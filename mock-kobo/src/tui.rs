@@ -77,6 +77,7 @@ fn event_loop(terminal: &mut DefaultTerminal, tui: Tui, runtime: &Handle) -> io:
             return Ok(());
         }
         let view = control.view();
+        app.device_syncing = view.syncing;
         app.show_library(view.library.keys().cloned().collect());
         app.show_book(&view.library);
         if let Ok(size) = terminal.size() {

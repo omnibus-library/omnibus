@@ -66,6 +66,12 @@ pub struct Reader {
     pub cursor: usize,
     width: u16,
     rows: u16,
+    /// `chapter`'s pagination at `width`×`rows`, cached: rebuilt only when
+    /// `pages_key` no longer matches, so a 100ms tick never re-walks a long
+    /// chapter's words just to redraw the same page.
+    pages: Vec<Page>,
+    /// `(chapter, width, rows)` the cached `pages` was built for.
+    pages_key: (usize, u16, u16),
     /// The `modified` stamp of the last device bookmark `App::show_book`
     /// placed this reader on; `None` (older than any real stamp) before
     /// the first one, so a reader just opened on its own always takes it.
@@ -81,7 +87,7 @@ pub struct Reader {
 impl Reader {
     /// Open `book` at its first page; `text: None` is a metadata-only book.
     pub fn open(book: String, text: Option<Kepub>) -> Self {
-        Self {
+        let mut reader = Self {
             book,
             text,
             chapter: 0,
@@ -89,11 +95,15 @@ impl Reader {
             cursor: 0,
             width: 0,
             rows: 0,
+            pages: Vec::new(),
+            pages_key: (0, 0, 0),
             placed_at: None,
             view: ReaderView::Page,
             selection: None,
             annotations: Vec::new(),
-        }
+        };
+        reader.rebuild_pages();
+        reader
     }
 
     /// Whether `modified` is newer than the stamp this reader last placed
@@ -109,8 +119,10 @@ impl Reader {
     }
 
     /// Move to `chapter`'s `span` (its first word) and record `modified` as
-    /// placed. A no-op past the chapter's own bounds (the caller already
-    /// checked `Kepub::locate_span`, so this never happens in practice).
+    /// placed. Clears any word selection and returns to the page view — a
+    /// selection's word indices are only meaningful on the chapter/page they
+    /// were started on. A no-op past the chapter's own bounds (the caller
+    /// already checked `Kepub::locate_span`, so this never happens in practice).
     pub fn place_at_span(&mut self, chapter: usize, span: usize, modified: i64) {
         self.chapter = chapter;
         self.cursor = self
@@ -120,25 +132,57 @@ impl Reader {
             .and_then(|text| text.words.iter().position(|w| w.span == span))
             .unwrap_or(0);
         self.placed_at = Some(modified);
+        self.selection = None;
+        self.view = ReaderView::Page;
+        self.rebuild_pages();
         self.sync_page();
     }
 
     /// Re-paginate the current chapter to `width`×`rows` and keep the page
-    /// holding `cursor`'s word on screen.
+    /// holding `cursor`'s word on screen. A no-op re-fit at an unchanged
+    /// size skips the re-pagination — the tick loop calls this every 100ms.
     pub fn fit(&mut self, width: u16, rows: u16) {
         self.width = width;
         self.rows = rows;
+        self.rebuild_pages();
         self.sync_page();
     }
 
-    /// This chapter's pages at the reader's last-fit size; empty for a
-    /// metadata-only book or before the first `fit`.
-    pub fn pages(&self) -> Vec<Page> {
-        match &self.text {
+    /// This chapter's pages at the reader's last-fit size; empty only for a
+    /// metadata-only book or an out-of-range chapter.
+    pub fn pages(&self) -> &[Page] {
+        &self.pages
+    }
+
+    /// Recompute `pages` for the current `chapter`/`width`/`rows` — a no-op
+    /// if they already match the cache's key (so a re-fit at an unchanged
+    /// size, called every 100ms by the tick loop, never re-walks the words).
+    fn rebuild_pages(&mut self) {
+        let key = (self.chapter, self.width, self.rows);
+        if key == self.pages_key {
+            return;
+        }
+        self.pages = match &self.text {
             Some(kepub) if self.chapter < kepub.chapters.len() => {
                 paginate(kepub, self.chapter, self.width, self.rows)
             }
             _ => Vec::new(),
+        };
+        self.pages_key = key;
+    }
+
+    /// Whether `key` would close with a job or commit a highlight right
+    /// now — the two points `App` checks its device-busy slot before
+    /// dispatching, so a refusal never loses the reader's position or an
+    /// open selection.
+    pub(super) fn commits_on(&self, key: KeyEvent) -> bool {
+        if key.kind != KeyEventKind::Press || self.text.is_none() {
+            return false;
+        }
+        match &self.view {
+            ReaderView::Page if self.selection.is_none() => key.code == KeyCode::Esc,
+            _ if self.selection.is_some() => matches!(key.code, KeyCode::Char('1'..='4')),
+            _ => false,
         }
     }
 
@@ -298,37 +342,39 @@ impl Reader {
     }
 
     /// Move the selection's `end` one word, clamped to `[start, the open
-    /// page's last word]` — a selection never crosses off the page it started on.
+    /// page's last word]` — a selection never crosses off the page it
+    /// started on. A no-op if those bounds have gone stale (`start` past
+    /// the current page's end), rather than panicking.
     fn extend_selection(&mut self, delta: i32) {
         let Some((start, end)) = self.selection.as_ref().map(|s| (s.start, s.end)) else {
             return;
         };
-        let pages = self.pages();
-        let Some(page) = pages.get(self.page) else {
+        let Some(page) = self.pages.get(self.page) else {
             return;
         };
-        let max = *page
-            .lines
-            .last()
-            .expect("a page has at least one line")
-            .end();
-        let current = i32::try_from(end).unwrap_or(0);
-        let min_i = i32::try_from(start).unwrap_or(0);
-        let max_i = i32::try_from(max).unwrap_or(i32::MAX);
-        let moved = (current + delta).clamp(min_i, max_i);
+        let Some(&max) = page.lines.last().map(std::ops::RangeInclusive::end) else {
+            return;
+        };
+        let Some(moved) = nudge(end, delta, start, max) else {
+            return;
+        };
         if let Some(selection) = self.selection.as_mut() {
-            selection.end = usize::try_from(moved).unwrap_or(start);
+            selection.end = moved;
         }
     }
 
     /// `selection`'s highlight, in `color`, over this chapter's text.
-    /// `None` only if the book or chapter vanished mid-selection.
+    /// `None` if the book or chapter vanished mid-selection, or the
+    /// selection's bounds no longer fit the chapter's words.
     fn highlight_of(
         &self,
         selection: &Selection,
         color: Swatch,
     ) -> Option<crate::annotations::NewHighlight> {
         let chapter = self.text.as_ref()?.chapters.get(self.chapter)?;
+        if selection.end >= chapter.words.len() {
+            return None;
+        }
         Some(chapter.highlight(
             selection.start..=selection.end,
             color,
@@ -339,34 +385,32 @@ impl Reader {
     /// Recompute `page` for the current `chapter`/`cursor`/size: the last
     /// page whose first word is at or before `cursor`.
     fn sync_page(&mut self) {
-        let pages = self.pages();
-        self.page = pages
+        self.page = self
+            .pages
             .iter()
             .rposition(|p| *p.lines[0].start() <= self.cursor)
             .unwrap_or(0);
     }
 
     fn next_page(&mut self) {
-        let pages = self.pages();
-        if pages.is_empty() {
+        if self.pages.is_empty() {
             return;
         }
-        if self.page + 1 < pages.len() {
+        if self.page + 1 < self.pages.len() {
             self.page += 1;
-            self.cursor = *pages[self.page].lines[0].start();
+            self.cursor = *self.pages[self.page].lines[0].start();
         } else {
             self.jump_chapter_to_first(1);
         }
     }
 
     fn prev_page(&mut self) {
-        let pages = self.pages();
-        if pages.is_empty() {
+        if self.pages.is_empty() {
             return;
         }
         if self.page > 0 {
             self.page -= 1;
-            self.cursor = *pages[self.page].lines[0].start();
+            self.cursor = *self.pages[self.page].lines[0].start();
         } else {
             self.jump_chapter_to_last(-1);
         }
@@ -381,6 +425,7 @@ impl Reader {
         };
         self.chapter = next;
         self.cursor = 0;
+        self.rebuild_pages();
         self.sync_page();
     }
 
@@ -392,37 +437,33 @@ impl Reader {
             return;
         };
         self.chapter = next;
-        let pages = self.pages();
-        self.cursor = pages.last().map_or(0, |p| *p.lines[0].start());
+        self.rebuild_pages();
+        self.cursor = self.pages.last().map_or(0, |p| *p.lines[0].start());
         self.sync_page();
     }
 
-    /// Move the cursor one word within the current page, clamped to it.
+    /// Move the cursor one word within the current page, clamped to it. A
+    /// no-op if the page's bounds have gone stale, rather than panicking.
     fn move_cursor(&mut self, delta: i32) {
-        let pages = self.pages();
-        let Some(page) = pages.get(self.page) else {
+        let Some(page) = self.pages.get(self.page) else {
             return;
         };
         let min = *page.lines[0].start();
-        let max = *page
-            .lines
-            .last()
-            .expect("a page has at least one line")
-            .end();
-        let current = i32::try_from(self.cursor).unwrap_or(0);
-        let min_i = i32::try_from(min).unwrap_or(0);
-        let max_i = i32::try_from(max).unwrap_or(i32::MAX);
-        let moved = (current + delta).clamp(min_i, max_i);
-        self.cursor = usize::try_from(moved).unwrap_or(min);
+        let Some(&max) = page.lines.last().map(std::ops::RangeInclusive::end) else {
+            return;
+        };
+        if let Some(moved) = nudge(self.cursor, delta, min, max) {
+            self.cursor = moved;
+        }
     }
 
-    /// Esc on the page view: the open page's span and percent, as a read job.
-    fn close(&self) -> ReaderAction {
+    /// Esc on the page view: the open page's span and percent, as a read
+    /// job. Also used directly by `App`'s Ctrl-C quit path.
+    pub(super) fn close(&self) -> ReaderAction {
         let Some(kepub) = &self.text else {
             return ReaderAction::Close(None);
         };
-        let pages = self.pages();
-        let span = pages.get(self.page).map_or(0, |p| p.span);
+        let span = self.pages.get(self.page).map_or(0, |p| p.span);
         let (percent, location) = kepub.bookmark(self.chapter, span);
         ReaderAction::Close(Some(Job::Read {
             book: self.book.clone(),
@@ -430,6 +471,19 @@ impl Reader {
             location: Some(location),
         }))
     }
+}
+
+/// `value + delta`, clamped to `[lo, hi]` — `None` if `lo > hi` (a page or
+/// selection whose bounds have gone stale) rather than panicking, as
+/// `i32::clamp` would.
+fn nudge(value: usize, delta: i32, lo: usize, hi: usize) -> Option<usize> {
+    if lo > hi {
+        return None;
+    }
+    let value = i32::try_from(value).unwrap_or(0);
+    let lo = i32::try_from(lo).unwrap_or(0);
+    let hi = i32::try_from(hi).unwrap_or(i32::MAX);
+    usize::try_from((value + delta).clamp(lo, hi)).ok()
 }
 
 /// The swatch a selection digit names (`Bookmark.Color` index = digit − 1).
@@ -493,25 +547,44 @@ fn chapter_lines(chapter: &Chapter, width: u16) -> Vec<std::ops::RangeInclusive<
 }
 
 /// `chapter`'s pages at `width`×`rows`: `rows` consecutive lines each (0
-/// counts as 1), with every chapter getting at least one page.
+/// counts as 1), with every chapter getting at least one page. Percents are
+/// computed in one pass (matching `Kepub::bookmark`'s own definition)
+/// rather than a `bookmark` call per page.
 pub fn paginate(kepub: &Kepub, chapter: usize, width: u16, rows: u16) -> Vec<Page> {
     let rows = usize::from(rows.max(1));
     let ch = &kepub.chapters[chapter];
     let lines = chapter_lines(ch, width);
+    let words_before_chapter: usize = kepub.chapters[..chapter].iter().map(|c| c.words.len()).sum();
+    let total: usize = kepub.chapters.iter().map(|c| c.words.len()).sum();
+    let words_before_span = words_before_span_table(ch);
     lines
         .chunks(rows)
         .map(|chunk| {
             let page_lines = chunk.to_vec();
             let first_word = *page_lines[0].start();
             let span = ch.words[first_word].span;
-            let percent = kepub.bookmark(chapter, span).0;
+            let before = words_before_chapter + words_before_span[span];
             Page {
                 lines: page_lines,
                 span,
-                percent,
+                percent: Percent::of(before, total),
             }
         })
         .collect()
+}
+
+/// `table[s]` = how many of `chapter`'s words sit in a span before `s` —
+/// the per-page percent in one pass, instead of a `Kepub::bookmark` call
+/// (itself O(chapter words)) for every page.
+fn words_before_span_table(chapter: &Chapter) -> Vec<usize> {
+    let mut table = vec![0usize; chapter.spans.len() + 1];
+    for word in &chapter.words {
+        table[word.span + 1] += 1;
+    }
+    for i in 1..table.len() {
+        table[i] += table[i - 1];
+    }
+    table
 }
 
 #[cfg(test)]

@@ -12,7 +12,7 @@ use crate::control::DeviceView;
 use crate::device::Book;
 use crate::kepub::Kepub;
 use crate::test_support::READER_KEPUB;
-use crate::tui::app::{App, Mode};
+use crate::tui::app::{App, Mode, Status};
 use crate::tui::reader::{Reader, ReaderView, Selection};
 use crate::tui::render::{draw, Screen};
 use crate::wire::Series;
@@ -45,10 +45,11 @@ fn library(book: Book) -> DeviceView {
     }
 }
 
-fn drawn(view: &DeviceView, reader: Reader) -> Terminal<TestBackend> {
+fn drawn(view: &DeviceView, reader: Reader, status: Option<Status>) -> Terminal<TestBackend> {
     let mut terminal = Terminal::new(TestBackend::new(40, 10)).unwrap();
     let app = App {
         mode: Mode::Reading(Box::new(reader)),
+        status,
         ..App::default()
     };
     let screen = Screen {
@@ -63,7 +64,7 @@ fn drawn(view: &DeviceView, reader: Reader) -> Terminal<TestBackend> {
 }
 
 fn shown(view: &DeviceView, reader: Reader) -> String {
-    drawn(view, reader).backend().to_string()
+    drawn(view, reader, None).backend().to_string()
 }
 
 fn screen_rows(terminal: &Terminal<TestBackend>) -> Vec<String> {
@@ -87,9 +88,25 @@ fn draw_shows_the_reader_page_with_its_chapter_page_and_percent() {
 
     assert!(shown.contains("Reader Fixture"), "{shown}");
     assert!(shown.contains("ch 1/3"), "{shown}");
-    assert!(shown.contains("p 1/5"), "{shown}");
-    assert!(shown.contains("0%"), "{shown}");
+    assert!(shown.contains("p 1/5 · 0%"), "{shown}");
     assert!(shown.contains("Chapter"), "{shown}");
+}
+
+#[test]
+fn draw_shows_the_apps_status_while_the_reader_is_open() {
+    let kepub = Kepub::parse(READER_KEPUB).unwrap();
+    let mut reader = Reader::open("book-1".to_owned(), Some(kepub));
+    reader.fit(24, 3);
+
+    let shown = drawn(
+        &library(book("Reader Fixture")),
+        reader,
+        Some(Status::Error("boom".to_owned())),
+    )
+    .backend()
+    .to_string();
+
+    assert!(shown.contains("boom"), "{shown}");
 }
 
 #[test]
@@ -140,7 +157,7 @@ fn draw_shows_the_selection_reversed_on_the_page() {
         note: None,
     });
 
-    let terminal = drawn(&library(book("Reader Fixture")), reader);
+    let terminal = drawn(&library(book("Reader Fixture")), reader, None);
 
     let (x, y) = locate(&terminal, "café");
     assert!(
@@ -200,7 +217,7 @@ fn draw_colours_a_highlighted_word_in_its_swatch() {
         location: location_json(Some(&naive_to_zurich_range())),
     }];
 
-    let terminal = drawn(&library(book("Reader Fixture")), reader);
+    let terminal = drawn(&library(book("Reader Fixture")), reader, None);
 
     let (x, y) = locate(&terminal, "café");
     assert_ne!(

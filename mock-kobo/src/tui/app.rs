@@ -76,6 +76,10 @@ pub struct App {
     pub books: Vec<String>,
     /// Index into `books`; clamped whenever the library changes.
     pub selected: usize,
+    /// The device's own `syncing` flag as of the last tick — a sync begun
+    /// over the control API by someone else, distinct from `busy` (a job
+    /// this app itself started).
+    pub device_syncing: bool,
 }
 
 /// Whether keys are commands or text for a field, or the reader is open.
@@ -133,13 +137,36 @@ impl App {
             return None;
         }
         if is_ctrl_c(key) {
-            return self.quit();
+            return self.quit_from_reading().or_else(|| self.quit());
         }
         match self.mode {
             Mode::Normal => self.on_normal_key(key, current_url),
             Mode::Editing(_) => self.on_edit_key(key, current_url),
             Mode::Reading(_) => self.on_reading_key(key),
         }
+    }
+
+    /// Ctrl-C from `Mode::Reading` with a downloaded book first sends the
+    /// open page's close job, same as Esc, so the last position is never
+    /// lost on exit; `None` leaves the normal quit path (any other mode,
+    /// a device mid-exchange, or a metadata-only book with no job to send)
+    /// to run instead.
+    fn quit_from_reading(&mut self) -> Option<Action> {
+        let Mode::Reading(reader) = &self.mode else {
+            return None;
+        };
+        if self.device_syncing || reader.text.is_none() {
+            return None;
+        }
+        let ReaderAction::Close(Some(job)) = reader.close() else {
+            return None;
+        };
+        let action = self.start(job);
+        if action.is_some() {
+            self.mode = Mode::Normal;
+            self.quit_deferred = true;
+        }
+        action
     }
 
     /// A job ended: the app takes jobs again and shows how it went.
@@ -239,11 +266,20 @@ impl App {
     }
 
     /// Dispatch a key to the open reader; its close/run becomes a job the
-    /// same way an edit's save does, so a busy refusal keeps the reader open.
+    /// same way an edit's save does, so a busy refusal keeps the reader
+    /// open. A key that would close or commit is refused *before* it
+    /// reaches the reader — not just by `start`'s own busy check — so a
+    /// refusal while busy or while the device reports its own exchange
+    /// never drops the page position or an open selection the way
+    /// `reader.on_key` consuming it first would.
     fn on_reading_key(&mut self, key: KeyEvent) -> Option<Action> {
         let Mode::Reading(reader) = &mut self.mode else {
             return None;
         };
+        if (self.busy || self.device_syncing) && reader.commits_on(key) {
+            self.status = Some(Status::Error(BUSY.to_owned()));
+            return None;
+        }
         match reader.on_key(key)? {
             ReaderAction::Close(None) => {
                 self.mode = Mode::Normal;

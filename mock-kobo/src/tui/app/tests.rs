@@ -787,6 +787,99 @@ fn on_key_refuses_a_readers_highlight_while_another_job_runs() {
 }
 
 #[test]
+fn show_book_clears_a_stale_selection_when_it_moves_to_another_chapter() {
+    let mut app = opened_reader_app();
+    if let Mode::Reading(reader) = &mut app.mode {
+        reader.cursor = 45; // a late word in ch1 (50 words, 0-49)
+    }
+    app.on_key(code(KeyCode::Char('v')), URL);
+    match &app.mode {
+        Mode::Reading(reader) => assert!(reader.selection.is_some(), "selection started"),
+        other => panic!("expected Reading, got {other:?}"),
+    }
+    // ch3 (index 2) has only 8 words (0-7) — far shorter than word 45.
+    let bookmark = crate::reading::Bookmark {
+        percent: Percent::new(90),
+        location: Some(KoboSpan {
+            source: "ch3.xhtml".into(),
+            value: "kobo.2.1".into(),
+        }),
+        modified: 1,
+    };
+
+    app.show_book(&library_with(book_with_bookmark(Some(bookmark))));
+
+    assert_eq!(reader_position(&app).0, 2, "moved to ch3");
+    match &app.mode {
+        Mode::Reading(reader) => assert_eq!(
+            reader.selection, None,
+            "the selection must not survive the jump"
+        ),
+        other => panic!("expected Reading, got {other:?}"),
+    }
+
+    let right = app.on_key(code(KeyCode::Right), URL);
+    let digit = app.on_key(code(KeyCode::Char('1')), URL);
+
+    assert_eq!(right, None, "no stray action from extending a cleared selection");
+    assert_eq!(digit, None, "no Highlight job without an open selection");
+}
+
+#[test]
+fn on_key_refuses_to_close_the_reader_while_the_device_is_syncing() {
+    let mut app = opened_reader_app();
+    app.device_syncing = true;
+
+    let action = app.on_key(code(KeyCode::Esc), URL);
+
+    assert_eq!(action, None);
+    assert!(
+        matches!(app.mode, Mode::Reading(_)),
+        "the reader stays open"
+    );
+    assert_eq!(app.status, Some(Status::Error(BUSY.to_owned())));
+}
+
+#[test]
+fn on_key_refuses_to_commit_a_highlight_while_the_device_is_syncing() {
+    let mut app = opened_reader_app();
+    if let Mode::Reading(reader) = &mut app.mode {
+        reader.chapter = 1;
+        reader.cursor = 2;
+        reader.fit(24, 3);
+        reader.selection = Some(crate::tui::reader::Selection {
+            start: 2,
+            end: 4,
+            note: None,
+        });
+    }
+    app.device_syncing = true;
+
+    let action = app.on_key(code(KeyCode::Char('1')), URL);
+
+    assert_eq!(action, None);
+    match &app.mode {
+        Mode::Reading(reader) => assert!(reader.selection.is_some(), "the selection survives"),
+        other => panic!("expected Reading, got {other:?}"),
+    }
+    assert_eq!(app.status, Some(Status::Error(BUSY.to_owned())));
+}
+
+#[test]
+fn ctrl_c_in_the_reader_sends_the_read_job_before_quitting() {
+    let mut app = opened_reader_app();
+
+    let action = app.on_key(ctrl_c(), URL);
+
+    match action {
+        Some(Action::Run(Job::Read { book, .. })) => assert_eq!(book, "book-1"),
+        other => panic!("expected a Read job, got {other:?}"),
+    }
+    assert_eq!(app.mode, Mode::Normal);
+    assert!(app.busy, "quit waits for the job, same as a busy job today");
+}
+
+#[test]
 fn show_book_reports_a_bookmarked_span_the_book_does_not_hold() {
     let mut app = opened_reader_app();
     let bookmark = crate::reading::Bookmark {

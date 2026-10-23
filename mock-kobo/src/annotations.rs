@@ -43,6 +43,16 @@ impl Swatch {
         }
     }
 
+    /// The display name `tui::render::reader`'s highlights list shows for this colour.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Yellow => "Yellow",
+            Self::Pink => "Pink",
+            Self::Blue => "Blue",
+            Self::Green => "Green",
+        }
+    }
+
     /// `raw`'s swatch, when it names one of the four hex values
     /// (ASCII case-insensitive). Anything else — a CSS colour name, an
     /// unrecognized hex value, or no value at all — lands on yellow

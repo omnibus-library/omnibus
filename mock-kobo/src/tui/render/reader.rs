@@ -13,7 +13,8 @@ use ratatui::Frame;
 
 use crate::annotations::{span_range, Annotation, Swatch};
 use crate::device::Book;
-use crate::tui::reader::{Reader, ReaderView, Selection};
+use crate::tui::app::Status;
+use crate::tui::reader::{Page, Reader, ReaderView, Selection};
 
 const PAGE_HELP: &str = "←/→ page · [/] chapter · ↑/↓ cursor · v select · h highlights · Esc close";
 const SELECTION_HELP: &str = "←/→ extend · 1-4 highlight · n note · Esc cancel";
@@ -34,8 +35,16 @@ pub fn page_area(frame: Rect) -> Rect {
 
 /// Draw the reader into `area`: the header line, the page or metadata view,
 /// and the key help. `book` is the device's record for `reader.book`; a
-/// book that vanished from the library mid-session draws blank.
-pub fn draw(frame: &mut Frame, area: Rect, reader: &Reader, book: Option<&Book>) {
+/// book that vanished from the library mid-session draws blank. `status`
+/// (BUSY, a failed job, a bookmark the book doesn't hold) borrows the help
+/// line when set — the reader has no separate status row.
+pub fn draw(
+    frame: &mut Frame,
+    area: Rect,
+    reader: &Reader,
+    book: Option<&Book>,
+    status: Option<&Status>,
+) {
     let [header, body, help] = Layout::vertical([
         Constraint::Length(1),
         Constraint::Fill(1),
@@ -51,12 +60,12 @@ pub fn draw(frame: &mut Frame, area: Rect, reader: &Reader, book: Option<&Book>)
             let Some(page) = pages.get(reader.page) else {
                 return;
             };
-            draw_page_header(frame, header, book, reader, pages.len());
+            draw_page_header(frame, header, book, reader, page, pages.len());
             let chapter = &kepub.chapters[reader.chapter];
             match &reader.view {
                 ReaderView::Highlights(selected) => {
                     draw_highlights_list(frame, body, chapter, &reader.annotations, *selected);
-                    frame.render_widget(Line::raw(HIGHLIGHTS_HELP), help);
+                    draw_help_line(frame, help, HIGHLIGHTS_HELP, status);
                 }
                 ReaderView::Note(buffer) => {
                     draw_page(
@@ -68,7 +77,10 @@ pub fn draw(frame: &mut Frame, area: Rect, reader: &Reader, book: Option<&Book>)
                         reader.selection.as_ref(),
                         &reader.annotations,
                     );
-                    draw_note_prompt(frame, help, buffer);
+                    match status {
+                        Some(status) => draw_help_line(frame, help, "", Some(status)),
+                        None => super::draw_prompt(frame, help, "note", buffer),
+                    }
                 }
                 ReaderView::Page => {
                     draw_page(
@@ -85,14 +97,22 @@ pub fn draw(frame: &mut Frame, area: Rect, reader: &Reader, book: Option<&Book>)
                     } else {
                         PAGE_HELP
                     };
-                    frame.render_widget(Line::raw(help_line), help);
+                    draw_help_line(frame, help, help_line, status);
                 }
             }
         }
         None => {
             draw_metadata(frame, header.union(body), book);
-            frame.render_widget(Line::raw(METADATA_HELP), help);
+            draw_help_line(frame, help, METADATA_HELP, status);
         }
+    }
+}
+
+/// `help` normally, or `status` instead when one is set.
+fn draw_help_line(frame: &mut Frame, area: Rect, help: &str, status: Option<&Status>) {
+    match status {
+        Some(status) => frame.render_widget(super::status_line(status), area),
+        None => frame.render_widget(Line::raw(help), area),
     }
 }
 
@@ -101,13 +121,11 @@ fn draw_page_header(
     area: Rect,
     book: &Book,
     reader: &Reader,
+    page: &Page,
     page_count: usize,
 ) {
     let chapter_count = reader.text.as_ref().map_or(0, |kepub| kepub.chapters.len());
-    let percent = reader
-        .pages()
-        .get(reader.page)
-        .map_or(0, |p| u8::from(p.percent));
+    let percent = u8::from(page.percent);
     let line = format!(
         "{} · ch {}/{chapter_count} · p {}/{page_count} · {percent}%",
         book.title,
@@ -210,7 +228,7 @@ fn draw_highlights_list(
             let note = annotation.note.as_deref().unwrap_or("");
             let text = format!(
                 "[{}] \"{}\" — {note}{suffix}",
-                swatch_name(annotation.color),
+                annotation.color.name(),
                 annotation.text
             );
             if index == selected {
@@ -221,27 +239,6 @@ fn draw_highlights_list(
         })
         .collect();
     frame.render_widget(Paragraph::new(lines), area);
-}
-
-fn swatch_name(swatch: Swatch) -> &'static str {
-    match swatch {
-        Swatch::Yellow => "Yellow",
-        Swatch::Pink => "Pink",
-        Swatch::Blue => "Blue",
-        Swatch::Green => "Green",
-    }
-}
-
-/// The note prompt, with the terminal cursor after what's been typed.
-fn draw_note_prompt(frame: &mut Frame, area: Rect, buffer: &str) {
-    let prompt = Line::raw(format!("note: {buffer}"));
-    let typed = u16::try_from(prompt.width()).unwrap_or(u16::MAX);
-    let x = area
-        .x
-        .saturating_add(typed)
-        .min(area.right().saturating_sub(1));
-    frame.set_cursor_position((x, area.y));
-    frame.render_widget(prompt, area);
 }
 
 /// The metadata-only view: title, authors, series, description, a
@@ -256,11 +253,8 @@ fn draw_metadata(frame: &mut Frame, area: Rect, book: &Book) {
         Line::raw(book.authors.join(", ")),
     ];
     if let Some(series) = &book.series {
-        lines.push(Line::raw(format!(
-            "{} #{}",
-            series.name,
-            format_number(series.number)
-        )));
+        let number = series.number.map_or_else(String::new, |n| n.to_string());
+        lines.push(Line::raw(format!("{} #{number}", series.name)));
     }
     if !book.description.is_empty() {
         lines.push(Line::raw(book.description.clone()));
@@ -273,10 +267,6 @@ fn draw_metadata(frame: &mut Frame, area: Rect, book: &Book) {
         )));
     }
     frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: true }), area);
-}
-
-fn format_number(number: Option<f64>) -> String {
-    number.map_or_else(String::new, |n| n.to_string())
 }
 
 #[cfg(test)]
