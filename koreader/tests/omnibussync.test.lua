@@ -25,15 +25,20 @@ local DIR = "/books/Omnibus"
 local ALPHA = { uuid = "0123abcd-0000-0000-0000-000000000000", title = "Alpha", format = "epub" }
 local BETA = { uuid = "89efcdab-0000-0000-0000-000000000000", title = "Beta", format = "epub" }
 
--- A fake device: `files` is the set of paths on disk; every call lands in `log`.
+-- A fake device: `files` is the set of paths on disk, `opts.delivered` the plugin's record of
+-- what it delivered; every call lands in `log`. A download answers `true, "etag-new"` unless
+-- `opts.fail_download[title]` fails it or `opts.not_modified` answers it with a 304; applying
+-- metadata fails for the titles in `opts.fail_apply`.
 local function fake(opts)
     opts = opts or {}
     local files = opts.files or {}
-    local log = { downloads = {}, removed = {}, reports = {}, saves = 0 }
+    local log = { downloads = {}, conditions = {}, applied = {}, removed = {}, reports = {}, saves = 0 }
     local deps = {
         dir = DIR,
         open_path = opts.open_path,
         manifest = opts.manifest or {},
+        files = opts.delivered or {},
+        can_replace = opts.can_replace ~= false,
         save_manifest = function()
             log.saves = log.saves + 1
         end,
@@ -43,13 +48,25 @@ local function fake(opts)
             end
             return 200, { books = opts.books or {} }
         end,
-        download = function(book, path)
+        download = function(book, path, if_none_match)
             table.insert(log.downloads, path)
+            table.insert(log.conditions, if_none_match or "none")
             local failure = opts.fail_download and opts.fail_download[book.title]
             if failure then
                 return false, failure
             end
+            if opts.not_modified then
+                return true, nil, true
+            end
             files[path] = true
+            return true, "etag-new"
+        end,
+        apply_metadata = function(book, path)
+            table.insert(log.applied, path)
+            local failure = opts.fail_apply and opts.fail_apply[book.title]
+            if failure then
+                return false, failure
+            end
             return true
         end,
         remove = function(path)
@@ -221,6 +238,240 @@ test("run forgets a manifest path outside the folder without deleting it", funct
     eq(result.ok, true)
     eq(#log.removed, 0)
     eq(deps.manifest[ALPHA.uuid], nil)
+end)
+
+
+-- Metadata: what the plugin writes into the device's custom metadata, and when.
+local EDITED = {
+    uuid = ALPHA.uuid, title = "Alpha Revised", format = "epub", last_modified = 200,
+    authors = { "Ada Lovelace", "Bo Peep" }, series = "The Greek Letters", series_index = 2.0,
+    description = "An edited blurb",
+}
+local ALPHA_PATH = DIR .. "/Alpha - 0123abcd.epub"
+local EDITED_PATH = DIR .. "/Alpha Revised - 0123abcd.epub"
+
+test("custom_props maps title, authors, series, series_index and description", function()
+    local props = sync.custom_props(EDITED)
+
+    eq(props.title, "Alpha Revised")
+    eq(props.authors, "Ada Lovelace\nBo Peep")
+    eq(props.series, "The Greek Letters")
+    eq(props.series_index, 2.0)
+    eq(props.description, "An edited blurb")
+end)
+
+test("custom_props leaves out an empty title, a null series and index and an empty description", function()
+    local null = function() end -- KOReader's json decodes null to a function
+    local props = sync.custom_props({ title = "", authors = {}, series = null, series_index = null, description = "" })
+
+    eq(props.title, nil)
+    eq(props.authors, nil)
+    eq(props.series, nil)
+    eq(props.series_index, nil)
+    eq(props.description, nil)
+end)
+
+test("refresh_plan lists a delivered book whose version moved, at its manifest path", function()
+    local manifest = { [ALPHA.uuid] = "/books/Omnibus/Old name.epub" }
+    local files = { [ALPHA.uuid] = { path = "/books/Omnibus/Old name.epub", version = 100 } }
+
+    local plan = sync.refresh_plan(manifest, files, { EDITED }, function() return true end, nil)
+
+    eq(#plan, 1)
+    eq(plan[1].book, EDITED)
+    eq(plan[1].path, "/books/Omnibus/Old name.epub")
+end)
+
+test("refresh_plan skips a book whose version matches", function()
+    local manifest = { [ALPHA.uuid] = ALPHA_PATH }
+    local files = { [ALPHA.uuid] = { path = ALPHA_PATH, version = 200 } }
+
+    eq(#sync.refresh_plan(manifest, files, { EDITED }, function() return true end, nil), 0)
+end)
+
+test("refresh_plan skips the open document and a file that is gone", function()
+    local manifest = { [ALPHA.uuid] = ALPHA_PATH, [BETA.uuid] = DIR .. "/Beta - 89efcdab.epub" }
+    local files = {}
+    local beta = { uuid = BETA.uuid, title = "Beta", format = "epub", last_modified = 5 }
+    local exists = function(path) return path == ALPHA_PATH end
+
+    eq(#sync.refresh_plan(manifest, files, { EDITED, beta }, exists, ALPHA_PATH), 0)
+end)
+
+test("refresh_plan treats a delivered book with no record as changed", function()
+    local manifest = { [ALPHA.uuid] = ALPHA_PATH }
+
+    eq(#sync.refresh_plan(manifest, {}, { EDITED }, function() return true end, nil), 1)
+end)
+
+test("run applies metadata after a new download and records its path, version and etag", function()
+    local deps, log = fake({ books = { EDITED } })
+
+    local result = sync.run("https://omni.test", deps)
+
+    eq(result.ok, true)
+    eq(log.applied[1], EDITED_PATH)
+    eq(log.conditions[1], "none")
+    local kept = deps.files[ALPHA.uuid]
+    eq(kept.path, EDITED_PATH)
+    eq(kept.version, 200)
+    eq(kept.etag, "etag-new")
+end)
+
+test("run re-downloads a changed book to its manifest path with its saved etag and deletes nothing", function()
+    local path = DIR .. "/Old name - 0123abcd.epub"
+    local deps, log = fake({
+        books = { EDITED },
+        manifest = { [ALPHA.uuid] = path },
+        files = { [path] = true },
+        delivered = { [ALPHA.uuid] = { path = path, version = 100, etag = "etag-old" } },
+    })
+
+    local result = sync.run("https://omni.test", deps)
+
+    eq(result.ok, true)
+    eq(result.added, 0)
+    eq(result.refreshed, 1)
+    eq(result.replaced, 1)
+    eq(log.downloads[1], path)
+    eq(log.conditions[1], "etag-old")
+    eq(#log.removed, 0)
+    eq(deps.manifest[ALPHA.uuid], path)
+    eq(log.applied[1], path)
+    eq(deps.files[ALPHA.uuid].version, 200)
+    eq(deps.files[ALPHA.uuid].etag, "etag-new")
+end)
+
+test("run keeps the file on a not-modified answer, still applies metadata and keeps the etag", function()
+    local deps, log = fake({
+        books = { EDITED },
+        manifest = { [ALPHA.uuid] = ALPHA_PATH },
+        files = { [ALPHA_PATH] = true },
+        delivered = { [ALPHA.uuid] = { path = ALPHA_PATH, version = 100, etag = "etag-old" } },
+        not_modified = true,
+    })
+
+    local result = sync.run("https://omni.test", deps)
+
+    eq(result.ok, true)
+    eq(result.replaced, 0)
+    eq(result.refreshed, 1)
+    eq(log.applied[1], ALPHA_PATH)
+    eq(deps.files[ALPHA.uuid].version, 200)
+    eq(deps.files[ALPHA.uuid].etag, "etag-old")
+end)
+
+test("run with can_replace off never downloads for a refresh, still applies metadata and records the version", function()
+    local deps, log = fake({
+        books = { EDITED },
+        manifest = { [ALPHA.uuid] = ALPHA_PATH },
+        files = { [ALPHA_PATH] = true },
+        delivered = { [ALPHA.uuid] = { path = ALPHA_PATH, version = 100, etag = "etag-old" } },
+        can_replace = false,
+    })
+
+    local result = sync.run("https://omni.test", deps)
+
+    eq(result.ok, true)
+    eq(#log.downloads, 0)
+    eq(result.replaced, 0)
+    eq(result.refreshed, 1)
+    eq(log.applied[1], ALPHA_PATH)
+    eq(deps.files[ALPHA.uuid].version, 200)
+end)
+
+test("run neither downloads nor applies metadata for a book whose version is unchanged", function()
+    local deps, log = fake({
+        books = { EDITED },
+        manifest = { [ALPHA.uuid] = ALPHA_PATH },
+        files = { [ALPHA_PATH] = true },
+        delivered = { [ALPHA.uuid] = { path = ALPHA_PATH, version = 200, etag = "etag-old" } },
+    })
+
+    local result = sync.run("https://omni.test", deps)
+
+    eq(result.ok, true)
+    eq(result.refreshed + result.replaced + result.added, 0)
+    eq(#log.downloads + #log.applied, 0)
+end)
+
+test("run leaves the version as it was when a refresh download fails, so the next sync retries", function()
+    local deps, log = fake({
+        books = { EDITED },
+        manifest = { [ALPHA.uuid] = ALPHA_PATH },
+        files = { [ALPHA_PATH] = true },
+        delivered = { [ALPHA.uuid] = { path = ALPHA_PATH, version = 100, etag = "etag-old" } },
+        fail_download = { ["Alpha Revised"] = "HTTP 500" },
+    })
+
+    local result = sync.run("https://omni.test", deps)
+
+    eq(result.ok, false)
+    eq(result.message, "Couldn't update 1 book: Alpha Revised: HTTP 500")
+    eq(log.reports[1], result.message)
+    eq(#log.applied, 0)
+    eq(deps.files[ALPHA.uuid].version, 100)
+    eq(deps.files[ALPHA.uuid].etag, "etag-old")
+end)
+
+test("run records the new etag but not the version when applying metadata fails after a replace", function()
+    local deps = fake({
+        books = { EDITED },
+        manifest = { [ALPHA.uuid] = ALPHA_PATH },
+        files = { [ALPHA_PATH] = true },
+        delivered = { [ALPHA.uuid] = { path = ALPHA_PATH, version = 100, etag = "etag-old" } },
+        fail_apply = { ["Alpha Revised"] = "unsupported cover type text/html" },
+    })
+
+    local result = sync.run("https://omni.test", deps)
+
+    eq(result.ok, false)
+    eq(result.message, "Couldn't update 1 book: Alpha Revised: unsupported cover type text/html")
+    eq(deps.files[ALPHA.uuid].etag, "etag-new")
+    eq(deps.files[ALPHA.uuid].version, 100)
+end)
+
+test("run joins a download failure and an update failure in one message", function()
+    local beta = { uuid = BETA.uuid, title = "Beta", format = "epub", last_modified = 5 }
+    local deps = fake({
+        books = { EDITED, beta },
+        manifest = { [ALPHA.uuid] = ALPHA_PATH },
+        files = { [ALPHA_PATH] = true },
+        delivered = { [ALPHA.uuid] = { path = ALPHA_PATH, version = 100 } },
+        fail_download = { ["Alpha Revised"] = "HTTP 500", Beta = "HTTP 404" },
+    })
+
+    local result = sync.run("https://omni.test", deps)
+
+    eq(result.message, "Couldn't download 1 book: Beta: HTTP 404; Couldn't update 1 book: Alpha Revised: HTTP 500")
+end)
+
+test("run delivers a returning book to the path it had when that is free inside the folder", function()
+    local kept = DIR .. "/Old name - 0123abcd.epub"
+    local deps, log = fake({
+        books = { EDITED },
+        delivered = { [ALPHA.uuid] = { path = kept, version = 100, etag = "etag-old" } },
+    })
+
+    sync.run("https://omni.test", deps)
+
+    eq(log.downloads[1], kept)
+    eq(log.conditions[1], "none")
+    eq(deps.manifest[ALPHA.uuid], kept)
+end)
+
+test("run delivers a returning book under its file name when its old path is taken or outside the folder", function()
+    for _, remembered in ipairs({ DIR .. "/Old name - 0123abcd.epub", "/books/Elsewhere.epub" }) do
+        local deps, log = fake({
+            books = { EDITED },
+            files = { [DIR .. "/Old name - 0123abcd.epub"] = true },
+            delivered = { [ALPHA.uuid] = { path = remembered, version = 100 } },
+        })
+
+        sync.run("https://omni.test", deps)
+
+        eq(log.downloads[1], EDITED_PATH, remembered)
+    end
 end)
 
 
