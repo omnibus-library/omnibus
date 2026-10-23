@@ -14,11 +14,13 @@ back with GET /api/covers/{uuid}), `precise` (put two more books on the shelf, s
 the web reader with a POST /api/progress, read the result back with GET /api/progress/{uuid})
 and `highlights` (stand in for the web reader with POST /api/highlights, PATCH
 /api/highlights/{id}/color and DELETE /api/highlights/{id}, read the result back with
-GET /api/highlights/book/{uuid}).
+GET /api/highlights/book/{uuid}), and `kosync` (stock KOReader's Progress sync, with no Omnibus plugin
+mounted: read the position a push left with GET /api/progress/{uuid} and stand in for the web reader
+with POST /api/progress).
 
 Env (scripts/koreader-e2e.sh sets them on `docker run`):
-  KOREADER_E2E_SCENARIO  scenario name: "opds", "delivery", "roundtrip", "metadata", "precise" or
-                         "highlights"
+  KOREADER_E2E_SCENARIO  scenario name: "opds", "delivery", "roundtrip", "metadata", "precise",
+                         "highlights" or "kosync"
   KOREADER_E2E_RESULTS   writable dir for <scenario>.json and <scenario>.png
   OMNIBUS_URL            server origin; the `opds` scenario appends /opds
   OMNIBUS_USER / OMNIBUS_PASSWORD   Basic credentials of the seeded account
@@ -26,6 +28,9 @@ Env (scripts/koreader-e2e.sh sets them on `docker run`):
                          session of that account, and the shelf holding Alpha that they switch off and on
   OMNIBUS_LAGOON_UUID / OMNIBUS_RELAY_UUID   `precise` and `highlights`: the uuids of Lagoon of
                          Ligatures and Frontmatter Relay, which they add to that shelf
+  OMNIBUS_KOSYNC_PASSWORD / OMNIBUS_ALPHA_UUID   `kosync`: the progress-sync password generated in
+                         Settings, and the uuid of Alpha, whose override-baked download the runner
+                         left at <results>/kosync/alpha.epub
 
 Writes <results>/<scenario>.json exactly once — pass, fail or watchdog —
 screenshots to <results>/<scenario>.png on failure, then quits.
@@ -44,6 +49,8 @@ local SESSION_TOKEN = os.getenv("OMNIBUS_SESSION_TOKEN") or ""
 local SHELF_ID = os.getenv("OMNIBUS_SHELF_ID") or ""
 local LAGOON_UUID = os.getenv("OMNIBUS_LAGOON_UUID") or ""
 local RELAY_UUID = os.getenv("OMNIBUS_RELAY_UUID") or ""
+local KOSYNC_PASSWORD = os.getenv("OMNIBUS_KOSYNC_PASSWORD") or ""
+local ALPHA_UUID = os.getenv("OMNIBUS_ALPHA_UUID") or ""
 
 -- Titles of test_data/epubs/generated/alpha.epub and beta.epub — the two
 -- files scripts/koreader-e2e.sh copies into the scratch library.
@@ -1150,6 +1157,179 @@ local function highlights_scenario()
     }
 end
 
+-- The `kosync` scenario: stock KOReader's own Progress sync (no Omnibus plugin) against /kosync.
+-- A wrong key is refused with the server's message, a login with the generated password works, a
+-- push reaches the web, and a position the web writes afterwards comes back.
+local function kosync_scenario()
+    local DocSettings = require("docsettings")
+    local Event = require("ui/event")
+    local ReaderUI = require("apps/reader/readerui")
+    local md5 = require("ffi/sha2").md5
+    local path = RESULTS .. "/kosync/alpha.epub"
+    -- Twenty characters into Alpha's paragraph, a page past where `read_forward` leaves the device.
+    local WEB_CFI = "epubcfi(/6/2!/4/4/1:20)"
+    local WEB_XPOINTER = "/body/DocFragment/body/p/text().20"
+    local WEB_PERCENT = 89
+    local kosync, digest, pushed_percent, pushed_progress
+
+    local function client()
+        local KOSyncClient = require("KOSyncClient")
+        return KOSyncClient:new{
+            custom_url = kosync.settings.custom_server,
+            service_spec = kosync.path .. "/api.json",
+        }
+    end
+
+    -- The epub position the web holds for Alpha.
+    local function web_epub()
+        local code, progress = api("GET", "/api/progress/" .. ALPHA_UUID)
+        if code ~= 200 or type(progress) ~= "table" then
+            return nil, "GET /api/progress answered " .. tostring(code)
+        end
+        for _, record in ipairs(progress.records or {}) do
+            if record.format == "epub" then
+                return record
+            end
+        end
+        return nil, "the web holds no epub position"
+    end
+
+    return {
+        {
+            name = "open",
+            deferred = true,
+            fn = function(resume)
+                -- Alpha is one page; a huge font spreads it over several, so positions differ.
+                local sidecar = DocSettings:open(path)
+                sidecar:saveSetting("copt_font_size", 200)
+                sidecar:flush()
+                -- Read when the plugin initialises, so it has to be there before the book opens.
+                G_reader_settings:saveSetting("device_id", "lane-kosync-device")
+                ReaderUI:showReader(path, nil, nil, nil, function(reader_ui)
+                    kosync = reader_ui.kosync
+                    digest = reader_ui.doc_settings:readSetting("partial_md5_checksum")
+                    local pages = reader_ui.document:getPageCount()
+                    if not kosync then
+                        resume(false, "reader_ui.kosync missing")
+                    elseif reader_ui.omnibus then
+                        resume(false, "the Omnibus plugin is loaded; this scenario is for stock KOReader")
+                    elseif not digest then
+                        resume(false, "the book has no partial_md5_checksum")
+                    elseif pages < 4 then
+                        resume(false, "expected at least 4 pages at the large font, got " .. pages)
+                    else
+                        resume(true, "stock kosync loaded; digest " .. digest .. ", " .. pages .. " pages")
+                    end
+                end)
+                return true
+            end,
+        },
+        {
+            name = "wrong_key_refused",
+            fn = function()
+                kosync:setCustomServer(BASE_URL .. "/kosync")
+                local ok, body = client():authorize(USER, md5("wrong"))
+                if ok then
+                    return false, "a wrong key was accepted"
+                end
+                if type(body) ~= "table" or body.message ~= "Unauthorized" then
+                    return false, "expected the message Unauthorized, got " .. tostring(body and body.message)
+                end
+                return true, "refused with: " .. body.message
+            end,
+        },
+        {
+            name = "login",
+            fn = function()
+                kosync:doLogin(USER, KOSYNC_PASSWORD)
+                if kosync.settings.username ~= USER or kosync.settings.userkey ~= md5(KOSYNC_PASSWORD) then
+                    return false, "doLogin did not keep the credentials"
+                end
+                return true, "logged in as " .. USER
+            end,
+        },
+        {
+            name = "read_forward",
+            fn = function()
+                ReaderUI.instance:handleEvent(Event:new("GotoPercent", 80))
+                return true, "moved to 80%"
+            end,
+        },
+        {
+            name = "push",
+            fn = function()
+                pushed_progress = kosync:getLastProgress()
+                pushed_percent = kosync:getLastPercent()
+                kosync:updateProgress(false, true)
+                return true, string.format("pushed %s at %s", tostring(pushed_progress), tostring(pushed_percent))
+            end,
+        },
+        {
+            name = "web_shows_push",
+            fn = function()
+                local epub, err = web_epub()
+                if not epub then
+                    return false, err
+                end
+                local expected = math.floor(pushed_percent * 100)
+                if epub.progress_percent ~= expected then
+                    return false, string.format("expected the web at %d%%, got %s",
+                        expected, tostring(epub.progress_percent))
+                end
+                if type(epub.epub_cfi) ~= "string" or epub.epub_cfi == "" then
+                    return false, "the push reached the web without a CFI"
+                end
+                return true, string.format("the web holds %d%% at %s", expected, epub.epub_cfi)
+            end,
+        },
+        {
+            name = "web_newer",
+            fn = function()
+                local code = api("POST", "/api/progress", {
+                    book_uuid = ALPHA_UUID, format = "epub", epub_cfi = WEB_CFI, progress_percent = WEB_PERCENT,
+                })
+                if code ~= 200 then
+                    return false, "saving the web position answered " .. tostring(code)
+                end
+                return true, "the web moved to " .. WEB_CFI
+            end,
+        },
+        {
+            name = "pull_returns_web",
+            deferred = true,
+            fn = function(resume)
+                local pulled
+                client():get_progress(USER, kosync.settings.userkey, digest, function(ok, body)
+                    pulled = ok and body or nil
+                end)
+                if type(pulled) ~= "table" then
+                    resume(false, "get_progress failed")
+                    return true
+                end
+                if pulled.progress ~= WEB_XPOINTER or pulled.device ~= "Omnibus" then
+                    resume(false, string.format("expected %s from Omnibus, got %s from %s",
+                        WEB_XPOINTER, tostring(pulled.progress), tostring(pulled.device)))
+                    return true
+                end
+                local before = ReaderUI.instance.document:getCurrentPage()
+                kosync:getProgress(false, true)
+                UIManager:nextTick(function()
+                    local document = ReaderUI.instance.document
+                    local wanted = document:getPageFromXPointer(pulled.progress)
+                    local now = document:getCurrentPage()
+                    if wanted == now and now ~= before then
+                        resume(true, string.format("moved from page %d to page %d", before, now))
+                    else
+                        resume(false, string.format("wanted page %s, was on %d, now on %s",
+                            tostring(wanted), before, tostring(now)))
+                    end
+                end)
+                return true
+            end,
+        },
+    }
+end
+
 -- Every scenario the lane can run, by KOREADER_E2E_SCENARIO. A new scenario
 -- is an entry here plus an entry in the runner's `scenarios` list.
 local SCENARIOS = {
@@ -1159,6 +1339,7 @@ local SCENARIOS = {
     metadata = metadata_scenario,
     precise = precise_scenario,
     highlights = highlights_scenario,
+    kosync = kosync_scenario,
 }
 
 local function run_at(scenario_steps, i)
