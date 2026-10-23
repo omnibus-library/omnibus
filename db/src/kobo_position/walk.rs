@@ -29,19 +29,33 @@ use super::location::{parse_span_id, SpanPoint};
 /// result is discarded.
 pub(super) const SNIPPET_CHARS: usize = 32;
 
+/// One element of the document tree, in document order (root first).
+pub(crate) struct Element {
+    /// Index into the element table of the parent; `None` for the root.
+    pub parent: Option<usize>,
+    /// Qualified name as written, so a prefixed element never matches a bare name.
+    pub local: String,
+}
+
 /// One coalesced text cluster in the source DOM: its CFI address plus the
 /// raw text and enough state to replay normalization inside it.
-struct Cluster {
-    element_steps: Vec<u32>,
-    text_index: u32,
+pub(crate) struct Cluster {
+    pub element_steps: Vec<u32>,
+    pub text_index: u32,
+    /// Index into the element table of the element holding the text.
+    pub parent: usize,
+    /// A comment, PI, CDATA section or unresolved entity arrived while open.
+    pub markup_inside: bool,
+    /// Source bytes of the run (text plus entity references).
+    pub source_bytes: usize,
     /// Normalized-stream offset of the first character this cluster emitted.
-    norm_start: u64,
+    pub norm_start: u64,
     /// Chars this cluster emitted into the normalized stream.
-    norm_len: u64,
+    pub norm_len: u64,
     /// Whitespace-collapse state on entry: a pending run was already open.
     entered_in_run: bool,
     /// Raw decoded text (uncollapsed) — the DOM text node content.
-    raw: String,
+    pub raw: String,
 }
 
 /// A `kobo.N.M` span start observed in a kepub document.
@@ -54,15 +68,16 @@ struct SpanMark {
 
 /// Everything the four queries need from one content document; every field
 /// holds the module-level invariants.
-pub(super) struct FileIndex {
+pub(crate) struct FileIndex {
     norm: String,
     clusters: Vec<Cluster>,
+    elements: Vec<Element>,
     spans: Vec<SpanMark>,
 }
 
 /// Build the index for one XHTML document. `Err` only on unparseable
 /// input — the caller logs and abandons the derivation.
-pub(super) fn index_file(xhtml: &[u8]) -> anyhow::Result<FileIndex> {
+pub(crate) fn index_file(xhtml: &[u8]) -> anyhow::Result<FileIndex> {
     let mut reader = Reader::from_reader(xhtml);
     let mut b = Builder::default();
     let mut buf = Vec::new();
@@ -70,16 +85,18 @@ pub(super) fn index_file(xhtml: &[u8]) -> anyhow::Result<FileIndex> {
         match reader.read_event_into(&mut buf).context("parse xhtml")? {
             Event::Start(ref e) => {
                 let local = String::from_utf8_lossy(e.local_name().as_ref()).into_owned();
+                let qname = String::from_utf8_lossy(e.name().as_ref()).into_owned();
                 let id = e.try_get_attribute("id").ok().flatten().and_then(|a| {
                     a.normalized_value(quick_xml::XmlVersion::Implicit1_0)
                         .ok()
                         .map(|v| v.into_owned())
                 });
-                b.element_start(&local, id.as_deref());
+                b.element_start(&local, &qname, id.as_deref());
             }
             Event::Empty(ref e) => {
                 let local = String::from_utf8_lossy(e.local_name().as_ref()).into_owned();
-                b.element_start(&local, None);
+                let qname = String::from_utf8_lossy(e.name().as_ref()).into_owned();
+                b.element_start(&local, &qname, None);
                 b.element_end(&local);
             }
             Event::End(ref e) => {
@@ -88,20 +105,31 @@ pub(super) fn index_file(xhtml: &[u8]) -> anyhow::Result<FileIndex> {
             }
             Event::Text(ref t) => {
                 let text = t.decode().context("decode text")?;
-                b.chars(&text);
+                b.chars(&text, t.len());
             }
             Event::CData(ref t) => {
                 let text = t.decode().context("decode cdata")?;
-                b.chars(&text);
+                b.chars(&text, t.len());
+                b.flag_markup();
             }
             Event::GeneralRef(ref r) => {
-                if let Some(c) = resolve_entity(r.as_ref(), r.resolve_char_ref().ok().flatten()) {
-                    b.chars(&c.to_string());
+                // `&` + name + `;`
+                let source_bytes = r.len() + 2;
+                match resolve_entity(r.as_ref(), r.resolve_char_ref().ok().flatten()) {
+                    Some(c) => {
+                        b.chars(&c.to_string(), source_bytes);
+                        // A resolved space may collapse differently in crengine.
+                        if c.is_whitespace() {
+                            b.flag_markup();
+                        }
+                    }
+                    None => b.flag_markup_or_next(),
                 }
             }
-            // Comments, PIs, declarations and doctypes neither emit text
-            // nor close a cluster (CFI coalescing ignores them).
-            Event::Comment(_) | Event::PI(_) | Event::Decl(_) | Event::DocType(_) => {}
+            // Comments and PIs neither emit text nor close a cluster (CFI
+            // coalescing ignores them), but crengine splits the run there.
+            Event::Comment(_) | Event::PI(_) => b.flag_markup(),
+            Event::Decl(_) | Event::DocType(_) => {}
             Event::Eof => break,
         }
         buf.clear();
@@ -163,17 +191,28 @@ struct Builder {
     spans: Vec<SpanMark>,
     /// Span ids seen whose first visible character hasn't arrived yet.
     pending_spans: Vec<(u32, u32)>,
+    elements: Vec<Element>,
+    /// Element-table index per open element, root included.
+    open: Vec<usize>,
+    /// Markup that arrived before any text: flags the cluster it precedes.
+    markup_pending: bool,
 }
 
 impl Builder {
-    fn element_start(&mut self, local: &str, id: Option<&str>) {
+    fn element_start(&mut self, local: &str, qname: &str, id: Option<&str>) {
         self.open_cluster = None;
+        self.markup_pending = false;
         // The root element carries no step (the CFI tail starts at its
         // children); every other element is step 2k among its siblings.
         if let Some(count) = self.child_counts.last_mut() {
             *count += 1;
             self.steps.push(*count * 2);
         }
+        self.elements.push(Element {
+            parent: self.open.last().copied(),
+            local: qname.to_owned(),
+        });
+        self.open.push(self.elements.len() - 1);
         if self.body_depth > 0 {
             if let Some((n, m)) = id.and_then(parse_span_id) {
                 self.pending_spans.push((n, m));
@@ -188,6 +227,8 @@ impl Builder {
 
     fn element_end(&mut self, _local: &str) {
         self.open_cluster = None;
+        self.markup_pending = false;
+        self.open.pop();
         self.child_counts.pop();
         self.text_counts.pop();
         if !self.child_counts.is_empty() {
@@ -198,7 +239,23 @@ impl Builder {
         }
     }
 
-    fn chars(&mut self, text: &str) {
+    /// Mark the open cluster as holding markup crengine reads differently.
+    fn flag_markup(&mut self) {
+        if let Some(i) = self.open_cluster {
+            self.clusters[i].markup_inside = true;
+        }
+    }
+
+    /// [`Builder::flag_markup`], or the next cluster when none is open yet.
+    fn flag_markup_or_next(&mut self) {
+        if self.open_cluster.is_some() {
+            self.flag_markup();
+        } else {
+            self.markup_pending = true;
+        }
+    }
+
+    fn chars(&mut self, text: &str, source_bytes: usize) {
         if self.body_depth == 0 {
             return;
         }
@@ -212,6 +269,9 @@ impl Builder {
                 self.clusters.push(Cluster {
                     element_steps: self.steps.clone(),
                     text_index: clusters_so_far * 2 + 1,
+                    parent: self.open.last().copied().unwrap_or_default(),
+                    markup_inside: std::mem::take(&mut self.markup_pending),
+                    source_bytes: 0,
                     norm_start: self.norm_len,
                     norm_len: 0,
                     entered_in_run: self.in_run || !self.emitted_any,
@@ -222,6 +282,7 @@ impl Builder {
         };
         self.open_cluster = Some(cluster);
         self.clusters[cluster].raw.push_str(text);
+        self.clusters[cluster].source_bytes += source_bytes;
         for c in text.chars() {
             if c.is_whitespace() {
                 if !self.in_run && self.emitted_any {
@@ -261,18 +322,29 @@ impl Builder {
         FileIndex {
             norm: self.norm,
             clusters: self.clusters,
+            elements: self.elements,
             spans: self.spans,
         }
     }
 }
 
 /// An anchored position: normalized offset plus the proving snippet.
-pub(super) struct Anchor {
+pub(crate) struct Anchor {
     pub norm_offset: u64,
     pub snippet: String,
 }
 
 impl FileIndex {
+    /// The element table in document order, root first.
+    pub(crate) fn elements(&self) -> &[Element] {
+        &self.elements
+    }
+
+    /// Every text cluster in document order.
+    pub(crate) fn clusters(&self) -> &[Cluster] {
+        &self.clusters
+    }
+
     /// Total visible characters (normalized stream length).
     pub(super) fn visible_char_count(&self) -> u64 {
         self.norm.chars().count() as u64
@@ -354,7 +426,7 @@ impl FileIndex {
 
     /// Source walk: the CFI tail addressing normalized offset `t` (landed
     /// on the first visible character at/after it).
-    pub(super) fn tail_at(&self, t: u64) -> Option<(CfiTail, Anchor)> {
+    pub(crate) fn tail_at(&self, t: u64) -> Option<(CfiTail, Anchor)> {
         let landed = self.land(t)?;
         let cluster = self.clusters.iter().find(|c| {
             c.norm_len > 0 && landed >= c.norm_start && landed < c.norm_start + c.norm_len
@@ -374,7 +446,7 @@ impl FileIndex {
     }
 
     /// Source walk: the normalized offset a CFI tail addresses.
-    pub(super) fn offset_at(&self, tail: &CfiTail) -> Option<Anchor> {
+    pub(crate) fn offset_at(&self, tail: &CfiTail) -> Option<Anchor> {
         let cluster = self
             .clusters
             .iter()
