@@ -222,7 +222,7 @@ mod auth {
             ("GET", format!("/kosync/syncs/progress/{document}")),
         ];
         for (method, uri) in routes {
-            let req = kosync_request(&method, &uri, None, Some(ACCEPT), None);
+            let req = kosync_request(method, &uri, None, Some(ACCEPT), None);
 
             let res = r.app.clone().oneshot(req).await.unwrap();
 
