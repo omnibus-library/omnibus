@@ -9,9 +9,9 @@ const positions = new Map<string, number>();
 let routePath: string | null = null;
 // Path whose offsets are trusted. Null while a route transition or history navigation settles; `restore` re-arms it.
 let recordPath: string | null = null;
-// Stops the restore still converging, so a newer one supersedes it rather than both scrolling at once.
 // `location.pathname` when recording was last armed: a popstate that leaves it unchanged (a `#fragment` traversal) keeps recording.
 let armedLocation: string | null = null;
+// Stops the restore still converging, so a newer one supersedes it rather than both scrolling at once.
 let stopRunning: (() => void) | null = null;
 let pendingFrame = 0;
 let installed = false;
