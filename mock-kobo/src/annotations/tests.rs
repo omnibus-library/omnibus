@@ -222,7 +222,8 @@ async fn fetch_changed_annotations_applies_nothing_when_checkforchanges_gets_no_
     .await;
     let mut device = device_holding("book-1", "Dune");
     device.reading_services_host = Some(stub.origin.clone());
-    let mut client = Client::with_timeout(&stub.endpoint, "HW-1", Duration::from_millis(200)).unwrap();
+    let mut client =
+        Client::with_timeout(&stub.endpoint, "HW-1", Duration::from_millis(200)).unwrap();
 
     tokio::time::timeout(
         Duration::from_secs(5),
@@ -245,7 +246,8 @@ async fn fetch_changed_annotations_applies_nothing_when_the_annotations_get_gets
     .await;
     let mut device = device_holding("book-1", "Dune");
     device.reading_services_host = Some(stub.origin.clone());
-    let mut client = Client::with_timeout(&stub.endpoint, "HW-1", Duration::from_millis(200)).unwrap();
+    let mut client =
+        Client::with_timeout(&stub.endpoint, "HW-1", Duration::from_millis(200)).unwrap();
 
     tokio::time::timeout(
         Duration::from_secs(5),

@@ -396,7 +396,11 @@ fn highlight_appends_the_highlight_with_its_kobospan_location() {
     let mut device = downloaded_book_1();
 
     device
-        .highlight("book-1", "h-1".into(), new_highlight(Some("a thought"), Some(span_range())))
+        .highlight(
+            "book-1",
+            "h-1".into(),
+            new_highlight(Some("a thought"), Some(span_range())),
+        )
         .unwrap();
 
     let highlight = &device.library["book-1"].annotations[0];
@@ -450,7 +454,11 @@ fn highlight_returns_not_downloaded_for_an_undownloaded_book() {
     device.apply(item(new_entitlement("book-1", "Dune")));
 
     let error = device
-        .highlight("book-1", "h-1".into(), new_highlight(Some("a thought"), None))
+        .highlight(
+            "book-1",
+            "h-1".into(),
+            new_highlight(Some("a thought"), None),
+        )
         .unwrap_err();
 
     assert_eq!(error, DeviceError::NotDownloaded("book-1".into()));
@@ -461,7 +469,11 @@ fn highlight_returns_unknown_book_for_a_book_it_lacks() {
     let mut device = Device::new("HW-1");
 
     let error = device
-        .highlight("book-1", "h-1".into(), new_highlight(Some("a thought"), None))
+        .highlight(
+            "book-1",
+            "h-1".into(),
+            new_highlight(Some("a thought"), None),
+        )
         .unwrap_err();
 
     assert_eq!(error, DeviceError::UnknownBook("book-1".into()));
@@ -471,7 +483,11 @@ fn highlight_returns_unknown_book_for_a_book_it_lacks() {
 fn delete_highlight_removes_the_highlight() {
     let mut device = downloaded_book_1();
     device
-        .highlight("book-1", "h-1".into(), new_highlight(Some("a thought"), None))
+        .highlight(
+            "book-1",
+            "h-1".into(),
+            new_highlight(Some("a thought"), None),
+        )
         .unwrap();
 
     device.delete_highlight("book-1", "h-1").unwrap();

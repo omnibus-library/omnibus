@@ -479,7 +479,10 @@ async fn perform_delete_highlight_deletes_the_newest_highlight() {
     assert_eq!(status, Status::Info("annotation sent".to_owned()));
     let annotations = &control.view().library["book-1"].annotations;
     assert_eq!(annotations.len(), 1);
-    assert_eq!(annotations[0].text, "a passage", "the older highlight must survive");
+    assert_eq!(
+        annotations[0].text, "a passage",
+        "the older highlight must survive"
+    );
 }
 
 #[tokio::test]

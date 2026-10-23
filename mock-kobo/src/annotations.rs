@@ -168,7 +168,10 @@ pub async fn fetch_changed_annotations(client: &mut Client, device: &mut Device)
 /// letters, digits, `_` and `-` only, so a server-side entitlement id can
 /// never steer the request outside `/api/v3/content/` (`/`, `..`, `?`, …).
 fn is_safe_id(id: &str) -> bool {
-    !id.is_empty() && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+    !id.is_empty()
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
 }
 
 /// Fetch and apply one book's annotation set unconditionally, right after it
