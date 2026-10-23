@@ -9,10 +9,9 @@ FROM debian:trixie-slim
 
 COPY koreader.sha256 /tmp/koreader.sha256
 
-# The .deb's own Depends: is the runtime KOReader declares (the X11/Wayland/DRM
-# libs SDL loads; SDL itself is bundled), so apt pulls exactly that and none of
-# it is hand-listed here. sha256sum -c gates the download before anything from
-# it is installed.
+# The .deb's own Depends: is the runtime KOReader declares, so apt pulls
+# exactly that and none of it is hand-listed here. sha256sum -c gates the
+# download before anything from it is installed.
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends ca-certificates curl; \
@@ -26,10 +25,9 @@ RUN set -eux; \
     apt-get install -y --no-install-recommends "/tmp/$deb" xvfb xauth; \
     rm -rf /var/lib/apt/lists/* /tmp/koreader.sha256 "/tmp/$deb"
 
-# KO_HOME is KOReader's data dir (settings) and where userpatch looks for
-# patches. World-writable so the container runs as the invoking uid
-# (--user $(id -u):$(id -g)); the lane mounts its patches read-only at
-# /ko-home/patches.
+# KO_HOME is KOReader's data dir, its patches dir, and — as the CMD's
+# argument — the directory it opens. World-writable: the container runs as
+# the invoking uid (--user $(id -u):$(id -g)).
 ENV KO_HOME=/ko-home
 RUN mkdir -p /ko-home && chmod 777 /ko-home
 

@@ -27,10 +27,10 @@ source scripts/lib/dev-port.sh
 # shellcheck source=scripts/lib/scratch-server.sh disable=SC1091
 source scripts/lib/scratch-server.sh
 
-: "${CARGO_TARGET_DIR:?run this through \`just koreader-e2e\`, inside the nix dev shell}"
-
 label=koreader
 kept_hint="server.log, results/"
+deb="$(awk '{print $2}' ui_tests/koreader/koreader.sha256)"
+docker build -t "omnibus-koreader:$deb" ui_tests/koreader
 bundle_web_app
 
 # Seed the library before the server boots: an empty index would kick its
@@ -56,9 +56,6 @@ until body="$(curl -fsS -u "$user:$password" "$base_url/opds/all" 2>/dev/null)" 
     fi
     sleep 1
 done
-
-deb="$(awk '{print $2}' ui_tests/koreader/koreader.sha256)"
-docker build -t "omnibus-koreader:$deb" ui_tests/koreader
 
 # Scenario names live here; the fixture titles live beside them in the
 # patch's opds scenario.

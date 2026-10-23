@@ -62,11 +62,9 @@ cleanup() {
 }
 
 make_scratch_dir() {
-    # Not under $TMPDIR: the nix shell points that at a fresh dir per invocation.
-    # Canonical (/tmp is /private/tmp on macOS) because the health wait compares
-    # it with the cwd the server reports. Two steps, so a failed mktemp aborts
-    # under set -e rather than leaving `cd ""` to make the worktree the scratch
-    # dir.
+    # Not under $TMPDIR (the nix shell re-points it), and canonical (macOS
+    # aliases /tmp): the health wait compares this with the cwd the server
+    # reports. Two steps so a failed mktemp aborts instead of `cd ""`.
     scratch="$(mktemp -d "/tmp/omnibus-$label.XXXXXX")"
     scratch="$(cd "$scratch" && pwd -P)"
     server_pid=""
@@ -84,9 +82,8 @@ start_scratch_server() {
     port="${choice%%:*}"
     base_url="http://127.0.0.1:$port"
 
-    # The server must not see the developer's .env: library paths would index
-    # a second library, provider keys and SMTP would reach the network, and
-    # the dev rate-limit switch would hide limits CI enforces. Drop all of it,
+    # The server must not see the developer's .env: library paths, provider
+    # keys, SMTP and the dev rate-limit switch would leak in. Drop all of it,
     # then set exactly what CI's server has (plus the caller's extras).
     local unset_args=()
     local name
