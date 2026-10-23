@@ -11,12 +11,13 @@ pub mod hardcover;
 
 pub use cascade::{resolve, resolve_with};
 pub use data::{
-    decide, delete_suggestions, get_suggestion_cover, get_suggestions, mark_pending,
-    replace_suggestions, suggestion_state, CacheDecision, CachedSuggestion, NewSuggestion,
-    SuggestionState, SuggestionsDataError, PENDING_DEBOUNCE_SECS, SUGGESTIONS_TTL_SECS,
+    decide, delete_suggestions, get_suggestion_cover, get_suggestions, is_unavailable, mark_failed,
+    mark_pending, replace_suggestions, suggestion_state, CacheDecision, CachedSuggestion,
+    NewSuggestion, SuggestionState, SuggestionsDataError, PENDING_DEBOUNCE_SECS,
+    SUGGESTIONS_TTL_SECS,
 };
 pub use filter::{filter_candidates, is_entry_point, is_same_author, is_same_series, Candidate};
-pub use hardcover::{HardcoverConfig, HardcoverError};
+pub use hardcover::{rejected_key_status, HardcoverConfig, HardcoverError};
 
 #[cfg(test)]
 mod tests;

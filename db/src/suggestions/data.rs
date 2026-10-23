@@ -1,6 +1,6 @@
 //! Cache CRUD + the pure [`decide`] de-duplication state machine for
 //! suggestions. Two tables back this (migration 0033): `book_suggestion_state`
-//! holds one TTL/`pending`/`resolved`/`empty` marker per source book, and
+//! holds one TTL/`pending`/`resolved`/`empty`/`failed` marker per source book, and
 //! `book_suggestions` holds its 0..N cached result rows. Read by [`cascade`]
 //! and the suggestions RPC/REST handlers.
 
@@ -33,6 +33,8 @@ pub enum SuggestionState {
     Resolved,
     /// Sticky negative — Hardcover matched nothing usable.
     Empty,
+    /// The lookup errored; it is tried again once the pending debounce lapses.
+    Failed,
 }
 
 impl SuggestionState {
@@ -42,6 +44,7 @@ impl SuggestionState {
             SuggestionState::Pending => "pending",
             SuggestionState::Resolved => "resolved",
             SuggestionState::Empty => "empty",
+            SuggestionState::Failed => "failed",
         }
     }
 
@@ -51,6 +54,7 @@ impl SuggestionState {
             "pending" => Some(Self::Pending),
             "resolved" => Some(Self::Resolved),
             "empty" => Some(Self::Empty),
+            "failed" => Some(Self::Failed),
             _ => None,
         }
     }
@@ -78,9 +82,9 @@ pub fn decide(marker: Option<(SuggestionState, i64)>, now: i64) -> CacheDecision
             serve: false,
             enqueue: true,
         },
-        // In flight: serve nothing, and only re-post if the marker is old
-        // enough that the prior task almost certainly died.
-        Some((SuggestionState::Pending, at)) => CacheDecision {
+        // In flight (or just failed): serve nothing, and only re-post if the
+        // marker is old enough that the prior task died or is worth retrying.
+        Some((SuggestionState::Pending | SuggestionState::Failed, at)) => CacheDecision {
             serve: false,
             enqueue: now.saturating_sub(at) > PENDING_DEBOUNCE_SECS,
         },
@@ -90,6 +94,12 @@ pub fn decide(marker: Option<(SuggestionState, i64)>, now: i64) -> CacheDecision
             enqueue: now.saturating_sub(at) > SUGGESTIONS_TTL_SECS,
         },
     }
+}
+
+/// Whether an unserved read should answer `unavailable` rather than `pending`:
+/// the marker records a failed lookup that this read did not retry.
+pub fn is_unavailable(marker: Option<(SuggestionState, i64)>, decision: CacheDecision) -> bool {
+    matches!(marker, Some((SuggestionState::Failed, _))) && !decision.enqueue
 }
 
 /// A cached suggestion row as served to the API layer (cover bytes excluded —
@@ -204,6 +214,22 @@ pub async fn mark_pending(pool: &SqlitePool, book_uuid: &str) -> Result<(), Sugg
               VALUES (?, 'pending', strftime('%s','now'))
          ON CONFLICT(book_uuid) DO UPDATE SET
               state      = 'pending',
+              fetched_at = strftime('%s','now')",
+    )
+    .bind(book_uuid)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Mark a book's lookup `failed` (upsert state + reset the `fetched_at` clock),
+/// so the read path settles instead of waiting on a result that is not coming.
+pub async fn mark_failed(pool: &SqlitePool, book_uuid: &str) -> Result<(), SuggestionsDataError> {
+    sqlx::query(
+        "INSERT INTO book_suggestion_state (book_uuid, state, fetched_at)
+              VALUES (?, 'failed', strftime('%s','now'))
+         ON CONFLICT(book_uuid) DO UPDATE SET
+              state      = 'failed',
               fetched_at = strftime('%s','now')",
     )
     .bind(book_uuid)

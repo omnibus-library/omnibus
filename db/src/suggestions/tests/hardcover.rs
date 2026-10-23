@@ -9,8 +9,8 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use super::config_for;
 use crate::suggestions::hardcover::{
-    book_description, co_listed_counts, curated_list_ids, fetch_candidates, resolve_book,
-    HardcoverError,
+    book_description, co_listed_counts, curated_list_ids, fetch_candidates, rejected_key_status,
+    resolve_book, HardcoverError,
 };
 
 #[tokio::test]
@@ -389,4 +389,29 @@ async fn resolve_book_propagates_an_earlier_isbn_error_even_when_a_later_isbn_in
         "isbn[2] must have fully resolved to book 777 in the background, even though \
          the earlier isbn[1] error is what the walk actually surfaces"
     );
+}
+
+async fn status_error_for(status: u16) -> anyhow::Error {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(status))
+        .mount(&server)
+        .await;
+    let err = curated_list_ids(&config_for(&server), 1).await.unwrap_err();
+    anyhow::Error::from(err)
+}
+
+#[tokio::test]
+async fn rejected_key_status_names_a_401_and_a_403_from_hardcover() {
+    for status in [401u16, 403] {
+        let err = status_error_for(status).await;
+        assert_eq!(rejected_key_status(&err).map(|s| s.as_u16()), Some(status));
+    }
+}
+
+#[tokio::test]
+async fn rejected_key_status_ignores_a_server_error_and_a_graphql_error() {
+    assert_eq!(rejected_key_status(&status_error_for(500).await), None);
+    let graphql = anyhow::Error::from(HardcoverError::Graphql("boom".into()));
+    assert_eq!(rejected_key_status(&graphql), None);
 }

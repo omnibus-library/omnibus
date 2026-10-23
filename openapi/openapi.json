@@ -4249,7 +4249,7 @@
           "Metadata"
         ],
         "summary": "Get a book's suggestions",
-        "description": "Books that Hardcover's curated lists pair with this one, for a \"readers also enjoyed\"\nstrip. `status` is `not_configured` when the server has no Hardcover key, `pending`\nwhile the server fetches them in the background (ask again shortly), or `ready` with\nthe items, which may be empty. Results are kept for 30 days, then refreshed.",
+        "description": "Books that Hardcover's curated lists pair with this one, for a \"readers also enjoyed\"\nstrip. `status` is `not_configured` when the server has no Hardcover key, `pending`\nwhile the server fetches them in the background (ask again shortly), `unavailable` when\nthe last lookup failed (it is retried after 15 minutes), or `ready` with the items,\nwhich may be empty. Results are kept for 30 days, then refreshed.",
         "operationId": "get_suggestions",
         "parameters": [
           {
@@ -16243,6 +16243,21 @@
                 "type": "string",
                 "enum": [
                   "pending"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The lookup failed; it is tried again later.",
+            "required": [
+              "status"
+            ],
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "unavailable"
                 ]
               }
             }

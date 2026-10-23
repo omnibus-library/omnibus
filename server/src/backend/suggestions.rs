@@ -33,8 +33,9 @@ fn now_secs() -> i64 {
 ///
 /// Books that Hardcover's curated lists pair with this one, for a "readers also enjoyed"
 /// strip. `status` is `not_configured` when the server has no Hardcover key, `pending`
-/// while the server fetches them in the background (ask again shortly), or `ready` with
-/// the items, which may be empty. Results are kept for 30 days, then refreshed.
+/// while the server fetches them in the background (ask again shortly), `unavailable` when
+/// the last lookup failed (it is retried after 15 minutes), or `ready` with the items,
+/// which may be empty. Results are kept for 30 days, then refreshed.
 #[utoipa::path(
     get,
     path = "/api/ebooks/{uuid}/suggestions",
@@ -66,6 +67,9 @@ pub(super) async fn get_suggestions(
         state.worker.post(Task::ResolveSuggestions {
             book_uuid: uuid.clone(),
         });
+    }
+    if db::is_unavailable(marker, decision) {
+        return Json(SuggestionsResponse::Unavailable).into_response();
     }
     if !decision.serve {
         return Json(SuggestionsResponse::Pending).into_response();

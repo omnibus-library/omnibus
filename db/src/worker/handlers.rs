@@ -425,10 +425,18 @@ impl Worker {
         id: TaskId,
     ) -> TaskOutcome {
         self.report_book_detail_by_uuid(id, &book_uuid).await;
-        anyhow_outcome(
-            "suggestions lookup",
-            crate::suggestions::resolve(&self.pool, &book_uuid).await,
-        )
+        let result = crate::suggestions::resolve(&self.pool, &book_uuid).await;
+        if let Some(status) = result
+            .as_ref()
+            .err()
+            .and_then(crate::suggestions::rejected_key_status)
+        {
+            tracing::error!(
+                "Hardcover rejected the API key (HTTP {}); suggestions are paused until it is replaced",
+                status.as_u16()
+            );
+        }
+        anyhow_outcome("suggestions lookup", result)
     }
 
     /// `Task::ConvertFormat`: convert one book's file to `target_format` via

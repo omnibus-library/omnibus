@@ -78,6 +78,20 @@ pub enum HardcoverError {
     Graphql(String),
 }
 
+/// The 401/403 status when `e` is Hardcover refusing the API key, `None` for any
+/// other failure.
+pub fn rejected_key_status(e: &anyhow::Error) -> Option<reqwest::StatusCode> {
+    match e.downcast_ref::<HardcoverError>()? {
+        HardcoverError::Http(http) => http.status().filter(|s| {
+            matches!(
+                *s,
+                reqwest::StatusCode::UNAUTHORIZED | reqwest::StatusCode::FORBIDDEN
+            )
+        }),
+        HardcoverError::Graphql(_) => None,
+    }
+}
+
 /// The Hardcover book a library book resolved to, plus the fields the filter
 /// needs to exclude same-author / same-series candidates.
 #[derive(Debug, Clone, PartialEq, Eq)]
