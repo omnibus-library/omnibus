@@ -8,7 +8,7 @@ You have three things the runner set up before it briefed you:
 
 - **Your own account**, `explorer-<k>`, the one your actor id names.
 - **Your own browser**, driven like a web agent's with `driver.sh`. You use it
-  to make shelves, turn their **Sync to Kobo** opt-in on and off, and read the
+  to make shelves, turn their **Sync to my devices** opt-in on and off, and read the
   results.
 - **Your own fake Kobo**: a `mock-kobo` process syncing as your account, with a
   port, a state file and a hardware id nobody else shares. The runner started
@@ -91,7 +91,7 @@ Two things leave the sync unjudged instead, and both are by design:
 - **A shelf write after it.** Any `shelf.*` entry you journal after your last
   sync makes that sync a stale picture, so the audit declines it. **End every
   flow on a sync.**
-- **A Smart shelf with Sync to Kobo On.** Its members move whenever another
+- **A Smart shelf with Sync to my devices On.** Its members move whenever another
   agent adds or deletes a book, so the audit cannot tell drift from a bad sync.
   Use hand-picked shelves for anything you want judged.
 
