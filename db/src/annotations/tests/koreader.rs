@@ -434,6 +434,49 @@ mod upsert_koreader_annotation {
         assert_eq!(stored(&pool, user, "k1").await, None);
     }
 
+    async fn kobo_location_after_upsert(new_cfi: &str) -> Option<String> {
+        let pool = init_db("sqlite::memory:").await.unwrap();
+        let user = seed_user(&pool, "alice").await;
+        let (_, uuid) = seed(&pool, "/lib", "Book A").await;
+        let from_kobo = IngestKoboAnnotation {
+            client_id: "k1".into(),
+            color: HighlightColor::Green,
+            text: None,
+            note: None,
+            kobo_location: r#"{"span":{"startPath":"span#kobo\\.1\\.2","startChar":3}}"#.into(),
+            epub_cfi_range: Some(CFI.into()),
+        };
+        ingest_kobo_annotations(&pool, user, &uuid, &[from_kobo], &[])
+            .await
+            .unwrap();
+        stamp(&pool, "k1", 5000).await;
+        let moved = KoreaderUpsert {
+            epub_cfi_range: new_cfi.into(),
+            ..device_upsert("k1", 6000)
+        };
+
+        upsert(&pool, user, &uuid, &moved).await.unwrap();
+
+        sqlx::query_scalar("SELECT kobo_location FROM annotations WHERE client_id = 'k1'")
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn clears_the_kobo_anchor_when_the_cfi_moves() {
+        let moved = kobo_location_after_upsert("epubcfi(/6/2!/4/50,/1:0,/1:5)").await;
+
+        assert_eq!(moved, None);
+    }
+
+    #[tokio::test]
+    async fn keeps_the_kobo_anchor_when_the_cfi_is_unchanged() {
+        let kept = kobo_location_after_upsert(CFI).await;
+
+        assert!(kept.is_some_and(|location| location.contains("startPath")));
+    }
+
     #[tokio::test]
     async fn returns_not_found_for_an_id_that_belongs_to_another_book() {
         let pool = init_db("sqlite::memory:").await.unwrap();
