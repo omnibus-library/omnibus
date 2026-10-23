@@ -33,4 +33,4 @@ RUN set -eux; \
 ENV KO_HOME=/ko-home
 RUN mkdir -p /ko-home && chmod 777 /ko-home
 
-CMD ["xvfb-run", "-a", "koreader"]
+CMD ["xvfb-run", "-a", "koreader", "/ko-home"]

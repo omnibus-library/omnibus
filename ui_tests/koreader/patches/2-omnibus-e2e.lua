@@ -2,9 +2,9 @@
 Omnibus E2E: drive one KOReader scenario against a live Omnibus server.
 
 A `late` user patch (prio 2), so it runs in reader.lua after UIManager is up
-and before FileManager:showFiles — all work is deferred to the first
-nextTick, by which time FileManager.instance.opds exists. Each step goes
-through KOReader's own OPDS plugin; nothing here speaks HTTP itself.
+and before FileManager:showFiles. The lane opens KO_HOME as a directory, so
+showFiles runs and the deferred first nextTick finds FileManager.instance.opds.
+Each step goes through KOReader's own OPDS plugin; nothing here speaks HTTP itself.
 
 Env (scripts/koreader-e2e.sh sets them on `docker run`):
   KOREADER_E2E_SCENARIO  scenario name; only "opds" is defined
