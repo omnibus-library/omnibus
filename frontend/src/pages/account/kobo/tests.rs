@@ -94,24 +94,40 @@ mod render_tests {
     /// `Callback::new` needs a live runtime, so the row is built inside the
     /// throwaway `VirtualDom` rather than via a bare `render`.
     fn row_of(kind: DeviceKind, name: &str) -> Element {
+        row_with(KoboDeviceView {
+            kind,
+            ..device_of_named(name)
+        })
+    }
+
+    fn device_of_named(name: &str) -> KoboDeviceView {
+        KoboDeviceView {
+            name: name.to_string(),
+            token: "tok123".to_string(),
+            ..device_of(DeviceKind::Kobo)
+        }
+    }
+
+    fn row_with(device: KoboDeviceView) -> Element {
         rsx! {
             KoboDeviceRow {
-                device: KoboDeviceView {
-                    id: 1,
-                    name: name.to_string(),
-                    kind,
-                    token: "tok123".to_string(),
-                    created_at: 0,
-                    last_seen_at: 0,
-                    last_sync_at: None,
-                    last_sync_error: None,
-                },
+                device,
                 endpoint: "https://omni.example.com/kobo/tok123".to_string(),
+                plugin_url: "https://omni.example.com/api/account/kobo-devices/1/koreader-plugin".to_string(),
                 disabled: false,
                 on_regenerate: Callback::new(|_| {}),
                 on_remove: Callback::new(|_| {}),
             }
         }
+    }
+
+    fn koreader_synced_at(last_sync_at: Option<i64>, last_sync_error: Option<&str>) -> Element {
+        row_with(KoboDeviceView {
+            kind: DeviceKind::Koreader,
+            last_sync_at,
+            last_sync_error: last_sync_error.map(str::to_string),
+            ..device_of_named("Libra")
+        })
     }
 
     /// The warning sits at card level, above the list, so it is present on the
@@ -219,6 +235,56 @@ mod render_tests {
         assert!(html.contains(r#"translate="no""#), "{html}");
         assert!(
             html.contains(r#"data-testid="kobo-endpoint-copy""#),
+            "{html}"
+        );
+    }
+
+    #[test]
+    fn kobo_device_row_offers_a_koreader_its_plugin_download() {
+        let html = render_in_vdom(koreader_row);
+        assert!(
+            html.contains(r#"data-testid="koreader-plugin-download""#),
+            "{html}"
+        );
+        assert!(
+            html.contains(
+                r#"href="https://omni.example.com/api/account/kobo-devices/1/koreader-plugin""#
+            ),
+            "{html}"
+        );
+        assert!(
+            html.contains(r#"download="omnibus.koplugin.zip""#),
+            "{html}"
+        );
+        assert!(!render_in_vdom(device_row).contains("koreader-plugin-download"));
+    }
+
+    #[test]
+    fn kobo_device_row_says_a_koreader_has_not_synced_yet() {
+        let html = render_in_vdom(|| koreader_synced_at(None, None));
+        assert!(html.contains("Not synced yet"), "{html}");
+        assert!(!html.contains("koreader-last-error"), "{html}");
+    }
+
+    #[test]
+    fn kobo_device_row_shows_the_date_of_a_koreaders_last_sync() {
+        let html = render_in_vdom(|| koreader_synced_at(Some(1_704_067_200), None));
+        assert!(html.contains("Last sync Jan 1, 2024"), "{html}");
+        assert!(!html.contains("Not synced yet"), "{html}");
+    }
+
+    #[test]
+    fn kobo_device_row_shows_a_koreaders_last_sync_error() {
+        let html = render_in_vdom(|| {
+            koreader_synced_at(Some(1_704_067_200), Some("Couldn't download Alpha: 404"))
+        });
+        assert!(
+            html.contains(r#"data-testid="koreader-last-error""#),
+            "{html}"
+        );
+        assert!(
+            html.contains("Last sync failed: Couldn&#39;t download Alpha: 404")
+                || html.contains("Last sync failed: Couldn't download Alpha: 404"),
             "{html}"
         );
     }
@@ -374,7 +440,7 @@ mod render_tests {
             !html.contains("data-testid=\"kobo-endpoint-url\""),
             "{html}"
         );
-        assert!(!html.contains("omni.example.com"), "{html}");
+        assert!(!html.contains("/kobo/tok123"), "{html}");
     }
 
     #[test]

@@ -420,7 +420,7 @@ fn permission_chips(user: &AdminUserRow) -> Element {
 
 /// Format a Unix-seconds timestamp as `Mon D, YYYY` (UTC). Pure so SSR and
 /// the hydrated client render byte-identical text.
-fn fmt_date(unix_secs: i64) -> String {
+pub(crate) fn fmt_date(unix_secs: i64) -> String {
     const MONTHS: [&str; 12] = [
         "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
     ];
