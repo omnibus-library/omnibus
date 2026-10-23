@@ -496,27 +496,29 @@ class ActTests(KoboLaneTestCase):
             [["POST", "/actions/remove-download", {"book": "uuid-1"}]],
         )
 
-    def test_act_highlight_posts_the_book_colour_and_text(self):
+    def test_act_read_to_posts_the_book_and_passage(self):
         manifest = self.up(agent=1)
 
-        proc = self.kobo(
-            "act", "--agent", 1, "highlight", "uuid-1", "blue", "kobo.1.1", "0", "12", "a passage"
-        )
+        proc = self.kobo("act", "--agent", 1, "read-to", "uuid-1", "a whole-word passage")
 
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertEqual(
             self.stub_get(manifest, "/__calls"),
-            [["POST", "/actions/highlight", {
+            [["POST", "/actions/read-to", {"book": "uuid-1", "passage": "a whole-word passage"}]],
+        )
+
+    def test_act_highlight_posts_the_book_colour_and_passage(self):
+        manifest = self.up(agent=1)
+
+        proc = self.kobo("act", "--agent", 1, "highlight", "uuid-1", "blue", "a passage")
+
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(
+            self.stub_get(manifest, "/__calls"),
+            [["POST", "/actions/highlight-words", {
                 "book": "uuid-1",
-                "text": "a passage",
                 "color": "blue",
-                "location": {
-                    "chapter": "unknown",
-                    "start_span": "kobo.1.1",
-                    "start_char": 0,
-                    "end_span": "kobo.1.1",
-                    "end_char": 12,
-                },
+                "passage": "a passage",
             }]],
         )
 
@@ -524,24 +526,16 @@ class ActTests(KoboLaneTestCase):
         manifest = self.up(agent=1)
 
         proc = self.kobo(
-            "act", "--agent", 1, "highlight", "uuid-1", "blue", "kobo.1.1", "0", "12",
-            "a passage", "a thought",
+            "act", "--agent", 1, "highlight", "uuid-1", "blue", "a passage", "a thought",
         )
 
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertEqual(
             self.stub_get(manifest, "/__calls"),
-            [["POST", "/actions/highlight", {
+            [["POST", "/actions/highlight-words", {
                 "book": "uuid-1",
-                "text": "a passage",
                 "color": "blue",
-                "location": {
-                    "chapter": "unknown",
-                    "start_span": "kobo.1.1",
-                    "start_char": 0,
-                    "end_span": "kobo.1.1",
-                    "end_char": 12,
-                },
+                "passage": "a passage",
                 "note": "a thought",
             }]],
         )
@@ -584,9 +578,10 @@ class ActTests(KoboLaneTestCase):
             "finish with no book": ["finish"],
             "finish with an extra argument": ["finish", "uuid-1", "extra"],
             "remove-download with no book": ["remove-download"],
-            "highlight with no text": ["highlight", "uuid-1", "blue", "kobo.1.1", "0", "12"],
-            "highlight with an extra argument": [
-                "highlight", "uuid-1", "blue", "kobo.1.1", "0", "12", "text", "note", "extra",
+            "read-to with no passage": ["read-to", "uuid-1"],
+            "highlight with no passage": ["highlight", "uuid-1", "blue"],
+            "highlight with an argument past the note": [
+                "highlight", "uuid-1", "blue", "a passage", "a thought", "extra",
             ],
             "delete-highlight with no id": ["delete-highlight", "uuid-1"],
         }.items():

@@ -29,6 +29,17 @@ impl Percent {
     pub fn new(value: u8) -> Option<Self> {
         (value <= 100).then_some(Self(value))
     }
+
+    /// `⌊100·part/whole⌋`, capped to 100, and 0 when `whole` is 0 — the
+    /// reader view's book-percent calculation, which never needs an
+    /// `unwrap` to land in range.
+    pub fn of(part: usize, whole: usize) -> Self {
+        if whole == 0 {
+            return Self(0);
+        }
+        let ratio = (part.saturating_mul(100) / whole).min(100);
+        Self(u8::try_from(ratio).unwrap_or(100))
+    }
 }
 
 impl TryFrom<u8> for Percent {

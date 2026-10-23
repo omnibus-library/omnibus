@@ -23,8 +23,16 @@ tui = ["dep:ratatui"]
 anyhow = "1"
 # Same version `server/` uses for axum, so cargo unifies on one build.
 axum = "0.8"
+# `zip`'s own `deflate-flate2` feature pulls this in as an optional
+# dependency but picks no backend; `db/` gets one "for free" from another
+# workspace member's feature unification, but this crate is out of
+# default-members and built alone, so it names the backend itself —
+# `rust_backend` (pure-Rust miniz_oxide), the same one `db/`'s comment names.
+flate2 = { version = "1.1", default-features = false, features = ["rust_backend"] }
 # Same version `db/` uses for its CSPRNG tokens, so cargo unifies on one build.
 getrandom = "0.3"
+# Same version `db/` uses for its XHTML walker, so cargo unifies on one build.
+quick-xml = "0.41"
 # The terminal UI. Its re-exported crossterm is the only one used, so the two can't disagree.
 ratatui = { version = "0.30", default-features = false, features = ["crossterm"], optional = true }
 reqwest = { workspace = true }
@@ -34,6 +42,8 @@ thiserror = { workspace = true }
 # Same version/features `server/` uses for Kobo's RFC 3339 stamps, so cargo unifies on one build.
 time = { version = "0.3", features = ["formatting", "parsing"] }
 tokio = { workspace = true, features = ["fs", "macros", "net", "rt-multi-thread", "sync"] }
+# Same version/features `db/` uses to read a KEPUB's zip entries, so cargo unifies on one build.
+zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["time"] }

@@ -19,11 +19,14 @@ touches the device's control API directly.
 1. **Sync, then download a book.** `act sync`, then read `details.library`
    from `act show` for a book on one of your Kobo-synced shelves that isn't
    an audiobook-only book. `act download <uuid>` it.
-2. **Make two highlights in different colours.**
-   `act highlight <uuid> blue kobo.1.1 0 12 "a passage"`, then
-   `act highlight <uuid> pink kobo.2.1 0 20 "another passage" "a thought"`
-   (the second carries a note; journal its colour as `rose` — Omnibus's
-   name for the wire swatch `pink`). Each reply's `code` is `annotation_sent`.
+2. **Make two highlights in different colours.** Open the book in the
+   browser's reader and copy two passages, in different chapters, as whole
+   words — punctuation included, and enough of them that each reads
+   uniquely in the book (the device highlights the first occurrence it
+   finds). Then `act highlight <uuid> blue "<first passage>"`, and
+   `act highlight <uuid> pink "<second passage>" "a thought"` (the second
+   carries a note; journal its colour as `rose` — Omnibus's name for the
+   wire swatch `pink`). Each reply's `code` is `annotation_sent`.
    Journal each as `highlight.create --surface kobo`, `params`
    `{"text": "<the verbatim text>", "colour": "<the colour>"}`, plus
    `"note_text"` when you gave one, `target` the book's uuid.
@@ -55,6 +58,7 @@ touches the device's control API directly.
 
 - Both highlights made in step 2 appear on the detail page, each in the
   colour it was given, the note attached to the right one.
+- Each highlight sits on exactly the words given, in the web reader.
 - The deleted highlight in step 4 is gone from the detail page.
 - The surviving highlight's text, note and colour match what step 2 sent,
   after the round trip through step 5's sync.
@@ -70,10 +74,10 @@ touches the device's control API directly.
 ## Sharp edges
 
 - **Never journal `kobo.highlight`.** See Journalling above.
-- **A device highlight made here carries no position until
-  [#2738](https://github.com/omnibus-library/omnibus/issues/2738).** The
-  reader can't place it in the text yet — that is not a defect to report,
-  just this slice's known limit.
+- **`highlight` lands on the passage's first occurrence in the book.** If
+  the words you copied appear more than once, the device highlights the
+  earlier one — add words from the sentence around it until the passage is
+  unique, rather than reporting a mismatch.
 - **A `dropped_annotations` count on an undownloaded book is the firmware
   rule, not a loss.** If you see one in `act show`, it means a book held
   annotations it hasn't downloaded yet to hold, not that anything vanished.

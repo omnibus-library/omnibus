@@ -23,11 +23,14 @@ fn now() -> i64 {
 
 impl Control {
     /// Download each listed book that isn't downloaded yet. A book the
-    /// device doesn't hold is rejected before any request.
+    /// device doesn't hold, or no sync since the device started, is
+    /// rejected before any request — a sync's own download pass is
+    /// unaffected, since it learns the host before downloading anything.
     pub async fn download(self: &Arc<Self>, books: Vec<String>) -> Result<Acted, ControlError> {
         if let Some(missing) = self.missing_book(&books) {
             return Err(ControlError::Device(DeviceError::UnknownBook(missing)));
         }
+        self.check_synced()?;
         let attempt = self
             .run_exchange(
                 move |mut device, endpoint| async move {
@@ -40,15 +43,21 @@ impl Control {
         Ok(acted(attempt, self.view()))
     }
 
-    /// Clear a book's downloaded flag and problem; local only, no request.
-    /// Refused while a sync or another action is running, like `reset`.
+    /// Clear a book's downloaded flag and problem, and delete its file
+    /// from storage; local only, no request. Refused while a sync or
+    /// another action is running, like `reset`.
     pub async fn remove_download(&self, book: &str) -> Result<DeviceView, ControlError> {
-        {
+        let file = {
             let mut live = self.live();
             if live.syncing {
                 return Err(ControlError::SyncInProgress);
             }
+            let file = live.saved.device.book_file(book);
             live.saved.device.remove_download(book)?;
+            file
+        };
+        if let Some(file) = file {
+            super::remove_file_best_effort(&file).await?;
         }
         self.persist().await?;
         Ok(self.view())
@@ -135,6 +144,7 @@ impl Control {
         new: NewHighlight,
     ) -> Result<Acted, ControlError> {
         self.check_downloaded(&book)?;
+        self.check_synced()?;
         let id = match annotations::mint_id() {
             Ok(id) => id,
             Err(error) => {
@@ -182,6 +192,7 @@ impl Control {
         highlight: String,
     ) -> Result<Acted, ControlError> {
         self.check_holds_highlight(&book, &highlight)?;
+        self.check_synced()?;
         let now = now();
         let attempt = self
             .run_exchange(
@@ -223,6 +234,16 @@ impl Control {
             ))),
             Some(_) => Ok(()),
         }
+    }
+
+    /// The device must have synced at least once since it started — a
+    /// highlight or delete needs a `reading_services_host` to send to,
+    /// learned from `v1/initialization`, checked before any request.
+    fn check_synced(&self) -> Result<(), ControlError> {
+        if self.live().saved.device.reading_services_host.is_none() {
+            return Err(ControlError::NotSynced);
+        }
+        Ok(())
     }
 
     /// `book` must be held, checked before any request.

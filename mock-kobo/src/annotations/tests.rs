@@ -631,3 +631,23 @@ async fn attempt_download_makes_no_annotations_get_when_the_download_fails() {
         .iter()
         .any(|l| l.contains("/annotations")));
 }
+
+#[test]
+fn span_range_reads_back_what_location_json_writes() {
+    let range = SpanRange {
+        chapter: "ch2.xhtml".into(),
+        start_span: "kobo.2.1".into(),
+        start_char: 22,
+        end_span: "kobo.2.1".into(),
+        end_char: 55,
+    };
+    let location = location_json(Some(&range));
+
+    assert_eq!(super::span_range(&location), Some(range));
+}
+
+#[test]
+fn span_range_returns_none_for_a_null_location() {
+    assert_eq!(super::span_range(&json!(null)), None);
+    assert_eq!(super::span_range(&json!({"not": "a span"})), None);
+}

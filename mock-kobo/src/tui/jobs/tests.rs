@@ -9,7 +9,7 @@ use tempfile::TempDir;
 use crate::control::{Control, ControlError, LastSync, RESET_MESSAGE};
 use crate::downloads::DownloadPolicy;
 use crate::firmware::Quirk;
-use crate::reading::{Percent, ReadStatus};
+use crate::reading::{KoboSpan, Percent, ReadStatus};
 use crate::state::{self, StateError};
 use crate::test_support::{
     control_wired_against, dune_stub, never_answers, new_entitlement, new_highlight, spawn_stub,
@@ -383,6 +383,7 @@ async fn perform_read_reports_state_sent() {
         Job::Read {
             book: "book-1".into(),
             percent: Percent::new(42).unwrap(),
+            location: None,
         },
     )
     .await;
@@ -392,6 +393,82 @@ async fn perform_read_reports_state_sent() {
         control.view().library["book-1"].reading.status,
         ReadStatus::Reading
     );
+}
+
+#[tokio::test]
+async fn perform_read_sends_the_location_it_was_given() {
+    let stub = spawn_stub(dune_stub()).await;
+    let dir = TempDir::new().unwrap();
+    let control = stub_control(&stub, dir.path().join("kobo.json"));
+    control.sync(DownloadPolicy::All).await.unwrap();
+
+    perform(
+        &control,
+        &wiring(),
+        Job::Read {
+            book: "book-1".into(),
+            percent: Percent::new(23).unwrap(),
+            location: Some(KoboSpan {
+                source: "ch1.xhtml".into(),
+                value: "kobo.4.1".into(),
+            }),
+        },
+    )
+    .await;
+
+    let requests = stub.requests.lock().unwrap();
+    let put = requests
+        .iter()
+        .rev()
+        .find(|r| r.path.ends_with("/state"))
+        .expect("no state PUT was recorded");
+    let body: serde_json::Value = serde_json::from_str(&put.body).unwrap();
+    let bookmark = &body["ReadingStates"][0]["CurrentBookmark"];
+    assert_eq!(
+        bookmark["Location"],
+        serde_json::json!({ "Source": "ch1.xhtml", "Type": "KoboSpan", "Value": "kobo.4.1" })
+    );
+    assert_eq!(bookmark["ProgressPercent"], 23);
+}
+
+#[tokio::test]
+async fn load_book_reads_the_kepub_a_download_stored() {
+    let dir = TempDir::new().unwrap();
+    let (control, _stub) = crate::test_support::control_with_downloaded_book(
+        crate::test_support::READER_KEPUB,
+        dir.path().join("kobo.json"),
+    )
+    .await;
+
+    let kepub = load_book(&control, "book-1").unwrap();
+
+    assert!(kepub.is_some());
+}
+
+#[tokio::test]
+async fn load_book_returns_none_for_a_book_that_is_not_downloaded() {
+    let stub = spawn_stub(dune_stub()).await;
+    let dir = TempDir::new().unwrap();
+    let control = stub_control(&stub, dir.path().join("kobo.json"));
+    control.sync(DownloadPolicy::None).await.unwrap();
+
+    let result = load_book(&control, "book-1").unwrap();
+
+    assert_eq!(result, None);
+}
+
+#[tokio::test]
+async fn load_book_reports_a_plain_epub() {
+    let dir = TempDir::new().unwrap();
+    let (control, _stub) = crate::test_support::control_with_downloaded_book(
+        crate::test_support::READER_EPUB,
+        dir.path().join("kobo.json"),
+    )
+    .await;
+
+    let error = load_book(&control, "book-1").unwrap_err();
+
+    assert!(error.to_lowercase().contains("kepubify"), "{error}");
 }
 
 #[tokio::test]
@@ -445,7 +522,7 @@ async fn perform_highlight_reports_annotation_sent() {
 }
 
 #[tokio::test]
-async fn perform_delete_highlight_deletes_the_newest_highlight() {
+async fn perform_delete_highlight_deletes_the_named_highlight() {
     let stub = spawn_stub(dune_stub()).await;
     let dir = TempDir::new().unwrap();
     let control = stub_control(&stub, dir.path().join("kobo.json"));
@@ -473,29 +550,23 @@ async fn perform_delete_highlight_deletes_the_newest_highlight() {
         },
     )
     .await;
+    let first_id = control.view().library["book-1"].annotations[0].id.clone();
 
-    let status = perform(&control, &wiring(), Job::DeleteHighlight("book-1".into())).await;
+    let status = perform(
+        &control,
+        &wiring(),
+        Job::DeleteHighlight {
+            book: "book-1".into(),
+            highlight: first_id,
+        },
+    )
+    .await;
 
     assert_eq!(status, Status::Info("annotation sent".to_owned()));
     let annotations = &control.view().library["book-1"].annotations;
     assert_eq!(annotations.len(), 1);
     assert_eq!(
-        annotations[0].text, "a passage",
-        "the older highlight must survive"
-    );
-}
-
-#[tokio::test]
-async fn perform_delete_highlight_reports_no_highlights_on_a_book_without_any() {
-    let stub = spawn_stub(dune_stub()).await;
-    let dir = TempDir::new().unwrap();
-    let control = stub_control(&stub, dir.path().join("kobo.json"));
-    control.sync(DownloadPolicy::None).await.unwrap();
-
-    let status = perform(&control, &wiring(), Job::DeleteHighlight("book-1".into())).await;
-
-    assert_eq!(
-        status,
-        Status::Error("no highlights on this book".to_owned())
+        annotations[0].text, "another passage",
+        "the named highlight is gone; the other survives"
     );
 }

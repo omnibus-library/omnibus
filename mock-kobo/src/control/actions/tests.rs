@@ -21,12 +21,29 @@ fn device_holding_book_1() -> Device {
     device_holding("book-1", "Dune")
 }
 
+/// `device_holding_book_1`, already synced — a `reading_services_host` is
+/// set, so a download test exercising a *different* refusal (busy, a
+/// bad state write, a mismatched token) doesn't trip `NotSynced` first.
+fn device_holding_book_1_synced() -> Device {
+    let mut device = device_holding_book_1();
+    device.reading_services_host = Some("http://placeholder.example".into());
+    device
+}
+
 /// A downloaded "book-1", wired to `stub` as its `reading_services_host` —
 /// without it, a highlight action fails with "sync first".
 fn device_holding_downloaded_book_1(stub: &crate::test_support::RunningStub) -> Device {
     let mut device = device_holding_book_1();
     device.library.get_mut("book-1").unwrap().downloaded = true;
     device.reading_services_host = Some(stub.origin.clone());
+    device
+}
+
+/// A downloaded "book-1" that has never synced — `reading_services_host`
+/// is `None`, the exact state a highlight/delete action must refuse.
+fn device_holding_downloaded_book_1_without_a_sync() -> Device {
+    let mut device = device_holding_book_1();
+    device.library.get_mut("book-1").unwrap().downloaded = true;
     device
 }
 
@@ -84,6 +101,10 @@ async fn download_never_leaks_a_cached_urls_token_after_a_retarget() {
         .retarget(Retarget::Token("typed-token-b".into()))
         .await
         .unwrap();
+    // `retarget` drops `reading_services_host`; restore it so the
+    // download below exercises the cached-download-URLs leak this test
+    // is about, not the (separately tested) not-synced-yet refusal.
+    control.live().saved.device.reading_services_host = Some(stub.origin.clone());
     control.download(vec!["book-1".into()]).await.unwrap();
 
     let problem = control.view().library["book-1"].download_problem.clone();
@@ -101,6 +122,19 @@ async fn download_never_leaks_a_cached_urls_token_after_a_retarget() {
             );
         }
     }
+}
+
+#[tokio::test]
+async fn download_refuses_before_any_sync_and_leaves_the_book_undownloaded() {
+    let stub = spawn_stub(Stub::default()).await;
+    let dir = TempDir::new().unwrap();
+    let control = stub_control_with(&stub, device_holding_book_1(), dir.path().join("kobo.json"));
+
+    let result = control.download(vec!["book-1".into()]).await;
+
+    assert!(matches!(result, Err(ControlError::NotSynced)), "{result:?}");
+    assert!(!control.view().library["book-1"].downloaded);
+    assert!(stub.paths().is_empty());
 }
 
 #[tokio::test]
@@ -122,7 +156,11 @@ async fn download_returns_unknown_book_without_a_request() {
 async fn download_returns_sync_in_progress_while_a_sync_runs() {
     let stub = spawn_stub(never_answers()).await;
     let dir = TempDir::new().unwrap();
-    let control = stub_control_with(&stub, device_holding_book_1(), dir.path().join("kobo.json"));
+    let control = stub_control_with(
+        &stub,
+        device_holding_book_1_synced(),
+        dir.path().join("kobo.json"),
+    );
     let running = spawn_sync(&control);
     wait_until(|| control.view().syncing).await;
 
@@ -138,7 +176,11 @@ async fn download_returns_state_not_saved_when_state_file_cannot_be_written() {
     let dir = TempDir::new().unwrap();
     let parent = dir.path().join("parent");
     std::fs::write(&parent, "").unwrap();
-    let control = stub_control_with(&stub, device_holding_book_1(), parent.join("kobo.json"));
+    let control = stub_control_with(
+        &stub,
+        device_holding_book_1_synced(),
+        parent.join("kobo.json"),
+    );
 
     let result = control.download(vec!["book-1".into()]).await;
 
@@ -150,7 +192,11 @@ async fn download_refuses_a_token_wired_for_another_server() {
     let wired = spawn_stub(Stub::default()).await;
     let live = spawn_stub(Stub::default()).await;
     let dir = TempDir::new().unwrap();
-    let control = stub_control_with(&live, device_holding_book_1(), dir.path().join("kobo.json"));
+    let control = stub_control_with(
+        &live,
+        device_holding_book_1_synced(),
+        dir.path().join("kobo.json"),
+    );
     control
         .retarget(Retarget::Wired {
             token: "another-token".into(),
@@ -158,6 +204,10 @@ async fn download_refuses_a_token_wired_for_another_server() {
         })
         .await
         .unwrap();
+    // `retarget` drops `reading_services_host` (it belongs to the old
+    // target); restore it so this test exercises the token-wire refusal,
+    // not the (separately tested) not-synced-yet one.
+    control.live().saved.device.reading_services_host = Some(live.origin.clone());
 
     let result = control.download(vec!["book-1".into()]).await.unwrap();
 
@@ -170,6 +220,25 @@ async fn download_refuses_a_token_wired_for_another_server() {
     }
     assert!(live.paths().is_empty());
     assert_eq!(control.view().last_sync, None);
+}
+
+#[tokio::test]
+async fn remove_download_deletes_the_books_file() {
+    let dir = TempDir::new().unwrap();
+    let (control, _stub) = crate::test_support::control_with_downloaded_book(
+        crate::test_support::READER_KEPUB,
+        dir.path().join("kobo.json"),
+    )
+    .await;
+    let file = dir.path().join("kobo.books").join("book-1.kepub.epub");
+    assert!(file.exists());
+
+    control.remove_download("book-1").await.unwrap();
+
+    assert!(
+        !file.exists(),
+        "the file must be removed, not just the flag"
+    );
 }
 
 #[tokio::test]
@@ -476,6 +545,25 @@ async fn highlight_reports_the_failure_and_keeps_the_highlight_when_the_patch_an
 }
 
 #[tokio::test]
+async fn highlight_refuses_before_any_sync_and_leaves_the_device_untouched() {
+    let stub = spawn_stub(Stub::default()).await;
+    let dir = TempDir::new().unwrap();
+    let control = stub_control_with(
+        &stub,
+        device_holding_downloaded_book_1_without_a_sync(),
+        dir.path().join("kobo.json"),
+    );
+
+    let result = control
+        .highlight("book-1".into(), new_highlight(None, None))
+        .await;
+
+    assert!(matches!(result, Err(ControlError::NotSynced)), "{result:?}");
+    assert!(control.view().library["book-1"].annotations.is_empty());
+    assert!(stub.paths().is_empty());
+}
+
+#[tokio::test]
 async fn highlight_returns_not_downloaded_without_a_request() {
     let stub = spawn_stub(Stub::default()).await;
     let dir = TempDir::new().unwrap();
@@ -568,6 +656,29 @@ async fn delete_highlight_sends_the_delete_and_drops_it_from_the_device() {
         other => panic!("expected Done, got {other:?}"),
     }
     assert_eq!(patch_count(&stub, "book-1"), 1);
+}
+
+#[tokio::test]
+async fn delete_highlight_refuses_before_any_sync_and_leaves_the_device_untouched() {
+    let stub = spawn_stub(Stub::default()).await;
+    let dir = TempDir::new().unwrap();
+    let mut device = device_holding_downloaded_book_1_without_a_sync();
+    device
+        .highlight("book-1", "h-1".into(), new_highlight(None, None))
+        .unwrap();
+    let control = stub_control_with(&stub, device, dir.path().join("kobo.json"));
+
+    let result = control
+        .delete_highlight("book-1".into(), "h-1".into())
+        .await;
+
+    assert!(matches!(result, Err(ControlError::NotSynced)), "{result:?}");
+    assert_eq!(
+        control.view().library["book-1"].annotations.len(),
+        1,
+        "the highlight must still be there"
+    );
+    assert!(stub.paths().is_empty());
 }
 
 #[tokio::test]

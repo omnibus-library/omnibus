@@ -3,23 +3,24 @@
 //! Work that waits on the device or the network is handed back as a [`Job`],
 //! and the app refuses another until [`App::finish`] reports the first.
 
+use std::collections::BTreeMap;
+
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
-use crate::annotations::{NewHighlight, SpanRange, Swatch};
+use crate::annotations::NewHighlight;
 use crate::cli;
-use crate::reading::Percent;
-
-/// The TUI's stand-in for a real KoboSpan chapter, before #2738's reader
-/// view supplies one from an actual KEPUB. Every shorthand highlight
-/// anchors here, so it never matches a real document until then.
-// shortcut: no chapter list before #2738 lands; swap for the real one then.
-const SHORTHAND_CHAPTER: &str = "unknown";
+use crate::device::Book;
+use crate::kepub::Kepub;
+use crate::reading::{KoboSpan, Percent};
+use crate::tui::reader::{Reader, ReaderAction};
 
 /// What a key press asks of the loop.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Action {
     Quit,
     Run(Job),
+    /// Open the named book's reader; local, so never refused while a job runs.
+    Open(String),
 }
 
 /// Work that waits on the device or the network, so it never runs on the draw loop.
@@ -35,10 +36,12 @@ pub enum Job {
     Wire,
     /// Download the selected book.
     Download(String),
-    /// Send the selected book's position; the TUI never supplies a `KoboSpan` (#2738 does).
+    /// Send the selected book's position. The percent edit sends `None`;
+    /// the reader view sends the open page's span (see `tui::reader`).
     Read {
         book: String,
         percent: Percent,
+        location: Option<KoboSpan>,
     },
     /// Mark the selected book finished.
     Finish(String),
@@ -49,8 +52,11 @@ pub enum Job {
         book: String,
         highlight: NewHighlight,
     },
-    /// Delete the selected book's newest highlight.
-    DeleteHighlight(String),
+    /// Delete one of the reader's listed highlights, by id.
+    DeleteHighlight {
+        book: String,
+        highlight: String,
+    },
 }
 
 /// Shown for `d`/`f`/`x`/`p` with no book selected.
@@ -70,14 +76,21 @@ pub struct App {
     pub books: Vec<String>,
     /// Index into `books`; clamped whenever the library changes.
     pub selected: usize,
+    /// The device's own `syncing` flag as of the last tick — a sync begun
+    /// over the control API by someone else, distinct from `busy` (a job
+    /// this app itself started).
+    pub device_syncing: bool,
 }
 
-/// Whether keys are commands or text for a field.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+/// Whether keys are commands or text for a field, or the reader is open.
+/// `Reading` is boxed to keep this small — clippy's `large_enum_variant`.
+/// Not `Eq`: `Reader` isn't either.
+#[derive(Clone, Debug, Default, PartialEq)]
 pub enum Mode {
     #[default]
     Normal,
     Editing(Edit),
+    Reading(Box<Reader>),
 }
 
 /// A field being typed into.
@@ -94,8 +107,6 @@ pub enum Field {
     Token,
     /// A percent for the book (uuid) this edit was opened on.
     Percent(String),
-    /// A highlight shorthand for the book (uuid) this edit was opened on.
-    Highlight(String),
 }
 
 /// The line under the device: how the last action went.
@@ -126,12 +137,36 @@ impl App {
             return None;
         }
         if is_ctrl_c(key) {
-            return self.quit();
+            return self.quit_from_reading().or_else(|| self.quit());
         }
         match self.mode {
             Mode::Normal => self.on_normal_key(key, current_url),
             Mode::Editing(_) => self.on_edit_key(key, current_url),
+            Mode::Reading(_) => self.on_reading_key(key),
         }
+    }
+
+    /// Ctrl-C from `Mode::Reading` with a downloaded book first sends the
+    /// open page's close job, same as Esc, so the last position is never
+    /// lost on exit; `None` leaves the normal quit path (any other mode,
+    /// a device mid-exchange, or a metadata-only book with no job to send)
+    /// to run instead.
+    fn quit_from_reading(&mut self) -> Option<Action> {
+        let Mode::Reading(reader) = &self.mode else {
+            return None;
+        };
+        if self.device_syncing || reader.text.is_none() {
+            return None;
+        }
+        let ReaderAction::Close(Some(job)) = reader.close() else {
+            return None;
+        };
+        let action = self.start(job);
+        if action.is_some() {
+            self.mode = Mode::Normal;
+            self.quit_deferred = true;
+        }
+        action
     }
 
     /// A job ended: the app takes jobs again and shows how it went.
@@ -166,6 +201,7 @@ impl App {
                 self.move_selection(1);
                 return None;
             }
+            KeyCode::Enter => return self.open_selected(),
             _ => {}
         }
         // Caps Lock or Shift must not silence a command key.
@@ -186,8 +222,6 @@ impl App {
             'd' => return self.book_action(Job::Download),
             'f' => return self.book_action(Job::Finish),
             'x' => return self.book_action(Job::RemoveDownload),
-            'h' => return self.open_highlight_edit(),
-            'e' => return self.book_action(Job::DeleteHighlight),
             _ => return None,
         };
         self.start(job)
@@ -221,14 +255,108 @@ impl App {
         None
     }
 
-    /// Open the highlight edit for the selected book, or show [`NO_BOOK`].
-    fn open_highlight_edit(&mut self) -> Option<Action> {
+    /// Open the selected book's reader, or show [`NO_BOOK`]. Opening is
+    /// local, so it is not refused while a job runs.
+    fn open_selected(&mut self) -> Option<Action> {
         let Some(book) = self.selected_book().map(str::to_owned) else {
             self.status = Some(Status::Error(NO_BOOK.to_owned()));
             return None;
         };
-        self.open_edit(Field::Highlight(book), "");
-        None
+        Some(Action::Open(book))
+    }
+
+    /// Dispatch a key to the open reader; its close/run becomes a job the
+    /// same way an edit's save does, so a busy refusal keeps the reader
+    /// open. A key that would close or commit is refused *before* it
+    /// reaches the reader — not just by `start`'s own busy check — so a
+    /// refusal while busy or while the device reports its own exchange
+    /// never drops the page position or an open selection the way
+    /// `reader.on_key` consuming it first would.
+    fn on_reading_key(&mut self, key: KeyEvent) -> Option<Action> {
+        let Mode::Reading(reader) = &mut self.mode else {
+            return None;
+        };
+        if (self.busy || self.device_syncing) && reader.commits_on(key) {
+            self.status = Some(Status::Error(BUSY.to_owned()));
+            return None;
+        }
+        match reader.on_key(key)? {
+            ReaderAction::Close(None) => {
+                self.mode = Mode::Normal;
+                None
+            }
+            ReaderAction::Close(Some(job)) => {
+                let action = self.start(job);
+                if action.is_some() {
+                    self.mode = Mode::Normal;
+                }
+                action
+            }
+            ReaderAction::Run(job) => self.start(job),
+        }
+    }
+
+    /// Enter's reader load finished: `Ok(Some(kepub))` opens the full
+    /// reader, `Ok(None)` the metadata-only view, `Err(message)` reports it
+    /// and the library stays open.
+    pub fn open_book(&mut self, book: String, text: Result<Option<Kepub>, String>) {
+        match text {
+            Ok(kepub) => self.mode = Mode::Reading(Box::new(Reader::open(book, kepub))),
+            Err(message) => self.status = Some(Status::Error(message)),
+        }
+    }
+
+    /// Re-fit the open reader's pagination to `width`×`rows`; a no-op outside `Mode::Reading`.
+    pub fn fit_reader(&mut self, width: u16, rows: u16) {
+        if let Mode::Reading(reader) = &mut self.mode {
+            reader.fit(width, rows);
+        }
+    }
+
+    /// Called every tick: move the open reader to the span (or, lacking
+    /// one, the word at the percent) a newer device bookmark names. A
+    /// no-op outside `Mode::Reading`, for a book the library no longer
+    /// holds, one with no bookmark, or one no newer than the reader's own
+    /// last-placed stamp (so the reader's own page turns are never undone).
+    /// An unplaceable location or percent just records the stamp.
+    pub fn show_book(&mut self, library: &BTreeMap<String, Book>) {
+        let Mode::Reading(reader) = &mut self.mode else {
+            return;
+        };
+        let Some(book) = library.get(&reader.book) else {
+            return;
+        };
+        reader.annotations = book.annotations.clone();
+        let Some(kepub) = &reader.text else {
+            return;
+        };
+        let Some(bookmark) = book.reading.bookmark.as_ref() else {
+            return;
+        };
+        if !reader.is_newer_than_placed(bookmark.modified) {
+            return;
+        }
+        let Some(location) = &bookmark.location else {
+            match bookmark.percent {
+                Some(percent) => {
+                    let (chapter, word) = kepub.word_at_percent(percent);
+                    reader.place_at_word(chapter, word, bookmark.modified);
+                }
+                None => reader.record_placed(bookmark.modified),
+            }
+            return;
+        };
+        match kepub.locate_span(&location.source, &location.value) {
+            Some((chapter, span)) => reader.place_at_span(chapter, span, bookmark.modified),
+            None => {
+                let message = format!(
+                    "the device's bookmark {} in {} is not in this book",
+                    location.value, location.source
+                );
+                reader.record_placed(bookmark.modified);
+                self.status = Some(Status::Error(message));
+            }
+        }
     }
 
     fn on_edit_key(&mut self, key: KeyEvent, current_url: &str) -> Option<Action> {
@@ -276,16 +404,9 @@ impl App {
                 .map(|percent| Job::Read {
                     book: book.clone(),
                     percent,
+                    location: None,
                 })
                 .ok_or_else(|| format!("{buffer} is not a whole number 0..=100")),
-            Field::Highlight(book) => parse_highlight(&buffer)
-                .map(|highlight| Job::Highlight {
-                    book: book.clone(),
-                    highlight,
-                })
-                .ok_or_else(|| {
-                    "expected \"<span> <start>-<end> [<1-4> ]<text>[ // <note>]\"".to_owned()
-                }),
         };
         match job {
             Ok(Job::SetUrl(url)) if url == current_url => {
@@ -342,68 +463,10 @@ fn parse_percent(buffer: &str) -> Option<Percent> {
     buffer.trim().parse::<u8>().ok().and_then(Percent::new)
 }
 
-/// `"<span> <start>-<end> [<1-4> ]<text>[ // <note>]"`: a single-span
-/// shorthand for a real KoboSpan range — `span` anchors both ends — the
-/// TUI's stand-in for #2738's word-level selection. `None` on anything
-/// that doesn't parse this shape, including empty text.
-fn parse_highlight(buffer: &str) -> Option<NewHighlight> {
-    let mut parts = buffer.trim().splitn(3, ' ');
-    let span = parts.next()?;
-    let range = parts.next()?;
-    let rest = parts.next().unwrap_or("");
-    if span.is_empty() {
-        return None;
-    }
-    let (start, end) = range.split_once('-')?;
-    let start_char: u32 = start.parse().ok()?;
-    let end_char: u32 = end.parse().ok()?;
-    let (color, rest) = leading_swatch_digit(rest);
-    let (text, note) = split_note(rest);
-    if text.is_empty() {
-        return None;
-    }
-    Some(NewHighlight {
-        text: text.to_owned(),
-        color,
-        note: note.map(str::to_owned),
-        location: Some(SpanRange {
-            chapter: SHORTHAND_CHAPTER.to_owned(),
-            start_span: span.to_owned(),
-            start_char,
-            end_span: span.to_owned(),
-            end_char,
-        }),
-    })
-}
-
-/// A leading `"<1-4> "` picks the swatch at digit − 1 (#2738's believed key
-/// order: 1 yellow, 2 pink, 3 blue, 4 green); no digit leads to yellow.
-fn leading_swatch_digit(rest: &str) -> (Swatch, &str) {
-    let mut chars = rest.chars();
-    match (chars.next(), chars.next()) {
-        (Some(digit @ '1'..='4'), Some(' ')) => {
-            let color = match digit {
-                '1' => Swatch::Yellow,
-                '2' => Swatch::Pink,
-                '3' => Swatch::Blue,
-                _ => Swatch::Green,
-            };
-            (color, &rest[2..])
-        }
-        _ => (Swatch::Yellow, rest),
-    }
-}
-
-/// The first `" // "` splits off the note; both sides are trimmed.
-fn split_note(text_and_note: &str) -> (&str, Option<&str>) {
-    match text_and_note.split_once(" // ") {
-        Some((text, note)) => (text.trim(), Some(note.trim())),
-        None => (text_and_note.trim(), None),
-    }
-}
-
 /// The character `key` types, unless Ctrl or Alt made it a shortcut instead.
-fn typed_char(key: KeyEvent) -> Option<char> {
+/// Shared with the reader's note view, so the two never disagree on what
+/// counts as a shortcut versus typed text.
+pub(crate) fn typed_char(key: KeyEvent) -> Option<char> {
     let shortcut = key
         .modifiers
         .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT);

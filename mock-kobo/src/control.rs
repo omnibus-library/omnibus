@@ -7,7 +7,7 @@
 
 use std::collections::BTreeMap;
 use std::future::Future;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use serde::Serialize;
@@ -20,6 +20,7 @@ use crate::session::{attempt_sync, Attempt, SyncFailure};
 use crate::state::{self, SavedState, StateError};
 
 pub mod actions;
+pub mod passages;
 
 /// One running device: what the control API (and a TUI) reads and drives.
 pub struct Control {
@@ -67,6 +68,16 @@ pub enum ControlError {
     StateNotSaved(#[from] StateError),
     #[error(transparent)]
     Device(#[from] DeviceError),
+    #[error(transparent)]
+    Kepub(#[from] crate::kepub::KepubError),
+    #[error(
+        "no run of whole words in the book reads \"{0}\"; copy them exactly, punctuation included"
+    )]
+    PassageNotFound(String),
+    #[error("no sync since the device started; sync first")]
+    NotSynced,
+    #[error("could not remove the downloaded file: {0}")]
+    FileRemoval(String),
 }
 
 /// How a device action that talks to the server ended.
@@ -112,8 +123,11 @@ pub struct DeviceView {
 }
 
 impl Control {
-    /// A device restored from (or just written to) `state_path`, syncing against `url`.
-    pub fn new(saved: SavedState, url: String, state_path: PathBuf) -> Self {
+    /// A device restored from (or just written to) `state_path`, syncing
+    /// against `url`. Its storage directory sits beside the state file,
+    /// whatever `saved` carried in (storage is never saved to disk).
+    pub fn new(mut saved: SavedState, url: String, state_path: PathBuf) -> Self {
+        saved.device.storage = Some(state::books_dir(&state_path));
         Self {
             state_path,
             save_lock: tokio::sync::Mutex::new(()),
@@ -214,14 +228,7 @@ impl Control {
             let persisted = control.persist().await;
             (attempt, persisted)
         });
-        let (attempt, persisted) = match task.await {
-            Ok(result) => result,
-            Err(error) => std::panic::resume_unwind(
-                error
-                    .try_into_panic()
-                    .unwrap_or_else(|cancelled| Box::new(cancelled.to_string())),
-            ),
-        };
+        let (attempt, persisted) = settled(task).await;
         persisted?;
         Ok(attempt)
     }
@@ -240,19 +247,25 @@ impl Control {
         }
     }
 
-    /// Wipe what the device holds — its library, sync token and cover cache
-    /// — by replacing it outright; keep who it is and where it syncs.
+    /// Wipe what the device holds — its library, sync token and cover
+    /// cache — by replacing it outright; keep who it is and where it
+    /// syncs. Also removes every downloaded file from the books dir, so a
+    /// reset device's storage matches its now-empty library.
     pub async fn reset(&self) -> Result<DeviceView, ControlError> {
-        {
+        let books_dir = {
             let mut live = self.live();
             if live.syncing {
                 return Err(ControlError::SyncInProgress);
             }
             let hardware_id = live.saved.device.hardware_id.clone();
             live.saved.device = Device::new(&hardware_id);
+            let books_dir = state::books_dir(&self.state_path);
+            live.saved.device.storage = Some(books_dir.clone());
             live.last_sync = None;
             live.requests.clear();
-        }
+            books_dir
+        };
+        clear_books_dir(&books_dir).await?;
         self.persist().await?;
         Ok(self.view())
     }
@@ -303,6 +316,26 @@ impl Control {
         self.live().requests.clone()
     }
 
+    /// `book`'s downloaded file, beside the state file. `UnknownBook` for a
+    /// book the device doesn't hold; `NotDownloaded` for one it hasn't
+    /// fetched yet (not an error the reader needs to report — see `jobs::load_book`).
+    pub fn book_file(&self, book: &str) -> Result<PathBuf, DeviceError> {
+        let live = self.live();
+        let found = live
+            .saved
+            .device
+            .library
+            .get(book)
+            .ok_or_else(|| DeviceError::UnknownBook(book.to_owned()))?;
+        if !found.downloaded {
+            return Err(DeviceError::NotDownloaded(book.to_owned()));
+        }
+        live.saved
+            .device
+            .book_file(book)
+            .ok_or_else(|| DeviceError::UnknownBook(book.to_owned()))
+    }
+
     /// Write the current state to the state file.
     async fn persist(&self) -> Result<(), StateError> {
         let _saving = self.save_lock.lock().await;
@@ -314,6 +347,60 @@ impl Control {
     fn live(&self) -> MutexGuard<'_, Live> {
         self.live.lock().unwrap_or_else(PoisonError::into_inner)
     }
+}
+
+/// Await `task`, propagating its panic rather than returning a `JoinError`
+/// — nothing ever aborts these handles, so the only way one fails is a
+/// panic, which should surface the same as if it had happened inline.
+pub(super) async fn settled<T>(task: tokio::task::JoinHandle<T>) -> T {
+    match task.await {
+        Ok(result) => result,
+        Err(error) => std::panic::resume_unwind(
+            error
+                .try_into_panic()
+                .unwrap_or_else(|cancelled| Box::new(cancelled.to_string())),
+        ),
+    }
+}
+
+/// Whether `kind` means "nothing is there" rather than a real failure — a
+/// missing file, or one whose parent isn't even a directory (a books dir
+/// that was never created because nothing was ever downloaded).
+fn nothing_there(kind: std::io::ErrorKind) -> bool {
+    matches!(
+        kind,
+        std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+    )
+}
+
+/// Delete `path`, best-effort — a missing file is fine, any other error
+/// is reported rather than silently dropped.
+pub(super) async fn remove_file_best_effort(path: &Path) -> Result<(), ControlError> {
+    match tokio::fs::remove_file(path).await {
+        Ok(()) => Ok(()),
+        Err(error) if nothing_there(error.kind()) => Ok(()),
+        Err(error) => Err(ControlError::FileRemoval(error.to_string())),
+    }
+}
+
+/// Delete every regular file directly inside `dir` (the device's book
+/// storage) — a missing directory is fine, any other error is reported.
+async fn clear_books_dir(dir: &Path) -> Result<(), ControlError> {
+    let mut entries = match tokio::fs::read_dir(dir).await {
+        Ok(entries) => entries,
+        Err(error) if nothing_there(error.kind()) => return Ok(()),
+        Err(error) => return Err(ControlError::FileRemoval(error.to_string())),
+    };
+    while let Some(entry) = entries
+        .next_entry()
+        .await
+        .map_err(|error| ControlError::FileRemoval(error.to_string()))?
+    {
+        if entry.file_type().await.is_ok_and(|t| t.is_file()) {
+            remove_file_best_effort(&entry.path()).await?;
+        }
+    }
+    Ok(())
 }
 
 impl Live {

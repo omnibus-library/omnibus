@@ -16,8 +16,10 @@ use crate::device::Book;
 use crate::reading::ReadStatus;
 use crate::tui::app::{App, Edit, Field, Mode, Status};
 
+pub mod reader;
+
 const HELP: &str =
-    "↑/↓ select · d download · p read % · f finish · x remove · h highlight · e delete highlight · s sync · r reset · u edit URL · t edit token · w wire · q quit";
+    "↑/↓ select · Enter open · d download · p read % · f finish · x remove · s sync · r reset · u edit URL · t edit token · w wire · q quit";
 const EDIT_HELP: &str = "Enter save · Esc cancel";
 
 /// Rows the status line may wrap onto before the rest is cut.
@@ -32,8 +34,14 @@ pub struct Screen<'a> {
     pub app: &'a App,
 }
 
-/// Draw `screen`: header, library, last sync, request log, status line, key help.
+/// Draw `screen`: the reader when one is open, else the library screen
+/// (header, library, last sync, request log, status line, key help).
 pub fn draw(frame: &mut Frame, screen: &Screen) {
+    if let Mode::Reading(open) = &screen.app.mode {
+        let book = screen.view.library.get(&open.book);
+        reader::draw(frame, frame.area(), open, book, screen.app.status.as_ref());
+        return;
+    }
     let [header, library, last_sync, requests, footer] = Layout::vertical([
         Constraint::Length(4),
         Constraint::Percentage(35),
@@ -160,25 +168,23 @@ fn draw_footer(frame: &mut Frame, area: Rect, app: &App) {
             draw_edit(frame, edit_area, edit);
             frame.render_widget(Line::raw(EDIT_HELP), help_area);
         }
+        // `draw` dispatches `Reading` to `reader::draw` before this runs.
+        Mode::Reading(_) => {}
     }
 }
 
-fn status_line(status: &Status) -> Line<'_> {
+pub(super) fn status_line(status: &Status) -> Line<'_> {
     match status {
         Status::Info(message) => Line::raw(message.as_str()),
         Status::Error(message) => Line::styled(message.as_str(), Style::new().fg(Color::Red)),
     }
 }
 
-/// The prompt, with the terminal cursor after what has been typed (kept on screen).
-fn draw_edit(frame: &mut Frame, area: Rect, edit: &Edit) {
-    let label = match &edit.field {
-        Field::Url => "URL",
-        Field::Token => "token",
-        Field::Percent(_) => "percent",
-        Field::Highlight(_) => "highlight",
-    };
-    let prompt = Line::raw(format!("{label}: {}", edit.buffer));
+/// A one-line `label: buffer` prompt with the terminal cursor kept just
+/// after what's been typed — shared by the library's edit fields and the
+/// reader's note prompt.
+pub(super) fn draw_prompt(frame: &mut Frame, area: Rect, label: &str, buffer: &str) {
+    let prompt = Line::raw(format!("{label}: {buffer}"));
     let typed = u16::try_from(prompt.width()).unwrap_or(u16::MAX);
     let x = area
         .x
@@ -186,6 +192,15 @@ fn draw_edit(frame: &mut Frame, area: Rect, edit: &Edit) {
         .min(area.right().saturating_sub(1));
     frame.set_cursor_position((x, area.y));
     frame.render_widget(prompt, area);
+}
+
+fn draw_edit(frame: &mut Frame, area: Rect, edit: &Edit) {
+    let label = match &edit.field {
+        Field::Url => "URL",
+        Field::Token => "token",
+        Field::Percent(_) => "percent",
+    };
+    draw_prompt(frame, area, label, &edit.buffer);
 }
 
 #[cfg(test)]

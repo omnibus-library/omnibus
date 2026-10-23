@@ -47,8 +47,8 @@ Cargo workspace with seven crates:
   the firmware behaviours behind past Kobo regressions, each a named
   `firmware::Quirk` citing its evidence. `mock-kobo serve` runs one device
   behind a loopback control API (`POST /actions/{sync,download,remove-download,
-  read,finish,highlight,delete-highlight}`, `GET /device`, `GET /requests`,
-  `PUT /reset`; replies
+  read,finish,highlight,delete-highlight,read-to,highlight-words}`, `GET /device`,
+  `GET /requests`, `PUT /reset`; replies
   `{status, code, message, details}`), keeps a JSON state file, and
   auto-wires the dev seed admin's device;
   `mock-kobo tui` drives that same device from a terminal UI while serving the

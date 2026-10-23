@@ -78,6 +78,16 @@ pub enum ReplyCode {
     AnnotationSent,
     /// 502: the PATCH failed.
     AnnotationFailed,
+    /// 404: no run of whole words in the book matches the given passage.
+    PassageNotFound,
+    /// 409: the downloaded file isn't a KEPUB `Kepub::open`/`parse` can read.
+    BookUnreadable,
+    /// 409: the downloaded file has no koboSpan markup (a plain EPUB).
+    NoKoboSpans,
+    /// 409: no sync since the device started, so it has no `reading_services_host` yet.
+    NotSynced,
+    /// 500: a downloaded file could not be removed.
+    FileRemoval,
 }
 
 /// What a reply's `details` carries, for routes whose outcomes differ.
@@ -120,6 +130,8 @@ pub fn router(control: Arc<Control>) -> Router {
         .route("/actions/finish", post(post_finish))
         .route("/actions/highlight", post(post_highlight))
         .route("/actions/delete-highlight", post(post_delete_highlight))
+        .route("/actions/read-to", post(post_read_to))
+        .route("/actions/highlight-words", post(post_highlight_words))
         .route("/requests", get(get_requests))
         .route("/reset", put(put_reset))
         .method_not_allowed_fallback(method_not_allowed)
@@ -354,6 +366,47 @@ async fn post_delete_highlight(State(control): State<Arc<Control>>, body: Bytes)
     )
 }
 
+async fn post_read_to(State(control): State<Arc<Control>>, body: Bytes) -> Reply<Details> {
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct ReadToBody {
+        book: String,
+        passage: String,
+    }
+    let parsed: ReadToBody = match serde_json::from_slice(&body) {
+        Ok(parsed) => parsed,
+        Err(e) => return invalid_request_reply(format!("invalid read-to body: {e}")),
+    };
+    if parsed.passage.trim().is_empty() {
+        return invalid_request_reply("\"passage\" must not be empty");
+    }
+    state_reply(control.read_to(parsed.book, parsed.passage).await)
+}
+
+async fn post_highlight_words(State(control): State<Arc<Control>>, body: Bytes) -> Reply<Details> {
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct HighlightWordsBody {
+        book: String,
+        passage: String,
+        color: Swatch,
+        #[serde(default)]
+        note: Option<String>,
+    }
+    let parsed: HighlightWordsBody = match serde_json::from_slice(&body) {
+        Ok(parsed) => parsed,
+        Err(e) => return invalid_request_reply(format!("invalid highlight-words body: {e}")),
+    };
+    if parsed.passage.trim().is_empty() {
+        return invalid_request_reply("\"passage\" must not be empty");
+    }
+    annotation_reply(
+        control
+            .highlight_words(parsed.book, parsed.passage, parsed.color, parsed.note)
+            .await,
+    )
+}
+
 async fn get_requests(State(control): State<Arc<Control>>) -> Reply<Details> {
     let requests = control.requests();
     Reply::new(
@@ -425,6 +478,15 @@ fn error_reply(error: &ControlError) -> Reply<Details> {
         ControlError::Device(DeviceError::UnknownHighlight(_)) => {
             (StatusCode::NOT_FOUND, ReplyCode::UnknownHighlight)
         }
+        ControlError::PassageNotFound(_) => (StatusCode::NOT_FOUND, ReplyCode::PassageNotFound),
+        ControlError::Kepub(crate::kepub::KepubError::Unreadable(_)) => {
+            (StatusCode::CONFLICT, ReplyCode::BookUnreadable)
+        }
+        ControlError::Kepub(crate::kepub::KepubError::NoSpans) => {
+            (StatusCode::CONFLICT, ReplyCode::NoKoboSpans)
+        }
+        ControlError::NotSynced => (StatusCode::CONFLICT, ReplyCode::NotSynced),
+        ControlError::FileRemoval(_) => (StatusCode::INTERNAL_SERVER_ERROR, ReplyCode::FileRemoval),
     };
     Reply::new(
         status,

@@ -34,6 +34,12 @@ impl SavedState {
     }
 }
 
+/// Where downloaded books for the device saved at `state` are kept:
+/// `<state>` with its extension replaced by `books` (`/x/kobo.json` → `/x/kobo.books`).
+pub fn books_dir(state: &Path) -> PathBuf {
+    state.with_extension("books")
+}
+
 /// Why a state file couldn't be read or written.
 #[derive(Debug, thiserror::Error)]
 pub enum StateError {

@@ -198,6 +198,92 @@ async fn attempt_download_fails_with_download_failure_when_the_download_answers_
 }
 
 #[tokio::test]
+async fn attempt_download_stores_the_body_in_the_devices_storage() {
+    let stub = spawn_stub(Stub {
+        download_body: b"hello-kepub",
+        ..Stub::default()
+    })
+    .await;
+    let dir = tempfile::TempDir::new().unwrap();
+    let storage = dir.path().join("kobo.books");
+    let mut device = Device::new("HW-1");
+    device.storage = Some(storage.clone());
+    device
+        .library
+        .insert("book-1".into(), book(false, false, None));
+    device.download_urls.insert(
+        "book-1".into(),
+        format!("{}/kobo/{STUB_TOKEN}/v1/download/book-1", stub.origin),
+    );
+
+    let attempt = attempt_download(&mut device, &stub.endpoint, &["book-1".into()]).await;
+
+    assert!(attempt.outcome.is_ok());
+    let bytes = std::fs::read(storage.join("book-1.kepub.epub")).unwrap();
+    assert_eq!(bytes, b"hello-kepub");
+    let names: Vec<_> = std::fs::read_dir(&storage)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert_eq!(names, ["book-1.kepub.epub"]);
+}
+
+#[tokio::test]
+async fn attempt_download_refuses_to_store_a_book_whose_id_is_not_a_plain_id() {
+    let stub = spawn_stub(Stub::default()).await;
+    let dir = tempfile::TempDir::new().unwrap();
+    let storage = dir.path().join("kobo.books");
+    let mut device = Device::new("HW-1");
+    device.storage = Some(storage.clone());
+    device
+        .library
+        .insert("../escape".into(), book(false, false, None));
+    device.download_urls.insert(
+        "../escape".into(),
+        format!("{}/kobo/{STUB_TOKEN}/v1/download/escape", stub.origin),
+    );
+
+    let attempt = attempt_download(&mut device, &stub.endpoint, &["../escape".into()]).await;
+
+    assert!(attempt.outcome.is_err());
+    assert!(!device.library["../escape"].downloaded);
+    let problem = device.library["../escape"]
+        .download_problem
+        .as_deref()
+        .unwrap();
+    assert!(problem.contains("../escape"), "{problem}");
+    assert!(stub
+        .paths()
+        .into_iter()
+        .all(|p| !p.contains("/v1/download/")));
+    assert!(!dir.path().join("escape.kepub.epub").exists());
+    assert!(!storage.exists());
+}
+
+#[tokio::test]
+async fn attempt_download_leaves_the_book_undownloaded_when_its_file_cannot_be_written() {
+    let stub = spawn_stub(Stub::default()).await;
+    let dir = tempfile::TempDir::new().unwrap();
+    let storage = dir.path().join("kobo.books");
+    std::fs::write(&storage, "not a directory").unwrap();
+    let mut device = Device::new("HW-1");
+    device.storage = Some(storage.clone());
+    device
+        .library
+        .insert("book-1".into(), book(false, false, None));
+    device.download_urls.insert(
+        "book-1".into(),
+        format!("{}/kobo/{STUB_TOKEN}/v1/download/book-1", stub.origin),
+    );
+
+    let attempt = attempt_download(&mut device, &stub.endpoint, &["book-1".into()]).await;
+
+    assert!(attempt.outcome.is_err());
+    assert!(!device.library["book-1"].downloaded);
+    assert!(device.library["book-1"].download_problem.is_some());
+}
+
+#[tokio::test]
 async fn attempt_download_fails_with_transport_when_the_server_is_unreachable() {
     let mut device = Device::new("HW-1");
     device
@@ -212,4 +298,46 @@ async fn attempt_download_fails_with_transport_when_the_server_is_unreachable() 
     let attempt = attempt_download(&mut device, "http://127.0.0.1:1", &["book-1".into()]).await;
 
     assert!(matches!(attempt.outcome, Err(SyncFailure::Transport(_))));
+}
+
+#[tokio::test]
+async fn attempt_download_fails_with_transport_when_the_body_is_truncated() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        let Ok((mut socket, _)) = listener.accept().await else {
+            return;
+        };
+        let mut buf = [0u8; 1024];
+        let _ = socket.read(&mut buf).await;
+        // Promise 100 bytes, send 5, then close — a connection dropped
+        // mid-body, not a non-2xx answer.
+        let _ = socket
+            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\nshort")
+            .await;
+    });
+
+    let dir = tempfile::TempDir::new().unwrap();
+    let storage = dir.path().join("kobo.books");
+    let mut device = Device::new("HW-1");
+    device.storage = Some(storage.clone());
+    device
+        .library
+        .insert("book-1".into(), book(false, false, None));
+    device
+        .download_urls
+        .insert("book-1".into(), format!("http://{addr}/v1/download/book-1"));
+
+    let attempt =
+        attempt_download(&mut device, &format!("http://{addr}"), &["book-1".into()]).await;
+
+    assert!(
+        matches!(attempt.outcome, Err(SyncFailure::Transport(_))),
+        "{:?}",
+        attempt.outcome
+    );
+    assert!(!device.library["book-1"].downloaded);
 }

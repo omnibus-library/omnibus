@@ -192,11 +192,7 @@ async fn run_download(
     let mut rejected = Vec::new();
     let mut transport = None;
     for id in books {
-        if device
-            .library
-            .get(id.as_str())
-            .is_some_and(|b| b.downloaded)
-        {
+        if already_downloaded(device, id).await {
             continue;
         }
         let outcome = downloads::attempt_one(client, device, id).await;
@@ -225,6 +221,19 @@ async fn run_download(
         ));
     }
     Ok(())
+}
+
+/// Whether `id` is marked downloaded *and* its file is still on disk — a
+/// state file carried over from before storage was wired, or a file
+/// removed out-of-band, must not silently skip a re-download.
+async fn already_downloaded(device: &Device, id: &str) -> bool {
+    if !device.library.get(id).is_some_and(|b| b.downloaded) {
+        return false;
+    }
+    match device.book_file(id) {
+        Some(path) => tokio::fs::try_exists(&path).await.unwrap_or(false),
+        None => true, // no storage configured; trust the flag as before
+    }
 }
 
 /// Which PATCH shape a device-made highlight action sends, under its id.

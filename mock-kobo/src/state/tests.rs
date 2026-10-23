@@ -203,6 +203,14 @@ async fn save_reports_write_error_when_parent_is_a_file() {
 }
 
 #[test]
+fn books_dir_sits_beside_the_state_file() {
+    assert_eq!(
+        books_dir(Path::new("/x/kobo.json")),
+        Path::new("/x/kobo.books")
+    );
+}
+
+#[test]
 fn token_wired_for_is_true_for_a_token_the_user_gave() {
     let state = SavedState {
         wired_url: None,

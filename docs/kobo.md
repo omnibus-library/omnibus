@@ -261,12 +261,11 @@ database already had an admin, mark a shelf **Sync to Kobo** yourself.
 | Key | Does |
 |---|---|
 | <kbd>↑</kbd> / <kbd>↓</kbd> | Move the selection (marked `>`) within the library |
+| <kbd>Enter</kbd> | Open the selected book: a downloaded KEPUB in the reader, else a metadata-only view |
 | <kbd>d</kbd> | Download the selected book |
 | <kbd>p</kbd> | Edit the selected book's read percent (0–100), sent as a `Reading` state on <kbd>Enter</kbd> |
 | <kbd>f</kbd> | Mark the selected book finished |
 | <kbd>x</kbd> | Clear the selected book's downloaded flag, locally |
-| <kbd>h</kbd> | Make a highlight on the selected book: `<span> <start>-<end> [<1-4> ]<text>[ // <note>]` |
-| <kbd>e</kbd> | Delete the selected book's newest highlight |
 | <kbd>s</kbd> | Sync now |
 | <kbd>r</kbd> | Reset the device: empty library, no sync token, so the next sync resends every opted-in book |
 | <kbd>u</kbd> | Edit the server URL (pinned and saved) |
@@ -276,8 +275,42 @@ database already had an admin, mark a shelf **Sync to Kobo** yourself.
 
 Each book line shows `downloaded`, `download failed`, the bookmark percent,
 `finished`, its highlight count, and a dropped-highlight count, whichever
-apply (the device never shows a `KoboSpan` location, or a highlight's colour
-or text — see [#2738](https://github.com/omnibus-library/omnibus/issues/2738)).
+apply. Opening a downloaded book shows its text in the reader: closing it
+(Esc, or quitting with Ctrl-C) sends the open page's `KoboSpan` position,
+and a word selection becomes a highlight (see "In the reader" below). A page
+that opens mid-sentence bookmarks that sentence's own span, so reopening the
+book shows the page where the sentence starts, not the one it was left on.
+
+### In the reader
+
+| Key | Does |
+|---|---|
+| <kbd>←</kbd> / <kbd>→</kbd> | Turn the page, crossing a chapter edge at either end |
+| <kbd>[</kbd> / <kbd>]</kbd> | Jump to the previous/next chapter's first page |
+| <kbd>↑</kbd> / <kbd>↓</kbd> | Move the cursor one word, clamped to the open page |
+| <kbd>v</kbd> | Start a word selection at the cursor |
+| <kbd>h</kbd> | Open the highlights list |
+| <kbd>Esc</kbd> | Close: a downloaded book sends the open page's span and percent as its `Reading` state; the metadata-only view just closes |
+
+While selecting a word range:
+
+| Key | Does |
+|---|---|
+| <kbd>←</kbd> / <kbd>→</kbd> | Move the selection's end one word, clamped to `[start, the open page's last word]` |
+| <kbd>1</kbd>–<kbd>4</kbd> | Highlight the selection in Yellow / Pink / Blue / Green and clear it |
+| <kbd>n</kbd> | Type a note for the selection |
+| <kbd>Esc</kbd> | Cancel the selection; the book stays open |
+
+Highlights made on the page, or by the web reader, show inline on their own
+words in their swatch colour once the device has them. The highlights list
+(<kbd>h</kbd>) names each one's colour and text (plus its note, and
+`(not placed)` when the open chapter can't locate it):
+
+| Key | Does |
+|---|---|
+| <kbd>↓</kbd> / <kbd>↑</kbd> | Move the selected row |
+| <kbd>x</kbd> | Delete the selected highlight |
+| <kbd>Esc</kbd> | Back to the page |
 
 While editing, <kbd>Enter</kbd> saves and <kbd>Esc</kbd> cancels. Pointing a
 device at another server re-wires a token that was wired for the old one; a URL
@@ -295,6 +328,27 @@ For a second device, give it its own state file; inside the gitignored
 ```bash
 just kobo --state .claude/runtime/other.json   # the Omnibus device "Mock Kobo (other)"
 ```
+
+A downloaded book's file is kept beside the state file, in `<state>.books/`
+(the default `.claude/runtime/mock-kobo.json` → `.claude/runtime/mock-kobo.books/<id>.kepub.epub`),
+so a second device's downloads never collide with the first's.
+
+#### Reader fixture
+
+`test_data/kepub/reader.epub` is a hand-written three-chapter EPUB (ASCII
+prose in chapter 1, accented Latin and Mathematical Fraktur text in chapter
+2, one short paragraph in chapter 3); `reader.kepub.epub` is kepubify's own
+output over it, committed so the walker's tests run with no kepubify on
+`PATH`. Regenerate the KEPUB after editing the source EPUB:
+
+```bash
+scripts/with-dev-env.sh web kepubify --no-add-dummy-titlepage \
+  -o test_data/kepub/reader.kepub.epub -- test_data/kepub/reader.epub
+```
+
+Produced with kepubify 4.0.4. `--no-add-dummy-titlepage` matters: without
+it, kepubify inserts a blank titlepage as the book's first spine item,
+which would shift every chapter's spine index.
 
 ### From a script
 
@@ -403,12 +457,14 @@ port is in its header). Every reply is `{status, code, message, details}`:
 |---|---|
 | `GET /device` | 200 `ok` |
 | `POST /actions/sync` `{"download": "none" \| "all" \| ["<uuid>", …]}` (body optional, defaults to `none`) | 200 `synced` · 400 `invalid_request` · 502 `sync_failed` · 409 `sync_in_progress` · 500 `state_not_saved` |
-| `POST /actions/download` `{"books": ["<uuid>", …]}` | 200 `downloaded` · 400 `invalid_request` · 404 `unknown_book` · 409 `sync_in_progress` · 500 `state_not_saved` · 502 `download_failed` |
+| `POST /actions/download` `{"books": ["<uuid>", …]}` | 200 `downloaded` · 400 `invalid_request` · 404 `unknown_book` · 409 `not_synced` · 409 `sync_in_progress` · 500 `state_not_saved` · 502 `download_failed` |
 | `POST /actions/remove-download` `{"book": "<uuid>"}` | 200 `download_removed` · 400 `invalid_request` · 404 `unknown_book` · 409 `sync_in_progress` · 500 `state_not_saved` |
 | `POST /actions/read` `{"book": "<uuid>", "percent": 0..=100, "location": {"source","value"}?}` | 200 `state_sent` · 400 `invalid_request` · 404 `unknown_book` · 409 `not_downloaded` · 409 `sync_in_progress` · 500 `state_not_saved` · 502 `state_failed` |
 | `POST /actions/finish` `{"book": "<uuid>"}` | 200 `state_sent` · 400 `invalid_request` · 404 `unknown_book` · 409 `sync_in_progress` · 500 `state_not_saved` · 502 `state_failed` |
-| `POST /actions/highlight` `{"book": "<uuid>", "text", "color": "yellow"\|"pink"\|"blue"\|"green", "note"?, "location": {"chapter","start_span","start_char","end_span","end_char"}}` | 200 `annotation_sent` · 400 `invalid_request` · 404 `unknown_book` · 409 `not_downloaded` · 409 `sync_in_progress` · 500 `state_not_saved` · 502 `annotation_failed` |
-| `POST /actions/delete-highlight` `{"book": "<uuid>", "highlight": "<id>"}` | 200 `annotation_sent` · 400 `invalid_request` · 404 `unknown_book` · 404 `unknown_highlight` · 409 `sync_in_progress` · 500 `state_not_saved` · 502 `annotation_failed` |
+| `POST /actions/highlight` `{"book": "<uuid>", "text", "color": "yellow"\|"pink"\|"blue"\|"green", "note"?, "location": {"chapter","start_span","start_char","end_span","end_char"}}` | 200 `annotation_sent` · 400 `invalid_request` · 404 `unknown_book` · 409 `not_downloaded` · 409 `not_synced` · 409 `sync_in_progress` · 500 `state_not_saved` · 502 `annotation_failed` |
+| `POST /actions/delete-highlight` `{"book": "<uuid>", "highlight": "<id>"}` | 200 `annotation_sent` · 400 `invalid_request` · 404 `unknown_book` · 404 `unknown_highlight` · 409 `not_synced` · 409 `sync_in_progress` · 500 `state_not_saved` · 502 `annotation_failed` |
+| `POST /actions/read-to` `{"book": "<uuid>", "passage"}` | 200 `state_sent` · 400 `invalid_request` · 404 `unknown_book` · 404 `passage_not_found` · 409 `not_downloaded` · 409 `book_unreadable` · 409 `no_kobo_spans` · 409 `sync_in_progress` · 500 `state_not_saved` · 502 `state_failed` |
+| `POST /actions/highlight-words` `{"book": "<uuid>", "passage", "color": "yellow"\|"pink"\|"blue"\|"green", "note"?}` | 200 `annotation_sent` · 400 `invalid_request` · 404 `unknown_book` · 404 `passage_not_found` · 409 `not_downloaded` · 409 `not_synced` · 409 `book_unreadable` · 409 `no_kobo_spans` · 409 `sync_in_progress` · 500 `state_not_saved` · 502 `annotation_failed` |
 | `GET /requests` | 200 `ok` |
 | `PUT /reset` | 200 `reset` · 409 `sync_in_progress` · 500 `state_not_saved` |
 | any other path | 404 `not_found` |

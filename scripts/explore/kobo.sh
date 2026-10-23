@@ -14,6 +14,7 @@
 # ${OMNIBUS_EXPLORE_KOBO_DIR:-<repo>/.claude/runtime/explore/kobo}/agent-<k>/
 # (a relative KOBO_DIR is taken from the repo root):
 #   state.json     mock-kobo's state file; kept across up/down, holds the device token
+#   state.books/   downloaded books, one <uuid>.kepub.epub each
 #   serve.log      mock-kobo's output
 #   manifest.json  what `up` printed; removed by `down`
 #
@@ -42,7 +43,7 @@ kobo::usage() {
   cat >&2 <<EOF
 usage: kobo.sh up --agent <k> --accounts <provision.json>
        kobo.sh act --agent <k> <action> [args...]
-                   actions: sync show download read finish remove-download highlight delete-highlight
+                   actions: sync show download read read-to finish remove-download highlight delete-highlight
        kobo.sh state --agent <k>
        kobo.sh requests --agent <k>
        kobo.sh down [--agent <k>]
@@ -53,18 +54,16 @@ EOF
 # Build one action's JSON body via `json.dumps`, never string interpolation.
 kobo::json_books() { python3 -c 'import json,sys; print(json.dumps({"books": sys.argv[1:]}))' "$@"; }
 kobo::json_book() { python3 -c 'import json,sys; print(json.dumps({"book": sys.argv[1]}))' "$1"; }
-# shortcut: no chapter list before #2738's reader view, so every shorthand
-# highlight anchors to this placeholder chapter name, and both ends of the
-# range share one span. Upgrade once #2738 supplies real multi-span selection.
-kobo::json_highlight() {
+# A passage is a run of whole words copied from the web reader; the device
+# resolves it to a span the way its own reader view does (#2738), so no
+# agent ever names a span id or a word index.
+kobo::json_highlight_words() {
   python3 -c 'import json,sys
 args = sys.argv[1:]
-book, color, span, start, end, text = args[0:6]
-body = {"book": book, "text": text, "color": color,
-        "location": {"chapter": "unknown", "start_span": span, "start_char": int(start),
-                      "end_span": span, "end_char": int(end)}}
-if len(args) > 6:
-    body["note"] = args[6]
+book, color, passage = args[0:3]
+body = {"book": book, "color": color, "passage": passage}
+if len(args) > 3:
+    body["note"] = args[3]
 print(json.dumps(body))' "$@"
 }
 kobo::json_delete_highlight() {
@@ -77,6 +76,9 @@ body = {"book": args[0], "percent": int(args[1])}
 if len(args) > 2:
     body["location"] = {"source": args[2], "value": args[3]}
 print(json.dumps(body))' "$@"
+}
+kobo::json_read_to() {
+  python3 -c 'import json,sys; print(json.dumps({"book": sys.argv[1], "passage": sys.argv[2]}))' "$1" "$2"
 }
 
 # Validate action $1's remaining args ($2…) and set $method, $path and $body
@@ -105,6 +107,12 @@ kobo::act_request() {
       method=POST path=/actions/read
       body="$(kobo::json_read "$@")"
       ;;
+    read-to)
+      # <uuid> <passage>
+      [ "$#" -eq 2 ] || kobo::usage
+      method=POST path=/actions/read-to
+      body="$(kobo::json_read_to "$@")"
+      ;;
     finish)
       [ "$#" -eq 1 ] || kobo::usage
       method=POST path=/actions/finish
@@ -116,12 +124,10 @@ kobo::act_request() {
       body="$(kobo::json_book "$1")"
       ;;
     highlight)
-      # <uuid> <colour> <span-path> <start-char> <end-char> <text> [<note>]
-      case "$#" in 6 | 7) ;; *) kobo::usage ;; esac
-      [[ "$4" =~ ^[0-9]+$ ]] || kobo::usage
-      [[ "$5" =~ ^[0-9]+$ ]] || kobo::usage
-      method=POST path=/actions/highlight
-      body="$(kobo::json_highlight "$@")"
+      # <uuid> <colour> <passage> [<note>]
+      case "$#" in 3 | 4) ;; *) kobo::usage ;; esac
+      method=POST path=/actions/highlight-words
+      body="$(kobo::json_highlight_words "$@")"
       ;;
     delete-highlight)
       [ "$#" -eq 2 ] || kobo::usage

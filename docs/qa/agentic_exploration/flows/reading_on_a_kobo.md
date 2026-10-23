@@ -33,7 +33,15 @@ tool that ever touches the device's control API.
 4. **Read forward in the browser**, far enough to move the percent, then
    `act sync` and `act show` again. `details.library[<uuid>].reading.bookmark.percent`
    is now ahead of 42 — the browser's newer position reached the device.
-5. **Finish the book:** `act finish <uuid>`. The reply's `code` is
+5. **Read to a passage in a later chapter:** copy the first words of a
+   paragraph past where you are now — enough of them to read uniquely in
+   the book — and `act read-to <uuid> "<those words>"`. The reply's `code`
+   is `state_sent`; journal it as `progress.set --surface kobo`, `params`
+   `{"percent": <the reply's own details.library[<uuid>].reading.bookmark.percent>}`
+   and `target` the book's uuid, same as step 2 — never `kobo.read_to`.
+   `act sync`, then open the reader in the browser: it resumes on the
+   paragraph you named, not wherever step 4 left it.
+6. **Finish the book:** `act finish <uuid>`. The reply's `code` is
    `state_sent` and `reading.status` is `"Finished"`. Journal this as
    `status.set --surface kobo`, `params` `{"status": "finished"}` and
    `target` the book's uuid. **End on a sync:** `act sync` once more, so your
@@ -54,6 +62,7 @@ tool that ever touches the device's control API.
 - `read <uuid> 42` lands as 42% and status Reading, on both the device's own
   reply and the detail page and reader the browser shows.
 - A browser position read forward of 42% reaches the device on the next sync.
+- `read-to` in step 5 resumes the browser's reader on the paragraph named.
 - `finish` lands as status Finished on the device.
 
 ## Fail
@@ -62,17 +71,20 @@ tool that ever touches the device's control API.
   or status after step 2.
 - The device still shows 42% (or the old status) after a newer browser write
   and a sync in step 4 — the device's older write should have lost.
+- The browser's reader opens somewhere other than the paragraph named in
+  step 5's `read-to`.
 - `finish` leaves the device's status at anything but Finished.
 
 ## Sharp edges
 
-- **Never journal `kobo.read`.** `read` is one of the audit's own qualifier
-  words, so an entry named `kobo.read` is silently read as a look and never
-  asserts the position change you made — journal `progress.set --surface
-  kobo` instead (see Journalling above).
+- **Never journal `kobo.read` or `kobo.read_to`.** `read` is one of the
+  audit's own qualifier words, so `kobo.read` is silently read as a look
+  and never asserts the position change you made; `kobo.read_to` isn't a
+  recognised action at all. Journal `progress.set --surface kobo` instead,
+  for either one (see Journalling above).
 - **Newest wins by event time, not arrival time.** The device stamps its own
   write with its own clock; a browser position written after the device's
   but arriving before it (or vice versa) still loses to whichever is
   chronologically newer, not whichever synced first.
 - A shelf write, or any action, after your last `kobo.sync` leaves that entry
-  unjudged — end on a sync, as step 5 does.
+  unjudged — end on a sync, as step 6 does.

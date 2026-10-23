@@ -22,7 +22,7 @@ use tokio::sync::Notify;
 
 use crate::client::RequestRecord;
 use crate::control::{Control, ControlError, LastSync};
-use crate::device::Device;
+use crate::device::{Book, Device};
 use crate::state::SavedState;
 
 /// The path token every stub device syncs with.
@@ -82,6 +82,8 @@ pub struct Stub {
     pub cover: Option<(&'static str, &'static [u8])>,
     /// The status every `v1/download/<id>` request answers with.
     pub download_status: StatusCode,
+    /// The bytes every `v1/download/<id>` request answers with, on success.
+    pub download_body: &'static [u8],
     /// The status every state PUT answers with.
     pub state_status: StatusCode,
     /// The state PUT reply body; `None` (the default) is an all-`Success` reply.
@@ -133,6 +135,7 @@ impl Default for Stub {
             login_token: Some(SESSION_TOKEN),
             cover: None,
             download_status: StatusCode::OK,
+            download_body: b"stub-kepub",
             state_status: StatusCode::OK,
             state_reply: None,
             reading_services_status: StatusCode::OK,
@@ -262,6 +265,35 @@ fn control_with(
     Arc::new(Control::new(saved, url.to_owned(), state_path))
 }
 
+/// A stub whose one sync page holds "book-1" and answers its download with
+/// `download_body` (the reader fixture's KEPUB or its plain-EPUB source).
+pub fn reader_stub(download_body: &'static [u8]) -> Stub {
+    Stub {
+        sync_pages: vec![json!([new_entitlement("book-1", "Reader Fixture")])],
+        download_body,
+        ..Stub::default()
+    }
+}
+
+/// A `Control` whose "book-1" is downloaded with `download_body`'s bytes
+/// into `state_path`'s storage: a `dune_stub`-style sync, then a download.
+/// Shared by the reader's `load_book` tests and the passage-action tests,
+/// so a book download never needs a per-file copy of this sequence. The
+/// stub comes back too, for a test that inspects what it received.
+pub async fn control_with_downloaded_book(
+    download_body: &'static [u8],
+    state_path: PathBuf,
+) -> (Arc<Control>, RunningStub) {
+    let stub = spawn_stub(reader_stub(download_body)).await;
+    let control = stub_control(&stub, state_path);
+    control
+        .sync(crate::downloads::DownloadPolicy::None)
+        .await
+        .unwrap();
+    control.download(vec!["book-1".to_owned()]).await.unwrap();
+    (control, stub)
+}
+
 /// Start a sync on its own task, as the control API's handler does.
 pub fn spawn_sync(
     control: &Arc<Control>,
@@ -305,6 +337,15 @@ pub fn dune_stub() -> Stub {
         ..Stub::default()
     }
 }
+
+/// The kepubify-converted reader fixture (see `docs/kobo.md`'s "Reader
+/// fixture" note for how it's regenerated): three chapters of koboSpans
+/// covering ASCII, accented and astral text.
+pub const READER_KEPUB: &[u8] = include_bytes!("../../test_data/kepub/reader.kepub.epub");
+
+/// [`READER_KEPUB`]'s source EPUB, before kepubify — a plain EPUB with no
+/// koboSpan markup, for the "not downloaded as a KEPUB" paths.
+pub const READER_EPUB: &[u8] = include_bytes!("../../test_data/kepub/reader.epub");
 
 /// Enough bytes to satisfy `covers::decode`'s JPEG magic check.
 pub const JPEG_BYTES: &[u8] = &[0xFF, 0xD8, 0xFF, 0x00];
@@ -370,7 +411,7 @@ async fn handle(
 
 /// `GET v1/download/{id}`, outside the resources map like the real server's route.
 fn download(state: &StubState) -> Response {
-    (state.stub.download_status, b"stub-kepub".as_slice()).into_response()
+    (state.stub.download_status, state.stub.download_body).into_response()
 }
 
 /// `PUT v1/library/{id}/state`, also off `api_endpoint` directly.
@@ -489,6 +530,57 @@ pub fn annotation(id: &str) -> crate::annotations::Annotation {
         color: crate::annotations::Swatch::Yellow,
         location: Value::Null,
     }
+}
+
+/// A minimal single-chapter KEPUB zip: `META-INF/container.xml`, a bare
+/// OPF naming one spine item, and `chapter_xhtml` as that item's body —
+/// for a test that wants to hand-craft koboSpan markup `Kepub::parse` sees
+/// directly, rather than go through the committed reader fixture.
+pub fn minimal_kepub_zip(chapter_xhtml: &str) -> Vec<u8> {
+    minimal_kepub_zip_with_href("ch1.xhtml", "ch1.xhtml", chapter_xhtml)
+}
+
+/// Like [`minimal_kepub_zip`], but the OPF manifest's `href` (relative to
+/// the OPF's own directory — `content.opf` sits at the zip root here) and
+/// the zip entry actually holding the chapter are given separately, for a
+/// test that wants the two to differ: a `./`/`../`-relative or
+/// percent-encoded href naming an entry stored under a plain path.
+pub fn minimal_kepub_zip_with_href(
+    manifest_href: &str,
+    zip_entry: &str,
+    chapter_xhtml: &str,
+) -> Vec<u8> {
+    use std::io::Write as _;
+
+    let mut buf = Vec::new();
+    let mut writer = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
+    let options = zip::write::SimpleFileOptions::default();
+    writer
+        .start_file("META-INF/container.xml", options)
+        .unwrap();
+    writer
+        .write_all(
+            br#"<?xml version="1.0"?><container><rootfiles>
+                <rootfile full-path="content.opf"/>
+            </rootfiles></container>"#,
+        )
+        .unwrap();
+    writer.start_file("content.opf", options).unwrap();
+    writer
+        .write_all(
+            format!(
+                r#"<?xml version="1.0"?><package>
+                <manifest><item id="ch1" href="{manifest_href}"/></manifest>
+                <spine><itemref idref="ch1"/></spine>
+            </package>"#
+            )
+            .as_bytes(),
+        )
+        .unwrap();
+    writer.start_file(zip_entry, options).unwrap();
+    writer.write_all(chapter_xhtml.as_bytes()).unwrap();
+    writer.finish().unwrap();
+    buf
 }
 
 /// A `NewHighlight` with "a passage" and `Swatch::Blue` fixed; `note` and
@@ -639,6 +731,28 @@ async fn library_sync(state: &StubState) -> Response {
 fn fill_stub_origin(page: Value, base: &str) -> Value {
     let text = page.to_string().replace(STUB_ORIGIN, base);
     serde_json::from_str(&text).expect("re-parsing a re-serialized Value cannot fail")
+}
+
+/// A downloaded `Book` named `title` with no authors, series, annotations
+/// or reading state — a test overrides whatever field it needs via
+/// struct-update syntax. Paired with `id`, for building a `DeviceView` or
+/// library `BTreeMap` directly from `BTreeMap::from([test_support::book(id, title)])`.
+pub fn book(id: &str, title: &str) -> (String, Book) {
+    let book = Book {
+        title: title.to_owned(),
+        description: String::new(),
+        authors: Vec::new(),
+        series: None,
+        downloaded: true,
+        archived: false,
+        cover_image_id: String::new(),
+        cover: None,
+        download_problem: None,
+        reading: crate::reading::Reading::default(),
+        annotations: Vec::new(),
+        dropped_annotations: 0,
+    };
+    (id.to_owned(), book)
 }
 
 /// A device that already holds the book `id`/`title`, via a [`new_entitlement`].

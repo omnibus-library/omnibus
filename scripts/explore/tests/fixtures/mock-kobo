@@ -77,11 +77,13 @@ class Handler(BaseHTTPRequestHandler):
             return self.download(stub, body)
         if (method, self.path) == ("POST", "/actions/read"):
             return self.read(stub, body)
+        if (method, self.path) == ("POST", "/actions/read-to"):
+            return self.reply(200, "state_sent", "state sent", self.view(stub))
         if (method, self.path) == ("POST", "/actions/finish"):
             return self.finish(stub, body)
         if (method, self.path) == ("POST", "/actions/remove-download"):
             return self.remove_download(stub, body)
-        if (method, self.path) in (("POST", "/actions/highlight"), ("POST", "/actions/delete-highlight")):
+        if (method, self.path) in (("POST", "/actions/highlight-words"), ("POST", "/actions/delete-highlight")):
             return self.reply(200, "annotation_sent", "annotation sent", self.view(stub))
         if (method, self.path) == ("GET", "/requests"):
             return self.reply(200, "ok", "ok", {"requests": stub["requests"]})
