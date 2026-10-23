@@ -203,7 +203,7 @@ impl Reader {
         if self.text.is_none() {
             return match key.code {
                 KeyCode::Esc => Some(ReaderAction::Close(None)),
-                KeyCode::Char(c) if c.to_ascii_lowercase() == 'h' => {
+                KeyCode::Char(c) if c.eq_ignore_ascii_case(&'h') => {
                     self.view = ReaderView::Highlights(0);
                     None
                 }
@@ -241,7 +241,7 @@ impl Reader {
                 self.move_cursor(-1);
                 None
             }
-            KeyCode::Char(c) if c.to_ascii_lowercase() == 'v' => {
+            KeyCode::Char(c) if c.eq_ignore_ascii_case(&'v') => {
                 self.selection = Some(Selection {
                     start: self.cursor,
                     end: self.cursor,
@@ -249,7 +249,7 @@ impl Reader {
                 });
                 None
             }
-            KeyCode::Char(c) if c.to_ascii_lowercase() == 'h' => {
+            KeyCode::Char(c) if c.eq_ignore_ascii_case(&'h') => {
                 self.view = ReaderView::Highlights(0);
                 None
             }
@@ -271,7 +271,7 @@ impl Reader {
                 self.view = ReaderView::Highlights(selected.saturating_sub(1));
                 None
             }
-            KeyCode::Char(c) if c.to_ascii_lowercase() == 'x' => {
+            KeyCode::Char(c) if c.eq_ignore_ascii_case(&'x') => {
                 let highlight = self.annotations.get(selected)?.id.clone();
                 self.view = ReaderView::Page;
                 Some(ReaderAction::Run(Job::DeleteHighlight {
@@ -309,7 +309,7 @@ impl Reader {
                     highlight,
                 }))
             }
-            KeyCode::Char(c) if c.to_ascii_lowercase() == 'n' => {
+            KeyCode::Char(c) if c.eq_ignore_ascii_case(&'n') => {
                 let note = self
                     .selection
                     .as_ref()

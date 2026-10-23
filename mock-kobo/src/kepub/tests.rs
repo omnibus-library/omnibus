@@ -114,7 +114,10 @@ fn find_passage_matches_words_glued_across_an_inline_elements_span_split() {
     let words = &kepub.chapters[0].words;
     assert_eq!(words.len(), 3, "{words:?}");
     assert!(!words[1].glued, "\"never\" follows a real space");
-    assert!(words[2].glued, "\".\" directly continues \"never\" with no space");
+    assert!(
+        words[2].glued,
+        "\".\" directly continues \"never\" with no space"
+    );
 
     let found = kepub.find_passage("said never.");
 

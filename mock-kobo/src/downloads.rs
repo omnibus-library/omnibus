@@ -122,7 +122,9 @@ async fn store(response: &mut reqwest::Response, dir: &Path, id: &str, client: &
         Err(error) => {
             let _ = tokio::fs::remove_file(&part).await;
             match error {
-                WriteError::Transport(error) => Outcome::Transport(client.redact(&error.to_string())),
+                WriteError::Transport(error) => {
+                    Outcome::Transport(client.redact(&error.to_string()))
+                }
                 WriteError::Io(error) => Outcome::Rejected(client.redact(&error.to_string())),
             }
         }
@@ -139,7 +141,9 @@ enum WriteError {
 
 /// Write `response`'s body to a new file at `path`, chunk by chunk.
 async fn write_body(response: &mut reqwest::Response, path: &Path) -> Result<(), WriteError> {
-    let mut file = tokio::fs::File::create(path).await.map_err(WriteError::Io)?;
+    let mut file = tokio::fs::File::create(path)
+        .await
+        .map_err(WriteError::Io)?;
     while let Some(chunk) = response.chunk().await.map_err(WriteError::Transport)? {
         file.write_all(&chunk).await.map_err(WriteError::Io)?;
     }

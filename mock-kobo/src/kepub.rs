@@ -548,7 +548,9 @@ fn words_in(spans: &[Span]) -> Vec<Word> {
 /// one paragraph (an inline element splits a paragraph across several spans
 /// with the same `N`, different `M`).
 fn paragraph_key(span_id: &str) -> &str {
-    span_id.rsplit_once('.').map_or(span_id, |(prefix, _)| prefix)
+    span_id
+        .rsplit_once('.')
+        .map_or(span_id, |(prefix, _)| prefix)
 }
 
 #[cfg(test)]
