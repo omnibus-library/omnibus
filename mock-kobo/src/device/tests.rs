@@ -2,7 +2,7 @@
 
 use serde_json::{json, Value};
 
-use crate::reading::{KoboSpan, Percent, ReadStatus};
+use crate::reading::{rfc3339, Bookmark, KoboSpan, Percent, ReadStatus};
 use crate::test_support::{book_metadata, new_entitlement};
 use crate::wire::Series;
 
@@ -123,6 +123,97 @@ fn apply_takes_the_reading_state_of_a_new_entitlement() {
     device.apply(item(entitlement));
 
     assert_eq!(device.library["book-1"].reading.status, ReadStatus::Reading);
+}
+
+/// A held, downloaded "book-1" with its bookmark stamped at `modified`.
+fn device_with_bookmark(modified: i64) -> Device {
+    let mut device = Device::new("HW-1");
+    device.apply(item(new_entitlement("book-1", "Dune")));
+    let book = device.library.get_mut("book-1").unwrap();
+    book.downloaded = true;
+    book.reading.bookmark = Some(Bookmark {
+        percent: Percent::new(55),
+        location: None,
+        modified,
+    });
+    device
+}
+
+#[test]
+fn apply_keeps_a_newer_local_bookmark_when_a_replayed_new_entitlements_bookmark_is_older() {
+    let mut device = device_with_bookmark(2_000);
+    let mut entitlement = new_entitlement("book-1", "Dune");
+    entitlement["NewEntitlement"]["ReadingState"]["CurrentBookmark"] = json!({
+        "ProgressPercent": 10,
+        "LastModified": rfc3339(1_000),
+    });
+
+    device.apply(item(entitlement));
+
+    let book = &device.library["book-1"];
+    assert!(book.downloaded);
+    let bookmark = book.reading.bookmark.as_ref().unwrap();
+    assert_eq!(
+        (bookmark.percent, bookmark.modified),
+        (Percent::new(55), 2_000)
+    );
+}
+
+#[test]
+fn apply_keeps_a_local_bookmark_when_a_replayed_new_entitlements_bookmark_is_equally_stamped() {
+    let mut device = device_with_bookmark(2_000);
+    let mut entitlement = new_entitlement("book-1", "Dune");
+    entitlement["NewEntitlement"]["ReadingState"]["CurrentBookmark"] = json!({
+        "ProgressPercent": 10,
+        "LastModified": rfc3339(2_000),
+    });
+
+    device.apply(item(entitlement));
+
+    let book = &device.library["book-1"];
+    assert!(book.downloaded);
+    let bookmark = book.reading.bookmark.as_ref().unwrap();
+    assert_eq!(
+        (bookmark.percent, bookmark.modified),
+        (Percent::new(55), 2_000)
+    );
+}
+
+#[test]
+fn apply_keeps_a_local_bookmark_when_a_replayed_new_entitlements_bookmark_is_unstamped() {
+    let mut device = device_with_bookmark(2_000);
+    // `new_entitlement`'s own `CurrentBookmark` template is `{}`: no `LastModified` at all.
+    let entitlement = new_entitlement("book-1", "Dune");
+
+    device.apply(item(entitlement));
+
+    let book = &device.library["book-1"];
+    assert!(book.downloaded);
+    let bookmark = book.reading.bookmark.as_ref().unwrap();
+    assert_eq!(
+        (bookmark.percent, bookmark.modified),
+        (Percent::new(55), 2_000)
+    );
+}
+
+#[test]
+fn apply_clears_archived_when_a_held_archived_book_is_reannounced() {
+    let mut device = Device::new("HW-1");
+    device.apply(item(new_entitlement("book-1", "Dune")));
+    device.apply(item(json!({ "ChangedEntitlement": {
+        "BookEntitlement": { "Id": "book-1", "IsRemoved": true, "Status": "Deleted" },
+        "BookMetadata": book_metadata("book-1", "Dune"),
+        "ReadingState": {
+            "EntitlementId": "book-1",
+            "StatusInfo": { "Status": "ReadyToRead" },
+            "CurrentBookmark": {},
+        },
+    }})));
+    assert!(device.library["book-1"].archived);
+
+    device.apply(item(new_entitlement("book-1", "Dune")));
+
+    assert!(!device.library["book-1"].archived);
 }
 
 #[test]

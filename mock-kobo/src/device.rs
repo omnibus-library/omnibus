@@ -150,11 +150,25 @@ impl Device {
     pub fn apply(&mut self, item: SyncItem) {
         match item {
             SyncItem::NewEntitlement(entitlement) => {
-                let id = entitlement.book_entitlement.id;
+                let id = entitlement.book_entitlement.id.clone();
                 update_download_url(&mut self.download_urls, &id, &entitlement.book_metadata);
-                let mut book = Book::from_metadata(entitlement.book_metadata);
-                book.reading.apply(&entitlement.reading_state);
-                self.library.insert(id, book);
+                // The server resends every held book as a `NewEntitlement` on
+                // a full resync, and re-adding a synced shelf re-announces an
+                // archived one the same way: a book the device already holds
+                // keeps its local downloaded flag, problem and cover, and
+                // reconciles reading state instead of starting it over.
+                match self.library.get_mut(&id) {
+                    Some(book) => {
+                        book.refresh(entitlement.book_metadata);
+                        book.archived = false;
+                        book.reading.apply(&entitlement.reading_state);
+                    }
+                    None => {
+                        let mut book = Book::from_metadata(entitlement.book_metadata);
+                        book.reading.apply(&entitlement.reading_state);
+                        self.library.insert(id, book);
+                    }
+                }
             }
             SyncItem::ChangedEntitlement(entitlement)
                 if entitlement.book_entitlement.is_removed =>
