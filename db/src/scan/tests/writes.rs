@@ -12,8 +12,10 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 use crate::author_photos::RemoteImageConfig;
 use crate::covers::find_cover_file;
 use crate::metadata_lookup::provider_cover_image_config;
-use crate::physical::{list_physical_copies, list_wishlist, PhysicalError};
-use crate::test_support::CoversTempDir;
+use crate::physical::{
+    create_fileless_book, list_physical_copies, list_wishlist, FilelessBook, PhysicalError,
+};
+use crate::test_support::{count_rows, CoversTempDir};
 
 use super::super::resolve::{add_physical_only_with, wishlist_add_with};
 use super::super::*;
@@ -140,6 +142,43 @@ async fn wishlist_add_by_book_uuid() {
         .unwrap();
     assert_eq!(uuid, "u1");
     assert_eq!(list_wishlist(&pool, user).await.unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn wishlist_add_by_book_uuid_lands_on_a_book_only_another_reader_wants() {
+    let pool = pool().await;
+    let first = seed_user(&pool, "first").await;
+    let second = seed_user(&pool, "second").await;
+    let uuid = create_fileless_book(
+        &pool,
+        FilelessBook {
+            title: "Wanted".to_string(),
+            authors: vec!["Jane Doe".to_string()],
+            isbn: Some(ISBN.to_string()),
+            pubdate: None,
+            description: None,
+            cover: None,
+        },
+    )
+    .await
+    .unwrap();
+    wishlist_add(&pool, first, Some(&uuid), None, WishlistSource::Manual)
+        .await
+        .unwrap();
+    let books_before = count_rows(&pool, "SELECT COUNT(*) FROM books").await;
+
+    let landed = wishlist_add(&pool, second, Some(&uuid), None, WishlistSource::Scan)
+        .await
+        .unwrap();
+
+    assert_eq!(landed, uuid);
+    assert_eq!(
+        count_rows(&pool, "SELECT COUNT(*) FROM books").await,
+        books_before
+    );
+    let wishes = list_wishlist(&pool, second).await.unwrap();
+    assert_eq!(wishes.len(), 1);
+    assert_eq!(wishes[0].book_uuid, uuid);
 }
 
 #[tokio::test]

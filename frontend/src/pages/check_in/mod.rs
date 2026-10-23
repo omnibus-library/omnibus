@@ -484,7 +484,15 @@ fn CheckInStage(state: FlowState, handlers: CheckInHandlers) -> Element {
             isbn,
             wishlisted,
         } => rsx! {
-            ConfirmScreen { book, isbn, wishlisted, state, on_check_in: handlers.on_check_in, on_cancel: on_restart }
+            ConfirmScreen {
+                book,
+                isbn,
+                wishlisted,
+                state,
+                on_check_in: handlers.on_check_in,
+                on_wishlist: handlers.on_wishlist,
+                on_cancel: on_restart,
+            }
         },
         Stage::CloseMatch { books, scanned } => close_match_stage(books, scanned, state),
         Stage::Choose { online } => choose_stage(online, state, handlers, on_restart),
@@ -910,11 +918,12 @@ fn make_on_wishlist(
     } = state;
     move |req: WishlistAddRequest| {
         let server_url = server_url.clone();
-        let title = req
-            .meta
-            .as_ref()
-            .map(|m| m.title.clone())
-            .unwrap_or_default();
+        // A request for a library book carries no meta; its title is the book on screen.
+        let title = match (&req.meta, stage()) {
+            (Some(meta), _) => meta.title.clone(),
+            (None, Stage::Confirm { book, .. }) => book.title,
+            (None, _) => String::new(),
+        };
         error.set(None);
         busy.set(true);
         spawn(async move {
@@ -949,6 +958,19 @@ pub(crate) fn wishlist_request_for(
     WishlistAddRequest {
         book_uuid: None,
         meta: Some(online.clone()),
+        source: found_via.wishlist_source(),
+    }
+}
+
+/// The wishlist request for a library book that only another reader wants,
+/// filing the reader's own entry against the existing book.
+pub(crate) fn wishlist_request_for_book(
+    book: &ScanBook,
+    found_via: FoundVia,
+) -> WishlistAddRequest {
+    WishlistAddRequest {
+        book_uuid: Some(book.uuid.clone()),
+        meta: None,
         source: found_via.wishlist_source(),
     }
 }

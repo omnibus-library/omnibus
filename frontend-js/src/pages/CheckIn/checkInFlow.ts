@@ -120,8 +120,37 @@ export const wishlistSource = {
   search: "search",
 } satisfies Record<FoundVia, WishlistAddRequest["source"]>;
 
-/** The confirm screen's framing of what the copy is added to, worded from the book's holdings. */
-export function confirmSubtitle(book: ScanBook, wishlisted: boolean): string {
+/** Whether the library holds the book only because another reader wants it: no file, no copy, and not on the viewer's own wishlist. */
+export const onAnotherReadersWishlist = (book: ScanBook, wishlisted: boolean) =>
+  !book.has_files && !book.has_physical && !wishlisted;
+
+/** The wishlist request for a library book that only another reader wants, filed against the existing book. */
+export const wishlistRequestForBook = (
+  book: ScanBook,
+  via: FoundVia,
+): WishlistAddRequest => ({
+  book_uuid: book.uuid,
+  source: wishlistSource[via],
+});
+
+/** Whose print copy a paper-only book carries, as far as its filers say; never a guess while the viewer is unknown. */
+function printCopyLine(book: ScanBook, viewerId: number | null): string {
+  const filers = book.copy_filers ?? [];
+  if (viewerId !== null && filers.some((f) => f.user_id === viewerId)) {
+    return "You already have a print copy of this one — this adds another.";
+  }
+  const name = viewerId === null ? undefined : filers.find((f) => f.name)?.name;
+  return name
+    ? `${name} already has a print copy of this one — this adds yours.`
+    : "The household already has a print copy of this one — this adds yours.";
+}
+
+/** The confirm screen's framing of what the copy is added to, worded from the book's holdings and, for a print copy, whose it is. */
+export function confirmSubtitle(
+  book: ScanBook,
+  wishlisted: boolean,
+  viewerId: number | null,
+): string {
   if (wishlisted) {
     return "This one is on your wishlist — checking your copy in takes it off.";
   }
@@ -129,8 +158,8 @@ export function confirmSubtitle(book: ScanBook, wishlisted: boolean): string {
     return "You already have this one digitally — this adds your print copy.";
   }
   return book.has_physical
-    ? "You already have a print copy of this one — this adds another."
-    : "This one is in your library without a file — this adds your print copy.";
+    ? printCopyLine(book, viewerId)
+    : "Not in your library — it's on another reader's wishlist.";
 }
 
 /** The close-match screen's four strings, by whether it offers one candidate or several and how the ISBN was reached. */

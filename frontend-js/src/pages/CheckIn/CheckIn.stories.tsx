@@ -233,6 +233,34 @@ export const TakesAWishlistedBookOffTheWishlist: Story = {
   },
 };
 
+export const OffersAnotherReadersWishlistBookAsNotInTheLibrary: Story = {
+  beforeEach({ msw }) {
+    const wishOnly = aScanBook({
+      ...BOOK,
+      has_files: false,
+      has_physical: false,
+    });
+    msw.use(...handlers({ kind: "in_library_unowned", book: wishOnly }));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await lookUp({ canvas, userEvent });
+
+    await expect(
+      await canvas.findByTestId("check-in-confirm"),
+    ).toHaveTextContent(
+      "Not in your library — it's on another reader's wishlist.",
+    );
+    await userEvent.click(canvas.getByTestId("check-in-confirm-wishlist"));
+
+    const done = await canvas.findByTestId("check-in-success");
+    await expect(done).toHaveTextContent("On your wishlist");
+    await expect(done).toHaveTextContent("The Salt Road");
+    await expect(wishlisted).toEqual([
+      { book_uuid: BOOK.uuid, source: "manual" },
+    ]);
+  },
+};
+
 export const CheckInFailsAndStays: Story = {
   beforeEach({ msw }) {
     msw.use(

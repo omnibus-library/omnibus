@@ -5,9 +5,11 @@
 
 use super::entry::apply_key;
 use super::link::{scan_book_from_hit, truncation_note};
-use super::screens::{byline, confirm_subtitle, meta_details, CloseMatchCopy};
+use super::screens::{
+    byline, confirm_subtitle, meta_details, on_another_readers_wishlist, CloseMatchCopy,
+};
 use super::*;
-use omnibus_shared::{MetadataProvider, PaletteBookHit};
+use omnibus_shared::{CopyFiler, MetadataProvider, PaletteBookHit};
 
 fn scan_book() -> ScanBook {
     ScanBook {
@@ -198,25 +200,108 @@ fn stage_for_close_match_flattens_the_wire_head_and_tail_into_one_picker() {
 #[test]
 fn confirm_subtitle_claims_a_digital_copy_only_for_a_book_with_a_file() {
     let digital = scan_book();
-    assert!(confirm_subtitle(&digital, false).contains("digitally"));
+    assert!(confirm_subtitle(&digital, false, None).contains("digitally"));
 
     let paper_only = ScanBook {
         has_files: false,
         has_physical: true,
         ..scan_book()
     };
-    let paper = confirm_subtitle(&paper_only, false);
+    let paper = confirm_subtitle(&paper_only, false, None);
     assert!(!paper.contains("digitally"), "got: {paper}");
     assert!(paper.contains("print copy"), "got: {paper}");
+}
 
-    let wished = ScanBook {
+#[test]
+fn confirm_subtitle_says_a_book_nobody_holds_is_on_another_readers_wishlist() {
+    let wish_only = ScanBook {
         has_files: false,
         has_physical: false,
         ..scan_book()
     };
-    let fileless = confirm_subtitle(&wished, false);
-    assert!(!fileless.contains("digitally"), "got: {fileless}");
-    assert!(fileless.contains("without a file"), "got: {fileless}");
+    let line = confirm_subtitle(&wish_only, false, Some(1));
+    assert_eq!(
+        line,
+        "Not in your library \u{2014} it's on another reader's wishlist."
+    );
+}
+
+fn paper_only_filed_by(filers: &[(Option<i64>, Option<&str>)]) -> ScanBook {
+    ScanBook {
+        has_files: false,
+        has_physical: true,
+        copy_filers: filers
+            .iter()
+            .map(|(user_id, name)| CopyFiler {
+                user_id: *user_id,
+                name: name.map(str::to_string),
+            })
+            .collect(),
+        ..scan_book()
+    }
+}
+
+#[test]
+fn confirm_subtitle_says_the_viewer_already_has_a_print_copy_when_they_filed_one() {
+    let book = paper_only_filed_by(&[(Some(2), Some("Sam")), (Some(1), Some("Ada"))]);
+    assert_eq!(
+        confirm_subtitle(&book, false, Some(1)),
+        "You already have a print copy of this one \u{2014} this adds another."
+    );
+}
+
+#[test]
+fn confirm_subtitle_names_the_first_named_filer_when_the_viewer_filed_none() {
+    // A deleted account's copy leads the list but names nobody.
+    let book = paper_only_filed_by(&[(None, None), (Some(2), Some("Sam"))]);
+    assert_eq!(
+        confirm_subtitle(&book, false, Some(1)),
+        "Sam already has a print copy of this one \u{2014} this adds yours."
+    );
+}
+
+#[test]
+fn confirm_subtitle_says_the_household_has_a_print_copy_when_no_filer_is_named() {
+    for filers in [vec![], vec![(None, None)]] {
+        let book = paper_only_filed_by(&filers);
+        assert_eq!(
+            confirm_subtitle(&book, false, Some(1)),
+            "The household already has a print copy of this one \u{2014} this adds yours."
+        );
+    }
+}
+
+#[test]
+fn confirm_subtitle_does_not_guess_who_filed_a_copy_while_the_viewer_is_unknown() {
+    let book = paper_only_filed_by(&[(Some(2), Some("Sam"))]);
+    assert_eq!(
+        confirm_subtitle(&book, false, None),
+        "The household already has a print copy of this one \u{2014} this adds yours."
+    );
+}
+
+#[test]
+fn on_another_readers_wishlist_holds_only_for_a_book_with_no_file_copy_or_own_wish() {
+    let wish_only = ScanBook {
+        has_files: false,
+        has_physical: false,
+        ..scan_book()
+    };
+    assert!(on_another_readers_wishlist(&wish_only, false));
+    assert!(!on_another_readers_wishlist(&wish_only, true));
+    assert!(!on_another_readers_wishlist(&scan_book(), false));
+    assert!(!on_another_readers_wishlist(
+        &paper_only_filed_by(&[]),
+        false
+    ));
+}
+
+#[test]
+fn wishlist_request_for_book_targets_the_existing_book_by_uuid() {
+    let req = wishlist_request_for_book(&scan_book(), FoundVia::BarcodeScan);
+    assert_eq!(req.book_uuid.as_deref(), Some("book-uuid"));
+    assert!(req.meta.is_none());
+    assert_eq!(req.source, WishlistSource::Scan);
 }
 
 #[test]
@@ -226,7 +311,7 @@ fn confirm_subtitle_says_a_wishlisted_book_comes_off_the_wishlist() {
         has_physical: false,
         ..scan_book()
     };
-    let line = confirm_subtitle(&wished, true);
+    let line = confirm_subtitle(&wished, true, None);
     assert!(line.contains("on your wishlist"), "got: {line}");
     assert!(line.contains("takes it off"), "got: {line}");
 }
@@ -465,7 +550,7 @@ fn scan_book_from_hit_reports_a_paper_only_book_as_a_print_copy() {
     let book = scan_book_from_hit(&hit);
     assert!(!book.has_files);
     assert!(book.has_physical);
-    assert!(confirm_subtitle(&book, false).contains("print copy of this one"));
+    assert!(confirm_subtitle(&book, false, None).contains("print copy of this one"));
 }
 
 #[test]

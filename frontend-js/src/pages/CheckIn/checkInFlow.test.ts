@@ -10,9 +10,11 @@ import {
   isbnRejection,
   manualFallback,
   metaDetails,
+  onAnotherReadersWishlist,
   someIfFilled,
   stageFor,
   truncationNote,
+  wishlistRequestForBook,
 } from "./checkInFlow";
 
 describe("cleanIsbn", () => {
@@ -154,15 +156,91 @@ describe("closeMatchCopy", () => {
 describe("confirmSubtitle", () => {
   it.each([
     [aScanBook({ has_files: true }), false, "digitally"],
-    [aScanBook({ has_files: false, has_physical: true }), false, "another"],
-    [
-      aScanBook({ has_files: false, has_physical: false }),
-      false,
-      "without a file",
-    ],
+    [aScanBook({ has_files: false, has_physical: true }), false, "print copy"],
     [aScanBook(), true, "takes it off"],
   ])("words the holdings of %#", (book, wishlisted, fragment) => {
-    expect(confirmSubtitle(book, wishlisted)).toContain(fragment);
+    expect(confirmSubtitle(book, wishlisted, 1)).toContain(fragment);
+  });
+
+  it("says a book nobody holds is on another reader's wishlist", () => {
+    const wishOnly = aScanBook({ has_files: false, has_physical: false });
+
+    expect(confirmSubtitle(wishOnly, false, 1)).toBe(
+      "Not in your library — it's on another reader's wishlist.",
+    );
+  });
+
+  describe("a print copy", () => {
+    const paperOnly = (
+      filers: { user_id: number | null; name: string | null }[],
+    ) =>
+      aScanBook({ has_files: false, has_physical: true, copy_filers: filers });
+
+    it("is the viewer's when they filed one", () => {
+      const book = paperOnly([
+        { user_id: 2, name: "Sam" },
+        { user_id: 1, name: "Ada" },
+      ]);
+
+      expect(confirmSubtitle(book, false, 1)).toBe(
+        "You already have a print copy of this one — this adds another.",
+      );
+    });
+
+    it("names the first named filer when the viewer filed none", () => {
+      const book = paperOnly([
+        { user_id: null, name: null },
+        { user_id: 2, name: "Sam" },
+      ]);
+
+      expect(confirmSubtitle(book, false, 1)).toBe(
+        "Sam already has a print copy of this one — this adds yours.",
+      );
+    });
+
+    it.each([
+      ["no filers", []],
+      ["only a deleted filer", [{ user_id: null, name: null }]],
+    ])("is the household's with %s", (_case, filers) => {
+      expect(confirmSubtitle(paperOnly(filers), false, 1)).toBe(
+        "The household already has a print copy of this one — this adds yours.",
+      );
+    });
+
+    it("does not guess who filed it while the viewer is unknown", () => {
+      const book = paperOnly([{ user_id: 2, name: "Sam" }]);
+
+      expect(confirmSubtitle(book, false, null)).toBe(
+        "The household already has a print copy of this one — this adds yours.",
+      );
+    });
+  });
+});
+
+describe("onAnotherReadersWishlist", () => {
+  it("holds only for a book with no file, no copy and no wish of the viewer's", () => {
+    const wishOnly = aScanBook({ has_files: false, has_physical: false });
+
+    expect(onAnotherReadersWishlist(wishOnly, false)).toBe(true);
+    expect(onAnotherReadersWishlist(wishOnly, true)).toBe(false);
+    expect(onAnotherReadersWishlist(aScanBook(), false)).toBe(false);
+    expect(
+      onAnotherReadersWishlist(
+        aScanBook({ has_files: false, has_physical: true }),
+        false,
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("wishlistRequestForBook", () => {
+  it("targets the existing book by uuid, stamped with the door it came through", () => {
+    const book = aScanBook();
+
+    expect(wishlistRequestForBook(book, "scan")).toEqual({
+      book_uuid: book.uuid,
+      source: "scan",
+    });
   });
 });
 
