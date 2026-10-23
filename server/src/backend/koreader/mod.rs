@@ -2,8 +2,8 @@
 //! `/api/*` auth gate: each route authenticates through [`extractor::KoreaderDevice`].
 //! Like `/kobo/*` they are not part of the REST contract, so they are plain
 //! routes with DTOs local to the module. [`library`] lists and serves the synced
-//! shelves' books; [`report`] stores each sync's outcome for Settings, and [`plugin`] builds the
-//! plugin zip the Settings download serves.
+//! shelves' books; [`state`] syncs a book's reading position and status; [`report`] stores each
+//! sync's outcome for Settings, and [`plugin`] builds the plugin zip the Settings download serves.
 
 use axum::{
     routing::{get, post},
@@ -16,6 +16,9 @@ mod extractor;
 mod library;
 pub(super) mod plugin;
 mod report;
+mod state;
+#[cfg(test)]
+mod test_support;
 #[cfg(test)]
 mod tests;
 
@@ -24,6 +27,10 @@ pub fn koreader_router(state: AppState) -> Router {
     Router::new()
         .route("/koreader/v1/library", get(library::library))
         .route("/koreader/v1/books/{uuid}/file", get(library::file))
+        .route(
+            "/koreader/v1/books/{uuid}/state",
+            get(state::get_state).put(state::put_state),
+        )
         .route("/koreader/v1/sync-report", post(report::sync_report))
         .with_state(state)
 }
