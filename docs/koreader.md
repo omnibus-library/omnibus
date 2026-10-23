@@ -11,7 +11,7 @@ each scenario prints one PASS/FAIL line.
 ```bash
 just koreader-e2e
 # PASS opds
-# or: FAIL opds: search: expected "Alpha" in search results, got ["Beta in the Series"] (screenshot: /tmp/omnibus-koreader.XXXXXX/opds.png)
+# or: FAIL opds: search: expected "Alpha" in search results, got ["Beta in the Series"] (screenshot: /tmp/omnibus-koreader.XXXXXX/results/opds.png)
 ```
 
 The lane boots a scratch server (its own DB, a fresh admin, the two
@@ -26,9 +26,9 @@ the verdict line. Exits non-zero on any failure.
 
 A failure keeps the scratch dir and names it (`kept /tmp/omnibus-koreader.XXX`):
 
-- `<scenario>.json` — the step list, with the first failing step's detail
-- `<scenario>.png` — the screen at the failure
-- `<scenario>.koreader.log` — KOReader's console output
+- `results/<scenario>.json` — the step list, with the first failing step's detail
+- `results/<scenario>.png` — the screen at the failure
+- `results/<scenario>.koreader.log` — KOReader's console output
 - `server.log` — the scratch Omnibus server
 
 In CI the same directory is uploaded as the `koreader-lane` artifact

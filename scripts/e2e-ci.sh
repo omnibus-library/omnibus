@@ -34,6 +34,7 @@ source scripts/lib/dev-port.sh
 source scripts/lib/scratch-server.sh
 
 label=e2e-ci
+kept_hint="server.log, test-results/"
 bundle_web_app
 make_scratch_dir
 start_scratch_server

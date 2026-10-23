@@ -8,7 +8,8 @@
 # torn down afterwards. A second copy of the bring-up would let the two
 # lanes drift.
 #
-# Callers set `label` (log-line prefix), then:
+# Callers set `label` (log-line prefix) and `kept_hint` (what a kept dir
+# holds), then:
 #
 #   make_scratch_dir                            # sets scratch; installs traps
 #   bundle_web_app                              # sets bundle_dir
@@ -56,7 +57,7 @@ cleanup() {
     if [ "$status" -eq 0 ]; then
         rm -rf "$scratch"
     else
-        echo "$label: kept $scratch" >&2
+        echo "$label: kept $scratch${kept_hint:+ ($kept_hint)}" >&2
     fi
 }
 

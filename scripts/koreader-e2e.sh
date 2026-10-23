@@ -30,6 +30,7 @@ source scripts/lib/scratch-server.sh
 : "${CARGO_TARGET_DIR:?run this through \`just koreader-e2e\`, inside the nix dev shell}"
 
 label=koreader
+kept_hint="server.log, results/"
 bundle_web_app
 
 # Seed the library before the server boots: an empty index would kick its
