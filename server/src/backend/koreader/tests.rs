@@ -4,7 +4,6 @@
 use axum::{
     body::{to_bytes, Body},
     http::{header, Request, StatusCode},
-    response::Response,
     Router,
 };
 use omnibus_db as db;
@@ -15,8 +14,8 @@ use tower::ServiceExt;
 
 use crate::auth::test_support as auth_test_support;
 use crate::backend::test_support::{
-    get_anon, get_with_bearer, get_with_bearer_and_if_none_match, opt_in, revoke_can_download,
-    seed_downloadable_book,
+    body_json, get_anon, get_with_bearer, get_with_bearer_and_if_none_match, opt_in,
+    revoke_can_download, seed_downloadable_book, seed_downloadable_book_with,
 };
 
 use super::*;
@@ -32,11 +31,6 @@ async fn fixture() -> (Router, SqlitePool, String, i64) {
             .await
             .unwrap();
     (app, pool, device.token, user.id)
-}
-
-async fn body_json(res: Response) -> Value {
-    let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
-    serde_json::from_slice(&bytes).unwrap()
 }
 
 mod auth {
@@ -109,7 +103,7 @@ mod library {
             .unwrap();
 
         assert_eq!(res.status(), StatusCode::OK);
-        let books = body_json(res).await["books"].clone();
+        let books = body_json::<Value>(res).await["books"].clone();
         let titles: Vec<&str> = books
             .as_array()
             .unwrap()
@@ -140,7 +134,7 @@ mod library {
             .await
             .unwrap();
 
-        let body = body_json(res).await;
+        let body = body_json::<Value>(res).await;
         let entry = |uuid: &str| {
             body["books"]
                 .as_array()
@@ -173,7 +167,7 @@ mod library {
             .unwrap();
 
         assert_eq!(res.status(), StatusCode::OK);
-        assert_eq!(body_json(res).await, json!({ "books": [] }));
+        assert_eq!(body_json::<Value>(res).await, json!({ "books": [] }));
     }
 }
 
@@ -215,33 +209,8 @@ mod file {
     #[tokio::test]
     async fn serves_the_cbz_archive_for_a_cbz_only_book() {
         let (app, pool, token, _uid) = fixture().await;
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("aurora.cbz"), b"archive").unwrap();
-        let lib_id = sqlx::query("INSERT INTO scan_roots (path, display_name) VALUES (?, 'lib')")
-            .bind(dir.path().to_str().unwrap())
-            .execute(&pool)
-            .await
-            .unwrap()
-            .last_insert_rowid();
-        let book_id = sqlx::query(
-            "INSERT INTO books (uuid, library_id, path, title, last_modified) \
-             VALUES (?, ?, ?, 'Aurora', 1)",
-        )
-        .bind(UUID)
-        .bind(lib_id)
-        .bind(dir.path().to_str().unwrap())
-        .execute(&pool)
-        .await
-        .unwrap()
-        .last_insert_rowid();
-        sqlx::query(
-            "INSERT INTO book_files (book_id, format, filename, size_bytes) \
-             VALUES (?, 'CBZ', 'aurora', 0)",
-        )
-        .bind(book_id)
-        .execute(&pool)
-        .await
-        .unwrap();
+        seed_downloadable_book_with(&pool, UUID, "Aurora", "Ada", "CBZ", "aurora", b"archive")
+            .await;
 
         let res = app
             .oneshot(get_with_bearer(&file_uri(UUID), &token))
@@ -371,6 +340,21 @@ mod sync_report {
 
         let stored = owner_view(&pool, uid).await.last_sync_error.unwrap();
         assert_eq!(stored, "é".repeat(500));
+    }
+
+    #[tokio::test]
+    async fn rejects_a_report_without_an_authorization_header() {
+        let (app, _pool, _token, _uid) = fixture().await;
+        let req = Request::builder()
+            .method("POST")
+            .uri("/koreader/v1/sync-report")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(json!({ "error": null }).to_string()))
+            .unwrap();
+
+        let res = app.oneshot(req).await.unwrap();
+
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
     }
 
     #[tokio::test]
