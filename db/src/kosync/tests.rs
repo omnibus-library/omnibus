@@ -20,6 +20,17 @@ async fn seed_hashed_epub(pool: &SqlitePool, filename: &str, digest: &str) -> St
     uuid
 }
 
+async fn record_digest(pool: &SqlitePool, digest: &str, uuid: &str) {
+    sqlx::query(
+        "INSERT INTO book_export_digests (partial_md5, book_uuid, created_at) VALUES (?, ?, 1)",
+    )
+    .bind(digest)
+    .bind(uuid)
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
 mod resolve_document {
     use super::*;
 
@@ -60,6 +71,31 @@ mod resolve_document {
             .unwrap();
 
         assert_eq!(resolve_document(&pool, DIGEST_A).await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn finds_a_book_by_a_digest_recorded_for_its_bake() {
+        let pool = init_db("sqlite::memory:").await.unwrap();
+        let uuid = seed_hashed_epub(&pool, "a.epub", DIGEST_A).await;
+        record_digest(&pool, DIGEST_B, &uuid).await;
+
+        assert_eq!(resolve_document(&pool, DIGEST_B).await.unwrap(), Some(uuid));
+    }
+
+    #[tokio::test]
+    async fn resolves_a_bake_recorded_under_a_merged_away_uuid_to_the_survivor() {
+        let pool = init_db("sqlite::memory:").await.unwrap();
+        let survivor = seed_hashed_epub(&pool, "a.epub", DIGEST_A).await;
+        let loser = seed_hashed_epub(&pool, "b.epub", "b".repeat(32).as_str()).await;
+        crate::merge::merge_books(&pool, &loser, &survivor, None)
+            .await
+            .unwrap();
+        record_digest(&pool, DIGEST_B, &loser).await;
+
+        assert_eq!(
+            resolve_document(&pool, DIGEST_B).await.unwrap(),
+            Some(survivor)
+        );
     }
 
     #[tokio::test]

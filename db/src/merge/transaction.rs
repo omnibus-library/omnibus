@@ -365,7 +365,7 @@ async fn move_book_files(
 
 /// Every table that soft-references `books.uuid` and must follow the book
 /// across a merge; the contract is in `.claude/rules/06-migrations.md`.
-pub(super) const RETARGET_TABLES: [&str; 19] = [
+pub(super) const RETARGET_TABLES: [&str; 20] = [
     "reading_progress",
     "reading_progress_marks",
     "reading_progress_daily",
@@ -385,6 +385,7 @@ pub(super) const RETARGET_TABLES: [&str; 19] = [
     "wishlist_entries",
     "cross_format_links",
     "book_content_chapters",
+    "book_export_digests",
 ];
 
 /// The `book_uuid`-keyed tables the merge deliberately leaves alone, each

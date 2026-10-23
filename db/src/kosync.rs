@@ -1,19 +1,59 @@
 //! What a KOReader progress-sync request names: the book behind a partial MD5 document id.
-//! Called by the `/kosync` routes; the digests come from `book_files.partial_md5`.
+//! Called by the `/kosync` routes; digests come from `book_files.partial_md5` (original
+//! files) and `book_export_digests` (override-baked downloads).
 
+use std::{collections::BTreeSet, path::Path};
+
+use anyhow::Context;
 use sqlx::SqlitePool;
 
-/// The book a KOReader partial MD5 names, by an original EPUB file. `None` when no file
-/// matches or the digest matches more than one book (never guess).
+use crate::{books::resolve_canonical_book_uuid, partial_md5::partial_md5};
+
+/// The book a KOReader partial MD5 names: an original EPUB file or a served bake. `None` when
+/// no file matches or the digest matches more than one book (never guess).
 pub async fn resolve_document(pool: &SqlitePool, digest: &str) -> anyhow::Result<Option<String>> {
-    let mut uuids: Vec<String> = sqlx::query_scalar(
-        "SELECT DISTINCT b.uuid FROM book_files bf JOIN books b ON b.id = bf.book_id \
-         WHERE bf.partial_md5 = ? AND bf.format = 'EPUB' COLLATE NOCASE LIMIT 2",
+    let candidates: Vec<String> = sqlx::query_scalar(
+        "SELECT b.uuid FROM book_files bf JOIN books b ON b.id = bf.book_id \
+         WHERE bf.partial_md5 = ?1 AND bf.format = 'EPUB' COLLATE NOCASE \
+         UNION \
+         SELECT book_uuid FROM book_export_digests WHERE partial_md5 = ?1",
     )
     .bind(digest)
     .fetch_all(pool)
     .await?;
-    Ok(if uuids.len() == 1 { uuids.pop() } else { None })
+    // A bake recorded before a merge may still name the merged-away uuid.
+    let mut books = BTreeSet::new();
+    for uuid in candidates {
+        books.extend(resolve_canonical_book_uuid(pool, &uuid).await?);
+    }
+    Ok(if books.len() == 1 {
+        books.pop_first()
+    } else {
+        None
+    })
+}
+
+/// Remember the partial MD5 of the baked EPUB at `path` as `book_uuid`'s, so a device that
+/// downloaded this bake keeps resolving after the next override edit replaces the file.
+pub async fn record_export_digest(
+    pool: &SqlitePool,
+    book_uuid: &str,
+    path: &Path,
+) -> anyhow::Result<()> {
+    let path = path.to_path_buf();
+    let digest = tokio::task::spawn_blocking(move || partial_md5(&path))
+        .await
+        .context("hash task join failed")?
+        .context("hash baked epub")?;
+    sqlx::query(
+        "INSERT OR IGNORE INTO book_export_digests (partial_md5, book_uuid, created_at) \
+         VALUES (?, ?, strftime('%s', 'now'))",
+    )
+    .bind(digest)
+    .bind(book_uuid)
+    .execute(pool)
+    .await?;
+    Ok(())
 }
 
 #[cfg(test)]

@@ -226,6 +226,29 @@ async fn merge_carries_the_content_index_with_the_moved_file() {
     assert_eq!(hit.as_deref(), Some(target.as_str()));
 }
 
+#[tokio::test]
+async fn merge_moves_the_sources_bake_digests_onto_the_target() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let target = seed_ebook(&pool, "A/Dracula.epub", "Dracula", "Bram Stoker").await;
+    let source = seed_audiobook(&pool, "B/Drakula.m4b", "Drakula", "Bram Stoker").await;
+    sqlx::query(
+        "INSERT INTO book_export_digests (partial_md5, book_uuid, created_at) VALUES ('bake', ?, 1)",
+    )
+    .bind(&source)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    merge_books(&pool, &source, &target, None).await.unwrap();
+
+    let owner: String =
+        sqlx::query_scalar("SELECT book_uuid FROM book_export_digests WHERE partial_md5 = 'bake'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(owner, target);
+}
+
 /// The guard on the soft-reference contract: every table keyed on
 /// `book_uuid` is either retargeted or named exempt with a reason, so a new
 /// one cannot join the stranded set silently.
