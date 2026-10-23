@@ -1,6 +1,6 @@
 //! Unit tests for `kobo_devices`: create/list/get, token regenerate (rotates
 //! the token, preserves cursor + learned device id), revoke, token resolution
-//! (valid / invalid / cross-user), device-id steal-on-learn + hardware-id resolution, and the NotFound
+//! (valid / invalid / cross-user / other kind), device-id steal-on-learn + hardware-id resolution, and the NotFound
 //! variant on regenerate/revoke of an unowned id.
 
 use super::*;
@@ -22,7 +22,9 @@ async fn create_device_mints_a_token_and_lists_it() {
     let pool = init_db("sqlite::memory:").await.unwrap();
     let user = seed_user(&pool, "reader").await;
 
-    let dev = create_device(&pool, user, "Kobo Clara").await.unwrap();
+    let dev = create_device(&pool, user, "Kobo Clara", DeviceKind::Kobo)
+        .await
+        .unwrap();
     assert_eq!(dev.user_id, user);
     assert_eq!(dev.name, "Kobo Clara");
     assert!(!dev.token.is_empty());
@@ -36,10 +38,37 @@ async fn create_device_mints_a_token_and_lists_it() {
 }
 
 #[tokio::test]
+async fn create_device_stores_the_kind_it_is_given() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool, "reader").await;
+
+    create_device(&pool, user, "Libra", DeviceKind::Koreader)
+        .await
+        .unwrap();
+    create_device(&pool, user, "Clara", DeviceKind::Kobo)
+        .await
+        .unwrap();
+
+    let kinds: Vec<_> = list_devices(&pool, user)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|d| (d.name, d.kind))
+        .collect();
+    assert_eq!(
+        kinds,
+        [
+            ("Libra".to_string(), DeviceKind::Koreader),
+            ("Clara".to_string(), DeviceKind::Kobo),
+        ]
+    );
+}
+
+#[tokio::test]
 async fn create_device_propagates_db_error_when_pool_is_closed() {
     let pool = init_db("sqlite::memory:").await.unwrap();
     pool.close().await;
-    let err = create_device(&pool, 1, "Kobo").await;
+    let err = create_device(&pool, 1, "Kobo", DeviceKind::Kobo).await;
     assert!(matches!(err, Err(KoboDeviceError::Sqlx(_))));
 }
 
@@ -51,7 +80,7 @@ async fn create_device_surfaces_a_token_error_when_generation_fails() {
     let pool = init_db("sqlite::memory:").await.unwrap();
     let user = seed_user(&pool, "reader").await;
 
-    let err = create_device_with_token(&pool, user, "Kobo", || {
+    let err = create_device_with_token(&pool, user, "Kobo", DeviceKind::Kobo, || {
         Err(crate::auth::AuthError::Crypto(
             "forced CSPRNG failure for test".to_string(),
         ))
@@ -68,8 +97,12 @@ async fn create_device_mints_unique_tokens_per_device() {
     let pool = init_db("sqlite::memory:").await.unwrap();
     let user = seed_user(&pool, "reader").await;
 
-    let a = create_device(&pool, user, "Kobo One").await.unwrap();
-    let b = create_device(&pool, user, "Kobo Two").await.unwrap();
+    let a = create_device(&pool, user, "Kobo One", DeviceKind::Kobo)
+        .await
+        .unwrap();
+    let b = create_device(&pool, user, "Kobo Two", DeviceKind::Kobo)
+        .await
+        .unwrap();
     assert_ne!(a.token, b.token);
     assert_eq!(list_devices(&pool, user).await.unwrap().len(), 2);
 }
@@ -94,9 +127,11 @@ async fn get_device_for_user_propagates_db_error_when_pool_is_closed() {
 async fn resolve_device_by_token_returns_owner_for_valid_token() {
     let pool = init_db("sqlite::memory:").await.unwrap();
     let user = seed_user(&pool, "reader").await;
-    let dev = create_device(&pool, user, "Kobo").await.unwrap();
+    let dev = create_device(&pool, user, "Kobo", DeviceKind::Kobo)
+        .await
+        .unwrap();
 
-    let resolved = resolve_device_by_token(&pool, &dev.token)
+    let resolved = resolve_device_by_token(&pool, &dev.token, DeviceKind::Kobo)
         .await
         .unwrap()
         .expect("valid token resolves");
@@ -105,15 +140,51 @@ async fn resolve_device_by_token_returns_owner_for_valid_token() {
 }
 
 #[tokio::test]
-async fn resolve_device_by_token_returns_none_for_unknown_token() {
+async fn resolve_device_by_token_returns_none_for_a_token_of_another_kind() {
     let pool = init_db("sqlite::memory:").await.unwrap();
     let user = seed_user(&pool, "reader").await;
-    create_device(&pool, user, "Kobo").await.unwrap();
+    let dev = create_device(&pool, user, "Libra", DeviceKind::Koreader)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE kobo_devices SET last_seen_at = 1 WHERE id = ?")
+        .bind(dev.id)
+        .execute(&pool)
+        .await
+        .unwrap();
 
-    assert!(resolve_device_by_token(&pool, "not-a-real-token")
+    assert!(resolve_device_by_token(&pool, &dev.token, DeviceKind::Kobo)
         .await
         .unwrap()
         .is_none());
+
+    // The kind filter sits in the UPDATE's WHERE, so a refused token is not "seen".
+    let after = get_device_for_user(&pool, user, dev.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(after.last_seen_at, 1);
+    assert!(
+        resolve_device_by_token(&pool, &dev.token, DeviceKind::Koreader)
+            .await
+            .unwrap()
+            .is_some()
+    );
+}
+
+#[tokio::test]
+async fn resolve_device_by_token_returns_none_for_unknown_token() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool, "reader").await;
+    create_device(&pool, user, "Kobo", DeviceKind::Kobo)
+        .await
+        .unwrap();
+
+    assert!(
+        resolve_device_by_token(&pool, "not-a-real-token", DeviceKind::Kobo)
+            .await
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[tokio::test]
@@ -128,7 +199,9 @@ async fn regenerate_token_propagates_db_error_when_pool_is_closed() {
 async fn regenerate_token_rotates_the_token_and_invalidates_the_old() {
     let pool = init_db("sqlite::memory:").await.unwrap();
     let user = seed_user(&pool, "reader").await;
-    let dev = create_device(&pool, user, "Kobo").await.unwrap();
+    let dev = create_device(&pool, user, "Kobo", DeviceKind::Kobo)
+        .await
+        .unwrap();
     let old = dev.token.clone();
 
     let rotated = regenerate_token(&pool, user, dev.id).await.unwrap();
@@ -136,21 +209,23 @@ async fn regenerate_token_rotates_the_token_and_invalidates_the_old() {
     assert_eq!(rotated.id, dev.id);
 
     // Old token no longer authenticates; new one does.
-    assert!(resolve_device_by_token(&pool, &old)
+    assert!(resolve_device_by_token(&pool, &old, DeviceKind::Kobo)
         .await
         .unwrap()
         .is_none());
-    assert!(resolve_device_by_token(&pool, &rotated.token)
-        .await
-        .unwrap()
-        .is_some());
+    assert!(
+        resolve_device_by_token(&pool, &rotated.token, DeviceKind::Kobo)
+            .await
+            .unwrap()
+            .is_some()
+    );
 }
 
 #[tokio::test]
 async fn resolve_device_by_token_propagates_db_error_when_pool_is_closed() {
     let pool = init_db("sqlite::memory:").await.unwrap();
     pool.close().await;
-    let err = resolve_device_by_token(&pool, "some-token").await;
+    let err = resolve_device_by_token(&pool, "some-token", DeviceKind::Kobo).await;
     assert!(matches!(err, Err(KoboDeviceError::Sqlx(_))));
 }
 
@@ -158,7 +233,9 @@ async fn resolve_device_by_token_propagates_db_error_when_pool_is_closed() {
 async fn regenerate_token_preserves_the_sync_cursor() {
     let pool = init_db("sqlite::memory:").await.unwrap();
     let user = seed_user(&pool, "reader").await;
-    let dev = create_device(&pool, user, "Kobo").await.unwrap();
+    let dev = create_device(&pool, user, "Kobo", DeviceKind::Kobo)
+        .await
+        .unwrap();
     set_sync_cursor(&pool, dev.id, "cursor-42").await.unwrap();
 
     // AC3: the cursor is independent of the auth token — rotating the token
@@ -172,12 +249,14 @@ async fn regenerate_token_rejects_a_device_owned_by_another_user() {
     let pool = init_db("sqlite::memory:").await.unwrap();
     let owner = seed_user(&pool, "owner").await;
     let other = seed_user(&pool, "other").await;
-    let dev = create_device(&pool, owner, "Kobo").await.unwrap();
+    let dev = create_device(&pool, owner, "Kobo", DeviceKind::Kobo)
+        .await
+        .unwrap();
 
     let err = regenerate_token(&pool, other, dev.id).await.unwrap_err();
     assert!(matches!(err, KoboDeviceError::NotFound));
     // The owner's token is untouched.
-    assert!(resolve_device_by_token(&pool, &dev.token)
+    assert!(resolve_device_by_token(&pool, &dev.token, DeviceKind::Kobo)
         .await
         .unwrap()
         .is_some());
@@ -195,11 +274,13 @@ async fn revoke_device_propagates_db_error_when_pool_is_closed() {
 async fn revoke_device_removes_the_token() {
     let pool = init_db("sqlite::memory:").await.unwrap();
     let user = seed_user(&pool, "reader").await;
-    let dev = create_device(&pool, user, "Kobo").await.unwrap();
+    let dev = create_device(&pool, user, "Kobo", DeviceKind::Kobo)
+        .await
+        .unwrap();
 
     revoke_device(&pool, user, dev.id).await.unwrap();
     assert!(list_devices(&pool, user).await.unwrap().is_empty());
-    assert!(resolve_device_by_token(&pool, &dev.token)
+    assert!(resolve_device_by_token(&pool, &dev.token, DeviceKind::Kobo)
         .await
         .unwrap()
         .is_none());
@@ -210,7 +291,9 @@ async fn revoke_device_rejects_a_device_owned_by_another_user() {
     let pool = init_db("sqlite::memory:").await.unwrap();
     let owner = seed_user(&pool, "owner").await;
     let other = seed_user(&pool, "other").await;
-    let dev = create_device(&pool, owner, "Kobo").await.unwrap();
+    let dev = create_device(&pool, owner, "Kobo", DeviceKind::Kobo)
+        .await
+        .unwrap();
 
     let err = revoke_device(&pool, other, dev.id).await.unwrap_err();
     assert!(matches!(err, KoboDeviceError::NotFound));
@@ -222,8 +305,12 @@ async fn list_devices_is_scoped_to_the_owner() {
     let pool = init_db("sqlite::memory:").await.unwrap();
     let alice = seed_user(&pool, "alice").await;
     let bob = seed_user(&pool, "bob").await;
-    create_device(&pool, alice, "Alice Kobo").await.unwrap();
-    create_device(&pool, bob, "Bob Kobo").await.unwrap();
+    create_device(&pool, alice, "Alice Kobo", DeviceKind::Kobo)
+        .await
+        .unwrap();
+    create_device(&pool, bob, "Bob Kobo", DeviceKind::Kobo)
+        .await
+        .unwrap();
 
     let alice_devices = list_devices(&pool, alice).await.unwrap();
     assert_eq!(alice_devices.len(), 1);
@@ -259,7 +346,9 @@ async fn set_sync_cursor_propagates_db_error_when_pool_is_closed() {
 async fn learn_kobo_device_id_rebinds_a_new_id_to_the_same_row() {
     let pool = init_db("sqlite::memory:").await.unwrap();
     let user = seed_user(&pool, "reader").await;
-    let dev = create_device(&pool, user, "Kobo").await.unwrap();
+    let dev = create_device(&pool, user, "Kobo", DeviceKind::Kobo)
+        .await
+        .unwrap();
 
     learn_kobo_device_id(&pool, dev.id, "hw-abc").await.unwrap();
     let after = get_device_for_user(&pool, user, dev.id)
@@ -283,8 +372,12 @@ async fn learn_kobo_device_id_steals_the_id_from_another_users_row() {
     let pool = init_db("sqlite::memory:").await.unwrap();
     let alice = seed_user(&pool, "alice").await;
     let bob = seed_user(&pool, "bob").await;
-    let alices = create_device(&pool, alice, "Kobo").await.unwrap();
-    let bobs = create_device(&pool, bob, "Kobo").await.unwrap();
+    let alices = create_device(&pool, alice, "Kobo", DeviceKind::Kobo)
+        .await
+        .unwrap();
+    let bobs = create_device(&pool, bob, "Kobo", DeviceKind::Kobo)
+        .await
+        .unwrap();
 
     // The physical device synced under Alice's token first, then was handed
     // to Bob who registered his own. Presenting Bob's token moves the
@@ -313,7 +406,9 @@ async fn learn_kobo_device_id_steals_the_id_from_another_users_row() {
 async fn resolve_device_by_hardware_id_returns_the_owning_device_and_touches_last_seen() {
     let pool = init_db("sqlite::memory:").await.unwrap();
     let user = seed_user(&pool, "reader").await;
-    let dev = create_device(&pool, user, "Kobo").await.unwrap();
+    let dev = create_device(&pool, user, "Kobo", DeviceKind::Kobo)
+        .await
+        .unwrap();
     learn_kobo_device_id(&pool, dev.id, "hw-abc").await.unwrap();
 
     sqlx::query("UPDATE kobo_devices SET last_seen_at = 1 WHERE id = ?")
@@ -340,7 +435,9 @@ async fn resolve_device_by_hardware_id_returns_the_owning_device_and_touches_las
 async fn resolve_device_by_hardware_id_returns_none_for_an_unknown_id() {
     let pool = init_db("sqlite::memory:").await.unwrap();
     let user = seed_user(&pool, "reader").await;
-    create_device(&pool, user, "Kobo").await.unwrap();
+    create_device(&pool, user, "Kobo", DeviceKind::Kobo)
+        .await
+        .unwrap();
 
     assert!(resolve_device_by_hardware_id(&pool, "hw-never-learned")
         .await
@@ -392,14 +489,16 @@ async fn list_devices_caps_response_at_hard_limit() {
 async fn deleting_the_user_cascades_the_device() {
     let pool = init_db("sqlite::memory:").await.unwrap();
     let user = seed_user(&pool, "reader").await;
-    let dev = create_device(&pool, user, "Kobo").await.unwrap();
+    let dev = create_device(&pool, user, "Kobo", DeviceKind::Kobo)
+        .await
+        .unwrap();
 
     sqlx::query("DELETE FROM users WHERE id = ?")
         .bind(user)
         .execute(&pool)
         .await
         .unwrap();
-    assert!(resolve_device_by_token(&pool, &dev.token)
+    assert!(resolve_device_by_token(&pool, &dev.token, DeviceKind::Kobo)
         .await
         .unwrap()
         .is_none());

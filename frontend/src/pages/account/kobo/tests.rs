@@ -65,6 +65,7 @@ mod render_tests {
                 device: KoboDeviceView {
                     id: 1,
                     name: "Kobo Clara".to_string(),
+                    kind: omnibus_shared::DeviceKind::Kobo,
                     token: "tok123".to_string(),
                     created_at: 0,
                     last_seen_at: 0,

@@ -38,9 +38,14 @@ async fn fixture() -> (Router, SqlitePool, String, i64) {
     let pool = db::init_db("sqlite::memory:").await.unwrap();
     let app = kobo_router(AppState::new(pool.clone()));
     let user = auth_test_support::create_user(&pool, "kobo-reader").await;
-    let device = db::kobo_devices::create_device(&pool, user.id, "Test Kobo")
-        .await
-        .unwrap();
+    let device = db::kobo_devices::create_device(
+        &pool,
+        user.id,
+        "Test Kobo",
+        omnibus_shared::DeviceKind::Kobo,
+    )
+    .await
+    .unwrap();
     (app, pool, device.token, user.id)
 }
 
@@ -413,11 +418,12 @@ async fn full_device_sequence_replays_initialization_through_state_put() {
     let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
     epub::doc::EpubDoc::from_reader(std::io::Cursor::new(bytes.to_vec()))
         .expect("downloaded bytes are a valid EPUB");
-    let device_id = db::kobo_devices::resolve_device_by_token(&pool, &token)
-        .await
-        .unwrap()
-        .unwrap()
-        .device_id;
+    let device_id =
+        db::kobo_devices::resolve_device_by_token(&pool, &token, omnibus_shared::DeviceKind::Kobo)
+            .await
+            .unwrap()
+            .unwrap()
+            .device_id;
     let downloaded_at: Option<i64> = sqlx::query_scalar(
         "SELECT downloaded_at FROM kobo_annotations_sync WHERE device_id = ? AND book_uuid = ?",
     )

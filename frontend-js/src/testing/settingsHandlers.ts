@@ -141,11 +141,12 @@ export function settingsHandlers(server: SettingsServer) {
     }),
     http.get("/api/account/kobo-devices", () => HttpResponse.json(server.kobo)),
     http.post("/api/account/kobo-devices", async ({ request }) => {
-      const { name } = CreateKoboDevice.parse(await request.json());
+      const { name, kind } = CreateKoboDevice.parse(await request.json());
       const id = Math.max(0, ...server.kobo.map((d) => d.id)) + 1;
       const device = aWireKoboDevice({
         id,
         name: name.trim(),
+        kind,
         token: `tok-${id}`,
       });
       server.kobo = [...server.kobo, device];

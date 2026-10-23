@@ -231,9 +231,14 @@ async fn gc_deletes_the_purged_books_kobo_annotation_sync_state() {
         .await
         .unwrap()
         .id;
-    let device = crate::kobo_devices::create_device(&pool, user_id, "Kobo")
-        .await
-        .unwrap();
+    let device = crate::kobo_devices::create_device(
+        &pool,
+        user_id,
+        "Kobo",
+        omnibus_shared::DeviceKind::Kobo,
+    )
+    .await
+    .unwrap();
     crate::kobo::annotations::mark_adopted(&pool, device.id, &uuid)
         .await
         .unwrap();
