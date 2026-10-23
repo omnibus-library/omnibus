@@ -113,3 +113,154 @@ mod resolve_document {
         );
     }
 }
+
+mod credentials {
+    use md5::{Digest, Md5};
+
+    use super::*;
+
+    fn md5_hex(text: &str) -> String {
+        format!("{:x}", Md5::digest(text.as_bytes()))
+    }
+
+    async fn user(pool: &SqlitePool, name: &str) -> i64 {
+        crate::auth::create_user(pool, name, "securepassword1")
+            .await
+            .unwrap()
+            .id
+    }
+
+    async fn reader_with_password(pool: &SqlitePool, name: &str) -> (i64, String) {
+        let id = user(pool, name).await;
+        (id, generate_kosync_password(pool, id).await.unwrap())
+    }
+
+    mod generate_kosync_password {
+        use super::*;
+
+        #[tokio::test]
+        async fn returns_a_grouped_password() {
+            let pool = init_db("sqlite::memory:").await.unwrap();
+            let id = user(&pool, "ada").await;
+
+            let password = generate_kosync_password(&pool, id).await.unwrap();
+
+            let shape = regex::Regex::new(r"^[a-hjkmnp-z2-9]{5}(-[a-hjkmnp-z2-9]{5}){3}$").unwrap();
+            assert!(shape.is_match(&password), "{password}");
+        }
+
+        #[tokio::test]
+        async fn stores_neither_the_password_nor_its_md5() {
+            let pool = init_db("sqlite::memory:").await.unwrap();
+            let (id, password) = reader_with_password(&pool, "ada").await;
+
+            let stored: Vec<u8> =
+                sqlx::query_scalar("SELECT kosync_key_hash FROM users WHERE id = ?")
+                    .bind(id)
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap();
+
+            assert_eq!(stored.len(), 32);
+            assert_ne!(stored, password.as_bytes());
+            assert_ne!(stored, md5_hex(&password).as_bytes());
+        }
+
+        #[tokio::test]
+        async fn errors_for_an_unknown_user() {
+            let pool = init_db("sqlite::memory:").await.unwrap();
+
+            assert!(generate_kosync_password(&pool, 999).await.is_err());
+        }
+    }
+
+    mod kosync_configured {
+        use super::*;
+
+        #[tokio::test]
+        async fn turns_true_once_a_password_is_generated() {
+            let pool = init_db("sqlite::memory:").await.unwrap();
+            let id = user(&pool, "ada").await;
+            assert!(!kosync_configured(&pool, id).await.unwrap());
+
+            generate_kosync_password(&pool, id).await.unwrap();
+
+            assert!(kosync_configured(&pool, id).await.unwrap());
+        }
+    }
+
+    mod verify_kosync_key {
+        use super::*;
+
+        #[tokio::test]
+        async fn accepts_the_md5_of_the_password() {
+            let pool = init_db("sqlite::memory:").await.unwrap();
+            let (id, password) = reader_with_password(&pool, "ada").await;
+
+            let found = verify_kosync_key(&pool, "ada", &md5_hex(&password)).await;
+
+            assert_eq!(found.unwrap(), Some(id));
+        }
+
+        #[tokio::test]
+        async fn accepts_uppercase_hex_and_a_differently_cased_username() {
+            let pool = init_db("sqlite::memory:").await.unwrap();
+            let (id, password) = reader_with_password(&pool, "ada").await;
+
+            let found = verify_kosync_key(&pool, "ADA", &md5_hex(&password).to_uppercase()).await;
+
+            assert_eq!(found.unwrap(), Some(id));
+        }
+
+        #[tokio::test]
+        async fn rejects_a_wrong_key() {
+            let pool = init_db("sqlite::memory:").await.unwrap();
+            reader_with_password(&pool, "ada").await;
+
+            let found = verify_kosync_key(&pool, "ada", &md5_hex("wrong")).await;
+
+            assert_eq!(found.unwrap(), None);
+        }
+
+        #[tokio::test]
+        async fn rejects_an_unknown_user() {
+            let pool = init_db("sqlite::memory:").await.unwrap();
+            let (_, password) = reader_with_password(&pool, "ada").await;
+
+            let found = verify_kosync_key(&pool, "grace", &md5_hex(&password)).await;
+
+            assert_eq!(found.unwrap(), None);
+        }
+
+        #[tokio::test]
+        async fn rejects_the_old_password_after_generating_again() {
+            let pool = init_db("sqlite::memory:").await.unwrap();
+            let (id, old) = reader_with_password(&pool, "ada").await;
+
+            let new = generate_kosync_password(&pool, id).await.unwrap();
+
+            assert_eq!(
+                verify_kosync_key(&pool, "ada", &md5_hex(&old))
+                    .await
+                    .unwrap(),
+                None
+            );
+            assert_eq!(
+                verify_kosync_key(&pool, "ada", &md5_hex(&new))
+                    .await
+                    .unwrap(),
+                Some(id)
+            );
+        }
+
+        #[tokio::test]
+        async fn rejects_a_user_who_never_generated_one() {
+            let pool = init_db("sqlite::memory:").await.unwrap();
+            user(&pool, "ada").await;
+
+            let found = verify_kosync_key(&pool, "ada", &md5_hex("anything")).await;
+
+            assert_eq!(found.unwrap(), None);
+        }
+    }
+}

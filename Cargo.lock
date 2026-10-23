@@ -5038,6 +5038,7 @@ dependencies = [
  "futures-util",
  "hmac",
  "httpdate",
+ "md-5",
  "omnibus-db",
  "omnibus-frontend",
  "omnibus-mcp",

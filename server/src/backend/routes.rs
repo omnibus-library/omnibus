@@ -11,11 +11,11 @@ use utoipa_axum::{router::OpenApiRouter, routes};
 use crate::rate_limit::{rate_limit_by_ip, RateLimiter, RateLimits};
 
 use super::{
-    account, admin_health, admin_sessions, audiobooks, author_photos, authors, bookmarks, cleanup,
-    covers, cross_format, deletion, ebooks, genres, highlights, journals, kindle, kobo_devices,
-    logs, merge, metadata, overrides, physical, profile, progress, ratings, read_status, reviews,
-    scan, search, series, settings, shelves, stats, suggestions, summary, tags, tasks, uploads,
-    users, AppState,
+    account, account_kosync, admin_health, admin_sessions, audiobooks, author_photos, authors,
+    bookmarks, cleanup, covers, cross_format, deletion, ebooks, genres, highlights, journals,
+    kindle, kobo_devices, logs, merge, metadata, overrides, physical, profile, progress, ratings,
+    read_status, reviews, scan, search, series, settings, shelves, stats, suggestions, summary,
+    tags, tasks, uploads, users, AppState,
 };
 
 /// Health check, settings, ebooks, and audiobook playback routes.
@@ -368,7 +368,7 @@ fn kindle_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(kindle::post_smtp_test))
 }
 
-/// The signed-in reader's Kobo devices.
+/// The signed-in reader's Kobo devices and KOReader progress-sync password.
 fn kobo_device_routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
         .routes(routes!(
@@ -378,6 +378,10 @@ fn kobo_device_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(kobo_devices::regenerate_kobo_device))
         .routes(routes!(kobo_devices::delete_kobo_device))
         .routes(routes!(kobo_devices::download_koreader_plugin))
+        .routes(routes!(
+            account_kosync::get_kosync,
+            account_kosync::post_kosync
+        ))
 }
 
 /// Sub-router for `/api/search/*` carrying its own per-IP rate-limit layer, capping each
