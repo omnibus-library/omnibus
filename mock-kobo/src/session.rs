@@ -274,7 +274,7 @@ async fn run_annotation(
             "no reading_services_host yet; sync first".to_owned(),
         ));
     };
-    let body = annotation_patch_body(device, book, sent, now);
+    let body = annotation_patch_body(device, book, sent, now)?;
     let response = client.patch_annotations(&host, book, &body).await?;
     if response.status().is_success() {
         Ok(())
@@ -285,19 +285,23 @@ async fn run_annotation(
 
 /// The device's own current state of `sent`'s highlight, as the PATCH body
 /// `reading_services/dto.rs::parse_patch` expects (see `annotations.rs`'s module doc).
+/// Rejected, with no request, for an upsert naming a highlight the device
+/// no longer holds (deleted locally since it was minted, say).
 fn annotation_patch_body(
     device: &Device,
     book: &str,
     sent: &AnnotationSent,
     now: i64,
-) -> serde_json::Value {
+) -> Result<serde_json::Value, SyncFailure> {
     match sent {
         AnnotationSent::Upsert(id) => {
             let highlight = device
                 .library
                 .get(book)
                 .and_then(|b| b.annotations.iter().find(|a| &a.id == id))
-                .expect("Upsert is only sent for a highlight Device::highlight just appended");
+                .ok_or_else(|| {
+                    SyncFailure::Rejected(format!("the device holds no highlight {id}"))
+                })?;
             let mut entry = serde_json::json!({
                 "id": highlight.id,
                 "type": if highlight.note.is_some() { "note" } else { "highlight" },
@@ -309,9 +313,9 @@ fn annotation_patch_body(
             if let Some(note) = &highlight.note {
                 entry["noteText"] = serde_json::Value::String(note.clone());
             }
-            serde_json::json!({ "updatedAnnotations": [entry] })
+            Ok(serde_json::json!({ "updatedAnnotations": [entry] }))
         }
-        AnnotationSent::Delete(id) => serde_json::json!({ "deletedAnnotationIds": [id] }),
+        AnnotationSent::Delete(id) => Ok(serde_json::json!({ "deletedAnnotationIds": [id] })),
     }
 }
 

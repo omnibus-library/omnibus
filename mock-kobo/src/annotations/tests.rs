@@ -398,6 +398,24 @@ async fn attempt_annotation_fails_until_a_sync_names_the_reading_services_host()
 }
 
 #[tokio::test]
+async fn attempt_annotation_rejects_an_upsert_for_a_highlight_the_device_no_longer_holds() {
+    let stub = spawn_stub(Stub::default()).await;
+    let mut device = device_with_highlight(&stub, None, None);
+
+    let attempt = attempt_annotation(
+        &mut device,
+        &stub.endpoint,
+        "book-1",
+        AnnotationSent::Upsert("missing".into()),
+        1_700_000_000,
+    )
+    .await;
+
+    assert!(matches!(attempt.outcome, Err(SyncFailure::Rejected(_))));
+    assert!(attempt.requests.is_empty());
+}
+
+#[tokio::test]
 async fn attempt_download_fetches_annotations_unconditionally_after_the_server_stopped_reporting_the_book(
 ) {
     let stub = spawn_stub(Stub {
