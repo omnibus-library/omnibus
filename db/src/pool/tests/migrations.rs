@@ -584,3 +584,45 @@ async fn migration_0106_leaves_existing_devices_unsynced() {
     .unwrap();
     assert_eq!((at, error), (None, None));
 }
+
+#[tokio::test]
+async fn migration_0109_leaves_existing_files_unhashed_for_the_backfill() {
+    const PARTIAL_MD5_VERSION: i64 = 109;
+    static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .unwrap();
+    for m in MIGRATOR.iter().filter(|m| m.version < PARTIAL_MD5_VERSION) {
+        sqlx::raw_sql(&m.sql).execute(&pool).await.unwrap();
+    }
+    sqlx::query("INSERT INTO scan_roots (id, path, display_name) VALUES (1, '/lib', 'lib')")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO books (id, uuid, library_id, path, title) VALUES (1, 'u', 1, '', 'T')",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO book_files (book_id, format, filename, size_bytes) VALUES (1, 'EPUB', 'f', 1)",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let m = MIGRATOR
+        .iter()
+        .find(|m| m.version == PARTIAL_MD5_VERSION)
+        .expect("0109 must exist");
+    sqlx::raw_sql(&m.sql).execute(&pool).await.unwrap();
+
+    let digest: Option<String> = sqlx::query_scalar("SELECT partial_md5 FROM book_files")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(digest, None);
+}

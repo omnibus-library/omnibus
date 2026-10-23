@@ -5082,6 +5082,7 @@ dependencies = [
  "image",
  "lettre",
  "lofty",
+ "md-5",
  "omnibus-db",
  "omnibus-shared",
  "pdf-extract",

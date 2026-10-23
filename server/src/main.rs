@@ -179,8 +179,8 @@ mod server {
     /// Kick off a reindex through the shared worker if the index is empty or stale. The first
     /// user request reads whatever is in the DB; the refresh flows in next load. Read errors
     /// count as "stale" so a malformed timestamp can't suppress the recovery scan. A library
-    /// not due a scan still gets the word-count backfill posted (a no-op once every EPUB has
-    /// a count), as that is how a migration re-deriving `word_count` reaches a running install.
+    /// not due a scan still gets the word-count and fingerprint backfills posted (no-ops once every
+    /// EPUB is filled), as that is how a migration adding a derived column reaches a running install.
     async fn kick_recovery_scans(pool: &SqlitePool, worker: &Arc<Worker>) {
         if let Ok(settings) = omnibus_db::get_settings(pool).await {
             if let Some(path) = settings.ebook_library_path {
@@ -188,7 +188,10 @@ mod server {
                 if stale {
                     worker.post(Task::Scan { library_path: path });
                 } else {
-                    worker.post(Task::BackfillWordCounts { library_path: path });
+                    worker.post(Task::BackfillWordCounts {
+                        library_path: path.clone(),
+                    });
+                    worker.post(Task::BackfillPartialMd5 { library_path: path });
                 }
             }
             if let Some(path) = settings.audiobook_library_path {

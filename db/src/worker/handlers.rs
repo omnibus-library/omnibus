@@ -201,6 +201,9 @@ impl Worker {
             Task::BackfillPageCounts { library_path } => {
                 self.handle_backfill_page_counts(library_path, id).await
             }
+            Task::BackfillPartialMd5 { library_path } => {
+                self.handle_backfill_partial_md5(library_path, id).await
+            }
             Task::BackfillEpubStructure { library_path } => {
                 self.handle_backfill_epub_structure(library_path, id).await
             }
@@ -338,6 +341,25 @@ impl Worker {
         anyhow_outcome(
             "page-count backfill",
             crate::indexer::backfill_page_counts(
+                &self.pool,
+                &library_path,
+                |processed, total, item| {
+                    self.report_item_progress(id, processed, total, item);
+                },
+            )
+            .await,
+        )
+    }
+
+    /// `Task::BackfillPartialMd5`: fingerprint EPUB files for KOReader's progress sync.
+    async fn handle_backfill_partial_md5(
+        self: &Arc<Self>,
+        library_path: String,
+        id: TaskId,
+    ) -> TaskOutcome {
+        anyhow_outcome(
+            "partial MD5 backfill",
+            crate::indexer::backfill_partial_md5(
                 &self.pool,
                 &library_path,
                 |processed, total, item| {
@@ -539,7 +561,7 @@ impl Worker {
     }
 
     /// Reindex an ebook library, then (on success) post the follow-up word-count,
-    /// page-count, cover re-extract, thumbnail-warm-up and content-FTS backfill
+    /// page-count, fingerprint, cover re-extract, thumbnail-warm-up and content-FTS backfill
     /// tasks it still needs, plus a cleanup detection pass so fresh dedup
     /// suggestions appear after an import. All share the scan's resource key but
     /// `DetectCleanup`, which has its own `cleanup` key and never queues behind a rescan.
@@ -558,6 +580,9 @@ impl Worker {
                     library_path: library_path.clone(),
                 });
                 self.post(Task::BackfillPageCounts {
+                    library_path: library_path.clone(),
+                });
+                self.post(Task::BackfillPartialMd5 {
                     library_path: library_path.clone(),
                 });
                 self.post(Task::BackfillEpubStructure {
