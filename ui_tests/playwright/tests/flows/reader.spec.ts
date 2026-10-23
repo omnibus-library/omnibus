@@ -1370,6 +1370,13 @@ test.describe("epub reader", () => {
         );
         expect(savedCfi(save)).toMatch(/^epubcfi\(/);
       });
+
+      // The server's ruler, not the reader's pre-pagination estimate.
+      await test.step("check the turn did not store a lower percent", async () => {
+        await expect
+          .poll(async () => (await storedPosition(uuid))?.progress_percent)
+          .toBeGreaterThanOrEqual(40);
+      });
     });
   });
 

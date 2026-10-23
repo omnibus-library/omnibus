@@ -325,7 +325,7 @@ fn handle_relocate(
         gate.last_cfi = Some(cfi.clone());
         if !data.echo && moved && !std::mem::take(&mut gate.hold_first_write) {
             crate::reader_progress::save(uuid, &cfi);
-            persist_progress(uuid, server_url, cfi, data.pct);
+            persist_progress(uuid, server_url, cfi, data.percent_to_post());
         }
     }
     // A relocate names the (corrected) current position, so it also signals
@@ -362,11 +362,9 @@ fn handle_status(
 }
 
 /// Persist the latest CFI to the server (fire-and-forget); the local in-memory
-/// save already happened on the calling side. `pct` is the same whole-book
-/// figure the footer/ribbon render — carrying it into `progress_percent`
-/// keeps the landing hero's stored percent in step with what the reader
-/// itself is showing.
-fn persist_progress(uuid: &str, server_url: &str, cfi: String, pct: u32) {
+/// save already happened on the calling side. `percent` rides along only when
+/// the reader's figure is exact (see `RelocateData::percent_to_post`).
+fn persist_progress(uuid: &str, server_url: &str, cfi: String, percent: Option<i64>) {
     let uuid = uuid.to_string();
     let server_url = server_url.to_string();
     spawn(async move {
@@ -375,7 +373,7 @@ fn persist_progress(uuid: &str, server_url: &str, cfi: String, pct: u32) {
             format: ProgressFormat::Epub,
             epub_cfi: Some(cfi),
             audio_position_seconds: None,
-            progress_percent: Some(i64::from(pct.min(100))),
+            progress_percent: percent,
             kobo_location: None,
             book_file_id: None,
             client_updated_at: Some(now_unix()),
