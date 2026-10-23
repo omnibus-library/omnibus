@@ -2,13 +2,17 @@
 Omnibus: a "Sync now" menu entry that mirrors the shelves marked "Sync to my devices"
 into an Omnibus folder, and keeps each delivered book's reading position and status in
 step with the server: pulled when the book opens, pushed when it closes, the device
-suspends or Sync now runs. The decisions live in omnibussync.lua; this file is the wiring
+suspends or Sync now runs. A book edited in Omnibus gets its title, authors, series,
+description and cover written into KOReader's custom metadata on the next sync. The
+decisions live in omnibussync.lua; this file is the wiring
 to KOReader (menu, HTTP, files, UI). omnibus.json, written by the server's plugin
 download, holds the server URL and this device's token.
 --]]--
 
 local BookList = require("ui/widget/booklist")
 local DataStorage = require("datastorage")
+local DocSettings = require("docsettings")
+local DocumentRegistry = require("document/documentregistry")
 local Event = require("ui/event")
 local InfoMessage = require("ui/widget/infomessage")
 local JSON = require("json")
@@ -91,14 +95,15 @@ end
 
 -- One request with the device token and no redirects, so the token only ever reaches the
 -- configured server. `opts.sink` builds the sink after the timeouts are set, because
--- socketutil's sinks read them. Returns the status code, or nil and the error.
+-- socketutil's sinks read them; `opts.if_none_match` makes the GET conditional. Returns the
+-- status code and the response headers (names in lower case), or nil and the error.
 local function request(url, token, opts)
     socketutil:set_timeout(opts.block_timeout, opts.total_timeout)
-    local ok, code = pcall(function()
+    local ok, code, headers = pcall(function()
         local req = {
             url = url,
             method = opts.method or "GET",
-            headers = { Authorization = "Bearer " .. token },
+            headers = { Authorization = "Bearer " .. token, ["If-None-Match"] = opts.if_none_match },
             sink = opts.sink(),
             redirect = false,
         }
@@ -111,7 +116,7 @@ local function request(url, token, opts)
     end)
     socketutil:reset_timeout()
     if ok and type(code) == "number" then
-        return code
+        return code, headers
     end
     return nil, tostring(code)
 end
@@ -158,8 +163,11 @@ local function publish(part, path)
     return renamed, rename_err
 end
 
+-- Download one book to `path` through a `.part` file, so a failed download leaves the book the
+-- reader already has. With `if_none_match`, a 304 keeps the file: returns true, nil, true.
+-- A new file returns true and its ETag.
 function Omnibus:book_downloader(config)
-    return function(book, path)
+    return function(book, path, if_none_match)
         local url = sync.book_url(config.server_url, book)
         if not url then
             return false, "unexpected download address. Download the plugin again from Settings › Devices."
@@ -169,25 +177,129 @@ function Omnibus:book_downloader(config)
         if not file then
             return false, open_err
         end
-        local code, err = request(url, config.token, {
+        local code, headers = request(url, config.token, {
             sink = function()
                 return socketutil.file_sink(file)
             end,
             block_timeout = socketutil.FILE_BLOCK_TIMEOUT,
             total_timeout = socketutil.FILE_TOTAL_TIMEOUT,
+            if_none_match = if_none_match,
         })
         -- LuaSocket skips the sink's terminator when a request fails before the body.
         pcall(file.close, file)
-        if code ~= 200 then
+        if code == 304 then
             os.remove(part)
-            return false, code and ("HTTP " .. code) or err
+            return true, nil, true
+        elseif code ~= 200 then
+            os.remove(part)
+            return false, code and ("HTTP " .. code) or headers
         end
         local renamed, rename_err = publish(part, path)
         if not renamed then
             os.remove(part)
             return false, rename_err
         end
+        return true, headers.etag
+    end
+end
+
+local CUSTOM_PROP_KEYS = { "title", "authors", "series", "series_index", "description" }
+
+-- The properties of the book's own file, which "Reset custom" restores; nil when it can't be read.
+local function file_props(path)
+    if not DocumentRegistry:hasProvider(path) then
+        return nil
+    end
+    local document = DocumentRegistry:openDocument(path)
+    if not document then
+        return nil
+    end
+    local props
+    if not document.loadDocument or document:loadDocument(false) then -- metadata only
+        props = document:getProps()
+    end
+    document:close()
+    return props
+end
+
+-- Write the book's metadata as KOReader's own "custom metadata", the way Book information
+-- does: the five fields over a copy of the file's own, which the file itself is never edited for.
+local function write_custom_props(book, path)
+    local props = sync.custom_props(book)
+    local custom = DocSettings.openSettingsFile(DocSettings:findCustomMetadataFile(path))
+    local own = file_props(path)
+    if own or not custom:readSetting("doc_props") then
+        custom:saveSetting("doc_props", own or {})
+    end
+    local custom_props = custom:readSetting("custom_props", {})
+    for _, key in ipairs(CUSTOM_PROP_KEYS) do
+        custom_props[key] = props[key]
+    end
+    if not custom:flushCustomMetadata(path) then
+        return false, "couldn't write the custom metadata"
+    end
+    return true
+end
+
+local function remove_custom_cover(path)
+    local old = DocSettings:findCustomCoverFile(path)
+    if old then
+        os.remove(old)
+    end
+end
+
+-- Make the server's cover the book's custom cover. A book the server has no usable cover for
+-- (none, or a type KOReader can't show) loses the custom one and shows its own.
+function Omnibus:write_custom_cover(config, book, path)
+    local url = sync.cover_url(config.server_url, book)
+    if not url then
+        remove_custom_cover(path)
         return true
+    end
+    local chunks = {}
+    local code, headers = request(url, config.token, {
+        sink = function()
+            return socketutil.table_sink(chunks)
+        end,
+        block_timeout = socketutil.LARGE_BLOCK_TIMEOUT,
+        total_timeout = socketutil.LARGE_TOTAL_TIMEOUT,
+    })
+    local extension = code == 200 and sync.cover_extension(headers["content-type"])
+    if code == 404 or code == 200 and not extension then
+        remove_custom_cover(path)
+        return true
+    elseif code ~= 200 then
+        return false, code and ("cover HTTP " .. code) or headers
+    end
+    local cache = DataStorage:getDataDir() .. "/cache"
+    util.makePath(cache)
+    local image = cache .. "/omnibus-cover." .. extension
+    local written, write_err = util.writeToFile(table.concat(chunks), image)
+    if not written then
+        return false, write_err
+    end
+    local old = DocSettings:findCustomCoverFile(path)
+    local flushed = DocSettings:flushCustomCover(path, image)
+    os.remove(image)
+    if not flushed then
+        return false, "couldn't write the custom cover"
+    end
+    -- The new cover replaced a same-named one; a different extension leaves the old to remove.
+    if old and old:match("[^/]*$") ~= "cover." .. extension then
+        os.remove(old)
+    end
+    return true
+end
+
+function Omnibus:metadata_applier(config)
+    return function(book, path)
+        local ok, reason = write_custom_props(book, path)
+        if ok then
+            ok, reason = self:write_custom_cover(config, book, path)
+        end
+        -- The file manager keeps a row per book; make it read the new title and cover.
+        UIManager:broadcastEvent(Event:new("InvalidateMetadataCache", path))
+        return ok, reason
     end
 end
 
@@ -348,6 +460,17 @@ function Omnibus:onSuspend()
     self:guarded("suspend", self.capture_and_flush)
 end
 
+-- Replacing a file whose sidecar KOReader keys by the file's content would orphan the reader's
+-- place and highlights: that is every file while the setting says so, and a file read under it
+-- until it is reopened.
+local function can_replace(path)
+    if G_reader_settings:readSetting("document_metadata_folder", "doc") == "hash" then
+        return false
+    end
+    local ok, hash_dir = pcall(DocSettings.getSidecarDir, DocSettings, path, "hash")
+    return ok and lfs.attributes(hash_dir, "mode") ~= "directory"
+end
+
 local function remove_file(path)
     if lfs.attributes(path, "mode") ~= "file" then
         return true
@@ -369,6 +492,7 @@ function Omnibus:sync()
     util.makePath(dir)
     local settings = LuaSettings:open(DataStorage:getSettingsDir() .. "/omnibus.lua")
     local manifest = settings:readSetting("manifest", {})
+    local files = settings:readSetting("files", {})
 
     local progress = InfoMessage:new{ text = _("Syncing with Omnibus…") }
     UIManager:show(progress)
@@ -377,12 +501,16 @@ function Omnibus:sync()
         dir = dir,
         open_path = self.ui.document and self.ui.document.file,
         manifest = manifest,
+        files = files,
+        can_replace = can_replace,
         save_manifest = function()
             settings:saveSetting("manifest", manifest)
+            settings:saveSetting("files", files)
             settings:flush()
         end,
         get_library = self:library_getter(config),
         download = self:book_downloader(config),
+        apply_metadata = self:metadata_applier(config),
         remove = remove_file,
         exists = function(path)
             return lfs.attributes(path, "mode") == "file"

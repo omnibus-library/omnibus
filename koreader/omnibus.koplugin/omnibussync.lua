@@ -9,6 +9,12 @@ Reading state is kept per book in `books`: the percent and status the device las
 with the server, when (`event_at`), and whether a change still waits to be pushed. A
 change is captured only when the device differs from that agreed state, so a stale device
 never overwrites a newer server position with a fresh timestamp.
+
+Metadata is kept per delivered book in `files`: its path, the file's ETag and the
+`last_modified` its bytes (`version`) and its custom metadata (`meta_version`) were last
+brought to. It outlives a delete, so a returning book finds its old path and its sidecar.
+A book whose server version moved gets its custom metadata rewritten and, if the server's
+file changed too, the file replaced at the same path, unless replacing is refused.
 --]]--
 
 local M = {}
@@ -36,6 +42,15 @@ local function safe(text)
     return (text:gsub('[/\\:*?"<>|%c]', "_"))
 end
 
+-- The file extension `book` is delivered under.
+local function extension(book)
+    return ((book.format or "epub"):gsub("[^%w]", "_"))
+end
+
+local function path_extension(path)
+    return path:match("%.([^./]+)$")
+end
+
 --- "<title> - <first 8 of uuid>.<format>", safe to create on any filesystem.
 function M.file_name(book)
     local title = cap(safe(book.title or ""), FOLDER_LIMIT)
@@ -43,18 +58,26 @@ function M.file_name(book)
         title = "Untitled"
     end
     local id = (book.uuid or ""):sub(1, 8):gsub("[^%w%-]", "_")
-    local format = (book.format or "epub"):gsub("[^%w]", "_")
-    return string.format("%s - %s.%s", title, id, format)
+    return string.format("%s - %s.%s", title, id, extension(book))
 end
 
---- The URL to fetch `book` from, always on `server_url`: nil unless the server's
---- `download_url` is a path, so a token is never sent to a host the config doesn't name.
-function M.book_url(server_url, book)
-    local url = book.download_url
+-- `url` on `server_url`: nil unless it is a path, so a token is never sent to a host the
+-- config doesn't name.
+local function on_server(server_url, url)
     if type(url) ~= "string" or url:sub(1, 1) ~= "/" or url:sub(1, 2) == "//" then
         return nil
     end
     return server_url:gsub("/+$", "") .. url
+end
+
+--- The URL to fetch `book` from, always on `server_url`.
+function M.book_url(server_url, book)
+    return on_server(server_url, book.download_url)
+end
+
+--- The URL of `book`'s cover, always on `server_url`.
+function M.cover_url(server_url, book)
+    return on_server(server_url, book.cover_url)
 end
 
 local function inside(dir, path)
@@ -89,6 +112,58 @@ function M.plan(manifest, books, dir, exists, open_path)
         end
     end
     return plan
+end
+
+local function text(value)
+    return type(value) == "string" and value ~= "" and value or nil
+end
+
+--- The custom-metadata fields KOReader shows for `book`; a field the server has none for is
+--- nil, which clears a stale value. A decoded JSON null is a function, so only keep real types.
+function M.custom_props(book)
+    local authors = type(book.authors) == "table" and table.concat(book.authors, "\n") or nil
+    return {
+        title = text(book.title),
+        authors = text(authors),
+        series = text(book.series),
+        series_index = type(book.series_index) == "number" and book.series_index or nil,
+        description = text(book.description),
+    }
+end
+
+local COVER_EXTENSIONS = { ["image/jpeg"] = "jpg", ["image/png"] = "png", ["image/gif"] = "gif",
+    ["image/webp"] = "webp" }
+
+--- The file extension for a cover of `content_type`, nil when KOReader cannot show that type.
+function M.cover_extension(content_type)
+    return COVER_EXTENSIONS[(content_type or ""):match("^[^;]*"):lower()]
+end
+
+--- Bring `files` entries from before bytes and metadata had their own version up to date.
+function M.upgrade_files(files)
+    for _, entry in pairs(files) do
+        if entry.meta_version == nil then
+            entry.meta_version = entry.version
+        end
+    end
+end
+
+--- The delivered books to refresh, `{ book, path }` at their manifest path: those whose bytes
+--- or metadata are behind the server's version, or whose file extension is not the format the
+--- server now serves. The open document, a file that is gone and one outside `dir` are left
+--- to `plan`.
+function M.refresh_plan(manifest, files, books, dir, exists, open_path)
+    local refresh = {}
+    for _, book in ipairs(books) do
+        local path = manifest[book.uuid]
+        local kept = files[book.uuid]
+        if inside(dir, path) and path ~= open_path and exists(path)
+            and (not kept or kept.version ~= book.last_modified or kept.meta_version ~= book.last_modified
+                or path_extension(path) ~= extension(book)) then
+            table.insert(refresh, { book = book, path = path })
+        end
+    end
+    return refresh
 end
 
 --- The whole-book percent of a 0..1 fraction, floored (never overstate how far along the
@@ -329,20 +404,90 @@ local function fetch_library(server_url, deps)
     return body.books
 end
 
+-- Where `book` is delivered: the path it had before when that is free inside the folder and
+-- of the right format, so its kept sidecar is found again, else the file name its title gives.
+local function delivery_path(book, deps)
+    local kept = deps.files[book.uuid]
+    if kept and inside(deps.dir, kept.path) and not deps.exists(kept.path)
+        and path_extension(kept.path) == extension(book) then
+        return kept.path
+    end
+    return deps.dir .. "/" .. M.file_name(book)
+end
+
+-- Put `book` in `path` as the file the server serves now, recording what was delivered.
+local function replace_file(book, path, deps, result, failures)
+    local kept = deps.files[book.uuid]
+    local format_changed = path_extension(path) ~= extension(book)
+    local target = format_changed and (deps.dir .. "/" .. M.file_name(book)) or path
+    local ok, etag_or_reason, not_modified = deps.download(book, target, not format_changed and kept.etag or nil)
+    if not ok then
+        return nil, etag_or_reason
+    end
+    if format_changed then
+        -- The old file goes, its sidecar stays; the new file has no custom metadata yet.
+        deps.manifest[book.uuid] = target
+        kept.path, kept.meta_version = target, nil
+        local removed, reason = deps.remove(path)
+        if not removed then
+            table.insert(failures, string.format("%s: %s", path, tostring(reason)))
+        end
+    end
+    if not not_modified then
+        kept.etag = etag_or_reason
+        result.replaced = result.replaced + 1
+    end
+    kept.version = book.last_modified
+    deps.save_manifest()
+    return target
+end
+
+-- Bring one delivered book up to the server's version: replace its file when its bytes are
+-- behind (the server answers 304 when the ETag still matches) and replacing is allowed, then
+-- rewrite its metadata when that is behind.
+local function refresh_book(item, deps, result, remove_failures)
+    local book, path = item.book, item.path
+    local kept = deps.files[book.uuid] or { path = path }
+    deps.files[book.uuid] = kept
+    local touched = false
+    local format_changed = path_extension(path) ~= extension(book)
+    if (format_changed or kept.version ~= book.last_modified) and deps.can_replace(path) then
+        local target, reason = replace_file(book, path, deps, result, remove_failures)
+        if not target then
+            return false, reason
+        end
+        path, touched = target, true
+    end
+    if kept.meta_version ~= book.last_modified then
+        local ok, reason = deps.apply_metadata(book, path)
+        if not ok then
+            return false, reason
+        end
+        kept.meta_version, touched = book.last_modified, true
+        deps.save_manifest()
+    end
+    if touched then
+        result.refreshed = result.refreshed + 1
+    end
+    return true
+end
+
 --- One sync: bring the Omnibus folder in line with the server's library.
---- Returns { ok, added, removed, message }.
+--- Returns { ok, added, removed, refreshed, replaced, message }.
 function M.run(server_url, deps)
     local books, message, reportable = fetch_library(server_url, deps)
     if not books then
         if reportable then
             deps.report(message)
         end
-        return { ok = false, added = 0, removed = 0, message = message }
+        return { ok = false, added = 0, removed = 0, refreshed = 0, replaced = 0, message = message }
     end
 
+    M.upgrade_files(deps.files)
     local plan = M.plan(deps.manifest, books, deps.dir, deps.exists, deps.open_path)
-    local result = { ok = true, added = 0, removed = 0 }
-    local download_failures, remove_failures = {}, {}
+    local refresh = M.refresh_plan(deps.manifest, deps.files, books, deps.dir, deps.exists, deps.open_path)
+    local result = { ok = true, added = 0, removed = 0, refreshed = 0, replaced = 0 }
+    local download_failures, remove_failures, update_failures = {}, {}, {}
 
     for _, uuid in ipairs(plan.forget) do
         deps.manifest[uuid] = nil
@@ -359,27 +504,44 @@ function M.run(server_url, deps)
         end
     end
     for _, book in ipairs(plan.download) do
-        local path = deps.dir .. "/" .. M.file_name(book)
-        local ok, reason = deps.download(book, path)
+        local path = delivery_path(book, deps)
+        local ok, etag_or_reason = deps.download(book, path)
         if ok then
             deps.manifest[book.uuid] = path
-            deps.save_manifest()
+            deps.files[book.uuid] = { path = path, etag = etag_or_reason, version = book.last_modified }
             result.added = result.added + 1
+            -- Saved before the metadata fetch, so a crash there cannot orphan the file.
+            deps.save_manifest()
+            local applied, reason = deps.apply_metadata(book, path)
+            if applied then
+                deps.files[book.uuid].meta_version = book.last_modified
+                deps.save_manifest()
+            else
+                table.insert(update_failures, string.format("%s: %s", book.title, tostring(reason)))
+            end
         else
-            table.insert(download_failures, string.format("%s: %s", book.title, tostring(reason)))
+            table.insert(download_failures, string.format("%s: %s", book.title, tostring(etag_or_reason)))
+        end
+    end
+    for _, item in ipairs(refresh) do
+        local ok, reason = refresh_book(item, deps, result, remove_failures)
+        if not ok then
+            table.insert(update_failures, string.format("%s: %s", item.book.title, tostring(reason)))
         end
     end
 
     local problems = {}
-    for _, text in ipairs({ failure_message("download", download_failures),
-                            failure_message("remove", remove_failures) }) do
+    for _, group in ipairs({ { "download", download_failures }, { "remove", remove_failures },
+                             { "update", update_failures } }) do
+        -- Not ipairs over the messages: a nil (no failures) would end the loop early.
+        local text = failure_message(group[1], group[2])
         if text then
             table.insert(problems, text)
         end
     end
     if #problems > 0 then
         result.ok = false
-        result.message = table.concat(problems, " ")
+        result.message = table.concat(problems, "; ")
     end
     deps.report(result.message)
     return result

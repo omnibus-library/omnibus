@@ -1,10 +1,10 @@
-//! `GET /koreader/v1/library` (the books on the reader's synced shelves) and
-//! `GET /koreader/v1/books/{uuid}/file` (one book's bytes), the two reads a
-//! plugin sync makes.
+//! `GET /koreader/v1/library` (the books on the reader's synced shelves),
+//! `GET /koreader/v1/books/{uuid}/file` (one book's bytes) and
+//! `GET /koreader/v1/books/{uuid}/cover` (its cover), the reads a plugin sync makes.
 
 use axum::{
     extract::{Path, Request, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
@@ -13,7 +13,7 @@ use serde::Serialize;
 
 use super::extractor::KoreaderDevice;
 use crate::backend::ebooks::{device_file, rewritten_or_source, DeviceFile, EPUB_MIME};
-use crate::backend::kobo::reject_oversized_uuid;
+use crate::backend::kobo::{reject_oversized_uuid, serve_cover, CoverEtag};
 use crate::backend::{deny_unless_can_download, serve_download, AppState};
 use crate::http_errors::internal;
 
@@ -32,14 +32,22 @@ struct LibraryBook {
     format: String,
     size: i64,
     last_modified: i64,
+    series: Option<String>,
+    series_index: Option<f64>,
+    description: String,
     download_url: String,
+    cover_url: String,
 }
 
 impl From<KoboBookRow> for LibraryBook {
     fn from(book: KoboBookRow) -> Self {
         Self {
             download_url: format!("/koreader/v1/books/{}/file", book.uuid),
+            cover_url: format!("/koreader/v1/books/{}/cover", book.uuid),
             format: book.file_format().to_lowercase(),
+            series_index: book.series.as_ref().and_then(|s| s.index),
+            series: book.series.map(|s| s.name),
+            description: book.description,
             uuid: book.uuid,
             title: book.title,
             authors: book.authors,
@@ -94,4 +102,14 @@ pub async fn file(
         Err(e) => return internal("koreader device_file", e),
     };
     serve_download(req, &path, mime).await
+}
+
+/// One book's cover, honouring `If-None-Match`; 404 when it has none.
+pub async fn cover(
+    _device: KoreaderDevice,
+    State(state): State<AppState>,
+    Path(uuid): Path<String>,
+    headers: HeaderMap,
+) -> Response {
+    serve_cover(&state, &uuid, &headers, CoverEtag::Strong).await
 }

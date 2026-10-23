@@ -29,7 +29,8 @@ for the same shelf rule, which both device kinds share.
 
 - Books on your marked shelves are downloaded into an `Omnibus` folder inside
   KOReader's home folder, as plain EPUB (or the CBZ/PDF a book only has). A
-  book that is already there isn't fetched again.
+  book that is already there isn't fetched again unless it changed
+  ([Metadata](#metadata)).
 - A book that leaves every marked shelf is deleted from that folder. Its
   reading progress and highlights (the `.sdr` folder beside it) are kept, so
   the book picks up where you left off if it returns.
@@ -80,6 +81,35 @@ and the other way round.
 - **Sideloaded books** (files you copied in yourself, not delivered by the
   plugin) are never read or written.
 
+## Metadata
+
+An edit made in Omnibus reaches the book on the device with the next sync: the
+title, authors, series (and its number), description and cover.
+
+- **Shown through KOReader's custom metadata,** the layer **Book information**
+  edits, so the file browser, the reader and the cover grid show the edit and
+  **Book information › Reset custom** shows the file's own again. An edit made
+  on the device to one of those five fields is overwritten when the book next
+  changes in Omnibus.
+- **A changed EPUB is replaced in place.** When a change alters the file Omnibus
+  serves (an edit baked into the EPUB, or a re-scanned file), the plugin
+  downloads it over the old one under the same name. The place and highlights,
+  kept beside the book, stay. A cover or title edit to a CBZ or PDF is shown
+  without downloading the file again.
+- **A book that is open** is left alone and updated by the next sync after you
+  close it.
+- **Names don't change,** except for a format change. A delivered file keeps its
+  name after a retitle, and a book that leaves the shelves and returns comes back
+  under the name it had, so its kept place and highlights are found again. A book
+  that Omnibus now serves in another format (an EPUB that is now a CBZ) is
+  delivered under a new name and the old file is removed; its old `.sdr` stays.
+- **Hash sidecars:** with KOReader's book-metadata location set to *hash* (or for
+  a book that was read under it and not reopened since), the place and highlights
+  are tied to the file's contents, so the plugin never replaces that file. The
+  metadata and cover still update; the changed file waits and is downloaded by the
+  first sync after the book is no longer kept that way. The default location
+  (*doc*) isn't affected.
+
 ## Test lane
 
 `just koreader-e2e` proves the path a KOReader user takes against Omnibus:
@@ -89,14 +119,17 @@ scenario), then sync a shelf through the Omnibus plugin and drop it again (the
 `delivery` scenario), and open a book at the web reader's position and close it
 further on, which the web then shows after a suspend, a close, and a change
 made offline that waits for the next Sync now (the `roundtrip` scenario),
-and fails if the device token appears in KOReader's log — driven by a
-real KOReader in Docker, with nothing stubbed. Each scenario prints one PASS/FAIL line.
+and fails if the device token appears in KOReader's log; then retitle and
+re-cover a book on the web, which the next sync shows without losing the reader's
+place or highlights (the `metadata` scenario) — driven by a real KOReader in
+Docker, with nothing stubbed. Each scenario prints one PASS/FAIL line.
 
 ```bash
 just koreader-e2e
 # PASS opds
 # PASS delivery
 # PASS roundtrip
+# PASS metadata
 # or: FAIL opds: search: expected "Alpha" in search results, got ["Beta in the Series"] (screenshot: /tmp/omnibus-koreader.XXXXXX/results/opds.png)
 ```
 
@@ -122,7 +155,7 @@ A failure keeps the scratch dir and names it (`kept /tmp/omnibus-koreader.XXX`):
 In CI the same directory is uploaded as the `koreader-lane` artifact
 (retention 7 days) by [`.github/workflows/koreader.yml`](../.github/workflows/koreader.yml),
 which runs the lane on PRs touching OPDS/auth code, the position and
-status stores or the lane itself, and
+status stores, the metadata and export-EPUB code or the lane itself, and
 nightly.
 
 ### Bumping KOReader
