@@ -174,31 +174,44 @@ impl Reader {
     /// Whether `key` would close with a job or commit a highlight right
     /// now — the two points `App` checks its device-busy slot before
     /// dispatching, so a refusal never loses the reader's position or an
-    /// open selection.
+    /// open selection. Only `ReaderView::Page` commits — a digit typed into
+    /// an open note, or any key while the highlights list is showing, is
+    /// never a close or a highlight commit.
     pub(super) fn commits_on(&self, key: KeyEvent) -> bool {
         if key.kind != KeyEventKind::Press || self.text.is_none() {
             return false;
         }
         match &self.view {
             ReaderView::Page if self.selection.is_none() => key.code == KeyCode::Esc,
-            _ if self.selection.is_some() => matches!(key.code, KeyCode::Char('1'..='4')),
+            ReaderView::Page if self.selection.is_some() => {
+                matches!(key.code, KeyCode::Char('1'..='4'))
+            }
             _ => false,
         }
     }
 
-    /// Act on `key`; only presses act. A metadata-only book takes only Esc.
+    /// Act on `key`; only presses act. The highlights list (and its own
+    /// delete) works even for a metadata-only book, which otherwise takes
+    /// only Esc and `h`/`H`.
     pub fn on_key(&mut self, key: KeyEvent) -> Option<ReaderAction> {
         if key.kind != KeyEventKind::Press {
             return None;
         }
+        if let ReaderView::Highlights(selected) = self.view {
+            return self.on_highlights_key(key, selected);
+        }
         if self.text.is_none() {
-            return (key.code == KeyCode::Esc).then_some(ReaderAction::Close(None));
+            return match key.code {
+                KeyCode::Esc => Some(ReaderAction::Close(None)),
+                KeyCode::Char(c) if c.to_ascii_lowercase() == 'h' => {
+                    self.view = ReaderView::Highlights(0);
+                    None
+                }
+                _ => None,
+            };
         }
         if let ReaderView::Note(_) = &self.view {
             return self.on_note_key(key);
-        }
-        if let ReaderView::Highlights(selected) = self.view {
-            return self.on_highlights_key(key, selected);
         }
         if self.selection.is_some() {
             return self.on_selection_key(key);
@@ -228,7 +241,7 @@ impl Reader {
                 self.move_cursor(-1);
                 None
             }
-            KeyCode::Char('v') => {
+            KeyCode::Char(c) if c.to_ascii_lowercase() == 'v' => {
                 self.selection = Some(Selection {
                     start: self.cursor,
                     end: self.cursor,
@@ -236,7 +249,7 @@ impl Reader {
                 });
                 None
             }
-            KeyCode::Char('h') => {
+            KeyCode::Char(c) if c.to_ascii_lowercase() == 'h' => {
                 self.view = ReaderView::Highlights(0);
                 None
             }
@@ -258,7 +271,7 @@ impl Reader {
                 self.view = ReaderView::Highlights(selected.saturating_sub(1));
                 None
             }
-            KeyCode::Char('x') => {
+            KeyCode::Char(c) if c.to_ascii_lowercase() == 'x' => {
                 let highlight = self.annotations.get(selected)?.id.clone();
                 self.view = ReaderView::Page;
                 Some(ReaderAction::Run(Job::DeleteHighlight {
@@ -296,7 +309,7 @@ impl Reader {
                     highlight,
                 }))
             }
-            KeyCode::Char('n') => {
+            KeyCode::Char(c) if c.to_ascii_lowercase() == 'n' => {
                 let note = self
                     .selection
                     .as_ref()
@@ -503,24 +516,15 @@ fn adjacent_chapter(current: usize, delta: i32, len: usize) -> Option<usize> {
     usize::try_from(next).ok().filter(|n| *n < len)
 }
 
-/// `chapter`'s paragraph key: the `kobo.N` prefix shared by every span of
-/// one paragraph (an inline element splits a paragraph across several spans
-/// with the same `N`, different `M`).
-fn paragraph_of(chapter: &Chapter, span: usize) -> &str {
-    chapter.spans[span]
-        .id
-        .rsplit_once('.')
-        .map_or(chapter.spans[span].id.as_str(), |(prefix, _)| prefix)
-}
-
 /// Display columns `text` takes, as ratatui measures it.
 fn display_width(text: &str) -> u16 {
     u16::try_from(TextSpan::raw(text).width()).unwrap_or(u16::MAX)
 }
 
 /// Wrap `chapter`'s words into lines: a new line starts at every paragraph
-/// break, and otherwise whenever the next word (plus its separating space)
-/// would cross `width`; a word wider than `width` sits alone on its line.
+/// break, and otherwise whenever the next word (plus its separating space —
+/// a glued word has none) would cross `width`; a word wider than `width`
+/// sits alone on its line.
 fn chapter_lines(chapter: &Chapter, width: u16) -> Vec<std::ops::RangeInclusive<usize>> {
     let width = width.max(1);
     let mut lines = Vec::new();
@@ -530,16 +534,17 @@ fn chapter_lines(chapter: &Chapter, width: u16) -> Vec<std::ops::RangeInclusive<
     let mut start = 0usize;
     let mut col = display_width(&chapter.words[0].text);
     for i in 1..chapter.words.len() {
-        let new_paragraph = paragraph_of(chapter, chapter.words[i].span)
-            != paragraph_of(chapter, chapter.words[i - 1].span);
+        let new_paragraph = chapter.paragraph_of(chapter.words[i].span)
+            != chapter.paragraph_of(chapter.words[i - 1].span);
         let word_width = display_width(&chapter.words[i].text);
-        let fits = col.saturating_add(1).saturating_add(word_width) <= width;
+        let separator = u16::from(!chapter.words[i].glued);
+        let fits = col.saturating_add(separator).saturating_add(word_width) <= width;
         if new_paragraph || !fits {
             lines.push(start..=(i - 1));
             start = i;
             col = word_width;
         } else {
-            col += 1 + word_width;
+            col += separator + word_width;
         }
     }
     lines.push(start..=(chapter.words.len() - 1));

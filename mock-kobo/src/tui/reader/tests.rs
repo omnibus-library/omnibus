@@ -31,6 +31,7 @@ fn synthetic_chapter(word_count: usize) -> Chapter {
             text: word.clone(),
             start: offset,
             end: offset + len,
+            glued: false,
         });
         text.push_str(&word);
         offset += len;
@@ -439,6 +440,57 @@ fn on_key_deletes_the_listed_highlight_with_x() {
         }))
     );
     assert_eq!(reader.view, ReaderView::Page);
+}
+
+#[test]
+fn on_key_deletes_a_highlight_from_the_metadata_only_view() {
+    let mut reader = Reader::open("book-1".into(), None);
+    reader.annotations = vec![crate::test_support::annotation("h-1")];
+
+    reader.on_key(press(KeyCode::Char('h')));
+    let action = reader.on_key(press(KeyCode::Char('x')));
+
+    assert_eq!(
+        action,
+        Some(ReaderAction::Run(Job::DeleteHighlight {
+            book: "book-1".to_owned(),
+            highlight: "h-1".to_owned(),
+        }))
+    );
+}
+
+#[test]
+fn on_key_accepts_uppercase_letter_commands() {
+    let mut reader = opened_on_ch2();
+    reader.on_key(press(KeyCode::Char('V')));
+    assert!(reader.selection.is_some(), "uppercase V starts a selection");
+
+    let mut reader = opened_on_ch2();
+    reader.on_key(press(KeyCode::Char('v')));
+    reader.on_key(press(KeyCode::Char('N')));
+    assert_eq!(
+        reader.view,
+        ReaderView::Note(String::new()),
+        "uppercase N opens the note view"
+    );
+
+    let mut reader = opened();
+    reader.on_key(press(KeyCode::Char('H')));
+    assert_eq!(
+        reader.view,
+        ReaderView::Highlights(0),
+        "uppercase H opens the highlights list"
+    );
+    reader.annotations = vec![crate::test_support::annotation("h-1")];
+    let action = reader.on_key(press(KeyCode::Char('X')));
+    assert_eq!(
+        action,
+        Some(ReaderAction::Run(Job::DeleteHighlight {
+            book: "book-1".to_owned(),
+            highlight: "h-1".to_owned(),
+        })),
+        "uppercase X deletes the selected highlight"
+    );
 }
 
 #[test]

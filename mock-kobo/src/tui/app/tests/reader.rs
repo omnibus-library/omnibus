@@ -216,6 +216,35 @@ fn on_key_refuses_to_close_the_reader_while_the_device_is_syncing() {
 }
 
 #[test]
+fn on_key_types_a_digit_into_the_note_buffer_while_the_device_is_syncing() {
+    let mut app = opened_reader_app();
+    if let Mode::Reading(reader) = &mut app.mode {
+        reader.chapter = 1;
+        reader.cursor = 2;
+        reader.fit(24, 3);
+        reader.selection = Some(crate::tui::reader::Selection {
+            start: 2,
+            end: 4,
+            note: None,
+        });
+        reader.view = crate::tui::reader::ReaderView::Note(String::new());
+    }
+    app.device_syncing = true;
+
+    let action = app.on_key(code(KeyCode::Char('4')), URL);
+
+    assert_eq!(action, None);
+    match &app.mode {
+        Mode::Reading(reader) => assert_eq!(
+            reader.view,
+            crate::tui::reader::ReaderView::Note("4".to_owned()),
+            "the digit must reach the note buffer, not the busy gate"
+        ),
+        other => panic!("expected Reading, got {other:?}"),
+    }
+}
+
+#[test]
 fn on_key_refuses_to_commit_a_highlight_while_the_device_is_syncing() {
     let mut app = opened_reader_app();
     if let Mode::Reading(reader) = &mut app.mode {
