@@ -554,7 +554,10 @@ pub fn paginate(kepub: &Kepub, chapter: usize, width: u16, rows: u16) -> Vec<Pag
     let rows = usize::from(rows.max(1));
     let ch = &kepub.chapters[chapter];
     let lines = chapter_lines(ch, width);
-    let words_before_chapter: usize = kepub.chapters[..chapter].iter().map(|c| c.words.len()).sum();
+    let words_before_chapter: usize = kepub.chapters[..chapter]
+        .iter()
+        .map(|c| c.words.len())
+        .sum();
     let total: usize = kepub.chapters.iter().map(|c| c.words.len()).sum();
     let words_before_span = words_before_span_table(ch);
     lines

@@ -177,7 +177,11 @@ fn paginate_puts_a_word_wider_than_the_width_on_its_own_line() {
 
     let lines = all_lines(&paginate(&kepub, 0, 5, 3));
 
-    assert_eq!(lines[0], 0..=0, "\"Chapter\" (7 wide) alone exceeds width 5");
+    assert_eq!(
+        lines[0],
+        0..=0,
+        "\"Chapter\" (7 wide) alone exceeds width 5"
+    );
 }
 
 #[test]
