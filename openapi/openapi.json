@@ -15601,7 +15601,7 @@
           },
           "sync_to_kobo": {
             "type": "boolean",
-            "description": "Whether the owner's Kobo devices sync this shelf's books. Off by default. A Kobo\nsyncs only books on shelves with this on, never the whole library."
+            "description": "Whether the owner's sync devices (Kobos and KOReaders) sync this shelf's books. Off\nby default. A device syncs only books on shelves with this on, never the whole\nlibrary."
           },
           "visibility": {
             "$ref": "#/components/schemas/Visibility"
@@ -16637,7 +16637,7 @@
               "boolean",
               "null"
             ],
-            "description": "Turns Kobo sync for the shelf on or off."
+            "description": "Turns device sync for the shelf on or off."
           },
           "visibility": {
             "oneOf": [

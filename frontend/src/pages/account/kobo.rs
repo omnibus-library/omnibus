@@ -109,7 +109,7 @@ fn render_kobo_setup(open: bool) -> Element {
             }
             p { class: "subtitle kobo-shelf-rule", "data-testid": "kobo-shelf-rule",
                 "Only shelves marked "
-                b { "Sync to Kobo" }
+                b { "Sync to my devices" }
                 " are synced, so set that on a shelf before the first sync. "
                 Link { to: Route::Shelves {}, "data-testid": "kobo-shelves-link", "Choose shelves to sync" }
             }

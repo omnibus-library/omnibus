@@ -184,7 +184,7 @@ mod render_tests {
             rule_at > ol_end,
             "the shelf rule must sit after the procedure list, not inside it"
         );
-        assert!(html.contains("Sync to Kobo"));
+        assert!(html.contains("Sync to my devices"));
     }
 
     /// Step 2 and step 4 must name the same thing: the whole URL the field

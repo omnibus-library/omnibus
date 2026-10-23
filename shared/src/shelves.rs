@@ -295,8 +295,9 @@ pub struct Shelf {
     pub match_mode: Option<MatchMode>,
     pub rules: Vec<ShelfRule>,
     pub book_count: i64,
-    /// Whether the owner's Kobo devices sync this shelf's books. Off by default. A Kobo
-    /// syncs only books on shelves with this on, never the whole library.
+    /// Whether the owner's sync devices (Kobos and KOReaders) sync this shelf's books. Off
+    /// by default. A device syncs only books on shelves with this on, never the whole
+    /// library.
     #[serde(default)]
     pub sync_to_kobo: bool,
 }
@@ -375,7 +376,7 @@ pub struct UpdateShelfRequest {
     pub match_mode: Option<MatchMode>,
     #[serde(default)]
     pub rules: Option<Vec<ShelfRule>>,
-    /// Turns Kobo sync for the shelf on or off.
+    /// Turns device sync for the shelf on or off.
     #[serde(default)]
     pub sync_to_kobo: Option<bool>,
 }
