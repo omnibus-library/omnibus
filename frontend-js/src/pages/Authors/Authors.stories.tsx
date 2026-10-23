@@ -358,10 +358,11 @@ export const DeepLinkScrollsToTheRow: Story = {
 
 const nextFrame = () => new Promise((frame) => requestAnimationFrame(frame));
 
-/** Scrolls the window and waits a frame, which is when the browser files the scroll event. */
+/** Scrolls the window and waits out the frame that fires the scroll event and the one that records it. */
 async function scrollWindowTo(y: number) {
   window.scrollTo(0, y);
   await waitFor(() => expect(window.scrollY).toBe(y));
+  await nextFrame();
   await nextFrame();
 }
 
@@ -518,5 +519,32 @@ export const MountingWithNothingSavedLeavesTheWindow: Story = {
     await nextFrame();
 
     await expect(window.scrollY).toBe(300);
+  },
+};
+
+export const HashOnlyHistoryTraversalKeepsRecording: Story = {
+  parameters: { path: "/authors/2" },
+  beforeEach({ msw }) {
+    msw.use(...withAuthors());
+  },
+  render: () => leaveAndReturn,
+  play: async ({ canvas, userEvent }) => {
+    await canvas.findByRole("heading", pageHeadingOf("Octavia E. Butler"));
+    await scrollWindowTo(400);
+
+    // Back or Forward between two `#letter-X` entries: same pathname, so no hook reruns.
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    await scrollWindowTo(500);
+
+    await userEvent.click(canvas.getByRole("link", { name: "Leave authors" }));
+    await canvas.findByText("Elsewhere");
+    window.scrollTo(0, 0);
+    await nextFrame();
+    await userEvent.click(
+      canvas.getByRole("link", { name: "Return to authors" }),
+    );
+
+    await canvas.findByRole("heading", pageHeadingOf("Octavia E. Butler"));
+    await waitFor(() => expect(window.scrollY).toBe(500));
   },
 };

@@ -10,6 +10,8 @@ let routePath: string | null = null;
 // Path whose offsets are trusted. Null while a route transition or history navigation settles; `restore` re-arms it.
 let recordPath: string | null = null;
 // Stops the restore still converging, so a newer one supersedes it rather than both scrolling at once.
+// `location.pathname` when recording was last armed: a popstate that leaves it unchanged (a `#fragment` traversal) keeps recording.
+let armedLocation: string | null = null;
 let stopRunning: (() => void) | null = null;
 let pendingFrame = 0;
 let installed = false;
@@ -31,7 +33,7 @@ function install() {
     { passive: true },
   );
   window.addEventListener("popstate", () => {
-    recordPath = null;
+    if (window.location.pathname !== armedLocation) recordPath = null;
   });
 }
 
@@ -42,6 +44,7 @@ function restore(path: string, toTopIfNone: boolean) {
   const target = positions.get(path);
   const rearm = () => {
     recordPath = path;
+    armedLocation = window.location.pathname;
   };
   if (target === undefined || target <= 0) {
     if (toTopIfNone) window.scrollTo(0, 0);
@@ -99,6 +102,7 @@ export function forgetScrollPositions() {
   positions.clear();
   routePath = null;
   recordPath = null;
+  armedLocation = null;
 }
 
 /** Reports the route path and freezes recording at each change, until that path's restore re-arms it. */
