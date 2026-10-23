@@ -45,7 +45,12 @@ pub fn cfi_to_xpointer(source_epub: &Path, cfi: &str) -> anyhow::Result<Option<S
         return Ok(None);
     };
     let mut doc = book::open_doc(source_epub)?;
-    tail_xpointer(&mut doc, &mut Walks::new(), parsed.spine_index, &parsed.tail)
+    tail_xpointer(
+        &mut doc,
+        &mut Walks::new(),
+        parsed.spine_index,
+        &parsed.tail,
+    )
 }
 
 /// Each spine item's walk, kept so a batch parses every XHTML file once;
