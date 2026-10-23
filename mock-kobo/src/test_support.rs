@@ -532,6 +532,41 @@ pub fn annotation(id: &str) -> crate::annotations::Annotation {
     }
 }
 
+/// A minimal single-chapter KEPUB zip: `META-INF/container.xml`, a bare
+/// OPF naming one spine item, and `chapter_xhtml` as that item's body —
+/// for a test that wants to hand-craft koboSpan markup `Kepub::parse` sees
+/// directly, rather than go through the committed reader fixture.
+pub fn minimal_kepub_zip(chapter_xhtml: &str) -> Vec<u8> {
+    use std::io::Write as _;
+
+    let mut buf = Vec::new();
+    let mut writer = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
+    let options = zip::write::SimpleFileOptions::default();
+    writer
+        .start_file("META-INF/container.xml", options)
+        .unwrap();
+    writer
+        .write_all(
+            br#"<?xml version="1.0"?><container><rootfiles>
+                <rootfile full-path="content.opf"/>
+            </rootfiles></container>"#,
+        )
+        .unwrap();
+    writer.start_file("content.opf", options).unwrap();
+    writer
+        .write_all(
+            br#"<?xml version="1.0"?><package>
+                <manifest><item id="ch1" href="ch1.xhtml"/></manifest>
+                <spine><itemref idref="ch1"/></spine>
+            </package>"#,
+        )
+        .unwrap();
+    writer.start_file("ch1.xhtml", options).unwrap();
+    writer.write_all(chapter_xhtml.as_bytes()).unwrap();
+    writer.finish().unwrap();
+    buf
+}
+
 /// A `NewHighlight` with "a passage" and `Swatch::Blue` fixed; `note` and
 /// `location` are the two fields call sites actually vary.
 pub fn new_highlight(

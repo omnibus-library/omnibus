@@ -58,6 +58,12 @@ pub struct Word {
     /// UTF-16 code units into `spans[span].text`; `end` is exclusive.
     pub start: u32,
     pub end: u32,
+    /// Whether this word directly continues the previous one with no
+    /// whitespace between them — an inline element (`<em>`) can split one
+    /// span into several with no space in the markup at all. Rendering and
+    /// passage matching must join a glued word to the one before it; a
+    /// highlight's offsets stay per-span regardless.
+    pub glued: bool,
 }
 
 impl Chapter {
@@ -76,6 +82,11 @@ impl Chapter {
         let last = &self.words[*words.end()];
         let mut raw = String::new();
         for span_index in first.span..=last.span {
+            if span_index > first.span
+                && self.paragraph_of(span_index) != self.paragraph_of(span_index - 1)
+            {
+                raw.push(' ');
+            }
             let units: Vec<u16> = self.spans[span_index].text.encode_utf16().collect();
             let from = if span_index == first.span {
                 first.start as usize
@@ -127,6 +138,11 @@ impl Chapter {
             }
         }
         covered
+    }
+
+    /// This chapter's paragraph key for `span` — see [`paragraph_key`].
+    pub(crate) fn paragraph_of(&self, span: usize) -> &str {
+        paragraph_key(&self.spans[span].id)
     }
 }
 
@@ -200,25 +216,28 @@ impl Kepub {
     /// The first run of consecutive words in spine order whose text equals
     /// `passage`'s whitespace-split words exactly, punctuation included —
     /// the control API's `read-to`/`highlight-words` actions resolve a
-    /// passage the same way. `None` for an empty passage, a partial word, or
-    /// a run that would cross a chapter boundary (each chapter stands alone).
+    /// passage the same way, glued words joined on both sides the same way
+    /// rendering joins them. `None` for an empty passage, a partial word,
+    /// or a run that would cross a chapter boundary.
     pub fn find_passage(&self, passage: &str) -> Option<(usize, std::ops::RangeInclusive<usize>)> {
         let needle: Vec<&str> = passage.split_whitespace().collect();
         if needle.is_empty() {
             return None;
         }
         for (chapter_index, chapter) in self.chapters.iter().enumerate() {
-            let words = &chapter.words;
-            if needle.len() > words.len() {
+            let tokens = comparison_words(&chapter.words);
+            if needle.len() > tokens.len() {
                 continue;
             }
-            for start in 0..=(words.len() - needle.len()) {
+            for start in 0..=(tokens.len() - needle.len()) {
                 let matches = needle
                     .iter()
                     .enumerate()
-                    .all(|(offset, word)| words[start + offset].text == *word);
+                    .all(|(offset, word)| tokens[start + offset].0 == *word);
                 if matches {
-                    return Some((chapter_index, start..=(start + needle.len() - 1)));
+                    let first = tokens[start].1.clone();
+                    let last = tokens[start + needle.len() - 1].1.clone();
+                    return Some((chapter_index, *first.start()..=*last.end()));
                 }
             }
         }
@@ -448,14 +467,47 @@ fn resolve_entity(r: &BytesRef<'_>) -> Result<char, KepubError> {
     }
 }
 
+/// `chapter.words`, with every run of `glued` words merged into the single
+/// token a copied passage would show, each still naming the word-index
+/// range it covers (so a match can still return a `Word`-level range).
+fn comparison_words(words: &[Word]) -> Vec<(String, std::ops::RangeInclusive<usize>)> {
+    let mut tokens: Vec<(String, std::ops::RangeInclusive<usize>)> = Vec::new();
+    for (index, word) in words.iter().enumerate() {
+        if word.glued {
+            if let Some((text, range)) = tokens.last_mut() {
+                text.push_str(&word.text);
+                *range = *range.start()..=index;
+                continue;
+            }
+        }
+        tokens.push((word.text.clone(), index..=index));
+    }
+    tokens
+}
+
 /// Every maximal run of non-whitespace characters across `spans`, with its
-/// UTF-16 start/end into its own span's text.
+/// UTF-16 start/end into its own span's text. A word is `glued` when the
+/// span before it ended still inside a word (no trailing whitespace), this
+/// one starts at its own byte 0 (no leading whitespace either), *and* the
+/// two spans are the same paragraph — an inline element splitting one
+/// paragraph's span with no space at all, never two paragraphs in a row
+/// whose own markup just has no whitespace between the elements.
 fn words_in(spans: &[Span]) -> Vec<Word> {
     let mut words = Vec::new();
+    // Whether the previous non-empty span ended still inside a word, and
+    // which paragraph it belonged to.
+    let mut glue_next = false;
+    let mut prev_paragraph: Option<&str> = None;
     for (index, span) in spans.iter().enumerate() {
+        if span.text.is_empty() {
+            continue;
+        }
+        let paragraph = paragraph_key(&span.id);
+        let can_glue = glue_next && prev_paragraph == Some(paragraph);
         let mut utf16 = 0u32;
         let mut open: Option<(u32, usize)> = None;
         let mut last_byte_end = 0usize;
+        let mut first_word = true;
         for (byte_index, ch) in span.text.char_indices() {
             let width = u32::try_from(ch.len_utf16()).unwrap_or(2);
             if ch.is_whitespace() {
@@ -465,7 +517,9 @@ fn words_in(spans: &[Span]) -> Vec<Word> {
                         text: span.text[start_byte..byte_index].to_owned(),
                         start,
                         end: utf16,
+                        glued: first_word && can_glue && start_byte == 0,
                     });
+                    first_word = false;
                 }
             } else if open.is_none() {
                 open = Some((utf16, byte_index));
@@ -479,10 +533,22 @@ fn words_in(spans: &[Span]) -> Vec<Word> {
                 text: span.text[start_byte..last_byte_end].to_owned(),
                 start,
                 end: utf16,
+                glued: first_word && can_glue && start_byte == 0,
             });
+            glue_next = true;
+        } else {
+            glue_next = false;
         }
+        prev_paragraph = Some(paragraph);
     }
     words
+}
+
+/// `span_id`'s paragraph key: the `kobo.N` prefix shared by every span of
+/// one paragraph (an inline element splits a paragraph across several spans
+/// with the same `N`, different `M`).
+fn paragraph_key(span_id: &str) -> &str {
+    span_id.rsplit_once('.').map_or(span_id, |(prefix, _)| prefix)
 }
 
 #[cfg(test)]

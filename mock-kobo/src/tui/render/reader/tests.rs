@@ -166,6 +166,23 @@ fn draw_shows_the_selection_reversed_on_the_page() {
 }
 
 #[test]
+fn draw_joins_glued_words_without_a_space() {
+    let xhtml = r#"<?xml version="1.0"?><html><body><p>
+        <span class="koboSpan" id="kobo.1.1">said </span>
+        <em><span class="koboSpan" id="kobo.1.2">never</span></em>
+        <span class="koboSpan" id="kobo.1.3">.</span>
+    </p></body></html>"#;
+    let kepub = Kepub::parse(&crate::test_support::minimal_kepub_zip(xhtml)).unwrap();
+    let mut reader = Reader::open("book-1".to_owned(), Some(kepub));
+    reader.fit(80, 3);
+
+    let shown = shown(&library(book("Reader Fixture")), reader);
+
+    assert!(shown.contains("said never."), "{shown}");
+    assert!(!shown.contains("never ."), "{shown}");
+}
+
+#[test]
 fn draw_shows_the_note_prompt_while_typing_a_note() {
     let kepub = Kepub::parse(READER_KEPUB).unwrap();
     let mut reader = Reader::open("book-1".to_owned(), Some(kepub));

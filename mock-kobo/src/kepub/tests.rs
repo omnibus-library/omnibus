@@ -104,6 +104,24 @@ fn read_entry_refuses_an_entry_that_decompresses_past_the_byte_cap() {
 }
 
 #[test]
+fn find_passage_matches_words_glued_across_an_inline_elements_span_split() {
+    let xhtml = r#"<?xml version="1.0"?><html><body><p>
+        <span class="koboSpan" id="kobo.1.1">said </span>
+        <em><span class="koboSpan" id="kobo.1.2">never</span></em>
+        <span class="koboSpan" id="kobo.1.3">.</span>
+    </p></body></html>"#;
+    let kepub = Kepub::parse(&crate::test_support::minimal_kepub_zip(xhtml)).unwrap();
+    let words = &kepub.chapters[0].words;
+    assert_eq!(words.len(), 3, "{words:?}");
+    assert!(!words[1].glued, "\"never\" follows a real space");
+    assert!(words[2].glued, "\".\" directly continues \"never\" with no space");
+
+    let found = kepub.find_passage("said never.");
+
+    assert_eq!(found, Some((0, 0..=2)));
+}
+
+#[test]
 fn locate_span_finds_the_chapter_and_span_of_a_kobospan() {
     let kepub = Kepub::parse(READER_KEPUB).unwrap();
 
@@ -175,6 +193,18 @@ fn highlight_carries_utf16_offsets_over_an_astral_fraktur_word() {
     assert_eq!(location.start_char, 27);
     assert_eq!(location.end_span, "kobo.3.1");
     assert_eq!(location.end_char, 45);
+}
+
+#[test]
+fn highlight_inserts_a_space_between_spans_of_different_paragraphs() {
+    let kepub = Kepub::parse(READER_KEPUB).unwrap();
+    let ch1 = &kepub.chapters[0];
+    // "dawn." (kobo.2.1, last word of its paragraph) through "Paul"
+    // (kobo.3.1, first word of the next) — the book's own markup puts no
+    // space between the two spans' text.
+    let highlight = ch1.highlight(7..=8, crate::annotations::Swatch::Yellow, None);
+
+    assert_eq!(highlight.text, "dawn. Paul");
 }
 
 #[test]

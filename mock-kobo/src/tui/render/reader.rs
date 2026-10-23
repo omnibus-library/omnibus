@@ -151,10 +151,10 @@ fn draw_page(
         .map(|range| {
             let mut spans = Vec::new();
             for (position, word_index) in range.clone().enumerate() {
-                if position > 0 {
+                let word = &chapter.words[word_index];
+                if position > 0 && !word.glued {
                     spans.push(TextSpan::raw(" "));
                 }
-                let word = &chapter.words[word_index];
                 let mut style = Style::new();
                 if let Some(&swatch) = colors.get(&word_index) {
                     style = style.bg(swatch_color(swatch)).fg(Color::Black);
