@@ -199,6 +199,61 @@ fn draw_shows_the_note_prompt_while_typing_a_note() {
     assert!(shown.contains("note: a thought"), "{shown}");
 }
 
+#[test]
+fn draw_shows_the_note_prompt_over_a_retained_status() {
+    let kepub = Kepub::parse(READER_KEPUB).unwrap();
+    let mut reader = Reader::open("book-1".to_owned(), Some(kepub));
+    reader.fit(24, 3);
+    reader.selection = Some(Selection {
+        start: 0,
+        end: 1,
+        note: None,
+    });
+    reader.view = ReaderView::Note("a thought".to_owned());
+
+    let shown = drawn(
+        &library(book("Reader Fixture")),
+        reader,
+        Some(Status::Info("downloaded".to_owned())),
+    )
+    .backend()
+    .to_string();
+
+    assert!(shown.contains("note: a thought"), "{shown}");
+    assert!(!shown.contains("downloaded"), "{shown}");
+}
+
+#[test]
+fn draw_shows_the_highlights_list_for_a_metadata_only_book() {
+    let mut reader = Reader::open("book-1".to_owned(), None);
+    reader.annotations = vec![Annotation {
+        id: "h-1".to_owned(),
+        text: "a passage".to_owned(),
+        note: None,
+        color: Swatch::Pink,
+        location: location_json(None),
+    }];
+    reader.view = ReaderView::Highlights(0);
+
+    let shown = shown(&library(book("Reader Fixture")), reader);
+
+    assert!(shown.contains("[Pink]"), "{shown}");
+    assert!(shown.contains("a passage"), "{shown}");
+    assert!(
+        !shown.contains("(not placed)"),
+        "no chapter means no placement marker either way: {shown}"
+    );
+}
+
+#[test]
+fn draw_names_h_in_the_metadata_only_views_help_line() {
+    let reader = Reader::open("book-1".to_owned(), None);
+
+    let shown = shown(&library(book("Reader Fixture")), reader);
+
+    assert!(shown.contains("h highlights"), "{shown}");
+}
+
 fn naive_to_zurich_range() -> SpanRange {
     SpanRange {
         chapter: "ch2.xhtml".to_owned(),
@@ -276,4 +331,48 @@ fn draw_marks_a_highlight_the_book_cannot_place() {
     let shown = shown(&library(book("Reader Fixture")), reader);
 
     assert!(shown.contains("(not placed)"), "{shown}");
+}
+
+#[test]
+fn draw_scrolls_the_highlights_list_so_the_selected_row_stays_visible() {
+    let kepub = Kepub::parse(READER_KEPUB).unwrap();
+    let mut reader = Reader::open("book-1".to_owned(), Some(kepub));
+    reader.fit(24, 3);
+    reader.annotations = (0..20)
+        .map(|i| Annotation {
+            id: format!("h-{i}"),
+            text: format!("passage {i}"),
+            note: None,
+            color: Swatch::Yellow,
+            location: location_json(None),
+        })
+        .collect();
+    reader.view = ReaderView::Highlights(15);
+
+    let shown = shown(&library(book("Reader Fixture")), reader);
+
+    assert!(shown.contains("passage 15"), "{shown}");
+}
+
+#[test]
+fn draw_shows_no_dangling_dash_for_a_highlight_without_a_note() {
+    let kepub = Kepub::parse(READER_KEPUB).unwrap();
+    let mut reader = Reader::open("book-1".to_owned(), Some(kepub));
+    reader.fit(24, 3);
+    reader.annotations = vec![Annotation {
+        id: "h-1".to_owned(),
+        text: "a passage".to_owned(),
+        note: None,
+        color: Swatch::Yellow,
+        location: location_json(None),
+    }];
+    reader.view = ReaderView::Highlights(0);
+
+    let shown = shown(&library(book("Reader Fixture")), reader);
+
+    assert!(
+        shown.contains("\"a passage\" (not placed)"),
+        "no note means no dash at all: {shown}"
+    );
+    assert!(!shown.contains("passage\" —"), "{shown}");
 }

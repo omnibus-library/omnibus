@@ -19,7 +19,7 @@ use crate::tui::reader::{Page, Reader, ReaderView, Selection};
 const PAGE_HELP: &str = "←/→ page · [/] chapter · ↑/↓ cursor · v select · h highlights · Esc close";
 const SELECTION_HELP: &str = "←/→ extend · 1-4 highlight · n note · Esc cancel";
 const HIGHLIGHTS_HELP: &str = "↓/↑ move · x delete · Esc back";
-const METADATA_HELP: &str = "Esc close";
+const METADATA_HELP: &str = "h highlights · Esc close";
 
 /// The rect pages are fitted to: a one-line header and a one-line help
 /// bracket the page itself.
@@ -54,6 +54,12 @@ pub fn draw(
     let Some(book) = book else {
         return;
     };
+    if let ReaderView::Highlights(selected) = &reader.view {
+        let chapter = reader.text.as_ref().map(|kepub| &kepub.chapters[reader.chapter]);
+        draw_highlights_list(frame, header.union(body), chapter, &reader.annotations, *selected);
+        draw_help_line(frame, help, HIGHLIGHTS_HELP, status);
+        return;
+    }
     match &reader.text {
         Some(kepub) => {
             let pages = reader.pages();
@@ -63,10 +69,7 @@ pub fn draw(
             draw_page_header(frame, header, book, reader, page, pages.len());
             let chapter = &kepub.chapters[reader.chapter];
             match &reader.view {
-                ReaderView::Highlights(selected) => {
-                    draw_highlights_list(frame, body, chapter, &reader.annotations, *selected);
-                    draw_help_line(frame, help, HIGHLIGHTS_HELP, status);
-                }
+                ReaderView::Highlights(_) => unreachable!("handled above"),
                 ReaderView::Note(buffer) => {
                     draw_page(
                         frame,
@@ -77,10 +80,7 @@ pub fn draw(
                         reader.selection.as_ref(),
                         &reader.annotations,
                     );
-                    match status {
-                        Some(status) => draw_help_line(frame, help, "", Some(status)),
-                        None => super::draw_prompt(frame, help, "note", buffer),
-                    }
+                    super::draw_prompt(frame, help, "note", buffer);
                 }
                 ReaderView::Page => {
                     draw_page(
@@ -205,11 +205,14 @@ fn swatch_color(swatch: Swatch) -> Color {
 }
 
 /// The highlights list: each row's colour, text and note, `(not placed)`
-/// when the book's text can't locate it; "no highlights on this book" when empty.
+/// when the chapter can't locate it (never shown without a chapter — a
+/// metadata-only book can't say either way); "no highlights on this book"
+/// when empty. Scrolls so the selected row stays visible, the same way the
+/// library list does.
 fn draw_highlights_list(
     frame: &mut Frame,
     area: Rect,
-    chapter: &crate::kepub::Chapter,
+    chapter: Option<&crate::kepub::Chapter>,
     annotations: &[Annotation],
     selected: usize,
 ) {
@@ -221,13 +224,26 @@ fn draw_highlights_list(
         .iter()
         .enumerate()
         .map(|(index, annotation)| {
-            let placed = span_range(&annotation.location)
-                .and_then(|range| chapter.covered_words(&range))
-                .is_some();
-            let suffix = if placed { "" } else { " (not placed)" };
-            let note = annotation.note.as_deref().unwrap_or("");
+            let suffix = match chapter {
+                Some(chapter) => {
+                    let placed = span_range(&annotation.location)
+                        .and_then(|range| chapter.covered_words(&range))
+                        .is_some();
+                    if placed {
+                        ""
+                    } else {
+                        " (not placed)"
+                    }
+                }
+                None => "",
+            };
+            let note_part = annotation
+                .note
+                .as_deref()
+                .map(|note| format!(" — {note}"))
+                .unwrap_or_default();
             let text = format!(
-                "[{}] \"{}\" — {note}{suffix}",
+                "[{}] \"{}\"{note_part}{suffix}",
                 annotation.color.name(),
                 annotation.text
             );
@@ -238,7 +254,10 @@ fn draw_highlights_list(
             }
         })
         .collect();
-    frame.render_widget(Paragraph::new(lines), area);
+    let rows = usize::from(area.height);
+    let offset = selected.saturating_sub(rows.saturating_sub(1));
+    let offset = u16::try_from(offset).unwrap_or(u16::MAX);
+    frame.render_widget(Paragraph::new(lines).scroll((offset, 0)), area);
 }
 
 /// The metadata-only view: title, authors, series, description, a
