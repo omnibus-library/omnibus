@@ -4,6 +4,7 @@
 use axum::{
     body::{to_bytes, Body},
     http::{header, Request, StatusCode},
+    Router,
 };
 use omnibus_db as db;
 use omnibus_shared::DeviceKind;
@@ -14,7 +15,7 @@ use tower::ServiceExt;
 use crate::auth::test_support as auth_test_support;
 use crate::backend::test_support::{
     body_json, get_with_bearer, get_with_bearer_and_if_none_match, opt_in, request,
-    revoke_can_download, seed_downloadable_book,
+    revoke_can_download, seed_downloadable_book, CoversDirGuard, TINY_PNG,
 };
 
 use super::test_support::fixture;
@@ -26,11 +27,15 @@ mod auth {
     const STATE: &str = "/koreader/v1/books/0123abcd-0000-0000-0000-000000000000/state";
 
     /// Every route as `(method, uri)`.
-    const ROUTES: [(&str, &str); 4] = [
+    const ROUTES: [(&str, &str); 5] = [
         ("GET", "/koreader/v1/library"),
         (
             "GET",
             "/koreader/v1/books/0123abcd-0000-0000-0000-000000000000/file",
+        ),
+        (
+            "GET",
+            "/koreader/v1/books/0123abcd-0000-0000-0000-000000000000/cover",
         ),
         ("GET", STATE),
         ("PUT", STATE),
@@ -169,6 +174,92 @@ mod library {
         assert!(berserk["last_modified"].is_i64());
     }
 
+    async fn library_entry(app: &Router, token: &str, uuid: &str) -> Value {
+        let res = app
+            .clone()
+            .oneshot(get_with_bearer("/koreader/v1/library", token))
+            .await
+            .unwrap();
+        let body: Value = body_json(res).await;
+        body["books"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|b| b["uuid"] == uuid)
+            .unwrap_or_else(|| panic!("{uuid} missing from {body}"))
+            .clone()
+    }
+
+    #[tokio::test]
+    async fn carries_the_effective_metadata_with_overrides_applied() {
+        let (app, pool, token, uid) = fixture().await;
+        let uuid = db::test_support::seed_synced_ebook(&pool, "alpha.epub", "Alpha", "Ada").await;
+        opt_in(&pool, uid, std::slice::from_ref(&uuid)).await;
+        let creator = |name: &str| omnibus_shared::Contributor {
+            name: name.into(),
+            ..Default::default()
+        };
+        let overrides = omnibus_shared::MetadataOverrides {
+            title: Some("Alpha Revised".into()),
+            creators: Some(vec![creator("Ada Lovelace"), creator("Bo Peep")]),
+            series: Some("The Greek Letters".into()),
+            series_index: Some("2".into()),
+            description: Some("An edited blurb".into()),
+            ..Default::default()
+        };
+        db::upsert_metadata_overrides(&pool, &uuid, &overrides, false, uid)
+            .await
+            .unwrap();
+
+        let entry = library_entry(&app, &token, &uuid).await;
+
+        assert_eq!(entry["title"], "Alpha Revised");
+        assert_eq!(entry["authors"], json!(["Ada Lovelace", "Bo Peep"]));
+        assert_eq!(entry["series"], "The Greek Letters");
+        assert_eq!(entry["series_index"], 2.0);
+        assert_eq!(entry["description"], "An edited blurb");
+        assert_eq!(
+            entry["cover_url"],
+            format!("/koreader/v1/books/{uuid}/cover")
+        );
+    }
+
+    #[tokio::test]
+    async fn returns_null_series_and_an_empty_description_for_a_book_without_them() {
+        let (app, pool, token, uid) = fixture().await;
+        let uuid = db::test_support::seed_synced_ebook(&pool, "alpha.epub", "Alpha", "Ada").await;
+        opt_in(&pool, uid, std::slice::from_ref(&uuid)).await;
+
+        let entry = library_entry(&app, &token, &uuid).await;
+
+        assert_eq!(entry["series"], Value::Null);
+        assert_eq!(entry["series_index"], Value::Null);
+        assert_eq!(entry["description"], "");
+    }
+
+    #[tokio::test]
+    async fn moves_last_modified_when_an_override_is_saved() {
+        let (app, pool, token, uid) = fixture().await;
+        let uuid = db::test_support::seed_synced_ebook(&pool, "alpha.epub", "Alpha", "Ada").await;
+        opt_in(&pool, uid, std::slice::from_ref(&uuid)).await;
+        sqlx::query("UPDATE books SET last_modified = 1 WHERE uuid = ?")
+            .bind(&uuid)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let overrides = omnibus_shared::MetadataOverrides {
+            title: Some("Alpha Revised".into()),
+            ..Default::default()
+        };
+        db::upsert_metadata_overrides(&pool, &uuid, &overrides, false, uid)
+            .await
+            .unwrap();
+
+        let entry = library_entry(&app, &token, &uuid).await;
+
+        assert!(entry["last_modified"].as_i64().unwrap() > 1);
+    }
+
     #[tokio::test]
     async fn returns_an_empty_list_when_no_shelf_is_opted_in() {
         let (app, pool, token, _uid) = fixture().await;
@@ -219,14 +310,14 @@ mod file {
         assert_eq!(again.status(), StatusCode::NOT_MODIFIED);
     }
 
-    #[tokio::test]
-    async fn serves_the_cbz_archive_for_a_cbz_only_book() {
-        let (app, pool, token, _uid) = fixture().await;
+    /// A CBZ-only book `uuid` backed by a real `aurora.cbz`; the file lives as long as the
+    /// returned directory.
+    async fn seed_cbz_book(pool: &SqlitePool, uuid: &str) -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("aurora.cbz"), b"archive").unwrap();
         let lib_id = sqlx::query("INSERT INTO scan_roots (path, display_name) VALUES (?, 'lib')")
             .bind(dir.path().to_str().unwrap())
-            .execute(&pool)
+            .execute(pool)
             .await
             .unwrap()
             .last_insert_rowid();
@@ -234,10 +325,10 @@ mod file {
             "INSERT INTO books (uuid, library_id, path, title, last_modified) \
              VALUES (?, ?, ?, 'Aurora', 1)",
         )
-        .bind(UUID)
+        .bind(uuid)
         .bind(lib_id)
         .bind(dir.path().to_str().unwrap())
-        .execute(&pool)
+        .execute(pool)
         .await
         .unwrap()
         .last_insert_rowid();
@@ -246,9 +337,16 @@ mod file {
              VALUES (?, 'CBZ', 'aurora', 0)",
         )
         .bind(book_id)
-        .execute(&pool)
+        .execute(pool)
         .await
         .unwrap();
+        dir
+    }
+
+    #[tokio::test]
+    async fn serves_the_cbz_archive_for_a_cbz_only_book() {
+        let (app, pool, token, _uid) = fixture().await;
+        let _library = seed_cbz_book(&pool, UUID).await;
 
         let res = app
             .oneshot(get_with_bearer(&file_uri(UUID), &token))
@@ -262,6 +360,70 @@ mod file {
         );
         let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
         assert_eq!(&bytes[..], b"archive");
+    }
+
+    async fn etag_of(app: &Router, token: &str, uuid: &str) -> String {
+        let res = app
+            .clone()
+            .oneshot(get_with_bearer(&file_uri(uuid), token))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        res.headers()[header::ETAG].to_str().unwrap().to_owned()
+    }
+
+    async fn save_title(pool: &SqlitePool, uid: i64, uuid: &str, title: &str) {
+        let overrides = omnibus_shared::MetadataOverrides {
+            title: Some(title.into()),
+            ..Default::default()
+        };
+        db::upsert_metadata_overrides(pool, uuid, &overrides, false, uid)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn answers_200_with_a_new_etag_after_an_override_is_saved() {
+        let export = tempfile::tempdir().unwrap();
+        let _env = db::test_support::EnvVarGuard::set_os(
+            "OMNIBUS_EXPORT_EPUB_DIR",
+            Some(export.path().as_os_str()),
+        );
+        let (app, pool, token, uid) = fixture().await;
+        seed_downloadable_book(&pool, UUID, "Alpha", "Ada").await;
+        let before = etag_of(&app, &token, UUID).await;
+        save_title(&pool, uid, UUID, "Alpha Revised").await;
+
+        let res = app
+            .oneshot(get_with_bearer_and_if_none_match(
+                &file_uri(UUID),
+                &token,
+                &before,
+            ))
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_ne!(res.headers()[header::ETAG].to_str().unwrap(), before);
+    }
+
+    #[tokio::test]
+    async fn answers_304_to_the_old_etag_after_a_title_edit_of_a_cbz() {
+        let (app, pool, token, uid) = fixture().await;
+        let _library = seed_cbz_book(&pool, UUID).await;
+        let before = etag_of(&app, &token, UUID).await;
+        save_title(&pool, uid, UUID, "Aurora Revised").await;
+
+        let res = app
+            .oneshot(get_with_bearer_and_if_none_match(
+                &file_uri(UUID),
+                &token,
+                &before,
+            ))
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::NOT_MODIFIED);
     }
 
     #[tokio::test]
@@ -301,6 +463,81 @@ mod file {
             .unwrap();
 
         assert_eq!(res.status(), StatusCode::FORBIDDEN);
+    }
+}
+
+mod cover {
+    use super::*;
+
+    const UUID: &str = "11111111-1111-1111-1111-111111111111";
+
+    fn cover_uri(uuid: &str) -> String {
+        format!("/koreader/v1/books/{uuid}/cover")
+    }
+
+    #[tokio::test]
+    async fn serves_the_books_cover_bytes() {
+        let _covers = CoversDirGuard::new("koreader_cover");
+        let (app, pool, token, uid) = fixture().await;
+        let uuid = db::test_support::seed_synced_ebook(&pool, "alpha.epub", "Alpha", "Ada").await;
+        db::write_override_cover(&uuid, "image/png", TINY_PNG).unwrap();
+        db::upsert_metadata_overrides(
+            &pool,
+            &uuid,
+            &omnibus_shared::MetadataOverrides::default(),
+            true,
+            uid,
+        )
+        .await
+        .unwrap();
+
+        let res = app
+            .oneshot(get_with_bearer(&cover_uri(&uuid), &token))
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(res.headers()[header::CONTENT_TYPE], "image/png");
+        let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(&bytes[..], TINY_PNG);
+    }
+
+    #[tokio::test]
+    async fn answers_404_for_a_book_without_a_cover() {
+        let (app, pool, token, _uid) = fixture().await;
+        let uuid = db::test_support::seed_synced_ebook(&pool, "alpha.epub", "Alpha", "Ada").await;
+
+        let res = app
+            .oneshot(get_with_bearer(&cover_uri(&uuid), &token))
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn answers_404_for_an_unknown_uuid() {
+        let (app, _pool, token, _uid) = fixture().await;
+
+        let res = app
+            .oneshot(get_with_bearer(&cover_uri(UUID), &token))
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn answers_400_for_a_uuid_over_the_length_cap() {
+        let (app, _pool, token, _uid) = fixture().await;
+        let long = "a".repeat(omnibus_shared::BOOK_UUID_MAX_LEN + 1);
+
+        let res = app
+            .oneshot(get_with_bearer(&cover_uri(&long), &token))
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
     }
 }
 

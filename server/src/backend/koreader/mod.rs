@@ -27,6 +27,7 @@ pub fn koreader_router(state: AppState) -> Router {
     Router::new()
         .route("/koreader/v1/library", get(library::library))
         .route("/koreader/v1/books/{uuid}/file", get(library::file))
+        .route("/koreader/v1/books/{uuid}/cover", get(library::cover))
         .route(
             "/koreader/v1/books/{uuid}/state",
             get(state::get_state).put(state::put_state),

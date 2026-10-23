@@ -138,7 +138,7 @@ pub async fn image_plain(
 }
 
 /// Resolve `image_id` and serve its cover, honouring `If-None-Match`.
-async fn serve_cover(state: &AppState, image_id: &str, headers: &HeaderMap) -> Response {
+pub(crate) async fn serve_cover(state: &AppState, image_id: &str, headers: &HeaderMap) -> Response {
     if let Some(rejected) = reject_oversized_uuid(image_id) {
         return rejected;
     }
