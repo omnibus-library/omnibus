@@ -66,7 +66,10 @@ pub enum Quirk {
     /// Annotations for a book the device hasn't downloaded are dropped
     /// rather than held, and the server keeps reporting the book until it is
     /// served once downloaded — [`Quirk::AnnotationsOnDownload`] is how a
-    /// dropped set comes back. Evidence: #1647. Observed.
+    /// dropped set comes back. Evidence: #1647. Observed. That a downloaded
+    /// book's set is instead *replaced wholesale* by each served set (never
+    /// merged) is inferred from `server/src/backend/kobo/reading_services.rs`,
+    /// not itself observed.
     AnnotationsUnheld,
     /// A download triggers one unconditional `GET .../annotations`, whether
     /// or not `checkforchanges` ever named the book. Evidence: #1647. Observed.
@@ -111,7 +114,8 @@ pub const COVER_QUALITY: u32 = 90;
 /// The size whose cache entry `Book::cover` shows (the library list). Inferred.
 pub const SHOWN_COVER_SIZE: (u32, u32) = (149, 223);
 
-/// Every checkforchanges-driven and post-download annotations GET's
-/// `If-None-Match`. Firmware always sends this value rather than echoing a
-/// prior ETag. Evidence: `server/src/backend/kobo/reading_services.rs`. Inferred.
+/// Every checkforchanges-driven annotations GET's `If-None-Match`; the
+/// post-download GET ([`Quirk::AnnotationsOnDownload`]) sends none at all.
+/// Firmware always sends this value rather than echoing a prior ETag.
+/// Evidence: `server/src/backend/kobo/reading_services.rs`. Inferred.
 pub const ANNOTATIONS_IF_NONE_MATCH: &str = "W/\"0\"";

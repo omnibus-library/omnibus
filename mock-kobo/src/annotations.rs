@@ -8,10 +8,9 @@
 //! The outbound PATCH shape (sent by `session::attempt_annotation`) is
 //! inferred from `server/src/backend/kobo/reading_services/dto.rs::parse_patch`
 //! and its tests' `upload_body` — this repo holds no captured device PATCH.
-//! A `null` location (no [`SpanRange`]) is a mock stand-in for a highlight
-//! made with no real anchor, not observed firmware behaviour, until
-//! [#2738](https://github.com/omnibus-library/omnibus/issues/2738) supplies
-//! real spans from a KEPUB reader view.
+//! Every highlight carries a KoboSpan range; the TUI's and `kobo.sh`'s
+//! single-span shorthand anchors it on a placeholder `unknown` chapter
+//! until a real KEPUB reader view supplies actual ones.
 
 use serde::{Deserialize, Serialize};
 

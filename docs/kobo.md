@@ -350,10 +350,14 @@ to settle it.
 
 Heights (223/600/1448), quality (90) and greyscale (`false`) are inferred, as
 is the content-type/magic-bytes agreement rule and that a non-2xx cover is
-never cached. The `If-None-Match: W/"0"` header every annotations GET sends,
-and the sync phase order (handshake → library sync → covers → downloads →
+never cached. The `If-None-Match: W/"0"` header every checkforchanges-driven
+annotations GET sends (the post-download GET sends none at all), and the
+sync phase order (handshake → library sync → covers → downloads →
 checkforchanges → annotations GETs), are both inferred from
-`kobo/reading_services.rs`, not observed on a device.
+`kobo/reading_services.rs`, not observed on a device. `AnnotationsUnheld`'s
+drop for an undownloaded book is observed (#1647); that a *downloaded*
+book's set is instead replaced wholesale by each served set, never merged,
+is inferred from the same file, not itself observed.
 
 ### Annotations
 

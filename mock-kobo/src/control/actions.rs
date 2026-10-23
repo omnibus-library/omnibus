@@ -125,7 +125,10 @@ impl Control {
     /// Make a highlight on `book` and send it. The device check (held,
     /// downloaded) and the id mint both run before any request; a failed
     /// mint answers `Failed` the same way. A failed PATCH keeps the
-    /// highlight on the device and is not retried.
+    /// highlight on the device and is not retried — until the book's next
+    /// served set replaces it wholesale (see `firmware::Quirk::AnnotationsUnheld`'s
+    /// doc), a server that never ingested it may keep offering the same set
+    /// back, silently dropping the unsent highlight.
     pub async fn highlight(
         self: &Arc<Self>,
         book: String,
