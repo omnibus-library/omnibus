@@ -78,6 +78,7 @@ fn event_loop(terminal: &mut DefaultTerminal, tui: Tui, runtime: &Handle) -> io:
         }
         let view = control.view();
         app.show_library(view.library.keys().cloned().collect());
+        app.show_book(&view.library);
         if let Ok(size) = terminal.size() {
             let area = render::reader::page_area(size.into());
             app.fit_reader(area.width, area.height);

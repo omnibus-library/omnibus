@@ -75,6 +75,23 @@ fn open_returns_unreadable_for_a_missing_file() {
 }
 
 #[test]
+fn locate_span_finds_the_chapter_and_span_of_a_kobospan() {
+    let kepub = Kepub::parse(READER_KEPUB).unwrap();
+
+    let found = kepub.locate_span("ch2.xhtml", "kobo.3.1");
+
+    assert_eq!(found, Some((1, 2)));
+}
+
+#[test]
+fn locate_span_returns_none_for_a_span_the_book_lacks() {
+    let kepub = Kepub::parse(READER_KEPUB).unwrap();
+
+    assert_eq!(kepub.locate_span("ch2.xhtml", "kobo.9.9"), None);
+    assert_eq!(kepub.locate_span("ch9.xhtml", "kobo.1.1"), None);
+}
+
+#[test]
 fn bookmark_names_the_chapter_href_and_span_id_at_zero_for_the_first_span() {
     let kepub = Kepub::parse(READER_KEPUB).unwrap();
 

@@ -43,6 +43,10 @@ pub struct Reader {
     pub cursor: usize,
     width: u16,
     rows: u16,
+    /// The `modified` stamp of the last device bookmark `App::show_book`
+    /// placed this reader on; `None` (older than any real stamp) before
+    /// the first one, so a reader just opened on its own always takes it.
+    placed_at: Option<i64>,
 }
 
 impl Reader {
@@ -56,7 +60,35 @@ impl Reader {
             cursor: 0,
             width: 0,
             rows: 0,
+            placed_at: None,
         }
+    }
+
+    /// Whether `modified` is newer than the stamp this reader last placed
+    /// itself on — `None` counts as older than any real stamp.
+    pub fn is_newer_than_placed(&self, modified: i64) -> bool {
+        self.placed_at.is_none_or(|placed| modified > placed)
+    }
+
+    /// Record `modified` as placed without moving — a bookmark with no
+    /// location, or one naming a span this book doesn't hold.
+    pub fn record_placed(&mut self, modified: i64) {
+        self.placed_at = Some(modified);
+    }
+
+    /// Move to `chapter`'s `span` (its first word) and record `modified` as
+    /// placed. A no-op past the chapter's own bounds (the caller already
+    /// checked `Kepub::locate_span`, so this never happens in practice).
+    pub fn place_at_span(&mut self, chapter: usize, span: usize, modified: i64) {
+        self.chapter = chapter;
+        self.cursor = self
+            .text
+            .as_ref()
+            .and_then(|kepub| kepub.chapters.get(chapter))
+            .and_then(|text| text.words.iter().position(|w| w.span == span))
+            .unwrap_or(0);
+        self.placed_at = Some(modified);
+        self.sync_page();
     }
 
     /// Re-paginate the current chapter to `width`×`rows` and keep the page

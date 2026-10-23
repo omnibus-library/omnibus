@@ -3,10 +3,13 @@
 //! Work that waits on the device or the network is handed back as a [`Job`],
 //! and the app refuses another until [`App::finish`] reports the first.
 
+use std::collections::BTreeMap;
+
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 use crate::annotations::{NewHighlight, SpanRange, Swatch};
 use crate::cli;
+use crate::device::Book;
 use crate::kepub::Kepub;
 use crate::reading::{KoboSpan, Percent};
 use crate::tui::reader::{Reader, ReaderAction};
@@ -287,6 +290,47 @@ impl App {
     pub fn fit_reader(&mut self, width: u16, rows: u16) {
         if let Mode::Reading(reader) = &mut self.mode {
             reader.fit(width, rows);
+        }
+    }
+
+    /// Called every tick: move the open reader to the span a newer device
+    /// bookmark names. A no-op outside `Mode::Reading`, for a metadata-only
+    /// book, for a book the library no longer holds, for one with no
+    /// bookmark, or for a bookmark no newer than the stamp the reader last
+    /// placed itself on (so the reader's own page turns are never undone).
+    /// A location the book's text doesn't hold records the stamp (so the
+    /// error shows once, not every tick) and reports it; one with no
+    /// location also just records the stamp.
+    pub fn show_book(&mut self, library: &BTreeMap<String, Book>) {
+        let Mode::Reading(reader) = &mut self.mode else {
+            return;
+        };
+        let Some(kepub) = &reader.text else {
+            return;
+        };
+        let Some(bookmark) = library
+            .get(&reader.book)
+            .and_then(|book| book.reading.bookmark.as_ref())
+        else {
+            return;
+        };
+        if !reader.is_newer_than_placed(bookmark.modified) {
+            return;
+        }
+        let Some(location) = &bookmark.location else {
+            reader.record_placed(bookmark.modified);
+            return;
+        };
+        match kepub.locate_span(&location.source, &location.value) {
+            Some((chapter, span)) => reader.place_at_span(chapter, span, bookmark.modified),
+            None => {
+                let message = format!(
+                    "the device's bookmark {} in {} is not in this book",
+                    location.value, location.source
+                );
+                reader.record_placed(bookmark.modified);
+                self.status = Some(Status::Error(message));
+            }
         }
     }
 

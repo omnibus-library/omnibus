@@ -106,6 +106,21 @@ impl Kepub {
         Self::parse(&bytes)
     }
 
+    /// `(chapter, span)` for the koboSpan `source`/`span_id` names, by exact
+    /// href and id match. `None` for a span the book doesn't hold — a web
+    /// position derived against a different edition of the file, say.
+    pub fn locate_span(&self, source: &str, span_id: &str) -> Option<(usize, usize)> {
+        for (chapter, text) in self.chapters.iter().enumerate() {
+            if text.href != source {
+                continue;
+            }
+            if let Some(span) = text.spans.iter().position(|s| s.id == span_id) {
+                return Some((chapter, span));
+            }
+        }
+        None
+    }
+
     /// The bookmark naming `chapter`'s `span`: the percent of the book's
     /// words that come before it (every word of earlier chapters, and of
     /// earlier spans in this one), and its `KoboSpan`.
