@@ -335,6 +335,8 @@ mod server {
             // (require_auth passes through non-`/api/` paths); each route
             // authenticates via its path token internally.
             .merge(backend::kobo_router(state.clone()))
+            // KOReader plugin device routes; same gate-exempt shape, Bearer device token.
+            .merge(backend::koreader_router(state.clone()))
             // Kobo Reading Services (annotations, #1278). Lives under /api/v3
             // at the bare origin — require_auth exempts those paths; each
             // route authenticates via the x-kobo-deviceid header internally.

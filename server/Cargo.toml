@@ -66,6 +66,9 @@ tokio-util = { version = "0.7", features = ["io"], optional = true }
 # `backend::uploads` (RAII cleanup on drop). Also a dev-dependency below for
 # the integration tests; listed here so the server lib can use it directly.
 tempfile = { workspace = true, optional = true }
+# The plugin download zips the embedded plugin in memory; the same spec as `omnibus-db`, so no
+# new crate enters the lockfile.
+zip = { version = "9", default-features = false, features = ["deflate-flate2"], optional = true }
 # Percent-encoding the OPDS search feed's `self` link query — already in the
 # tree via `omnibus-db`, so depending on it directly unifies rather than
 # adding a build.
@@ -147,6 +150,7 @@ server = [
     "dep:base64",
     "dep:anyhow",
     "dep:tempfile",
+    "dep:zip",
     "dep:omnibus-db",
     "dep:omnibus-mcp",
     "dep:rmcp",

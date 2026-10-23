@@ -41,6 +41,7 @@ mod journals;
 mod kindle;
 mod kobo;
 mod kobo_devices;
+mod koreader;
 mod logs;
 mod merge;
 mod metadata;
@@ -70,6 +71,7 @@ mod uploads;
 mod users;
 
 pub use kobo::{kobo_router, reading_services_router};
+pub use koreader::koreader_router;
 pub use opds::opds_router;
 #[cfg(test)]
 use process_meta::read_app_version;
@@ -113,7 +115,12 @@ fn timeout_layer(timeout: std::time::Duration) -> tower_http::timeout::TimeoutLa
 /// any authenticated user), shared with `opds::delegate`'s acquisition routes so
 /// the two surfaces cannot drift on what counts as a download.
 fn deny_without_download(user: &AuthUser) -> Option<Response> {
-    (!user.can_download).then(|| (StatusCode::FORBIDDEN, "download not permitted").into_response())
+    deny_unless_can_download(user.can_download)
+}
+
+/// [`deny_without_download`] for a caller with no session, such as a device token's owner.
+fn deny_unless_can_download(can_download: bool) -> Option<Response> {
+    (!can_download).then(|| (StatusCode::FORBIDDEN, "download not permitted").into_response())
 }
 
 /// Serve a file from disk as a browser download: streamed (so large

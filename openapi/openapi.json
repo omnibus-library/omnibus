@@ -271,6 +271,54 @@
         }
       }
     },
+    "/api/account/kobo-devices/{id}/koreader-plugin": {
+      "get": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Download a KOReader's plugin",
+        "description": "The Omnibus plugin for one of your KOReaders, as a zip already set to this server and\ncarrying that KOReader's token. Unzip it into KOReader's `plugins` folder. The zip holds\nthe token, so treat the file like a password. Needs the download permission.",
+        "operationId": "download_koreader_plugin",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The KOReader's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The plugin, zipped.",
+            "headers": {
+              "Content-Disposition": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`attachment`, with the file name."
+              }
+            },
+            "content": {
+              "application/zip": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileBytes"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Your account lacks the download permission."
+          },
+          "404": {
+            "description": "No KOReader of yours has that id."
+          }
+        }
+      }
+    },
     "/api/account/kobo-devices/{id}/regenerate": {
       "post": {
         "tags": [
@@ -12686,6 +12734,21 @@
             "type": "integer",
             "format": "int64",
             "description": "When the device last synced, in Unix seconds."
+          },
+          "last_sync_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "When a KOReader last reported finishing a sync, in Unix seconds. `null` for a Kobo\nand for a KOReader that has not synced yet."
+          },
+          "last_sync_error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "What went wrong in a KOReader's last reported sync. `null` when it succeeded."
           },
           "name": {
             "type": "string",

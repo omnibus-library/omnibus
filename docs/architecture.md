@@ -117,7 +117,7 @@ code generates it; nobody writes it by hand.
   and MSW handlers from the file with orval, so a wire change becomes a
   TypeScript error there.
 
-Left out: the Dioxus server functions (`/api/rpc/*`), Kobo and OPDS, whose
+Left out: the Dioxus server functions (`/api/rpc/*`), Kobo, KOReader and OPDS, whose
 formats their clients fix. Conventions are in
 [rule 13](../.claude/rules/13-openapi.md).
 
@@ -128,6 +128,8 @@ formats their clients fix. Conventions are in
 too:
 
 - `/kobo/<token>/v1/*` — Kobo sync, by a per-device token in the path.
+- `/koreader/v1/*` — KOReader plugin, by a per-device token in
+  `Authorization: Bearer`.
 - `/api/v3/content/*` and `/api/UserStorage/Metadata` — Kobo Reading Services,
   exempted from the gate and authenticated by the `x-kobo-deviceid` header.
 - `/opds/*` — a session, else HTTP Basic.

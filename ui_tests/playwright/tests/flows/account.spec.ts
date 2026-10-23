@@ -343,6 +343,13 @@ test.describe("devices section", () => {
       await expect(section.kindBadge(name)).toHaveText("KOReader");
       await expect(section.tokenField(name)).not.toHaveValue("");
       await expect(section.endpointField(name)).toHaveCount(0);
+      await expect(section.lastSync(name)).toHaveText("Not synced yet");
+    });
+
+    await test.step("download the plugin", async () => {
+      expect(await section.downloadPlugin(name)).toBe(
+        `omnibus-koreader-${id}.zip`,
+      );
     });
 
     await test.step("remove it", async () => {

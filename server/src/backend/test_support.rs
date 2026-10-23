@@ -604,3 +604,120 @@ pub(crate) async fn seed_audiobook_with_parts(
     }
     uuid
 }
+
+/// Put `uuids` on a hand-picked shelf owned by `user_id` and flag it for Kobo
+/// sync, returning the shelf id. Since #924 the sync set is shelf-gated, so any
+/// test that expects a book back from `library/sync` must opt it in first.
+pub(crate) async fn opt_in(pool: &sqlx::SqlitePool, user_id: i64, uuids: &[String]) -> i64 {
+    let shelf = db::shelves::create_shelf(
+        pool,
+        user_id,
+        &omnibus_shared::CreateShelfRequest {
+            kind: omnibus_shared::ShelfKind::Manual,
+            name: "Kobo".into(),
+            description: None,
+            visibility: Default::default(),
+            match_mode: None,
+            rules: Vec::new(),
+            book_uuids: uuids.to_vec(),
+        },
+    )
+    .await
+    .unwrap();
+    db::shelves::update_shelf(
+        pool,
+        shelf.id,
+        &omnibus_shared::UpdateShelfRequest {
+            sync_to_kobo: Some(true),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    shelf.id
+}
+
+/// Seed one real book on disk — a copy of the committed EPUB fixture under a
+/// fresh scan root — so [`download`](super::resources::download) has real
+/// bytes to serve. Mirrors the on-disk setup
+/// `download_bakes_a_metadata_override_into_the_plain_epub_fallback` uses,
+/// minus the override (that sibling test cleans up its tempdir via
+/// `remove_dir_all`; this one deliberately doesn't, since each run gets a
+/// fresh pid-scoped path and CI wipes `/tmp` between runs).
+pub(crate) async fn seed_downloadable_book(
+    pool: &sqlx::SqlitePool,
+    uuid: &str,
+    title: &str,
+    author: &str,
+) {
+    let fixture_epub = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../test_data/epubs/generated/alpha.epub");
+    let bytes = std::fs::read(fixture_epub).unwrap();
+    seed_downloadable_book_with(pool, uuid, title, author, "EPUB", "alpha", &bytes).await;
+}
+
+/// [`seed_downloadable_book`] for any `format` (`EPUB`, `CBZ`, `PDF`): the file is
+/// `<filename>.<format lowercased>` holding `bytes`.
+pub(crate) async fn seed_downloadable_book_with(
+    pool: &sqlx::SqlitePool,
+    uuid: &str,
+    title: &str,
+    author: &str,
+    format: &str,
+    filename: &str,
+    bytes: &[u8],
+) {
+    let pid = std::process::id();
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let lib_dir = std::env::temp_dir().join(format!("omnibus_kobo_contract_{pid}_{nanos}_{uuid}"));
+    std::fs::create_dir_all(&lib_dir).unwrap();
+    let extension = format.to_lowercase();
+    std::fs::write(lib_dir.join(format!("{filename}.{extension}")), bytes).unwrap();
+
+    let lib_id = sqlx::query("INSERT INTO scan_roots (path, display_name) VALUES (?, 'lib')")
+        .bind(lib_dir.to_str().unwrap())
+        .execute(pool)
+        .await
+        .unwrap()
+        .last_insert_rowid();
+    sqlx::query(
+        "INSERT INTO books (uuid, library_id, path, title, last_modified) \
+         VALUES (?, ?, ?, ?, 1700000000)",
+    )
+    .bind(uuid)
+    .bind(lib_id)
+    .bind(lib_dir.to_str().unwrap())
+    .bind(title)
+    .execute(pool)
+    .await
+    .unwrap();
+    let book_id: i64 = sqlx::query_scalar("SELECT id FROM books WHERE uuid = ?")
+        .bind(uuid)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO book_files (book_id, format, filename, size_bytes) \
+         VALUES (?, ?, ?, 0)",
+    )
+    .bind(book_id)
+    .bind(format)
+    .bind(filename)
+    .execute(pool)
+    .await
+    .unwrap();
+    let author_id: i64 = sqlx::query_scalar("INSERT INTO authors (name) VALUES (?) RETURNING id")
+        .bind(author)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO books_authors_link (book, author, position) VALUES (?, ?, 0)")
+        .bind(book_id)
+        .bind(author_id)
+        .execute(pool)
+        .await
+        .unwrap();
+}

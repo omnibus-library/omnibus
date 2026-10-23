@@ -5061,6 +5061,7 @@ dependencies = [
  "utoipa",
  "utoipa-axum",
  "wiremock",
+ "zip 9.0.5",
 ]
 
 [[package]]

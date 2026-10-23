@@ -94,8 +94,8 @@ async fn store_stub(auth: KoboAuthUser, Path((_token, rest)): Path<(String, Stri
 /// Cap a path `{uuid}` at [`omnibus_shared::BOOK_UUID_MAX_LEN`] before any DB
 /// round trip, mirroring the request-input sweep the JSON-body routes already
 /// follow (`kindle::SendBody::validate`). `Some(response)` is the rejection.
-/// Shared across [`sync`] and [`resources`] handlers.
-fn reject_oversized_uuid(uuid: &str) -> Option<Response> {
+/// Shared across [`sync`], [`resources`] and the KOReader file route.
+pub(crate) fn reject_oversized_uuid(uuid: &str) -> Option<Response> {
     (uuid.len() > omnibus_shared::BOOK_UUID_MAX_LEN)
         .then(|| StatusCode::BAD_REQUEST.into_response())
 }

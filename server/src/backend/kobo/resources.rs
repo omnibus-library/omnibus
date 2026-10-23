@@ -15,6 +15,7 @@ use omnibus_db::{
 };
 
 use super::{dto, extractor::KoboAuthUser, reject_oversized_uuid, AppState};
+use crate::backend::ebooks::{device_file, rewritten_or_source, DeviceFile, EPUB_MIME};
 use crate::backend::serve_download;
 use crate::http_errors::internal;
 
@@ -48,12 +49,8 @@ pub async fn download(
     };
     // EPUB presence decides the branch *before* any conversion is attempted,
     // so a CBZ-only book never enqueues a KepubConvert doomed to fail.
-    let epub_source = match db::book_file_path(state.pool(), id, "EPUB").await {
-        Ok(p) => p,
-        Err(e) => return internal("kobo book_file_path", e),
-    };
-    let (path, content_type) = match epub_source {
-        Some(source) => {
+    let (path, content_type) = match device_file(&state, id).await {
+        Ok(Some(DeviceFile::Epub(source))) => {
             let path = if kepub_ready(&state, id).await {
                 db::kepub_path(id)
             } else {
@@ -61,19 +58,13 @@ pub async fn download(
                 // — so a Kobo device without kepubify support (or after a
                 // conversion failure) sees the user's edits rather than the
                 // raw scanned file.
-                crate::backend::ebooks::rewritten_or_source(&state, id, source).await
+                rewritten_or_source(&state, id, source).await
             };
-            (path, "application/epub+zip")
+            (path, EPUB_MIME)
         }
-        None => match db::book_file_path(state.pool(), id, "CBZ").await {
-            Ok(Some(path)) => (path, crate::backend::ebooks::CBZ_MIME),
-            Ok(None) => match db::book_file_path(state.pool(), id, "PDF").await {
-                Ok(Some(path)) => (path, crate::backend::ebooks::PDF_MIME),
-                Ok(None) => return StatusCode::NOT_FOUND.into_response(),
-                Err(e) => return internal("kobo book_file_path", e),
-            },
-            Err(e) => return internal("kobo book_file_path", e),
-        },
+        Ok(Some(DeviceFile::Other(path, mime))) => (path, mime),
+        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+        Err(e) => return internal("kobo device_file", e),
     };
     let response = serve_download(req, &path, content_type).await;
     // Only bookkeep on an answer that means the device actually has (or

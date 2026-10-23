@@ -140,6 +140,7 @@ just lint-ts                                                # biome + typecheck 
 # KOReader E2E lane: a real KOReader in Docker over OPDS against a scratch
 # server. Linux + docker only.
 just koreader-e2e                                           # PASS/FAIL per scenario (docs/koreader.md)
+just koreader-plugin-test                                   # the Omnibus plugin's sync logic, under plain luajit
 
 # Native iOS app (omnibus-ios/; system xcodebuild + simctl, no nix shell)
 just ios-build                                              # compile check (generic simulator destination)
