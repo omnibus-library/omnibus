@@ -347,7 +347,9 @@ test.describe("devices section", () => {
     });
 
     await test.step("download the plugin", async () => {
-      expect(await section.downloadPlugin(name)).toBe(`omnibus-koreader-${id}.zip`);
+      expect(await section.downloadPlugin(name)).toBe(
+        `omnibus-koreader-${id}.zip`,
+      );
     });
 
     await test.step("remove it", async () => {
