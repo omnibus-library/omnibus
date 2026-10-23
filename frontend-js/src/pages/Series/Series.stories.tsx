@@ -196,3 +196,22 @@ export const SortByCount: Story = {
     ).toMatchObject({ series_sort: "book_count" });
   },
 };
+
+export const StoredRecentSortShowsAsAlphabetical: Story = {
+  beforeEach({ msw }) {
+    msw.use(...seriesHandlers({ list: SERIES }));
+    // The Dioxus client offers Recent on the series index; here it reads as A–Z.
+    localStorage.setItem(
+      "omnibus.discovery_prefs",
+      '{"authors_sort":"name","series_sort":"recent","shelves_sort":"name"}',
+    );
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByRole("button", { name: "A–Z" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await expect(
+      canvas.getByRole("button", { name: "Most books" }),
+    ).toHaveAttribute("aria-pressed", "false");
+  },
+};

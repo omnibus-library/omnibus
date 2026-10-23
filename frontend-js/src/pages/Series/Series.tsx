@@ -98,7 +98,9 @@ export function Series() {
                 key={axis}
                 type="button"
                 className="idx-btn"
-                aria-pressed={sort === axis}
+                aria-pressed={
+                  sort === axis || (axis === "name" && sort === "recent")
+                }
                 data-testid={testid}
                 onClick={() => {
                   setSort(axis);
