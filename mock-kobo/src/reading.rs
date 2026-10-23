@@ -5,7 +5,9 @@
 //! here reads the wall clock — so arbitration is testable with no sleeps.
 
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 
+use crate::session::StateSent;
 use crate::wire;
 
 /// The wire tokens for where a book sits in its reading lifecycle; any other token fails the decode.
@@ -108,6 +110,38 @@ fn parse_stamp(raw: Option<&str>) -> Option<i64> {
 /// Whether a stamped `server` value is strictly newer than `device`'s, which may have none.
 fn newer(server: i64, device: Option<i64>) -> bool {
     device.is_none_or(|device_at| server > device_at)
+}
+
+/// Format an epoch-seconds instant as the RFC 3339 string Kobo expects.
+pub fn rfc3339(epoch: i64) -> String {
+    time::OffsetDateTime::from_unix_timestamp(epoch)
+        .unwrap_or(time::OffsetDateTime::UNIX_EPOCH)
+        .format(&time::format_description::well_known::Rfc3339)
+        .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned())
+}
+
+/// The `PUT library/<book>/state` body for `reading`'s current status (and,
+/// for a read, its bookmark), every sub-object stamped RFC 3339.
+pub fn state_put_body(reading: &Reading, sent: StateSent) -> Value {
+    let status_at = reading.status_modified.unwrap_or(0);
+    let mut entry = json!({
+        "StatusInfo": { "Status": reading.status, "LastModified": rfc3339(status_at) },
+    });
+    if sent == StateSent::Read {
+        if let Some(bookmark) = &reading.bookmark {
+            entry["CurrentBookmark"] = json!({
+                "ProgressPercent": bookmark.percent.map(u8::from),
+                "Location": bookmark.location.as_ref().map(kobo_span_wire),
+                "LastModified": rfc3339(bookmark.modified),
+            });
+        }
+    }
+    json!({ "ReadingStates": [entry] })
+}
+
+/// `KoboSpan` on the wire: `{"Source", "Type": "KoboSpan", "Value"}`.
+fn kobo_span_wire(span: &KoboSpan) -> Value {
+    json!({ "Source": span.source, "Type": "KoboSpan", "Value": span.value })
 }
 
 #[cfg(test)]

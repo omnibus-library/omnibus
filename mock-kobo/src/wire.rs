@@ -111,6 +111,29 @@ pub struct DownloadUrl {
     pub url: String,
 }
 
+/// The `state` PUT reply; every sub-result must read `Success`
+/// ([`crate::firmware::Quirk::StatePutResult`]).
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct StateResponse {
+    pub request_result: String,
+    #[serde(default)]
+    pub update_results: Vec<UpdateResult>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct UpdateResult {
+    pub status_info_result: ResultTag,
+    pub current_bookmark_result: ResultTag,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct ResultTag {
+    pub result: String,
+}
+
 /// A book's series. Serialized as it arrived, so a saved device reads back.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "PascalCase")]

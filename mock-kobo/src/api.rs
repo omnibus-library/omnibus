@@ -17,6 +17,7 @@ use crate::control::{Acted, Control, ControlError, DeviceView, LastSync, RESET_M
 use crate::device::DeviceError;
 use crate::downloads::DownloadPolicy;
 use crate::firmware::Quirk;
+use crate::reading::{KoboSpan, Percent};
 
 /// Every control API reply, success or failure: `{status, code, message, details}`.
 #[derive(Debug, Serialize)]
@@ -66,6 +67,10 @@ pub enum ReplyCode {
     UnknownBook,
     /// 409: the book named isn't downloaded yet.
     NotDownloaded,
+    /// 200: `POST /actions/read` or `POST /actions/finish` sent the state PUT.
+    StateSent,
+    /// 502: the state PUT failed.
+    StateFailed,
 }
 
 /// What a reply's `details` carries, for routes whose outcomes differ.
@@ -104,6 +109,8 @@ pub fn router(control: Arc<Control>) -> Router {
         .route("/actions/sync", post(post_sync))
         .route("/actions/download", post(post_download))
         .route("/actions/remove-download", post(post_remove_download))
+        .route("/actions/read", post(post_read))
+        .route("/actions/finish", post(post_finish))
         .route("/requests", get(get_requests))
         .route("/reset", put(put_reset))
         .method_not_allowed_fallback(method_not_allowed)
@@ -205,6 +212,68 @@ fn acted_reply(result: Result<Acted, ControlError>) -> Reply<Details> {
             Reply::new(
                 StatusCode::BAD_GATEWAY,
                 ReplyCode::DownloadFailed,
+                message,
+                details,
+            )
+        }
+        Err(error) => error_reply(&error),
+    }
+}
+
+async fn post_read(State(control): State<Arc<Control>>, body: Bytes) -> Reply<Details> {
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct ReadBody {
+        book: String,
+        percent: u8,
+        #[serde(default)]
+        location: Option<LocationBody>,
+    }
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct LocationBody {
+        source: String,
+        value: String,
+    }
+    let parsed: ReadBody = match serde_json::from_slice(&body) {
+        Ok(parsed) => parsed,
+        Err(e) => return invalid_request_reply(format!("invalid read body: {e}")),
+    };
+    let Some(percent) = Percent::new(parsed.percent) else {
+        return invalid_request_reply(format!("{} is not a percent (0..=100)", parsed.percent));
+    };
+    let location = parsed.location.map(|l| KoboSpan {
+        source: l.source,
+        value: l.value,
+    });
+    state_reply(control.read(parsed.book, percent, location).await)
+}
+
+async fn post_finish(State(control): State<Arc<Control>>, body: Bytes) -> Reply<Details> {
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct FinishBody {
+        book: String,
+    }
+    let parsed: FinishBody = match serde_json::from_slice(&body) {
+        Ok(parsed) => parsed,
+        Err(e) => return invalid_request_reply(format!("invalid finish body: {e}")),
+    };
+    state_reply(control.finish(parsed.book).await)
+}
+
+/// The reply for a finished read or finish action.
+fn state_reply(result: Result<Acted, ControlError>) -> Reply<Details> {
+    match result {
+        Ok(Acted::Done(view)) => {
+            let details = Details::Device(view);
+            Reply::new(StatusCode::OK, ReplyCode::StateSent, "state sent", details)
+        }
+        Ok(Acted::Failed { quirk, message }) => {
+            let details = Details::Quirk { quirk };
+            Reply::new(
+                StatusCode::BAD_GATEWAY,
+                ReplyCode::StateFailed,
                 message,
                 details,
             )

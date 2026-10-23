@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use crate::covers::Cover;
-use crate::reading::Reading;
+use crate::reading::{Bookmark, KoboSpan, Percent, ReadStatus, Reading};
 use crate::wire::{BookMetadata, Series, SyncItem};
 
 /// What the device shows for a book with no `Contributors` ([`crate::firmware::Quirk::ContributorsDisplay`]).
@@ -107,6 +107,42 @@ impl Device {
             .ok_or_else(|| DeviceError::UnknownBook(book.to_owned()))?;
         book.downloaded = false;
         book.download_problem = None;
+        Ok(())
+    }
+
+    /// Stamp `book`'s status `Reading` and its bookmark, both at `now`. Needs a downloaded book.
+    pub fn read(
+        &mut self,
+        id: &str,
+        percent: Percent,
+        location: Option<KoboSpan>,
+        now: i64,
+    ) -> Result<(), DeviceError> {
+        let book = self
+            .library
+            .get_mut(id)
+            .ok_or_else(|| DeviceError::UnknownBook(id.to_owned()))?;
+        if !book.downloaded {
+            return Err(DeviceError::NotDownloaded(id.to_owned()));
+        }
+        book.reading.status = ReadStatus::Reading;
+        book.reading.status_modified = Some(now);
+        book.reading.bookmark = Some(Bookmark {
+            percent: Some(percent),
+            location,
+            modified: now,
+        });
+        Ok(())
+    }
+
+    /// Stamp `book`'s status `Finished` at `now`. The book need not be downloaded.
+    pub fn finish(&mut self, book: &str, now: i64) -> Result<(), DeviceError> {
+        let book = self
+            .library
+            .get_mut(book)
+            .ok_or_else(|| DeviceError::UnknownBook(book.to_owned()))?;
+        book.reading.status = ReadStatus::Finished;
+        book.reading.status_modified = Some(now);
         Ok(())
     }
 

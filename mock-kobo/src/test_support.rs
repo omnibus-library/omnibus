@@ -81,6 +81,10 @@ pub struct Stub {
     pub cover: Option<(&'static str, &'static [u8])>,
     /// The status every `v1/download/<id>` request answers with.
     pub download_status: StatusCode,
+    /// The status every state PUT answers with.
+    pub state_status: StatusCode,
+    /// The state PUT reply body; `None` (the default) is an all-`Success` reply.
+    pub state_reply: Option<Value>,
 }
 
 impl Default for Stub {
@@ -105,6 +109,8 @@ impl Default for Stub {
             login_token: Some(SESSION_TOKEN),
             cover: None,
             download_status: StatusCode::OK,
+            state_status: StatusCode::OK,
+            state_reply: None,
         }
     }
 }
@@ -293,6 +299,12 @@ async fn handle(
         | "/v1/products/books/subscriptions"
         | "/v1/deals" => store_path(&state),
         _ if rest.starts_with("/v1/download/") => download(&state),
+        _ if rest.starts_with("/v1/library/")
+            && rest.ends_with("/state")
+            && method == Method::PUT =>
+        {
+            state_put(&state)
+        }
         _ => match rest.strip_prefix(state.stub.resources_under) {
             Some(resource) => answer_resource(&state, &method, resource).await,
             None => StatusCode::NOT_FOUND.into_response(),
@@ -303,6 +315,24 @@ async fn handle(
 /// `GET v1/download/{id}`, outside the resources map like the real server's route.
 fn download(state: &StubState) -> Response {
     (state.stub.download_status, b"stub-kepub".as_slice()).into_response()
+}
+
+/// `PUT v1/library/{id}/state`, also off `api_endpoint` directly.
+fn state_put(state: &StubState) -> Response {
+    let status = state.stub.state_status;
+    if !status.is_success() {
+        return status.into_response();
+    }
+    let reply = state.stub.state_reply.clone().unwrap_or_else(|| {
+        json!({
+            "RequestResult": "Success",
+            "UpdateResults": [{
+                "StatusInfoResult": { "Result": "Success" },
+                "CurrentBookmarkResult": { "Result": "Success" },
+            }],
+        })
+    });
+    (status, Json(reply)).into_response()
 }
 
 /// The Omnibus `/api` routes auto-wire calls: login, the device list and create, then logout.

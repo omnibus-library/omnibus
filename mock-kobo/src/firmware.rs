@@ -57,6 +57,10 @@ pub enum Quirk {
     /// independently, each adopted only when stamped and strictly newer
     /// than the device's own. Evidence: `server/src/backend/kobo/dto.rs`. Observed.
     StateArbitration,
+    /// A state PUT's reply must read `Success` on every sub-result, or the
+    /// write is treated as failed. Evidence: `server/src/backend/kobo/dto.rs`
+    /// (`StateResponse`). Inferred.
+    StatePutResult,
 }
 
 /// The header `v1/initialization` must carry ([`Quirk::ApiToken`]).

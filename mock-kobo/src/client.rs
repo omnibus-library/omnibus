@@ -91,6 +91,16 @@ impl Client {
         self.send(self.http.get(url)).await
     }
 
+    /// `PUT library/<book>/state`, off `api_endpoint` itself like the store paths.
+    pub async fn put_state(
+        &mut self,
+        book: &str,
+        body: &serde_json::Value,
+    ) -> Result<Response, SyncFailure> {
+        let url = format!("{}/v1/library/{book}/state", self.api_endpoint);
+        self.send(self.http.put(url).json(body)).await
+    }
+
     /// `GET library_sync`: one page of the library delta, echoing the
     /// previous page's `sync_token` when there was one.
     pub async fn library_sync(

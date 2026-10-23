@@ -2,7 +2,7 @@
 
 use serde_json::{json, Value};
 
-use crate::reading::ReadStatus;
+use crate::reading::{KoboSpan, Percent, ReadStatus};
 use crate::test_support::{book_metadata, new_entitlement};
 use crate::wire::Series;
 
@@ -161,6 +161,79 @@ fn remove_download_returns_unknown_book_for_a_book_it_lacks() {
     let mut device = Device::new("HW-1");
 
     let error = device.remove_download("book-1").unwrap_err();
+
+    assert_eq!(error, DeviceError::UnknownBook("book-1".into()));
+}
+
+#[test]
+fn read_stamps_status_and_bookmark_at_now() {
+    let mut device = Device::new("HW-1");
+    device.apply(item(new_entitlement("book-1", "Dune")));
+    device.library.get_mut("book-1").unwrap().downloaded = true;
+    let location = KoboSpan {
+        source: "c1.xhtml".into(),
+        value: "kobo.2.1".into(),
+    };
+
+    device
+        .read(
+            "book-1",
+            Percent::new(42).unwrap(),
+            Some(location.clone()),
+            1_700_000_000,
+        )
+        .unwrap();
+
+    let reading = &device.library["book-1"].reading;
+    assert_eq!(reading.status, ReadStatus::Reading);
+    assert_eq!(reading.status_modified, Some(1_700_000_000));
+    let bookmark = reading.bookmark.as_ref().unwrap();
+    assert_eq!(
+        (bookmark.percent, &bookmark.location, bookmark.modified),
+        (Percent::new(42), &Some(location), 1_700_000_000)
+    );
+}
+
+#[test]
+fn read_returns_not_downloaded_for_an_undownloaded_book() {
+    let mut device = Device::new("HW-1");
+    device.apply(item(new_entitlement("book-1", "Dune")));
+
+    let error = device
+        .read("book-1", Percent::new(42).unwrap(), None, 1_700_000_000)
+        .unwrap_err();
+
+    assert_eq!(error, DeviceError::NotDownloaded("book-1".into()));
+}
+
+#[test]
+fn read_returns_unknown_book_for_a_book_it_lacks() {
+    let mut device = Device::new("HW-1");
+
+    let error = device
+        .read("book-1", Percent::new(42).unwrap(), None, 1_700_000_000)
+        .unwrap_err();
+
+    assert_eq!(error, DeviceError::UnknownBook("book-1".into()));
+}
+
+#[test]
+fn finish_stamps_finished_at_now() {
+    let mut device = Device::new("HW-1");
+    device.apply(item(new_entitlement("book-1", "Dune")));
+
+    device.finish("book-1", 1_700_000_000).unwrap();
+
+    let reading = &device.library["book-1"].reading;
+    assert_eq!(reading.status, ReadStatus::Finished);
+    assert_eq!(reading.status_modified, Some(1_700_000_000));
+}
+
+#[test]
+fn finish_returns_unknown_book_for_a_book_it_lacks() {
+    let mut device = Device::new("HW-1");
+
+    let error = device.finish("book-1", 1_700_000_000).unwrap_err();
 
     assert_eq!(error, DeviceError::UnknownBook("book-1".into()));
 }

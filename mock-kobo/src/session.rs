@@ -8,7 +8,15 @@ use crate::downloads::{self, DownloadPolicy};
 use crate::firmware::{
     Quirk, API_TOKEN_HEADER, MAX_SYNC_PAGES, STORE_PATHS, SYNC_CONTINUE_HEADER, SYNC_TOKEN_HEADER,
 };
-use crate::wire::{Initialization, SyncItem};
+use crate::reading;
+use crate::wire::{Initialization, StateResponse, SyncItem};
+
+/// Which sub-objects a state PUT carries: a read sends status and bookmark, a finish status only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StateSent {
+    Read,
+    Finish,
+}
 
 /// What one successful sync did.
 #[derive(Clone, Debug, PartialEq)]
@@ -210,6 +218,76 @@ async fn run_download(
         ));
     }
     Ok(())
+}
+
+/// Send `book`'s current reading state to the server with one state PUT.
+/// `device` must hold `book`; its own `Device::read`/`Device::finish` is
+/// expected to have already set what this sends.
+pub async fn attempt_state(
+    device: &mut Device,
+    api_endpoint: &str,
+    book: &str,
+    sent: StateSent,
+) -> Attempt<()> {
+    let mut client = match Client::new(api_endpoint, &device.hardware_id) {
+        Ok(client) => client,
+        Err(failure) => {
+            return Attempt {
+                requests: Vec::new(),
+                outcome: Err(failure),
+            }
+        }
+    };
+    let outcome = run_state(&mut client, device, book, sent).await;
+    Attempt {
+        requests: client.into_requests(),
+        outcome,
+    }
+}
+
+async fn run_state(
+    client: &mut Client,
+    device: &Device,
+    book: &str,
+    sent: StateSent,
+) -> Result<(), SyncFailure> {
+    let Some(reading) = device.library.get(book).map(|b| b.reading.clone()) else {
+        return Err(SyncFailure::BadResponse(format!(
+            "no such book on device: {book}"
+        )));
+    };
+    let body = reading::state_put_body(&reading, sent);
+    let response = client.put_state(book, &body).await?;
+    check_state_reply(client, response).await
+}
+
+/// A non-2xx answer rejects the sync as usual; a 2xx body that doesn't
+/// parse as a [`StateResponse`] is a bad response; every sub-result reading
+/// anything but `Success` trips [`Quirk::StatePutResult`].
+async fn check_state_reply(
+    client: &Client,
+    response: reqwest::Response,
+) -> Result<(), SyncFailure> {
+    if !response.status().is_success() {
+        return Err(SyncFailure::Rejected(rejection(client, &response)));
+    }
+    let state: StateResponse = client.decode(response).await?;
+    let all_success = state.request_result == "Success"
+        && state.update_results.iter().all(|u| {
+            u.status_info_result.result == "Success"
+                && u.current_bookmark_result.result == "Success"
+        });
+    if all_success {
+        Ok(())
+    } else {
+        Err(tripped(
+            Quirk::StatePutResult,
+            format!(
+                "state PUT returned a non-success result: {}",
+                state.request_result
+            ),
+        ))
+    }
 }
 
 /// Firmware aborts the whole sync on a non-2xx answer to these requests.

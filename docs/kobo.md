@@ -328,6 +328,7 @@ from the server code or docs, not seen directly.
 | `CoverDecode` | Only a JPEG or PNG cover whose content type and magic bytes agree renders; anything else (a WebP, say) shows no cover | #2116 | observed |
 | `DownloadFailure` | A non-2xx download, or no answer at all, leaves the book undownloaded and is retried on the next sync, whatever the policy | #2116 | observed |
 | `StateArbitration` | Reading status and bookmark are reconciled against the server independently, each adopted only when stamped and strictly newer than the device's own | `kobo/dto.rs` | observed |
+| `StatePutResult` | A state PUT's reply must read `Success` on every sub-result, or the write is treated as failed | `kobo/dto.rs` (`StateResponse`) | inferred |
 
 Heights (223/600/1448), quality (90) and greyscale (`false`) are inferred, as
 is the content-type/magic-bytes agreement rule and that a non-2xx cover is
@@ -344,6 +345,8 @@ port is in its header). Every reply is `{status, code, message, details}`:
 | `POST /actions/sync` `{"download": "none" \| "all" \| ["<uuid>", …]}` (body optional, defaults to `none`) | 200 `synced` · 400 `invalid_request` · 502 `sync_failed` · 409 `sync_in_progress` · 500 `state_not_saved` |
 | `POST /actions/download` `{"books": ["<uuid>", …]}` | 200 `downloaded` · 400 `invalid_request` · 404 `unknown_book` · 409 `sync_in_progress` · 500 `state_not_saved` · 502 `download_failed` |
 | `POST /actions/remove-download` `{"book": "<uuid>"}` | 200 `download_removed` · 400 `invalid_request` · 404 `unknown_book` · 409 `sync_in_progress` · 500 `state_not_saved` |
+| `POST /actions/read` `{"book": "<uuid>", "percent": 0..=100, "location": {"source","value"}?}` | 200 `state_sent` · 400 `invalid_request` · 404 `unknown_book` · 409 `not_downloaded` · 409 `sync_in_progress` · 500 `state_not_saved` · 502 `state_failed` |
+| `POST /actions/finish` `{"book": "<uuid>"}` | 200 `state_sent` · 400 `invalid_request` · 404 `unknown_book` · 409 `sync_in_progress` · 500 `state_not_saved` · 502 `state_failed` |
 | `GET /requests` | 200 `ok` |
 | `PUT /reset` | 200 `reset` · 409 `sync_in_progress` · 500 `state_not_saved` |
 | any other path | 404 `not_found` |
