@@ -16,6 +16,7 @@ use crate::sync::upsert_fts;
 use super::fts::rebuild_fts_for_book;
 use super::links::{
     materialize_author_rows, materialize_genre_rows, materialize_series_link, materialize_tag_rows,
+    prune_override_series_links,
 };
 
 mod cover;
@@ -374,6 +375,8 @@ pub(crate) async fn delete_one_in_tx(
     // A uuid with no live book has no FTS row to restore.
     let book_id = resolve_book_id_by_uuid_exec(&mut **tx, book_uuid).await?;
     if let Some(id) = book_id {
+        // The override's series link goes with it, leaving the scanned one.
+        prune_override_series_links(tx, id, None).await?;
         upsert_fts(tx, id).await?;
     }
     touch_book_last_modified(tx, book_uuid).await?;

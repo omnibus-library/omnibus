@@ -236,3 +236,31 @@ async fn refresh_author_sort_leaves_a_book_with_no_author_links_alone() {
 
     assert_eq!(stored_author_sort(&pool, book).await, "Keep, Me");
 }
+
+#[tokio::test]
+async fn backfill_series_sort_skips_a_series_the_override_materialised() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    sqlx::raw_sql(
+        "INSERT INTO scan_roots (path, display_name) VALUES ('/lib', 'l');
+         INSERT INTO users (id, username, password_hash, is_admin) VALUES (1, 'u', 'x', 1);
+         INSERT INTO series (id, name) VALUES (1, 'Override Series'), (2, 'Scanned Series');
+         INSERT INTO books (id, uuid, library_id, path, title, series_sort)
+              VALUES (1, 'u1', 1, '/lib/a', 'Overridden', NULL),
+                     (2, 'u2', 1, '/lib/b', 'Scanned', NULL);
+         INSERT INTO books_series_link (book, series) VALUES (1, 1), (2, 2);
+         INSERT INTO metadata_overrides (book_uuid, overrides, updated_by)
+              VALUES ('u1', '{\"series\":\"override series\"}', 1);",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    backfill_series_sort(&pool).await.unwrap();
+
+    let sorts: Vec<Option<String>> =
+        sqlx::query_scalar("SELECT series_sort FROM books ORDER BY id")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(sorts, [None, Some("Scanned Series".to_string())]);
+}

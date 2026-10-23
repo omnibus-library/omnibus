@@ -9,6 +9,7 @@ use omnibus_shared::text_fold::fold_for_match;
 use omnibus_shared::MetadataOverrides;
 use sqlx::{QueryBuilder, SqliteConnection};
 
+use super::sql::scanned_series_sql;
 use crate::sync::AUTHOR_UPSERT_CHUNK;
 
 /// Names bound per batched insert. SQLite's default bound-parameter cap is
@@ -41,26 +42,62 @@ impl VocabularyTable {
 /// When an override sets a series name, ensure a `series` row and
 /// `books_series_link` exist so the browse index and detail-page breadcrumb
 /// resolve; override-only series are otherwise invisible to `list_series`.
-/// Takes `&mut SqliteConnection` so the caller runs all four statements in one
-/// transaction (`&mut tx`): autocommit would reopen the partial-failure window.
+/// Links the scan did not write are pruned, so the book keeps its scanned link
+/// plus at most the current override's. Takes `&mut SqliteConnection` so the
+/// caller runs every statement in one transaction (`&mut tx`): autocommit would
+/// reopen the partial-failure window.
 pub(super) async fn materialize_series_link(
     conn: &mut SqliteConnection,
     book_uuid: &str,
     overrides: &MetadataOverrides,
 ) -> Result<(), sqlx::Error> {
+    let Some(book_id) = lookup_book_id(&mut *conn, book_uuid).await? else {
+        return Ok(());
+    };
     let series_name = overrides
         .series
         .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty());
-    let Some(series_name) = series_name else {
-        return Ok(());
-    };
-    let Some(book_id) = lookup_book_id(&mut *conn, book_uuid).await? else {
-        return Ok(());
-    };
-    let series_id = find_or_create_series(&mut *conn, series_name).await?;
-    link_book_to_series(&mut *conn, book_id, series_id).await
+    let mut keep = None;
+    if let Some(series_name) = series_name {
+        let series_id = find_or_create_series(&mut *conn, series_name).await?;
+        link_book_to_series(&mut *conn, book_id, series_id).await?;
+        keep = Some(series_id);
+    }
+    prune_override_series_links(conn, book_id, keep).await
+}
+
+/// Delete the book's series links that are neither the scanned one nor `keep`
+/// (the current override's), so clearing or replacing an override restores the
+/// scanned series. A book whose `series_sort` names a series but whose links
+/// match none of it keeps them: nothing says which was scanned.
+pub(super) async fn prune_override_series_links(
+    conn: &mut SqliteConnection,
+    book_id: i64,
+    keep: Option<i64>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(concat!(
+        "DELETE FROM books_series_link
+          WHERE book = ?1
+            AND (?2 IS NULL OR series <> ?2)
+            AND NOT EXISTS (SELECT 1 FROM series s JOIN books b ON b.id = books_series_link.book
+                             WHERE s.id = books_series_link.series AND ",
+        scanned_series_sql!("s", "b.series_sort"),
+        ")
+            AND (SELECT b.series_sort IS NULL OR EXISTS (
+                   SELECT 1 FROM books_series_link kept
+                     JOIN series s ON s.id = kept.series
+                    WHERE kept.book = b.id AND ",
+        scanned_series_sql!("s", "b.series_sort"),
+        ")
+                   FROM books b WHERE b.id = ?1)"
+    ))
+    .bind(book_id)
+    .bind(keep)
+    .execute(conn)
+    .await?;
+    Ok(())
 }
 
 /// When an override sets a subjects list, ensure a `tags` row exists for every

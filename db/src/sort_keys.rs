@@ -9,6 +9,15 @@ use sqlx::{SqliteConnection, SqlitePool};
 
 use crate::normalize::creator_sort_key;
 
+/// `s` (a `series` alias) is not the series the book's override names.
+macro_rules! not_override_series {
+    () => {
+        "NOT EXISTS (SELECT 1 FROM metadata_overrides mo
+                      WHERE mo.book_uuid = books.uuid AND json_valid(mo.overrides)
+                        AND json_extract(mo.overrides, '$.series') = s.name COLLATE NOCASE)"
+    };
+}
+
 /// Errors returned by [`backfill_series_sort`].
 #[derive(Debug, thiserror::Error)]
 pub enum SortKeysError {
@@ -55,13 +64,14 @@ pub(crate) async fn refresh_author_sort(
 /// (idempotent and cheap once caught up). Only selects rows whose `series_sort`
 /// is NULL **and** that have a series link, so a seriesless book is never
 /// re-touched. The value is the alphabetically first series name, matching
-/// `BOOK_COLUMNS`' `series_json`.
+/// `BOOK_COLUMNS`' `series_json`. A series the book's override names is skipped:
+/// its link was materialised by the override, not written by the scan.
 pub async fn backfill_series_sort(pool: &SqlitePool) -> Result<(), SortKeysError> {
     // TRIM mirrors the write-time `series_sort_value` so backfilled rows match
     // freshly-indexed ones. The guard requires a non-whitespace linked series
     // name, so a (degenerate) whitespace-only series never traps a row in a
     // re-touch loop — it stays NULL and is skipped next boot.
-    sqlx::query(
+    sqlx::query(concat!(
         r"
         UPDATE books
            SET series_sort = (
@@ -69,6 +79,9 @@ pub async fn backfill_series_sort(pool: &SqlitePool) -> Result<(), SortKeysError
                  FROM books_series_link bsl
                  JOIN series s ON s.id = bsl.series
                 WHERE bsl.book = books.id
+                  AND ",
+        not_override_series!(),
+        r"
                 ORDER BY s.name
                 LIMIT 1
            )
@@ -79,9 +92,12 @@ pub async fn backfill_series_sort(pool: &SqlitePool) -> Result<(), SortKeysError
                  JOIN series s ON s.id = bsl.series
                 WHERE bsl.book = books.id
                   AND TRIM(s.name) <> ''
+                  AND ",
+        not_override_series!(),
+        r"
            )
-        ",
-    )
+        "
+    ))
     .execute(pool)
     .await?;
     Ok(())

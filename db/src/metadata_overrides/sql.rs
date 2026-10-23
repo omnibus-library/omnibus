@@ -278,10 +278,32 @@ macro_rules! effective_series_sql {
     };
 }
 
+/// Is series row `$s` the one the scan linked for the book whose `series_sort`
+/// is `$sort`: the series of that name, or the canonical a cleanup merge folded
+/// that name into? False when `$sort` is NULL, since a book scanned with no
+/// series has no scanned link. Both arguments are SQL expressions.
+macro_rules! scanned_series_sql {
+    ($s:literal, $sort:literal) => {
+        concat!(
+            "(",
+            $s,
+            ".name = ",
+            $sort,
+            " COLLATE NOCASE OR ",
+            $s,
+            ".id = (SELECT ea.canonical_id FROM entity_aliases ea
+                     WHERE ea.kind = 'series' AND ea.alias_name = ",
+            $sort,
+            " COLLATE NOCASE))"
+        )
+    };
+}
+
 pub(crate) use {
     creator_sort_sql, effective_author_sql, effective_authors_sql, effective_genres_sql,
     effective_series_sql, effective_tags_sql, effective_text_sql, effective_value_sql,
     override_join_sql, override_present_sql, override_sql, overrides_win_sql, safe_overrides_sql,
+    scanned_series_sql,
 };
 
 #[cfg(test)]
