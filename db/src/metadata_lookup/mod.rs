@@ -162,6 +162,9 @@ async fn narrow_for_check_in(
     provider: MetadataProvider,
     found: Vec<omnibus_shared::metadata_lookup::ProviderEdition>,
 ) -> Vec<ExternalBookMeta> {
+    if provider == MetadataProvider::OpenLibrary {
+        return resolve_open_library_editions(config, found).await;
+    }
     let handle = found.first().map(|e| e.provider_ref.clone());
     let narrowed: Vec<ExternalBookMeta> = found
         .into_iter()
@@ -187,6 +190,31 @@ async fn narrow_for_check_in(
             Vec::new()
         }
     }
+}
+
+/// Open Library's title search answers *works*, whose `isbn` list spans every
+/// printing, so the ISBN a doc offers can be a Turkish paperback's. Each work
+/// is resolved to one real edition, all concurrently; a work whose editions
+/// can't be read, or carry no ISBN, is dropped. Candidates that already name
+/// an edition (an ISBN lookup's) pass through unchanged.
+async fn resolve_open_library_editions(
+    config: &MetadataLookupConfig,
+    found: Vec<omnibus_shared::metadata_lookup::ProviderEdition>,
+) -> Vec<ExternalBookMeta> {
+    let resolved = futures::future::join_all(found.into_iter().map(|mut candidate| async move {
+        if !candidate.provider_ref.starts_with("/works/") {
+            return ExternalBookMeta::try_from(candidate).ok();
+        }
+        let edition = providers::openlibrary::work_edition(config, &candidate.provider_ref).await?;
+        candidate.isbn13 = Some(edition.isbn13);
+        candidate.publisher = edition.publisher;
+        candidate.pages = edition.pages;
+        let mut meta = ExternalBookMeta::try_from(candidate).ok()?;
+        meta.format = edition.format;
+        Some(meta)
+    }))
+    .await;
+    resolved.into_iter().flatten().collect()
 }
 
 /// Drop repeat editions (Google Books in particular answers the same ISBN

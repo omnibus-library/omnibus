@@ -36,6 +36,7 @@ fn external() -> ExternalBookMeta {
         cover_url: None,
         series: None,
         first_publish_year: None,
+        format: None,
         source: MetadataProvider::OpenLibrary,
     }
 }

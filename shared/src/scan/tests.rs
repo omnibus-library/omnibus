@@ -15,6 +15,7 @@ fn valid_meta() -> ExternalBookMeta {
         cover_url: Some("https://example.com/cover.jpg".into()),
         series: None,
         first_publish_year: Some(1813),
+        format: None,
         source: MetadataProvider::OpenLibrary,
     }
 }

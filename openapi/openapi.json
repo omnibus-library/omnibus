@@ -11983,6 +11983,13 @@
             "format": "int64",
             "description": "The year the work was first published, in any edition. `year` is this edition's\nown date."
           },
+          "format": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The edition's physical format as the provider names it, such as `Paperback`."
+          },
           "isbn13": {
             "type": "string",
             "description": "The ISBN-13 that matched, as 13 digits with no hyphens."

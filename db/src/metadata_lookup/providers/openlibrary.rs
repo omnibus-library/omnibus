@@ -271,6 +271,132 @@ fn map_search_doc(doc: OlSearchDoc) -> Option<ProviderEdition> {
     })
 }
 
+// ── Edition of a work ────────────────────────────────────────────
+
+/// One entry of `/works/<id>/editions.json`. Only what picking a printing
+/// reads; `publishers` is a plain string list here, unlike `jscmd=data`.
+#[derive(Debug, Deserialize)]
+struct OlEditionEntry {
+    #[serde(default)]
+    isbn_13: Vec<String>,
+    #[serde(default)]
+    isbn_10: Vec<String>,
+    #[serde(default)]
+    publishers: Vec<String>,
+    #[serde(default)]
+    number_of_pages: Option<i64>,
+    #[serde(default)]
+    physical_format: Option<String>,
+    #[serde(default)]
+    languages: Vec<OlLanguage>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OlLanguage {
+    #[serde(default)]
+    key: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct OlEditions {
+    #[serde(default)]
+    entries: Vec<OlEditionEntry>,
+}
+
+/// The printing of a work chosen to stand for it at a shelf.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(in crate::metadata_lookup) struct WorkEdition {
+    pub(in crate::metadata_lookup) isbn13: String,
+    pub(in crate::metadata_lookup) publisher: Option<String>,
+    pub(in crate::metadata_lookup) pages: Option<i64>,
+    pub(in crate::metadata_lookup) format: Option<String>,
+}
+
+/// How many of a work's editions are read; the list is newest-first and a
+/// popular work has hundreds.
+const EDITIONS_LIMIT: &str = "50";
+
+/// Whether `format` names a book on paper. An unnamed format is not known to be
+/// print, and a format that is a recording, a screen or large type never is.
+fn is_print(format: Option<&str>) -> bool {
+    let Some(format) = format.map(str::to_lowercase) else {
+        return false;
+    };
+    let non_print = [
+        "audio",
+        "cassette",
+        "ebook",
+        "e-book",
+        "kindle",
+        "large print",
+    ]
+    .iter()
+    .any(|word| format.contains(word))
+        || format
+            .split(|c: char| !c.is_alphanumeric())
+            .any(|token| matches!(token, "cd" | "mp3" | "dvd"));
+    !format.trim().is_empty() && !non_print
+}
+
+/// The edition to file for a work, best first: English print, any print,
+/// English, then the first with an ISBN. Ties keep Open Library's order.
+fn best_edition(entries: Vec<OlEditionEntry>) -> Option<WorkEdition> {
+    let mut best: Option<(u8, WorkEdition)> = None;
+    for entry in entries {
+        let Some(isbn13) = entry
+            .isbn_13
+            .iter()
+            .chain(&entry.isbn_10)
+            .find_map(|v| normalize_isbn(v).ok())
+        else {
+            continue;
+        };
+        let print = is_print(entry.physical_format.as_deref());
+        let english = entry.languages.iter().any(|l| l.key == "/languages/eng");
+        let score = match (english, print) {
+            (true, true) => 3,
+            (false, true) => 2,
+            (true, false) => 1,
+            (false, false) => 0,
+        };
+        if best.as_ref().is_some_and(|(top, _)| *top >= score) {
+            continue;
+        }
+        let name_ok = |v: &String| {
+            !v.trim().is_empty() && v.chars().count() <= ExternalBookMeta::NAME_MAX_LEN
+        };
+        let edition = WorkEdition {
+            isbn13,
+            publisher: entry.publishers.into_iter().find(name_ok),
+            pages: entry.number_of_pages.filter(|p| *p > 0),
+            format: entry.physical_format.filter(name_ok),
+        };
+        best = Some((score, edition));
+    }
+    best.map(|(_, edition)| edition)
+}
+
+/// The printing to file for the work at `work_key`, from its editions list.
+/// `None` when the key isn't a work path this crate will address, the call
+/// fails, or no edition carries an ISBN.
+pub(in crate::metadata_lookup) async fn work_edition(
+    config: &MetadataLookupConfig,
+    work_key: &str,
+) -> Option<WorkEdition> {
+    if !work_key.starts_with("/works/") || !is_record_key(work_key) {
+        return None;
+    }
+    let mut url = base_url(
+        &config.openlibrary_base,
+        &format!("{work_key}/editions.json"),
+        "open library",
+    )
+    .ok()?;
+    url.query_pairs_mut().append_pair("limit", EDITIONS_LIMIT);
+    let editions: OlEditions = get_json_best_effort(config, url.as_str()).await?;
+    best_edition(editions.entries)
+}
+
 // ── Enrichment ───────────────────────────────────────────────────
 
 /// Bonus fields for an already-resolved ISBN, filled best-effort from Open
@@ -488,7 +614,101 @@ pub async fn describe(config: &MetadataLookupConfig, key: &str) -> Option<String
 
 #[cfg(test)]
 mod tests {
-    use super::is_record_key;
+    use serde_json::json;
+
+    use super::{best_edition, is_record_key, OlEditionEntry};
+
+    fn entry(isbn: &str, format: Option<&str>, language: &str) -> OlEditionEntry {
+        serde_json::from_value(json!({
+            "isbn_13": [isbn],
+            "physical_format": format,
+            "languages": [{ "key": format!("/languages/{language}") }],
+        }))
+        .unwrap()
+    }
+
+    // Four valid ISBN-13s that differ only in their check digit's data digits.
+    const TURKISH_PAPERBACK: &str = "9780306406157";
+    const ENGLISH_PAPERBACK: &str = "9780134685991";
+    const ENGLISH_AUDIO_CD: &str = "9780441013593";
+    const FRENCH_HARDCOVER: &str = "9780451524935";
+
+    fn picked(entries: Vec<OlEditionEntry>) -> Option<String> {
+        best_edition(entries).map(|e| e.isbn13)
+    }
+
+    #[test]
+    fn best_edition_prefers_an_english_print_edition_to_any_other() {
+        let entries = vec![
+            entry(TURKISH_PAPERBACK, Some("Paperback"), "tur"),
+            entry(ENGLISH_AUDIO_CD, Some("Audio CD"), "eng"),
+            entry(ENGLISH_PAPERBACK, Some("Paperback"), "eng"),
+        ];
+        assert_eq!(picked(entries).as_deref(), Some(ENGLISH_PAPERBACK));
+    }
+
+    #[test]
+    fn best_edition_prefers_a_print_edition_to_an_english_one_that_is_not() {
+        let entries = vec![
+            entry(ENGLISH_AUDIO_CD, Some("Audio CD"), "eng"),
+            entry(FRENCH_HARDCOVER, Some("Hardcover"), "fre"),
+        ];
+        assert_eq!(picked(entries).as_deref(), Some(FRENCH_HARDCOVER));
+    }
+
+    #[test]
+    fn best_edition_prefers_an_english_edition_to_one_of_unknown_format() {
+        let entries = vec![
+            entry(FRENCH_HARDCOVER, None, "fre"),
+            entry(ENGLISH_AUDIO_CD, None, "eng"),
+        ];
+        assert_eq!(picked(entries).as_deref(), Some(ENGLISH_AUDIO_CD));
+    }
+
+    #[test]
+    fn best_edition_falls_back_to_the_first_edition_with_an_isbn() {
+        let entries = vec![
+            entry(FRENCH_HARDCOVER, None, "fre"),
+            entry(TURKISH_PAPERBACK, None, "tur"),
+        ];
+        assert_eq!(picked(entries).as_deref(), Some(FRENCH_HARDCOVER));
+    }
+
+    #[test]
+    fn best_edition_never_counts_a_non_print_format_as_print() {
+        for format in [
+            "Audio CD",
+            "MP3 CD",
+            "Audio Cassette",
+            "eBook",
+            "Large Print",
+            "Kindle Edition",
+        ] {
+            let entries = vec![
+                entry(ENGLISH_AUDIO_CD, Some(format), "eng"),
+                entry(FRENCH_HARDCOVER, Some("Hardcover"), "fre"),
+            ];
+            assert_eq!(
+                picked(entries).as_deref(),
+                Some(FRENCH_HARDCOVER),
+                "{format} must lose to a plain print edition"
+            );
+        }
+    }
+
+    #[test]
+    fn best_edition_skips_an_edition_with_no_usable_isbn() {
+        let bad: OlEditionEntry =
+            serde_json::from_value(json!({ "isbn_13": ["not-an-isbn"] })).unwrap();
+        assert_eq!(picked(vec![bad]), None);
+    }
+
+    #[test]
+    fn best_edition_reads_an_isbn_10_as_its_isbn_13() {
+        let entry: OlEditionEntry =
+            serde_json::from_value(json!({ "isbn_10": ["0134685997"] })).unwrap();
+        assert_eq!(picked(vec![entry]).as_deref(), Some(ENGLISH_PAPERBACK));
+    }
 
     // `base_url` concatenates rather than joining, so what reaches `Url::parse`
     // is `{base}{key}.json`. That makes `is_record_key` the only thing standing
