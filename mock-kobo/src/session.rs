@@ -32,15 +32,17 @@ pub enum SyncFailure {
     /// The request got no answer at all.
     #[error("sync failed: no answer from the server: {0}")]
     Transport(String),
+    /// The device's token is auto-wired for another server; refused before any request.
+    #[error("{0}")]
+    Refused(String),
 }
 
-/// One "Sync now" press whatever its outcome: every request made, and how it ended.
+/// One exchange with the server whatever its outcome: every request made, and how it ended.
 #[derive(Debug)]
-pub struct SyncAttempt {
+pub struct Attempt<T> {
     /// Every request the device made, in order, token redacted.
     pub requests: Vec<RequestRecord>,
-    /// The `library_sync` pages fetched, or why the sync failed.
-    pub outcome: Result<usize, SyncFailure>,
+    pub outcome: Result<T, SyncFailure>,
 }
 
 /// Press "Sync now" on `device`, configured with `api_endpoint`.
@@ -53,18 +55,18 @@ pub async fn sync_now(device: &mut Device, api_endpoint: &str) -> Result<SyncRep
 }
 
 /// Press "Sync now", keeping the request log even when the sync fails.
-pub async fn attempt_sync(device: &mut Device, api_endpoint: &str) -> SyncAttempt {
+pub async fn attempt_sync(device: &mut Device, api_endpoint: &str) -> Attempt<usize> {
     let mut client = match Client::new(api_endpoint, &device.hardware_id) {
         Ok(client) => client,
         Err(failure) => {
-            return SyncAttempt {
+            return Attempt {
                 requests: Vec::new(),
                 outcome: Err(failure),
             }
         }
     };
     let outcome = run_sync(&mut client, device).await;
-    SyncAttempt {
+    Attempt {
         requests: client.into_requests(),
         outcome,
     }
