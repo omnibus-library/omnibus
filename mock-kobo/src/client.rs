@@ -15,6 +15,9 @@ use crate::session::SyncFailure;
 /// What stands in for the path token in anything the device reports.
 const REDACTED: &str = "<token>";
 
+/// The path segment Kobo routes carry their token under.
+const KOBO_SEGMENT: &str = "/kobo/";
+
 /// A harness safeguard, not a measured firmware timeout: a stalled server fails the test instead of hanging it.
 pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -32,7 +35,6 @@ pub struct Client {
     http: reqwest::Client,
     api_endpoint: String,
     hardware_id: String,
-    token: Option<String>,
     requests: Vec<RequestRecord>,
 }
 
@@ -58,7 +60,6 @@ impl Client {
             http,
             api_endpoint: api_endpoint.trim_end_matches('/').to_owned(),
             hardware_id: hardware_id.to_owned(),
-            token: path_token(api_endpoint),
             requests: Vec::new(),
         })
     }
@@ -118,12 +119,31 @@ impl Client {
             .map_err(|e| SyncFailure::BadResponse(self.redact(&format!("{path}: {e}"))))
     }
 
-    /// `text` with the device token replaced, safe to report.
+    /// `text` with every `/kobo/<token>/` path's token masked, whichever
+    /// token that is — a URL cached from an earlier sync can carry a token
+    /// this client no longer holds, so this can't rely on the client's own.
     pub fn redact(&self, text: &str) -> String {
-        match &self.token {
-            Some(token) => text.replace(token.as_str(), REDACTED),
-            None => text.to_owned(),
+        let mut out = String::new();
+        let mut rest = text;
+        while let Some(start) = rest.find(KOBO_SEGMENT) {
+            let after_marker = start + KOBO_SEGMENT.len();
+            out.push_str(&rest[..after_marker]);
+            let tail = &rest[after_marker..];
+            match tail.find('/') {
+                Some(end) => {
+                    out.push_str(REDACTED);
+                    out.push('/');
+                    rest = &tail[end + 1..];
+                }
+                None => {
+                    out.push_str(tail);
+                    rest = "";
+                    break;
+                }
+            }
         }
+        out.push_str(rest);
+        out
     }
 
     /// The requests answered so far, in order.
@@ -163,17 +183,6 @@ impl Client {
     fn transport(&self, error: reqwest::Error) -> SyncFailure {
         SyncFailure::Transport(self.redact(&error.to_string()))
     }
-}
-
-/// The `<TOKEN>` in an `api_endpoint` of the form `…/kobo/<TOKEN>`.
-fn path_token(api_endpoint: &str) -> Option<String> {
-    let url = reqwest::Url::parse(api_endpoint).ok()?;
-    let mut segments = url.path_segments()?;
-    segments.find(|s| *s == "kobo")?;
-    segments
-        .next()
-        .filter(|token| !token.is_empty())
-        .map(str::to_owned)
 }
 
 #[cfg(test)]

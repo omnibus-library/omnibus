@@ -534,6 +534,31 @@ async fn retarget_token_saves_token_and_clears_wired_url() {
 }
 
 #[tokio::test]
+async fn retarget_token_clears_cached_download_urls_and_sync_token() {
+    let stub = spawn_stub(dune_stub()).await;
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("kobo.json");
+    let control = stub_control(&stub, path.clone());
+    control.sync(DownloadPolicy::None).await.unwrap();
+    let before = state::load(&path).await.unwrap().unwrap();
+    assert!(!before.device.download_urls.is_empty());
+    assert!(before.device.sync_token.is_some());
+
+    control
+        .retarget(Retarget::Token("typed-token".into()))
+        .await
+        .unwrap();
+
+    let after = state::load(&path).await.unwrap().unwrap();
+    assert!(after.device.download_urls.is_empty());
+    assert_eq!(after.device.sync_token, None);
+    assert_eq!(
+        after.device.library, before.device.library,
+        "retarget keeps the library"
+    );
+}
+
+#[tokio::test]
 async fn retarget_wired_saves_token_and_wired_url() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("kobo.json");

@@ -11,8 +11,8 @@ use crate::downloads::DownloadPolicy;
 use crate::firmware::Quirk;
 use crate::reading::{Percent, ReadStatus};
 use crate::test_support::{
-    device_holding, dune_stub, never_answers, new_entitlement, spawn_stub, spawn_sync,
-    stub_control, stub_control_with, wait_until, Stub,
+    device_holding, dune_stub, never_answers, new_entitlement, request_lines, spawn_stub,
+    spawn_sync, stub_control, stub_control_with, wait_until, Stub, STUB_TOKEN,
 };
 
 use super::*;
@@ -62,6 +62,41 @@ async fn download_reports_failed_with_the_quirk_when_a_book_fails() {
             message,
         } => assert!(message.contains("book-1")),
         other => panic!("expected Failed, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn download_never_leaks_a_cached_urls_token_after_a_retarget() {
+    let stub = spawn_stub(Stub {
+        sync_pages: vec![json!([new_entitlement("book-1", "Dune")])],
+        download_status: StatusCode::NOT_FOUND,
+        ..Stub::default()
+    })
+    .await;
+    let dir = TempDir::new().unwrap();
+    let control = stub_control(&stub, dir.path().join("kobo.json"));
+    control.sync(DownloadPolicy::None).await.unwrap();
+
+    control
+        .retarget(Retarget::Token("typed-token-b".into()))
+        .await
+        .unwrap();
+    control.download(vec!["book-1".into()]).await.unwrap();
+
+    let problem = control.view().library["book-1"].download_problem.clone();
+    for leaked in [STUB_TOKEN, "typed-token-b"] {
+        assert!(
+            !request_lines(&control.requests())
+                .iter()
+                .any(|line| line.contains(leaked)),
+            "requests() leaked {leaked}"
+        );
+        if let Some(problem) = &problem {
+            assert!(
+                !problem.contains(leaked),
+                "download_problem leaked {leaked}: {problem}"
+            );
+        }
     }
 }
 

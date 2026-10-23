@@ -257,8 +257,11 @@ impl Control {
         Ok(self.view())
     }
 
-    /// Point the device at a new URL or token and save it; library and sync token stay.
-    /// Turned away while a sync runs.
+    /// Point the device at a new URL or token and save it. A URL retarget
+    /// keeps everything; a token retarget keeps the library but drops the
+    /// sync token and cached download URLs, so the next sync is a full
+    /// resync that re-delivers every held book with URLs carrying the new
+    /// token. Turned away while a sync runs.
     pub async fn retarget(&self, to: Retarget) -> Result<Retargeted, ControlError> {
         let retargeted = {
             let mut live = self.live();
@@ -273,10 +276,14 @@ impl Control {
                 Retarget::Token(token) => {
                     live.saved.token = token;
                     live.saved.wired_url = None;
+                    live.saved.device.sync_token = None;
+                    live.saved.device.download_urls.clear();
                 }
                 Retarget::Wired { token, url } => {
                     live.saved.token = token;
                     live.saved.wired_url = Some(url);
+                    live.saved.device.sync_token = None;
+                    live.saved.device.download_urls.clear();
                 }
             }
             let needs_wire = !live.saved.token_wired_for(&live.url);
