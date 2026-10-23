@@ -10,9 +10,10 @@ use ratatui::widgets::{Paragraph, Wrap};
 use ratatui::Frame;
 
 use crate::device::Book;
-use crate::tui::reader::Reader;
+use crate::tui::reader::{Reader, ReaderView, Selection};
 
-const PAGE_HELP: &str = "←/→ page · [/] chapter · ↑/↓ cursor · Esc close";
+const PAGE_HELP: &str = "←/→ page · [/] chapter · ↑/↓ cursor · v select · Esc close";
+const SELECTION_HELP: &str = "←/→ extend · 1-4 highlight · n note · Esc cancel";
 const METADATA_HELP: &str = "Esc close";
 
 /// The rect pages are fitted to: a one-line header and a one-line help
@@ -53,8 +54,16 @@ pub fn draw(frame: &mut Frame, area: Rect, reader: &Reader, book: Option<&Book>)
                 &kepub.chapters[reader.chapter],
                 page,
                 reader.cursor,
+                reader.selection.as_ref(),
             );
-            frame.render_widget(Line::raw(PAGE_HELP), help);
+            match &reader.view {
+                ReaderView::Note(buffer) => draw_note_prompt(frame, help, buffer),
+                ReaderView::Highlights(_) => {}
+                ReaderView::Page if reader.selection.is_some() => {
+                    frame.render_widget(Line::raw(SELECTION_HELP), help);
+                }
+                ReaderView::Page => frame.render_widget(Line::raw(PAGE_HELP), help),
+            }
         }
         None => {
             draw_metadata(frame, header.union(body), book);
@@ -90,6 +99,7 @@ fn draw_page(
     chapter: &crate::kepub::Chapter,
     page: &crate::tui::reader::Page,
     cursor: usize,
+    selection: Option<&Selection>,
 ) {
     let lines: Vec<Line> = page
         .lines
@@ -101,17 +111,31 @@ fn draw_page(
                     spans.push(TextSpan::raw(" "));
                 }
                 let word = &chapter.words[word_index];
-                let style = if word_index == cursor {
-                    Style::new().add_modifier(Modifier::UNDERLINED)
-                } else {
-                    Style::new()
-                };
+                let mut style = Style::new();
+                if selection.is_some_and(|s| (s.start..=s.end).contains(&word_index)) {
+                    style = style.add_modifier(Modifier::REVERSED);
+                }
+                if word_index == cursor {
+                    style = style.add_modifier(Modifier::UNDERLINED);
+                }
                 spans.push(TextSpan::styled(word.text.clone(), style));
             }
             Line::from(spans)
         })
         .collect();
     frame.render_widget(Paragraph::new(lines), area);
+}
+
+/// The note prompt, with the terminal cursor after what's been typed.
+fn draw_note_prompt(frame: &mut Frame, area: Rect, buffer: &str) {
+    let prompt = Line::raw(format!("note: {buffer}"));
+    let typed = u16::try_from(prompt.width()).unwrap_or(u16::MAX);
+    let x = area
+        .x
+        .saturating_add(typed)
+        .min(area.right().saturating_sub(1));
+    frame.set_cursor_position((x, area.y));
+    frame.render_widget(prompt, area);
 }
 
 /// The metadata-only view: title, authors, series, description, a

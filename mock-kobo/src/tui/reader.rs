@@ -6,9 +6,10 @@
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 use ratatui::text::Span as TextSpan;
 
+use crate::annotations::Swatch;
 use crate::kepub::{Chapter, Kepub};
 use crate::reading::Percent;
-use crate::tui::app::Job;
+use crate::tui::app::{typed_char, Job};
 
 /// One screenful of a chapter: which word-index lines it holds, the span of
 /// its first word, and that span's book percent.
@@ -24,10 +25,31 @@ pub struct Page {
 /// What closing, or a selection, hands back to the app.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ReaderAction {
-    /// Esc: the reader's own `Job::Read` (a downloaded book), or none (metadata-only).
+    /// Esc on the page view: the reader's own `Job::Read` (a downloaded
+    /// book), or none (metadata-only).
     Close(Option<Job>),
-    /// A job the reader made while staying open (a highlight, from Task 5).
+    /// A job the reader made while staying open (a highlight).
     Run(Job),
+}
+
+/// A word-by-word selection in progress: `start`/`end` are absolute word
+/// indices (inclusive, `start <= end`), and the note the `n` view attached, if any.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Selection {
+    pub start: usize,
+    pub end: usize,
+    pub note: Option<String>,
+}
+
+/// What the reader's body is showing, besides the open page itself.
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub enum ReaderView {
+    #[default]
+    Page,
+    /// Typing a note for the open selection; the buffer typed so far.
+    Note(String),
+    /// The book's highlights list; the selected row.
+    Highlights(usize),
 }
 
 /// An open book: its text (`None` for metadata-only), where the reader is,
@@ -47,6 +69,9 @@ pub struct Reader {
     /// placed this reader on; `None` (older than any real stamp) before
     /// the first one, so a reader just opened on its own always takes it.
     placed_at: Option<i64>,
+    pub view: ReaderView,
+    /// A word selection in progress on the open page, started by `v`.
+    pub selection: Option<Selection>,
 }
 
 impl Reader {
@@ -61,6 +86,8 @@ impl Reader {
             width: 0,
             rows: 0,
             placed_at: None,
+            view: ReaderView::Page,
+            selection: None,
         }
     }
 
@@ -118,6 +145,12 @@ impl Reader {
         if self.text.is_none() {
             return (key.code == KeyCode::Esc).then_some(ReaderAction::Close(None));
         }
+        if let ReaderView::Note(_) = &self.view {
+            return self.on_note_key(key);
+        }
+        if self.selection.is_some() {
+            return self.on_selection_key(key);
+        }
         match key.code {
             KeyCode::Right => {
                 self.next_page();
@@ -143,9 +176,123 @@ impl Reader {
                 self.move_cursor(-1);
                 None
             }
+            KeyCode::Char('v') => {
+                self.selection = Some(Selection {
+                    start: self.cursor,
+                    end: self.cursor,
+                    note: None,
+                });
+                None
+            }
             KeyCode::Esc => Some(self.close()),
             _ => None,
         }
+    }
+
+    /// Keys while a selection is open: the arrows extend it, a digit
+    /// highlights in that swatch and clears it, `n` opens the note view,
+    /// Esc cancels it without closing the book.
+    fn on_selection_key(&mut self, key: KeyEvent) -> Option<ReaderAction> {
+        match key.code {
+            KeyCode::Right => {
+                self.extend_selection(1);
+                None
+            }
+            KeyCode::Left => {
+                self.extend_selection(-1);
+                None
+            }
+            KeyCode::Char(digit @ '1'..='4') => {
+                let color = swatch_of(digit);
+                let selection = self.selection.take()?;
+                let highlight = self.highlight_of(&selection, color)?;
+                Some(ReaderAction::Run(Job::Highlight {
+                    book: self.book.clone(),
+                    highlight,
+                }))
+            }
+            KeyCode::Char('n') => {
+                let note = self
+                    .selection
+                    .as_ref()
+                    .and_then(|s| s.note.clone())
+                    .unwrap_or_default();
+                self.view = ReaderView::Note(note);
+                None
+            }
+            KeyCode::Esc => {
+                self.selection = None;
+                None
+            }
+            _ => None,
+        }
+    }
+
+    /// Keys while typing a note: everything but Enter/Esc/Backspace is
+    /// typed text, same rule as an edit buffer in the library.
+    fn on_note_key(&mut self, key: KeyEvent) -> Option<ReaderAction> {
+        let ReaderView::Note(buffer) = &mut self.view else {
+            return None;
+        };
+        match key.code {
+            KeyCode::Esc => self.view = ReaderView::Page,
+            KeyCode::Backspace => {
+                buffer.pop();
+            }
+            KeyCode::Enter => {
+                let trimmed = buffer.trim();
+                let note = (!trimmed.is_empty()).then(|| trimmed.to_owned());
+                if let Some(selection) = self.selection.as_mut() {
+                    selection.note = note;
+                }
+                self.view = ReaderView::Page;
+            }
+            _ => {
+                if let Some(c) = typed_char(key) {
+                    buffer.push(c);
+                }
+            }
+        }
+        None
+    }
+
+    /// Move the selection's `end` one word, clamped to `[start, the open
+    /// page's last word]` — a selection never crosses off the page it started on.
+    fn extend_selection(&mut self, delta: i32) {
+        let Some((start, end)) = self.selection.as_ref().map(|s| (s.start, s.end)) else {
+            return;
+        };
+        let pages = self.pages();
+        let Some(page) = pages.get(self.page) else {
+            return;
+        };
+        let max = *page
+            .lines
+            .last()
+            .expect("a page has at least one line")
+            .end();
+        let current = i32::try_from(end).unwrap_or(0);
+        let min_i = i32::try_from(start).unwrap_or(0);
+        let max_i = i32::try_from(max).unwrap_or(i32::MAX);
+        let moved = (current + delta).clamp(min_i, max_i);
+        if let Some(selection) = self.selection.as_mut() {
+            selection.end = usize::try_from(moved).unwrap_or(start);
+        }
+    }
+
+    /// `selection`'s highlight, in `color`, over this chapter's text.
+    /// `None` only if the book or chapter vanished mid-selection.
+    fn highlight_of(
+        &self,
+        selection: &Selection,
+        color: Swatch,
+    ) -> Option<crate::annotations::NewHighlight> {
+        let chapter = self.text.as_ref()?.chapters.get(self.chapter)?;
+        Some(chapter.highlight(
+            selection.start..=selection.end,
+            color,
+            selection.note.clone(),
+        ))
     }
 
     /// Recompute `page` for the current `chapter`/`cursor`/size: the last
@@ -241,6 +388,17 @@ impl Reader {
             percent,
             location: Some(location),
         }))
+    }
+}
+
+/// The swatch a selection digit names (`Bookmark.Color` index = digit − 1).
+/// Only ever called with `'1'..='4'`.
+fn swatch_of(digit: char) -> Swatch {
+    match digit {
+        '1' => Swatch::Yellow,
+        '2' => Swatch::Pink,
+        '3' => Swatch::Blue,
+        _ => Swatch::Green,
     }
 }
 

@@ -2,6 +2,7 @@
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+use crate::annotations::Swatch;
 use crate::kepub::Kepub;
 use crate::test_support::READER_KEPUB;
 use crate::tui::app::Job;
@@ -207,4 +208,124 @@ fn on_key_closes_a_metadata_only_book_without_a_job() {
     let action = reader.on_key(press(KeyCode::Esc));
 
     assert_eq!(action, Some(ReaderAction::Close(None)));
+}
+
+fn opened_on_ch2() -> Reader {
+    let mut reader = opened();
+    reader.chapter = 1;
+    reader.cursor = 2; // "The", the first word of kobo.2.1
+    reader.fit(24, 3);
+    reader
+}
+
+#[test]
+fn on_key_extends_the_selection_word_by_word_with_the_arrows() {
+    let mut reader = opened_on_ch2();
+
+    reader.on_key(press(KeyCode::Char('v')));
+    reader.on_key(press(KeyCode::Right));
+    reader.on_key(press(KeyCode::Right));
+
+    assert_eq!(
+        reader.selection,
+        Some(Selection {
+            start: 2,
+            end: 4,
+            note: None
+        })
+    );
+}
+
+#[test]
+fn on_key_keeps_the_selection_end_on_the_page_and_never_before_its_start() {
+    let mut reader = opened_on_ch2();
+    reader.on_key(press(KeyCode::Char('v')));
+
+    for _ in 0..3 {
+        reader.on_key(press(KeyCode::Left));
+    }
+    assert_eq!(
+        reader.selection.as_ref().unwrap().end,
+        2,
+        "never before start"
+    );
+
+    for _ in 0..30 {
+        reader.on_key(press(KeyCode::Right));
+    }
+    assert_eq!(
+        reader.selection.as_ref().unwrap().end,
+        10,
+        "clamped to the page's last word"
+    );
+}
+
+#[test]
+fn on_key_returns_a_highlight_job_in_the_swatch_its_digit_names() {
+    let mut reader = opened_on_ch2();
+    reader.on_key(press(KeyCode::Char('v')));
+    reader.on_key(press(KeyCode::Right));
+    reader.on_key(press(KeyCode::Right));
+
+    let action = reader.on_key(press(KeyCode::Char('3')));
+
+    let Some(ReaderAction::Run(Job::Highlight { book, highlight })) = action else {
+        panic!("expected a Highlight job, got {action:?}");
+    };
+    assert_eq!(book, "book-1");
+    assert_eq!(highlight.color, Swatch::Blue);
+    assert_eq!(highlight.text, "The café at");
+    let location = highlight.location.unwrap();
+    assert_eq!(location.start_span, "kobo.2.1");
+    assert_eq!(location.start_char, 0);
+    assert_eq!(location.end_span, "kobo.2.1");
+    assert_eq!(location.end_char, 11);
+    assert_eq!(reader.selection, None, "the selection is cleared");
+}
+
+#[test]
+fn on_key_attaches_a_typed_note_to_the_highlight() {
+    let mut reader = opened_on_ch2();
+    reader.on_key(press(KeyCode::Char('v')));
+    reader.on_key(press(KeyCode::Char('n')));
+    for c in "a thought".chars() {
+        reader.on_key(press(KeyCode::Char(c)));
+    }
+    reader.on_key(press(KeyCode::Enter));
+
+    let action = reader.on_key(press(KeyCode::Char('2')));
+
+    let Some(ReaderAction::Run(Job::Highlight { highlight, .. })) = action else {
+        panic!("expected a Highlight job, got {action:?}");
+    };
+    assert_eq!(highlight.color, Swatch::Pink);
+    assert_eq!(highlight.note, Some("a thought".to_owned()));
+}
+
+#[test]
+fn on_key_treats_an_empty_typed_note_as_none() {
+    let mut reader = opened_on_ch2();
+    reader.on_key(press(KeyCode::Char('v')));
+    reader.on_key(press(KeyCode::Char('n')));
+
+    reader.on_key(press(KeyCode::Enter));
+
+    let action = reader.on_key(press(KeyCode::Char('1')));
+    let Some(ReaderAction::Run(Job::Highlight { highlight, .. })) = action else {
+        panic!("expected a Highlight job, got {action:?}");
+    };
+    assert_eq!(highlight.color, Swatch::Yellow);
+    assert_eq!(highlight.note, None);
+}
+
+#[test]
+fn on_key_cancels_the_selection_on_esc_without_closing_the_book() {
+    let mut reader = opened_on_ch2();
+    reader.on_key(press(KeyCode::Char('v')));
+
+    let action = reader.on_key(press(KeyCode::Esc));
+
+    assert_eq!(action, None);
+    assert_eq!(reader.selection, None);
+    assert_eq!(reader.chapter, 1, "the book stays open");
 }

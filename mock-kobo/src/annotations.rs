@@ -8,9 +8,9 @@
 //! The outbound PATCH shape (sent by `session::attempt_annotation`) is
 //! inferred from `server/src/backend/kobo/reading_services/dto.rs::parse_patch`
 //! and its tests' `upload_body` — this repo holds no captured device PATCH.
-//! Every highlight carries a KoboSpan range; the TUI's and `kobo.sh`'s
-//! single-span shorthand anchors it on a placeholder `unknown` chapter
-//! until a real KEPUB reader view supplies actual ones.
+//! Every highlight carries a KoboSpan range: the reader view's word
+//! selection (`tui::reader`) and the control API's passage actions both
+//! resolve one from the downloaded KEPUB, through `Chapter::highlight`.
 
 use serde::{Deserialize, Serialize};
 

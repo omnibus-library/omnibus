@@ -1,8 +1,10 @@
-//! `reader::draw` through ratatui's `TestBackend`: the page view and the metadata-only view.
+//! `reader::draw` through ratatui's `TestBackend`: the page view, the
+//! selection, the note prompt, and the metadata-only view.
 
 use std::collections::BTreeMap;
 
 use ratatui::backend::TestBackend;
+use ratatui::style::Modifier;
 use ratatui::Terminal;
 
 use crate::control::DeviceView;
@@ -10,7 +12,7 @@ use crate::device::Book;
 use crate::kepub::Kepub;
 use crate::test_support::READER_KEPUB;
 use crate::tui::app::{App, Mode};
-use crate::tui::reader::Reader;
+use crate::tui::reader::{Reader, ReaderView, Selection};
 use crate::tui::render::{draw, Screen};
 use crate::wire::Series;
 
@@ -42,7 +44,7 @@ fn library(book: Book) -> DeviceView {
     }
 }
 
-fn shown(view: &DeviceView, reader: Reader) -> String {
+fn drawn(view: &DeviceView, reader: Reader) -> Terminal<TestBackend> {
     let mut terminal = Terminal::new(TestBackend::new(40, 10)).unwrap();
     let app = App {
         mode: Mode::Reading(Box::new(reader)),
@@ -56,7 +58,22 @@ fn shown(view: &DeviceView, reader: Reader) -> String {
         app: &app,
     };
     terminal.draw(|frame| draw(frame, &screen)).unwrap();
-    terminal.backend().to_string()
+    terminal
+}
+
+fn shown(view: &DeviceView, reader: Reader) -> String {
+    drawn(view, reader).backend().to_string()
+}
+
+fn screen_rows(terminal: &Terminal<TestBackend>) -> Vec<String> {
+    let buffer = terminal.backend().buffer();
+    (0..buffer.area.height)
+        .map(|y| {
+            (0..buffer.area.width)
+                .map(|x| buffer[(x, y)].symbol())
+                .collect()
+        })
+        .collect()
 }
 
 #[test]
@@ -98,4 +115,61 @@ fn draw_shows_metadata_and_waiting_highlights_for_an_undownloaded_book() {
         shown.contains("3 highlights wait for the download"),
         "{shown}"
     );
+}
+
+/// The (x, y) of `word`'s first character on screen, in the smallest row that holds it.
+fn locate(terminal: &Terminal<TestBackend>, word: &str) -> (u16, u16) {
+    screen_rows(terminal)
+        .iter()
+        .zip(0..)
+        .find_map(|(row, y)| row.find(word).map(|x| (x as u16, y)))
+        .unwrap_or_else(|| panic!("{word:?} not on screen"))
+}
+
+#[test]
+fn draw_shows_the_selection_reversed_on_the_page() {
+    let kepub = Kepub::parse(READER_KEPUB).unwrap();
+    let mut reader = Reader::open("book-1".to_owned(), Some(kepub));
+    reader.chapter = 1;
+    reader.cursor = 2; // "The", kobo.2.1's first word
+    reader.fit(24, 3);
+    reader.selection = Some(Selection {
+        start: 2,
+        end: 3, // "The café"
+        note: None,
+    });
+
+    let terminal = drawn(&library(book("Reader Fixture")), reader);
+
+    let (x, y) = locate(&terminal, "café");
+    assert!(
+        terminal.backend().buffer()[(x, y)]
+            .modifier
+            .contains(Modifier::REVERSED),
+        "the selected word is reversed"
+    );
+    let (x, y) = locate(&terminal, "at");
+    assert!(
+        !terminal.backend().buffer()[(x, y)]
+            .modifier
+            .contains(Modifier::REVERSED),
+        "a word outside the selection is not"
+    );
+}
+
+#[test]
+fn draw_shows_the_note_prompt_while_typing_a_note() {
+    let kepub = Kepub::parse(READER_KEPUB).unwrap();
+    let mut reader = Reader::open("book-1".to_owned(), Some(kepub));
+    reader.fit(24, 3);
+    reader.selection = Some(Selection {
+        start: 0,
+        end: 1,
+        note: None,
+    });
+    reader.view = ReaderView::Note("a thought".to_owned());
+
+    let shown = shown(&library(book("Reader Fixture")), reader);
+
+    assert!(shown.contains("note: a thought"), "{shown}");
 }

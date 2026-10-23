@@ -394,8 +394,7 @@ fn draw_shows_key_help_in_normal_mode() {
     let shown = shown(&view(), &App::default());
 
     // The full line is longer than the 100-column fixture, so only its start is checked here.
-    let help =
-        "↑/↓ select · Enter open · d download · p read % · f finish · x remove · h highlight";
+    let help = "↑/↓ select · Enter open · d download · p read % · f finish · x remove";
     assert!(shown.contains(help), "{shown}");
     assert!(!shown.contains("Enter save"), "{shown}");
 }
@@ -418,18 +417,6 @@ fn draw_shows_highlight_and_dropped_counts_per_book() {
 
     assert!(shown.contains("1 highlights"), "{shown}");
     assert!(shown.contains("2 highlights dropped"), "{shown}");
-}
-
-#[test]
-fn draw_shows_the_highlight_prompt_while_editing() {
-    let app = editing(Field::Highlight("b-1".into()), "kobo.1.1 0-5 some text");
-
-    let shown = shown(&view(), &app);
-
-    assert!(
-        shown.contains("highlight: kobo.1.1 0-5 some text"),
-        "{shown}"
-    );
 }
 
 #[test]

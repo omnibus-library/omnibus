@@ -115,3 +115,39 @@ fn bookmark_counts_the_words_before_a_span_in_a_later_chapter() {
     assert_eq!(span.source, "ch2.xhtml");
     assert_eq!(span.value, "kobo.3.1");
 }
+
+#[test]
+fn highlight_carries_utf16_offsets_over_astral_and_accented_words() {
+    let kepub = Kepub::parse(READER_KEPUB).unwrap();
+    let ch2 = &kepub.chapters[1];
+    // "naïve" (word 7) through "Zürich." (word 12), both inside kobo.2.1.
+    let highlight = ch2.highlight(7..=12, crate::annotations::Swatch::Pink, None);
+
+    assert_eq!(highlight.text, "naïve and still, far from Zürich.");
+    let location = highlight.location.unwrap();
+    assert_eq!(location.start_span, "kobo.2.1");
+    assert_eq!(location.start_char, 22);
+    assert_eq!(location.end_span, "kobo.2.1");
+    assert_eq!(location.end_char, 55);
+}
+
+#[test]
+fn highlight_crosses_spans_with_the_books_own_spacing() {
+    let kepub = Kepub::parse(READER_KEPUB).unwrap();
+    let ch1 = &kepub.chapters[0];
+    // "feet," (kobo.5.1) through "silent." (kobo.5.3), crossing the
+    // <em>-split paragraph's three spans.
+    let highlight = ch1.highlight(
+        32..=34,
+        crate::annotations::Swatch::Blue,
+        Some("note".into()),
+    );
+
+    assert_eq!(highlight.text, "feet, utterly silent.");
+    assert_eq!(highlight.note, Some("note".to_owned()));
+    let location = highlight.location.unwrap();
+    assert_eq!(location.start_span, "kobo.5.1");
+    assert_eq!(location.start_char, 38);
+    assert_eq!(location.end_span, "kobo.5.3");
+    assert_eq!(location.end_char, 8);
+}

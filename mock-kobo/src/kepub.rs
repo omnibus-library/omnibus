@@ -12,6 +12,7 @@ use quick_xml::events::{BytesRef, BytesStart, Event};
 use quick_xml::reader::Reader;
 use quick_xml::XmlVersion;
 
+use crate::annotations::{NewHighlight, SpanRange, Swatch};
 use crate::reading::{KoboSpan, Percent};
 
 /// Why a KEPUB's text could not be read.
@@ -57,6 +58,69 @@ pub struct Word {
     /// UTF-16 code units into `spans[span].text`; `end` is exclusive.
     pub start: u32,
     pub end: u32,
+}
+
+impl Chapter {
+    /// A highlight over `words` (inclusive, absolute into this chapter's
+    /// `words`): its KoboSpan range (the first and last word's span and
+    /// UTF-16 offsets) and the book's own text across them — each covered
+    /// span's UTF-16 slice concatenated, whitespace runs collapsed to one
+    /// space, then trimmed, so a span-crossing selection reads as the
+    /// original prose rather than its words re-joined with single spaces.
+    pub fn highlight(
+        &self,
+        words: std::ops::RangeInclusive<usize>,
+        color: Swatch,
+        note: Option<String>,
+    ) -> NewHighlight {
+        let first = &self.words[*words.start()];
+        let last = &self.words[*words.end()];
+        let mut raw = String::new();
+        for span_index in first.span..=last.span {
+            let units: Vec<u16> = self.spans[span_index].text.encode_utf16().collect();
+            let from = if span_index == first.span {
+                first.start as usize
+            } else {
+                0
+            };
+            let to = if span_index == last.span {
+                last.end as usize
+            } else {
+                units.len()
+            };
+            raw.push_str(&String::from_utf16_lossy(&units[from..to]));
+        }
+        NewHighlight {
+            text: collapse_whitespace(&raw),
+            color,
+            note,
+            location: Some(SpanRange {
+                chapter: self.href.clone(),
+                start_span: self.spans[first.span].id.clone(),
+                start_char: first.start,
+                end_span: self.spans[last.span].id.clone(),
+                end_char: last.end,
+            }),
+        }
+    }
+}
+
+/// Collapse every whitespace run in `text` to one space, then trim the ends.
+fn collapse_whitespace(text: &str) -> String {
+    let mut out = String::new();
+    let mut in_run = false;
+    for c in text.chars() {
+        if c.is_whitespace() {
+            if !in_run {
+                out.push(' ');
+            }
+            in_run = true;
+        } else {
+            out.push(c);
+            in_run = false;
+        }
+    }
+    out.trim().to_owned()
 }
 
 impl Kepub {

@@ -6,6 +6,7 @@ use omnibus_db::test_support::{seed_synced_ebook, EnvVarGuard};
 use omnibus_mock_kobo::annotations::{NewHighlight, SpanRange, Swatch};
 use omnibus_mock_kobo::device::Device;
 use omnibus_mock_kobo::downloads::DownloadPolicy;
+use omnibus_mock_kobo::kepub::Kepub;
 use omnibus_mock_kobo::session::{attempt_annotation, attempt_download, sync_now, AnnotationSent};
 use omnibus_shared::HighlightColor;
 
@@ -199,6 +200,62 @@ async fn attempt_annotation_deletes_a_device_highlight_from_the_server() {
     .await
     .unwrap();
     assert!(highlights.is_empty());
+}
+
+#[tokio::test]
+async fn attempt_annotation_lands_a_word_selection_on_the_same_text_in_the_web_reader() {
+    let omnibus = spawn_omnibus().await;
+    let (uuid, _guard) = seed_reader_book(&omnibus.pool).await;
+    opt_in(&omnibus.pool, omnibus.user_id, std::slice::from_ref(&uuid)).await;
+    let mut device = Device::new("HW-1");
+    device.storage = Some(db::test_support::make_test_dir("reader_device_storage"));
+    sync_now(&mut device, &omnibus.endpoint, &DownloadPolicy::All)
+        .await
+        .unwrap();
+    let file = device
+        .book_file(&uuid)
+        .expect("the sync downloaded the reader fixture");
+    let kepub = Kepub::open(&file).unwrap();
+    // ch2's "naïve and still, far from Zürich." (words 7-12, all inside kobo.2.1).
+    let highlight = kepub.chapters[1].highlight(7..=12, Swatch::Blue, None);
+    assert_eq!(highlight.text, "naïve and still, far from Zürich.");
+
+    device
+        .highlight(&uuid, "mock-h-1".into(), highlight)
+        .unwrap();
+    attempt_annotation(
+        &mut device,
+        &omnibus.endpoint,
+        &uuid,
+        AnnotationSent::Upsert("mock-h-1".into()),
+        1_700_000_000,
+    )
+    .await
+    .outcome
+    .unwrap();
+
+    let highlights = db::annotations::list_highlights(
+        &omnibus.pool,
+        omnibus.user_id,
+        &uuid,
+        db::anchor::AnnotationOrder::Position,
+    )
+    .await
+    .unwrap();
+    assert_eq!(highlights.len(), 1);
+    let row = &highlights[0];
+    assert_eq!(
+        row.text.as_deref(),
+        Some("naïve and still, far from Zürich.")
+    );
+    // kobo.2.1 is <body>'s 2nd child → CFI step 4; both endpoints share that
+    // element and its sole text node, so the range CFI's common prefix is
+    // `/4/4` and the two tails are just the UTF-16 offsets — worked out by
+    // hand from `test_data/kepub/reader.epub`'s ch2.xhtml.
+    assert_eq!(
+        row.epub_cfi_range.as_deref(),
+        Some("epubcfi(/6/4!/4/4,/1:22,/1:55)")
+    );
 }
 
 #[tokio::test]
