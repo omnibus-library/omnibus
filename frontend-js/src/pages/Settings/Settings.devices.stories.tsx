@@ -301,6 +301,21 @@ export const ListsEachKoboWithItsEndpoint: Story = {
   },
 };
 
+export const HidesAKoreaderDevice: Story = {
+  beforeEach() {
+    server.kobo = [
+      CLARA,
+      aWireKoboDevice({ id: 2, name: "Libra", kind: "koreader" }),
+    ];
+  },
+  play: async ({ canvas }) => {
+    const rows = await canvas.findAllByTestId("kobo-device-row");
+    await expect(rows).toHaveLength(1);
+    await expect(rows[0]).toHaveTextContent("Clara");
+    await expect(canvas.queryByText("Libra")).toBeNull();
+  },
+};
+
 export const AddsAKobo: Story = {
   play: async ({ canvas, userEvent }) => {
     await userEvent.type(

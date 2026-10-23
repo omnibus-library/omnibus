@@ -103,7 +103,7 @@ export function EditShelfModal({
       )}
       {showKobo && (
         <div className="shelf-modal-kobo">
-          <span className="shelf-kobo-label">Sync to Kobo</span>
+          <span className="shelf-kobo-label">Sync to my devices</span>
           <div className="shelf-kobo-toggle">
             {KOBO.map(([on, label, testid]) => (
               <button
