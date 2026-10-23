@@ -103,6 +103,52 @@ fn read_entry_refuses_an_entry_that_decompresses_past_the_byte_cap() {
     assert!(message.contains("byte cap"), "{message}");
 }
 
+/// A chapter body with one word, enough for `words_in` to keep the chapter.
+const ONE_WORD_CHAPTER: &str =
+    r#"<?xml version="1.0"?><html><body><span class="koboSpan" id="kobo.1.1">Hello.</span></body></html>"#;
+
+#[test]
+fn parse_resolves_a_dot_relative_href() {
+    let zip = crate::test_support::minimal_kepub_zip_with_href(
+        "./ch1.xhtml",
+        "ch1.xhtml",
+        ONE_WORD_CHAPTER,
+    );
+
+    let kepub = Kepub::parse(&zip).unwrap();
+
+    assert_eq!(
+        kepub.chapters[0].href, "./ch1.xhtml",
+        "the chapter's own identity stays the raw manifest href"
+    );
+}
+
+#[test]
+fn parse_resolves_a_parent_relative_href() {
+    let zip = crate::test_support::minimal_kepub_zip_with_href(
+        "../Text/ch1.xhtml",
+        "Text/ch1.xhtml",
+        ONE_WORD_CHAPTER,
+    );
+
+    let kepub = Kepub::parse(&zip).unwrap();
+
+    assert_eq!(kepub.chapters[0].href, "../Text/ch1.xhtml");
+}
+
+#[test]
+fn parse_resolves_a_percent_encoded_href() {
+    let zip = crate::test_support::minimal_kepub_zip_with_href(
+        "My%20Chapter.xhtml",
+        "My Chapter.xhtml",
+        ONE_WORD_CHAPTER,
+    );
+
+    let kepub = Kepub::parse(&zip).unwrap();
+
+    assert_eq!(kepub.chapters[0].href, "My%20Chapter.xhtml");
+}
+
 #[test]
 fn find_passage_matches_words_glued_across_an_inline_elements_span_split() {
     let xhtml = r#"<?xml version="1.0"?><html><body><p>
@@ -150,6 +196,16 @@ fn bookmark_names_the_chapter_href_and_span_id_at_zero_for_the_first_span() {
     assert_eq!(u8::from(percent), 0);
     assert_eq!(span.source, "ch1.xhtml");
     assert_eq!(span.value, "kobo.1.1");
+}
+
+#[test]
+fn word_at_percent_finds_the_word_whose_position_matches_the_target_percent() {
+    let kepub = Kepub::parse(READER_KEPUB).unwrap();
+
+    // 80 words total; 55% rounds up to word 44, still inside ch1 (0-49).
+    let (chapter, word) = kepub.word_at_percent(Percent::new(55).unwrap());
+
+    assert_eq!((chapter, word), (0, 44));
 }
 
 #[test]

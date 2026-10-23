@@ -168,11 +168,7 @@ impl Kepub {
             let Some(href) = manifest.get(&idref) else {
                 continue;
             };
-            let entry_path = if opf_dir.is_empty() {
-                href.clone()
-            } else {
-                format!("{opf_dir}/{href}")
-            };
+            let entry_path = resolve_href(opf_dir, href);
             let xhtml = read_entry(&mut archive, &entry_path)?;
             let spans = parse_spans(&xhtml)?;
             let words = words_in(&spans);
@@ -267,6 +263,25 @@ impl Kepub {
             },
         )
     }
+
+    /// The chapter and word index holding `percent` of the book's words —
+    /// the reverse of `bookmark`'s own measure, for a server bookmark that
+    /// carries only a percent, no span.
+    pub fn word_at_percent(&self, percent: Percent) -> (usize, usize) {
+        let total: usize = self.chapters.iter().map(|c| c.words.len()).sum();
+        let target = (usize::from(u8::from(percent)) * total)
+            .div_ceil(100)
+            .min(total.saturating_sub(1));
+        let mut seen = 0;
+        for (chapter_index, chapter) in self.chapters.iter().enumerate() {
+            let len = chapter.words.len();
+            if target < seen + len {
+                return (chapter_index, target - seen);
+            }
+            seen += len;
+        }
+        (self.chapters.len().saturating_sub(1), 0)
+    }
 }
 
 type Archive<'a> = zip::ZipArchive<Cursor<&'a [u8]>>;
@@ -300,6 +315,49 @@ fn read_entry(archive: &mut Archive<'_>, name: &str) -> Result<Vec<u8>, KepubErr
         )));
     }
     Ok(bytes)
+}
+
+/// Resolve a manifest `href` (a relative URI, possibly with `.`/`..`
+/// segments or percent-encoding) against `opf_dir` into the zip entry it
+/// actually names. `Chapter::href` keeps the manifest's raw value — the
+/// `Source` a bookmark or highlight names — only the archive lookup uses this.
+fn resolve_href(opf_dir: &str, href: &str) -> String {
+    let decoded = percent_decode(href);
+    let mut segments: Vec<&str> = opf_dir.split('/').filter(|s| !s.is_empty()).collect();
+    for part in decoded.split('/') {
+        match part {
+            "" | "." => {}
+            ".." => {
+                segments.pop();
+            }
+            other => segments.push(other),
+        }
+    }
+    segments.join("/")
+}
+
+/// Decode `%XX` escapes in `href`. A malformed escape (not two hex digits)
+/// is left as a literal `%` — the resulting file-not-found is the right
+/// failure for a genuinely bad href. Works on bytes throughout, so it
+/// never slices a `&str` mid-character.
+fn percent_decode(href: &str) -> String {
+    let bytes = href.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 3 <= bytes.len() {
+            if let Ok(hex) = std::str::from_utf8(&bytes[i + 1..i + 3]) {
+                if let Ok(byte) = u8::from_str_radix(hex, 16) {
+                    out.push(byte);
+                    i += 3;
+                    continue;
+                }
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 /// `META-INF/container.xml`'s rootfile `full-path` — the OPF's path.

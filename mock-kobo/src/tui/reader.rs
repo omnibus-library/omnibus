@@ -119,18 +119,27 @@ impl Reader {
     }
 
     /// Move to `chapter`'s `span` (its first word) and record `modified` as
-    /// placed. Clears any word selection and returns to the page view — a
-    /// selection's word indices are only meaningful on the chapter/page they
-    /// were started on. A no-op past the chapter's own bounds (the caller
-    /// already checked `Kepub::locate_span`, so this never happens in practice).
+    /// placed. A no-op past the chapter's own bounds (the caller already
+    /// checked `Kepub::locate_span`, so this never happens in practice).
     pub fn place_at_span(&mut self, chapter: usize, span: usize, modified: i64) {
-        self.chapter = chapter;
-        self.cursor = self
+        let word = self
             .text
             .as_ref()
             .and_then(|kepub| kepub.chapters.get(chapter))
             .and_then(|text| text.words.iter().position(|w| w.span == span))
             .unwrap_or(0);
+        self.place_at_word(chapter, word, modified);
+    }
+
+    /// Move to `chapter`'s absolute word `word` and record `modified` as
+    /// placed — the counterpart to `place_at_span` for a bookmark naming
+    /// only a book percent, no span ([`crate::kepub::Kepub::word_at_percent`]).
+    /// Clears any word selection and returns to the page view — a
+    /// selection's word indices are only meaningful on the chapter/page
+    /// they were started on.
+    pub fn place_at_word(&mut self, chapter: usize, word: usize, modified: i64) {
+        self.chapter = chapter;
+        self.cursor = word;
         self.placed_at = Some(modified);
         self.selection = None;
         self.view = ReaderView::Page;

@@ -537,6 +537,15 @@ pub fn annotation(id: &str) -> crate::annotations::Annotation {
 /// for a test that wants to hand-craft koboSpan markup `Kepub::parse` sees
 /// directly, rather than go through the committed reader fixture.
 pub fn minimal_kepub_zip(chapter_xhtml: &str) -> Vec<u8> {
+    minimal_kepub_zip_with_href("ch1.xhtml", "ch1.xhtml", chapter_xhtml)
+}
+
+/// Like [`minimal_kepub_zip`], but the OPF manifest's `href` (relative to
+/// the OPF's own directory — `content.opf` sits at the zip root here) and
+/// the zip entry actually holding the chapter are given separately, for a
+/// test that wants the two to differ: a `./`/`../`-relative or
+/// percent-encoded href naming an entry stored under a plain path.
+pub fn minimal_kepub_zip_with_href(manifest_href: &str, zip_entry: &str, chapter_xhtml: &str) -> Vec<u8> {
     use std::io::Write as _;
 
     let mut buf = Vec::new();
@@ -555,13 +564,16 @@ pub fn minimal_kepub_zip(chapter_xhtml: &str) -> Vec<u8> {
     writer.start_file("content.opf", options).unwrap();
     writer
         .write_all(
-            br#"<?xml version="1.0"?><package>
-                <manifest><item id="ch1" href="ch1.xhtml"/></manifest>
+            format!(
+                r#"<?xml version="1.0"?><package>
+                <manifest><item id="ch1" href="{manifest_href}"/></manifest>
                 <spine><itemref idref="ch1"/></spine>
-            </package>"#,
+            </package>"#
+            )
+            .as_bytes(),
         )
         .unwrap();
-    writer.start_file("ch1.xhtml", options).unwrap();
+    writer.start_file(zip_entry, options).unwrap();
     writer.write_all(chapter_xhtml.as_bytes()).unwrap();
     writer.finish().unwrap();
     buf

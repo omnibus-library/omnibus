@@ -313,25 +313,23 @@ impl App {
         }
     }
 
-    /// Called every tick: move the open reader to the span a newer device
-    /// bookmark names. A no-op outside `Mode::Reading`, for a metadata-only
-    /// book, for a book the library no longer holds, for one with no
-    /// bookmark, or for a bookmark no newer than the stamp the reader last
-    /// placed itself on (so the reader's own page turns are never undone).
-    /// A location the book's text doesn't hold records the stamp (so the
-    /// error shows once, not every tick) and reports it; one with no
-    /// location also just records the stamp.
+    /// Called every tick: move the open reader to the span (or, lacking
+    /// one, the word at the percent) a newer device bookmark names. A
+    /// no-op outside `Mode::Reading`, for a book the library no longer
+    /// holds, one with no bookmark, or one no newer than the reader's own
+    /// last-placed stamp (so the reader's own page turns are never undone).
+    /// An unplaceable location or percent just records the stamp.
     pub fn show_book(&mut self, library: &BTreeMap<String, Book>) {
         let Mode::Reading(reader) = &mut self.mode else {
-            return;
-        };
-        let Some(kepub) = &reader.text else {
             return;
         };
         let Some(book) = library.get(&reader.book) else {
             return;
         };
         reader.annotations = book.annotations.clone();
+        let Some(kepub) = &reader.text else {
+            return;
+        };
         let Some(bookmark) = book.reading.bookmark.as_ref() else {
             return;
         };
@@ -339,7 +337,13 @@ impl App {
             return;
         }
         let Some(location) = &bookmark.location else {
-            reader.record_placed(bookmark.modified);
+            match bookmark.percent {
+                Some(percent) => {
+                    let (chapter, word) = kepub.word_at_percent(percent);
+                    reader.place_at_word(chapter, word, bookmark.modified);
+                }
+                None => reader.record_placed(bookmark.modified),
+            }
             return;
         };
         match kepub.locate_span(&location.source, &location.value) {

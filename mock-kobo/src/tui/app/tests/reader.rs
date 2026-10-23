@@ -284,17 +284,17 @@ fn ctrl_c_in_the_reader_sends_the_read_job_before_quitting() {
 }
 
 #[test]
-fn show_book_records_the_stamp_for_a_bookmark_with_no_location() {
+fn show_book_records_the_stamp_for_a_bookmark_with_neither_location_nor_percent() {
     let mut app = opened_reader_app();
     let bookmark = crate::reading::Bookmark {
-        percent: Percent::new(10),
+        percent: None,
         location: None,
         modified: 1,
     };
 
     app.show_book(&library_with(book_with_bookmark(Some(bookmark))));
 
-    assert_eq!(reader_position(&app), (0, 0), "no location means no move");
+    assert_eq!(reader_position(&app), (0, 0), "no location or percent means no move");
     assert_eq!(app.status, None, "a missing location is not an error");
 
     let older = crate::reading::Bookmark {
@@ -342,6 +342,35 @@ fn show_book_keeps_the_page_for_a_bookmark_older_than_the_last_placed() {
         (1, 1),
         "an older bookmark must not move the reader back"
     );
+}
+
+#[test]
+fn show_book_opens_on_the_page_matching_a_percent_only_bookmark() {
+    let mut app = opened_reader_app();
+    let bookmark = crate::reading::Bookmark {
+        percent: Percent::new(55),
+        location: None,
+        modified: 1,
+    };
+
+    app.show_book(&library_with(book_with_bookmark(Some(bookmark))));
+
+    let page_percent = match &app.mode {
+        Mode::Reading(reader) => i16::from(u8::from(reader.pages()[reader.page].percent)),
+        other => panic!("expected Reading, got {other:?}"),
+    };
+    assert!(
+        (page_percent - 55).abs() <= 25,
+        "page percent {page_percent} should land near the bookmark's 55%"
+    );
+
+    let action = app.on_key(code(KeyCode::Esc), URL);
+    match action {
+        Some(Action::Run(Job::Read { percent, .. })) => {
+            assert_ne!(u8::from(percent), 0, "must not have fallen back to the book's start");
+        }
+        other => panic!("expected a Read job, got {other:?}"),
+    }
 }
 
 #[test]
