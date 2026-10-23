@@ -94,6 +94,13 @@ local function opds_scenario()
     local root_url = BASE_URL .. "/opds"
     local browser
 
+    -- updateCatalog swaps item_table in only when the feed loaded with entries.
+    local function load(url)
+        local before = browser.item_table
+        browser:updateCatalog(url)
+        return browser.item_table ~= before
+    end
+
     return {
         {
             name = "add_catalog",
@@ -126,7 +133,9 @@ local function opds_scenario()
                 browser.root_catalog_title = "Omnibus"
                 browser.root_catalog_username = USER
                 browser.root_catalog_password = PASSWORD
-                browser:updateCatalog(root_url)
+                if not load(root_url) then
+                    return false, "feed failed to load or carried no entries: " .. root_url
+                end
                 -- genItemTableFromCatalog clears search_url on every feed.
                 search_url = browser.search_url
                 if not search_url then
@@ -143,7 +152,9 @@ local function opds_scenario()
                     return false, 'expected "All Books" entry in root feed, got '
                         .. titles_of(browser.item_table)
                 end
-                browser:updateCatalog(all_url)
+                if not load(all_url) then
+                    return false, "feed failed to load or carried no entries: " .. all_url
+                end
                 for _, title in ipairs(FIXTURE_TITLES) do
                     if not find_item(browser.item_table, title) then
                         return false, string.format(
@@ -165,7 +176,9 @@ local function opds_scenario()
                 local url = search_url:gsub("%%s", function()
                     return query
                 end)
-                browser:updateCatalog(url)
+                if not load(url) then
+                    return false, "feed failed to load or carried no entries: " .. url
+                end
                 if not find_item(browser.item_table, query) then
                     return false, string.format(
                         'expected "%s" in search results, got %s', query,
@@ -243,6 +256,7 @@ local function run_at(scenario_steps, i)
     end
     local spec = scenario_steps[i]
     if not spec then
+        finish(nil)
         return
     end
     current_step = spec.name
@@ -251,11 +265,12 @@ local function run_at(scenario_steps, i)
         fail(spec.name, "error: " .. tostring(step_ok))
         return
     end
-    if spec.deferred then
-        return -- its callback records the step and finishes
-    end
     if not step_ok then
         fail(spec.name, detail or "step failed")
+        return
+    end
+    -- A deferred step must be last: its callback records the step and finishes.
+    if spec.deferred then
         return
     end
     record(spec.name, true, detail or "")
