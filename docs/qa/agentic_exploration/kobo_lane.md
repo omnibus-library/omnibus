@@ -46,7 +46,7 @@ The actions today:
 |---|---|---|
 | `sync` | Presses **Sync now** on your device | `code` `synced` with `details.pages`, or `sync_failed` |
 | `show` | Reads the device | `details.library` (every book, keyed by uuid) and `details.last_sync` |
-| `download <uuid>…` | Downloads one or more books already on the device | `code` `downloaded`, or `download_failed` with the quirk |
+| `download <uuid>…` | Downloads one or more books already on the device | `code` `downloaded`, or `not_synced` (409)/`download_failed` with the quirk |
 | `read <uuid> <percent> [<source> <span>]` | Sends a reading position; the span is optional | `code` `state_sent`, or `state_failed` with the quirk |
 | `read-to <uuid> <passage>` | Reads to the span holding a passage copied from the web reader | `code` `state_sent`, or `passage_not_found`/`not_downloaded`/`book_unreadable`/`no_kobo_spans` (409)/`state_failed` |
 | `finish <uuid>` | Marks a book finished and sends it | `code` `state_sent`, or `state_failed` with the quirk |

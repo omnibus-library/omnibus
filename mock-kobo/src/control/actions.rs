@@ -23,11 +23,14 @@ fn now() -> i64 {
 
 impl Control {
     /// Download each listed book that isn't downloaded yet. A book the
-    /// device doesn't hold is rejected before any request.
+    /// device doesn't hold, or no sync since the device started, is
+    /// rejected before any request — a sync's own download pass is
+    /// unaffected, since it learns the host before downloading anything.
     pub async fn download(self: &Arc<Self>, books: Vec<String>) -> Result<Acted, ControlError> {
         if let Some(missing) = self.missing_book(&books) {
             return Err(ControlError::Device(DeviceError::UnknownBook(missing)));
         }
+        self.check_synced()?;
         let attempt = self
             .run_exchange(
                 move |mut device, endpoint| async move {

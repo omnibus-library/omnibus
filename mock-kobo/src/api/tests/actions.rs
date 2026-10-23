@@ -211,6 +211,25 @@ async fn post_actions_download_returns_download_failed_with_the_quirk_when_the_d
 }
 
 #[tokio::test]
+async fn post_actions_download_returns_not_synced_before_any_sync() {
+    let stub = spawn_stub(Stub::default()).await;
+    let dir = TempDir::new().unwrap();
+    let device = device_holding("book-1", "Dune");
+    let base = serve(stub_control_with(&stub, device, dir.path().join("kobo.json"))).await;
+
+    let response = reqwest::Client::new()
+        .post(format!("{base}/actions/download"))
+        .json(&json!({ "books": ["book-1"] }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["code"], "not_synced");
+}
+
+#[tokio::test]
 async fn post_actions_download_returns_unknown_book_for_a_book_the_device_lacks() {
     let stub = spawn_stub(Stub::default()).await;
     let dir = TempDir::new().unwrap();

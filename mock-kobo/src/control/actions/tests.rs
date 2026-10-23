@@ -21,6 +21,15 @@ fn device_holding_book_1() -> Device {
     device_holding("book-1", "Dune")
 }
 
+/// `device_holding_book_1`, already synced — a `reading_services_host` is
+/// set, so a download test exercising a *different* refusal (busy, a
+/// bad state write, a mismatched token) doesn't trip `NotSynced` first.
+fn device_holding_book_1_synced() -> Device {
+    let mut device = device_holding_book_1();
+    device.reading_services_host = Some("http://placeholder.example".into());
+    device
+}
+
 /// A downloaded "book-1", wired to `stub` as its `reading_services_host` —
 /// without it, a highlight action fails with "sync first".
 fn device_holding_downloaded_book_1(stub: &crate::test_support::RunningStub) -> Device {
@@ -92,6 +101,10 @@ async fn download_never_leaks_a_cached_urls_token_after_a_retarget() {
         .retarget(Retarget::Token("typed-token-b".into()))
         .await
         .unwrap();
+    // `retarget` drops `reading_services_host`; restore it so the
+    // download below exercises the cached-download-URLs leak this test
+    // is about, not the (separately tested) not-synced-yet refusal.
+    control.live().saved.device.reading_services_host = Some(stub.origin.clone());
     control.download(vec!["book-1".into()]).await.unwrap();
 
     let problem = control.view().library["book-1"].download_problem.clone();
@@ -109,6 +122,19 @@ async fn download_never_leaks_a_cached_urls_token_after_a_retarget() {
             );
         }
     }
+}
+
+#[tokio::test]
+async fn download_refuses_before_any_sync_and_leaves_the_book_undownloaded() {
+    let stub = spawn_stub(Stub::default()).await;
+    let dir = TempDir::new().unwrap();
+    let control = stub_control_with(&stub, device_holding_book_1(), dir.path().join("kobo.json"));
+
+    let result = control.download(vec!["book-1".into()]).await;
+
+    assert!(matches!(result, Err(ControlError::NotSynced)), "{result:?}");
+    assert!(!control.view().library["book-1"].downloaded);
+    assert!(stub.paths().is_empty());
 }
 
 #[tokio::test]
@@ -130,7 +156,11 @@ async fn download_returns_unknown_book_without_a_request() {
 async fn download_returns_sync_in_progress_while_a_sync_runs() {
     let stub = spawn_stub(never_answers()).await;
     let dir = TempDir::new().unwrap();
-    let control = stub_control_with(&stub, device_holding_book_1(), dir.path().join("kobo.json"));
+    let control = stub_control_with(
+        &stub,
+        device_holding_book_1_synced(),
+        dir.path().join("kobo.json"),
+    );
     let running = spawn_sync(&control);
     wait_until(|| control.view().syncing).await;
 
@@ -146,7 +176,11 @@ async fn download_returns_state_not_saved_when_state_file_cannot_be_written() {
     let dir = TempDir::new().unwrap();
     let parent = dir.path().join("parent");
     std::fs::write(&parent, "").unwrap();
-    let control = stub_control_with(&stub, device_holding_book_1(), parent.join("kobo.json"));
+    let control = stub_control_with(
+        &stub,
+        device_holding_book_1_synced(),
+        parent.join("kobo.json"),
+    );
 
     let result = control.download(vec!["book-1".into()]).await;
 
@@ -158,7 +192,11 @@ async fn download_refuses_a_token_wired_for_another_server() {
     let wired = spawn_stub(Stub::default()).await;
     let live = spawn_stub(Stub::default()).await;
     let dir = TempDir::new().unwrap();
-    let control = stub_control_with(&live, device_holding_book_1(), dir.path().join("kobo.json"));
+    let control = stub_control_with(
+        &live,
+        device_holding_book_1_synced(),
+        dir.path().join("kobo.json"),
+    );
     control
         .retarget(Retarget::Wired {
             token: "another-token".into(),
@@ -166,6 +204,10 @@ async fn download_refuses_a_token_wired_for_another_server() {
         })
         .await
         .unwrap();
+    // `retarget` drops `reading_services_host` (it belongs to the old
+    // target); restore it so this test exercises the token-wire refusal,
+    // not the (separately tested) not-synced-yet one.
+    control.live().saved.device.reading_services_host = Some(live.origin.clone());
 
     let result = control.download(vec!["book-1".into()]).await.unwrap();
 
