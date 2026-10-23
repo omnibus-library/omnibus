@@ -15,8 +15,8 @@ use tower::ServiceExt;
 use crate::auth::test_support as auth_test_support;
 use crate::backend::test_support::{
     body_json, get_with_bearer, get_with_bearer_and_if_none_match, opt_in, request,
-    revoke_can_download, seed_downloadable_book, seed_downloadable_book_with, CoversDirGuard,
-    TINY_PNG,
+    revoke_can_download, seed_downloadable_book, seed_downloadable_book_with, seed_override_cover,
+    CoversDirGuard, TINY_PNG,
 };
 
 use super::test_support::fixture;
@@ -154,15 +154,7 @@ mod library {
             .unwrap();
 
         let body: Value = body_json(res).await;
-        let entry = |uuid: &str| {
-            body["books"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .find(|b| b["uuid"] == uuid)
-                .unwrap_or_else(|| panic!("{uuid} missing from {body}"))
-                .clone()
-        };
+        let entry = |uuid: &str| book_entry(&body, uuid);
         let berserk = entry(&cbz);
         assert_eq!(berserk["format"], "cbz");
         assert_eq!(berserk["size"], 777);
@@ -175,13 +167,7 @@ mod library {
         assert!(berserk["last_modified"].is_i64());
     }
 
-    async fn library_entry(app: &Router, token: &str, uuid: &str) -> Value {
-        let res = app
-            .clone()
-            .oneshot(get_with_bearer("/koreader/v1/library", token))
-            .await
-            .unwrap();
-        let body: Value = body_json(res).await;
+    fn book_entry(body: &Value, uuid: &str) -> Value {
         body["books"]
             .as_array()
             .unwrap()
@@ -189,6 +175,15 @@ mod library {
             .find(|b| b["uuid"] == uuid)
             .unwrap_or_else(|| panic!("{uuid} missing from {body}"))
             .clone()
+    }
+
+    async fn library_entry(app: &Router, token: &str, uuid: &str) -> Value {
+        let res = app
+            .clone()
+            .oneshot(get_with_bearer("/koreader/v1/library", token))
+            .await
+            .unwrap();
+        book_entry(&body_json::<Value>(res).await, uuid)
     }
 
     #[tokio::test]
@@ -450,16 +445,7 @@ mod cover {
         let _covers = CoversDirGuard::new("koreader_cover");
         let (app, pool, token, uid) = fixture().await;
         let uuid = db::test_support::seed_synced_ebook(&pool, "alpha.epub", "Alpha", "Ada").await;
-        db::write_override_cover(&uuid, "image/png", TINY_PNG).unwrap();
-        db::upsert_metadata_overrides(
-            &pool,
-            &uuid,
-            &omnibus_shared::MetadataOverrides::default(),
-            true,
-            uid,
-        )
-        .await
-        .unwrap();
+        seed_override_cover(&pool, &uuid, uid).await;
 
         let res = app
             .oneshot(get_with_bearer(&cover_uri(&uuid), &token))
@@ -470,6 +456,53 @@ mod cover {
         assert_eq!(res.headers()[header::CONTENT_TYPE], "image/png");
         let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
         assert_eq!(&bytes[..], TINY_PNG);
+    }
+
+    #[tokio::test]
+    async fn sends_a_strong_etag_and_the_media_headers_with_the_cover() {
+        let _covers = CoversDirGuard::new("koreader_cover_headers");
+        let (app, pool, token, uid) = fixture().await;
+        let uuid = db::test_support::seed_synced_ebook(&pool, "alpha.epub", "Alpha", "Ada").await;
+        seed_override_cover(&pool, &uuid, uid).await;
+
+        let res = app
+            .oneshot(get_with_bearer(&cover_uri(&uuid), &token))
+            .await
+            .unwrap();
+
+        let headers = res.headers();
+        assert!(!headers[header::ETAG].to_str().unwrap().starts_with("W/"));
+        assert_eq!(headers[header::VARY], "Cookie, Authorization");
+        assert_eq!(headers[header::CACHE_CONTROL], "private, no-cache");
+        assert_eq!(headers[header::X_CONTENT_TYPE_OPTIONS], "nosniff");
+    }
+
+    #[tokio::test]
+    async fn answers_304_with_the_etag_and_the_media_headers_to_a_matching_validator() {
+        let _covers = CoversDirGuard::new("koreader_cover_304");
+        let (app, pool, token, uid) = fixture().await;
+        let uuid = db::test_support::seed_synced_ebook(&pool, "alpha.epub", "Alpha", "Ada").await;
+        seed_override_cover(&pool, &uuid, uid).await;
+        let first = app
+            .clone()
+            .oneshot(get_with_bearer(&cover_uri(&uuid), &token))
+            .await
+            .unwrap();
+        let etag = first.headers()[header::ETAG].to_str().unwrap().to_owned();
+
+        let res = app
+            .oneshot(get_with_bearer_and_if_none_match(
+                &cover_uri(&uuid),
+                &token,
+                &etag,
+            ))
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::NOT_MODIFIED);
+        assert_eq!(res.headers()[header::ETAG], etag.as_str());
+        assert_eq!(res.headers()[header::VARY], "Cookie, Authorization");
+        assert_eq!(res.headers()[header::CACHE_CONTROL], "private, no-cache");
     }
 
     #[tokio::test]
