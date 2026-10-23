@@ -11,6 +11,15 @@ use crate::wire::{BookMetadata, Series, SyncItem};
 /// What the device shows for a book with no `Contributors` ([`crate::firmware::Quirk::ContributorsDisplay`]).
 const UNKNOWN_AUTHOR: &str = "Unknown";
 
+/// Why a device action naming a book couldn't be carried out.
+#[derive(Debug, PartialEq, Eq, thiserror::Error)]
+pub enum DeviceError {
+    #[error("the device holds no book {0}")]
+    UnknownBook(String),
+    #[error("{0} is not downloaded; download it first")]
+    NotDownloaded(String),
+}
+
 /// The current on-disk shape of a saved device: covers, downloads and
 /// reading state. A device saved before this format upgrade loses its sync
 /// token on load, so the next sync resends every book with these new fields.
@@ -84,6 +93,17 @@ impl Device {
             covers: BTreeMap::new(),
             download_urls: BTreeMap::new(),
         }
+    }
+
+    /// Clear a book's downloaded flag and problem, locally — no request.
+    pub fn remove_download(&mut self, book: &str) -> Result<(), DeviceError> {
+        let book = self
+            .library
+            .get_mut(book)
+            .ok_or_else(|| DeviceError::UnknownBook(book.to_owned()))?;
+        book.downloaded = false;
+        book.download_problem = None;
+        Ok(())
     }
 
     /// Apply one `library_sync` item the way the firmware does.

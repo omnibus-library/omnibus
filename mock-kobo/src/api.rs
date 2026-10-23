@@ -13,7 +13,8 @@ use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 
 use crate::client::RequestRecord;
-use crate::control::{Control, ControlError, DeviceView, LastSync, RESET_MESSAGE};
+use crate::control::{Acted, Control, ControlError, DeviceView, LastSync, RESET_MESSAGE};
+use crate::device::DeviceError;
 use crate::downloads::DownloadPolicy;
 use crate::firmware::Quirk;
 
@@ -55,6 +56,16 @@ pub enum ReplyCode {
     MethodNotAllowed,
     /// 400: the request body couldn't be used.
     InvalidRequest,
+    /// 200: `POST /actions/download` downloaded every listed book.
+    Downloaded,
+    /// 502: a download failed.
+    DownloadFailed,
+    /// 200: `POST /actions/remove-download` cleared a book's downloaded flag.
+    DownloadRemoved,
+    /// 404: a book the device doesn't hold.
+    UnknownBook,
+    /// 409: the book named isn't downloaded yet.
+    NotDownloaded,
 }
 
 /// What a reply's `details` carries, for routes whose outcomes differ.
@@ -91,6 +102,8 @@ pub fn router(control: Arc<Control>) -> Router {
     Router::new()
         .route("/device", get(get_device))
         .route("/actions/sync", post(post_sync))
+        .route("/actions/download", post(post_download))
+        .route("/actions/remove-download", post(post_remove_download))
         .route("/requests", get(get_requests))
         .route("/reset", put(put_reset))
         .method_not_allowed_fallback(method_not_allowed)
@@ -139,6 +152,64 @@ fn parse_sync_policy(body: &[u8]) -> Result<DownloadPolicy, String> {
         Some(DownloadField::Named(other)) => Err(format!(
             "invalid sync body: unknown download value \"{other}\""
         )),
+    }
+}
+
+async fn post_download(State(control): State<Arc<Control>>, body: Bytes) -> Reply<Details> {
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct DownloadBody {
+        books: Vec<String>,
+    }
+    let books = match serde_json::from_slice::<DownloadBody>(&body) {
+        Ok(parsed) if !parsed.books.is_empty() => parsed.books,
+        Ok(_) => return invalid_request_reply("\"books\" must not be empty"),
+        Err(e) => return invalid_request_reply(format!("invalid download body: {e}")),
+    };
+    acted_reply(control.download(books).await)
+}
+
+async fn post_remove_download(State(control): State<Arc<Control>>, body: Bytes) -> Reply<Details> {
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct RemoveDownloadBody {
+        book: String,
+    }
+    let book = match serde_json::from_slice::<RemoveDownloadBody>(&body) {
+        Ok(parsed) => parsed.book,
+        Err(e) => return invalid_request_reply(format!("invalid remove-download body: {e}")),
+    };
+    match control.remove_download(&book).await {
+        Ok(view) => {
+            let details = Details::Device(view);
+            Reply::new(
+                StatusCode::OK,
+                ReplyCode::DownloadRemoved,
+                "download removed",
+                details,
+            )
+        }
+        Err(error) => error_reply(&error),
+    }
+}
+
+/// The reply for a finished download action.
+fn acted_reply(result: Result<Acted, ControlError>) -> Reply<Details> {
+    match result {
+        Ok(Acted::Done(view)) => {
+            let details = Details::Device(view);
+            Reply::new(StatusCode::OK, ReplyCode::Downloaded, "downloaded", details)
+        }
+        Ok(Acted::Failed { quirk, message }) => {
+            let details = Details::Quirk { quirk };
+            Reply::new(
+                StatusCode::BAD_GATEWAY,
+                ReplyCode::DownloadFailed,
+                message,
+                details,
+            )
+        }
+        Err(error) => error_reply(&error),
     }
 }
 
@@ -203,6 +274,12 @@ fn error_reply(error: &ControlError) -> Reply<Details> {
         ControlError::SyncInProgress => (StatusCode::CONFLICT, ReplyCode::SyncInProgress),
         ControlError::StateNotSaved(_) => {
             (StatusCode::INTERNAL_SERVER_ERROR, ReplyCode::StateNotSaved)
+        }
+        ControlError::Device(DeviceError::UnknownBook(_)) => {
+            (StatusCode::NOT_FOUND, ReplyCode::UnknownBook)
+        }
+        ControlError::Device(DeviceError::NotDownloaded(_)) => {
+            (StatusCode::CONFLICT, ReplyCode::NotDownloaded)
         }
     };
     Reply::new(

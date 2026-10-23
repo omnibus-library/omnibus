@@ -13,11 +13,13 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use serde::Serialize;
 
 use crate::client::RequestRecord;
-use crate::device::{Book, Device};
+use crate::device::{Book, Device, DeviceError};
 use crate::downloads::DownloadPolicy;
 use crate::firmware::Quirk;
 use crate::session::{attempt_sync, Attempt, SyncFailure};
 use crate::state::{self, SavedState, StateError};
+
+pub mod actions;
 
 /// One running device: what the control API (and a TUI) reads and drives.
 pub struct Control {
@@ -63,6 +65,18 @@ pub enum ControlError {
     SyncInProgress,
     #[error("device state not saved: {0}")]
     StateNotSaved(#[from] StateError),
+    #[error(transparent)]
+    Device(#[from] DeviceError),
+}
+
+/// How a device action that talks to the server ended.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Acted {
+    Done(DeviceView),
+    Failed {
+        quirk: Option<Quirk>,
+        message: String,
+    },
 }
 
 /// Where `Control::retarget` points the device.
@@ -350,6 +364,17 @@ fn last_sync_of(attempt: &Attempt<usize>) -> LastSync {
         Ok(pages) => LastSync::Synced { pages: *pages },
         Err(failure) => LastSync::Failed {
             quirk: quirk_of(failure),
+            message: failure.to_string(),
+        },
+    }
+}
+
+/// How a download or state-write action's outcome is reported to its caller.
+fn acted(attempt: Attempt<()>, view: DeviceView) -> Acted {
+    match attempt.outcome {
+        Ok(()) => Acted::Done(view),
+        Err(failure) => Acted::Failed {
+            quirk: quirk_of(&failure),
             message: failure.to_string(),
         },
     }

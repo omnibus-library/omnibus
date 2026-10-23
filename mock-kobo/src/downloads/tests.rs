@@ -4,7 +4,8 @@ use axum::http::StatusCode;
 use serde_json::json;
 
 use crate::device::{Book, Device};
-use crate::session::sync_now;
+use crate::firmware::Quirk;
+use crate::session::{attempt_download, sync_now, SyncFailure};
 use crate::test_support::{new_entitlement, spawn_stub, Stub, STUB_TOKEN};
 use crate::wire::Series;
 
@@ -146,4 +147,66 @@ async fn sync_now_retries_a_failed_download_on_the_next_sync() {
         download_requests, 2,
         "the second sync must retry it unasked"
     );
+}
+
+#[tokio::test]
+async fn attempt_download_makes_no_request_for_a_downloaded_book() {
+    let stub = spawn_stub(Stub::default()).await;
+    let mut device = Device::new("HW-1");
+    device
+        .library
+        .insert("book-1".into(), book(true, false, None));
+
+    let attempt = attempt_download(&mut device, &stub.endpoint, &["book-1".into()]).await;
+
+    assert!(attempt.outcome.is_ok());
+    assert!(stub
+        .paths()
+        .into_iter()
+        .all(|p| !p.contains("/v1/download/")));
+}
+
+#[tokio::test]
+async fn attempt_download_fails_with_download_failure_when_the_download_answers_404() {
+    let stub = spawn_stub(Stub {
+        download_status: StatusCode::NOT_FOUND,
+        ..Stub::default()
+    })
+    .await;
+    let mut device = Device::new("HW-1");
+    device
+        .library
+        .insert("book-1".into(), book(false, false, None));
+    device.download_urls.insert(
+        "book-1".into(),
+        format!("{}/kobo/{STUB_TOKEN}/v1/download/book-1", stub.origin),
+    );
+
+    let attempt = attempt_download(&mut device, &stub.endpoint, &["book-1".into()]).await;
+
+    assert!(matches!(
+        attempt.outcome,
+        Err(SyncFailure::Quirk {
+            quirk: Quirk::DownloadFailure,
+            ..
+        })
+    ));
+    assert!(device.library["book-1"].download_problem.is_some());
+}
+
+#[tokio::test]
+async fn attempt_download_fails_with_transport_when_the_server_is_unreachable() {
+    let mut device = Device::new("HW-1");
+    device
+        .library
+        .insert("book-1".into(), book(false, false, None));
+    // Port 1 is privileged, so nothing answers there.
+    device.download_urls.insert(
+        "book-1".into(),
+        "http://127.0.0.1:1/v1/download/book-1".into(),
+    );
+
+    let attempt = attempt_download(&mut device, "http://127.0.0.1:1", &["book-1".into()]).await;
+
+    assert!(matches!(attempt.outcome, Err(SyncFailure::Transport(_))));
 }

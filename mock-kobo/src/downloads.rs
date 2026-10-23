@@ -41,36 +41,56 @@ fn policy_wants(policy: &DownloadPolicy, id: &str) -> bool {
 /// Download every book `wanted` names, through the device's own `download_urls`.
 pub async fn download_books(client: &mut Client, device: &mut Device, policy: &DownloadPolicy) {
     for id in wanted(device, policy) {
-        download_one(client, device, &id).await;
+        let outcome = attempt_one(client, device, &id).await;
+        apply_outcome(device, &id, outcome);
     }
+}
+
+/// What attempting one book's download found out.
+pub enum Outcome {
+    Downloaded,
+    /// No `DownloadUrls` entry at all.
+    NoUrl,
+    /// A non-2xx answer, redacted.
+    Rejected(String),
+    /// No answer at all, redacted.
+    Transport(String),
 }
 
 /// Fetch one book's bytes, draining the body chunk by chunk rather than
 /// buffering it, and never storing it — this is a sync, not the reader.
-async fn download_one(client: &mut Client, device: &mut Device, id: &str) {
+pub async fn attempt_one(client: &mut Client, device: &mut Device, id: &str) -> Outcome {
     let Some(url) = device.download_urls.get(id).cloned() else {
-        record_problem(device, id, "no download URL".to_owned());
-        return;
+        return Outcome::NoUrl;
     };
     match client.download(&url).await {
         Ok(mut response) if response.status().is_success() => match drain(&mut response).await {
-            Ok(()) => {
-                if let Some(book) = device.library.get_mut(id) {
-                    book.downloaded = true;
-                    book.download_problem = None;
-                }
-            }
-            Err(error) => record_problem(device, id, client.redact(&error.to_string())),
+            Ok(()) => Outcome::Downloaded,
+            Err(error) => Outcome::Transport(client.redact(&error.to_string())),
         },
-        Ok(response) => {
-            let problem = format!(
-                "{} answered {}",
-                client.redact(response.url().path()),
-                response.status()
-            );
-            record_problem(device, id, problem);
+        Ok(response) => Outcome::Rejected(format!(
+            "{} answered {}",
+            client.redact(response.url().path()),
+            response.status()
+        )),
+        Err(failure) => Outcome::Transport(client.redact(&failure.to_string())),
+    }
+}
+
+/// Record what `attempt_one` found out onto `id`'s book.
+pub fn apply_outcome(device: &mut Device, id: &str, outcome: Outcome) {
+    let Some(book) = device.library.get_mut(id) else {
+        return;
+    };
+    match outcome {
+        Outcome::Downloaded => {
+            book.downloaded = true;
+            book.download_problem = None;
         }
-        Err(failure) => record_problem(device, id, client.redact(&failure.to_string())),
+        Outcome::NoUrl => book.download_problem = Some("no download URL".to_owned()),
+        Outcome::Rejected(problem) | Outcome::Transport(problem) => {
+            book.download_problem = Some(problem);
+        }
     }
 }
 
@@ -78,12 +98,6 @@ async fn download_one(client: &mut Client, device: &mut Device, id: &str) {
 async fn drain(response: &mut reqwest::Response) -> Result<(), reqwest::Error> {
     while response.chunk().await?.is_some() {}
     Ok(())
-}
-
-fn record_problem(device: &mut Device, id: &str, problem: String) {
-    if let Some(book) = device.library.get_mut(id) {
-        book.download_problem = Some(problem);
-    }
 }
 
 #[cfg(test)]

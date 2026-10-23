@@ -15,7 +15,7 @@ use crate::device::Device;
 use crate::firmware::Quirk;
 use crate::state::StateError;
 use crate::test_support::{
-    new_entitlement, spawn_stub, stub_control, stub_control_with, Stub, STUB_TOKEN,
+    dune_stub, new_entitlement, spawn_stub, stub_control, stub_control_with, Stub, STUB_TOKEN,
 };
 
 use super::*;
@@ -263,6 +263,127 @@ async fn get_device_never_carries_the_token_of_a_download_url() {
         .unwrap();
 
     assert!(!body.to_string().contains(STUB_TOKEN));
+}
+
+#[tokio::test]
+async fn post_actions_download_returns_downloaded_reply_with_the_device() {
+    let stub = spawn_stub(dune_stub()).await;
+    let dir = TempDir::new().unwrap();
+    let base = serve(stub_control(&stub, dir.path().join("kobo.json"))).await;
+    reqwest::Client::new()
+        .post(format!("{base}/actions/sync"))
+        .send()
+        .await
+        .unwrap();
+
+    let response = reqwest::Client::new()
+        .post(format!("{base}/actions/download"))
+        .json(&json!({ "books": ["book-1"] }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["code"], "downloaded");
+    assert_eq!(body["details"]["library"]["book-1"]["downloaded"], true);
+}
+
+#[tokio::test]
+async fn post_actions_download_returns_download_failed_with_the_quirk_when_the_download_answers_404(
+) {
+    let stub = spawn_stub(Stub {
+        sync_pages: vec![json!([new_entitlement("book-1", "Dune")])],
+        download_status: StatusCode::NOT_FOUND,
+        ..Stub::default()
+    })
+    .await;
+    let dir = TempDir::new().unwrap();
+    let base = serve(stub_control(&stub, dir.path().join("kobo.json"))).await;
+    reqwest::Client::new()
+        .post(format!("{base}/actions/sync"))
+        .send()
+        .await
+        .unwrap();
+
+    let response = reqwest::Client::new()
+        .post(format!("{base}/actions/download"))
+        .json(&json!({ "books": ["book-1"] }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["code"], "download_failed");
+    assert_eq!(body["details"]["quirk"], "DownloadFailure");
+}
+
+#[tokio::test]
+async fn post_actions_download_returns_unknown_book_for_a_book_the_device_lacks() {
+    let stub = spawn_stub(Stub::default()).await;
+    let dir = TempDir::new().unwrap();
+    let base = serve(stub_control(&stub, dir.path().join("kobo.json"))).await;
+
+    let response = reqwest::Client::new()
+        .post(format!("{base}/actions/download"))
+        .json(&json!({ "books": ["book-1"] }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["code"], "unknown_book");
+}
+
+#[tokio::test]
+async fn post_actions_download_returns_invalid_request_for_an_empty_book_list() {
+    let stub = spawn_stub(Stub::default()).await;
+    let dir = TempDir::new().unwrap();
+    let base = serve(stub_control(&stub, dir.path().join("kobo.json"))).await;
+
+    let response = reqwest::Client::new()
+        .post(format!("{base}/actions/download"))
+        .json(&json!({ "books": [] }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["code"], "invalid_request");
+}
+
+#[tokio::test]
+async fn post_actions_remove_download_returns_download_removed_reply() {
+    let stub = spawn_stub(dune_stub()).await;
+    let dir = TempDir::new().unwrap();
+    let base = serve(stub_control(&stub, dir.path().join("kobo.json"))).await;
+    let client = reqwest::Client::new();
+    client
+        .post(format!("{base}/actions/sync"))
+        .send()
+        .await
+        .unwrap();
+    client
+        .post(format!("{base}/actions/download"))
+        .json(&json!({ "books": ["book-1"] }))
+        .send()
+        .await
+        .unwrap();
+
+    let response = client
+        .post(format!("{base}/actions/remove-download"))
+        .json(&json!({ "book": "book-1" }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["code"], "download_removed");
+    assert_eq!(body["details"]["library"]["book-1"]["downloaded"], false);
 }
 
 #[tokio::test]

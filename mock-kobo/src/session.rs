@@ -147,6 +147,71 @@ async fn sync_library(
     Err(tripped(Quirk::SyncPaging, detail))
 }
 
+/// Download each of `books` not yet downloaded, recording a problem on any
+/// that fail the way [`downloads::download_books`] does. Unlike a sync's own
+/// download pass, a failure here surfaces in the outcome: `Transport` when
+/// any book got no answer at all, else a [`Quirk::DownloadFailure`] naming
+/// every book that answered non-2xx.
+pub async fn attempt_download(
+    device: &mut Device,
+    api_endpoint: &str,
+    books: &[String],
+) -> Attempt<()> {
+    let mut client = match Client::new(api_endpoint, &device.hardware_id) {
+        Ok(client) => client,
+        Err(failure) => {
+            return Attempt {
+                requests: Vec::new(),
+                outcome: Err(failure),
+            }
+        }
+    };
+    let outcome = run_download(&mut client, device, books).await;
+    Attempt {
+        requests: client.into_requests(),
+        outcome,
+    }
+}
+
+async fn run_download(
+    client: &mut Client,
+    device: &mut Device,
+    books: &[String],
+) -> Result<(), SyncFailure> {
+    let mut rejected = Vec::new();
+    let mut transport = None;
+    for id in books {
+        if device
+            .library
+            .get(id.as_str())
+            .is_some_and(|b| b.downloaded)
+        {
+            continue;
+        }
+        let outcome = downloads::attempt_one(client, device, id).await;
+        if let downloads::Outcome::Transport(message) = &outcome {
+            transport.get_or_insert_with(|| message.clone());
+        }
+        if matches!(
+            outcome,
+            downloads::Outcome::Rejected(_) | downloads::Outcome::NoUrl
+        ) {
+            rejected.push(id.clone());
+        }
+        downloads::apply_outcome(device, id, outcome);
+    }
+    if let Some(message) = transport {
+        return Err(SyncFailure::Transport(message));
+    }
+    if !rejected.is_empty() {
+        return Err(tripped(
+            Quirk::DownloadFailure,
+            format!("could not download: {}", rejected.join(", ")),
+        ));
+    }
+    Ok(())
+}
+
 /// Firmware aborts the whole sync on a non-2xx answer to these requests.
 fn require_success(
     client: &Client,

@@ -105,6 +105,29 @@ fn apply_leaves_library_unchanged_when_reading_state_changes() {
 }
 
 #[test]
+fn remove_download_clears_downloaded_and_the_problem() {
+    let mut device = Device::new("HW-1");
+    device.apply(item(new_entitlement("book-1", "Dune")));
+    let book = device.library.get_mut("book-1").unwrap();
+    book.downloaded = true;
+    book.download_problem = Some("stale".into());
+
+    device.remove_download("book-1").unwrap();
+
+    let book = &device.library["book-1"];
+    assert_eq!((book.downloaded, &book.download_problem), (false, &None));
+}
+
+#[test]
+fn remove_download_returns_unknown_book_for_a_book_it_lacks() {
+    let mut device = Device::new("HW-1");
+
+    let error = device.remove_download("book-1").unwrap_err();
+
+    assert_eq!(error, DeviceError::UnknownBook("book-1".into()));
+}
+
+#[test]
 fn mint_hardware_id_returns_mock_prefix_and_32_hex_digits() {
     let id = mint_hardware_id().unwrap();
 
