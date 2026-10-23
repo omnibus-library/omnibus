@@ -32,14 +32,12 @@ source scripts/lib/scratch-server.sh
 label=koreader
 bundle_web_app
 
-# Pre-made so the seeded library exists before the server boots: an empty
-# index would kick its boot scan off on nothing. scripts/lib/scratch-server.sh
-# adopts this scratch dir (and keeps it on failure, as for e2e-ci).
-scratch="$(mktemp -d /tmp/omnibus-koreader.XXXXXX)"
-scratch="$(cd "$scratch" && pwd -P)"
+# Seed the library before the server boots: an empty index would kick its
+# boot scan off on nothing.
+make_scratch_dir
 mkdir -p "$scratch/library" "$scratch/results"
 cp test_data/epubs/generated/alpha.epub test_data/epubs/generated/beta.epub "$scratch/library/"
-start_scratch_server omnibus-koreader "EBOOK_LIBRARY_PATH=$scratch/library"
+start_scratch_server "EBOOK_LIBRARY_PATH=$scratch/library"
 
 user=koreader
 password=koreader-e2e-pw-00

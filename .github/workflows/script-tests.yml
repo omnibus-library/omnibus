@@ -1,5 +1,6 @@
-# Runs the stdlib-Python script suites: the TestFlight scripts', the module
-# map's (`just modules`), and the KOReader lane report's.
+# Runs the script suites: the TestFlight scripts', the module map's
+# (`just modules`), the KOReader lane report's, and scratch-server.sh's
+# scratch-dir regression test.
 #
 # The TestFlight scripts only ever execute against Apple's live API — one
 # during a release dispatch, one on a daily schedule — so a regression is
@@ -9,8 +10,9 @@
 # credentials, so they can gate every change to the scripts here instead.
 #
 # Deliberately scoped to these suites rather than all of scripts/tests/: the
-# sibling bash tests expect a Nix dev shell and a worktree layout that this
-# runner does not have.
+# dev-port/dev-serve/with-dev-env bash tests expect a Nix dev shell and a
+# worktree layout that this runner does not have. The scratch-server one is
+# plain bash with stubbed I/O, so it runs here.
 name: Script tests
 
 # Path lists are spelled out twice because GitHub Actions does not support YAML
@@ -27,6 +29,9 @@ on:
       - "scripts/tests/module-map.test.py"
       - "scripts/koreader_report.py"
       - "scripts/tests/koreader-report.test.py"
+      - "scripts/lib/dev-port.sh"
+      - "scripts/lib/scratch-server.sh"
+      - "scripts/tests/scratch-server-make-scratch-dir.test.sh"
       - ".github/workflows/script-tests.yml"
   pull_request:
     paths:
@@ -38,6 +43,9 @@ on:
       - "scripts/tests/module-map.test.py"
       - "scripts/koreader_report.py"
       - "scripts/tests/koreader-report.test.py"
+      - "scripts/lib/dev-port.sh"
+      - "scripts/lib/scratch-server.sh"
+      - "scripts/tests/scratch-server-make-scratch-dir.test.sh"
       - ".github/workflows/script-tests.yml"
 
 permissions:
@@ -103,3 +111,12 @@ jobs:
 
       - name: Run suite
         run: python scripts/tests/koreader-report.test.py
+
+  scratch-server:
+    name: scratch-server.sh
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run suite
+        run: bash scripts/tests/scratch-server-make-scratch-dir.test.sh

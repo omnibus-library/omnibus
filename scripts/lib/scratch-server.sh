@@ -8,19 +8,20 @@
 # torn down afterwards. A second copy of the bring-up would let the two
 # lanes drift.
 #
-# Callers set `label` (log-line prefix) and may pre-set `scratch` to a dir
-# they already created and seeded; otherwise:
+# Callers set `label` (log-line prefix), then:
 #
+#   make_scratch_dir                            # sets scratch; installs traps
 #   bundle_web_app                              # sets bundle_dir
-#   start_scratch_server <prefix> [NAME=value ...]
+#   start_scratch_server [NAME=value ...]
 #
-# `start_scratch_server` sets scratch (/tmp/<prefix>.XXXXXX unless pre-set),
-# port, base_url and server_pid; installs the EXIT/INT/TERM traps; and waits
-# for this server's /api/_health. Extra NAME=value args are the only env the
+# `make_scratch_dir` always makes a fresh /tmp/omnibus-<label>.* dir — an
+# exported `scratch` is not adopted — and installs the EXIT/INT/TERM traps
+# before anything else can fail: the dir is kept iff the caller's `$status`
+# is non-zero at exit (status starts at 1); INT/TERM exit 130.
+# `start_scratch_server` sets port, base_url and server_pid and waits for
+# this server's /api/_health. Extra NAME=value args are the only env the
 # server adds on top of its fixed scratch set (e.g. EBOOK_LIBRARY_PATH) --
-# the developer's env is scrubbed first. The scratch dir is kept iff the
-# caller's `$status` is non-zero at exit (status starts at 1); INT/TERM exit
-# 130.
+# the developer's env is scrubbed first.
 
 label="${label:-scratch-server}"
 HEALTH_TIMEOUT_SECS=120
@@ -41,42 +42,39 @@ bundle_web_app() {
         ${profile_args[@]+"${profile_args[@]}"} --out-dir "$bundle_dir"
 }
 
-start_scratch_server() {
-    local prefix="$1"
-    shift
+# Invoked via `trap`, which shellcheck can't see.
+# shellcheck disable=SC2329
+cleanup() {
+    if [ -n "$server_pid" ] && kill -0 "$server_pid" 2>/dev/null; then
+        kill "$server_pid" 2>/dev/null || true
+        for _ in $(seq 1 50); do
+            kill -0 "$server_pid" 2>/dev/null || break
+            sleep 0.1
+        done
+        kill -KILL "$server_pid" 2>/dev/null || true
+    fi
+    if [ "$status" -eq 0 ]; then
+        rm -rf "$scratch"
+    else
+        echo "$label: kept $scratch" >&2
+    fi
+}
 
+make_scratch_dir() {
     # Not under $TMPDIR: the nix shell points that at a fresh dir per invocation.
     # Canonical (/tmp is /private/tmp on macOS) because the health wait compares
     # it with the cwd the server reports. Two steps, so a failed mktemp aborts
     # under set -e rather than leaving `cd ""` to make the worktree the scratch
-    # dir. A caller that seeded a scratch dir of its own passes it in `scratch`.
-    if [ -z "${scratch:-}" ]; then
-        scratch="$(mktemp -d "/tmp/${prefix}.XXXXXX")"
-    fi
+    # dir.
+    scratch="$(mktemp -d "/tmp/omnibus-$label.XXXXXX")"
     scratch="$(cd "$scratch" && pwd -P)"
     server_pid=""
     status=1
-
-    # Invoked via `trap`, which shellcheck can't see.
-    # shellcheck disable=SC2329
-    cleanup() {
-        if [ -n "$server_pid" ] && kill -0 "$server_pid" 2>/dev/null; then
-            kill "$server_pid" 2>/dev/null || true
-            for _ in $(seq 1 50); do
-                kill -0 "$server_pid" 2>/dev/null || break
-                sleep 0.1
-            done
-            kill -KILL "$server_pid" 2>/dev/null || true
-        fi
-        if [ "$status" -eq 0 ]; then
-            rm -rf "$scratch"
-        else
-            echo "$label: kept $scratch" >&2
-        fi
-    }
     trap cleanup EXIT
     trap 'exit 130' INT TERM
+}
 
+start_scratch_server() {
     local choice
     if ! choice="$(choose_port --free-only)"; then
         echo "$label: no free port in $START_PORT-$END_PORT" >&2

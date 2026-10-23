@@ -35,7 +35,8 @@ source scripts/lib/scratch-server.sh
 
 label=e2e-ci
 bundle_web_app
-start_scratch_server omnibus-e2e-ci
+make_scratch_dir
+start_scratch_server
 
 cd ui_tests/playwright
 pnpm install --frozen-lockfile
