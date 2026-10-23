@@ -84,6 +84,50 @@ and the other way round.
 - **Sideloaded books** (files you copied in yourself, not delivered by the
   plugin) are never read or written.
 
+## Highlights and notes
+
+The plugin keeps an EPUB's highlights and notes in step with Omnibus, so a
+passage marked on a KOReader shows in the web reader and on an iPhone at the
+same words, and the other way round.
+
+- **When:** the plugin syncs a delivered EPUB's highlights when the book opens
+  and closes, and on **Sync now** while it is open. **Sync now** from the file
+  manager syncs the library, not highlights: a closed book's highlights wait
+  for its next open. A highlight made in Omnibus appears the next time you open
+  the book.
+- **What follows:** new highlights, note edits, recolours and deletes, both
+  ways. A highlight is matched by an id KOReader keeps with it in the book's
+  metadata, so the same one is never added twice.
+- **Colours:** KOReader has nine, Omnibus five.
+
+  | KOReader → Omnibus | Omnibus → KOReader |
+  |---|---|
+  | yellow, orange, gray, any other → amber | amber → yellow |
+  | red → rose | rose → red |
+  | green, olive → green | green → green |
+  | cyan, blue → blue | blue → blue |
+  | purple → violet | violet → purple |
+
+  A highlight keeps the colour KOReader gave it: an orange one stays orange
+  after a note edit on the web, and only a recolour on the web repaints it, in
+  the KOReader colour the table gives.
+- **Newest wins:** whichever edit happened last on its own device wins, as for
+  the reading position, and a device whose clock is ahead is held to the
+  server's time. A delete wins over an edit: a highlight deleted on one side is
+  deleted on the other even if it was edited meanwhile, and is never brought
+  back. Two KOReaders editing one highlight offline can settle on the edit that
+  reaches the server first.
+- **Exact places only:** a highlight is stored at the passage it covers, using
+  the same rules as the reading position. One Omnibus can't place exactly
+  (unusual markup, text inside `pre`, SVG) stays on the device, and one KOReader
+  can't place stays in Omnibus.
+- **Offline:** changes wait on the device and go with the next open, close or
+  **Sync now** that finds a connection. A lost or reset book metadata file makes
+  the device pull everything again; it never deletes highlights it merely
+  stopped seeing.
+- **Not synced:** bookmarks (no highlighted text), PDF and CBZ annotations, and
+  highlights in sideloaded books.
+
 ## Metadata
 
 An edit made in Omnibus reaches the book on the device with the next sync: the
@@ -120,8 +164,9 @@ further on, which the web then shows (the `roundtrip` scenario), and retitle and
 re-cover a book on the web, which the next sync shows without losing the reader's
 place or highlights (the `metadata` scenario), and carry a spot inside a
 paragraph both ways, so the device and the web reader open on the same
-sentence (the `precise` scenario) — driven by a real KOReader in Docker, with
-nothing stubbed. Each scenario prints one PASS/FAIL line.
+sentence (the `precise` scenario), and carry a highlight with a note out and a
+recolour, a delete and a new highlight back (the `highlights` scenario) —
+driven by a real KOReader in Docker, with nothing stubbed. Each scenario prints one PASS/FAIL line.
 
 ```bash
 just koreader-e2e
@@ -130,12 +175,13 @@ just koreader-e2e
 # PASS roundtrip
 # PASS metadata
 # PASS precise
+# PASS highlights
 # or: FAIL opds: search: expected "Alpha" in search results, got ["Beta in the Series"] (screenshot: /tmp/omnibus-koreader.XXXXXX/results/opds.png)
 ```
 
 The lane boots a scratch server (its own DB, a fresh admin, four
 committed fixture EPUBs from `test_data/epubs/generated/`: Alpha and Beta, plus the
-two `precise` puts on the shelf), builds
+two `precise` and `highlights` put on the shelf), builds
 [`ui_tests/koreader/`](../ui_tests/koreader/) — a pinned KOReader release
 under Xvfb — and runs one container per scenario. The scenario is a KOReader
 user patch (`ui_tests/koreader/patches/2-omnibus-e2e.lua`) that drives
@@ -155,8 +201,8 @@ A failure keeps the scratch dir and names it (`kept /tmp/omnibus-koreader.XXX`):
 
 In CI the same directory is uploaded as the `koreader-lane` artifact
 (retention 7 days) by [`.github/workflows/koreader.yml`](../.github/workflows/koreader.yml),
-which runs the lane on PRs touching OPDS/auth code, the position and
-status stores, the metadata and export-EPUB code or the lane itself, and
+which runs the lane on PRs touching OPDS/auth code, the position, status and
+annotation stores, the metadata and export-EPUB code or the lane itself, and
 nightly.
 
 ### Bumping KOReader
