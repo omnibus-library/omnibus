@@ -211,6 +211,35 @@ impl Kepub {
         None
     }
 
+    /// The first run of consecutive words in spine order whose text equals
+    /// `passage`'s whitespace-split words exactly (punctuation included —
+    /// the control API's `read-to`/`highlight-words` actions resolve a
+    /// passage the way the reader view resolves a page and a selection).
+    /// `None` for an empty passage, a partial word, or a run that would
+    /// have to cross a chapter boundary (each chapter is searched on its own).
+    pub fn find_passage(&self, passage: &str) -> Option<(usize, std::ops::RangeInclusive<usize>)> {
+        let needle: Vec<&str> = passage.split_whitespace().collect();
+        if needle.is_empty() {
+            return None;
+        }
+        for (chapter_index, chapter) in self.chapters.iter().enumerate() {
+            let words = &chapter.words;
+            if needle.len() > words.len() {
+                continue;
+            }
+            for start in 0..=(words.len() - needle.len()) {
+                let matches = needle
+                    .iter()
+                    .enumerate()
+                    .all(|(offset, word)| words[start + offset].text == *word);
+                if matches {
+                    return Some((chapter_index, start..=(start + needle.len() - 1)));
+                }
+            }
+        }
+        None
+    }
+
     /// The bookmark naming `chapter`'s `span`: the percent of the book's
     /// words that come before it (every word of earlier chapters, and of
     /// earlier spans in this one), and its `KoboSpan`.

@@ -430,7 +430,8 @@ async fn reset_keeps_downloading_into_the_same_storage() {
 async fn book_file_names_a_downloaded_books_file_beside_the_state_file() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("kobo.json");
-    let control = control_with_downloaded_book(crate::test_support::READER_KEPUB, path).await;
+    let (control, _stub) =
+        control_with_downloaded_book(crate::test_support::READER_KEPUB, path).await;
 
     let file = control.book_file("book-1").unwrap();
 

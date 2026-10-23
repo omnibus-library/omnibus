@@ -20,6 +20,7 @@ use crate::session::{attempt_sync, Attempt, SyncFailure};
 use crate::state::{self, SavedState, StateError};
 
 pub mod actions;
+pub mod passages;
 
 /// One running device: what the control API (and a TUI) reads and drives.
 pub struct Control {
@@ -67,6 +68,12 @@ pub enum ControlError {
     StateNotSaved(#[from] StateError),
     #[error(transparent)]
     Device(#[from] DeviceError),
+    #[error(transparent)]
+    Kepub(#[from] crate::kepub::KepubError),
+    #[error(
+        "no run of whole words in the book reads \"{0}\"; copy them exactly, punctuation included"
+    )]
+    PassageNotFound(String),
 }
 
 /// How a device action that talks to the server ended.

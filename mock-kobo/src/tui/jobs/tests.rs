@@ -434,7 +434,7 @@ async fn perform_read_sends_the_location_it_was_given() {
 #[tokio::test]
 async fn load_book_reads_the_kepub_a_download_stored() {
     let dir = TempDir::new().unwrap();
-    let control = crate::test_support::control_with_downloaded_book(
+    let (control, _stub) = crate::test_support::control_with_downloaded_book(
         crate::test_support::READER_KEPUB,
         dir.path().join("kobo.json"),
     )
@@ -460,7 +460,7 @@ async fn load_book_returns_none_for_a_book_that_is_not_downloaded() {
 #[tokio::test]
 async fn load_book_reports_a_plain_epub() {
     let dir = TempDir::new().unwrap();
-    let control = crate::test_support::control_with_downloaded_book(
+    let (control, _stub) = crate::test_support::control_with_downloaded_book(
         crate::test_support::READER_EPUB,
         dir.path().join("kobo.json"),
     )

@@ -463,6 +463,8 @@ port is in its header). Every reply is `{status, code, message, details}`:
 | `POST /actions/finish` `{"book": "<uuid>"}` | 200 `state_sent` · 400 `invalid_request` · 404 `unknown_book` · 409 `sync_in_progress` · 500 `state_not_saved` · 502 `state_failed` |
 | `POST /actions/highlight` `{"book": "<uuid>", "text", "color": "yellow"\|"pink"\|"blue"\|"green", "note"?, "location": {"chapter","start_span","start_char","end_span","end_char"}}` | 200 `annotation_sent` · 400 `invalid_request` · 404 `unknown_book` · 409 `not_downloaded` · 409 `sync_in_progress` · 500 `state_not_saved` · 502 `annotation_failed` |
 | `POST /actions/delete-highlight` `{"book": "<uuid>", "highlight": "<id>"}` | 200 `annotation_sent` · 400 `invalid_request` · 404 `unknown_book` · 404 `unknown_highlight` · 409 `sync_in_progress` · 500 `state_not_saved` · 502 `annotation_failed` |
+| `POST /actions/read-to` `{"book": "<uuid>", "passage"}` | 200 `state_sent` · 400 `invalid_request` · 404 `unknown_book` · 404 `passage_not_found` · 409 `not_downloaded` · 409 `book_unreadable` · 409 `no_kobo_spans` · 409 `sync_in_progress` · 500 `state_not_saved` · 502 `state_failed` |
+| `POST /actions/highlight-words` `{"book": "<uuid>", "passage", "color": "yellow"\|"pink"\|"blue"\|"green", "note"?}` | 200 `annotation_sent` · 400 `invalid_request` · 404 `unknown_book` · 404 `passage_not_found` · 409 `not_downloaded` · 409 `book_unreadable` · 409 `no_kobo_spans` · 409 `sync_in_progress` · 500 `state_not_saved` · 502 `annotation_failed` |
 | `GET /requests` | 200 `ok` |
 | `PUT /reset` | 200 `reset` · 409 `sync_in_progress` · 500 `state_not_saved` |
 | any other path | 404 `not_found` |

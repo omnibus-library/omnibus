@@ -268,11 +268,12 @@ fn control_with(
 /// A `Control` whose "book-1" is downloaded with `download_body`'s bytes
 /// into `state_path`'s storage: a `dune_stub`-style sync, then a download.
 /// Shared by the reader's `load_book` tests and the passage-action tests,
-/// so a book download never needs a per-file copy of this sequence.
+/// so a book download never needs a per-file copy of this sequence. The
+/// stub comes back too, for a test that inspects what it received.
 pub async fn control_with_downloaded_book(
     download_body: &'static [u8],
     state_path: PathBuf,
-) -> Arc<Control> {
+) -> (Arc<Control>, RunningStub) {
     let stub = spawn_stub(Stub {
         sync_pages: vec![json!([new_entitlement("book-1", "Reader Fixture")])],
         download_body,
@@ -285,7 +286,7 @@ pub async fn control_with_downloaded_book(
         .await
         .unwrap();
     control.download(vec!["book-1".to_owned()]).await.unwrap();
-    control
+    (control, stub)
 }
 
 /// Start a sync on its own task, as the control API's handler does.

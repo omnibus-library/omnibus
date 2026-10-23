@@ -183,3 +183,28 @@ fn covered_words_returns_none_for_another_chapter() {
 
     assert_eq!(ch2.covered_words(&range), None);
 }
+
+#[test]
+fn find_passage_returns_the_first_whole_word_run() {
+    let kepub = Kepub::parse(READER_KEPUB).unwrap();
+
+    let found = kepub.find_passage("Paul and Jessica walked");
+
+    assert_eq!(found, Some((0, 8..=11)));
+}
+
+#[test]
+fn find_passage_returns_none_for_a_partial_word() {
+    let kepub = Kepub::parse(READER_KEPUB).unwrap();
+
+    assert_eq!(kepub.find_passage("Paul and Jessic"), None);
+}
+
+#[test]
+fn find_passage_returns_none_across_a_chapter_boundary() {
+    let kepub = Kepub::parse(READER_KEPUB).unwrap();
+
+    // "light." is ch1's last word; "Chapter" is ch2's first — never adjacent
+    // within one chapter's word list.
+    assert_eq!(kepub.find_passage("light. Chapter"), None);
+}
