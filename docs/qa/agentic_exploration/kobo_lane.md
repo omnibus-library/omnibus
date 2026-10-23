@@ -25,9 +25,10 @@ scripts/explore/kobo.sh act --agent <n> sync                         # press Syn
 scripts/explore/kobo.sh act --agent <n> show                         # the device: library, last sync
 scripts/explore/kobo.sh act --agent <n> download <uuid>…              # download one or more books
 scripts/explore/kobo.sh act --agent <n> read <uuid> <percent> [<source> <span>]  # read to a percent
+scripts/explore/kobo.sh act --agent <n> read-to <uuid> <passage>      # read to a copied passage
 scripts/explore/kobo.sh act --agent <n> finish <uuid>                 # mark a book finished
 scripts/explore/kobo.sh act --agent <n> remove-download <uuid>        # clear a book's downloaded flag
-scripts/explore/kobo.sh act --agent <n> highlight <uuid> <colour> <span> <start> <end> <text> [<note>]  # make a highlight
+scripts/explore/kobo.sh act --agent <n> highlight <uuid> <colour> <passage> [<note>]  # highlight a copied passage
 scripts/explore/kobo.sh act --agent <n> delete-highlight <uuid> <id> # delete a highlight
 scripts/explore/kobo.sh requests --agent <n>                         # what it asked Omnibus for
 scripts/explore/kobo.sh state --agent <n>                            # is it still running?
@@ -47,14 +48,18 @@ The actions today:
 | `show` | Reads the device | `details.library` (every book, keyed by uuid) and `details.last_sync` |
 | `download <uuid>…` | Downloads one or more books already on the device | `code` `downloaded`, or `download_failed` with the quirk |
 | `read <uuid> <percent> [<source> <span>]` | Sends a reading position; the span is optional | `code` `state_sent`, or `state_failed` with the quirk |
+| `read-to <uuid> <passage>` | Reads to the span holding a passage copied from the web reader | `code` `state_sent`, or `passage_not_found`/`not_downloaded`/`state_failed` |
 | `finish <uuid>` | Marks a book finished and sends it | `code` `state_sent`, or `state_failed` with the quirk |
 | `remove-download <uuid>` | Clears a book's downloaded flag, locally | `code` `download_removed` |
-| `highlight <uuid> <colour> <span> <start> <end> <text> [<note>]` | Makes a highlight, single-span shorthand (`<colour>` one of `yellow`/`pink`/`blue`/`green`) | `code` `annotation_sent`, or `annotation_failed` with the quirk |
+| `highlight <uuid> <colour> <passage> [<note>]` | Highlights a passage copied from the web reader (`<colour>` one of `yellow`/`pink`/`blue`/`green`) | `code` `annotation_sent`, or `passage_not_found`/`not_downloaded`/`annotation_failed` |
 | `delete-highlight <uuid> <id>` | Deletes a highlight by the id `show` reports in `annotations` | `code` `annotation_sent`, or `annotation_failed` with the quirk |
 
-The `[<source> <span>]` on `read` is hand-supplied for testing, same as
-`highlight`'s `<span> <start> <end>`; #2738 wires both from a real reader
-view. **A reset is not an agent action yet.** Any action answers `409`
+The `[<source> <span>]` on `read` is hand-supplied for testing. `read-to` and
+`highlight` instead take a **passage** — a run of whole words copied exactly
+from the web reader — and find it in the downloaded KEPUB the same way the
+reader view resolves a page and a selection; copy enough words to make the
+passage unique, since both actions land on its first occurrence in the book.
+**A reset is not an agent action yet.** Any action answers `409`
 `sync_in_progress` while the device is mid-sync; wait a moment and ask again.
 
 ## Reading a reply
@@ -93,12 +98,14 @@ a developer which rule broke. A sync already running answers `sync_in_progress`
   Omnibus keeps no copy the audit can read back — so the vocabulary marks
   them out of scope. Journal them anyway, as looks, so an agent's actions are
   still traceable.
-- **A device `read` or `finish` is never journalled as `kobo.*`.** `read` is
-  an audit qualifier ("I checked it"), so `kobo.read` would silently classify
-  as a look and assert nothing. Journal the position or status change itself,
-  with `--surface kobo`: `progress.set --surface kobo` for a `read`,
-  `status.set --surface kobo` for a `finish` — see
-  [reading_on_a_kobo.md](flows/reading_on_a_kobo.md).
+- **A device `read`, `read-to` or `finish` is never journalled as `kobo.*`.**
+  `read` is an audit qualifier ("I checked it"), so `kobo.read` would silently
+  classify as a look and assert nothing. Journal the position or status change
+  itself, with `--surface kobo`: `progress.set --surface kobo` for a `read` or
+  a `read-to` (for `read-to`, `params` is `{"percent":
+  <details.library[<uuid>].reading.bookmark.percent>}` from the reply's own
+  device view, never the passage or a `kobo.*` span), `status.set --surface
+  kobo` for a `finish` — see [reading_on_a_kobo.md](flows/reading_on_a_kobo.md).
 - **Never journal the device endpoint URL or its token.** The Account page's
   Kobo card shows both, and the journal is kept forever. Nothing here needs
   them: `kobo.sh` already holds the token.
