@@ -223,6 +223,94 @@ async fn run_download(
     Ok(())
 }
 
+/// Which PATCH shape a device-made highlight action sends, under its id.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AnnotationSent {
+    Upsert(String),
+    Delete(String),
+}
+
+/// PATCH one device-made highlight or delete to Reading Services. `book`
+/// must be held, and for an upsert must already hold the annotation `sent`
+/// names (as `Device::highlight` leaves it) — this only sends it, it never
+/// mutates the device. Rejected before any request when no sync has named a
+/// `reading_services_host` yet.
+pub async fn attempt_annotation(
+    device: &mut Device,
+    api_endpoint: &str,
+    book: &str,
+    sent: AnnotationSent,
+    now: i64,
+) -> Attempt<()> {
+    let mut client = match Client::new(api_endpoint, &device.hardware_id) {
+        Ok(client) => client,
+        Err(failure) => {
+            return Attempt {
+                requests: Vec::new(),
+                outcome: Err(failure),
+            }
+        }
+    };
+    let outcome = run_annotation(&mut client, device, book, &sent, now).await;
+    Attempt {
+        requests: client.into_requests(),
+        outcome,
+    }
+}
+
+async fn run_annotation(
+    client: &mut Client,
+    device: &Device,
+    book: &str,
+    sent: &AnnotationSent,
+    now: i64,
+) -> Result<(), SyncFailure> {
+    let Some(host) = device.reading_services_host.clone() else {
+        return Err(SyncFailure::Rejected(
+            "no reading_services_host yet; sync first".to_owned(),
+        ));
+    };
+    let body = annotation_patch_body(device, book, sent, now);
+    let response = client.patch_annotations(&host, book, &body).await?;
+    if response.status().is_success() {
+        Ok(())
+    } else {
+        Err(SyncFailure::Rejected(rejection(client, &response)))
+    }
+}
+
+/// The device's own current state of `sent`'s highlight, as the PATCH body
+/// `reading_services/dto.rs::parse_patch` expects (see `annotations.rs`'s module doc).
+fn annotation_patch_body(
+    device: &Device,
+    book: &str,
+    sent: &AnnotationSent,
+    now: i64,
+) -> serde_json::Value {
+    match sent {
+        AnnotationSent::Upsert(id) => {
+            let highlight = device
+                .library
+                .get(book)
+                .and_then(|b| b.annotations.iter().find(|a| &a.id == id))
+                .expect("Upsert is only sent for a highlight Device::highlight just appended");
+            let mut entry = serde_json::json!({
+                "id": highlight.id,
+                "type": if highlight.note.is_some() { "note" } else { "highlight" },
+                "highlightColor": highlight.color.hex(),
+                "highlightedText": highlight.text,
+                "clientLastModifiedUtc": reading::rfc3339(now),
+                "location": highlight.location,
+            });
+            if let Some(note) = &highlight.note {
+                entry["noteText"] = serde_json::Value::String(note.clone());
+            }
+            serde_json::json!({ "updatedAnnotations": [entry] })
+        }
+        AnnotationSent::Delete(id) => serde_json::json!({ "deletedAnnotationIds": [id] }),
+    }
+}
+
 /// Send `book`'s current reading state to the server with one state PUT.
 /// `device` must hold `book`; its own `Device::read`/`Device::finish` is
 /// expected to have already set what this sends.

@@ -4,11 +4,15 @@
 use std::collections::BTreeMap;
 
 use axum::http::StatusCode;
+use serde_json::json;
 
 use crate::device::Device;
 use crate::downloads::DownloadPolicy;
-use crate::session::sync_now;
-use crate::test_support::{device_holding, new_entitlement, request_lines, served_annotation, Stub};
+use crate::session::{attempt_annotation, sync_now, AnnotationSent, SyncFailure};
+use crate::test_support::{
+    device_holding, new_entitlement, request_lines, served_annotation, spawn_stub, RunningStub,
+    Stub,
+};
 
 use super::*;
 
@@ -187,4 +191,211 @@ async fn sync_now_lands_a_css_colour_name_as_yellow() {
         .map(|a| a.color)
         .collect();
     assert_eq!(colors, [Swatch::Yellow, Swatch::Yellow, Swatch::Yellow]);
+}
+
+/// A device holding a downloaded "book-1" with one highlight "h-1" already
+/// appended, synced against `stub`'s origin as its `reading_services_host`.
+fn device_with_highlight(
+    stub: &RunningStub,
+    note: Option<&str>,
+    location: Option<SpanRange>,
+) -> Device {
+    let mut device = device_holding("book-1", "Dune");
+    device.library.get_mut("book-1").unwrap().downloaded = true;
+    device.reading_services_host = Some(stub.origin.clone());
+    device
+        .highlight(
+            "book-1",
+            "h-1".into(),
+            NewHighlight {
+                text: "a passage".into(),
+                color: Swatch::Pink,
+                note: note.map(str::to_owned),
+                location,
+            },
+        )
+        .unwrap();
+    device
+}
+
+fn patch_body(stub: &RunningStub, book: &str) -> serde_json::Value {
+    let recorded = stub.requests_to(&format!("/api/v3/content/{book}/annotations"));
+    let patch = recorded
+        .iter()
+        .find(|r| r.method == "PATCH")
+        .expect("no PATCH recorded");
+    serde_json::from_str(&patch.body).unwrap()
+}
+
+#[tokio::test]
+async fn attempt_annotation_patches_a_highlight_with_its_note_to_the_reading_services_host() {
+    let stub = spawn_stub(Stub::default()).await;
+    let location = Some(SpanRange {
+        chapter: "OEBPS/ch1.xhtml".into(),
+        start_span: "kobo.1.2".into(),
+        start_char: 3,
+        end_span: "kobo.1.4".into(),
+        end_char: 9,
+    });
+    let mut device = device_with_highlight(&stub, Some("a thought"), location);
+
+    let attempt = attempt_annotation(
+        &mut device,
+        &stub.endpoint,
+        "book-1",
+        AnnotationSent::Upsert("h-1".into()),
+        1_700_000_000,
+    )
+    .await;
+
+    assert!(attempt.outcome.is_ok(), "{:?}", attempt.outcome);
+    assert_eq!(
+        patch_body(&stub, "book-1"),
+        json!({
+            "updatedAnnotations": [{
+                "id": "h-1",
+                "type": "note",
+                "highlightColor": "#E8AFCF",
+                "highlightedText": "a passage",
+                "noteText": "a thought",
+                "clientLastModifiedUtc": "2023-11-14T22:13:20Z",
+                "location": {
+                    "span": {
+                        "chapterFilename": "OEBPS/ch1.xhtml",
+                        "startPath": "span#kobo\\.1\\.2",
+                        "startChar": 3,
+                        "endPath": "span#kobo\\.1\\.4",
+                        "endChar": 9,
+                    }
+                }
+            }]
+        })
+    );
+}
+
+#[tokio::test]
+async fn attempt_annotation_patches_a_highlight_without_a_note_or_location() {
+    let stub = spawn_stub(Stub::default()).await;
+    let mut device = device_with_highlight(&stub, None, None);
+
+    let attempt = attempt_annotation(
+        &mut device,
+        &stub.endpoint,
+        "book-1",
+        AnnotationSent::Upsert("h-1".into()),
+        1_700_000_000,
+    )
+    .await;
+
+    assert!(attempt.outcome.is_ok(), "{:?}", attempt.outcome);
+    let body = patch_body(&stub, "book-1");
+    assert_eq!(body["updatedAnnotations"][0]["type"], "highlight");
+    assert!(body["updatedAnnotations"][0].get("noteText").is_none());
+    assert_eq!(
+        body["updatedAnnotations"][0]["location"],
+        serde_json::Value::Null
+    );
+}
+
+#[tokio::test]
+async fn attempt_annotation_patches_a_delete_as_deleted_annotation_ids() {
+    let stub = spawn_stub(Stub::default()).await;
+    let mut device = device_with_highlight(&stub, None, None);
+
+    let attempt = attempt_annotation(
+        &mut device,
+        &stub.endpoint,
+        "book-1",
+        AnnotationSent::Delete("h-1".into()),
+        1_700_000_000,
+    )
+    .await;
+
+    assert!(attempt.outcome.is_ok(), "{:?}", attempt.outcome);
+    assert_eq!(
+        patch_body(&stub, "book-1"),
+        json!({ "deletedAnnotationIds": ["h-1"] })
+    );
+}
+
+#[tokio::test]
+async fn attempt_annotation_fails_rejected_when_the_patch_answers_500() {
+    let stub = spawn_stub(Stub {
+        patch_status: StatusCode::INTERNAL_SERVER_ERROR,
+        ..Stub::default()
+    })
+    .await;
+    let mut device = device_with_highlight(&stub, None, None);
+
+    let attempt = attempt_annotation(
+        &mut device,
+        &stub.endpoint,
+        "book-1",
+        AnnotationSent::Upsert("h-1".into()),
+        1_700_000_000,
+    )
+    .await;
+
+    assert!(matches!(attempt.outcome, Err(SyncFailure::Rejected(_))));
+}
+
+#[tokio::test]
+async fn attempt_annotation_fails_with_transport_when_the_server_is_unreachable() {
+    let mut device = device_holding("book-1", "Dune");
+    device.library.get_mut("book-1").unwrap().downloaded = true;
+    device.reading_services_host = Some("http://127.0.0.1:1".into());
+    device
+        .highlight(
+            "book-1",
+            "h-1".into(),
+            NewHighlight {
+                text: "a passage".into(),
+                color: Swatch::Yellow,
+                note: None,
+                location: None,
+            },
+        )
+        .unwrap();
+
+    let attempt = attempt_annotation(
+        &mut device,
+        "http://127.0.0.1:1",
+        "book-1",
+        AnnotationSent::Upsert("h-1".into()),
+        1_700_000_000,
+    )
+    .await;
+
+    assert!(matches!(attempt.outcome, Err(SyncFailure::Transport(_))));
+}
+
+#[tokio::test]
+async fn attempt_annotation_fails_until_a_sync_names_the_reading_services_host() {
+    let stub = spawn_stub(Stub::default()).await;
+    let mut device = device_holding("book-1", "Dune");
+    device.library.get_mut("book-1").unwrap().downloaded = true;
+    device
+        .highlight(
+            "book-1",
+            "h-1".into(),
+            NewHighlight {
+                text: "a passage".into(),
+                color: Swatch::Yellow,
+                note: None,
+                location: None,
+            },
+        )
+        .unwrap();
+
+    let attempt = attempt_annotation(
+        &mut device,
+        &stub.endpoint,
+        "book-1",
+        AnnotationSent::Upsert("h-1".into()),
+        1_700_000_000,
+    )
+    .await;
+
+    assert!(matches!(attempt.outcome, Err(SyncFailure::Rejected(_))));
+    assert!(attempt.requests.is_empty());
 }

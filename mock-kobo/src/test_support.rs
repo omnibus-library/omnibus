@@ -94,6 +94,8 @@ pub struct Stub {
     /// Each reported id's served annotation set. An id absent, or mapped to
     /// an empty vec, answers its GET `304`; a non-empty vec answers `200`.
     pub reading_services_annotations: BTreeMap<String, Vec<Value>>,
+    /// The status every `PATCH .../annotations` answers with.
+    pub patch_status: StatusCode,
 }
 
 impl Default for Stub {
@@ -123,6 +125,7 @@ impl Default for Stub {
             reading_services_status: StatusCode::OK,
             reading_services_changed: Vec::new(),
             reading_services_annotations: BTreeMap::new(),
+            patch_status: StatusCode::NO_CONTENT,
         }
     }
 }
@@ -381,6 +384,7 @@ fn reading_services(state: &StubState, method: &Method, path: &str) -> Option<Re
         .and_then(|rest| rest.strip_suffix("/annotations"))?;
     match *method {
         Method::GET => Some(annotations_get(state, id)),
+        Method::PATCH => Some(state.stub.patch_status.into_response()),
         _ => None,
     }
 }

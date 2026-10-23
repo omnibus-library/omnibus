@@ -4,6 +4,14 @@
 //! A failed exchange here is never a sync failure — only covers and downloads
 //! behave the same way — so a stalled Reading Services host just leaves the
 //! device's annotations as they were, retried on the next sync.
+//!
+//! The outbound PATCH shape (sent by `session::attempt_annotation`) is
+//! inferred from `server/src/backend/kobo/reading_services/dto.rs::parse_patch`
+//! and its tests' `upload_body` — this repo holds no captured device PATCH.
+//! A `null` location (no [`SpanRange`]) is a mock stand-in for a highlight
+//! made with no real anchor, not observed firmware behaviour, until
+//! [#2738](https://github.com/omnibus-library/omnibus/issues/2738) supplies
+//! real spans from a KEPUB reader view.
 
 use serde::{Deserialize, Serialize};
 
@@ -60,6 +68,53 @@ pub struct Annotation {
     pub color: Swatch,
     /// The device's own location object, round-tripped verbatim.
     pub location: serde_json::Value,
+}
+
+/// One endpoint-to-endpoint KoboSpan range a highlight anchors to. Span ids
+/// are `kobo.N.M`; char offsets are UTF-16 code units (#2738's reader view
+/// supplies both). `start_span`/`end_span` may name the same span or two
+/// different ones, mirroring `db::kobo_position::KoboSpanRange`.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SpanRange {
+    pub chapter: String,
+    pub start_span: String,
+    pub start_char: u32,
+    pub end_span: String,
+    pub end_char: u32,
+}
+
+/// A highlight the device is about to make, before it is given an id.
+#[derive(Clone, Debug, PartialEq)]
+pub struct NewHighlight {
+    pub text: String,
+    pub color: Swatch,
+    pub note: Option<String>,
+    pub location: Option<SpanRange>,
+}
+
+/// The device's own `location` object for `new`'s range, the shape
+/// `db::kobo_position::annotation_location_json` writes: `{"span":{...}}`
+/// with each span id's `.` backslash-escaped. `None` without a range —
+/// a mock stand-in (see `annotations.rs`'s module doc), not firmware behaviour.
+pub(crate) fn location_json(location: Option<&SpanRange>) -> serde_json::Value {
+    let Some(range) = location else {
+        return serde_json::Value::Null;
+    };
+    serde_json::json!({
+        "span": {
+            "chapterFilename": range.chapter,
+            "startPath": escaped_span_path(&range.start_span),
+            "startChar": range.start_char,
+            "endPath": escaped_span_path(&range.end_span),
+            "endChar": range.end_char,
+        }
+    })
+}
+
+/// A `kobo.N.M` span id as the CSS-ish selector a location carries: each `.` escaped.
+fn escaped_span_path(span_id: &str) -> String {
+    format!("span#{}", span_id.replace('.', "\\."))
 }
 
 impl Annotation {

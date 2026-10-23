@@ -120,6 +120,17 @@ impl Client {
         self.send(request).await
     }
 
+    /// `PATCH {host}/api/v3/content/{book}/annotations` with a device upsert/delete body.
+    pub async fn patch_annotations(
+        &mut self,
+        host: &str,
+        book: &str,
+        body: &serde_json::Value,
+    ) -> Result<Response, SyncFailure> {
+        let url = format!("{host}/api/v3/content/{book}/annotations");
+        self.send(self.http.patch(url).json(body)).await
+    }
+
     /// `GET library_sync`: one page of the library delta, echoing the
     /// previous page's `sync_token` when there was one.
     pub async fn library_sync(

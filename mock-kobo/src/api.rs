@@ -67,6 +67,8 @@ pub enum ReplyCode {
     UnknownBook,
     /// 409: the book named isn't downloaded yet.
     NotDownloaded,
+    /// 404: a highlight id the book doesn't hold.
+    UnknownHighlight,
     /// 200: `POST /actions/read` or `POST /actions/finish` sent the state PUT.
     StateSent,
     /// 502: the state PUT failed.
@@ -346,6 +348,9 @@ fn error_reply(error: &ControlError) -> Reply<Details> {
         }
         ControlError::Device(DeviceError::NotDownloaded(_)) => {
             (StatusCode::CONFLICT, ReplyCode::NotDownloaded)
+        }
+        ControlError::Device(DeviceError::UnknownHighlight(_)) => {
+            (StatusCode::NOT_FOUND, ReplyCode::UnknownHighlight)
         }
     };
     Reply::new(

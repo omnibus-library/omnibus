@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::annotations::Annotation;
+use crate::annotations::{Annotation, NewHighlight};
 use crate::covers::Cover;
 use crate::reading::{Bookmark, KoboSpan, Percent, ReadStatus, Reading};
 use crate::wire::{BookMetadata, Series, SyncItem};
@@ -20,6 +20,8 @@ pub enum DeviceError {
     UnknownBook(String),
     #[error("{0} is not downloaded; download it first")]
     NotDownloaded(String),
+    #[error("the book holds no highlight {0}")]
+    UnknownHighlight(String),
 }
 
 /// The current on-disk shape of a saved device: covers, downloads and
@@ -177,6 +179,45 @@ impl Device {
         } else {
             book.dropped_annotations = served.len();
         }
+    }
+
+    /// Add a highlight the device just made, under `id`. Needs the book held
+    /// and downloaded, because the firmware highlights only inside an open book.
+    pub fn highlight(
+        &mut self,
+        book_id: &str,
+        id: String,
+        new: NewHighlight,
+    ) -> Result<(), DeviceError> {
+        let book = self
+            .library
+            .get_mut(book_id)
+            .ok_or_else(|| DeviceError::UnknownBook(book_id.to_owned()))?;
+        if !book.downloaded {
+            return Err(DeviceError::NotDownloaded(book_id.to_owned()));
+        }
+        book.annotations.push(Annotation {
+            id,
+            text: new.text,
+            note: new.note.filter(|n| !n.is_empty()),
+            color: new.color,
+            location: crate::annotations::location_json(new.location.as_ref()),
+        });
+        Ok(())
+    }
+
+    /// Remove a highlight the device holds, by its id.
+    pub fn delete_highlight(&mut self, book: &str, id: &str) -> Result<(), DeviceError> {
+        let book = self
+            .library
+            .get_mut(book)
+            .ok_or_else(|| DeviceError::UnknownBook(book.to_owned()))?;
+        let before = book.annotations.len();
+        book.annotations.retain(|a| a.id != id);
+        if book.annotations.len() == before {
+            return Err(DeviceError::UnknownHighlight(id.to_owned()));
+        }
+        Ok(())
     }
 
     /// Apply one `library_sync` item the way the firmware does.
