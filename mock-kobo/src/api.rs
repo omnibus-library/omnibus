@@ -4,15 +4,17 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use axum::body::Bytes;
 use axum::extract::State;
 use axum::http::{Method, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post, put};
 use axum::{Json, Router};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::client::RequestRecord;
 use crate::control::{Control, ControlError, DeviceView, LastSync, RESET_MESSAGE};
+use crate::downloads::DownloadPolicy;
 use crate::firmware::Quirk;
 
 /// Every control API reply, success or failure: `{status, code, message, details}`.
@@ -51,6 +53,8 @@ pub enum ReplyCode {
     NotFound,
     /// 405: the path exists, but not for this method.
     MethodNotAllowed,
+    /// 400: the request body couldn't be used.
+    InvalidRequest,
 }
 
 /// What a reply's `details` carries, for routes whose outcomes differ.
@@ -98,8 +102,44 @@ async fn get_device(State(control): State<Arc<Control>>) -> Reply<DeviceView> {
     Reply::new(StatusCode::OK, ReplyCode::Ok, "ok", control.view())
 }
 
-async fn post_sync(State(control): State<Arc<Control>>) -> Reply<Details> {
-    sync_reply(control.sync().await)
+async fn post_sync(State(control): State<Arc<Control>>, body: Bytes) -> Reply<Details> {
+    match parse_sync_policy(&body) {
+        Ok(policy) => sync_reply(control.sync(policy).await),
+        Err(message) => invalid_request_reply(message),
+    }
+}
+
+/// `{"download": "none" | "all" | ["<uuid>", …]}`; an absent body or absent
+/// field means [`DownloadPolicy::None`]. Parsed from raw bytes (no
+/// `Content-Type` required) with `deny_unknown_fields`, so a misspelt key is
+/// a rejection rather than a silent `None`.
+fn parse_sync_policy(body: &[u8]) -> Result<DownloadPolicy, String> {
+    if body.is_empty() {
+        return Ok(DownloadPolicy::None);
+    }
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct SyncBody {
+        #[serde(default)]
+        download: Option<DownloadField>,
+    }
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum DownloadField {
+        Named(String),
+        Listed(Vec<String>),
+    }
+    let parsed: SyncBody =
+        serde_json::from_slice(body).map_err(|e| format!("invalid sync body: {e}"))?;
+    match parsed.download {
+        None => Ok(DownloadPolicy::None),
+        Some(DownloadField::Listed(uuids)) => Ok(DownloadPolicy::Listed(uuids)),
+        Some(DownloadField::Named(name)) if name == "none" => Ok(DownloadPolicy::None),
+        Some(DownloadField::Named(name)) if name == "all" => Ok(DownloadPolicy::All),
+        Some(DownloadField::Named(other)) => Err(format!(
+            "invalid sync body: unknown download value \"{other}\""
+        )),
+    }
 }
 
 async fn get_requests(State(control): State<Arc<Control>>) -> Reply<Details> {
@@ -145,6 +185,16 @@ fn sync_reply(result: Result<LastSync, ControlError>) -> Reply<Details> {
         }
         Err(error) => error_reply(&error),
     }
+}
+
+/// The reply for a request body that couldn't be parsed or validated.
+fn invalid_request_reply(message: impl Into<String>) -> Reply<Details> {
+    Reply::new(
+        StatusCode::BAD_REQUEST,
+        ReplyCode::InvalidRequest,
+        message,
+        Details::Empty(NoDetails {}),
+    )
 }
 
 /// The reply for a control problem, whichever action hit it.

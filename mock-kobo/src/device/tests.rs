@@ -35,6 +35,7 @@ fn apply_adds_new_entitlement_as_undownloaded_book() {
         archived: false,
         cover_image_id: "book-1".into(),
         cover: None,
+        download_problem: None,
     };
     assert_eq!(device.library["book-1"], expected);
 }

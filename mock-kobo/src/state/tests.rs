@@ -23,6 +23,7 @@ fn dune() -> Book {
         archived: false,
         cover_image_id: "book-1".into(),
         cover: None,
+        download_problem: None,
     }
 }
 

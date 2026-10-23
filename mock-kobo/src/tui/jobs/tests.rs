@@ -7,6 +7,7 @@ use axum::http::StatusCode;
 use tempfile::TempDir;
 
 use crate::control::{Control, ControlError, LastSync, RESET_MESSAGE};
+use crate::downloads::DownloadPolicy;
 use crate::firmware::Quirk;
 use crate::state::{self, StateError};
 use crate::test_support::{
@@ -86,7 +87,7 @@ async fn perform_reset_reports_reset_message_and_empties_library() {
     let stub = spawn_stub(dune_stub()).await;
     let dir = TempDir::new().unwrap();
     let control = stub_control(&stub, dir.path().join("kobo.json"));
-    control.sync().await.unwrap();
+    control.sync(DownloadPolicy::None).await.unwrap();
 
     let status = perform(&control, &wiring(), Job::Reset).await;
 

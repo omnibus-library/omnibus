@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use crate::autowire::{self, AutoWireError, SeedUser};
 use crate::control::{Control, ControlError, LastSync, Retarget, Retargeted, RESET_MESSAGE};
+use crate::downloads::DownloadPolicy;
 use crate::tui::app::{Job, Status};
 
 /// What `w` needs to wire a token: the dev seed admin and the device's Omnibus name.
@@ -30,7 +31,7 @@ pub async fn perform(control: &Arc<Control>, wiring: &Wiring, job: Job) -> Statu
 }
 
 async fn sync(control: &Arc<Control>) -> Status {
-    match control.sync().await {
+    match control.sync(DownloadPolicy::None).await {
         Ok(LastSync::Synced { .. }) => Status::Info("sync complete".to_owned()),
         Ok(LastSync::Failed { message, .. }) => Status::Error(message),
         Err(error) => failure(error),

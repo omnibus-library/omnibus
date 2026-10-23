@@ -27,6 +27,12 @@ use crate::state::SavedState;
 /// The path token every stub device syncs with.
 pub const STUB_TOKEN: &str = "stub-device-token";
 
+/// A placeholder for the stub's own origin, which isn't known until it
+/// binds its ephemeral port. `book_metadata`/`new_entitlement` build a
+/// `DownloadUrls` entry with this in place of the base, and `library_sync`
+/// substitutes the real one into every page before serving it.
+pub const STUB_ORIGIN: &str = "{STUB_ORIGIN}";
+
 /// The bearer token the stub's login hands out, and the only one its device routes accept.
 pub const SESSION_TOKEN: &str = "stub-session";
 
@@ -73,6 +79,8 @@ pub struct Stub {
     /// What every cover thumbnail request answers with: `(content-type, bytes)`.
     /// `None` (the default) answers 404.
     pub cover: Option<(&'static str, &'static [u8])>,
+    /// The status every `v1/download/<id>` request answers with.
+    pub download_status: StatusCode,
 }
 
 impl Default for Stub {
@@ -96,6 +104,7 @@ impl Default for Stub {
             login_redirects_to: None,
             login_token: Some(SESSION_TOKEN),
             cover: None,
+            download_status: StatusCode::OK,
         }
     }
 }
@@ -200,7 +209,7 @@ pub fn spawn_sync(
     control: &Arc<Control>,
 ) -> tokio::task::JoinHandle<Result<LastSync, ControlError>> {
     let control = Arc::clone(control);
-    tokio::spawn(async move { control.sync().await })
+    tokio::spawn(async move { control.sync(crate::downloads::DownloadPolicy::None).await })
 }
 
 /// Poll `condition` until it holds, failing the test at a deadline.
@@ -283,11 +292,17 @@ async fn handle(
         | "/v1/user/loyalty/benefits"
         | "/v1/products/books/subscriptions"
         | "/v1/deals" => store_path(&state),
+        _ if rest.starts_with("/v1/download/") => download(&state),
         _ => match rest.strip_prefix(state.stub.resources_under) {
             Some(resource) => answer_resource(&state, &method, resource).await,
             None => StatusCode::NOT_FOUND.into_response(),
         },
     }
+}
+
+/// `GET v1/download/{id}`, outside the resources map like the real server's route.
+fn download(state: &StubState) -> Response {
+    (state.stub.download_status, b"stub-kepub".as_slice()).into_response()
 }
 
 /// The Omnibus `/api` routes auto-wire calls: login, the device list and create, then logout.
@@ -394,8 +409,8 @@ async fn library_sync(state: &StubState) -> Response {
     }
     let pages = &state.stub.sync_pages;
     let page = pages.get(call).or(pages.last());
-    let body = Json(page.cloned().unwrap_or_else(|| json!([])));
-    let mut response = (state.stub.sync_status, body).into_response();
+    let page = fill_stub_origin(page.cloned().unwrap_or_else(|| json!([])), &state.base);
+    let mut response = (state.stub.sync_status, Json(page)).into_response();
     let headers = response.headers_mut();
     if state.stub.sends_sync_token {
         let token = HeaderValue::from_str(&format!("page-{}", call + 1)).unwrap();
@@ -406,6 +421,13 @@ async fn library_sync(state: &StubState) -> Response {
         headers.insert(HeaderName::from_static("x-kobo-sync"), more);
     }
     response
+}
+
+/// Replace every [`STUB_ORIGIN`] placeholder in a sync page with the stub's
+/// real base, now that it's bound to a port.
+fn fill_stub_origin(page: Value, base: &str) -> Value {
+    let text = page.to_string().replace(STUB_ORIGIN, base);
+    serde_json::from_str(&text).expect("re-parsing a re-serialized Value cannot fail")
 }
 
 /// A `NewEntitlement` sync item as Omnibus sends it, trimmed to the fields
@@ -428,6 +450,13 @@ pub fn book_metadata(id: &str, title: &str) -> Value {
         "Contributors": [],
         "ContributorRoles": [],
         "CoverImageId": id,
+        "DownloadUrls": [{
+            "Format": "KEPUB",
+            "Size": 0,
+            "Url": format!("{STUB_ORIGIN}/kobo/{STUB_TOKEN}/v1/download/{id}"),
+            "Platform": "Generic",
+            "DrmType": "None",
+        }],
     })
 }
 

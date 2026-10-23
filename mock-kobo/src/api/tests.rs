@@ -189,8 +189,80 @@ async fn get_device_returns_each_book_with_its_series() {
             "archived": false,
             "cover_image_id": "book-1",
             "cover": null,
+            "download_problem": null,
         })
     );
+}
+
+#[tokio::test]
+async fn post_actions_sync_downloads_every_book_when_the_body_asks_for_all() {
+    let stub = spawn_stub(Stub {
+        sync_pages: vec![json!([new_entitlement("book-1", "Dune")])],
+        ..Stub::default()
+    })
+    .await;
+    let dir = TempDir::new().unwrap();
+    let base = serve(stub_control(&stub, dir.path().join("kobo.json"))).await;
+
+    let response = reqwest::Client::new()
+        .post(format!("{base}/actions/sync"))
+        .json(&json!({ "download": "all" }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body: Value = reqwest::get(format!("{base}/device"))
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(body["details"]["library"]["book-1"]["downloaded"], true);
+}
+
+#[tokio::test]
+async fn post_actions_sync_returns_invalid_request_for_an_unreadable_body() {
+    let stub = spawn_stub(Stub::default()).await;
+    let dir = TempDir::new().unwrap();
+    let base = serve(stub_control(&stub, dir.path().join("kobo.json"))).await;
+
+    let response = reqwest::Client::new()
+        .post(format!("{base}/actions/sync"))
+        .json(&json!({ "download": "not-a-real-policy" }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["code"], "invalid_request");
+}
+
+#[tokio::test]
+async fn get_device_never_carries_the_token_of_a_download_url() {
+    let stub = spawn_stub(Stub {
+        sync_pages: vec![json!([new_entitlement("book-1", "Dune")])],
+        ..Stub::default()
+    })
+    .await;
+    let dir = TempDir::new().unwrap();
+    let base = serve(stub_control(&stub, dir.path().join("kobo.json"))).await;
+    reqwest::Client::new()
+        .post(format!("{base}/actions/sync"))
+        .json(&json!({ "download": "all" }))
+        .send()
+        .await
+        .unwrap();
+
+    let body: Value = reqwest::get(format!("{base}/device"))
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+
+    assert!(!body.to_string().contains(STUB_TOKEN));
 }
 
 #[tokio::test]

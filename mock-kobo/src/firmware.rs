@@ -49,6 +49,10 @@ pub enum Quirk {
     /// renders; anything else (a WebP, say) caches as undecodable and shows
     /// no cover. Evidence: #2116. Observed.
     CoverDecode,
+    /// A non-2xx download, or no answer at all, leaves the book
+    /// undownloaded and is retried on the next sync, whatever the policy.
+    /// Evidence: #2116. Observed.
+    DownloadFailure,
 }
 
 /// The header `v1/initialization` must carry ([`Quirk::ApiToken`]).

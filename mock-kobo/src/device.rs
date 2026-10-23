@@ -45,6 +45,10 @@ pub struct Device {
     /// Decoded covers, keyed `"{CoverImageId}@{width}x{height}"`, never revalidated.
     #[serde(default)]
     pub covers: BTreeMap<String, Cover>,
+    /// Each book's first `DownloadUrls` entry, keyed by entitlement id.
+    /// Holds the device token baked into the URL, so this never appears in the control API's device view.
+    #[serde(default)]
+    pub download_urls: BTreeMap<String, String>,
 }
 
 /// One book as the device shows it.
@@ -64,6 +68,9 @@ pub struct Book {
     /// The decoded cover at [`crate::firmware::SHOWN_COVER_SIZE`], once fetched.
     #[serde(default)]
     pub cover: Option<Cover>,
+    /// Why the last download attempt failed, redacted; `None` once it succeeds.
+    #[serde(default)]
+    pub download_problem: Option<String>,
 }
 
 impl Device {
@@ -75,6 +82,7 @@ impl Device {
             sync_token: None,
             format: DEVICE_FORMAT,
             covers: BTreeMap::new(),
+            download_urls: BTreeMap::new(),
         }
     }
 
@@ -82,8 +90,10 @@ impl Device {
     pub fn apply(&mut self, item: SyncItem) {
         match item {
             SyncItem::NewEntitlement(entitlement) => {
+                let id = entitlement.book_entitlement.id;
+                update_download_url(&mut self.download_urls, &id, &entitlement.book_metadata);
                 let book = Book::from_metadata(entitlement.book_metadata);
-                self.library.insert(entitlement.book_entitlement.id, book);
+                self.library.insert(id, book);
             }
             SyncItem::ChangedEntitlement(entitlement)
                 if entitlement.book_entitlement.is_removed =>
@@ -95,11 +105,25 @@ impl Device {
             SyncItem::ChangedEntitlement(_) => {}
             SyncItem::ChangedProductMetadata(changed) => {
                 let metadata = changed.book_metadata;
-                if let Some(book) = self.library.get_mut(&metadata.entitlement_id) {
+                let id = metadata.entitlement_id.clone();
+                update_download_url(&mut self.download_urls, &id, &metadata);
+                if let Some(book) = self.library.get_mut(&id) {
                     book.refresh(metadata);
                 }
             }
             SyncItem::ChangedReadingState(_) => {}
+        }
+    }
+}
+
+/// Keep `urls[id]` current with `metadata`'s first `DownloadUrls` entry, if it has one.
+fn update_download_url(urls: &mut BTreeMap<String, String>, id: &str, metadata: &BookMetadata) {
+    match metadata.download_urls.first() {
+        Some(first) => {
+            urls.insert(id.to_owned(), first.url.clone());
+        }
+        None => {
+            urls.remove(id);
         }
     }
 }
@@ -123,6 +147,7 @@ impl Book {
             archived: false,
             cover_image_id: metadata.cover_image_id,
             cover: None,
+            download_problem: None,
         }
     }
 
@@ -131,6 +156,7 @@ impl Book {
         *self = Self {
             downloaded: self.downloaded,
             archived: self.archived,
+            download_problem: self.download_problem.clone(),
             ..Self::from_metadata(metadata)
         };
     }

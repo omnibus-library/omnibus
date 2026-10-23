@@ -64,6 +64,14 @@ pub struct BookMetadata {
     pub contributors: Vec<String>,
     pub series: Option<Series>,
     pub cover_image_id: String,
+    pub download_urls: Vec<DownloadUrl>,
+}
+
+/// Where the device can fetch this book's bytes; the device follows only the first.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct DownloadUrl {
+    pub url: String,
 }
 
 /// A book's series. Serialized as it arrived, so a saved device reads back.

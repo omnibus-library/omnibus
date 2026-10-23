@@ -5,6 +5,7 @@
 use omnibus_db::test_support::seed_synced_ebook;
 use omnibus_mock_kobo::covers::Cover;
 use omnibus_mock_kobo::device::Device;
+use omnibus_mock_kobo::downloads::DownloadPolicy;
 use omnibus_mock_kobo::session::sync_now;
 
 use super::*;
@@ -22,13 +23,17 @@ async fn sync_now_shows_the_new_cover_after_one_sync_when_the_cover_changes() {
         .unwrap();
     opt_in(&omnibus.pool, omnibus.user_id, std::slice::from_ref(&uuid)).await;
     let mut device = Device::new("HW-1");
-    sync_now(&mut device, &omnibus.endpoint).await.unwrap();
+    sync_now(&mut device, &omnibus.endpoint, &DownloadPolicy::None)
+        .await
+        .unwrap();
     assert_eq!(device.library[&uuid].cover, None);
     let before_id = device.library[&uuid].cover_image_id.clone();
 
     seed_override_cover(&omnibus.pool, &uuid, omnibus.user_id).await;
 
-    let report = sync_now(&mut device, &omnibus.endpoint).await.unwrap();
+    let report = sync_now(&mut device, &omnibus.endpoint, &DownloadPolicy::None)
+        .await
+        .unwrap();
 
     let book = &device.library[&uuid];
     assert_ne!(

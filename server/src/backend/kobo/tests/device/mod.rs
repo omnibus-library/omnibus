@@ -3,6 +3,7 @@
 //! the server sends; these check what a reader would then see on the device.
 
 mod covers;
+mod downloads;
 mod library_sync;
 
 use super::*;

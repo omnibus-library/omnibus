@@ -4,6 +4,7 @@ use serde_json::{json, Value};
 use tempfile::TempDir;
 
 use crate::device::Device;
+use crate::downloads::DownloadPolicy;
 use crate::session::sync_now;
 use crate::test_support::{
     book_metadata, new_entitlement, spawn_stub, stub_control, Stub, JPEG_BYTES, PNG_BYTES,
@@ -49,7 +50,9 @@ async fn sync_now_fetches_each_cover_at_three_sizes_through_the_quality_template
     .await;
     let mut device = Device::new("HW-1");
 
-    sync_now(&mut device, &stub.endpoint).await.unwrap();
+    sync_now(&mut device, &stub.endpoint, &DownloadPolicy::None)
+        .await
+        .unwrap();
 
     let cover_paths: Vec<String> = stub
         .paths()
@@ -78,7 +81,9 @@ async fn sync_now_keeps_the_cached_cover_when_the_cover_image_id_is_unchanged() 
     })
     .await;
     let mut device = Device::new("HW-1");
-    sync_now(&mut device, &stub_a.endpoint).await.unwrap();
+    sync_now(&mut device, &stub_a.endpoint, &DownloadPolicy::None)
+        .await
+        .unwrap();
     assert_eq!(device.library["book-1"].cover, Some(Cover::Jpeg));
 
     let changed = json!([{
@@ -91,7 +96,9 @@ async fn sync_now_keeps_the_cached_cover_when_the_cover_image_id_is_unchanged() 
     })
     .await;
 
-    sync_now(&mut device, &stub_b.endpoint).await.unwrap();
+    sync_now(&mut device, &stub_b.endpoint, &DownloadPolicy::None)
+        .await
+        .unwrap();
 
     assert!(
         stub_b.paths().iter().all(|p| !p.contains("/v1/books/")),
@@ -110,7 +117,9 @@ async fn sync_now_caches_a_webp_cover_as_undecodable() {
     .await;
     let mut device = Device::new("HW-1");
 
-    sync_now(&mut device, &stub.endpoint).await.unwrap();
+    sync_now(&mut device, &stub.endpoint, &DownloadPolicy::None)
+        .await
+        .unwrap();
 
     assert_eq!(device.library["book-1"].cover, Some(Cover::Undecodable));
     assert_eq!(
@@ -127,11 +136,15 @@ async fn sync_now_asks_again_next_sync_for_a_cover_that_answered_404() {
     })
     .await;
     let mut device = Device::new("HW-1");
-    sync_now(&mut device, &stub.endpoint).await.unwrap();
+    sync_now(&mut device, &stub.endpoint, &DownloadPolicy::None)
+        .await
+        .unwrap();
     assert_eq!(device.library["book-1"].cover, None);
     assert!(device.covers.is_empty());
 
-    sync_now(&mut device, &stub.endpoint).await.unwrap();
+    sync_now(&mut device, &stub.endpoint, &DownloadPolicy::None)
+        .await
+        .unwrap();
 
     let cover_requests = stub
         .paths()
@@ -151,11 +164,11 @@ async fn reset_makes_the_next_sync_fetch_every_cover_again() {
     .await;
     let dir = TempDir::new().unwrap();
     let control = stub_control(&stub, dir.path().join("kobo.json"));
-    control.sync().await.unwrap();
+    control.sync(DownloadPolicy::None).await.unwrap();
     assert_eq!(control.view().library["book-1"].cover, Some(Cover::Jpeg));
 
     control.reset().await.unwrap();
-    control.sync().await.unwrap();
+    control.sync(DownloadPolicy::None).await.unwrap();
 
     let cover_requests = stub
         .paths()

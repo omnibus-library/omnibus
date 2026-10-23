@@ -35,6 +35,7 @@ fn book(title: &str, authors: &[&str], archived: bool) -> Book {
         archived,
         cover_image_id: String::new(),
         cover: None,
+        download_problem: None,
     }
 }
 

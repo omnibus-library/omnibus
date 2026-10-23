@@ -326,6 +326,7 @@ from the server code or docs, not seen directly.
 | `RemovalArchives` | A `ChangedEntitlement` with `IsRemoved` archives the book rather than deleting it | `kobo/dto.rs` | inferred |
 | `CoverCache` | A cover is cached per `(CoverImageId, width, height)` and never revalidated; widths 149/400/1072 | #2684 | observed |
 | `CoverDecode` | Only a JPEG or PNG cover whose content type and magic bytes agree renders; anything else (a WebP, say) shows no cover | #2116 | observed |
+| `DownloadFailure` | A non-2xx download, or no answer at all, leaves the book undownloaded and is retried on the next sync, whatever the policy | #2116 | observed |
 
 Heights (223/600/1448), quality (90) and greyscale (`false`) are inferred, as
 is the content-type/magic-bytes agreement rule and that a non-2xx cover is
@@ -339,7 +340,7 @@ port is in its header). Every reply is `{status, code, message, details}`:
 | Route | Replies (`status` `code`) |
 |---|---|
 | `GET /device` | 200 `ok` |
-| `POST /actions/sync` | 200 `synced` · 502 `sync_failed` · 409 `sync_in_progress` · 500 `state_not_saved` |
+| `POST /actions/sync` `{"download": "none" \| "all" \| ["<uuid>", …]}` (body optional, defaults to `none`) | 200 `synced` · 400 `invalid_request` · 502 `sync_failed` · 409 `sync_in_progress` · 500 `state_not_saved` |
 | `GET /requests` | 200 `ok` |
 | `PUT /reset` | 200 `reset` · 409 `sync_in_progress` · 500 `state_not_saved` |
 | any other path | 404 `not_found` |

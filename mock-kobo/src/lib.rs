@@ -12,6 +12,7 @@ pub mod client;
 pub mod control;
 pub mod covers;
 pub mod device;
+pub mod downloads;
 pub mod firmware;
 pub mod session;
 pub mod startup;

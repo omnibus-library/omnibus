@@ -4,6 +4,7 @@
 use crate::client::{Client, RequestRecord};
 use crate::covers;
 use crate::device::Device;
+use crate::downloads::{self, DownloadPolicy};
 use crate::firmware::{
     Quirk, API_TOKEN_HEADER, MAX_SYNC_PAGES, STORE_PATHS, SYNC_CONTINUE_HEADER, SYNC_TOKEN_HEADER,
 };
@@ -47,8 +48,12 @@ pub struct Attempt<T> {
 }
 
 /// Press "Sync now" on `device`, configured with `api_endpoint`.
-pub async fn sync_now(device: &mut Device, api_endpoint: &str) -> Result<SyncReport, SyncFailure> {
-    let attempt = attempt_sync(device, api_endpoint).await;
+pub async fn sync_now(
+    device: &mut Device,
+    api_endpoint: &str,
+    policy: &DownloadPolicy,
+) -> Result<SyncReport, SyncFailure> {
+    let attempt = attempt_sync(device, api_endpoint, policy).await;
     attempt.outcome.map(|pages| SyncReport {
         requests: attempt.requests,
         pages,
@@ -56,7 +61,11 @@ pub async fn sync_now(device: &mut Device, api_endpoint: &str) -> Result<SyncRep
 }
 
 /// Press "Sync now", keeping the request log even when the sync fails.
-pub async fn attempt_sync(device: &mut Device, api_endpoint: &str) -> Attempt<usize> {
+pub async fn attempt_sync(
+    device: &mut Device,
+    api_endpoint: &str,
+    policy: &DownloadPolicy,
+) -> Attempt<usize> {
     let mut client = match Client::new(api_endpoint, &device.hardware_id) {
         Ok(client) => client,
         Err(failure) => {
@@ -66,15 +75,19 @@ pub async fn attempt_sync(device: &mut Device, api_endpoint: &str) -> Attempt<us
             }
         }
     };
-    let outcome = run_sync(&mut client, device).await;
+    let outcome = run_sync(&mut client, device, policy).await;
     Attempt {
         requests: client.into_requests(),
         outcome,
     }
 }
 
-/// The handshake, store paths and library sync; returns the pages fetched.
-async fn run_sync(client: &mut Client, device: &mut Device) -> Result<usize, SyncFailure> {
+/// The handshake, store paths, library sync, covers and downloads; returns the pages fetched.
+async fn run_sync(
+    client: &mut Client,
+    device: &mut Device,
+    policy: &DownloadPolicy,
+) -> Result<usize, SyncFailure> {
     let initialization = client.initialization().await?;
     require_not_rejected(client, &initialization)?;
     if !initialization.headers().contains_key(API_TOKEN_HEADER) {
@@ -95,6 +108,7 @@ async fn run_sync(client: &mut Client, device: &mut Device) -> Result<usize, Syn
     }
     let pages = sync_library(client, &resources.library_sync, device).await?;
     covers::fetch_covers(client, device, &resources.image_url_quality_template).await;
+    downloads::download_books(client, device, policy).await;
     Ok(pages)
 }
 

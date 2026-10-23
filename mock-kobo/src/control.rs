@@ -14,6 +14,7 @@ use serde::Serialize;
 
 use crate::client::RequestRecord;
 use crate::device::{Book, Device};
+use crate::downloads::DownloadPolicy;
 use crate::firmware::Quirk;
 use crate::session::{attempt_sync, Attempt, SyncFailure};
 use crate::state::{self, SavedState, StateError};
@@ -121,11 +122,11 @@ impl Control {
     /// Press "Sync now" against `<url>/kobo/<token>`. The sync runs on its own
     /// task, so dropping the caller (a client disconnect) never cancels it.
     /// A token auto-wired for another server is never sent: the sync fails without a request.
-    pub async fn sync(self: &Arc<Self>) -> Result<LastSync, ControlError> {
+    pub async fn sync(self: &Arc<Self>, policy: DownloadPolicy) -> Result<LastSync, ControlError> {
         let attempt = self
             .run_exchange(
                 |mut device, endpoint| async move {
-                    let attempt = attempt_sync(&mut device, &endpoint).await;
+                    let attempt = attempt_sync(&mut device, &endpoint, &policy).await;
                     (device, attempt)
                 },
                 // Only `sync` writes `last_sync`, including for a refusal; a
