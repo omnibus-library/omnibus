@@ -5,6 +5,7 @@
 mod client_id;
 mod highlights;
 mod kobo;
+mod koreader;
 mod placement;
 
 use omnibus_shared::EbookMetadata;

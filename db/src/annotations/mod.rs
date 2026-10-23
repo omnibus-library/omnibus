@@ -2,7 +2,8 @@
 //! and notes (CFI-anchored) plus Kobo device annotations (KoboSpan-anchored,
 //! held opaquely in `kobo_location`). The web wire surface keeps its
 //! highlight naming; the Kobo Reading Services channel uses the
-//! `*_kobo_annotations` functions.
+//! `*_kobo_annotations` functions and a KOReader device the `*_koreader_*` ones.
+//! Every delete of a row with a client id leaves a tombstone for the latter.
 
 use omnibus_shared::{CreateHighlight, Highlight, HighlightColor};
 use sqlx::{Row, Sqlite, SqlitePool, Transaction};
@@ -13,11 +14,16 @@ use crate::resolve_canonical_book_uuid;
 
 mod backfill;
 mod downsync;
+mod koreader;
 
 pub use backfill::{backfill_kobo_annotation_cfis, BackfillStats};
 pub use downsync::{
     downsync_all_kobo_annotations, downsync_book_annotations, downsync_book_id_annotations,
     spawn_kobo_downsync, DownsyncStats,
+};
+pub use koreader::{
+    delete_koreader_annotations, koreader_annotations_since, upsert_koreader_annotation,
+    KoreaderAnnotation, KoreaderListing, KoreaderUpsert, UpsertOutcome,
 };
 
 /// Hard cap on how many highlights `list_highlights` returns for a single
@@ -219,19 +225,46 @@ pub async fn update_highlight_note(
     Ok(())
 }
 
-/// Delete a highlight by id, scoped to the owning user.
+/// Delete a highlight by id, scoped to the owning user, leaving a tombstone
+/// when it carried a client id.
 pub async fn delete_highlight(
     pool: &SqlitePool,
     user_id: i64,
     highlight_id: i64,
 ) -> Result<(), HighlightError> {
-    let result = sqlx::query("DELETE FROM annotations WHERE id = ? AND user_id = ?")
-        .bind(highlight_id)
+    let mut tx = pool.begin().await?;
+    let (book_uuid, client_id) = sqlx::query_as::<_, (String, Option<String>)>(
+        "DELETE FROM annotations WHERE id = ? AND user_id = ? RETURNING book_uuid, client_id",
+    )
+    .bind(highlight_id)
+    .bind(user_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or(HighlightError::NotFound)?;
+    if let Some(client_id) = client_id {
+        record_tombstones(&mut tx, user_id, &[(book_uuid, client_id)]).await?;
+    }
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Note `(book_uuid, client_id)` pairs as deleted so a KOReader listing can
+/// report them; a repeat delete just moves the time.
+async fn record_tombstones(
+    tx: &mut Transaction<'_, Sqlite>,
+    user_id: i64,
+    deleted: &[(String, String)],
+) -> Result<(), HighlightError> {
+    for (book_uuid, client_id) in deleted {
+        sqlx::query(
+            "INSERT OR REPLACE INTO annotation_tombstones (user_id, book_uuid, client_id)
+             VALUES (?, ?, ?)",
+        )
         .bind(user_id)
-        .execute(pool)
+        .bind(book_uuid)
+        .bind(client_id)
+        .execute(&mut **tx)
         .await?;
-    if result.rows_affected() == 0 {
-        return Err(HighlightError::NotFound);
     }
     Ok(())
 }
@@ -492,17 +525,35 @@ async fn delete_kobo_annotations(
     user_id: i64,
     deleted_client_ids: &[String],
 ) -> Result<(), HighlightError> {
-    for chunk in deleted_client_ids.chunks(DELETE_CHUNK_SIZE) {
+    delete_with_tombstones(tx, user_id, None, deleted_client_ids).await
+}
+
+/// Delete the user's rows under `client_ids` (only in `book_uuid` when given)
+/// and tombstone each one deleted.
+async fn delete_with_tombstones(
+    tx: &mut Transaction<'_, Sqlite>,
+    user_id: i64,
+    book_uuid: Option<&str>,
+    client_ids: &[String],
+) -> Result<(), HighlightError> {
+    for chunk in client_ids.chunks(DELETE_CHUNK_SIZE) {
         let placeholders = std::iter::repeat_n("?", chunk.len())
             .collect::<Vec<_>>()
             .join(", ");
-        let sql =
-            format!("DELETE FROM annotations WHERE user_id = ? AND client_id IN ({placeholders})");
-        let mut q = sqlx::query(&sql).bind(user_id);
+        let sql = format!(
+            "DELETE FROM annotations
+             WHERE user_id = ? AND (? IS NULL OR book_uuid = ?) AND client_id IN ({placeholders})
+             RETURNING book_uuid, client_id"
+        );
+        let mut q = sqlx::query_as::<_, (String, String)>(&sql)
+            .bind(user_id)
+            .bind(book_uuid)
+            .bind(book_uuid);
         for client_id in chunk {
             q = q.bind(client_id);
         }
-        q.execute(&mut **tx).await?;
+        let deleted = q.fetch_all(&mut **tx).await?;
+        record_tombstones(tx, user_id, &deleted).await?;
     }
     Ok(())
 }
