@@ -54,7 +54,7 @@ so you can read on a KOReader and pick up in the web reader or on an iPhone,
 and the other way round.
 
 - **What syncs:** how far through the whole book you are, as a whole percent,
-  and the **Reading** and **Finished** statuses. KOReader's *Abandoned* is not
+  the exact spot in an EPUB (below), and the **Reading** and **Finished** statuses. KOReader's *Abandoned* is not
   synced, and *Unread* never reaches the device: a book you haven't started has
   nothing to apply.
 - **When:** the plugin pulls when a book opens, so a newer position from the
@@ -69,9 +69,15 @@ and the other way round.
   one whose clock is ahead is held to the server's time. Opening a book and
   closing it without reading changes nothing, so a stale device can't overwrite
   a newer position.
-- **Precision:** KOReader sends a whole percent, so a finer position saved by
-  the web reader is replaced by it, and Omnibus opens the book at the page that
-  percent falls on.
+- **Precision:** an EPUB's position syncs to the exact spot both ways, so the
+  book and the web reader open on the same paragraph and character, and a
+  position saved by one replaces the other's. Omnibus keeps the XPointer
+  KOReader reports and works out the web reader's position from it; for a
+  position saved on the web it works out the XPointer. When it can't place a
+  position exactly (unusual markup, text inside `pre`, SVG or image-only pages,
+  a book KOReader first opened with an old version) it falls back to the
+  whole-book percent, so you land on the page that percent falls on. PDF and
+  CBZ are paged and stay percent-only.
 - **Finishing on KOReader** is dated by when you finished on the device, not
   when it synced, so the stats count it on that day. A Kobo that already synced
   after that moment gets the change only with its next change to that book.
@@ -112,8 +118,10 @@ scenario), then sync a shelf through the Omnibus plugin and drop it again (the
 `delivery` scenario), and open a book at the web reader's position and close it
 further on, which the web then shows (the `roundtrip` scenario), and retitle and
 re-cover a book on the web, which the next sync shows without losing the reader's
-place or highlights (the `metadata` scenario) — driven by a real KOReader in
-Docker, with nothing stubbed. Each scenario prints one PASS/FAIL line.
+place or highlights (the `metadata` scenario), and carry a spot inside a
+paragraph both ways, so the device and the web reader open on the same
+sentence (the `precise` scenario) — driven by a real KOReader in Docker, with
+nothing stubbed. Each scenario prints one PASS/FAIL line.
 
 ```bash
 just koreader-e2e
@@ -121,11 +129,13 @@ just koreader-e2e
 # PASS delivery
 # PASS roundtrip
 # PASS metadata
+# PASS precise
 # or: FAIL opds: search: expected "Alpha" in search results, got ["Beta in the Series"] (screenshot: /tmp/omnibus-koreader.XXXXXX/results/opds.png)
 ```
 
-The lane boots a scratch server (its own DB, a fresh admin, the two
-committed fixture EPUBs from `test_data/epubs/generated/`), builds
+The lane boots a scratch server (its own DB, a fresh admin, four
+committed fixture EPUBs from `test_data/epubs/generated/`: Alpha and Beta, plus the
+two `precise` puts on the shelf), builds
 [`ui_tests/koreader/`](../ui_tests/koreader/) — a pinned KOReader release
 under Xvfb — and runs one container per scenario. The scenario is a KOReader
 user patch (`ui_tests/koreader/patches/2-omnibus-e2e.lua`) that drives
