@@ -94,6 +94,11 @@ module-map-test:
 koreader-report-test:
     python3 scripts/tests/koreader-report.test.py
 
+# Unit tests for the KOReader plugin's sync logic (koreader/omnibus.koplugin/omnibussync.lua),
+# under plain luajit; main.lua is proven by the KOReader lane.
+koreader-plugin-test:
+    luajit koreader/tests/omnibussync.test.lua
+
 # Regression tests for scripts/lib/scratch-server.sh's scratch-dir ownership.
 # Plain bash with stubbed I/O, like dev-port-choose-port.test.sh.
 scratch-server-test:
@@ -102,7 +107,7 @@ scratch-server-test:
 # Run every unit/integration suite: the Rust matrix first, then the script
 # suites. Rust leads so a failing script suite can't stop the recipe
 # before the cargo results are in.
-test: test-rust explore-test module-map-test koreader-report-test scratch-server-test
+test: test-rust explore-test module-map-test koreader-report-test koreader-plugin-test scratch-server-test
 
 # The Rust half of `just test`: the full matrix via cargo-nextest (the same
 # runner CI uses, so local and CI results match; no doctests in the tree, which

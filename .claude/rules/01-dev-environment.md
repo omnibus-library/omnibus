@@ -13,7 +13,7 @@ The flake exposes five purpose-built shells so daily cargo work doesn't pay for 
 
 | Shell | Headline tools | When to use |
 |---|---|---|
-| `default` (slim) | rust core (+ `llvm-tools-preview`) + sqlite + openssl + just + zellij + process-compose + stylelint + cargo-llvm-cov | Daily `cargo test`/`clippy`/`fmt`, editor, rust-analyzer, `just lint-css`, `just coverage` — this is what direnv auto-loads via `.envrc` |
+| `default` (slim) | rust core (+ `llvm-tools-preview`) + sqlite + openssl + just + zellij + process-compose + stylelint + cargo-llvm-cov + luajit | Daily `cargo test`/`clippy`/`fmt`, editor, rust-analyzer, `just lint-css`, `just coverage`, `just koreader-plugin-test` — this is what direnv auto-loads via `.envrc` |
 | `web` | default + dioxus-cli + matched `wasm-bindgen` + node + pnpm | `dx serve --platform web`, `just dev-up`, `just lint-ts`, anything that bundles the WASM client or drives the Playwright npm project |
 | `e2e` | web + Playwright Chromium bundle | `pnpm exec playwright test`, the `playwright` pane in the multiplexer, CI's E2E job |
 | `mobile` | own package set (not `default`-based) — rust core (Android targets) + sqlite + openssl + just + zellij + process-compose + sccache + dioxus-cli (`dx`) + Android rust-std targets + JDK 21 + Android SDK auto-detect (+ GTK 3 / WebKitGTK on Linux) | `dx serve --platform android`, `cargo build -p omnibus-mobile`; CI's `cargo clippy (mobile)` host-target lint |
