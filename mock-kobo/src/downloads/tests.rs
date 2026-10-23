@@ -299,3 +299,45 @@ async fn attempt_download_fails_with_transport_when_the_server_is_unreachable() 
 
     assert!(matches!(attempt.outcome, Err(SyncFailure::Transport(_))));
 }
+
+#[tokio::test]
+async fn attempt_download_fails_with_transport_when_the_body_is_truncated() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        let Ok((mut socket, _)) = listener.accept().await else {
+            return;
+        };
+        let mut buf = [0u8; 1024];
+        let _ = socket.read(&mut buf).await;
+        // Promise 100 bytes, send 5, then close — a connection dropped
+        // mid-body, not a non-2xx answer.
+        let _ = socket
+            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\nshort")
+            .await;
+    });
+
+    let dir = tempfile::TempDir::new().unwrap();
+    let storage = dir.path().join("kobo.books");
+    let mut device = Device::new("HW-1");
+    device.storage = Some(storage.clone());
+    device
+        .library
+        .insert("book-1".into(), book(false, false, None));
+    device
+        .download_urls
+        .insert("book-1".into(), format!("http://{addr}/v1/download/book-1"));
+
+    let attempt =
+        attempt_download(&mut device, &format!("http://{addr}"), &["book-1".into()]).await;
+
+    assert!(
+        matches!(attempt.outcome, Err(SyncFailure::Transport(_))),
+        "{:?}",
+        attempt.outcome
+    );
+    assert!(!device.library["book-1"].downloaded);
+}

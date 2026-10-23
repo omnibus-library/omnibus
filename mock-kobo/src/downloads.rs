@@ -109,27 +109,41 @@ async fn store(response: &mut reqwest::Response, dir: &Path, id: &str, client: &
     }
     let part = dir.join(format!(".{id}.part"));
     let target = dir.join(format!("{id}.kepub.epub"));
-    let written = write_body(response, &part).await;
-    if written.is_ok() {
-        if let Err(error) = tokio::fs::rename(&part, &target).await {
-            let _ = tokio::fs::remove_file(&part).await;
-            return Outcome::Rejected(client.redact(&error.to_string()));
+    match write_body(response, &part).await {
+        Ok(()) => {
+            if let Err(error) = tokio::fs::rename(&part, &target).await {
+                let _ = tokio::fs::remove_file(&part).await;
+                return Outcome::Rejected(client.redact(&error.to_string()));
+            }
+            // shortcut: a reset or remove-download never deletes `target`; harmless (a later
+            // download overwrites it) — revisit if a reset should reclaim disk space.
+            Outcome::Downloaded
         }
-        // shortcut: a reset or remove-download never deletes `target`; harmless (a later
-        // download overwrites it) — revisit if a reset should reclaim disk space.
-        return Outcome::Downloaded;
+        Err(error) => {
+            let _ = tokio::fs::remove_file(&part).await;
+            match error {
+                WriteError::Transport(error) => Outcome::Transport(client.redact(&error.to_string())),
+                WriteError::Io(error) => Outcome::Rejected(client.redact(&error.to_string())),
+            }
+        }
     }
-    let _ = tokio::fs::remove_file(&part).await;
-    Outcome::Rejected(client.redact(&written.unwrap_err().to_string()))
+}
+
+/// A body read that failed over the network, apart from one that failed
+/// writing to disk — the caller maps the two to different outcomes
+/// ([`Outcome::Transport`] is never the server's fault; [`Outcome::Rejected`] trips the quirk).
+enum WriteError {
+    Transport(reqwest::Error),
+    Io(std::io::Error),
 }
 
 /// Write `response`'s body to a new file at `path`, chunk by chunk.
-async fn write_body(response: &mut reqwest::Response, path: &Path) -> std::io::Result<()> {
-    let mut file = tokio::fs::File::create(path).await?;
-    while let Some(chunk) = response.chunk().await.map_err(std::io::Error::other)? {
-        file.write_all(&chunk).await?;
+async fn write_body(response: &mut reqwest::Response, path: &Path) -> Result<(), WriteError> {
+    let mut file = tokio::fs::File::create(path).await.map_err(WriteError::Io)?;
+    while let Some(chunk) = response.chunk().await.map_err(WriteError::Transport)? {
+        file.write_all(&chunk).await.map_err(WriteError::Io)?;
     }
-    file.sync_all().await
+    file.sync_all().await.map_err(WriteError::Io)
 }
 
 /// Record what `attempt_one` found out onto `id`'s book.
