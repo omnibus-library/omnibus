@@ -53,6 +53,10 @@ pub enum Quirk {
     /// undownloaded and is retried on the next sync, whatever the policy.
     /// Evidence: #2116. Observed.
     DownloadFailure,
+    /// Reading status and bookmark are reconciled against the server
+    /// independently, each adopted only when stamped and strictly newer
+    /// than the device's own. Evidence: `server/src/backend/kobo/dto.rs`. Observed.
+    StateArbitration,
 }
 
 /// The header `v1/initialization` must carry ([`Quirk::ApiToken`]).

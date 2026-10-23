@@ -22,6 +22,7 @@ fn book(downloaded: bool, archived: bool, download_problem: Option<&str>) -> Boo
         cover_image_id: String::new(),
         cover: None,
         download_problem: download_problem.map(str::to_owned),
+        reading: crate::reading::Reading::default(),
     }
 }
 

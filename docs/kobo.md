@@ -327,6 +327,7 @@ from the server code or docs, not seen directly.
 | `CoverCache` | A cover is cached per `(CoverImageId, width, height)` and never revalidated; widths 149/400/1072 | #2684 | observed |
 | `CoverDecode` | Only a JPEG or PNG cover whose content type and magic bytes agree renders; anything else (a WebP, say) shows no cover | #2116 | observed |
 | `DownloadFailure` | A non-2xx download, or no answer at all, leaves the book undownloaded and is retried on the next sync, whatever the policy | #2116 | observed |
+| `StateArbitration` | Reading status and bookmark are reconciled against the server independently, each adopted only when stamped and strictly newer than the device's own | `kobo/dto.rs` | observed |
 
 Heights (223/600/1448), quality (90) and greyscale (`false`) are inferred, as
 is the content-type/magic-bytes agreement rule and that a non-2xx cover is

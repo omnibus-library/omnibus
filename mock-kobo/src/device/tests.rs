@@ -2,6 +2,7 @@
 
 use serde_json::{json, Value};
 
+use crate::reading::ReadStatus;
 use crate::test_support::{book_metadata, new_entitlement};
 use crate::wire::Series;
 
@@ -36,6 +37,7 @@ fn apply_adds_new_entitlement_as_undownloaded_book() {
         cover_image_id: "book-1".into(),
         cover: None,
         download_problem: None,
+        reading: crate::reading::Reading::default(),
     };
     assert_eq!(device.library["book-1"], expected);
 }
@@ -83,6 +85,11 @@ fn apply_archives_book_when_entitlement_is_removed() {
     device.apply(item(json!({ "ChangedEntitlement": {
         "BookEntitlement": { "Id": "book-1", "IsRemoved": true, "Status": "Deleted" },
         "BookMetadata": book_metadata("book-1", ""),
+        "ReadingState": {
+            "EntitlementId": "book-1",
+            "StatusInfo": { "Status": "ReadyToRead" },
+            "CurrentBookmark": {},
+        },
     }})));
 
     let book = &device.library["book-1"];
@@ -102,6 +109,37 @@ fn apply_leaves_library_unchanged_when_reading_state_changes() {
     }}})));
 
     assert_eq!(device, before);
+}
+
+#[test]
+fn apply_takes_the_reading_state_of_a_new_entitlement() {
+    let mut entitlement = new_entitlement("book-1", "Dune");
+    entitlement["NewEntitlement"]["ReadingState"]["StatusInfo"] = json!({
+        "Status": "Reading",
+        "LastModified": "2024-01-01T00:00:00Z",
+    });
+    let mut device = Device::new("HW-1");
+
+    device.apply(item(entitlement));
+
+    assert_eq!(device.library["book-1"].reading.status, ReadStatus::Reading);
+}
+
+#[test]
+fn apply_reconciles_a_changed_reading_state_for_a_held_book() {
+    let mut device = Device::new("HW-1");
+    device.apply(item(new_entitlement("book-1", "Dune")));
+
+    device.apply(item(json!({ "ChangedReadingState": { "ReadingState": {
+        "EntitlementId": "book-1",
+        "StatusInfo": { "Status": "Finished", "LastModified": "2024-01-01T00:00:00Z" },
+        "CurrentBookmark": {},
+    }}})));
+
+    assert_eq!(
+        device.library["book-1"].reading.status,
+        ReadStatus::Finished
+    );
 }
 
 #[test]

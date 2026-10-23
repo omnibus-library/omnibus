@@ -25,8 +25,14 @@ pub enum SyncItem {
     NewEntitlement(Entitlement),
     ChangedEntitlement(Entitlement),
     ChangedProductMetadata(ChangedProductMetadata),
-    /// Reading state isn't modelled until StateArbitration lands.
-    ChangedReadingState(serde::de::IgnoredAny),
+    ChangedReadingState(ChangedReadingState),
+}
+
+/// A reading-state-only sync item.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct ChangedReadingState {
+    pub reading_state: ReadingState,
 }
 
 /// Refreshed metadata for a book the device already has.
@@ -42,6 +48,37 @@ pub struct ChangedProductMetadata {
 pub struct Entitlement {
     pub book_entitlement: BookEntitlement,
     pub book_metadata: BookMetadata,
+    pub reading_state: ReadingState,
+}
+
+/// Server reading state for one book, trimmed to what the device reconciles.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct ReadingState {
+    pub entitlement_id: String,
+    pub status_info: StatusInfo,
+    pub current_bookmark: CurrentBookmark,
+}
+
+/// Where the reader is in the book's lifecycle, and when that last moved.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct StatusInfo {
+    pub status: crate::reading::ReadStatus,
+    #[serde(default)]
+    pub last_modified: Option<String>,
+}
+
+/// The server's notion of the device's position in a book.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct CurrentBookmark {
+    #[serde(default)]
+    pub progress_percent: Option<i64>,
+    #[serde(default)]
+    pub location: Option<crate::reading::KoboSpan>,
+    #[serde(default)]
+    pub last_modified: Option<String>,
 }
 
 /// The ownership record; its `Id` is the book's key on the device.

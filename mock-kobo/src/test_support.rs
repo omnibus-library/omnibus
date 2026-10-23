@@ -436,7 +436,11 @@ pub fn new_entitlement(id: &str, title: &str) -> Value {
     json!({ "NewEntitlement": {
         "BookEntitlement": { "Id": id, "IsRemoved": false, "Status": "Active" },
         "BookMetadata": book_metadata(id, title),
-        "ReadingState": { "EntitlementId": id, "StatusInfo": { "Status": "ReadyToRead" } },
+        "ReadingState": {
+            "EntitlementId": id,
+            "StatusInfo": { "Status": "ReadyToRead" },
+            "CurrentBookmark": {},
+        },
     }})
 }
 

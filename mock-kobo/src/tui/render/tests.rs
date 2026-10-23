@@ -36,6 +36,7 @@ fn book(title: &str, authors: &[&str], archived: bool) -> Book {
         cover_image_id: String::new(),
         cover: None,
         download_problem: None,
+        reading: crate::reading::Reading::default(),
     }
 }
 

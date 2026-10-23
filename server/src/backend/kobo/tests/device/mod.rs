@@ -5,6 +5,7 @@
 mod covers;
 mod downloads;
 mod library_sync;
+mod reading_state;
 
 use super::*;
 

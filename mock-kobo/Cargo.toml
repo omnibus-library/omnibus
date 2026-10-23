@@ -31,6 +31,8 @@ reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+# Same version/features `server/` uses for Kobo's RFC 3339 stamps, so cargo unifies on one build.
+time = { version = "0.3", features = ["formatting", "parsing"] }
 tokio = { workspace = true, features = ["fs", "macros", "net", "rt-multi-thread", "sync"] }
 
 [dev-dependencies]

@@ -14,6 +14,7 @@ pub mod covers;
 pub mod device;
 pub mod downloads;
 pub mod firmware;
+pub mod reading;
 pub mod session;
 pub mod startup;
 pub mod state;

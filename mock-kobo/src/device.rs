@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use crate::covers::Cover;
+use crate::reading::Reading;
 use crate::wire::{BookMetadata, Series, SyncItem};
 
 /// What the device shows for a book with no `Contributors` ([`crate::firmware::Quirk::ContributorsDisplay`]).
@@ -80,6 +81,9 @@ pub struct Book {
     /// Why the last download attempt failed, redacted; `None` once it succeeds.
     #[serde(default)]
     pub download_problem: Option<String>,
+    /// Reconciled against the server independently of everything else above.
+    #[serde(default)]
+    pub reading: Reading,
 }
 
 impl Device {
@@ -112,7 +116,8 @@ impl Device {
             SyncItem::NewEntitlement(entitlement) => {
                 let id = entitlement.book_entitlement.id;
                 update_download_url(&mut self.download_urls, &id, &entitlement.book_metadata);
-                let book = Book::from_metadata(entitlement.book_metadata);
+                let mut book = Book::from_metadata(entitlement.book_metadata);
+                book.reading.apply(&entitlement.reading_state);
                 self.library.insert(id, book);
             }
             SyncItem::ChangedEntitlement(entitlement)
@@ -131,7 +136,12 @@ impl Device {
                     book.refresh(metadata);
                 }
             }
-            SyncItem::ChangedReadingState(_) => {}
+            SyncItem::ChangedReadingState(changed) => {
+                let id = &changed.reading_state.entitlement_id;
+                if let Some(book) = self.library.get_mut(id) {
+                    book.reading.apply(&changed.reading_state);
+                }
+            }
         }
     }
 }
@@ -168,6 +178,7 @@ impl Book {
             cover_image_id: metadata.cover_image_id,
             cover: None,
             download_problem: None,
+            reading: Reading::default(),
         }
     }
 
@@ -177,6 +188,7 @@ impl Book {
             downloaded: self.downloaded,
             archived: self.archived,
             download_problem: self.download_problem.clone(),
+            reading: self.reading.clone(),
             ..Self::from_metadata(metadata)
         };
     }

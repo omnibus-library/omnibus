@@ -190,6 +190,7 @@ async fn get_device_returns_each_book_with_its_series() {
             "cover_image_id": "book-1",
             "cover": null,
             "download_problem": null,
+            "reading": { "status": "ReadyToRead", "status_modified": null, "bookmark": null },
         })
     );
 }
