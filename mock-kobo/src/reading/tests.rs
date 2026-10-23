@@ -324,13 +324,16 @@ async fn attempt_state_fails_with_state_put_result_when_a_sub_result_is_not_succ
 
     let attempt = attempt_state(&mut device, &stub.endpoint, "book-1", StateSent::Finish).await;
 
-    assert!(matches!(
-        attempt.outcome,
+    match attempt.outcome {
         Err(SyncFailure::Quirk {
             quirk: Quirk::StatePutResult,
-            ..
-        })
-    ));
+            detail,
+        }) => {
+            assert!(detail.contains("Conflict"), "{detail}");
+            assert!(detail.contains("StatusInfoResult"), "{detail}");
+        }
+        other => panic!("expected Quirk(StatePutResult), got {other:?}"),
+    }
 }
 
 #[tokio::test]

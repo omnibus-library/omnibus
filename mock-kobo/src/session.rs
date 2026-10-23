@@ -272,19 +272,32 @@ async fn check_state_reply(
         return Err(SyncFailure::Rejected(rejection(client, &response)));
     }
     let state: StateResponse = client.decode(response).await?;
-    let all_success = state.request_result == "Success"
-        && state.update_results.iter().all(|u| {
-            u.status_info_result.result == "Success"
-                && u.current_bookmark_result.result == "Success"
-        });
-    if all_success {
+    let mut problems = Vec::new();
+    if state.request_result != "Success" {
+        problems.push(format!("RequestResult: {}", state.request_result));
+    }
+    for update in &state.update_results {
+        if update.status_info_result.result != "Success" {
+            problems.push(format!(
+                "StatusInfoResult: {}",
+                update.status_info_result.result
+            ));
+        }
+        if update.current_bookmark_result.result != "Success" {
+            problems.push(format!(
+                "CurrentBookmarkResult: {}",
+                update.current_bookmark_result.result
+            ));
+        }
+    }
+    if problems.is_empty() {
         Ok(())
     } else {
         Err(tripped(
             Quirk::StatePutResult,
             format!(
                 "state PUT returned a non-success result: {}",
-                state.request_result
+                problems.join(", ")
             ),
         ))
     }

@@ -216,8 +216,11 @@ async fn read_reports_state_put_result_when_a_sub_result_is_not_success() {
     match result {
         Acted::Failed {
             quirk: Some(Quirk::StatePutResult),
-            ..
-        } => {}
+            message,
+        } => {
+            assert!(message.contains("Conflict"), "{message}");
+            assert!(message.contains("CurrentBookmarkResult"), "{message}");
+        }
         other => panic!("expected Failed, got {other:?}"),
     }
     // A failed PUT keeps the device's change.
