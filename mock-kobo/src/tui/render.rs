@@ -70,7 +70,14 @@ fn draw_library(frame: &mut Frame, area: Rect, view: &DeviceView, selected: Opti
             .collect()
     };
     let block = Block::bordered().title(format!("Library ({})", view.library.len()));
-    frame.render_widget(Paragraph::new(lines).block(block), area);
+    let rows = usize::from(block.inner(area).height);
+    // Selecting past the visible rows (or wrapping Up to the last book) must
+    // not hide the marker: scroll just far enough to keep it in view.
+    let index = selected.and_then(|id| view.library.keys().position(|k| k == id));
+    let offset = index.map_or(0, |i| i.saturating_sub(rows.saturating_sub(1)));
+    let offset = u16::try_from(offset).unwrap_or(u16::MAX);
+    let paragraph = Paragraph::new(lines).block(block).scroll((offset, 0));
+    frame.render_widget(paragraph, area);
 }
 
 fn book_line(book: &Book, selected: bool) -> Line<'static> {

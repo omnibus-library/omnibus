@@ -176,6 +176,26 @@ fn draw_marks_the_selected_book() {
 }
 
 #[test]
+fn draw_scrolls_the_library_so_a_selection_past_the_visible_rows_is_on_screen() {
+    let ids: Vec<String> = (0..40).map(|n| format!("b-{n:02}")).collect();
+    let books: Vec<(&str, Book)> = ids
+        .iter()
+        .map(|id| (id.as_str(), book(&format!("Book {id}"), &["Author"], false)))
+        .collect();
+    let view = view_with_books(books);
+    let mut app = App::default();
+    app.show_library(ids.clone());
+    app.selected = ids.len() - 1;
+
+    let shown = shown(&view, &app);
+
+    assert!(
+        shown.contains(&format!("> Book {}", ids.last().unwrap())),
+        "{shown}"
+    );
+}
+
+#[test]
 fn draw_shows_download_state_and_reading_progress_per_book() {
     let mut downloaded = book("Dune", &["Frank Herbert"], false);
     downloaded.downloaded = true;
