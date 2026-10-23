@@ -236,7 +236,7 @@
             }
           },
           "422": {
-            "description": "The name is empty or longer than 100 characters once trimmed."
+            "description": "The name is empty or longer than 100 characters once trimmed, or `kind` is not `kobo` or `koreader`."
           }
         }
       }

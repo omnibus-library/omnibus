@@ -64,7 +64,7 @@ pub(super) async fn list_kobo_devices(user: AuthUser, State(state): State<AppSta
     request_body = CreateKoboDevice,
     responses(
         (status = 200, description = "The new device, with its token.", body = KoboDeviceView),
-        (status = 422, description = "The name is empty or longer than 100 characters once trimmed."),
+        (status = 422, description = "The name is empty or longer than 100 characters once trimmed, or `kind` is not `kobo` or `koreader`."),
     ),
 )]
 pub(super) async fn create_kobo_device(
