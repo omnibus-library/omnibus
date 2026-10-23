@@ -5507,7 +5507,7 @@
           "Progress"
         ],
         "summary": "Save a position",
-        "description": "Records where you are in a book in one format: `epub` with an `epub_cfi`, a\n`progress_percent` or both, or `audio` with `audio_position_seconds`. The latest\nposition wins, judged by `client_updated_at` (the server's clock when absent), so a\nwrite older than the stored position changes nothing. An `audio` position without\n`book_file_id` also loses to a stored one that names a file of a multi-file audiobook.\nThe response is the position the server kept, yours or the stored one. A book you\nhaven't given a read status becomes `reading`; one you have keeps its status.",
+        "description": "Records where you are in a book in one format: `epub` with an `epub_cfi`, a\n`progress_percent` or both, or `audio` with `audio_position_seconds`. The latest\nposition wins, judged by `client_updated_at` (the server's clock when absent), so a\nwrite older than the stored position changes nothing. An `audio` position without\n`book_file_id` also loses to a stored one that names a file of a multi-file audiobook.\nFor an EPUB `epub_cfi` the server stores its own `progress_percent` for that position, where\nit has measured the book, in place of the one you sent. The response is the position the\nserver kept, yours or the stored one. A book you\nhaven't given a read status becomes `reading`; one you have keeps its status.",
         "operationId": "post_progress",
         "requestBody": {
           "content": {
