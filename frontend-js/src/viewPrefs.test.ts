@@ -182,6 +182,19 @@ describe("loadDiscoveryPrefs", () => {
     });
   });
 
+  it("keeps the stored fields and defaults the missing one to name", () => {
+    localStorage.setItem(
+      "omnibus.discovery_prefs",
+      '{"authors_sort":"recent","shelves_sort":"book_count"}',
+    );
+
+    expect(loadDiscoveryPrefs()).toEqual({
+      authors_sort: "recent",
+      series_sort: "name",
+      shelves_sort: "book_count",
+    });
+  });
+
   it("resets every field to name when one value is unknown to both clients", () => {
     localStorage.setItem(
       "omnibus.discovery_prefs",

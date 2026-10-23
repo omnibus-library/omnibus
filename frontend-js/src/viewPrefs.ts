@@ -170,9 +170,11 @@ export function saveShelfSelection(selection: ShelfSelection) {
   write(SHELF_KEY, JSON.stringify(selection));
 }
 
+const BrowseSort = z.enum(["name", "book_count", "recent"]).default("name");
+
 const DiscoveryStored = z.object({
-  authors_sort: z.enum(["name", "book_count", "recent"]).default("name"),
-  series_sort: z.enum(["name", "book_count", "recent"]).default("name"),
+  authors_sort: BrowseSort,
+  series_sort: BrowseSort,
   shelves_sort: z.enum(["name", "book_count"]).default("name"),
 });
 
