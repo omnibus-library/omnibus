@@ -128,6 +128,41 @@ same words, and the other way round.
 - **Not synced:** bookmarks (no highlighted text), PDF and CBZ annotations, and
   highlights in sideloaded books.
 
+## Progress sync without the plugin
+
+Stock KOReader's own **Progress sync** can keep your place in step with Omnibus
+without installing the plugin. It speaks the same protocol as KOReader's sync
+server, which Omnibus serves at `/kosync`.
+
+1. In Omnibus, open **Settings › Devices** and click **Generate password** under
+   **KOReader progress sync**. The server URL, your username and the password are
+   shown once; copy them now. Generating again replaces the password, and the old
+   one stops working.
+2. In KOReader, open **Progress sync › Custom sync server** and enter
+   `https://<host>/kosync`, with no trailing slash.
+3. Choose **Login** and enter your Omnibus username and that password. **Register**
+   is refused, because the password is made in Omnibus.
+
+What to expect:
+
+- **Only books downloaded from Omnibus match.** KOReader names a book by a
+  fingerprint of the file it holds, and Omnibus knows the fingerprint of every EPUB
+  in the library and of every edited copy it has served. A sideloaded book, or one
+  with the same name but different bytes, is not recognised: pushing its position
+  answers success and stores nothing, and pulling answers that there is none.
+  Switching KOReader to *filename* checksums doesn't work either.
+- **EPUB positions only.** A PDF or comic isn't matched, and no read status
+  travels, only the place.
+- **Positions read back as from device "Omnibus".** Omnibus doesn't keep which
+  device pushed a position, so KOReader's prompt names "Omnibus" whichever
+  device or the web reader last moved. Your own push reads back as already
+  synced.
+- **A push is dated when it reaches the server.** The protocol carries no time, so
+  a push KOReader queued while offline can replace a newer position from the web
+  when it finally arrives.
+- **The plugin and Progress sync can both run,** but need not: the plugin keeps
+  the place on its own at open and close.
+
 ## Metadata
 
 An edit made in Omnibus reaches the book on the device with the next sync: the
@@ -165,7 +200,9 @@ re-cover a book on the web, which the next sync shows without losing the reader'
 place or highlights (the `metadata` scenario), and carry a spot inside a
 paragraph both ways, so the device and the web reader open on the same
 sentence (the `precise` scenario), and carry a highlight with a note out and a
-recolour, a delete and a new highlight back (the `highlights` scenario) —
+recolour, a delete and a new highlight back (the `highlights` scenario), and push
+a position through stock KOReader's own Progress sync with no Omnibus plugin and pull
+the web's back (the `kosync` scenario) —
 driven by a real KOReader in Docker, with nothing stubbed. Each scenario prints one PASS/FAIL line.
 
 ```bash
@@ -176,6 +213,7 @@ just koreader-e2e
 # PASS metadata
 # PASS precise
 # PASS highlights
+# PASS kosync
 # or: FAIL opds: search: expected "Alpha" in search results, got ["Beta in the Series"] (screenshot: /tmp/omnibus-koreader.XXXXXX/results/opds.png)
 ```
 
@@ -185,8 +223,9 @@ two `precise` and `highlights` put on the shelf), builds
 [`ui_tests/koreader/`](../ui_tests/koreader/) — a pinned KOReader release
 under Xvfb — and runs one container per scenario. The scenario is a KOReader
 user patch (`ui_tests/koreader/patches/2-omnibus-e2e.lua`) that drives
-KOReader's own OPDS plugin, or the Omnibus plugin the runner downloaded
-from the real Settings route, and writes a result JSON the report turns into
+KOReader's own OPDS plugin, the Omnibus plugin the runner downloaded
+from the real Settings route, or (`kosync`, with no Omnibus plugin mounted) its
+built-in Progress sync, and writes a result JSON the report turns into
 the verdict line. Exits non-zero on any failure. The plugin's sync logic is
 also unit-tested without KOReader by `just koreader-plugin-test`.
 
@@ -202,8 +241,8 @@ A failure keeps the scratch dir and names it (`kept /tmp/omnibus-koreader.XXX`):
 In CI the same directory is uploaded as the `koreader-lane` artifact
 (retention 7 days) by [`.github/workflows/koreader.yml`](../.github/workflows/koreader.yml),
 which runs the lane on PRs touching OPDS/auth code, the position, status and
-annotation stores, the metadata and export-EPUB code or the lane itself, and
-nightly.
+annotation stores, the metadata and export-EPUB code, the kosync routes and file
+fingerprints or the lane itself, and nightly.
 
 ### Bumping KOReader
 
