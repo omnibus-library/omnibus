@@ -309,6 +309,15 @@ pub fn dune_stub() -> Stub {
     }
 }
 
+/// The kepubify-converted reader fixture (see `docs/kobo.md`'s "Reader
+/// fixture" note for how it's regenerated): three chapters of koboSpans
+/// covering ASCII, accented and astral text.
+pub const READER_KEPUB: &[u8] = include_bytes!("../../test_data/kepub/reader.kepub.epub");
+
+/// [`READER_KEPUB`]'s source EPUB, before kepubify — a plain EPUB with no
+/// koboSpan markup, for the "not downloaded as a KEPUB" paths.
+pub const READER_EPUB: &[u8] = include_bytes!("../../test_data/kepub/reader.epub");
+
 /// Enough bytes to satisfy `covers::decode`'s JPEG magic check.
 pub const JPEG_BYTES: &[u8] = &[0xFF, 0xD8, 0xFF, 0x00];
 

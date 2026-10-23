@@ -300,6 +300,23 @@ A downloaded book's file is kept beside the state file, in `<state>.books/`
 (`.claude/runtime/kobo.json` → `.claude/runtime/kobo.books/<id>.kepub.epub`),
 so a second device's downloads never collide with the first's.
 
+#### Reader fixture
+
+`test_data/kepub/reader.epub` is a hand-written three-chapter EPUB (ASCII
+prose in chapter 1, accented Latin and Mathematical Fraktur text in chapter
+2, one short paragraph in chapter 3); `reader.kepub.epub` is kepubify's own
+output over it, committed so the walker's tests run with no kepubify on
+`PATH`. Regenerate the KEPUB after editing the source EPUB:
+
+```bash
+scripts/with-dev-env.sh web kepubify --no-add-dummy-titlepage \
+  -o test_data/kepub/reader.kepub.epub -- test_data/kepub/reader.epub
+```
+
+Produced with kepubify 4.0.4. `--no-add-dummy-titlepage` matters: without
+it, kepubify inserts a blank titlepage as the book's first spine item,
+which would shift every chapter's spine index.
+
 ### From a script
 
 `mock-kobo serve` runs the same device headless, printing one

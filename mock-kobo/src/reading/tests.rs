@@ -406,3 +406,15 @@ async fn attempt_state_fails_with_transport_when_the_server_is_unreachable() {
 
     assert!(matches!(attempt.outcome, Err(SyncFailure::Transport(_))));
 }
+
+#[test]
+fn percent_of_floors_the_ratio() {
+    assert_eq!(u8::from(Percent::of(63, 80)), 78);
+    assert_eq!(u8::from(Percent::of(1, 3)), 33);
+    assert_eq!(u8::from(Percent::of(5, 5)), 100);
+}
+
+#[test]
+fn percent_of_is_zero_for_an_empty_whole() {
+    assert_eq!(u8::from(Percent::of(0, 0)), 0);
+}
