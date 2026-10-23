@@ -575,6 +575,36 @@ test("capture twice leaves one entry carrying the later event time", function()
     eq(books[ALPHA.uuid].event_at, 900)
 end)
 
+test("capture marks a book pending when only its xpointer moved within the same percent", function()
+    local books = { [ALPHA.uuid] = entry({ xpointer = "/body/DocFragment/body/p[1]/text().0" }) }
+
+    sync.capture(books, ALPHA.uuid,
+        { percent = 40, status = "reading", xpointer = "/body/DocFragment/body/p[2]/text().0" }, 500)
+
+    local e = books[ALPHA.uuid]
+    eq(e.xpointer, "/body/DocFragment/body/p[2]/text().0")
+    eq(e.event_at, 500)
+    eq(e.pending, true)
+end)
+
+test("capture never counts a missing xpointer as a change", function()
+    local books = { [ALPHA.uuid] = entry({ xpointer = "/body/DocFragment/body/p/text().0" }) }
+
+    sync.capture(books, ALPHA.uuid, { percent = 40, status = "reading" }, 500)
+
+    eq(books[ALPHA.uuid].pending, false)
+    eq(books[ALPHA.uuid].xpointer, "/body/DocFragment/body/p/text().0")
+end)
+
+test("capture does not push an entry saved before xpointers for the xpointer alone", function()
+    local books = { [ALPHA.uuid] = entry() }
+
+    sync.capture(books, ALPHA.uuid,
+        { percent = 40, status = "reading", xpointer = "/body/DocFragment/body/p/text().0" }, 500)
+
+    eq(books[ALPHA.uuid].pending, false)
+end)
+
 -- A flush target that answers each PUT from `answers` in order and records what it was sent.
 local function fake_server(answers)
     local sent, saves = {}, { n = 0 }
@@ -608,6 +638,19 @@ test("flush sends each pending book once as percent, status and event time and c
     eq(sent[1].body.event_at, 500)
     eq(books[ALPHA.uuid].pending, false)
     eq(saves.n, 1)
+end)
+
+test("flush sends the xpointer when the entry has one and leaves the key out otherwise", function()
+    local books = {
+        [ALPHA.uuid] = entry({ pending = true, xpointer = "/body/DocFragment/body/p/text().3" }),
+        [BETA.uuid] = entry({ pending = true }),
+    }
+    local deps, sent = fake_server({})
+
+    sync.flush(books, deps)
+
+    eq(sent[1].body.xpointer, "/body/DocFragment/body/p/text().3")
+    eq(sent[2].body.xpointer, nil)
 end)
 
 test("flush leaves the status out of the body when the device has none", function()
@@ -715,6 +758,41 @@ test("pull_plan keeps the page when the newer remote position is the same whole 
     eq(plan.event_at, 300)
 end)
 
+test("pull_plan moves by a newer remote xpointer the device is not at, keeping the percent as fallback", function()
+    local plan = sync.pull_plan(entry({ percent = 40, event_at = 100 }),
+        { position = { percent = 40, event_at = 300, xpointer = "/body/DocFragment/body/p[7]/text().2" } },
+        { percent = 40, status = "reading", xpointer = "/body/DocFragment/body/p[2]/text().0" })
+
+    eq(plan.xpointer, "/body/DocFragment/body/p[7]/text().2")
+    eq(plan.percent, 40)
+    eq(plan.event_at, 300)
+end)
+
+test("pull_plan keeps the page when the newer remote xpointer is the one the device is at", function()
+    local at = "/body/DocFragment/body/p[7]/text().2"
+    local plan = sync.pull_plan(entry({ percent = 40, event_at = 100 }),
+        { position = { percent = 41, event_at = 300, xpointer = at } },
+        { percent = 40, status = "reading", xpointer = at })
+
+    eq(plan.xpointer, nil)
+    eq(plan.percent, nil)
+    eq(plan.event_at, 300)
+end)
+
+test("pull_plan moves by percent when the remote position has no xpointer or the device has none", function()
+    local remote = { position = { percent = 70, event_at = 300 } }
+    local no_xpointer = sync.pull_plan(entry({ event_at = 100 }), remote,
+        { percent = 40, status = "reading", xpointer = "/body/DocFragment/body/p/text().0" })
+    local paged = sync.pull_plan(entry({ event_at = 100 }),
+        { position = { percent = 70, event_at = 300, xpointer = "/body/DocFragment/body/p/text().5" } },
+        { percent = 40, status = "reading" })
+
+    eq(no_xpointer.percent, 70)
+    eq(no_xpointer.xpointer, nil)
+    eq(paged.percent, 70)
+    eq(paged.xpointer, nil)
+end)
+
 test("pull_plan applies a newer remote complete status", function()
     local plan = sync.pull_plan(entry({ event_at = 100 }),
         { position = { percent = 100, event_at = 300 }, status = { status = "complete", event_at = 350 } },
@@ -755,6 +833,14 @@ test("pull_plan reads a decoded JSON null as no state", function()
     -- KOReader's json decodes null to a function, not nil.
     local null = function() end
     eq(sync.pull_plan(entry(), { position = null, status = null }, { percent = 40, status = "reading" }), nil)
+end)
+
+test("settle records the xpointer the device is at", function()
+    local books = {}
+
+    sync.settle(books, ALPHA.uuid, { percent = 70, status = "reading", xpointer = "/body/DocFragment/body/p/text().1" }, 300)
+
+    eq(books[ALPHA.uuid].xpointer, "/body/DocFragment/body/p/text().1")
 end)
 
 test("settle records the device's own state as agreed at the event time and not pending", function()

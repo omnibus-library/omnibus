@@ -5,10 +5,11 @@ side effect (HTTP, files, the manifest) as `deps`, so this runs under plain luaj
 The manifest maps a book's uuid to the file this plugin delivered for it. It is the only
 thing sync deletes by, so a file the plugin did not deliver is never touched.
 
-Reading state is kept per book in `books`: the percent and status the device last agreed
-with the server, when (`event_at`), and whether a change still waits to be pushed. A
-change is captured only when the device differs from that agreed state, so a stale device
-never overwrites a newer server position with a fresh timestamp.
+Reading state is kept per book in `books`: the percent, status and (for a reflowable book)
+XPointer the device last agreed with the server, when (`event_at`), and whether a change
+still waits to be pushed. A change is captured only when the device differs from that
+agreed state, so a stale device never overwrites a newer server position with a fresh
+timestamp.
 
 Metadata is kept per delivered book in `files` (path, the `last_modified` it was last
 written at, and the file's ETag), which outlives a delete so a returning book finds its
@@ -150,19 +151,32 @@ function M.uuid_for_path(manifest, path)
 end
 
 --- Record the device's own state as agreed with the server at `event_at`, nothing to push.
---- `current` = { percent = int|nil, status = string|nil }.
+--- `current` = { percent = int|nil, status = string|nil, xpointer = string|nil }.
 function M.settle(books, uuid, current, event_at)
-    books[uuid] = { percent = current.percent, status = current.status, event_at = event_at, pending = false }
+    books[uuid] = {
+        percent = current.percent,
+        status = current.status,
+        xpointer = current.xpointer,
+        event_at = event_at,
+        pending = false,
+    }
 end
 
---- Mark a book pending at `now` when the device's percent or status differs from the agreed
---- one. Repeated captures leave one entry, so the latest event wins.
+-- An XPointer moved within the same percent. An entry saved before XPointers existed has
+-- none to compare with: it learns one at the next settle and never pushes for it.
+local function xpointer_moved(agreed, current)
+    return current.xpointer ~= nil and agreed.xpointer ~= nil and agreed.xpointer ~= current.xpointer
+end
+
+--- Mark a book pending at `now` when the device's percent, status or XPointer differs from the
+--- agreed one. Repeated captures leave one entry, so the latest event wins.
 function M.capture(books, uuid, current, now)
     local agreed = books[uuid]
     if not agreed or current.percent == nil then
         return
     end
-    if agreed.percent ~= current.percent or agreed.status ~= current.status then
+    if agreed.percent ~= current.percent or agreed.status ~= current.status
+        or xpointer_moved(agreed, current) then
         M.settle(books, uuid, current, now)
         books[uuid].pending = true
     end
@@ -186,7 +200,12 @@ end
 function M.flush(books, deps)
     for _, uuid in ipairs(sorted_pending(books)) do
         local entry = books[uuid]
-        local body = { percent = entry.percent, status = entry.status, event_at = entry.event_at }
+        local body = {
+            percent = entry.percent,
+            status = entry.status,
+            xpointer = entry.xpointer,
+            event_at = entry.event_at,
+        }
         local code, err = deps.put_state(uuid, body)
         if not code then
             return { ok = false, message = string.format("Couldn't reach Omnibus: %s", tostring(err)) }
@@ -206,8 +225,10 @@ end
 
 --- What opening a book should change on the device, or nil for nothing: the server's state
 --- (`remote` = the GET body) when it is newer than the local entry, which a book still
---- waiting to be pushed outranks. Returns { percent = int|nil, status = string|nil, event_at }
---- where `percent`/`status` appear only when they differ from `current`.
+--- waiting to be pushed outranks. Returns { percent = int|nil, status = string|nil,
+--- xpointer = string|nil, event_at } where they appear only when they differ from `current`.
+--- A newer position with an XPointer moves by it (with the percent as the fallback when the
+--- document can't place it); one without, or a device that has no XPointer, moves by percent.
 function M.pull_plan(entry, remote, current)
     if entry and entry.pending then
         return nil
@@ -224,8 +245,15 @@ function M.pull_plan(entry, remote, current)
     -- A decoded JSON null is not nil (KOReader's json yields a function), so keep only tables.
     local position = type(remote.position) == "table" and remote.position or nil
     local status = type(remote.status) == "table" and remote.status or nil
-    if position and newer(position.event_at) and position.percent ~= current.percent then
-        plan.percent = position.percent
+    if position and newer(position.event_at) then
+        if type(position.xpointer) == "string" and current.xpointer ~= nil then
+            if position.xpointer ~= current.xpointer then
+                plan.xpointer = position.xpointer
+                plan.percent = position.percent
+            end
+        elseif position.percent ~= current.percent then
+            plan.percent = position.percent
+        end
     end
     if status and newer(status.event_at) and status.status ~= current.status then
         plan.status = status.status
