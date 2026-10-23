@@ -7,8 +7,9 @@ use std::fmt::Display;
 use std::sync::Arc;
 
 use crate::autowire::{self, AutoWireError, SeedUser};
-use crate::control::{Control, ControlError, LastSync, Retarget, Retargeted, RESET_MESSAGE};
+use crate::control::{Acted, Control, ControlError, LastSync, Retarget, Retargeted, RESET_MESSAGE};
 use crate::downloads::DownloadPolicy;
+use crate::reading::Percent;
 use crate::tui::app::{Job, Status};
 
 /// What `w` needs to wire a token: the dev seed admin and the device's Omnibus name.
@@ -27,6 +28,41 @@ pub async fn perform(control: &Arc<Control>, wiring: &Wiring, job: Job) -> Statu
         Job::SetUrl(url) => set_url(control, wiring, &url).await,
         Job::SetToken(token) => set_token(control, token).await,
         Job::Wire => wire(control, wiring).await,
+        Job::Download(book) => download(control, book).await,
+        Job::Read { book, percent } => read(control, book, percent).await,
+        Job::Finish(book) => finish(control, book).await,
+        Job::RemoveDownload(book) => remove_download(control, book).await,
+    }
+}
+
+async fn download(control: &Arc<Control>, book: String) -> Status {
+    match control.download(vec![book]).await {
+        Ok(Acted::Done(_)) => Status::Info("downloaded".to_owned()),
+        Ok(Acted::Failed { message, .. }) => Status::Error(message),
+        Err(error) => failure(error),
+    }
+}
+
+async fn read(control: &Arc<Control>, book: String, percent: Percent) -> Status {
+    state_status(control.read(book, percent, None).await)
+}
+
+async fn finish(control: &Arc<Control>, book: String) -> Status {
+    state_status(control.finish(book).await)
+}
+
+fn state_status(result: Result<Acted, ControlError>) -> Status {
+    match result {
+        Ok(Acted::Done(_)) => Status::Info("state sent".to_owned()),
+        Ok(Acted::Failed { message, .. }) => Status::Error(message),
+        Err(error) => failure(error),
+    }
+}
+
+async fn remove_download(control: &Control, book: String) -> Status {
+    match control.remove_download(&book).await {
+        Ok(_) => Status::Info("removed".to_owned()),
+        Err(error) => failure(error),
     }
 }
 

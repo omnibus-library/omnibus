@@ -160,6 +160,51 @@ fn draw_marks_archived_books() {
 }
 
 #[test]
+fn draw_marks_the_selected_book() {
+    let view = view_with_books(vec![
+        ("b-1", book("Dune", &["Frank Herbert"], false)),
+        ("b-2", book("Emma", &["Jane Austen"], false)),
+    ]);
+    let mut app = App::default();
+    app.show_library(&["b-1".to_owned(), "b-2".to_owned()]);
+    app.selected = 1;
+
+    let shown = shown(&view, &app);
+
+    assert!(shown.contains("> Emma — Jane Austen"), "{shown}");
+    assert!(!shown.contains("> Dune — Frank Herbert"), "{shown}");
+}
+
+#[test]
+fn draw_shows_download_state_and_reading_progress_per_book() {
+    let mut downloaded = book("Dune", &["Frank Herbert"], false);
+    downloaded.downloaded = true;
+    let mut failed = book("Emma", &["Jane Austen"], false);
+    failed.download_problem = Some("404".into());
+    let mut reading = book("Good Omens", &["Terry Pratchett"], false);
+    reading.reading.bookmark = Some(crate::reading::Bookmark {
+        percent: crate::reading::Percent::new(42),
+        location: None,
+        modified: 1,
+    });
+    let mut finished = book("1984", &["George Orwell"], false);
+    finished.reading.status = crate::reading::ReadStatus::Finished;
+    let view = view_with_books(vec![
+        ("b-1", downloaded),
+        ("b-2", failed),
+        ("b-3", reading),
+        ("b-4", finished),
+    ]);
+
+    let shown = shown(&view, &App::default());
+
+    assert!(shown.contains("[downloaded]"), "{shown}");
+    assert!(shown.contains("[download failed]"), "{shown}");
+    assert!(shown.contains("[42%]"), "{shown}");
+    assert!(shown.contains("[finished]"), "{shown}");
+}
+
+#[test]
 fn draw_shows_no_books_hint_when_library_empty() {
     let shown = shown(&view(), &App::default());
 
@@ -314,10 +359,20 @@ fn draw_labels_token_edit_as_token_while_editing() {
 }
 
 #[test]
+fn draw_shows_the_percent_prompt_while_editing() {
+    let app = editing(Field::Percent("b-1".into()), "42");
+
+    let shown = shown(&view(), &app);
+
+    assert!(shown.contains("percent: 42"), "{shown}");
+}
+
+#[test]
 fn draw_shows_key_help_in_normal_mode() {
     let shown = shown(&view(), &App::default());
 
-    let help = "s sync · r reset · u edit URL · t edit token · w wire · q quit";
+    // The full line is longer than the 100-column fixture, so only its start is checked here.
+    let help = "↑/↓ select · d download · p read % · f finish · x remove · s sync · r reset";
     assert!(shown.contains(help), "{shown}");
     assert!(!shown.contains("Enter save"), "{shown}");
 }

@@ -13,9 +13,11 @@ use ratatui::Frame;
 use crate::client::RequestRecord;
 use crate::control::{DeviceView, LastSync};
 use crate::device::Book;
+use crate::reading::ReadStatus;
 use crate::tui::app::{App, Edit, Field, Mode, Status};
 
-const HELP: &str = "s sync · r reset · u edit URL · t edit token · w wire · q quit";
+const HELP: &str =
+    "↑/↓ select · d download · p read % · f finish · x remove · s sync · r reset · u edit URL · t edit token · w wire · q quit";
 const EDIT_HELP: &str = "Enter save · Esc cancel";
 
 /// Rows the status line may wrap onto before the rest is cut.
@@ -41,7 +43,7 @@ pub fn draw(frame: &mut Frame, screen: &Screen) {
     ])
     .areas(frame.area());
     draw_header(frame, header, screen);
-    draw_library(frame, library, screen.view);
+    draw_library(frame, library, screen.view, screen.app.selected_book());
     draw_last_sync(frame, last_sync, screen.view);
     draw_requests(frame, requests, screen.requests);
     draw_footer(frame, footer, screen.app);
@@ -58,20 +60,51 @@ fn draw_header(frame: &mut Frame, area: Rect, screen: &Screen) {
     frame.render_widget(Paragraph::new(lines), area);
 }
 
-fn draw_library(frame: &mut Frame, area: Rect, view: &DeviceView) {
+fn draw_library(frame: &mut Frame, area: Rect, view: &DeviceView, selected: Option<&str>) {
     let lines: Vec<Line> = if view.library.is_empty() {
         vec![Line::raw("no books: press s to sync")]
     } else {
-        view.library.values().map(book_line).collect()
+        view.library
+            .iter()
+            .map(|(id, book)| book_line(book, Some(id.as_str()) == selected))
+            .collect()
     };
     let block = Block::bordered().title(format!("Library ({})", view.library.len()));
     frame.render_widget(Paragraph::new(lines).block(block), area);
 }
 
-fn book_line(book: &Book) -> Line<'static> {
+fn book_line(book: &Book, selected: bool) -> Line<'static> {
+    let marker = if selected { "> " } else { "  " };
     let archived = if book.archived { " (archived)" } else { "" };
     let authors = book.authors.join(", ");
-    Line::raw(format!("{} — {authors}{archived}", book.title))
+    let status = book_status(book);
+    let status = if status.is_empty() {
+        String::new()
+    } else {
+        format!(" [{status}]")
+    };
+    let text = format!("{marker}{} — {authors}{archived}{status}", book.title);
+    if selected {
+        Line::styled(text, Style::new().add_modifier(Modifier::BOLD))
+    } else {
+        Line::raw(text)
+    }
+}
+
+/// `downloaded`/`download failed`, the bookmark percent, or `finished` — whichever apply.
+fn book_status(book: &Book) -> String {
+    let mut parts = Vec::new();
+    if book.reading.status == ReadStatus::Finished {
+        parts.push("finished".to_owned());
+    } else if let Some(percent) = book.reading.bookmark.as_ref().and_then(|b| b.percent) {
+        parts.push(format!("{}%", u8::from(percent)));
+    }
+    match &book.download_problem {
+        Some(_) => parts.push("download failed".to_owned()),
+        None if book.downloaded => parts.push("downloaded".to_owned()),
+        None => {}
+    }
+    parts.join(" · ")
 }
 
 fn draw_last_sync(frame: &mut Frame, area: Rect, view: &DeviceView) {
@@ -126,9 +159,10 @@ fn status_line(status: &Status) -> Line<'_> {
 
 /// The prompt, with the terminal cursor after what has been typed (kept on screen).
 fn draw_edit(frame: &mut Frame, area: Rect, edit: &Edit) {
-    let label = match edit.field {
+    let label = match &edit.field {
         Field::Url => "URL",
         Field::Token => "token",
+        Field::Percent(_) => "percent",
     };
     let prompt = Line::raw(format!("{label}: {}", edit.buffer));
     let typed = u16::try_from(prompt.width()).unwrap_or(u16::MAX);

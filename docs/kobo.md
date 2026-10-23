@@ -260,12 +260,21 @@ database already had an admin, mark a shelf **Sync to Kobo** yourself.
 
 | Key | Does |
 |---|---|
+| <kbd>↑</kbd> / <kbd>↓</kbd> | Move the selection (marked `>`) within the library |
+| <kbd>d</kbd> | Download the selected book |
+| <kbd>p</kbd> | Edit the selected book's read percent (0–100), sent as a `Reading` state on <kbd>Enter</kbd> |
+| <kbd>f</kbd> | Mark the selected book finished |
+| <kbd>x</kbd> | Clear the selected book's downloaded flag, locally |
 | <kbd>s</kbd> | Sync now |
 | <kbd>r</kbd> | Reset the device: empty library, no sync token, so the next sync resends every opted-in book |
 | <kbd>u</kbd> | Edit the server URL (pinned and saved) |
 | <kbd>t</kbd> | Edit the device token (saved) |
 | <kbd>w</kbd> | Wire a token for the current URL, as startup does |
 | <kbd>q</kbd> / <kbd>Ctrl-C</kbd> | Quit |
+
+Each book line shows `downloaded`, `download failed`, the bookmark percent, or
+`finished`, whichever apply (the device never shows a `KoboSpan` location —
+see [#2738](https://github.com/omnibus-library/omnibus/issues/2738)).
 
 While editing, <kbd>Enter</kbd> saves and <kbd>Esc</kbd> cancels. Pointing a
 device at another server re-wires a token that was wired for the old one; a URL

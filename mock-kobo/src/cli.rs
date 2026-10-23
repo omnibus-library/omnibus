@@ -35,7 +35,9 @@ OPTIONS (each flag wins over its env var, for both commands):
     -h, --help        print this text
 
 KEYS IN THE TUI:
-    s sync    r reset    u edit URL    t edit token    w wire a token    q quit
+    up/down select book    d download    p read to a percent    f mark finished
+    x remove download      s sync        r reset                u edit URL
+    t edit token            w wire a token    q quit
 
 WITH NO ARGUMENTS:
     The device follows this worktree's dev server (.claude/runtime/port, else
