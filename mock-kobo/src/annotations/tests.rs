@@ -12,21 +12,11 @@ use crate::device::Device;
 use crate::downloads::DownloadPolicy;
 use crate::session::{attempt_annotation, attempt_download, sync_now, AnnotationSent, SyncFailure};
 use crate::test_support::{
-    device_holding, new_entitlement, request_lines, served_annotation, spawn_stub, RunningStub,
-    Stub,
+    annotation, device_holding, new_entitlement, request_lines, served_annotation, span_range,
+    spawn_stub, RunningStub, Stub,
 };
 
 use super::*;
-
-fn annotation(id: &str) -> Annotation {
-    Annotation {
-        id: id.to_owned(),
-        text: "existing".into(),
-        note: None,
-        color: Swatch::Yellow,
-        location: serde_json::Value::Null,
-    }
-}
 
 #[test]
 fn swatch_from_wire_maps_each_kobo_hex_swatch_case_insensitively() {
@@ -363,14 +353,7 @@ fn patch_body(stub: &RunningStub, book: &str) -> serde_json::Value {
 #[tokio::test]
 async fn attempt_annotation_patches_a_highlight_with_its_note_to_the_reading_services_host() {
     let stub = spawn_stub(Stub::default()).await;
-    let location = Some(SpanRange {
-        chapter: "OEBPS/ch1.xhtml".into(),
-        start_span: "kobo.1.2".into(),
-        start_char: 3,
-        end_span: "kobo.1.4".into(),
-        end_char: 9,
-    });
-    let mut device = device_with_highlight(&stub, Some("a thought"), location);
+    let mut device = device_with_highlight(&stub, Some("a thought"), Some(span_range()));
 
     let attempt = attempt_annotation(
         &mut device,

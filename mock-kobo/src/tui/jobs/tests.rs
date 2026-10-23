@@ -12,8 +12,8 @@ use crate::firmware::Quirk;
 use crate::reading::{Percent, ReadStatus};
 use crate::state::{self, StateError};
 use crate::test_support::{
-    control_wired_against, dune_stub, never_answers, new_entitlement, spawn_stub, spawn_sync,
-    stub_control, stub_with_device, wait_until, Stub, STUB_TOKEN,
+    control_wired_against, dune_stub, never_answers, new_entitlement, new_highlight, spawn_stub,
+    spawn_sync, stub_control, stub_with_device, wait_until, Stub, STUB_TOKEN,
 };
 use crate::tui::app::{Job, Status};
 
@@ -423,15 +423,6 @@ async fn perform_remove_download_reports_removed() {
     assert!(!control.view().library["book-1"].downloaded);
 }
 
-fn a_highlight() -> crate::annotations::NewHighlight {
-    crate::annotations::NewHighlight {
-        text: "a passage".into(),
-        color: crate::annotations::Swatch::Blue,
-        note: None,
-        location: None,
-    }
-}
-
 #[tokio::test]
 async fn perform_highlight_reports_annotation_sent() {
     let stub = spawn_stub(dune_stub()).await;
@@ -444,7 +435,7 @@ async fn perform_highlight_reports_annotation_sent() {
         &wiring(),
         Job::Highlight {
             book: "book-1".into(),
-            highlight: a_highlight(),
+            highlight: new_highlight(None, None),
         },
     )
     .await;
@@ -464,7 +455,7 @@ async fn perform_delete_highlight_deletes_the_newest_highlight() {
         &wiring(),
         Job::Highlight {
             book: "book-1".into(),
-            highlight: a_highlight(),
+            highlight: new_highlight(None, None),
         },
     )
     .await;

@@ -3,7 +3,7 @@
 use serde_json::{json, Value};
 
 use crate::reading::{rfc3339, Bookmark, KoboSpan, Percent, ReadStatus};
-use crate::test_support::{book_metadata, new_entitlement};
+use crate::test_support::{annotation, book_metadata, new_entitlement, new_highlight, span_range};
 use crate::wire::Series;
 
 use super::*;
@@ -331,16 +331,6 @@ fn finish_returns_unknown_book_for_a_book_it_lacks() {
     assert_eq!(error, DeviceError::UnknownBook("book-1".into()));
 }
 
-fn annotation(id: &str) -> crate::annotations::Annotation {
-    crate::annotations::Annotation {
-        id: id.to_owned(),
-        text: "some text".into(),
-        note: None,
-        color: crate::annotations::Swatch::Yellow,
-        location: Value::Null,
-    }
-}
-
 #[test]
 fn receive_annotations_replaces_the_highlights_of_a_downloaded_book() {
     let mut device = Device::new("HW-1");
@@ -394,27 +384,6 @@ fn apply_keeps_a_books_highlights_when_its_metadata_changes() {
     assert_eq!(book.annotations, vec![annotation("a-1")]);
 }
 
-fn new_highlight(
-    location: Option<crate::annotations::SpanRange>,
-) -> crate::annotations::NewHighlight {
-    crate::annotations::NewHighlight {
-        text: "a passage".into(),
-        color: crate::annotations::Swatch::Blue,
-        note: Some("a thought".into()),
-        location,
-    }
-}
-
-fn span_range() -> crate::annotations::SpanRange {
-    crate::annotations::SpanRange {
-        chapter: "OEBPS/ch1.xhtml".into(),
-        start_span: "kobo.1.2".into(),
-        start_char: 3,
-        end_span: "kobo.1.4".into(),
-        end_char: 9,
-    }
-}
-
 fn downloaded_book_1() -> Device {
     let mut device = Device::new("HW-1");
     device.apply(item(new_entitlement("book-1", "Dune")));
@@ -427,7 +396,7 @@ fn highlight_appends_the_highlight_with_its_kobospan_location() {
     let mut device = downloaded_book_1();
 
     device
-        .highlight("book-1", "h-1".into(), new_highlight(Some(span_range())))
+        .highlight("book-1", "h-1".into(), new_highlight(Some("a thought"), Some(span_range())))
         .unwrap();
 
     let highlight = &device.library["book-1"].annotations[0];
@@ -452,7 +421,7 @@ fn highlight_appends_the_highlight_with_its_kobospan_location() {
 #[test]
 fn highlight_treats_an_empty_note_as_none() {
     let mut device = downloaded_book_1();
-    let mut new = new_highlight(None);
+    let mut new = new_highlight(Some("a thought"), None);
     new.note = Some(String::new());
 
     device.highlight("book-1", "h-1".into(), new).unwrap();
@@ -467,7 +436,7 @@ fn highlight_treats_an_empty_note_as_none() {
 #[test]
 fn highlight_treats_a_whitespace_only_note_as_none() {
     let mut device = downloaded_book_1();
-    let mut new = new_highlight(None);
+    let mut new = new_highlight(Some("a thought"), None);
     new.note = Some("  ".into());
 
     device.highlight("book-1", "h-1".into(), new).unwrap();
@@ -481,7 +450,7 @@ fn highlight_returns_not_downloaded_for_an_undownloaded_book() {
     device.apply(item(new_entitlement("book-1", "Dune")));
 
     let error = device
-        .highlight("book-1", "h-1".into(), new_highlight(None))
+        .highlight("book-1", "h-1".into(), new_highlight(Some("a thought"), None))
         .unwrap_err();
 
     assert_eq!(error, DeviceError::NotDownloaded("book-1".into()));
@@ -492,7 +461,7 @@ fn highlight_returns_unknown_book_for_a_book_it_lacks() {
     let mut device = Device::new("HW-1");
 
     let error = device
-        .highlight("book-1", "h-1".into(), new_highlight(None))
+        .highlight("book-1", "h-1".into(), new_highlight(Some("a thought"), None))
         .unwrap_err();
 
     assert_eq!(error, DeviceError::UnknownBook("book-1".into()));
@@ -502,7 +471,7 @@ fn highlight_returns_unknown_book_for_a_book_it_lacks() {
 fn delete_highlight_removes_the_highlight() {
     let mut device = downloaded_book_1();
     device
-        .highlight("book-1", "h-1".into(), new_highlight(None))
+        .highlight("book-1", "h-1".into(), new_highlight(Some("a thought"), None))
         .unwrap();
 
     device.delete_highlight("book-1", "h-1").unwrap();

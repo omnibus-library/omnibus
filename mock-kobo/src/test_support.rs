@@ -478,6 +478,44 @@ pub fn served_annotation(id: &str, color: &str, text: &str) -> Value {
     })
 }
 
+/// A plain `Annotation` under `id`, text and colour fixed — for tests that
+/// only need *an* annotation to compare identity against, never a
+/// particular colour or text.
+pub fn annotation(id: &str) -> crate::annotations::Annotation {
+    crate::annotations::Annotation {
+        id: id.to_owned(),
+        text: "a passage".into(),
+        note: None,
+        color: crate::annotations::Swatch::Yellow,
+        location: Value::Null,
+    }
+}
+
+/// A `NewHighlight` with "a passage" and `Swatch::Blue` fixed; `note` and
+/// `location` are the two fields call sites actually vary.
+pub fn new_highlight(
+    note: Option<&str>,
+    location: Option<crate::annotations::SpanRange>,
+) -> crate::annotations::NewHighlight {
+    crate::annotations::NewHighlight {
+        text: "a passage".into(),
+        color: crate::annotations::Swatch::Blue,
+        note: note.map(str::to_owned),
+        location,
+    }
+}
+
+/// A fixed KoboSpan range over `OEBPS/ch1.xhtml`, `kobo.1.2`:3 → `kobo.1.4`:9.
+pub fn span_range() -> crate::annotations::SpanRange {
+    crate::annotations::SpanRange {
+        chapter: "OEBPS/ch1.xhtml".into(),
+        start_span: "kobo.1.2".into(),
+        start_char: 3,
+        end_span: "kobo.1.4".into(),
+        end_char: 9,
+    }
+}
+
 /// The Omnibus `/api` routes auto-wire calls: login, the device list and create, then logout.
 fn omnibus_api(state: &StubState, path: &str, headers: &HeaderMap, body: &str) -> Option<Response> {
     let signed_in = headers

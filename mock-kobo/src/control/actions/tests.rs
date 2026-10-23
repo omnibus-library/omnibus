@@ -11,8 +11,8 @@ use crate::downloads::DownloadPolicy;
 use crate::firmware::Quirk;
 use crate::reading::{Percent, ReadStatus};
 use crate::test_support::{
-    device_holding, dune_stub, never_answers, new_entitlement, request_lines, spawn_stub,
-    spawn_sync, stub_control, stub_control_with, wait_until, Stub, STUB_TOKEN,
+    device_holding, dune_stub, never_answers, new_entitlement, new_highlight, request_lines,
+    spawn_stub, spawn_sync, stub_control, stub_control_with, wait_until, Stub, STUB_TOKEN,
 };
 
 use super::*;
@@ -400,21 +400,12 @@ async fn finish_returns_state_not_saved_when_state_file_cannot_be_written() {
     assert!(matches!(result, Err(ControlError::StateNotSaved(_))));
 }
 
-fn new_highlight() -> crate::annotations::NewHighlight {
-    crate::annotations::NewHighlight {
-        text: "a passage".into(),
-        color: crate::annotations::Swatch::Blue,
-        note: None,
-        location: None,
-    }
-}
-
 fn device_holding_downloaded_book_1_with_highlight(
     stub: &crate::test_support::RunningStub,
 ) -> Device {
     let mut device = device_holding_downloaded_book_1(stub);
     device
-        .highlight("book-1", "h-1".into(), new_highlight())
+        .highlight("book-1", "h-1".into(), new_highlight(None, None))
         .unwrap();
     device
 }
@@ -437,7 +428,7 @@ async fn highlight_sends_the_highlight_and_keeps_it_on_the_device() {
     );
 
     let result = control
-        .highlight("book-1".into(), new_highlight())
+        .highlight("book-1".into(), new_highlight(None, None))
         .await
         .unwrap();
 
@@ -468,7 +459,7 @@ async fn highlight_reports_the_failure_and_keeps_the_highlight_when_the_patch_an
     );
 
     let result = control
-        .highlight("book-1".into(), new_highlight())
+        .highlight("book-1".into(), new_highlight(None, None))
         .await
         .unwrap();
 
@@ -486,7 +477,7 @@ async fn highlight_returns_not_downloaded_without_a_request() {
     let dir = TempDir::new().unwrap();
     let control = stub_control_with(&stub, device_holding_book_1(), dir.path().join("kobo.json"));
 
-    let result = control.highlight("book-1".into(), new_highlight()).await;
+    let result = control.highlight("book-1".into(), new_highlight(None, None)).await;
 
     assert!(matches!(
         result,
@@ -501,7 +492,7 @@ async fn highlight_returns_unknown_book_without_a_request() {
     let dir = TempDir::new().unwrap();
     let control = stub_control(&stub, dir.path().join("kobo.json"));
 
-    let result = control.highlight("book-1".into(), new_highlight()).await;
+    let result = control.highlight("book-1".into(), new_highlight(None, None)).await;
 
     assert!(matches!(
         result,
@@ -522,7 +513,7 @@ async fn highlight_returns_sync_in_progress_while_a_sync_runs() {
     let running = spawn_sync(&control);
     wait_until(|| control.view().syncing).await;
 
-    let result = control.highlight("book-1".into(), new_highlight()).await;
+    let result = control.highlight("book-1".into(), new_highlight(None, None)).await;
 
     assert!(matches!(result, Err(ControlError::SyncInProgress)));
     running.abort();
@@ -540,7 +531,7 @@ async fn highlight_returns_state_not_saved_when_state_file_cannot_be_written() {
         parent.join("kobo.json"),
     );
 
-    let result = control.highlight("book-1".into(), new_highlight()).await;
+    let result = control.highlight("book-1".into(), new_highlight(None, None)).await;
 
     assert!(matches!(result, Err(ControlError::StateNotSaved(_))));
 }
