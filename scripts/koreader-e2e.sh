@@ -84,6 +84,9 @@ python3 -m zipfile -e "$scratch/plugin.zip" "$scratch/plugins"
 # Scenario names live here; the fixture titles live beside them in the
 # patch's opds scenario.
 scenarios=(opds delivery roundtrip)
+# The token must never reach KOReader's log: a leak there is a leak to anyone who shares it.
+device_token="$(json_field token <"$scratch/plugins/omnibus.koplugin/omnibus.json")"
+leaked=0
 for scenario in "${scenarios[@]}"; do
     set +e
     timeout -k 15 300 docker run --init --rm --network host \
@@ -102,10 +105,15 @@ for scenario in "${scenarios[@]}"; do
         "omnibus-koreader:$deb" \
         >"$scratch/results/$scenario.koreader.log" 2>&1
     set -e
+    if grep -qF -- "$device_token" "$scratch/results/$scenario.koreader.log"; then
+        echo "FAIL $scenario: the device token appears in KOReader's log" >&2
+        leaked=1
+    fi
 done
 
 set +e
 python3 scripts/koreader_report.py "$scratch/results" "${scenarios[@]}"
 status=$?
 set -e
+[ "$leaked" -eq 0 ] || status=1
 exit "$status"

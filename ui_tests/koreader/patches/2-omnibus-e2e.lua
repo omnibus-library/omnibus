@@ -373,16 +373,17 @@ local function delivery_scenario()
     }
 end
 
--- The `roundtrip` scenario: the web reader's position reaches the book when it opens, and
--- the device's own reading reaches the web when it closes.
+-- The `roundtrip` scenario: the web reader's position reaches the book when it opens, and the
+-- device's own reading reaches the web when the device suspends, when the book closes, and, for
+-- a change made offline, with the next Sync now.
 local function roundtrip_scenario()
     local Event = require("ui/event")
     local ReaderUI = require("apps/reader/readerui")
-    local plugin, uuid, path, pushed
+    local uuid, path
 
-    -- The open book's whole percent, floored like the plugin's.
+    -- The open book's whole percent, as the reader's own plugin instance reports it.
     local function device_percent()
-        return math.floor(ReaderUI.instance.rolling:getLastPercent() * 100)
+        return ReaderUI.instance.omnibus:current_state().percent
     end
 
     -- The epub position and the read status the server holds for the book.
@@ -404,6 +405,53 @@ local function roundtrip_scenario()
         return { percent = percent, status = status.status }
     end
 
+    -- Pass when the web holds `percent` and `reading` for the book.
+    local function web_holds(percent)
+        local state, err = web_state()
+        if not state then
+            return false, err
+        end
+        if state.percent ~= percent or state.status ~= "reading" then
+            return false, string.format("expected %d%% reading on the web, got %s%% %s",
+                percent, tostring(state.percent), tostring(state.status))
+        end
+        return true, string.format("web shows %d%% reading", percent)
+    end
+
+    -- Whether the plugin's state store still holds a change it has not pushed.
+    local function store_pending()
+        local DataStorage = require("datastorage")
+        local LuaSettings = require("luasettings")
+        local books = LuaSettings:open(DataStorage:getSettingsDir() .. "/omnibus_state.lua")
+            :readSetting("books", {})
+        return books[uuid] ~= nil and require("omnibussync").pending(books[uuid])
+    end
+
+    -- Read to `percent` in the open book and return the percent the device landed on.
+    local function read_to(percent)
+        ReaderUI.instance:handleEvent(Event:new("GotoPercent", percent))
+        return device_percent()
+    end
+
+    local function open_book(resume, expect)
+        ReaderUI:showReader(path, nil, nil, nil, function(reader_ui)
+            local pages = reader_ui.document:getPageCount()
+            local percent = reader_ui.omnibus:current_state().percent
+            -- Within half a page of the expected percent is the page the position lands on;
+            -- with fewer than four pages every page is close and the check proves nothing.
+            if pages >= 4 and math.abs(percent - expect) <= 50 / pages + 1 then
+                resume(true, string.format("opened at %d%% of %d pages", percent, pages))
+            else
+                resume(false, string.format(
+                    "expected about %d%% of at least 4 pages, opened at %d%% of %d pages",
+                    expect, percent, pages))
+            end
+        end)
+        return true
+    end
+
+    local suspended, closed
+
     return {
         {
             name = "opt_in",
@@ -422,7 +470,7 @@ local function roundtrip_scenario()
                 local DataStorage = require("datastorage")
                 local LuaSettings = require("luasettings")
                 local FileManager = require("apps/filemanager/filemanager")
-                plugin = FileManager.instance and FileManager.instance.omnibus
+                local plugin = FileManager.instance and FileManager.instance.omnibus
                 if not plugin then
                     return false, "FileManager.instance.omnibus missing"
                 end
@@ -467,51 +515,82 @@ local function roundtrip_scenario()
             name = "open_lands_on_web_position",
             deferred = true,
             fn = function(resume)
-                ReaderUI:showReader(path, nil, nil, nil, function(reader_ui)
-                    local pages = reader_ui.document:getPageCount()
-                    local percent = math.floor(reader_ui.rolling:getLastPercent() * 100)
-                    -- Within half a page of 40% is the page the position lands on; with fewer
-                    -- than four pages every page is close and the check proves nothing.
-                    if pages >= 4 and math.abs(percent - 40) <= 50 / pages + 1 then
-                        resume(true, string.format("opened at %d%% of %d pages", percent, pages))
-                    else
-                        resume(false, string.format("expected about 40%% of at least 4 pages, opened at %d%% of %d pages",
-                            percent, pages))
-                    end
-                end)
-                return true
+                return open_book(resume, 40)
             end,
         },
         {
-            name = "read_forward",
+            name = "suspend_pushes",
             fn = function()
-                ReaderUI.instance:handleEvent(Event:new("GotoPercent", 80))
-                pushed = device_percent()
-                if pushed <= 40 then
-                    return false, "the device did not move past the web position: " .. pushed .. "%"
+                suspended = read_to(80)
+                if suspended <= 40 then
+                    return false, "the device did not move past the web position: " .. suspended .. "%"
                 end
-                return true, "read on to " .. pushed .. "%"
+                ReaderUI.instance.omnibus:onSuspend()
+                return web_holds(suspended)
             end,
         },
         {
             name = "close_pushes",
             fn = function()
+                closed = read_to(100)
+                if closed <= suspended then
+                    return false, "the device did not read past " .. suspended .. "%: " .. closed .. "%"
+                end
                 ReaderUI.instance:onClose()
-                return true, "closed the book"
+                if store_pending() then
+                    return false, "the plugin still holds an unpushed change after the close"
+                end
+                return web_holds(closed)
             end,
         },
         {
-            name = "web_has_newer",
+            name = "reopen",
+            deferred = true,
+            fn = function(resume)
+                return open_book(resume, closed)
+            end,
+        },
+        {
+            name = "close_offline",
             fn = function()
-                local state, err = web_state()
-                if not state then
-                    return false, err
+                local NetworkMgr = require("ui/network/manager")
+                local online = NetworkMgr.isOnline
+                NetworkMgr.isOnline = function()
+                    return false
                 end
-                if state.percent ~= pushed or state.status ~= "reading" then
-                    return false, string.format("expected %d%% reading on the web, got %s%% %s",
-                        pushed, tostring(state.percent), tostring(state.status))
+                local ok, err = pcall(function()
+                    read_to(20)
+                    ReaderUI.instance:onClose()
+                end)
+                NetworkMgr.isOnline = online
+                if not ok then
+                    return false, "error: " .. tostring(err)
                 end
-                return true, string.format("web shows %d%% reading", pushed)
+                if not store_pending() then
+                    return false, "the offline change was not queued on the device"
+                end
+                local state = web_state()
+                if not state or state.percent ~= closed then
+                    return false, "the web moved while the device was offline"
+                end
+                return true, "queued 20% on the device; the web still shows " .. closed .. "%"
+            end,
+        },
+        {
+            name = "sync_now_flushes",
+            fn = function()
+                -- A fresh file manager: its plugin instance has no book open, so only the
+                -- queue the reader's instance left can move the web.
+                local FileManager = require("apps/filemanager/filemanager")
+                FileManager:showFiles(RESULTS .. "/roundtrip/home")
+                local result = FileManager.instance.omnibus:sync()
+                if not result.ok then
+                    return false, "sync: " .. tostring(result.message)
+                end
+                if store_pending() then
+                    return false, "the queue was not flushed by Sync now"
+                end
+                return web_holds(20)
             end,
         },
     }

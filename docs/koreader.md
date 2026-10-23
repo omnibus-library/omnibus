@@ -63,7 +63,10 @@ and the other way round.
   with the next open, close, suspend or **Sync now** that finds one. A later
   change to the same book replaces the waiting one, so only the latest is sent.
 - **Newest wins:** whichever change happened last on its own device wins, not
-  whichever reached the server last. Position and status are decided separately.
+  whichever reached the server last. Position and status are decided
+  separately, and the device sends only what it changed: finishing a book there
+  leaves a position saved elsewhere alone, and moving the page leaves the
+  status alone.
   A device whose clock is behind loses to a newer change from another device;
   one whose clock is ahead is held to the server's time. Opening a book and
   closing it without reading changes nothing, so a stale device can't overwrite
@@ -84,7 +87,9 @@ add the OPDS catalog with Basic credentials, browse **All Books**, search,
 download the EPUB acquisition, and open it in the reader (the `opds`
 scenario), then sync a shelf through the Omnibus plugin and drop it again (the
 `delivery` scenario), and open a book at the web reader's position and close it
-further on, which the web then shows (the `roundtrip` scenario) — driven by a
+further on, which the web then shows after a suspend, a close, and a change
+made offline that waits for the next Sync now (the `roundtrip` scenario),
+and fails if the device token appears in KOReader's log — driven by a
 real KOReader in Docker, with nothing stubbed. Each scenario prints one PASS/FAIL line.
 
 ```bash
