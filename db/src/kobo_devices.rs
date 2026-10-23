@@ -247,7 +247,7 @@ pub async fn resolve_device_by_hardware_id(
 ) -> Result<Option<ResolvedKoboDevice>, KoboDeviceError> {
     let Some(row) = sqlx::query(
         "UPDATE kobo_devices SET last_seen_at = strftime('%s', 'now')
-         WHERE kobo_device_id = ?
+         WHERE kobo_device_id = ? AND kind = 'kobo'
          RETURNING id, user_id",
     )
     .bind(hardware_id)

@@ -446,6 +446,21 @@ async fn resolve_device_by_hardware_id_returns_none_for_an_unknown_id() {
 }
 
 #[tokio::test]
+async fn resolve_device_by_hardware_id_returns_none_for_a_koreader_row() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool, "reader").await;
+    let dev = create_device(&pool, user, "Libra", DeviceKind::Koreader)
+        .await
+        .unwrap();
+    learn_kobo_device_id(&pool, dev.id, "hw-abc").await.unwrap();
+
+    assert!(resolve_device_by_hardware_id(&pool, "hw-abc")
+        .await
+        .unwrap()
+        .is_none());
+}
+
+#[tokio::test]
 async fn resolve_device_by_hardware_id_propagates_db_error_when_pool_is_closed() {
     let pool = init_db("sqlite::memory:").await.unwrap();
     pool.close().await;
