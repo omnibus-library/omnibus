@@ -1,12 +1,17 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { Route, Routes } from "react-router";
+import { delay } from "msw";
+import { Link, Route, Routes } from "react-router";
 import { expect, waitFor, within } from "storybook/test";
 import { getGetAuthorByIdMockHandler200 } from "../../api/generated/omnibus.msw";
+import { forgetScrollPositions } from "../../scrollRestore";
+import { storyClient } from "../../testing/AppHarness";
 import { authorsHandlers, failing, hanging } from "../../testing/handlers";
 import {
   aWireAuthor,
   aWireAuthorReading,
   aWireAuthorSummary,
+  aWireBook,
+  uuidOf,
 } from "../../testing/wire";
 import { AuthorDetail } from "../AuthorDetail/AuthorDetail";
 import { Authors, AuthorsIndexPane } from "./Authors";
@@ -61,14 +66,13 @@ const authorPage = getGetAuthorByIdMockHandler200(({ params }) => {
   return aWireAuthor({ id, name: known?.name ?? "Unknown", book_count: 0 });
 });
 
-const authorRoutes = (
-  <Routes>
-    <Route path="/authors" element={<Authors />}>
-      <Route index element={<AuthorsIndexPane />} />
-      <Route path=":id" element={<AuthorDetail />} />
-    </Route>
-  </Routes>
+const authorRoute = (
+  <Route path="/authors" element={<Authors />}>
+    <Route index element={<AuthorsIndexPane />} />
+    <Route path=":id" element={<AuthorDetail />} />
+  </Route>
 );
+const authorRoutes = <Routes>{authorRoute}</Routes>;
 
 const meta = {
   title: "Pages/Authors",
@@ -77,6 +81,13 @@ const meta = {
   beforeEach({ msw }) {
     localStorage.removeItem("omnibus.discovery_prefs");
     msw.use(authorPage);
+    // The window and the saved offsets outlive a story, so each starts clean.
+    const reset = () => {
+      forgetScrollPositions();
+      window.scrollTo(0, 0);
+    };
+    reset();
+    return reset;
   },
   render: () => authorRoutes,
 } satisfies Meta<typeof Authors>;
@@ -345,32 +356,167 @@ export const DeepLinkScrollsToTheRow: Story = {
   },
 };
 
+const nextFrame = () => new Promise((frame) => requestAnimationFrame(frame));
+
+/** Scrolls the window and waits a frame, which is when the browser files the scroll event. */
+async function scrollWindowTo(y: number) {
+  window.scrollTo(0, y);
+  await waitFor(() => expect(window.scrollY).toBe(y));
+  await nextFrame();
+}
+
+const pageHeadingOf = (name: string) => ({ level: 2, name }) as const;
+
 export const SwitchingAuthorsMovesTheWindow: Story = {
+  parameters: { path: "/authors/12" },
+  beforeEach({ msw }) {
+    msw.use(
+      ...authorsHandlers({ authors: MANY }),
+      getGetAuthorByIdMockHandler200(({ params }) => {
+        const id = Number(params.id);
+        return aWireAuthor({ id, name: MANY[id - 1]?.name, book_count: 0 });
+      }),
+    );
+  },
+  render: () => <div style={{ minHeight: "300vh" }}>{authorRoutes}</div>,
+  play: async ({ canvas, userEvent }) => {
+    await canvas.findByRole("heading", pageHeadingOf("Author 11"));
+    const list = await canvas.findByTestId("authors-list");
+    await waitFor(() => expect(list.scrollTop).toBeGreaterThan(0));
+    const listTop = list.scrollTop;
+    await scrollWindowTo(400);
+
+    await userEvent.click(
+      await canvas.findByRole("link", { name: /^Author 12, / }),
+    );
+    await canvas.findByRole("heading", pageHeadingOf("Author 12"));
+    await waitFor(() => expect(window.scrollY).toBe(0));
+    await expect(list.scrollTop).toBe(listTop);
+
+    await userEvent.click(
+      await canvas.findByRole("link", { name: /^Author 11, / }),
+    );
+    await canvas.findByRole("heading", pageHeadingOf("Author 11"));
+    await waitFor(() => expect(window.scrollY).toBe(400));
+    await expect(list.scrollTop).toBe(listTop);
+  },
+};
+
+const books = (count: number) =>
+  Array.from({ length: count }, (_, n) =>
+    aWireBook({
+      id: n + 1,
+      unique_identifier: uuidOf(n + 1),
+      title: `Book ${n}`,
+      series: null,
+      series_index: null,
+      cover_url: null,
+    }),
+  );
+
+const butlerLoad = { ms: 0 };
+
+export const ColdAuthorRegainsItsOffsetOnceItsPaneGrows: Story = {
+  parameters: { path: "/authors/2" },
+  beforeEach({ msw }) {
+    butlerLoad.ms = 0;
+    msw.use(
+      ...withAuthors(),
+      getGetAuthorByIdMockHandler200(async ({ params }) => {
+        const id = Number(params.id);
+        const butler = id === 2;
+        if (butler) await delay(butlerLoad.ms);
+        return aWireAuthor({
+          id,
+          name: AUTHORS.find((a) => a.id === id)?.name,
+          books: books(butler ? 150 : 2),
+        });
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    const row = (name: RegExp) => canvas.findByRole("link", { name });
+    await canvas.findByRole("heading", pageHeadingOf("Octavia E. Butler"));
+    await waitFor(() =>
+      expect(
+        document.documentElement.scrollHeight - window.innerHeight,
+      ).toBeGreaterThan(800),
+    );
+    await scrollWindowTo(800);
+
+    await userEvent.click(await row(/^Ursula K\. Le Guin, /));
+    await canvas.findByRole("heading", pageHeadingOf("Ursula K. Le Guin"));
+    await waitFor(() => expect(window.scrollY).toBe(0));
+
+    // Butler's page is gone from the cache, and the short Le Guin pane stands in while it reloads.
+    storyClient().removeQueries({ queryKey: ["author", 2] });
+    butlerLoad.ms = 500;
+    await userEvent.click(await row(/^Octavia E\. Butler, /));
+    await canvas.findByRole("heading", pageHeadingOf("Octavia E. Butler"));
+    await waitFor(() => expect(window.scrollY).toBe(800));
+
+    // The retries against the short pane did not overwrite the saved offset.
+    await userEvent.click(await row(/^Ursula K\. Le Guin, /));
+    await waitFor(() => expect(window.scrollY).toBe(0));
+    await userEvent.click(await row(/^Octavia E\. Butler, /));
+    await waitFor(() => expect(window.scrollY).toBe(800));
+  },
+};
+
+const leaveAndReturn = (
+  <div style={{ minHeight: "300vh" }}>
+    {/* Fixed, so a click never scrolls the window to reach the link. */}
+    <nav style={{ position: "fixed", bottom: 0, right: 0, zIndex: 10 }}>
+      <Link to="/elsewhere">Leave authors</Link>
+      <Link to="/authors/2">Return to authors</Link>
+    </nav>
+    <Routes>
+      {authorRoute}
+      <Route path="/elsewhere" element={<p>Elsewhere</p>} />
+    </Routes>
+  </div>
+);
+
+export const ReturningToAuthorsRestoresTheWindow: Story = {
   parameters: { path: "/authors/2" },
   beforeEach({ msw }) {
     msw.use(...withAuthors());
   },
-  render: () => <div style={{ minHeight: "300vh" }}>{authorRoutes}</div>,
+  render: () => leaveAndReturn,
   play: async ({ canvas, userEvent }) => {
-    await canvas.findByRole("heading", {
-      level: 2,
-      name: "Octavia E. Butler",
-    });
-    window.scrollTo(0, 400);
+    await canvas.findByRole("heading", pageHeadingOf("Octavia E. Butler"));
+    await scrollWindowTo(400);
+
+    await userEvent.click(canvas.getByRole("link", { name: "Leave authors" }));
+    await canvas.findByText("Elsewhere");
+    window.scrollTo(0, 0);
+    await nextFrame();
+    await userEvent.click(
+      canvas.getByRole("link", { name: "Return to authors" }),
+    );
+
+    await canvas.findByRole("heading", pageHeadingOf("Octavia E. Butler"));
     await waitFor(() => expect(window.scrollY).toBe(400));
-    // The browser files the scroll event on the next frame; a reader's click can't beat it.
-    await new Promise((frame) => requestAnimationFrame(frame));
+  },
+};
+
+export const MountingWithNothingSavedLeavesTheWindow: Story = {
+  parameters: { path: "/elsewhere" },
+  beforeEach({ msw }) {
+    msw.use(...withAuthors());
+  },
+  render: () => leaveAndReturn,
+  play: async ({ canvas, userEvent }) => {
+    await canvas.findByText("Elsewhere");
+    await scrollWindowTo(300);
 
     await userEvent.click(
-      await canvas.findByRole("link", { name: /^Ursula K\. Le Guin/ }),
+      canvas.getByRole("link", { name: "Return to authors" }),
     );
-    await canvas.findByRole("heading", { level: 2, name: "Ursula K. Le Guin" });
-    await waitFor(() => expect(window.scrollY).toBe(0));
+    await canvas.findByRole("heading", pageHeadingOf("Octavia E. Butler"));
+    await canvas.findAllByTestId("author-card");
+    await nextFrame();
 
-    await userEvent.click(
-      await canvas.findByRole("link", { name: /^Octavia E\. Butler/ }),
-    );
-    await canvas.findByRole("heading", { level: 2, name: "Octavia E. Butler" });
-    await waitFor(() => expect(window.scrollY).toBe(400));
+    await expect(window.scrollY).toBe(300);
   },
 };
