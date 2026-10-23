@@ -4,7 +4,6 @@
 use axum::{
     body::{to_bytes, Body},
     http::{header, Request, StatusCode},
-    Router,
 };
 use omnibus_db as db;
 use omnibus_shared::DeviceKind;
@@ -14,39 +13,43 @@ use tower::ServiceExt;
 
 use crate::auth::test_support as auth_test_support;
 use crate::backend::test_support::{
-    body_json, get_anon, get_with_bearer, get_with_bearer_and_if_none_match, opt_in,
+    body_json, get_with_bearer, get_with_bearer_and_if_none_match, opt_in, request,
     revoke_can_download, seed_downloadable_book, seed_downloadable_book_with,
 };
 
+use super::test_support::fixture;
 use super::*;
-
-/// A KOReader router on a fresh in-memory DB, with the owning user's id and the
-/// device's token.
-async fn fixture() -> (Router, SqlitePool, String, i64) {
-    let pool = db::init_db("sqlite::memory:").await.unwrap();
-    let app = koreader_router(AppState::new(pool.clone()));
-    let user = auth_test_support::create_user(&pool, "ko-reader").await;
-    let device =
-        db::kobo_devices::create_device(&pool, user.id, "Test KOReader", DeviceKind::Koreader)
-            .await
-            .unwrap();
-    (app, pool, device.token, user.id)
-}
 
 mod auth {
     use super::*;
 
-    const ROUTES: [&str; 2] = [
-        "/koreader/v1/library",
-        "/koreader/v1/books/0123abcd-0000-0000-0000-000000000000/file",
+    const STATE: &str = "/koreader/v1/books/0123abcd-0000-0000-0000-000000000000/state";
+
+    /// Every route as `(method, uri)`.
+    const ROUTES: [(&str, &str); 4] = [
+        ("GET", "/koreader/v1/library"),
+        (
+            "GET",
+            "/koreader/v1/books/0123abcd-0000-0000-0000-000000000000/file",
+        ),
+        ("GET", STATE),
+        ("PUT", STATE),
     ];
 
-    fn with_authorization(uri: &str, value: &str) -> Request<Body> {
-        Request::builder()
-            .uri(uri)
-            .header(header::AUTHORIZATION, value)
-            .body(Body::empty())
-            .unwrap()
+    fn authorized(method: &str, uri: &str, token: Option<&str>) -> Request<Body> {
+        request(
+            method,
+            uri,
+            token,
+            (method == "PUT").then(|| json!({ "percent": 1, "event_at": 1 })),
+        )
+    }
+
+    fn with_authorization(method: &str, uri: &str, value: &str) -> Request<Body> {
+        let mut req = authorized(method, uri, None);
+        req.headers_mut()
+            .insert(header::AUTHORIZATION, value.parse().unwrap());
+        req
     }
 
     #[tokio::test]
@@ -62,23 +65,33 @@ mod auth {
             .await
             .unwrap();
 
-        for uri in ROUTES {
+        for (method, uri) in ROUTES {
             let cases = [
-                ("missing header", get_anon(uri)),
+                ("missing header", authorized(method, uri, None)),
                 (
                     "non-Bearer scheme",
-                    with_authorization(uri, &format!("Basic {token}")),
+                    with_authorization(method, uri, &format!("Basic {token}")),
                 ),
-                ("unknown token", get_with_bearer(uri, "not-a-token")),
-                ("a Kobo-kind token", get_with_bearer(uri, &kobo.token)),
+                (
+                    "unknown token",
+                    authorized(method, uri, Some("not-a-token")),
+                ),
+                (
+                    "a Kobo-kind token",
+                    authorized(method, uri, Some(&kobo.token)),
+                ),
                 (
                     "a revoked device's token",
-                    get_with_bearer(uri, &revoked.token),
+                    authorized(method, uri, Some(&revoked.token)),
                 ),
             ];
             for (case, req) in cases {
                 let res = app.clone().oneshot(req).await.unwrap();
-                assert_eq!(res.status(), StatusCode::UNAUTHORIZED, "{case} on {uri}");
+                assert_eq!(
+                    res.status(),
+                    StatusCode::UNAUTHORIZED,
+                    "{case} on {method} {uri}"
+                );
             }
         }
     }
@@ -134,7 +147,7 @@ mod library {
             .await
             .unwrap();
 
-        let body = body_json::<Value>(res).await;
+        let body: Value = body_json(res).await;
         let entry = |uuid: &str| {
             body["books"]
                 .as_array()

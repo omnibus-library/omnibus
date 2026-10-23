@@ -1,11 +1,15 @@
 --[[--
 Omnibus: a "Sync now" menu entry that mirrors the shelves marked "Sync to my devices"
-into an Omnibus folder. The decisions live in omnibussync.lua; this file is the wiring
+into an Omnibus folder, and keeps each delivered book's reading position and status in
+step with the server: pulled when the book opens, pushed when it closes, the device
+suspends or Sync now runs. The decisions live in omnibussync.lua; this file is the wiring
 to KOReader (menu, HTTP, files, UI). omnibus.json, written by the server's plugin
 download, holds the server URL and this device's token.
 --]]--
 
+local BookList = require("ui/widget/booklist")
 local DataStorage = require("datastorage")
+local Event = require("ui/event")
 local InfoMessage = require("ui/widget/infomessage")
 local JSON = require("json")
 local LuaSettings = require("luasettings")
@@ -28,6 +32,8 @@ local sync = require("omnibussync")
 
 local FOLDER = "Omnibus"
 local MISSING_CONFIG = _("Download the plugin from Omnibus Settings › Devices.")
+-- Reading state is a few bytes, and a book open or close waits on it: give up sooner than a download.
+local STATE_BLOCK_TIMEOUT, STATE_TOTAL_TIMEOUT = 5, 15
 
 local Omnibus = WidgetContainer:extend{
     name = "omnibus",
@@ -36,6 +42,13 @@ local Omnibus = WidgetContainer:extend{
 
 function Omnibus:init()
     self.ui.menu:registerToMainMenu(self)
+    -- Only a reader has this: the file manager's instance never pulls a position.
+    if self.ui.registerPostReaderReadyCallback then
+        -- After the book restored its local position, before it is first shown.
+        self.ui:registerPostReaderReadyCallback(function()
+            self:guarded("pull", self.pull_on_open)
+        end)
+    end
 end
 
 function Omnibus:addToMainMenu(menu_items)
@@ -103,21 +116,30 @@ local function request(url, token, opts)
     return nil, tostring(code)
 end
 
+-- One JSON call to the server: the status code and the decoded body (nil when unreadable), or
+-- nil, nil and the error. `body` is a table to send as JSON.
+local function call_json(config, method, path, body, block_timeout, total_timeout)
+    local chunks = {}
+    local code, err = request(config.server_url .. path, config.token, {
+        method = method,
+        body = body and JSON.encode(body),
+        sink = function()
+            return socketutil.table_sink(chunks)
+        end,
+        block_timeout = block_timeout,
+        total_timeout = total_timeout,
+    })
+    if not code then
+        return nil, nil, err
+    end
+    local ok, decoded = pcall(JSON.decode, table.concat(chunks))
+    return code, ok and decoded or nil
+end
+
 function Omnibus:library_getter(config)
     return function()
-        local chunks = {}
-        local code, err = request(config.server_url .. "/koreader/v1/library", config.token, {
-            sink = function()
-                return socketutil.table_sink(chunks)
-            end,
-            block_timeout = socketutil.LARGE_BLOCK_TIMEOUT,
-            total_timeout = socketutil.LARGE_TOTAL_TIMEOUT,
-        })
-        if not code then
-            return nil, nil, err
-        end
-        local ok, body = pcall(JSON.decode, table.concat(chunks))
-        return code, ok and body or nil
+        return call_json(config, "GET", "/koreader/v1/library", nil,
+            socketutil.LARGE_BLOCK_TIMEOUT, socketutil.LARGE_TOTAL_TIMEOUT)
     end
 end
 
@@ -182,6 +204,150 @@ function Omnibus:reporter(config)
     end
 end
 
+-- GET one book's server-side state: the status code and decoded body, or nil, nil and the error.
+function Omnibus:state_getter(config)
+    return function(uuid)
+        return call_json(config, "GET", "/koreader/v1/books/" .. uuid .. "/state", nil,
+            STATE_BLOCK_TIMEOUT, STATE_TOTAL_TIMEOUT)
+    end
+end
+
+-- PUT one book's state: the status code and the state the server now holds, or nil, nil and the error.
+function Omnibus:state_putter(config)
+    return function(uuid, body)
+        return call_json(config, "PUT", "/koreader/v1/books/" .. uuid .. "/state", body,
+            STATE_BLOCK_TIMEOUT, STATE_TOTAL_TIMEOUT)
+    end
+end
+
+-- The per-book reading state (see omnibussync.lua) in its own settings file, loaded at each use
+-- because the file manager's and the reader's instances of this plugin both read and write it.
+-- Returns the books table and a function that saves it.
+local function state_store()
+    local settings = LuaSettings:open(DataStorage:getSettingsDir() .. "/omnibus_state.lua")
+    local books = settings:readSetting("books", {})
+    sync.upgrade(books)
+    return books, function()
+        settings:saveSetting("books", books)
+        settings:flush()
+    end
+end
+
+-- Run `method` and log a failure instead of raising it: reading state must never stop a
+-- book from opening or closing.
+function Omnibus:guarded(what, method, ...)
+    local ok, err = pcall(method, self, ...)
+    if not ok then
+        logger.warn("omnibus reading state", what, "failed:", err)
+    end
+end
+
+-- The uuid of the open book if this plugin delivered it; a sideloaded book is never synced.
+function Omnibus:open_book_uuid()
+    local document = self.ui.document
+    if not document then
+        return nil
+    end
+    local settings = LuaSettings:open(DataStorage:getSettingsDir() .. "/omnibus.lua")
+    return sync.uuid_for_path(settings:readSetting("manifest", {}), document.file)
+end
+
+-- The open book's whole percent and status as the device holds them.
+function Omnibus:current_state()
+    local ui = self.ui
+    local module = ui.document.info.has_pages and ui.paging or ui.rolling
+    local summary = ui.doc_settings:readSetting("summary")
+    return { percent = sync.percent(module:getLastPercent()), status = summary and summary.status }
+end
+
+-- Mark the open book `status` the way the reader's own "Mark as finished" does.
+function Omnibus:set_status(status)
+    local summary = self.ui.doc_settings:readSetting("summary", {})
+    summary.status = status
+    summary.modified = os.date("%Y-%m-%d", os.time())
+    BookList.setBookInfoCacheProperty(self.ui.document.file, "status", status)
+end
+
+-- Push every pending book in `books`; a failure leaves them pending and is logged (the message
+-- never carries the token or the request).
+function Omnibus:push_pending(config, books, save)
+    local result = sync.flush(books, { put_state = self:state_putter(config), save = save })
+    if not result.ok then
+        logger.warn("omnibus reading state push failed:", result.message)
+    end
+    return result
+end
+
+-- Open: baseline an unseen book, push what waits, then move to the server's state where it is
+-- newer. A first-seen book the server knows nothing about pushes the device's own state instead.
+function Omnibus:pull_on_open()
+    local config = self:loadConfig()
+    local uuid = self:open_book_uuid()
+    if not config or not uuid then
+        return
+    end
+    local books, save = state_store()
+    local current = self:current_state()
+    local first_sight = not books[uuid]
+    if first_sight then
+        -- Time 0 so any server state outranks a book the device only just met.
+        sync.settle(books, uuid, current, { percent_at = 0, status_at = 0 })
+        save()
+    end
+    if not NetworkMgr:isOnline() then
+        return
+    end
+    self:push_pending(config, books, save)
+    local code, remote = self:state_getter(config)(uuid)
+    if code ~= 200 or type(remote) ~= "table" then
+        return
+    end
+    if first_sight and sync.adopt_empty_server(books, uuid, current, remote, os.time()) then
+        save()
+        self:push_pending(config, books, save)
+        return
+    end
+    local plan = sync.pull_plan(books[uuid], remote, current)
+    if not plan then
+        return
+    end
+    if plan.percent then
+        self.ui:handleEvent(Event:new("GotoPercent", plan.percent))
+    end
+    if plan.status then
+        self:set_status(plan.status)
+    end
+    -- Read the percent back: the device lands on a page, not on the exact percent asked for.
+    sync.settle(books, uuid, self:current_state(), plan)
+    save()
+end
+
+-- Close, suspend or Sync now: record a change to the open book (if a book is open), then push
+-- everything pending if there is a connection.
+function Omnibus:capture_and_flush()
+    local config = self:loadConfig()
+    if not config then
+        return
+    end
+    local books, save = state_store()
+    local uuid = self:open_book_uuid()
+    if uuid then
+        sync.capture(books, uuid, self:current_state(), os.time())
+        save()
+    end
+    if NetworkMgr:isOnline() then
+        self:push_pending(config, books, save)
+    end
+end
+
+function Omnibus:onCloseDocument()
+    self:guarded("close", self.capture_and_flush)
+end
+
+function Omnibus:onSuspend()
+    self:guarded("suspend", self.capture_and_flush)
+end
+
 local function remove_file(path)
     if lfs.attributes(path, "mode") ~= "file" then
         return true
@@ -196,6 +362,9 @@ function Omnibus:sync()
         UIManager:show(InfoMessage:new{ text = MISSING_CONFIG })
         return { ok = false, added = 0, removed = 0, message = MISSING_CONFIG }
     end
+    -- Reading state goes up first. A removed device fails the library fetch below with the
+    -- same message, so a failed push needs no handling here.
+    self:guarded("push", self.capture_and_flush)
     local dir = sync_dir()
     util.makePath(dir)
     local settings = LuaSettings:open(DataStorage:getSettingsDir() .. "/omnibus.lua")

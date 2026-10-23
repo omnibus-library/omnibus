@@ -9,13 +9,14 @@
 #      scratch DB with a seeded library: the two committed fixture EPUBs
 #      (test_data/epubs/generated/alpha.epub, beta.epub) and the first
 #      (admin) account, registered here as on CI.
-#   2. Seeds the `delivery` scenario through the REST API: a shelf holding
+#   2. Seeds the `delivery` and `roundtrip` scenarios through the REST API: a shelf holding
 #      Alpha that syncs to devices, and a KOReader whose preconfigured plugin
 #      it downloads from the real Settings route.
 #   3. Builds ui_tests/koreader (pinned KOReader under Xvfb) and runs one
 #      container per scenario; its user patch drives KOReader's own OPDS
 #      plugin through add-catalog, browse, search, download and open, and the
-#      Omnibus plugin through a sync that delivers and one that removes.
+#      Omnibus plugin through a sync that delivers and one that removes, and
+#      through opening a book at the web's position and closing it at its own.
 #   4. Reports each scenario's result JSON (scripts/koreader_report.py) and
 #      exits non-zero on any failure, keeping the scratch dir (results,
 #      screenshot, logs) and naming it.
@@ -61,7 +62,7 @@ until body="$(curl -fsS -u "$user:$password" "$base_url/opds/all" 2>/dev/null)" 
     sleep 1
 done
 
-# The `delivery` scenario's seed. The REST calls need a session, so sign in with a
+# The `delivery` and `roundtrip` scenarios' seed. The REST calls need a session, so sign in with a
 # bearer token; the plugin is the zip the Settings download hands a reader.
 json_field() { python3 -c 'import json,sys; print(json.load(sys.stdin)[sys.argv[1]])' "$1"; }
 session="$(curl -fsS -X POST -H 'Content-Type: application/json' \
@@ -82,7 +83,10 @@ python3 -m zipfile -e "$scratch/plugin.zip" "$scratch/plugins"
 
 # Scenario names live here; the fixture titles live beside them in the
 # patch's opds scenario.
-scenarios=(opds delivery)
+scenarios=(opds delivery roundtrip)
+# The token must never reach KOReader's log: a leak there is a leak to anyone who shares it.
+device_token="$(json_field token <"$scratch/plugins/omnibus.koplugin/omnibus.json")"
+leaked=0
 for scenario in "${scenarios[@]}"; do
     set +e
     timeout -k 15 300 docker run --init --rm --network host \
@@ -101,10 +105,15 @@ for scenario in "${scenarios[@]}"; do
         "omnibus-koreader:$deb" \
         >"$scratch/results/$scenario.koreader.log" 2>&1
     set -e
+    if grep -qF -- "$device_token" "$scratch/results/$scenario.koreader.log"; then
+        echo "FAIL $scenario: the device token appears in KOReader's log" >&2
+        leaked=1
+    fi
 done
 
 set +e
 python3 scripts/koreader_report.py "$scratch/results" "${scenarios[@]}"
 status=$?
 set -e
+[ "$leaked" -eq 0 ] || status=1
 exit "$status"
