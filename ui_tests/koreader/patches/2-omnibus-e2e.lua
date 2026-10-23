@@ -4,13 +4,17 @@ Omnibus E2E: drive one KOReader scenario against a live Omnibus server.
 A `late` user patch (prio 2), so it runs in reader.lua after UIManager is up
 and before FileManager:showFiles. The lane opens KO_HOME as a directory, so
 showFiles runs and the deferred first nextTick finds FileManager.instance.opds.
-Each step goes through KOReader's own OPDS plugin; nothing here speaks HTTP itself.
+Each step goes through a KOReader plugin (OPDS, or the Omnibus plugin the runner
+downloaded and mounted): the one HTTP call this patch makes itself is the `delivery`
+scenario's `unopt` step.
 
 Env (scripts/koreader-e2e.sh sets them on `docker run`):
-  KOREADER_E2E_SCENARIO  scenario name; only "opds" is defined
+  KOREADER_E2E_SCENARIO  scenario name: "opds" or "delivery"
   KOREADER_E2E_RESULTS   writable dir for <scenario>.json and <scenario>.png
-  OMNIBUS_URL            server origin; this patch appends /opds
+  OMNIBUS_URL            server origin; the `opds` scenario appends /opds
   OMNIBUS_USER / OMNIBUS_PASSWORD   Basic credentials of the seeded account
+  OMNIBUS_SESSION_TOKEN / OMNIBUS_SHELF_ID   `delivery` only: a bearer session of that
+                         account, and the synced shelf its `unopt` step switches off
 
 Writes <results>/<scenario>.json exactly once — pass, fail or watchdog —
 screenshots to <results>/<scenario>.png on failure, then quits.
@@ -25,6 +29,8 @@ local RESULTS = os.getenv("KOREADER_E2E_RESULTS") or "/results"
 local BASE_URL = os.getenv("OMNIBUS_URL") or ""
 local USER = os.getenv("OMNIBUS_USER") or ""
 local PASSWORD = os.getenv("OMNIBUS_PASSWORD") or ""
+local SESSION_TOKEN = os.getenv("OMNIBUS_SESSION_TOKEN") or ""
+local SHELF_ID = os.getenv("OMNIBUS_SHELF_ID") or ""
 
 -- Titles of test_data/epubs/generated/alpha.epub and beta.epub — the two
 -- files scripts/koreader-e2e.sh copies into the scratch library.
@@ -234,10 +240,133 @@ local function opds_scenario()
     }
 end
 
+-- The `delivery` scenario: the Omnibus plugin syncs the one shelf the runner opted in,
+-- then removes its book when the shelf is opted out, leaving the .sdr and a sideload.
+local function delivery_scenario()
+    local lfs = require("libs/libkoreader-lfs")
+    local DocSettings = require("docsettings")
+    local plugin
+    local omnibus_dir = RESULTS .. "/home/Omnibus"
+    local sideload = omnibus_dir .. "/Sideloaded.epub"
+    local delivered
+
+    local function names()
+        local found = {}
+        for name in lfs.dir(omnibus_dir) do
+            if name ~= "." and name ~= ".." then
+                table.insert(found, name)
+            end
+        end
+        table.sort(found)
+        return found
+    end
+
+    local function find_name(prefix)
+        for _, name in ipairs(names()) do
+            if name:sub(1, #prefix) == prefix then
+                return name
+            end
+        end
+    end
+
+    return {
+        {
+            name = "plugin_loaded",
+            fn = function()
+                local FileManager = require("apps/filemanager/filemanager")
+                plugin = FileManager.instance and FileManager.instance.omnibus
+                if not plugin then
+                    return false, "FileManager.instance.omnibus missing"
+                end
+                local config = plugin:loadConfig()
+                if not config or config.server_url ~= BASE_URL then
+                    return false, "plugin config does not name " .. BASE_URL
+                end
+                util.makePath(omnibus_dir)
+                G_reader_settings:saveSetting("home_dir", RESULTS .. "/home")
+                util.writeToFile("sideloaded", sideload)
+                return true, "configured for " .. config.server_url
+            end,
+        },
+        {
+            name = "sync_delivers",
+            fn = function()
+                local result = plugin:sync()
+                if not result.ok or result.added ~= 1 then
+                    return false, string.format("sync: ok=%s added=%s %s",
+                        tostring(result.ok), tostring(result.added), tostring(result.message))
+                end
+                local alpha = find_name("Alpha - ")
+                if not alpha or not alpha:find("%.epub$") then
+                    return false, "no Alpha epub delivered, got " .. table.concat(names(), ", ")
+                end
+                if find_name("Beta in the Series - ") then
+                    return false, "Beta was delivered from an unsynced shelf"
+                end
+                delivered = omnibus_dir .. "/" .. alpha
+                -- A reader's progress sidecar: it must outlive the book.
+                local sidecar = DocSettings:open(delivered)
+                sidecar:saveSetting("omnibus_lane", true)
+                sidecar:flush()
+                if lfs.attributes(DocSettings:getSidecarDir(delivered), "mode") ~= "directory" then
+                    return false, "sidecar was not written for " .. delivered
+                end
+                return true, "delivered " .. alpha
+            end,
+        },
+        {
+            name = "unopt",
+            fn = function()
+                local JSON = require("json")
+                local ltn12 = require("ltn12")
+                local socket = require("socket")
+                local http = require("socket.http")
+                local body = JSON.encode({ sync_to_kobo = false })
+                local code = socket.skip(1, http.request{
+                    url = BASE_URL .. "/api/shelves/" .. SHELF_ID,
+                    method = "PATCH",
+                    headers = {
+                        Authorization = "Bearer " .. SESSION_TOKEN,
+                        ["Content-Type"] = "application/json",
+                        ["Content-Length"] = #body,
+                    },
+                    source = ltn12.source.string(body),
+                    sink = ltn12.sink.null(),
+                })
+                if code ~= 200 then
+                    return false, "opting the shelf out answered " .. tostring(code)
+                end
+                return true, "shelf opted out"
+            end,
+        },
+        {
+            name = "sync_removes",
+            fn = function()
+                local result = plugin:sync()
+                if not result.ok or result.removed ~= 1 then
+                    return false, string.format("sync: ok=%s removed=%s %s",
+                        tostring(result.ok), tostring(result.removed), tostring(result.message))
+                end
+                if lfs.attributes(delivered, "mode") then
+                    return false, "delivered book still present: " .. delivered
+                end
+                if lfs.attributes(DocSettings:getSidecarDir(delivered), "mode") ~= "directory" then
+                    return false, "sidecar was deleted with the book"
+                end
+                if lfs.attributes(sideload, "mode") ~= "file" then
+                    return false, "sideloaded file was deleted"
+                end
+                return true, "book removed; sidecar and sideload kept"
+            end,
+        },
+    }
+end
+
 -- Every scenario the lane can run, by KOREADER_E2E_SCENARIO. A new scenario
 -- is an entry here plus an entry in the runner's `scenarios` list.
 local SCENARIOS = {
     opds = opds_scenario,
+    delivery = delivery_scenario,
 }
 
 local function run_at(scenario_steps, i)
