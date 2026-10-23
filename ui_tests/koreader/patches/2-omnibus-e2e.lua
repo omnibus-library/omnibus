@@ -68,6 +68,7 @@ local function fail(name, detail)
     end
     record(name, false, detail)
     local shot = SCENARIO .. ".png"
+    UIManager:forceRePaint()
     Screen:shot(RESULTS .. "/" .. shot)
     finish(shot)
 end
@@ -119,7 +120,10 @@ local function opds_scenario()
                     { "Omnibus", root_url, USER, PASSWORD, false, false }, nil, true)
                 for _, server in ipairs(browser.servers) do
                     if server.title == "Omnibus" and server.url == root_url then
-                        return true, "catalog added"
+                        if server.username == USER and server.password == PASSWORD then
+                            return true, "catalog added"
+                        end
+                        return false, "stored credentials do not match"
                     end
                 end
                 return false, "server not recorded in browser.servers"
@@ -212,7 +216,7 @@ local function opds_scenario()
                 local dir = RESULTS .. "/downloads"
                 util.makePath(dir)
                 G_reader_settings:saveSetting("download_dir", dir)
-                local path = browser:getLocalDownloadPath(nil, "epub", href)
+                local path = browser:getLocalDownloadPath(browser:getFileName(item), "epub", href)
                 if not browser:downloadFile(path, href, USER, PASSWORD) then
                     return false, "downloadFile failed for " .. href
                 end
@@ -231,11 +235,13 @@ local function opds_scenario()
                 local ReaderUI = require("apps/reader/readerui")
                 ReaderUI:showReader(download_path, nil, nil, nil, function(reader_ui)
                     local pages = reader_ui.document and reader_ui.document:getPageCount() or 0
-                    if pages > 0 then
-                        record("open", true, "pages=" .. pages)
+                    local title = reader_ui.doc_props.title
+                    if pages > 0 and title == FIXTURE_TITLES[1] then
+                        record("open", true, title .. ", pages=" .. pages)
                         finish(nil)
                     else
-                        fail("open", "getPageCount() == 0")
+                        fail("open", string.format('expected title "%s", got "%s", pages=%d',
+                            FIXTURE_TITLES[1], tostring(title), pages))
                     end
                 end)
                 return true
