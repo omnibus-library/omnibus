@@ -477,6 +477,7 @@ async fn highlight_reports_the_failure_and_keeps_the_highlight_when_the_patch_an
         other => panic!("expected Failed, got {other:?}"),
     }
     assert_eq!(control.view().library["book-1"].annotations.len(), 1);
+    assert_eq!(patch_count(&stub, "book-1"), 1, "a failed PATCH is not retried");
 }
 
 #[tokio::test]

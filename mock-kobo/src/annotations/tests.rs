@@ -2,10 +2,12 @@
 //! against a stub Omnibus: one test per firmware rule the device enforces.
 
 use std::collections::BTreeMap;
+use std::time::Duration;
 
 use axum::http::StatusCode;
 use serde_json::json;
 
+use crate::client::Client;
 use crate::device::Device;
 use crate::downloads::DownloadPolicy;
 use crate::session::{attempt_annotation, attempt_download, sync_now, AnnotationSent, SyncFailure};
@@ -154,6 +156,116 @@ async fn sync_now_stays_synced_when_checkforchanges_answers_500() {
     assert!(request_lines(&report.requests)
         .iter()
         .any(|l| l == "POST /api/v3/content/checkforchanges 500"));
+}
+
+#[tokio::test]
+async fn sync_now_stays_synced_when_the_annotations_get_answers_500() {
+    let stub = crate::test_support::spawn_stub(Stub {
+        reading_services_changed: vec!["book-1".into()],
+        reading_services_annotations: BTreeMap::from([(
+            "book-1".into(),
+            vec![served_annotation("a-1", "#F6F3B3", "a passage")],
+        )]),
+        annotations_get_status: StatusCode::INTERNAL_SERVER_ERROR,
+        ..Stub::default()
+    })
+    .await;
+    let mut device = device_holding("book-1", "Dune");
+
+    let report = sync_now(&mut device, &stub.endpoint, &DownloadPolicy::None)
+        .await
+        .unwrap();
+
+    assert!(request_lines(&report.requests)
+        .iter()
+        .any(|l| l == "GET /api/v3/content/book-1/annotations 500"));
+    assert!(device.library["book-1"].annotations.is_empty());
+    assert_eq!(device.library["book-1"].dropped_annotations, 0);
+}
+
+#[tokio::test]
+async fn sync_now_stays_synced_when_checkforchanges_body_is_undecodable() {
+    let stub = crate::test_support::spawn_stub(Stub {
+        checkforchanges_bad_body: true,
+        ..Stub::default()
+    })
+    .await;
+    let mut device = Device::new("HW-1");
+
+    let report = sync_now(&mut device, &stub.endpoint, &DownloadPolicy::None)
+        .await
+        .unwrap();
+
+    assert!(request_lines(&report.requests)
+        .iter()
+        .any(|l| l == "POST /api/v3/content/checkforchanges 200"));
+}
+
+#[tokio::test]
+async fn sync_now_stays_synced_when_the_annotations_get_body_is_undecodable() {
+    let stub = crate::test_support::spawn_stub(Stub {
+        reading_services_changed: vec!["book-1".into()],
+        reading_services_annotations: BTreeMap::from([(
+            "book-1".into(),
+            vec![served_annotation("a-1", "#F6F3B3", "a passage")],
+        )]),
+        annotations_get_bad_body: true,
+        ..Stub::default()
+    })
+    .await;
+    let mut device = device_holding("book-1", "Dune");
+    device.library.get_mut("book-1").unwrap().downloaded = true;
+
+    sync_now(&mut device, &stub.endpoint, &DownloadPolicy::None)
+        .await
+        .unwrap();
+
+    assert!(device.library["book-1"].annotations.is_empty());
+}
+
+#[tokio::test]
+async fn fetch_changed_annotations_applies_nothing_when_checkforchanges_gets_no_answer() {
+    let stub = crate::test_support::spawn_stub(Stub {
+        checkforchanges_never_answers: true,
+        ..Stub::default()
+    })
+    .await;
+    let mut device = device_holding("book-1", "Dune");
+    device.reading_services_host = Some(stub.origin.clone());
+    let mut client = Client::with_timeout(&stub.endpoint, "HW-1", Duration::from_millis(200)).unwrap();
+
+    tokio::time::timeout(
+        Duration::from_secs(5),
+        fetch_changed_annotations(&mut client, &mut device),
+    )
+    .await
+    .unwrap();
+
+    assert!(device.library["book-1"].annotations.is_empty());
+    assert_eq!(device.library["book-1"].dropped_annotations, 0);
+}
+
+#[tokio::test]
+async fn fetch_changed_annotations_applies_nothing_when_the_annotations_get_gets_no_answer() {
+    let stub = crate::test_support::spawn_stub(Stub {
+        reading_services_changed: vec!["book-1".into()],
+        annotations_get_never_answers: true,
+        ..Stub::default()
+    })
+    .await;
+    let mut device = device_holding("book-1", "Dune");
+    device.reading_services_host = Some(stub.origin.clone());
+    let mut client = Client::with_timeout(&stub.endpoint, "HW-1", Duration::from_millis(200)).unwrap();
+
+    tokio::time::timeout(
+        Duration::from_secs(5),
+        fetch_changed_annotations(&mut client, &mut device),
+    )
+    .await
+    .unwrap();
+
+    assert!(device.library["book-1"].annotations.is_empty());
+    assert_eq!(device.library["book-1"].dropped_annotations, 0);
 }
 
 #[tokio::test]

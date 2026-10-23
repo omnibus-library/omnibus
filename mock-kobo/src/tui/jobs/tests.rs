@@ -468,11 +468,27 @@ async fn perform_delete_highlight_deletes_the_newest_highlight() {
         },
     )
     .await;
+    perform(
+        &control,
+        &wiring(),
+        Job::Highlight {
+            book: "book-1".into(),
+            highlight: crate::annotations::NewHighlight {
+                text: "another passage".into(),
+                color: crate::annotations::Swatch::Green,
+                note: None,
+                location: None,
+            },
+        },
+    )
+    .await;
 
     let status = perform(&control, &wiring(), Job::DeleteHighlight("book-1".into())).await;
 
     assert_eq!(status, Status::Info("annotation sent".to_owned()));
-    assert!(control.view().library["book-1"].annotations.is_empty());
+    let annotations = &control.view().library["book-1"].annotations;
+    assert_eq!(annotations.len(), 1);
+    assert_eq!(annotations[0].text, "a passage", "the older highlight must survive");
 }
 
 #[tokio::test]

@@ -96,6 +96,19 @@ pub struct Stub {
     pub reading_services_annotations: BTreeMap<String, Vec<Value>>,
     /// The status every `PATCH .../annotations` answers with.
     pub patch_status: StatusCode,
+    /// The status a non-empty served set's `GET .../annotations` answers
+    /// with (an empty set always answers `304`, regardless).
+    pub annotations_get_status: StatusCode,
+    /// Leave `checkforchanges` requests open without ever answering.
+    pub checkforchanges_never_answers: bool,
+    /// Leave an annotations GET open without ever answering.
+    pub annotations_get_never_answers: bool,
+    /// Answer `checkforchanges` 200 with a body the device can't decode as
+    /// a list of ids.
+    pub checkforchanges_bad_body: bool,
+    /// Answer a non-empty served set's GET 200 with a body the device
+    /// can't decode as the annotations envelope.
+    pub annotations_get_bad_body: bool,
 }
 
 impl Default for Stub {
@@ -126,6 +139,11 @@ impl Default for Stub {
             reading_services_changed: Vec::new(),
             reading_services_annotations: BTreeMap::new(),
             patch_status: StatusCode::NO_CONTENT,
+            annotations_get_status: StatusCode::OK,
+            checkforchanges_never_answers: false,
+            annotations_get_never_answers: false,
+            checkforchanges_bad_body: false,
+            annotations_get_bad_body: false,
         }
     }
 }
@@ -323,7 +341,7 @@ async fn handle(
     if let Some(response) = omnibus_api(&state, uri.path(), &headers, &body) {
         return response;
     }
-    if let Some(response) = reading_services(&state, &method, uri.path()) {
+    if let Some(response) = reading_services(&state, &method, uri.path()).await {
         return response;
     }
     let prefix = format!("/kobo/{STUB_TOKEN}");
@@ -375,15 +393,15 @@ fn state_put(state: &StubState) -> Response {
 
 /// The Reading Services routes: `checkforchanges` and the annotations GET,
 /// served at the bare origin rather than under `/kobo/<token>`.
-fn reading_services(state: &StubState, method: &Method, path: &str) -> Option<Response> {
+async fn reading_services(state: &StubState, method: &Method, path: &str) -> Option<Response> {
     if path == "/api/v3/content/checkforchanges" && *method == Method::POST {
-        return Some(checkforchanges(state));
+        return Some(checkforchanges(state).await);
     }
     let id = path
         .strip_prefix("/api/v3/content/")
         .and_then(|rest| rest.strip_suffix("/annotations"))?;
     match *method {
-        Method::GET => Some(annotations_get(state, id)),
+        Method::GET => Some(annotations_get(state, id).await),
         Method::PATCH => Some(state.stub.patch_status.into_response()),
         _ => None,
     }
@@ -391,10 +409,16 @@ fn reading_services(state: &StubState, method: &Method, path: &str) -> Option<Re
 
 /// `checkforchanges`'s answer: `reading_services_changed`, minus any id
 /// already served a 200 GET this run.
-fn checkforchanges(state: &StubState) -> Response {
+async fn checkforchanges(state: &StubState) -> Response {
+    if state.stub.checkforchanges_never_answers {
+        std::future::pending::<()>().await;
+    }
     let status = state.stub.reading_services_status;
     if !status.is_success() {
         return status.into_response();
+    }
+    if state.stub.checkforchanges_bad_body {
+        return (status, Json(json!({ "not": "a list" }))).into_response();
     }
     let served_once = state.served_once.lock().unwrap();
     let ids: Vec<&String> = state
@@ -408,7 +432,10 @@ fn checkforchanges(state: &StubState) -> Response {
 
 /// One book's annotations GET: `200` with its served set when non-empty
 /// (marking it served, for the next `checkforchanges`), else `304 W/"0"`.
-fn annotations_get(state: &StubState, id: &str) -> Response {
+async fn annotations_get(state: &StubState, id: &str) -> Response {
+    if state.stub.annotations_get_never_answers {
+        std::future::pending::<()>().await;
+    }
     let served = state
         .stub
         .reading_services_annotations
@@ -418,8 +445,19 @@ fn annotations_get(state: &StubState, id: &str) -> Response {
     if served.is_empty() {
         return (StatusCode::NOT_MODIFIED, [(ETAG, "W/\"0\"".to_owned())]).into_response();
     }
+    let status = state.stub.annotations_get_status;
+    if !status.is_success() {
+        return status.into_response();
+    }
+    if state.stub.annotations_get_bad_body {
+        return (status, Json(json!({ "not": "the envelope" }))).into_response();
+    }
     state.served_once.lock().unwrap().insert(id.to_owned());
-    Json(json!({ "annotations": served, "nextPageOffsetToken": null })).into_response()
+    (
+        status,
+        Json(json!({ "annotations": served, "nextPageOffsetToken": null })),
+    )
+        .into_response()
 }
 
 /// One served annotation entry, with a `{"span":…}` location.
