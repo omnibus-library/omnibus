@@ -61,6 +61,15 @@ const authorPage = getGetAuthorByIdMockHandler200(({ params }) => {
   return aWireAuthor({ id, name: known?.name ?? "Unknown", book_count: 0 });
 });
 
+const authorRoutes = (
+  <Routes>
+    <Route path="/authors" element={<Authors />}>
+      <Route index element={<AuthorsIndexPane />} />
+      <Route path=":id" element={<AuthorDetail />} />
+    </Route>
+  </Routes>
+);
+
 const meta = {
   title: "Pages/Authors",
   component: Authors,
@@ -69,14 +78,7 @@ const meta = {
     localStorage.removeItem("omnibus.discovery_prefs");
     msw.use(authorPage);
   },
-  render: () => (
-    <Routes>
-      <Route path="/authors" element={<Authors />}>
-        <Route index element={<AuthorsIndexPane />} />
-        <Route path=":id" element={<AuthorDetail />} />
-      </Route>
-    </Routes>
-  ),
+  render: () => authorRoutes,
 } satisfies Meta<typeof Authors>;
 
 export default meta;
@@ -340,5 +342,33 @@ export const DeepLinkScrollsToTheRow: Story = {
     await waitFor(() =>
       expect(canvas.getByTestId("authors-list").scrollTop).toBeGreaterThan(0),
     );
+  },
+};
+
+export const SwitchingAuthorsMovesTheWindow: Story = {
+  parameters: { path: "/authors/2" },
+  beforeEach({ msw }) {
+    msw.use(...withAuthors());
+  },
+  render: () => <div style={{ minHeight: "300vh" }}>{authorRoutes}</div>,
+  play: async ({ canvas, userEvent }) => {
+    await canvas.findByRole("heading", {
+      level: 2,
+      name: "Octavia E. Butler",
+    });
+    window.scrollTo(0, 400);
+    await waitFor(() => expect(window.scrollY).toBe(400));
+
+    await userEvent.click(
+      await canvas.findByRole("link", { name: /^Ursula K\. Le Guin/ }),
+    );
+    await canvas.findByRole("heading", { level: 2, name: "Ursula K. Le Guin" });
+    await waitFor(() => expect(window.scrollY).toBe(0));
+
+    await userEvent.click(
+      await canvas.findByRole("link", { name: /^Octavia E\. Butler/ }),
+    );
+    await canvas.findByRole("heading", { level: 2, name: "Octavia E. Butler" });
+    await waitFor(() => expect(window.scrollY).toBe(400));
   },
 };

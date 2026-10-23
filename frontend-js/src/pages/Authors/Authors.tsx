@@ -1,6 +1,19 @@
 import { useQuery } from "@tanstack/react-query";
-import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
-import { Link, Outlet, useOutletContext, useParams } from "react-router";
+import {
+  type RefObject,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  Link,
+  Outlet,
+  useLocation,
+  useOutletContext,
+  useParams,
+} from "react-router";
 import {
   type AuthorId,
   type AuthorReading,
@@ -229,6 +242,26 @@ function useRevealShown(
   }, [list, ready]);
 }
 
+// In memory for the page's lifetime, like the Dioxus client's scroll_restore.rs.
+const windowOffsets = new Map<string, number>();
+
+/** After mount, each change of `path` puts the window at `path`'s last offset, or the top. */
+function useWindowOffsetPerPath(path: string) {
+  const current = useRef(path);
+  useEffect(() => {
+    const record = () => windowOffsets.set(current.current, window.scrollY);
+    window.addEventListener("scroll", record, { passive: true });
+    return () => window.removeEventListener("scroll", record);
+  }, []);
+  // The ref moves here, before the scroll event the restore fires, so that event is filed under `path`.
+  useLayoutEffect(() => {
+    if (current.current === path) return;
+    current.current = path;
+    // shortcut: one scrollTo, no retry while the pane loads (scroll_restore.rs retries ~6 s); a revisited author's query is cached, so its pane is already full — add a retry if an uncached revisit lands short.
+    window.scrollTo(0, windowOffsets.get(path) ?? 0);
+  }, [path]);
+}
+
 /** List + pane for both author routes; the list keeps its filter, sort and scroll while the pane changes. */
 export function Authors() {
   const { id } = useParams();
@@ -239,6 +272,7 @@ export function Authors() {
   const [sort, setSort] = useState(() => loadDiscoveryPrefs().authors_sort);
   const [onlyReading, setOnlyReading] = useState(false);
   const list = useRef<HTMLDivElement>(null);
+  useWindowOffsetPerPath(useLocation().pathname);
 
   const rows = authors.data ?? NO_AUTHORS;
   const readingState: ReadingState = reading.data
