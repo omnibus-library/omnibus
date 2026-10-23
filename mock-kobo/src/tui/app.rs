@@ -7,7 +7,9 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 use crate::annotations::{NewHighlight, SpanRange, Swatch};
 use crate::cli;
-use crate::reading::Percent;
+use crate::kepub::Kepub;
+use crate::reading::{KoboSpan, Percent};
+use crate::tui::reader::{Reader, ReaderAction};
 
 /// The TUI's stand-in for a real KoboSpan chapter, before #2738's reader
 /// view supplies one from an actual KEPUB. Every shorthand highlight
@@ -20,6 +22,8 @@ const SHORTHAND_CHAPTER: &str = "unknown";
 pub enum Action {
     Quit,
     Run(Job),
+    /// Open the named book's reader; local, so never refused while a job runs.
+    Open(String),
 }
 
 /// Work that waits on the device or the network, so it never runs on the draw loop.
@@ -35,10 +39,12 @@ pub enum Job {
     Wire,
     /// Download the selected book.
     Download(String),
-    /// Send the selected book's position; the TUI never supplies a `KoboSpan` (#2738 does).
+    /// Send the selected book's position. The percent edit sends `None`;
+    /// the reader view sends the open page's span (see `tui::reader`).
     Read {
         book: String,
         percent: Percent,
+        location: Option<KoboSpan>,
     },
     /// Mark the selected book finished.
     Finish(String),
@@ -72,12 +78,14 @@ pub struct App {
     pub selected: usize,
 }
 
-/// Whether keys are commands or text for a field.
+/// Whether keys are commands or text for a field, or the reader is open.
+/// `Reading` is boxed to keep this small — clippy's `large_enum_variant`.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum Mode {
     #[default]
     Normal,
     Editing(Edit),
+    Reading(Box<Reader>),
 }
 
 /// A field being typed into.
@@ -131,6 +139,7 @@ impl App {
         match self.mode {
             Mode::Normal => self.on_normal_key(key, current_url),
             Mode::Editing(_) => self.on_edit_key(key, current_url),
+            Mode::Reading(_) => self.on_reading_key(key),
         }
     }
 
@@ -166,6 +175,7 @@ impl App {
                 self.move_selection(1);
                 return None;
             }
+            KeyCode::Enter => return self.open_selected(),
             _ => {}
         }
         // Caps Lock or Shift must not silence a command key.
@@ -221,6 +231,16 @@ impl App {
         None
     }
 
+    /// Open the selected book's reader, or show [`NO_BOOK`]. Opening is
+    /// local, so it is not refused while a job runs.
+    fn open_selected(&mut self) -> Option<Action> {
+        let Some(book) = self.selected_book().map(str::to_owned) else {
+            self.status = Some(Status::Error(NO_BOOK.to_owned()));
+            return None;
+        };
+        Some(Action::Open(book))
+    }
+
     /// Open the highlight edit for the selected book, or show [`NO_BOOK`].
     fn open_highlight_edit(&mut self) -> Option<Action> {
         let Some(book) = self.selected_book().map(str::to_owned) else {
@@ -229,6 +249,45 @@ impl App {
         };
         self.open_edit(Field::Highlight(book), "");
         None
+    }
+
+    /// Dispatch a key to the open reader; its close/run becomes a job the
+    /// same way an edit's save does, so a busy refusal keeps the reader open.
+    fn on_reading_key(&mut self, key: KeyEvent) -> Option<Action> {
+        let Mode::Reading(reader) = &mut self.mode else {
+            return None;
+        };
+        match reader.on_key(key)? {
+            ReaderAction::Close(None) => {
+                self.mode = Mode::Normal;
+                None
+            }
+            ReaderAction::Close(Some(job)) => {
+                let action = self.start(job);
+                if action.is_some() {
+                    self.mode = Mode::Normal;
+                }
+                action
+            }
+            ReaderAction::Run(job) => self.start(job),
+        }
+    }
+
+    /// Enter's reader load finished: `Ok(Some(kepub))` opens the full
+    /// reader, `Ok(None)` the metadata-only view, `Err(message)` reports it
+    /// and the library stays open.
+    pub fn open_book(&mut self, book: String, text: Result<Option<Kepub>, String>) {
+        match text {
+            Ok(kepub) => self.mode = Mode::Reading(Box::new(Reader::open(book, kepub))),
+            Err(message) => self.status = Some(Status::Error(message)),
+        }
+    }
+
+    /// Re-fit the open reader's pagination to `width`×`rows`; a no-op outside `Mode::Reading`.
+    pub fn fit_reader(&mut self, width: u16, rows: u16) {
+        if let Mode::Reading(reader) = &mut self.mode {
+            reader.fit(width, rows);
+        }
     }
 
     fn on_edit_key(&mut self, key: KeyEvent, current_url: &str) -> Option<Action> {
@@ -276,6 +335,7 @@ impl App {
                 .map(|percent| Job::Read {
                     book: book.clone(),
                     percent,
+                    location: None,
                 })
                 .ok_or_else(|| format!("{buffer} is not a whole number 0..=100")),
             Field::Highlight(book) => parse_highlight(&buffer)

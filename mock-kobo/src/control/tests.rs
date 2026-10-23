@@ -9,13 +9,13 @@ use tempfile::TempDir;
 use tokio::sync::Notify;
 
 use crate::annotations::{NewHighlight, Swatch};
-use crate::device::Device;
+use crate::device::{Device, DeviceError};
 use crate::downloads::DownloadPolicy;
 use crate::state;
 use crate::test_support::{
-    control_wired_against, device_holding, dune_stub, never_answers, new_entitlement,
-    request_lines, spawn_stub, spawn_sync, stub_control, stub_control_with, wait_until, Stub,
-    STUB_TOKEN,
+    control_wired_against, control_with_downloaded_book, device_holding, dune_stub, never_answers,
+    new_entitlement, request_lines, spawn_stub, spawn_sync, stub_control, stub_control_with,
+    wait_until, Stub, STUB_TOKEN,
 };
 
 use super::*;
@@ -424,6 +424,44 @@ async fn reset_keeps_downloading_into_the_same_storage() {
     control.download(vec!["book-1".into()]).await.unwrap();
 
     assert!(file.exists());
+}
+
+#[tokio::test]
+async fn book_file_names_a_downloaded_books_file_beside_the_state_file() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("kobo.json");
+    let control = control_with_downloaded_book(crate::test_support::READER_KEPUB, path).await;
+
+    let file = control.book_file("book-1").unwrap();
+
+    assert_eq!(
+        file,
+        dir.path().join("kobo.books").join("book-1.kepub.epub")
+    );
+    assert!(file.exists());
+}
+
+#[tokio::test]
+async fn book_file_returns_not_downloaded_for_a_held_book_not_yet_downloaded() {
+    let stub = spawn_stub(dune_stub()).await;
+    let dir = TempDir::new().unwrap();
+    let control = stub_control(&stub, dir.path().join("kobo.json"));
+    control.sync(DownloadPolicy::None).await.unwrap();
+
+    let error = control.book_file("book-1").unwrap_err();
+
+    assert!(matches!(error, DeviceError::NotDownloaded(_)));
+}
+
+#[tokio::test]
+async fn book_file_returns_unknown_book_for_a_book_it_lacks() {
+    let stub = spawn_stub(Stub::default()).await;
+    let dir = TempDir::new().unwrap();
+    let control = stub_control(&stub, dir.path().join("kobo.json"));
+
+    let error = control.book_file("book-1").unwrap_err();
+
+    assert!(matches!(error, DeviceError::UnknownBook(_)));
 }
 
 #[tokio::test]

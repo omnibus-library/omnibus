@@ -395,7 +395,7 @@ fn draw_shows_key_help_in_normal_mode() {
 
     // The full line is longer than the 100-column fixture, so only its start is checked here.
     let help =
-        "↑/↓ select · d download · p read % · f finish · x remove · h highlight · e delete highlight";
+        "↑/↓ select · Enter open · d download · p read % · f finish · x remove · h highlight";
     assert!(shown.contains(help), "{shown}");
     assert!(!shown.contains("Enter save"), "{shown}");
 }

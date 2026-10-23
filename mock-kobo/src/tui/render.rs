@@ -16,8 +16,10 @@ use crate::device::Book;
 use crate::reading::ReadStatus;
 use crate::tui::app::{App, Edit, Field, Mode, Status};
 
+pub mod reader;
+
 const HELP: &str =
-    "↑/↓ select · d download · p read % · f finish · x remove · h highlight · e delete highlight · s sync · r reset · u edit URL · t edit token · w wire · q quit";
+    "↑/↓ select · Enter open · d download · p read % · f finish · x remove · h highlight · e delete highlight · s sync · r reset · u edit URL · t edit token · w wire · q quit";
 const EDIT_HELP: &str = "Enter save · Esc cancel";
 
 /// Rows the status line may wrap onto before the rest is cut.
@@ -32,8 +34,14 @@ pub struct Screen<'a> {
     pub app: &'a App,
 }
 
-/// Draw `screen`: header, library, last sync, request log, status line, key help.
+/// Draw `screen`: the reader when one is open, else the library screen
+/// (header, library, last sync, request log, status line, key help).
 pub fn draw(frame: &mut Frame, screen: &Screen) {
+    if let Mode::Reading(open) = &screen.app.mode {
+        let book = screen.view.library.get(&open.book);
+        reader::draw(frame, frame.area(), open, book);
+        return;
+    }
     let [header, library, last_sync, requests, footer] = Layout::vertical([
         Constraint::Length(4),
         Constraint::Percentage(35),
@@ -160,6 +168,8 @@ fn draw_footer(frame: &mut Frame, area: Rect, app: &App) {
             draw_edit(frame, edit_area, edit);
             frame.render_widget(Line::raw(EDIT_HELP), help_area);
         }
+        // `draw` dispatches `Reading` to `reader::draw` before this runs.
+        Mode::Reading(_) => {}
     }
 }
 

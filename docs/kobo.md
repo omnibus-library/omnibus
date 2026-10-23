@@ -261,6 +261,7 @@ database already had an admin, mark a shelf **Sync to Kobo** yourself.
 | Key | Does |
 |---|---|
 | <kbd>↑</kbd> / <kbd>↓</kbd> | Move the selection (marked `>`) within the library |
+| <kbd>Enter</kbd> | Open the selected book: a downloaded KEPUB in the reader, else a metadata-only view |
 | <kbd>d</kbd> | Download the selected book |
 | <kbd>p</kbd> | Edit the selected book's read percent (0–100), sent as a `Reading` state on <kbd>Enter</kbd> |
 | <kbd>f</kbd> | Mark the selected book finished |
@@ -276,8 +277,20 @@ database already had an admin, mark a shelf **Sync to Kobo** yourself.
 
 Each book line shows `downloaded`, `download failed`, the bookmark percent,
 `finished`, its highlight count, and a dropped-highlight count, whichever
-apply (the device never shows a `KoboSpan` location, or a highlight's colour
-or text — see [#2738](https://github.com/omnibus-library/omnibus/issues/2738)).
+apply. Opening a downloaded book shows its text in the reader: turning pages
+moves the `KoboSpan` position the next sync sends, and a word selection
+becomes a highlight (see "In the reader" below). A page that opens
+mid-sentence bookmarks that sentence's own span, so reopening the book shows
+the page where the sentence starts, not the one it was left on.
+
+### In the reader
+
+| Key | Does |
+|---|---|
+| <kbd>←</kbd> / <kbd>→</kbd> | Turn the page, crossing a chapter edge at either end |
+| <kbd>[</kbd> / <kbd>]</kbd> | Jump to the previous/next chapter's first page |
+| <kbd>↑</kbd> / <kbd>↓</kbd> | Move the cursor one word, clamped to the open page |
+| <kbd>Esc</kbd> | Close: a downloaded book sends the open page's span and percent as its `Reading` state; the metadata-only view just closes |
 
 While editing, <kbd>Enter</kbd> saves and <kbd>Esc</kbd> cancels. Pointing a
 device at another server re-wires a token that was wired for the old one; a URL

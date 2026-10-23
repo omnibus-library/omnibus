@@ -307,6 +307,26 @@ impl Control {
         self.live().requests.clone()
     }
 
+    /// `book`'s downloaded file, beside the state file. `UnknownBook` for a
+    /// book the device doesn't hold; `NotDownloaded` for one it hasn't
+    /// fetched yet (not an error the reader needs to report — see `jobs::load_book`).
+    pub fn book_file(&self, book: &str) -> Result<PathBuf, DeviceError> {
+        let live = self.live();
+        let found = live
+            .saved
+            .device
+            .library
+            .get(book)
+            .ok_or_else(|| DeviceError::UnknownBook(book.to_owned()))?;
+        if !found.downloaded {
+            return Err(DeviceError::NotDownloaded(book.to_owned()));
+        }
+        live.saved
+            .device
+            .book_file(book)
+            .ok_or_else(|| DeviceError::UnknownBook(book.to_owned()))
+    }
+
     /// Write the current state to the state file.
     async fn persist(&self) -> Result<(), StateError> {
         let _saving = self.save_lock.lock().await;

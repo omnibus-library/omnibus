@@ -4,6 +4,7 @@
 use omnibus_db::test_support::seed_synced_ebook;
 use omnibus_mock_kobo::device::Device;
 use omnibus_mock_kobo::downloads::DownloadPolicy;
+use omnibus_mock_kobo::kepub::Kepub;
 use omnibus_mock_kobo::reading::{Bookmark, Percent, ReadStatus};
 use omnibus_mock_kobo::session::{attempt_state, sync_now, StateSent};
 use omnibus_shared::{ProgressFormat, ProgressUpdate};
@@ -118,6 +119,48 @@ async fn attempt_state_loses_to_a_newer_web_position_when_the_device_write_is_ol
         .await
         .unwrap();
     assert_eq!(states[uuid].percent, Some(77));
+}
+
+#[tokio::test]
+async fn attempt_state_lands_a_reader_bookmark_on_its_kobospan_and_derived_cfi() {
+    let omnibus = spawn_omnibus().await;
+    let (uuid, _guard) = seed_reader_book(&omnibus.pool).await;
+    opt_in(&omnibus.pool, omnibus.user_id, std::slice::from_ref(&uuid)).await;
+    let mut device = Device::new("HW-1");
+    device.storage = Some(db::test_support::make_test_dir("reader_device_storage"));
+    sync_now(&mut device, &omnibus.endpoint, &DownloadPolicy::All)
+        .await
+        .unwrap();
+    let file = device
+        .book_file(&uuid)
+        .expect("the sync downloaded the reader fixture");
+    let kepub = Kepub::open(&file).unwrap();
+    // ch1's 4th block (kobo.4.1, span index 3): the page a reader opens
+    // after turning two pages past the book's start (Task 3's own
+    // `paginate` tests land on the same span at 24x3).
+    let (percent, location) = kepub.bookmark(0, 3);
+    device
+        .read(&uuid, percent, Some(location), 1_700_000_000)
+        .unwrap();
+
+    attempt_state(&mut device, &omnibus.endpoint, &uuid, StateSent::Read)
+        .await
+        .outcome
+        .unwrap();
+
+    let record =
+        db::progress::get_progress(&omnibus.pool, omnibus.user_id, &uuid, ProgressFormat::Epub)
+            .await
+            .unwrap()
+            .unwrap();
+    assert_eq!(record.progress_percent, Some(18));
+    let stored_location = record.kobo_location.unwrap();
+    assert!(stored_location.contains("ch1.xhtml"), "{stored_location}");
+    assert!(stored_location.contains("kobo.4.1"), "{stored_location}");
+    // kobo.4.1 is <body>'s 4th child (h1, p, p, p) → CFI step 8; its sole
+    // text node is the first (only) text cluster, landing at offset 0 —
+    // worked out by hand from `test_data/kepub/reader.epub`'s ch1.xhtml.
+    assert_eq!(record.epub_cfi.as_deref(), Some("epubcfi(/6/2!/4/8/1:0)"));
 }
 
 #[tokio::test]

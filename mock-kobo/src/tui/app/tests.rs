@@ -41,7 +41,7 @@ fn editing(field_key: char) -> App {
 fn editing_buffer(app: &App) -> Option<&str> {
     match &app.mode {
         Mode::Editing(edit) => Some(&edit.buffer),
-        Mode::Normal => None,
+        Mode::Normal | Mode::Reading(_) => None,
     }
 }
 
@@ -119,7 +119,6 @@ fn on_key_ignores_unmapped_key() {
     let mut app = App::new(None);
 
     assert_eq!(app.on_key(key('z'), URL), None);
-    assert_eq!(app.on_key(code(KeyCode::Enter), URL), None);
     assert_eq!(app.mode, Mode::Normal);
     assert_eq!(app.status, None);
     assert!(!app.busy);
@@ -552,6 +551,7 @@ fn on_key_returns_read_job_with_the_typed_percent_on_enter() {
         Some(Action::Run(Job::Read {
             book: "book-1".into(),
             percent: Percent::new(42).unwrap(),
+            location: None,
         }))
     );
     assert_eq!(app.mode, Mode::Normal);
@@ -666,4 +666,86 @@ fn on_key_returns_delete_highlight_job_for_the_selected_book_when_e_pressed() {
         action,
         Some(Action::Run(Job::DeleteHighlight("book-1".into())))
     );
+}
+
+#[test]
+fn on_key_opens_the_selected_book_on_enter() {
+    let mut app = with_library(&["book-1"]);
+
+    let action = app.on_key(code(KeyCode::Enter), URL);
+
+    assert_eq!(action, Some(Action::Open("book-1".to_owned())));
+}
+
+#[test]
+fn on_key_shows_no_book_for_enter_with_an_empty_library() {
+    let mut app = App::new(None);
+
+    let action = app.on_key(code(KeyCode::Enter), URL);
+
+    assert_eq!(action, None);
+    assert_eq!(app.status, Some(Status::Error(NO_BOOK.to_owned())));
+}
+
+fn reader_kepub() -> crate::kepub::Kepub {
+    crate::kepub::Kepub::parse(crate::test_support::READER_KEPUB).unwrap()
+}
+
+#[test]
+fn open_book_shows_metadata_only_for_a_book_that_is_not_downloaded() {
+    let mut app = App::new(None);
+
+    app.open_book("book-1".into(), Ok(None));
+
+    match &app.mode {
+        Mode::Reading(reader) => assert_eq!(reader.text, None),
+        other => panic!("expected Reading, got {other:?}"),
+    }
+}
+
+#[test]
+fn open_book_reports_an_unreadable_book_and_stays_in_the_library() {
+    let mut app = App::new(None);
+
+    app.open_book("book-1".into(), Err("not a kepub".into()));
+
+    assert_eq!(app.mode, Mode::Normal);
+    assert_eq!(app.status, Some(Status::Error("not a kepub".to_owned())));
+}
+
+#[test]
+fn on_key_returns_the_read_job_when_the_reader_closes() {
+    let mut app = App::new(None);
+    app.open_book("book-1".into(), Ok(Some(reader_kepub())));
+    app.fit_reader(24, 3);
+
+    let action = app.on_key(code(KeyCode::Esc), URL);
+
+    match action {
+        Some(Action::Run(Job::Read {
+            book,
+            percent,
+            location,
+        })) => {
+            assert_eq!(book, "book-1");
+            assert_eq!(u8::from(percent), 0);
+            assert!(location.is_some());
+        }
+        other => panic!("expected a Read job, got {other:?}"),
+    }
+    assert_eq!(app.mode, Mode::Normal);
+}
+
+#[test]
+fn on_key_keeps_the_reader_open_when_closing_while_busy() {
+    let mut app = App::new(None);
+    app.open_book("book-1".into(), Ok(Some(reader_kepub())));
+    app.fit_reader(24, 3);
+    app.busy = true;
+
+    let action = app.on_key(code(KeyCode::Esc), URL);
+
+    assert_eq!(action, None);
+    assert!(matches!(app.mode, Mode::Reading(_)));
+    assert_eq!(app.status, Some(Status::Error(BUSY.to_owned())));
 }
