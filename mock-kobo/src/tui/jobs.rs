@@ -36,24 +36,21 @@ pub async fn perform(control: &Arc<Control>, wiring: &Wiring, job: Job) -> Statu
 }
 
 async fn download(control: &Arc<Control>, book: String) -> Status {
-    match control.download(vec![book]).await {
-        Ok(Acted::Done(_)) => Status::Info("downloaded".to_owned()),
-        Ok(Acted::Failed { message, .. }) => Status::Error(message),
-        Err(error) => failure(error),
-    }
+    acted_status("downloaded", control.download(vec![book]).await)
 }
 
 async fn read(control: &Arc<Control>, book: String, percent: Percent) -> Status {
-    state_status(control.read(book, percent, None).await)
+    acted_status("state sent", control.read(book, percent, None).await)
 }
 
 async fn finish(control: &Arc<Control>, book: String) -> Status {
-    state_status(control.finish(book).await)
+    acted_status("state sent", control.finish(book).await)
 }
 
-fn state_status(result: Result<Acted, ControlError>) -> Status {
+/// How an [`Acted`] result reports on the status line, under `ok_label` for a success.
+fn acted_status(ok_label: &str, result: Result<Acted, ControlError>) -> Status {
     match result {
-        Ok(Acted::Done(_)) => Status::Info("state sent".to_owned()),
+        Ok(Acted::Done(_)) => Status::Info(ok_label.to_owned()),
         Ok(Acted::Failed { message, .. }) => Status::Error(message),
         Err(error) => failure(error),
     }

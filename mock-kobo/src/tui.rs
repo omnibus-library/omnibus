@@ -76,7 +76,7 @@ fn event_loop(terminal: &mut DefaultTerminal, tui: Tui, runtime: &Handle) -> io:
             return Ok(());
         }
         let view = control.view();
-        app.show_library(&view.library.keys().cloned().collect::<Vec<_>>());
+        app.show_library(view.library.keys().cloned().collect());
         let requests = control.requests();
         let screen = Screen {
             view: &view,

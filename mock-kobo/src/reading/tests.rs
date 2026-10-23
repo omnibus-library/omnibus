@@ -6,15 +6,14 @@ use serde_json::{json, Value};
 use crate::device::Device;
 use crate::firmware::Quirk;
 use crate::session::{attempt_state, sync_now, StateSent, SyncFailure};
-use crate::test_support::{new_entitlement, spawn_stub, RunningStub, Stub};
+use crate::test_support::{device_holding, spawn_stub, RunningStub, Stub};
 use crate::wire::{CurrentBookmark, ReadingState, StatusInfo};
 
 use super::*;
 
 /// A device holding "book-1" (downloaded), with its `reading` set directly.
 fn device_with_reading(reading: Reading) -> Device {
-    let mut device = Device::new("HW-1");
-    device.apply(serde_json::from_value(new_entitlement("book-1", "Dune")).unwrap());
+    let mut device = device_holding("book-1", "Dune");
     let book = device.library.get_mut("book-1").unwrap();
     book.downloaded = true;
     book.reading = reading;
@@ -182,8 +181,7 @@ async fn sync_now_keeps_its_own_bookmark_when_the_server_sends_it_unstamped() {
         ..Stub::default()
     })
     .await;
-    let mut device = Device::new("HW-1");
-    device.apply(serde_json::from_value(new_entitlement("book-1", "Dune")).unwrap());
+    let mut device = device_holding("book-1", "Dune");
     device.library.get_mut("book-1").unwrap().reading = Reading {
         status: ReadStatus::ReadyToRead,
         status_modified: None,
@@ -222,8 +220,7 @@ async fn sync_now_tolerates_a_location_that_is_not_a_kobospan() {
         ..Stub::default()
     })
     .await;
-    let mut device = Device::new("HW-1");
-    device.apply(serde_json::from_value(new_entitlement("book-1", "Dune")).unwrap());
+    let mut device = device_holding("book-1", "Dune");
 
     sync_now(
         &mut device,

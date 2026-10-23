@@ -79,7 +79,8 @@ async fn fetch_one(
         return;
     }
     let url = fill_template(template, image_id, size);
-    let Ok(response) = client.cover(&url).await else {
+    // Never sends a conditional header — the firmware never revalidates a cached cover.
+    let Ok(response) = client.get(&url).await else {
         return;
     };
     if !response.status().is_success() {

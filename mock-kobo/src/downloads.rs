@@ -63,7 +63,7 @@ pub async fn attempt_one(client: &mut Client, device: &mut Device, id: &str) -> 
     let Some(url) = device.download_urls.get(id).cloned() else {
         return Outcome::NoUrl;
     };
-    match client.download(&url).await {
+    match client.get(&url).await {
         Ok(mut response) if response.status().is_success() => match drain(&mut response).await {
             Ok(()) => Outcome::Downloaded,
             Err(error) => Outcome::Transport(client.redact(&error.to_string())),

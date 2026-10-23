@@ -11,16 +11,14 @@ use crate::downloads::DownloadPolicy;
 use crate::firmware::Quirk;
 use crate::reading::{Percent, ReadStatus};
 use crate::test_support::{
-    dune_stub, never_answers, new_entitlement, spawn_stub, spawn_sync, stub_control,
-    stub_control_with, wait_until, Stub,
+    device_holding, dune_stub, never_answers, new_entitlement, spawn_stub, spawn_sync,
+    stub_control, stub_control_with, wait_until, Stub,
 };
 
 use super::*;
 
 fn device_holding_book_1() -> Device {
-    let mut device = Device::new("HW-1");
-    device.apply(serde_json::from_value(new_entitlement("book-1", "Dune")).unwrap());
-    device
+    device_holding("book-1", "Dune")
 }
 
 fn device_holding_downloaded_book_1() -> Device {

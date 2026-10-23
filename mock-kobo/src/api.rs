@@ -225,7 +225,7 @@ async fn post_read(State(control): State<Arc<Control>>, body: Bytes) -> Reply<De
     #[serde(deny_unknown_fields)]
     struct ReadBody {
         book: String,
-        percent: u8,
+        percent: Percent,
         #[serde(default)]
         location: Option<LocationBody>,
     }
@@ -239,14 +239,11 @@ async fn post_read(State(control): State<Arc<Control>>, body: Bytes) -> Reply<De
         Ok(parsed) => parsed,
         Err(e) => return invalid_request_reply(format!("invalid read body: {e}")),
     };
-    let Some(percent) = Percent::new(parsed.percent) else {
-        return invalid_request_reply(format!("{} is not a percent (0..=100)", parsed.percent));
-    };
     let location = parsed.location.map(|l| KoboSpan {
         source: l.source,
         value: l.value,
     });
-    state_reply(control.read(parsed.book, percent, location).await)
+    state_reply(control.read(parsed.book, parsed.percent, location).await)
 }
 
 async fn post_finish(State(control): State<Arc<Control>>, body: Bytes) -> Reply<Details> {

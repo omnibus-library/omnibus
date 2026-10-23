@@ -474,6 +474,13 @@ fn fill_stub_origin(page: Value, base: &str) -> Value {
     serde_json::from_str(&text).expect("re-parsing a re-serialized Value cannot fail")
 }
 
+/// A device that already holds the book `id`/`title`, via a [`new_entitlement`].
+pub fn device_holding(id: &str, title: &str) -> Device {
+    let mut device = Device::new("HW-1");
+    device.apply(serde_json::from_value(new_entitlement(id, title)).unwrap());
+    device
+}
+
 /// A `NewEntitlement` sync item as Omnibus sends it, trimmed to the fields
 /// the device reads plus a reading state it must tolerate.
 pub fn new_entitlement(id: &str, title: &str) -> Value {

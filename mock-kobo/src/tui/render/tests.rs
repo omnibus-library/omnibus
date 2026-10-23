@@ -166,7 +166,7 @@ fn draw_marks_the_selected_book() {
         ("b-2", book("Emma", &["Jane Austen"], false)),
     ]);
     let mut app = App::default();
-    app.show_library(&["b-1".to_owned(), "b-2".to_owned()]);
+    app.show_library(vec!["b-1".to_owned(), "b-2".to_owned()]);
     app.selected = 1;
 
     let shown = shown(&view, &app);

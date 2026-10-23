@@ -125,8 +125,8 @@ impl App {
     }
 
     /// Take in this tick's library, in screen order, clamping the selection to it.
-    pub fn show_library(&mut self, uuids: &[String]) {
-        self.books = uuids.to_vec();
+    pub fn show_library(&mut self, uuids: Vec<String>) {
+        self.books = uuids;
         self.selected = self.selected.min(self.books.len().saturating_sub(1));
     }
 

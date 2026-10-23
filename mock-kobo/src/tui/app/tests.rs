@@ -452,7 +452,7 @@ fn new_has_no_status_without_a_notice() {
 
 fn with_library(uuids: &[&str]) -> App {
     let mut app = App::new(None);
-    app.show_library(&uuids.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>());
+    app.show_library(uuids.iter().map(|s| (*s).to_owned()).collect());
     app
 }
 
@@ -478,7 +478,7 @@ fn show_library_clamps_the_selection_when_the_library_shrinks() {
     app.on_key(code(KeyCode::Down), URL);
     assert_eq!(app.selected_book(), Some("book-3"));
 
-    app.show_library(&["book-9".to_owned()]);
+    app.show_library(vec!["book-9".to_owned()]);
 
     assert_eq!(app.selected_book(), Some("book-9"));
 }

@@ -80,14 +80,9 @@ impl Client {
         self.send(self.http.get(url)).await
     }
 
-    /// `GET` one cover through the filled `image_url_quality_template`.
-    /// Never sends a conditional header — the firmware never revalidates a cached cover.
-    pub async fn cover(&mut self, url: &str) -> Result<Response, SyncFailure> {
-        self.send(self.http.get(url)).await
-    }
-
-    /// `GET` one book's first `DownloadUrls` entry.
-    pub async fn download(&mut self, url: &str) -> Result<Response, SyncFailure> {
+    /// `GET` an arbitrary `url` — a cover through the filled
+    /// `image_url_quality_template`, or one book's first `DownloadUrls` entry.
+    pub async fn get(&mut self, url: &str) -> Result<Response, SyncFailure> {
         self.send(self.http.get(url)).await
     }
 

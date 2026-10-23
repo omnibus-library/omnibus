@@ -12,17 +12,16 @@ use crate::device::Device;
 use crate::downloads::DownloadPolicy;
 use crate::state;
 use crate::test_support::{
-    control_wired_against, dune_stub, never_answers, new_entitlement, request_lines, spawn_stub,
-    spawn_sync, stub_control, stub_control_with, wait_until, Stub, STUB_TOKEN,
+    control_wired_against, device_holding, dune_stub, never_answers, new_entitlement,
+    request_lines, spawn_stub, spawn_sync, stub_control, stub_control_with, wait_until, Stub,
+    STUB_TOKEN,
 };
 
 use super::*;
 
 /// A device already holding the book "Dune".
 fn device_with_dune() -> Device {
-    let mut device = Device::new("HW-1");
-    device.apply(serde_json::from_value(new_entitlement("book-1", "Dune")).unwrap());
-    device
+    device_holding("book-1", "Dune")
 }
 
 #[tokio::test]
