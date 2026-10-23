@@ -29,17 +29,23 @@ pub enum DeviceError {
 /// token on load, so the next sync resends every book with these new fields.
 pub const DEVICE_FORMAT: u32 = 1;
 
+/// Hex-encode `bytes`, lowercase, two characters per byte. Shared by
+/// [`mint_hardware_id`] and `annotations::mint_id`.
+pub(crate) fn hex_encode(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        out.push(char::from(HEX[usize::from(byte >> 4)]));
+        out.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    out
+}
+
 /// A fresh hardware id for a new device: `mock-` then 32 random hex digits.
 pub fn mint_hardware_id() -> Result<String, getrandom::Error> {
-    const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut bytes = [0u8; 16];
     getrandom::fill(&mut bytes)?;
-    let mut id = String::from("mock-");
-    for byte in bytes {
-        id.push(char::from(HEX[usize::from(byte >> 4)]));
-        id.push(char::from(HEX[usize::from(byte & 0x0f)]));
-    }
-    Ok(id)
+    Ok(format!("mock-{}", hex_encode(&bytes)))
 }
 
 /// One fake Kobo.

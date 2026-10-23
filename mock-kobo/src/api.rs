@@ -12,6 +12,7 @@ use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 
+use crate::annotations::{NewHighlight, SpanRange, Swatch};
 use crate::client::RequestRecord;
 use crate::control::{Acted, Control, ControlError, DeviceView, LastSync, RESET_MESSAGE};
 use crate::device::DeviceError;
@@ -73,6 +74,10 @@ pub enum ReplyCode {
     StateSent,
     /// 502: the state PUT failed.
     StateFailed,
+    /// 200: `POST /actions/highlight` or `POST /actions/delete-highlight` sent the PATCH.
+    AnnotationSent,
+    /// 502: the PATCH failed.
+    AnnotationFailed,
 }
 
 /// What a reply's `details` carries, for routes whose outcomes differ.
@@ -113,6 +118,8 @@ pub fn router(control: Arc<Control>) -> Router {
         .route("/actions/remove-download", post(post_remove_download))
         .route("/actions/read", post(post_read))
         .route("/actions/finish", post(post_finish))
+        .route("/actions/highlight", post(post_highlight))
+        .route("/actions/delete-highlight", post(post_delete_highlight))
         .route("/requests", get(get_requests))
         .route("/reset", put(put_reset))
         .method_not_allowed_fallback(method_not_allowed)
@@ -202,24 +209,45 @@ async fn post_remove_download(State(control): State<Arc<Control>>, body: Bytes) 
     }
 }
 
-/// The reply for a finished download action.
-fn acted_reply(result: Result<Acted, ControlError>) -> Reply<Details> {
+/// The reply for a finished action whose outcome is an [`Acted`]:
+/// `Done` under `success`/`success_message`, `Failed` under `failure`.
+/// Shared by download, read/finish and the two highlight actions, so each
+/// only names its own codes and message.
+fn acted_reply_as(
+    result: Result<Acted, ControlError>,
+    success: ReplyCode,
+    success_message: &str,
+    failure: ReplyCode,
+) -> Reply<Details> {
     match result {
         Ok(Acted::Done(view)) => {
-            let details = Details::Device(view);
-            Reply::new(StatusCode::OK, ReplyCode::Downloaded, "downloaded", details)
+            Reply::new(StatusCode::OK, success, success_message, Details::Device(view))
         }
         Ok(Acted::Failed { quirk, message }) => {
-            let details = Details::Quirk { quirk };
-            Reply::new(
-                StatusCode::BAD_GATEWAY,
-                ReplyCode::DownloadFailed,
-                message,
-                details,
-            )
+            Reply::new(StatusCode::BAD_GATEWAY, failure, message, Details::Quirk { quirk })
         }
         Err(error) => error_reply(&error),
     }
+}
+
+/// The reply for a finished download action.
+fn acted_reply(result: Result<Acted, ControlError>) -> Reply<Details> {
+    acted_reply_as(
+        result,
+        ReplyCode::Downloaded,
+        "downloaded",
+        ReplyCode::DownloadFailed,
+    )
+}
+
+/// The reply for a finished highlight or delete-highlight action.
+fn annotation_reply(result: Result<Acted, ControlError>) -> Reply<Details> {
+    acted_reply_as(
+        result,
+        ReplyCode::AnnotationSent,
+        "annotation sent",
+        ReplyCode::AnnotationFailed,
+    )
 }
 
 async fn post_read(State(control): State<Arc<Control>>, body: Bytes) -> Reply<Details> {
@@ -263,22 +291,98 @@ async fn post_finish(State(control): State<Arc<Control>>, body: Bytes) -> Reply<
 
 /// The reply for a finished read or finish action.
 fn state_reply(result: Result<Acted, ControlError>) -> Reply<Details> {
-    match result {
-        Ok(Acted::Done(view)) => {
-            let details = Details::Device(view);
-            Reply::new(StatusCode::OK, ReplyCode::StateSent, "state sent", details)
+    acted_reply_as(
+        result,
+        ReplyCode::StateSent,
+        "state sent",
+        ReplyCode::StateFailed,
+    )
+}
+
+/// The wire shape of a highlight's span range, under `"location"` in the request body.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LocationBody {
+    chapter: String,
+    start_span: String,
+    start_char: u32,
+    end_span: String,
+    end_char: u32,
+}
+
+impl From<LocationBody> for SpanRange {
+    fn from(body: LocationBody) -> Self {
+        Self {
+            chapter: body.chapter,
+            start_span: body.start_span,
+            start_char: body.start_char,
+            end_span: body.end_span,
+            end_char: body.end_char,
         }
-        Ok(Acted::Failed { quirk, message }) => {
-            let details = Details::Quirk { quirk };
-            Reply::new(
-                StatusCode::BAD_GATEWAY,
-                ReplyCode::StateFailed,
-                message,
-                details,
-            )
-        }
-        Err(error) => error_reply(&error),
     }
+}
+
+/// `"color"` in a highlight request body; unknown or malformed fails the whole parse.
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum ColorBody {
+    Yellow,
+    Pink,
+    Blue,
+    Green,
+}
+
+impl From<ColorBody> for Swatch {
+    fn from(body: ColorBody) -> Self {
+        match body {
+            ColorBody::Yellow => Self::Yellow,
+            ColorBody::Pink => Self::Pink,
+            ColorBody::Blue => Self::Blue,
+            ColorBody::Green => Self::Green,
+        }
+    }
+}
+
+async fn post_highlight(State(control): State<Arc<Control>>, body: Bytes) -> Reply<Details> {
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct HighlightBody {
+        book: String,
+        text: String,
+        color: ColorBody,
+        #[serde(default)]
+        note: Option<String>,
+        // Required: a real device never highlights without a KoboSpan range.
+        location: LocationBody,
+    }
+    let parsed: HighlightBody = match serde_json::from_slice(&body) {
+        Ok(parsed) => parsed,
+        Err(e) => return invalid_request_reply(format!("invalid highlight body: {e}")),
+    };
+    if parsed.text.is_empty() {
+        return invalid_request_reply("\"text\" must not be empty");
+    }
+    let new = NewHighlight {
+        text: parsed.text,
+        color: parsed.color.into(),
+        note: parsed.note,
+        location: Some(parsed.location.into()),
+    };
+    annotation_reply(control.highlight(parsed.book, new).await)
+}
+
+async fn post_delete_highlight(State(control): State<Arc<Control>>, body: Bytes) -> Reply<Details> {
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct DeleteHighlightBody {
+        book: String,
+        highlight: String,
+    }
+    let parsed: DeleteHighlightBody = match serde_json::from_slice(&body) {
+        Ok(parsed) => parsed,
+        Err(e) => return invalid_request_reply(format!("invalid delete-highlight body: {e}")),
+    };
+    annotation_reply(control.delete_highlight(parsed.book, parsed.highlight).await)
 }
 
 async fn get_requests(State(control): State<Arc<Control>>) -> Reply<Details> {

@@ -129,6 +129,15 @@ impl Annotation {
     }
 }
 
+/// A highlight id the way a real device mints one: 32 lowercase hex digits.
+/// Shares [`crate::device::mint_hardware_id`]'s hex encoding rather than
+/// duplicating it.
+pub fn mint_id() -> Result<String, getrandom::Error> {
+    let mut bytes = [0u8; 16];
+    getrandom::fill(&mut bytes)?;
+    Ok(crate::device::hex_encode(&bytes))
+}
+
 /// After a library sync: `POST checkforchanges`, then `GET .../annotations`
 /// for each id it names, with [`ANNOTATIONS_IF_NONE_MATCH`]. A non-2xx
 /// answer, an unreadable body, or no answer at all on either request is

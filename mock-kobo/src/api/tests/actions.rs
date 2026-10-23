@@ -1,7 +1,33 @@
 //! `POST /actions/*` route replies, over real TCP: sync's download policy,
-//! download, remove-download, read and finish.
+//! download, remove-download, read, finish, highlight and delete-highlight.
 
 use super::*;
+
+fn span_location() -> Value {
+    json!({
+        "chapter": "OEBPS/ch1.xhtml",
+        "start_span": "kobo.1.2",
+        "start_char": 3,
+        "end_span": "kobo.1.4",
+        "end_char": 9,
+    })
+}
+
+/// `/actions/sync` then `/actions/download` on `base`'s one "book-1".
+async fn synced_and_downloaded(base: &str) {
+    let client = reqwest::Client::new();
+    client
+        .post(format!("{base}/actions/sync"))
+        .send()
+        .await
+        .unwrap();
+    client
+        .post(format!("{base}/actions/download"))
+        .json(&json!({ "books": ["book-1"] }))
+        .send()
+        .await
+        .unwrap();
+}
 
 #[tokio::test]
 async fn post_actions_sync_downloads_every_book_when_the_body_asks_for_all() {
@@ -380,4 +406,196 @@ async fn post_actions_finish_returns_state_sent_reply() {
         body["details"]["library"]["book-1"]["reading"]["status"],
         "Finished"
     );
+}
+
+#[tokio::test]
+async fn post_actions_highlight_returns_annotation_sent_reply() {
+    let stub = spawn_stub(dune_stub()).await;
+    let dir = TempDir::new().unwrap();
+    let base = serve(stub_control(&stub, dir.path().join("kobo.json"))).await;
+    synced_and_downloaded(&base).await;
+
+    let response = reqwest::Client::new()
+        .post(format!("{base}/actions/highlight"))
+        .json(&json!({
+            "book": "book-1",
+            "text": "a passage",
+            "color": "blue",
+            "location": span_location(),
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["code"], "annotation_sent");
+    let highlights = &body["details"]["library"]["book-1"]["annotations"];
+    assert_eq!(highlights[0]["color"], "blue");
+    assert_eq!(highlights[0]["text"], "a passage");
+}
+
+#[tokio::test]
+async fn post_actions_highlight_returns_invalid_request_for_an_unknown_colour() {
+    let stub = spawn_stub(dune_stub()).await;
+    let dir = TempDir::new().unwrap();
+    let base = serve(stub_control(&stub, dir.path().join("kobo.json"))).await;
+    synced_and_downloaded(&base).await;
+
+    let response = reqwest::Client::new()
+        .post(format!("{base}/actions/highlight"))
+        .json(&json!({
+            "book": "book-1",
+            "text": "a passage",
+            "color": "purple",
+            "location": span_location(),
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["code"], "invalid_request");
+}
+
+#[tokio::test]
+async fn post_actions_highlight_returns_invalid_request_for_empty_text() {
+    let stub = spawn_stub(dune_stub()).await;
+    let dir = TempDir::new().unwrap();
+    let base = serve(stub_control(&stub, dir.path().join("kobo.json"))).await;
+    synced_and_downloaded(&base).await;
+
+    let response = reqwest::Client::new()
+        .post(format!("{base}/actions/highlight"))
+        .json(&json!({
+            "book": "book-1",
+            "text": "",
+            "color": "blue",
+            "location": span_location(),
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["code"], "invalid_request");
+}
+
+#[tokio::test]
+async fn post_actions_highlight_returns_not_downloaded_for_an_undownloaded_book() {
+    let stub = spawn_stub(dune_stub()).await;
+    let dir = TempDir::new().unwrap();
+    let base = serve(stub_control(&stub, dir.path().join("kobo.json"))).await;
+    reqwest::Client::new()
+        .post(format!("{base}/actions/sync"))
+        .send()
+        .await
+        .unwrap();
+
+    let response = reqwest::Client::new()
+        .post(format!("{base}/actions/highlight"))
+        .json(&json!({
+            "book": "book-1",
+            "text": "a passage",
+            "color": "blue",
+            "location": span_location(),
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["code"], "not_downloaded");
+}
+
+#[tokio::test]
+async fn post_actions_highlight_returns_annotation_failed_when_the_patch_answers_500() {
+    let stub = spawn_stub(Stub {
+        sync_pages: vec![json!([new_entitlement("book-1", "Dune")])],
+        patch_status: StatusCode::INTERNAL_SERVER_ERROR,
+        ..Stub::default()
+    })
+    .await;
+    let dir = TempDir::new().unwrap();
+    let base = serve(stub_control(&stub, dir.path().join("kobo.json"))).await;
+    synced_and_downloaded(&base).await;
+
+    let response = reqwest::Client::new()
+        .post(format!("{base}/actions/highlight"))
+        .json(&json!({
+            "book": "book-1",
+            "text": "a passage",
+            "color": "blue",
+            "location": span_location(),
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["code"], "annotation_failed");
+}
+
+#[tokio::test]
+async fn post_actions_delete_highlight_returns_annotation_sent_reply() {
+    let stub = spawn_stub(dune_stub()).await;
+    let dir = TempDir::new().unwrap();
+    let base = serve(stub_control(&stub, dir.path().join("kobo.json"))).await;
+    synced_and_downloaded(&base).await;
+    let client = reqwest::Client::new();
+    let highlighted: Value = client
+        .post(format!("{base}/actions/highlight"))
+        .json(&json!({
+            "book": "book-1",
+            "text": "a passage",
+            "color": "blue",
+            "location": span_location(),
+        }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let highlight_id = highlighted["details"]["library"]["book-1"]["annotations"][0]["id"]
+        .as_str()
+        .unwrap();
+
+    let response = client
+        .post(format!("{base}/actions/delete-highlight"))
+        .json(&json!({ "book": "book-1", "highlight": highlight_id }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["code"], "annotation_sent");
+    assert!(body["details"]["library"]["book-1"]["annotations"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+}
+
+#[tokio::test]
+async fn post_actions_delete_highlight_returns_unknown_highlight_for_an_id_the_book_lacks() {
+    let stub = spawn_stub(dune_stub()).await;
+    let dir = TempDir::new().unwrap();
+    let base = serve(stub_control(&stub, dir.path().join("kobo.json"))).await;
+    synced_and_downloaded(&base).await;
+
+    let response = reqwest::Client::new()
+        .post(format!("{base}/actions/delete-highlight"))
+        .json(&json!({ "book": "book-1", "highlight": "nope" }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["code"], "unknown_highlight");
 }
