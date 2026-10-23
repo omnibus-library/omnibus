@@ -48,10 +48,10 @@ The actions today:
 | `show` | Reads the device | `details.library` (every book, keyed by uuid) and `details.last_sync` |
 | `download <uuid>…` | Downloads one or more books already on the device | `code` `downloaded`, or `download_failed` with the quirk |
 | `read <uuid> <percent> [<source> <span>]` | Sends a reading position; the span is optional | `code` `state_sent`, or `state_failed` with the quirk |
-| `read-to <uuid> <passage>` | Reads to the span holding a passage copied from the web reader | `code` `state_sent`, or `passage_not_found`/`not_downloaded`/`state_failed` |
+| `read-to <uuid> <passage>` | Reads to the span holding a passage copied from the web reader | `code` `state_sent`, or `passage_not_found`/`not_downloaded`/`book_unreadable`/`no_kobo_spans` (409)/`state_failed` |
 | `finish <uuid>` | Marks a book finished and sends it | `code` `state_sent`, or `state_failed` with the quirk |
 | `remove-download <uuid>` | Clears a book's downloaded flag, locally | `code` `download_removed` |
-| `highlight <uuid> <colour> <passage> [<note>]` | Highlights a passage copied from the web reader (`<colour>` one of `yellow`/`pink`/`blue`/`green`) | `code` `annotation_sent`, or `passage_not_found`/`not_downloaded`/`annotation_failed` |
+| `highlight <uuid> <colour> <passage> [<note>]` | Highlights a passage copied from the web reader (`<colour>` one of `yellow`/`pink`/`blue`/`green`) | `code` `annotation_sent`, or `passage_not_found`/`not_downloaded`/`book_unreadable`/`no_kobo_spans` (409)/`annotation_failed` |
 | `delete-highlight <uuid> <id>` | Deletes a highlight by the id `show` reports in `annotations` | `code` `annotation_sent`, or `annotation_failed` with the quirk |
 
 The `[<source> <span>]` on `read` is hand-supplied for testing. `read-to` and
@@ -59,6 +59,7 @@ The `[<source> <span>]` on `read` is hand-supplied for testing. `read-to` and
 from the web reader — and find it in the downloaded KEPUB the same way the
 reader view resolves a page and a selection; copy enough words to make the
 passage unique, since both actions land on its first occurrence in the book.
+`no_kobo_spans` means the server sent a plain EPUB (no kepubify).
 **A reset is not an agent action yet.** Any action answers `409`
 `sync_in_progress` while the device is mid-sync; wait a moment and ask again.
 

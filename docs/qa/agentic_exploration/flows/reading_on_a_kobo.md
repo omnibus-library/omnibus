@@ -78,10 +78,10 @@ tool that ever touches the device's control API.
 ## Sharp edges
 
 - **Never journal `kobo.read` or `kobo.read_to`.** `read` is one of the
-  audit's own qualifier words, so an entry named `kobo.read` (or
-  `kobo.read_to`) is silently read as a look and never asserts the position
-  change you made — journal `progress.set --surface kobo` instead (see
-  Journalling above).
+  audit's own qualifier words, so `kobo.read` is silently read as a look
+  and never asserts the position change you made; `kobo.read_to` isn't a
+  recognised action at all. Journal `progress.set --surface kobo` instead,
+  for either one (see Journalling above).
 - **Newest wins by event time, not arrival time.** The device stamps its own
   write with its own clock; a browser position written after the device's
   but arriving before it (or vice versa) still loses to whichever is
