@@ -1,6 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
-import { Link, Outlet, useOutletContext, useParams } from "react-router";
+import {
+  Link,
+  Outlet,
+  useLocation,
+  useOutletContext,
+  useParams,
+} from "react-router";
 import {
   type AuthorId,
   type AuthorReading,
@@ -12,6 +18,10 @@ import {
 import { Loading, RowSkeletons } from "../../components/Loading/Loading";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
 import { bookCount } from "../../format";
+import {
+  useScrollRestore,
+  useScrollRestoreOnChange,
+} from "../../scrollRestore";
 import { loadDiscoveryPrefs, saveDiscoverySort } from "../../viewPrefs";
 import { AuthorPane } from "../AuthorDetail/AuthorPane";
 import {
@@ -239,6 +249,9 @@ export function Authors() {
   const [sort, setSort] = useState(() => loadDiscoveryPrefs().authors_sort);
   const [onlyReading, setOnlyReading] = useState(false);
   const list = useRef<HTMLDivElement>(null);
+  const pathname = useLocation().pathname;
+  useScrollRestore(authors.data !== undefined, pathname);
+  useScrollRestoreOnChange(pathname);
 
   const rows = authors.data ?? NO_AUTHORS;
   const readingState: ReadingState = reading.data
