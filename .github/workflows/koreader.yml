@@ -39,10 +39,13 @@ jobs:
             koreader:
               - "server/src/backend/opds/**"
               - "server/src/auth/**"
+              - "server/src/backend.rs"
+              - "server/src/main.rs"
               - "server/src/backend/ebooks.rs"
               - "server/src/backend/koreader/**"
               - "server/src/backend/kobo_devices.rs"
               - "db/src/kobo.rs"
+              - "db/migrations/**"
               - "db/src/kobo_devices*"
               - "koreader/**"
               - "ui_tests/koreader/**"
@@ -52,6 +55,8 @@ jobs:
               - "scripts/koreader_report.py"
               - "scripts/lib/scratch-server.sh"
               - "scripts/lib/dev-port.sh"
+              - "Justfile"
+              - "flake.nix"
               - ".github/workflows/koreader.yml"
 
   koreader:
