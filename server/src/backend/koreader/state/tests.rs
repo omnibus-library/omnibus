@@ -13,7 +13,7 @@ use crate::auth::test_support as auth_test_support;
 use crate::backend::test_support::{body_json, get_with_bearer, request};
 use crate::backend::{rest_router, AppState};
 
-use super::super::test_support::fixture;
+use super::super::test_support::{fixture, seed_epub_book};
 
 const MISSING: &str = "99999999-9999-9999-9999-999999999999";
 
@@ -67,7 +67,14 @@ async fn web_view(
 
 /// A position the web reader stored: a percent at an event time.
 async fn web_position(pool: &SqlitePool, uid: i64, uuid: &str, percent: i64, at: i64) {
-    let update = ProgressUpdate {
+    db::progress::upsert_progress(pool, uid, &update_at(uuid, percent, at))
+        .await
+        .unwrap();
+}
+
+/// An epub position update of `percent` at `at`, with no CFI.
+fn update_at(uuid: &str, percent: i64, at: i64) -> ProgressUpdate {
+    ProgressUpdate {
         book_uuid: uuid.to_owned(),
         format: ProgressFormat::Epub,
         epub_cfi: None,
@@ -76,10 +83,7 @@ async fn web_position(pool: &SqlitePool, uid: i64, uuid: &str, percent: i64, at:
         kobo_location: None,
         book_file_id: None,
         client_updated_at: Some(at),
-    };
-    db::progress::upsert_progress(pool, uid, &update)
-        .await
-        .unwrap();
+    }
 }
 
 /// A status the web stored, dated `at`.
@@ -389,5 +393,206 @@ mod get {
         let res = get(&app, &token, &long).await;
 
         assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    }
+}
+
+/// Two chapters: `DocFragment[2]`'s second paragraph starts "Second paragraph.", which the
+/// literals below address as `/4/4` (body, then its second element child) by hand.
+const CHAPTER_ONE: &str = r#"<?xml version="1.0" encoding="utf-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml"><head><title>One</title></head><body><p>Opening chapter text.</p></body></html>"#;
+const CHAPTER_TWO: &str = r#"<?xml version="1.0" encoding="utf-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml"><head><title>Two</title></head><body><p>First paragraph.</p><p>Second paragraph.</p></body></html>"#;
+
+const SECOND_PARAGRAPH_XPOINTER: &str = "/body/DocFragment[2]/body/p[2]/text().6";
+const SECOND_PARAGRAPH_CFI: &str = "epubcfi(/6/4!/4/4/1:6)";
+
+async fn seeded_epub() -> (
+    axum::Router,
+    SqlitePool,
+    String,
+    i64,
+    String,
+    std::path::PathBuf,
+) {
+    let (app, pool, token, uid) = fixture().await;
+    let (uuid, file) = seed_epub_book(
+        &pool,
+        &[("c1.xhtml", CHAPTER_ONE), ("c2.xhtml", CHAPTER_TWO)],
+    )
+    .await;
+    (app, pool, token, uid, uuid, file)
+}
+
+mod xpointer {
+    use super::*;
+
+    #[tokio::test]
+    async fn put_state_with_an_xpointer_stores_its_cfi_for_the_web() {
+        let (app, pool, token, uid, uuid, _file) = seeded_epub().await;
+
+        let res = put(
+            &app,
+            &token,
+            &uuid,
+            json!({ "percent": 60, "event_at": now() - 10, "xpointer": SECOND_PARAGRAPH_XPOINTER }),
+        )
+        .await;
+
+        assert_eq!(res.status(), StatusCode::OK);
+        let epub = web_view(&pool, uid, &uuid).await.0.unwrap();
+        assert_eq!(epub.epub_cfi.as_deref(), Some(SECOND_PARAGRAPH_CFI));
+        assert_eq!(epub.progress_percent, Some(60));
+    }
+
+    #[tokio::test]
+    async fn get_state_derives_an_xpointer_from_a_web_cfi() {
+        let (app, pool, token, uid, uuid, _file) = seeded_epub().await;
+        let update = ProgressUpdate {
+            epub_cfi: Some(SECOND_PARAGRAPH_CFI.to_owned()),
+            ..update_at(&uuid, 60, now() - 10)
+        };
+        db::progress::upsert_progress(&pool, uid, &update)
+            .await
+            .unwrap();
+
+        let res = get(&app, &token, &uuid).await;
+
+        assert_eq!(
+            body_json::<Value>(res).await["position"]["xpointer"],
+            SECOND_PARAGRAPH_XPOINTER
+        );
+    }
+
+    #[tokio::test]
+    async fn get_state_returns_the_devices_own_xpointer_verbatim() {
+        let (app, pool, token, uid, uuid, _file) = seeded_epub().await;
+        let spelled = "/body/DocFragment[2]/body/p[2]/text()[1].6";
+
+        put(
+            &app,
+            &token,
+            &uuid,
+            json!({ "percent": 60, "event_at": now() - 10, "xpointer": spelled }),
+        )
+        .await;
+
+        let res = get(&app, &token, &uuid).await;
+        assert_eq!(
+            body_json::<Value>(res).await["position"]["xpointer"],
+            spelled
+        );
+        let epub = web_view(&pool, uid, &uuid).await.0.unwrap();
+        assert_eq!(epub.epub_cfi.as_deref(), Some(SECOND_PARAGRAPH_CFI));
+    }
+
+    #[tokio::test]
+    async fn put_state_with_an_unmappable_xpointer_falls_back_to_percent() {
+        let (app, pool, token, uid, uuid, _file) = seeded_epub().await;
+        let unmappable = "/body/DocFragment[2]/body/p[9]/text().1";
+
+        let res = put(
+            &app,
+            &token,
+            &uuid,
+            json!({ "percent": 60, "event_at": now() - 10, "xpointer": unmappable }),
+        )
+        .await;
+
+        assert_eq!(res.status(), StatusCode::OK);
+        let epub = web_view(&pool, uid, &uuid).await.0.unwrap();
+        assert_eq!((epub.epub_cfi, epub.progress_percent), (None, Some(60)));
+        let res = get(&app, &token, &uuid).await;
+        assert_eq!(
+            body_json::<Value>(res).await["position"]["xpointer"],
+            unmappable
+        );
+    }
+
+    #[tokio::test]
+    async fn put_state_with_an_xpointer_for_a_book_without_its_epub_file_stores_percent() {
+        let (app, pool, token, uid, uuid, file) = seeded_epub().await;
+        std::fs::remove_file(file).unwrap();
+
+        let res = put(
+            &app,
+            &token,
+            &uuid,
+            json!({ "percent": 60, "event_at": now() - 10, "xpointer": SECOND_PARAGRAPH_XPOINTER }),
+        )
+        .await;
+
+        assert_eq!(res.status(), StatusCode::OK);
+        let epub = web_view(&pool, uid, &uuid).await.0.unwrap();
+        assert_eq!((epub.epub_cfi, epub.progress_percent), (None, Some(60)));
+    }
+
+    #[tokio::test]
+    async fn put_state_rejects_an_xpointer_over_the_length_cap() {
+        let (app, pool, token, uid, uuid, _file) = seeded_epub().await;
+        let long = "a".repeat(omnibus_shared::EPUB_CFI_MAX_LEN + 1);
+
+        let res = put(
+            &app,
+            &token,
+            &uuid,
+            json!({ "percent": 60, "event_at": now() - 10, "xpointer": long }),
+        )
+        .await;
+
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+        assert!(web_view(&pool, uid, &uuid).await.0.is_none());
+    }
+
+    #[tokio::test]
+    async fn put_state_clears_the_stored_xpointer_when_the_write_carries_none() {
+        let (app, _pool, token, _uid, uuid, _file) = seeded_epub().await;
+        let (t1, t2) = (now() - 100, now() - 50);
+        put(
+            &app,
+            &token,
+            &uuid,
+            json!({ "percent": 60, "event_at": t1, "xpointer": SECOND_PARAGRAPH_XPOINTER }),
+        )
+        .await;
+
+        let res = put(
+            &app,
+            &token,
+            &uuid,
+            json!({ "percent": 70, "event_at": t2 }),
+        )
+        .await;
+
+        assert_eq!(
+            body_json::<Value>(res).await["position"],
+            json!({ "percent": 70, "event_at": t2 })
+        );
+    }
+
+    #[tokio::test]
+    async fn put_state_answers_a_stale_write_with_the_stored_xpointer() {
+        let (app, _pool, token, _uid, uuid, _file) = seeded_epub().await;
+        let (t1, t2) = (now() - 200, now() - 100);
+        put(
+            &app,
+            &token,
+            &uuid,
+            json!({ "percent": 60, "event_at": t2, "xpointer": SECOND_PARAGRAPH_XPOINTER }),
+        )
+        .await;
+
+        let res = put(
+            &app,
+            &token,
+            &uuid,
+            json!({ "percent": 10, "event_at": t1, "xpointer": "/body/DocFragment[1]/body/p/text().2" }),
+        )
+        .await;
+
+        assert_eq!(res.status(), StatusCode::CONFLICT);
+        assert_eq!(
+            body_json::<Value>(res).await["position"],
+            json!({ "percent": 60, "event_at": t2, "xpointer": SECOND_PARAGRAPH_XPOINTER })
+        );
     }
 }
