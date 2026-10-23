@@ -471,3 +471,52 @@ fn description_overflows_only_past_the_clamps_worth_of_words() {
     let tagged = "<em>one</em> <em>two</em> <em>three</em>".repeat(3);
     assert!(!description_overflows(&tagged));
 }
+
+fn creator(name: &str, id: Option<i64>) -> omnibus_shared::Contributor {
+    omnibus_shared::Contributor {
+        name: name.into(),
+        role: None,
+        file_as: None,
+        id,
+    }
+}
+
+#[test]
+fn byline_renders_authors_as_plain_text_when_the_book_is_wishlist_only() {
+    let html = dioxus::ssr::render_element(rsx! {
+        MarqueeByline {
+            creators: vec![creator("Ada Lovelace", Some(3)), creator("Grace Hopper", Some(4))],
+            linked: false,
+        }
+    });
+    assert!(html.contains("Ada Lovelace"), "{html}");
+    assert!(html.contains("Grace Hopper"), "{html}");
+    assert!(!html.contains("href="), "{html}");
+}
+
+#[derive(Clone, Debug, PartialEq, dioxus_router::Routable)]
+enum BylineRoute {
+    #[route("/")]
+    BylineHost {},
+}
+
+#[component]
+fn BylineHost() -> Element {
+    rsx! {
+        MarqueeByline {
+            creators: vec![creator("Ada Lovelace", Some(3)), creator("No Page", None)],
+            linked: true,
+        }
+    }
+}
+
+#[test]
+fn byline_links_only_the_authors_that_have_a_page() {
+    let html = crate::test_support::render_in_vdom(|| {
+        rsx! {
+            dioxus_router::Router::<BylineRoute> {}
+        }
+    });
+    assert!(html.contains("href=\"/authors/3\""), "{html}");
+    assert_eq!(html.matches("href=").count(), 1, "{html}");
+}

@@ -434,7 +434,7 @@ fn render_physical_section(
         BdSectionHead { kicker: "Physical", title: "Physical copy" }
         div { class: "bd-phys-pill-row",
             span { class: "chip bd-phys-pill", "data-testid": "physical-pill",
-                "In your physical collection"
+                {viewer.collection_label(&copies.read())}
             }
         }
         div { class: "bd-phys-copies",
@@ -481,6 +481,7 @@ fn render_copy_row_marquee(
     let filer = viewer.filer_label(&copy);
     let checked_in = checked_in_label(now_unix(), copy.checked_in_at, filer.as_deref());
     let may_change = viewer.may_change(&copy);
+    let collection = viewer.copy_collection_label(&copy);
     let note_val = copy.note.clone().unwrap_or_default();
     let note_is_empty = note_val.trim().is_empty();
     rsx! {
@@ -491,7 +492,7 @@ fn render_copy_row_marquee(
             span {
                 class: "format-badge rx-ic",
                 "data-testid": "format-badge-physical",
-                title: "In your physical collection",
+                title: "{collection}",
                 "aria-label": "Physical",
                 {book_glyph(15)}
             }
@@ -499,7 +500,7 @@ fn render_copy_row_marquee(
                 div { class: "nm", "Physical copy" }
                 div { class: "sb",
                     span { class: "rx-statusdot", "data-testid": "physical-pill",
-                        "aria-label": "In your physical collection" }
+                        "aria-label": "{collection}" }
                     "{checked_in}"
                     if let Some(isbn) = copy.isbn.clone() {
                         br {}

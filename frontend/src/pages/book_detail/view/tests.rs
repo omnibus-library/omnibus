@@ -39,3 +39,36 @@ fn settle_after_poll_cap_leaves_every_settled_answer_alone() {
         assert_eq!(settle_after_poll_cap(settled.clone()), settled);
     }
 }
+
+fn credited_book(formats: &[&str], has_physical: bool) -> EbookMetadata {
+    EbookMetadata {
+        formats: formats.iter().map(|f| (*f).to_string()).collect(),
+        has_physical,
+        creators: vec![omnibus_shared::Contributor {
+            name: "Ada Lovelace".into(),
+            role: None,
+            file_as: None,
+            id: Some(3),
+        }],
+        ..Default::default()
+    }
+}
+
+#[test]
+fn derive_loaded_view_withholds_the_author_page_from_a_wishlist_only_book() {
+    let wish_only = derive_loaded_view(&credited_book(&[], false));
+    assert_eq!(wish_only.author_id, None);
+    assert_eq!(wish_only.primary_author, "Ada Lovelace");
+}
+
+#[test]
+fn derive_loaded_view_keeps_the_author_page_for_a_book_with_a_file_or_a_copy() {
+    assert_eq!(
+        derive_loaded_view(&credited_book(&["EPUB"], false)).author_id,
+        Some(3)
+    );
+    assert_eq!(
+        derive_loaded_view(&credited_book(&[], true)).author_id,
+        Some(3)
+    );
+}

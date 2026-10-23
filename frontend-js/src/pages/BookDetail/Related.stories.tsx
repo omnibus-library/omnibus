@@ -289,6 +289,27 @@ export const MoreByWithoutAnAuthorIdHasNoLinks: Story = {
   },
 };
 
+export const MoreByIsAbsentForAWishlistOnlyBook: Story = {
+  args: {
+    book: aBook({
+      series: null,
+      series_id: null,
+      formats: [],
+      book_files: [],
+      has_physical: false,
+    }),
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("bp-related");
+    await expect(
+      canvas.queryByRole("link", { name: "Author page" }),
+    ).not.toBeInTheDocument();
+    await expect(
+      canvas.queryByRole("heading", { name: /^More by/ }),
+    ).not.toBeInTheDocument();
+  },
+};
+
 const READY = {
   status: "ready",
   items: [1, 2, 3, 4, 5, 6, 7, 8].map((n) =>

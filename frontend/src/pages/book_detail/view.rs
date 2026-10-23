@@ -20,6 +20,12 @@ fn series_label(series: Option<&str>, index: Option<&str>) -> Option<String> {
     }
 }
 
+/// A book held only because someone wants it: no file and no physical copy. The
+/// library has no author page for its authors, so nothing links to one.
+pub(super) fn is_wishlist_only(b: &EbookMetadata) -> bool {
+    b.formats.is_empty() && !b.has_physical
+}
+
 /// What the strip shows once polling gives up: a lookup still `Pending` after
 /// the last poll will not finish soon, so it reads as unavailable, not loading.
 #[cfg_attr(not(feature = "web"), allow(dead_code))]
@@ -59,7 +65,11 @@ pub(super) fn derive_loaded_view(b: &EbookMetadata) -> LoadedBookView {
         .first()
         .map(|c| c.name.clone())
         .unwrap_or_default();
-    let author_id = b.creators.first().and_then(|c| c.id);
+    let author_id = b
+        .creators
+        .first()
+        .and_then(|c| c.id)
+        .filter(|_| !is_wishlist_only(b));
     let authors_line = b
         .creators
         .iter()

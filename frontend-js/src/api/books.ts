@@ -46,6 +46,10 @@ export type Book = ReturnType<typeof toBook>;
 const hasFormat = (formats: readonly string[], ...names: string[]) =>
   formats.some((f) => names.includes(f.toLowerCase()));
 
+/** A book held only because someone wants it: no file and no physical copy. The library has no author page to open for its authors. */
+export const isWishlistOnly = (book: Pick<Book, "formats" | "hasPhysical">) =>
+  book.formats.length === 0 && !book.hasPhysical;
+
 /** The screen's shape of `GET /api/ebooks/{uuid}`. */
 export function toBookDetail(wire: EbookMetadata) {
   const formats = wire.formats ?? [];

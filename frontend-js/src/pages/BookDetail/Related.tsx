@@ -5,6 +5,7 @@ import {
   authorBooksQuery,
   type Book,
   type BookDetail,
+  isWishlistOnly,
   type Suggestion,
   seriesQuery,
   thumbSrcSet,
@@ -145,7 +146,7 @@ function SeriesFan({ book, seriesId }: { book: BookDetail; seriesId: number }) {
 /** The author's other books in the library, up to four, with a link to their page; nothing until there is one. */
 function MoreBy({ book }: { book: BookDetail }) {
   const author = book.authors[0] ?? "";
-  const id = book.creators[0]?.id ?? null;
+  const id = isWishlistOnly(book) ? null : (book.creators[0]?.id ?? null);
   const page = useQuery(authorBooksQuery(id));
   // The author's page is the source; without one read, or an author it doesn't know, there is nothing to list.
   const others = (page.data ?? []).filter((b) => b.uuid !== book.uuid);
