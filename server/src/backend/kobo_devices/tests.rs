@@ -334,7 +334,10 @@ mod koreader_plugin {
         assert_eq!(headers["content-type"], "application/zip");
         assert_eq!(
             headers["content-disposition"],
-            "attachment; filename=\"omnibus.koplugin.zip\""
+            format!(
+                "attachment; filename=\"omnibus-koreader-{}.zip\"",
+                device.id
+            )
         );
         assert_eq!(headers["cache-control"], "no-store");
         let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();

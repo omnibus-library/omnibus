@@ -14,19 +14,22 @@ never overwrites a newer server position with a fresh timestamp.
 local M = {}
 
 local FOLDER_LIMIT = 80
+local UNREADABLE_MESSAGE = "Omnibus sent a library this plugin could not read. Download the plugin again from Settings › Devices."
 
-M.REMOVED_MESSAGE = "This device was removed from Omnibus. Download the plugin again from Settings › Devices."
+M.REMOVED_MESSAGE = "This device was removed from Omnibus. Add a new KOReader in Settings › Devices and install its plugin."
 
--- shortcut: limits by bytes, not characters, backing off to a character boundary.
 local function cap(text, limit)
-    if #text <= limit then
-        return text
+    local count = 0
+    for i = 1, #text do
+        local byte = text:byte(i)
+        if byte < 0x80 or byte >= 0xC0 then
+            count = count + 1
+            if count > limit then
+                return text:sub(1, i - 1)
+            end
+        end
     end
-    local cut = limit
-    while cut > 0 and text:byte(cut + 1) >= 0x80 and text:byte(cut + 1) < 0xC0 do
-        cut = cut - 1
-    end
-    return text:sub(1, cut)
+    return text
 end
 
 local function safe(text)
@@ -69,8 +72,11 @@ function M.plan(manifest, books, dir, exists, open_path)
     for _, book in ipairs(books) do
         wanted[book.uuid] = true
         local path = manifest[book.uuid]
-        if not path or not exists(path) then
+        if not (inside(dir, path) and exists(path)) then
             table.insert(plan.download, book)
+            if path and not inside(dir, path) then
+                table.insert(plan.forget, book.uuid)
+            end
         end
     end
     for uuid, path in pairs(manifest) do
@@ -195,6 +201,23 @@ local function failure_message(verb, failures)
         table.concat(failures, "; "))
 end
 
+-- A books list that is a real sequence of complete entries; anything else must not be
+-- mistaken for an empty library, which would remove every delivered book.
+local function readable_library(body)
+    if type(body) ~= "table" or type(body.books) ~= "table" then
+        return false
+    end
+    local count = 0
+    for _, book in pairs(body.books) do
+        count = count + 1
+        if type(book) ~= "table" or type(book.uuid) ~= "string" or type(book.title) ~= "string"
+            or type(book.format) ~= "string" or type(book.download_url) ~= "string" then
+            return false
+        end
+    end
+    return count == #body.books
+end
+
 local function fetch_library(server_url, deps)
     local code, body, err = deps.get_library()
     if not code then
@@ -204,10 +227,10 @@ local function fetch_library(server_url, deps)
         return nil, M.REMOVED_MESSAGE
     end
     if code ~= 200 then
-        return nil, string.format("Omnibus answered HTTP %d", code), true
+        return nil, string.format("Omnibus answered HTTP %d. Try again later.", code), true
     end
-    if type(body) ~= "table" or type(body.books) ~= "table" then
-        return nil, "Omnibus sent a library this plugin could not read", true
+    if not readable_library(body) then
+        return nil, UNREADABLE_MESSAGE, true
     end
     return body.books
 end

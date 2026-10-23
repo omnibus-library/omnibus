@@ -14,7 +14,7 @@ use tower::ServiceExt;
 use crate::auth::test_support as auth_test_support;
 use crate::backend::test_support::{
     body_json, get_with_bearer, get_with_bearer_and_if_none_match, opt_in, request,
-    revoke_can_download, seed_downloadable_book,
+    revoke_can_download, seed_downloadable_book, seed_downloadable_book_with,
 };
 
 use super::test_support::fixture;
@@ -222,33 +222,8 @@ mod file {
     #[tokio::test]
     async fn serves_the_cbz_archive_for_a_cbz_only_book() {
         let (app, pool, token, _uid) = fixture().await;
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("aurora.cbz"), b"archive").unwrap();
-        let lib_id = sqlx::query("INSERT INTO scan_roots (path, display_name) VALUES (?, 'lib')")
-            .bind(dir.path().to_str().unwrap())
-            .execute(&pool)
-            .await
-            .unwrap()
-            .last_insert_rowid();
-        let book_id = sqlx::query(
-            "INSERT INTO books (uuid, library_id, path, title, last_modified) \
-             VALUES (?, ?, ?, 'Aurora', 1)",
-        )
-        .bind(UUID)
-        .bind(lib_id)
-        .bind(dir.path().to_str().unwrap())
-        .execute(&pool)
-        .await
-        .unwrap()
-        .last_insert_rowid();
-        sqlx::query(
-            "INSERT INTO book_files (book_id, format, filename, size_bytes) \
-             VALUES (?, 'CBZ', 'aurora', 0)",
-        )
-        .bind(book_id)
-        .execute(&pool)
-        .await
-        .unwrap();
+        seed_downloadable_book_with(&pool, UUID, "Aurora", "Ada", "CBZ", "aurora", b"archive")
+            .await;
 
         let res = app
             .oneshot(get_with_bearer(&file_uri(UUID), &token))
@@ -378,6 +353,21 @@ mod sync_report {
 
         let stored = owner_view(&pool, uid).await.last_sync_error.unwrap();
         assert_eq!(stored, "é".repeat(500));
+    }
+
+    #[tokio::test]
+    async fn rejects_a_report_without_an_authorization_header() {
+        let (app, _pool, _token, _uid) = fixture().await;
+        let req = Request::builder()
+            .method("POST")
+            .uri("/koreader/v1/sync-report")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(json!({ "error": null }).to_string()))
+            .unwrap();
+
+        let res = app.oneshot(req).await.unwrap();
+
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
     }
 
     #[tokio::test]

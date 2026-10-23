@@ -22,8 +22,14 @@ local function eq(actual, expected, what)
 end
 
 local DIR = "/books/Omnibus"
-local ALPHA = { uuid = "0123abcd-0000-0000-0000-000000000000", title = "Alpha", format = "epub" }
-local BETA = { uuid = "89efcdab-0000-0000-0000-000000000000", title = "Beta", format = "epub" }
+local ALPHA = {
+    uuid = "0123abcd-0000-0000-0000-000000000000", title = "Alpha", format = "epub",
+    download_url = "/koreader/v1/books/0123abcd-0000-0000-0000-000000000000/file",
+}
+local BETA = {
+    uuid = "89efcdab-0000-0000-0000-000000000000", title = "Beta", format = "epub",
+    download_url = "/koreader/v1/books/89efcdab-0000-0000-0000-000000000000/file",
+}
 
 -- A fake device: `files` is the set of paths on disk; every call lands in `log`.
 local function fake(opts)
@@ -78,7 +84,7 @@ end)
 
 test("file_name caps the title at 80 characters without splitting a multibyte one", function()
     local book = { uuid = ALPHA.uuid, title = string.rep("a", 79) .. "é" .. "tail", format = "epub" }
-    eq(sync.file_name(book), string.rep("a", 79) .. " - 0123abcd.epub")
+    eq(sync.file_name(book), string.rep("a", 79) .. "é - 0123abcd.epub")
 end)
 
 test("book_url joins a host-relative download path to the configured server", function()
@@ -102,6 +108,14 @@ test("plan downloads a manifest book whose file is gone", function()
     local manifest = { [ALPHA.uuid] = DIR .. "/Alpha - 0123abcd.epub" }
     local plan = sync.plan(manifest, { ALPHA }, DIR, function() return false end, nil)
     eq(#plan.download, 1)
+end)
+
+test("plan downloads a wanted book again when its manifest path is outside the folder, without deleting it", function()
+    local old = "/old/Omnibus/Alpha - 0123abcd.epub"
+    local plan = sync.plan({ [ALPHA.uuid] = old }, { ALPHA }, "/new/Omnibus", function(p) return p == old end, nil)
+    eq(#plan.download, 1)
+    eq(#plan.delete, 0)
+    eq(plan.forget[1], ALPHA.uuid)
 end)
 
 test("plan keeps a delivered book whose file is still there", function()
@@ -173,7 +187,7 @@ test("run on a 401 changes nothing, reports nothing and says the device was remo
     local result = sync.run("https://omni.test", deps)
 
     eq(result.ok, false)
-    eq(result.message, "This device was removed from Omnibus. Download the plugin again from Settings › Devices.")
+    eq(result.message, "This device was removed from Omnibus. Add a new KOReader in Settings › Devices and install its plugin.")
     eq(#log.downloads + #log.removed + #log.reports, 0)
     eq(deps.manifest[BETA.uuid], gone)
 end)
@@ -198,6 +212,40 @@ test("run treats a 200 without a books array as a failure, never an empty librar
     eq(result.ok, false)
     eq(#log.removed, 0)
     eq(#log.reports, 1)
+end)
+
+test("run treats a books map as an unreadable library and removes nothing", function()
+    local gone = DIR .. "/Beta - 89efcdab.epub"
+    local deps, log = fake({ library = { 200, { books = { x = 1 } } }, manifest = { [BETA.uuid] = gone }, files = { [gone] = true } })
+
+    local result = sync.run("https://omni.test", deps)
+
+    eq(result.ok, false)
+    eq(result.message, "Omnibus sent a library this plugin could not read. Download the plugin again from Settings › Devices.")
+    eq(#log.removed, 0)
+    eq(deps.manifest[BETA.uuid], gone)
+end)
+
+test("run treats a book without a uuid as an unreadable library instead of crashing", function()
+    local deps, log = fake({ library = { 200, { books = { { title = "X" } } } } })
+
+    local result = sync.run("https://omni.test", deps)
+
+    eq(result.ok, false)
+    eq(#log.downloads, 0)
+end)
+
+test("run removes the manifest books when the library is a genuinely empty list", function()
+    local gone = DIR .. "/Beta - 89efcdab.epub"
+    local deps = fake({ books = {}, manifest = { [BETA.uuid] = gone }, files = { [gone] = true } })
+
+    eq(sync.run("https://omni.test", deps).removed, 1)
+end)
+
+test("run says to try again later when Omnibus answers an unexpected status", function()
+    local deps = fake({ library = { 500, nil } })
+
+    eq(sync.run("https://omni.test", deps).message, "Omnibus answered HTTP 500. Try again later.")
 end)
 
 test("run still delivers the other book when one download fails and reports the failure", function()

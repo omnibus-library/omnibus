@@ -650,6 +650,23 @@ pub(crate) async fn seed_downloadable_book(
     title: &str,
     author: &str,
 ) {
+    let fixture_epub = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../test_data/epubs/generated/alpha.epub");
+    let bytes = std::fs::read(fixture_epub).unwrap();
+    seed_downloadable_book_with(pool, uuid, title, author, "EPUB", "alpha", &bytes).await;
+}
+
+/// [`seed_downloadable_book`] for any `format` (`EPUB`, `CBZ`, `PDF`): the file is
+/// `<filename>.<format lowercased>` holding `bytes`.
+pub(crate) async fn seed_downloadable_book_with(
+    pool: &sqlx::SqlitePool,
+    uuid: &str,
+    title: &str,
+    author: &str,
+    format: &str,
+    filename: &str,
+    bytes: &[u8],
+) {
     let pid = std::process::id();
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -657,9 +674,8 @@ pub(crate) async fn seed_downloadable_book(
         .unwrap_or(0);
     let lib_dir = std::env::temp_dir().join(format!("omnibus_kobo_contract_{pid}_{nanos}_{uuid}"));
     std::fs::create_dir_all(&lib_dir).unwrap();
-    let fixture_epub = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../test_data/epubs/generated/alpha.epub");
-    std::fs::copy(&fixture_epub, lib_dir.join("alpha.epub")).unwrap();
+    let extension = format.to_lowercase();
+    std::fs::write(lib_dir.join(format!("{filename}.{extension}")), bytes).unwrap();
 
     let lib_id = sqlx::query("INSERT INTO scan_roots (path, display_name) VALUES (?, 'lib')")
         .bind(lib_dir.to_str().unwrap())
@@ -685,9 +701,11 @@ pub(crate) async fn seed_downloadable_book(
         .unwrap();
     sqlx::query(
         "INSERT INTO book_files (book_id, format, filename, size_bytes) \
-         VALUES (?, 'EPUB', 'alpha', 0)",
+         VALUES (?, ?, ?, 0)",
     )
     .bind(book_id)
+    .bind(format)
+    .bind(filename)
     .execute(pool)
     .await
     .unwrap();
