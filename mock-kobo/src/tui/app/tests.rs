@@ -654,22 +654,13 @@ fn on_key_keeps_the_reader_open_when_closing_while_busy() {
 
 fn book_with_bookmark(bookmark: Option<crate::reading::Bookmark>) -> Book {
     Book {
-        title: "Reader Fixture".into(),
-        description: String::new(),
         authors: vec!["Author".into()],
-        series: None,
-        downloaded: true,
-        archived: false,
-        cover_image_id: String::new(),
-        cover: None,
-        download_problem: None,
         reading: crate::reading::Reading {
             status: crate::reading::ReadStatus::Reading,
             status_modified: None,
             bookmark,
         },
-        annotations: Vec::new(),
-        dropped_annotations: 0,
+        ..crate::test_support::book("book-1", "Reader Fixture").1
     }
 }
 

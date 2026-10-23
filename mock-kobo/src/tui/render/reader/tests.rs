@@ -19,18 +19,8 @@ use crate::wire::Series;
 
 fn book(title: &str) -> Book {
     Book {
-        title: title.to_owned(),
-        description: String::new(),
         authors: vec!["Frank Herbert".to_owned()],
-        series: None,
-        downloaded: true,
-        archived: false,
-        cover_image_id: String::new(),
-        cover: None,
-        download_problem: None,
-        reading: crate::reading::Reading::default(),
-        annotations: Vec::new(),
-        dropped_annotations: 0,
+        ..crate::test_support::book("book-1", title).1
     }
 }
 

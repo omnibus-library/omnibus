@@ -2,19 +2,9 @@
 //! download, remove-download, read, finish, highlight, delete-highlight,
 //! read-to and highlight-words.
 
-use crate::test_support::{device_holding, READER_EPUB, READER_KEPUB};
+use crate::test_support::{device_holding, reader_stub, READER_EPUB, READER_KEPUB};
 
 use super::*;
-
-/// A stub whose one sync page holds "book-1" and answers its download with
-/// `download_body` (the reader fixture's KEPUB or its plain-EPUB source).
-fn reader_stub(download_body: &'static [u8]) -> Stub {
-    Stub {
-        sync_pages: vec![json!([new_entitlement("book-1", "Reader Fixture")])],
-        download_body,
-        ..Stub::default()
-    }
-}
 
 fn span_location() -> Value {
     json!({

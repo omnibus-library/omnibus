@@ -22,7 +22,7 @@ use tokio::sync::Notify;
 
 use crate::client::RequestRecord;
 use crate::control::{Control, ControlError, LastSync};
-use crate::device::Device;
+use crate::device::{Book, Device};
 use crate::state::SavedState;
 
 /// The path token every stub device syncs with.
@@ -265,6 +265,16 @@ fn control_with(
     Arc::new(Control::new(saved, url.to_owned(), state_path))
 }
 
+/// A stub whose one sync page holds "book-1" and answers its download with
+/// `download_body` (the reader fixture's KEPUB or its plain-EPUB source).
+pub fn reader_stub(download_body: &'static [u8]) -> Stub {
+    Stub {
+        sync_pages: vec![json!([new_entitlement("book-1", "Reader Fixture")])],
+        download_body,
+        ..Stub::default()
+    }
+}
+
 /// A `Control` whose "book-1" is downloaded with `download_body`'s bytes
 /// into `state_path`'s storage: a `dune_stub`-style sync, then a download.
 /// Shared by the reader's `load_book` tests and the passage-action tests,
@@ -274,12 +284,7 @@ pub async fn control_with_downloaded_book(
     download_body: &'static [u8],
     state_path: PathBuf,
 ) -> (Arc<Control>, RunningStub) {
-    let stub = spawn_stub(Stub {
-        sync_pages: vec![json!([new_entitlement("book-1", "Reader Fixture")])],
-        download_body,
-        ..Stub::default()
-    })
-    .await;
+    let stub = spawn_stub(reader_stub(download_body)).await;
     let control = stub_control(&stub, state_path);
     control
         .sync(crate::downloads::DownloadPolicy::None)
@@ -675,6 +680,28 @@ async fn library_sync(state: &StubState) -> Response {
 fn fill_stub_origin(page: Value, base: &str) -> Value {
     let text = page.to_string().replace(STUB_ORIGIN, base);
     serde_json::from_str(&text).expect("re-parsing a re-serialized Value cannot fail")
+}
+
+/// A downloaded `Book` named `title` with no authors, series, annotations
+/// or reading state — a test overrides whatever field it needs via
+/// struct-update syntax. Paired with `id`, for building a `DeviceView` or
+/// library `BTreeMap` directly from `BTreeMap::from([test_support::book(id, title)])`.
+pub fn book(id: &str, title: &str) -> (String, Book) {
+    let book = Book {
+        title: title.to_owned(),
+        description: String::new(),
+        authors: Vec::new(),
+        series: None,
+        downloaded: true,
+        archived: false,
+        cover_image_id: String::new(),
+        cover: None,
+        download_problem: None,
+        reading: crate::reading::Reading::default(),
+        annotations: Vec::new(),
+        dropped_annotations: 0,
+    };
+    (id.to_owned(), book)
 }
 
 /// A device that already holds the book `id`/`title`, via a [`new_entitlement`].
