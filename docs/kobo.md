@@ -265,6 +265,8 @@ database already had an admin, mark a shelf **Sync to Kobo** yourself.
 | <kbd>p</kbd> | Edit the selected book's read percent (0–100), sent as a `Reading` state on <kbd>Enter</kbd> |
 | <kbd>f</kbd> | Mark the selected book finished |
 | <kbd>x</kbd> | Clear the selected book's downloaded flag, locally |
+| <kbd>h</kbd> | Make a highlight on the selected book: `<span> <start>-<end> [<1-4> ]<text>[ // <note>]` |
+| <kbd>e</kbd> | Delete the selected book's newest highlight |
 | <kbd>s</kbd> | Sync now |
 | <kbd>r</kbd> | Reset the device: empty library, no sync token, so the next sync resends every opted-in book |
 | <kbd>u</kbd> | Edit the server URL (pinned and saved) |
@@ -272,9 +274,10 @@ database already had an admin, mark a shelf **Sync to Kobo** yourself.
 | <kbd>w</kbd> | Wire a token for the current URL, as startup does |
 | <kbd>q</kbd> / <kbd>Ctrl-C</kbd> | Quit |
 
-Each book line shows `downloaded`, `download failed`, the bookmark percent, or
-`finished`, whichever apply (the device never shows a `KoboSpan` location —
-see [#2738](https://github.com/omnibus-library/omnibus/issues/2738)).
+Each book line shows `downloaded`, `download failed`, the bookmark percent,
+`finished`, its highlight count, and a dropped-highlight count, whichever
+apply (the device never shows a `KoboSpan` location, or a highlight's colour
+or text — see [#2738](https://github.com/omnibus-library/omnibus/issues/2738)).
 
 While editing, <kbd>Enter</kbd> saves and <kbd>Esc</kbd> cancels. Pointing a
 device at another server re-wires a token that was wired for the old one; a URL

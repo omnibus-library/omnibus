@@ -422,3 +422,80 @@ async fn perform_remove_download_reports_removed() {
     assert_eq!(status, Status::Info("removed".to_owned()));
     assert!(!control.view().library["book-1"].downloaded);
 }
+
+fn a_highlight() -> crate::annotations::NewHighlight {
+    crate::annotations::NewHighlight {
+        text: "a passage".into(),
+        color: crate::annotations::Swatch::Blue,
+        note: None,
+        location: None,
+    }
+}
+
+#[tokio::test]
+async fn perform_highlight_reports_annotation_sent() {
+    let stub = spawn_stub(dune_stub()).await;
+    let dir = TempDir::new().unwrap();
+    let control = stub_control(&stub, dir.path().join("kobo.json"));
+    control.sync(DownloadPolicy::All).await.unwrap();
+
+    let status = perform(
+        &control,
+        &wiring(),
+        Job::Highlight {
+            book: "book-1".into(),
+            highlight: a_highlight(),
+        },
+    )
+    .await;
+
+    assert_eq!(status, Status::Info("annotation sent".to_owned()));
+    assert_eq!(control.view().library["book-1"].annotations.len(), 1);
+}
+
+#[tokio::test]
+async fn perform_delete_highlight_deletes_the_newest_highlight() {
+    let stub = spawn_stub(dune_stub()).await;
+    let dir = TempDir::new().unwrap();
+    let control = stub_control(&stub, dir.path().join("kobo.json"));
+    control.sync(DownloadPolicy::All).await.unwrap();
+    perform(
+        &control,
+        &wiring(),
+        Job::Highlight {
+            book: "book-1".into(),
+            highlight: a_highlight(),
+        },
+    )
+    .await;
+
+    let status = perform(
+        &control,
+        &wiring(),
+        Job::DeleteHighlight("book-1".into()),
+    )
+    .await;
+
+    assert_eq!(status, Status::Info("annotation sent".to_owned()));
+    assert!(control.view().library["book-1"].annotations.is_empty());
+}
+
+#[tokio::test]
+async fn perform_delete_highlight_reports_no_highlights_on_a_book_without_any() {
+    let stub = spawn_stub(dune_stub()).await;
+    let dir = TempDir::new().unwrap();
+    let control = stub_control(&stub, dir.path().join("kobo.json"));
+    control.sync(DownloadPolicy::None).await.unwrap();
+
+    let status = perform(
+        &control,
+        &wiring(),
+        Job::DeleteHighlight("book-1".into()),
+    )
+    .await;
+
+    assert_eq!(
+        status,
+        Status::Error("no highlights on this book".to_owned())
+    );
+}

@@ -85,7 +85,7 @@ pub struct SpanRange {
 }
 
 /// A highlight the device is about to make, before it is given an id.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NewHighlight {
     pub text: String,
     pub color: Swatch,
