@@ -137,15 +137,24 @@ impl KoboSeries {
 }
 
 impl KoboBookRow {
-    /// The `DownloadUrl.Format` the entitlement advertises, on the same
-    /// ladder `resources::download` serves: KEPUB, else CBZ, else PDF.
-    pub fn download_format(&self) -> &'static str {
+    /// The format of the file a device download serves, on the one ladder:
+    /// EPUB, else CBZ, else PDF.
+    pub fn file_format(&self) -> &'static str {
         if self.has_epub {
-            "KEPUB"
+            "EPUB"
         } else if self.has_cbz {
             "CBZ"
         } else {
             "PDF"
+        }
+    }
+
+    /// The `DownloadUrl.Format` the entitlement advertises: [`Self::file_format`],
+    /// with the EPUB rung served to a Kobo as `KEPUB`.
+    pub fn download_format(&self) -> &'static str {
+        match self.file_format() {
+            "EPUB" => "KEPUB",
+            other => other,
         }
     }
 }

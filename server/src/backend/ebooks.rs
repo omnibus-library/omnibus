@@ -394,6 +394,30 @@ async fn resolve_readable_path(
     Err(StatusCode::NOT_FOUND.into_response())
 }
 
+/// The file a device download serves for one book: its EPUB (the caller picks the bytes, so
+/// it can convert or rewrite) or a CBZ/PDF to stream as-is with its mime.
+pub(super) enum DeviceFile {
+    Epub(std::path::PathBuf),
+    Other(std::path::PathBuf, &'static str),
+}
+
+/// Resolve a book's [`DeviceFile`] on the shared ladder: EPUB, else CBZ, else PDF.
+/// `None` when the book has none of them.
+pub(super) async fn device_file(
+    state: &AppState,
+    book_id: i64,
+) -> anyhow::Result<Option<DeviceFile>> {
+    if let Some(epub) = db::book_file_path(&state.pool, book_id, "EPUB").await? {
+        return Ok(Some(DeviceFile::Epub(epub)));
+    }
+    for (format, mime) in [("CBZ", CBZ_MIME), ("PDF", PDF_MIME)] {
+        if let Some(path) = db::book_file_path(&state.pool, book_id, format).await? {
+            return Ok(Some(DeviceFile::Other(path, mime)));
+        }
+    }
+    Ok(None)
+}
+
 /// Get a book's file
 ///
 /// The book's EPUB, else its CBZ archive for a comic, else its PDF, served inline for
