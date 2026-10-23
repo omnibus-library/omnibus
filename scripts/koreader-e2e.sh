@@ -7,17 +7,19 @@
 # What it does:
 #   1. `dx bundle` the web app and starts the bundle's standalone server on a
 #      scratch DB with a seeded library: the two committed fixture EPUBs
-#      (test_data/epubs/generated/alpha.epub, beta.epub) and the first
-#      (admin) account, registered here as on CI.
-#   2. Seeds the `delivery`, `roundtrip` and `metadata` scenarios through the REST API: a shelf holding
-#      Alpha that syncs to devices, and a KOReader whose preconfigured plugin
+#      (test_data/epubs/generated/alpha.epub, beta.epub), the two the `precise`
+#      scenario puts on the shelf (standalone-lagoon.epub, frontmatter-relay.epub)
+#      and the first (admin) account, registered here as on CI.
+#   2. Seeds the `delivery`, `roundtrip`, `metadata` and `precise` scenarios through the REST API: a shelf
+#      holding Alpha that syncs to devices, and a KOReader whose preconfigured plugin
 #      it downloads from the real Settings route.
 #   3. Builds ui_tests/koreader (pinned KOReader under Xvfb) and runs one
 #      container per scenario; its user patch drives KOReader's own OPDS
 #      plugin through add-catalog, browse, search, download and open, and the
 #      Omnibus plugin through a sync that delivers and one that removes, and
 #      through opening a book at the web's position and closing it at its own,
-#      and through a web edit of a book's title and cover reaching it.
+#      through a web edit of a book's title and cover reaching it, and through a
+#      position inside a paragraph travelling both ways.
 #   4. Reports each scenario's result JSON (scripts/koreader_report.py) and
 #      exits non-zero on any failure, keeping the scratch dir (results,
 #      screenshot, logs) and naming it.
@@ -43,7 +45,7 @@ bundle_web_app
 # boot scan off on nothing.
 make_scratch_dir
 mkdir -p "$scratch/library" "$scratch/results"
-cp test_data/epubs/generated/alpha.epub test_data/epubs/generated/beta.epub "$scratch/library/"
+cp test_data/epubs/generated/{alpha,beta,standalone-lagoon,frontmatter-relay}.epub "$scratch/library/"
 start_scratch_server "EBOOK_LIBRARY_PATH=$scratch/library"
 
 user=koreader
@@ -55,7 +57,9 @@ curl -fsS -X POST -H 'Content-Type: application/json' \
 deadline=$(($(date +%s) + 60))
 until body="$(curl -fsS -u "$user:$password" "$base_url/opds/all" 2>/dev/null)" &&
     printf '%s' "$body" | grep -q ">Alpha<" &&
-    printf '%s' "$body" | grep -q ">Beta in the Series<"; do
+    printf '%s' "$body" | grep -q ">Beta in the Series<" &&
+    printf '%s' "$body" | grep -q ">Lagoon of Ligatures<" &&
+    printf '%s' "$body" | grep -q ">Frontmatter Relay<"; do
     if [ "$(date +%s)" -ge "$deadline" ]; then
         echo "$label: library never indexed" >&2
         exit 1
@@ -63,7 +67,7 @@ until body="$(curl -fsS -u "$user:$password" "$base_url/opds/all" 2>/dev/null)" 
     sleep 1
 done
 
-# The `delivery`, `roundtrip` and `metadata` scenarios' seed. The REST calls need a session, so sign in with a
+# The `delivery`, `roundtrip`, `metadata` and `precise` scenarios' seed. The REST calls need a session, so sign in with a
 # bearer token; the plugin is the zip the Settings download hands a reader.
 json_field() { python3 -c 'import json,sys; print(json.load(sys.stdin)[sys.argv[1]])' "$1"; }
 session="$(curl -fsS -X POST -H 'Content-Type: application/json' \
@@ -71,8 +75,13 @@ session="$(curl -fsS -X POST -H 'Content-Type: application/json' \
     "$base_url/api/auth/login" | json_field token)"
 api() { curl -fsS -H "Authorization: Bearer $session" -H 'Content-Type: application/json' "$@"; }
 
-alpha_uuid="$(api "$base_url/api/ebooks" | python3 -c \
-    'import json,sys; print(next(b["unique_identifier"] for b in json.load(sys.stdin)["books"] if b["title"] == "Alpha"))')"
+book_uuid() {
+    api "$base_url/api/ebooks" | python3 -c \
+        'import json,sys; print(next(b["unique_identifier"] for b in json.load(sys.stdin)["books"] if b["title"] == sys.argv[1]))' "$1"
+}
+alpha_uuid="$(book_uuid Alpha)"
+lagoon_uuid="$(book_uuid "Lagoon of Ligatures")"
+relay_uuid="$(book_uuid "Frontmatter Relay")"
 shelf_id="$(api -X POST -d "{\"kind\":\"manual\",\"name\":\"KOReader lane\",\"book_uuids\":[\"$alpha_uuid\"]}" \
     "$base_url/api/shelves" | json_field id)"
 api -X PATCH -d '{"sync_to_kobo":true}' "$base_url/api/shelves/$shelf_id" >/dev/null
@@ -83,8 +92,9 @@ api -o "$scratch/plugin.zip" "$base_url/api/account/kobo-devices/$device_id/kore
 python3 -m zipfile -e "$scratch/plugin.zip" "$scratch/plugins"
 
 # Scenario names live here; the fixture titles live beside them in the
-# patch's opds scenario. `metadata` is last: it retitles Alpha on the shared server.
-scenarios=(opds delivery roundtrip metadata)
+# patch's opds scenario. `metadata` retitles Alpha on the shared server, and `precise` is last
+# because it adds two books to the shelf the earlier scenarios expect to hold Alpha alone.
+scenarios=(opds delivery roundtrip metadata precise)
 # The token must never reach KOReader's log: a leak there is a leak to anyone who shares it.
 device_token="$(json_field token <"$scratch/plugins/omnibus.koplugin/omnibus.json")"
 leaked=0
@@ -100,6 +110,8 @@ for scenario in "${scenarios[@]}"; do
         -e OMNIBUS_PASSWORD="$password" \
         -e OMNIBUS_SESSION_TOKEN="$session" \
         -e OMNIBUS_SHELF_ID="$shelf_id" \
+        -e OMNIBUS_LAGOON_UUID="$lagoon_uuid" \
+        -e OMNIBUS_RELAY_UUID="$relay_uuid" \
         -v "$PWD/ui_tests/koreader/patches:/ko-home/patches:ro" \
         -v "$scratch/plugins/omnibus.koplugin:/ko-home/plugins/omnibus.koplugin:ro" \
         -v "$scratch/results:/results" \

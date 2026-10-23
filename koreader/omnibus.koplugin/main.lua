@@ -364,12 +364,17 @@ function Omnibus:open_book_uuid()
     return sync.uuid_for_path(settings:readSetting("manifest", {}), document.file)
 end
 
--- The open book's whole percent and status as the device holds them.
+-- The open book's whole percent, status and (reflowable books only) XPointer as the device holds them.
 function Omnibus:current_state()
     local ui = self.ui
-    local module = ui.document.info.has_pages and ui.paging or ui.rolling
+    local paged = ui.document.info.has_pages
+    local module = paged and ui.paging or ui.rolling
     local summary = ui.doc_settings:readSetting("summary")
-    return { percent = sync.percent(module:getLastPercent()), status = summary and summary.status }
+    return {
+        percent = sync.percent(module:getLastPercent()),
+        status = summary and summary.status,
+        xpointer = not paged and ui.rolling:getLastProgress() or nil,
+    }
 end
 
 -- Mark the open book `status` the way the reader's own "Mark as finished" does.
@@ -423,13 +428,15 @@ function Omnibus:pull_on_open()
     if not plan then
         return
     end
-    if plan.percent then
+    if plan.xpointer and self.ui.document:isXPointerInDocument(plan.xpointer) then
+        self.ui:handleEvent(Event:new("GotoXPointer", plan.xpointer))
+    elseif plan.percent then
         self.ui:handleEvent(Event:new("GotoPercent", plan.percent))
     end
     if plan.status then
         self:set_status(plan.status)
     end
-    -- Read the percent back: the device lands on a page, not on the exact percent asked for.
+    -- Read the position back: the device lands on a page, not on the exact percent asked for.
     sync.settle(books, uuid, self:current_state(), plan)
     save()
 end

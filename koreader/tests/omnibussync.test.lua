@@ -791,6 +791,45 @@ test("capture twice leaves one entry carrying the later change time", function()
     eq(books[ALPHA.uuid].percent_at, 900)
 end)
 
+test("capture marks the percent field pending when only its xpointer moved", function()
+    local books = { [ALPHA.uuid] = entry({ xpointer = "/body/DocFragment/body/p[1]/text().0" }) }
+
+    sync.capture(books, ALPHA.uuid,
+        { percent = 40, status = "reading", xpointer = "/body/DocFragment/body/p[2]/text().0" }, 500)
+
+    local e = books[ALPHA.uuid]
+    eq(e.xpointer, "/body/DocFragment/body/p[2]/text().0")
+    eq(e.percent_at, 500)
+    eq(e.dirty_percent, true)
+    eq(e.status_at, 100)
+    eq(e.dirty_status, false)
+end)
+
+test("capture never counts a missing xpointer as a change", function()
+    local books = { [ALPHA.uuid] = entry({ xpointer = "/body/DocFragment/body/p/text().0" }) }
+
+    sync.capture(books, ALPHA.uuid, READING40, 500)
+
+    eq(sync.pending(books[ALPHA.uuid]), false)
+    eq(books[ALPHA.uuid].xpointer, "/body/DocFragment/body/p/text().0")
+end)
+
+test("capture does not push an entry saved before xpointers for the xpointer alone", function()
+    local books = { [ALPHA.uuid] = entry() }
+
+    sync.capture(books, ALPHA.uuid, { percent = 40, status = "reading", xpointer = "/body/DocFragment/body/p/text().0" }, 500)
+
+    eq(sync.pending(books[ALPHA.uuid]), false)
+end)
+
+test("capture reads text() and text()[1] as the same place", function()
+    local books = { [ALPHA.uuid] = entry({ xpointer = "/body/DocFragment/body/p/text()[1].0" }) }
+
+    sync.capture(books, ALPHA.uuid, { percent = 40, status = "reading", xpointer = "/body/DocFragment/body/p/text().0" }, 500)
+
+    eq(sync.pending(books[ALPHA.uuid]), false)
+end)
+
 -- A flush target that answers each PUT from `answers` in order ({code, answer body, error})
 -- and records what it was sent.
 local function fake_server(answers)
@@ -851,6 +890,30 @@ test("flush sends a percent and a status changed together in one PUT and clears 
     eq(sent[1].body.event_at, 500)
     eq(sync.pending(books[ALPHA.uuid]), false)
     eq(saves.n, 1)
+end)
+
+test("flush sends the xpointer with the percent and leaves the key out otherwise", function()
+    local books = {
+        [ALPHA.uuid] = entry({ dirty_percent = true, percent_at = 500, xpointer = "/body/DocFragment/body/p/text().0" }),
+        [BETA.uuid] = entry({ dirty_percent = true, percent_at = 500 }),
+    }
+    local deps, sent = fake_server({})
+
+    sync.flush(books, deps)
+
+    eq(sent[1].body.xpointer, "/body/DocFragment/body/p/text().0")
+    eq(sent[2].body.xpointer, nil)
+end)
+
+test("flush leaves the xpointer out of a status-only push", function()
+    local books = { [ALPHA.uuid] = entry({ dirty_status = true, status = "complete", status_at = 500,
+        xpointer = "/body/DocFragment/body/p/text().0" }) }
+    local deps, sent = fake_server({})
+
+    sync.flush(books, deps)
+
+    eq(sent[1].body.percent, nil)
+    eq(sent[1].body.xpointer, nil)
 end)
 
 test("flush sends the two fields separately when they changed at different times", function()
@@ -1011,10 +1074,61 @@ test("pull_plan returns nothing when the server holds no state", function()
     eq(sync.pull_plan(entry(), {}, READING40), nil)
 end)
 
+test("pull_plan moves by a newer remote xpointer the device is not at, keeping the percent as fallback", function()
+    local plan = sync.pull_plan(entry({ percent_at = 100, xpointer = "/body/DocFragment/body/p[2]/text().0" }),
+        { position = { percent = 40, event_at = 300, xpointer = "/body/DocFragment/body/p[7]/text().2" } },
+        { percent = 40, status = "reading", xpointer = "/body/DocFragment/body/p[2]/text().0" })
+
+    eq(plan.xpointer, "/body/DocFragment/body/p[7]/text().2")
+    eq(plan.percent, 40)
+    eq(plan.percent_at, 300)
+end)
+
+test("pull_plan keeps the page when the newer remote xpointer is the one the device is at", function()
+    local at = "/body/DocFragment/body/p[7]/text().2"
+    local plan = sync.pull_plan(entry({ percent_at = 100, xpointer = at }),
+        { position = { percent = 41, event_at = 300, xpointer = at } },
+        { percent = 40, status = "reading", xpointer = at })
+
+    eq(plan.xpointer, nil)
+    eq(plan.percent, nil)
+    eq(plan.percent_at, 300)
+end)
+
+test("pull_plan reads text() and text()[1] as the same place", function()
+    local plan = sync.pull_plan(entry({ percent_at = 100, xpointer = "/body/DocFragment/body/p/text()[1].0" }),
+        { position = { percent = 40, event_at = 300, xpointer = "/body/DocFragment/body/p/text().0" } },
+        { percent = 40, status = "reading", xpointer = "/body/DocFragment/body/p/text()[1].0" })
+
+    eq(plan, nil)
+end)
+
+test("pull_plan moves by percent when the remote position has no xpointer or the device has none", function()
+    local remote = { position = { percent = 70, event_at = 300 } }
+    local no_xpointer = sync.pull_plan(entry(), remote, { percent = 40, status = "reading", xpointer = "/body/DocFragment/body/p/text().0" })
+    local paged = sync.pull_plan(entry(),
+        { position = { percent = 70, event_at = 300, xpointer = "/body/DocFragment/body/p/text().0" } }, READING40)
+
+    eq(no_xpointer.percent, 70)
+    eq(no_xpointer.xpointer, nil)
+    eq(paged.percent, 70)
+    eq(paged.xpointer, nil)
+end)
+
 test("pull_plan reads a decoded JSON null as no state", function()
     -- KOReader's json decodes null to a function, not nil.
     local null = function() end
     eq(sync.pull_plan(entry(), { position = null, status = null }, READING40), nil)
+end)
+
+test("settle records the xpointer with the percent field only", function()
+    local books = { [ALPHA.uuid] = entry({ xpointer = "/body/DocFragment/body/p/text().1" }) }
+
+    sync.settle(books, ALPHA.uuid, { percent = 70, status = "reading", xpointer = "/body/DocFragment/body/p/text().0" }, { status_at = 300 })
+    eq(books[ALPHA.uuid].xpointer, "/body/DocFragment/body/p/text().1")
+
+    sync.settle(books, ALPHA.uuid, { percent = 70, status = "reading", xpointer = "/body/DocFragment/body/p/text().0" }, { percent_at = 300 })
+    eq(books[ALPHA.uuid].xpointer, "/body/DocFragment/body/p/text().0")
 end)
 
 test("settle advances only the fields that have a clock and clears their pending marks", function()

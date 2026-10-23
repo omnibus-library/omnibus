@@ -10,15 +10,18 @@ REST calls of `delivery` (opt the shelf out), `roundtrip` (opt it in, stand in f
 web reader with a POST /api/progress, read the result back with GET /api/progress/{uuid}
 and GET /api/read-status/{uuid}) and `metadata` (opt it in, stand in for the web editor
 with POST /api/ebooks/{uuid}/overrides and POST /api/ebooks/{uuid}/cover, read the cover
-back with GET /api/covers/{uuid}).
+back with GET /api/covers/{uuid}) and `precise` (put two more books on the shelf, stand in for
+the web reader with a POST /api/progress, read the result back with GET /api/progress/{uuid}).
 
 Env (scripts/koreader-e2e.sh sets them on `docker run`):
-  KOREADER_E2E_SCENARIO  scenario name: "opds", "delivery", "roundtrip" or "metadata"
+  KOREADER_E2E_SCENARIO  scenario name: "opds", "delivery", "roundtrip", "metadata" or "precise"
   KOREADER_E2E_RESULTS   writable dir for <scenario>.json and <scenario>.png
   OMNIBUS_URL            server origin; the `opds` scenario appends /opds
   OMNIBUS_USER / OMNIBUS_PASSWORD   Basic credentials of the seeded account
   OMNIBUS_SESSION_TOKEN / OMNIBUS_SHELF_ID   `delivery`, `roundtrip` and `metadata`: a bearer
                          session of that account, and the shelf holding Alpha that they switch off and on
+  OMNIBUS_LAGOON_UUID / OMNIBUS_RELAY_UUID   `precise`: the uuids of Lagoon of Ligatures and
+                         Frontmatter Relay, which it adds to that shelf
 
 Writes <results>/<scenario>.json exactly once — pass, fail or watchdog —
 screenshots to <results>/<scenario>.png on failure, then quits.
@@ -35,6 +38,8 @@ local USER = os.getenv("OMNIBUS_USER") or ""
 local PASSWORD = os.getenv("OMNIBUS_PASSWORD") or ""
 local SESSION_TOKEN = os.getenv("OMNIBUS_SESSION_TOKEN") or ""
 local SHELF_ID = os.getenv("OMNIBUS_SHELF_ID") or ""
+local LAGOON_UUID = os.getenv("OMNIBUS_LAGOON_UUID") or ""
+local RELAY_UUID = os.getenv("OMNIBUS_RELAY_UUID") or ""
 
 -- Titles of test_data/epubs/generated/alpha.epub and beta.epub — the two
 -- files scripts/koreader-e2e.sh copies into the scratch library.
@@ -129,17 +134,37 @@ local function omnibus_plugin()
     return FileManager.instance and FileManager.instance.omnibus
 end
 
--- The uuid and path of Alpha as the plugin's manifest records its delivery; nil without one.
-local function delivered_alpha()
+-- The uuid and path of the book titled `title` as the plugin's manifest records its delivery;
+-- nil without one.
+local function delivered_book(title)
     local DataStorage = require("datastorage")
     local LuaSettings = require("luasettings")
     local manifest = LuaSettings:open(DataStorage:getSettingsDir() .. "/omnibus.lua")
         :readSetting("manifest", {})
     for book_uuid, book_path in pairs(manifest) do
-        if book_path:find("/Alpha - ", 1, true) then
+        if book_path:find("/" .. title .. " - ", 1, true) then
             return book_uuid, book_path
         end
     end
+end
+
+local function delivered_alpha()
+    return delivered_book("Alpha")
+end
+
+-- The epub record the server holds for a book (an empty table when it has none), or nil and
+-- the error.
+local function web_epub_record(uuid)
+    local code, progress = api("GET", "/api/progress/" .. uuid)
+    if code ~= 200 or type(progress) ~= "table" then
+        return nil, "GET /api/progress answered " .. tostring(code)
+    end
+    for _, record in ipairs(progress.records or {}) do
+        if record.format == "epub" then
+            return record
+        end
+    end
+    return {}
 end
 
 -- The step that opts the shelf in: `delivery` switched it off, and each scenario starts on a
@@ -157,10 +182,12 @@ local function opt_in_step()
     }
 end
 
--- The step that syncs Alpha into <results>/<scenario>/home and gives it a huge font: the
--- two-line book becomes several pages, so a place in it is not always "the only page".
--- `delivered(uuid, path)` hands the scenario what the plugin recorded.
-local function deliver_step(scenario, delivered)
+-- The step that syncs the shelf into <results>/<scenario>/home and gives one book a huge font:
+-- Alpha's two lines become several pages, so a place in it is not always "the only page".
+-- `opts` = { title = the book to hand over (Alpha), added = how many books the sync delivers (1) };
+-- `delivered(uuid, path)` hands the scenario what the plugin recorded for that book.
+local function deliver_step(scenario, delivered, opts)
+    opts = opts or {}
     return {
         name = "deliver",
         fn = function()
@@ -172,13 +199,14 @@ local function deliver_step(scenario, delivered)
             util.makePath(home)
             G_reader_settings:saveSetting("home_dir", home)
             local result = plugin:sync()
-            if not result.ok or result.added ~= 1 then
+            if not result.ok or result.added ~= (opts.added or 1) then
                 return false, string.format("sync: ok=%s added=%s %s",
                     tostring(result.ok), tostring(result.added), tostring(result.message))
             end
-            local uuid, path = delivered_alpha()
+            local title = opts.title or "Alpha"
+            local uuid, path = delivered_book(title)
             if not uuid then
-                return false, "Alpha missing from the plugin's manifest"
+                return false, title .. " missing from the plugin's manifest"
             end
             local sidecar = require("docsettings"):open(path)
             sidecar:saveSetting("copt_font_size", 200)
@@ -461,16 +489,11 @@ local function roundtrip_scenario()
 
     -- The epub position and the read status the server holds for the book.
     local function web_state()
-        local code, progress = api("GET", "/api/progress/" .. uuid)
-        if code ~= 200 or type(progress) ~= "table" then
-            return nil, "GET /api/progress answered " .. tostring(code)
+        local record, err = web_epub_record(uuid)
+        if not record then
+            return nil, err
         end
-        local percent
-        for _, record in ipairs(progress.records or {}) do
-            if record.format == "epub" then
-                percent = record.progress_percent
-            end
-        end
+        local percent = record.progress_percent
         local status_code, status = api("GET", "/api/read-status/" .. uuid)
         if status_code ~= 200 or type(status) ~= "table" then
             return nil, "GET /api/read-status answered " .. tostring(status_code)
@@ -908,6 +931,123 @@ local function metadata_scenario()
     }
 end
 
+-- The `precise` scenario: a position inside a paragraph travels both ways, so the book and the
+-- web reader open on the same sentence and not just the same percent.
+local function precise_scenario()
+    local Event = require("ui/event")
+    local ReaderUI = require("apps/reader/readerui")
+    -- Paragraph 23 of Lagoon ("... fixture. The expedition charted ...") at the "e" of
+    -- "expedition", and the CFI the web reader holds for the same character.
+    local LAGOON_XPOINTER = "/body/DocFragment/body/p[23]/text().43"
+    local LAGOON_WORD_END = "/body/DocFragment/body/p[23]/text().53"
+    local LAGOON_CFI = "epubcfi(/6/2!/4/48/1:43)"
+    -- The "t" of "test" in the last chapter of Relay's six-item spine, and its CFI.
+    local RELAY_XPOINTER = "/body/DocFragment[6]/body/p/text().10"
+    local RELAY_WORD_END = "/body/DocFragment[6]/body/p/text().14"
+    local RELAY_CFI = "epubcfi(/6/12!/4/4/1:10)"
+    local lagoon_path, relay_path
+
+    return {
+        {
+            name = "add_books",
+            fn = function()
+                local code = api("POST", "/api/shelves/" .. SHELF_ID .. "/books",
+                    { book_uuids = { LAGOON_UUID, RELAY_UUID } })
+                if code ~= 204 then
+                    return false, "adding the books to the shelf answered " .. tostring(code)
+                end
+                return true, "shelf holds Lagoon and Relay"
+            end,
+        },
+        opt_in_step(),
+        -- Alpha was retitled by `metadata`, so the delivered pair is found by its own titles.
+        deliver_step("precise", function(lagoon_uuid, path)
+            lagoon_path = path
+            local relay_uuid
+            relay_uuid, relay_path = delivered_book("Frontmatter Relay")
+            if lagoon_uuid ~= LAGOON_UUID or relay_uuid ~= RELAY_UUID then
+                error("the manifest does not hold both books: "
+                    .. tostring(lagoon_uuid) .. ", " .. tostring(relay_uuid))
+            end
+        end, { title = "Lagoon of Ligatures", added = 3 }),
+        {
+            name = "koreader_mid_paragraph",
+            deferred = true,
+            fn = function(resume)
+                ReaderUI:showReader(lagoon_path, nil, nil, nil, function(reader_ui)
+                    reader_ui:handleEvent(Event:new("GotoXPointer", LAGOON_XPOINTER))
+                    local at = reader_ui.rolling:getLastProgress()
+                    local word = reader_ui.document:getTextFromXPointers(LAGOON_XPOINTER, LAGOON_WORD_END)
+                    if at ~= LAGOON_XPOINTER then
+                        resume(false, "expected the device at " .. LAGOON_XPOINTER .. ", got " .. tostring(at))
+                    elseif word ~= "expedition" then
+                        resume(false, 'expected the word "expedition" there, got "' .. tostring(word) .. '"')
+                    else
+                        resume(true, 'the device is at the start of "expedition"')
+                    end
+                end)
+                return true
+            end,
+        },
+        {
+            name = "close_pushes",
+            fn = function()
+                ReaderUI.instance:onHome()
+                return true, "closed the book"
+            end,
+        },
+        {
+            name = "web_on_same_paragraph",
+            fn = function()
+                local record, err = web_epub_record(LAGOON_UUID)
+                if not record then
+                    return false, err
+                end
+                if record.epub_cfi ~= LAGOON_CFI then
+                    return false, string.format("expected %s on the web, got %s",
+                        LAGOON_CFI, tostring(record.epub_cfi))
+                end
+                return true, "the web holds " .. record.epub_cfi
+            end,
+        },
+        {
+            name = "web_mid_paragraph",
+            fn = function()
+                -- The web reader posts its percent beside the CFI; the device reads the percent.
+                local code = api("POST", "/api/progress", {
+                    book_uuid = RELAY_UUID, format = "epub", epub_cfi = RELAY_CFI, progress_percent = 90,
+                })
+                if code ~= 200 then
+                    return false, "saving the web position answered " .. tostring(code)
+                end
+                return true, "web position " .. RELAY_CFI
+            end,
+        },
+        {
+            name = "koreader_on_same_paragraph",
+            deferred = true,
+            fn = function(resume)
+                ReaderUI:showReader(relay_path, nil, nil, nil, function(reader_ui)
+                    local at = reader_ui.rolling:getLastProgress()
+                    local document = reader_ui.document
+                    local word = document:getTextFromXPointers(RELAY_XPOINTER, RELAY_WORD_END)
+                    if at ~= RELAY_XPOINTER then
+                        resume(false, "expected the device at " .. RELAY_XPOINTER .. ", got " .. tostring(at))
+                    elseif document:getPageFromXPointer(at) ~= document:getCurrentPage() then
+                        resume(false, string.format("page %s is not the one shown, %s",
+                            tostring(document:getPageFromXPointer(at)), tostring(document:getCurrentPage())))
+                    elseif word ~= "test" then
+                        resume(false, 'expected the word "test" there, got "' .. tostring(word) .. '"')
+                    else
+                        resume(true, 'opened at the start of "test"')
+                    end
+                end)
+                return true
+            end,
+        },
+    }
+end
+
 -- Every scenario the lane can run, by KOREADER_E2E_SCENARIO. A new scenario
 -- is an entry here plus an entry in the runner's `scenarios` list.
 local SCENARIOS = {
@@ -915,6 +1055,7 @@ local SCENARIOS = {
     delivery = delivery_scenario,
     roundtrip = roundtrip_scenario,
     metadata = metadata_scenario,
+    precise = precise_scenario,
 }
 
 local function run_at(scenario_steps, i)

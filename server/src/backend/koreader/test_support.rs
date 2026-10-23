@@ -21,3 +21,16 @@ pub(super) async fn fixture() -> (Router, SqlitePool, String, i64) {
             .unwrap();
     (app, pool, device.token, user.id)
 }
+
+/// An EPUB book whose file on disk holds `spine` (`(href, xhtml)` pairs, in order); returns
+/// its uuid and the file's path. The library directory is a fresh temp dir.
+pub(super) async fn seed_epub_book(
+    pool: &SqlitePool,
+    spine: &[(&str, &str)],
+) -> (String, std::path::PathBuf) {
+    let lib = db::test_support::make_test_dir("koreader_state");
+    let (_, uuid) = db::test_support::seed_epub_book_at(pool, &lib).await;
+    let file = lib.join("sub").join("book.epub");
+    std::fs::write(&file, db::test_support::build_test_epub(spine)).unwrap();
+    (uuid, file)
+}

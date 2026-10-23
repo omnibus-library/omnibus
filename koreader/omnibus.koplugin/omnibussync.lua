@@ -9,6 +9,8 @@ Reading state is kept per book in `books`: the percent and status the device las
 with the server, when (`event_at`), and whether a change still waits to be pushed. A
 change is captured only when the device differs from that agreed state, so a stale device
 never overwrites a newer server position with a fresh timestamp.
+A reflowable book's XPointer is part of its percent field: it is captured, pushed and
+settled with the percent, and a move within the same percent still counts as a change.
 
 Metadata is kept per delivered book in `files`: its path, the file's ETag and the
 `last_modified` its bytes (`version`) and its custom metadata (`meta_version`) were last
@@ -201,13 +203,15 @@ function M.pending(entry)
 end
 
 --- Record the device's own state as agreed with the server, nothing to push. `current` =
---- { percent = int|nil, status = string|nil }; `clocks` = { percent_at, status_at } and only
---- the arm that has a clock advances, so each field keeps the time its own value was set.
+--- { percent = int|nil, status = string|nil, xpointer = string|nil }; `clocks` = { percent_at,
+--- status_at } and only the arm that has a clock advances, so each field keeps the time its own
+--- value was set. The XPointer is part of the percent field and moves with it.
 function M.settle(books, uuid, current, clocks)
     local entry = books[uuid] or {}
     books[uuid] = entry
     if clocks.percent_at then
         entry.percent, entry.percent_at, entry.dirty_percent = current.percent, clocks.percent_at, false
+        entry.xpointer = current.xpointer
     end
     if clocks.status_at then
         entry.status, entry.status_at, entry.dirty_status = wire_status(current.status), clocks.status_at, false
@@ -227,6 +231,18 @@ function M.upgrade(books)
     end
 end
 
+-- crengine reads `text()` and `text()[1]` (and every other `[1]` step) as the same place.
+local function normalized(xpointer)
+    return xpointer and (xpointer:gsub("%[1%]", ""))
+end
+
+-- An XPointer moved within the same percent. An entry saved before XPointers existed has
+-- none to compare with: it learns one at the next settle and never pushes for it.
+local function xpointer_moved(entry, current)
+    return current.xpointer ~= nil and entry.xpointer ~= nil
+        and normalized(entry.xpointer) ~= normalized(current.xpointer)
+end
+
 --- Mark each field that differs from the agreed one pending at `now`, leaving the other
 --- field's clock alone. Repeated captures leave one entry, so the latest change wins.
 function M.capture(books, uuid, current, now)
@@ -234,8 +250,9 @@ function M.capture(books, uuid, current, now)
     if not entry or current.percent == nil then
         return
     end
-    if entry.percent ~= current.percent then
+    if entry.percent ~= current.percent or xpointer_moved(entry, current) then
         entry.percent, entry.percent_at, entry.dirty_percent = current.percent, now, true
+        entry.xpointer = current.xpointer
     end
     local status = wire_status(current.status)
     if entry.status ~= status then
@@ -306,6 +323,9 @@ function M.flush(books, deps)
             for _, arm in ipairs(arms) do
                 body[arm] = entry[arm]
             end
+            if body.percent then
+                body.xpointer = entry.xpointer
+            end
             local code, answer, err = deps.put_state(uuid, body)
             if not code then
                 return { ok = false, message = string.format("Couldn't reach Omnibus: %s", tostring(err)) }
@@ -339,7 +359,10 @@ end
 --- What opening a book should change on the device, or nil for nothing. Each of the server's
 --- fields (`remote` = the GET body) is applied when its time is at least the device's own for
 --- that field and its value differs; a field still waiting to be pushed outranks the server.
---- Returns { percent, percent_at, status, status_at } with only the applied fields.
+--- Returns { percent, percent_at, xpointer, status, status_at } with only the applied fields.
+--- A position with an XPointer moves by it (the percent is the fallback when the document can't
+--- place it); one without it, or a device that reports none, moves by percent. The same place
+--- under a new clock returns the clock alone.
 function M.pull_plan(entry, remote, current)
     entry = entry or {}
     local plan
@@ -347,15 +370,24 @@ function M.pull_plan(entry, remote, current)
         -- A decoded JSON null is not nil (KOReader's json yields a function), so keep only tables.
         local server = remote[ANSWER_KEY[arm]]
         local at = entry[arm .. "_at"]
-        if type(server) == "table" and not entry["dirty_" .. arm] then
+        -- A tie adopts the server's value, which survived a same-second write.
+        if type(server) == "table" and not entry["dirty_" .. arm] and server.event_at >= (at or 0) then
             local local_value = device_value(arm, current)
             if at then
                 local_value = entry[arm]
             end
-            -- A tie adopts the server's value, which survived a same-second write.
-            if server.event_at >= (at or 0) and server[arm] ~= local_value then
+            local by_xpointer = arm == "percent" and type(server.xpointer) == "string"
+                and current.xpointer ~= nil
+            local local_xpointer = at and entry.xpointer or current.xpointer
+            if by_xpointer and normalized(server.xpointer) ~= normalized(local_xpointer) then
                 plan = plan or {}
-                plan[arm], plan[arm .. "_at"] = server[arm], server.event_at
+                plan.xpointer, plan.percent, plan.percent_at = server.xpointer, server.percent, server.event_at
+            elseif server[arm] ~= local_value then
+                plan = plan or {}
+                plan[arm .. "_at"] = server.event_at
+                if not by_xpointer then
+                    plan[arm] = server[arm]
+                end
             end
         end
     end
