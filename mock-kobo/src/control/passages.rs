@@ -44,26 +44,26 @@ impl Control {
     }
 
     /// Resolve `passage` against `book`'s downloaded KEPUB: look up its
-    /// file, load it off the executor (parsing is file and CPU work), then
-    /// find the passage. Every refusal happens here, before any request.
+    /// file, then load and search it off the executor — both parsing and
+    /// the passage scan are file/CPU work, so neither runs on the async
+    /// worker. Every refusal happens here, before any request.
     async fn locate_passage(
         &self,
         book: &str,
         passage: &str,
     ) -> Result<(Kepub, usize, RangeInclusive<usize>), ControlError> {
         let path = self.book_file(book)?;
-        let kepub = match tokio::task::spawn_blocking(move || Kepub::open(&path)).await {
-            Ok(result) => result,
-            Err(error) => std::panic::resume_unwind(
-                error
-                    .try_into_panic()
-                    .unwrap_or_else(|cancelled| Box::new(cancelled.to_string())),
-            ),
-        }?;
-        let (chapter, words) = kepub
-            .find_passage(passage)
-            .ok_or_else(|| ControlError::PassageNotFound(passage.to_owned()))?;
-        Ok((kepub, chapter, words))
+        let passage = passage.to_owned();
+        super::settled(tokio::task::spawn_blocking(
+            move || -> Result<_, ControlError> {
+                let kepub = Kepub::open(&path)?;
+                let (chapter, words) = kepub
+                    .find_passage(&passage)
+                    .ok_or_else(|| ControlError::PassageNotFound(passage.clone()))?;
+                Ok((kepub, chapter, words))
+            },
+        ))
+        .await
     }
 }
 

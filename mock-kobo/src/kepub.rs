@@ -62,10 +62,9 @@ pub struct Word {
 
 impl Chapter {
     /// A highlight over `words` (inclusive, absolute into this chapter's
-    /// `words`): its KoboSpan range (the first and last word's span and
-    /// UTF-16 offsets) and the book's own text across them — each covered
-    /// span's UTF-16 slice concatenated, whitespace runs collapsed to one
-    /// space, then trimmed, so a span-crossing selection reads as the
+    /// `words`): its KoboSpan range and the book's own text across them —
+    /// each covered span's UTF-16 slice concatenated, then whitespace
+    /// collapsed and trimmed, so a span-crossing selection reads as the
     /// original prose rather than its words re-joined with single spaces.
     pub fn highlight(
         &self,
@@ -133,20 +132,7 @@ impl Chapter {
 
 /// Collapse every whitespace run in `text` to one space, then trim the ends.
 fn collapse_whitespace(text: &str) -> String {
-    let mut out = String::new();
-    let mut in_run = false;
-    for c in text.chars() {
-        if c.is_whitespace() {
-            if !in_run {
-                out.push(' ');
-            }
-            in_run = true;
-        } else {
-            out.push(c);
-            in_run = false;
-        }
-    }
-    out.trim().to_owned()
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 impl Kepub {
@@ -212,11 +198,10 @@ impl Kepub {
     }
 
     /// The first run of consecutive words in spine order whose text equals
-    /// `passage`'s whitespace-split words exactly (punctuation included —
+    /// `passage`'s whitespace-split words exactly, punctuation included —
     /// the control API's `read-to`/`highlight-words` actions resolve a
-    /// passage the way the reader view resolves a page and a selection).
-    /// `None` for an empty passage, a partial word, or a run that would
-    /// have to cross a chapter boundary (each chapter is searched on its own).
+    /// passage the same way. `None` for an empty passage, a partial word, or
+    /// a run that would cross a chapter boundary (each chapter stands alone).
     pub fn find_passage(&self, passage: &str) -> Option<(usize, std::ops::RangeInclusive<usize>)> {
         let needle: Vec<&str> = passage.split_whitespace().collect();
         if needle.is_empty() {
@@ -267,15 +252,34 @@ impl Kepub {
 
 type Archive<'a> = zip::ZipArchive<Cursor<&'a [u8]>>;
 
-/// Read `name` fully into memory from `archive`.
+/// Hard cap on the bytes read from any single zip entry, bounding memory
+/// against a "zip bomb" — a server-supplied KEPUB with a false declared
+/// size or deflate's ~1000:1 ratio. 64 MiB covers any real KEPUB chapter
+/// or asset.
+#[cfg(not(test))]
+const ENTRY_LIMIT: u64 = 64 * 1024 * 1024;
+/// Test builds use a much smaller cap so the zip-bomb regression test isn't
+/// streaming 64 MiB of I/O and compression on every run.
+#[cfg(test)]
+const ENTRY_LIMIT: u64 = 64 * 1024;
+
+/// Read `name` fully into memory from `archive`, capped at [`ENTRY_LIMIT`]
+/// regardless of the entry's declared (attacker-controlled) size.
 fn read_entry(archive: &mut Archive<'_>, name: &str) -> Result<Vec<u8>, KepubError> {
-    let mut entry = archive
+    let entry = archive
         .by_name(name)
         .map_err(|error| KepubError::Unreadable(format!("{name}: {error}")))?;
     let mut bytes = Vec::new();
-    entry
+    // One byte past the cap, so an entry landing exactly on it reads clean.
+    let read = entry
+        .take(ENTRY_LIMIT + 1)
         .read_to_end(&mut bytes)
         .map_err(|error| KepubError::Unreadable(format!("{name}: {error}")))?;
+    if read as u64 > ENTRY_LIMIT {
+        return Err(KepubError::Unreadable(format!(
+            "{name}: exceeds {ENTRY_LIMIT} byte cap"
+        )));
+    }
     Ok(bytes)
 }
 

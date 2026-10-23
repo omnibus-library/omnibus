@@ -224,14 +224,7 @@ impl Control {
             let persisted = control.persist().await;
             (attempt, persisted)
         });
-        let (attempt, persisted) = match task.await {
-            Ok(result) => result,
-            Err(error) => std::panic::resume_unwind(
-                error
-                    .try_into_panic()
-                    .unwrap_or_else(|cancelled| Box::new(cancelled.to_string())),
-            ),
-        };
+        let (attempt, persisted) = settled(task).await;
         persisted?;
         Ok(attempt)
     }
@@ -344,6 +337,20 @@ impl Control {
     /// The lock on the live state; a panic elsewhere never makes the device unreadable.
     fn live(&self) -> MutexGuard<'_, Live> {
         self.live.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+/// Await `task`, propagating its panic rather than returning a `JoinError`
+/// — nothing ever aborts these handles, so the only way one fails is a
+/// panic, which should surface the same as if it had happened inline.
+pub(super) async fn settled<T>(task: tokio::task::JoinHandle<T>) -> T {
+    match task.await {
+        Ok(result) => result,
+        Err(error) => std::panic::resume_unwind(
+            error
+                .try_into_panic()
+                .unwrap_or_else(|cancelled| Box::new(cancelled.to_string())),
+        ),
     }
 }
 

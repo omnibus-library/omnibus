@@ -75,6 +75,35 @@ fn open_returns_unreadable_for_a_missing_file() {
 }
 
 #[test]
+fn read_entry_refuses_an_entry_that_decompresses_past_the_byte_cap() {
+    // Zip-bomb-style fixture: `huge.bin` decompresses to one byte past the
+    // per-entry read cap (test builds use a much smaller `ENTRY_LIMIT` than
+    // production, so this regression stays fast), but — being all zeros —
+    // deflates to a few bytes, the "small compressed, huge decompressed"
+    // shape a hostile server reply could exploit.
+    const OVER_CAP: u64 = ENTRY_LIMIT + 1;
+    let mut buf = Vec::new();
+    let mut writer = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
+    writer
+        .start_file(
+            "huge.bin",
+            zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated),
+        )
+        .unwrap();
+    std::io::copy(&mut std::io::repeat(0).take(OVER_CAP), &mut writer).unwrap();
+    writer.finish().unwrap();
+    let mut archive = zip::ZipArchive::new(Cursor::new(buf.as_slice())).unwrap();
+
+    let error = read_entry(&mut archive, "huge.bin").unwrap_err();
+
+    let KepubError::Unreadable(message) = error else {
+        panic!("expected Unreadable, got {error:?}");
+    };
+    assert!(message.contains("byte cap"), "{message}");
+}
+
+#[test]
 fn locate_span_finds_the_chapter_and_span_of_a_kobospan() {
     let kepub = Kepub::parse(READER_KEPUB).unwrap();
 
