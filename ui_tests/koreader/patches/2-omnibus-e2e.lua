@@ -182,11 +182,12 @@ local function opt_in_step()
     }
 end
 
--- The step that syncs the shelf into <results>/<scenario>/home (`added` books, one unless the
--- scenario put more on it) and gives Alpha a huge font: the two-line book becomes several
--- pages, so a place in it is not always "the only page". `delivered(uuid, path)` hands the
--- scenario what the plugin recorded for Alpha.
-local function deliver_step(scenario, delivered, added)
+-- The step that syncs the shelf into <results>/<scenario>/home and gives one book a huge font:
+-- Alpha's two lines become several pages, so a place in it is not always "the only page".
+-- `opts` = { title = the book to hand over (Alpha), added = how many books the sync delivers (1) };
+-- `delivered(uuid, path)` hands the scenario what the plugin recorded for that book.
+local function deliver_step(scenario, delivered, opts)
+    opts = opts or {}
     return {
         name = "deliver",
         fn = function()
@@ -198,13 +199,14 @@ local function deliver_step(scenario, delivered, added)
             util.makePath(home)
             G_reader_settings:saveSetting("home_dir", home)
             local result = plugin:sync()
-            if not result.ok or result.added ~= (added or 1) then
+            if not result.ok or result.added ~= (opts.added or 1) then
                 return false, string.format("sync: ok=%s added=%s %s",
                     tostring(result.ok), tostring(result.added), tostring(result.message))
             end
-            local uuid, path = delivered_alpha()
+            local title = opts.title or "Alpha"
+            local uuid, path = delivered_book(title)
             if not uuid then
-                return false, "Alpha missing from the plugin's manifest"
+                return false, title .. " missing from the plugin's manifest"
             end
             local sidecar = require("docsettings"):open(path)
             sidecar:saveSetting("copt_font_size", 200)
@@ -958,15 +960,16 @@ local function precise_scenario()
             end,
         },
         opt_in_step(),
-        deliver_step("precise", function()
-            local lagoon_uuid, relay_uuid
-            lagoon_uuid, lagoon_path = delivered_book("Lagoon of Ligatures")
+        -- Alpha was retitled by `metadata`, so the delivered pair is found by its own titles.
+        deliver_step("precise", function(lagoon_uuid, path)
+            lagoon_path = path
+            local relay_uuid
             relay_uuid, relay_path = delivered_book("Frontmatter Relay")
             if lagoon_uuid ~= LAGOON_UUID or relay_uuid ~= RELAY_UUID then
                 error("the manifest does not hold both books: "
                     .. tostring(lagoon_uuid) .. ", " .. tostring(relay_uuid))
             end
-        end, 3),
+        end, { title = "Lagoon of Ligatures", added = 3 }),
         {
             name = "koreader_mid_paragraph",
             deferred = true,
