@@ -18,6 +18,7 @@ screenshots to <results>/<scenario>.png on failure, then quits.
 
 local Screen = require("device").screen
 local UIManager = require("ui/uimanager")
+local util = require("util")
 
 local SCENARIO = os.getenv("KOREADER_E2E_SCENARIO") or ""
 local RESULTS = os.getenv("KOREADER_E2E_RESULTS") or "/results"
@@ -38,10 +39,7 @@ local search_url = nil
 local download_path = nil
 
 local function record(name, ok, detail)
-    if done then
-        return
-    end
-    table.insert(steps, { name = name, ok = ok and true or false, detail = detail or "" })
+    table.insert(steps, { name = name, ok = ok, detail = detail })
 end
 
 local function finish(screenshot_name)
@@ -54,11 +52,7 @@ local function finish(screenshot_name)
     if screenshot_name then
         result.screenshot = screenshot_name
     end
-    local f = io.open(RESULTS .. "/" .. SCENARIO .. ".json", "w")
-    if f then
-        f:write(JSON.encode(result))
-        f:close()
-    end
+    util.writeToFile(JSON.encode(result), RESULTS .. "/" .. SCENARIO .. ".json")
     UIManager:quit()
 end
 
@@ -145,19 +139,13 @@ local function opds_scenario()
                 if not search_url then
                     return false, "root feed carried no search template"
                 end
-                local all_url
-                for _, item in ipairs(browser.item_table) do
-                    if item.title == "All Books" then
-                        all_url = item.url
-                        break
-                    end
-                end
-                if not all_url then
+                local all = find_item(browser.item_table, "All Books")
+                if not all then
                     return false, 'expected "All Books" entry in root feed, got '
                         .. titles_of(browser.item_table)
                 end
-                if not load(all_url) then
-                    return false, "feed failed to load or carried no entries: " .. all_url
+                if not load(all.url) then
+                    return false, "feed failed to load or carried no entries: " .. all.url
                 end
                 for _, title in ipairs(FIXTURE_TITLES) do
                     if not find_item(browser.item_table, title) then
@@ -172,9 +160,6 @@ local function opds_scenario()
         {
             name = "search",
             fn = function()
-                if not search_url then
-                    return false, "search template not captured"
-                end
                 -- searchCatalog substitutes the query into %s the same way.
                 local query = FIXTURE_TITLES[1]
                 local url = search_url:gsub("%%s", function()
@@ -201,7 +186,7 @@ local function opds_scenario()
             fn = function()
                 local item = find_item(browser.item_table, FIXTURE_TITLES[1])
                 local href
-                for _, acquisition in ipairs(item and item.acquisitions or {}) do
+                for _, acquisition in ipairs(item.acquisitions or {}) do
                     if acquisition.type and acquisition.type:find("epub", 1, true) then
                         href = acquisition.href
                         break
@@ -211,7 +196,6 @@ local function opds_scenario()
                     return false, string.format(
                         'no EPUB acquisition on "%s"', FIXTURE_TITLES[1])
                 end
-                local util = require("util")
                 local lfs = require("libs/libkoreader-lfs")
                 local dir = RESULTS .. "/downloads"
                 util.makePath(dir)
@@ -279,7 +263,7 @@ local function run_at(scenario_steps, i)
     if spec.deferred then
         return
     end
-    record(spec.name, true, detail or "")
+    record(spec.name, true, detail)
     UIManager:nextTick(function()
         run_at(scenario_steps, i + 1)
     end)
@@ -293,9 +277,6 @@ UIManager:nextTick(function()
     end
     local scenario_steps = build()
     UIManager:scheduleIn(WATCHDOG_SECS, function()
-        if done then
-            return
-        end
         fail("timeout", "timed out in " .. (current_step or "startup"))
     end)
     run_at(scenario_steps, 1)
