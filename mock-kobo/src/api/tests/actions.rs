@@ -35,17 +35,70 @@ async fn post_actions_sync_returns_invalid_request_for_an_unreadable_body() {
     let stub = spawn_stub(Stub::default()).await;
     let dir = TempDir::new().unwrap();
     let base = serve(stub_control(&stub, dir.path().join("kobo.json"))).await;
+    let client = reqwest::Client::new();
 
-    let response = reqwest::Client::new()
+    let unknown_value = client
         .post(format!("{base}/actions/sync"))
         .json(&json!({ "download": "not-a-real-policy" }))
         .send()
         .await
         .unwrap();
+    let misspelt_key = client
+        .post(format!("{base}/actions/sync"))
+        .json(&json!({ "downlaod": "all" }))
+        .send()
+        .await
+        .unwrap();
+    let non_json = client
+        .post(format!("{base}/actions/sync"))
+        .body("not json")
+        .send()
+        .await
+        .unwrap();
+    let wrong_type = client
+        .post(format!("{base}/actions/sync"))
+        .json(&json!({ "download": 5 }))
+        .send()
+        .await
+        .unwrap();
 
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    let body: Value = response.json().await.unwrap();
-    assert_eq!(body["code"], "invalid_request");
+    for response in [unknown_value, misspelt_key, non_json, wrong_type] {
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body: Value = response.json().await.unwrap();
+        assert_eq!(body["code"], "invalid_request");
+    }
+    assert!(stub.paths().is_empty(), "no request reached the stub");
+}
+
+#[tokio::test]
+async fn post_actions_sync_downloads_only_the_listed_book() {
+    let stub = spawn_stub(Stub {
+        sync_pages: vec![json!([
+            new_entitlement("book-1", "Dune"),
+            new_entitlement("book-2", "Dune Messiah"),
+        ])],
+        ..Stub::default()
+    })
+    .await;
+    let dir = TempDir::new().unwrap();
+    let base = serve(stub_control(&stub, dir.path().join("kobo.json"))).await;
+
+    let response = reqwest::Client::new()
+        .post(format!("{base}/actions/sync"))
+        .json(&json!({ "download": ["book-1"] }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body: Value = reqwest::get(format!("{base}/device"))
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(body["details"]["library"]["book-1"]["downloaded"], true);
+    assert_eq!(body["details"]["library"]["book-2"]["downloaded"], false);
 }
 
 #[tokio::test]

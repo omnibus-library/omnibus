@@ -142,6 +142,20 @@ impl RunningStub {
             .collect()
     }
 
+    /// The `name` header each request carried, in order.
+    pub fn header_on_every_request(&self, name: &str) -> Vec<Option<String>> {
+        let requests = self.requests.lock().unwrap();
+        requests
+            .iter()
+            .map(|r| {
+                r.headers
+                    .get(name)
+                    .and_then(|v| v.to_str().ok())
+                    .map(str::to_owned)
+            })
+            .collect()
+    }
+
     /// The paths requested so far, in order.
     pub fn paths(&self) -> Vec<String> {
         let requests = self.requests.lock().unwrap();

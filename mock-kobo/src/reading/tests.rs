@@ -141,6 +141,25 @@ fn reading_apply_reconciles_status_and_bookmark_independently() {
 }
 
 #[test]
+fn reading_apply_adopts_a_newer_ready_to_read_over_its_own_reading_status() {
+    let mut reading = Reading {
+        status: ReadStatus::Reading,
+        status_modified: Some(1_000),
+        bookmark: None,
+    };
+
+    reading.apply(&server_state(
+        ReadStatus::ReadyToRead,
+        Some(2_000),
+        None,
+        None,
+    ));
+
+    assert_eq!(reading.status, ReadStatus::ReadyToRead);
+    assert_eq!(reading.status_modified, Some(2_000));
+}
+
+#[test]
 fn reading_apply_treats_an_unparseable_stamp_as_unstamped() {
     let mut reading = Reading::default();
     let mut server = server_state(ReadStatus::Reading, None, None, None);

@@ -84,9 +84,7 @@ pub struct CurrentBookmark {
     pub last_modified: Option<String>,
 }
 
-fn lenient_kobo_span<'de, D>(
-    deserializer: D,
-) -> Result<Option<crate::reading::KoboSpan>, D::Error>
+fn lenient_kobo_span<'de, D>(deserializer: D) -> Result<Option<crate::reading::KoboSpan>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {

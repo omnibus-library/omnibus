@@ -1,8 +1,11 @@
 //! `decode`'s table, then `sync_now`'s cover pass against a stub.
 
+use std::time::Duration;
+
 use serde_json::{json, Value};
 use tempfile::TempDir;
 
+use crate::client::Client;
 use crate::device::Device;
 use crate::downloads::DownloadPolicy;
 use crate::session::sync_now;
@@ -68,6 +71,12 @@ async fn sync_now_fetches_each_cover_at_three_sizes_through_the_quality_template
         ]
     );
     assert_eq!(device.library["book-1"].cover, Some(Cover::Jpeg));
+    assert!(
+        stub.header_on_every_request("if-none-match")
+            .iter()
+            .all(Option::is_none),
+        "the firmware never revalidates a cached cover"
+    );
 }
 
 #[tokio::test]
@@ -189,6 +198,29 @@ async fn sync_now_asks_again_next_sync_for_a_cover_that_answered_404() {
         .filter(|p| p.contains("/v1/books/"))
         .count();
     assert_eq!(cover_requests, 6, "both syncs must ask for all three sizes");
+}
+
+#[tokio::test]
+async fn fetch_covers_caches_nothing_and_retries_when_the_origin_gets_no_answer() {
+    let mut device = Device::new("HW-1");
+    device.apply(serde_json::from_value(new_entitlement("book-1", "Dune")).unwrap());
+    // Port 1 is privileged, so nothing answers there — a fast stand-in for a
+    // dropped connection, unlike a real timeout.
+    let mut client =
+        Client::with_timeout("http://127.0.0.1:1", "HW-1", Duration::from_millis(200)).unwrap();
+    let template =
+        "http://127.0.0.1:1/v1/books/{ImageId}/thumbnail/{Width}/{Height}/{Quality}/{IsGreyscale}/image.jpg";
+
+    fetch_covers(&mut client, &mut device, template).await;
+
+    assert_eq!(device.library["book-1"].cover, None);
+    assert!(device.covers.is_empty());
+
+    // Nothing cached means nothing to skip: the next sync's pass asks again.
+    fetch_covers(&mut client, &mut device, template).await;
+
+    assert_eq!(device.library["book-1"].cover, None);
+    assert!(device.covers.is_empty());
 }
 
 #[tokio::test]

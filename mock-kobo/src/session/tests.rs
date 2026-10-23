@@ -29,20 +29,6 @@ fn library_sync_tokens(stub: &RunningStub) -> Vec<Option<String>> {
         .collect()
 }
 
-/// The `name` header each request carried, in order.
-fn header_on_every_request(stub: &RunningStub, name: &str) -> Vec<Option<String>> {
-    let requests = stub.requests.lock().unwrap();
-    requests
-        .iter()
-        .map(|r| {
-            r.headers
-                .get(name)
-                .and_then(|v| v.to_str().ok())
-                .map(str::to_owned)
-        })
-        .collect()
-}
-
 #[tokio::test]
 async fn sync_now_completes_handshake_against_healthy_stub() {
     let stub = spawn_stub(Stub::default()).await;
@@ -262,7 +248,7 @@ async fn sync_now_sends_hardware_id_on_every_request() {
     .await
     .unwrap();
 
-    let ids = header_on_every_request(&stub, "x-kobo-deviceid");
+    let ids = stub.header_on_every_request("x-kobo-deviceid");
     assert_eq!(ids, vec![Some("HW-1".to_owned()); 7]);
 }
 
@@ -278,7 +264,7 @@ async fn sync_now_sends_host_without_port_on_every_request() {
     .await
     .unwrap();
 
-    let hosts = header_on_every_request(&stub, "host");
+    let hosts = stub.header_on_every_request("host");
     assert_eq!(hosts, vec![Some("127.0.0.1".to_owned()); 7]);
 }
 

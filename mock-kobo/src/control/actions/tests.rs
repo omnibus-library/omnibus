@@ -250,7 +250,8 @@ async fn finish_marks_the_book_finished_and_sends_it() {
 async fn read_returns_unknown_book_for_a_book_it_lacks() {
     let stub = spawn_stub(Stub::default()).await;
     let dir = TempDir::new().unwrap();
-    let control = stub_control(&stub, dir.path().join("kobo.json"));
+    let state_path = dir.path().join("kobo.json");
+    let control = stub_control(&stub, state_path.clone());
 
     let result = control
         .read("book-1".into(), Percent::new(42).unwrap(), None)
@@ -260,13 +261,16 @@ async fn read_returns_unknown_book_for_a_book_it_lacks() {
         Err(ControlError::Device(DeviceError::UnknownBook(id))) => assert_eq!(id, "book-1"),
         other => panic!("expected UnknownBook, got {other:?}"),
     }
+    assert!(stub.paths().is_empty(), "no request should have been made");
+    assert!(!state_path.exists(), "nothing should have been saved");
 }
 
 #[tokio::test]
 async fn read_returns_not_downloaded_for_an_undownloaded_book() {
     let stub = spawn_stub(Stub::default()).await;
     let dir = TempDir::new().unwrap();
-    let control = stub_control_with(&stub, device_holding_book_1(), dir.path().join("kobo.json"));
+    let state_path = dir.path().join("kobo.json");
+    let control = stub_control_with(&stub, device_holding_book_1(), state_path.clone());
 
     let result = control
         .read("book-1".into(), Percent::new(42).unwrap(), None)
@@ -276,6 +280,8 @@ async fn read_returns_not_downloaded_for_an_undownloaded_book() {
         Err(ControlError::Device(DeviceError::NotDownloaded(id))) => assert_eq!(id, "book-1"),
         other => panic!("expected NotDownloaded, got {other:?}"),
     }
+    assert!(stub.paths().is_empty(), "no request should have been made");
+    assert!(!state_path.exists(), "nothing should have been saved");
 }
 
 #[tokio::test]
