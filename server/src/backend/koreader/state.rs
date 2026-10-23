@@ -112,7 +112,7 @@ pub(super) async fn epub_source(pool: &SqlitePool, uuid: &str) -> Option<PathBuf
 
 /// Convert between an XPointer and a CFI against the book's source EPUB, off the async
 /// runtime. A book with no EPUB, an unreadable file or a panic is a `None`, never a 5xx.
-async fn convert(
+pub(in crate::backend) async fn convert(
     pool: &SqlitePool,
     uuid: &str,
     run: impl FnOnce(&FsPath) -> anyhow::Result<Option<String>> + Send + 'static,
@@ -133,7 +133,7 @@ async fn convert(
 
 /// The exact position to report: the device's own XPointer, else one derived from the CFI
 /// another surface stored.
-async fn position_xpointer(
+pub(in crate::backend) async fn position_xpointer(
     pool: &SqlitePool,
     uuid: &str,
     stored: &KoboBookState,

@@ -24,7 +24,7 @@ pub(super) async fn fixture() -> (Router, SqlitePool, String, i64) {
 
 /// An EPUB book whose file on disk holds `spine` (`(href, xhtml)` pairs, in order); returns
 /// its uuid and the file's path. The library directory is a fresh temp dir.
-pub(super) async fn seed_epub_book(
+pub(in crate::backend) async fn seed_epub_book(
     pool: &SqlitePool,
     spine: &[(&str, &str)],
 ) -> (String, std::path::PathBuf) {
