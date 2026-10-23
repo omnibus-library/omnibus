@@ -1,4 +1,4 @@
-//! `paginate` against the reader fixture (AC5), then every `Reader::on_key`.
+//! `paginate` against the reader fixture, then every `Reader::on_key`.
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 

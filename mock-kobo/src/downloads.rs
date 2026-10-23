@@ -72,15 +72,9 @@ pub enum Outcome {
     Transport(String),
 }
 
-/// Fetch one book's bytes. With storage set, the body is streamed to
-/// `<storage>/.<id>.part` and renamed over `<storage>/<id>.kepub.epub`; an
-/// id that isn't a plain id ([`annotations::is_safe_id`]) is refused before
-/// any request
-/// (// shortcut: a reset or a remove-download never deletes this file —
-/// harmless, since only a downloaded book is read, and a later download
-/// overwrites it; revisit if a reset should reclaim disk space). Without
-/// storage the body is drained chunk by chunk and discarded — this is a
-/// sync, not the reader.
+/// Fetch one book's bytes: streamed to storage when the device has one,
+/// drained and discarded otherwise, as a plain sync does. Refused before
+/// any request for an id that isn't a plain id ([`annotations::is_safe_id`]).
 pub async fn attempt_one(client: &mut Client, device: &mut Device, id: &str) -> Outcome {
     let Some(url) = device.download_urls.get(id).cloned() else {
         return Outcome::NoUrl;
@@ -121,6 +115,8 @@ async fn store(response: &mut reqwest::Response, dir: &Path, id: &str, client: &
             let _ = tokio::fs::remove_file(&part).await;
             return Outcome::Rejected(client.redact(&error.to_string()));
         }
+        // shortcut: a reset or remove-download never deletes `target`; harmless (a later
+        // download overwrites it) — revisit if a reset should reclaim disk space.
         return Outcome::Downloaded;
     }
     let _ = tokio::fs::remove_file(&part).await;
