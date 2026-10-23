@@ -122,6 +122,22 @@ impl Device {
         }
     }
 
+    /// Drop what was learned about the server this device last talked to:
+    /// always `reading_services_host` (the next sync re-learns it from
+    /// `v1/initialization`), and when the device's token changed, also
+    /// `sync_token` and `download_urls` — the same state a token retarget
+    /// drops, because a new token means a full resync. Shared by
+    /// `Control::retarget` and `startup::start`, so a device that comes
+    /// back from a restart pointed at a different server or token never
+    /// keeps talking to the old one.
+    pub fn forget_server(&mut self, token_changed: bool) {
+        self.reading_services_host = None;
+        if token_changed {
+            self.sync_token = None;
+            self.download_urls.clear();
+        }
+    }
+
     /// Clear a book's downloaded flag and problem, locally — no request.
     pub fn remove_download(&mut self, book: &str) -> Result<(), DeviceError> {
         let book = self

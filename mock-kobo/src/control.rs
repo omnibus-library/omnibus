@@ -275,21 +275,19 @@ impl Control {
                 Retarget::Url(url) => {
                     live.saved.url = Some(url.clone());
                     live.url = url;
+                    live.saved.device.forget_server(false);
                 }
                 Retarget::Token(token) => {
                     live.saved.token = token;
                     live.saved.wired_url = None;
-                    live.saved.device.sync_token = None;
-                    live.saved.device.download_urls.clear();
+                    live.saved.device.forget_server(true);
                 }
                 Retarget::Wired { token, url } => {
                     live.saved.token = token;
                     live.saved.wired_url = Some(url);
-                    live.saved.device.sync_token = None;
-                    live.saved.device.download_urls.clear();
+                    live.saved.device.forget_server(true);
                 }
             }
-            live.saved.device.reading_services_host = None;
             let needs_wire = !live.saved.token_wired_for(&live.url);
             Retargeted {
                 view: live.view(),
