@@ -305,61 +305,20 @@ fn state_reply(result: Result<Acted, ControlError>) -> Reply<Details> {
     )
 }
 
-/// The wire shape of a highlight's span range, under `"location"` in the request body.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct LocationBody {
-    chapter: String,
-    start_span: String,
-    start_char: u32,
-    end_span: String,
-    end_char: u32,
-}
-
-impl From<LocationBody> for SpanRange {
-    fn from(body: LocationBody) -> Self {
-        Self {
-            chapter: body.chapter,
-            start_span: body.start_span,
-            start_char: body.start_char,
-            end_span: body.end_span,
-            end_char: body.end_char,
-        }
-    }
-}
-
-/// `"color"` in a highlight request body; unknown or malformed fails the whole parse.
-#[derive(Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum ColorBody {
-    Yellow,
-    Pink,
-    Blue,
-    Green,
-}
-
-impl From<ColorBody> for Swatch {
-    fn from(body: ColorBody) -> Self {
-        match body {
-            ColorBody::Yellow => Self::Yellow,
-            ColorBody::Pink => Self::Pink,
-            ColorBody::Blue => Self::Blue,
-            ColorBody::Green => Self::Green,
-        }
-    }
-}
-
 async fn post_highlight(State(control): State<Arc<Control>>, body: Bytes) -> Reply<Details> {
+    // `SpanRange` and `Swatch` already derive `Deserialize` in the request
+    // body's own shape (`deny_unknown_fields`, snake_case), so the body
+    // parses straight into them — no separate wire type to keep in sync.
     #[derive(Deserialize)]
     #[serde(deny_unknown_fields)]
     struct HighlightBody {
         book: String,
         text: String,
-        color: ColorBody,
+        color: Swatch,
         #[serde(default)]
         note: Option<String>,
         // Required: a real device never highlights without a KoboSpan range.
-        location: LocationBody,
+        location: SpanRange,
     }
     let parsed: HighlightBody = match serde_json::from_slice(&body) {
         Ok(parsed) => parsed,
@@ -370,9 +329,9 @@ async fn post_highlight(State(control): State<Arc<Control>>, body: Bytes) -> Rep
     }
     let new = NewHighlight {
         text: parsed.text,
-        color: parsed.color.into(),
+        color: parsed.color,
         note: parsed.note,
-        location: Some(parsed.location.into()),
+        location: Some(parsed.location),
     };
     annotation_reply(control.highlight(parsed.book, new).await)
 }
