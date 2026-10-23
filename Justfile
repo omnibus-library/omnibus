@@ -89,10 +89,20 @@ modules dir:
 module-map-test:
     python3 scripts/tests/module-map.test.py
 
-# Run every unit/integration suite: the Rust matrix first, then the Python
-# script suites. Rust leads so a failing script suite can't stop the recipe
+# Unit tests for scripts/koreader_report.py (the KOReader lane's PASS/FAIL
+# report). Stdlib unittest, like explore-test.
+koreader-report-test:
+    python3 scripts/tests/koreader-report.test.py
+
+# Regression tests for scripts/lib/scratch-server.sh's scratch-dir ownership.
+# Plain bash with stubbed I/O, like dev-port-choose-port.test.sh.
+scratch-server-test:
+    bash scripts/tests/scratch-server-make-scratch-dir.test.sh
+
+# Run every unit/integration suite: the Rust matrix first, then the script
+# suites. Rust leads so a failing script suite can't stop the recipe
 # before the cargo results are in.
-test: test-rust explore-test module-map-test
+test: test-rust explore-test module-map-test koreader-report-test scratch-server-test
 
 # The Rust half of `just test`: the full matrix via cargo-nextest (the same
 # runner CI uses, so local and CI results match; no doctests in the tree, which
@@ -182,6 +192,13 @@ lint-ts:
 [positional-arguments]
 e2e-ci *specs: fixtures
     scripts/with-dev-env.sh e2e scripts/e2e-ci.sh "$@"
+
+# Run the KOReader E2E lane (scripts/koreader-e2e.sh): a scratch server with
+# the two generated fixture EPUBs, and a real KOReader in Docker browsing,
+# searching, downloading and opening over OPDS. Prints PASS/FAIL per scenario;
+# keeps the scratch dir on failure (docs/koreader.md). Linux + docker only.
+koreader-e2e:
+    scripts/with-dev-env.sh web scripts/koreader-e2e.sh
 
 # Regenerate openapi/openapi.json, the REST API contract, from the handlers'
 # `#[utoipa::path]` annotations. A test fails while the committed file is stale,

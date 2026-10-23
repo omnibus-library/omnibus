@@ -45,7 +45,7 @@ jobs:
               - "shared/**"
               - "server/**"
               - "db/**"
-              - "ui_tests/**"
+              - "ui_tests/playwright/**"
               # The iOS reader's glue; `tests/ios_glue/` is its only test lane.
               # Not in the bundle key below: nothing in the web bundle reads it.
               - "omnibus-ios/omnibus/Reader/Web/**"

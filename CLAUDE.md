@@ -137,6 +137,10 @@ cd ui_tests/playwright && pnpm install                      # first time
 cd ui_tests/playwright && pnpm exec playwright test         # run all
 just lint-ts                                                # biome + typecheck (TS project)
 
+# KOReader E2E lane: a real KOReader in Docker over OPDS against a scratch
+# server. Linux + docker only.
+just koreader-e2e                                           # PASS/FAIL per scenario (docs/koreader.md)
+
 # Native iOS app (omnibus-ios/; system xcodebuild + simctl, no nix shell)
 just ios-build                                              # compile check (generic simulator destination)
 just ios-test                                               # omnibusTests unit suite — same script CI runs
