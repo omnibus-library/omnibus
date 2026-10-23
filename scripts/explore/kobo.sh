@@ -298,16 +298,26 @@ case "$cmd" in up|act|state|requests|down) ;; *) kobo::usage ;; esac
 shift
 
 agent="" accounts="" have_agent=0
+rest=()
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --agent) [ "$#" -ge 2 ] || kobo::usage; agent="$2"; have_agent=1; shift 2 ;;
     --accounts) [ "$#" -ge 2 ] || kobo::usage; accounts="$2"; shift 2 ;;
-    --) shift; break ;;
+    --)
+      shift
+      while [ "$#" -gt 0 ]; do rest+=("$1"); shift; done
+      ;;
     -*) kobo::usage ;;
-    *) break ;;
+    *) rest+=("$1"); shift ;;
   esac
 done
-# "$@" now holds act's own action and its args; every other command takes none.
+if [ "${#rest[@]}" -gt 0 ]; then
+  set -- "${rest[@]}"
+else
+  set --
+fi
+# "$@" now holds act's own action and its args, with --agent/--accounts
+# consumed wherever they appeared; every other command takes none.
 
 case "$cmd" in
   down) [ "$have_agent" = 0 ] || kobo::valid_agent "$agent" || kobo::usage ;;
