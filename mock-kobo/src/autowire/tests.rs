@@ -174,6 +174,21 @@ async fn wire_reuses_device_with_matching_name() {
 }
 
 #[tokio::test]
+async fn wire_creates_a_kobo_when_only_a_koreader_has_the_name() {
+    let stub = spawn_stub(Stub {
+        koreader_devices: vec![("Mock Kobo".to_owned(), "tok-koreader".to_owned())],
+        ..Stub::default()
+    })
+    .await;
+
+    let wired = wire(&stub.origin, &admin(), "Mock Kobo").await.unwrap();
+
+    assert_eq!(wired.token, STUB_TOKEN);
+    assert!(!wired.reused);
+    assert_eq!(stub.requests_to("/api/rpc/kobo/devices/create").len(), 1);
+}
+
+#[tokio::test]
 async fn wire_creates_device_when_no_name_matches() {
     let stub = spawn_stub(stub_with_devices(&[("Mock Kobo", "tok-a")])).await;
 

@@ -62,6 +62,8 @@ pub struct Stub {
     pub second_page_gate: Option<Arc<Notify>>,
     /// The `(name, token)` devices `POST /api/rpc/kobo/devices` lists, oldest first.
     pub devices: Vec<(String, String)>,
+    /// The `(name, token)` KOReader devices listed after `devices`.
+    pub koreader_devices: Vec<(String, String)>,
     /// The status `POST /api/rpc/kobo/devices` answers a signed-in caller with.
     pub devices_status: StatusCode,
     /// The status `POST /api/auth/login` answers with.
@@ -88,6 +90,7 @@ impl Default for Stub {
             sync_never_answers: false,
             second_page_gate: None,
             devices: Vec::new(),
+            koreader_devices: Vec::new(),
             devices_status: StatusCode::OK,
             login_status: StatusCode::OK,
             login_redirects_to: None,
@@ -308,10 +311,11 @@ fn login(state: &StubState) -> Response {
         .into_response()
 }
 
-fn device_row(id: usize, name: &str, token: &str) -> Value {
+fn device_row(id: usize, name: &str, token: &str, kind: &str) -> Value {
     json!({
         "id": id,
         "name": name,
+        "kind": kind,
         "token": token,
         "created_at": "2026-01-01T00:00:00Z",
         "last_seen_at": null,
@@ -322,9 +326,11 @@ fn list_devices(state: &StubState) -> Response {
     if !state.stub.devices_status.is_success() {
         return state.stub.devices_status.into_response();
     }
+    let kobos = state.stub.devices.iter().map(|d| (d, "kobo"));
+    let koreaders = state.stub.koreader_devices.iter().map(|d| (d, "koreader"));
     let rows: Vec<Value> = (1..)
-        .zip(&state.stub.devices)
-        .map(|(id, (name, token))| device_row(id, name, token))
+        .zip(kobos.chain(koreaders))
+        .map(|(id, ((name, token), kind))| device_row(id, name, token, kind))
         .collect();
     Json(rows).into_response()
 }
@@ -332,7 +338,7 @@ fn list_devices(state: &StubState) -> Response {
 fn create_device(body: &str) -> Response {
     let request: Value = serde_json::from_str(body).unwrap_or_default();
     let name = request["name"].as_str().unwrap_or_default();
-    Json(device_row(99, name, STUB_TOKEN)).into_response()
+    Json(device_row(99, name, STUB_TOKEN, "kobo")).into_response()
 }
 
 /// A firmware store path's answer, redirecting to a healthy path when `store_path_status` is a 3xx.
