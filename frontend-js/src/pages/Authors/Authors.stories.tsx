@@ -358,6 +358,8 @@ export const SwitchingAuthorsMovesTheWindow: Story = {
     });
     window.scrollTo(0, 400);
     await waitFor(() => expect(window.scrollY).toBe(400));
+    // The browser files the scroll event on the next frame; a reader's click can't beat it.
+    await new Promise((frame) => requestAnimationFrame(frame));
 
     await userEvent.click(
       await canvas.findByRole("link", { name: /^Ursula K\. Le Guin/ }),
