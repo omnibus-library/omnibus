@@ -98,13 +98,17 @@ title, authors, series (and its number), description and cover.
   without downloading the file again.
 - **A book that is open** is left alone and updated by the next sync after you
   close it.
-- **Names don't change.** A delivered file keeps its name after a retitle, and a
-  book that leaves the shelves and returns comes back under the name it had,
-  so its kept place and highlights are found again.
-- **Hash sidecars:** with KOReader's book-metadata location set to *hash*, the
-  place and highlights are tied to the file's contents, so the plugin never
-  replaces the file there. The metadata and cover still update; a changed file
-  waits. The default location (*doc*) isn't affected.
+- **Names don't change,** except for a format change. A delivered file keeps its
+  name after a retitle, and a book that leaves the shelves and returns comes back
+  under the name it had, so its kept place and highlights are found again. A book
+  that Omnibus now serves in another format (an EPUB that is now a CBZ) is
+  delivered under a new name and the old file is removed; its old `.sdr` stays.
+- **Hash sidecars:** with KOReader's book-metadata location set to *hash* (or for
+  a book that was read under it and not reopened since), the place and highlights
+  are tied to the file's contents, so the plugin never replaces that file. The
+  metadata and cover still update; the changed file waits and is downloaded by the
+  first sync after the book is no longer kept that way. The default location
+  (*doc*) isn't affected.
 
 ## Test lane
 

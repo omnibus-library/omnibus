@@ -12,6 +12,7 @@ download, holds the server URL and this device's token.
 local BookList = require("ui/widget/booklist")
 local DataStorage = require("datastorage")
 local DocSettings = require("docsettings")
+local DocumentRegistry = require("document/documentregistry")
 local Event = require("ui/event")
 local InfoMessage = require("ui/widget/infomessage")
 local JSON = require("json")
@@ -202,17 +203,33 @@ function Omnibus:book_downloader(config)
     end
 end
 
-local COVER_EXTENSIONS = { ["image/jpeg"] = "jpg", ["image/png"] = "png", ["image/gif"] = "gif",
-    ["image/webp"] = "webp" }
 local CUSTOM_PROP_KEYS = { "title", "authors", "series", "series_index", "description" }
 
+-- The properties of the book's own file, which "Reset custom" restores; nil when it can't be read.
+local function file_props(path)
+    if not DocumentRegistry:hasProvider(path) then
+        return nil
+    end
+    local document = DocumentRegistry:openDocument(path)
+    if not document then
+        return nil
+    end
+    local props
+    if not document.loadDocument or document:loadDocument(false) then -- metadata only
+        props = document:getProps()
+    end
+    document:close()
+    return props
+end
+
 -- Write the book's metadata as KOReader's own "custom metadata", the way Book information
--- does: the five fields in the book's metadata file, which the file itself is never edited for.
+-- does: the five fields over a copy of the file's own, which the file itself is never edited for.
 local function write_custom_props(book, path)
     local props = sync.custom_props(book)
     local custom = DocSettings.openSettingsFile(DocSettings:findCustomMetadataFile(path))
-    if not custom:readSetting("doc_props") then
-        custom:saveSetting("doc_props", {})
+    local own = file_props(path)
+    if own or not custom:readSetting("doc_props") then
+        custom:saveSetting("doc_props", own or {})
     end
     local custom_props = custom:readSetting("custom_props", {})
     for _, key in ipairs(CUSTOM_PROP_KEYS) do
@@ -231,11 +248,13 @@ local function remove_custom_cover(path)
     end
 end
 
--- Make the server's cover the book's custom cover; a book with none loses the custom one.
+-- Make the server's cover the book's custom cover. A book the server has no usable cover for
+-- (none, or a type KOReader can't show) loses the custom one and shows its own.
 function Omnibus:write_custom_cover(config, book, path)
     local url = sync.cover_url(config.server_url, book)
     if not url then
-        return false, "unexpected cover address"
+        remove_custom_cover(path)
+        return true
     end
     local chunks = {}
     local code, headers = request(url, config.token, {
@@ -245,16 +264,12 @@ function Omnibus:write_custom_cover(config, book, path)
         block_timeout = socketutil.LARGE_BLOCK_TIMEOUT,
         total_timeout = socketutil.LARGE_TOTAL_TIMEOUT,
     })
-    if code == 404 then
+    local extension = code == 200 and sync.cover_extension(headers["content-type"])
+    if code == 404 or code == 200 and not extension then
         remove_custom_cover(path)
         return true
     elseif code ~= 200 then
         return false, code and ("cover HTTP " .. code) or headers
-    end
-    local content_type = (headers["content-type"] or ""):match("^[^;]*"):lower()
-    local extension = COVER_EXTENSIONS[content_type]
-    if not extension then
-        return false, "unsupported cover type " .. content_type
     end
     local cache = DataStorage:getDataDir() .. "/cache"
     util.makePath(cache)
@@ -263,11 +278,15 @@ function Omnibus:write_custom_cover(config, book, path)
     if not written then
         return false, write_err
     end
-    remove_custom_cover(path)
+    local old = DocSettings:findCustomCoverFile(path)
     local flushed = DocSettings:flushCustomCover(path, image)
     os.remove(image)
     if not flushed then
         return false, "couldn't write the custom cover"
+    end
+    -- The new cover replaced a same-named one; a different extension leaves the old to remove.
+    if old and old:match("[^/]*$") ~= "cover." .. extension then
+        os.remove(old)
     end
     return true
 end
@@ -441,6 +460,17 @@ function Omnibus:onSuspend()
     self:guarded("suspend", self.capture_and_flush)
 end
 
+-- Replacing a file whose sidecar KOReader keys by the file's content would orphan the reader's
+-- place and highlights: that is every file while the setting says so, and a file read under it
+-- until it is reopened.
+local function can_replace(path)
+    if G_reader_settings:readSetting("document_metadata_folder", "doc") == "hash" then
+        return false
+    end
+    local ok, hash_dir = pcall(DocSettings.getSidecarDir, DocSettings, path, "hash")
+    return ok and lfs.attributes(hash_dir, "mode") ~= "directory"
+end
+
 local function remove_file(path)
     if lfs.attributes(path, "mode") ~= "file" then
         return true
@@ -472,8 +502,7 @@ function Omnibus:sync()
         open_path = self.ui.document and self.ui.document.file,
         manifest = manifest,
         files = files,
-        -- Files KOReader keys by the file's content cannot be replaced without orphaning them.
-        can_replace = G_reader_settings:readSetting("document_metadata_folder", "doc") ~= "hash",
+        can_replace = can_replace,
         save_manifest = function()
             settings:saveSetting("manifest", manifest)
             settings:saveSetting("files", files)
