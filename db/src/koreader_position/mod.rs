@@ -14,6 +14,7 @@ mod crengine_text;
 mod tests;
 mod xpointer;
 
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -114,9 +115,9 @@ fn spine_file_index<'a>(
     walks: &'a mut Walks,
     i: usize,
 ) -> anyhow::Result<Option<&'a FileIndex>> {
-    if !walks.contains_key(&i) {
+    if let Entry::Vacant(slot) = walks.entry(i) {
         let bytes = book::read_spine_entry(doc, i)?;
-        walks.insert(i, crate::kobo_position::walk::index_file(&bytes).ok());
+        slot.insert(crate::kobo_position::walk::index_file(&bytes).ok());
     }
     Ok(walks.get(&i).and_then(Option::as_ref))
 }
