@@ -24,15 +24,16 @@ use crate::http_errors::internal;
 #[cfg(test)]
 mod tests;
 
-/// What the device reports about a book.
+/// What the device reports about a book: the field(s) that changed, at one event time.
 #[derive(Deserialize)]
 pub struct StatePut {
     /// Whole-book percent, 0 to 100, floored on the device.
-    percent: i64,
+    #[serde(default)]
+    percent: Option<i64>,
     /// KOReader's `summary.status`; only `reading` and `complete` sync.
     #[serde(default)]
     status: Option<String>,
-    /// When the device recorded it, in Unix seconds on the device's clock.
+    /// When the device recorded them, in Unix seconds on the device's clock.
     event_at: i64,
 }
 
@@ -116,7 +117,7 @@ pub async fn get_state(
     answer(StatusCode::OK, state.pool(), device.user_id, &uuid).await
 }
 
-/// Store the device's position and status; 200 with the resulting state when the position
+/// Store the device's position and/or status; 200 with the resulting state when the position
 /// landed, 409 with the stored state when it was older than the stored position.
 pub async fn put_state(
     device: KoreaderDevice,
@@ -131,17 +132,25 @@ pub async fn put_state(
     let event_at = body
         .event_at
         .min(time::OffsetDateTime::now_utc().unix_timestamp());
-    let position = ProgressUpdate {
+    if body.percent.is_none() && body.status.is_none() {
+        return (StatusCode::BAD_REQUEST, "percent or status is required").into_response();
+    }
+    let position = body.percent.map(|percent| ProgressUpdate {
         book_uuid: uuid.clone(),
         format: ProgressFormat::Epub,
         epub_cfi: None,
         audio_position_seconds: None,
-        progress_percent: Some(body.percent),
+        progress_percent: Some(percent),
         kobo_location: None,
         book_file_id: None,
         client_updated_at: Some(event_at),
+    });
+    let valid = match &position {
+        Some(update) => update.validate(),
+        None if event_at < 0 => Err("event_at must be non-negative".to_owned()),
+        None => Ok(()),
     };
-    if let Err(msg) = position.validate() {
+    if let Err(msg) = valid {
         return (StatusCode::BAD_REQUEST, msg).into_response();
     }
     // BEGIN IMMEDIATE avoids a stale-snapshot 517 on concurrent writers (#1862).
@@ -164,11 +173,14 @@ pub async fn put_state(
         }
     }
     // A won write stores exactly the clamped time, so a larger stored one is a newer position.
-    let stale = match db::progress::upsert_progress_tx(&mut tx, device.user_id, &position).await {
-        Ok(stored) => stored.client_updated_at > event_at,
-        Err(ProgressError::BookNotFound) => return StatusCode::NOT_FOUND.into_response(),
-        Err(ProgressError::Sqlx(e)) => return internal("koreader upsert_progress", e),
-    };
+    let mut stale = false;
+    if let Some(position) = &position {
+        stale = match db::progress::upsert_progress_tx(&mut tx, device.user_id, position).await {
+            Ok(stored) => stored.client_updated_at > event_at,
+            Err(ProgressError::BookNotFound) => return StatusCode::NOT_FOUND.into_response(),
+            Err(ProgressError::Sqlx(e)) => return internal("koreader upsert_progress", e),
+        };
+    }
     if let Err(e) = tx.commit().await {
         return internal("koreader put_state commit", e);
     }
