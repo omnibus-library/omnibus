@@ -699,6 +699,27 @@ mod xpointer {
     }
 
     #[tokio::test]
+    async fn put_state_treats_a_blank_xpointer_as_absent() {
+        let (app, pool, token, uid, uuid, _file) = seeded_epub().await;
+
+        let res = put(
+            &app,
+            &token,
+            &uuid,
+            json!({ "percent": 60, "event_at": now() - 10, "xpointer": "   " }),
+        )
+        .await;
+
+        assert_eq!(res.status(), StatusCode::OK);
+        let epub = web_view(&pool, uid, &uuid).await.0.unwrap();
+        assert_eq!((epub.epub_cfi, epub.progress_percent), (None, Some(60)));
+        assert_eq!(
+            body_json::<Value>(res).await["position"]["xpointer"],
+            Value::Null
+        );
+    }
+
+    #[tokio::test]
     async fn put_state_rejects_an_xpointer_over_the_length_cap() {
         let (app, pool, token, uid, uuid, _file) = seeded_epub().await;
         let long = "a".repeat(omnibus_shared::EPUB_CFI_MAX_LEN + 1);
