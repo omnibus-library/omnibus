@@ -546,3 +546,41 @@ async fn migration_0105_keeps_existing_devices_as_kobos_that_still_resolve() {
             .unwrap();
     assert!(resolved.is_some(), "a pre-0105 device must keep resolving");
 }
+
+#[tokio::test]
+async fn migration_0106_leaves_existing_devices_unsynced() {
+    const SYNC_REPORT_VERSION: i64 = 106;
+    static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .unwrap();
+    for m in MIGRATOR.iter().filter(|m| m.version < SYNC_REPORT_VERSION) {
+        sqlx::raw_sql(&m.sql).execute(&pool).await.unwrap();
+    }
+    sqlx::query(
+        "INSERT INTO users (id, username, password_hash, is_admin) VALUES (1, 'u', 'h', 0)",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO kobo_devices (user_id, token, name) VALUES (1, 'old-token', 'Clara')")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let m = MIGRATOR
+        .iter()
+        .find(|m| m.version == SYNC_REPORT_VERSION)
+        .expect("0106 must exist");
+    sqlx::raw_sql(&m.sql).execute(&pool).await.unwrap();
+
+    let (at, error): (Option<i64>, Option<String>) = sqlx::query_as(
+        "SELECT last_sync_at, last_sync_error FROM kobo_devices WHERE token = 'old-token'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!((at, error), (None, None));
+}

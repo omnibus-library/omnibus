@@ -2,14 +2,18 @@
 //! `/api/*` auth gate: each route authenticates through [`extractor::KoreaderDevice`].
 //! Like `/kobo/*` they are not part of the REST contract, so they are plain
 //! routes with DTOs local to the module. [`library`] lists and serves the synced
-//! shelves' books; the Settings plugin download lives with the device routes.
+//! shelves' books; [`report`] stores each sync's outcome for Settings.
 
-use axum::{routing::get, Router};
+use axum::{
+    routing::{get, post},
+    Router,
+};
 
 use super::AppState;
 
 mod extractor;
 mod library;
+mod report;
 #[cfg(test)]
 mod tests;
 
@@ -18,5 +22,6 @@ pub fn koreader_router(state: AppState) -> Router {
     Router::new()
         .route("/koreader/v1/library", get(library::library))
         .route("/koreader/v1/books/{uuid}/file", get(library::file))
+        .route("/koreader/v1/sync-report", post(report::sync_report))
         .with_state(state)
 }

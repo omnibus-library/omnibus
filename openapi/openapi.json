@@ -12687,6 +12687,21 @@
             "format": "int64",
             "description": "When the device last synced, in Unix seconds."
           },
+          "last_sync_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "When a KOReader last reported finishing a sync, in Unix seconds. `null` for a Kobo\nand for a KOReader that has not synced yet."
+          },
+          "last_sync_error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "What went wrong in a KOReader's last reported sync. `null` when it succeeded."
+          },
           "name": {
             "type": "string",
             "description": "The label you gave it."

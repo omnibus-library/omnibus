@@ -296,3 +296,95 @@ mod file {
         assert_eq!(res.status(), StatusCode::FORBIDDEN);
     }
 }
+
+mod sync_report {
+    use super::*;
+
+    fn post_report(token: &str, body: Value) -> Request<Body> {
+        Request::builder()
+            .method("POST")
+            .uri("/koreader/v1/sync-report")
+            .header(header::AUTHORIZATION, format!("Bearer {token}"))
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(body.to_string()))
+            .unwrap()
+    }
+
+    /// The owner's view of their devices, as Settings reads it.
+    async fn owner_view(pool: &SqlitePool, uid: i64) -> omnibus_shared::KoboDeviceView {
+        let owner = auth_test_support::bearer_token(pool, uid).await;
+        let res = crate::backend::rest_router(AppState::new(pool.clone()))
+            .oneshot(get_with_bearer("/api/account/kobo-devices", &owner))
+            .await
+            .unwrap();
+        let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let mut devices: Vec<omnibus_shared::KoboDeviceView> =
+            serde_json::from_slice(&bytes).unwrap();
+        devices.remove(0)
+    }
+
+    #[tokio::test]
+    async fn shows_the_reported_error_and_time_in_the_owners_device_list() {
+        let (app, pool, token, uid) = fixture().await;
+
+        let res = app
+            .oneshot(post_report(
+                &token,
+                json!({ "error": "Couldn't download Alpha: 404" }),
+            ))
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::NO_CONTENT);
+        let device = owner_view(&pool, uid).await;
+        assert_eq!(
+            device.last_sync_error.as_deref(),
+            Some("Couldn't download Alpha: 404")
+        );
+        assert!(device.last_sync_at.is_some());
+    }
+
+    #[tokio::test]
+    async fn clears_the_error_when_the_report_has_none() {
+        let (app, pool, token, uid) = fixture().await;
+        app.clone()
+            .oneshot(post_report(&token, json!({ "error": "boom" })))
+            .await
+            .unwrap();
+
+        let res = app
+            .oneshot(post_report(&token, json!({ "error": null })))
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::NO_CONTENT);
+        assert_eq!(owner_view(&pool, uid).await.last_sync_error, None);
+    }
+
+    #[tokio::test]
+    async fn stores_an_overlong_error_cut_to_500_characters() {
+        let (app, pool, token, uid) = fixture().await;
+
+        app.oneshot(post_report(&token, json!({ "error": "é".repeat(600) })))
+            .await
+            .unwrap();
+
+        let stored = owner_view(&pool, uid).await.last_sync_error.unwrap();
+        assert_eq!(stored, "é".repeat(500));
+    }
+
+    #[tokio::test]
+    async fn rejects_a_kobo_kind_token() {
+        let (app, pool, _token, uid) = fixture().await;
+        let kobo = db::kobo_devices::create_device(&pool, uid, "Kobo", DeviceKind::Kobo)
+            .await
+            .unwrap();
+
+        let res = app
+            .oneshot(post_report(&kobo.token, json!({ "error": null })))
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+    }
+}

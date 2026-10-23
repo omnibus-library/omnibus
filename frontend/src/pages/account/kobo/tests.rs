@@ -26,6 +26,8 @@ fn device_of(kind: omnibus_shared::DeviceKind) -> KoboDeviceView {
         token: "tok".to_string(),
         created_at: 0,
         last_seen_at: 0,
+        last_sync_at: None,
+        last_sync_error: None,
     }
 }
 
@@ -101,6 +103,8 @@ mod render_tests {
                     token: "tok123".to_string(),
                     created_at: 0,
                     last_seen_at: 0,
+                    last_sync_at: None,
+                    last_sync_error: None,
                 },
                 endpoint: "https://omni.example.com/kobo/tok123".to_string(),
                 disabled: false,
