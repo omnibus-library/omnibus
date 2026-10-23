@@ -7,7 +7,7 @@
 
 use std::collections::BTreeMap;
 use std::future::Future;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use serde::Serialize;
@@ -74,6 +74,10 @@ pub enum ControlError {
         "no run of whole words in the book reads \"{0}\"; copy them exactly, punctuation included"
     )]
     PassageNotFound(String),
+    #[error("no sync since the device started; sync first")]
+    NotSynced,
+    #[error("could not remove the downloaded file: {0}")]
+    FileRemoval(String),
 }
 
 /// How a device action that talks to the server ended.
@@ -243,20 +247,25 @@ impl Control {
         }
     }
 
-    /// Wipe what the device holds — its library, sync token and cover cache
-    /// — by replacing it outright; keep who it is and where it syncs.
+    /// Wipe what the device holds — its library, sync token and cover
+    /// cache — by replacing it outright; keep who it is and where it
+    /// syncs. Also removes every downloaded file from the books dir, so a
+    /// reset device's storage matches its now-empty library.
     pub async fn reset(&self) -> Result<DeviceView, ControlError> {
-        {
+        let books_dir = {
             let mut live = self.live();
             if live.syncing {
                 return Err(ControlError::SyncInProgress);
             }
             let hardware_id = live.saved.device.hardware_id.clone();
             live.saved.device = Device::new(&hardware_id);
-            live.saved.device.storage = Some(state::books_dir(&self.state_path));
+            let books_dir = state::books_dir(&self.state_path);
+            live.saved.device.storage = Some(books_dir.clone());
             live.last_sync = None;
             live.requests.clear();
-        }
+            books_dir
+        };
+        clear_books_dir(&books_dir).await?;
         self.persist().await?;
         Ok(self.view())
     }
@@ -352,6 +361,46 @@ pub(super) async fn settled<T>(task: tokio::task::JoinHandle<T>) -> T {
                 .unwrap_or_else(|cancelled| Box::new(cancelled.to_string())),
         ),
     }
+}
+
+/// Whether `kind` means "nothing is there" rather than a real failure — a
+/// missing file, or one whose parent isn't even a directory (a books dir
+/// that was never created because nothing was ever downloaded).
+fn nothing_there(kind: std::io::ErrorKind) -> bool {
+    matches!(
+        kind,
+        std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+    )
+}
+
+/// Delete `path`, best-effort — a missing file is fine, any other error
+/// is reported rather than silently dropped.
+pub(super) async fn remove_file_best_effort(path: &Path) -> Result<(), ControlError> {
+    match tokio::fs::remove_file(path).await {
+        Ok(()) => Ok(()),
+        Err(error) if nothing_there(error.kind()) => Ok(()),
+        Err(error) => Err(ControlError::FileRemoval(error.to_string())),
+    }
+}
+
+/// Delete every regular file directly inside `dir` (the device's book
+/// storage) — a missing directory is fine, any other error is reported.
+async fn clear_books_dir(dir: &Path) -> Result<(), ControlError> {
+    let mut entries = match tokio::fs::read_dir(dir).await {
+        Ok(entries) => entries,
+        Err(error) if nothing_there(error.kind()) => return Ok(()),
+        Err(error) => return Err(ControlError::FileRemoval(error.to_string())),
+    };
+    while let Some(entry) = entries
+        .next_entry()
+        .await
+        .map_err(|error| ControlError::FileRemoval(error.to_string()))?
+    {
+        if entry.file_type().await.is_ok_and(|t| t.is_file()) {
+            remove_file_best_effort(&entry.path()).await?;
+        }
+    }
+    Ok(())
 }
 
 impl Live {

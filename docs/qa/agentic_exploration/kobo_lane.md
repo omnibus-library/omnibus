@@ -51,8 +51,8 @@ The actions today:
 | `read-to <uuid> <passage>` | Reads to the span holding a passage copied from the web reader | `code` `state_sent`, or `passage_not_found`/`not_downloaded`/`book_unreadable`/`no_kobo_spans` (409)/`state_failed` |
 | `finish <uuid>` | Marks a book finished and sends it | `code` `state_sent`, or `state_failed` with the quirk |
 | `remove-download <uuid>` | Clears a book's downloaded flag, locally | `code` `download_removed` |
-| `highlight <uuid> <colour> <passage> [<note>]` | Highlights a passage copied from the web reader (`<colour>` one of `yellow`/`pink`/`blue`/`green`) | `code` `annotation_sent`, or `passage_not_found`/`not_downloaded`/`book_unreadable`/`no_kobo_spans` (409)/`annotation_failed` |
-| `delete-highlight <uuid> <id>` | Deletes a highlight by the id `show` reports in `annotations` | `code` `annotation_sent`, or `annotation_failed` with the quirk |
+| `highlight <uuid> <colour> <passage> [<note>]` | Highlights a passage copied from the web reader (`<colour>` one of `yellow`/`pink`/`blue`/`green`) | `code` `annotation_sent`, or `passage_not_found`/`not_downloaded`/`not_synced`/`book_unreadable`/`no_kobo_spans` (409)/`annotation_failed` |
+| `delete-highlight <uuid> <id>` | Deletes a highlight by the id `show` reports in `annotations` | `code` `annotation_sent`, or `not_synced` (409)/`annotation_failed` with the quirk |
 
 The `[<source> <span>]` on `read` is hand-supplied for testing. `read-to` and
 `highlight` instead take a **passage** — a run of whole words copied exactly

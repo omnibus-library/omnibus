@@ -511,6 +511,31 @@ async fn post_actions_highlight_returns_invalid_request_for_whitespace_only_text
 }
 
 #[tokio::test]
+async fn post_actions_highlight_returns_not_synced_before_any_sync() {
+    let stub = spawn_stub(Stub::default()).await;
+    let dir = TempDir::new().unwrap();
+    let mut device = device_holding("book-1", "Dune");
+    device.library.get_mut("book-1").unwrap().downloaded = true;
+    let base = serve(stub_control_with(&stub, device, dir.path().join("kobo.json"))).await;
+
+    let response = reqwest::Client::new()
+        .post(format!("{base}/actions/highlight"))
+        .json(&json!({
+            "book": "book-1",
+            "text": "a passage",
+            "color": "blue",
+            "location": span_location(),
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["code"], "not_synced");
+}
+
+#[tokio::test]
 async fn post_actions_highlight_returns_not_downloaded_for_an_undownloaded_book() {
     let stub = spawn_stub(dune_stub()).await;
     let dir = TempDir::new().unwrap();

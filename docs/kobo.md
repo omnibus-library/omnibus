@@ -275,11 +275,11 @@ database already had an admin, mark a shelf **Sync to Kobo** yourself.
 
 Each book line shows `downloaded`, `download failed`, the bookmark percent,
 `finished`, its highlight count, and a dropped-highlight count, whichever
-apply. Opening a downloaded book shows its text in the reader: turning pages
-moves the `KoboSpan` position the next sync sends, and a word selection
-becomes a highlight (see "In the reader" below). A page that opens
-mid-sentence bookmarks that sentence's own span, so reopening the book shows
-the page where the sentence starts, not the one it was left on.
+apply. Opening a downloaded book shows its text in the reader: closing it
+(Esc, or quitting with Ctrl-C) sends the open page's `KoboSpan` position,
+and a word selection becomes a highlight (see "In the reader" below). A page
+that opens mid-sentence bookmarks that sentence's own span, so reopening the
+book shows the page where the sentence starts, not the one it was left on.
 
 ### In the reader
 
@@ -330,7 +330,7 @@ just kobo --state .claude/runtime/other.json   # the Omnibus device "Mock Kobo (
 ```
 
 A downloaded book's file is kept beside the state file, in `<state>.books/`
-(`.claude/runtime/kobo.json` → `.claude/runtime/kobo.books/<id>.kepub.epub`),
+(the default `.claude/runtime/mock-kobo.json` → `.claude/runtime/mock-kobo.books/<id>.kepub.epub`),
 so a second device's downloads never collide with the first's.
 
 #### Reader fixture
@@ -461,10 +461,10 @@ port is in its header). Every reply is `{status, code, message, details}`:
 | `POST /actions/remove-download` `{"book": "<uuid>"}` | 200 `download_removed` · 400 `invalid_request` · 404 `unknown_book` · 409 `sync_in_progress` · 500 `state_not_saved` |
 | `POST /actions/read` `{"book": "<uuid>", "percent": 0..=100, "location": {"source","value"}?}` | 200 `state_sent` · 400 `invalid_request` · 404 `unknown_book` · 409 `not_downloaded` · 409 `sync_in_progress` · 500 `state_not_saved` · 502 `state_failed` |
 | `POST /actions/finish` `{"book": "<uuid>"}` | 200 `state_sent` · 400 `invalid_request` · 404 `unknown_book` · 409 `sync_in_progress` · 500 `state_not_saved` · 502 `state_failed` |
-| `POST /actions/highlight` `{"book": "<uuid>", "text", "color": "yellow"\|"pink"\|"blue"\|"green", "note"?, "location": {"chapter","start_span","start_char","end_span","end_char"}}` | 200 `annotation_sent` · 400 `invalid_request` · 404 `unknown_book` · 409 `not_downloaded` · 409 `sync_in_progress` · 500 `state_not_saved` · 502 `annotation_failed` |
-| `POST /actions/delete-highlight` `{"book": "<uuid>", "highlight": "<id>"}` | 200 `annotation_sent` · 400 `invalid_request` · 404 `unknown_book` · 404 `unknown_highlight` · 409 `sync_in_progress` · 500 `state_not_saved` · 502 `annotation_failed` |
+| `POST /actions/highlight` `{"book": "<uuid>", "text", "color": "yellow"\|"pink"\|"blue"\|"green", "note"?, "location": {"chapter","start_span","start_char","end_span","end_char"}}` | 200 `annotation_sent` · 400 `invalid_request` · 404 `unknown_book` · 409 `not_downloaded` · 409 `not_synced` · 409 `sync_in_progress` · 500 `state_not_saved` · 502 `annotation_failed` |
+| `POST /actions/delete-highlight` `{"book": "<uuid>", "highlight": "<id>"}` | 200 `annotation_sent` · 400 `invalid_request` · 404 `unknown_book` · 404 `unknown_highlight` · 409 `not_synced` · 409 `sync_in_progress` · 500 `state_not_saved` · 502 `annotation_failed` |
 | `POST /actions/read-to` `{"book": "<uuid>", "passage"}` | 200 `state_sent` · 400 `invalid_request` · 404 `unknown_book` · 404 `passage_not_found` · 409 `not_downloaded` · 409 `book_unreadable` · 409 `no_kobo_spans` · 409 `sync_in_progress` · 500 `state_not_saved` · 502 `state_failed` |
-| `POST /actions/highlight-words` `{"book": "<uuid>", "passage", "color": "yellow"\|"pink"\|"blue"\|"green", "note"?}` | 200 `annotation_sent` · 400 `invalid_request` · 404 `unknown_book` · 404 `passage_not_found` · 409 `not_downloaded` · 409 `book_unreadable` · 409 `no_kobo_spans` · 409 `sync_in_progress` · 500 `state_not_saved` · 502 `annotation_failed` |
+| `POST /actions/highlight-words` `{"book": "<uuid>", "passage", "color": "yellow"\|"pink"\|"blue"\|"green", "note"?}` | 200 `annotation_sent` · 400 `invalid_request` · 404 `unknown_book` · 404 `passage_not_found` · 409 `not_downloaded` · 409 `not_synced` · 409 `book_unreadable` · 409 `no_kobo_spans` · 409 `sync_in_progress` · 500 `state_not_saved` · 502 `annotation_failed` |
 | `GET /requests` | 200 `ok` |
 | `PUT /reset` | 200 `reset` · 409 `sync_in_progress` · 500 `state_not_saved` |
 | any other path | 404 `not_found` |

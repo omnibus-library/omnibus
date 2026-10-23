@@ -428,6 +428,23 @@ async fn download_refetches_a_downloaded_book_whose_file_is_missing() {
 }
 
 #[tokio::test]
+async fn reset_removes_every_file_in_the_books_dir() {
+    let dir = TempDir::new().unwrap();
+    let (control, _stub) = crate::test_support::control_with_downloaded_book(
+        crate::test_support::READER_KEPUB,
+        dir.path().join("kobo.json"),
+    )
+    .await;
+    let books_dir = dir.path().join("kobo.books");
+    assert!(books_dir.join("book-1.kepub.epub").exists());
+
+    control.reset().await.unwrap();
+
+    let remaining: Vec<_> = std::fs::read_dir(&books_dir).unwrap().collect();
+    assert!(remaining.is_empty(), "{remaining:?}");
+}
+
+#[tokio::test]
 async fn reset_keeps_downloading_into_the_same_storage() {
     let stub = spawn_stub(dune_stub()).await;
     let dir = TempDir::new().unwrap();
@@ -558,7 +575,7 @@ async fn retarget_url_keeps_library_sync_token_and_hardware_id() {
 }
 
 #[tokio::test]
-async fn retarget_clears_reading_services_host_so_a_highlight_reaches_no_server() {
+async fn retarget_clears_reading_services_host_so_a_highlight_refuses_before_any_request() {
     let stub_a = spawn_stub(dune_stub()).await;
     let dir = TempDir::new().unwrap();
     let control = stub_control(&stub_a, dir.path().join("kobo.json"));
@@ -580,18 +597,15 @@ async fn retarget_clears_reading_services_host_so_a_highlight_reaches_no_server(
                 location: None,
             },
         )
-        .await
-        .unwrap();
+        .await;
 
-    match result {
-        Acted::Failed { message, .. } => assert!(message.contains("sync first"), "{message}"),
-        other => panic!("expected Failed, got {other:?}"),
-    }
+    assert!(matches!(result, Err(ControlError::NotSynced)), "{result:?}");
+    assert!(control.view().library["book-1"].annotations.is_empty());
     assert_eq!(stub_a.paths().len(), requests_after_sync);
 }
 
 #[tokio::test]
-async fn retarget_token_clears_reading_services_host_so_a_highlight_reaches_no_server() {
+async fn retarget_token_clears_reading_services_host_so_a_highlight_refuses_before_any_request() {
     let stub = spawn_stub(dune_stub()).await;
     let dir = TempDir::new().unwrap();
     let control = stub_control(&stub, dir.path().join("kobo.json"));
@@ -613,13 +627,10 @@ async fn retarget_token_clears_reading_services_host_so_a_highlight_reaches_no_s
                 location: None,
             },
         )
-        .await
-        .unwrap();
+        .await;
 
-    match result {
-        Acted::Failed { message, .. } => assert!(message.contains("sync first"), "{message}"),
-        other => panic!("expected Failed, got {other:?}"),
-    }
+    assert!(matches!(result, Err(ControlError::NotSynced)), "{result:?}");
+    assert!(control.view().library["book-1"].annotations.is_empty());
     assert_eq!(stub.paths().len(), requests_after_sync);
 }
 

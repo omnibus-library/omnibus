@@ -7,7 +7,7 @@ use std::sync::Arc;
 use serde_json::json;
 use tempfile::TempDir;
 
-use crate::control::{Acted, LastSync, Retarget};
+use crate::control::{ControlError, LastSync, Retarget};
 use crate::device::Device;
 use crate::downloads::DownloadPolicy;
 use crate::state::{self, StateError};
@@ -556,13 +556,10 @@ async fn start_forgets_the_old_servers_reading_services_host_when_resolving_a_di
 
     let result = restarted
         .highlight("book-1".into(), new_highlight(None, None))
-        .await
-        .unwrap();
+        .await;
 
-    match result {
-        Acted::Failed { message, .. } => assert!(message.contains("sync first"), "{message}"),
-        other => panic!("expected Failed, got {other:?}"),
-    }
+    assert!(matches!(result, Err(ControlError::NotSynced)), "{result:?}");
+    assert!(restarted.view().library["book-1"].annotations.is_empty());
     assert_eq!(stub_a.paths().len(), requests_before);
 }
 

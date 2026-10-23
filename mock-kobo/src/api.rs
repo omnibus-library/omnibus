@@ -84,6 +84,10 @@ pub enum ReplyCode {
     BookUnreadable,
     /// 409: the downloaded file has no koboSpan markup (a plain EPUB).
     NoKoboSpans,
+    /// 409: no sync since the device started, so it has no `reading_services_host` yet.
+    NotSynced,
+    /// 500: a downloaded file could not be removed.
+    FileRemoval,
 }
 
 /// What a reply's `details` carries, for routes whose outcomes differ.
@@ -480,6 +484,10 @@ fn error_reply(error: &ControlError) -> Reply<Details> {
         }
         ControlError::Kepub(crate::kepub::KepubError::NoSpans) => {
             (StatusCode::CONFLICT, ReplyCode::NoKoboSpans)
+        }
+        ControlError::NotSynced => (StatusCode::CONFLICT, ReplyCode::NotSynced),
+        ControlError::FileRemoval(_) => {
+            (StatusCode::INTERNAL_SERVER_ERROR, ReplyCode::FileRemoval)
         }
     };
     Reply::new(
