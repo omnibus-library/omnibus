@@ -137,7 +137,7 @@ pub(super) async fn delete_kobo_device(
 ///
 /// The Omnibus plugin for one of your KOReaders, as a zip already set to this server and
 /// carrying that KOReader's token. Unzip it into KOReader's `plugins` folder. The zip holds
-/// the token, so treat the file like a password.
+/// the token, so treat the file like a password. Needs the download permission.
 #[utoipa::path(
     get,
     path = "/api/account/kobo-devices/{id}/koreader-plugin",
@@ -164,14 +164,12 @@ pub(super) async fn download_koreader_plugin(
         Ok(_) => return (StatusCode::NOT_FOUND, "koreader not found").into_response(),
         Err(e) => return failed("get koreader device", e),
     };
+    let disposition = format!("attachment; filename=\"omnibus-koreader-{id}.zip\"");
     match plugin_zip(&origin_for(&headers, &state.public_origins), &device.token) {
         Ok(bytes) => (
             [
                 (header::CONTENT_TYPE, "application/zip"),
-                (
-                    header::CONTENT_DISPOSITION,
-                    "attachment; filename=\"omnibus.koplugin.zip\"",
-                ),
+                (header::CONTENT_DISPOSITION, disposition.as_str()),
                 (header::CACHE_CONTROL, "no-store"),
             ],
             bytes,

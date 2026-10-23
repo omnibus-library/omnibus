@@ -169,6 +169,7 @@ fn render_kobo_warning() -> Element {
 fn render_kobo_device_list(
     device_list: &[KoboDeviceView],
     server_url: &str,
+    can_download: bool,
     in_flight: bool,
     on_regenerate: Callback<i64>,
     on_remove: Callback<i64>,
@@ -189,6 +190,7 @@ fn render_kobo_device_list(
                     key: "{dev.id}",
                     endpoint: endpoint_url(server_url, &dev.token),
                     plugin_url: plugin_download_url(server_url, dev.id),
+                    can_download,
                     device: dev.clone(),
                     disabled: in_flight,
                     on_regenerate,
@@ -396,6 +398,10 @@ pub fn KoboDevicesCard() -> Element {
     });
 
     let device_list = devices();
+    // Hidden, not disabled, for an account without the permission; shown while the
+    // user is unresolved so SSR and the first client paint agree.
+    let user = crate::use_current_user_summary();
+    let can_download = user().map(|u| u.can_download).unwrap_or(true);
 
     rsx! {
         section { class: "card", "data-testid": "kobo-devices-card",
@@ -411,7 +417,7 @@ pub fn KoboDevicesCard() -> Element {
                 on_add,
             )}
             match device_list.as_deref() {
-                Some(list) => render_kobo_device_list(list, &endpoint_origin(), in_flight(), on_ask_regenerate, on_ask_remove),
+                Some(list) => render_kobo_device_list(list, &endpoint_origin(), can_download, in_flight(), on_ask_regenerate, on_ask_remove),
                 // The form's status line carries the failure.
                 None if msg_is_error() => rsx! {},
                 None => rsx! {
@@ -474,6 +480,7 @@ fn KoboDeviceRow(
     device: KoboDeviceView,
     endpoint: String,
     plugin_url: String,
+    can_download: bool,
     disabled: bool,
     on_regenerate: Callback<i64>,
     on_remove: Callback<i64>,
@@ -544,11 +551,12 @@ fn KoboDeviceRow(
                 }
             }
             div { class: "settings-actions",
-                if !kobo {
+                if !kobo && can_download {
                     a {
                         class: "btn",
                         href: "{plugin_url}",
-                        download: "omnibus.koplugin.zip",
+                        download: "omnibus-koreader-{id}.zip",
+                        "aria-label": "Download the plugin for {name}",
                         "data-testid": "koreader-plugin-download",
                         "Download plugin"
                     }
