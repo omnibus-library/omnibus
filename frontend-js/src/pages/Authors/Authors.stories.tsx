@@ -548,3 +548,26 @@ export const HashOnlyHistoryTraversalKeepsRecording: Story = {
     await waitFor(() => expect(window.scrollY).toBe(500));
   },
 };
+
+export const ReturningToAZeroOffsetRestoresTheTop: Story = {
+  parameters: { path: "/authors/2" },
+  beforeEach({ msw }) {
+    msw.use(...withAuthors());
+  },
+  render: () => leaveAndReturn,
+  play: async ({ canvas, userEvent }) => {
+    await canvas.findByRole("heading", pageHeadingOf("Octavia E. Butler"));
+    await scrollWindowTo(400);
+    await scrollWindowTo(0);
+
+    await userEvent.click(canvas.getByRole("link", { name: "Leave authors" }));
+    await canvas.findByText("Elsewhere");
+    await scrollWindowTo(300);
+    await userEvent.click(
+      canvas.getByRole("link", { name: "Return to authors" }),
+    );
+
+    await canvas.findByRole("heading", pageHeadingOf("Octavia E. Butler"));
+    await waitFor(() => expect(window.scrollY).toBe(0));
+  },
+};

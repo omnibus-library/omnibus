@@ -46,8 +46,9 @@ function restore(path: string, toTopIfNone: boolean) {
     recordPath = path;
     armedLocation = window.location.pathname;
   };
+  // Only a missing entry is unseen; a saved 0 is the top, which a remount must restore too.
   if (target === undefined || target <= 0) {
-    if (toTopIfNone) window.scrollTo(0, 0);
+    if (target !== undefined || toTopIfNone) window.scrollTo(0, 0);
     rearm();
     return;
   }
