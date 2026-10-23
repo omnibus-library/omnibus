@@ -1,7 +1,8 @@
-//! Device actions that talk to the server: download and remove-download.
-//! Download shares the sync's busy slot and token-wire refusal, running
-//! through the Task 1 runner; remove-download touches nothing but the
-//! device, and is refused only while something else is running.
+//! Device actions that talk to the server: download, remove-download, read
+//! and finish. Download, read and finish share the sync's busy slot and
+//! token-wire refusal, running through `Control::run_exchange`;
+//! remove-download touches nothing but the device, and is refused only
+//! while something else is running.
 
 use std::sync::Arc;
 

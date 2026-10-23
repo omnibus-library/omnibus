@@ -25,6 +25,7 @@ pub enum ReadStatus {
 pub struct Percent(u8);
 
 impl Percent {
+    /// `value` as a `Percent`, or `None` outside `0..=100`.
     pub fn new(value: u8) -> Option<Self> {
         (value <= 100).then_some(Self(value))
     }

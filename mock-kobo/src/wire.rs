@@ -134,6 +134,7 @@ pub struct StateResponse {
     pub update_results: Vec<UpdateResult>,
 }
 
+/// One book's per-sub-object outcome within a `state` PUT reply.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct UpdateResult {
@@ -141,6 +142,7 @@ pub struct UpdateResult {
     pub current_bookmark_result: ResultTag,
 }
 
+/// A single `{"Result": ...}` tag; the device checks it reads `Success`.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct ResultTag {

@@ -60,7 +60,9 @@ pub async fn fetch_covers(client: &mut Client, device: &mut Device, template: &s
             .covers
             .get(&cache_key(&image_id, SHOWN_COVER_SIZE))
             .copied();
-        device.library.get_mut(&uuid).expect("just read").cover = shown;
+        if let Some(book) = device.library.get_mut(&uuid) {
+            book.cover = shown;
+        }
     }
 }
 
