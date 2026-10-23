@@ -40,21 +40,25 @@ local MISSING_CONFIG = _("Download the plugin from Omnibus Settings › Devices.
 -- Reading state is a few bytes, and a book open or close waits on it: give up sooner than a download.
 local STATE_BLOCK_TIMEOUT, STATE_TOTAL_TIMEOUT = 5, 15
 
--- Ids for highlights this device creates; seeded once, as a repeat would mint the same ones.
+-- Seeded once; only the fallback for new_id reads it.
 math.randomseed(os.time() + math.floor(os.clock() * 1000000))
 
+-- An id for a highlight this device creates: 16 random bytes in hex, from the system's source
+-- where it can be read, so two devices or two runs never mint the same one.
 local function new_id()
+    local source = io.open("/dev/urandom", "rb")
+    local bytes = source and source:read(16)
+    if source then
+        source:close()
+    end
     local digits = {}
-    for i = 1, 32 do
-        digits[i] = string.format("%x", math.random(0, 15))
+    for i = 1, 16 do
+        digits[i] = string.format("%02x", bytes and #bytes == 16 and bytes:byte(i) or math.random(0, 255))
     end
     return table.concat(digits)
 end
 
--- A decoded JSON null is a function, so only a string is used as one.
-local function string_or_nil(value)
-    return type(value) == "string" and value or nil
-end
+local string_or_nil = sync.string_or_nil
 
 local Omnibus = WidgetContainer:extend{
     name = "omnibus",
@@ -356,13 +360,16 @@ function Omnibus:annotation_deps(config, uuid)
     local ui = self.ui
     local path = "/koreader/v1/books/" .. uuid .. "/annotations"
     return {
+        now = os.time,
+        encode = JSON.encode,
         new_id = new_id,
         post = function(body)
             return call_json(config, "POST", path, body, socketutil.LARGE_BLOCK_TIMEOUT,
                 socketutil.LARGE_TOTAL_TIMEOUT)
         end,
         get = function(since)
-            return call_json(config, "GET", path .. string.format("?since=%d", since), nil,
+            local cursor = type(since) == "number" and string.format("%d", since) or since
+            return call_json(config, "GET", path .. "?since=" .. cursor, nil,
                 socketutil.LARGE_BLOCK_TIMEOUT, socketutil.LARGE_TOTAL_TIMEOUT)
         end,
         add = function(wire)

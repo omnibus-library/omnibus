@@ -400,8 +400,13 @@ function M.pull_plan(entry, remote, current)
     return plan
 end
 
--- Most upserts, and most deletes, the server takes in one push.
+-- Most upserts, and most deletes, the server takes in one push, and the most JSON bytes: the
+-- server refuses a request body over 1 MiB before it reads it.
 M.PUSH_BATCH = 500
+M.PUSH_BYTES = 512 * 1024
+
+-- Listing pages one sync reads at most, so a server that always says "more" can't hold the book.
+local MAX_PAGES = 20
 
 --- The epoch second of a KOReader local "%Y-%m-%d %H:%M:%S" stamp; nil when it isn't one.
 function M.parse_datetime(stamp)
@@ -416,10 +421,12 @@ function M.parse_datetime(stamp)
         hour = tonumber(hour), min = tonumber(min), sec = tonumber(sec) })
 end
 
--- A decoded JSON null is a function, so a field is only used when it has the type asked for.
-local function string_or_nil(value)
+--- `value` when it is a string, else nil: a decoded JSON null is a function, so a field is only
+--- used when it has the type asked for.
+function M.string_or_nil(value)
     return type(value) == "string" and value or nil
 end
+local string_or_nil = M.string_or_nil
 
 local function table_or_nil(value)
     return type(value) == "table" and value or nil
@@ -435,28 +442,57 @@ local function fingerprint(item)
     return table.concat({ item.color or "", item.note or "", item.text or "", item.pos0, item.pos1 }, "\0")
 end
 
+-- The agreed id that named a highlight at this place, unclaimed by any highlight on the device:
+-- an item that lost its id (KOReader's import rebuilds items) is the same highlight, not a new one.
+local function agreed_id_at(item, agreed, claimed)
+    local found
+    for id, entry in pairs(agreed) do
+        if not claimed[id] and entry.pos0 == item.pos0 and entry.pos1 == item.pos1
+            and (not found or id < found) then
+            found = id
+        end
+    end
+    return found
+end
+
 -- The highlights on the device, numbering any that have no id yet. Returns them in order,
--- by id, and whether an id was minted.
-local function numbered_highlights(items, deps)
+-- by id, and whether an id was given.
+local function numbered_highlights(items, agreed, deps)
     local list, by_id, minted = {}, {}, false
     for _, item in ipairs(items) do
         if is_highlight(item) then
-            if not item.omnibus_id then
-                item.omnibus_id = deps.new_id()
-                minted = true
-            end
-            by_id[item.omnibus_id] = item
             table.insert(list, item)
+            if item.omnibus_id then
+                by_id[item.omnibus_id] = item
+            end
+        end
+    end
+    for _, item in ipairs(list) do
+        if not item.omnibus_id then
+            item.omnibus_id = agreed_id_at(item, agreed, by_id) or deps.new_id()
+            by_id[item.omnibus_id] = item
+            minted = true
         end
     end
     return list, by_id, minted
 end
 
--- When the device last changed `item`: its own stamp, but never before the server time it
--- last agreed on, since a note edit leaves the stamp alone.
-local function event_time(item, agreed)
-    local stamp = M.parse_datetime(item.datetime_updated) or M.parse_datetime(item.datetime) or 0
-    return math.max(stamp, agreed and agreed.server_at or 0)
+-- Note when the device first saw `item` differ from what was agreed, as the time to push it
+-- under: KOReader leaves its own stamps alone for some edits. A stamp already newer than the
+-- last agreement stays, so a push that failed keeps the time of the edit. Returns whether it stamped.
+local function stamp_edits(list, agreed, deps)
+    local stamped = false
+    for _, item in ipairs(list) do
+        local entry = agreed[item.omnibus_id]
+        if not entry or entry.fp ~= fingerprint(item) then
+            local seen = item.omnibus_edited_at
+            if not seen or seen <= (entry and entry.server_at or 0) then
+                item.omnibus_edited_at = deps.now()
+                stamped = true
+            end
+        end
+    end
+    return stamped
 end
 
 -- The highlights to push (`{ id, fp, item, wire }`) and the agreed ids that left the device.
@@ -474,7 +510,7 @@ local function outgoing(list, by_id, agreed)
                 wire = {
                     id = id, pos0 = item.pos0, pos1 = item.pos1, text = item.text, note = item.note,
                     color = item.color, created_at = M.parse_datetime(item.datetime) or 0,
-                    updated_at = event_time(item, entry),
+                    updated_at = math.max(item.omnibus_edited_at or 0, entry and entry.server_at or 0),
                 },
             })
         end
@@ -513,20 +549,28 @@ local function take_server_version(item, server, entry)
     if color and color ~= (entry and entry.server_color) then
         item.color = color
     end
+    if string_or_nil(server.pos0) and string_or_nil(server.pos1) then
+        item.pos0, item.pos1 = server.pos0, server.pos1
+        if item.page ~= nil then
+            item.page = server.pos0
+        end
+    end
 end
 
 -- What the server holds of a highlight that the device would show: a change to it is a change
 -- made elsewhere. Compared as well as the time because the server's clock counts whole seconds.
 local function server_fingerprint(server)
     return table.concat({ string_or_nil(server.color) or "", string_or_nil(server.note) or "",
-        string_or_nil(server.text) or "" }, "\0")
+        string_or_nil(server.text) or "", string_or_nil(server.pos0) or "", string_or_nil(server.pos1) or "" }, "\0")
 end
 
--- The agreed entry for a highlight whose device-side fingerprint is `fp` and whose server
--- version is `server`.
-local function agree(fp, server)
+-- The agreed entry for a highlight whose device-side fingerprint is `fp`, sitting at `item`'s
+-- place, and whose server version is `server`.
+local function agree(fp, item, server)
     return {
         fp = fp,
+        pos0 = item.pos0,
+        pos1 = item.pos1,
         server_at = type(server.updated_at) == "number" and server.updated_at or nil,
         server_color = string_or_nil(server.color),
         server_fp = server_fingerprint(server),
@@ -543,8 +587,10 @@ local function newer_on_server(entry, wire)
 end
 
 -- Record what the server answered for each upsert of one push: `applied` and `stale` agree on
--- the server's version, `deleted` removes the highlight, `unplaceable` keeps it local. An
--- upsert with no answer stays as it was, so the next sync sends it again.
+-- the server's version, `deleted` removes the highlight, `unplaceable` keeps it local. A stale
+-- answer with no version to take is settled at the pushed state, so it is not sent again; the
+-- pull brings the server's version. An upsert with no answer stays as it was, so the next sync
+-- sends it again.
 local function settle_results(sent, results, deps, state)
     local answers = {}
     for _, answer in ipairs(results) do
@@ -557,16 +603,19 @@ local function settle_results(sent, results, deps, state)
         local server = table_or_nil(answer.annotation)
         local landed = true
         if answer.outcome == "applied" and server then
-            state.agreed[up.id] = agree(up.fp, server)
+            state.agreed[up.id] = agree(up.fp, up.item, server)
         elseif answer.outcome == "stale" and server then
             take_server_version(up.item, server, state.agreed[up.id])
-            state.agreed[up.id] = agree(fingerprint(up.item), server)
+            state.agreed[up.id] = agree(fingerprint(up.item), up.item, server)
+        elseif answer.outcome == "stale" then
+            state.agreed[up.id] = { fp = up.fp, pos0 = up.item.pos0, pos1 = up.item.pos1,
+                server_at = up.wire.updated_at }
         elseif answer.outcome == "deleted" then
             deps.remove(up.item)
             state.by_id[up.id] = nil
             state.agreed[up.id] = nil
         elseif answer.outcome == "unplaceable" then
-            state.agreed[up.id] = { fp = up.fp, local_only = true }
+            state.agreed[up.id] = { fp = up.fp, pos0 = up.item.pos0, pos1 = up.item.pos1, local_only = true }
         else
             landed = false
         end
@@ -574,35 +623,65 @@ local function settle_results(sent, results, deps, state)
     end
 end
 
--- Push the upserts and deletes in requests within the server's cap. Returns a failure
--- message, or nil when everything landed.
+-- The next request's contents: up to `max_items` upserts (and as many deletes) from the given
+-- positions, the upserts also held to the byte cap, with at least one upsert.
+local function take_batch(upserts, at_up, deletes, at_del, max_items, deps)
+    local sent, gone, size = {}, {}, 0
+    for i = at_up, math.min(at_up + max_items - 1, #upserts) do
+        local up = upserts[i]
+        up.bytes = up.bytes or #deps.encode(up.wire) + 1
+        if #sent > 0 and size + up.bytes > M.PUSH_BYTES then
+            break
+        end
+        size = size + up.bytes
+        table.insert(sent, up)
+    end
+    for i = at_del, math.min(at_del + max_items - 1, #deletes) do
+        table.insert(gone, deletes[i])
+    end
+    return sent, gone
+end
+
+-- Push the upserts and deletes in requests within the server's limits, halving a request the
+-- server answers 413 and reporting a lone highlight it still refuses. Returns a message for what
+-- did not land and whether to stop there (no answer, or the device was removed): the pull is
+-- pointless then.
 local function push(upserts, deletes, deps, state)
-    local at_up, at_del = 1, 1
+    local at_up, at_del, max_items = 1, 1, M.PUSH_BATCH
+    local refused = {}
     while at_up <= #upserts or at_del <= #deletes do
-        local sent, wires, gone = {}, {}, {}
-        for i = at_up, math.min(at_up + M.PUSH_BATCH - 1, #upserts) do
-            table.insert(sent, upserts[i])
-            table.insert(wires, upserts[i].wire)
-        end
-        for i = at_del, math.min(at_del + M.PUSH_BATCH - 1, #deletes) do
-            table.insert(gone, deletes[i])
-        end
-        at_up, at_del = at_up + #sent, at_del + #gone
+        local sent, gone = take_batch(upserts, at_up, deletes, at_del, max_items, deps)
         -- An empty array may encode as an object, which the server would refuse.
+        local wires = {}
+        for _, up in ipairs(sent) do
+            table.insert(wires, up.wire)
+        end
         local code, reply, err = deps.post({ upserts = #sent > 0 and wires or nil,
             deletes = #gone > 0 and gone or nil })
-        local problem = http_problem(code, err)
-        if problem then
-            return problem
+        if code == 413 and #sent + #gone > 1 then
+            max_items = math.max(1, math.ceil(math.max(#sent, #gone) / 2))
+        elseif code == 413 then
+            table.insert(refused, string.format("a highlight is too large for Omnibus to take (%s)",
+                sent[1] and sent[1].id or gone[1]))
+            at_up, at_del = at_up + #sent, at_del + #gone
+        else
+            local problem = http_problem(code, err)
+            if problem then
+                return problem, code == nil or code == 401
+            end
+            if type(reply) ~= "table" or (#sent > 0 and type(reply.results) ~= "table") then
+                return "Omnibus sent a reply this plugin could not read"
+            end
+            settle_results(sent, reply.results or {}, deps, state)
+            for _, id in ipairs(gone) do
+                state.agreed[id] = nil
+                state.result.changed = true
+            end
+            at_up, at_del = at_up + #sent, at_del + #gone
         end
-        if type(reply) ~= "table" or (#sent > 0 and type(reply.results) ~= "table") then
-            return "Omnibus sent a reply this plugin could not read"
-        end
-        settle_results(sent, reply.results or {}, deps, state)
-        for _, id in ipairs(gone) do
-            state.agreed[id] = nil
-            state.result.changed = true
-        end
+    end
+    if #refused > 0 then
+        return table.concat(refused, "; ")
     end
 end
 
@@ -622,12 +701,12 @@ local function apply_listing(listing, synced, deps, state)
                 item = deps.add(wire)
                 if item then
                     state.by_id[id] = item
-                    synced.agreed[id] = agree(fingerprint(item), wire)
+                    synced.agreed[id] = agree(fingerprint(item), item, wire)
                     state.result.changed = true
                 end
             elseif item and entry and newer_on_server(entry, wire) then
                 take_server_version(item, wire, entry)
-                synced.agreed[id] = agree(fingerprint(item), wire)
+                synced.agreed[id] = agree(fingerprint(item), item, wire)
                 state.result.changed = true
             end
         end
@@ -636,52 +715,66 @@ local function apply_listing(listing, synced, deps, state)
         if state.by_id[id] then
             deps.remove(state.by_id[id])
             state.by_id[id] = nil
+            state.result.changed = true
         end
         if synced.agreed[id] then
             synced.agreed[id] = nil
             state.result.changed = true
         end
     end
-    if type(listing.cursor) == "number" and listing.cursor ~= synced.cursor then
-        synced.cursor = listing.cursor
+    local cursor = listing.cursor
+    if (type(cursor) == "string" or type(cursor) == "number") and cursor ~= synced.cursor then
+        synced.cursor = cursor
         state.result.changed = true
     end
 end
 
+-- Read the listing pages from the saved cursor until the server has no more. Returns a failure
+-- message, or nil.
+local function pull(synced, deps, state)
+    for _ = 1, MAX_PAGES do
+        local code, listing, err = deps.get(synced.cursor)
+        local problem = http_problem(code, err)
+        if problem then
+            return problem
+        end
+        if type(listing) ~= "table" or type(listing.annotations) ~= "table" then
+            return "Omnibus sent annotations this plugin could not read"
+        end
+        apply_listing(listing, synced, deps, state)
+        if listing.more ~= true then
+            return nil
+        end
+    end
+end
+
 --- Reconcile the open book's highlights with Omnibus: push what changed on the device, then
---- pull what changed on the server. `items` is the document's annotation list (highlights get
---- an `omnibus_id` in place), `synced` = { cursor = int, agreed = { [id] = { fp, server_at,
---- server_color, server_fp, local_only } } } is mutated, and `deps` = { new_id() -> string,
+--- pull what changed on the server (a refused or failed push is reported, and the pull still
+--- runs unless the server never answered). `items` is the document's annotation list
+--- (highlights get an `omnibus_id` in place), `synced` = { cursor = string|int, agreed =
+--- { [id] = { fp, pos0, pos1, server_at, server_color, server_fp, local_only } } } is mutated,
+--- and `deps` = { now() -> epoch seconds, encode(table) -> JSON string, new_id() -> string,
 --- post(body) -> code|nil, reply|nil, err|nil, get(since) -> code|nil, listing|nil, err|nil,
 --- add(wire) -> item|nil, remove(item) }. `changed` says the caller has something to save,
 --- failure or not. Returns { ok, changed, message }.
 function M.sync_annotations(items, synced, deps)
     synced.cursor = synced.cursor or 0
     synced.agreed = synced.agreed or {}
-    local list, by_id, minted = numbered_highlights(items, deps)
+    local list, by_id, minted = numbered_highlights(items, synced.agreed, deps)
     local result = { ok = true, changed = minted }
     local state = { agreed = synced.agreed, by_id = by_id, result = result }
-    local function failed(message)
-        result.ok, result.message = false, message
-        return result
-    end
+    result.changed = stamp_edits(list, synced.agreed, deps) or result.changed
 
     local upserts, deletes, forgot = outgoing(list, by_id, synced.agreed)
     result.changed = result.changed or forgot
-    local problem = push(upserts, deletes, deps, state)
-    if problem then
-        return failed(problem)
+    local message, stop = push(upserts, deletes, deps, state)
+    if not stop then
+        local pull_message = pull(synced, deps, state)
+        message = message or pull_message
     end
-
-    local code, listing, err = deps.get(synced.cursor)
-    problem = http_problem(code, err)
-    if problem then
-        return failed(problem)
+    if message then
+        result.ok, result.message = false, message
     end
-    if type(listing) ~= "table" or type(listing.annotations) ~= "table" then
-        return failed("Omnibus sent annotations this plugin could not read")
-    end
-    apply_listing(listing, synced, deps, state)
     return result
 end
 
