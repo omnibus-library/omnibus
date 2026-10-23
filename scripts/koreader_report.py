@@ -38,7 +38,8 @@ def summarize(results_dir: str | Path, scenario: str) -> tuple[bool, str]:
         return False, f"FAIL {scenario}: unreadable result {path}: {e}"
     if failed is None:
         return True, f"PASS {scenario}"
-    shot = f" (screenshot: {results / data['screenshot']})" if data.get("screenshot") else ""
+    screenshot = data.get("screenshot")
+    shot = f" (screenshot: {results / screenshot})" if isinstance(screenshot, str) else ""
     return False, f"FAIL {scenario}: {failed.get('name', '?')}: {failed.get('detail', '')}{shot}"
 
 

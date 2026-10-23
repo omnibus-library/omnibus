@@ -106,6 +106,19 @@ class SummarizeTests(unittest.TestCase):
             (False, "FAIL opds: open: getPageCount() == 0"),
         )
 
+    def test_fails_naming_the_step_when_the_screenshot_is_not_a_string(self):
+        self.write_result(
+            {
+                "scenario": "opds",
+                "steps": [{"name": "open", "ok": False, "detail": "getPageCount() == 0"}],
+                "screenshot": 7,
+            }
+        )
+        self.assertEqual(
+            summarize(self.results, "opds"),
+            (False, "FAIL opds: open: getPageCount() == 0"),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
