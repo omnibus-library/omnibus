@@ -10,18 +10,22 @@ REST calls of `delivery` (opt the shelf out), `roundtrip` (opt it in, stand in f
 web reader with a POST /api/progress, read the result back with GET /api/progress/{uuid}
 and GET /api/read-status/{uuid}) and `metadata` (opt it in, stand in for the web editor
 with POST /api/ebooks/{uuid}/overrides and POST /api/ebooks/{uuid}/cover, read the cover
-back with GET /api/covers/{uuid}) and `precise` (put two more books on the shelf, stand in for
-the web reader with a POST /api/progress, read the result back with GET /api/progress/{uuid}).
+back with GET /api/covers/{uuid}), `precise` (put two more books on the shelf, stand in for
+the web reader with a POST /api/progress, read the result back with GET /api/progress/{uuid})
+and `highlights` (stand in for the web reader with POST /api/highlights, PATCH
+/api/highlights/{id}/color and DELETE /api/highlights/{id}, read the result back with
+GET /api/highlights/book/{uuid}).
 
 Env (scripts/koreader-e2e.sh sets them on `docker run`):
-  KOREADER_E2E_SCENARIO  scenario name: "opds", "delivery", "roundtrip", "metadata" or "precise"
+  KOREADER_E2E_SCENARIO  scenario name: "opds", "delivery", "roundtrip", "metadata", "precise" or
+                         "highlights"
   KOREADER_E2E_RESULTS   writable dir for <scenario>.json and <scenario>.png
   OMNIBUS_URL            server origin; the `opds` scenario appends /opds
   OMNIBUS_USER / OMNIBUS_PASSWORD   Basic credentials of the seeded account
   OMNIBUS_SESSION_TOKEN / OMNIBUS_SHELF_ID   `delivery`, `roundtrip` and `metadata`: a bearer
                          session of that account, and the shelf holding Alpha that they switch off and on
-  OMNIBUS_LAGOON_UUID / OMNIBUS_RELAY_UUID   `precise`: the uuids of Lagoon of Ligatures and
-                         Frontmatter Relay, which it adds to that shelf
+  OMNIBUS_LAGOON_UUID / OMNIBUS_RELAY_UUID   `precise` and `highlights`: the uuids of Lagoon of
+                         Ligatures and Frontmatter Relay, which they add to that shelf
 
 Writes <results>/<scenario>.json exactly once — pass, fail or watchdog —
 screenshots to <results>/<scenario>.png on failure, then quits.
@@ -1048,6 +1052,212 @@ local function precise_scenario()
     }
 end
 
+-- The `highlights` scenario: a highlight with a note made in KOReader reaches the web at the same
+-- passage, and a recolour, a delete and a new highlight made on the web reach the book. The last
+-- one is read after opening alone, without Sync now.
+local function highlights_scenario()
+    local Event = require("ui/event")
+    local ReaderUI = require("apps/reader/readerui")
+    -- "expedition" in paragraph 23 of Lagoon, and the range CFI the web reader holds for it.
+    local LAGOON_POS0 = "/body/DocFragment/body/p[23]/text().43"
+    local LAGOON_POS1 = "/body/DocFragment/body/p[23]/text().53"
+    local LAGOON_CFI = "epubcfi(/6/2!/4/48,/1:43,/1:53)"
+    -- "test" in the last chapter of Relay's six-item spine, and its range CFI.
+    local RELAY_POS0 = "/body/DocFragment[6]/body/p/text().10"
+    local RELAY_POS1 = "/body/DocFragment[6]/body/p/text().14"
+    local RELAY_CFI = "epubcfi(/6/12!/4/4,/1:10,/1:14)"
+    local lagoon_path, relay_path, client_id
+
+    -- The highlight items of the open book that start at `pos0`.
+    local function items_at(reader_ui, pos0)
+        local found = {}
+        for _, item in ipairs(reader_ui.annotation.annotations) do
+            if item.pos0 == pos0 then
+                table.insert(found, item)
+            end
+        end
+        return found
+    end
+
+    local function web_highlights(uuid)
+        local code, rows = api("GET", "/api/highlights/book/" .. uuid)
+        if code ~= 200 or type(rows) ~= "table" then
+            return nil, "GET /api/highlights/book answered " .. tostring(code)
+        end
+        return rows
+    end
+
+    -- A deferred step: open the book at `path()`, run the Sync now of the open reader unless
+    -- `sync_now` is false (then only the open itself can have brought a change), then let
+    -- `check(reader_ui)` return the step's outcome.
+    local function open_sync_check(name, path, check, sync_now)
+        return {
+            name = name,
+            deferred = true,
+            fn = function(resume)
+                ReaderUI:showReader(path(), nil, nil, nil, function(reader_ui)
+                    if sync_now ~= false then
+                        local result = reader_ui.omnibus:sync()
+                        if not result.ok then
+                            resume(false, "Sync now in the reader failed: " .. tostring(result.message))
+                            return
+                        end
+                    end
+                    resume(check(reader_ui))
+                end)
+                return true
+            end,
+        }
+    end
+
+    local function close_step(name)
+        return {
+            name = name,
+            fn = function()
+                ReaderUI.instance:onHome()
+                return true, "closed the book"
+            end,
+        }
+    end
+
+    return {
+        {
+            name = "add_books",
+            fn = function()
+                local code = api("POST", "/api/shelves/" .. SHELF_ID .. "/books",
+                    { book_uuids = { LAGOON_UUID, RELAY_UUID } })
+                if code ~= 204 then
+                    return false, "adding the books to the shelf answered " .. tostring(code)
+                end
+                return true, "shelf holds Lagoon and Relay"
+            end,
+        },
+        opt_in_step(),
+        deliver_step("highlights", function(lagoon_uuid, path)
+            lagoon_path = path
+            local relay_uuid
+            relay_uuid, relay_path = delivered_book("Frontmatter Relay")
+            if lagoon_uuid ~= LAGOON_UUID or relay_uuid ~= RELAY_UUID then
+                error("the manifest does not hold both books: "
+                    .. tostring(lagoon_uuid) .. ", " .. tostring(relay_uuid))
+            end
+        end, { title = "Lagoon of Ligatures", added = 3 }),
+        {
+            name = "koreader_highlight",
+            deferred = true,
+            fn = function(resume)
+                ReaderUI:showReader(lagoon_path, nil, nil, nil, function(reader_ui)
+                    local item = {
+                        page = LAGOON_POS0,
+                        pos0 = LAGOON_POS0,
+                        pos1 = LAGOON_POS1,
+                        text = "expedition",
+                        color = "orange",
+                        drawer = "lighten",
+                        note = "lane note",
+                        chapter = reader_ui.toc:getTocTitleByPage(LAGOON_POS0),
+                    }
+                    -- What ReaderHighlight:saveHighlight does for a note made in the reader.
+                    local index = reader_ui.annotation:addItem(item)
+                    reader_ui:handleEvent(Event:new("AnnotationsModified",
+                        { item, nb_highlights_added = 1, nb_notes_added = 1, index_modified = index }))
+                    local word = reader_ui.document:getTextFromXPointers(LAGOON_POS0, LAGOON_POS1)
+                    if word ~= "expedition" then
+                        resume(false, 'expected the word "expedition" highlighted, got "' .. tostring(word) .. '"')
+                    else
+                        resume(true, 'highlighted "expedition" with a note')
+                    end
+                end)
+                return true
+            end,
+        },
+        close_step("close_pushes"),
+        {
+            name = "web_has_it",
+            fn = function()
+                local rows, err = web_highlights(LAGOON_UUID)
+                if not rows then
+                    return false, err
+                end
+                if #rows ~= 1 then
+                    return false, "expected one highlight on the web, got " .. #rows
+                end
+                local row = rows[1]
+                if row.epub_cfi_range ~= LAGOON_CFI or row.color ~= "amber" or row.note ~= "lane note"
+                    or row.text ~= "expedition" then
+                    return false, string.format("the web holds %s %s note=%s text=%s",
+                        tostring(row.epub_cfi_range), tostring(row.color), tostring(row.note), tostring(row.text))
+                end
+                if type(row.client_id) ~= "string" or row.client_id == "" then
+                    return false, "the web row has no client_id"
+                end
+                client_id = row.client_id
+                return true, "the web holds " .. row.epub_cfi_range .. " in amber with the note"
+            end,
+        },
+        {
+            name = "web_recolour",
+            fn = function()
+                local code = api("PATCH", "/api/highlights/" .. client_id .. "/color", { color = "violet" })
+                if code ~= 204 then
+                    return false, "recolouring answered " .. tostring(code)
+                end
+                code = api("POST", "/api/highlights", {
+                    book_uuid = RELAY_UUID, epub_cfi_range = RELAY_CFI, color = "rose", text = "test",
+                })
+                if code ~= 200 then
+                    return false, "creating the Relay highlight answered " .. tostring(code)
+                end
+                return true, "recoloured Lagoon's highlight, highlighted Relay"
+            end,
+        },
+        open_sync_check("recolour_reaches", function() return lagoon_path end, function(reader_ui)
+            local found = items_at(reader_ui, LAGOON_POS0)
+            if #found ~= 1 then
+                return false, "expected one highlight at the passage, found " .. #found
+            end
+            if found[1].color ~= "purple" or found[1].note ~= "lane note" then
+                return false, string.format("expected purple with the note, got %s note=%s",
+                    tostring(found[1].color), tostring(found[1].note))
+            end
+            return true, "the highlight is purple and keeps its note"
+        end),
+        close_step("close_after_recolour"),
+        {
+            name = "web_delete",
+            fn = function()
+                local code = api("DELETE", "/api/highlights/" .. client_id)
+                if code ~= 204 then
+                    return false, "deleting answered " .. tostring(code)
+                end
+                return true, "deleted Lagoon's highlight on the web"
+            end,
+        },
+        open_sync_check("delete_reaches", function() return lagoon_path end, function(reader_ui)
+            local found = items_at(reader_ui, LAGOON_POS0)
+            if #found ~= 0 then
+                return false, "expected the highlight gone, found " .. #found
+            end
+            return true, "the highlight is gone"
+        end),
+        close_step("close_after_delete"),
+        open_sync_check("web_highlight_reaches", function() return relay_path end, function(reader_ui)
+            local found = items_at(reader_ui, RELAY_POS0)
+            if #found ~= 1 then
+                return false, "expected one highlight at the passage, found " .. #found
+            end
+            local item = found[1]
+            local word = reader_ui.document:getTextFromXPointers(item.pos0, item.pos1)
+            if item.pos1 ~= RELAY_POS1 or item.color ~= "red" or word ~= "test" then
+                return false, string.format('expected red "test" to %s, got %s "%s" to %s',
+                    RELAY_POS1, tostring(item.color), tostring(word), tostring(item.pos1))
+            end
+            return true, 'the web highlight of "test" arrived in red'
+        end, false),
+        close_step("close_relay"),
+    }
+end
+
 -- Every scenario the lane can run, by KOREADER_E2E_SCENARIO. A new scenario
 -- is an entry here plus an entry in the runner's `scenarios` list.
 local SCENARIOS = {
@@ -1056,6 +1266,7 @@ local SCENARIOS = {
     roundtrip = roundtrip_scenario,
     metadata = metadata_scenario,
     precise = precise_scenario,
+    highlights = highlights_scenario,
 }
 
 local function run_at(scenario_steps, i)

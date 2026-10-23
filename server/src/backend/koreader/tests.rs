@@ -27,8 +27,10 @@ mod auth {
 
     const STATE: &str = "/koreader/v1/books/0123abcd-0000-0000-0000-000000000000/state";
 
+    const ANNOTATIONS: &str = "/koreader/v1/books/0123abcd-0000-0000-0000-000000000000/annotations";
+
     /// Every route as `(method, uri)`.
-    const ROUTES: [(&str, &str); 5] = [
+    const ROUTES: [(&str, &str); 7] = [
         ("GET", "/koreader/v1/library"),
         (
             "GET",
@@ -40,6 +42,8 @@ mod auth {
         ),
         ("GET", STATE),
         ("PUT", STATE),
+        ("GET", ANNOTATIONS),
+        ("POST", ANNOTATIONS),
     ];
 
     fn authorized(method: &str, uri: &str, token: Option<&str>) -> Request<Body> {
@@ -47,7 +51,11 @@ mod auth {
             method,
             uri,
             token,
-            (method == "PUT").then(|| json!({ "percent": 1, "event_at": 1 })),
+            match method {
+                "PUT" => Some(json!({ "percent": 1, "event_at": 1 })),
+                "POST" => Some(json!({})),
+                _ => None,
+            },
         )
     }
 

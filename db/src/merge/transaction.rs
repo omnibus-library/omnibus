@@ -365,7 +365,7 @@ async fn move_book_files(
 
 /// Every table that soft-references `books.uuid` and must follow the book
 /// across a merge; the contract is in `.claude/rules/06-migrations.md`.
-pub(super) const RETARGET_TABLES: [&str; 18] = [
+pub(super) const RETARGET_TABLES: [&str; 19] = [
     "reading_progress",
     "reading_progress_marks",
     "reading_progress_daily",
@@ -375,6 +375,7 @@ pub(super) const RETARGET_TABLES: [&str; 18] = [
     "reading_sessions",
     "listening_sessions",
     "annotations",
+    "annotation_tombstones",
     "kobo_annotations_sync",
     "journal_entries",
     "book_read_status",

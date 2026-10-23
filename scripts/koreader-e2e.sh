@@ -10,7 +10,7 @@
 #      (test_data/epubs/generated/alpha.epub, beta.epub), the two the `precise`
 #      scenario puts on the shelf (standalone-lagoon.epub, frontmatter-relay.epub)
 #      and the first (admin) account, registered here as on CI.
-#   2. Seeds the `delivery`, `roundtrip`, `metadata` and `precise` scenarios through the REST API: a shelf
+#   2. Seeds the `delivery`, `roundtrip`, `metadata`, `precise` and `highlights` scenarios through the REST API: a shelf
 #      holding Alpha that syncs to devices, and a KOReader whose preconfigured plugin
 #      it downloads from the real Settings route.
 #   3. Builds ui_tests/koreader (pinned KOReader under Xvfb) and runs one
@@ -18,8 +18,10 @@
 #      plugin through add-catalog, browse, search, download and open, and the
 #      Omnibus plugin through a sync that delivers and one that removes, and
 #      through opening a book at the web's position and closing it at its own,
-#      through a web edit of a book's title and cover reaching it, and through a
-#      position inside a paragraph travelling both ways.
+#      through a web edit of a book's title and cover reaching it, through a
+#      position inside a paragraph travelling both ways, and through a highlight
+#      and its note travelling out and a recolour, a delete and a new highlight
+#      travelling back.
 #   4. Reports each scenario's result JSON (scripts/koreader_report.py) and
 #      exits non-zero on any failure, keeping the scratch dir (results,
 #      screenshot, logs) and naming it.
@@ -67,7 +69,7 @@ until body="$(curl -fsS -u "$user:$password" "$base_url/opds/all" 2>/dev/null)" 
     sleep 1
 done
 
-# The `delivery`, `roundtrip`, `metadata` and `precise` scenarios' seed. The REST calls need a session, so sign in with a
+# The `delivery`, `roundtrip`, `metadata`, `precise` and `highlights` scenarios' seed. The REST calls need a session, so sign in with a
 # bearer token; the plugin is the zip the Settings download hands a reader.
 json_field() { python3 -c 'import json,sys; print(json.load(sys.stdin)[sys.argv[1]])' "$1"; }
 session="$(curl -fsS -X POST -H 'Content-Type: application/json' \
@@ -92,9 +94,10 @@ api -o "$scratch/plugin.zip" "$base_url/api/account/kobo-devices/$device_id/kore
 python3 -m zipfile -e "$scratch/plugin.zip" "$scratch/plugins"
 
 # Scenario names live here; the fixture titles live beside them in the
-# patch's opds scenario. `metadata` retitles Alpha on the shared server, and `precise` is last
-# because it adds two books to the shelf the earlier scenarios expect to hold Alpha alone.
-scenarios=(opds delivery roundtrip metadata precise)
+# patch's opds scenario. `metadata` retitles Alpha on the shared server, and `precise` and then
+# `highlights` come last because they add two books to the shelf the earlier scenarios expect
+# to hold Alpha alone.
+scenarios=(opds delivery roundtrip metadata precise highlights)
 # The token must never reach KOReader's log: a leak there is a leak to anyone who shares it.
 device_token="$(json_field token <"$scratch/plugins/omnibus.koplugin/omnibus.json")"
 leaked=0

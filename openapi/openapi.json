@@ -4572,6 +4572,9 @@
           },
           "404": {
             "description": "No book has that `book_uuid`."
+          },
+          "410": {
+            "description": "That `client_id` was deleted; a delete is final, so repeating the create can never succeed."
           }
         }
       }

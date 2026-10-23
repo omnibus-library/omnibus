@@ -37,6 +37,9 @@ pub async fn rpc_create_highlight(input: CreateHighlight) -> Result<Highlight> {
         Err(db::annotations::HighlightError::NotFound) => {
             Err(ServerFnError::new("highlight not found").into())
         }
+        Err(db::annotations::HighlightError::Gone) => {
+            Err(ServerFnError::new("highlight was deleted").into())
+        }
         Err(db::annotations::HighlightError::Sqlx(e)) => {
             Err(internal_rpc_error("create highlight", e).into())
         }

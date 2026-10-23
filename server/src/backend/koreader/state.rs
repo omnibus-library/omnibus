@@ -6,7 +6,7 @@
 //! wrote. Position and status arbitrate independently, each against their own stored
 //! clock. The wire speaks KOReader's status tokens and is not part of the REST contract.
 
-use std::path::Path as FsPath;
+use std::path::{Path as FsPath, PathBuf};
 
 use axum::{
     extract::{Path, State},
@@ -102,6 +102,15 @@ impl StateBody {
     }
 }
 
+/// The path of the book's source EPUB: `Ok(None)` for a book that has none, `Err` when the
+/// lookup itself fails, which a caller must not mistake for a book without an EPUB.
+pub(super) async fn epub_source(pool: &SqlitePool, uuid: &str) -> anyhow::Result<Option<PathBuf>> {
+    let Some(book_id) = db::resolve_book_id_by_uuid(pool, uuid).await? else {
+        return Ok(None);
+    };
+    Ok(db::book_file_path(pool, book_id, "EPUB").await?)
+}
+
 /// Convert between an XPointer and a CFI against the book's source EPUB, off the async
 /// runtime. A book with no EPUB, an unreadable file or a panic is a `None`, never a 5xx.
 async fn convert(
@@ -109,8 +118,7 @@ async fn convert(
     uuid: &str,
     run: impl FnOnce(&FsPath) -> anyhow::Result<Option<String>> + Send + 'static,
 ) -> Option<String> {
-    let book_id = db::resolve_book_id_by_uuid(pool, uuid).await.ok()??;
-    let source = db::book_file_path(pool, book_id, "EPUB").await.ok()??;
+    let source = epub_source(pool, uuid).await.ok().flatten()?;
     match tokio::task::spawn_blocking(move || run(&source)).await {
         Ok(Ok(converted)) => converted,
         Ok(Err(e)) => {
