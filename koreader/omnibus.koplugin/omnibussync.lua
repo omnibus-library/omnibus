@@ -49,14 +49,23 @@ function M.file_name(book)
     return string.format("%s - %s.%s", title, id, format)
 end
 
---- The URL to fetch `book` from, always on `server_url`: nil unless the server's
---- `download_url` is a path, so a token is never sent to a host the config doesn't name.
-function M.book_url(server_url, book)
-    local url = book.download_url
+-- `url` on `server_url`: nil unless it is a path, so a token is never sent to a host the
+-- config doesn't name.
+local function on_server(server_url, url)
     if type(url) ~= "string" or url:sub(1, 1) ~= "/" or url:sub(1, 2) == "//" then
         return nil
     end
     return server_url:gsub("/+$", "") .. url
+end
+
+--- The URL to fetch `book` from, always on `server_url`.
+function M.book_url(server_url, book)
+    return on_server(server_url, book.download_url)
+end
+
+--- The URL of `book`'s cover, always on `server_url`.
+function M.cover_url(server_url, book)
+    return on_server(server_url, book.cover_url)
 end
 
 local function inside(dir, path)

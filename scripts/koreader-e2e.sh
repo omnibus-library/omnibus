@@ -9,14 +9,15 @@
 #      scratch DB with a seeded library: the two committed fixture EPUBs
 #      (test_data/epubs/generated/alpha.epub, beta.epub) and the first
 #      (admin) account, registered here as on CI.
-#   2. Seeds the `delivery` and `roundtrip` scenarios through the REST API: a shelf holding
+#   2. Seeds the `delivery`, `roundtrip` and `metadata` scenarios through the REST API: a shelf holding
 #      Alpha that syncs to devices, and a KOReader whose preconfigured plugin
 #      it downloads from the real Settings route.
 #   3. Builds ui_tests/koreader (pinned KOReader under Xvfb) and runs one
 #      container per scenario; its user patch drives KOReader's own OPDS
 #      plugin through add-catalog, browse, search, download and open, and the
 #      Omnibus plugin through a sync that delivers and one that removes, and
-#      through opening a book at the web's position and closing it at its own.
+#      through opening a book at the web's position and closing it at its own,
+#      and through a web edit of a book's title and cover reaching it.
 #   4. Reports each scenario's result JSON (scripts/koreader_report.py) and
 #      exits non-zero on any failure, keeping the scratch dir (results,
 #      screenshot, logs) and naming it.
@@ -62,7 +63,7 @@ until body="$(curl -fsS -u "$user:$password" "$base_url/opds/all" 2>/dev/null)" 
     sleep 1
 done
 
-# The `delivery` and `roundtrip` scenarios' seed. The REST calls need a session, so sign in with a
+# The `delivery`, `roundtrip` and `metadata` scenarios' seed. The REST calls need a session, so sign in with a
 # bearer token; the plugin is the zip the Settings download hands a reader.
 json_field() { python3 -c 'import json,sys; print(json.load(sys.stdin)[sys.argv[1]])' "$1"; }
 session="$(curl -fsS -X POST -H 'Content-Type: application/json' \
@@ -82,8 +83,8 @@ api -o "$scratch/plugin.zip" "$base_url/api/account/kobo-devices/$device_id/kore
 python3 -m zipfile -e "$scratch/plugin.zip" "$scratch/plugins"
 
 # Scenario names live here; the fixture titles live beside them in the
-# patch's opds scenario.
-scenarios=(opds delivery roundtrip)
+# patch's opds scenario. `metadata` is last: it retitles Alpha on the shared server.
+scenarios=(opds delivery roundtrip metadata)
 for scenario in "${scenarios[@]}"; do
     set +e
     timeout -k 15 300 docker run --init --rm --network host \

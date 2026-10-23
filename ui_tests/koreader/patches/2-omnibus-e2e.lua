@@ -6,17 +6,19 @@ and before FileManager:showFiles. The lane opens KO_HOME as a directory, so
 showFiles runs and the deferred first nextTick finds FileManager.instance.opds.
 Each step goes through a KOReader plugin (OPDS, or the Omnibus plugin the runner
 downloaded and mounted): the only HTTP this patch makes itself goes through api(), the
-REST calls of `delivery` (opt the shelf out) and `roundtrip` (opt it in, stand in for the
+REST calls of `delivery` (opt the shelf out), `roundtrip` (opt it in, stand in for the
 web reader with a POST /api/progress, read the result back with GET /api/progress/{uuid}
-and GET /api/read-status/{uuid}).
+and GET /api/read-status/{uuid}) and `metadata` (opt it in, stand in for the web editor
+with POST /api/ebooks/{uuid}/overrides and POST /api/ebooks/{uuid}/cover, read the cover
+back with GET /api/covers/{uuid}).
 
 Env (scripts/koreader-e2e.sh sets them on `docker run`):
-  KOREADER_E2E_SCENARIO  scenario name: "opds", "delivery" or "roundtrip"
+  KOREADER_E2E_SCENARIO  scenario name: "opds", "delivery", "roundtrip" or "metadata"
   KOREADER_E2E_RESULTS   writable dir for <scenario>.json and <scenario>.png
   OMNIBUS_URL            server origin; the `opds` scenario appends /opds
   OMNIBUS_USER / OMNIBUS_PASSWORD   Basic credentials of the seeded account
-  OMNIBUS_SESSION_TOKEN / OMNIBUS_SHELF_ID   `delivery` and `roundtrip`: a bearer session of
-                         that account, and the shelf holding Alpha that they switch off and on
+  OMNIBUS_SESSION_TOKEN / OMNIBUS_SHELF_ID   `delivery`, `roundtrip` and `metadata`: a bearer
+                         session of that account, and the shelf holding Alpha that they switch off and on
 
 Writes <results>/<scenario>.json exactly once — pass, fail or watchdog —
 screenshots to <results>/<scenario>.png on failure, then quits.
@@ -91,17 +93,21 @@ local function find_item(item_table, title)
     end
 end
 
--- A REST call as the lane's account (the bearer session the runner passes in). Returns the
--- status code and the decoded JSON body, nil when there is none.
-local function api(method, path, body)
+-- A REST call as the lane's account (the bearer session the runner passes in). `body` is a
+-- table sent as JSON, or with a `content_type` the string to send as it is. Returns the status
+-- code, the decoded JSON body (nil when there is none) and the raw body.
+local function api(method, path, body, content_type)
     local JSON = require("json")
     local ltn12 = require("ltn12")
     local socket = require("socket")
     local http = require("socket.http")
-    local text = body and JSON.encode(body)
+    local text = body
+    if body and not content_type then
+        text = JSON.encode(body)
+    end
     local headers = { Authorization = "Bearer " .. SESSION_TOKEN }
     if text then
-        headers["Content-Type"] = "application/json"
+        headers["Content-Type"] = content_type or "application/json"
         headers["Content-Length"] = #text
     end
     local chunks = {}
@@ -112,8 +118,28 @@ local function api(method, path, body)
         source = text and ltn12.source.string(text) or nil,
         sink = ltn12.sink.table(chunks),
     })
-    local ok, decoded = pcall(JSON.decode, table.concat(chunks))
-    return code, ok and decoded or nil
+    local raw = table.concat(chunks)
+    local ok, decoded = pcall(JSON.decode, raw)
+    return code, ok and decoded or nil, raw
+end
+
+-- The Omnibus plugin instance of the file manager now showing; closing a book builds a new one.
+local function omnibus_plugin()
+    local FileManager = require("apps/filemanager/filemanager")
+    return FileManager.instance and FileManager.instance.omnibus
+end
+
+-- The uuid and path of Alpha as the plugin's manifest records its delivery; nil without one.
+local function delivered_alpha()
+    local DataStorage = require("datastorage")
+    local LuaSettings = require("luasettings")
+    local manifest = LuaSettings:open(DataStorage:getSettingsDir() .. "/omnibus.lua")
+        :readSetting("manifest", {})
+    for book_uuid, book_path in pairs(manifest) do
+        if book_path:find("/Alpha - ", 1, true) then
+            return book_uuid, book_path
+        end
+    end
 end
 
 -- The `opds` scenario: add the Omnibus catalog with Basic credentials, browse
@@ -419,10 +445,7 @@ local function roundtrip_scenario()
         {
             name = "deliver",
             fn = function()
-                local DataStorage = require("datastorage")
-                local LuaSettings = require("luasettings")
-                local FileManager = require("apps/filemanager/filemanager")
-                plugin = FileManager.instance and FileManager.instance.omnibus
+                plugin = omnibus_plugin()
                 if not plugin then
                     return false, "FileManager.instance.omnibus missing"
                 end
@@ -434,13 +457,7 @@ local function roundtrip_scenario()
                     return false, string.format("sync: ok=%s added=%s %s",
                         tostring(result.ok), tostring(result.added), tostring(result.message))
                 end
-                local manifest = LuaSettings:open(DataStorage:getSettingsDir() .. "/omnibus.lua")
-                    :readSetting("manifest", {})
-                for book_uuid, book_path in pairs(manifest) do
-                    if book_path:find("/Alpha - ", 1, true) then
-                        uuid, path = book_uuid, book_path
-                    end
-                end
+                uuid, path = delivered_alpha()
                 if not uuid then
                     return false, "Alpha missing from the plugin's manifest"
                 end
@@ -517,12 +534,247 @@ local function roundtrip_scenario()
     }
 end
 
+-- The `metadata` scenario: an edit made on the web (title and cover) reaches the delivered
+-- book on the next sync, in KOReader's custom metadata and in a replaced file, and the
+-- reader's place and highlights survive the replacement.
+local function metadata_scenario()
+    local Blitbuffer = require("ffi/blitbuffer")
+    local DocSettings = require("docsettings")
+    local DocumentRegistry = require("document/documentregistry")
+    local Event = require("ui/event")
+    local FileManagerBookInfo = require("apps/filemanager/filemanagerbookinfo")
+    local ReaderUI = require("apps/reader/readerui")
+    local lfs = require("libs/libkoreader-lfs")
+    local EDITED_TITLE = "Alpha Revised"
+    local uuid, path, xp, expected_cover, inode
+
+    local function read_file(file_path)
+        local file = io.open(file_path, "rb")
+        if not file then
+            return nil
+        end
+        local bytes = file:read("*a")
+        file:close()
+        return bytes
+    end
+
+    -- A 60x90 picture written as a PNG: the cover the web editor "uploads".
+    local function cover_png()
+        local file_path = RESULTS .. "/metadata/cover.png"
+        local bb = Blitbuffer.new(60, 90, Blitbuffer.TYPE_BBRGB32)
+        bb:fill(Blitbuffer.COLOR_DARK_GRAY)
+        bb:paintRect(10, 10, 40, 70, Blitbuffer.COLOR_WHITE)
+        bb:writePNG(file_path)
+        bb:free()
+        return read_file(file_path)
+    end
+
+    local function sync_alpha()
+        local plugin = omnibus_plugin()
+        if not plugin then
+            return nil, "FileManager.instance.omnibus missing"
+        end
+        local result = plugin:sync()
+        if not result.ok then
+            return nil, "sync failed: " .. tostring(result.message)
+        end
+        return result
+    end
+
+    return {
+        {
+            name = "opt_in",
+            fn = function()
+                local code = api("PATCH", "/api/shelves/" .. SHELF_ID, { sync_to_kobo = true })
+                if code ~= 200 then
+                    return false, "opting the shelf in answered " .. tostring(code)
+                end
+                return true, "shelf opted in"
+            end,
+        },
+        {
+            name = "deliver",
+            fn = function()
+                local home = RESULTS .. "/metadata/home"
+                util.makePath(home)
+                G_reader_settings:saveSetting("home_dir", home)
+                local result, err = sync_alpha()
+                if not result then
+                    return false, err
+                end
+                if result.added ~= 1 then
+                    return false, "expected one book added, got " .. tostring(result.added)
+                end
+                uuid, path = delivered_alpha()
+                if not uuid then
+                    return false, "Alpha missing from the plugin's manifest"
+                end
+                -- A huge font spreads the two-line book over several pages, so a place is one.
+                local sidecar = DocSettings:open(path)
+                sidecar:saveSetting("copt_font_size", 200)
+                sidecar:flush()
+                local title = FileManagerBookInfo.extendProps({}, path).title
+                if title ~= "Alpha" then
+                    return false, 'expected the custom title "Alpha", got ' .. tostring(title)
+                end
+                return true, "delivered " .. path
+            end,
+        },
+        {
+            name = "read",
+            deferred = true,
+            fn = function(resume)
+                ReaderUI:showReader(path, nil, nil, nil, function(reader_ui)
+                    reader_ui:handleEvent(Event:new("GotoPercent", 50))
+                    resume(true, "opened at the middle")
+                end)
+                return true
+            end,
+        },
+        {
+            name = "read_saves_place",
+            fn = function()
+                -- Home, as a reader leaves a book: it also brings the file manager back.
+                ReaderUI.instance:onHome()
+                local sidecar = DocSettings:open(path)
+                xp = sidecar:readSetting("last_xpointer")
+                if not xp then
+                    return false, "closing the book saved no last_xpointer"
+                end
+                sidecar:saveSetting("annotations", { {
+                    text = "lane highlight", page = xp, pos0 = xp, pos1 = xp,
+                    drawer = "lighten", datetime = os.date("%Y-%m-%d %H:%M:%S"),
+                } })
+                sidecar:flush()
+                return true, "place " .. xp .. " and one highlight saved"
+            end,
+        },
+        {
+            name = "edit",
+            fn = function()
+                local code = api("POST", "/api/ebooks/" .. uuid .. "/overrides", { title = EDITED_TITLE })
+                if code ~= 200 then
+                    return false, "saving the title answered " .. tostring(code)
+                end
+                local boundary = "----omnibus-lane-cover"
+                local form = table.concat({
+                    "--" .. boundary,
+                    'Content-Disposition: form-data; name="cover"; filename="cover.png"',
+                    "Content-Type: image/png",
+                    "",
+                    cover_png(),
+                    "--" .. boundary .. "--",
+                    "",
+                }, "\r\n")
+                code = api("POST", "/api/ebooks/" .. uuid .. "/cover", form,
+                    "multipart/form-data; boundary=" .. boundary)
+                if code ~= 200 then
+                    return false, "uploading the cover answered " .. tostring(code)
+                end
+                local cover_code, _, bytes = api("GET", "/api/covers/" .. uuid)
+                if cover_code ~= 200 or #bytes == 0 then
+                    return false, "reading the cover back answered " .. tostring(cover_code)
+                end
+                expected_cover = bytes
+                return true, "retitled and re-covered, cover " .. #bytes .. " bytes"
+            end,
+        },
+        {
+            name = "sync_refreshes",
+            fn = function()
+                local result, err = sync_alpha()
+                if not result then
+                    return false, err
+                end
+                if result.refreshed ~= 1 or result.replaced ~= 1 or result.added ~= 0 then
+                    return false, string.format("expected 1 refreshed and 1 replaced, got %s and %s (added %s)",
+                        tostring(result.refreshed), tostring(result.replaced), tostring(result.added))
+                end
+                local _, now_path = delivered_alpha()
+                if now_path ~= path then
+                    return false, "the file moved from " .. path .. " to " .. tostring(now_path)
+                end
+                local title = FileManagerBookInfo.extendProps({}, path).title
+                if title ~= EDITED_TITLE then
+                    return false, 'expected the custom title "' .. EDITED_TITLE .. '", got ' .. tostring(title)
+                end
+                local cover = DocSettings:findCustomCoverFile(path)
+                if not cover or read_file(cover) ~= expected_cover then
+                    return false, "the custom cover is not the uploaded one: " .. tostring(cover)
+                end
+                local document = DocumentRegistry:openDocument(path)
+                local own_title
+                if document then
+                    if not document.loadDocument or document:loadDocument(false) then
+                        own_title = document:getProps().title
+                    end
+                    document:close()
+                end
+                if own_title ~= EDITED_TITLE then
+                    return false, 'the re-downloaded file reads "' .. tostring(own_title) .. '"'
+                end
+                return true, "custom title, cover and the file itself show the edit"
+            end,
+        },
+        {
+            name = "reopen_keeps_place",
+            deferred = true,
+            fn = function(resume)
+                ReaderUI:showReader(path, nil, nil, nil, function(reader_ui)
+                    local kept_xp = reader_ui.doc_settings:readSetting("last_xpointer")
+                    local highlighted = false
+                    for _, annotation in ipairs(reader_ui.annotation.annotations) do
+                        highlighted = highlighted or annotation.text == "lane highlight"
+                    end
+                    local title = reader_ui.doc_props.display_title
+                    if kept_xp ~= xp then
+                        resume(false, string.format("place moved from %s to %s", xp, tostring(kept_xp)))
+                    elseif not highlighted then
+                        resume(false, "the lane highlight is gone")
+                    elseif title ~= EDITED_TITLE then
+                        resume(false, 'the book shows "' .. tostring(title) .. '"')
+                    else
+                        resume(true, "same place, highlight kept, titled " .. title)
+                    end
+                end)
+                return true
+            end,
+        },
+        {
+            name = "close_reopened",
+            fn = function()
+                ReaderUI.instance:onHome()
+                return true, "closed the book"
+            end,
+        },
+        {
+            name = "unchanged",
+            fn = function()
+                inode = lfs.attributes(path, "ino")
+                local result, err = sync_alpha()
+                if not result then
+                    return false, err
+                end
+                if result.added + result.refreshed + result.replaced ~= 0 then
+                    return false, string.format("expected nothing to do, got %d added, %d refreshed, %d replaced",
+                        result.added, result.refreshed, result.replaced)
+                end
+                if lfs.attributes(path, "ino") ~= inode then
+                    return false, "the file was replaced although nothing changed"
+                end
+                return true, "second sync changed nothing"
+            end,
+        },
+    }
+end
+
 -- Every scenario the lane can run, by KOREADER_E2E_SCENARIO. A new scenario
 -- is an entry here plus an entry in the runner's `scenarios` list.
 local SCENARIOS = {
     opds = opds_scenario,
     delivery = delivery_scenario,
     roundtrip = roundtrip_scenario,
+    metadata = metadata_scenario,
 }
 
 local function run_at(scenario_steps, i)

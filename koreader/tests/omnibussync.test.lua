@@ -109,6 +109,17 @@ test("book_url refuses a download url that could point at another host", functio
     end
 end)
 
+test("cover_url joins a host-relative cover path to the configured server", function()
+    local book = { cover_url = "/koreader/v1/books/abc/cover" }
+    eq(sync.cover_url("https://omni.test/", book), "https://omni.test/koreader/v1/books/abc/cover")
+end)
+
+test("cover_url refuses a cover url that could point at another host", function()
+    for _, url in ipairs({ "https://evil.test/x", "//evil.test/x", "@evil.test/x" }) do
+        eq(sync.cover_url("https://omni.test", { cover_url = url }), nil, url)
+    end
+end)
+
 test("plan downloads a library book that is absent from the manifest", function()
     local plan = sync.plan({}, { ALPHA }, DIR, function() return false end, nil)
     eq(#plan.download, 1)
