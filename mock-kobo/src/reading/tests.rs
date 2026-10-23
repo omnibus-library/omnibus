@@ -188,6 +188,37 @@ async fn sync_now_keeps_its_own_bookmark_when_the_server_sends_it_unstamped() {
     assert_eq!(reading.bookmark.as_ref().unwrap().percent, Percent::new(30));
 }
 
+#[tokio::test]
+async fn sync_now_tolerates_a_location_that_is_not_a_kobospan() {
+    let stub = spawn_stub(Stub {
+        sync_pages: vec![json!([{ "ChangedReadingState": { "ReadingState": {
+            "EntitlementId": "book-1",
+            "StatusInfo": { "Status": "Reading", "LastModified": "2024-01-01T00:00:00Z" },
+            "CurrentBookmark": {
+                "ProgressPercent": 50,
+                "Location": { "Type": "KoboSpan", "Value": "kobo.9.1" },
+                "LastModified": "2024-01-01T00:00:00Z",
+            },
+        }}}])],
+        ..Stub::default()
+    })
+    .await;
+    let mut device = Device::new("HW-1");
+    device.apply(serde_json::from_value(new_entitlement("book-1", "Dune")).unwrap());
+
+    sync_now(
+        &mut device,
+        &stub.endpoint,
+        &crate::downloads::DownloadPolicy::None,
+    )
+    .await
+    .unwrap();
+
+    let bookmark = device.library["book-1"].reading.bookmark.as_ref().unwrap();
+    assert_eq!(bookmark.percent, Percent::new(50));
+    assert_eq!(bookmark.location, None);
+}
+
 #[test]
 fn percent_new_accepts_100_and_rejects_101() {
     assert!(Percent::new(100).is_some());

@@ -75,10 +75,23 @@ pub struct StatusInfo {
 pub struct CurrentBookmark {
     #[serde(default)]
     pub progress_percent: Option<i64>,
-    #[serde(default)]
+    /// The server stores and echoes any JSON a state PUT sent here, so a
+    /// value that isn't a `{Source, Value}` `KoboSpan` decodes as `None`
+    /// rather than failing the whole page.
+    #[serde(default, deserialize_with = "lenient_kobo_span")]
     pub location: Option<crate::reading::KoboSpan>,
     #[serde(default)]
     pub last_modified: Option<String>,
+}
+
+fn lenient_kobo_span<'de, D>(
+    deserializer: D,
+) -> Result<Option<crate::reading::KoboSpan>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value: Option<serde_json::Value> = Option::deserialize(deserializer)?;
+    Ok(value.and_then(|v| serde_json::from_value(v).ok()))
 }
 
 /// The ownership record; its `Id` is the book's key on the device.
