@@ -133,6 +133,47 @@ test.describe("devices section", () => {
       await expect(kobo.setupToggle).toBeVisible();
       await expect(kobo.shelvesLink).toHaveAttribute("href", "/shelves");
     });
+
+    await test.step("check the kosync card", async () => {
+      await expect(settingsPage.kosync.heading).toBeVisible();
+      await expect(settingsPage.kosync.generateButton).toBeVisible();
+    });
+  });
+
+  test("generate a KOReader sync password", async ({
+    readerSettingsPage,
+    readerExpectMutation,
+  }) => {
+    const { kosync } = readerSettingsPage;
+
+    await test.step("open the devices section of a reader with no password", async () => {
+      await readerSettingsPage.goto("devices");
+      await expect(kosync.heading).toBeVisible();
+      await expect(kosync.status).toHaveText("Off");
+      await expect(kosync.revealed).toHaveCount(0);
+    });
+
+    await test.step("generate a password", async () => {
+      await readerExpectMutation(account.kosyncPassword(), () =>
+        kosync.generate(),
+      );
+    });
+
+    await test.step("check the login is shown once", async () => {
+      await expect(kosync.status).toHaveText("On");
+      await expect(kosync.passwordField).toHaveValue(
+        /^[a-hjkmnp-z2-9]{5}(-[a-hjkmnp-z2-9]{5}){3}$/,
+      );
+      await expect(kosync.serverUrlField).toHaveValue(/\/kosync$/);
+      await expect(kosync.usernameField).not.toHaveValue("");
+      await expect(kosync.generateButton).toHaveText("Generate a new password");
+    });
+
+    await test.step("reload and check the password is gone", async () => {
+      await readerSettingsPage.goto("devices");
+      await expect(kosync.status).toHaveText("On");
+      await expect(kosync.revealed).toHaveCount(0);
+    });
   });
 
   // Delivery readiness is instance configuration (an SMTP relay), so the two
