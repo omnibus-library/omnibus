@@ -40,7 +40,9 @@ pub async fn perform(control: &Arc<Control>, wiring: &Wiring, job: Job) -> Statu
         Job::Finish(book) => finish(control, book).await,
         Job::RemoveDownload(book) => remove_download(control, book).await,
         Job::Highlight { book, highlight } => make_highlight(control, book, highlight).await,
-        Job::DeleteHighlight(book) => delete_highlight(control, book).await,
+        Job::DeleteHighlight { book, highlight } => {
+            delete_highlight(control, book, highlight).await
+        }
     }
 }
 
@@ -48,23 +50,12 @@ async fn make_highlight(control: &Arc<Control>, book: String, highlight: NewHigh
     acted_status("annotation sent", control.highlight(book, highlight).await)
 }
 
-/// Delete `book`'s newest highlight (the device's own last annotation),
-/// or report there are none.
-async fn delete_highlight(control: &Arc<Control>, book: String) -> Status {
-    let Some(id) = newest_highlight_id(control, &book) else {
-        return Status::Error("no highlights on this book".to_owned());
-    };
-    acted_status("annotation sent", control.delete_highlight(book, id).await)
-}
-
-fn newest_highlight_id(control: &Control, book: &str) -> Option<String> {
-    control
-        .view()
-        .library
-        .get(book)?
-        .annotations
-        .last()
-        .map(|a| a.id.clone())
+/// Delete `book`'s named highlight (the reader's list names it by id).
+async fn delete_highlight(control: &Arc<Control>, book: String, highlight: String) -> Status {
+    acted_status(
+        "annotation sent",
+        control.delete_highlight(book, highlight).await,
+    )
 }
 
 async fn download(control: &Arc<Control>, book: String) -> Status {

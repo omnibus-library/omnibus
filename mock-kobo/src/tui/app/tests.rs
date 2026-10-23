@@ -571,18 +571,6 @@ fn on_key_keeps_the_percent_edit_open_and_shows_an_error_for_101() {
 }
 
 #[test]
-fn on_key_returns_delete_highlight_job_for_the_selected_book_when_e_pressed() {
-    let mut app = with_library(&["book-1"]);
-
-    let action = app.on_key(key('e'), URL);
-
-    assert_eq!(
-        action,
-        Some(Action::Run(Job::DeleteHighlight("book-1".into())))
-    );
-}
-
-#[test]
 fn on_key_opens_the_selected_book_on_enter() {
     let mut app = with_library(&["book-1"]);
 

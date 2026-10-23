@@ -6,7 +6,7 @@
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 use ratatui::text::Span as TextSpan;
 
-use crate::annotations::Swatch;
+use crate::annotations::{Annotation, Swatch};
 use crate::kepub::{Chapter, Kepub};
 use crate::reading::Percent;
 use crate::tui::app::{typed_char, Job};
@@ -53,8 +53,9 @@ pub enum ReaderView {
 }
 
 /// An open book: its text (`None` for metadata-only), where the reader is,
-/// and the size it last fit to.
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// and the size it last fit to. Not `Eq`: `annotations` carries a
+/// `serde_json::Value` location, which isn't either.
+#[derive(Clone, Debug, PartialEq)]
 pub struct Reader {
     pub book: String,
     pub text: Option<Kepub>,
@@ -72,6 +73,9 @@ pub struct Reader {
     pub view: ReaderView,
     /// A word selection in progress on the open page, started by `v`.
     pub selection: Option<Selection>,
+    /// The book's annotations as of the last `App::show_book`; the
+    /// highlights list's ids and rows come from here, never a fresh read.
+    pub annotations: Vec<Annotation>,
 }
 
 impl Reader {
@@ -88,6 +92,7 @@ impl Reader {
             placed_at: None,
             view: ReaderView::Page,
             selection: None,
+            annotations: Vec::new(),
         }
     }
 
@@ -148,6 +153,9 @@ impl Reader {
         if let ReaderView::Note(_) = &self.view {
             return self.on_note_key(key);
         }
+        if let ReaderView::Highlights(selected) = self.view {
+            return self.on_highlights_key(key, selected);
+        }
         if self.selection.is_some() {
             return self.on_selection_key(key);
         }
@@ -184,7 +192,40 @@ impl Reader {
                 });
                 None
             }
+            KeyCode::Char('h') => {
+                self.view = ReaderView::Highlights(0);
+                None
+            }
             KeyCode::Esc => Some(self.close()),
+            _ => None,
+        }
+    }
+
+    /// Keys in the highlights list: ↓/↑ move (clamped), `x` deletes the
+    /// selected row, Esc returns to the page.
+    fn on_highlights_key(&mut self, key: KeyEvent, selected: usize) -> Option<ReaderAction> {
+        let last = self.annotations.len().saturating_sub(1);
+        match key.code {
+            KeyCode::Down => {
+                self.view = ReaderView::Highlights((selected + 1).min(last));
+                None
+            }
+            KeyCode::Up => {
+                self.view = ReaderView::Highlights(selected.saturating_sub(1));
+                None
+            }
+            KeyCode::Char('x') => {
+                let highlight = self.annotations.get(selected)?.id.clone();
+                self.view = ReaderView::Page;
+                Some(ReaderAction::Run(Job::DeleteHighlight {
+                    book: self.book.clone(),
+                    highlight,
+                }))
+            }
+            KeyCode::Esc => {
+                self.view = ReaderView::Page;
+                None
+            }
             _ => None,
         }
     }

@@ -266,7 +266,6 @@ database already had an admin, mark a shelf **Sync to Kobo** yourself.
 | <kbd>p</kbd> | Edit the selected book's read percent (0–100), sent as a `Reading` state on <kbd>Enter</kbd> |
 | <kbd>f</kbd> | Mark the selected book finished |
 | <kbd>x</kbd> | Clear the selected book's downloaded flag, locally |
-| <kbd>e</kbd> | Delete the selected book's newest highlight |
 | <kbd>s</kbd> | Sync now |
 | <kbd>r</kbd> | Reset the device: empty library, no sync token, so the next sync resends every opted-in book |
 | <kbd>u</kbd> | Edit the server URL (pinned and saved) |
@@ -290,6 +289,7 @@ the page where the sentence starts, not the one it was left on.
 | <kbd>[</kbd> / <kbd>]</kbd> | Jump to the previous/next chapter's first page |
 | <kbd>↑</kbd> / <kbd>↓</kbd> | Move the cursor one word, clamped to the open page |
 | <kbd>v</kbd> | Start a word selection at the cursor |
+| <kbd>h</kbd> | Open the highlights list |
 | <kbd>Esc</kbd> | Close: a downloaded book sends the open page's span and percent as its `Reading` state; the metadata-only view just closes |
 
 While selecting a word range:
@@ -300,6 +300,17 @@ While selecting a word range:
 | <kbd>1</kbd>–<kbd>4</kbd> | Highlight the selection in Yellow / Pink / Blue / Green and clear it |
 | <kbd>n</kbd> | Type a note for the selection |
 | <kbd>Esc</kbd> | Cancel the selection; the book stays open |
+
+Highlights made on the page, or by the web reader, show inline on their own
+words in their swatch colour once the device has them. The highlights list
+(<kbd>h</kbd>) names each one's colour and text (plus its note, and
+`(not placed)` when the open chapter can't locate it):
+
+| Key | Does |
+|---|---|
+| <kbd>↓</kbd> / <kbd>↑</kbd> | Move the selected row |
+| <kbd>x</kbd> | Delete the selected highlight |
+| <kbd>Esc</kbd> | Back to the page |
 
 While editing, <kbd>Enter</kbd> saves and <kbd>Esc</kbd> cancels. Pointing a
 device at another server re-wires a token that was wired for the old one; a URL

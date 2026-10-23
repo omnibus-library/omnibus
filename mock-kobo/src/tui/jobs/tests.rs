@@ -522,7 +522,7 @@ async fn perform_highlight_reports_annotation_sent() {
 }
 
 #[tokio::test]
-async fn perform_delete_highlight_deletes_the_newest_highlight() {
+async fn perform_delete_highlight_deletes_the_named_highlight() {
     let stub = spawn_stub(dune_stub()).await;
     let dir = TempDir::new().unwrap();
     let control = stub_control(&stub, dir.path().join("kobo.json"));
@@ -550,29 +550,23 @@ async fn perform_delete_highlight_deletes_the_newest_highlight() {
         },
     )
     .await;
+    let first_id = control.view().library["book-1"].annotations[0].id.clone();
 
-    let status = perform(&control, &wiring(), Job::DeleteHighlight("book-1".into())).await;
+    let status = perform(
+        &control,
+        &wiring(),
+        Job::DeleteHighlight {
+            book: "book-1".into(),
+            highlight: first_id,
+        },
+    )
+    .await;
 
     assert_eq!(status, Status::Info("annotation sent".to_owned()));
     let annotations = &control.view().library["book-1"].annotations;
     assert_eq!(annotations.len(), 1);
     assert_eq!(
-        annotations[0].text, "a passage",
-        "the older highlight must survive"
-    );
-}
-
-#[tokio::test]
-async fn perform_delete_highlight_reports_no_highlights_on_a_book_without_any() {
-    let stub = spawn_stub(dune_stub()).await;
-    let dir = TempDir::new().unwrap();
-    let control = stub_control(&stub, dir.path().join("kobo.json"));
-    control.sync(DownloadPolicy::None).await.unwrap();
-
-    let status = perform(&control, &wiring(), Job::DeleteHighlight("book-1".into())).await;
-
-    assert_eq!(
-        status,
-        Status::Error("no highlights on this book".to_owned())
+        annotations[0].text, "another passage",
+        "the named highlight is gone; the other survives"
     );
 }

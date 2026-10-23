@@ -111,6 +111,30 @@ pub(crate) fn location_json(location: Option<&SpanRange>) -> serde_json::Value {
     })
 }
 
+/// The inverse of [`location_json`]: the range a device's own `location`
+/// object carries, or `None` for `null` or any other shape (an id the
+/// reader can't place, say).
+pub fn span_range(location: &serde_json::Value) -> Option<SpanRange> {
+    let span = location.get("span")?;
+    let chapter = span.get("chapterFilename")?.as_str()?.to_owned();
+    let start_span = unescaped_span_path(span.get("startPath")?.as_str()?)?;
+    let start_char = u32::try_from(span.get("startChar")?.as_u64()?).ok()?;
+    let end_span = unescaped_span_path(span.get("endPath")?.as_str()?)?;
+    let end_char = u32::try_from(span.get("endChar")?.as_u64()?).ok()?;
+    Some(SpanRange {
+        chapter,
+        start_span,
+        start_char,
+        end_span,
+        end_char,
+    })
+}
+
+/// The inverse of [`escaped_span_path`]: the span id a `span#...` selector names.
+fn unescaped_span_path(path: &str) -> Option<String> {
+    Some(path.strip_prefix("span#")?.replace("\\.", "."))
+}
+
 /// A `kobo.N.M` span id as the CSS-ish selector a location carries: each `.` escaped.
 fn escaped_span_path(span_id: &str) -> String {
     format!("span#{}", span_id.replace('.', "\\."))

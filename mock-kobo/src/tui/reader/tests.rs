@@ -329,3 +329,32 @@ fn on_key_cancels_the_selection_on_esc_without_closing_the_book() {
     assert_eq!(reader.selection, None);
     assert_eq!(reader.chapter, 1, "the book stays open");
 }
+
+#[test]
+fn on_key_deletes_the_listed_highlight_with_x() {
+    let mut reader = opened();
+    reader.annotations = vec![crate::test_support::annotation("h-1")];
+    reader.on_key(press(KeyCode::Char('h')));
+
+    let action = reader.on_key(press(KeyCode::Char('x')));
+
+    assert_eq!(
+        action,
+        Some(ReaderAction::Run(Job::DeleteHighlight {
+            book: "book-1".to_owned(),
+            highlight: "h-1".to_owned(),
+        }))
+    );
+    assert_eq!(reader.view, ReaderView::Page);
+}
+
+#[test]
+fn on_key_returns_to_the_page_from_the_list_on_esc() {
+    let mut reader = opened();
+    reader.on_key(press(KeyCode::Char('h')));
+
+    let action = reader.on_key(press(KeyCode::Esc));
+
+    assert_eq!(action, None);
+    assert_eq!(reader.view, ReaderView::Page);
+}

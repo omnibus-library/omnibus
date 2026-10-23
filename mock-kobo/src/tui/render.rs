@@ -19,7 +19,7 @@ use crate::tui::app::{App, Edit, Field, Mode, Status};
 pub mod reader;
 
 const HELP: &str =
-    "↑/↓ select · Enter open · d download · p read % · f finish · x remove · e delete highlight · s sync · r reset · u edit URL · t edit token · w wire · q quit";
+    "↑/↓ select · Enter open · d download · p read % · f finish · x remove · s sync · r reset · u edit URL · t edit token · w wire · q quit";
 const EDIT_HELP: &str = "Enter save · Esc cancel";
 
 /// Rows the status line may wrap onto before the rest is cut.

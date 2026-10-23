@@ -151,3 +151,35 @@ fn highlight_crosses_spans_with_the_books_own_spacing() {
     assert_eq!(location.end_span, "kobo.5.3");
     assert_eq!(location.end_char, 8);
 }
+
+#[test]
+fn covered_words_returns_the_words_a_range_overlaps() {
+    let kepub = Kepub::parse(READER_KEPUB).unwrap();
+    let ch2 = &kepub.chapters[1];
+    // "naïve" through "Zürich." (words 7-12); start_char cut mid-"naïve"
+    // (22..27) still covers the whole word.
+    let range = crate::annotations::SpanRange {
+        chapter: "ch2.xhtml".into(),
+        start_span: "kobo.2.1".into(),
+        start_char: 24,
+        end_span: "kobo.2.1".into(),
+        end_char: 55,
+    };
+
+    assert_eq!(ch2.covered_words(&range), Some(7..=12));
+}
+
+#[test]
+fn covered_words_returns_none_for_another_chapter() {
+    let kepub = Kepub::parse(READER_KEPUB).unwrap();
+    let ch2 = &kepub.chapters[1];
+    let range = crate::annotations::SpanRange {
+        chapter: "ch1.xhtml".into(),
+        start_span: "kobo.2.1".into(),
+        start_char: 0,
+        end_span: "kobo.2.1".into(),
+        end_char: 1,
+    };
+
+    assert_eq!(ch2.covered_words(&range), None);
+}

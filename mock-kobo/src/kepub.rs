@@ -90,6 +90,7 @@ impl Chapter {
             };
             raw.push_str(&String::from_utf16_lossy(&units[from..to]));
         }
+
         NewHighlight {
             text: collapse_whitespace(&raw),
             color,
@@ -102,6 +103,31 @@ impl Chapter {
                 end_char: last.end,
             }),
         }
+    }
+
+    /// The words `range` overlaps, compared in `(span index, UTF-16 offset)`
+    /// order — a word cut mid-way still counts. `None` when `range.chapter`
+    /// isn't this chapter's href, or either span id is one this chapter
+    /// doesn't hold.
+    pub fn covered_words(&self, range: &SpanRange) -> Option<std::ops::RangeInclusive<usize>> {
+        if range.chapter != self.href {
+            return None;
+        }
+        let start_span = self.spans.iter().position(|s| s.id == range.start_span)?;
+        let end_span = self.spans.iter().position(|s| s.id == range.end_span)?;
+        let start_key = (start_span, range.start_char);
+        let end_key = (end_span, range.end_char);
+        let mut covered = None::<std::ops::RangeInclusive<usize>>;
+        for (index, word) in self.words.iter().enumerate() {
+            let overlaps = (word.span, word.start) < end_key && (word.span, word.end) > start_key;
+            if overlaps {
+                covered = Some(match covered {
+                    Some(range) => *range.start()..=index,
+                    None => index..=index,
+                });
+            }
+        }
+        covered
     }
 }
 

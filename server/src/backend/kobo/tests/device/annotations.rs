@@ -3,7 +3,7 @@
 
 use omnibus_db::annotations::IngestKoboAnnotation;
 use omnibus_db::test_support::{seed_synced_ebook, EnvVarGuard};
-use omnibus_mock_kobo::annotations::{NewHighlight, SpanRange, Swatch};
+use omnibus_mock_kobo::annotations::{span_range, NewHighlight, SpanRange, Swatch};
 use omnibus_mock_kobo::device::Device;
 use omnibus_mock_kobo::downloads::DownloadPolicy;
 use omnibus_mock_kobo::kepub::Kepub;
@@ -256,6 +256,53 @@ async fn attempt_annotation_lands_a_word_selection_on_the_same_text_in_the_web_r
         row.epub_cfi_range.as_deref(),
         Some("epubcfi(/6/4!/4/4,/1:22,/1:55)")
     );
+}
+
+#[tokio::test]
+async fn sync_now_lands_a_web_highlight_on_the_same_words_in_the_downloaded_kepub() {
+    let omnibus = spawn_omnibus().await;
+    let (uuid, _guard) = seed_reader_book(&omnibus.pool).await;
+    opt_in(&omnibus.pool, omnibus.user_id, std::slice::from_ref(&uuid)).await;
+    // Same ch2 passage (words 7-12, "naïve...Zürich.") as the AC3 device→web
+    // test, so the range CFI is already proven correct by hand.
+    db::annotations::create_highlight(
+        &omnibus.pool,
+        omnibus.user_id,
+        &omnibus_shared::CreateHighlight {
+            book_uuid: uuid.clone(),
+            epub_cfi_range: "epubcfi(/6/4!/4/4,/1:22,/1:55)".into(),
+            color: HighlightColor::Green,
+            text: Some("naïve and still, far from Zürich.".into()),
+            client_id: Some("web-1".into()),
+        },
+    )
+    .await
+    .unwrap();
+    let mut device = Device::new("HW-1");
+    device.storage = Some(db::test_support::make_test_dir("reader_device_storage"));
+
+    sync_now(&mut device, &omnibus.endpoint, &DownloadPolicy::All)
+        .await
+        .unwrap();
+
+    let annotation = device.library[&uuid]
+        .annotations
+        .iter()
+        .find(|a| a.text == "naïve and still, far from Zürich.")
+        .expect("the web highlight landed on the device via the on-download GET");
+    assert_eq!(annotation.color, Swatch::Green);
+    let range = span_range(&annotation.location).expect("a materialized span location");
+    assert_eq!(range.chapter, "ch2.xhtml");
+    assert_eq!(range.start_span, "kobo.2.1");
+    assert_eq!(range.start_char, 22);
+    assert_eq!(range.end_span, "kobo.2.1");
+    assert_eq!(range.end_char, 55);
+
+    let file = device
+        .book_file(&uuid)
+        .expect("the sync downloaded the reader fixture");
+    let kepub = Kepub::open(&file).unwrap();
+    assert_eq!(kepub.chapters[1].covered_words(&range), Some(7..=12));
 }
 
 #[tokio::test]

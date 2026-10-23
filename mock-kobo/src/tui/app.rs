@@ -52,8 +52,11 @@ pub enum Job {
         book: String,
         highlight: NewHighlight,
     },
-    /// Delete the selected book's newest highlight.
-    DeleteHighlight(String),
+    /// Delete one of the reader's listed highlights, by id.
+    DeleteHighlight {
+        book: String,
+        highlight: String,
+    },
 }
 
 /// Shown for `d`/`f`/`x`/`p` with no book selected.
@@ -77,7 +80,8 @@ pub struct App {
 
 /// Whether keys are commands or text for a field, or the reader is open.
 /// `Reading` is boxed to keep this small — clippy's `large_enum_variant`.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+/// Not `Eq`: `Reader` isn't either.
+#[derive(Clone, Debug, Default, PartialEq)]
 pub enum Mode {
     #[default]
     Normal,
@@ -191,7 +195,6 @@ impl App {
             'd' => return self.book_action(Job::Download),
             'f' => return self.book_action(Job::Finish),
             'x' => return self.book_action(Job::RemoveDownload),
-            'e' => return self.book_action(Job::DeleteHighlight),
             _ => return None,
         };
         self.start(job)
@@ -289,10 +292,11 @@ impl App {
         let Some(kepub) = &reader.text else {
             return;
         };
-        let Some(bookmark) = library
-            .get(&reader.book)
-            .and_then(|book| book.reading.bookmark.as_ref())
-        else {
+        let Some(book) = library.get(&reader.book) else {
+            return;
+        };
+        reader.annotations = book.annotations.clone();
+        let Some(bookmark) = book.reading.bookmark.as_ref() else {
             return;
         };
         if !reader.is_newer_than_placed(bookmark.modified) {

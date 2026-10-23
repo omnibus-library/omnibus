@@ -4,9 +4,10 @@
 use std::collections::BTreeMap;
 
 use ratatui::backend::TestBackend;
-use ratatui::style::Modifier;
+use ratatui::style::{Color, Modifier};
 use ratatui::Terminal;
 
+use crate::annotations::{location_json, Annotation, SpanRange, Swatch};
 use crate::control::DeviceView;
 use crate::device::Book;
 use crate::kepub::Kepub;
@@ -172,4 +173,83 @@ fn draw_shows_the_note_prompt_while_typing_a_note() {
     let shown = shown(&library(book("Reader Fixture")), reader);
 
     assert!(shown.contains("note: a thought"), "{shown}");
+}
+
+fn naive_to_zurich_range() -> SpanRange {
+    SpanRange {
+        chapter: "ch2.xhtml".to_owned(),
+        start_span: "kobo.2.1".to_owned(),
+        start_char: 22,
+        end_span: "kobo.2.1".to_owned(),
+        end_char: 55,
+    }
+}
+
+#[test]
+fn draw_colours_a_highlighted_word_in_its_swatch() {
+    let kepub = Kepub::parse(READER_KEPUB).unwrap();
+    let mut reader = Reader::open("book-1".to_owned(), Some(kepub));
+    reader.chapter = 1;
+    reader.cursor = 2;
+    reader.fit(24, 3);
+    reader.annotations = vec![Annotation {
+        id: "h-1".to_owned(),
+        text: "naïve and still, far from Zürich.".to_owned(),
+        note: None,
+        color: Swatch::Blue,
+        location: location_json(Some(&naive_to_zurich_range())),
+    }];
+
+    let terminal = drawn(&library(book("Reader Fixture")), reader);
+
+    let (x, y) = locate(&terminal, "café");
+    assert_ne!(
+        terminal.backend().buffer()[(x, y)].bg,
+        Color::Cyan,
+        "a word outside the highlight is not coloured"
+    );
+    let (x, y) = locate(&terminal, "naïve");
+    let cell = &terminal.backend().buffer()[(x, y)];
+    assert_eq!(cell.bg, Color::Cyan);
+    assert_eq!(cell.fg, Color::Black);
+}
+
+#[test]
+fn draw_lists_each_highlight_with_its_colour_text_and_note() {
+    let kepub = Kepub::parse(READER_KEPUB).unwrap();
+    let mut reader = Reader::open("book-1".to_owned(), Some(kepub));
+    reader.fit(24, 3);
+    reader.annotations = vec![Annotation {
+        id: "h-1".to_owned(),
+        text: "a passage".to_owned(),
+        note: Some("a thought".to_owned()),
+        color: Swatch::Pink,
+        location: location_json(Some(&naive_to_zurich_range())),
+    }];
+    reader.view = ReaderView::Highlights(0);
+
+    let shown = shown(&library(book("Reader Fixture")), reader);
+
+    assert!(shown.contains("[Pink]"), "{shown}");
+    assert!(shown.contains("a passage"), "{shown}");
+    assert!(shown.contains("a thought"), "{shown}");
+}
+
+#[test]
+fn draw_marks_a_highlight_the_book_cannot_place() {
+    let kepub = Kepub::parse(READER_KEPUB).unwrap();
+    let mut reader = Reader::open("book-1".to_owned(), Some(kepub));
+    reader.fit(24, 3);
+    reader.annotations = vec![Annotation {
+        id: "h-1".to_owned(),
+        text: "a passage".to_owned(),
+        note: None,
+        color: Swatch::Green,
+        location: location_json(None),
+    }];
+    reader.view = ReaderView::Highlights(0);
+
+    let shown = shown(&library(book("Reader Fixture")), reader);
+
+    assert!(shown.contains("(not placed)"), "{shown}");
 }
