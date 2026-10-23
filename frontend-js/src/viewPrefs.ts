@@ -172,7 +172,7 @@ export function saveShelfSelection(selection: ShelfSelection) {
 
 const DiscoveryStored = z.object({
   authors_sort: z.enum(["name", "book_count", "recent"]).default("name"),
-  series_sort: z.enum(["name", "book_count"]).default("name"),
+  series_sort: z.enum(["name", "book_count", "recent"]).default("name"),
   shelves_sort: z.enum(["name", "book_count"]).default("name"),
 });
 

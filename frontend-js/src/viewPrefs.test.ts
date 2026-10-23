@@ -172,20 +172,27 @@ describe("loadDiscoveryPrefs", () => {
   it("reads the JSON the Dioxus client stored", () => {
     localStorage.setItem(
       "omnibus.discovery_prefs",
-      '{"authors_sort":"recent","shelves_sort":"book_count"}',
+      '{"authors_sort":"recent","series_sort":"recent","shelves_sort":"book_count"}',
     );
 
     expect(loadDiscoveryPrefs()).toEqual({
       authors_sort: "recent",
-      series_sort: "name",
+      series_sort: "recent",
       shelves_sort: "book_count",
     });
   });
 
-  it("falls back to name for a value the client does not know", () => {
-    localStorage.setItem("omnibus.discovery_prefs", '{"series_sort":"recent"}');
+  it("resets every field to name when one value is unknown to both clients", () => {
+    localStorage.setItem(
+      "omnibus.discovery_prefs",
+      '{"authors_sort":"recent","series_sort":"newest"}',
+    );
 
-    expect(loadDiscoveryPrefs().series_sort).toBe("name");
+    expect(loadDiscoveryPrefs()).toEqual({
+      authors_sort: "name",
+      series_sort: "name",
+      shelves_sort: "name",
+    });
   });
 });
 
@@ -201,6 +208,23 @@ describe("saveDiscoverySort", () => {
       authors_sort: "recent",
       series_sort: "name",
       shelves_sort: "book_count",
+    });
+  });
+
+  it("keeps a Recent series sort the Dioxus client saved", () => {
+    localStorage.setItem(
+      "omnibus.discovery_prefs",
+      '{"authors_sort":"name","series_sort":"recent","shelves_sort":"name"}',
+    );
+
+    saveDiscoverySort("authors_sort", "book_count");
+
+    expect(
+      JSON.parse(localStorage.getItem("omnibus.discovery_prefs") ?? ""),
+    ).toEqual({
+      authors_sort: "book_count",
+      series_sort: "recent",
+      shelves_sort: "name",
     });
   });
 });
