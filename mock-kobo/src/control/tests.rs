@@ -409,6 +409,25 @@ async fn download_keeps_the_books_file_beside_the_state_file() {
 }
 
 #[tokio::test]
+async fn download_refetches_a_downloaded_book_whose_file_is_missing() {
+    let stub = spawn_stub(dune_stub()).await;
+    let dir = TempDir::new().unwrap();
+    let control = stub_control(&stub, dir.path().join("kobo.json"));
+    control.sync(DownloadPolicy::None).await.unwrap();
+    control.download(vec!["book-1".into()]).await.unwrap();
+    let file = dir.path().join("kobo.books").join("book-1.kepub.epub");
+    assert!(file.exists());
+    // Removed out-of-band (or never written by a state file carried over
+    // from before this book had a file) — the device's flag still says
+    // downloaded.
+    std::fs::remove_file(&file).unwrap();
+
+    control.download(vec!["book-1".into()]).await.unwrap();
+
+    assert!(file.exists(), "a missing file must be re-fetched");
+}
+
+#[tokio::test]
 async fn reset_keeps_downloading_into_the_same_storage() {
     let stub = spawn_stub(dune_stub()).await;
     let dir = TempDir::new().unwrap();
