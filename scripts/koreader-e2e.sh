@@ -66,7 +66,7 @@ docker build -t "omnibus-koreader:$deb" ui_tests/koreader
 scenarios=(opds)
 for scenario in "${scenarios[@]}"; do
     set +e
-    timeout 300 docker run --rm --network host \
+    timeout -k 15 300 docker run --init --rm --network host \
         --user "$(id -u):$(id -g)" \
         -e HOME=/tmp \
         -e KOREADER_E2E_SCENARIO="$scenario" \
