@@ -4,12 +4,18 @@ side effect (HTTP, files, the manifest) as `deps`, so this runs under plain luaj
 
 The manifest maps a book's uuid to the file this plugin delivered for it. It is the only
 thing sync deletes by, so a file the plugin did not deliver is never touched.
+
+Reading state is kept per book in `books`: the percent and status the device last agreed
+with the server, when (`event_at`), and whether a change still waits to be pushed. A
+change is captured only when the device differs from that agreed state, so a stale device
+never overwrites a newer server position with a fresh timestamp.
 --]]--
 
 local M = {}
 
 local FOLDER_LIMIT = 80
-local REMOVED_MESSAGE = "This device was removed from Omnibus. Download the plugin again from Settings › Devices."
+
+M.REMOVED_MESSAGE = "This device was removed from Omnibus. Download the plugin again from Settings › Devices."
 
 -- shortcut: limits by bytes, not characters, backing off to a character boundary.
 local function cap(text, limit)
@@ -79,6 +85,108 @@ function M.plan(manifest, books, dir, exists, open_path)
     return plan
 end
 
+--- The whole-book percent of a 0..1 fraction, floored (never overstate how far along the
+--- device is) and clamped to 0..100; nil when the device has none.
+function M.percent(fraction)
+    if type(fraction) ~= "number" then
+        return nil
+    end
+    return math.max(0, math.min(100, math.floor(fraction * 100)))
+end
+
+--- The uuid of the book this plugin delivered to `path`; nil for a sideloaded file.
+function M.uuid_for_path(manifest, path)
+    for uuid, delivered in pairs(manifest) do
+        if delivered == path then
+            return uuid
+        end
+    end
+end
+
+--- Record the device's own state as agreed with the server at `event_at`, nothing to push.
+--- `current` = { percent = int|nil, status = string|nil }.
+function M.settle(books, uuid, current, event_at)
+    books[uuid] = { percent = current.percent, status = current.status, event_at = event_at, pending = false }
+end
+
+--- Mark a book pending at `now` when the device's percent or status differs from the agreed
+--- one. Repeated captures leave one entry, so the latest event wins.
+function M.capture(books, uuid, current, now)
+    local agreed = books[uuid]
+    if not agreed or current.percent == nil then
+        return
+    end
+    if agreed.percent ~= current.percent or agreed.status ~= current.status then
+        M.settle(books, uuid, current, now)
+        books[uuid].pending = true
+    end
+end
+
+local function sorted_pending(books)
+    local uuids = {}
+    for uuid, entry in pairs(books) do
+        if entry.pending then
+            table.insert(uuids, uuid)
+        end
+    end
+    table.sort(uuids)
+    return uuids
+end
+
+--- Push every pending book once; `deps` = { put_state(uuid, body) -> code|nil, err|nil, save() }.
+--- 200 and 409 (the server holds a newer position) settle a book, 400/404/422 drop it so it
+--- cannot block the queue; no response, 401 or a server error stop with every remaining book
+--- still pending for the next sync. Returns { ok, message }.
+function M.flush(books, deps)
+    for _, uuid in ipairs(sorted_pending(books)) do
+        local entry = books[uuid]
+        local body = { percent = entry.percent, status = entry.status, event_at = entry.event_at }
+        local code, err = deps.put_state(uuid, body)
+        if not code then
+            return { ok = false, message = string.format("Couldn't reach Omnibus: %s", tostring(err)) }
+        elseif code == 401 then
+            return { ok = false, message = M.REMOVED_MESSAGE }
+        elseif code == 200 or code == 409 then
+            entry.pending = false
+        elseif code == 400 or code == 404 or code == 422 then
+            books[uuid] = nil
+        else
+            return { ok = false, message = string.format("Omnibus answered HTTP %d", code) }
+        end
+        deps.save()
+    end
+    return { ok = true }
+end
+
+--- What opening a book should change on the device, or nil for nothing: the server's state
+--- (`remote` = the GET body) when it is newer than the local entry, which a book still
+--- waiting to be pushed outranks. Returns { percent = int|nil, status = string|nil, event_at }
+--- where `percent`/`status` appear only when they differ from `current`.
+function M.pull_plan(entry, remote, current)
+    if entry and entry.pending then
+        return nil
+    end
+    local local_at = entry and entry.event_at or 0
+    local plan
+    local function newer(event_at)
+        if event_at > local_at then
+            plan = plan or { event_at = event_at }
+            plan.event_at = math.max(plan.event_at, event_at)
+            return true
+        end
+    end
+    -- A decoded JSON null is not nil (KOReader's json yields a function), so keep only tables.
+    local position = type(remote.position) == "table" and remote.position or nil
+    local status = type(remote.status) == "table" and remote.status or nil
+    if position and newer(position.event_at) and position.percent ~= current.percent then
+        plan.percent = position.percent
+    end
+    if status and newer(status.event_at) and status.status ~= current.status then
+        plan.status = status.status
+    end
+    return plan
+end
+
 local function failure_message(verb, failures)
     if #failures == 0 then
         return nil
@@ -93,7 +201,7 @@ local function fetch_library(server_url, deps)
         return nil, string.format("Couldn't reach %s: %s", server_url, tostring(err))
     end
     if code == 401 then
-        return nil, REMOVED_MESSAGE
+        return nil, M.REMOVED_MESSAGE
     end
     if code ~= 200 then
         return nil, string.format("Omnibus answered HTTP %d", code), true

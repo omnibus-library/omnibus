@@ -223,4 +223,288 @@ test("run forgets a manifest path outside the folder without deleting it", funct
     eq(deps.manifest[ALPHA.uuid], nil)
 end)
 
+
+-- Reading state. `books` is the device's per-book record: percent, status, the event_at it
+-- last agreed with the server, and whether a change still waits to be pushed.
+local function entry(fields)
+    local e = { percent = 40, status = "reading", event_at = 100, pending = false }
+    for k, v in pairs(fields or {}) do
+        e[k] = v
+    end
+    return e
+end
+
+test("percent floors a fraction to a whole percent clamped to 0..100, and passes nil on", function()
+    local cases = { { 0.379, 37 }, { 1.0, 100 }, { 1.2, 100 }, { -0.1, 0 }, { 0, 0 } }
+    for _, case in ipairs(cases) do
+        eq(sync.percent(case[1]), case[2], tostring(case[1]))
+    end
+    eq(sync.percent(nil), nil, "nil")
+end)
+
+test("uuid_for_path finds the uuid of a delivered file and nothing for a sideload", function()
+    local path = DIR .. "/Alpha - 0123abcd.epub"
+    local manifest = { [ALPHA.uuid] = path, [BETA.uuid] = DIR .. "/Beta - 89efcdab.epub" }
+    eq(sync.uuid_for_path(manifest, path), ALPHA.uuid)
+    eq(sync.uuid_for_path(manifest, "/books/Sideloaded.epub"), nil)
+end)
+
+test("capture marks a book pending at now when its percent moved", function()
+    local books = { [ALPHA.uuid] = entry() }
+
+    sync.capture(books, ALPHA.uuid, { percent = 55, status = "reading" }, 500)
+
+    local e = books[ALPHA.uuid]
+    eq(e.percent, 55)
+    eq(e.event_at, 500)
+    eq(e.pending, true)
+end)
+
+test("capture marks a book pending at now when its status changed", function()
+    local books = { [ALPHA.uuid] = entry() }
+
+    sync.capture(books, ALPHA.uuid, { percent = 40, status = "complete" }, 500)
+
+    local e = books[ALPHA.uuid]
+    eq(e.status, "complete")
+    eq(e.event_at, 500)
+    eq(e.pending, true)
+end)
+
+test("capture leaves a book whose state matches the agreed one exactly as it was", function()
+    local books = { [ALPHA.uuid] = entry() }
+
+    sync.capture(books, ALPHA.uuid, { percent = 40, status = "reading" }, 500)
+
+    local e = books[ALPHA.uuid]
+    eq(e.event_at, 100)
+    eq(e.pending, false)
+end)
+
+test("capture does nothing when the device cannot report a percent", function()
+    local books = { [ALPHA.uuid] = entry() }
+
+    sync.capture(books, ALPHA.uuid, { percent = nil, status = "complete" }, 500)
+
+    eq(books[ALPHA.uuid].status, "reading")
+    eq(books[ALPHA.uuid].pending, false)
+end)
+
+test("capture does nothing for a book that was never baselined", function()
+    local books = {}
+
+    sync.capture(books, ALPHA.uuid, { percent = 55, status = "reading" }, 500)
+
+    eq(books[ALPHA.uuid], nil)
+end)
+
+test("capture twice leaves one entry carrying the later event time", function()
+    local books = { [ALPHA.uuid] = entry() }
+
+    sync.capture(books, ALPHA.uuid, { percent = 55, status = "reading" }, 500)
+    sync.capture(books, ALPHA.uuid, { percent = 61, status = "reading" }, 900)
+
+    local count = 0
+    for _ in pairs(books) do
+        count = count + 1
+    end
+    eq(count, 1)
+    eq(books[ALPHA.uuid].percent, 61)
+    eq(books[ALPHA.uuid].event_at, 900)
+end)
+
+-- A flush target that answers each PUT from `answers` in order and records what it was sent.
+local function fake_server(answers)
+    local sent, saves = {}, { n = 0 }
+    local deps = {
+        put_state = function(uuid, body)
+            table.insert(sent, { uuid = uuid, body = body })
+            local answer = answers[#sent] or { 200 }
+            return (table.unpack or unpack)(answer, 1, 2)
+        end,
+        save = function()
+            saves.n = saves.n + 1
+        end,
+    }
+    return deps, sent, saves
+end
+
+test("flush sends each pending book once as percent, status and event time and clears pending", function()
+    local books = {
+        [ALPHA.uuid] = entry({ pending = true, percent = 55, event_at = 500 }),
+        [BETA.uuid] = entry(),
+    }
+    local deps, sent, saves = fake_server({})
+
+    local result = sync.flush(books, deps)
+
+    eq(result.ok, true)
+    eq(#sent, 1)
+    eq(sent[1].uuid, ALPHA.uuid)
+    eq(sent[1].body.percent, 55)
+    eq(sent[1].body.status, "reading")
+    eq(sent[1].body.event_at, 500)
+    eq(books[ALPHA.uuid].pending, false)
+    eq(saves.n, 1)
+end)
+
+test("flush leaves the status out of the body when the device has none", function()
+    local books = { [ALPHA.uuid] = entry({ pending = true }) }
+    books[ALPHA.uuid].status = nil
+    local deps, sent = fake_server({})
+
+    sync.flush(books, deps)
+
+    eq(sent[1].body.status, nil)
+end)
+
+test("flush clears pending without retrying when the server holds a newer position", function()
+    local books = { [ALPHA.uuid] = entry({ pending = true }) }
+    local deps, sent = fake_server({ { 409 } })
+
+    local result = sync.flush(books, deps)
+
+    eq(result.ok, true)
+    eq(#sent, 1)
+    eq(books[ALPHA.uuid].pending, false)
+end)
+
+test("flush drops a book the server refuses outright, so it never blocks the queue", function()
+    for _, code in ipairs({ 400, 404, 422 }) do
+        local books = {
+            [ALPHA.uuid] = entry({ pending = true }),
+            [BETA.uuid] = entry({ pending = true }),
+        }
+        local deps, sent = fake_server({ { code } })
+
+        local result = sync.flush(books, deps)
+
+        eq(result.ok, true, "HTTP " .. code)
+        eq(#sent, 2, "HTTP " .. code)
+        eq(books[ALPHA.uuid], nil, "HTTP " .. code)
+        eq(books[BETA.uuid].pending, false, "HTTP " .. code)
+    end
+end)
+
+test("flush with no response keeps every entry pending, stops and returns the error", function()
+    local books = {
+        [ALPHA.uuid] = entry({ pending = true }),
+        [BETA.uuid] = entry({ pending = true }),
+    }
+    local deps, sent = fake_server({ { nil, "connection refused" } })
+
+    local result = sync.flush(books, deps)
+
+    eq(result.ok, false)
+    assert(result.message:find("connection refused", 1, true), result.message)
+    eq(#sent, 1)
+    eq(books[ALPHA.uuid].pending, true)
+    eq(books[BETA.uuid].pending, true)
+end)
+
+test("flush on a server error keeps every remaining entry pending and stops", function()
+    local books = {
+        [ALPHA.uuid] = entry({ pending = true }),
+        [BETA.uuid] = entry({ pending = true }),
+    }
+    local deps, sent = fake_server({ { 503 } })
+
+    local result = sync.flush(books, deps)
+
+    eq(result.ok, false)
+    assert(result.message:find("503", 1, true), result.message)
+    eq(#sent, 1)
+    eq(books[ALPHA.uuid].pending, true)
+    eq(books[BETA.uuid].pending, true)
+end)
+
+test("flush on a 401 stops with the removed-device message and keeps the entries", function()
+    local books = { [ALPHA.uuid] = entry({ pending = true }), [BETA.uuid] = entry({ pending = true }) }
+    local deps, sent = fake_server({ { 401 } })
+
+    local result = sync.flush(books, deps)
+
+    eq(result.ok, false)
+    eq(result.message, sync.REMOVED_MESSAGE)
+    eq(#sent, 1)
+    eq(books[ALPHA.uuid].pending, true)
+end)
+
+test("pull_plan moves to a remote position newer than the local entry", function()
+    local plan = sync.pull_plan(entry({ percent = 40, event_at = 100 }),
+        { position = { percent = 70, event_at = 300 } }, { percent = 40, status = "reading" })
+
+    eq(plan.percent, 70)
+    eq(plan.event_at, 300)
+end)
+
+test("pull_plan ignores a remote position older than the local entry", function()
+    local plan = sync.pull_plan(entry({ percent = 40, event_at = 500 }),
+        { position = { percent = 70, event_at = 300 } }, { percent = 40, status = "reading" })
+
+    eq(plan, nil)
+end)
+
+test("pull_plan keeps the page when the newer remote position is the same whole percent", function()
+    local plan = sync.pull_plan(entry({ percent = 40, event_at = 100 }),
+        { position = { percent = 40, event_at = 300 } }, { percent = 40, status = "reading" })
+
+    eq(plan.percent, nil)
+    eq(plan.event_at, 300)
+end)
+
+test("pull_plan applies a newer remote complete status", function()
+    local plan = sync.pull_plan(entry({ event_at = 100 }),
+        { position = { percent = 100, event_at = 300 }, status = { status = "complete", event_at = 350 } },
+        { percent = 40, status = "reading" })
+
+    eq(plan.status, "complete")
+    eq(plan.percent, 100)
+    eq(plan.event_at, 350)
+end)
+
+test("pull_plan leaves a status the device already has", function()
+    local plan = sync.pull_plan(entry({ event_at = 100 }),
+        { status = { status = "reading", event_at = 350 } }, { percent = 40, status = "reading" })
+
+    eq(plan.status, nil)
+    eq(plan.event_at, 350)
+end)
+
+test("pull_plan returns nothing while the local entry waits to be pushed", function()
+    local plan = sync.pull_plan(entry({ pending = true, event_at = 100 }),
+        { position = { percent = 70, event_at = 300 } }, { percent = 55, status = "reading" })
+
+    eq(plan, nil)
+end)
+
+test("pull_plan treats a missing entry as event time zero", function()
+    local plan = sync.pull_plan(nil, { position = { percent = 70, event_at = 1 } },
+        { percent = 5, status = nil })
+
+    eq(plan.percent, 70)
+end)
+
+test("pull_plan returns nothing when the server holds no state", function()
+    eq(sync.pull_plan(entry(), {}, { percent = 40, status = "reading" }), nil)
+end)
+
+test("pull_plan reads a decoded JSON null as no state", function()
+    -- KOReader's json decodes null to a function, not nil.
+    local null = function() end
+    eq(sync.pull_plan(entry(), { position = null, status = null }, { percent = 40, status = "reading" }), nil)
+end)
+
+test("settle records the device's own state as agreed at the event time and not pending", function()
+    local books = { [ALPHA.uuid] = entry({ pending = true }) }
+
+    sync.settle(books, ALPHA.uuid, { percent = 70, status = "complete" }, 300)
+
+    local e = books[ALPHA.uuid]
+    eq(e.percent, 70)
+    eq(e.status, "complete")
+    eq(e.event_at, 300)
+    eq(e.pending, false)
+end)
+
 os.exit(failures == 0 and 0 or 1)
