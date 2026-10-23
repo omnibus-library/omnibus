@@ -187,6 +187,8 @@ async fn get_device_returns_each_book_with_its_series() {
             "series": { "Name": "Dune", "Number": 1.0, "Id": "s-1" },
             "downloaded": false,
             "archived": false,
+            "cover_image_id": "book-1",
+            "cover": null,
         })
     );
 }

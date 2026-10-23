@@ -306,6 +306,31 @@ Both commands take the same options; each flag wins over its env var:
 With no token, the device logs in as the `user:password` in
 `OMNIBUS_DEV_SEED_USER`. `mock-kobo --help` lists the rest.
 
+### Firmware behaviours
+
+Every rule `mock-kobo` enforces, named in `mock-kobo::firmware::Quirk`. "Observed"
+means seen on a real device or in a linked bug report; "inferred" means derived
+from the server code or docs, not seen directly.
+
+| Quirk | Behaviour | Evidence | Status |
+|---|---|---|---|
+| `ApiToken` | No `x-kobo-apitoken` on `v1/initialization` fails the sync | `kobo/auth.rs` | inferred |
+| `GetTestsPost` | `get_tests_request` is POSTed; a non-2xx answer fails the sync | #1499 | observed |
+| `StorePaths` | The four firmware store paths are fetched off `api_endpoint`; any non-2xx fails the sync before `library_sync` | #1499 | observed |
+| `HardwareId` | Every request carries the device serial as `x-kobo-deviceid` | `kobo/extractor.rs` | observed |
+| `PortlessHost` | Every request's `Host` is its URL's host without the port | #2756 | observed |
+| `ResourcesOnly` | `library_sync` and `get_tests_request` come only from the adopted `Resources` map, never from `api_endpoint` | #2684 | observed |
+| `SyncPaging` | `library_sync` pages are followed while the server says `continue`; past 50 pages the sync never ends | `flows/syncing_a_kobo.md` | inferred |
+| `ContributorsDisplay` | Before a download, authors come from `Contributors`; `ContributorRoles` alone shows "Unknown" | #2684 | observed |
+| `MetadataNoRedownload` | `ChangedProductMetadata` refreshes a book's metadata and never re-downloads its file | #2684 | observed |
+| `RemovalArchives` | A `ChangedEntitlement` with `IsRemoved` archives the book rather than deleting it | `kobo/dto.rs` | inferred |
+| `CoverCache` | A cover is cached per `(CoverImageId, width, height)` and never revalidated; widths 149/400/1072 | #2684 | observed |
+| `CoverDecode` | Only a JPEG or PNG cover whose content type and magic bytes agree renders; anything else (a WebP, say) shows no cover | #2116 | observed |
+
+Heights (223/600/1448), quality (90) and greyscale (`false`) are inferred, as
+is the content-type/magic-bytes agreement rule and that a non-2xx cover is
+never cached.
+
 ### The control API
 
 Both commands serve a loopback HTTP API over the same device (the terminal UI's

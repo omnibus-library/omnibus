@@ -33,6 +33,8 @@ fn apply_adds_new_entitlement_as_undownloaded_book() {
         }),
         downloaded: false,
         archived: false,
+        cover_image_id: "book-1".into(),
+        cover: None,
     };
     assert_eq!(device.library["book-1"], expected);
 }

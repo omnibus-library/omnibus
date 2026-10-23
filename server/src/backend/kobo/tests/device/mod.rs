@@ -2,6 +2,7 @@
 //! and `reading_services_router` over local TCP. The suites above check what
 //! the server sends; these check what a reader would then see on the device.
 
+mod covers;
 mod library_sync;
 
 use super::*;

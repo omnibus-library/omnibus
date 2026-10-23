@@ -80,6 +80,12 @@ impl Client {
         self.send(self.http.get(url)).await
     }
 
+    /// `GET` one cover through the filled `image_url_quality_template`.
+    /// Never sends a conditional header — the firmware never revalidates a cached cover.
+    pub async fn cover(&mut self, url: &str) -> Result<Response, SyncFailure> {
+        self.send(self.http.get(url)).await
+    }
+
     /// `GET library_sync`: one page of the library delta, echoing the
     /// previous page's `sync_token` when there was one.
     pub async fn library_sync(

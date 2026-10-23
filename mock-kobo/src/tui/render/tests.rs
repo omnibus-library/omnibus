@@ -33,6 +33,8 @@ fn book(title: &str, authors: &[&str], archived: bool) -> Book {
         series: None,
         downloaded: false,
         archived,
+        cover_image_id: String::new(),
+        cover: None,
     }
 }
 

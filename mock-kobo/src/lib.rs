@@ -10,6 +10,7 @@ pub mod autowire;
 pub mod cli;
 pub mod client;
 pub mod control;
+pub mod covers;
 pub mod device;
 pub mod firmware;
 pub mod session;

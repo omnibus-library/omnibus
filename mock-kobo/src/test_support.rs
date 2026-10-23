@@ -10,7 +10,7 @@ use std::time::Duration;
 use axum::{
     extract::State,
     http::{
-        header::{HOST, LOCATION},
+        header::{CONTENT_TYPE, HOST, LOCATION},
         HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri,
     },
     response::{IntoResponse, Response},
@@ -70,6 +70,9 @@ pub struct Stub {
     pub login_redirects_to: Option<String>,
     /// The `token` in a successful login reply; `None` leaves it null.
     pub login_token: Option<&'static str>,
+    /// What every cover thumbnail request answers with: `(content-type, bytes)`.
+    /// `None` (the default) answers 404.
+    pub cover: Option<(&'static str, &'static [u8])>,
 }
 
 impl Default for Stub {
@@ -92,6 +95,7 @@ impl Default for Stub {
             login_status: StatusCode::OK,
             login_redirects_to: None,
             login_token: Some(SESSION_TOKEN),
+            cover: None,
         }
     }
 }
@@ -235,6 +239,17 @@ pub fn dune_stub() -> Stub {
     }
 }
 
+/// Enough bytes to satisfy `covers::decode`'s JPEG magic check.
+pub const JPEG_BYTES: &[u8] = &[0xFF, 0xD8, 0xFF, 0x00];
+
+/// Enough bytes to satisfy `covers::decode`'s PNG magic check.
+pub const PNG_BYTES: &[u8] = &[
+    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x00,
+];
+
+/// A WebP's magic bytes: `RIFF….WEBP`, which the device never decodes.
+pub const WEBP_BYTES: &[u8] = b"RIFF\x00\x00\x00\x00WEBP";
+
 /// Each request as `METHOD path status`, in order.
 pub fn request_lines(requests: &[RequestRecord]) -> Vec<String> {
     requests
@@ -355,7 +370,16 @@ async fn answer_resource(state: &StubState, method: &Method, resource: &str) -> 
         }
         "/v1/analytics/gettests" => Json(json!({ "Result": "Success" })).into_response(),
         "/v1/library/sync" => library_sync(state).await,
+        _ if resource.starts_with("/v1/books/") && resource.ends_with("/image.jpg") => cover(state),
         _ => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+/// The quality-template thumbnail path's answer, from the `cover` knob.
+fn cover(state: &StubState) -> Response {
+    match state.stub.cover {
+        Some((content_type, bytes)) => ([(CONTENT_TYPE, content_type)], bytes).into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
     }
 }
 
@@ -395,6 +419,7 @@ pub fn new_entitlement(id: &str, title: &str) -> Value {
 }
 
 /// A `BookMetadata` block with no description, contributors or series.
+/// `CoverImageId` defaults to `id` itself; a test after a cover change gives it its own.
 pub fn book_metadata(id: &str, title: &str) -> Value {
     json!({
         "EntitlementId": id,
@@ -402,6 +427,7 @@ pub fn book_metadata(id: &str, title: &str) -> Value {
         "Description": "",
         "Contributors": [],
         "ContributorRoles": [],
+        "CoverImageId": id,
     })
 }
 
@@ -419,6 +445,9 @@ fn initialization(state: &StubState, headers: &HeaderMap) -> Response {
     let resources = json!({
         "library_sync": format!("{prefix}/v1/library/sync"),
         "get_tests_request": format!("{prefix}/v1/analytics/gettests"),
+        "image_url_quality_template": format!(
+            "{prefix}/v1/books/{{ImageId}}/thumbnail/{{Width}}/{{Height}}/{{Quality}}/{{IsGreyscale}}/image.jpg"
+        ),
     });
     let mut response = (status, Json(json!({ "Resources": resources }))).into_response();
     if state.stub.sends_api_token {

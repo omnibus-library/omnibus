@@ -225,15 +225,16 @@ impl Control {
         }
     }
 
-    /// Wipe what the device holds; keep who it is and where it syncs.
+    /// Wipe what the device holds — its library, sync token and cover cache
+    /// — by replacing it outright; keep who it is and where it syncs.
     pub async fn reset(&self) -> Result<DeviceView, ControlError> {
         {
             let mut live = self.live();
             if live.syncing {
                 return Err(ControlError::SyncInProgress);
             }
-            live.saved.device.library.clear();
-            live.saved.device.sync_token = None;
+            let hardware_id = live.saved.device.hardware_id.clone();
+            live.saved.device = Device::new(&hardware_id);
             live.last_sync = None;
             live.requests.clear();
         }

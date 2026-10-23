@@ -5,10 +5,16 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+use crate::covers::Cover;
 use crate::wire::{BookMetadata, Series, SyncItem};
 
 /// What the device shows for a book with no `Contributors` ([`crate::firmware::Quirk::ContributorsDisplay`]).
 const UNKNOWN_AUTHOR: &str = "Unknown";
+
+/// The current on-disk shape of a saved device: covers, downloads and
+/// reading state. A device saved before this format upgrade loses its sync
+/// token on load, so the next sync resends every book with these new fields.
+pub const DEVICE_FORMAT: u32 = 1;
 
 /// A fresh hardware id for a new device: `mock-` then 32 random hex digits.
 pub fn mint_hardware_id() -> Result<String, getrandom::Error> {
@@ -32,6 +38,13 @@ pub struct Device {
     pub library: BTreeMap<String, Book>,
     /// The last `x-kobo-synctoken` the server sent, which the device echoes on its next sync.
     pub sync_token: Option<String>,
+    /// The on-disk format this device was last saved under; `0` for a file
+    /// saved before covers, downloads and reading state ([`DEVICE_FORMAT`]).
+    #[serde(default)]
+    pub format: u32,
+    /// Decoded covers, keyed `"{CoverImageId}@{width}x{height}"`, never revalidated.
+    #[serde(default)]
+    pub covers: BTreeMap<String, Cover>,
 }
 
 /// One book as the device shows it.
@@ -45,6 +58,12 @@ pub struct Book {
     pub downloaded: bool,
     /// Whether the book has moved to the device's archive.
     pub archived: bool,
+    /// The server's current `CoverImageId` for this book.
+    #[serde(default)]
+    pub cover_image_id: String,
+    /// The decoded cover at [`crate::firmware::SHOWN_COVER_SIZE`], once fetched.
+    #[serde(default)]
+    pub cover: Option<Cover>,
 }
 
 impl Device {
@@ -54,6 +73,8 @@ impl Device {
             hardware_id: hardware_id.to_owned(),
             library: BTreeMap::new(),
             sync_token: None,
+            format: DEVICE_FORMAT,
+            covers: BTreeMap::new(),
         }
     }
 
@@ -100,6 +121,8 @@ impl Book {
             series: metadata.series,
             downloaded: false,
             archived: false,
+            cover_image_id: metadata.cover_image_id,
+            cover: None,
         }
     }
 

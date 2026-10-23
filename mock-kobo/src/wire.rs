@@ -16,6 +16,7 @@ pub struct Initialization {
 pub struct Resources {
     pub library_sync: String,
     pub get_tests_request: String,
+    pub image_url_quality_template: String,
 }
 
 /// One element of a `library_sync` page, externally tagged by its shape.
@@ -62,6 +63,7 @@ pub struct BookMetadata {
     #[serde(default)]
     pub contributors: Vec<String>,
     pub series: Option<Series>,
+    pub cover_image_id: String,
 }
 
 /// A book's series. Serialized as it arrived, so a saved device reads back.

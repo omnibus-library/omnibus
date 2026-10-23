@@ -2,6 +2,7 @@
 //! library sync, run the way the firmware runs them.
 
 use crate::client::{Client, RequestRecord};
+use crate::covers;
 use crate::device::Device;
 use crate::firmware::{
     Quirk, API_TOKEN_HEADER, MAX_SYNC_PAGES, STORE_PATHS, SYNC_CONTINUE_HEADER, SYNC_TOKEN_HEADER,
@@ -92,7 +93,9 @@ async fn run_sync(client: &mut Client, device: &mut Device) -> Result<usize, Syn
         let store = client.store_path(path).await?;
         require_success(client, &store, Quirk::StorePaths)?;
     }
-    sync_library(client, &resources.library_sync, device).await
+    let pages = sync_library(client, &resources.library_sync, device).await?;
+    covers::fetch_covers(client, device, &resources.image_url_quality_template).await;
+    Ok(pages)
 }
 
 /// Fetch and apply `library_sync` pages until the server stops asking for more,
