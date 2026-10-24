@@ -15,7 +15,9 @@ use sqlx::SqlitePool;
 use tower::ServiceExt;
 
 use crate::auth::test_support as auth_test_support;
-use crate::backend::koreader::test_support::seed_epub_book;
+use crate::backend::koreader::test_support::{
+    seeded_two_chapter_epub, SECOND_PARAGRAPH_CFI, SECOND_PARAGRAPH_XPOINTER,
+};
 use crate::backend::test_support::{body_json, get_with_bearer, request};
 use crate::backend::{rest_router, AppState};
 
@@ -24,14 +26,6 @@ use super::kosync_router;
 const ACCEPT: &str = "application/vnd.koreader.v1+json";
 const USERNAME: &str = "ada";
 
-/// Two chapters: `DocFragment[2]`'s paragraphs are 16 and 17 characters long.
-const CHAPTER_ONE: &str = r#"<?xml version="1.0" encoding="utf-8"?>
-<html xmlns="http://www.w3.org/1999/xhtml"><head><title>One</title></head><body><p>Opening chapter text.</p></body></html>"#;
-const CHAPTER_TWO: &str = r#"<?xml version="1.0" encoding="utf-8"?>
-<html xmlns="http://www.w3.org/1999/xhtml"><head><title>Two</title></head><body><p>First paragraph.</p><p>Second paragraph.</p></body></html>"#;
-
-const SECOND_PARAGRAPH_XPOINTER: &str = "/body/DocFragment[2]/body/p[2]/text().6";
-const SECOND_PARAGRAPH_CFI: &str = "epubcfi(/6/4!/4/4/1:6)";
 const FIRST_PARAGRAPH_CFI: &str = "epubcfi(/6/4!/4/2/1:3)";
 const FIRST_PARAGRAPH_XPOINTER: &str = "/body/DocFragment[2]/body/p[1]/text().3";
 
@@ -108,8 +102,7 @@ fn push_body(document: &str, progress: &str, percentage: f64) -> Value {
 
 /// A two-chapter book whose file's partial MD5 is filled in; returns `(uuid, document, file)`.
 async fn seeded_book(r: &Reader) -> (String, String, std::path::PathBuf) {
-    let spine = [("c1.xhtml", CHAPTER_ONE), ("c2.xhtml", CHAPTER_TWO)];
-    let (uuid, file) = seed_epub_book(&r.pool, &spine).await;
+    let (uuid, file) = seeded_two_chapter_epub(&r.pool).await;
     let document = db::partial_md5::partial_md5(&file).unwrap();
     sqlx::query("UPDATE book_files SET partial_md5 = ?")
         .bind(&document)
