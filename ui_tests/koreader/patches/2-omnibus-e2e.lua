@@ -1288,20 +1288,6 @@ local function kosync_scenario()
         }
     end
 
-    -- The epub position the web holds for Alpha.
-    local function web_epub()
-        local code, progress = api("GET", "/api/progress/" .. ALPHA_UUID)
-        if code ~= 200 or type(progress) ~= "table" then
-            return nil, "GET /api/progress answered " .. tostring(code)
-        end
-        for _, record in ipairs(progress.records or {}) do
-            if record.format == "epub" then
-                return record
-            end
-        end
-        return nil, "the web holds no epub position"
-    end
-
     return {
         {
             name = "open",
@@ -1375,7 +1361,7 @@ local function kosync_scenario()
         {
             name = "web_shows_push",
             fn = function()
-                local epub, err = web_epub()
+                local epub, err = web_epub_record(ALPHA_UUID)
                 if not epub then
                     return false, err
                 end
@@ -1403,6 +1389,14 @@ local function kosync_scenario()
             end,
         },
         {
+            name = "back_to_first_page",
+            fn = function()
+                -- Page 1 holds the heading, so the web position is on another page whatever the pagination.
+                ReaderUI.instance:handleEvent(Event:new("GotoPage", 1))
+                return true, "moved to page 1"
+            end,
+        },
+        {
             name = "pull_returns_web",
             deferred = true,
             fn = function(resume)
@@ -1420,12 +1414,18 @@ local function kosync_scenario()
                     return true
                 end
                 local before = ReaderUI.instance.document:getCurrentPage()
+                local target = ReaderUI.instance.document:getPageFromXPointer(pulled.progress)
+                if before ~= 1 or target == 1 then
+                    resume(false, string.format("expected to pull from page 1 to another page, was on %d, target %s",
+                        before, tostring(target)))
+                    return true
+                end
                 kosync:getProgress(false, true)
                 UIManager:nextTick(function()
                     local document = ReaderUI.instance.document
                     local wanted = document:getPageFromXPointer(pulled.progress)
                     local now = document:getCurrentPage()
-                    if wanted == now and now ~= before then
+                    if wanted == now then
                         resume(true, string.format("moved from page %d to page %d", before, now))
                     else
                         resume(false, string.format("wanted page %s, was on %d, now on %s",
