@@ -90,9 +90,10 @@ pub(super) fn SpResultsList(
     rsx! {
         div {
             class: "sp-results",
-            id: LISTBOX_ID,
-            role: "listbox",
-            "aria-label": "Search results",
+            // Only a list with rows is a listbox, matching the input's `aria-expanded`.
+            id: if items.is_empty() { None } else { Some(LISTBOX_ID) },
+            role: if items.is_empty() { None } else { Some("listbox") },
+            "aria-label": if items.is_empty() { None } else { Some("Search results") },
             if let Some(ref r) = *res {
                 // Books
                 if !r.books.is_empty() {

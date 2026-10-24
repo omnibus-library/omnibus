@@ -405,9 +405,11 @@ export const SuggestionsSayUnavailableWhenTheLookupFailed: Story = {
     msw.use(getGetSuggestionsMockHandler200({ status: "unavailable" }));
   },
   play: async ({ canvas }) => {
-    await expect(
-      await canvas.findByTestId("suggestions-unavailable"),
-    ).toHaveTextContent("Suggestions are unavailable right now.");
+    const note = await canvas.findByTestId("suggestions-unavailable");
+    await expect(note).toHaveTextContent(
+      "Suggestions are unavailable right now.",
+    );
+    await expect(note.closest('[role="status"]')).not.toBeNull();
     await expect(
       canvas.queryByTestId("suggestions-pending"),
     ).not.toBeInTheDocument();

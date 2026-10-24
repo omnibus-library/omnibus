@@ -219,14 +219,22 @@ function Suggestions({ book }: { book: BookDetail }) {
             </li>
           ))}
         </ul>
-      ) : unavailable ? (
-        <p className="bp-quiet" data-testid="suggestions-unavailable">
-          Suggestions are unavailable right now.
-        </p>
       ) : (
-        <div className="bp-suggest-pending" data-testid="suggestions-pending">
-          <Ring />
-          <p className="bp-quiet">Looking for read-alikes via Hardcover…</p>
+        // A status region, so a lookup that gives up is announced, not swapped in silently.
+        <div role="status">
+          {unavailable ? (
+            <p className="bp-quiet" data-testid="suggestions-unavailable">
+              Suggestions are unavailable right now.
+            </p>
+          ) : (
+            <div
+              className="bp-suggest-pending"
+              data-testid="suggestions-pending"
+            >
+              <Ring />
+              <p className="bp-quiet">Looking for read-alikes via Hardcover…</p>
+            </div>
+          )}
         </div>
       )}
     </section>

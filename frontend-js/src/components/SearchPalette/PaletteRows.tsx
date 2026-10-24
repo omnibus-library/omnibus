@@ -36,13 +36,13 @@ type ResultsListProps = {
 /** The grouped rows, in the order the arrow keys walk them: a listbox of labelled groups of options. */
 export function ResultsList({ groups, highlighted, onPick }: ResultsListProps) {
   let flatIndex = 0;
+  // Only a list with rows is a listbox, matching the input's `aria-expanded`.
+  const listbox =
+    groups.length > 0
+      ? { id: LISTBOX_ID, role: "listbox", "aria-label": "Search results" }
+      : {};
   return (
-    <div
-      className="sp-results"
-      id={LISTBOX_ID}
-      role="listbox"
-      aria-label="Search results"
-    >
+    <div className="sp-results" {...listbox}>
       {groups.map((group) => {
         const headId = `sp-group-${group.label.toLowerCase()}`;
         return (

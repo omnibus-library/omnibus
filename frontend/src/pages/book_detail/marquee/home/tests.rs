@@ -492,6 +492,7 @@ fn byline_renders_authors_as_plain_text_when_the_book_is_wishlist_only() {
     assert!(html.contains("Ada Lovelace"), "{html}");
     assert!(html.contains("Grace Hopper"), "{html}");
     assert!(!html.contains("href="), "{html}");
+    assert!(!html.contains("bd-author-link"), "{html}");
 }
 
 #[derive(Clone, Debug, PartialEq, dioxus_router::Routable)]

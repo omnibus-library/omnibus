@@ -54,7 +54,6 @@ fn MarqueeByline(creators: Vec<Contributor>, linked: bool) -> Element {
                 } else {
                     span {
                         key: "name-{creator.name}-{creator.role:?}-{creator.file_as:?}",
-                        class: "bd-author-link",
                         "{creator.name}"
                     }
                 }

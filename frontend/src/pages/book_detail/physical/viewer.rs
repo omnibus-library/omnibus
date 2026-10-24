@@ -53,6 +53,9 @@ impl PhysViewer {
     /// The section pill for a book's copies: yours when you filed any of them,
     /// else the one reader who filed them all, else the household's.
     pub(super) fn collection_label(self, copies: &[PhysicalCopy]) -> String {
+        if self.id.is_none() {
+            return collection_of(None);
+        }
         if let Some(own) = copies
             .iter()
             .find(|c| self.id.is_some() && c.added_by_user_id == self.id)

@@ -278,8 +278,15 @@ fn JustifyRow() -> Element {
         div {
             class: "rd-toggle-row",
             span { style: "font-size:13px; color:var(--ink-1);", "Justify text" }
-            div {
+            // A button, so it has a name, a keyboard path and a state; the border and
+            // padding a button brings are reset to leave Atrium's track as drawn.
+            button {
+                r#type: "button",
+                role: "switch",
+                "aria-checked": pressed(justify),
+                "aria-label": "Justify text",
                 class: if justify { "rd-toggle-track on" } else { "rd-toggle-track" },
+                style: "border:0; padding:0;",
                 onclick: move |_| prefs.toggle_justify(),
                 div { class: "rd-toggle-knob" }
             }

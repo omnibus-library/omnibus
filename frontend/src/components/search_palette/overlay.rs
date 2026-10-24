@@ -313,14 +313,14 @@ fn SpInputRow(
     let focus_buffer = Rc::clone(&buffer);
     rsx! {
         div { class: "sp-input-wrap",
-            {search_glyph(18, "sp-input-icon", false)}
+            {search_glyph(18, "sp-input-icon", true)}
             input {
                 class: "sp-input",
                 "data-testid": "sp-input",
                 r#type: "text",
                 role: "combobox",
                 "aria-label": "Search",
-                "aria-controls": LISTBOX_ID,
+                "aria-controls": if listbox.expanded { Some(LISTBOX_ID) } else { None },
                 "aria-expanded": if listbox.expanded { "true" } else { "false" },
                 "aria-autocomplete": "list",
                 "aria-activedescendant": listbox.active,

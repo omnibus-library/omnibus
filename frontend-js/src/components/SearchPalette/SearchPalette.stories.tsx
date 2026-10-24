@@ -140,6 +140,21 @@ export const ExposesTheHighlightedRowToAssistiveTech: Story = {
   },
 };
 
+export const ListboxAppearsOnlyWithRows: Story = {
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(canvas.getByRole("button", { name: /Search/ }));
+    const input = canvas.getByRole("combobox", { name: "Search" });
+
+    await expect(input).toHaveAttribute("aria-expanded", "false");
+    await expect(canvas.queryByRole("listbox")).not.toBeInTheDocument();
+
+    await userEvent.type(input, "aurora");
+    await canvas.findByText("5 results · 18ms");
+    await expect(input).toHaveAttribute("aria-expanded", "true");
+    await expect(canvas.getByRole("listbox")).toBeInTheDocument();
+  },
+};
+
 export const EnterSearchesWithoutHighlight: Story = {
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(canvas.getByRole("button", { name: /Search/ }));

@@ -42,7 +42,7 @@ function Byline({
         <Fragment key={`${id}:${name}`}>
           {i > 0 && ", "}
           {id === null || !linked ? (
-            <span className="bd-author-link">{name}</span>
+            <span>{name}</span>
           ) : (
             <Link to={`/authors/${id}`} className="bd-author-link">
               {name}

@@ -493,6 +493,7 @@ fn render_copy_row_marquee(
                 class: "format-badge rx-ic",
                 "data-testid": "format-badge-physical",
                 title: "{collection}",
+                role: "img",
                 "aria-label": "Physical",
                 {book_glyph(15)}
             }
@@ -500,7 +501,7 @@ fn render_copy_row_marquee(
                 div { class: "nm", "Physical copy" }
                 div { class: "sb",
                     span { class: "rx-statusdot", "data-testid": "physical-pill",
-                        "aria-label": "{collection}" }
+                        role: "img", "aria-label": "{collection}" }
                     "{checked_in}"
                     if let Some(isbn) = copy.isbn.clone() {
                         br {}

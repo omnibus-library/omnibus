@@ -168,12 +168,19 @@ test.describe("epub reader", () => {
       });
     });
 
-    test("mark the selected theme as pressed in the display panel", async ({
+    test("mark each display setting's selected option as pressed", async ({
       epubReaderPage,
       request,
     }) => {
       const panel = epubReaderPage.displayPanel;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+      const rows = [
+        "Theme",
+        "Typeface",
+        "Line spacing",
+        "Margins",
+        "Page view",
+      ] as const;
 
       await test.step("open the display panel", async () => {
         await epubReaderPage.goto(uuid);
@@ -181,16 +188,12 @@ test.describe("epub reader", () => {
         await expect(panel.root).toBeVisible();
       });
 
-      await test.step("check one theme is pressed and the rest are not", async () => {
-        await expect(panel.themeButton("Dark")).toHaveAttribute(
-          "aria-pressed",
-          "true",
-        );
-        await expect(panel.themeButton("Light")).toHaveAttribute(
-          "aria-pressed",
-          "false",
-        );
-      });
+      for (const row of rows) {
+        await test.step(`check ${row} has one pressed option and the rest unpressed`, async () => {
+          await expect(panel.pressedOption(row)).toHaveCount(1);
+          await expect(panel.unpressedOptions(row)).not.toHaveCount(0);
+        });
+      }
 
       await test.step("choose another theme", async () => {
         await panel.chooseTheme("Light");
@@ -204,6 +207,40 @@ test.describe("epub reader", () => {
         await expect(panel.themeButton("Dark")).toHaveAttribute(
           "aria-pressed",
           "false",
+        );
+      });
+    });
+
+    test("expose the justify setting as a switch", async ({
+      epubReaderPage,
+      request,
+    }) => {
+      const panel = epubReaderPage.displayPanel;
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open the display panel", async () => {
+        await epubReaderPage.goto(uuid);
+        await epubReaderPage.openDisplayPanel();
+      });
+
+      let before = "";
+      await test.step("read the switch", async () => {
+        await expect(panel.justifySwitch).toHaveAttribute(
+          "aria-checked",
+          /^(true|false)$/,
+        );
+        before = (await panel.justifySwitch.getAttribute("aria-checked")) ?? "";
+      });
+
+      await test.step("flip it with the keyboard", async () => {
+        await panel.justifySwitch.focus();
+        await epubReaderPage.page.keyboard.press("Space");
+      });
+
+      await test.step("check the state flipped", async () => {
+        await expect(panel.justifySwitch).toHaveAttribute(
+          "aria-checked",
+          before === "true" ? "false" : "true",
         );
       });
     });

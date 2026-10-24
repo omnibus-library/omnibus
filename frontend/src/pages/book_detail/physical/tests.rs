@@ -118,6 +118,15 @@ fn phys_viewer_copy_collection_label_does_not_guess_for_an_unresolved_viewer() {
 }
 
 #[test]
+fn phys_viewer_collection_label_does_not_name_a_filer_while_the_viewer_is_unresolved() {
+    let copies = [copy_filed_by(Some(9), Some("Sam"))];
+    assert_eq!(
+        PhysViewer::default().collection_label(&copies),
+        "In the household's physical collection"
+    );
+}
+
+#[test]
 fn phys_viewer_collection_label_is_yours_when_you_filed_any_copy() {
     let copies = [
         copy_filed_by(Some(9), Some("Sam")),
@@ -321,6 +330,11 @@ mod render_tests {
         );
         // The pill's wording moves to the status dot's accessible name.
         assert!(html.contains("data-testid=\"physical-pill\""), "{html}");
+        assert_eq!(
+            html.matches("role=\"img\"").count(),
+            2,
+            "badge and dot: {html}"
+        );
         assert!(html.contains("In your physical collection"), "{html}");
         assert!(
             html.contains("data-testid=\"format-badge-physical\""),

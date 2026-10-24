@@ -202,6 +202,7 @@ export const WishlistOnlyBookDoesNotLinkItsAuthors: Story = {
 
     await expect(byline).toHaveTextContent("Sora Inkwell");
     await expect(within(byline).queryByRole("link")).not.toBeInTheDocument();
+    await expect(byline.querySelector(".bd-author-link")).toBeNull();
   },
 };
 
