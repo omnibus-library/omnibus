@@ -141,6 +141,31 @@ pub(super) async fn restore_target_author_sort(
     Ok(())
 }
 
+/// Hand an undone merge's captured `author_sort` to the next still-open merge
+/// into the same target, whose own capture was taken with this merge's authors
+/// in place: if that one is undone last, it must put back the key from before both.
+pub(super) async fn hand_on_author_sort(
+    tx: &mut Transaction<'_, sqlx::Sqlite>,
+    merge_log_id: i64,
+    target_id: i64,
+    before: Option<&TargetAuthorSort>,
+) -> Result<(), MergeError> {
+    let Some(before) = before else { return Ok(()) };
+    // Only a snapshot that already has the field: older merges never re-keyed, so none to restore.
+    sqlx::query(
+        "UPDATE merge_log SET source_metadata = json_set(source_metadata, '$.target_author_sort', json(?))
+          WHERE id = (SELECT MIN(id) FROM merge_log
+                       WHERE target_book_id = ? AND id > ? AND undone_at IS NULL)
+            AND json_type(source_metadata, '$.target_author_sort') IS NOT NULL",
+    )
+    .bind(serde_json::to_string(before)?)
+    .bind(target_id)
+    .bind(merge_log_id)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
 /// Copy one link table's source rows onto the target, returning the names
 /// that were new to it.
 async fn copy_link_table(

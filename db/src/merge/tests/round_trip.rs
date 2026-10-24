@@ -264,6 +264,35 @@ async fn undo_of_the_older_merge_re_keys_author_sort_from_the_authors_that_remai
 }
 
 #[tokio::test]
+async fn undoing_both_merges_oldest_first_restores_the_author_sort_from_before_the_first() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool).await;
+    let target = seed_book(&pool, "A/t.epub", "T", &[], &[], ("K", "1"), "en").await;
+    let first = seed_book(&pool, "B/a.epub", "A", &["A Author"], &[], ("K", "1"), "en").await;
+    let second = seed_book(&pool, "C/b.epub", "B", &["B Author"], &[], ("K", "1"), "en").await;
+    sqlx::query("UPDATE books SET author_sort = 'Stored, Key' WHERE uuid = ?")
+        .bind(&target)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let older = merge_books(&pool, &first, &target, Some(user))
+        .await
+        .unwrap();
+    let newer = merge_books(&pool, &second, &target, Some(user))
+        .await
+        .unwrap();
+
+    undo_merge(&pool, older.merge_log_id).await.unwrap();
+    undo_merge(&pool, newer.merge_log_id).await.unwrap();
+
+    assert!(authors(&pool, &target).await.is_empty());
+    assert_eq!(
+        author_sort_of(&pool, &target).await.as_deref(),
+        Some("Stored, Key")
+    );
+}
+
+#[tokio::test]
 async fn merge_keeps_the_target_author_sort_when_it_already_has_authors() {
     let pool = init_db("sqlite::memory:").await.unwrap();
     let user = seed_user(&pool).await;
