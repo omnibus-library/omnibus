@@ -501,17 +501,69 @@ async fn search_by_title_resolves_an_open_library_work_to_its_english_paperback(
 }
 
 #[tokio::test]
-async fn search_by_title_drops_an_open_library_work_whose_editions_call_fails() {
+async fn search_by_title_keeps_the_work_with_its_search_isbn_when_the_editions_call_fails() {
     let server = MockServer::start().await;
     mount_ol_search(&server, ol_work_hit()).await;
     mount_ol_editions(&server, ResponseTemplate::new(500)).await;
-    mount_gb_search(&server, json!({ "totalItems": 0 })).await;
 
     let results = search_provider_by_title(&config_for(&server), QUERY)
         .await
         .unwrap();
 
-    assert!(results.is_empty());
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].title, "Effective Java");
+    assert_eq!(results[0].isbn13, "9780306406157");
+}
+
+#[tokio::test]
+async fn search_by_title_records_a_cooldown_when_open_library_throttles_the_editions_call() {
+    let server = MockServer::start().await;
+    mount_ol_search(&server, ol_work_hit()).await;
+    mount_ol_editions(&server, ResponseTemplate::new(429)).await;
+    let config = config_for(&server);
+
+    let results = search_provider_by_title(&config, QUERY).await.unwrap();
+
+    assert_eq!(results.len(), 1, "the work stays on the list");
+    assert!(config
+        .throttle
+        .remaining(MetadataProvider::OpenLibrary)
+        .is_some());
+}
+
+#[tokio::test]
+async fn resolving_open_library_editions_makes_no_request_while_it_is_throttled() {
+    let server = MockServer::start().await;
+    mount_ol_editions(
+        &server,
+        ResponseTemplate::new(200).set_body_json(json!({ "entries": [] })),
+    )
+    .await;
+    let config = config_for(&server);
+    config.throttle.record(MetadataProvider::OpenLibrary, None);
+    let work = omnibus_shared::metadata_lookup::ProviderEdition {
+        source: MetadataProvider::OpenLibrary,
+        provider_ref: "/works/OL1W".into(),
+        isbn13: Some("9780306406157".into()),
+        isbn10: None,
+        title: "Effective Java".into(),
+        authors: vec!["Joshua Bloch".into()],
+        year: None,
+        pages: None,
+        publisher: None,
+        description: None,
+        cover_url: None,
+        series: None,
+        series_index: None,
+        first_publish_year: None,
+        genres: Vec::new(),
+        relevance: None,
+    };
+
+    let metas = resolve_open_library_editions(&config, vec![work]).await;
+
+    assert_eq!(metas.len(), 1);
+    assert!(server.received_requests().await.unwrap().is_empty());
 }
 
 #[tokio::test]

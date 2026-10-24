@@ -195,17 +195,35 @@ async fn narrow_for_check_in(
 /// Open Library's title search answers *works*, whose `isbn` list spans every
 /// printing, so the ISBN a doc offers can be a Turkish paperback's. Each work
 /// is resolved to one real edition, all concurrently; a work whose editions
-/// can't be read, or carry no ISBN, is dropped. Candidates that already name
-/// an edition (an ISBN lookup's) pass through unchanged.
+/// carry no ISBN is dropped, and one whose editions can't be read stays under
+/// the ISBN the search gave. Candidates that already name an edition (an ISBN
+/// lookup's) pass through unchanged.
 async fn resolve_open_library_editions(
     config: &MetadataLookupConfig,
     found: Vec<omnibus_shared::metadata_lookup::ProviderEdition>,
 ) -> Vec<ExternalBookMeta> {
+    // A cooling-down Open Library is not asked again; the search's own ISBN stands.
+    let throttled = config
+        .throttle
+        .remaining(MetadataProvider::OpenLibrary)
+        .is_some();
     let resolved = futures::future::join_all(found.into_iter().map(|mut candidate| async move {
-        if !candidate.provider_ref.starts_with("/works/") {
+        if throttled || !candidate.provider_ref.starts_with("/works/") {
             return ExternalBookMeta::try_from(candidate).ok();
         }
-        let edition = providers::openlibrary::work_edition(config, &candidate.provider_ref).await?;
+        let edition =
+            match providers::openlibrary::work_edition(config, &candidate.provider_ref).await {
+                Ok(Some(edition)) => edition,
+                // The work has no printing with an ISBN to file.
+                Ok(None) => return None,
+                // A hiccup is not a verdict on the work: keep it under the
+                // ISBN the search gave, and let a 429 start the cooldown.
+                Err(e) => {
+                    providers::note_throttle(config, MetadataProvider::OpenLibrary, &e);
+                    tracing::warn!("open library editions lookup failed: {e:#}");
+                    return ExternalBookMeta::try_from(candidate).ok();
+                }
+            };
         candidate.isbn13 = Some(edition.isbn13);
         candidate.publisher = edition.publisher;
         candidate.pages = edition.pages;
