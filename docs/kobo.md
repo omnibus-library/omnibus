@@ -260,12 +260,57 @@ database already had an admin, mark a shelf **Sync to Kobo** yourself.
 
 | Key | Does |
 |---|---|
+| <kbd>↑</kbd> / <kbd>↓</kbd> | Move the selection (marked `>`) within the library |
+| <kbd>Enter</kbd> | Open the selected book: a downloaded KEPUB in the reader, else a metadata-only view |
+| <kbd>d</kbd> | Download the selected book |
+| <kbd>p</kbd> | Edit the selected book's read percent (0–100), sent as a `Reading` state on <kbd>Enter</kbd> |
+| <kbd>f</kbd> | Mark the selected book finished |
+| <kbd>x</kbd> | Clear the selected book's downloaded flag, locally |
 | <kbd>s</kbd> | Sync now |
 | <kbd>r</kbd> | Reset the device: empty library, no sync token, so the next sync resends every opted-in book |
 | <kbd>u</kbd> | Edit the server URL (pinned and saved) |
 | <kbd>t</kbd> | Edit the device token (saved) |
 | <kbd>w</kbd> | Wire a token for the current URL, as startup does |
 | <kbd>q</kbd> / <kbd>Ctrl-C</kbd> | Quit |
+
+Each book line shows `downloaded`, `download failed`, the bookmark percent,
+`finished`, its highlight count, and a dropped-highlight count, whichever
+apply. Opening a downloaded book shows its text in the reader: closing it
+(Esc, or quitting with Ctrl-C) sends the open page's `KoboSpan` position,
+and a word selection becomes a highlight (see "In the reader" below). A page
+that opens mid-sentence bookmarks that sentence's own span, so reopening the
+book shows the page where the sentence starts, not the one it was left on.
+
+### In the reader
+
+| Key | Does |
+|---|---|
+| <kbd>←</kbd> / <kbd>→</kbd> | Turn the page, crossing a chapter edge at either end |
+| <kbd>[</kbd> / <kbd>]</kbd> | Jump to the previous/next chapter's first page |
+| <kbd>↑</kbd> / <kbd>↓</kbd> | Move the cursor one word, clamped to the open page |
+| <kbd>v</kbd> | Start a word selection at the cursor |
+| <kbd>h</kbd> | Open the highlights list |
+| <kbd>Esc</kbd> | Close: a downloaded book sends the open page's span and percent as its `Reading` state; the metadata-only view just closes |
+
+While selecting a word range:
+
+| Key | Does |
+|---|---|
+| <kbd>←</kbd> / <kbd>→</kbd> | Move the selection's end one word, clamped to `[start, the open page's last word]` |
+| <kbd>1</kbd>–<kbd>4</kbd> | Highlight the selection in Yellow / Pink / Blue / Green and clear it |
+| <kbd>n</kbd> | Type a note for the selection |
+| <kbd>Esc</kbd> | Cancel the selection; the book stays open |
+
+Highlights made on the page, or by the web reader, show inline on their own
+words in their swatch colour once the device has them. The highlights list
+(<kbd>h</kbd>) names each one's colour and text (plus its note, and
+`(not placed)` when the open chapter can't locate it):
+
+| Key | Does |
+|---|---|
+| <kbd>↓</kbd> / <kbd>↑</kbd> | Move the selected row |
+| <kbd>x</kbd> | Delete the selected highlight |
+| <kbd>Esc</kbd> | Back to the page |
 
 While editing, <kbd>Enter</kbd> saves and <kbd>Esc</kbd> cancels. Pointing a
 device at another server re-wires a token that was wired for the old one; a URL
@@ -283,6 +328,27 @@ For a second device, give it its own state file; inside the gitignored
 ```bash
 just kobo --state .claude/runtime/other.json   # the Omnibus device "Mock Kobo (other)"
 ```
+
+A downloaded book's file is kept beside the state file, in `<state>.books/`
+(the default `.claude/runtime/mock-kobo.json` → `.claude/runtime/mock-kobo.books/<id>.kepub.epub`),
+so a second device's downloads never collide with the first's.
+
+#### Reader fixture
+
+`test_data/kepub/reader.epub` is a hand-written three-chapter EPUB (ASCII
+prose in chapter 1, accented Latin and Mathematical Fraktur text in chapter
+2, one short paragraph in chapter 3); `reader.kepub.epub` is kepubify's own
+output over it, committed so the walker's tests run with no kepubify on
+`PATH`. Regenerate the KEPUB after editing the source EPUB:
+
+```bash
+scripts/with-dev-env.sh web kepubify --no-add-dummy-titlepage \
+  -o test_data/kepub/reader.kepub.epub -- test_data/kepub/reader.epub
+```
+
+Produced with kepubify 4.0.4. `--no-add-dummy-titlepage` matters: without
+it, kepubify inserts a blank titlepage as the book's first spine item,
+which would shift every chapter's spine index.
 
 ### From a script
 
@@ -306,6 +372,82 @@ Both commands take the same options; each flag wins over its env var:
 With no token, the device logs in as the `user:password` in
 `OMNIBUS_DEV_SEED_USER`. `mock-kobo --help` lists the rest.
 
+### Firmware behaviours
+
+Every rule `mock-kobo` enforces, named in `mock-kobo::firmware::Quirk`. "Observed"
+means seen on a real device or in a linked bug report; "inferred" means derived
+from the server code or docs, not seen directly; "unverified" means the rule is
+coded in but has never been checked against a real device at all — the table
+below names the one such row and [AC4](#ac4-the-highlight-colour-check) is how
+to settle it.
+
+| Quirk | Behaviour | Evidence | Status |
+|---|---|---|---|
+| `ApiToken` | No `x-kobo-apitoken` on `v1/initialization` fails the sync | `kobo/auth.rs` | inferred |
+| `GetTestsPost` | `get_tests_request` is POSTed; a non-2xx answer fails the sync | #1499 | observed |
+| `StorePaths` | The four firmware store paths are fetched off `api_endpoint`; any non-2xx fails the sync before `library_sync` | #1499 | observed |
+| `HardwareId` | Every request carries the device serial as `x-kobo-deviceid` | `kobo/extractor.rs` | observed |
+| `PortlessHost` | Every request's `Host` is its URL's host without the port | #2756 | observed |
+| `ResourcesOnly` | `library_sync` and `get_tests_request` come only from the adopted `Resources` map, never from `api_endpoint` | #2684 | observed |
+| `SyncPaging` | `library_sync` pages are followed while the server says `continue`; past 50 pages the sync never ends | `flows/syncing_a_kobo.md` | inferred |
+| `ContributorsDisplay` | Before a download, authors come from `Contributors`; `ContributorRoles` alone shows "Unknown" | #2684 | observed |
+| `MetadataNoRedownload` | `ChangedProductMetadata` refreshes a book's metadata and never re-downloads its file | #2684 | observed |
+| `RemovalArchives` | A `ChangedEntitlement` with `IsRemoved` archives the book rather than deleting it | `kobo/dto.rs` | inferred |
+| `CoverCache` | A cover is cached per `(CoverImageId, width, height)` and never revalidated; widths 149/400/1072 | #2684 | observed |
+| `CoverDecode` | Only a JPEG or PNG cover whose content type and magic bytes agree renders; anything else (a WebP, say) shows no cover | #2116 | observed |
+| `DownloadFailure` | A non-2xx download, or no answer at all, leaves the book undownloaded and is retried on the next sync, whatever the policy | #2116 | observed |
+| `StateArbitration` | Reading status and bookmark are reconciled against the server independently, each adopted only when stamped and strictly newer than the device's own | `kobo/dto.rs` | observed |
+| `StatePutResult` | A state PUT's reply must read `Success` on every sub-result, or the write is treated as failed | `kobo/dto.rs` (`StateResponse`) | inferred |
+| `AnnotationsUnheld` | Annotations for an undownloaded book are dropped rather than held, and the server keeps reporting the book until it is served once downloaded; `AnnotationsOnDownload` is how a dropped set comes back | #1647 | observed |
+| `AnnotationsOnDownload` | A download triggers one unconditional `GET .../annotations`, whether or not `checkforchanges` ever named the book | #1647 | observed |
+| `HighlightColor` | A served `highlightColor` hex swatch maps onto the device's `Bookmark.Color` index; anything else lands on yellow (index 0) | #1629 | unverified |
+
+Heights (223/600/1448), quality (90) and greyscale (`false`) are inferred, as
+is the content-type/magic-bytes agreement rule and that a non-2xx cover is
+never cached. The `If-None-Match: W/"0"` header every checkforchanges-driven
+annotations GET sends (the post-download GET sends none at all), and the
+sync phase order (handshake → library sync → covers → downloads →
+checkforchanges → annotations GETs), are both inferred from
+`kobo/reading_services.rs`, not observed on a device. `AnnotationsUnheld`'s
+drop for an undownloaded book is observed (#1647); that a *downloaded*
+book's set is instead replaced wholesale by each served set, never merged,
+is inferred from the same file, not itself observed.
+
+### Annotations
+
+After a library sync, `mock-kobo` POSTs `checkforchanges` and then GETs each
+named book's annotations, mapping the served `highlightColor` hex swatch onto
+its own `Swatch` the same way firmware is believed to (`HighlightColor`,
+above):
+
+| Omnibus colour | Wire hex | Mock `Swatch` | Expected `Bookmark.Color` | Observed `Bookmark.Color` |
+|---|---|---|---|---|
+| amber | `#F6F3B3` | yellow | 0 | 0 (#1629) |
+| green | `#C6E09E` | green | 3 | not yet checked |
+| blue | `#B2E1E8` | blue | 2 | not yet checked |
+| rose | `#E8AFCF` | pink | 1 | not yet checked |
+| violet | `#E8AFCF` | pink | 1 | not yet checked |
+
+#### AC4: the highlight-colour check
+
+This pins the mock's `Swatch` table against the server's own `color_to_kobo`
+map — it does **not** prove either one matches a real device. Settling that
+needs a `.kobo/KoboReader.sqlite` capture:
+
+1. Back up the device — see the [warning above](#wireless-sync).
+2. In the Omnibus web reader, make one highlight in each colour (amber, green,
+   blue, rose, violet) on a Kobo-synced book that has a KEPUB.
+3. Sync the Kobo, and open the book once so the highlights materialise.
+4. Copy `.kobo/KoboReader.sqlite` off the device over USB.
+5. Run `SELECT Text, Color FROM Bookmark WHERE VolumeID LIKE '%<uuid>%'`.
+6. Record each `Color` in the "Observed" column above.
+7. Then either flip `Quirk::HighlightColor` and its table row to **observed**,
+   or correct `Swatch`'s discriminants or hex values to match.
+
+If every row reads 0, the firmware ignores `highlightColor` on inbound
+annotations entirely, and the quirk becomes "always 0" — which also answers
+[#1629](https://github.com/omnibus-library/omnibus/issues/1629)'s open question.
+
 ### The control API
 
 Both commands serve a loopback HTTP API over the same device (the terminal UI's
@@ -314,7 +456,15 @@ port is in its header). Every reply is `{status, code, message, details}`:
 | Route | Replies (`status` `code`) |
 |---|---|
 | `GET /device` | 200 `ok` |
-| `POST /actions/sync` | 200 `synced` · 502 `sync_failed` · 409 `sync_in_progress` · 500 `state_not_saved` |
+| `POST /actions/sync` `{"download": "none" \| "all" \| ["<uuid>", …]}` (body optional, defaults to `none`) | 200 `synced` · 400 `invalid_request` · 502 `sync_failed` · 409 `sync_in_progress` · 500 `state_not_saved` |
+| `POST /actions/download` `{"books": ["<uuid>", …]}` | 200 `downloaded` · 400 `invalid_request` · 404 `unknown_book` · 409 `not_synced` · 409 `sync_in_progress` · 500 `state_not_saved` · 502 `download_failed` |
+| `POST /actions/remove-download` `{"book": "<uuid>"}` | 200 `download_removed` · 400 `invalid_request` · 404 `unknown_book` · 409 `sync_in_progress` · 500 `state_not_saved` |
+| `POST /actions/read` `{"book": "<uuid>", "percent": 0..=100, "location": {"source","value"}?}` | 200 `state_sent` · 400 `invalid_request` · 404 `unknown_book` · 409 `not_downloaded` · 409 `sync_in_progress` · 500 `state_not_saved` · 502 `state_failed` |
+| `POST /actions/finish` `{"book": "<uuid>"}` | 200 `state_sent` · 400 `invalid_request` · 404 `unknown_book` · 409 `sync_in_progress` · 500 `state_not_saved` · 502 `state_failed` |
+| `POST /actions/highlight` `{"book": "<uuid>", "text", "color": "yellow"\|"pink"\|"blue"\|"green", "note"?, "location": {"chapter","start_span","start_char","end_span","end_char"}}` | 200 `annotation_sent` · 400 `invalid_request` · 404 `unknown_book` · 409 `not_downloaded` · 409 `not_synced` · 409 `sync_in_progress` · 500 `state_not_saved` · 502 `annotation_failed` |
+| `POST /actions/delete-highlight` `{"book": "<uuid>", "highlight": "<id>"}` | 200 `annotation_sent` · 400 `invalid_request` · 404 `unknown_book` · 404 `unknown_highlight` · 409 `not_synced` · 409 `sync_in_progress` · 500 `state_not_saved` · 502 `annotation_failed` |
+| `POST /actions/read-to` `{"book": "<uuid>", "passage"}` | 200 `state_sent` · 400 `invalid_request` · 404 `unknown_book` · 404 `passage_not_found` · 409 `not_downloaded` · 409 `book_unreadable` · 409 `no_kobo_spans` · 409 `sync_in_progress` · 500 `state_not_saved` · 502 `state_failed` |
+| `POST /actions/highlight-words` `{"book": "<uuid>", "passage", "color": "yellow"\|"pink"\|"blue"\|"green", "note"?}` | 200 `annotation_sent` · 400 `invalid_request` · 404 `unknown_book` · 404 `passage_not_found` · 409 `not_downloaded` · 409 `not_synced` · 409 `book_unreadable` · 409 `no_kobo_spans` · 409 `sync_in_progress` · 500 `state_not_saved` · 502 `annotation_failed` |
 | `GET /requests` | 200 `ok` |
 | `PUT /reset` | 200 `reset` · 409 `sync_in_progress` · 500 `state_not_saved` |
 | any other path | 404 `not_found` |

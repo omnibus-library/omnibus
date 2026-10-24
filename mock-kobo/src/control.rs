@@ -6,16 +6,21 @@
 //! never sends a token auto-wired for another URL.
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::future::Future;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use serde::Serialize;
 
 use crate::client::RequestRecord;
-use crate::device::{Book, Device};
+use crate::device::{Book, Device, DeviceError};
+use crate::downloads::DownloadPolicy;
 use crate::firmware::Quirk;
-use crate::session::{attempt_sync, SyncFailure};
+use crate::session::{attempt_sync, Attempt, SyncFailure};
 use crate::state::{self, SavedState, StateError};
+
+pub mod actions;
+pub mod passages;
 
 /// One running device: what the control API (and a TUI) reads and drives.
 pub struct Control {
@@ -61,6 +66,28 @@ pub enum ControlError {
     SyncInProgress,
     #[error("device state not saved: {0}")]
     StateNotSaved(#[from] StateError),
+    #[error(transparent)]
+    Device(#[from] DeviceError),
+    #[error(transparent)]
+    Kepub(#[from] crate::kepub::KepubError),
+    #[error(
+        "no run of whole words in the book reads \"{0}\"; copy them exactly, punctuation included"
+    )]
+    PassageNotFound(String),
+    #[error("no sync since the device started; sync first")]
+    NotSynced,
+    #[error("could not remove the downloaded file: {0}")]
+    FileRemoval(String),
+}
+
+/// How a device action that talks to the server ended.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Acted {
+    Done(DeviceView),
+    Failed {
+        quirk: Option<Quirk>,
+        message: String,
+    },
 }
 
 /// Where `Control::retarget` points the device.
@@ -87,6 +114,8 @@ pub struct Retargeted {
 pub struct DeviceView {
     pub hardware_id: String,
     pub url: String,
+    /// A sync, download or reading-state write is talking to the server.
+    /// Kobo calls all of them syncing, so there is no separate name per kind.
     pub syncing: bool,
     pub last_sync: Option<LastSync>,
     pub sync_token: Option<String>,
@@ -94,8 +123,11 @@ pub struct DeviceView {
 }
 
 impl Control {
-    /// A device restored from (or just written to) `state_path`, syncing against `url`.
-    pub fn new(saved: SavedState, url: String, state_path: PathBuf) -> Self {
+    /// A device restored from (or just written to) `state_path`, syncing
+    /// against `url`. Its storage directory sits beside the state file,
+    /// whatever `saved` carried in (storage is never saved to disk).
+    pub fn new(mut saved: SavedState, url: String, state_path: PathBuf) -> Self {
+        saved.device.storage = Some(state::books_dir(&state_path));
         Self {
             state_path,
             save_lock: tokio::sync::Mutex::new(()),
@@ -118,65 +150,87 @@ impl Control {
     /// Press "Sync now" against `<url>/kobo/<token>`. The sync runs on its own
     /// task, so dropping the caller (a client disconnect) never cancels it.
     /// A token auto-wired for another server is never sent: the sync fails without a request.
-    pub async fn sync(self: &Arc<Self>) -> Result<LastSync, ControlError> {
-        let (syncing, device, endpoint) = match self.begin_sync()? {
-            Begun::Run(syncing, device, endpoint) => (syncing, device, endpoint),
-            Begun::Refused(refused) => return Ok(refused),
-        };
-        let control = Arc::clone(self);
-        let task = tokio::spawn(async move { control.run_sync(syncing, device, endpoint).await });
-        match task.await {
-            Ok(result) => result,
-            Err(error) => std::panic::resume_unwind(
-                error
-                    .try_into_panic()
-                    .unwrap_or_else(|cancelled| Box::new(cancelled.to_string())),
-            ),
-        }
+    pub async fn sync(self: &Arc<Self>, policy: DownloadPolicy) -> Result<LastSync, ControlError> {
+        let attempt = self
+            .run_exchange(
+                |mut device, endpoint| async move {
+                    let attempt = attempt_sync(&mut device, &endpoint, &policy).await;
+                    (device, attempt)
+                },
+                // Only `sync` writes `last_sync`, including for a refusal; a
+                // download or state write leaves it alone. Runs inside the
+                // exchange's own task, so a dropped caller never loses it.
+                |live, attempt| live.last_sync = Some(last_sync_of(attempt)),
+            )
+            .await?;
+        Ok(last_sync_of(&attempt))
     }
 
-    /// Mark a sync as running and hand back what it works on, or turn it away if one already is.
-    /// The endpoint is read with the flag, so a retarget never lands between them.
-    fn begin_sync(self: &Arc<Self>) -> Result<Begun, ControlError> {
-        let (device, endpoint) = {
-            let mut live = self.live();
-            if live.syncing {
-                return Err(ControlError::SyncInProgress);
-            }
-            if let Some(refused) = live.refusal() {
-                live.last_sync = Some(refused.clone());
-                return Ok(Begun::Refused(refused));
-            }
-            live.syncing = true;
-            let endpoint = format!("{}/kobo/{}", live.url, live.saved.token);
-            (live.saved.device.clone(), endpoint)
-        };
+    /// Mark one exchange with the server as running (the busy flag) and hand
+    /// back the device it works on and its endpoint, or turn it away before
+    /// any request: a sync already running, or a token auto-wired for
+    /// another server. The endpoint is read with the flag, so a retarget
+    /// never lands between them.
+    fn begin_exchange(self: &Arc<Self>) -> Result<Begun, ControlError> {
+        let mut live = self.live();
+        if live.syncing {
+            return Err(ControlError::SyncInProgress);
+        }
+        if let Some(message) = live.refusal() {
+            return Ok(Begun::Refused(message));
+        }
+        live.syncing = true;
+        let endpoint = format!("{}/kobo/{}", live.url, live.saved.token);
+        let device = live.saved.device.clone();
+        drop(live);
         Ok(Begun::Run(SyncingGuard(Arc::clone(self)), device, endpoint))
     }
 
-    /// Sync `device`, commit what it learned, and save; `_syncing` clears the flag when this ends.
-    async fn run_sync(
-        &self,
-        _syncing: SyncingGuard,
-        mut device: Device,
-        endpoint: String,
-    ) -> Result<LastSync, ControlError> {
-        let attempt = attempt_sync(&mut device, &endpoint).await;
-        let last_sync = match attempt.outcome {
-            Ok(pages) => LastSync::Synced { pages },
-            Err(failure) => LastSync::Failed {
-                quirk: quirk_of(&failure),
-                message: failure.to_string(),
-            },
+    /// Run one exchange with the server through `op`, which is given a
+    /// device clone and its endpoint and hands back the device as it ended
+    /// plus what happened. Commits that device, appends its requests to the
+    /// log, runs `on_done` (for the caller's own fields, e.g. `last_sync`),
+    /// and saves — the one thing every exchange with the server does — on
+    /// its own task, so a dropped caller never cancels any of it. A refusal
+    /// before any request skips the request and the save, but still runs
+    /// `on_done`. The `live` lock is never held across an `.await`.
+    async fn run_exchange<T, F, Fut>(
+        self: &Arc<Self>,
+        op: F,
+        on_done: impl FnOnce(&mut Live, &Attempt<T>) + Send + 'static,
+    ) -> Result<Attempt<T>, ControlError>
+    where
+        T: Send + 'static,
+        F: FnOnce(Device, String) -> Fut + Send + 'static,
+        Fut: Future<Output = (Device, Attempt<T>)> + Send,
+    {
+        let (guard, device, endpoint) = match self.begin_exchange()? {
+            Begun::Run(guard, device, endpoint) => (guard, device, endpoint),
+            Begun::Refused(message) => {
+                let attempt = Attempt {
+                    requests: Vec::new(),
+                    outcome: Err(SyncFailure::Refused(message)),
+                };
+                on_done(&mut self.live(), &attempt);
+                return Ok(attempt);
+            }
         };
-        {
-            let mut live = self.live();
-            live.saved.device = device;
-            live.last_sync = Some(last_sync.clone());
-            live.requests.extend(attempt.requests);
-        }
-        self.persist().await?;
-        Ok(last_sync)
+        let control = Arc::clone(self);
+        let task = tokio::spawn(async move {
+            let _guard = guard;
+            let (device, attempt) = op(device, endpoint).await;
+            {
+                let mut live = control.live();
+                live.saved.device = device;
+                live.requests.extend(attempt.requests.clone());
+                on_done(&mut live, &attempt);
+            }
+            let persisted = control.persist().await;
+            (attempt, persisted)
+        });
+        let (attempt, persisted) = settled(task).await;
+        persisted?;
+        Ok(attempt)
     }
 
     /// Return once no sync is running, so a caller about to exit never cuts one short.
@@ -193,24 +247,37 @@ impl Control {
         }
     }
 
-    /// Wipe what the device holds; keep who it is and where it syncs.
+    /// Wipe what the device holds — its library, sync token and cover
+    /// cache — by replacing it outright; keep who it is and where it
+    /// syncs. Also removes every downloaded file from the books dir, so a
+    /// reset device's storage matches its now-empty library.
     pub async fn reset(&self) -> Result<DeviceView, ControlError> {
-        {
+        let books_dir = {
             let mut live = self.live();
             if live.syncing {
                 return Err(ControlError::SyncInProgress);
             }
-            live.saved.device.library.clear();
-            live.saved.device.sync_token = None;
+            let hardware_id = live.saved.device.hardware_id.clone();
+            live.saved.device = Device::new(&hardware_id);
+            let books_dir = state::books_dir(&self.state_path);
+            live.saved.device.storage = Some(books_dir.clone());
             live.last_sync = None;
             live.requests.clear();
-        }
+            books_dir
+        };
+        clear_books_dir(&books_dir).await?;
         self.persist().await?;
         Ok(self.view())
     }
 
-    /// Point the device at a new URL or token and save it; library and sync token stay.
-    /// Turned away while a sync runs.
+    /// Point the device at a new URL or token and save it. A URL retarget
+    /// keeps everything; a token retarget keeps the library but drops the
+    /// sync token and cached download URLs, so the next sync is a full
+    /// resync that re-delivers every held book with URLs carrying the new
+    /// token. Every arm also drops `reading_services_host`: it was learned
+    /// from the old target's `v1/initialization`, so a highlight or a
+    /// post-download annotations GET made before the next sync must not
+    /// reach whichever server that was. Turned away while a sync runs.
     pub async fn retarget(&self, to: Retarget) -> Result<Retargeted, ControlError> {
         let retargeted = {
             let mut live = self.live();
@@ -221,14 +288,17 @@ impl Control {
                 Retarget::Url(url) => {
                     live.saved.url = Some(url.clone());
                     live.url = url;
+                    live.saved.device.forget_server(false);
                 }
                 Retarget::Token(token) => {
                     live.saved.token = token;
                     live.saved.wired_url = None;
+                    live.saved.device.forget_server(true);
                 }
                 Retarget::Wired { token, url } => {
                     live.saved.token = token;
                     live.saved.wired_url = Some(url);
+                    live.saved.device.forget_server(true);
                 }
             }
             let needs_wire = !live.saved.token_wired_for(&live.url);
@@ -246,6 +316,26 @@ impl Control {
         self.live().requests.clone()
     }
 
+    /// `book`'s downloaded file, beside the state file. `UnknownBook` for a
+    /// book the device doesn't hold; `NotDownloaded` for one it hasn't
+    /// fetched yet (not an error the reader needs to report — see `jobs::load_book`).
+    pub fn book_file(&self, book: &str) -> Result<PathBuf, DeviceError> {
+        let live = self.live();
+        let found = live
+            .saved
+            .device
+            .library
+            .get(book)
+            .ok_or_else(|| DeviceError::UnknownBook(book.to_owned()))?;
+        if !found.downloaded {
+            return Err(DeviceError::NotDownloaded(book.to_owned()));
+        }
+        live.saved
+            .device
+            .book_file(book)
+            .ok_or_else(|| DeviceError::UnknownBook(book.to_owned()))
+    }
+
     /// Write the current state to the state file.
     async fn persist(&self) -> Result<(), StateError> {
         let _saving = self.save_lock.lock().await;
@@ -259,21 +349,72 @@ impl Control {
     }
 }
 
+/// Await `task`, propagating its panic rather than returning a `JoinError`
+/// — nothing ever aborts these handles, so the only way one fails is a
+/// panic, which should surface the same as if it had happened inline.
+pub(super) async fn settled<T>(task: tokio::task::JoinHandle<T>) -> T {
+    match task.await {
+        Ok(result) => result,
+        Err(error) => std::panic::resume_unwind(
+            error
+                .try_into_panic()
+                .unwrap_or_else(|cancelled| Box::new(cancelled.to_string())),
+        ),
+    }
+}
+
+/// Whether `kind` means "nothing is there" rather than a real failure — a
+/// missing file, or one whose parent isn't even a directory (a books dir
+/// that was never created because nothing was ever downloaded).
+fn nothing_there(kind: std::io::ErrorKind) -> bool {
+    matches!(
+        kind,
+        std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+    )
+}
+
+/// Delete `path`, best-effort — a missing file is fine, any other error
+/// is reported rather than silently dropped.
+pub(super) async fn remove_file_best_effort(path: &Path) -> Result<(), ControlError> {
+    match tokio::fs::remove_file(path).await {
+        Ok(()) => Ok(()),
+        Err(error) if nothing_there(error.kind()) => Ok(()),
+        Err(error) => Err(ControlError::FileRemoval(error.to_string())),
+    }
+}
+
+/// Delete every regular file directly inside `dir` (the device's book
+/// storage) — a missing directory is fine, any other error is reported.
+async fn clear_books_dir(dir: &Path) -> Result<(), ControlError> {
+    let mut entries = match tokio::fs::read_dir(dir).await {
+        Ok(entries) => entries,
+        Err(error) if nothing_there(error.kind()) => return Ok(()),
+        Err(error) => return Err(ControlError::FileRemoval(error.to_string())),
+    };
+    while let Some(entry) = entries
+        .next_entry()
+        .await
+        .map_err(|error| ControlError::FileRemoval(error.to_string()))?
+    {
+        if entry.file_type().await.is_ok_and(|t| t.is_file()) {
+            remove_file_best_effort(&entry.path()).await?;
+        }
+    }
+    Ok(())
+}
+
 impl Live {
-    /// How a sync ends before any request when the token was auto-wired for another server.
-    fn refusal(&self) -> Option<LastSync> {
+    /// Why an exchange ends before any request when the token was auto-wired for another server.
+    fn refusal(&self) -> Option<String> {
         let wired_url = self.saved.wired_url.as_deref()?;
         if self.saved.token_wired_for(&self.url) {
             return None;
         }
-        Some(LastSync::Failed {
-            quirk: None,
-            message: format!(
-                "the device token was auto-wired for {wired_url}, not {}: press w to wire one \
-                 for this server, or give one with t / --token",
-                self.url
-            ),
-        })
+        Some(format!(
+            "the device token was auto-wired for {wired_url}, not {}: press w to wire one \
+             for this server, or give one with t / --token",
+            self.url
+        ))
     }
 
     /// The device as `GET /device` reports it.
@@ -289,10 +430,10 @@ impl Live {
     }
 }
 
-/// What `begin_sync` decided: a sync to run, or how a sync ended before it began.
+/// What `begin_exchange` decided: an exchange to run, or a refusal before any request.
 enum Begun {
     Run(SyncingGuard, Device, String),
-    Refused(LastSync),
+    Refused(String),
 }
 
 /// Clears `syncing` when a sync ends for any reason, including its task panicking.
@@ -310,6 +451,28 @@ fn quirk_of(failure: &SyncFailure) -> Option<Quirk> {
     match failure {
         SyncFailure::Quirk { quirk, .. } => Some(*quirk),
         _ => None,
+    }
+}
+
+/// How a sync's outcome shows up as `GET /device`'s `last_sync`.
+fn last_sync_of(attempt: &Attempt<usize>) -> LastSync {
+    match &attempt.outcome {
+        Ok(pages) => LastSync::Synced { pages: *pages },
+        Err(failure) => LastSync::Failed {
+            quirk: quirk_of(failure),
+            message: failure.to_string(),
+        },
+    }
+}
+
+/// How a download or state-write action's outcome is reported to its caller.
+fn acted(attempt: Attempt<()>, view: DeviceView) -> Acted {
+    match attempt.outcome {
+        Ok(()) => Acted::Done(view),
+        Err(failure) => Acted::Failed {
+            quirk: quirk_of(&failure),
+            message: failure.to_string(),
+        },
     }
 }
 

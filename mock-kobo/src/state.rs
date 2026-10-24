@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::{Deserialize, Serialize};
 
-use crate::device::Device;
+use crate::device::{Device, DEVICE_FORMAT};
 
 /// Everything one device keeps across restarts: what a real Kobo stores on disk.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -32,6 +32,12 @@ impl SavedState {
     pub fn token_wired_for(&self, url: &str) -> bool {
         self.wired_url.as_ref().is_none_or(|wired| wired == url)
     }
+}
+
+/// Where downloaded books for the device saved at `state` are kept:
+/// `<state>` with its extension replaced by `books` (`/x/kobo.json` → `/x/kobo.books`).
+pub fn books_dir(state: &Path) -> PathBuf {
+    state.with_extension("books")
 }
 
 /// Why a state file couldn't be read or written.
@@ -63,12 +69,19 @@ pub async fn load(path: &Path) -> Result<Option<SavedState>, StateError> {
             })
         }
     };
-    serde_json::from_slice(&bytes)
-        .map(Some)
-        .map_err(|error| StateError::Corrupt {
+    let mut saved: SavedState =
+        serde_json::from_slice(&bytes).map_err(|error| StateError::Corrupt {
             path: path.to_owned(),
             detail: error.to_string(),
-        })
+        })?;
+    // A device saved before covers, downloads and reading state has no sync
+    // token worth keeping: those fields default empty on load, so the
+    // server's next delta must be a full resend, not the gap since then.
+    if saved.device.format == 0 {
+        saved.device.sync_token = None;
+        saved.device.format = DEVICE_FORMAT;
+    }
+    Ok(Some(saved))
 }
 
 /// Write `state` to `path` atomically: a synced temp file beside it, then a rename.

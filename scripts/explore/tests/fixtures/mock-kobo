@@ -65,15 +65,32 @@ class Handler(BaseHTTPRequestHandler):
         stub = self.server.stub
         if (method, self.path) == ("GET", "/__calls"):
             return self.send_json(200, stub["calls"])
-        stub["calls"].append([method, self.path])
+        length = int(self.headers.get("Content-Length") or 0)
+        raw = self.rfile.read(length) if length else b""
+        body = json.loads(raw) if raw else None
+        stub["calls"].append([method, self.path] if body is None else [method, self.path, body])
         if (method, self.path) == ("GET", "/device"):
-            view = {**stub["device"], "url": stub["url"], "syncing": False, "last_sync": stub["last_sync"]}
-            return self.reply(200, "ok", "ok", view)
+            return self.reply(200, "ok", "ok", self.view(stub))
         if (method, self.path) == ("POST", "/actions/sync"):
             return self.sync(stub)
+        if (method, self.path) == ("POST", "/actions/download"):
+            return self.download(stub, body)
+        if (method, self.path) == ("POST", "/actions/read"):
+            return self.read(stub, body)
+        if (method, self.path) == ("POST", "/actions/read-to"):
+            return self.reply(200, "state_sent", "state sent", self.view(stub))
+        if (method, self.path) == ("POST", "/actions/finish"):
+            return self.finish(stub, body)
+        if (method, self.path) == ("POST", "/actions/remove-download"):
+            return self.remove_download(stub, body)
+        if (method, self.path) in (("POST", "/actions/highlight-words"), ("POST", "/actions/delete-highlight")):
+            return self.reply(200, "annotation_sent", "annotation sent", self.view(stub))
         if (method, self.path) == ("GET", "/requests"):
             return self.reply(200, "ok", "ok", {"requests": stub["requests"]})
         self.reply(404, "not_found", f"no route for {method} {self.path}", {})
+
+    def view(self, stub):
+        return {**stub["device"], "url": stub["url"], "syncing": False, "last_sync": stub["last_sync"]}
 
     def sync(self, stub):
         if stub["mode"] == "sync_failed":
@@ -85,6 +102,30 @@ class Handler(BaseHTTPRequestHandler):
         stub["last_sync"] = {"result": "synced", "pages": 1}
         stub["requests"] = [{"method": "GET", "path": "/kobo/[REDACTED]/v1/library/sync", "status": 200}]
         self.reply(200, "synced", "sync complete", {"pages": 1})
+
+    def download(self, stub, body):
+        for book_id in body["books"]:
+            if book_id in stub["device"]["library"]:
+                stub["device"]["library"][book_id]["downloaded"] = True
+        self.reply(200, "downloaded", "downloaded", self.view(stub))
+
+    def read(self, stub, body):
+        book = stub["device"]["library"].get(body["book"])
+        if book is not None:
+            book["reading"] = {"status": "Reading", "bookmark": {"percent": body["percent"]}}
+        self.reply(200, "state_sent", "state sent", self.view(stub))
+
+    def finish(self, stub, body):
+        book = stub["device"]["library"].get(body["book"])
+        if book is not None:
+            book["reading"] = {"status": "Finished"}
+        self.reply(200, "state_sent", "state sent", self.view(stub))
+
+    def remove_download(self, stub, body):
+        book = stub["device"]["library"].get(body["book"])
+        if book is not None:
+            book["downloaded"] = False
+        self.reply(200, "download_removed", "download removed", self.view(stub))
 
 
 def main(argv):

@@ -1,4 +1,8 @@
-//! The control API over real TCP: `listen`, `ready_line`, and each route's reply envelope.
+//! The control API over real TCP: `listen`, `ready_line`, `GET`/`PUT` route
+//! replies and their unit-level reply builders. The `POST /actions/*` route
+//! tests live in `actions.rs`, split out by rule 05's ~800-line file cap.
+
+mod actions;
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -15,7 +19,7 @@ use crate::device::Device;
 use crate::firmware::Quirk;
 use crate::state::StateError;
 use crate::test_support::{
-    new_entitlement, spawn_stub, stub_control, stub_control_with, Stub, STUB_TOKEN,
+    dune_stub, new_entitlement, spawn_stub, stub_control, stub_control_with, Stub, STUB_TOKEN,
 };
 
 use super::*;
@@ -187,6 +191,12 @@ async fn get_device_returns_each_book_with_its_series() {
             "series": { "Name": "Dune", "Number": 1.0, "Id": "s-1" },
             "downloaded": false,
             "archived": false,
+            "cover_image_id": "book-1",
+            "cover": null,
+            "download_problem": null,
+            "reading": { "status": "ReadyToRead", "status_modified": null, "bookmark": null },
+            "annotations": [],
+            "dropped_annotations": 0,
         })
     );
 }
@@ -423,6 +433,7 @@ async fn get_requests_returns_ok_reply_with_redacted_requests() {
                 request("GET", "/v1/products/books/subscriptions"),
                 request("GET", "/v1/deals"),
                 request("GET", "/v1/library/sync"),
+                json!({ "method": "POST", "path": "/api/v3/content/checkforchanges", "status": 200 }),
             ] },
         })
     );

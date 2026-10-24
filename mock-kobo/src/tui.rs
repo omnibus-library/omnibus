@@ -23,6 +23,7 @@ use self::render::Screen;
 
 pub mod app;
 pub mod jobs;
+pub mod reader;
 pub mod render;
 
 /// Redraw interval, so a sync started over the control API shows without a key press.
@@ -76,6 +77,13 @@ fn event_loop(terminal: &mut DefaultTerminal, tui: Tui, runtime: &Handle) -> io:
             return Ok(());
         }
         let view = control.view();
+        app.device_syncing = view.syncing;
+        app.show_library(view.library.keys().cloned().collect());
+        app.show_book(&view.library);
+        if let Ok(size) = terminal.size() {
+            let area = render::reader::page_area(size.into());
+            app.fit_reader(area.width, area.height);
+        }
         let requests = control.requests();
         let screen = Screen {
             view: &view,
@@ -93,6 +101,10 @@ fn event_loop(terminal: &mut DefaultTerminal, tui: Tui, runtime: &Handle) -> io:
                 Some(Action::Quit) => return Ok(()),
                 Some(Action::Run(job)) => {
                     spawn_job(runtime, &control, &wiring, job, finished_tx.clone());
+                }
+                Some(Action::Open(book)) => {
+                    let result = jobs::load_book(&control, &book);
+                    app.open_book(book, result);
                 }
                 None => {}
             }

@@ -6,6 +6,7 @@ use axum::http::StatusCode;
 use serde_json::json;
 
 use crate::device::Device;
+use crate::downloads::DownloadPolicy;
 use crate::firmware::Quirk;
 use crate::test_support::{
     new_entitlement, request_lines, spawn_stub, RunningStub, Stub, STUB_TOKEN,
@@ -28,26 +29,14 @@ fn library_sync_tokens(stub: &RunningStub) -> Vec<Option<String>> {
         .collect()
 }
 
-/// The `name` header each request carried, in order.
-fn header_on_every_request(stub: &RunningStub, name: &str) -> Vec<Option<String>> {
-    let requests = stub.requests.lock().unwrap();
-    requests
-        .iter()
-        .map(|r| {
-            r.headers
-                .get(name)
-                .and_then(|v| v.to_str().ok())
-                .map(str::to_owned)
-        })
-        .collect()
-}
-
 #[tokio::test]
 async fn sync_now_completes_handshake_against_healthy_stub() {
     let stub = spawn_stub(Stub::default()).await;
     let mut device = Device::new("HW-1");
 
-    let report = sync_now(&mut device, &stub.endpoint).await.unwrap();
+    let report = sync_now(&mut device, &stub.endpoint, &DownloadPolicy::None)
+        .await
+        .unwrap();
 
     assert_eq!(
         request_lines(&report.requests),
@@ -59,6 +48,7 @@ async fn sync_now_completes_handshake_against_healthy_stub() {
             "GET /kobo/<token>/v1/products/books/subscriptions 200",
             "GET /kobo/<token>/v1/deals 200",
             "GET /kobo/<token>/v1/library/sync 200",
+            "POST /api/v3/content/checkforchanges 200",
         ]
     );
 }
@@ -71,9 +61,13 @@ async fn sync_now_fails_when_initialization_lacks_api_token() {
     })
     .await;
 
-    let failure = sync_now(&mut Device::new("HW-1"), &stub.endpoint)
-        .await
-        .unwrap_err();
+    let failure = sync_now(
+        &mut Device::new("HW-1"),
+        &stub.endpoint,
+        &DownloadPolicy::None,
+    )
+    .await
+    .unwrap_err();
 
     assert!(matches!(
         failure,
@@ -92,9 +86,13 @@ async fn sync_now_reports_status_when_initialization_is_rejected() {
     })
     .await;
 
-    let failure = sync_now(&mut Device::new("HW-1"), &stub.endpoint)
-        .await
-        .unwrap_err();
+    let failure = sync_now(
+        &mut Device::new("HW-1"),
+        &stub.endpoint,
+        &DownloadPolicy::None,
+    )
+    .await
+    .unwrap_err();
 
     assert!(matches!(failure, SyncFailure::Rejected(_)));
     assert_eq!(
@@ -112,9 +110,13 @@ async fn sync_now_fails_when_library_sync_answers_server_error() {
     })
     .await;
 
-    let failure = sync_now(&mut Device::new("HW-1"), &stub.endpoint)
-        .await
-        .unwrap_err();
+    let failure = sync_now(
+        &mut Device::new("HW-1"),
+        &stub.endpoint,
+        &DownloadPolicy::None,
+    )
+    .await
+    .unwrap_err();
 
     assert!(matches!(failure, SyncFailure::Rejected(_)));
     assert_eq!(
@@ -131,9 +133,13 @@ async fn sync_now_fails_when_gettests_rejects_post() {
     })
     .await;
 
-    let failure = sync_now(&mut Device::new("HW-1"), &stub.endpoint)
-        .await
-        .unwrap_err();
+    let failure = sync_now(
+        &mut Device::new("HW-1"),
+        &stub.endpoint,
+        &DownloadPolicy::None,
+    )
+    .await
+    .unwrap_err();
 
     assert!(matches!(
         failure,
@@ -152,9 +158,13 @@ async fn sync_now_fails_before_library_sync_when_store_path_returns_404() {
     })
     .await;
 
-    let failure = sync_now(&mut Device::new("HW-1"), &stub.endpoint)
-        .await
-        .unwrap_err();
+    let failure = sync_now(
+        &mut Device::new("HW-1"),
+        &stub.endpoint,
+        &DownloadPolicy::None,
+    )
+    .await
+    .unwrap_err();
 
     assert!(matches!(
         failure,
@@ -174,9 +184,13 @@ async fn sync_now_fails_when_store_path_redirects() {
     })
     .await;
 
-    let failure = sync_now(&mut Device::new("HW-1"), &stub.endpoint)
-        .await
-        .unwrap_err();
+    let failure = sync_now(
+        &mut Device::new("HW-1"),
+        &stub.endpoint,
+        &DownloadPolicy::None,
+    )
+    .await
+    .unwrap_err();
 
     assert!(matches!(
         failure,
@@ -195,9 +209,13 @@ async fn sync_now_failure_omits_device_token_when_store_path_returns_404() {
     })
     .await;
 
-    let failure = sync_now(&mut Device::new("HW-1"), &stub.endpoint)
-        .await
-        .unwrap_err();
+    let failure = sync_now(
+        &mut Device::new("HW-1"),
+        &stub.endpoint,
+        &DownloadPolicy::None,
+    )
+    .await
+    .unwrap_err();
 
     assert_eq!(
         failure.to_string(),
@@ -211,7 +229,7 @@ async fn sync_now_failure_omits_device_token_when_server_unreachable() {
     // Port 1 is privileged, so a parallel stub's `bind("127.0.0.1:0")` is never handed it.
     let endpoint = format!("http://127.0.0.1:1/kobo/{STUB_TOKEN}");
 
-    let failure = sync_now(&mut Device::new("HW-1"), &endpoint)
+    let failure = sync_now(&mut Device::new("HW-1"), &endpoint, &DownloadPolicy::None)
         .await
         .unwrap_err();
 
@@ -223,24 +241,32 @@ async fn sync_now_failure_omits_device_token_when_server_unreachable() {
 async fn sync_now_sends_hardware_id_on_every_request() {
     let stub = spawn_stub(Stub::default()).await;
 
-    sync_now(&mut Device::new("HW-1"), &stub.endpoint)
-        .await
-        .unwrap();
+    sync_now(
+        &mut Device::new("HW-1"),
+        &stub.endpoint,
+        &DownloadPolicy::None,
+    )
+    .await
+    .unwrap();
 
-    let ids = header_on_every_request(&stub, "x-kobo-deviceid");
-    assert_eq!(ids, vec![Some("HW-1".to_owned()); 7]);
+    let ids = stub.header_on_every_request("x-kobo-deviceid");
+    assert_eq!(ids, vec![Some("HW-1".to_owned()); 8]);
 }
 
 #[tokio::test]
 async fn sync_now_sends_host_without_port_on_every_request() {
     let stub = spawn_stub(Stub::default()).await;
 
-    sync_now(&mut Device::new("HW-1"), &stub.endpoint)
-        .await
-        .unwrap();
+    sync_now(
+        &mut Device::new("HW-1"),
+        &stub.endpoint,
+        &DownloadPolicy::None,
+    )
+    .await
+    .unwrap();
 
-    let hosts = header_on_every_request(&stub, "host");
-    assert_eq!(hosts, vec![Some("127.0.0.1".to_owned()); 7]);
+    let hosts = stub.header_on_every_request("host");
+    assert_eq!(hosts, vec![Some("127.0.0.1".to_owned()); 8]);
 }
 
 #[tokio::test]
@@ -253,7 +279,7 @@ async fn sync_leaves_the_server_when_resources_are_built_on_a_portless_host() {
     let mut client = Client::with_timeout(&stub.endpoint, "HW-1", Duration::from_secs(1)).unwrap();
 
     // The stub hands out port 80 URLs, so what answers there decides the outcome. It is not asserted.
-    let _ = run_sync(&mut client, &mut Device::new("HW-1")).await;
+    let _ = run_sync(&mut client, &mut Device::new("HW-1"), &DownloadPolicy::None).await;
 
     let lines = request_lines(&client.into_requests());
     assert_eq!(
@@ -277,18 +303,24 @@ async fn sync_now_follows_urls_from_adopted_resources() {
     })
     .await;
 
-    sync_now(&mut Device::new("HW-1"), &stub.endpoint)
-        .await
-        .unwrap();
+    sync_now(
+        &mut Device::new("HW-1"),
+        &stub.endpoint,
+        &DownloadPolicy::None,
+    )
+    .await
+    .unwrap();
 
     let paths = stub.paths();
     assert_eq!(
         paths[1],
         "/kobo/stub-device-token/moved/v1/analytics/gettests"
     );
-    assert_eq!(
-        paths.last().unwrap(),
-        "/kobo/stub-device-token/moved/v1/library/sync"
+    assert!(
+        paths
+            .iter()
+            .any(|p| p == "/kobo/stub-device-token/moved/v1/library/sync"),
+        "{paths:?}"
     );
 }
 
@@ -304,7 +336,9 @@ async fn sync_now_applies_every_page_until_server_stops_continuing() {
     .await;
     let mut device = Device::new("HW-1");
 
-    sync_now(&mut device, &stub.endpoint).await.unwrap();
+    sync_now(&mut device, &stub.endpoint, &DownloadPolicy::None)
+        .await
+        .unwrap();
 
     let titles: Vec<&str> = device.library.values().map(|b| b.title.as_str()).collect();
     assert_eq!(titles, ["First", "Second"]);
@@ -318,9 +352,13 @@ async fn sync_now_echoes_sync_token_on_continued_pages() {
     })
     .await;
 
-    let report = sync_now(&mut Device::new("HW-1"), &stub.endpoint)
-        .await
-        .unwrap();
+    let report = sync_now(
+        &mut Device::new("HW-1"),
+        &stub.endpoint,
+        &DownloadPolicy::None,
+    )
+    .await
+    .unwrap();
 
     assert_eq!(report.pages, 2);
     assert_eq!(
@@ -337,9 +375,13 @@ async fn sync_now_fails_when_sync_never_stops_continuing() {
     })
     .await;
 
-    let failure = sync_now(&mut Device::new("HW-1"), &stub.endpoint)
-        .await
-        .unwrap_err();
+    let failure = sync_now(
+        &mut Device::new("HW-1"),
+        &stub.endpoint,
+        &DownloadPolicy::None,
+    )
+    .await
+    .unwrap_err();
 
     assert!(matches!(
         failure,
@@ -358,9 +400,13 @@ async fn sync_now_fails_when_library_sync_body_is_malformed() {
     })
     .await;
 
-    let failure = sync_now(&mut Device::new("HW-1"), &stub.endpoint)
-        .await
-        .unwrap_err();
+    let failure = sync_now(
+        &mut Device::new("HW-1"),
+        &stub.endpoint,
+        &DownloadPolicy::None,
+    )
+    .await
+    .unwrap_err();
 
     assert!(matches!(failure, SyncFailure::BadResponse(_)));
     assert!(failure
@@ -377,7 +423,12 @@ async fn attempt_sync_keeps_requests_when_sync_fails() {
     })
     .await;
 
-    let attempt = attempt_sync(&mut Device::new("HW-1"), &stub.endpoint).await;
+    let attempt = attempt_sync(
+        &mut Device::new("HW-1"),
+        &stub.endpoint,
+        &DownloadPolicy::None,
+    )
+    .await;
 
     assert!(matches!(
         attempt.outcome,
@@ -400,10 +451,15 @@ async fn attempt_sync_keeps_requests_when_sync_fails() {
 async fn attempt_sync_reports_pages_and_requests_when_sync_succeeds() {
     let stub = spawn_stub(Stub::default()).await;
 
-    let attempt = attempt_sync(&mut Device::new("HW-1"), &stub.endpoint).await;
+    let attempt = attempt_sync(
+        &mut Device::new("HW-1"),
+        &stub.endpoint,
+        &DownloadPolicy::None,
+    )
+    .await;
 
     assert!(matches!(attempt.outcome, Ok(1)));
-    assert_eq!(attempt.requests.len(), 7);
+    assert_eq!(attempt.requests.len(), 8);
 }
 
 #[tokio::test]
@@ -412,7 +468,9 @@ async fn sync_now_echoes_saved_sync_token_on_first_page() {
     let mut device = Device::new("HW-1");
     device.sync_token = Some("page-9".into());
 
-    sync_now(&mut device, &stub.endpoint).await.unwrap();
+    sync_now(&mut device, &stub.endpoint, &DownloadPolicy::None)
+        .await
+        .unwrap();
 
     assert_eq!(library_sync_tokens(&stub), [Some("page-9".to_owned())]);
 }
@@ -426,7 +484,9 @@ async fn sync_now_keeps_last_sync_token_on_device() {
     .await;
     let mut device = Device::new("HW-1");
 
-    sync_now(&mut device, &stub.endpoint).await.unwrap();
+    sync_now(&mut device, &stub.endpoint, &DownloadPolicy::None)
+        .await
+        .unwrap();
 
     assert_eq!(device.sync_token, Some("page-2".to_owned()));
 }
@@ -441,7 +501,9 @@ async fn sync_now_keeps_saved_sync_token_when_page_carries_none() {
     let mut device = Device::new("HW-1");
     device.sync_token = Some("page-9".into());
 
-    sync_now(&mut device, &stub.endpoint).await.unwrap();
+    sync_now(&mut device, &stub.endpoint, &DownloadPolicy::None)
+        .await
+        .unwrap();
 
     assert_eq!(device.sync_token, Some("page-9".to_owned()));
 }
@@ -456,7 +518,9 @@ async fn sync_now_keeps_saved_sync_token_when_page_fails_to_decode() {
     let mut device = Device::new("HW-1");
     device.sync_token = Some("page-9".into());
 
-    sync_now(&mut device, &stub.endpoint).await.unwrap_err();
+    sync_now(&mut device, &stub.endpoint, &DownloadPolicy::None)
+        .await
+        .unwrap_err();
 
     assert_eq!(device.sync_token, Some("page-9".to_owned()));
 }

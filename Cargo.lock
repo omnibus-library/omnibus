@@ -5182,14 +5182,18 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
+ "flate2",
  "getrandom 0.3.4",
+ "quick-xml",
  "ratatui",
  "reqwest 0.13.5",
  "serde",
  "serde_json",
  "tempfile",
  "thiserror 2.0.18",
+ "time",
  "tokio",
+ "zip 9.0.5",
 ]
 
 [[package]]

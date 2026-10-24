@@ -2,6 +2,7 @@
 //! the Kobo sync routes as a [`Stub`] says and records every request, so a
 //! test can reproduce an old server bug and watch the device react to it.
 
+use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -10,7 +11,7 @@ use std::time::Duration;
 use axum::{
     extract::State,
     http::{
-        header::{HOST, LOCATION},
+        header::{CONTENT_TYPE, ETAG, HOST, LOCATION},
         HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri,
     },
     response::{IntoResponse, Response},
@@ -21,11 +22,17 @@ use tokio::sync::Notify;
 
 use crate::client::RequestRecord;
 use crate::control::{Control, ControlError, LastSync};
-use crate::device::Device;
+use crate::device::{Book, Device};
 use crate::state::SavedState;
 
 /// The path token every stub device syncs with.
 pub const STUB_TOKEN: &str = "stub-device-token";
+
+/// A placeholder for the stub's own origin, which isn't known until it
+/// binds its ephemeral port. `book_metadata`/`new_entitlement` build a
+/// `DownloadUrls` entry with this in place of the base, and `library_sync`
+/// substitutes the real one into every page before serving it.
+pub const STUB_ORIGIN: &str = "{STUB_ORIGIN}";
 
 /// The bearer token the stub's login hands out, and the only one its device routes accept.
 pub const SESSION_TOKEN: &str = "stub-session";
@@ -70,6 +77,40 @@ pub struct Stub {
     pub login_redirects_to: Option<String>,
     /// The `token` in a successful login reply; `None` leaves it null.
     pub login_token: Option<&'static str>,
+    /// What every cover thumbnail request answers with: `(content-type, bytes)`.
+    /// `None` (the default) answers 404.
+    pub cover: Option<(&'static str, &'static [u8])>,
+    /// The status every `v1/download/<id>` request answers with.
+    pub download_status: StatusCode,
+    /// The bytes every `v1/download/<id>` request answers with, on success.
+    pub download_body: &'static [u8],
+    /// The status every state PUT answers with.
+    pub state_status: StatusCode,
+    /// The state PUT reply body; `None` (the default) is an all-`Success` reply.
+    pub state_reply: Option<Value>,
+    /// The status `POST .../checkforchanges` answers with.
+    pub reading_services_status: StatusCode,
+    /// The entitlement ids `checkforchanges` reports, minus any already
+    /// served a 200 GET (see [`StubState::served_once`]) — the AC1 self-heal.
+    pub reading_services_changed: Vec<String>,
+    /// Each reported id's served annotation set. An id absent, or mapped to
+    /// an empty vec, answers its GET `304`; a non-empty vec answers `200`.
+    pub reading_services_annotations: BTreeMap<String, Vec<Value>>,
+    /// The status every `PATCH .../annotations` answers with.
+    pub patch_status: StatusCode,
+    /// The status a non-empty served set's `GET .../annotations` answers
+    /// with (an empty set always answers `304`, regardless).
+    pub annotations_get_status: StatusCode,
+    /// Leave `checkforchanges` requests open without ever answering.
+    pub checkforchanges_never_answers: bool,
+    /// Leave an annotations GET open without ever answering.
+    pub annotations_get_never_answers: bool,
+    /// Answer `checkforchanges` 200 with a body the device can't decode as
+    /// a list of ids.
+    pub checkforchanges_bad_body: bool,
+    /// Answer a non-empty served set's GET 200 with a body the device
+    /// can't decode as the annotations envelope.
+    pub annotations_get_bad_body: bool,
 }
 
 impl Default for Stub {
@@ -92,6 +133,20 @@ impl Default for Stub {
             login_status: StatusCode::OK,
             login_redirects_to: None,
             login_token: Some(SESSION_TOKEN),
+            cover: None,
+            download_status: StatusCode::OK,
+            download_body: b"stub-kepub",
+            state_status: StatusCode::OK,
+            state_reply: None,
+            reading_services_status: StatusCode::OK,
+            reading_services_changed: Vec::new(),
+            reading_services_annotations: BTreeMap::new(),
+            patch_status: StatusCode::NO_CONTENT,
+            annotations_get_status: StatusCode::OK,
+            checkforchanges_never_answers: false,
+            annotations_get_never_answers: false,
+            checkforchanges_bad_body: false,
+            annotations_get_bad_body: false,
         }
     }
 }
@@ -99,6 +154,7 @@ impl Default for Stub {
 /// One request the stub received.
 #[derive(Clone, Debug)]
 pub struct Recorded {
+    pub method: String,
     pub path: String,
     pub headers: HeaderMap,
     pub body: String,
@@ -123,6 +179,20 @@ impl RunningStub {
             .collect()
     }
 
+    /// The `name` header each request carried, in order.
+    pub fn header_on_every_request(&self, name: &str) -> Vec<Option<String>> {
+        let requests = self.requests.lock().unwrap();
+        requests
+            .iter()
+            .map(|r| {
+                r.headers
+                    .get(name)
+                    .and_then(|v| v.to_str().ok())
+                    .map(str::to_owned)
+            })
+            .collect()
+    }
+
     /// The paths requested so far, in order.
     pub fn paths(&self) -> Vec<String> {
         let requests = self.requests.lock().unwrap();
@@ -135,6 +205,9 @@ struct StubState {
     base: String,
     requests: Arc<Mutex<Vec<Recorded>>>,
     sync_calls: AtomicUsize,
+    /// Ids whose annotations GET has already answered 200 — subtracted from
+    /// `checkforchanges`'s next answer, the AC1 self-heal.
+    served_once: Mutex<HashSet<String>>,
 }
 
 /// Serve `stub` on an ephemeral local port.
@@ -147,6 +220,7 @@ pub async fn spawn_stub(stub: Stub) -> RunningStub {
         base: base.clone(),
         requests: requests.clone(),
         sync_calls: AtomicUsize::new(0),
+        served_once: Mutex::new(HashSet::new()),
     });
     let app = Router::new().fallback(handle).with_state(state);
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
@@ -191,12 +265,41 @@ fn control_with(
     Arc::new(Control::new(saved, url.to_owned(), state_path))
 }
 
+/// A stub whose one sync page holds "book-1" and answers its download with
+/// `download_body` (the reader fixture's KEPUB or its plain-EPUB source).
+pub fn reader_stub(download_body: &'static [u8]) -> Stub {
+    Stub {
+        sync_pages: vec![json!([new_entitlement("book-1", "Reader Fixture")])],
+        download_body,
+        ..Stub::default()
+    }
+}
+
+/// A `Control` whose "book-1" is downloaded with `download_body`'s bytes
+/// into `state_path`'s storage: a `dune_stub`-style sync, then a download.
+/// Shared by the reader's `load_book` tests and the passage-action tests,
+/// so a book download never needs a per-file copy of this sequence. The
+/// stub comes back too, for a test that inspects what it received.
+pub async fn control_with_downloaded_book(
+    download_body: &'static [u8],
+    state_path: PathBuf,
+) -> (Arc<Control>, RunningStub) {
+    let stub = spawn_stub(reader_stub(download_body)).await;
+    let control = stub_control(&stub, state_path);
+    control
+        .sync(crate::downloads::DownloadPolicy::None)
+        .await
+        .unwrap();
+    control.download(vec!["book-1".to_owned()]).await.unwrap();
+    (control, stub)
+}
+
 /// Start a sync on its own task, as the control API's handler does.
 pub fn spawn_sync(
     control: &Arc<Control>,
 ) -> tokio::task::JoinHandle<Result<LastSync, ControlError>> {
     let control = Arc::clone(control);
-    tokio::spawn(async move { control.sync().await })
+    tokio::spawn(async move { control.sync(crate::downloads::DownloadPolicy::None).await })
 }
 
 /// Poll `condition` until it holds, failing the test at a deadline.
@@ -235,6 +338,26 @@ pub fn dune_stub() -> Stub {
     }
 }
 
+/// The kepubify-converted reader fixture (see `docs/kobo.md`'s "Reader
+/// fixture" note for how it's regenerated): three chapters of koboSpans
+/// covering ASCII, accented and astral text.
+pub const READER_KEPUB: &[u8] = include_bytes!("../../test_data/kepub/reader.kepub.epub");
+
+/// [`READER_KEPUB`]'s source EPUB, before kepubify — a plain EPUB with no
+/// koboSpan markup, for the "not downloaded as a KEPUB" paths.
+pub const READER_EPUB: &[u8] = include_bytes!("../../test_data/kepub/reader.epub");
+
+/// Enough bytes to satisfy `covers::decode`'s JPEG magic check.
+pub const JPEG_BYTES: &[u8] = &[0xFF, 0xD8, 0xFF, 0x00];
+
+/// Enough bytes to satisfy `covers::decode`'s PNG magic check.
+pub const PNG_BYTES: &[u8] = &[
+    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x00,
+];
+
+/// A WebP's magic bytes: `RIFF….WEBP`, which the device never decodes.
+pub const WEBP_BYTES: &[u8] = b"RIFF\x00\x00\x00\x00WEBP";
+
 /// Each request as `METHOD path status`, in order.
 pub fn request_lines(requests: &[RequestRecord]) -> Vec<String> {
     requests
@@ -251,11 +374,15 @@ async fn handle(
     body: String,
 ) -> Response {
     state.requests.lock().unwrap().push(Recorded {
+        method: method.to_string(),
         path: uri.path().to_owned(),
         headers: headers.clone(),
         body: body.clone(),
     });
     if let Some(response) = omnibus_api(&state, uri.path(), &headers, &body) {
+        return response;
+    }
+    if let Some(response) = reading_services(&state, &method, uri.path()).await {
         return response;
     }
     let prefix = format!("/kobo/{STUB_TOKEN}");
@@ -268,10 +395,216 @@ async fn handle(
         | "/v1/user/loyalty/benefits"
         | "/v1/products/books/subscriptions"
         | "/v1/deals" => store_path(&state),
+        _ if rest.starts_with("/v1/download/") => download(&state),
+        _ if rest.starts_with("/v1/library/")
+            && rest.ends_with("/state")
+            && method == Method::PUT =>
+        {
+            state_put(&state)
+        }
         _ => match rest.strip_prefix(state.stub.resources_under) {
             Some(resource) => answer_resource(&state, &method, resource).await,
             None => StatusCode::NOT_FOUND.into_response(),
         },
+    }
+}
+
+/// `GET v1/download/{id}`, outside the resources map like the real server's route.
+fn download(state: &StubState) -> Response {
+    (state.stub.download_status, state.stub.download_body).into_response()
+}
+
+/// `PUT v1/library/{id}/state`, also off `api_endpoint` directly.
+fn state_put(state: &StubState) -> Response {
+    let status = state.stub.state_status;
+    if !status.is_success() {
+        return status.into_response();
+    }
+    let reply = state.stub.state_reply.clone().unwrap_or_else(|| {
+        json!({
+            "RequestResult": "Success",
+            "UpdateResults": [{
+                "StatusInfoResult": { "Result": "Success" },
+                "CurrentBookmarkResult": { "Result": "Success" },
+            }],
+        })
+    });
+    (status, Json(reply)).into_response()
+}
+
+/// The Reading Services routes: `checkforchanges` and the annotations GET,
+/// served at the bare origin rather than under `/kobo/<token>`.
+async fn reading_services(state: &StubState, method: &Method, path: &str) -> Option<Response> {
+    if path == "/api/v3/content/checkforchanges" && *method == Method::POST {
+        return Some(checkforchanges(state).await);
+    }
+    let id = path
+        .strip_prefix("/api/v3/content/")
+        .and_then(|rest| rest.strip_suffix("/annotations"))?;
+    match *method {
+        Method::GET => Some(annotations_get(state, id).await),
+        Method::PATCH => Some(state.stub.patch_status.into_response()),
+        _ => None,
+    }
+}
+
+/// `checkforchanges`'s answer: `reading_services_changed`, minus any id
+/// already served a 200 GET this run.
+async fn checkforchanges(state: &StubState) -> Response {
+    if state.stub.checkforchanges_never_answers {
+        std::future::pending::<()>().await;
+    }
+    let status = state.stub.reading_services_status;
+    if !status.is_success() {
+        return status.into_response();
+    }
+    if state.stub.checkforchanges_bad_body {
+        return (status, Json(json!({ "not": "a list" }))).into_response();
+    }
+    let served_once = state.served_once.lock().unwrap();
+    let ids: Vec<&String> = state
+        .stub
+        .reading_services_changed
+        .iter()
+        .filter(|id| !served_once.contains(id.as_str()))
+        .collect();
+    (status, Json(ids)).into_response()
+}
+
+/// One book's annotations GET: `200` with its served set when non-empty
+/// (marking it served, for the next `checkforchanges`), else `304 W/"0"`.
+async fn annotations_get(state: &StubState, id: &str) -> Response {
+    if state.stub.annotations_get_never_answers {
+        std::future::pending::<()>().await;
+    }
+    let served = state
+        .stub
+        .reading_services_annotations
+        .get(id)
+        .cloned()
+        .unwrap_or_default();
+    if served.is_empty() {
+        return (StatusCode::NOT_MODIFIED, [(ETAG, "W/\"0\"".to_owned())]).into_response();
+    }
+    let status = state.stub.annotations_get_status;
+    if !status.is_success() {
+        return status.into_response();
+    }
+    if state.stub.annotations_get_bad_body {
+        return (status, Json(json!({ "not": "the envelope" }))).into_response();
+    }
+    state.served_once.lock().unwrap().insert(id.to_owned());
+    (
+        status,
+        Json(json!({ "annotations": served, "nextPageOffsetToken": null })),
+    )
+        .into_response()
+}
+
+/// One served annotation entry, with a `{"span":…}` location.
+pub fn served_annotation(id: &str, color: &str, text: &str) -> Value {
+    json!({
+        "id": id,
+        "highlightColor": color,
+        "highlightedText": text,
+        "location": {
+            "span": {
+                "chapterFilename": "OEBPS/ch1.xhtml",
+                "startPath": "span#kobo\\.1\\.2",
+                "startChar": 0,
+                "endPath": "span#kobo\\.1\\.2",
+                "endChar": 1,
+            },
+        },
+    })
+}
+
+/// A plain `Annotation` under `id`, text and colour fixed — for tests that
+/// only need *an* annotation to compare identity against, never a
+/// particular colour or text.
+pub fn annotation(id: &str) -> crate::annotations::Annotation {
+    crate::annotations::Annotation {
+        id: id.to_owned(),
+        text: "a passage".into(),
+        note: None,
+        color: crate::annotations::Swatch::Yellow,
+        location: Value::Null,
+    }
+}
+
+/// A minimal single-chapter KEPUB zip: `META-INF/container.xml`, a bare
+/// OPF naming one spine item, and `chapter_xhtml` as that item's body —
+/// for a test that wants to hand-craft koboSpan markup `Kepub::parse` sees
+/// directly, rather than go through the committed reader fixture.
+pub fn minimal_kepub_zip(chapter_xhtml: &str) -> Vec<u8> {
+    minimal_kepub_zip_with_href("ch1.xhtml", "ch1.xhtml", chapter_xhtml)
+}
+
+/// Like [`minimal_kepub_zip`], but the OPF manifest's `href` (relative to
+/// the OPF's own directory — `content.opf` sits at the zip root here) and
+/// the zip entry actually holding the chapter are given separately, for a
+/// test that wants the two to differ: a `./`/`../`-relative or
+/// percent-encoded href naming an entry stored under a plain path.
+pub fn minimal_kepub_zip_with_href(
+    manifest_href: &str,
+    zip_entry: &str,
+    chapter_xhtml: &str,
+) -> Vec<u8> {
+    use std::io::Write as _;
+
+    let mut buf = Vec::new();
+    let mut writer = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
+    let options = zip::write::SimpleFileOptions::default();
+    writer
+        .start_file("META-INF/container.xml", options)
+        .unwrap();
+    writer
+        .write_all(
+            br#"<?xml version="1.0"?><container><rootfiles>
+                <rootfile full-path="content.opf"/>
+            </rootfiles></container>"#,
+        )
+        .unwrap();
+    writer.start_file("content.opf", options).unwrap();
+    writer
+        .write_all(
+            format!(
+                r#"<?xml version="1.0"?><package>
+                <manifest><item id="ch1" href="{manifest_href}"/></manifest>
+                <spine><itemref idref="ch1"/></spine>
+            </package>"#
+            )
+            .as_bytes(),
+        )
+        .unwrap();
+    writer.start_file(zip_entry, options).unwrap();
+    writer.write_all(chapter_xhtml.as_bytes()).unwrap();
+    writer.finish().unwrap();
+    buf
+}
+
+/// A `NewHighlight` with "a passage" and `Swatch::Blue` fixed; `note` and
+/// `location` are the two fields call sites actually vary.
+pub fn new_highlight(
+    note: Option<&str>,
+    location: Option<crate::annotations::SpanRange>,
+) -> crate::annotations::NewHighlight {
+    crate::annotations::NewHighlight {
+        text: "a passage".into(),
+        color: crate::annotations::Swatch::Blue,
+        note: note.map(str::to_owned),
+        location,
+    }
+}
+
+/// A fixed KoboSpan range over `OEBPS/ch1.xhtml`, `kobo.1.2`:3 → `kobo.1.4`:9.
+pub fn span_range() -> crate::annotations::SpanRange {
+    crate::annotations::SpanRange {
+        chapter: "OEBPS/ch1.xhtml".into(),
+        start_span: "kobo.1.2".into(),
+        start_char: 3,
+        end_span: "kobo.1.4".into(),
+        end_char: 9,
     }
 }
 
@@ -355,7 +688,16 @@ async fn answer_resource(state: &StubState, method: &Method, resource: &str) -> 
         }
         "/v1/analytics/gettests" => Json(json!({ "Result": "Success" })).into_response(),
         "/v1/library/sync" => library_sync(state).await,
+        _ if resource.starts_with("/v1/books/") && resource.ends_with("/image.jpg") => cover(state),
         _ => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+/// The quality-template thumbnail path's answer, from the `cover` knob.
+fn cover(state: &StubState) -> Response {
+    match state.stub.cover {
+        Some((content_type, bytes)) => ([(CONTENT_TYPE, content_type)], bytes).into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
     }
 }
 
@@ -370,8 +712,8 @@ async fn library_sync(state: &StubState) -> Response {
     }
     let pages = &state.stub.sync_pages;
     let page = pages.get(call).or(pages.last());
-    let body = Json(page.cloned().unwrap_or_else(|| json!([])));
-    let mut response = (state.stub.sync_status, body).into_response();
+    let page = fill_stub_origin(page.cloned().unwrap_or_else(|| json!([])), &state.base);
+    let mut response = (state.stub.sync_status, Json(page)).into_response();
     let headers = response.headers_mut();
     if state.stub.sends_sync_token {
         let token = HeaderValue::from_str(&format!("page-{}", call + 1)).unwrap();
@@ -384,17 +726,58 @@ async fn library_sync(state: &StubState) -> Response {
     response
 }
 
+/// Replace every [`STUB_ORIGIN`] placeholder in a sync page with the stub's
+/// real base, now that it's bound to a port.
+fn fill_stub_origin(page: Value, base: &str) -> Value {
+    let text = page.to_string().replace(STUB_ORIGIN, base);
+    serde_json::from_str(&text).expect("re-parsing a re-serialized Value cannot fail")
+}
+
+/// A downloaded `Book` named `title` with no authors, series, annotations
+/// or reading state — a test overrides whatever field it needs via
+/// struct-update syntax. Paired with `id`, for building a `DeviceView` or
+/// library `BTreeMap` directly from `BTreeMap::from([test_support::book(id, title)])`.
+pub fn book(id: &str, title: &str) -> (String, Book) {
+    let book = Book {
+        title: title.to_owned(),
+        description: String::new(),
+        authors: Vec::new(),
+        series: None,
+        downloaded: true,
+        archived: false,
+        cover_image_id: String::new(),
+        cover: None,
+        download_problem: None,
+        reading: crate::reading::Reading::default(),
+        annotations: Vec::new(),
+        dropped_annotations: 0,
+    };
+    (id.to_owned(), book)
+}
+
+/// A device that already holds the book `id`/`title`, via a [`new_entitlement`].
+pub fn device_holding(id: &str, title: &str) -> Device {
+    let mut device = Device::new("HW-1");
+    device.apply(serde_json::from_value(new_entitlement(id, title)).unwrap());
+    device
+}
+
 /// A `NewEntitlement` sync item as Omnibus sends it, trimmed to the fields
 /// the device reads plus a reading state it must tolerate.
 pub fn new_entitlement(id: &str, title: &str) -> Value {
     json!({ "NewEntitlement": {
         "BookEntitlement": { "Id": id, "IsRemoved": false, "Status": "Active" },
         "BookMetadata": book_metadata(id, title),
-        "ReadingState": { "EntitlementId": id, "StatusInfo": { "Status": "ReadyToRead" } },
+        "ReadingState": {
+            "EntitlementId": id,
+            "StatusInfo": { "Status": "ReadyToRead" },
+            "CurrentBookmark": {},
+        },
     }})
 }
 
 /// A `BookMetadata` block with no description, contributors or series.
+/// `CoverImageId` defaults to `id` itself; a test after a cover change gives it its own.
 pub fn book_metadata(id: &str, title: &str) -> Value {
     json!({
         "EntitlementId": id,
@@ -402,6 +785,14 @@ pub fn book_metadata(id: &str, title: &str) -> Value {
         "Description": "",
         "Contributors": [],
         "ContributorRoles": [],
+        "CoverImageId": id,
+        "DownloadUrls": [{
+            "Format": "KEPUB",
+            "Size": 0,
+            "Url": format!("{STUB_ORIGIN}/kobo/{STUB_TOKEN}/v1/download/{id}"),
+            "Platform": "Generic",
+            "DrmType": "None",
+        }],
     })
 }
 
@@ -419,6 +810,10 @@ fn initialization(state: &StubState, headers: &HeaderMap) -> Response {
     let resources = json!({
         "library_sync": format!("{prefix}/v1/library/sync"),
         "get_tests_request": format!("{prefix}/v1/analytics/gettests"),
+        "image_url_quality_template": format!(
+            "{prefix}/v1/books/{{ImageId}}/thumbnail/{{Width}}/{{Height}}/{{Quality}}/{{IsGreyscale}}/image.jpg"
+        ),
+        "reading_services_host": origin,
     });
     let mut response = (status, Json(json!({ "Resources": resources }))).into_response();
     if state.stub.sends_api_token {
