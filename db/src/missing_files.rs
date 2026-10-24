@@ -78,7 +78,7 @@ pub async fn gc_books_missing_files(
 }
 
 /// Hard-delete the `(id, uuid)` victims in one transaction: their
-/// `metadata_overrides`, `kobo_annotations_sync`, `books`, and `books_fts`
+/// `metadata_overrides`, `kobo_annotations_sync`, `book_export_digests`, `books`, and `books_fts`
 /// rows (chunked at 500 to stay under SQLite's 999-bind cap), then any
 /// taxonomy the purge orphaned.
 async fn delete_victim_rows(
@@ -107,6 +107,15 @@ async fn delete_victim_rows(
         let del_kobo_sync =
             format!("DELETE FROM kobo_annotations_sync WHERE book_uuid IN ({placeholders})");
         let mut q = sqlx::query(&del_kobo_sync);
+        for (_, uuid) in chunk {
+            q = q.bind(uuid);
+        }
+        q.execute(&mut *tx).await?;
+
+        // Served-bake digests are bookkeeping too: a purged book's would name nothing.
+        let del_digests =
+            format!("DELETE FROM book_export_digests WHERE book_uuid IN ({placeholders})");
+        let mut q = sqlx::query(&del_digests);
         for (_, uuid) in chunk {
             q = q.bind(uuid);
         }

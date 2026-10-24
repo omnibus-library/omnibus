@@ -104,6 +104,10 @@ rand_core = { version = "0.6", features = ["getrandom"] } # held at 0.6: tied to
 #   lockstep with the argon2 0.6 migration above.
 sha2 = "0.10"
 base64 = "0.22"
+# KOReader document fingerprint (`db::partial_md5`): its sync protocol names a
+# book by an MD5 of file samples, so this is identity matching, not security.
+# Same RustCrypto `digest` 0.10 as `sha2`, already in Cargo.lock via `lopdf`.
+md-5 = "0.10"
 
 # F1.2 thumbnail pipeline: decode EPUB covers (JPEG/PNG/WebP/GIF) and re-encode
 # as WebP at multiple sizes. Only the listed formats are enabled to keep

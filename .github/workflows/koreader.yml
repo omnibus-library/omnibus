@@ -1,6 +1,7 @@
 # The KOReader E2E lane: a real KOReader in Docker browsing, searching,
-# downloading and opening over OPDS, and syncing shelves through the Omnibus
-# plugin, against a freshly seeded scratch server (docs/koreader.md).
+# downloading and opening over OPDS, syncing shelves through the Omnibus
+# plugin, and syncing progress through its own built-in sync, against a
+# freshly seeded scratch server (docs/koreader.md).
 #
 # No workflow-level paths: (same reasoning as rust.yml); the changes job gates the lane.
 name: KOReader
@@ -44,6 +45,7 @@ jobs:
               - "server/src/backend/ebooks.rs"
               - "server/src/backend/highlights.rs"
               - "server/src/backend/koreader/**"
+              - "server/src/backend/kosync/**"
               - "server/src/backend/kobo_devices.rs"
               - "server/src/backend/kobo/resources.rs"
               - "server/src/backend/overrides.rs"
@@ -58,6 +60,8 @@ jobs:
               - "db/src/read_status/**"
               - "db/migrations/**"
               - "db/src/kobo_devices*"
+              - "db/src/kosync*"
+              - "db/src/partial_md5*"
               - "koreader/**"
               - "ui_tests/koreader/**"
               - "test_data/epubs/generated/alpha.epub"

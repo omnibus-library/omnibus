@@ -356,6 +356,48 @@
         }
       }
     },
+    "/api/account/kosync": {
+      "get": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Check your KOReader sync password",
+        "description": "Whether you have generated a password for stock KOReader's Progress sync. The password\nitself cannot be read back, only replaced.",
+        "operationId": "get_kosync",
+        "responses": {
+          "200": {
+            "description": "Whether a password exists.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KosyncStatus"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Generate a KOReader sync password",
+        "description": "Creates the password stock KOReader's Progress sync signs in with, together with your\nusername, and shows it once. Generating again replaces it, so the old one stops working.",
+        "operationId": "post_kosync",
+        "responses": {
+          "200": {
+            "description": "The new password, shown only in this response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KosyncPassword"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/account/profile": {
       "post": {
         "tags": [
@@ -12760,6 +12802,37 @@
           "token": {
             "type": "string",
             "description": "The device's secret. Treat it like a password: anyone holding it can sync as you."
+          }
+        }
+      },
+      "KosyncPassword": {
+        "type": "object",
+        "description": "A freshly generated progress-sync password, shown once.",
+        "required": [
+          "username",
+          "password"
+        ],
+        "properties": {
+          "password": {
+            "type": "string",
+            "description": "The new password. It replaces any earlier one, which stops working at once."
+          },
+          "username": {
+            "type": "string",
+            "description": "The username to enter in KOReader's Progress sync login."
+          }
+        }
+      },
+      "KosyncStatus": {
+        "type": "object",
+        "description": "Whether you have generated a KOReader progress-sync password.",
+        "required": [
+          "configured"
+        ],
+        "properties": {
+          "configured": {
+            "type": "boolean",
+            "description": "`true` once a password exists; it is not retrievable, only replaceable."
           }
         }
       },

@@ -8,6 +8,7 @@ mod diff;
 mod diff_moves;
 mod guards;
 mod merged;
+mod partial_md5;
 mod progress_reporting;
 mod reindex;
 mod resilience;

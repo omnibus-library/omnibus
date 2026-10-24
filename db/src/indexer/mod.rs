@@ -27,7 +27,7 @@ mod progress;
 pub use audiobooks::{reindex_audiobooks, reindex_audiobooks_with_progress};
 pub(crate) use backfill::{
     backfill_chapters, backfill_covers, backfill_epub_structure, backfill_page_counts,
-    backfill_thumbs, backfill_word_counts,
+    backfill_partial_md5, backfill_thumbs, backfill_word_counts,
 };
 pub use ebooks::{reindex, reindex_with_progress};
 pub(crate) use progress::{

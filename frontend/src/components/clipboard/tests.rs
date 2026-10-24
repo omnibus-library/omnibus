@@ -42,3 +42,31 @@ fn copy_button_mounts_its_live_region_before_any_copy() {
         "{html}"
     );
 }
+
+#[test]
+fn readonly_copy_field_labels_a_readonly_input_and_wires_the_copy_button() {
+    let html = render_in_vdom(|| {
+        rsx! {
+            ReadonlyCopyField {
+                id: "kosync-url",
+                label: "Server URL",
+                value: "https://omni.example.com/kosync",
+                input_testid: "kosync-url",
+                copy_label: "Copy",
+                copy_testid: "kosync-url-copy",
+                copy_aria_label: "Copy the server URL",
+            }
+        }
+    });
+    for expected in [
+        r#"<label for="kosync-url">Server URL</label>"#,
+        r#"id="kosync-url""#,
+        r#"data-testid="kosync-url""#,
+        "readonly",
+        r#"value="https://omni.example.com/kosync""#,
+        r#"data-testid="kosync-url-copy""#,
+        r#"aria-label="Copy the server URL""#,
+    ] {
+        assert!(html.contains(expected), "missing {expected}: {html}");
+    }
+}

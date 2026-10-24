@@ -21,6 +21,7 @@ use crate::http_errors::internal;
 use crate::rate_limit::{RateLimiter, RateLimits};
 
 mod account;
+mod account_kosync;
 mod admin_health;
 mod admin_sessions;
 mod audiobooks;
@@ -42,6 +43,7 @@ mod kindle;
 mod kobo;
 mod kobo_devices;
 mod koreader;
+mod kosync;
 mod logs;
 mod merge;
 mod metadata;
@@ -72,6 +74,7 @@ mod users;
 
 pub use kobo::{kobo_router, reading_services_router};
 pub use koreader::koreader_router;
+pub use kosync::kosync_router;
 pub use opds::opds_router;
 #[cfg(test)]
 use process_meta::read_app_version;

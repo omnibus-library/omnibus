@@ -15,7 +15,9 @@ use crate::auth::test_support as auth_test_support;
 use crate::backend::test_support::{body_json, get_with_bearer, request};
 use crate::backend::{rest_router, AppState};
 
-use super::super::test_support::{fixture, seed_epub_book};
+use super::super::test_support::{
+    fixture, seeded_two_chapter_epub, SECOND_PARAGRAPH_CFI, SECOND_PARAGRAPH_XPOINTER,
+};
 
 const MISSING: &str = "99999999-9999-9999-9999-999999999999";
 
@@ -568,16 +570,6 @@ mod get {
     }
 }
 
-/// Two chapters: `DocFragment[2]`'s second paragraph starts "Second paragraph.", which the
-/// literals below address as `/4/4` (body, then its second element child) by hand.
-const CHAPTER_ONE: &str = r#"<?xml version="1.0" encoding="utf-8"?>
-<html xmlns="http://www.w3.org/1999/xhtml"><head><title>One</title></head><body><p>Opening chapter text.</p></body></html>"#;
-const CHAPTER_TWO: &str = r#"<?xml version="1.0" encoding="utf-8"?>
-<html xmlns="http://www.w3.org/1999/xhtml"><head><title>Two</title></head><body><p>First paragraph.</p><p>Second paragraph.</p></body></html>"#;
-
-const SECOND_PARAGRAPH_XPOINTER: &str = "/body/DocFragment[2]/body/p[2]/text().6";
-const SECOND_PARAGRAPH_CFI: &str = "epubcfi(/6/4!/4/4/1:6)";
-
 async fn seeded_epub() -> (
     axum::Router,
     SqlitePool,
@@ -587,11 +579,7 @@ async fn seeded_epub() -> (
     std::path::PathBuf,
 ) {
     let (app, pool, token, uid) = fixture().await;
-    let (uuid, file) = seed_epub_book(
-        &pool,
-        &[("c1.xhtml", CHAPTER_ONE), ("c2.xhtml", CHAPTER_TWO)],
-    )
-    .await;
+    let (uuid, file) = seeded_two_chapter_epub(&pool).await;
     (app, pool, token, uid, uuid, file)
 }
 

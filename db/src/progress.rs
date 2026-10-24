@@ -25,7 +25,9 @@ pub use state::{
     get_playback_rate, get_progress, set_kobo_statistics_tx, set_playback_rate,
     spawn_epub_percent_derivation, KoboStatistics,
 };
-pub use upsert::{upsert_koreader_progress_tx, upsert_progress, upsert_progress_tx};
+pub use upsert::{
+    upsert_koreader_progress, upsert_koreader_progress_tx, upsert_progress, upsert_progress_tx,
+};
 
 /// Failure space for the position and session-report writes.
 #[derive(Debug, thiserror::Error)]
