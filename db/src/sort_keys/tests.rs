@@ -264,3 +264,71 @@ async fn backfill_series_sort_skips_a_series_the_override_materialised() {
             .unwrap();
     assert_eq!(sorts, [None, Some("Scanned Series".to_string())]);
 }
+
+#[tokio::test]
+async fn backfill_series_sort_survives_a_corrupt_overrides_blob() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    sqlx::raw_sql(
+        "INSERT INTO scan_roots (path, display_name) VALUES ('/lib', 'l');
+         INSERT INTO series (id, name) VALUES (1, 'Dune');
+         INSERT INTO books (id, uuid, library_id, path, title, series_sort)
+              VALUES (1, 'u1', 1, '/lib/a', 'A', NULL);
+         INSERT INTO books_series_link (book, series) VALUES (1, 1);
+         INSERT INTO metadata_overrides (book_uuid, overrides) VALUES ('u1', '{not json');",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    backfill_series_sort(&pool).await.unwrap();
+
+    let sort: Option<String> = sqlx::query_scalar("SELECT series_sort FROM books WHERE id = 1")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(sort.as_deref(), Some("Dune"));
+}
+
+#[tokio::test]
+async fn backfill_series_sort_leaves_an_overrides_series_unstamped_after_a_cleanup_merge() {
+    let (pool, _guard) = crate::test_support::seed_discovery_fixture().await;
+    let user = crate::auth::create_user(&pool, "admin", "securepassword1")
+        .await
+        .unwrap()
+        .id;
+    let uuid = crate::test_support::uuid_by_scan_key(
+        &pool,
+        &crate::helpers::scan_key_for("standalone.epub"),
+    )
+    .await;
+    crate::metadata_overrides::upsert_metadata_overrides(
+        &pool,
+        &uuid,
+        &omnibus_shared::MetadataOverrides {
+            series: Some("Zeta Series".into()),
+            ..Default::default()
+        },
+        false,
+        user,
+    )
+    .await
+    .unwrap();
+    let source = crate::test_support::series_id_by_name(&pool, "Zeta Series").await;
+    let canonical: i64 =
+        sqlx::query_scalar("INSERT INTO series (name) VALUES ('Zeta Cycle') RETURNING id")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    crate::cleanup::apply_merge_series(&pool, &[source], canonical, None, None)
+        .await
+        .unwrap();
+
+    backfill_series_sort(&pool).await.unwrap();
+
+    let sort: Option<String> = sqlx::query_scalar("SELECT series_sort FROM books WHERE uuid = ?")
+        .bind(&uuid)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(sort, None);
+}

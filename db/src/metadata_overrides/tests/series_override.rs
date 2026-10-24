@@ -299,9 +299,9 @@ async fn series_override_migration_0105_drops_only_the_links_that_are_neither_sc
     // Crawler Carl". The second book has no scanned series and a stray link.
     sqlx::raw_sql(
         r#"INSERT INTO scan_roots (id, path, display_name) VALUES (1, '/lib', 'Lib');
-           INSERT INTO books (id, uuid, library_id, path, title, series_sort)
-                VALUES (1, 'tusk', 1, '/lib/tusk.epub', 'Tusk Love', 'Critical Role'),
-                       (2, 'loner', 1, '/lib/loner.epub', 'Loner', NULL);
+           INSERT INTO books (id, uuid, library_id, path, title, series_sort, scan_key)
+                VALUES (1, 'tusk', 1, '/lib/tusk.epub', 'Tusk Love', 'Critical Role', 'tusk.epub'),
+                       (2, 'loner', 1, '/lib/loner.epub', 'Loner', NULL, 'loner.epub');
            INSERT INTO series (id, name) VALUES (1, 'Critical Role'), (2, 'Aardvark Tales'),
                                                 (3, 'Dungeon Crawler Carl');
            INSERT INTO books_series_link (book, series) VALUES (1, 1), (1, 2), (1, 3), (2, 2);
@@ -325,4 +325,209 @@ async fn series_override_migration_0105_drops_only_the_links_that_are_neither_sc
             .await
             .unwrap();
     assert_eq!(kept, [(1, 1), (1, 3), (2, 2)]);
+}
+
+async fn apply_link_repair(pool: &sqlx::SqlitePool) {
+    static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
+    let m = MIGRATOR
+        .iter()
+        .find(|m| m.version == LINK_REPAIR_VERSION)
+        .expect("0105 must exist");
+    sqlx::raw_sql(&m.sql).execute(pool).await.unwrap();
+}
+
+async fn links_of(pool: &sqlx::SqlitePool, book: i64) -> Vec<i64> {
+    sqlx::query_scalar("SELECT series FROM books_series_link WHERE book = ? ORDER BY series")
+        .bind(book)
+        .fetch_all(pool)
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn series_override_migration_0105_survives_a_corrupt_overrides_blob() {
+    let pool = pool_before_link_repair().await;
+    sqlx::raw_sql(
+        "INSERT INTO scan_roots (id, path, display_name) VALUES (1, '/lib', 'Lib');
+         INSERT INTO books (id, uuid, library_id, path, title, series_sort, scan_key)
+              VALUES (1, 'b', 1, '/lib/b.epub', 'B', 'Critical Role', 'b.epub');
+         INSERT INTO series (id, name) VALUES (1, 'Critical Role'), (2, 'Stale');
+         INSERT INTO books_series_link (book, series) VALUES (1, 1), (1, 2);
+         INSERT INTO metadata_overrides (book_uuid, overrides) VALUES ('b', '{not json');",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    apply_link_repair(&pool).await;
+
+    assert_eq!(links_of(&pool, 1).await, [1]);
+}
+
+#[tokio::test]
+async fn series_override_migration_0105_unstamps_a_never_scanned_book_and_keeps_only_its_overrides_link(
+) {
+    let pool = pool_before_link_repair().await;
+    // The old boot backfill stamped `series_sort` from the override's link on a
+    // physical-only book, which no scan has ever read; the stale link is a
+    // series it was overridden to earlier.
+    sqlx::raw_sql(
+        r#"INSERT INTO scan_roots (id, path, display_name) VALUES (1, '/lib', 'Lib');
+           INSERT INTO users (id, username, password_hash, is_admin) VALUES (1, 'u', 'x', 1);
+           INSERT INTO books (id, uuid, library_id, path, title, series_sort, scan_key)
+                VALUES (1, 'phys', 1, '', 'Physical', 'Aardvark Tales', NULL),
+                       (2, 'filed', 1, '/lib/f.epub', 'Filed', 'Zeta Series', 'f.epub');
+           INSERT INTO book_files (book_id, format, filename, size_bytes, mtime_epoch)
+                VALUES (2, 'EPUB', 'f', 1, 1);
+           INSERT INTO series (id, name) VALUES (1, 'Aardvark Tales'), (2, 'Zeta Series');
+           INSERT INTO books_series_link (book, series) VALUES (1, 1), (1, 2), (2, 2);
+           INSERT INTO metadata_overrides (book_uuid, overrides, updated_by)
+                VALUES ('phys', '{"series":"Zeta Series"}', 1),
+                       ('filed', '{"series":"Zeta Series"}', 1);"#,
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    apply_link_repair(&pool).await;
+
+    let sort: Option<String> = sqlx::query_scalar("SELECT series_sort FROM books WHERE id = 1")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(sort, None);
+    assert_eq!(links_of(&pool, 1).await, [2]);
+    // A filed book's scan may have read exactly the series the override names, so it stays.
+    assert_eq!(links_of(&pool, 2).await, [2]);
+}
+
+#[tokio::test]
+async fn series_override_clear_leaves_no_link_on_a_legacy_never_scanned_book_once_unstamped() {
+    let pool = pool_before_link_repair().await;
+    sqlx::raw_sql(
+        r#"INSERT INTO scan_roots (id, path, display_name) VALUES (1, '/lib', 'Lib');
+           INSERT INTO users (id, username, password_hash, is_admin) VALUES (1, 'u', 'x', 1);
+           INSERT INTO books (id, uuid, library_id, path, title, series_sort, scan_key)
+                VALUES (1, 'phys', 1, '', 'Physical', 'Zeta Series', NULL);
+           INSERT INTO series (id, name) VALUES (1, 'Zeta Series');
+           INSERT INTO books_series_link (book, series) VALUES (1, 1);
+           INSERT INTO metadata_overrides (book_uuid, overrides, updated_by)
+                VALUES ('phys', '{"series":"Zeta Series"}', 1);"#,
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    apply_link_repair(&pool).await;
+
+    delete_metadata_overrides(&pool, "phys").await.unwrap();
+
+    assert!(links_of(&pool, 1).await.is_empty());
+}
+
+#[tokio::test]
+async fn series_override_migration_0105_keeps_a_link_repointed_by_a_series_merge() {
+    let pool = pool_before_link_repair().await;
+    // "Zeta Series" was merged into "Zeta Cycle": its row is gone, aliased to the canonical one.
+    sqlx::raw_sql(
+        r#"INSERT INTO scan_roots (id, path, display_name) VALUES (1, '/lib', 'Lib');
+           INSERT INTO books (id, uuid, library_id, path, title, series_sort, scan_key)
+                VALUES (1, 'b', 1, '/lib/b.epub', 'B', 'Critical Role', 'b.epub');
+           INSERT INTO series (id, name) VALUES (1, 'Critical Role'), (2, 'Zeta Cycle');
+           INSERT INTO books_series_link (book, series) VALUES (1, 1), (1, 2);
+           INSERT INTO entity_aliases (kind, alias_name, canonical_id) VALUES ('series', 'Zeta Series', 2);
+           INSERT INTO metadata_overrides (book_uuid, overrides)
+                VALUES ('b', '{"series":"Zeta Series"}');"#,
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    apply_link_repair(&pool).await;
+
+    assert_eq!(links_of(&pool, 1).await, [1, 2]);
+}
+
+#[tokio::test]
+async fn series_override_replaced_on_a_seriesless_book_keeps_only_the_latest() {
+    let (pool, _guard) = seed_discovery_fixture().await;
+    let user = admin(&pool).await;
+    let uuid = uuid_by_scan_key(&pool, &crate::helpers::scan_key_for("standalone.epub")).await;
+    let id: i64 = sqlx::query_scalar("SELECT id FROM books WHERE uuid = ?")
+        .bind(&uuid)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+    for name in ["Beta Series", "Gamma Series"] {
+        upsert_metadata_overrides(&pool, &uuid, &with_series(name), false, user)
+            .await
+            .unwrap();
+    }
+
+    assert_eq!(linked_series(&pool, id).await, ["Gamma Series"]);
+}
+
+#[tokio::test]
+async fn series_override_keeps_the_links_of_a_book_with_no_series_sort() {
+    let (pool, _guard) = seed_discovery_fixture().await;
+    let user = admin(&pool).await;
+    let uuid = uuid_by_scan_key(&pool, &crate::helpers::scan_key_for("standalone.epub")).await;
+    let id: i64 = sqlx::query_scalar("SELECT id FROM books WHERE uuid = ?")
+        .bind(&uuid)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    // A link nothing here wrote and no override names: with no `series_sort`
+    // there is no telling which link the scan wrote, so it is left alone.
+    sqlx::query("INSERT INTO books_series_link (book, series) VALUES (?, ?)")
+        .bind(id)
+        .bind(series_id_by_name(&pool, "Pioneers").await)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    upsert_metadata_overrides(
+        &pool,
+        &uuid,
+        &MetadataOverrides {
+            title: Some("Retitled".into()),
+            ..Default::default()
+        },
+        false,
+        user,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(linked_series(&pool, id).await, ["Pioneers"]);
+}
+
+/// Merge "Zeta Series" (an override's series) into a new canonical "Zeta Cycle", as
+/// a library cleanup does: the source row goes, its name becomes an alias.
+async fn merge_override_series_into_zeta_cycle(pool: &sqlx::SqlitePool) -> i64 {
+    let source = series_id_by_name(pool, "Zeta Series").await;
+    let canonical: i64 =
+        sqlx::query_scalar("INSERT INTO series (name) VALUES ('Zeta Cycle') RETURNING id")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    crate::cleanup::apply_merge_series(pool, &[source], canonical, None, None)
+        .await
+        .unwrap();
+    canonical
+}
+
+#[tokio::test]
+async fn series_override_survives_a_cleanup_merge_of_its_series_with_name_and_link_agreeing() {
+    let (pool, _guard) = seed_discovery_fixture().await;
+    let user = admin(&pool).await;
+    let (uuid, id) = saga_one(&pool).await;
+    upsert_metadata_overrides(&pool, &uuid, &with_series("Zeta Series"), false, user)
+        .await
+        .unwrap();
+
+    let canonical = merge_override_series_into_zeta_cycle(&pool).await;
+
+    let book = get_book(&pool, id).await.unwrap().unwrap();
+    assert_eq!(book.series_id, Some(canonical));
 }

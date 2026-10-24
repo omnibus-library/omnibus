@@ -7,14 +7,18 @@
 use omnibus_shared::EbookMetadata;
 use sqlx::{SqliteConnection, SqlitePool};
 
+use crate::metadata_overrides::sql::override_series_sql;
 use crate::normalize::creator_sort_key;
 
 /// `s` (a `series` alias) is not the series the book's override names.
 macro_rules! not_override_series {
     () => {
-        "NOT EXISTS (SELECT 1 FROM metadata_overrides mo
-                      WHERE mo.book_uuid = books.uuid AND json_valid(mo.overrides)
-                        AND json_extract(mo.overrides, '$.series') = s.name COLLATE NOCASE)"
+        concat!(
+            "NOT EXISTS (SELECT 1 FROM metadata_overrides mo
+                          WHERE mo.book_uuid = books.uuid AND ",
+            override_series_sql!("s", "mo"),
+            ")"
+        )
     };
 }
 

@@ -9,7 +9,7 @@ use sqlx::{Row, SqlitePool};
 
 use crate::helpers::format_series_index;
 use crate::interaction::interacted_at_iso_sql;
-use crate::metadata_overrides::sql::{overrides_win_sql, safe_overrides_sql};
+use crate::metadata_overrides::sql::{override_series_sql, overrides_win_sql, scanned_series_sql};
 use crate::metadata_overrides::{
     apply_overrides, load_overrides_bulk, load_overrides_bulk_without_description,
 };
@@ -85,20 +85,19 @@ macro_rules! book_columns_body {
          JOIN metadata_overrides mo ON mo.book_uuid = b.uuid
         WHERE ",
             overrides_win_sql!(),
-            " AND s.name = json_extract(",
-            safe_overrides_sql!("mo"),
-            ", '$.series') COLLATE NOCASE
+            " AND ",
+            override_series_sql!("s", "mo"),
+            "
         LIMIT 1),
       -- The scanned flag is computed in a derived table: SQLite 3.46 rejects an
       -- outer column referenced from this subquery's own ORDER BY.
       (SELECT json_object('name', name, 'id', id)
          FROM (SELECT s.name AS name, s.id AS id,
-                      COALESCE(s.name = b.series_sort COLLATE NOCASE
-                               OR s.id = ea.canonical_id, 0) AS scanned
+                      COALESCE(",
+            scanned_series_sql!("s", "b.series_sort"),
+            ", 0) AS scanned
                  FROM books_series_link bsl
                  JOIN series s ON s.id = bsl.series
-                 LEFT JOIN entity_aliases ea
-                   ON ea.kind = 'series' AND ea.alias_name = b.series_sort COLLATE NOCASE
                 WHERE bsl.book = b.id)
         ORDER BY scanned DESC, name COLLATE NOCASE
         LIMIT 1))
