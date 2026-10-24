@@ -14,6 +14,7 @@ use crate::helpers::{
     cleaned_series_name, mint_uuid, resolved_series_index, sanitize_accent_color, scan_key_for,
     split_filename, stable_uuid,
 };
+use crate::metadata_overrides::restore_override_series_link;
 use crate::normalize::{creator_sort_key, normalize_author, normalize_title};
 use crate::sort_keys::series_sort_value;
 use crate::taxonomy::{
@@ -42,6 +43,8 @@ pub(super) async fn rewrite_book_in_place(
     wipe_per_book_link_rows(tx, book_id, &file_ext).await?;
     insert_book_file_row(tx, book_id, b).await?;
     insert_metadata_links(tx, book_id, &b.metadata, alias_maps).await?;
+    // The wipe dropped the override's series link; relink before the orphan sweep reaps it.
+    restore_override_series_link(tx, book_id, uuid).await?;
     upsert_fts(tx, book_id).await?;
     super::super::push_cover(covers, uuid, &b.cover);
     Ok(())

@@ -274,6 +274,41 @@ async fn series_override_survives_a_rescan_that_wiped_the_book_links() {
     );
 }
 
+#[tokio::test]
+async fn series_override_survives_a_changed_file_resync_that_orphans_its_only_link() {
+    let (pool, _guard) = seed_discovery_fixture().await;
+    let user = admin(&pool).await;
+    let (uuid, id) = saga_one(&pool).await;
+    upsert_metadata_overrides(&pool, &uuid, &with_series("Zeta Series"), false, user)
+        .await
+        .unwrap();
+
+    crate::sync::sync_books(
+        &pool,
+        "/lib",
+        crate::sync::SyncPlan {
+            changed_books: vec![crate::test_support::indexed(
+                "saga1.epub",
+                Some("Saga: Book One"),
+                &["Ada Lovelace"],
+                &[],
+                Some(("Saga", "1")),
+                None,
+            )],
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    let book = get_book(&pool, id).await.unwrap().unwrap();
+    assert_eq!(book.series.as_deref(), Some("Zeta Series"));
+    assert_eq!(
+        book.series_id,
+        Some(series_id_by_name(&pool, "Zeta Series").await)
+    );
+}
+
 /// Version of `0105_series_override_link_repair.sql`.
 const LINK_REPAIR_VERSION: i64 = 105;
 

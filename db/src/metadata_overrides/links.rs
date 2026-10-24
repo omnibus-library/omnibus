@@ -9,7 +9,7 @@ use omnibus_shared::text_fold::fold_for_match;
 use omnibus_shared::MetadataOverrides;
 use sqlx::{QueryBuilder, SqliteConnection};
 
-use super::sql::{override_series_sql, scanned_series_sql};
+use super::sql::{override_series_sql, safe_overrides_sql, scanned_series_sql};
 use crate::sync::AUTHOR_UPSERT_CHUNK;
 
 /// Names bound per batched insert. SQLite's default bound-parameter cap is
@@ -86,6 +86,36 @@ pub(super) async fn materialize_series_link(
         keep = Some(series_id);
     }
     prune_override_series_links(conn, book_id, keep, replaced).await
+}
+
+/// Re-link a book to the series its override names after a rescan wiped its
+/// link rows, so the orphan sweep that follows cannot reap that series. The
+/// series resolves through cleanup aliases like the read path; a row missing
+/// outright is recreated.
+pub(crate) async fn restore_override_series_link(
+    conn: &mut SqliteConnection,
+    book_id: i64,
+    book_uuid: &str,
+) -> Result<(), sqlx::Error> {
+    let series_id = match current_override_series(&mut *conn, book_uuid).await? {
+        Some(id) => id,
+        None => {
+            let name: Option<String> = sqlx::query_scalar(concat!(
+                "SELECT json_extract(",
+                safe_overrides_sql!("mo"),
+                ", '$.series') FROM metadata_overrides mo WHERE mo.book_uuid = ?"
+            ))
+            .bind(book_uuid)
+            .fetch_optional(&mut *conn)
+            .await?
+            .flatten();
+            let Some(name) = name.as_deref().map(str::trim).filter(|s| !s.is_empty()) else {
+                return Ok(());
+            };
+            find_or_create_series(&mut *conn, name).await?
+        }
+    };
+    link_book_to_series(conn, book_id, series_id).await
 }
 
 /// Delete the book's series links that are neither the scanned one nor `keep`
