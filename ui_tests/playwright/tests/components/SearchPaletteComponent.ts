@@ -22,8 +22,8 @@ export class SearchPaletteComponent extends BaseComponent {
     this.panel = page.getByTestId("sp-panel");
     this.input = page.getByTestId("sp-input");
     this.combobox = page.getByRole("combobox", { name: "Search" });
-    this.listbox = page.getByRole("listbox");
-    this.selectedOption = page.getByRole("option", { selected: true });
+    this.listbox = this.panel.getByRole("listbox");
+    this.selectedOption = this.panel.getByRole("option", { selected: true });
     this.resultCountText = page.getByTestId("sp-result-count");
     this.booksGroupHeading = page.getByText(/^Books · \d+$/);
     this.errorMessage = page.getByRole("alert");
