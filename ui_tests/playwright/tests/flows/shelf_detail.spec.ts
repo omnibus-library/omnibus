@@ -60,33 +60,35 @@ test.describe("shelf page", () => {
   });
 
   test("update the count after a check-in adds to this shelf", async ({
-    shelfPage,
-    adminWishlist,
+    readerShelfPage,
+    readerWishlist,
     createdBookUuids,
-    expectMutation,
+    readerExpectMutation,
   }) => {
-    const overlay = shelfPage.checkInOverlay;
+    // The reader's own wishlist: no other spec writes it while this one runs.
+    const overlay = readerShelfPage.checkInOverlay;
     const book = buildExternalBook();
     let before = 0;
 
     await test.step("open the wishlist shelf", async () => {
-      await shelfPage.goto(adminWishlist.id);
-      await expect(shelfPage.count).toHaveText(/^\d+$/);
-      before = Number(await shelfPage.count.innerText());
+      await readerShelfPage.goto(readerWishlist.id);
+      await expect(readerShelfPage.count).toHaveText(/^\d+$/);
+      before = Number(await readerShelfPage.count.innerText());
     });
 
     await test.step("look up a book only the providers know", async () => {
       await overlay.stubIsbnLookup(notInLibrary(book));
-      await shelfPage.topNav.openCheckIn();
-      await expectMutation(scan.resolve(book.isbn13), () =>
+      await readerShelfPage.topNav.openCheckIn();
+      await readerExpectMutation(scan.resolve(book.isbn13), () =>
         overlay.lookUpIsbn(book.isbn13),
       );
       await expect(overlay.chooseScreen).toBeVisible();
     });
 
     await test.step("add it to the wishlist", async () => {
-      const { response } = await expectMutation(scan.wishlist("manual"), () =>
-        overlay.addToWishlist(),
+      const { response } = await readerExpectMutation(
+        scan.wishlist("manual"),
+        () => overlay.addToWishlist(),
       );
       const added: BookRef = await response.json();
       createdBookUuids.add(added.book_uuid);
@@ -99,11 +101,8 @@ test.describe("shelf page", () => {
     });
 
     await test.step("check the shelf counts and lists the new book", async () => {
-      // Other specs write the admin's wishlist too, so the count only has to rise.
-      await expect(shelfPage.bookGrid).toContainText(book.title);
-      await expect
-        .poll(async () => Number(await shelfPage.count.innerText()))
-        .toBeGreaterThan(before);
+      await expect(readerShelfPage.bookGrid).toContainText(book.title);
+      await expect(readerShelfPage.count).toHaveText(String(before + 1));
     });
   });
 

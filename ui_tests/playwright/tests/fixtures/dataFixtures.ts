@@ -110,6 +110,7 @@ type DataFixtures = {
     status: ReadStatus,
   ) => Promise<void>;
   adminWishlist: ShelfRef;
+  readerWishlist: ShelfRef;
   dualFormatUuid: string;
   createdShelfIds: Set<number>;
   createdReaderShelfIds: Set<number>;
@@ -317,6 +318,14 @@ export const test = base.extend<DataFixtures>({
     const listed = await shelvesRequests.getShelves();
     await expect(listed).toBeOK();
     await use(wishlistOf(await listed.json(), adminSession.user.id));
+  },
+
+  // The worker's reader writes only their own wishlist, so a count read there
+  // can't move under another worker's specs the way the admin's can.
+  readerWishlist: async ({ readerAccount, readerShelvesRequests }, use) => {
+    const listed = await readerShelvesRequests.getShelves();
+    await expect(listed).toBeOK();
+    await use(wishlistOf(await listed.json(), readerAccount.id));
   },
 
   // A combined book count can land before the second scan attaches the other
