@@ -47,6 +47,20 @@ pub(super) fn rail_shelves(all: &[ShelfSummary], viewer_id: Option<i64>) -> Vec<
         .collect()
 }
 
+/// Whether a persisted gallery pick names a shelf the rail no longer shows: gone,
+/// emptied (the viewer's own wishlist) or no longer shared. Never true while the
+/// viewer is unknown, since the rail withholds every "yours" until they land.
+pub(super) fn selection_off_rail(
+    selection: ShelfSelection,
+    all: &[ShelfSummary],
+    viewer_id: Option<i64>,
+) -> bool {
+    let ShelfSelection::Shelf(id) = selection else {
+        return false;
+    };
+    viewer_id.is_some() && !rail_shelves(all, viewer_id).iter().any(|s| s.id == id)
+}
+
 /// Spoken meta: `"N books"`, plus `Public` when the shelf is shared, plus
 /// `by <owner>` when the viewer doesn't own it. The tab shows only
 /// [`shelf_tab_meta`]; this keeps the rest within reach of a screen reader.

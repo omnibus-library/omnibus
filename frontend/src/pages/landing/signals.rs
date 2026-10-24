@@ -15,11 +15,12 @@ use omnibus_shared::{
 #[cfg(feature = "web")]
 use super::effects::spawn_load_more_observer;
 use super::effects::{
-    spawn_hero_effect, spawn_load_more_effect, spawn_page_fetch_effect,
+    reset_pick_off_rail, spawn_hero_effect, spawn_load_more_effect, spawn_page_fetch_effect,
     spawn_selected_shelf_effect, spawn_shelf_members_effect, spawn_shelves_list_effect,
     spawn_suggestion_pools_effect, FetchKey, FetchSignals, ShelfFetchSignals, ShelfMembersKey,
     SuggestionPools,
 };
+use super::shelf_gallery::selection_off_rail;
 use crate::components::chip_editor::SuggestionItem;
 use crate::shelf_selection::{self, ShelfSelection};
 use crate::view_prefs;
@@ -499,6 +500,7 @@ fn wire_shelf_effects(
         hero_points,
     } = shelf_wiring;
     refetch_shelves_after_check_in(shelves_tick);
+    let viewer = crate::use_current_user_summary();
     spawn_shelves_list_effect(
         server_url.to_string(),
         shelves_tick,
@@ -506,7 +508,16 @@ fn wire_shelf_effects(
         shelves,
         (shelves_loaded, shelves_answered),
         selection,
+        viewer,
     );
+    // The rail withholds every "yours" until the viewer lands, so a pick the
+    // list effect had to leave alone is judged again once they do.
+    use_effect(move || {
+        let viewer_id = viewer().map(|u| u.id);
+        if *shelves_loaded.read() {
+            reset_pick_off_rail(selection, &shelves.peek(), viewer_id);
+        }
+    });
     spawn_hero_effect(server_url.to_string(), hero_points);
 
     // Full detail for the gallery pick; re-runs after an edit-shelf save
@@ -558,11 +569,10 @@ fn wire_shelf_effects(
         if stored == *selection.peek() {
             return;
         }
-        if let ShelfSelection::Shelf(id) = stored {
-            if *shelves_loaded.peek() && !shelves.peek().iter().any(|s| s.id == id) {
-                shelf_selection::save(ShelfSelection::All);
-                return;
-            }
+        let viewer_id = viewer.peek().as_ref().map(|u| u.id);
+        if *shelves_loaded.peek() && selection_off_rail(stored, &shelves.peek(), viewer_id) {
+            shelf_selection::save(ShelfSelection::All);
+            return;
         }
         selection.set(stored);
     });

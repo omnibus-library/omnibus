@@ -4,6 +4,7 @@ import {
   addTargets,
   pageTarget,
   railShelves,
+  selectionOffRail,
   shelfAriaLabel,
   shelfTabMeta,
 } from "./shelfLens";
@@ -65,6 +66,35 @@ describe("railShelves", () => {
     const all = Array.from({ length: 12 }, (_, i) => aShelf({ id: i + 1 }));
 
     expect(railShelves(all, ME).map((s) => s.id)).toEqual(all.map((s) => s.id));
+  });
+});
+
+describe("selectionOffRail", () => {
+  const theirs = { id: THEM, name: "x", hasAvatar: false };
+  const all = [
+    aShelf({ id: 1, kind: "wishlist", bookCount: 0 }),
+    aShelf({ id: 2, owner: theirs, visibility: "private" }),
+    aShelf({ id: 3, owner: theirs, kind: "wishlist", visibility: "public" }),
+    aShelf({ id: 4, bookCount: 2 }),
+    aShelf({ id: 5, owner: theirs, visibility: "public" }),
+  ];
+  const picked = (id: number) => ({ kind: "shelf", id }) as const;
+
+  it.each([
+    ["the readers emptied wishlist", 1],
+    ["another readers private shelf", 2],
+    ["another readers wishlist", 3],
+    ["a shelf the list no longer holds", 99],
+  ])("holds for %s", (_case, id) => {
+    expect(selectionOffRail(picked(id), all, ME)).toBe(true);
+  });
+
+  it.each([
+    ["the readers own shelf", picked(4)],
+    ["another readers public shelf", picked(5)],
+    ["All Books", { kind: "all" } as const],
+  ])("does not hold for %s", (_case, selection) => {
+    expect(selectionOffRail(selection, all, ME)).toBe(false);
   });
 });
 

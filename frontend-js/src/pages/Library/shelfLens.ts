@@ -9,6 +9,7 @@ import {
   type UserId,
 } from "../../api";
 import { bookCount } from "../../format";
+import { useCurrentUser } from "../../session";
 import {
   loadShelfSelection,
   type Prefs,
@@ -30,6 +31,18 @@ export function railShelves(all: Shelf[], viewerId: UserId): Shelf[] {
     const unusedWishlist = s.kind === "wishlist" && s.bookCount === 0;
     return (own || sharedByAnother) && !unusedWishlist;
   });
+}
+
+/** Whether a saved shelf pick names a shelf the row no longer shows: gone, emptied (the reader's wishlist) or no longer shared. */
+export function selectionOffRail(
+  selection: ShelfSelection,
+  all: Shelf[],
+  viewerId: UserId,
+): boolean {
+  return (
+    selection.kind === "shelf" &&
+    !railShelves(all, viewerId).some((s) => s.id === selection.id)
+  );
 }
 
 /** What follows a shelf's name in its tab: the count, then the owner when the reader doesn't own it. */
@@ -113,13 +126,13 @@ export function useShelfLens(prefs: Prefs) {
     saveShelfSelection(next);
   };
 
-  // A stored shelf the list no longer holds snaps back to All, judged only against a list that loaded.
+  // A stored shelf the row no longer shows snaps back to All, judged only against a list that loaded.
+  const viewerId = useCurrentUser().id;
   useEffect(() => {
-    if (shelfId === null || !shelves) return;
-    if (shelves.some((s) => s.id === shelfId)) return;
+    if (!shelves || !selectionOffRail(selection, shelves, viewerId)) return;
     setSelection({ kind: "all" });
     saveShelfSelection({ kind: "all" });
-  }, [shelfId, shelves]);
+  }, [selection, shelves, viewerId]);
 
   const sortLock = sortLockReason(
     shelves?.find((s) => s.id === shelfId)?.kind ?? null,
