@@ -118,24 +118,25 @@ async fn climb(
         // Score every answer before accepting it: Hardcover's full-text search would
         // otherwise hand back whatever a fuzzy engine ranked first as the one confident
         // answer a reader files a physical copy against.
-        match providers::run(rung.provider, config, query)
+        let answer = match providers::run(rung.provider, config, query)
             .await
             .map(|found| relevance::filter_and_rank(found, query, SEARCH_LIMIT))
         {
+            Ok(found) if !found.is_empty() => {
+                narrow_for_check_in(config, rung.provider, found).await
+            }
+            Ok(_) => Ok(Vec::new()),
+            Err(e) => Err(e),
+        };
+        match answer {
             // The ladder hands callers the frozen check-in payload, not the
             // picker's richer candidate — and a candidate with no ISBN is not
-            // something check-in can act on, so it is dropped here rather than
-            // being given a blank one. `filter_map` over `try_into` is what
-            // keeps `ExternalBookMeta`'s contract (and the iOS decoder that
-            // depends on it) frozen while the picker's loosens.
-            Ok(found) if !found.is_empty() => {
-                let narrowed = narrow_for_check_in(config, rung.provider, found).await;
-                // A rung whose every candidate lacks an ISBN has nothing
-                // check-in can use, which is the same as a miss: keep walking.
-                if !narrowed.is_empty() {
-                    return Ok(dedupe_by_isbn(narrowed));
-                }
-            }
+            // something check-in can act on, so it is dropped rather than being
+            // given a blank one. `ExternalBookMeta`'s contract (and the iOS
+            // decoder that depends on it) stays frozen while the picker's loosens.
+            // A rung whose every candidate lacks an ISBN has nothing check-in
+            // can use, which is the same as a miss: keep walking.
+            Ok(narrowed) if !narrowed.is_empty() => return Ok(dedupe_by_isbn(narrowed)),
             Ok(_) => {}
             Err(e) => {
                 tracing::warn!("{:?} lookup failed, trying next: {e:#}", rung.provider);
@@ -161,7 +162,7 @@ async fn narrow_for_check_in(
     config: &MetadataLookupConfig,
     provider: MetadataProvider,
     found: Vec<omnibus_shared::metadata_lookup::ProviderEdition>,
-) -> Vec<ExternalBookMeta> {
+) -> anyhow::Result<Vec<ExternalBookMeta>> {
     if provider == MetadataProvider::OpenLibrary {
         return resolve_open_library_editions(config, found).await;
     }
@@ -171,14 +172,14 @@ async fn narrow_for_check_in(
         .filter_map(|e| ExternalBookMeta::try_from(e).ok())
         .collect();
     if !narrowed.is_empty() {
-        return narrowed;
+        return Ok(narrowed);
     }
     let Some(handle) = handle else {
-        return narrowed;
+        return Ok(narrowed);
     };
     // First candidate only: a reader at a shelf with a scanner won't wait on a
     // lookup per result.
-    match providers::by_ref(provider, config, &handle).await {
+    let resolved = match providers::by_ref(provider, config, &handle).await {
         Ok(Some(detail)) => ExternalBookMeta::try_from(detail)
             .map(|meta| vec![meta])
             .unwrap_or_default(),
@@ -189,50 +190,65 @@ async fn narrow_for_check_in(
             tracing::warn!("{provider:?} edition resolve failed: {e:#}");
             Vec::new()
         }
-    }
+    };
+    Ok(resolved)
 }
 
 /// Open Library's title search answers *works*, whose `isbn` list spans every
 /// printing, so the ISBN a doc offers can be a Turkish paperback's. Each work
 /// is resolved to one real edition, all concurrently; a work whose editions
-/// carry no ISBN is dropped, and one whose editions can't be read stays under
-/// the ISBN the search gave. Candidates that already name an edition (an ISBN
-/// lookup's) pass through unchanged.
+/// carry no ISBN, or whose editions can't be read, is dropped rather than
+/// filed under that unrelated ISBN. Candidates that already name an edition
+/// (an ISBN lookup's) pass through. `Err` when nothing resolved and a lookup
+/// failed or Open Library is cooling down, so an outage never reads as a miss.
 async fn resolve_open_library_editions(
     config: &MetadataLookupConfig,
     found: Vec<omnibus_shared::metadata_lookup::ProviderEdition>,
-) -> Vec<ExternalBookMeta> {
-    // A cooling-down Open Library is not asked again; the search's own ISBN stands.
+) -> anyhow::Result<Vec<ExternalBookMeta>> {
     let throttled = config
         .throttle
         .remaining(MetadataProvider::OpenLibrary)
         .is_some();
     let resolved = futures::future::join_all(found.into_iter().map(|mut candidate| async move {
-        if throttled || !candidate.provider_ref.starts_with("/works/") {
-            return ExternalBookMeta::try_from(candidate).ok();
+        if !candidate.provider_ref.starts_with("/works/") {
+            return Ok(ExternalBookMeta::try_from(candidate).ok());
+        }
+        if throttled {
+            anyhow::bail!("Open Library is rate-limited");
         }
         let edition =
             match providers::openlibrary::work_edition(config, &candidate.provider_ref).await {
                 Ok(Some(edition)) => edition,
                 // The work has no printing with an ISBN to file.
-                Ok(None) => return None,
-                // A hiccup is not a verdict on the work: keep it under the
-                // ISBN the search gave, and let a 429 start the cooldown.
+                Ok(None) => return Ok(None),
                 Err(e) => {
                     providers::note_throttle(config, MetadataProvider::OpenLibrary, &e);
                     tracing::warn!("open library editions lookup failed: {e:#}");
-                    return ExternalBookMeta::try_from(candidate).ok();
+                    return Err(e);
                 }
             };
         candidate.isbn13 = Some(edition.isbn13);
         candidate.publisher = edition.publisher;
         candidate.pages = edition.pages;
-        let mut meta = ExternalBookMeta::try_from(candidate).ok()?;
+        let Ok(mut meta) = ExternalBookMeta::try_from(candidate) else {
+            return Ok(None);
+        };
         meta.format = edition.format;
-        Some(meta)
+        Ok(Some(meta))
     }))
     .await;
-    resolved.into_iter().flatten().collect()
+    let mut metas = Vec::new();
+    let mut first_error = None;
+    for outcome in resolved {
+        match outcome {
+            Ok(meta) => metas.extend(meta),
+            Err(e) => first_error = first_error.or(Some(e)),
+        }
+    }
+    match first_error {
+        Some(e) if metas.is_empty() => Err(e),
+        _ => Ok(metas),
+    }
 }
 
 /// Drop repeat editions (Google Books in particular answers the same ISBN

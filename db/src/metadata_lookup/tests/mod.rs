@@ -501,18 +501,18 @@ async fn search_by_title_resolves_an_open_library_work_to_its_english_paperback(
 }
 
 #[tokio::test]
-async fn search_by_title_keeps_the_work_with_its_search_isbn_when_the_editions_call_fails() {
+async fn search_by_title_drops_the_work_instead_of_filing_its_search_isbn_when_the_editions_call_fails(
+) {
     let server = MockServer::start().await;
     mount_ol_search(&server, ol_work_hit()).await;
     mount_ol_editions(&server, ResponseTemplate::new(500)).await;
+    mount_gb_search(&server, json!({ "totalItems": 0 })).await;
 
     let results = search_provider_by_title(&config_for(&server), QUERY)
         .await
         .unwrap();
 
-    assert_eq!(results.len(), 1);
-    assert_eq!(results[0].title, "Effective Java");
-    assert_eq!(results[0].isbn13, "9780306406157");
+    assert!(results.is_empty(), "got {results:?}");
 }
 
 #[tokio::test]
@@ -520,11 +520,12 @@ async fn search_by_title_records_a_cooldown_when_open_library_throttles_the_edit
     let server = MockServer::start().await;
     mount_ol_search(&server, ol_work_hit()).await;
     mount_ol_editions(&server, ResponseTemplate::new(429)).await;
+    mount_gb_search(&server, json!({ "totalItems": 0 })).await;
     let config = config_for(&server);
 
     let results = search_provider_by_title(&config, QUERY).await.unwrap();
 
-    assert_eq!(results.len(), 1, "the work stays on the list");
+    assert!(results.is_empty(), "got {results:?}");
     assert!(config
         .throttle
         .remaining(MetadataProvider::OpenLibrary)
@@ -532,7 +533,21 @@ async fn search_by_title_records_a_cooldown_when_open_library_throttles_the_edit
 }
 
 #[tokio::test]
-async fn resolving_open_library_editions_makes_no_request_while_it_is_throttled() {
+async fn search_by_title_reports_a_provider_error_when_open_library_is_last_and_every_editions_call_fails(
+) {
+    let server = MockServer::start().await;
+    mount_ol_search(&server, ol_work_hit()).await;
+    mount_ol_editions(&server, ResponseTemplate::new(500)).await;
+    mount_gb_search(&server, json!({ "totalItems": 0 })).await;
+
+    let result = search_provider_by_title(&keyed_config_for(&server), QUERY).await;
+
+    assert!(matches!(result, Err(MetadataLookupError::Provider(_))));
+}
+
+#[tokio::test]
+async fn resolving_open_library_editions_makes_no_request_and_files_no_work_isbn_while_it_is_throttled(
+) {
     let server = MockServer::start().await;
     mount_ol_editions(
         &server,
@@ -560,9 +575,9 @@ async fn resolving_open_library_editions_makes_no_request_while_it_is_throttled(
         relevance: None,
     };
 
-    let metas = resolve_open_library_editions(&config, vec![work]).await;
+    let resolved = resolve_open_library_editions(&config, vec![work]).await;
 
-    assert_eq!(metas.len(), 1);
+    assert!(resolved.is_err(), "a cooling-down lookup is not an answer");
     assert!(server.received_requests().await.unwrap().is_empty());
 }
 
