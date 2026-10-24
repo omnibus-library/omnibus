@@ -140,17 +140,18 @@ const NORM_UPDATE_CHUNK: usize = 300;
 /// Boot backfill: rewrite any `books.author_sort` that is out of step with the
 /// book's first displayed author (the lowest-position link), so the Author axis
 /// orders every row on one key format. Heals a given-first display name, a
-/// comma-less OPF `file_as` and a key left behind when links changed. A book
-/// with no author link keeps its value unless it is a comma-less key to reshape.
+/// comma-less OPF `file_as` and a key left behind when links changed, and keys
+/// a linked book that has none stored. A book with no author link keeps its
+/// value unless it is a comma-less key to reshape.
 pub async fn backfill_author_sort(pool: &SqlitePool) -> Result<(), NormalizeError> {
-    let rows: Vec<(i64, String, Option<String>, Option<String>)> = sqlx::query_as(
+    let rows: Vec<(i64, Option<String>, Option<String>, Option<String>)> = sqlx::query_as(
         "SELECT b.id, b.author_sort, a.name, a.sort
            FROM books b
            LEFT JOIN authors a ON a.id = (
                 SELECT l.author FROM books_authors_link l
                  WHERE l.book = b.id ORDER BY l.position LIMIT 1)
-          WHERE b.author_sort IS NOT NULL
-            AND b.author_sort <> ''",
+          WHERE (b.author_sort IS NOT NULL AND b.author_sort <> '')
+             OR a.id IS NOT NULL",
     )
     .fetch_all(pool)
     .await?;
@@ -160,9 +161,9 @@ pub async fn backfill_author_sort(pool: &SqlitePool) -> Result<(), NormalizeErro
         .filter_map(|(id, stored, name, sort)| {
             let key = match name {
                 Some(name) => creator_sort_key(sort.as_deref(), &name),
-                None => creator_sort_key(Some(&stored), ""),
+                None => creator_sort_key(stored.as_deref(), ""),
             };
-            (key != stored).then_some((id, key))
+            (stored.as_deref() != Some(key.as_str())).then_some((id, key))
         })
         .collect();
     if updates.is_empty() {

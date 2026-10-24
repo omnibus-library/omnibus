@@ -352,6 +352,61 @@ async fn backfill_author_sort_keeps_a_comma_key_on_a_book_with_no_author_link() 
 }
 
 #[tokio::test]
+async fn backfill_author_sort_keys_a_linked_book_with_no_stored_key_and_leaves_an_unlinked_one_null(
+) {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    sqlx::query("INSERT INTO scan_roots (path, display_name) VALUES ('/lib', 'lib')")
+        .execute(&pool)
+        .await
+        .unwrap();
+    for (uuid, stored) in [
+        ("linked-null", None),
+        ("linked-empty", Some("")),
+        ("bare", None),
+    ] {
+        let book_id: i64 = sqlx::query_scalar(
+            "INSERT INTO books (uuid, library_id, path, title, author_sort) \
+             VALUES (?, 1, '', 't', ?) RETURNING id",
+        )
+        .bind(uuid)
+        .bind(stored)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        if uuid != "bare" {
+            let author_id: i64 =
+                sqlx::query_scalar("INSERT INTO authors (name) VALUES (?) RETURNING id")
+                    .bind(format!("Ada {uuid}"))
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap();
+            sqlx::query("INSERT INTO books_authors_link (book, author, position) VALUES (?, ?, 0)")
+                .bind(book_id)
+                .bind(author_id)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+    }
+
+    backfill_author_sort(&pool).await.unwrap();
+
+    let keys: Vec<Option<String>> =
+        sqlx::query_scalar("SELECT author_sort FROM books ORDER BY uuid")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        keys,
+        [
+            None,
+            Some("linked-empty, Ada".into()),
+            Some("linked-null, Ada".into())
+        ]
+    );
+}
+
+#[tokio::test]
 async fn backfill_author_sort_propagates_db_error_when_pool_is_closed() {
     let pool = init_db("sqlite::memory:").await.unwrap();
     pool.close().await;
