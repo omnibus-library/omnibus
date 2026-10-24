@@ -1,3 +1,6 @@
+//! The kosync data layer: resolving a KOReader document digest to a book, and the per-reader
+//! password behind the `/kosync` routes.
+
 use super::*;
 use crate::pool::init_db;
 use crate::test_support::seed_synced_ebook;
@@ -29,6 +32,28 @@ async fn record_digest(pool: &SqlitePool, digest: &str, uuid: &str) {
     .execute(pool)
     .await
     .unwrap();
+}
+
+mod record_export_digest {
+    use super::*;
+
+    #[tokio::test]
+    async fn keeps_one_row_when_the_same_bake_is_recorded_again() {
+        let pool = init_db("sqlite::memory:").await.unwrap();
+        let uuid = seed_hashed_epub(&pool, "a.epub", DIGEST_A).await;
+        let dir = tempfile::tempdir().unwrap();
+        let bake = dir.path().join("bake.epub");
+        std::fs::write(&bake, b"baked bytes").unwrap();
+
+        record_export_digest(&pool, &uuid, &bake).await.unwrap();
+        record_export_digest(&pool, &uuid, &bake).await.unwrap();
+
+        let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM book_export_digests")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(rows, 1);
+    }
 }
 
 mod resolve_document {
@@ -80,6 +105,17 @@ mod resolve_document {
         record_digest(&pool, DIGEST_B, &uuid).await;
 
         assert_eq!(resolve_document(&pool, DIGEST_B).await.unwrap(), Some(uuid));
+    }
+
+    #[tokio::test]
+    async fn returns_none_when_two_books_baked_to_the_same_digest() {
+        let pool = init_db("sqlite::memory:").await.unwrap();
+        let a = seed_hashed_epub(&pool, "a.epub", DIGEST_A).await;
+        let b = seed_hashed_epub(&pool, "b.epub", "b".repeat(32).as_str()).await;
+        record_digest(&pool, DIGEST_B, &a).await;
+        record_digest(&pool, DIGEST_B, &b).await;
+
+        assert_eq!(resolve_document(&pool, DIGEST_B).await.unwrap(), None);
     }
 
     #[tokio::test]

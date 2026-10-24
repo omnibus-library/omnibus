@@ -436,7 +436,7 @@ pub(super) struct Collision {
 /// The subset of [`RETARGET_TABLES`] with a `UNIQUE` key to settle, resolved by
 /// [`dedupe_collisions`] before the retarget runs. Which rule fits which row,
 /// and how each deleted row stays undoable, is in `.claude/rules/06-migrations.md`.
-pub(super) const COLLISION_TABLES: [Collision; 9] = [
+pub(super) const COLLISION_TABLES: [Collision; 10] = [
     Collision {
         table: "reading_progress",
         keys: &["user_id", "format"],
@@ -496,6 +496,13 @@ pub(super) const COLLISION_TABLES: [Collision; 9] = [
     Collision {
         table: "book_content_chapters",
         keys: &["spine_index"],
+        keep: Keep::Target,
+    },
+    // Both books baked to one digest: the pair is the same fact either way, so the
+    // target's row stands.
+    Collision {
+        table: "book_export_digests",
+        keys: &["partial_md5"],
         keep: Keep::Target,
     },
 ];
