@@ -23,6 +23,8 @@ const AUTHOR_ID_CHUNK: usize = 500;
 pub enum AuthorPhotosDataError {
     #[error(transparent)]
     Db(#[from] sqlx::Error),
+    #[error(transparent)]
+    SortKeys(#[from] crate::sort_keys::SortKeysError),
 }
 
 /// Source-of-truth marker for a cached author photo row.

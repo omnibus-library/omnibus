@@ -1,8 +1,10 @@
-//! Denormalized sort-key columns carried on `books` for the keyset landing
-//! path — today just `series_sort`, computed at index time by the sync writers
-//! via [`series_sort_value`] and backfilled once at boot by
-//! [`backfill_series_sort`]. Like `normalize`, this denormalizes **scanned**
-//! metadata only; `metadata_overrides` is a read layer and is ignored here.
+//! The `series_sort` and `author_sort` columns carried on `books` for the
+//! keyset landing path. `series_sort` is computed at index time by the sync
+//! writers via [`series_sort_value`] and backfilled at boot by
+//! [`backfill_series_sort`]; `author_sort` is re-keyed from a book's first
+//! author by [`refresh_author_sort`] whenever a link change moves it. Like
+//! `normalize`, these denormalize **scanned** metadata only; `metadata_overrides`
+//! is a read layer and is ignored here.
 
 use omnibus_shared::EbookMetadata;
 use sqlx::{SqliteConnection, SqlitePool};
@@ -22,7 +24,7 @@ macro_rules! not_override_series {
     };
 }
 
-/// Errors returned by [`backfill_series_sort`].
+/// Errors returned by the sort-key writes ([`backfill_series_sort`], [`refresh_author_sort`]).
 #[derive(Debug, thiserror::Error)]
 pub enum SortKeysError {
     #[error(transparent)]
@@ -44,7 +46,7 @@ pub fn series_sort_value(m: &EbookMetadata) -> Option<String> {
 pub(crate) async fn refresh_author_sort(
     conn: &mut SqliteConnection,
     book_ids: &[i64],
-) -> Result<(), sqlx::Error> {
+) -> Result<(), SortKeysError> {
     for book_id in book_ids {
         let first: Option<(Option<String>, String)> = sqlx::query_as(
             "SELECT a.sort, a.name FROM books_authors_link l

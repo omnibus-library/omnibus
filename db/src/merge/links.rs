@@ -103,7 +103,7 @@ pub(super) async fn move_links(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     source_id: i64,
     target_id: i64,
-) -> Result<LinksAdded, sqlx::Error> {
+) -> Result<LinksAdded, MergeError> {
     let target_had_authors = has_author_links(tx, target_id).await?;
     let mut added = LinksAdded::new();
     for t in &LINK_TABLES {

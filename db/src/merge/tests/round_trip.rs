@@ -241,6 +241,29 @@ async fn merge_into_an_authorless_book_takes_the_sources_author_sort_and_undo_re
 }
 
 #[tokio::test]
+async fn undo_of_the_older_merge_re_keys_author_sort_from_the_authors_that_remain() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool).await;
+    let target = seed_book(&pool, "A/t.epub", "T", &[], &[], ("K", "1"), "en").await;
+    let first = seed_book(&pool, "B/a.epub", "A", &["A Author"], &[], ("K", "1"), "en").await;
+    let second = seed_book(&pool, "C/b.epub", "B", &["B Author"], &[], ("K", "1"), "en").await;
+    let older = merge_books(&pool, &first, &target, Some(user))
+        .await
+        .unwrap();
+    merge_books(&pool, &second, &target, Some(user))
+        .await
+        .unwrap();
+
+    undo_merge(&pool, older.merge_log_id).await.unwrap();
+
+    assert_eq!(authors(&pool, &target).await, ["B Author"]);
+    assert_eq!(
+        author_sort_of(&pool, &target).await.as_deref(),
+        Some("Author, B")
+    );
+}
+
+#[tokio::test]
 async fn merge_keeps_the_target_author_sort_when_it_already_has_authors() {
     let pool = init_db("sqlite::memory:").await.unwrap();
     let user = seed_user(&pool).await;
