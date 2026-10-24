@@ -32,6 +32,36 @@ fn replace_confirm_says_the_old_password_stops_working() {
     assert!(body.contains("stops working"), "{body}");
 }
 
+#[test]
+fn generate_asks_first_unless_the_reader_is_known_to_have_no_password() {
+    assert!(!generate_needs_confirm(Some(false)));
+    assert!(generate_needs_confirm(Some(true)));
+    assert!(generate_needs_confirm(None));
+}
+
+#[test]
+fn generate_is_disabled_only_while_the_status_loads_or_a_request_runs() {
+    assert!(generate_disabled(None, false, false));
+    assert!(!generate_disabled(None, true, false));
+    assert!(!generate_disabled(Some(false), false, false));
+    assert!(generate_disabled(Some(false), false, true));
+}
+
+#[test]
+fn generate_outcome_reports_success_as_a_message_and_failure_as_an_error() {
+    assert_eq!(
+        generate_outcome(Ok(())),
+        (
+            "Password generated. Copy it now: it is shown once.".to_string(),
+            false
+        )
+    );
+    assert_eq!(
+        generate_outcome(Err("boom".to_string())),
+        ("boom".to_string(), true)
+    );
+}
+
 #[cfg(feature = "server")]
 mod render_tests {
     use omnibus_shared::KosyncPassword;
@@ -74,6 +104,19 @@ mod render_tests {
             .unwrap();
         let button_tag = before_testid.rsplit("<button").next().unwrap();
         assert!(button_tag.contains("disabled=true"), "{html}");
+    }
+
+    fn failed_status() -> Element {
+        render_status(None, true)
+    }
+
+    #[test]
+    fn render_status_says_the_status_is_unavailable_when_the_read_failed() {
+        let html = render_in_vdom(failed_status);
+
+        assert!(html.contains("data-testid=\"kosync-status\""), "{html}");
+        assert!(html.contains("Status unavailable"), "{html}");
+        assert!(!html.contains("kosync-loading"), "{html}");
     }
 
     #[test]

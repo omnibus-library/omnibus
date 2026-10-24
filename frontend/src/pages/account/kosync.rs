@@ -6,7 +6,7 @@
 use dioxus::prelude::*;
 use omnibus_shared::KosyncPassword;
 
-use crate::components::clipboard::CopyButton;
+use crate::components::clipboard::ReadonlyCopyField;
 use crate::components::confirm_modal::{confirm_dialog, Confirm};
 use crate::components::credential_card::action_status;
 use crate::components::loading::{Loading, LoadingKind};
@@ -40,27 +40,56 @@ fn replace_confirm_text() -> (&'static str, &'static str) {
 /// One revealed value: a label, a read-only field and a copy button.
 fn revealed_field(id: &'static str, label: &'static str, value: &str) -> Element {
     rsx! {
-        div { class: "settings-field",
-            label { r#for: "kosync-{id}", "{label}" }
-            div { class: "kobo-endpoint-row",
-                input {
-                    r#type: "text",
-                    id: "kosync-{id}",
-                    class: "kobo-endpoint-url",
-                    "data-testid": "kosync-{id}",
-                    translate: "no",
-                    spellcheck: "false",
-                    readonly: true,
-                    value: "{value}",
-                }
-                CopyButton {
-                    text: value.to_string(),
-                    label: "Copy",
-                    testid: "kosync-{id}-copy",
-                    aria_label: format!("Copy the {}", label.to_lowercase()),
-                }
-            }
+        ReadonlyCopyField {
+            id: "kosync-{id}",
+            label,
+            value: value.to_string(),
+            input_testid: "kosync-{id}",
+            copy_label: "Copy",
+            copy_testid: "kosync-{id}-copy",
+            copy_aria_label: format!("Copy the {}", label.to_lowercase()),
         }
+    }
+}
+
+/// The status line: a loader until the read answers, then On or Off, or that it could not be read.
+fn render_status(status: Option<bool>, failed: bool) -> Element {
+    match (status, failed) {
+        (Some(on), _) => rsx! {
+            p { "data-testid": "kosync-status", if on { "On" } else { "Off" } }
+        },
+        (None, true) => rsx! {
+            p { "data-testid": "kosync-status", "Status unavailable" }
+        },
+        (None, false) => rsx! {
+            Loading {
+                kind: LoadingKind::Section,
+                class: "start",
+                testid: "kosync-loading",
+                label: "Checking progress sync\u{2026}",
+            }
+        },
+    }
+}
+
+/// Whether generating must ask first: anything but a known absence may hold a password to replace.
+fn generate_needs_confirm(status: Option<bool>) -> bool {
+    status != Some(false)
+}
+
+/// Whether the generate button is off: while the status is still loading, or a request runs.
+fn generate_disabled(status: Option<bool>, status_failed: bool, in_flight: bool) -> bool {
+    (status.is_none() && !status_failed) || in_flight
+}
+
+/// The card status line after a generate: its text, and whether it is an error.
+fn generate_outcome(result: Result<(), String>) -> (String, bool) {
+    match result {
+        Ok(()) => (
+            "Password generated. Copy it now: it is shown once.".to_string(),
+            false,
+        ),
+        Err(e) => (e, true),
     }
 }
 
@@ -90,6 +119,7 @@ pub fn KosyncCard() -> Element {
     let mut msg_is_error = use_signal(|| false);
     let mut in_flight = use_signal(|| false);
     let mut confirming = use_signal(|| false);
+    let mut status_failed = use_signal(|| false);
 
     let load_url = server_url.clone();
     use_effect(move || {
@@ -98,6 +128,7 @@ pub fn KosyncCard() -> Element {
             match data::kosync_status(&url).await {
                 Ok(status) => configured.set(Some(status.configured)),
                 Err(e) => {
+                    status_failed.set(true);
                     msg.set(Some(format!("Couldn\u{2019}t check progress sync: {e}")));
                     msg_is_error.set(true);
                 }
@@ -110,17 +141,15 @@ pub fn KosyncCard() -> Element {
         let url = generate_url.clone();
         in_flight.set(true);
         spawn(async move {
-            match data::generate_kosync_password(&url).await {
-                Ok(login) => {
-                    revealed.set(Some(login));
-                    configured.set(Some(true));
-                    msg.set(None);
-                }
-                Err(e) => {
-                    msg.set(Some(e.to_string()));
-                    msg_is_error.set(true);
-                }
+            let result = data::generate_kosync_password(&url).await;
+            let (text, is_error) =
+                generate_outcome(result.as_ref().map(|_| ()).map_err(|e| e.to_string()));
+            if let Ok(login) = result {
+                revealed.set(Some(login));
+                configured.set(Some(true));
             }
+            msg.set(Some(text));
+            msg_is_error.set(is_error);
             in_flight.set(false);
             confirming.set(false);
         });
@@ -134,21 +163,7 @@ pub fn KosyncCard() -> Element {
                 "Sync your reading position with KOReader\u{2019}s built-in Progress sync, no plugin needed. "
                 "Only books downloaded from Omnibus match."
             }
-            match status {
-                Some(on) => rsx! {
-                    p { "data-testid": "kosync-status", if on { "On" } else { "Off" } }
-                },
-                // The failure shows in the action status below.
-                None if msg_is_error() => rsx! {},
-                None => rsx! {
-                    Loading {
-                        kind: LoadingKind::Section,
-                        class: "start",
-                        testid: "kosync-loading",
-                        label: "Checking progress sync\u{2026}",
-                    }
-                },
-            }
+            {render_status(status, status_failed())}
             if let Some(login) = revealed() {
                 {render_revealed(&origin(), &login)}
             }
@@ -157,11 +172,11 @@ pub fn KosyncCard() -> Element {
                 button {
                     r#type: "button",
                     class: "btn primary",
-                    disabled: status.is_none() || in_flight(),
+                    disabled: generate_disabled(status, status_failed(), in_flight()),
                     "aria-busy": "{in_flight()}",
                     "data-testid": "kosync-generate",
                     onclick: move |_| {
-                        if status == Some(true) {
+                        if generate_needs_confirm(status) {
                             confirming.set(true);
                         } else {
                             on_generate.call(());

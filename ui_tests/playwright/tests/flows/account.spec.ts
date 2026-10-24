@@ -169,6 +169,28 @@ test.describe("devices section", () => {
       await expect(kosync.generateButton).toHaveText("Generate a new password");
     });
 
+    await test.step("ask to replace it and back out", async () => {
+      const shown = await kosync.passwordField.inputValue();
+      await kosync.generate();
+      await expect(kosync.replaceDialog).toBeVisible();
+      await kosync.cancelReplace();
+      await expect(kosync.replaceDialog).toBeHidden();
+      await expect(kosync.passwordField).toHaveValue(shown);
+      await expect(kosync.status).toHaveText("On");
+    });
+
+    await test.step("replace it and check a new password shows", async () => {
+      const before = await kosync.passwordField.inputValue();
+      await kosync.generate();
+      await readerExpectMutation(account.kosyncPassword(), () =>
+        kosync.confirmReplace(),
+      );
+      await expect(kosync.passwordField).not.toHaveValue(before);
+      await expect(kosync.passwordField).toHaveValue(
+        /^[a-hjkmnp-z2-9]{5}(-[a-hjkmnp-z2-9]{5}){3}$/,
+      );
+    });
+
     await test.step("reload and check the password is gone", async () => {
       await readerSettingsPage.goto("devices");
       await expect(kosync.status).toHaveText("On");

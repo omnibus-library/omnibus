@@ -43,4 +43,13 @@ export class KosyncCardComponent extends BaseComponent {
   async generate(): Promise<void> {
     await this.generateButton.click();
   }
+
+  async cancelReplace(): Promise<void> {
+    await this.cancelReplaceButton.click();
+  }
+
+  /** Confirms the replace dialog; wrap it in `expectMutation` to assert the write. */
+  async confirmReplace(): Promise<void> {
+    await this.confirmReplaceButton.click();
+  }
 }
