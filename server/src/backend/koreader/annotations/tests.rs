@@ -39,7 +39,7 @@ fn now() -> i64 {
     time::OffsetDateTime::now_utc().unix_timestamp()
 }
 
-async fn get(app: &Router, token: &str, uuid: &str, since: i64) -> Response {
+async fn get(app: &Router, token: &str, uuid: &str, since: impl std::fmt::Display) -> Response {
     app.clone()
         .oneshot(get_with_bearer(
             &format!("{}?since={since}", uri(uuid)),
@@ -112,7 +112,7 @@ async fn web_create(pool: &SqlitePool, uid: i64, uuid: &str, cfi: &str, id: Opti
     .unwrap();
 }
 
-async fn listed(app: &Router, token: &str, uuid: &str, since: i64) -> Value {
+async fn listed(app: &Router, token: &str, uuid: &str, since: impl std::fmt::Display) -> Value {
     let res = get(app, token, uuid, since).await;
     assert_eq!(res.status(), StatusCode::OK);
     body_json(res).await
@@ -174,7 +174,15 @@ mod get {
         assert_eq!(a["color"], "red");
         assert_eq!(a["text"], "Second");
         assert_eq!(a["id"].as_str().unwrap().len(), 32);
-        assert!(body["cursor"].as_i64().unwrap() >= a["updated_at"].as_i64().unwrap());
+        let cursor_time: i64 = body["cursor"]
+            .as_str()
+            .unwrap()
+            .split('.')
+            .next()
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert!(cursor_time >= a["updated_at"].as_i64().unwrap());
     }
 
     #[tokio::test]
@@ -257,6 +265,57 @@ mod get {
         let res = get(&app, &token, &uuid, 0).await;
 
         assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test]
+    async fn answers_500_when_the_epub_lookup_fails() {
+        let (app, pool, token, uid, uuid) = seeded().await;
+        web_create(&pool, uid, &uuid, SECOND_CFI, None).await;
+        sqlx::query("ALTER TABLE book_files RENAME TO book_files_gone")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let res = get(&app, &token, &uuid, 0).await;
+
+        assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test]
+    async fn answers_500_when_the_database_is_gone() {
+        let (app, pool, token, _uid, uuid) = seeded().await;
+        pool.close().await;
+
+        let res = get(&app, &token, &uuid, 0).await;
+
+        assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test]
+    async fn pages_through_rows_that_share_one_second() {
+        let (app, pool, token, uid, uuid) = seeded().await;
+        sqlx::query(
+            "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ?)
+             INSERT INTO annotations (user_id, book_uuid, epub_cfi_range, client_id, updated_at)
+             SELECT ?, ?, ?, 'c' || i, 10000 FROM n",
+        )
+        .bind(db::annotations::LIST_HIGHLIGHTS_LIMIT + 5)
+        .bind(uid)
+        .bind(&uuid)
+        .bind(SECOND_CFI)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let first = listed(&app, &token, &uuid, 0).await;
+        let cursor = first["cursor"].as_str().unwrap().to_owned();
+        let res = get(&app, &token, &uuid, &cursor).await;
+        let second: Value = body_json(res).await;
+
+        assert_eq!(first["annotations"].as_array().unwrap().len(), 1000);
+        assert_eq!(first["more"], true);
+        assert_eq!(second["annotations"].as_array().unwrap().len(), 5);
+        assert_eq!(second["more"], false);
     }
 
     #[tokio::test]
@@ -439,6 +498,97 @@ mod post {
     }
 
     #[tokio::test]
+    async fn answers_500_and_stores_nothing_when_the_epub_cannot_be_read() {
+        let (app, pool, token, uid) = fixture().await;
+        let uuid = db::test_support::seed_synced_ebook(&pool, "alpha.epub", "Alpha", "Ada").await;
+
+        let res = post(
+            &app,
+            &token,
+            &uuid,
+            json!({ "upserts": [upsert("h1", SECOND_POS0, SECOND_POS1)] }),
+        )
+        .await;
+
+        assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(web_highlights(&pool, uid, &uuid).await, Vec::<Value>::new());
+    }
+
+    #[tokio::test]
+    async fn answers_500_when_the_epub_lookup_fails() {
+        let (app, pool, token, _uid, uuid) = seeded().await;
+        sqlx::query("ALTER TABLE book_files RENAME TO book_files_gone")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let res = post(
+            &app,
+            &token,
+            &uuid,
+            json!({ "upserts": [upsert("h1", SECOND_POS0, SECOND_POS1)] }),
+        )
+        .await;
+
+        assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test]
+    async fn answers_stale_without_an_annotation_when_the_stored_anchor_cannot_be_placed() {
+        let (app, pool, token, uid, uuid) = seeded().await;
+        web_create(
+            &pool,
+            uid,
+            &uuid,
+            "epubcfi(/6/2!/4/40,/1:0,/1:6)",
+            Some("h1"),
+        )
+        .await;
+        let mut older = upsert("h1", SECOND_POS0, SECOND_POS1);
+        older["updated_at"] = json!(now() - 1000);
+
+        let res = post(&app, &token, &uuid, json!({ "upserts": [older] })).await;
+
+        let body: Value = body_json(res).await;
+        assert_eq!(outcomes(&body), ["stale"]);
+        assert_eq!(body["results"][0]["annotation"], Value::Null);
+    }
+
+    #[tokio::test]
+    async fn answers_500_when_the_database_is_gone() {
+        let (app, pool, token, _uid, uuid) = seeded().await;
+        pool.close().await;
+
+        let res = post(&app, &token, &uuid, json!({})).await;
+
+        assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[test]
+    fn asks_for_a_kobo_downsync_after_a_written_highlight_only() {
+        let row = KoreaderAnnotation {
+            client_id: "h1".into(),
+            epub_cfi_range: SECOND_CFI.into(),
+            color: HighlightColor::Amber,
+            text: None,
+            note: None,
+            created_at: 0,
+            updated_at: 0,
+        };
+
+        assert!(needs_kobo_downsync(&[
+            Stored::Deleted,
+            Stored::Applied(row.clone())
+        ]));
+        assert!(!needs_kobo_downsync(&[
+            Stored::Deleted,
+            Stored::Unplaceable,
+            Stored::Stale(row)
+        ]));
+        assert!(!needs_kobo_downsync(&[]));
+    }
+
+    #[tokio::test]
     async fn answers_deleted_for_an_id_the_web_deleted() {
         let (app, pool, token, uid, uuid) = seeded().await;
         web_create(&pool, uid, &uuid, SECOND_CFI, Some("h1")).await;
@@ -469,6 +619,7 @@ mod post {
         let over = |len: usize| "x".repeat(len);
         let cases = [
             ("empty id", one(&|i| i["id"] = json!(""))),
+            ("blank id", one(&|i| i["id"] = json!("   "))),
             (
                 "id over the cap",
                 one(&|i| i["id"] = json!(over(CreateHighlight::CLIENT_ID_MAX_LEN + 1))),
@@ -500,6 +651,7 @@ mod post {
                 json!({ "deletes": vec!["h1"; MAX_BATCH + 1] }),
             ),
             ("empty delete id", json!({ "deletes": [""] })),
+            ("blank delete id", json!({ "deletes": ["  "] })),
         ];
 
         for (case, body) in cases {

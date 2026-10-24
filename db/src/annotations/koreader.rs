@@ -26,12 +26,77 @@ pub struct KoreaderAnnotation {
     pub updated_at: i64,
 }
 
-/// What changed in one book since a cursor, and the cursor to ask from next.
+/// Where a device's listing of one book left off, as two independent positions: the last row
+/// seen by `(updated_at, id)` and the last tombstone by `(deleted_at, client_id)`. Rows and
+/// tombstones page separately, so neither a second shared by more rows than a page holds nor a
+/// long run of deletes can stall a device. It is opaque on the wire: a device stores the string
+/// and sends it back, and a bare integer (a time, as older plugins stored) still reads as one.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct KoreaderCursor {
+    row_at: i64,
+    row_id: i64,
+    tomb_at: i64,
+    tomb_client_id: String,
+}
+
+impl KoreaderCursor {
+    /// Read a cursor this module issued, or a bare non-negative integer; `None` for anything else.
+    pub fn parse(raw: &str) -> Option<Self> {
+        let digits = |s: &str| {
+            (!s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()))
+                .then(|| s.parse::<i64>().ok())
+                .flatten()
+        };
+        if !raw.contains('.') {
+            let at = digits(raw)?;
+            return Some(Self {
+                row_at: at,
+                tomb_at: at,
+                ..Self::default()
+            });
+        }
+        let parts: Vec<&str> = raw.split('.').collect();
+        let [row_at, row_id, tomb_at, tomb_client_id] = parts.as_slice() else {
+            return None;
+        };
+        Some(Self {
+            row_at: digits(row_at)?,
+            row_id: digits(row_id)?,
+            tomb_at: digits(tomb_at)?,
+            tomb_client_id: unhex(tomb_client_id)?,
+        })
+    }
+
+    /// The wire form: four dot-separated parts, the client id in hex so it needs no escaping.
+    pub fn encode(&self) -> String {
+        let hex: String = self
+            .tomb_client_id
+            .bytes()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        format!("{}.{}.{}.{hex}", self.row_at, self.row_id, self.tomb_at)
+    }
+}
+
+fn unhex(hex: &str) -> Option<String> {
+    if !hex.len().is_multiple_of(2) || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    let bytes: Option<Vec<u8>> = (0..hex.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).ok())
+        .collect();
+    String::from_utf8(bytes?).ok()
+}
+
+/// One page of what changed in a book since a cursor: the cursor to ask from next, and `more`
+/// when either list was cut at [`LIST_HIGHLIGHTS_LIMIT`] and the device should ask again.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KoreaderListing {
-    pub cursor: i64,
+    pub cursor: KoreaderCursor,
     pub annotations: Vec<KoreaderAnnotation>,
     pub deleted: Vec<String>,
+    pub more: bool,
 }
 
 /// One device annotation to store. `created_at` dates a new row; `event_at` is
@@ -56,16 +121,15 @@ pub enum UpsertOutcome {
     Deleted,
 }
 
-/// List a user's CFI-anchored annotations in a book changed at or after `since`,
-/// and the ids deleted since. `>=` re-lists same-second rows, which is
-/// idempotent. Rows lacking a client id are minted one first, leaving
-/// `updated_at` alone. `cursor` is the time the read began, or the last row's
-/// time when [`LIST_HIGHLIGHTS_LIMIT`] cut the list short.
+/// List a user's CFI-anchored annotations in a book and the ids deleted, from `since` on.
+/// Same-second rows are re-listed, which is idempotent. Rows lacking a client id are minted
+/// one first, leaving `updated_at` alone. When a list is cut at [`LIST_HIGHLIGHTS_LIMIT`] its
+/// cursor position is its last entry; otherwise it is the time the read began.
 pub async fn koreader_annotations_since(
     pool: &SqlitePool,
     user_id: i64,
     canonical_book_uuid: &str,
-    since: i64,
+    since: &KoreaderCursor,
 ) -> Result<KoreaderListing, HighlightError> {
     let now: i64 = sqlx::query_scalar(&format!("SELECT {NOW_SQL}"))
         .fetch_one(pool)
@@ -79,74 +143,96 @@ pub async fn koreader_annotations_since(
     .bind(canonical_book_uuid)
     .execute(pool)
     .await?;
-    let annotations = sqlx::query(&format!(
-        "SELECT {COLUMNS} FROM annotations
+    let rows = sqlx::query(&format!(
+        "SELECT id, {COLUMNS} FROM annotations
          WHERE user_id = ? AND book_uuid = ? AND client_id IS NOT NULL
-           AND epub_cfi_range IS NOT NULL AND updated_at >= ?
+           AND epub_cfi_range IS NOT NULL
+           AND (updated_at > ? OR (updated_at = ? AND id > ?))
          ORDER BY updated_at ASC, id ASC
          LIMIT ?"
     ))
     .bind(user_id)
     .bind(canonical_book_uuid)
-    .bind(since)
+    .bind(since.row_at)
+    .bind(since.row_at)
+    .bind(since.row_id)
     .bind(LIST_HIGHLIGHTS_LIMIT)
     .fetch_all(pool)
-    .await?
-    .iter()
-    .map(row_to_annotation)
-    .collect::<Result<Vec<_>, _>>()?;
-    let deleted = sqlx::query_scalar(
-        "SELECT client_id FROM annotation_tombstones
-         WHERE user_id = ? AND book_uuid = ? AND deleted_at >= ?
-         ORDER BY deleted_at ASC, client_id ASC",
+    .await?;
+    let tombstones: Vec<(String, i64)> = sqlx::query_as(
+        "SELECT client_id, deleted_at FROM annotation_tombstones
+         WHERE user_id = ? AND book_uuid = ?
+           AND (deleted_at > ? OR (deleted_at = ? AND client_id > ?))
+         ORDER BY deleted_at ASC, client_id ASC
+         LIMIT ?",
     )
     .bind(user_id)
     .bind(canonical_book_uuid)
-    .bind(since)
+    .bind(since.tomb_at)
+    .bind(since.tomb_at)
+    .bind(&since.tomb_client_id)
+    .bind(LIST_HIGHLIGHTS_LIMIT)
     .fetch_all(pool)
     .await?;
-    let capped = annotations.len() as i64 >= LIST_HIGHLIGHTS_LIMIT;
-    let cursor = match annotations.last() {
-        Some(last) if capped => last.updated_at,
-        _ => now,
+
+    let rows_cut = rows.len() as i64 >= LIST_HIGHLIGHTS_LIMIT;
+    let tombstones_cut = tombstones.len() as i64 >= LIST_HIGHLIGHTS_LIMIT;
+    let mut cursor = KoreaderCursor {
+        row_at: now,
+        tomb_at: now,
+        ..KoreaderCursor::default()
     };
+    if let (true, Some(last)) = (rows_cut, rows.last()) {
+        cursor.row_at = last.try_get("updated_at")?;
+        cursor.row_id = last.try_get("id")?;
+    }
+    if let (true, Some((client_id, deleted_at))) = (tombstones_cut, tombstones.last()) {
+        cursor.tomb_at = *deleted_at;
+        cursor.tomb_client_id = client_id.clone();
+    }
     Ok(KoreaderListing {
         cursor,
-        annotations,
-        deleted,
+        annotations: rows
+            .iter()
+            .map(row_to_annotation)
+            .collect::<Result<_, _>>()?,
+        deleted: tombstones.into_iter().map(|(id, _)| id).collect(),
+        more: rows_cut || tombstones_cut,
     })
 }
 
 /// Store a device annotation under its client id. An existing row is only
 /// overwritten when the event time (clamped to now) is no older than its
 /// `updated_at`; a landed write stamps `updated_at` with now. A deleted id is
-/// never resurrected. `NotFound` when the id belongs to a different book.
+/// never resurrected. `NotFound` when the id belongs to, or was deleted from, a different book.
 pub async fn upsert_koreader_annotation(
     tx: &mut Transaction<'_, Sqlite>,
     user_id: i64,
     canonical_book_uuid: &str,
     a: &KoreaderUpsert,
 ) -> Result<UpsertOutcome, HighlightError> {
-    let tombstoned: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM annotation_tombstones WHERE user_id = ? AND client_id = ?)",
+    let tombstone: Option<String> = sqlx::query_scalar(
+        "SELECT book_uuid FROM annotation_tombstones WHERE user_id = ? AND client_id = ?",
     )
     .bind(user_id)
     .bind(&a.client_id)
-    .fetch_one(&mut **tx)
+    .fetch_optional(&mut **tx)
     .await?;
-    if tombstoned {
-        return Ok(UpsertOutcome::Deleted);
+    match tombstone {
+        Some(book) if book == canonical_book_uuid => return Ok(UpsertOutcome::Deleted),
+        Some(_) => return Err(HighlightError::NotFound),
+        None => {}
     }
-    // A moved CFI voids the Kobo anchor, which the downsync pass derives again.
+    // A moved CFI flags the Kobo anchor stale, kept served until the downsync derives the new one.
     let written = sqlx::query(&format!(
         "INSERT INTO annotations
              (user_id, book_uuid, epub_cfi_range, color, text, note, client_id, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, {CLIENT_CREATED_AT_SQL})
          ON CONFLICT(user_id, client_id) WHERE client_id IS NOT NULL DO UPDATE SET
-             kobo_location = CASE
+             kobo_location_stale = CASE
                  WHEN annotations.epub_cfi_range IS excluded.epub_cfi_range
-                     THEN annotations.kobo_location
-                 ELSE NULL
+                     THEN annotations.kobo_location_stale
+                 ELSE 1
              END,
              epub_cfi_range = excluded.epub_cfi_range,
              color = excluded.color,

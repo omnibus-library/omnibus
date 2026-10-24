@@ -180,9 +180,14 @@ async fn merge_lists_a_source_books_tombstone_under_the_target_uuid() {
         .await
         .unwrap();
 
-    let listing = crate::annotations::koreader_annotations_since(&pool, user, &target, 0)
-        .await
-        .unwrap();
+    let listing = crate::annotations::koreader_annotations_since(
+        &pool,
+        user,
+        &target,
+        &crate::annotations::KoreaderCursor::default(),
+    )
+    .await
+    .unwrap();
     assert_eq!(listing.deleted, vec!["gone"]);
 }
 

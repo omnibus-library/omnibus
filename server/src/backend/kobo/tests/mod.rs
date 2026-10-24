@@ -74,20 +74,6 @@ async fn book_metadata(app: &Router, token: &str, uuid: &str) -> Value {
     body_json(res).await[0].take()
 }
 
-/// Give `uuid` an override cover of `TINY_PNG`; the caller holds a `CoversDirGuard`.
-async fn seed_override_cover(pool: &SqlitePool, uuid: &str, user_id: i64) {
-    db::write_override_cover(uuid, "image/png", crate::backend::test_support::TINY_PNG).unwrap();
-    db::upsert_metadata_overrides(
-        pool,
-        uuid,
-        &omnibus_shared::MetadataOverrides::default(),
-        true,
-        user_id,
-    )
-    .await
-    .unwrap();
-}
-
 /// Source/kepub fixture pair used by the derivation tests: single-chapter
 /// book where span kobo.2.1 starts the second paragraph.
 const STATE_SOURCE_C1: &str = r#"<?xml version="1.0" encoding="utf-8"?>

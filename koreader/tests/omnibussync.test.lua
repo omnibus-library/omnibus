@@ -22,23 +22,37 @@ local function eq(actual, expected, what)
 end
 
 local DIR = "/books/Omnibus"
-local ALPHA = { uuid = "0123abcd-0000-0000-0000-000000000000", title = "Alpha", format = "epub" }
-local BETA = { uuid = "89efcdab-0000-0000-0000-000000000000", title = "Beta", format = "epub" }
+local ALPHA = {
+    uuid = "0123abcd-0000-0000-0000-000000000000", title = "Alpha", format = "epub",
+    download_url = "/koreader/v1/books/0123abcd-0000-0000-0000-000000000000/file",
+}
+local BETA = {
+    uuid = "89efcdab-0000-0000-0000-000000000000", title = "Beta", format = "epub",
+    download_url = "/koreader/v1/books/89efcdab-0000-0000-0000-000000000000/file",
+}
 
 -- A fake device: `files` is the set of paths on disk, `opts.delivered` the plugin's record of
 -- what it delivered; every call lands in `log`. A download answers `true, "etag-new"` unless
 -- `opts.fail_download[title]` fails it or `opts.not_modified` answers it with a 304; applying
--- metadata fails for the titles in `opts.fail_apply`.
+-- metadata fails for the titles in `opts.fail_apply`, removing fails for the paths in
+-- `opts.fail_remove`, and `opts.can_replace` is a boolean or a function of the path.
 local function fake(opts)
     opts = opts or {}
     local files = opts.files or {}
-    local log = { downloads = {}, conditions = {}, applied = {}, removed = {}, reports = {}, saves = 0 }
+    local log = {
+        downloads = {}, conditions = {}, applied = {}, removed = {}, reports = {}, saves = 0, saves_at_apply = {},
+    }
     local deps = {
         dir = DIR,
         open_path = opts.open_path,
         manifest = opts.manifest or {},
         files = opts.delivered or {},
-        can_replace = opts.can_replace ~= false,
+        can_replace = function(path)
+            if type(opts.can_replace) == "function" then
+                return opts.can_replace(path)
+            end
+            return opts.can_replace ~= false
+        end,
         save_manifest = function()
             log.saves = log.saves + 1
         end,
@@ -63,6 +77,7 @@ local function fake(opts)
         end,
         apply_metadata = function(book, path)
             table.insert(log.applied, path)
+            table.insert(log.saves_at_apply, log.saves)
             local failure = opts.fail_apply and opts.fail_apply[book.title]
             if failure then
                 return false, failure
@@ -71,6 +86,10 @@ local function fake(opts)
         end,
         remove = function(path)
             table.insert(log.removed, path)
+            local failure = opts.fail_remove and opts.fail_remove[path]
+            if failure then
+                return false, failure
+            end
             files[path] = nil
             return true
         end,
@@ -95,7 +114,7 @@ end)
 
 test("file_name caps the title at 80 characters without splitting a multibyte one", function()
     local book = { uuid = ALPHA.uuid, title = string.rep("a", 79) .. "é" .. "tail", format = "epub" }
-    eq(sync.file_name(book), string.rep("a", 79) .. " - 0123abcd.epub")
+    eq(sync.file_name(book), string.rep("a", 79) .. "é - 0123abcd.epub")
 end)
 
 test("book_url joins a host-relative download path to the configured server", function()
@@ -130,6 +149,14 @@ test("plan downloads a manifest book whose file is gone", function()
     local manifest = { [ALPHA.uuid] = DIR .. "/Alpha - 0123abcd.epub" }
     local plan = sync.plan(manifest, { ALPHA }, DIR, function() return false end, nil)
     eq(#plan.download, 1)
+end)
+
+test("plan downloads a wanted book again when its manifest path is outside the folder, without deleting it", function()
+    local old = "/old/Omnibus/Alpha - 0123abcd.epub"
+    local plan = sync.plan({ [ALPHA.uuid] = old }, { ALPHA }, "/new/Omnibus", function(p) return p == old end, nil)
+    eq(#plan.download, 1)
+    eq(#plan.delete, 0)
+    eq(plan.forget[1], ALPHA.uuid)
 end)
 
 test("plan keeps a delivered book whose file is still there", function()
@@ -180,7 +207,7 @@ test("run downloads and removes books, saves the manifest after each file and re
     eq(log.downloads[1], DIR .. "/Alpha - 0123abcd.epub")
     eq(deps.manifest[ALPHA.uuid], DIR .. "/Alpha - 0123abcd.epub")
     eq(deps.manifest[BETA.uuid], nil)
-    eq(log.saves, 2)
+    eq(log.saves, 3)
     eq(log.reports[1], "nil")
 end)
 
@@ -201,7 +228,7 @@ test("run on a 401 changes nothing, reports nothing and says the device was remo
     local result = sync.run("https://omni.test", deps)
 
     eq(result.ok, false)
-    eq(result.message, "This device was removed from Omnibus. Download the plugin again from Settings › Devices.")
+    eq(result.message, "This device was removed from Omnibus. Add a new KOReader in Settings › Devices and install its plugin.")
     eq(#log.downloads + #log.removed + #log.reports, 0)
     eq(deps.manifest[BETA.uuid], gone)
 end)
@@ -226,6 +253,40 @@ test("run treats a 200 without a books array as a failure, never an empty librar
     eq(result.ok, false)
     eq(#log.removed, 0)
     eq(#log.reports, 1)
+end)
+
+test("run treats a books map as an unreadable library and removes nothing", function()
+    local gone = DIR .. "/Beta - 89efcdab.epub"
+    local deps, log = fake({ library = { 200, { books = { x = 1 } } }, manifest = { [BETA.uuid] = gone }, files = { [gone] = true } })
+
+    local result = sync.run("https://omni.test", deps)
+
+    eq(result.ok, false)
+    eq(result.message, "Omnibus sent a library this plugin could not read. Download the plugin again from Settings › Devices.")
+    eq(#log.removed, 0)
+    eq(deps.manifest[BETA.uuid], gone)
+end)
+
+test("run treats a book without a uuid as an unreadable library instead of crashing", function()
+    local deps, log = fake({ library = { 200, { books = { { title = "X" } } } } })
+
+    local result = sync.run("https://omni.test", deps)
+
+    eq(result.ok, false)
+    eq(#log.downloads, 0)
+end)
+
+test("run removes the manifest books when the library is a genuinely empty list", function()
+    local gone = DIR .. "/Beta - 89efcdab.epub"
+    local deps = fake({ books = {}, manifest = { [BETA.uuid] = gone }, files = { [gone] = true } })
+
+    eq(sync.run("https://omni.test", deps).removed, 1)
+end)
+
+test("run says to try again later when Omnibus answers an unexpected status", function()
+    local deps = fake({ library = { 500, nil } })
+
+    eq(sync.run("https://omni.test", deps).message, "Omnibus answered HTTP 500. Try again later.")
 end)
 
 test("run still delivers the other book when one download fails and reports the failure", function()
@@ -255,11 +316,30 @@ end)
 -- Metadata: what the plugin writes into the device's custom metadata, and when.
 local EDITED = {
     uuid = ALPHA.uuid, title = "Alpha Revised", format = "epub", last_modified = 200,
+    download_url = ALPHA.download_url,
     authors = { "Ada Lovelace", "Bo Peep" }, series = "The Greek Letters", series_index = 2.0,
     description = "An edited blurb",
 }
 local ALPHA_PATH = DIR .. "/Alpha - 0123abcd.epub"
 local EDITED_PATH = DIR .. "/Alpha Revised - 0123abcd.epub"
+local COMIC = { uuid = ALPHA.uuid, title = "Alpha Revised", format = "cbz", last_modified = 200,
+    download_url = ALPHA.download_url }
+local COMIC_PATH = DIR .. "/Alpha Revised - 0123abcd.cbz"
+
+-- A fake holding Alpha as delivered at `path` when it was at version 100; `extra` replaces any
+-- of the options (`delivered` included, as a whole). Every call builds fresh tables.
+local function refresh_at(path, extra)
+    local opts = {
+        books = { EDITED },
+        manifest = { [ALPHA.uuid] = path },
+        files = { [path] = true },
+        delivered = { [ALPHA.uuid] = { path = path, version = 100, meta_version = 100, etag = "etag-old" } },
+    }
+    for key, value in pairs(extra or {}) do
+        opts[key] = value
+    end
+    return fake(opts)
+end
 
 test("custom_props maps title, authors, series, series_index and description", function()
     local props = sync.custom_props(EDITED)
@@ -282,40 +362,69 @@ test("custom_props leaves out an empty title, a null series and index and an emp
     eq(props.description, nil)
 end)
 
-test("refresh_plan lists a delivered book whose version moved, at its manifest path", function()
-    local manifest = { [ALPHA.uuid] = "/books/Omnibus/Old name.epub" }
-    local files = { [ALPHA.uuid] = { path = "/books/Omnibus/Old name.epub", version = 100 } }
+test("cover_extension maps the image types KOReader can show and ignores parameters and case", function()
+    eq(sync.cover_extension("image/jpeg"), "jpg")
+    eq(sync.cover_extension("IMAGE/PNG; charset=binary"), "png")
+    eq(sync.cover_extension("image/gif"), "gif")
+    eq(sync.cover_extension("image/webp"), "webp")
+end)
 
-    local plan = sync.refresh_plan(manifest, files, { EDITED }, function() return true end, nil)
+test("cover_extension is nil for a type that is not a shown image", function()
+    eq(sync.cover_extension("application/octet-stream"), nil)
+    eq(sync.cover_extension(nil), nil)
+end)
+
+local function plan_refresh(manifest, files, books, open_path)
+    return sync.refresh_plan(manifest, files, books, DIR, function() return true end, open_path)
+end
+
+test("refresh_plan lists a delivered book whose bytes moved, at its manifest path", function()
+    local path = DIR .. "/Old name.epub"
+    local files = { [ALPHA.uuid] = { path = path, version = 100, meta_version = 200 } }
+
+    local plan = plan_refresh({ [ALPHA.uuid] = path }, files, { EDITED })
 
     eq(#plan, 1)
     eq(plan[1].book, EDITED)
-    eq(plan[1].path, "/books/Omnibus/Old name.epub")
+    eq(plan[1].path, path)
 end)
 
-test("refresh_plan skips a book whose version matches", function()
-    local manifest = { [ALPHA.uuid] = ALPHA_PATH }
-    local files = { [ALPHA.uuid] = { path = ALPHA_PATH, version = 200 } }
+test("refresh_plan lists a delivered book whose metadata is behind", function()
+    local files = { [ALPHA.uuid] = { path = ALPHA_PATH, version = 200, meta_version = 100 } }
 
-    eq(#sync.refresh_plan(manifest, files, { EDITED }, function() return true end, nil), 0)
+    eq(#plan_refresh({ [ALPHA.uuid] = ALPHA_PATH }, files, { EDITED }), 1)
 end)
 
-test("refresh_plan skips the open document and a file that is gone", function()
-    local manifest = { [ALPHA.uuid] = ALPHA_PATH, [BETA.uuid] = DIR .. "/Beta - 89efcdab.epub" }
-    local files = {}
+test("refresh_plan skips a book whose versions match", function()
+    local files = { [ALPHA.uuid] = { path = ALPHA_PATH, version = 200, meta_version = 200 } }
+
+    eq(#plan_refresh({ [ALPHA.uuid] = ALPHA_PATH }, files, { EDITED }), 0)
+end)
+
+test("refresh_plan lists a book whose file extension is not the format the server serves", function()
+    local files = { [ALPHA.uuid] = { path = ALPHA_PATH, version = 200, meta_version = 200 } }
+
+    eq(#plan_refresh({ [ALPHA.uuid] = ALPHA_PATH }, files, { COMIC }), 1)
+end)
+
+test("refresh_plan skips the open document, a file that is gone and a path outside the folder", function()
+    local manifest = {
+        [ALPHA.uuid] = ALPHA_PATH,
+        [BETA.uuid] = DIR .. "/Beta - 89efcdab.epub",
+        ["c"] = "/books/Sideloaded.epub",
+    }
     local beta = { uuid = BETA.uuid, title = "Beta", format = "epub", last_modified = 5 }
-    local exists = function(path) return path == ALPHA_PATH end
+    local sideload = { uuid = "c", title = "Side", format = "epub", last_modified = 5 }
+    local exists = function(path) return path ~= manifest[BETA.uuid] end
 
-    eq(#sync.refresh_plan(manifest, files, { EDITED, beta }, exists, ALPHA_PATH), 0)
+    eq(#sync.refresh_plan(manifest, {}, { EDITED, beta, sideload }, DIR, exists, ALPHA_PATH), 0)
 end)
 
 test("refresh_plan treats a delivered book with no record as changed", function()
-    local manifest = { [ALPHA.uuid] = ALPHA_PATH }
-
-    eq(#sync.refresh_plan(manifest, {}, { EDITED }, function() return true end, nil), 1)
+    eq(#plan_refresh({ [ALPHA.uuid] = ALPHA_PATH }, {}, { EDITED }), 1)
 end)
 
-test("run applies metadata after a new download and records its path, version and etag", function()
+test("run applies metadata after a new download and records its path, versions and etag", function()
     local deps, log = fake({ books = { EDITED } })
 
     local result = sync.run("https://omni.test", deps)
@@ -326,17 +435,21 @@ test("run applies metadata after a new download and records its path, version an
     local kept = deps.files[ALPHA.uuid]
     eq(kept.path, EDITED_PATH)
     eq(kept.version, 200)
+    eq(kept.meta_version, 200)
     eq(kept.etag, "etag-new")
+end)
+
+test("run saves the delivered file before it applies metadata, so a crash there loses nothing", function()
+    local deps, log = fake({ books = { EDITED } })
+
+    sync.run("https://omni.test", deps)
+
+    eq(log.saves_at_apply[1], 1)
 end)
 
 test("run re-downloads a changed book to its manifest path with its saved etag and deletes nothing", function()
     local path = DIR .. "/Old name - 0123abcd.epub"
-    local deps, log = fake({
-        books = { EDITED },
-        manifest = { [ALPHA.uuid] = path },
-        files = { [path] = true },
-        delivered = { [ALPHA.uuid] = { path = path, version = 100, etag = "etag-old" } },
-    })
+    local deps, log = refresh_at(path)
 
     local result = sync.run("https://omni.test", deps)
 
@@ -350,17 +463,12 @@ test("run re-downloads a changed book to its manifest path with its saved etag a
     eq(deps.manifest[ALPHA.uuid], path)
     eq(log.applied[1], path)
     eq(deps.files[ALPHA.uuid].version, 200)
+    eq(deps.files[ALPHA.uuid].meta_version, 200)
     eq(deps.files[ALPHA.uuid].etag, "etag-new")
 end)
 
 test("run keeps the file on a not-modified answer, still applies metadata and keeps the etag", function()
-    local deps, log = fake({
-        books = { EDITED },
-        manifest = { [ALPHA.uuid] = ALPHA_PATH },
-        files = { [ALPHA_PATH] = true },
-        delivered = { [ALPHA.uuid] = { path = ALPHA_PATH, version = 100, etag = "etag-old" } },
-        not_modified = true,
-    })
+    local deps, log = refresh_at(ALPHA_PATH, { not_modified = true })
 
     local result = sync.run("https://omni.test", deps)
 
@@ -369,17 +477,12 @@ test("run keeps the file on a not-modified answer, still applies metadata and ke
     eq(result.refreshed, 1)
     eq(log.applied[1], ALPHA_PATH)
     eq(deps.files[ALPHA.uuid].version, 200)
+    eq(deps.files[ALPHA.uuid].meta_version, 200)
     eq(deps.files[ALPHA.uuid].etag, "etag-old")
 end)
 
-test("run with can_replace off never downloads for a refresh, still applies metadata and records the version", function()
-    local deps, log = fake({
-        books = { EDITED },
-        manifest = { [ALPHA.uuid] = ALPHA_PATH },
-        files = { [ALPHA_PATH] = true },
-        delivered = { [ALPHA.uuid] = { path = ALPHA_PATH, version = 100, etag = "etag-old" } },
-        can_replace = false,
-    })
+test("run with replacing refused applies metadata and records only the metadata version", function()
+    local deps, log = refresh_at(ALPHA_PATH, { can_replace = false })
 
     local result = sync.run("https://omni.test", deps)
 
@@ -388,15 +491,50 @@ test("run with can_replace off never downloads for a refresh, still applies meta
     eq(result.replaced, 0)
     eq(result.refreshed, 1)
     eq(log.applied[1], ALPHA_PATH)
+    eq(deps.files[ALPHA.uuid].version, 100)
+    eq(deps.files[ALPHA.uuid].meta_version, 200)
+end)
+
+test("run with replacing refused does nothing on the next sync, and delivers the bytes once it is allowed", function()
+    local replace = false
+    local deps, log = refresh_at(ALPHA_PATH, { can_replace = function() return replace end })
+    sync.run("https://omni.test", deps)
+
+    local again = sync.run("https://omni.test", deps)
+    eq(again.refreshed + again.replaced, 0)
+    eq(#log.downloads + #log.applied, 1)
+
+    replace = true
+    local later = sync.run("https://omni.test", deps)
+    eq(later.replaced, 1)
+    eq(#log.downloads, 1)
+    eq(#log.applied, 1)
     eq(deps.files[ALPHA.uuid].version, 200)
 end)
 
-test("run neither downloads nor applies metadata for a book whose version is unchanged", function()
-    local deps, log = fake({
-        books = { EDITED },
-        manifest = { [ALPHA.uuid] = ALPHA_PATH },
-        files = { [ALPHA_PATH] = true },
-        delivered = { [ALPHA.uuid] = { path = ALPHA_PATH, version = 200, etag = "etag-old" } },
+test("run asks whether to replace per book, by the path it would replace", function()
+    local beta_path = DIR .. "/Beta - 89efcdab.epub"
+    local beta = { uuid = BETA.uuid, title = "Beta", format = "epub", last_modified = 200, download_url = BETA.download_url }
+    local deps, log = refresh_at(ALPHA_PATH, {
+        books = { EDITED, beta },
+        manifest = { [ALPHA.uuid] = ALPHA_PATH, [BETA.uuid] = beta_path },
+        files = { [ALPHA_PATH] = true, [beta_path] = true },
+        delivered = {
+            [ALPHA.uuid] = { path = ALPHA_PATH, version = 100, meta_version = 100 },
+            [BETA.uuid] = { path = beta_path, version = 100, meta_version = 100 },
+        },
+        can_replace = function(path) return path ~= ALPHA_PATH end,
+    })
+
+    sync.run("https://omni.test", deps)
+
+    eq(#log.downloads, 1)
+    eq(log.downloads[1], beta_path)
+end)
+
+test("run neither downloads nor applies metadata for a book whose versions are unchanged", function()
+    local deps, log = refresh_at(ALPHA_PATH, {
+        delivered = { [ALPHA.uuid] = { path = ALPHA_PATH, version = 200, meta_version = 200, etag = "etag-old" } },
     })
 
     local result = sync.run("https://omni.test", deps)
@@ -406,14 +544,45 @@ test("run neither downloads nor applies metadata for a book whose version is unc
     eq(#log.downloads + #log.applied, 0)
 end)
 
-test("run leaves the version as it was when a refresh download fails, so the next sync retries", function()
-    local deps, log = fake({
-        books = { EDITED },
-        manifest = { [ALPHA.uuid] = ALPHA_PATH },
-        files = { [ALPHA_PATH] = true },
-        delivered = { [ALPHA.uuid] = { path = ALPHA_PATH, version = 100, etag = "etag-old" } },
-        fail_download = { ["Alpha Revised"] = "HTTP 500" },
-    })
+test("run delivers a book now served in another format under its new name and removes the old file", function()
+    local deps, log = refresh_at(ALPHA_PATH, { books = { COMIC } })
+
+    local result = sync.run("https://omni.test", deps)
+
+    eq(result.ok, true)
+    eq(result.replaced, 1)
+    eq(log.downloads[1], COMIC_PATH)
+    eq(log.conditions[1], "none")
+    eq(log.removed[1], ALPHA_PATH)
+    eq(log.applied[1], COMIC_PATH)
+    eq(deps.manifest[ALPHA.uuid], COMIC_PATH)
+    local kept = deps.files[ALPHA.uuid]
+    eq(kept.path, COMIC_PATH)
+    eq(kept.version, 200)
+    eq(kept.meta_version, 200)
+end)
+
+test("run keeps the old file when the book in its new format cannot be downloaded", function()
+    local deps, log = refresh_at(ALPHA_PATH, { books = { COMIC }, fail_download = { ["Alpha Revised"] = "HTTP 500" } })
+
+    local result = sync.run("https://omni.test", deps)
+
+    eq(result.ok, false)
+    eq(#log.removed, 0)
+    eq(deps.manifest[ALPHA.uuid], ALPHA_PATH)
+end)
+
+test("run waits to change a book's format while replacing is refused", function()
+    local deps, log = refresh_at(ALPHA_PATH, { books = { COMIC }, can_replace = false })
+
+    sync.run("https://omni.test", deps)
+
+    eq(#log.downloads + #log.removed, 0)
+    eq(deps.manifest[ALPHA.uuid], ALPHA_PATH)
+end)
+
+test("run leaves the versions as they were when a refresh download fails, so the next sync retries", function()
+    local deps, log = refresh_at(ALPHA_PATH, { fail_download = { ["Alpha Revised"] = "HTTP 500" } })
 
     local result = sync.run("https://omni.test", deps)
 
@@ -422,39 +591,47 @@ test("run leaves the version as it was when a refresh download fails, so the nex
     eq(log.reports[1], result.message)
     eq(#log.applied, 0)
     eq(deps.files[ALPHA.uuid].version, 100)
+    eq(deps.files[ALPHA.uuid].meta_version, 100)
     eq(deps.files[ALPHA.uuid].etag, "etag-old")
 end)
 
-test("run records the new etag but not the version when applying metadata fails after a replace", function()
-    local deps = fake({
-        books = { EDITED },
-        manifest = { [ALPHA.uuid] = ALPHA_PATH },
-        files = { [ALPHA_PATH] = true },
-        delivered = { [ALPHA.uuid] = { path = ALPHA_PATH, version = 100, etag = "etag-old" } },
-        fail_apply = { ["Alpha Revised"] = "unsupported cover type text/html" },
-    })
+test("run records the new etag and bytes version but not the metadata version when applying fails after a replace", function()
+    local deps = refresh_at(ALPHA_PATH, { fail_apply = { ["Alpha Revised"] = "couldn't write the custom metadata" } })
 
     local result = sync.run("https://omni.test", deps)
 
     eq(result.ok, false)
-    eq(result.message, "Couldn't update 1 book: Alpha Revised: unsupported cover type text/html")
+    eq(result.message, "Couldn't update 1 book: Alpha Revised: couldn't write the custom metadata")
     eq(deps.files[ALPHA.uuid].etag, "etag-new")
-    eq(deps.files[ALPHA.uuid].version, 100)
+    eq(deps.files[ALPHA.uuid].version, 200)
+    eq(deps.files[ALPHA.uuid].meta_version, 100)
 end)
 
-test("run joins a download failure and an update failure in one message", function()
-    local beta = { uuid = BETA.uuid, title = "Beta", format = "epub", last_modified = 5 }
-    local deps = fake({
+test("run reports a failed removal on its own", function()
+    local gone = DIR .. "/Beta - 89efcdab.epub"
+    local deps = fake({ manifest = { [BETA.uuid] = gone }, files = { [gone] = true }, fail_remove = { [gone] = "read-only" } })
+
+    local result = sync.run("https://omni.test", deps)
+
+    eq(result.ok, false)
+    eq(result.message, "Couldn't remove 1 book: " .. gone .. ": read-only")
+end)
+
+test("run joins a download, a removal and an update failure in one message", function()
+    local gone = DIR .. "/Gamma - 11111111.epub"
+    local beta = { uuid = BETA.uuid, title = "Beta", format = "epub", last_modified = 5, download_url = BETA.download_url }
+    local deps = refresh_at(ALPHA_PATH, {
         books = { EDITED, beta },
-        manifest = { [ALPHA.uuid] = ALPHA_PATH },
-        files = { [ALPHA_PATH] = true },
-        delivered = { [ALPHA.uuid] = { path = ALPHA_PATH, version = 100 } },
+        manifest = { [ALPHA.uuid] = ALPHA_PATH, gamma = gone },
+        files = { [ALPHA_PATH] = true, [gone] = true },
         fail_download = { ["Alpha Revised"] = "HTTP 500", Beta = "HTTP 404" },
+        fail_remove = { [gone] = "read-only" },
     })
 
     local result = sync.run("https://omni.test", deps)
 
-    eq(result.message, "Couldn't download 1 book: Beta: HTTP 404; Couldn't update 1 book: Alpha Revised: HTTP 500")
+    eq(result.message, "Couldn't download 1 book: Beta: HTTP 404; Couldn't remove 1 book: " .. gone
+        .. ": read-only; Couldn't update 1 book: Alpha Revised: HTTP 500")
 end)
 
 test("run delivers a returning book to the path it had when that is free inside the folder", function()
@@ -471,11 +648,12 @@ test("run delivers a returning book to the path it had when that is free inside 
     eq(deps.manifest[ALPHA.uuid], kept)
 end)
 
-test("run delivers a returning book under its file name when its old path is taken or outside the folder", function()
-    for _, remembered in ipairs({ DIR .. "/Old name - 0123abcd.epub", "/books/Elsewhere.epub" }) do
+test("run delivers a returning book under its file name when its old path is taken, outside the folder or another format", function()
+    local old = DIR .. "/Old name - 0123abcd.epub"
+    for _, remembered in ipairs({ old, "/books/Elsewhere.epub" }) do
         local deps, log = fake({
             books = { EDITED },
-            files = { [DIR .. "/Old name - 0123abcd.epub"] = true },
+            files = { [old] = true },
             delivered = { [ALPHA.uuid] = { path = remembered, version = 100 } },
         })
 
@@ -483,18 +661,41 @@ test("run delivers a returning book under its file name when its old path is tak
 
         eq(log.downloads[1], EDITED_PATH, remembered)
     end
+    local deps, log = fake({
+        books = { COMIC },
+        delivered = { [ALPHA.uuid] = { path = old, version = 100 } },
+    })
+
+    sync.run("https://omni.test", deps)
+
+    eq(log.downloads[1], COMIC_PATH)
 end)
 
+test("upgrade_files gives an entry from before the two versions its bytes version as the metadata version", function()
+    local files = {
+        [ALPHA.uuid] = { path = ALPHA_PATH, version = 100 },
+        [BETA.uuid] = { path = ALPHA_PATH, version = 100, meta_version = 50 },
+    }
 
--- Reading state. `books` is the device's per-book record: percent, status, the event_at it
--- last agreed with the server, and whether a change still waits to be pushed.
+    sync.upgrade_files(files)
+
+    eq(files[ALPHA.uuid].meta_version, 100)
+    eq(files[BETA.uuid].meta_version, 50)
+end)
+
+-- Reading state. `books` is the device's per-book record: each field's agreed value and the
+-- time it was set (percent/percent_at, status/status_at), and whether a change to it still
+-- waits to be pushed (dirty_percent, dirty_status).
 local function entry(fields)
-    local e = { percent = 40, status = "reading", event_at = 100, pending = false }
+    local e = { percent = 40, percent_at = 100, status = "reading", status_at = 100,
+        dirty_percent = false, dirty_status = false }
     for k, v in pairs(fields or {}) do
         e[k] = v
     end
     return e
 end
+
+local READING40 = { percent = 40, status = "reading" }
 
 test("percent floors a fraction to a whole percent clamped to 0..100, and passes nil on", function()
     local cases = { { 0.379, 37 }, { 1.0, 100 }, { 1.2, 100 }, { -0.1, 0 }, { 0, 0 } }
@@ -511,36 +712,40 @@ test("uuid_for_path finds the uuid of a delivered file and nothing for a sideloa
     eq(sync.uuid_for_path(manifest, "/books/Sideloaded.epub"), nil)
 end)
 
-test("capture marks a book pending at now when its percent moved", function()
+test("capture marks only the percent pending when only the percent moved", function()
     local books = { [ALPHA.uuid] = entry() }
 
     sync.capture(books, ALPHA.uuid, { percent = 55, status = "reading" }, 500)
 
     local e = books[ALPHA.uuid]
     eq(e.percent, 55)
-    eq(e.event_at, 500)
-    eq(e.pending, true)
+    eq(e.percent_at, 500)
+    eq(e.dirty_percent, true)
+    eq(e.status_at, 100)
+    eq(e.dirty_status, false)
 end)
 
-test("capture marks a book pending at now when its status changed", function()
+test("capture marks only the status pending when only the status changed", function()
     local books = { [ALPHA.uuid] = entry() }
 
     sync.capture(books, ALPHA.uuid, { percent = 40, status = "complete" }, 500)
 
     local e = books[ALPHA.uuid]
     eq(e.status, "complete")
-    eq(e.event_at, 500)
-    eq(e.pending, true)
+    eq(e.status_at, 500)
+    eq(e.dirty_status, true)
+    eq(e.percent_at, 100)
+    eq(e.dirty_percent, false)
 end)
 
 test("capture leaves a book whose state matches the agreed one exactly as it was", function()
     local books = { [ALPHA.uuid] = entry() }
 
-    sync.capture(books, ALPHA.uuid, { percent = 40, status = "reading" }, 500)
+    sync.capture(books, ALPHA.uuid, READING40, 500)
 
-    local e = books[ALPHA.uuid]
-    eq(e.event_at, 100)
-    eq(e.pending, false)
+    eq(books[ALPHA.uuid].percent_at, 100)
+    eq(books[ALPHA.uuid].status_at, 100)
+    eq(sync.pending(books[ALPHA.uuid]), false)
 end)
 
 test("capture does nothing when the device cannot report a percent", function()
@@ -549,7 +754,7 @@ test("capture does nothing when the device cannot report a percent", function()
     sync.capture(books, ALPHA.uuid, { percent = nil, status = "complete" }, 500)
 
     eq(books[ALPHA.uuid].status, "reading")
-    eq(books[ALPHA.uuid].pending, false)
+    eq(sync.pending(books[ALPHA.uuid]), false)
 end)
 
 test("capture does nothing for a book that was never baselined", function()
@@ -560,7 +765,18 @@ test("capture does nothing for a book that was never baselined", function()
     eq(books[ALPHA.uuid], nil)
 end)
 
-test("capture twice leaves one entry carrying the later event time", function()
+test("capture dates a status the server does not sync but queues nothing for it", function()
+    local books = { [ALPHA.uuid] = entry() }
+
+    sync.capture(books, ALPHA.uuid, { percent = 40, status = "abandoned" }, 500)
+
+    local e = books[ALPHA.uuid]
+    eq(e.status, nil)
+    eq(e.status_at, 500)
+    eq(sync.pending(e), false)
+end)
+
+test("capture twice leaves one entry carrying the later change time", function()
     local books = { [ALPHA.uuid] = entry() }
 
     sync.capture(books, ALPHA.uuid, { percent = 55, status = "reading" }, 500)
@@ -572,10 +788,10 @@ test("capture twice leaves one entry carrying the later event time", function()
     end
     eq(count, 1)
     eq(books[ALPHA.uuid].percent, 61)
-    eq(books[ALPHA.uuid].event_at, 900)
+    eq(books[ALPHA.uuid].percent_at, 900)
 end)
 
-test("capture marks a book pending when only its xpointer moved within the same percent", function()
+test("capture marks the percent field pending when only its xpointer moved", function()
     local books = { [ALPHA.uuid] = entry({ xpointer = "/body/DocFragment/body/p[1]/text().0" }) }
 
     sync.capture(books, ALPHA.uuid,
@@ -583,36 +799,46 @@ test("capture marks a book pending when only its xpointer moved within the same 
 
     local e = books[ALPHA.uuid]
     eq(e.xpointer, "/body/DocFragment/body/p[2]/text().0")
-    eq(e.event_at, 500)
-    eq(e.pending, true)
+    eq(e.percent_at, 500)
+    eq(e.dirty_percent, true)
+    eq(e.status_at, 100)
+    eq(e.dirty_status, false)
 end)
 
 test("capture never counts a missing xpointer as a change", function()
     local books = { [ALPHA.uuid] = entry({ xpointer = "/body/DocFragment/body/p/text().0" }) }
 
-    sync.capture(books, ALPHA.uuid, { percent = 40, status = "reading" }, 500)
+    sync.capture(books, ALPHA.uuid, READING40, 500)
 
-    eq(books[ALPHA.uuid].pending, false)
+    eq(sync.pending(books[ALPHA.uuid]), false)
     eq(books[ALPHA.uuid].xpointer, "/body/DocFragment/body/p/text().0")
 end)
 
 test("capture does not push an entry saved before xpointers for the xpointer alone", function()
     local books = { [ALPHA.uuid] = entry() }
 
-    sync.capture(books, ALPHA.uuid,
-        { percent = 40, status = "reading", xpointer = "/body/DocFragment/body/p/text().0" }, 500)
+    sync.capture(books, ALPHA.uuid, { percent = 40, status = "reading", xpointer = "/body/DocFragment/body/p/text().0" }, 500)
 
-    eq(books[ALPHA.uuid].pending, false)
+    eq(sync.pending(books[ALPHA.uuid]), false)
 end)
 
--- A flush target that answers each PUT from `answers` in order and records what it was sent.
+test("capture reads text() and text()[1] as the same place", function()
+    local books = { [ALPHA.uuid] = entry({ xpointer = "/body/DocFragment/body/p/text()[1].0" }) }
+
+    sync.capture(books, ALPHA.uuid, { percent = 40, status = "reading", xpointer = "/body/DocFragment/body/p/text().0" }, 500)
+
+    eq(sync.pending(books[ALPHA.uuid]), false)
+end)
+
+-- A flush target that answers each PUT from `answers` in order ({code, answer body, error})
+-- and records what it was sent.
 local function fake_server(answers)
     local sent, saves = {}, { n = 0 }
     local deps = {
         put_state = function(uuid, body)
             table.insert(sent, { uuid = uuid, body = body })
             local answer = answers[#sent] or { 200 }
-            return (table.unpack or unpack)(answer, 1, 2)
+            return (table.unpack or unpack)(answer, 1, 3)
         end,
         save = function()
             saves.n = saves.n + 1
@@ -621,11 +847,37 @@ local function fake_server(answers)
     return deps, sent, saves
 end
 
-test("flush sends each pending book once as percent, status and event time and clears pending", function()
-    local books = {
-        [ALPHA.uuid] = entry({ pending = true, percent = 55, event_at = 500 }),
-        [BETA.uuid] = entry(),
-    }
+test("S1: a status that did not change is not pushed with a moved percent", function()
+    local books = {}
+    sync.settle(books, "u1", { percent = 54, status = "reading" }, { percent_at = 1000, status_at = 1000 })
+    sync.capture(books, "u1", { percent = 55, status = "reading" }, 3000)
+    local deps, sent = fake_server({})
+
+    sync.flush(books, deps)
+
+    eq(#sent, 1)
+    eq(sent[1].body.percent, 55)
+    eq(sent[1].body.status, nil)
+    eq(sent[1].body.event_at, 3000)
+end)
+
+test("S2: a percent that did not change is not pushed with a new status", function()
+    local books = {}
+    sync.settle(books, "u1", { percent = 40, status = "reading" }, { percent_at = 1000, status_at = 1000 })
+    sync.capture(books, "u1", { percent = 40, status = "complete" }, 3000)
+    local deps, sent = fake_server({})
+
+    sync.flush(books, deps)
+
+    eq(#sent, 1)
+    eq(sent[1].body.percent, nil)
+    eq(sent[1].body.status, "complete")
+    eq(sent[1].body.event_at, 3000)
+end)
+
+test("flush sends a percent and a status changed together in one PUT and clears both", function()
+    local books = { [ALPHA.uuid] = entry(), [BETA.uuid] = entry() }
+    sync.capture(books, ALPHA.uuid, { percent = 100, status = "complete" }, 500)
     local deps, sent, saves = fake_server({})
 
     local result = sync.flush(books, deps)
@@ -633,52 +885,87 @@ test("flush sends each pending book once as percent, status and event time and c
     eq(result.ok, true)
     eq(#sent, 1)
     eq(sent[1].uuid, ALPHA.uuid)
-    eq(sent[1].body.percent, 55)
-    eq(sent[1].body.status, "reading")
+    eq(sent[1].body.percent, 100)
+    eq(sent[1].body.status, "complete")
     eq(sent[1].body.event_at, 500)
-    eq(books[ALPHA.uuid].pending, false)
+    eq(sync.pending(books[ALPHA.uuid]), false)
     eq(saves.n, 1)
 end)
 
-test("flush sends the xpointer when the entry has one and leaves the key out otherwise", function()
+test("flush sends the xpointer with the percent and leaves the key out otherwise", function()
     local books = {
-        [ALPHA.uuid] = entry({ pending = true, xpointer = "/body/DocFragment/body/p/text().3" }),
-        [BETA.uuid] = entry({ pending = true }),
+        [ALPHA.uuid] = entry({ dirty_percent = true, percent_at = 500, xpointer = "/body/DocFragment/body/p/text().0" }),
+        [BETA.uuid] = entry({ dirty_percent = true, percent_at = 500 }),
     }
     local deps, sent = fake_server({})
 
     sync.flush(books, deps)
 
-    eq(sent[1].body.xpointer, "/body/DocFragment/body/p/text().3")
+    eq(sent[1].body.xpointer, "/body/DocFragment/body/p/text().0")
     eq(sent[2].body.xpointer, nil)
 end)
 
-test("flush leaves the status out of the body when the device has none", function()
-    local books = { [ALPHA.uuid] = entry({ pending = true }) }
-    books[ALPHA.uuid].status = nil
+test("flush leaves the xpointer out of a status-only push", function()
+    local books = { [ALPHA.uuid] = entry({ dirty_status = true, status = "complete", status_at = 500,
+        xpointer = "/body/DocFragment/body/p/text().0" }) }
     local deps, sent = fake_server({})
 
     sync.flush(books, deps)
 
-    eq(sent[1].body.status, nil)
+    eq(sent[1].body.percent, nil)
+    eq(sent[1].body.xpointer, nil)
 end)
 
-test("flush clears pending without retrying when the server holds a newer position", function()
-    local books = { [ALPHA.uuid] = entry({ pending = true }) }
-    local deps, sent = fake_server({ { 409 } })
+test("flush sends the two fields separately when they changed at different times", function()
+    local books = { [ALPHA.uuid] = entry() }
+    sync.capture(books, ALPHA.uuid, { percent = 55, status = "reading" }, 500)
+    sync.capture(books, ALPHA.uuid, { percent = 55, status = "complete" }, 900)
+    local deps, sent = fake_server({})
 
-    local result = sync.flush(books, deps)
+    sync.flush(books, deps)
 
-    eq(result.ok, true)
-    eq(#sent, 1)
-    eq(books[ALPHA.uuid].pending, false)
+    eq(#sent, 2)
+    eq(sent[1].body.event_at, 500)
+    eq(sent[1].body.percent, 55)
+    eq(sent[1].body.status, nil)
+    eq(sent[2].body.event_at, 900)
+    eq(sent[2].body.status, "complete")
+    eq(sent[2].body.percent, nil)
+end)
+
+test("P1: a landed write takes the time the server stored, not the device's clock ahead of it", function()
+    local books = { [ALPHA.uuid] = entry() }
+    sync.capture(books, ALPHA.uuid, { percent = 55, status = "reading" }, 9000)
+    local deps = fake_server({ { 200, { position = { percent = 55, event_at = 4000 } } } })
+
+    sync.flush(books, deps)
+
+    eq(books[ALPHA.uuid].percent_at, 4000)
+    local plan = sync.pull_plan(books[ALPHA.uuid], { position = { percent = 70, event_at = 4500 } },
+        { percent = 55, status = "reading" })
+    eq(plan.percent, 70)
+end)
+
+test("a lost write keeps the device's own value and time, so the newer server value is pulled", function()
+    local books = { [ALPHA.uuid] = entry() }
+    sync.capture(books, ALPHA.uuid, { percent = 55, status = "reading" }, 500)
+    local deps = fake_server({ { 409, { position = { percent = 70, event_at = 800 } } } })
+
+    sync.flush(books, deps)
+
+    eq(books[ALPHA.uuid].percent, 55)
+    eq(books[ALPHA.uuid].percent_at, 500)
+    eq(sync.pending(books[ALPHA.uuid]), false)
+    local plan = sync.pull_plan(books[ALPHA.uuid], { position = { percent = 70, event_at = 800 } },
+        { percent = 55, status = "reading" })
+    eq(plan.percent, 70)
 end)
 
 test("flush drops a book the server refuses outright, so it never blocks the queue", function()
     for _, code in ipairs({ 400, 404, 422 }) do
         local books = {
-            [ALPHA.uuid] = entry({ pending = true }),
-            [BETA.uuid] = entry({ pending = true }),
+            [ALPHA.uuid] = entry({ dirty_percent = true }),
+            [BETA.uuid] = entry({ dirty_percent = true }),
         }
         local deps, sent = fake_server({ { code } })
 
@@ -687,105 +974,140 @@ test("flush drops a book the server refuses outright, so it never blocks the que
         eq(result.ok, true, "HTTP " .. code)
         eq(#sent, 2, "HTTP " .. code)
         eq(books[ALPHA.uuid], nil, "HTTP " .. code)
-        eq(books[BETA.uuid].pending, false, "HTTP " .. code)
+        eq(sync.pending(books[BETA.uuid]), false, "HTTP " .. code)
     end
 end)
 
-test("flush with no response keeps every entry pending, stops and returns the error", function()
-    local books = {
-        [ALPHA.uuid] = entry({ pending = true }),
-        [BETA.uuid] = entry({ pending = true }),
+test("flush stops on a failure and keeps every remaining entry pending", function()
+    local failures = {
+        { name = "no response", answer = { nil, nil, "connection refused" }, expect = "connection refused" },
+        { name = "a server error", answer = { 503 }, expect = "503" },
+        { name = "a 401", answer = { 401 }, expect = sync.REMOVED_MESSAGE },
     }
-    local deps, sent = fake_server({ { nil, "connection refused" } })
+    for _, case in ipairs(failures) do
+        local books = {
+            [ALPHA.uuid] = entry({ dirty_percent = true }),
+            [BETA.uuid] = entry({ dirty_percent = true }),
+        }
+        local deps, sent = fake_server({ case.answer })
 
-    local result = sync.flush(books, deps)
+        local result = sync.flush(books, deps)
 
-    eq(result.ok, false)
-    assert(result.message:find("connection refused", 1, true), result.message)
-    eq(#sent, 1)
-    eq(books[ALPHA.uuid].pending, true)
-    eq(books[BETA.uuid].pending, true)
-end)
-
-test("flush on a server error keeps every remaining entry pending and stops", function()
-    local books = {
-        [ALPHA.uuid] = entry({ pending = true }),
-        [BETA.uuid] = entry({ pending = true }),
-    }
-    local deps, sent = fake_server({ { 503 } })
-
-    local result = sync.flush(books, deps)
-
-    eq(result.ok, false)
-    assert(result.message:find("503", 1, true), result.message)
-    eq(#sent, 1)
-    eq(books[ALPHA.uuid].pending, true)
-    eq(books[BETA.uuid].pending, true)
-end)
-
-test("flush on a 401 stops with the removed-device message and keeps the entries", function()
-    local books = { [ALPHA.uuid] = entry({ pending = true }), [BETA.uuid] = entry({ pending = true }) }
-    local deps, sent = fake_server({ { 401 } })
-
-    local result = sync.flush(books, deps)
-
-    eq(result.ok, false)
-    eq(result.message, sync.REMOVED_MESSAGE)
-    eq(#sent, 1)
-    eq(books[ALPHA.uuid].pending, true)
+        eq(result.ok, false, case.name)
+        assert(result.message:find(case.expect, 1, true), case.name .. ": " .. result.message)
+        eq(#sent, 1, case.name)
+        eq(books[ALPHA.uuid].dirty_percent, true, case.name)
+        eq(books[BETA.uuid].dirty_percent, true, case.name)
+    end
 end)
 
 test("pull_plan moves to a remote position newer than the local entry", function()
-    local plan = sync.pull_plan(entry({ percent = 40, event_at = 100 }),
-        { position = { percent = 70, event_at = 300 } }, { percent = 40, status = "reading" })
+    local plan = sync.pull_plan(entry(), { position = { percent = 70, event_at = 300 } }, READING40)
 
     eq(plan.percent, 70)
-    eq(plan.event_at, 300)
+    eq(plan.percent_at, 300)
+    eq(plan.status, nil)
 end)
 
 test("pull_plan ignores a remote position older than the local entry", function()
-    local plan = sync.pull_plan(entry({ percent = 40, event_at = 500 }),
-        { position = { percent = 70, event_at = 300 } }, { percent = 40, status = "reading" })
+    local plan = sync.pull_plan(entry({ percent_at = 500 }),
+        { position = { percent = 70, event_at = 300 } }, READING40)
 
     eq(plan, nil)
 end)
 
-test("pull_plan keeps the page when the newer remote position is the same whole percent", function()
-    local plan = sync.pull_plan(entry({ percent = 40, event_at = 100 }),
-        { position = { percent = 40, event_at = 300 } }, { percent = 40, status = "reading" })
+test("P2: pull_plan adopts a remote position that ties the local time", function()
+    local plan = sync.pull_plan(entry({ percent_at = 300 }),
+        { position = { percent = 70, event_at = 300 } }, READING40)
+
+    eq(plan.percent, 70)
+end)
+
+test("pull_plan returns nothing when the remote value is the one the device holds", function()
+    local plan = sync.pull_plan(entry({ percent_at = 300 }),
+        { position = { percent = 40, event_at = 300 }, status = { status = "reading", event_at = 900 } },
+        READING40)
+
+    eq(plan, nil)
+end)
+
+test("pull_plan applies a newer remote complete status", function()
+    local plan = sync.pull_plan(entry(),
+        { position = { percent = 100, event_at = 300 }, status = { status = "complete", event_at = 350 } },
+        READING40)
+
+    eq(plan.status, "complete")
+    eq(plan.status_at, 350)
+    eq(plan.percent, 100)
+    eq(plan.percent_at, 300)
+end)
+
+test("E6: settling a status pull leaves the percent clock, so a later web position still applies", function()
+    local books = { [ALPHA.uuid] = entry() }
+    local plan = sync.pull_plan(books[ALPHA.uuid], { status = { status = "complete", event_at = 350 } }, READING40)
+    sync.settle(books, ALPHA.uuid, { percent = 40, status = "complete" }, plan)
+
+    eq(books[ALPHA.uuid].status_at, 350)
+    eq(books[ALPHA.uuid].percent_at, 100)
+    local later = sync.pull_plan(books[ALPHA.uuid], { position = { percent = 70, event_at = 340 } },
+        { percent = 40, status = "complete" })
+    eq(later.percent, 70)
+end)
+
+test("pull_plan leaves a field that waits to be pushed but still pulls the other", function()
+    local plan = sync.pull_plan(entry({ dirty_percent = true }),
+        { position = { percent = 70, event_at = 300 }, status = { status = "complete", event_at = 300 } },
+        { percent = 55, status = "reading" })
 
     eq(plan.percent, nil)
-    eq(plan.event_at, 300)
+    eq(plan.status, "complete")
+end)
+
+test("pull_plan treats a missing entry as time zero and compares with the device", function()
+    local plan = sync.pull_plan(nil, { position = { percent = 70, event_at = 1 } }, { percent = 5, status = nil })
+
+    eq(plan.percent, 70)
+    eq(sync.pull_plan(nil, { position = { percent = 5, event_at = 1 } }, { percent = 5, status = nil }), nil)
+end)
+
+test("pull_plan returns nothing when the server holds no state", function()
+    eq(sync.pull_plan(entry(), {}, READING40), nil)
 end)
 
 test("pull_plan moves by a newer remote xpointer the device is not at, keeping the percent as fallback", function()
-    local plan = sync.pull_plan(entry({ percent = 40, event_at = 100 }),
+    local plan = sync.pull_plan(entry({ percent_at = 100, xpointer = "/body/DocFragment/body/p[2]/text().0" }),
         { position = { percent = 40, event_at = 300, xpointer = "/body/DocFragment/body/p[7]/text().2" } },
         { percent = 40, status = "reading", xpointer = "/body/DocFragment/body/p[2]/text().0" })
 
     eq(plan.xpointer, "/body/DocFragment/body/p[7]/text().2")
     eq(plan.percent, 40)
-    eq(plan.event_at, 300)
+    eq(plan.percent_at, 300)
 end)
 
 test("pull_plan keeps the page when the newer remote xpointer is the one the device is at", function()
     local at = "/body/DocFragment/body/p[7]/text().2"
-    local plan = sync.pull_plan(entry({ percent = 40, event_at = 100 }),
+    local plan = sync.pull_plan(entry({ percent_at = 100, xpointer = at }),
         { position = { percent = 41, event_at = 300, xpointer = at } },
         { percent = 40, status = "reading", xpointer = at })
 
     eq(plan.xpointer, nil)
     eq(plan.percent, nil)
-    eq(plan.event_at, 300)
+    eq(plan.percent_at, 300)
+end)
+
+test("pull_plan reads text() and text()[1] as the same place", function()
+    local plan = sync.pull_plan(entry({ percent_at = 100, xpointer = "/body/DocFragment/body/p/text()[1].0" }),
+        { position = { percent = 40, event_at = 300, xpointer = "/body/DocFragment/body/p/text().0" } },
+        { percent = 40, status = "reading", xpointer = "/body/DocFragment/body/p/text()[1].0" })
+
+    eq(plan, nil)
 end)
 
 test("pull_plan moves by percent when the remote position has no xpointer or the device has none", function()
     local remote = { position = { percent = 70, event_at = 300 } }
-    local no_xpointer = sync.pull_plan(entry({ event_at = 100 }), remote,
-        { percent = 40, status = "reading", xpointer = "/body/DocFragment/body/p/text().0" })
-    local paged = sync.pull_plan(entry({ event_at = 100 }),
-        { position = { percent = 70, event_at = 300, xpointer = "/body/DocFragment/body/p/text().5" } },
-        { percent = 40, status = "reading" })
+    local no_xpointer = sync.pull_plan(entry(), remote, { percent = 40, status = "reading", xpointer = "/body/DocFragment/body/p/text().0" })
+    local paged = sync.pull_plan(entry(),
+        { position = { percent = 70, event_at = 300, xpointer = "/body/DocFragment/body/p/text().0" } }, READING40)
 
     eq(no_xpointer.percent, 70)
     eq(no_xpointer.xpointer, nil)
@@ -793,66 +1115,75 @@ test("pull_plan moves by percent when the remote position has no xpointer or the
     eq(paged.xpointer, nil)
 end)
 
-test("pull_plan applies a newer remote complete status", function()
-    local plan = sync.pull_plan(entry({ event_at = 100 }),
-        { position = { percent = 100, event_at = 300 }, status = { status = "complete", event_at = 350 } },
-        { percent = 40, status = "reading" })
-
-    eq(plan.status, "complete")
-    eq(plan.percent, 100)
-    eq(plan.event_at, 350)
-end)
-
-test("pull_plan leaves a status the device already has", function()
-    local plan = sync.pull_plan(entry({ event_at = 100 }),
-        { status = { status = "reading", event_at = 350 } }, { percent = 40, status = "reading" })
-
-    eq(plan.status, nil)
-    eq(plan.event_at, 350)
-end)
-
-test("pull_plan returns nothing while the local entry waits to be pushed", function()
-    local plan = sync.pull_plan(entry({ pending = true, event_at = 100 }),
-        { position = { percent = 70, event_at = 300 } }, { percent = 55, status = "reading" })
-
-    eq(plan, nil)
-end)
-
-test("pull_plan treats a missing entry as event time zero", function()
-    local plan = sync.pull_plan(nil, { position = { percent = 70, event_at = 1 } },
-        { percent = 5, status = nil })
-
-    eq(plan.percent, 70)
-end)
-
-test("pull_plan returns nothing when the server holds no state", function()
-    eq(sync.pull_plan(entry(), {}, { percent = 40, status = "reading" }), nil)
-end)
-
 test("pull_plan reads a decoded JSON null as no state", function()
     -- KOReader's json decodes null to a function, not nil.
     local null = function() end
-    eq(sync.pull_plan(entry(), { position = null, status = null }, { percent = 40, status = "reading" }), nil)
+    eq(sync.pull_plan(entry(), { position = null, status = null }, READING40), nil)
 end)
 
-test("settle records the xpointer the device is at", function()
-    local books = {}
+test("settle records the xpointer with the percent field only", function()
+    local books = { [ALPHA.uuid] = entry({ xpointer = "/body/DocFragment/body/p/text().1" }) }
 
-    sync.settle(books, ALPHA.uuid, { percent = 70, status = "reading", xpointer = "/body/DocFragment/body/p/text().1" }, 300)
-
+    sync.settle(books, ALPHA.uuid, { percent = 70, status = "reading", xpointer = "/body/DocFragment/body/p/text().0" }, { status_at = 300 })
     eq(books[ALPHA.uuid].xpointer, "/body/DocFragment/body/p/text().1")
+
+    sync.settle(books, ALPHA.uuid, { percent = 70, status = "reading", xpointer = "/body/DocFragment/body/p/text().0" }, { percent_at = 300 })
+    eq(books[ALPHA.uuid].xpointer, "/body/DocFragment/body/p/text().0")
 end)
 
-test("settle records the device's own state as agreed at the event time and not pending", function()
-    local books = { [ALPHA.uuid] = entry({ pending = true }) }
+test("settle advances only the fields that have a clock and clears their pending marks", function()
+    local books = { [ALPHA.uuid] = entry({ dirty_percent = true, dirty_status = true }) }
 
-    sync.settle(books, ALPHA.uuid, { percent = 70, status = "complete" }, 300)
+    sync.settle(books, ALPHA.uuid, { percent = 70, status = "complete" }, { percent_at = 300 })
 
     local e = books[ALPHA.uuid]
     eq(e.percent, 70)
-    eq(e.status, "complete")
-    eq(e.event_at, 300)
-    eq(e.pending, false)
+    eq(e.percent_at, 300)
+    eq(e.dirty_percent, false)
+    eq(e.status, "reading")
+    eq(e.status_at, 100)
+    eq(e.dirty_status, true)
+end)
+
+test("adopt_empty_server queues a first-seen book's own state when the server holds none", function()
+    local books = {}
+    sync.settle(books, ALPHA.uuid, READING40, { percent_at = 0, status_at = 0 })
+
+    local adopted = sync.adopt_empty_server(books, ALPHA.uuid, READING40, {}, 700)
+
+    eq(adopted, true)
+    eq(books[ALPHA.uuid].percent_at, 700)
+    eq(books[ALPHA.uuid].dirty_percent, true)
+    eq(books[ALPHA.uuid].dirty_status, true)
+end)
+
+test("adopt_empty_server leaves the baseline alone when the server holds state", function()
+    local books = {}
+    sync.settle(books, ALPHA.uuid, READING40, { percent_at = 0, status_at = 0 })
+
+    local adopted = sync.adopt_empty_server(books, ALPHA.uuid, READING40,
+        { position = { percent = 70, event_at = 300 } }, 700)
+
+    eq(adopted, false)
+    eq(sync.pending(books[ALPHA.uuid]), false)
+end)
+
+test("upgrade gives an entry saved with one time and pending flag a clock and mark per field", function()
+    local books = {
+        [ALPHA.uuid] = { percent = 55, status = "reading", event_at = 500, pending = true },
+        [BETA.uuid] = { percent = 40, status = "abandoned", event_at = 100, pending = false },
+    }
+
+    sync.upgrade(books)
+
+    local a, b = books[ALPHA.uuid], books[BETA.uuid]
+    eq(a.percent_at, 500)
+    eq(a.status_at, 500)
+    eq(a.dirty_percent, true)
+    eq(a.dirty_status, true)
+    eq(a.event_at, nil)
+    eq(b.status, nil)
+    eq(sync.pending(b), false)
 end)
 
 -- Annotation sync. A fake device: `items` is the book's annotation list, `opts.post` /
@@ -871,17 +1202,40 @@ local function highlight(fields)
     return item
 end
 
+-- When the device syncs, and a stand-in for the JSON encoder that sizes a request the way the
+-- real one would: by the bytes of its strings.
+local SYNC_AT = NOW + 100
+
+local function json_size(value)
+    if type(value) == "string" then
+        return #value + 2
+    elseif type(value) == "table" then
+        local size = 2
+        for key, inner in pairs(value) do
+            size = size + (type(key) == "string" and #key + 3 or 1) + json_size(inner) + 1
+        end
+        return size
+    end
+    return 8
+end
+
 local function annotation_device(opts)
     opts = opts or {}
     local items = opts.items or {}
-    local log = { posts = {}, gets = {}, added = {}, removed = {}, minted = 0 }
+    local log = { posts = {}, gets = {}, added = {}, removed = {}, minted = 0, clock = { at = SYNC_AT } }
     local function answer(spec, request)
         if type(spec) == "function" then
-            spec = spec(request)
+            return spec(request)
         end
         return spec[1], spec[2], spec[3]
     end
     local deps = {
+        now = function()
+            return log.clock.at
+        end,
+        encode = function(value)
+            return string.rep("x", json_size(value))
+        end,
         new_id = function()
             log.minted = log.minted + 1
             return string.format("minted-%d", log.minted)
@@ -933,13 +1287,13 @@ local function fingerprint(item)
 end
 
 local function server_fingerprint(row)
-    return table.concat({ row.color, row.note or "", row.text or "" }, "\0")
+    return table.concat({ row.color, row.note or "", row.text or "", row.pos0 or "", row.pos1 or "" }, "\0")
 end
 
 -- The agreed entry for `item` as it stands, against the default `server_row`.
 local function agreed_with(item, extra)
-    local entry = { fp = fingerprint(item), server_at = NOW - 10, server_color = "yellow",
-        server_fp = server_fingerprint(server_row("any")) }
+    local entry = { fp = fingerprint(item), pos0 = item.pos0, pos1 = item.pos1, server_at = NOW - 10,
+        server_color = "yellow", server_fp = server_fingerprint(server_row("any")) }
     for k, v in pairs(extra or {}) do
         entry[k] = v
     end
@@ -975,7 +1329,7 @@ test("sync_annotations pushes a new highlight under a minted id with its device 
     eq(sent.note, "a note")
     eq(sent.color, "orange")
     eq(sent.created_at, NOW - 3600)
-    eq(sent.updated_at, NOW - 3600)
+    eq(sent.updated_at, SYNC_AT)
     eq(log.posts[1].deletes, nil)
 end)
 
@@ -1019,18 +1373,40 @@ for field, changed in pairs({ color = "red", note = "edited", text = "other", po
     end)
 end
 
-test("sync_annotations dates an edit no earlier than the server time it last agreed on", function()
-    local newer = highlight({ omnibus_id = "newer", note = "x", datetime_updated = os.date("%Y-%m-%d %H:%M:%S", NOW) })
-    local older = highlight({ omnibus_id = "older", note = "x", datetime_updated = os.date("%Y-%m-%d %H:%M:%S", NOW - 5000) })
-    local items, synced, deps, log = annotation_device({ items = { newer, older } })
-    local was = { newer = highlight(), older = highlight() }
-    synced.agreed = { newer = agreed_with(was.newer, { server_at = NOW - 100 }),
-        older = agreed_with(was.older, { server_at = NOW - 100 }) }
+test("sync_annotations stamps the time it noticed an edit and pushes that as the edit time", function()
+    local item = highlight({ omnibus_id = "h1" })
+    local items, synced, deps, log = annotation_device({ items = { item } })
+    synced.agreed = { h1 = agreed_with(item, { server_at = NOW - 100 }) }
+    item.note = "edited"
 
     sync.sync_annotations(items, synced, deps)
 
-    eq(log.posts[1].upserts[1].updated_at, NOW)
-    eq(log.posts[1].upserts[2].updated_at, NOW - 100)
+    eq(item.omnibus_edited_at, SYNC_AT)
+    eq(log.posts[1].upserts[1].updated_at, SYNC_AT)
+end)
+
+test("sync_annotations keeps the first stamp of an edit whose push failed", function()
+    local item = highlight({ omnibus_id = "h1" })
+    local items, synced, deps, log = annotation_device({ items = { item }, post = { 503 } })
+    synced.agreed = { h1 = agreed_with(item, { server_at = NOW - 100 }) }
+    item.note = "edited"
+    sync.sync_annotations(items, synced, deps)
+    log.clock.at = SYNC_AT + 500
+
+    sync.sync_annotations(items, synced, deps)
+
+    eq(log.posts[2].upserts[1].updated_at, SYNC_AT)
+end)
+
+test("sync_annotations stamps a second edit after the first one landed", function()
+    local item = highlight({ omnibus_id = "h1", omnibus_edited_at = NOW - 200 })
+    local items, synced, deps, log = annotation_device({ items = { item } })
+    synced.agreed = { h1 = agreed_with(item, { server_at = NOW - 100 }) }
+    item.note = "edited again"
+
+    sync.sync_annotations(items, synced, deps)
+
+    eq(log.posts[1].upserts[1].updated_at, SYNC_AT)
 end)
 
 test("sync_annotations sends an agreed id missing from the items as a delete, and forgets a local-only one", function()
@@ -1285,7 +1661,7 @@ for name, response in pairs({
 }) do
     test("sync_annotations fails on " .. name .. " to the push and changes nothing it did not land", function()
         local item = highlight({ omnibus_id = "h1", note = "edited" })
-        local items, synced, deps, log = annotation_device({ items = { item }, post = response })
+        local items, synced, deps = annotation_device({ items = { item }, post = response, get = { 503 } })
         synced.agreed = { h1 = agreed_with(highlight({ omnibus_id = "h1" })), gone = { fp = "x", server_at = 1 } }
         synced.cursor = 41
 
@@ -1297,9 +1673,35 @@ for name, response in pairs({
         eq(synced.agreed.gone ~= nil, true)
         eq(synced.agreed.h1.fp == fingerprint(item), false)
         eq(#items, 1)
-        eq(#log.gets, 0)
     end)
 end
+
+test("sync_annotations still pulls after a push the server refused", function()
+    local item = highlight({ omnibus_id = "h1", note = "edited" })
+    local items, synced, deps, log = annotation_device({
+        items = { item },
+        post = { 503 },
+        get = { 200, { cursor = 9, annotations = { server_row("w1", { updated_at = NOW }) }, deleted = {} } },
+    })
+    synced.agreed = { h1 = agreed_with(highlight({ omnibus_id = "h1" })) }
+
+    local result = sync.sync_annotations(items, synced, deps)
+
+    eq(result.ok, false)
+    eq(#log.gets, 1)
+    eq(#log.added, 1)
+    eq(synced.cursor, 9)
+end)
+
+test("sync_annotations does not wait on a second call when the push got no answer", function()
+    local item = highlight({ omnibus_id = "h1", note = "edited" })
+    local items, synced, deps, log = annotation_device({ items = { item }, post = { nil, nil, "timeout" } })
+    synced.agreed = { h1 = agreed_with(highlight({ omnibus_id = "h1" })) }
+
+    sync.sync_annotations(items, synced, deps)
+
+    eq(#log.gets, 0)
+end)
 
 for name, response in pairs({
     ["no response"] = { nil, nil, "timeout" },
@@ -1373,5 +1775,208 @@ test("sync_annotations splits a large push into requests within the server's bat
     eq(#log.posts[2].upserts, 1)
 end)
 
+
+test("sync_annotations settles a stale answer that carries no annotation so it is not resent", function()
+    local item = highlight({ omnibus_id = "h1", note = "device edit" })
+    local items, synced, deps, log = annotation_device({
+        items = { item },
+        post = { 200, { results = { { id = "h1", outcome = "stale", annotation = nil } } } },
+    })
+    synced.agreed = { h1 = agreed_with(highlight({ omnibus_id = "h1" })) }
+
+    sync.sync_annotations(items, synced, deps)
+    sync.sync_annotations(items, synced, deps)
+
+    eq(#log.posts, 1)
+    eq(item.note, "device edit")
+    eq(synced.agreed.h1.fp, fingerprint(item))
+end)
+
+test("sync_annotations settles a stale answer whose annotation is a JSON null", function()
+    local item = highlight({ omnibus_id = "h1", note = "device edit" })
+    local items, synced, deps, log = annotation_device({
+        items = { item },
+        post = { 200, { results = { { id = "h1", outcome = "stale", annotation = function() end } } } },
+    })
+    synced.agreed = { h1 = agreed_with(highlight({ omnibus_id = "h1" })) }
+
+    sync.sync_annotations(items, synced, deps)
+    sync.sync_annotations(items, synced, deps)
+
+    eq(#log.posts, 1)
+end)
+
+test("sync_annotations keeps every request under the size cap", function()
+    local items = {}
+    for i = 1, 60 do
+        table.insert(items, highlight({ omnibus_id = "h" .. i, text = string.rep("t", 20000) }))
+    end
+    local _, synced, deps, log = annotation_device({ items = items })
+
+    sync.sync_annotations(items, synced, deps)
+
+    eq(#log.posts > 1, true)
+    for _, body in ipairs(log.posts) do
+        eq(json_size(body) <= sync.PUSH_BYTES, true, "request size")
+    end
+    local sent = 0
+    for _, body in ipairs(log.posts) do
+        sent = sent + #body.upserts
+    end
+    eq(sent, 60)
+end)
+
+test("sync_annotations halves a push the server answers 413 until it lands", function()
+    local items = {}
+    for i = 1, 40 do
+        table.insert(items, highlight({ omnibus_id = "h" .. i }))
+    end
+    local landed = {}
+    local _, synced, deps, log = annotation_device({
+        items = items,
+        post = function(body)
+            if #body.upserts > 10 then
+                return 413
+            end
+            local results = {}
+            for _, up in ipairs(body.upserts) do
+                landed[up.id] = true
+                table.insert(results, { id = up.id, outcome = "applied", annotation = server_row(up.id) })
+            end
+            return 200, { results = results }
+        end,
+    })
+
+    local result = sync.sync_annotations(items, synced, deps)
+
+    eq(result.ok, true)
+    local count = 0
+    for _ in pairs(landed) do
+        count = count + 1
+    end
+    eq(count, 40)
+    eq(synced.agreed.h40 ~= nil, true)
+end)
+
+test("sync_annotations reports a single highlight the server refuses as too large and still pushes the rest", function()
+    local big = highlight({ omnibus_id = "big" })
+    local fine = highlight({ omnibus_id = "fine" })
+    local items, synced, deps, log = annotation_device({
+        items = { big, fine },
+        post = function(body)
+            for _, up in ipairs(body.upserts) do
+                if up.id == "big" then
+                    return 413
+                end
+            end
+            return 200, { results = { { id = "fine", outcome = "applied", annotation = server_row("fine") } } }
+        end,
+        get = { 200, { cursor = 9, annotations = {}, deleted = {} } },
+    })
+
+    local result = sync.sync_annotations(items, synced, deps)
+
+    eq(result.ok, false)
+    eq(result.message:find("too large", 1, true) ~= nil, true)
+    eq(synced.agreed.big, nil)
+    eq(synced.agreed.fine ~= nil, true)
+    eq(#log.gets, 1)
+    eq(#items, 2)
+end)
+
+test("sync_annotations counts a removal from the listing as a change even without an agreed entry", function()
+    local item = highlight({ omnibus_id = "h1" })
+    local items, synced, deps = annotation_device({
+        items = { item },
+        post = { 200, { results = {} } },
+        get = { 200, { cursor = 5, annotations = {}, deleted = { "h1" } } },
+    })
+    synced.agreed = { h1 = agreed_with(item) }
+    synced.cursor = 5
+    synced.agreed.h1 = nil
+    -- unchanged fingerprint, never agreed: nothing is pushed for it
+    local result = sync.sync_annotations(items, synced, deps)
+
+    eq(#items, 0)
+    eq(result.changed, true)
+end)
+
+test("sync_annotations takes the server's anchors with its version", function()
+    local item = highlight({ omnibus_id = "h1", page = PLACE.pos0 })
+    local moved = "/body/DocFragment/body/p[2]/text().3"
+    local items, synced, deps = annotation_device({
+        items = { item },
+        get = { 200, { cursor = 9, annotations = { server_row("h1", { pos0 = moved, updated_at = NOW }) }, deleted = {} } },
+    })
+    synced.agreed = { h1 = agreed_with(item) }
+
+    sync.sync_annotations(items, synced, deps)
+
+    eq(item.pos0, moved)
+    eq(item.page, moved)
+    eq(synced.agreed.h1.fp, fingerprint(item))
+end)
+
+test("sync_annotations reuses the agreed id of a highlight that lost its id and sits at the same place", function()
+    local entry_item = highlight({ omnibus_id = "kept" })
+    local imported = highlight()
+    local items, synced, deps, log = annotation_device({ items = { imported } })
+    synced.agreed = { kept = agreed_with(entry_item) }
+
+    sync.sync_annotations(items, synced, deps)
+
+    eq(imported.omnibus_id, "kept")
+    eq(log.minted, 0)
+    eq(#log.posts, 0)
+end)
+
+test("sync_annotations mints an id for a highlight at a place no agreed id names", function()
+    local entry_item = highlight({ omnibus_id = "kept", pos0 = "/body/DocFragment/body/p[1]/text().0" })
+    local fresh = highlight()
+    local items, synced, deps, log = annotation_device({ items = { fresh } })
+    synced.agreed = { kept = agreed_with(entry_item) }
+
+    sync.sync_annotations(items, synced, deps)
+
+    eq(fresh.omnibus_id, "minted-1")
+    eq(log.posts[1].deletes[1], "kept")
+end)
+
+test("string_or_nil keeps a string and drops everything else, a decoded JSON null included", function()
+    eq(sync.string_or_nil("a"), "a")
+    eq(sync.string_or_nil(function() end), nil)
+    eq(sync.string_or_nil(4), nil)
+end)
+
+test("sync_annotations keeps an opaque cursor and sends it back verbatim", function()
+    local items, synced, deps, log = annotation_device({
+        get = { 200, { cursor = "1700.12.1700.6162", annotations = {}, deleted = {} } },
+    })
+    sync.sync_annotations(items, synced, deps)
+    sync.sync_annotations(items, synced, deps)
+
+    eq(synced.cursor, "1700.12.1700.6162")
+    eq(log.gets[2], "1700.12.1700.6162")
+end)
+
+test("sync_annotations keeps pulling pages while the server says there are more", function()
+    local pages = {
+        { cursor = "a", more = true, annotations = { server_row("w1", { updated_at = NOW }) }, deleted = {} },
+        { cursor = "b", more = false, annotations = { server_row("w2", { updated_at = NOW }) }, deleted = {} },
+    }
+    local calls = 0
+    local items, synced, deps, log = annotation_device({
+        get = function()
+            calls = calls + 1
+            return 200, pages[calls]
+        end,
+    })
+
+    sync.sync_annotations(items, synced, deps)
+
+    eq(#log.added, 2)
+    eq(synced.cursor, "b")
+    eq(log.gets[2], "a")
+end)
 
 os.exit(failures == 0 and 0 or 1)

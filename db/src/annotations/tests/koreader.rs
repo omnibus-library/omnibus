@@ -35,10 +35,16 @@ async fn stamp(pool: &SqlitePool, client_id: &str, updated_at: i64) {
         .unwrap();
 }
 
-async fn listed(pool: &SqlitePool, user: i64, uuid: &str, since: i64) -> KoreaderListing {
-    koreader_annotations_since(pool, user, uuid, since)
+async fn listed(pool: &SqlitePool, user: i64, uuid: &str, since: impl ToString) -> KoreaderListing {
+    let since = KoreaderCursor::parse(&since.to_string()).unwrap();
+    koreader_annotations_since(pool, user, uuid, &since)
         .await
         .unwrap()
+}
+
+/// The time a cursor's rows position stands at (its first wire part).
+fn row_time(cursor: &KoreaderCursor) -> i64 {
+    cursor.encode().split('.').next().unwrap().parse().unwrap()
 }
 
 fn ids(listing: &KoreaderListing) -> Vec<&str> {
@@ -150,7 +156,7 @@ mod koreader_annotations_since {
 
         let listing = listed(&pool, user, &uuid, 0).await;
 
-        assert!((before..=now(&pool).await).contains(&listing.cursor));
+        assert!((before..=now(&pool).await).contains(&row_time(&listing.cursor)));
     }
 
     #[tokio::test]
@@ -260,7 +266,8 @@ mod koreader_annotations_since {
         let listing = listed(&pool, user, &uuid, 0).await;
 
         assert_eq!(listing.annotations.len() as i64, LIST_HIGHLIGHTS_LIMIT);
-        assert_eq!(listing.cursor, 10000 + LIST_HIGHLIGHTS_LIMIT);
+        assert_eq!(row_time(&listing.cursor), 10000 + LIST_HIGHLIGHTS_LIMIT);
+        assert!(listing.more);
     }
 }
 
@@ -434,7 +441,7 @@ mod upsert_koreader_annotation {
         assert_eq!(stored(&pool, user, "k1").await, None);
     }
 
-    async fn kobo_location_after_upsert(new_cfi: &str) -> Option<String> {
+    async fn kobo_anchor_after_upsert(new_cfi: &str) -> (Option<String>, i64) {
         let pool = init_db("sqlite::memory:").await.unwrap();
         let user = seed_user(&pool, "alice").await;
         let (_, uuid) = seed(&pool, "/lib", "Book A").await;
@@ -457,24 +464,47 @@ mod upsert_koreader_annotation {
 
         upsert(&pool, user, &uuid, &moved).await.unwrap();
 
-        sqlx::query_scalar("SELECT kobo_location FROM annotations WHERE client_id = 'k1'")
-            .fetch_one(&pool)
+        sqlx::query_as(
+            "SELECT kobo_location, kobo_location_stale FROM annotations WHERE client_id = 'k1'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn keeps_the_kobo_anchor_and_marks_it_stale_when_the_cfi_moves() {
+        let (location, stale) = kobo_anchor_after_upsert("epubcfi(/6/2!/4/50,/1:0,/1:5)").await;
+
+        assert!(location.is_some_and(|l| l.contains("startPath")));
+        assert_eq!(stale, 1);
+    }
+
+    #[tokio::test]
+    async fn keeps_the_kobo_anchor_current_when_the_cfi_is_unchanged() {
+        let (location, stale) = kobo_anchor_after_upsert(CFI).await;
+
+        assert!(location.is_some_and(|l| l.contains("startPath")));
+        assert_eq!(stale, 0);
+    }
+
+    #[tokio::test]
+    async fn refuses_an_id_tombstoned_in_another_book() {
+        let pool = init_db("sqlite::memory:").await.unwrap();
+        let user = seed_user(&pool, "alice").await;
+        let (_, book_a) = seed(&pool, "/lib", "Book A").await;
+        let (_, book_b) = seed(&pool, "/lib", "Book B").await;
+        let h = create_highlight(&pool, user, &web_highlight(&book_a, Some("k1")))
             .await
-            .unwrap()
-    }
+            .unwrap();
+        delete_highlight(&pool, user, h.id).await.unwrap();
 
-    #[tokio::test]
-    async fn clears_the_kobo_anchor_when_the_cfi_moves() {
-        let moved = kobo_location_after_upsert("epubcfi(/6/2!/4/50,/1:0,/1:5)").await;
+        let err = upsert(&pool, user, &book_b, &device_upsert("k1", now(&pool).await))
+            .await
+            .unwrap_err();
 
-        assert_eq!(moved, None);
-    }
-
-    #[tokio::test]
-    async fn keeps_the_kobo_anchor_when_the_cfi_is_unchanged() {
-        let kept = kobo_location_after_upsert(CFI).await;
-
-        assert!(kept.is_some_and(|location| location.contains("startPath")));
+        assert!(matches!(err, HighlightError::NotFound));
+        assert_eq!(stored(&pool, user, "k1").await, None);
     }
 
     #[tokio::test]
@@ -528,5 +558,152 @@ mod delete_koreader_annotations {
         assert_eq!(listed(&pool, alice, &book_a, 0).await.deleted, vec!["mine"]);
         assert!(listed(&pool, alice, &book_b, 0).await.deleted.is_empty());
         assert!(listed(&pool, bob, &book_a, 0).await.deleted.is_empty());
+    }
+}
+
+mod deleted_ids_stay_deleted {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_replayed_web_create_does_not_bring_back_a_deleted_highlight() {
+        let pool = init_db("sqlite::memory:").await.unwrap();
+        let user = seed_user(&pool, "alice").await;
+        let (_, uuid) = seed(&pool, "/lib", "Book A").await;
+        let h = create_highlight(&pool, user, &web_highlight(&uuid, Some("x1")))
+            .await
+            .unwrap();
+        delete_highlight(&pool, user, h.id).await.unwrap();
+
+        let replay = create_highlight(&pool, user, &web_highlight(&uuid, Some("x1"))).await;
+
+        assert!(matches!(replay, Err(HighlightError::Gone)));
+        let listing = listed(&pool, user, &uuid, "0").await;
+        assert!(listing.annotations.is_empty());
+        assert_eq!(listing.deleted, vec!["x1"]);
+    }
+
+    #[tokio::test]
+    async fn a_kobo_upload_of_a_deleted_annotation_does_not_bring_it_back() {
+        let pool = init_db("sqlite::memory:").await.unwrap();
+        let user = seed_user(&pool, "alice").await;
+        let (_, uuid) = seed(&pool, "/lib", "Book A").await;
+        let h = create_highlight(&pool, user, &web_highlight(&uuid, Some("x1")))
+            .await
+            .unwrap();
+        delete_highlight(&pool, user, h.id).await.unwrap();
+        let still_held = IngestKoboAnnotation {
+            client_id: "x1".into(),
+            color: HighlightColor::Green,
+            text: None,
+            note: None,
+            kobo_location: r#"{"span":{"startPath":"span#kobo\\.1\\.2","startChar":3}}"#.into(),
+            epub_cfi_range: Some(CFI.into()),
+        };
+
+        ingest_kobo_annotations(&pool, user, &uuid, &[still_held], &[])
+            .await
+            .unwrap();
+
+        assert!(listed(&pool, user, &uuid, "0").await.annotations.is_empty());
+        assert!(served_kobo_annotations(&pool, user, &uuid)
+            .await
+            .unwrap()
+            .is_empty());
+    }
+}
+
+mod paging {
+    use super::*;
+
+    async fn seed_rows(pool: &SqlitePool, user: i64, uuid: &str, count: i64, at: i64) {
+        sqlx::query(
+            "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ?)
+             INSERT INTO annotations (user_id, book_uuid, epub_cfi_range, client_id, updated_at)
+             SELECT ?, ?, 'epubcfi(/6/2!/4/2,/1:0,/1:1)', 'c' || i, ? FROM n",
+        )
+        .bind(count)
+        .bind(user)
+        .bind(uuid)
+        .bind(at)
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn delivers_every_row_that_shares_one_second_across_pages() {
+        let pool = init_db("sqlite::memory:").await.unwrap();
+        let user = seed_user(&pool, "alice").await;
+        let (_, uuid) = seed(&pool, "/lib", "Book A").await;
+        seed_rows(&pool, user, &uuid, LIST_HIGHLIGHTS_LIMIT + 5, 10_000).await;
+
+        let mut seen = std::collections::HashSet::new();
+        let mut cursor = "0".to_string();
+        for _ in 0..4 {
+            let page = listed(&pool, user, &uuid, &cursor).await;
+            seen.extend(page.annotations.iter().map(|a| a.client_id.clone()));
+            cursor = page.cursor.encode();
+            if !page.more {
+                break;
+            }
+        }
+
+        assert_eq!(seen.len() as i64, LIST_HIGHLIGHTS_LIMIT + 5);
+    }
+
+    #[tokio::test]
+    async fn delivers_every_tombstone_across_pages() {
+        let pool = init_db("sqlite::memory:").await.unwrap();
+        let user = seed_user(&pool, "alice").await;
+        let (_, uuid) = seed(&pool, "/lib", "Book A").await;
+        sqlx::query(
+            "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ?)
+             INSERT INTO annotation_tombstones (user_id, book_uuid, client_id, deleted_at)
+             SELECT ?, ?, 't' || i, 20000 FROM n",
+        )
+        .bind(LIST_HIGHLIGHTS_LIMIT * 5 / 2)
+        .bind(user)
+        .bind(&uuid)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let mut seen = std::collections::HashSet::new();
+        let mut cursor = "0".to_string();
+        for _ in 0..5 {
+            let page = listed(&pool, user, &uuid, &cursor).await;
+            assert!(page.deleted.len() as i64 <= LIST_HIGHLIGHTS_LIMIT);
+            seen.extend(page.deleted.iter().cloned());
+            cursor = page.cursor.encode();
+            if !page.more {
+                break;
+            }
+        }
+
+        assert_eq!(seen.len() as i64, LIST_HIGHLIGHTS_LIMIT * 5 / 2);
+    }
+
+    #[tokio::test]
+    async fn still_reads_a_bare_integer_cursor_as_a_time() {
+        let pool = init_db("sqlite::memory:").await.unwrap();
+        let user = seed_user(&pool, "alice").await;
+        let (_, uuid) = seed(&pool, "/lib", "Book A").await;
+        for (id, at) in [("old", 100), ("edge", 200), ("new", 300)] {
+            create_highlight(&pool, user, &web_highlight(&uuid, Some(id)))
+                .await
+                .unwrap();
+            stamp(&pool, id, at).await;
+        }
+
+        let page = listed(&pool, user, &uuid, "200").await;
+
+        assert_eq!(ids(&page), vec!["edge", "new"]);
+    }
+
+    #[tokio::test]
+    async fn rejects_a_cursor_it_did_not_issue() {
+        for junk in ["", "-1", "1.2", "x", "1.2.3.zz", "1.-2.3.00"] {
+            assert!(KoreaderCursor::parse(junk).is_none(), "{junk:?}");
+        }
     }
 }

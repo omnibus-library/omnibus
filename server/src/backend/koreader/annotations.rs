@@ -13,7 +13,7 @@ use axum::{
 };
 use omnibus_db::annotations::{
     delete_koreader_annotations, koreader_annotations_since, upsert_koreader_annotation,
-    HighlightError, KoreaderAnnotation, KoreaderUpsert, UpsertOutcome,
+    HighlightError, KoreaderAnnotation, KoreaderCursor, KoreaderUpsert, UpsertOutcome,
 };
 use omnibus_db::{self as db};
 use omnibus_shared::{CreateHighlight, HighlightColor, UpdateHighlightNote};
@@ -32,17 +32,21 @@ mod tests;
 /// Most upserts, and most deletes, one push may carry.
 const MAX_BATCH: usize = 500;
 
+/// The `?since=` query of a listing: the opaque cursor the last page answered, or a bare
+/// integer an older plugin stored. Absent means from the start.
 #[derive(Deserialize)]
 pub struct Since {
-    #[serde(default)]
-    since: i64,
+    since: Option<String>,
 }
 
+/// One page of changes. `more` says a list was cut short and the device should ask again
+/// from `cursor`.
 #[derive(Serialize)]
 struct Listing {
-    cursor: i64,
+    cursor: String,
     annotations: Vec<WireAnnotation>,
     deleted: Vec<String>,
+    more: bool,
 }
 
 #[derive(Serialize)]
@@ -57,6 +61,8 @@ struct WireAnnotation {
     updated_at: i64,
 }
 
+/// A device's changes to one book: highlights to store and ids to delete, at most
+/// [`MAX_BATCH`] of each.
 #[derive(Deserialize)]
 pub struct Push {
     #[serde(default)]
@@ -122,8 +128,9 @@ impl Push {
                 "a push carries at most {MAX_BATCH} upserts and deletes"
             ));
         }
-        let id_ok =
-            |id: &str| !id.is_empty() && id.chars().count() <= CreateHighlight::CLIENT_ID_MAX_LEN;
+        let id_ok = |id: &str| {
+            !id.trim().is_empty() && id.chars().count() <= CreateHighlight::CLIENT_ID_MAX_LEN
+        };
         if !self.deletes.iter().all(|id| id_ok(id)) {
             return Err("a delete id is empty or too long".into());
         }
@@ -187,41 +194,41 @@ async fn off_runtime<T: Send + 'static>(
     tokio::task::spawn_blocking(job).await?
 }
 
-/// The range CFI for each `(pos0, pos1)`; every slot is `None` when the book has no EPUB
-/// or the converter fails, so a push degrades to `unplaceable` instead of a 5xx.
+/// The range CFI for each `(pos0, pos1)`. A book with no EPUB places nothing (`None` in every
+/// slot); a lookup, read or conversion failure is an `Err`, so the device retries instead of
+/// being told its highlights can't be placed.
 async fn to_cfis(
     pool: &SqlitePool,
     uuid: &str,
     anchors: Vec<(String, String)>,
-) -> Vec<Option<String>> {
+) -> anyhow::Result<Vec<Option<String>>> {
     let count = anchors.len();
-    let Some(source) = epub_source(pool, uuid).await else {
-        return vec![None; count];
+    let Some(source) = epub_source(pool, uuid).await? else {
+        return Ok(vec![None; count]);
     };
-    off_runtime(move || db::koreader_position::annotation_cfis(&source, &anchors))
-        .await
-        .unwrap_or_else(|e| {
-            tracing::warn!(%uuid, error = %e, "koreader annotation conversion failed");
-            vec![None; count]
-        })
+    off_runtime(move || db::koreader_position::annotation_cfis(&source, &anchors)).await
 }
 
-/// The XPointer pair for each range CFI; every slot is `None` when the book has no EPUB.
+/// The XPointer pair for each range CFI; every slot is `None` for a book with no EPUB, and a
+/// failure is an `Err`.
 async fn to_xpointers(
     pool: &SqlitePool,
     uuid: &str,
     cfis: Vec<String>,
 ) -> anyhow::Result<Vec<Option<(String, String)>>> {
     let count = cfis.len();
-    let Some(source) = epub_source(pool, uuid).await else {
+    if count == 0 {
+        return Ok(Vec::new());
+    }
+    let Some(source) = epub_source(pool, uuid).await? else {
         return Ok(vec![None; count]);
     };
     off_runtime(move || db::koreader_position::annotation_xpointers(&source, &cfis)).await
 }
 
 /// What changed in a book since the device's cursor. A row the converter cannot place
-/// stays on the server. 404 when no book has the uuid; 500 when the EPUB cannot be read,
-/// so the device asks again from the same cursor instead of skipping the rows.
+/// stays on the server. 404 when no book has the uuid; 500 when the EPUB cannot be found or
+/// read, so the device asks again from the same cursor instead of skipping the rows.
 pub async fn get_annotations(
     device: KoreaderDevice,
     State(state): State<AppState>,
@@ -231,16 +238,18 @@ pub async fn get_annotations(
     if let Some(rejected) = reject_oversized_uuid(&uuid) {
         return rejected;
     }
-    if since < 0 {
-        return (StatusCode::BAD_REQUEST, "since must not be negative").into_response();
-    }
+    let since = match since.as_deref().map(KoreaderCursor::parse) {
+        None => KoreaderCursor::default(),
+        Some(Some(cursor)) => cursor,
+        Some(None) => return (StatusCode::BAD_REQUEST, "since is not a cursor").into_response(),
+    };
     let canonical = match db::resolve_canonical_book_uuid(state.pool(), &uuid).await {
         Ok(Some(canonical)) => canonical,
         Ok(None) => return StatusCode::NOT_FOUND.into_response(),
         Err(e) => return internal("koreader annotations book", e),
     };
     let listing =
-        match koreader_annotations_since(state.pool(), device.user_id, &canonical, since).await {
+        match koreader_annotations_since(state.pool(), device.user_id, &canonical, &since).await {
             Ok(listing) => listing,
             Err(e) => return internal("koreader annotations since", e),
         };
@@ -260,9 +269,10 @@ pub async fn get_annotations(
         .filter_map(|(a, pos)| Some(wire(a, pos?)))
         .collect();
     Json(Listing {
-        cursor: listing.cursor,
+        cursor: listing.cursor.encode(),
         annotations,
         deleted: listing.deleted,
+        more: listing.more,
     })
     .into_response()
 }
@@ -317,7 +327,8 @@ async fn store(
 }
 
 /// Apply the device's upserts and deletes; answers one result per upsert. 404 when no book
-/// has the uuid; 400 for an over-long field or batch.
+/// has the uuid; 400 for an over-long field or batch; 500 when the EPUB cannot be found or
+/// read, before anything is stored, so the whole push is retried.
 pub async fn post_annotations(
     device: KoreaderDevice,
     State(state): State<AppState>,
@@ -340,12 +351,15 @@ pub async fn post_annotations(
         .iter()
         .map(|u| (u.pos0.clone(), u.pos1.clone()))
         .collect();
-    let cfis = to_cfis(state.pool(), &canonical, anchors).await;
+    let cfis = match to_cfis(state.pool(), &canonical, anchors).await {
+        Ok(cfis) => cfis,
+        Err(e) => return internal("koreader annotations anchors", e),
+    };
     let stored = match store(state.pool(), device.user_id, &canonical, &push, cfis).await {
         Ok(stored) => stored,
         Err(e) => return internal("koreader annotations store", e),
     };
-    if stored.iter().any(|s| matches!(s, Stored::Applied(_))) {
+    if needs_kobo_downsync(&stored) {
         // Same as a web highlight write: let a Kobo with this book pick the change up.
         db::annotations::spawn_kobo_downsync(
             state.pool().clone(),
@@ -359,6 +373,12 @@ pub async fn post_annotations(
         results: results(push.upserts, stored, stale),
     })
     .into_response()
+}
+
+/// Whether a push changed what a Kobo is served: only a written highlight can, not a stale
+/// answer, a delete or an unplaceable one.
+fn needs_kobo_downsync(stored: &[Stored]) -> bool {
+    stored.iter().any(|s| matches!(s, Stored::Applied(_)))
 }
 
 /// The XPointers of each stale row's stored anchor, in order; `None` when they cannot be had.

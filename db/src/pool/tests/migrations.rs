@@ -462,23 +462,35 @@ async fn migration_0069_entity_aliases_rejects_duplicate_kind_alias_name() {
     );
 }
 
-#[tokio::test]
-async fn migration_0099_turns_share_stats_on_for_every_existing_reader() {
-    // A pool migrated to just below 0099 — the schema an install predating
-    // the share-stats column sits at. One connection, so the in-memory
-    // database is a single shared one, matching `pool_before_merge_orphan_heal`
-    // in `crate::merge::tests::migration_0079`.
-    const SHARE_STATS_VERSION: i64 = 99;
-    static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
+static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
+
+/// A pool migrated to just below `version` — the schema an install predating it sits at.
+/// One connection, so the in-memory database is a single shared one, matching
+/// `pool_before_merge_orphan_heal` in `crate::merge::tests::migration_0079`.
+async fn pool_before(version: i64) -> SqlitePool {
     let pool = sqlx::sqlite::SqlitePoolOptions::new()
         .max_connections(1)
         .connect("sqlite::memory:")
         .await
         .unwrap();
-    for m in MIGRATOR.iter().filter(|m| m.version < SHARE_STATS_VERSION) {
+    for m in MIGRATOR.iter().filter(|m| m.version < version) {
         sqlx::raw_sql(&m.sql).execute(&pool).await.unwrap();
     }
+    pool
+}
 
+/// Run migration `version` over a pool built by [`pool_before`].
+async fn apply_migration(pool: &SqlitePool, version: i64) {
+    let m = MIGRATOR
+        .iter()
+        .find(|m| m.version == version)
+        .unwrap_or_else(|| panic!("migration {version} must exist"));
+    sqlx::raw_sql(&m.sql).execute(pool).await.unwrap();
+}
+
+#[tokio::test]
+async fn migration_0099_turns_share_stats_on_for_every_existing_reader() {
+    let pool = pool_before(99).await;
     sqlx::query(
         "INSERT INTO users (id, username, password_hash, is_admin) VALUES (1, 'u', 'h', 0)",
     )
@@ -486,11 +498,7 @@ async fn migration_0099_turns_share_stats_on_for_every_existing_reader() {
     .await
     .unwrap();
 
-    let m = MIGRATOR
-        .iter()
-        .find(|m| m.version == SHARE_STATS_VERSION)
-        .expect("0099 must exist");
-    sqlx::raw_sql(&m.sql).execute(&pool).await.unwrap();
+    apply_migration(&pool, 99).await;
 
     let share_stats: i64 = sqlx::query_scalar("SELECT share_stats FROM users WHERE id = 1")
         .fetch_one(&pool)
@@ -502,21 +510,9 @@ async fn migration_0099_turns_share_stats_on_for_every_existing_reader() {
     );
 }
 
-#[tokio::test]
-async fn migration_0105_keeps_existing_devices_as_kobos_that_still_resolve() {
-    use omnibus_shared::DeviceKind;
-
-    const DEVICE_KIND_VERSION: i64 = 105;
-    static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
-    let pool = sqlx::sqlite::SqlitePoolOptions::new()
-        .max_connections(1)
-        .connect("sqlite::memory:")
-        .await
-        .unwrap();
-    for m in MIGRATOR.iter().filter(|m| m.version < DEVICE_KIND_VERSION) {
-        sqlx::raw_sql(&m.sql).execute(&pool).await.unwrap();
-    }
-
+/// A pool just below `version` holding user 1 and the Kobo `old-token`.
+async fn pool_before_with_old_device(version: i64) -> SqlitePool {
+    let pool = pool_before(version).await;
     sqlx::query(
         "INSERT INTO users (id, username, password_hash, is_admin) VALUES (1, 'u', 'h', 0)",
     )
@@ -527,12 +523,16 @@ async fn migration_0105_keeps_existing_devices_as_kobos_that_still_resolve() {
         .execute(&pool)
         .await
         .unwrap();
+    pool
+}
 
-    let m = MIGRATOR
-        .iter()
-        .find(|m| m.version == DEVICE_KIND_VERSION)
-        .expect("0105 must exist");
-    sqlx::raw_sql(&m.sql).execute(&pool).await.unwrap();
+#[tokio::test]
+async fn migration_0105_keeps_existing_devices_as_kobos_that_still_resolve() {
+    use omnibus_shared::DeviceKind;
+
+    let pool = pool_before_with_old_device(105).await;
+
+    apply_migration(&pool, 105).await;
 
     let kind: String =
         sqlx::query_scalar("SELECT kind FROM kobo_devices WHERE token = 'old-token'")
@@ -549,32 +549,9 @@ async fn migration_0105_keeps_existing_devices_as_kobos_that_still_resolve() {
 
 #[tokio::test]
 async fn migration_0106_leaves_existing_devices_unsynced() {
-    const SYNC_REPORT_VERSION: i64 = 106;
-    static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
-    let pool = sqlx::sqlite::SqlitePoolOptions::new()
-        .max_connections(1)
-        .connect("sqlite::memory:")
-        .await
-        .unwrap();
-    for m in MIGRATOR.iter().filter(|m| m.version < SYNC_REPORT_VERSION) {
-        sqlx::raw_sql(&m.sql).execute(&pool).await.unwrap();
-    }
-    sqlx::query(
-        "INSERT INTO users (id, username, password_hash, is_admin) VALUES (1, 'u', 'h', 0)",
-    )
-    .execute(&pool)
-    .await
-    .unwrap();
-    sqlx::query("INSERT INTO kobo_devices (user_id, token, name) VALUES (1, 'old-token', 'Clara')")
-        .execute(&pool)
-        .await
-        .unwrap();
+    let pool = pool_before_with_old_device(106).await;
 
-    let m = MIGRATOR
-        .iter()
-        .find(|m| m.version == SYNC_REPORT_VERSION)
-        .expect("0106 must exist");
-    sqlx::raw_sql(&m.sql).execute(&pool).await.unwrap();
+    apply_migration(&pool, 106).await;
 
     let (at, error): (Option<i64>, Option<String>) = sqlx::query_as(
         "SELECT last_sync_at, last_sync_error FROM kobo_devices WHERE token = 'old-token'",

@@ -5,6 +5,8 @@
 //! `*_kobo_annotations` functions and a KOReader device the `*_koreader_*` ones.
 //! Every delete of a row with a client id leaves a tombstone for the latter.
 
+use std::collections::HashSet;
+
 use omnibus_shared::{CreateHighlight, Highlight, HighlightColor};
 use sqlx::{Row, Sqlite, SqlitePool, Transaction};
 
@@ -23,7 +25,7 @@ pub use downsync::{
 };
 pub use koreader::{
     delete_koreader_annotations, koreader_annotations_since, upsert_koreader_annotation,
-    KoreaderAnnotation, KoreaderListing, KoreaderUpsert, UpsertOutcome,
+    KoreaderAnnotation, KoreaderCursor, KoreaderListing, KoreaderUpsert, UpsertOutcome,
 };
 
 /// Hard cap on how many highlights `list_highlights` returns for a single
@@ -40,6 +42,9 @@ pub enum HighlightError {
     BookNotFound,
     #[error("highlight not found")]
     NotFound,
+    /// The client id was deleted; a delete is final, so nothing writes it again.
+    #[error("highlight was deleted")]
+    Gone,
     #[error(transparent)]
     Sqlx(#[from] sqlx::Error),
 }
@@ -92,11 +97,13 @@ pub async fn create_highlight_at(
     let client_id = input.client_id.as_deref();
     // `DO NOTHING` rather than `DO UPDATE`: the first write of a given
     // client_id is the user's gesture, and a replay carries no newer intent.
-    // Colour and note changes arrive as their own ops.
+    // Colour and note changes arrive as their own ops. A deleted id is never
+    // written again, so a create queued before the delete can't bring it back.
     let id = sqlx::query_scalar::<_, i64>(&format!(
         "INSERT INTO annotations
             (user_id, book_uuid, epub_cfi_range, color, text, client_id, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, {CLIENT_CREATED_AT_SQL})
+         SELECT ?, ?, ?, ?, ?, ?, {CLIENT_CREATED_AT_SQL}
+          WHERE NOT EXISTS (SELECT 1 FROM annotation_tombstones WHERE user_id = ? AND client_id = ?)
          ON CONFLICT(user_id, client_id) WHERE client_id IS NOT NULL DO NOTHING
          RETURNING id"
     ))
@@ -107,13 +114,19 @@ pub async fn create_highlight_at(
     .bind(input.text.as_deref())
     .bind(client_id)
     .bind(client_created_at)
+    .bind(user_id)
+    .bind(client_id)
     .fetch_optional(pool)
     .await?;
 
     match (id, client_id) {
         (Some(id), _) => get_highlight_by_id(pool, user_id, id).await,
-        // The insert was a no-op, so this client_id is already ours.
-        (None, Some(client_id)) => get_highlight_by_client_id(pool, user_id, client_id).await,
+        // The insert was a no-op: this client_id is already ours, or was deleted.
+        (None, Some(client_id)) => match get_highlight_by_client_id(pool, user_id, client_id).await
+        {
+            Err(HighlightError::NotFound) => Err(HighlightError::Gone),
+            found => found,
+        },
         (None, None) => Err(HighlightError::NotFound),
     }
 }
@@ -468,14 +481,20 @@ pub async fn ingest_kobo_annotations(
 }
 
 /// Chunked multi-row upsert for a device PATCH's `updates` batch, in place of
-/// one `INSERT ... ON CONFLICT` per row.
+/// one `INSERT ... ON CONFLICT` per row. A deleted id is skipped, so it also
+/// leaves the Kobo's served set and the device drops its copy.
 async fn upsert_kobo_annotations(
     tx: &mut Transaction<'_, Sqlite>,
     user_id: i64,
     canonical_book_uuid: &str,
     updates: &[IngestKoboAnnotation],
 ) -> Result<(), HighlightError> {
-    for chunk in updates.chunks(UPSERT_CHUNK_SIZE) {
+    let deleted = tombstoned_client_ids(tx, user_id, updates).await?;
+    let live: Vec<&IngestKoboAnnotation> = updates
+        .iter()
+        .filter(|a| !deleted.contains(&a.client_id))
+        .collect();
+    for chunk in live.chunks(UPSERT_CHUNK_SIZE) {
         let rows = std::iter::repeat_n("(?, ?, ?, ?, ?, ?, ?, ?)", chunk.len())
             .collect::<Vec<_>>()
             .join(", ");
@@ -494,6 +513,10 @@ async fn upsert_kobo_annotations(
                      WHEN annotations.kobo_location IS NOT excluded.kobo_location
                          THEN excluded.epub_cfi_range
                      ELSE COALESCE(excluded.epub_cfi_range, annotations.epub_cfi_range)
+                 END,
+                 kobo_location_stale = CASE
+                     WHEN annotations.kobo_location IS NOT excluded.kobo_location THEN 0
+                     ELSE annotations.kobo_location_stale
                  END,
                  kobo_location = excluded.kobo_location,
                  color = excluded.color,
@@ -516,6 +539,30 @@ async fn upsert_kobo_annotations(
         q.execute(&mut **tx).await?;
     }
     Ok(())
+}
+
+/// The client ids among `updates` that this user has deleted.
+async fn tombstoned_client_ids(
+    tx: &mut Transaction<'_, Sqlite>,
+    user_id: i64,
+    updates: &[IngestKoboAnnotation],
+) -> Result<HashSet<String>, HighlightError> {
+    let mut deleted = HashSet::new();
+    for chunk in updates.chunks(DELETE_CHUNK_SIZE) {
+        let placeholders = std::iter::repeat_n("?", chunk.len())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let sql = format!(
+            "SELECT client_id FROM annotation_tombstones
+             WHERE user_id = ? AND client_id IN ({placeholders})"
+        );
+        let mut q = sqlx::query_scalar::<_, String>(&sql).bind(user_id);
+        for a in chunk {
+            q = q.bind(&a.client_id);
+        }
+        deleted.extend(q.fetch_all(&mut **tx).await?);
+    }
+    Ok(deleted)
 }
 
 /// Chunked `DELETE ... WHERE client_id IN (...)` for a device PATCH's

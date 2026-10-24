@@ -2,7 +2,8 @@
 //! `epub_cfi_range` get a derived `kobo_location` (and a minted
 //! `client_id`) so the Reading Services channel can serve them to a
 //! device. The serving queries never change — a materialized row simply
-//! starts matching `kobo_location IS NOT NULL`.
+//! starts matching `kobo_location IS NOT NULL`. A row whose CFI a KOReader moved keeps
+//! serving its old anchor, flagged stale, until the new one is derived.
 
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -61,7 +62,8 @@ pub async fn downsync_book_annotations(
     let rows = sqlx::query_as::<_, (i64, String)>(
         "SELECT id, epub_cfi_range FROM annotations
          WHERE user_id = ? AND book_uuid = ?
-           AND epub_cfi_range LIKE 'epubcfi(%' AND kobo_location IS NULL",
+           AND epub_cfi_range LIKE 'epubcfi(%'
+           AND (kobo_location IS NULL OR kobo_location_stale = 1)",
     )
     .bind(user_id)
     .bind(book_uuid)
@@ -122,7 +124,7 @@ const APPLY_CHUNK_SIZE: usize = 200;
 /// Persist every derived `(id, snapshot_cfi, location)` in chunked
 /// `UPDATE ... FROM (VALUES ...)` statements; returns the rows actually written.
 /// A row that gained an anchor or whose CFI moved since the snapshot is left
-/// untouched (`kobo_location IS NULL AND epub_cfi_range = <snapshot>`).
+/// untouched (no anchor or a stale one, and `epub_cfi_range = <snapshot>`).
 async fn apply_derived_locations(
     tx: &mut Transaction<'_, Sqlite>,
     candidates: &[(i64, String, String)],
@@ -135,10 +137,11 @@ async fn apply_derived_locations(
         let sql = format!(
             "UPDATE annotations
                 SET kobo_location = v.column2,
+                    kobo_location_stale = 0,
                     client_id = COALESCE(annotations.client_id, v.column3)
                FROM (VALUES {rows}) AS v
               WHERE annotations.id = v.column1
-                AND annotations.kobo_location IS NULL
+                AND (annotations.kobo_location IS NULL OR annotations.kobo_location_stale = 1)
                 AND annotations.epub_cfi_range = v.column4
               RETURNING annotations.id"
         );
@@ -168,7 +171,8 @@ pub async fn downsync_all_kobo_annotations(
 ) -> anyhow::Result<DownsyncStats> {
     let pairs: Vec<(i64, String)> = sqlx::query_as(
         "SELECT DISTINCT user_id, book_uuid FROM annotations
-         WHERE epub_cfi_range LIKE 'epubcfi(%' AND kobo_location IS NULL",
+         WHERE epub_cfi_range LIKE 'epubcfi(%'
+           AND (kobo_location IS NULL OR kobo_location_stale = 1)",
     )
     .fetch_all(pool)
     .await?;
@@ -205,7 +209,8 @@ pub async fn downsync_book_id_annotations(
     };
     let user_ids: Vec<i64> = sqlx::query_scalar(
         "SELECT DISTINCT user_id FROM annotations
-         WHERE book_uuid = ? AND epub_cfi_range LIKE 'epubcfi(%' AND kobo_location IS NULL",
+         WHERE book_uuid = ? AND epub_cfi_range LIKE 'epubcfi(%'
+           AND (kobo_location IS NULL OR kobo_location_stale = 1)",
     )
     .bind(&book_uuid)
     .fetch_all(pool)

@@ -277,7 +277,7 @@
           "Account"
         ],
         "summary": "Download a KOReader's plugin",
-        "description": "The Omnibus plugin for one of your KOReaders, as a zip already set to this server and\ncarrying that KOReader's token. Unzip it into KOReader's `plugins` folder. The zip holds\nthe token, so treat the file like a password.",
+        "description": "The Omnibus plugin for one of your KOReaders, as a zip already set to this server and\ncarrying that KOReader's token. Unzip it into KOReader's `plugins` folder. The zip holds\nthe token, so treat the file like a password. Needs the download permission.",
         "operationId": "download_koreader_plugin",
         "parameters": [
           {
@@ -4614,6 +4614,9 @@
           },
           "404": {
             "description": "No book has that `book_uuid`."
+          },
+          "410": {
+            "description": "That `client_id` was deleted; a delete is final, so repeating the create can never succeed."
           }
         }
       }

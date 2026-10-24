@@ -13,7 +13,7 @@ use serde::Serialize;
 
 use super::extractor::KoreaderDevice;
 use crate::backend::ebooks::{device_file, rewritten_or_source, DeviceFile, EPUB_MIME};
-use crate::backend::kobo::{reject_oversized_uuid, serve_cover};
+use crate::backend::kobo::{reject_oversized_uuid, serve_cover, CoverEtag};
 use crate::backend::{deny_unless_can_download, serve_download, AppState};
 use crate::http_errors::internal;
 
@@ -111,5 +111,5 @@ pub async fn cover(
     Path(uuid): Path<String>,
     headers: HeaderMap,
 ) -> Response {
-    serve_cover(&state, &uuid, &headers).await
+    serve_cover(&state, &uuid, &headers, CoverEtag::Strong).await
 }
