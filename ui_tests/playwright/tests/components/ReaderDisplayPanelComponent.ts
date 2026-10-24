@@ -12,6 +12,7 @@ export const TYPEFACES = [
 
 export type Typeface = (typeof TYPEFACES)[number];
 export type PageView = "single" | "double";
+export type Theme = "Dark" | "Black" | "Light" | "Sepia";
 
 /** The Aa panel: font size, page view and typeface. */
 export class ReaderDisplayPanelComponent extends BaseComponent {
@@ -29,6 +30,13 @@ export class ReaderDisplayPanelComponent extends BaseComponent {
     this.increaseFontButton = this.root.getByTestId("reader-font-increase");
   }
 
+  /** One option of the Theme group, which marks its selected option with `aria-pressed`. */
+  themeButton(theme: Theme): Locator {
+    return this.root
+      .getByRole("group", { name: "Theme" })
+      .getByRole("button", { name: theme, exact: true });
+  }
+
   pageViewButton(view: PageView): Locator {
     return this.root.getByTestId(`reader-spread-${view}`);
   }
@@ -43,6 +51,10 @@ export class ReaderDisplayPanelComponent extends BaseComponent {
 
   async choosePageView(view: PageView): Promise<void> {
     await this.pageViewButton(view).click();
+  }
+
+  async chooseTheme(theme: Theme): Promise<void> {
+    await this.themeButton(theme).click();
   }
 
   async chooseTypeface(face: Typeface): Promise<void> {

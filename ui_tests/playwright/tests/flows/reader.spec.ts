@@ -168,6 +168,46 @@ test.describe("epub reader", () => {
       });
     });
 
+    test("mark the selected theme as pressed in the display panel", async ({
+      epubReaderPage,
+      request,
+    }) => {
+      const panel = epubReaderPage.displayPanel;
+      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+
+      await test.step("open the display panel", async () => {
+        await epubReaderPage.goto(uuid);
+        await epubReaderPage.openDisplayPanel();
+        await expect(panel.root).toBeVisible();
+      });
+
+      await test.step("check one theme is pressed and the rest are not", async () => {
+        await expect(panel.themeButton("Dark")).toHaveAttribute(
+          "aria-pressed",
+          "true",
+        );
+        await expect(panel.themeButton("Light")).toHaveAttribute(
+          "aria-pressed",
+          "false",
+        );
+      });
+
+      await test.step("choose another theme", async () => {
+        await panel.chooseTheme("Light");
+      });
+
+      await test.step("check the pressed state followed the choice", async () => {
+        await expect(panel.themeButton("Light")).toHaveAttribute(
+          "aria-pressed",
+          "true",
+        );
+        await expect(panel.themeButton("Dark")).toHaveAttribute(
+          "aria-pressed",
+          "false",
+        );
+      });
+    });
+
     // #2252: the scrim covered the Aa button, so it could not close its panel.
     test("close the display panel with its button", async ({
       epubReaderPage,

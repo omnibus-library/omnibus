@@ -34,6 +34,15 @@ pub(crate) fn ReaderAaPanel(on_close: EventHandler<MouseEvent>) -> Element {
     }
 }
 
+/// The `aria-pressed` value of a toggle button, so its selected option is more than a class.
+fn pressed(on: bool) -> &'static str {
+    if on {
+        "true"
+    } else {
+        "false"
+    }
+}
+
 /// Theme segmented control (Dark / Black / Light / Sepia).
 #[component]
 fn ThemeRow() -> Element {
@@ -44,26 +53,32 @@ fn ThemeRow() -> Element {
             div { class: "rd-aa-label", "Theme" }
             div {
                 class: "rd-seg",
+                role: "group",
+                "aria-label": "Theme",
                 button {
                     class: if theme == Theme::Dark { "on" } else { "" },
+                    "aria-pressed": pressed(theme == Theme::Dark),
                     r#type: "button",
                     onclick: move |_| prefs.set_theme(Theme::Dark),
                     "Dark"
                 }
                 button {
                     class: if theme == Theme::Black { "on" } else { "" },
+                    "aria-pressed": pressed(theme == Theme::Black),
                     r#type: "button",
                     onclick: move |_| prefs.set_theme(Theme::Black),
                     "Black"
                 }
                 button {
                     class: if theme == Theme::Light { "on" } else { "" },
+                    "aria-pressed": pressed(theme == Theme::Light),
                     r#type: "button",
                     onclick: move |_| prefs.set_theme(Theme::Light),
                     "Light"
                 }
                 button {
                     class: if theme == Theme::Sepia { "on" } else { "" },
+                    "aria-pressed": pressed(theme == Theme::Sepia),
                     r#type: "button",
                     onclick: move |_| prefs.set_theme(Theme::Sepia),
                     "Sepia"
@@ -81,10 +96,11 @@ fn TypefaceRow() -> Element {
     rsx! {
         div { class: "rd-aa-row",
             div { class: "rd-aa-label", "Typeface" }
-            div { class: "rd-typeface-row",
+            div { class: "rd-typeface-row", role: "group", "aria-label": "Typeface",
                 for t in Typeface::ALL {
                     button {
                         class: if typeface == t { "rd-typeface-chip on" } else { "rd-typeface-chip" },
+                        "aria-pressed": pressed(typeface == t),
                         r#type: "button",
                         "data-testid": "reader-typeface-{t.to_storage()}",
                         onclick: move |_| prefs.set_typeface(t),
@@ -152,20 +168,25 @@ fn LineSpacingRow() -> Element {
             div { class: "rd-aa-label", "Line spacing" }
             div {
                 class: "rd-seg",
+                role: "group",
+                "aria-label": "Line spacing",
                 button {
                     class: if line_spacing == LineSpacing::Tight { "on" } else { "" },
+                    "aria-pressed": pressed(line_spacing == LineSpacing::Tight),
                     r#type: "button",
                     onclick: move |_| prefs.set_line_spacing(LineSpacing::Tight),
                     "Tight"
                 }
                 button {
                     class: if line_spacing == LineSpacing::Cozy { "on" } else { "" },
+                    "aria-pressed": pressed(line_spacing == LineSpacing::Cozy),
                     r#type: "button",
                     onclick: move |_| prefs.set_line_spacing(LineSpacing::Cozy),
                     "Cozy"
                 }
                 button {
                     class: if line_spacing == LineSpacing::Airy { "on" } else { "" },
+                    "aria-pressed": pressed(line_spacing == LineSpacing::Airy),
                     r#type: "button",
                     onclick: move |_| prefs.set_line_spacing(LineSpacing::Airy),
                     "Airy"
@@ -185,20 +206,25 @@ fn MarginsRow() -> Element {
             div { class: "rd-aa-label", "Margins" }
             div {
                 class: "rd-seg",
+                role: "group",
+                "aria-label": "Margins",
                 button {
                     class: if margins == Margins::Narrow { "on" } else { "" },
+                    "aria-pressed": pressed(margins == Margins::Narrow),
                     r#type: "button",
                     onclick: move |_| prefs.set_margins(Margins::Narrow),
                     "Narrow"
                 }
                 button {
                     class: if margins == Margins::Normal { "on" } else { "" },
+                    "aria-pressed": pressed(margins == Margins::Normal),
                     r#type: "button",
                     onclick: move |_| prefs.set_margins(Margins::Normal),
                     "Normal"
                 }
                 button {
                     class: if margins == Margins::Wide { "on" } else { "" },
+                    "aria-pressed": pressed(margins == Margins::Wide),
                     r#type: "button",
                     onclick: move |_| prefs.set_margins(Margins::Wide),
                     "Wide"
@@ -220,8 +246,11 @@ fn PageViewRow() -> Element {
             div { class: "rd-aa-label", "Page view" }
             div {
                 class: "rd-seg",
+                role: "group",
+                "aria-label": "Page view",
                 button {
                     class: if spread == Spread::Single { "on" } else { "" },
+                    "aria-pressed": pressed(spread == Spread::Single),
                     r#type: "button",
                     "data-testid": "reader-spread-single",
                     onclick: move |_| prefs.set_spread(Spread::Single),
@@ -229,6 +258,7 @@ fn PageViewRow() -> Element {
                 }
                 button {
                     class: if spread == Spread::Double { "on" } else { "" },
+                    "aria-pressed": pressed(spread == Spread::Double),
                     r#type: "button",
                     "data-testid": "reader-spread-double",
                     onclick: move |_| prefs.set_spread(Spread::Double),

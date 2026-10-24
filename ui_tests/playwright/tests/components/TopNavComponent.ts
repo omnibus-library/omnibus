@@ -21,6 +21,7 @@ export class TopNavComponent extends BaseComponent {
   readonly userMenuButton: Locator;
   readonly userMenuPanel: Locator;
   readonly searchButton: Locator;
+  readonly searchButtonByName: Locator;
   readonly searchPalette: SearchPaletteComponent;
   readonly breadcrumbNav: Locator;
 
@@ -49,6 +50,10 @@ export class TopNavComponent extends BaseComponent {
     this.userMenuButton = this.root.getByTestId("user-menu-trigger");
     this.userMenuPanel = page.getByTestId("user-menu-panel");
     this.searchButton = page.getByTestId("search-trigger");
+    this.searchButtonByName = page.getByRole("button", {
+      name: "Search",
+      exact: true,
+    });
     this.searchPalette = new SearchPaletteComponent(page, this.searchButton);
     // Absent on top-level pages.
     this.breadcrumbNav = page.locator("nav.breadcrumb");

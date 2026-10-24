@@ -19,6 +19,24 @@ test.describe("search palette", () => {
     });
   });
 
+  // The word is hidden below 900px, so the button has to carry its own name.
+  test.describe("phone viewport", () => {
+    test.use({ viewport: { width: 390, height: 844 } });
+
+    test("name the search button for assistive tech", async ({
+      libraryPage,
+    }) => {
+      await test.step("open the library", async () => {
+        await libraryPage.goto();
+        await libraryPage.assertDisplayed();
+      });
+
+      await test.step("check the button resolves by its role and name", async () => {
+        await expect(libraryPage.topNav.searchButtonByName).toBeVisible();
+      });
+    });
+  });
+
   test("open on clicking the search button", async ({ libraryPage }) => {
     const palette = libraryPage.topNav.searchPalette;
 
