@@ -6,14 +6,17 @@
 use omnibus_shared::metadata_lookup::MetadataProvider;
 use omnibus_shared::physical::WishlistSource;
 use omnibus_shared::scan::ScanOutcome;
+use sqlx::SqlitePool;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use crate::author_photos::RemoteImageConfig;
 use crate::covers::find_cover_file;
 use crate::metadata_lookup::provider_cover_image_config;
-use crate::physical::{list_physical_copies, list_wishlist, PhysicalError};
-use crate::test_support::CoversTempDir;
+use crate::physical::{
+    create_fileless_book, list_physical_copies, list_wishlist, FilelessBook, PhysicalError,
+};
+use crate::test_support::{count_rows, CoversTempDir};
 
 use super::super::resolve::{add_physical_only_with, wishlist_add_with};
 use super::super::*;
@@ -143,6 +146,43 @@ async fn wishlist_add_by_book_uuid() {
 }
 
 #[tokio::test]
+async fn wishlist_add_by_book_uuid_lands_on_a_book_only_another_reader_wants() {
+    let pool = pool().await;
+    let first = seed_user(&pool, "first").await;
+    let second = seed_user(&pool, "second").await;
+    let uuid = create_fileless_book(
+        &pool,
+        FilelessBook {
+            title: "Wanted".to_string(),
+            authors: vec!["Jane Doe".to_string()],
+            isbn: Some(ISBN.to_string()),
+            pubdate: None,
+            description: None,
+            cover: None,
+        },
+    )
+    .await
+    .unwrap();
+    wishlist_add(&pool, first, Some(&uuid), None, WishlistSource::Manual)
+        .await
+        .unwrap();
+    let books_before = count_rows(&pool, "SELECT COUNT(*) FROM books").await;
+
+    let landed = wishlist_add(&pool, second, Some(&uuid), None, WishlistSource::Scan)
+        .await
+        .unwrap();
+
+    assert_eq!(landed, uuid);
+    assert_eq!(
+        count_rows(&pool, "SELECT COUNT(*) FROM books").await,
+        books_before
+    );
+    let wishes = list_wishlist(&pool, second).await.unwrap();
+    assert_eq!(wishes.len(), 1);
+    assert_eq!(wishes[0].book_uuid, uuid);
+}
+
+#[tokio::test]
 async fn wishlist_add_by_meta_creates_fileless_book_with_provider_cover() {
     let pool = pool().await;
     let _covers = CoversTempDir::new("wishlist_add_cover");
@@ -197,4 +237,161 @@ async fn wishlist_add_surfaces_physical_error_when_book_uuid_is_unresolvable() {
         matches!(err, ScanError::Physical(PhysicalError::BookNotFound)),
         "got {err:?}"
     );
+}
+
+// ── what the created entry keeps from the candidate ──────────────
+
+/// A title-search hit: an Open Library work card carries the work's first
+/// publication year and a series statement, and leaves the edition's own year empty.
+fn title_hit_meta() -> omnibus_shared::ExternalBookMeta {
+    let mut meta = picked_meta("The Obelisk Gate", "N. K. Jemisin", ISBN);
+    meta.year = None;
+    meta.first_publish_year = Some(2016);
+    meta.series = Some("The Broken Earth #2".into());
+    meta.pages = Some(410);
+    meta
+}
+
+async fn stored_book(pool: &SqlitePool, uuid: &str) -> omnibus_shared::EbookMetadata {
+    crate::get_book_by_uuid(pool, uuid).await.unwrap().unwrap()
+}
+
+#[tokio::test]
+async fn wishlist_add_publishes_the_book_in_the_works_first_publication_year() {
+    let pool = pool().await;
+    let user = seed_user(&pool, "reader").await;
+
+    let uuid = wishlist_add(
+        &pool,
+        user,
+        None,
+        Some(&title_hit_meta()),
+        WishlistSource::Search,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        stored_book(&pool, &uuid).await.published.as_deref(),
+        Some("2016")
+    );
+}
+
+#[tokio::test]
+async fn wishlist_add_links_the_series_named_by_the_candidate_and_reads_its_index() {
+    let pool = pool().await;
+    let user = seed_user(&pool, "reader").await;
+
+    let uuid = wishlist_add(
+        &pool,
+        user,
+        None,
+        Some(&title_hit_meta()),
+        WishlistSource::Search,
+    )
+    .await
+    .unwrap();
+
+    let book = stored_book(&pool, &uuid).await;
+    assert_eq!(book.series.as_deref(), Some("The Broken Earth"));
+    assert_eq!(book.series_index.as_deref(), Some("2"));
+    assert_eq!(
+        book.series_id,
+        Some(
+            sqlx::query_scalar("SELECT id FROM series WHERE name = 'The Broken Earth'")
+                .fetch_one(&pool)
+                .await
+                .unwrap()
+        )
+    );
+    let sort: Option<String> = sqlx::query_scalar("SELECT series_sort FROM books WHERE uuid = ?")
+        .bind(&uuid)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(sort.as_deref(), Some("The Broken Earth"));
+}
+
+#[tokio::test]
+async fn add_physical_only_stores_the_candidates_pages_as_an_override_by_the_filing_user() {
+    let pool = pool().await;
+    let user = seed_user(&pool, "reader").await;
+
+    let uuid = add_physical_only_with(
+        &pool,
+        &title_hit_meta(),
+        None,
+        Some(user),
+        &loopback_cover_config(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(stored_book(&pool, &uuid).await.print_pages, Some(410));
+    let by: Option<i64> =
+        sqlx::query_scalar("SELECT updated_by FROM metadata_overrides WHERE book_uuid = ?")
+            .bind(&uuid)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(by, Some(user));
+}
+
+#[tokio::test]
+async fn add_physical_only_stores_no_pages_when_nobody_filed_the_copy() {
+    let pool = pool().await;
+
+    let uuid = add_physical_only_with(
+        &pool,
+        &title_hit_meta(),
+        None,
+        None,
+        &loopback_cover_config(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(stored_book(&pool, &uuid).await.print_pages, None);
+    assert_eq!(
+        count_rows(&pool, "SELECT COUNT(*) FROM metadata_overrides").await,
+        0
+    );
+}
+
+#[tokio::test]
+async fn add_physical_only_leaves_no_cover_file_behind_when_the_copy_cannot_be_filed() {
+    let pool = pool().await;
+    let covers = CoversTempDir::new("add_physical_only_rolled_back_cover");
+    let origin = MockServer::start().await;
+    mount_redirected_cover(&origin).await;
+    let mut meta = title_hit_meta();
+    meta.cover_url = Some(format!("{}/cover.jpg", origin.uri()));
+
+    let result =
+        add_physical_only_with(&pool, &meta, None, Some(9_999), &loopback_cover_config()).await;
+
+    assert!(result.is_err());
+    let files = std::fs::read_dir(&covers.path)
+        .map(|dir| dir.count())
+        .unwrap_or(0);
+    assert_eq!(files, 0, "a rolled-back check-in must not leave its cover");
+}
+
+#[tokio::test]
+async fn add_physical_only_leaves_no_book_behind_when_the_copy_cannot_be_filed() {
+    let pool = pool().await;
+
+    // No such reader: the copy's filer is a foreign key, so the write fails.
+    let err = add_physical_only_with(
+        &pool,
+        &title_hit_meta(),
+        None,
+        Some(9_999),
+        &loopback_cover_config(),
+    )
+    .await
+    .unwrap_err();
+
+    assert!(matches!(err, ScanError::Physical(_) | ScanError::Sqlx(_)));
+    assert_eq!(count_rows(&pool, "SELECT COUNT(*) FROM books").await, 0);
 }

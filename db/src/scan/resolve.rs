@@ -13,18 +13,23 @@ use omnibus_shared::isbn::{normalize_isbn, IsbnError};
 use omnibus_shared::metadata_lookup::ExternalBookMeta;
 use omnibus_shared::physical::{PhysicalCopy, WishlistSource};
 use omnibus_shared::scan::{ScanBook, ScanOutcome};
-use sqlx::{Row, SqlitePool};
+use omnibus_shared::MetadataOverrides;
+use sqlx::{Row, SqlitePool, Transaction};
 
 use crate::author_photos::{fetch_remote_image_with, RemoteImageConfig};
+use crate::helpers::split_embedded_series_index;
 use crate::metadata_lookup::{
     openlibrary_enrich, provider_cover_image_config, search_provider_by_isbn, MetadataLookupConfig,
     MetadataLookupError,
 };
+use crate::metadata_overrides::upsert_one_in_tx;
 use crate::normalize::{normalize_author, normalize_title};
 use crate::physical::{
-    add_physical_copy, add_wishlist_entry, create_fileless_book, get_wishlist_entry, FilelessBook,
-    FilelessCover, PhysicalError,
+    add_physical_copy, add_physical_copy_in_tx, add_wishlist_entry_in_tx,
+    create_fileless_book_in_tx, get_wishlist_entry, CreatedFileless, FilelessBook, FilelessCover,
+    PhysicalError,
 };
+use crate::taxonomy::resolve_or_insert_series;
 
 use super::projection::{row_to_scan_book, scan_book_cols, LIVE_BOOK};
 
@@ -192,11 +197,22 @@ pub(crate) async fn add_physical_only_with(
     added_by_user_id: Option<i64>,
     image_config: &RemoteImageConfig,
 ) -> Result<String, ScanError> {
-    let uuid = create_fileless_from_meta(pool, meta, image_config).await?;
+    let cover = fetch_candidate_cover(meta, image_config).await;
+    let mut tx = pool.begin().await?;
+    let created = create_fileless_from_meta(&mut tx, meta, cover, added_by_user_id).await?;
     // Store the canonical ISBN per copy (meta arrives over the wire — untrusted).
     let isbn = canonical_isbn(meta);
-    add_physical_copy(pool, &uuid, isbn.as_deref(), added_by_user_id, note).await?;
-    Ok(uuid)
+    add_physical_copy_in_tx(
+        &mut tx,
+        &created.uuid,
+        isbn.as_deref(),
+        added_by_user_id,
+        note,
+    )
+    .await?;
+    tx.commit().await?;
+    created.settle_cover(pool).await;
+    Ok(created.uuid)
 }
 
 /// Add a book to a user's physical wishlist — an existing library book
@@ -230,51 +246,132 @@ pub(crate) async fn wishlist_add_with(
     source: WishlistSource,
     image_config: &RemoteImageConfig,
 ) -> Result<String, ScanError> {
-    let uuid = match (book_uuid, meta) {
-        (Some(uuid), _) => uuid.to_string(),
-        (None, Some(meta)) => create_fileless_from_meta(pool, meta, image_config).await?,
+    let cover = match (book_uuid, meta) {
+        (None, Some(meta)) => fetch_candidate_cover(meta, image_config).await,
+        _ => None,
+    };
+    let mut tx = pool.begin().await?;
+    let (created, uuid) = match (book_uuid, meta) {
+        (Some(uuid), _) => (None, uuid.to_string()),
+        (None, Some(meta)) => {
+            let created = create_fileless_from_meta(&mut tx, meta, cover, Some(user_id)).await?;
+            let uuid = created.uuid.clone();
+            (Some(created), uuid)
+        }
         (None, None) => return Err(ScanError::MissingWishlistTarget),
     };
-    let entry = add_wishlist_entry(pool, user_id, &uuid, source).await?;
+    let entry = add_wishlist_entry_in_tx(&mut tx, user_id, &uuid, source).await?;
+    tx.commit().await?;
+    if let Some(created) = &created {
+        created.settle_cover(pool).await;
+    }
     Ok(entry.book_uuid)
 }
 
-/// Mint a fileless book from external metadata, fetching its cover now. `meta`
-/// crosses the HTTP boundary, so its `cover_url` is client-controlled and
-/// `image_config` constrains the fetch: production callers pass
-/// [`provider_cover_image_config`]`(false)` (HTTPS, provider hosts, SSRF gate,
-/// size cap, bounded redirects Open Library needs). The ISBN is re-canonicalized.
-async fn create_fileless_from_meta(
-    pool: &SqlitePool,
+/// Fetch the candidate's cover now, before any row is written. `meta` crosses
+/// the HTTP boundary, so its `cover_url` is client-controlled and `image_config`
+/// constrains the fetch: production callers pass [`provider_cover_image_config`]
+/// `(false)` (HTTPS, provider hosts, SSRF gate, size cap, bounded redirects Open
+/// Library needs). Non-fatal — a missing cover must not fail the check-in — but
+/// logged: a cover the reader watched render on the check-in card and then lost
+/// is otherwise invisible to the operator.
+async fn fetch_candidate_cover(
     meta: &ExternalBookMeta,
     image_config: &RemoteImageConfig,
-) -> Result<String, ScanError> {
-    let cover = match &meta.cover_url {
-        Some(url) => match fetch_remote_image_with(url, image_config).await {
-            Ok((mime, bytes)) => Some(FilelessCover { mime, bytes }),
-            // Non-fatal — a missing cover must not fail the check-in — but
-            // logged: a cover the reader watched render on the check-in card
-            // and then lost is otherwise invisible to the operator.
-            Err(e) => {
-                tracing::warn!(url, error = %e, "cover fetch failed; minting book without it");
-                None
-            }
-        },
-        None => None,
-    };
-    let uuid = create_fileless_book(
-        pool,
+) -> Option<FilelessCover> {
+    let url = meta.cover_url.as_deref()?;
+    match fetch_remote_image_with(url, image_config).await {
+        Ok((mime, bytes)) => Some(FilelessCover { mime, bytes }),
+        Err(e) => {
+            tracing::warn!(url, error = %e, "cover fetch failed; minting book without it");
+            None
+        }
+    }
+}
+
+/// Mint a fileless book from external metadata on `tx`: the book (dated by its
+/// edition year, else the work's first publication), its series and index from
+/// the series statement, and its page count as a `print_pages` override authored
+/// by `filed_by` (no filer, no override). The ISBN is re-canonicalized.
+async fn create_fileless_from_meta(
+    tx: &mut Transaction<'_, sqlx::Sqlite>,
+    meta: &ExternalBookMeta,
+    cover: Option<FilelessCover>,
+    filed_by: Option<i64>,
+) -> Result<CreatedFileless, ScanError> {
+    let created = create_fileless_book_in_tx(
+        tx,
         FilelessBook {
             title: meta.title.clone(),
             authors: meta.authors.clone(),
             isbn: canonical_isbn(meta),
-            pubdate: meta.year.clone(),
+            pubdate: meta
+                .year
+                .clone()
+                .or_else(|| meta.first_publish_year.map(|y| y.to_string())),
             description: meta.description.clone(),
             cover,
         },
     )
     .await?;
-    Ok(uuid)
+    link_series_from_meta(tx, created.id, meta.series.as_deref()).await?;
+    if let (Some(pages), Some(user_id)) = (meta.pages, filed_by) {
+        store_pages(tx, &created.uuid, pages, user_id).await?;
+    }
+    // Indexed once, after the series and pages it carries are written.
+    crate::sync::upsert_fts(tx, created.id).await?;
+    Ok(created)
+}
+
+/// Link the book to the series a statement such as "The Broken Earth #2" names,
+/// and set the sort key and index the scan writers set, so the link counts as
+/// the scanned one.
+async fn link_series_from_meta(
+    tx: &mut Transaction<'_, sqlx::Sqlite>,
+    book_id: i64,
+    statement: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    let Some(statement) = statement.map(str::trim).filter(|s| !s.is_empty()) else {
+        return Ok(());
+    };
+    let (name, index) = match split_embedded_series_index(statement) {
+        Some((name, index)) => (name, index.parse::<f64>().ok()),
+        None => (statement.to_string(), None),
+    };
+    let series_id = resolve_or_insert_series(tx, &name).await?;
+    sqlx::query("INSERT OR IGNORE INTO books_series_link (book, series) VALUES (?, ?)")
+        .bind(book_id)
+        .bind(series_id)
+        .execute(&mut **tx)
+        .await?;
+    sqlx::query("UPDATE books SET series_sort = ?, series_index = ? WHERE id = ?")
+        .bind(&name)
+        .bind(index)
+        .bind(book_id)
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
+}
+
+/// Store a candidate's page count as the book's `print_pages` override, there
+/// being no page column. A count the override rules refuse is left out rather
+/// than failing the check-in.
+async fn store_pages(
+    tx: &mut Transaction<'_, sqlx::Sqlite>,
+    uuid: &str,
+    pages: i64,
+    user_id: i64,
+) -> Result<(), PhysicalError> {
+    let overrides = MetadataOverrides {
+        print_pages: Some(pages),
+        ..Default::default()
+    };
+    if overrides.validate().is_err() {
+        return Ok(());
+    }
+    upsert_one_in_tx(tx, uuid, &overrides, false, user_id)
+        .await
+        .map_err(|e| PhysicalError::Other(format!("store pages: {e}")))
 }
 
 /// Canonicalize `meta.isbn13` (untrusted wire input) to a 13-digit ISBN, or

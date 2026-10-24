@@ -66,7 +66,7 @@ export const ResultCount: Story = {
     await userEvent.click(canvas.getByRole("button", { name: /Search/ }));
 
     await userEvent.type(
-      canvas.getByRole("textbox", { name: "Search" }),
+      canvas.getByRole("combobox", { name: "Search" }),
       "aurora",
     );
 
@@ -80,12 +80,12 @@ export const OpensBookRow: Story = {
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(canvas.getByRole("button", { name: /Search/ }));
     await userEvent.type(
-      canvas.getByRole("textbox", { name: "Search" }),
+      canvas.getByRole("combobox", { name: "Search" }),
       "aurora",
     );
 
     await userEvent.click(
-      await canvas.findByRole("link", { name: /Aurora Station, Vol\. 1/ }),
+      await canvas.findByRole("option", { name: /Aurora Station, Vol\. 1/ }),
     );
 
     await expect(
@@ -101,7 +101,7 @@ export const EnterOpensHighlightedRow: Story = {
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(canvas.getByRole("button", { name: /Search/ }));
     await userEvent.type(
-      canvas.getByRole("textbox", { name: "Search" }),
+      canvas.getByRole("combobox", { name: "Search" }),
       "aurora",
     );
     await canvas.findByText("5 results · 18ms");
@@ -114,12 +114,53 @@ export const EnterOpensHighlightedRow: Story = {
   },
 };
 
+export const ExposesTheHighlightedRowToAssistiveTech: Story = {
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(canvas.getByRole("button", { name: /Search/ }));
+    const input = canvas.getByRole("combobox", { name: "Search" });
+    await userEvent.type(input, "aurora");
+    await canvas.findByText("5 results · 18ms");
+
+    await expect(input).toHaveAttribute("aria-expanded", "true");
+    await expect(input).toHaveAttribute("aria-autocomplete", "list");
+    await expect(input).toHaveAttribute(
+      "aria-controls",
+      canvas.getByRole("listbox").id,
+    );
+    await expect(input).not.toHaveAttribute("aria-activedescendant");
+
+    await userEvent.keyboard("{ArrowDown}{ArrowDown}");
+
+    const selected = canvas.getByRole("option", { selected: true });
+    await expect(selected).toHaveAttribute("id", "sp-option-1");
+    await expect(input).toHaveAttribute("aria-activedescendant", "sp-option-1");
+    await expect(
+      canvas.getAllByRole("option", { selected: false }),
+    ).toHaveLength(4);
+  },
+};
+
+export const ListboxAppearsOnlyWithRows: Story = {
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(canvas.getByRole("button", { name: /Search/ }));
+    const input = canvas.getByRole("combobox", { name: "Search" });
+
+    await expect(input).toHaveAttribute("aria-expanded", "false");
+    await expect(canvas.queryByRole("listbox")).not.toBeInTheDocument();
+
+    await userEvent.type(input, "aurora");
+    await canvas.findByText("5 results · 18ms");
+    await expect(input).toHaveAttribute("aria-expanded", "true");
+    await expect(canvas.getByRole("listbox")).toBeInTheDocument();
+  },
+};
+
 export const EnterSearchesWithoutHighlight: Story = {
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(canvas.getByRole("button", { name: /Search/ }));
 
     await userEvent.type(
-      canvas.getByRole("textbox", { name: "Search" }),
+      canvas.getByRole("combobox", { name: "Search" }),
       " dune messiah {Enter}",
     );
 
@@ -148,7 +189,7 @@ export const SearchFailing: Story = {
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(canvas.getByRole("button", { name: /Search/ }));
     await userEvent.type(
-      canvas.getByRole("textbox", { name: "Search" }),
+      canvas.getByRole("combobox", { name: "Search" }),
       "aurora",
     );
 
@@ -165,12 +206,12 @@ export const SettingsBeforeServer: Story = {
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(canvas.getByRole("button", { name: /Search/ }));
     await userEvent.type(
-      canvas.getByRole("textbox", { name: "Search" }),
+      canvas.getByRole("combobox", { name: "Search" }),
       "kindle",
     );
 
     await expect(
-      canvas.getByRole("link", { name: /Send to Kindle/ }),
+      canvas.getByRole("option", { name: /Send to Kindle/ }),
     ).toHaveAttribute("href", "/settings?section=devices");
     await expect(await canvas.findByText("Searching")).toBeInTheDocument();
   },
@@ -192,7 +233,7 @@ export const EnterOpensFocusedRow: Story = {
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(canvas.getByRole("button", { name: /Search/ }));
     await userEvent.type(
-      canvas.getByRole("textbox", { name: "Search" }),
+      canvas.getByRole("combobox", { name: "Search" }),
       "aurora",
     );
     await canvas.findByText("5 results · 18ms");
@@ -242,7 +283,7 @@ export const ArrowScrollsIntoView: Story = {
   play: async ({ canvas, canvasElement, userEvent }) => {
     await userEvent.click(canvas.getByRole("button", { name: /Search/ }));
     await userEvent.type(
-      canvas.getByRole("textbox", { name: "Search" }),
+      canvas.getByRole("combobox", { name: "Search" }),
       "aurora",
     );
     await canvas.findByText("12 results · 18ms");
@@ -250,7 +291,7 @@ export const ArrowScrollsIntoView: Story = {
     await userEvent.keyboard("{ArrowUp}");
 
     const list = canvasElement.querySelector(".sp-results");
-    const last = canvas.getByRole("link", { name: /Vol\. 12/ });
+    const last = canvas.getByRole("option", { name: /Vol\. 12/ });
     if (!list) throw new Error("no results list");
     // Rounded: fractional layout can leave the row a sub-pixel past the edge.
     await expect(

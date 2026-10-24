@@ -45,3 +45,11 @@ fn new_omits_cover_url_when_no_cover_cached() {
     let s = BookSuggestion::new("book-1", 3, raw(42, Some("dune".into())), false);
     assert_eq!(s.cover_url, None);
 }
+
+#[test]
+fn suggestions_response_unavailable_serializes_as_a_bare_status_tag() {
+    let json = serde_json::to_string(&SuggestionsResponse::Unavailable).unwrap();
+    assert_eq!(json, r#"{"status":"unavailable"}"#);
+    let back: SuggestionsResponse = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, SuggestionsResponse::Unavailable);
+}

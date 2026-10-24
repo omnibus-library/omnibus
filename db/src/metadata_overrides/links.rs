@@ -9,6 +9,7 @@ use omnibus_shared::text_fold::fold_for_match;
 use omnibus_shared::MetadataOverrides;
 use sqlx::{QueryBuilder, SqliteConnection};
 
+use super::sql::{override_series_sql, scanned_series_sql};
 use crate::sync::AUTHOR_UPSERT_CHUNK;
 
 /// Names bound per batched insert. SQLite's default bound-parameter cap is
@@ -38,29 +39,90 @@ impl VocabularyTable {
     }
 }
 
+/// The series the book's current override names, resolved through any cleanup
+/// merge, read before the override is replaced or removed so
+/// [`materialize_series_link`] and [`prune_override_series_links`] know which link
+/// the old one wrote.
+pub(super) async fn current_override_series(
+    conn: &mut SqliteConnection,
+    book_uuid: &str,
+) -> Result<Option<i64>, sqlx::Error> {
+    sqlx::query_scalar(concat!(
+        "SELECT s.id FROM metadata_overrides mo JOIN series s ON ",
+        override_series_sql!("s", "mo"),
+        " WHERE mo.book_uuid = ? LIMIT 1"
+    ))
+    .bind(book_uuid)
+    .fetch_optional(conn)
+    .await
+}
+
 /// When an override sets a series name, ensure a `series` row and
 /// `books_series_link` exist so the browse index and detail-page breadcrumb
 /// resolve; override-only series are otherwise invisible to `list_series`.
-/// Takes `&mut SqliteConnection` so the caller runs all four statements in one
-/// transaction (`&mut tx`): autocommit would reopen the partial-failure window.
+/// Links the scan did not write are pruned, so the book keeps its scanned link
+/// plus at most the current override's; `replaced` is the series the override
+/// it replaces named. Takes `&mut SqliteConnection` so the caller runs every
+/// statement in one transaction (`&mut tx`): autocommit would reopen the
+/// partial-failure window.
 pub(super) async fn materialize_series_link(
     conn: &mut SqliteConnection,
     book_uuid: &str,
     overrides: &MetadataOverrides,
+    replaced: Option<i64>,
 ) -> Result<(), sqlx::Error> {
+    let Some(book_id) = lookup_book_id(&mut *conn, book_uuid).await? else {
+        return Ok(());
+    };
     let series_name = overrides
         .series
         .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty());
-    let Some(series_name) = series_name else {
-        return Ok(());
-    };
-    let Some(book_id) = lookup_book_id(&mut *conn, book_uuid).await? else {
-        return Ok(());
-    };
-    let series_id = find_or_create_series(&mut *conn, series_name).await?;
-    link_book_to_series(&mut *conn, book_id, series_id).await
+    let mut keep = None;
+    if let Some(series_name) = series_name {
+        let series_id = find_or_create_series(&mut *conn, series_name).await?;
+        link_book_to_series(&mut *conn, book_id, series_id).await?;
+        keep = Some(series_id);
+    }
+    prune_override_series_links(conn, book_id, keep, replaced).await
+}
+
+/// Delete the book's series links that are neither the scanned one nor `keep`
+/// (the current override's), so clearing or replacing an override restores the
+/// scanned series. `replaced`, the series the override being replaced or removed
+/// named, goes too unless it is the scanned link. The others are pruned only for
+/// a book whose `series_sort` names a series that one of its links matches:
+/// without that there is no telling which link the scan wrote.
+pub(super) async fn prune_override_series_links(
+    conn: &mut SqliteConnection,
+    book_id: i64,
+    keep: Option<i64>,
+    replaced: Option<i64>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(concat!(
+        "DELETE FROM books_series_link
+          WHERE book = ?1
+            AND (?2 IS NULL OR series <> ?2)
+            AND NOT EXISTS (SELECT 1 FROM series s JOIN books b ON b.id = books_series_link.book
+                             WHERE s.id = books_series_link.series AND ",
+        scanned_series_sql!("s", "b.series_sort"),
+        ")
+            AND (series = ?3 OR (
+                 SELECT b.series_sort IS NOT NULL AND EXISTS (
+                   SELECT 1 FROM books_series_link kept
+                     JOIN series s ON s.id = kept.series
+                    WHERE kept.book = b.id AND ",
+        scanned_series_sql!("s", "b.series_sort"),
+        ")
+                   FROM books b WHERE b.id = ?1))"
+    ))
+    .bind(book_id)
+    .bind(keep)
+    .bind(replaced)
+    .execute(conn)
+    .await?;
+    Ok(())
 }
 
 /// When an override sets a subjects list, ensure a `tags` row exists for every

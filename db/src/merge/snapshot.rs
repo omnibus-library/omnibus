@@ -108,6 +108,18 @@ pub(super) struct SourceSnapshot {
     /// outside `curation`. Empty on older snapshots, whose rows stay put.
     #[serde(default)]
     pub relocation: RelocationSnapshot,
+    /// The target's `author_sort` before the merge, for undo to put back when
+    /// the merge gave an authorless target its first author. Absent on older
+    /// snapshots, whose merges never re-keyed it.
+    #[serde(default)]
+    pub target_author_sort: Option<TargetAuthorSort>,
+}
+
+/// A wrapper so a stored NULL (`before: None`) differs from the field being
+/// absent on a pre-fix snapshot.
+#[derive(Debug, Serialize, Deserialize)]
+pub(super) struct TargetAuthorSort {
+    pub before: Option<String>,
 }
 
 /// The flat `books` + `scan_roots` row that seeds a [`SourceSnapshot`].
@@ -211,6 +223,7 @@ pub(super) async fn build_snapshot(
         links_added_to_target: LinksAdded::default(),
         overrides: OverridesRecord::default(),
         relocation: RelocationSnapshot::default(),
+        target_author_sort: None,
     })
 }
 

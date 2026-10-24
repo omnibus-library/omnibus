@@ -267,9 +267,10 @@ fn shelves_load(loaded: Option<&str>, uuid: &str, read: &ShelvesRead) -> Shelves
     }
 }
 
-/// Every shelf holding the book, in the order the block draws them: the
-/// hand-picked ones, the smart ones whose rules match it, then the viewer's own
-/// Wishlist when the book is on it. Wishlist membership comes from the page's
+/// Every shelf of the viewer's holding the book, in the order the block draws
+/// them: the hand-picked ones, the smart ones whose rules match it, then the
+/// Wishlist when the book is on it. Another reader's shelf that holds it is
+/// left out: it is theirs, not a place the viewer filed the book. Wishlist membership comes from the page's
 /// wishlist signal (neither membership read names it), so it tracks Add/Remove
 /// immediately.
 fn held_shelves(
@@ -290,6 +291,7 @@ fn held_shelves(
     facts
         .named(&facts.manual_ids)
         .chain(facts.named(&facts.smart_ids))
+        .filter(|s| Some(s.owner_user_id) == viewer_id)
         .cloned()
         .chain(wishlist)
         .collect()

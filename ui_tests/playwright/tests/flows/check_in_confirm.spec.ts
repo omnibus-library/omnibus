@@ -52,6 +52,44 @@ test.describe("check-in lookup outcomes", () => {
     });
   });
 
+  test("offer another readers wishlisted book as not in the library", async ({
+    checkInPage,
+    expectMutation,
+  }) => {
+    const flow = checkInPage.flow;
+
+    // A fileless row with no copy: held only because another reader wants it.
+    await test.step("look up a book only another reader wishes for", async () => {
+      await flow.stubIsbnLookup(
+        inLibraryUnowned(
+          libraryBook(TARGET, STUB_UUID, {
+            has_files: false,
+            has_physical: false,
+          }),
+        ),
+      );
+      await flow.stubWishlistEntry(STUB_UUID);
+      await checkInPage.goto();
+      await expectMutation(scan.resolve(ISBN), () => flow.lookUpIsbn(ISBN));
+    });
+
+    await test.step("check the confirm says whose wish it is", async () => {
+      await expect(flow.confirmScreen).toContainText(
+        "Not in your library \u2014 it's on another reader's wishlist.",
+      );
+      await expect(flow.addToWishlistButton).toBeVisible();
+    });
+
+    await test.step("add it to the reader's own wishlist", async () => {
+      await expectMutation(scan.wishlist("manual"), () => flow.addToWishlist());
+    });
+
+    await test.step("check the wishlist screen names the book", async () => {
+      await expect(flow.successScreen).toContainText("On your wishlist");
+      await expect(flow.successScreen).toContainText(TARGET.title);
+    });
+  });
+
   test("check in a copy of a digital book after an exact isbn match", async ({
     checkInPage,
     expectMutation,

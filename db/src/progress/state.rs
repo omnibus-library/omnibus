@@ -8,7 +8,7 @@ use std::sync::{Mutex, OnceLock, PoisonError};
 
 use omnibus_shared::{
     AudiobookPlaybackRateRecord, AudiobookPlaybackRateUpdate, BookProgress, ProgressFormat,
-    ProgressRecord,
+    ProgressRecord, ProgressUpdate,
 };
 use sqlx::{Row, Sqlite, SqlitePool, Transaction};
 
@@ -151,19 +151,14 @@ pub async fn derive_epub_percent(
     let stats = crate::epub_structure::get_spine_stats(pool, file_id)
         .await
         .map_err(|e| anyhow::anyhow!("read spine stats for file {file_id}: {e}"))?;
-    let cfi = cfi.to_owned();
     let percent = if stats.is_empty() {
+        let cfi = cfi.to_owned();
         tokio::task::spawn_blocking(move || crate::kobo_position::cfi_to_span(None, &source, &cfi))
             .await
             .context("percent derivation task panicked")??
             .percent
     } else {
-        tokio::task::spawn_blocking(move || crate::kobo_position::cfi_spine_offset(&source, &cfi))
-            .await
-            .context("percent derivation task panicked")??
-            .and_then(|(spine_index, offset)| {
-                crate::epub_structure::percent_at(&stats, spine_index as i64, offset)
-            })
+        percent_from_stats(stats, source, cfi.to_owned()).await?
     };
     let Some(percent) = percent else {
         return Ok(false);
@@ -183,6 +178,78 @@ pub async fn derive_epub_percent(
         Err(ProgressError::BookNotFound) => Ok(false),
         Err(e) => Err(e.into()),
     }
+}
+
+/// `cfi`'s whole-book percent on the stored spine-stats ruler: one walk of the
+/// spine document the CFI names, then arithmetic. `None` when the CFI can't be
+/// anchored in the book.
+async fn percent_from_stats(
+    stats: Vec<crate::epub_structure::SpineStatRow>,
+    source: std::path::PathBuf,
+    cfi: String,
+) -> anyhow::Result<Option<i64>> {
+    use anyhow::Context;
+
+    tokio::task::spawn_blocking(move || {
+        Ok(
+            crate::kobo_position::cfi_spine_offset(&source, &cfi)?.and_then(
+                |(spine_index, offset)| {
+                    crate::epub_structure::percent_at(&stats, spine_index as i64, offset)
+                },
+            ),
+        )
+    })
+    .await
+    .context("percent derivation task panicked")?
+}
+
+/// Replace an epub CFI write's client percent with the CFI's own percent on the
+/// stored spine-stats ruler, so the percent stored beside a position and the
+/// figure the server derives for it are one scale. Anything it can't place
+/// (a page anchor, a book without stats, a failed walk) keeps the client's
+/// figure; a failure only logs, since the write itself must still land.
+pub async fn scale_epub_percent(pool: &SqlitePool, update: &mut ProgressUpdate) {
+    if update.format != ProgressFormat::Epub {
+        return;
+    }
+    let Some(cfi) = update
+        .epub_cfi
+        .as_deref()
+        .filter(|cfi| omnibus_shared::is_epub_cfi(cfi))
+    else {
+        return;
+    };
+    match stored_stats_percent(pool, &update.book_uuid, cfi).await {
+        Ok(Some(percent)) => update.progress_percent = Some(percent),
+        Ok(None) => {}
+        Err(e) => tracing::warn!(
+            book_uuid = %update.book_uuid,
+            error = %e,
+            "epub percent scaling failed; keeping the client percent"
+        ),
+    }
+}
+
+/// [`percent_from_stats`] for a book looked up by uuid; `None` when it has no
+/// EPUB file or no stored stats.
+async fn stored_stats_percent(
+    pool: &SqlitePool,
+    book_uuid: &str,
+    cfi: &str,
+) -> anyhow::Result<Option<i64>> {
+    let Some(book_id) = crate::resolve_book_id_by_uuid(pool, book_uuid).await? else {
+        return Ok(None);
+    };
+    let Some((file_id, source)) = crate::book_file_with_id(pool, book_id, "EPUB").await? else {
+        return Ok(None);
+    };
+    let stats = crate::epub_structure::get_spine_stats(pool, file_id)
+        .await
+        .map_err(|e| anyhow::anyhow!("read spine stats for file {file_id}: {e}"))?;
+    if stats.is_empty() {
+        return Ok(None);
+    }
+    percent_from_stats(stats, source, cfi.to_owned()).await
 }
 
 /// In-flight guard for [`spawn_epub_percent_derivation`]: one spine walk per
@@ -212,7 +279,8 @@ impl Drop for InFlightGuard {
 }
 
 /// Fire-and-forget percent derivation for an accepted epub write that landed
-/// without one (the web reader sends only a CFI). Runs off the request path:
+/// without one (an iOS write, or a book [`scale_epub_percent`] couldn't
+/// measure). Runs off the request path:
 /// the caller responds immediately and the percent attaches clock-neutrally
 /// when the walk completes. No-op for audio rows, rows already carrying a
 /// percent (Kobo bookmarks, comic anchors), and CFI-less rows.

@@ -15,6 +15,7 @@ import {
   type FoundVia,
   foundViaLine,
   metaDetails,
+  wishlistRequestForBook,
   wishlistSource,
 } from "./checkInFlow";
 
@@ -198,30 +199,41 @@ type ConfirmProps = {
   book: ScanBook;
   isbn: string;
   wishlisted: boolean;
+  anotherWish: boolean;
+  /** The wishlist write is the one in flight. */
+  wishing: boolean;
   via: FoundVia;
+  viewerId: number;
   note: string;
   busy: boolean;
   onNote: (note: string) => void;
   onCheckIn: () => void;
+  onWishlist: (req: WishlistAddRequest) => void;
   onCancel: () => void;
 };
 
-/** Confirms filing a copy against a book the library holds, or one on the reader's wishlist. */
+/** Confirms filing a copy against a book the library holds, or one on the reader's wishlist; a book only another reader wants also offers the reader a wish of their own. */
 export function ConfirmScreen({
   book,
   isbn,
   wishlisted,
+  anotherWish,
+  wishing,
   via,
+  viewerId,
   note,
   busy,
   onNote,
   onCheckIn,
+  onWishlist,
   onCancel,
 }: ConfirmProps) {
   return (
     <div className="check-in-screen" data-testid="check-in-confirm">
       <h1>Check in this copy</h1>
-      <p className="subtitle">{confirmSubtitle(book, wishlisted)}</p>
+      <p className="subtitle">
+        {confirmSubtitle(book, wishlisted, anotherWish, viewerId)}
+      </p>
       <LibraryBookCard book={book} />
       <div className="settings-field">
         <label htmlFor="check-in-note">Edition note (optional)</label>
@@ -240,12 +252,31 @@ export function ConfirmScreen({
         <Button
           variant="primary"
           disabled={busy}
-          aria-busy={busy}
+          aria-busy={busy && !wishing}
           data-testid="check-in-confirm-submit"
           onClick={onCheckIn}
         >
-          <BusyLabel busy={busy} label="Check in" busyLabel="Checking in…" />
+          <BusyLabel
+            busy={busy && !wishing}
+            label="Check in"
+            busyLabel="Checking in…"
+          />
         </Button>
+        {anotherWish && (
+          <Button
+            variant="ghost"
+            disabled={busy}
+            aria-busy={wishing}
+            data-testid="check-in-confirm-wishlist"
+            onClick={() => onWishlist(wishlistRequestForBook(book, via))}
+          >
+            <BusyLabel
+              busy={wishing}
+              label="Add to my wishlist"
+              busyLabel="Adding…"
+            />
+          </Button>
+        )}
         <Button
           variant="ghost"
           disabled={busy}

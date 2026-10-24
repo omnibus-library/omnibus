@@ -147,8 +147,8 @@ pub use stats::{user_stats, StatsError, STATS_TTL_SECS};
 // `resolve`/`resolve_with` stay namespaced under `suggestions::` to avoid
 // colliding with `author_photos::resolve`.
 pub use suggestions::{
-    decide, get_suggestion_cover, get_suggestions, mark_pending, suggestion_state, CacheDecision,
-    CachedSuggestion, SuggestionState, SuggestionsDataError,
+    decide, get_suggestion_cover, get_suggestions, is_unavailable, mark_pending, suggestion_state,
+    CacheDecision, CachedSuggestion, SuggestionState, SuggestionsDataError,
 };
 pub use sync::*;
 pub use thumbs::{thumb_path_for, thumbs_dir, ThumbError, ThumbSize};

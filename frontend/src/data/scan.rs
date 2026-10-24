@@ -57,10 +57,25 @@ pub async fn resolve_scan_meta(
     post_json(server_url, "/api/scan/resolve-meta", &req).await
 }
 
+/// [`post_json`] for a write that changes what shelves hold (a copy, a wish): once
+/// it lands, every cached shelf row is outdated so the shelf page revalidates
+/// rather than serving its fresh copy for the cache window.
+#[cfg(feature = "mobile")]
+async fn post_shelf_write<B: serde::Serialize>(
+    server_url: &str,
+    path: &str,
+    body: &B,
+) -> Result<BookRef, DataError> {
+    let book = post_json(server_url, path, body).await?;
+    crate::offline::cache::expire(&crate::offline::cache::keys::shelves());
+    crate::offline::cache::expire_prefix(crate::offline::cache::keys::shelf_prefix());
+    Ok(book)
+}
+
 /// POST `/api/scan/check-in` — check in a physical copy of a library book.
 #[cfg(feature = "mobile")]
 pub async fn check_in(server_url: &str, req: CheckInRequest) -> Result<BookRef, DataError> {
-    post_json(server_url, "/api/scan/check-in", &req).await
+    post_shelf_write(server_url, "/api/scan/check-in", &req).await
 }
 
 /// POST `/api/scan/physical-only` — add a physical-only book from external meta.
@@ -69,13 +84,13 @@ pub async fn add_physical_only(
     server_url: &str,
     req: AddPhysicalOnlyRequest,
 ) -> Result<BookRef, DataError> {
-    post_json(server_url, "/api/scan/physical-only", &req).await
+    post_shelf_write(server_url, "/api/scan/physical-only", &req).await
 }
 
 /// POST `/api/scan/wishlist` — add a book to the caller's physical wishlist.
 #[cfg(feature = "mobile")]
 pub async fn wishlist_add(server_url: &str, req: WishlistAddRequest) -> Result<BookRef, DataError> {
-    post_json(server_url, "/api/scan/wishlist", &req).await
+    post_shelf_write(server_url, "/api/scan/wishlist", &req).await
 }
 
 /// Mobile: GET `/api/google-books-key` — masked Google Books key status.
@@ -217,3 +232,6 @@ pub async fn set_google_books_key(
         .await
         .map_err(note_server_fn_err)
 }
+
+#[cfg(all(test, feature = "mobile"))]
+mod tests;

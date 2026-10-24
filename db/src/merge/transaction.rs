@@ -36,6 +36,8 @@ pub async fn merge_books(
     migrate_book_files(&mut tx, source_id, target_id, &snapshot).await?;
     // A target left under the Physical pseudo-root is invisible to All Books/search.
     crate::physical::promote_filed_physical_book(&mut tx, target_id).await?;
+    snapshot.target_author_sort =
+        Some(links::capture_target_author_sort(&mut tx, target_id).await?);
     snapshot.links_added_to_target = links::move_links(&mut tx, source_id, target_id).await?;
     let relocated = relocation::capture_pre(&mut tx, source_uuid, target_uuid).await?;
     move_progress_and_history(&mut tx, source_id, target_id).await?;

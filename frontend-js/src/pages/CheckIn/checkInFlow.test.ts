@@ -7,12 +7,14 @@ import {
   closeMatchCopy,
   confirmSubtitle,
   foundViaLine,
+  heldOnlyByAWish,
   isbnRejection,
   manualFallback,
   metaDetails,
   someIfFilled,
   stageFor,
   truncationNote,
+  wishlistRequestForBook,
 } from "./checkInFlow";
 
 describe("cleanIsbn", () => {
@@ -69,6 +71,7 @@ describe("stageFor", () => {
       book,
       isbn: "9780134685991",
       wishlisted,
+      anotherWish: false,
       via: "scan",
     });
   });
@@ -154,15 +157,117 @@ describe("closeMatchCopy", () => {
 describe("confirmSubtitle", () => {
   it.each([
     [aScanBook({ has_files: true }), false, "digitally"],
-    [aScanBook({ has_files: false, has_physical: true }), false, "another"],
-    [
-      aScanBook({ has_files: false, has_physical: false }),
-      false,
-      "without a file",
-    ],
+    [aScanBook({ has_files: false, has_physical: true }), false, "print copy"],
     [aScanBook(), true, "takes it off"],
   ])("words the holdings of %#", (book, wishlisted, fragment) => {
-    expect(confirmSubtitle(book, wishlisted)).toContain(fragment);
+    expect(confirmSubtitle(book, wishlisted, false, 1)).toContain(fragment);
+  });
+
+  it("says a book nobody holds is on another reader's wishlist", () => {
+    const wishOnly = aScanBook({ has_files: false, has_physical: false });
+
+    expect(confirmSubtitle(wishOnly, false, true, 1)).toBe(
+      "Not in your library — it's on another reader's wishlist.",
+    );
+  });
+
+  describe("a print copy", () => {
+    const paperOnly = (
+      filers: { user_id: number | null; name: string | null }[],
+    ) =>
+      aScanBook({ has_files: false, has_physical: true, copy_filers: filers });
+
+    it("is the viewer's when they filed one", () => {
+      const book = paperOnly([
+        { user_id: 2, name: "Sam" },
+        { user_id: 1, name: "Ada" },
+      ]);
+
+      expect(confirmSubtitle(book, false, false, 1)).toBe(
+        "You already have a print copy of this one — this adds another.",
+      );
+    });
+
+    it("names the first named filer when the viewer filed none", () => {
+      const book = paperOnly([
+        { user_id: null, name: null },
+        { user_id: 2, name: "Sam" },
+      ]);
+
+      expect(confirmSubtitle(book, false, false, 1)).toBe(
+        "Sam already has a print copy of this one — this adds yours.",
+      );
+    });
+
+    it.each([
+      ["no filers", []],
+      ["only a deleted filer", [{ user_id: null, name: null }]],
+    ])("is the household's with %s", (_case, filers) => {
+      expect(confirmSubtitle(paperOnly(filers), false, false, 1)).toBe(
+        "The household already has a print copy of this one — this adds yours.",
+      );
+    });
+
+    it("does not guess who filed it while the viewer is unknown", () => {
+      const book = paperOnly([{ user_id: 2, name: "Sam" }]);
+
+      expect(confirmSubtitle(book, false, false, null)).toBe(
+        "The household already has a print copy of this one — this adds yours.",
+      );
+    });
+  });
+});
+
+describe("heldOnlyByAWish", () => {
+  it("holds only for a book with no file and no copy", () => {
+    const wishOnly = aScanBook({ has_files: false, has_physical: false });
+
+    expect(heldOnlyByAWish(wishOnly)).toBe(true);
+    expect(heldOnlyByAWish(aScanBook())).toBe(false);
+    expect(
+      heldOnlyByAWish(aScanBook({ has_files: false, has_physical: true })),
+    ).toBe(false);
+  });
+});
+
+describe("stageFor", () => {
+  const wishOnly = aScanBook({ has_files: false, has_physical: false });
+
+  it("blames another reader's wish for an unowned book nobody holds", () => {
+    expect(
+      stageFor({ kind: "in_library_unowned", book: wishOnly }, "9780", "isbn"),
+    ).toMatchObject({ kind: "confirm", anotherWish: true });
+  });
+
+  it("does not blame anyone for a book with a file", () => {
+    expect(
+      stageFor(
+        { kind: "in_library_unowned", book: aScanBook() },
+        "9780",
+        "isbn",
+      ),
+    ).toMatchObject({ kind: "confirm", anotherWish: false });
+  });
+});
+
+describe("confirmSubtitle without a proven wish", () => {
+  it("stays neutral for a wishless book picked from the library search", () => {
+    const wishOnly = aScanBook({ has_files: false, has_physical: false });
+
+    expect(confirmSubtitle(wishOnly, false, false, 1)).toBe(
+      "This one is in your library without a file — this adds your print copy.",
+    );
+  });
+});
+
+describe("wishlistRequestForBook", () => {
+  it("targets the existing book by uuid, stamped with the door it came through", () => {
+    const book = aScanBook();
+
+    expect(wishlistRequestForBook(book, "scan")).toEqual({
+      book_uuid: book.uuid,
+      source: "scan",
+    });
   });
 });
 
@@ -179,10 +284,30 @@ describe("byline", () => {
 });
 
 describe("metaDetails", () => {
-  it("joins whichever facts the provider carried", () => {
-    expect(metaDetails(anExternalBook())).toBe(
-      "First published 2019 · Lantern Press · 320 pages",
+  it("joins the edition facts the provider carried", () => {
+    const meta = anExternalBook({
+      first_publish_year: 2016,
+      publisher: "Orbit",
+      format: "Paperback",
+      pages: 410,
+      isbn13: "9780316229265",
+    });
+
+    expect(metaDetails(meta)).toBe(
+      "First published 2016 · Orbit · Paperback · 410 pages · ISBN 9780316229265",
     );
+  });
+
+  it("skips absent facts without stray separators", () => {
+    const meta = anExternalBook({
+      first_publish_year: null,
+      publisher: null,
+      pages: null,
+      format: "Paperback",
+      isbn13: "9780316229265",
+    });
+
+    expect(metaDetails(meta)).toBe("Paperback · ISBN 9780316229265");
   });
 
   it("is null when it carried none", () => {
@@ -191,7 +316,9 @@ describe("metaDetails", () => {
         anExternalBook({
           first_publish_year: null,
           publisher: " ",
+          format: " ",
           pages: 0,
+          isbn13: "",
         }),
       ),
     ).toBeNull();

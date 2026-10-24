@@ -525,8 +525,9 @@ fn same_hand_tile(ab: &EbookMetadata, server_url: &str) -> Element {
 }
 
 /// "Suggested for you" — Hardcover read-alikes as a horizontal strip. Mirrors
-/// the web state machine: results, empty, not-configured (connect note), or a
-/// quiet pending placeholder while the worker resolves.
+/// the web state machine: results, empty, not-configured (connect note),
+/// unavailable (the lookup failed), or a quiet pending placeholder while the
+/// worker resolves.
 fn suggestions_section(
     book_title: &str,
     suggestions: &Option<SuggestionsResponse>,
@@ -536,37 +537,48 @@ fn suggestions_section(
     rsx! {
         section { class: "m-section", "data-testid": "mobile-suggestions",
             div { class: "label", "Suggested for you" }
-            match suggestions {
-                Some(SuggestionsResponse::Ready { items }) if !items.is_empty() => rsx! {
+            // The settled states live in a status region, so a lookup that ends as
+            // unavailable (or empty) is announced rather than swapped in silently.
+            div { role: "status",
+                match suggestions {
+                    Some(SuggestionsResponse::Ready { items }) if !items.is_empty() => rsx! {},
+                    Some(SuggestionsResponse::Ready { .. }) => rsx! {
+                        p { class: "m-strip-note", "data-testid": "mobile-suggestions-empty",
+                            "No read-alikes found for {book_title} yet."
+                        }
+                    },
+                    Some(SuggestionsResponse::NotConfigured) => rsx! {
+                        p { class: "m-strip-note", "data-testid": "mobile-suggestions-not-configured",
+                            if is_admin {
+                                "Add a Hardcover API key in Settings to see read-alikes."
+                            } else {
+                                "Ask your server admin to connect Hardcover for read-alikes."
+                            }
+                        }
+                    },
+                    Some(SuggestionsResponse::Unavailable) => rsx! {
+                        p { class: "m-strip-note", "data-testid": "mobile-suggestions-unavailable",
+                            "Suggestions are unavailable right now."
+                        }
+                    },
+                    None | Some(SuggestionsResponse::Pending) => rsx! {
+                        Loading {
+                            kind: LoadingKind::Section,
+                            class: "inline",
+                            testid: "mobile-suggestions-pending",
+                            label: "Looking for read-alikes via Hardcover",
+                        }
+                    },
+                }
+            }
+            if let Some(SuggestionsResponse::Ready { items }) = suggestions {
+                if !items.is_empty() {
                     div { class: "m-strip",
                         for s in items.iter().cloned() {
                             {suggestion_tile(s, server_url)}
                         }
                     }
-                },
-                Some(SuggestionsResponse::Ready { .. }) => rsx! {
-                    p { class: "m-strip-note", "data-testid": "mobile-suggestions-empty",
-                        "No read-alikes found for {book_title} yet."
-                    }
-                },
-                Some(SuggestionsResponse::NotConfigured) => rsx! {
-                    p { class: "m-strip-note", "data-testid": "mobile-suggestions-not-configured",
-                        if is_admin {
-                            "Add a Hardcover API key in Settings to see read-alikes."
-                        } else {
-                            "Ask your server admin to connect Hardcover for read-alikes."
-                        }
-                    }
-                },
-                // None (pre-fetch) or Pending → loading placeholder.
-                _ => rsx! {
-                    Loading {
-                        kind: LoadingKind::Section,
-                        class: "inline",
-                        testid: "mobile-suggestions-pending",
-                        label: "Looking for read-alikes via Hardcover",
-                    }
-                },
+                }
             }
         }
     }

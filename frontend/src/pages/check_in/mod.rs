@@ -27,8 +27,8 @@ use link::LinkExistingScreen;
 use lookup::LookupScreen;
 use scan::ScanScreen;
 use screens::{
-    ChooseAction, ChooseScreen, CloseMatchScreen, ConfirmScreen, ResolvingScreen, SuccessScreen,
-    UnresolvedScreen,
+    held_only_by_a_wish, ChooseAction, ChooseScreen, CloseMatchScreen, ConfirmScreen,
+    ResolvingScreen, SuccessScreen, UnresolvedScreen,
 };
 
 /// Whether the check-in overlay is open. Provided at [`crate::App`] scope so
@@ -142,10 +142,13 @@ pub(crate) enum Stage {
     /// 3a — confirm checking in a copy of a book we already hold.
     /// `wishlisted` marks a book on the caller's own wishlist, which the
     /// check-in takes off it.
+    /// `another_wish` marks a book the exact-ISBN lookup found held only by
+    /// another reader's wish; a pick from a list never claims that.
     Confirm {
         book: ScanBook,
         isbn: String,
         wishlisted: bool,
+        another_wish: bool,
     },
     /// 2b — a fuzzy (title, author) hit that needs a human "is this it?".
     /// More than one library row can carry the same effective norm (an EPUB
@@ -214,8 +217,10 @@ pub(crate) fn stage_for(outcome: ScanOutcome, isbn: &str) -> Option<Stage> {
             book,
             isbn: isbn.to_string(),
             wishlisted: true,
+            another_wish: false,
         }),
         ScanOutcome::InLibraryUnowned { book } => Some(Stage::Confirm {
+            another_wish: held_only_by_a_wish(&book),
             book,
             isbn: isbn.to_string(),
             wishlisted: false,
@@ -483,8 +488,18 @@ fn CheckInStage(state: FlowState, handlers: CheckInHandlers) -> Element {
             book,
             isbn,
             wishlisted,
+            another_wish,
         } => rsx! {
-            ConfirmScreen { book, isbn, wishlisted, state, on_check_in: handlers.on_check_in, on_cancel: on_restart }
+            ConfirmScreen {
+                book,
+                isbn,
+                wishlisted,
+                another_wish,
+                state,
+                on_check_in: handlers.on_check_in,
+                on_wishlist: handlers.on_wishlist,
+                on_cancel: on_restart,
+            }
         },
         Stage::CloseMatch { books, scanned } => close_match_stage(books, scanned, state),
         Stage::Choose { online } => choose_stage(online, state, handlers, on_restart),
@@ -608,6 +623,7 @@ fn close_match_stage(books: Vec<ScanBook>, scanned: ExternalBookMeta, state: Flo
                     book,
                     isbn: isbn.clone(),
                     wishlisted: false,
+                    another_wish: false,
                 });
             }),
             // Declining every candidate lands on the chooser, which carries
@@ -663,6 +679,7 @@ fn link_stage(isbn: String, origin: Stage, state: FlowState) -> Element {
                     book,
                     isbn: isbn.clone(),
                     wishlisted: false,
+                    another_wish: false,
                 });
             }),
             on_back: EventHandler::new(move |_| stage.set(back_to.clone())),
@@ -910,11 +927,12 @@ fn make_on_wishlist(
     } = state;
     move |req: WishlistAddRequest| {
         let server_url = server_url.clone();
-        let title = req
-            .meta
-            .as_ref()
-            .map(|m| m.title.clone())
-            .unwrap_or_default();
+        // A request for a library book carries no meta; its title is the book on screen.
+        let title = match (&req.meta, stage()) {
+            (Some(meta), _) => meta.title.clone(),
+            (None, Stage::Confirm { book, .. }) => book.title,
+            (None, _) => String::new(),
+        };
         error.set(None);
         busy.set(true);
         spawn(async move {
@@ -949,6 +967,19 @@ pub(crate) fn wishlist_request_for(
     WishlistAddRequest {
         book_uuid: None,
         meta: Some(online.clone()),
+        source: found_via.wishlist_source(),
+    }
+}
+
+/// The wishlist request for a library book that only another reader wants,
+/// filing the reader's own entry against the existing book.
+pub(crate) fn wishlist_request_for_book(
+    book: &ScanBook,
+    found_via: FoundVia,
+) -> WishlistAddRequest {
+    WishlistAddRequest {
+        book_uuid: Some(book.uuid.clone()),
+        meta: None,
         source: found_via.wishlist_source(),
     }
 }

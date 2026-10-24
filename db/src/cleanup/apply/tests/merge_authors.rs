@@ -5,9 +5,9 @@
 
 use super::super::*;
 use super::{
-    alias_canonical, author_photo_source, author_position, author_row, count_rows, fts_authors,
-    insert_author, insert_author_photo, insert_book, link_author, new_pool, seed_root,
-    tally_race_outcomes, undo,
+    alias_canonical, author_photo_source, author_position, author_row, author_sort_of, count_rows,
+    fts_authors, insert_author, insert_author_photo, insert_book, link_author, new_pool, seed_root,
+    set_author_sort, tally_race_outcomes, undo,
 };
 
 #[tokio::test]
@@ -260,4 +260,54 @@ async fn undo_concurrent_calls_on_a_merge_race_to_exactly_one_success() {
     );
     let (restored_id, _) = author_row(&pool, "Sandy Brandon").await.unwrap();
     assert_eq!(author_position(&pool, book, restored_id).await, Some(2));
+}
+
+#[tokio::test]
+async fn apply_merge_authors_rekeys_author_sort_when_the_source_was_first_author() {
+    let pool = new_pool().await;
+    let lib = seed_root(&pool).await;
+    let book = insert_book(&pool, lib, "book-1", "Title One").await;
+    let source = insert_author(&pool, "Repro Sanderson", None).await;
+    let other = insert_author(&pool, "Other Writer", None).await;
+    let canonical = insert_author(&pool, "Brandon Sanderson", Some("Sanderson, Brandon")).await;
+    link_author(&pool, book, source, 0).await;
+    link_author(&pool, book, other, 1).await;
+    set_author_sort(&pool, book, "Sanderson, Repro").await;
+
+    let log_id = apply_merge_authors(&pool, &[source], canonical, None, None)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        author_sort_of(&pool, book).await.as_deref(),
+        Some("Sanderson, Brandon")
+    );
+
+    undo(&pool, log_id).await.unwrap();
+
+    assert_eq!(
+        author_sort_of(&pool, book).await.as_deref(),
+        Some("Sanderson, Repro")
+    );
+}
+
+#[tokio::test]
+async fn apply_merge_authors_rekeys_author_sort_when_the_canonical_was_already_a_later_author() {
+    let pool = new_pool().await;
+    let lib = seed_root(&pool).await;
+    let book = insert_book(&pool, lib, "book-1", "Title One").await;
+    let source = insert_author(&pool, "Repro Sanderson", None).await;
+    let canonical = insert_author(&pool, "Brandon Sanderson", Some("Sanderson, Brandon")).await;
+    link_author(&pool, book, source, 0).await;
+    link_author(&pool, book, canonical, 1).await;
+    set_author_sort(&pool, book, "Sanderson, Repro").await;
+
+    apply_merge_authors(&pool, &[source], canonical, None, None)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        author_sort_of(&pool, book).await.as_deref(),
+        Some("Sanderson, Brandon")
+    );
 }

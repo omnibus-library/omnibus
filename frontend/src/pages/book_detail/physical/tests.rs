@@ -91,6 +91,81 @@ fn phys_viewer_filer_label_says_you_for_the_viewers_own_copy() {
 }
 
 #[test]
+fn phys_viewer_copy_collection_label_names_whose_collection_a_copy_is_in() {
+    let own = copy_filed_by(Some(7), Some("Ada"));
+    let another = copy_filed_by(Some(9), Some("Sam"));
+    let orphan = copy_filed_by(None, None);
+    assert_eq!(
+        viewer(7, false, false).copy_collection_label(&own),
+        "In your physical collection"
+    );
+    assert_eq!(
+        viewer(7, false, false).copy_collection_label(&another),
+        "In Sam's physical collection"
+    );
+    assert_eq!(
+        viewer(7, false, false).copy_collection_label(&orphan),
+        "In the household's physical collection"
+    );
+}
+
+#[test]
+fn phys_viewer_copy_collection_label_does_not_guess_for_an_unresolved_viewer() {
+    assert_eq!(
+        PhysViewer::default().copy_collection_label(&copy_filed_by(Some(7), Some("Ada"))),
+        "In the household's physical collection"
+    );
+}
+
+#[test]
+fn phys_viewer_collection_label_does_not_name_a_filer_while_the_viewer_is_unresolved() {
+    let copies = [copy_filed_by(Some(9), Some("Sam"))];
+    assert_eq!(
+        PhysViewer::default().collection_label(&copies),
+        "In the household's physical collection"
+    );
+}
+
+#[test]
+fn phys_viewer_collection_label_is_yours_when_you_filed_any_copy() {
+    let copies = [
+        copy_filed_by(Some(9), Some("Sam")),
+        copy_filed_by(Some(7), Some("Ada")),
+    ];
+    assert_eq!(
+        viewer(7, false, false).collection_label(&copies),
+        "In your physical collection"
+    );
+}
+
+#[test]
+fn phys_viewer_collection_label_names_the_one_other_reader_who_filed_every_copy() {
+    let copies = [
+        copy_filed_by(Some(9), Some("Sam")),
+        copy_filed_by(Some(9), Some("Sam")),
+    ];
+    assert_eq!(
+        viewer(7, false, false).collection_label(&copies),
+        "In Sam's physical collection"
+    );
+}
+
+#[test]
+fn phys_viewer_collection_label_is_the_households_when_filers_differ_or_are_gone() {
+    let two_readers = [
+        copy_filed_by(Some(9), Some("Sam")),
+        copy_filed_by(Some(8), Some("Kit")),
+    ];
+    let gone = [copy_filed_by(None, None)];
+    for copies in [&two_readers[..], &gone[..]] {
+        assert_eq!(
+            viewer(7, false, false).collection_label(copies),
+            "In the household's physical collection"
+        );
+    }
+}
+
+#[test]
 fn source_label_covers_every_variant() {
     assert_eq!(source_label(WishlistSource::Scan), "a scan");
     assert_eq!(source_label(WishlistSource::Detail), "this page");
@@ -255,6 +330,11 @@ mod render_tests {
         );
         // The pill's wording moves to the status dot's accessible name.
         assert!(html.contains("data-testid=\"physical-pill\""), "{html}");
+        assert_eq!(
+            html.matches("role=\"img\"").count(),
+            2,
+            "badge and dot: {html}"
+        );
         assert!(html.contains("In your physical collection"), "{html}");
         assert!(
             html.contains("data-testid=\"format-badge-physical\""),
@@ -285,6 +365,7 @@ mod render_tests {
     fn physical_rows_marquee_name_the_filer_and_offer_no_controls_on_someone_elses_copy() {
         let html = render_in_vdom(someone_elses_copy_preview);
         assert!(html.contains("by Ada"), "{html}");
+        assert!(html.contains("In Ada&#39;s physical collection"), "{html}");
         assert!(!html.contains("data-testid=\"copy-edit-note\""), "{html}");
         assert!(!html.contains("data-testid=\"copy-delete\""), "{html}");
     }

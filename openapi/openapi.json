@@ -4249,7 +4249,7 @@
           "Metadata"
         ],
         "summary": "Get a book's suggestions",
-        "description": "Books that Hardcover's curated lists pair with this one, for a \"readers also enjoyed\"\nstrip. `status` is `not_configured` when the server has no Hardcover key, `pending`\nwhile the server fetches them in the background (ask again shortly), or `ready` with\nthe items, which may be empty. Results are kept for 30 days, then refreshed.",
+        "description": "Books that Hardcover's curated lists pair with this one, for a \"readers also enjoyed\"\nstrip. `status` is `not_configured` when the server has no Hardcover key, `pending`\nwhile the server fetches them in the background (ask again shortly), `unavailable` when\nthe last lookup failed (it is retried after 15 minutes), or `ready` with the items,\nwhich may be empty. Results are kept for 30 days, then refreshed.",
         "operationId": "get_suggestions",
         "parameters": [
           {
@@ -5507,7 +5507,7 @@
           "Progress"
         ],
         "summary": "Save a position",
-        "description": "Records where you are in a book in one format: `epub` with an `epub_cfi`, a\n`progress_percent` or both, or `audio` with `audio_position_seconds`. The latest\nposition wins, judged by `client_updated_at` (the server's clock when absent), so a\nwrite older than the stored position changes nothing. An `audio` position without\n`book_file_id` also loses to a stored one that names a file of a multi-file audiobook.\nThe response is the position the server kept, yours or the stored one. A book you\nhaven't given a read status becomes `reading`; one you have keeps its status.",
+        "description": "Records where you are in a book in one format: `epub` with an `epub_cfi`, a\n`progress_percent` or both, or `audio` with `audio_position_seconds`. The latest\nposition wins, judged by `client_updated_at` (the server's clock when absent), so a\nwrite older than the stored position changes nothing. An `audio` position without\n`book_file_id` also loses to a stored one that names a file of a multi-file audiobook.\nFor an EPUB `epub_cfi` the server stores its own `progress_percent` for that position, where\nit has measured the book, in place of the one you sent. The response is the position the\nserver kept, yours or the stored one. A book you\nhaven't given a read status becomes `reading`; one you have keeps its status.",
         "operationId": "post_progress",
         "requestBody": {
           "content": {
@@ -10826,6 +10826,27 @@
           }
         }
       },
+      "CopyFiler": {
+        "type": "object",
+        "description": "Who filed one of a book's physical copies.",
+        "properties": {
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The reader's display name, or username without one. Null once their account is\ndeleted."
+          },
+          "user_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The reader's id. Null once their account is deleted."
+          }
+        }
+      },
       "CoverFromUrlBody": {
         "type": "object",
         "description": "The image URL `POST /api/ebooks/{uuid}/cover/from-url` fetches as the book's cover.",
@@ -11961,6 +11982,13 @@
             ],
             "format": "int64",
             "description": "The year the work was first published, in any edition. `year` is this edition's\nown date."
+          },
+          "format": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The edition's physical format as the provider names it, such as `Paperback`."
           },
           "isbn13": {
             "type": "string",
@@ -14751,6 +14779,13 @@
               "type": "string"
             }
           },
+          "copy_filers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CopyFiler"
+            },
+            "description": "Who filed each of the book's physical copies, oldest copy first. Empty when the\nbook has no copy."
+          },
           "cover_url": {
             "type": [
               "string",
@@ -16243,6 +16278,21 @@
                 "type": "string",
                 "enum": [
                   "pending"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The lookup failed; it is tried again later.",
+            "required": [
+              "status"
+            ],
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "unavailable"
                 ]
               }
             }

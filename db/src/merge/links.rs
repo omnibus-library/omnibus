@@ -6,8 +6,9 @@ use std::collections::{BTreeMap, HashSet};
 
 use sqlx::Transaction;
 
-use super::snapshot::SourceSnapshot;
+use super::snapshot::{SourceSnapshot, TargetAuthorSort};
 use super::MergeError;
+use crate::sort_keys::refresh_author_sort;
 
 /// A link table the merge unions: its taxonomy column, and the taxonomy table
 /// and name column that column points at.
@@ -71,15 +72,39 @@ pub(super) fn supplied_links(snap: &SourceSnapshot) -> HashSet<(String, String)>
         .collect()
 }
 
+/// Whether the target has any author link.
+async fn has_author_links(
+    tx: &mut Transaction<'_, sqlx::Sqlite>,
+    book_id: i64,
+) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM books_authors_link WHERE book = ?)")
+        .bind(book_id)
+        .fetch_one(&mut **tx)
+        .await
+}
+
+/// The target's `author_sort` as it stands before the merge moves links.
+pub(super) async fn capture_target_author_sort(
+    tx: &mut Transaction<'_, sqlx::Sqlite>,
+    target_id: i64,
+) -> Result<TargetAuthorSort, sqlx::Error> {
+    let before = sqlx::query_scalar("SELECT author_sort FROM books WHERE id = ?")
+        .bind(target_id)
+        .fetch_one(&mut **tx)
+        .await?;
+    Ok(TargetAuthorSort { before })
+}
+
 /// Copy the source's authors, tags and publishers onto the target and clear
 /// every source link row. Returns what was added, for undo. The source's
 /// authors go **after** the target's, so the kept entry's primary author stays
-/// at position 0.
+/// at position 0 and its `author_sort` only re-keys when it had none.
 pub(super) async fn move_links(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     source_id: i64,
     target_id: i64,
-) -> Result<LinksAdded, sqlx::Error> {
+) -> Result<LinksAdded, MergeError> {
+    let target_had_authors = has_author_links(tx, target_id).await?;
     let mut added = LinksAdded::new();
     for t in &LINK_TABLES {
         let names = copy_link_table(tx, t, source_id, target_id).await?;
@@ -91,7 +116,29 @@ pub(super) async fn move_links(
         let sql = format!("DELETE FROM {table} WHERE book = ?");
         sqlx::query(&sql).bind(source_id).execute(&mut **tx).await?;
     }
+    if !target_had_authors {
+        refresh_author_sort(tx, &[target_id]).await?;
+    }
     Ok(added)
+}
+
+/// Put the target's `author_sort` back when undo left it with no author links,
+/// the one case where the merge's re-key has nothing left to re-derive from.
+pub(super) async fn restore_target_author_sort(
+    tx: &mut Transaction<'_, sqlx::Sqlite>,
+    target_id: i64,
+    before: Option<&TargetAuthorSort>,
+) -> Result<(), sqlx::Error> {
+    let Some(before) = before else { return Ok(()) };
+    if has_author_links(tx, target_id).await? {
+        return Ok(());
+    }
+    sqlx::query("UPDATE books SET author_sort = ? WHERE id = ?")
+        .bind(&before.before)
+        .bind(target_id)
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
 }
 
 /// Copy one link table's source rows onto the target, returning the names

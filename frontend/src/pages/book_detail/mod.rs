@@ -59,6 +59,8 @@ mod physical;
 // gated with it (the mobile CTA calls the fn inside `immersive` directly).
 #[cfg(not(feature = "mobile"))]
 pub(crate) use immersive::retarget_and_open_immersive;
+#[cfg(feature = "web")]
+use view::settle_after_poll_cap;
 use view::{render_loaded, LoadedCtx, RailButtons};
 // Only `mobile.rs` (compiled solely under this feature) re-derives the loaded
 // view itself; the web branch calls `derive_loaded_view` directly inside
@@ -511,6 +513,10 @@ fn fetch_book_and_author_books(
     });
 }
 
+/// How many times the web page re-asks for a `Pending` strip, 2.5 s apart.
+#[cfg(feature = "web")]
+const SUGGESTION_POLLS: u32 = 5;
+
 /// Fetch suggestions for `uuid` and, on web, poll a few times while the
 /// result is `Pending`. `suggestions_epoch` is bumped once per call and
 /// captured as the run's identity, so a stale poll left over from a previous
@@ -539,7 +545,7 @@ fn poll_suggestions_until_resolved(
                 #[cfg(feature = "web")]
                 if pending {
                     let mut tries = 0u32;
-                    while tries < 5 {
+                    while tries < SUGGESTION_POLLS {
                         gloo_timers::future::TimeoutFuture::new(2500).await;
                         if !is_current() {
                             return;
@@ -551,7 +557,12 @@ fn poll_suggestions_until_resolved(
                                     return;
                                 }
                                 let still_pending = matches!(next, SuggestionsResponse::Pending);
-                                suggestions.set(Some(next));
+                                let shown = if tries == SUGGESTION_POLLS {
+                                    settle_after_poll_cap(next)
+                                } else {
+                                    next
+                                };
+                                suggestions.set(Some(shown));
                                 if !still_pending {
                                     break;
                                 }

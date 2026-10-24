@@ -22,6 +22,8 @@ export type Stage =
       book: ScanBook;
       isbn: string;
       wishlisted: boolean;
+      /** The exact-ISBN lookup found the book held only by another reader's wish; a pick from a list never claims that. */
+      anotherWish: boolean;
       via: FoundVia;
     }
   | {
@@ -50,6 +52,7 @@ export function stageFor(
         book: outcome.book,
         isbn,
         wishlisted: true,
+        anotherWish: false,
         via,
       };
     case "in_library_unowned":
@@ -58,6 +61,7 @@ export function stageFor(
         book: outcome.book,
         isbn,
         wishlisted: false,
+        anotherWish: heldOnlyByAWish(outcome.book),
         via,
       };
     case "close_match":
@@ -120,16 +124,47 @@ export const wishlistSource = {
   search: "search",
 } satisfies Record<FoundVia, WishlistAddRequest["source"]>;
 
-/** The confirm screen's framing of what the copy is added to, worded from the book's holdings. */
-export function confirmSubtitle(book: ScanBook, wishlisted: boolean): string {
+/** Whether nothing but a wish holds the book: no file and no copy. The exact-ISBN lookup reads that as another reader's wish, since the reader's own comes back as `on_wishlist`. */
+export const heldOnlyByAWish = (book: ScanBook) =>
+  !book.has_files && !book.has_physical;
+
+/** The wishlist request for a library book that only another reader wants, filed against the existing book. */
+export const wishlistRequestForBook = (
+  book: ScanBook,
+  via: FoundVia,
+): WishlistAddRequest => ({
+  book_uuid: book.uuid,
+  source: wishlistSource[via],
+});
+
+/** Whose print copy a paper-only book carries, as far as its filers say; never a guess while the viewer is unknown. */
+function printCopyLine(book: ScanBook, viewerId: number | null): string {
+  const filers = book.copy_filers ?? [];
+  if (viewerId !== null && filers.some((f) => f.user_id === viewerId)) {
+    return "You already have a print copy of this one — this adds another.";
+  }
+  const name = viewerId === null ? undefined : filers.find((f) => f.name)?.name;
+  return name
+    ? `${name} already has a print copy of this one — this adds yours.`
+    : "The household already has a print copy of this one — this adds yours.";
+}
+
+/** The confirm screen's framing of what the copy is added to, worded from the book's holdings and, for a print copy, whose it is. `anotherWish` is only true when the lookup proved another reader wants the book. */
+export function confirmSubtitle(
+  book: ScanBook,
+  wishlisted: boolean,
+  anotherWish: boolean,
+  viewerId: number | null,
+): string {
   if (wishlisted) {
     return "This one is on your wishlist — checking your copy in takes it off.";
   }
   if (book.has_files) {
     return "You already have this one digitally — this adds your print copy.";
   }
-  return book.has_physical
-    ? "You already have a print copy of this one — this adds another."
+  if (book.has_physical) return printCopyLine(book, viewerId);
+  return anotherWish
+    ? "Not in your library — it's on another reader's wishlist."
     : "This one is in your library without a file — this adds your print copy.";
 }
 
@@ -164,12 +199,15 @@ export function byline(authors: string[]): string {
   return names.length ? `${names.join(", ")} and ${last}` : last;
 }
 
-/** The dot-separated facts under a provider card's byline, or `null` when the provider carried none. */
+/** The dot-separated facts under a provider card's byline: first publication, then the edition to be filed (publisher, format, pages, ISBN). `null` when the provider carried none. */
 export function metaDetails(meta: ExternalBookMeta): string | null {
+  const isbn = meta.isbn13.trim();
   const parts = [
     meta.first_publish_year ? `First published ${meta.first_publish_year}` : "",
     meta.publisher?.trim() ?? "",
+    meta.format?.trim() ?? "",
     meta.pages && meta.pages > 0 ? `${meta.pages} pages` : "",
+    isbn ? `ISBN ${isbn}` : "",
   ].filter(Boolean);
   return parts.length ? parts.join(" · ") : null;
 }

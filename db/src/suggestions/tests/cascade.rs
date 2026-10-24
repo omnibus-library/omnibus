@@ -233,6 +233,53 @@ async fn resolve_with_hydrates_covers_across_multiple_concurrency_chunks_with_pa
     }
 }
 
+async fn failed_marker_after_hardcover_answers(status: u16) -> (anyhow::Error, SuggestionState) {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let uuid = seed_synced_ebook(&pool, "src.epub", "Test Source", "Source Author").await;
+    crate::suggestions::data::mark_pending(&pool, &uuid)
+        .await
+        .unwrap();
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(status))
+        .mount(&server)
+        .await;
+
+    let err = resolve_with(
+        &pool,
+        &uuid,
+        &config_for(&server),
+        &RemoteImageConfig::default(),
+    )
+    .await
+    .unwrap_err();
+
+    let (state, _) = suggestion_state(&pool, &uuid).await.unwrap().unwrap();
+    (err, state)
+}
+
+#[tokio::test]
+async fn resolve_with_marks_the_book_failed_and_still_errors_when_hardcover_rejects_the_key() {
+    let (err, state) = failed_marker_after_hardcover_answers(401).await;
+
+    assert_eq!(state, SuggestionState::Failed);
+    assert_eq!(
+        crate::suggestions::hardcover::rejected_key_status(&err).map(|s| s.as_u16()),
+        Some(401)
+    );
+}
+
+#[tokio::test]
+async fn resolve_with_marks_the_book_failed_and_still_errors_when_hardcover_answers_500() {
+    let (err, state) = failed_marker_after_hardcover_answers(500).await;
+
+    assert_eq!(state, SuggestionState::Failed);
+    assert_eq!(
+        crate::suggestions::hardcover::rejected_key_status(&err),
+        None
+    );
+}
+
 #[test]
 fn extract_isbns_matches_identifiers_whose_scheme_names_isbn() {
     let book = omnibus_shared::EbookMetadata {

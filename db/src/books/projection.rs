@@ -9,6 +9,7 @@ use sqlx::{Row, SqlitePool};
 
 use crate::helpers::format_series_index;
 use crate::interaction::interacted_at_iso_sql;
+use crate::metadata_overrides::sql::{override_series_sql, overrides_win_sql, scanned_series_sql};
 use crate::metadata_overrides::{
     apply_overrides, load_overrides_bulk, load_overrides_bulk_without_description,
 };
@@ -74,10 +75,32 @@ macro_rules! book_columns_body {
       WHERE bll.book = b.id ORDER BY lang.code LIMIT 1)
                                                   AS language_code,
 
-    (SELECT json_object('name', s.name, 'id', s.id)
-       FROM books_series_link bsl
-       JOIN series s ON s.id = bsl.series
-      WHERE bsl.book = b.id ORDER BY s.name LIMIT 1)
+    COALESCE(
+      -- The series the book displays under: a winning override names it, so
+      -- its id is read from the row of that name, not from whichever link sorts
+      -- first (a rescan wipes the override's link; this survives that).
+      (SELECT json_object('name', s.name, 'id', s.id)
+         FROM series s
+         JOIN scan_roots l ON l.id = b.library_id
+         JOIN metadata_overrides mo ON mo.book_uuid = b.uuid
+        WHERE ",
+            overrides_win_sql!(),
+            " AND ",
+            override_series_sql!("s", "mo"),
+            "
+        LIMIT 1),
+      -- The scanned flag is computed in a derived table: SQLite 3.46 rejects an
+      -- outer column referenced from this subquery's own ORDER BY.
+      (SELECT json_object('name', name, 'id', id)
+         FROM (SELECT s.name AS name, s.id AS id,
+                      COALESCE(",
+            scanned_series_sql!("s", "b.series_sort"),
+            ", 0) AS scanned
+                 FROM books_series_link bsl
+                 JOIN series s ON s.id = bsl.series
+                WHERE bsl.book = b.id)
+        ORDER BY scanned DESC, name COLLATE NOCASE
+        LIMIT 1))
                                                   AS series_json,
 
     (SELECT json_group_array(json_object('id', a_id, 'name', name, 'sort', sort))
@@ -156,8 +179,8 @@ pub(crate) struct PrimaryFileRow {
     pub(crate) format: String,
 }
 
-/// Decoded `series_json` blob: the name + id of the primary
-/// `books_series_link` row (alphabetical by name). Both columns come from
+/// Decoded `series_json` blob: the name + id of the series the book displays
+/// under (a winning override's, else the scanned link). Both columns come from
 /// the *same* picked row, so a single subquery replaces the former pair.
 #[derive(serde::Deserialize)]
 pub(crate) struct SeriesRow {

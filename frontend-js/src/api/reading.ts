@@ -121,10 +121,10 @@ export async function fetchProgress(uuid: BookUuid): Promise<Progress> {
 
 const positionWrites = new Map<string, Promise<void>>();
 
-/** Saves where the reader stands: an anchor (`comic-page:N`, `pdf-page:N`, a CFI) and the whole-book percent. */
+/** Saves where the reader stands: an anchor (`comic-page:N`, `pdf-page:N`, a CFI) and the whole-book percent, which an EPUB leaves out until its figure is exact. */
 export function saveReadingPosition(
   uuid: BookUuid,
-  position: { anchor: string; percent: number },
+  position: { anchor: string; percent?: number },
 ): Promise<void> {
   // The server keeps the later of two equal-timestamp writes, so a book's writes must not overtake each other.
   return inOrder(positionWrites, uuid, async () => {

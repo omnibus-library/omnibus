@@ -5,13 +5,14 @@
 use dioxus::prelude::*;
 use omnibus_shared::{
     EbookMetadata, ResumePoint, SeriesStack, Shelf, ShelfSummary, SortDir, SortKey, TagWeight,
-    ViewFilters, ViewPrefs,
+    UserSummary, ViewFilters, ViewPrefs,
 };
 
 use crate::components::chip_editor::{collect_suggestions, SuggestionItem};
 use crate::data;
 use crate::shelf_selection::ShelfSelection;
 
+use super::rail::selection_off_rail;
 use super::PAGE_SIZE;
 
 /// How many resume points the continue-reading hero carousel shows.
@@ -286,7 +287,8 @@ pub(super) fn spawn_shelves_list_effect(
     generation: Signal<u64>,
     mut shelves: Signal<Vec<ShelfSummary>>,
     (mut shelves_loaded, mut answered): (Signal<bool>, Signal<bool>),
-    mut selection: Signal<ShelfSelection>,
+    selection: Signal<ShelfSelection>,
+    viewer: ReadSignal<Option<UserSummary>>,
 ) {
     use_effect(move || {
         let _ = tick();
@@ -302,21 +304,28 @@ pub(super) fn spawn_shelves_list_effect(
                 answered.set(true);
                 return;
             };
-            // Reset a dangling pick here, with the authoritative list in hand: a
-            // reactive effect over `(loaded, selection)` would misfire during
-            // hydration and rewrite a valid persisted pick to All.
-            let current = *selection.peek();
-            if let ShelfSelection::Shelf(id) = current {
-                if !list.iter().any(|s| s.id == id) {
-                    crate::shelf_selection::save(ShelfSelection::All);
-                    selection.set(ShelfSelection::All);
-                }
-            }
+            // Reset a pick the rail no longer shows here, with the authoritative
+            // list in hand: a reactive effect over `(loaded, selection)` would
+            // misfire during hydration and rewrite a valid persisted pick to All.
+            reset_pick_off_rail(selection, &list, viewer.peek().as_ref().map(|u| u.id));
             shelves.set(list);
             shelves_loaded.set(true);
             answered.set(true);
         });
     });
+}
+
+/// Snap a pick back to All Books, and forget it, when its shelf is off the rail
+/// of `list` for the viewer. A no-op while the viewer is unknown.
+pub(super) fn reset_pick_off_rail(
+    mut selection: Signal<ShelfSelection>,
+    list: &[ShelfSummary],
+    viewer_id: Option<i64>,
+) {
+    if selection_off_rail(*selection.peek(), list, viewer_id) {
+        crate::shelf_selection::save(ShelfSelection::All);
+        selection.set(ShelfSelection::All);
+    }
 }
 
 /// Fetch the full selected shelf (rules, visibility, ownership) whenever the

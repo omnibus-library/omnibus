@@ -19,8 +19,10 @@ import { SearchGlyph } from "../Glyphs/Glyphs";
 import { Loading, Ring } from "../Loading/Loading";
 import { ResultsList } from "./PaletteRows";
 import {
+  activeOptionId,
   itemHref,
   itemKey,
+  LISTBOX_ID,
   moveSelection,
   paletteGroups,
   selectedIndex,
@@ -174,7 +176,15 @@ function PaletteOverlay({ onClose }: { onClose: () => void }) {
             data-testid="sp-input"
             type="text"
             placeholder="Search books, authors, series, tags, settings…"
+            role="combobox"
             aria-label="Search"
+            aria-controls={items.length > 0 ? LISTBOX_ID : undefined}
+            aria-expanded={items.length > 0}
+            aria-autocomplete="list"
+            aria-activedescendant={activeOptionId(
+              items,
+              highlighted ? itemKey(highlighted) : null,
+            )}
             // biome-ignore lint/a11y/noAutofocus: the palette opens to type into
             autoFocus
             value={query}

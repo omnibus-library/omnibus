@@ -8,9 +8,9 @@ use dioxus::prelude::*;
 use dioxus_router::Link;
 use omnibus_shared::{ExternalBookMeta, ScanBook, WishlistAddRequest};
 
-use super::{wishlist_request_for, CheckInOpen, FlowState, FoundVia};
+use super::{wishlist_request_for, wishlist_request_for_book, CheckInOpen, FlowState, FoundVia};
 use crate::components::{BusyLabel, Loading, LoadingKind};
-use crate::{media_url, use_server_url, Route};
+use crate::{media_url, use_current_user_summary, use_server_url, Route};
 
 /// Matching sheet shown while the resolve request is in flight.
 #[component]
@@ -24,23 +24,32 @@ pub(super) fn ResolvingScreen() -> Element {
 }
 
 /// 3a — confirm checking in a copy of a book the library already holds, or
-/// one on the reader's own wishlist (`wishlisted`).
+/// one on the reader's own wishlist (`wishlisted`). A book the lookup found held
+/// only by another reader's wish (`another_wish`) also offers the reader a
+/// wishlist entry of their own.
 #[component]
 pub(super) fn ConfirmScreen(
     book: ScanBook,
     isbn: String,
     wishlisted: bool,
+    another_wish: bool,
     state: FlowState,
     on_check_in: EventHandler<ScanBook>,
+    on_wishlist: EventHandler<WishlistAddRequest>,
     on_cancel: EventHandler<()>,
 ) -> Element {
     let mut note = state.note;
     let busy = state.busy;
+    let viewer_id = use_current_user_summary()().map(|u| u.id);
     let target = book.clone();
+    let wish_req = wishlist_request_for_book(&book, (state.found_via)());
+    // Which button the shared busy flag belongs to, so only it shows the wait.
+    let mut wishing = use_signal(|| false);
+    let wish_pending = busy() && wishing();
     rsx! {
         div { class: "check-in-screen", "data-testid": "check-in-confirm",
             h1 { "Check in this copy" }
-            p { class: "subtitle", {confirm_subtitle(&book, wishlisted)} }
+            p { class: "subtitle", {confirm_subtitle(&book, wishlisted, another_wish, viewer_id)} }
             LibraryBookCard { book }
             div { class: "settings-field",
                 label { r#for: "check-in-note", "Edition note (optional)" }
@@ -60,10 +69,27 @@ pub(super) fn ConfirmScreen(
                     r#type: "button",
                     class: "btn primary",
                     disabled: busy(),
-                    "aria-busy": if busy() { "true" } else { "false" },
+                    "aria-busy": if busy() && !wish_pending { "true" } else { "false" },
                     "data-testid": "check-in-confirm-submit",
-                    onclick: move |_| on_check_in.call(target.clone()),
-                    BusyLabel { busy: busy(), label: "Check in", busy_label: "Checking in\u{2026}" }
+                    onclick: move |_| {
+                        wishing.set(false);
+                        on_check_in.call(target.clone());
+                    },
+                    BusyLabel { busy: busy() && !wish_pending, label: "Check in", busy_label: "Checking in\u{2026}" }
+                }
+                if another_wish {
+                    button {
+                        r#type: "button",
+                        class: "btn ghost",
+                        disabled: busy(),
+                        "aria-busy": if wish_pending { "true" } else { "false" },
+                        "data-testid": "check-in-confirm-wishlist",
+                        onclick: move |_| {
+                            wishing.set(true);
+                            on_wishlist.call(wish_req.clone());
+                        },
+                        BusyLabel { busy: wish_pending, label: "Add to my wishlist", busy_label: "Adding\u{2026}" }
+                    }
                 }
                 button {
                     r#type: "button",
@@ -78,20 +104,64 @@ pub(super) fn ConfirmScreen(
     }
 }
 
+/// Whether nothing but a wish holds the book in the library: no file and no copy.
+/// The exact-ISBN lookup reads that as another reader's wish, since the
+/// reader's own would have come back as `on_wishlist`.
+pub(super) fn held_only_by_a_wish(book: &ScanBook) -> bool {
+    !book.has_files && !book.has_physical
+}
+
 /// The confirm screen's one-line framing of what the copy is being added
-/// to, worded from the book's actual holdings: the "already have it
-/// digitally" line was shown for paper-only rows, where it was simply untrue.
-pub(super) fn confirm_subtitle(book: &ScanBook, wishlisted: bool) -> &'static str {
+/// to, worded from the book's actual holdings and, for a print copy, whose it
+/// is: copies belong to the household, so the line says who already holds one.
+/// `another_wish` is only true when the lookup proved another reader wants the
+/// book; a book reached by picking from a list gets the neutral line instead.
+pub(super) fn confirm_subtitle(
+    book: &ScanBook,
+    wishlisted: bool,
+    another_wish: bool,
+    viewer_id: Option<i64>,
+) -> String {
     if wishlisted {
-        return "This one is on your wishlist \u{2014} checking your copy in takes it off.";
+        return "This one is on your wishlist \u{2014} checking your copy in takes it off."
+            .to_string();
     }
-    match (book.has_files, book.has_physical) {
-        (true, _) => "You already have this one digitally \u{2014} this adds your print copy.",
-        (false, true) => "You already have a print copy of this one \u{2014} this adds another.",
-        (false, false) => {
+    if book.has_files {
+        return "You already have this one digitally \u{2014} this adds your print copy."
+            .to_string();
+    }
+    if !book.has_physical {
+        return if another_wish {
+            "Not in your library \u{2014} it's on another reader's wishlist.".to_string()
+        } else {
             "This one is in your library without a file \u{2014} this adds your print copy."
-        }
+                .to_string()
+        };
     }
+    print_copy_line(book, viewer_id)
+}
+
+/// Who already holds a print copy: the viewer when they filed one, else the
+/// first reader still named on one, else the household. An unknown viewer is
+/// never guessed at.
+fn print_copy_line(book: &ScanBook, viewer_id: Option<i64>) -> String {
+    let filers = &book.copy_filers;
+    match viewer_id {
+        Some(id) if filers.iter().any(|f| f.user_id == Some(id)) => {
+            "You already have a print copy of this one \u{2014} this adds another.".to_string()
+        }
+        Some(_) => match filers.iter().find_map(|f| f.name.as_deref()) {
+            Some(name) => {
+                format!("{name} already has a print copy of this one \u{2014} this adds yours.")
+            }
+            None => household_line(),
+        },
+        None => household_line(),
+    }
+}
+
+fn household_line() -> String {
+    "The household already has a print copy of this one \u{2014} this adds yours.".to_string()
 }
 
 /// 2b — the fuzzy (title, author) hits. Never auto-resolved: the reader picks
@@ -458,24 +528,30 @@ fn BookCard(
 }
 
 /// The dot-separated fact line under a provider card's byline: first-publish
-/// year, publisher, page count — whichever the provider carried. `None` when
-/// it carried none of them, so the card renders no empty line.
+/// year, then the edition to be filed (publisher, format, pages, ISBN) —
+/// whichever the provider carried. `None` when it carried none of them, so the
+/// card renders no empty line.
 pub(super) fn meta_details(meta: &ExternalBookMeta) -> Option<String> {
-    let mut parts = Vec::new();
-    if let Some(year) = meta.first_publish_year {
-        parts.push(format!("First published {year}"));
-    }
-    if let Some(publisher) = meta
-        .publisher
-        .as_deref()
-        .map(str::trim)
-        .filter(|p| !p.is_empty())
-    {
-        parts.push(publisher.to_string());
-    }
-    if let Some(pages) = meta.pages.filter(|p| *p > 0) {
-        parts.push(format!("{pages} pages"));
-    }
+    let text = |s: &Option<String>| {
+        s.as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+    };
+    let isbn = Some(meta.isbn13.trim()).filter(|i| !i.is_empty());
+    let parts: Vec<String> = [
+        meta.first_publish_year
+            .map(|year| format!("First published {year}")),
+        text(&meta.publisher),
+        text(&meta.format),
+        meta.pages
+            .filter(|p| *p > 0)
+            .map(|pages| format!("{pages} pages")),
+        isbn.map(|isbn| format!("ISBN {isbn}")),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
     (!parts.is_empty()).then(|| parts.join(" \u{b7} "))
 }
 

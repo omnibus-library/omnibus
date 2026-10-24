@@ -183,6 +183,7 @@ fn picked_meta(title: &str, author: &str, isbn13: &str) -> omnibus_shared::Exter
         cover_url: None,
         series: None,
         first_publish_year: None,
+        format: None,
         source: MetadataProvider::OpenLibrary,
     }
 }
