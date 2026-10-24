@@ -137,6 +137,9 @@ pub async fn backfill_norm_columns(pool: &SqlitePool) -> Result<(), NormalizeErr
 /// keeps a chunk under SQLite's 999-parameter cap.
 const NORM_UPDATE_CHUNK: usize = 300;
 
+/// `(book id, stored key, first author's name, first author's sort)`.
+type AuthorSortRow = (i64, Option<String>, Option<String>, Option<String>);
+
 /// Boot backfill: rewrite any `books.author_sort` that is out of step with the
 /// book's first displayed author (the lowest-position link), so the Author axis
 /// orders every row on one key format. Heals a given-first display name, a
@@ -144,7 +147,7 @@ const NORM_UPDATE_CHUNK: usize = 300;
 /// a linked book that has none stored. A book with no author link keeps its
 /// value unless it is a comma-less key to reshape.
 pub async fn backfill_author_sort(pool: &SqlitePool) -> Result<(), NormalizeError> {
-    let rows: Vec<(i64, Option<String>, Option<String>, Option<String>)> = sqlx::query_as(
+    let rows: Vec<AuthorSortRow> = sqlx::query_as(
         "SELECT b.id, b.author_sort, a.name, a.sort
            FROM books b
            LEFT JOIN authors a ON a.id = (
