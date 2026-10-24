@@ -207,9 +207,7 @@ export function AuthorsIndexPane() {
       ) : preview.kind === "unavailable" ? (
         <p className="au-pane-empty subtitle">Couldn’t load authors.</p>
       ) : preview.kind === "empty" ? (
-        <p className="au-pane-empty subtitle">
-          No authors yet — the library is empty.
-        </p>
+        <p className="au-pane-empty subtitle">{COPY.empty}</p>
       ) : (
         <AuthorPane key={preview.id} id={preview.id} preview />
       )}

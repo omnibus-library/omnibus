@@ -268,16 +268,18 @@ export const RecentWaitsOnReading: Story = {
       hanging("/api/series/reading"),
     );
   },
-  play: async ({ canvas, userEvent }) => {
+  play: async ({ canvas, canvasElement, userEvent }) => {
     const chip = await canvas.findByRole("button", { name: /Reading/ });
     await expect(chip).toBeDisabled();
     await expect(chip).toHaveAttribute("aria-busy", "true");
 
     await userEvent.click(canvas.getByRole("button", { name: "Recent" }));
 
-    await expect(
-      await canvas.findByText("Gathering every series"),
-    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        canvasElement.querySelector('[data-testid="series-list"] .ld-rows'),
+      ).not.toBeNull(),
+    );
     await expect(canvas.queryAllByTestId("series-card")).toHaveLength(0);
   },
 };
@@ -382,10 +384,14 @@ export const PreviewsTheLastReadSeries: Story = {
   beforeEach({ msw }) {
     msw.use(...withSeries());
   },
-  play: async ({ canvas }) => {
+  play: async ({ canvas, canvasElement }) => {
     await expect(
       await canvas.findByRole("heading", { level: 2, name: "Dune" }),
     ).toBeInTheDocument();
+    await expect(canvasElement.querySelector(".au-page")).toHaveAttribute(
+      "data-pane",
+      "index",
+    );
 
     const row = canvas.getByRole("link", { name: /^Dune, / });
     await expect(row).toHaveClass("is-shown");
@@ -399,11 +405,15 @@ export const DeepLink: Story = {
   beforeEach({ msw }) {
     msw.use(...withSeries());
   },
-  play: async ({ canvas }) => {
+  play: async ({ canvas, canvasElement }) => {
     const row = await canvas.findByRole("link", {
       name: "The Wheel of Time, by Robert Jordan, 14 books",
     });
 
+    await expect(canvasElement.querySelector(".au-page")).toHaveAttribute(
+      "data-pane",
+      "series",
+    );
     await expect(row).toHaveAttribute("aria-current", "page");
     await expect(
       await canvas.findByRole("heading", {

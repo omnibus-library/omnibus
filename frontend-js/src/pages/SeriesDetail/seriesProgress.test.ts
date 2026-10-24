@@ -133,6 +133,17 @@ describe("nextMeta", () => {
     ).toBe("Up next · Book 4");
   });
 
+  it.each([
+    ["start here", true, "Start here"],
+    ["up next", false, "Up next"],
+  ])("says just %s for a book with no number", (_condition, fresh, label) => {
+    const book = aSeriesBook(UUID_A);
+
+    expect(nextMeta({ kind: "start", book, state: null, fresh }, DAY, 0)).toBe(
+      label,
+    );
+  });
+
   it("says up next rather than start here for a kept position", () => {
     const book = aSeriesBook(UUID_A, { index: "1" });
     const kept = state("unread", { format: "epub", percent: 12 });
@@ -213,6 +224,12 @@ describe("tileCaption", () => {
     );
   });
 
+  it("keeps an empty number as a blank one", () => {
+    const book = aSeriesBook(UUID_A, { index: "", published: "2016-05-02" });
+
+    expect(tileCaption(book)).toBe("Book  · 2016");
+  });
+
   it("keeps a lone year", () => {
     expect(tileCaption(aSeriesBook(UUID_A, { published: "2016-05-02" }))).toBe(
       "2016",
@@ -232,6 +249,14 @@ describe("missingNumbers", () => {
     expect(missingNumbers(held("1", "4", "6"))).toEqual([2, 3, 5]);
   });
 
+  it.each([
+    ["a trailing point", "3."],
+    ["a plus sign", "+3"],
+    ["an exponent", "3e0"],
+  ])("reads %s as a whole number", (_condition, index) => {
+    expect(missingNumbers(held("1", index))).toEqual([2]);
+  });
+
   it("ignores a numbering past the scan limit", () => {
     expect(missingNumbers(held("1", "3", "2024"))).toEqual([2]);
     expect(missingNumbers(held("2024"))).toEqual([]);
@@ -239,6 +264,7 @@ describe("missingNumbers", () => {
 
   it.each([
     ["a fractional number", "2.5"],
+    ["a bare fraction", ".5"],
     ["a non-numeric one", "omnibus"],
     ["an empty one", ""],
     ["none", null],

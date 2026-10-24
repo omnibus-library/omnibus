@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { Route, Routes, useLocation } from "react-router";
-import { expect, within } from "storybook/test";
+import { expect, waitFor, within } from "storybook/test";
 import { getGetSeriesByIdMockHandler404 } from "../../api/generated/omnibus.msw";
 import { nowSecs } from "../../format";
 import { failing, hanging, seriesHandlers } from "../../testing/handlers";
@@ -115,6 +115,7 @@ export const Loaded: Story = {
       }),
     ).toHaveAttribute("href", `/books/${uuidOf(1)}`);
     await expect(canvas.queryByTestId("series-gaps")).toBeNull();
+    await waitFor(() => expect(document.title).toBe("Omnibus | Dune"));
   },
 };
 

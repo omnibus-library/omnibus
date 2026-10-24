@@ -28,7 +28,7 @@ export function foldForMatch(text: string): string {
 }
 
 // Mirrors `dictionary_key` in `shared/src/sort_order.rs`: the comma files below every printable character.
-export const dictionaryKey = (text: string) =>
+const dictionaryKey = (text: string) =>
   foldForMatch(text).replaceAll(",", "\0");
 
 function compareCodePoints(a: string, b: string): number {
@@ -73,7 +73,7 @@ export const letterFrag = (letter: string) =>
   letter === "#" ? "hash" : letter;
 
 /** What a row sorts by: its filing key, its book count, and when the reader last read it (`-1` for never). */
-export type RowOrder<T> = {
+type RowOrder<T> = {
   key: (row: T) => string;
   count: (row: T) => number;
   lastRead: (row: T) => number;

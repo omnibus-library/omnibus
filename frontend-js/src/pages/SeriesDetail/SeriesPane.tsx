@@ -5,6 +5,7 @@ import {
   type SeriesId,
   type SeriesPage,
   seriesQuery,
+  utcOffsetMinutes,
 } from "../../api";
 import {
   BookCard,
@@ -31,6 +32,7 @@ import {
   seriesAuthors,
   tileCaption,
 } from "./seriesProgress";
+import "../../components/DiscPage/DiscPage.css";
 import "./SeriesDetail.css";
 
 /** Most covers the hero's fan shows. */
@@ -147,7 +149,7 @@ function ReadingStrip({
       {next && action && (
         <BookCard
           book={next.book}
-          meta={nextMeta(next, nowSecs(), -new Date().getTimezoneOffset() * 60)}
+          meta={nextMeta(next, nowSecs(), utcOffsetMinutes() * 60)}
           action={action.label}
           to={action.to}
           testid={action.testid}
@@ -214,7 +216,6 @@ export function SeriesPane({
     ? { backTo: "/", backLabel: "Back to library" }
     : { backTo: "/series", backLabel: "Back to series" };
   if (page) {
-    // The accent of the first cover that has one tints the pane.
     const accent =
       page.books.find((b) => b.accent !== null)?.accent ?? "var(--accent)";
     // Past the book cap the list arrives cut short, and a tally drawn from it would describe only part.

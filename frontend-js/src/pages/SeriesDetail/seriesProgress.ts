@@ -10,6 +10,9 @@ import { readerHref } from "../../resume";
 /** Highest number `missingNumbers` looks for gaps below; a series numbered by year or issue past it isn't a run a reader collects book by book. */
 export const MAX_GAP_SCAN = 200;
 
+// What Rust's `f64::from_str` accepts, which the Dioxus page parses an index with.
+const F64 = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
+
 /** The book the reading strip offers next. */
 export type NextUp =
   | { kind: "resume"; book: SeriesBook; state: BookState }
@@ -33,7 +36,7 @@ export type NextAction = {
 const kept = (state: BookState | null) => state?.format != null;
 
 const bookNumber = (book: Book) =>
-  book.series?.index ? `Book ${book.series.index}` : null;
+  book.series?.index == null ? null : `Book ${book.series.index}`;
 
 /** The book in progress, else the first unread in reading order; `null` once every book is finished. */
 export function nextUp(
@@ -120,7 +123,7 @@ export function missingNumbers(books: readonly Book[]): number[] {
   const held = new Set<number>();
   for (const book of books) {
     const raw = book.series?.index?.trim() ?? "";
-    const n = /^\d+(\.\d+)?$/.test(raw) ? Number(raw) : 0;
+    const n = F64.test(raw) ? Number(raw) : 0;
     if (Number.isInteger(n) && n >= 1 && n <= MAX_GAP_SCAN) held.add(n);
   }
   const top = Math.max(0, ...held);

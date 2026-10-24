@@ -17,26 +17,25 @@ export function LetterRail({
   return (
     <nav className="au-rail" aria-label="Jump to letter">
       {ALPHABET.map((letter) => {
-        if (!present.includes(letter)) {
-          return (
-            <span
-              key={letter}
-              className="au-rail-letter is-empty"
-              aria-hidden="true"
-            >
-              {letter}
-            </span>
-          );
-        }
         const frag = letterFrag(letter);
-        const on = active === letter;
+        const has = present.includes(letter);
+        const on = has && active === letter;
+        // One element type either way: an `a` without an `href` is plain, unfocusable text.
+        const absent = has ? {} : { "aria-hidden": true };
         return (
           <a
             key={letter}
-            className={on ? "au-rail-letter is-active" : "au-rail-letter"}
-            href={`#letter-${frag}`}
+            className={
+              on
+                ? "au-rail-letter is-active"
+                : has
+                  ? "au-rail-letter"
+                  : "au-rail-letter is-empty"
+            }
+            href={has ? `#letter-${frag}` : undefined}
             aria-current={on ? "location" : undefined}
-            data-testid={`${testid}-letter-${frag}`}
+            data-testid={has ? `${testid}-letter-${frag}` : undefined}
+            {...absent}
           >
             {letter}
           </a>

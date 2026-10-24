@@ -12,6 +12,7 @@ import {
   authorQuery,
   type Book,
   type FilterClause,
+  utcOffsetMinutes,
 } from "../../api";
 import { AuthorPhotoEdit } from "../../components/AuthorPhotoEdit/AuthorPhotoEdit";
 import {
@@ -38,6 +39,7 @@ import {
   heroMeta,
   seriesCount,
 } from "./authorProgress";
+import "../../components/DiscPage/DiscPage.css";
 
 /** The portrait under its Edit button: the cached photo, else the name's initial; a photo that fails to load falls back to the initial for that URL. */
 function AuthorAvatar({
@@ -157,7 +159,7 @@ function ReadingStrip({
             current.book,
             current.state,
             nowSecs(),
-            -new Date().getTimezoneOffset() * 60,
+            utcOffsetMinutes() * 60,
           )}
           action="Resume"
           to={readerHref(
@@ -235,7 +237,6 @@ export function AuthorPane({
   });
   const page = author.data;
   if (page) {
-    // The accent of the first cover that has one tints the pane.
     const accent =
       page.books.find((b) => b.accent !== null)?.accent ?? "var(--accent)";
     return (
