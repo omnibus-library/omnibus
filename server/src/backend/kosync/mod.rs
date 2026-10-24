@@ -17,6 +17,7 @@ use axum::{
 use serde_json::json;
 
 use super::AppState;
+use crate::rate_limit::RateLimiter;
 
 mod auth;
 mod progress;
@@ -28,7 +29,7 @@ const KOREADER_ACCEPT: &str = "application/vnd.koreader.v1+json";
 
 /// Build the kosync router.
 pub fn kosync_router(state: AppState) -> Router {
-    let failures = Arc::new(auth::AuthFailures::new(state.rate_limits()));
+    let failures = Arc::new(RateLimiter::new().with_limits(state.rate_limits()));
     Router::new()
         .route("/kosync/users/create", post(create_user))
         .route("/kosync/users/auth", get(authorize))
@@ -64,10 +65,11 @@ async fn require_koreader_accept(req: Request, next: Next) -> Response {
     next.run(req).await
 }
 
-/// Registration is refused: the password is generated in Omnibus, never made on the device.
+/// Registration is refused with the 402 the stock server answers when sign-ups are off, which
+/// KOReader's client expects; the password is generated in Omnibus, never made on the device.
 async fn create_user() -> Response {
     error(
-        StatusCode::FORBIDDEN,
+        StatusCode::PAYMENT_REQUIRED,
         2005,
         "Create a sync password in Omnibus under Settings \u{203a} Devices.",
     )

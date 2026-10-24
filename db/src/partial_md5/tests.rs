@@ -1,3 +1,6 @@
+//! `partial_md5` against digests computed outside it: the sample offsets, the end-of-file stops
+//! and a fixture EPUB.
+
 use super::*;
 
 /// `len` bytes of a repeating 0..251 ramp, so every KiB sample differs.

@@ -114,27 +114,24 @@ pub(super) async fn put_progress(
         format: ProgressFormat::Epub,
         epub_cfi,
         audio_position_seconds: None,
-        // Floored, so a reader is never shown further than the device reached (rule 11).
-        progress_percent: Some((percentage * 100.0).floor() as i64),
+        // Floored (rule 11); the epsilon undoes binary rounding such as 0.29 * 100 = 28.999999999999996.
+        progress_percent: Some((percentage * 100.0 + 1e-9).floor() as i64),
         kobo_location: None,
         book_file_id: None,
         client_updated_at: None,
     };
-    // BEGIN IMMEDIATE avoids a stale-snapshot 517 on concurrent writers (#1862).
-    let mut tx = match state.pool().begin_with("BEGIN IMMEDIATE").await {
-        Ok(tx) => tx,
-        Err(e) => return internal("kosync put_progress begin", e),
-    };
-    let stored =
-        db::progress::upsert_koreader_progress_tx(&mut tx, user.0, &update, Some(&progress)).await;
-    let stored = match stored {
+    let stored = match db::progress::upsert_koreader_progress(
+        state.pool(),
+        user.0,
+        &update,
+        Some(&progress),
+    )
+    .await
+    {
         Ok(stored) => stored,
         Err(ProgressError::BookNotFound) => return accepted_unstored(&document),
         Err(ProgressError::Sqlx(e)) => return internal("kosync upsert_progress", e),
     };
-    if let Err(e) = tx.commit().await {
-        return internal("kosync put_progress commit", e);
-    }
     Json(json!({ "document": document, "timestamp": stored.client_updated_at })).into_response()
 }
 

@@ -53,7 +53,8 @@ async fn reader() -> Reader {
     let user = auth_test_support::create_user(&pool, USERNAME).await;
     let password = db::kosync::generate_kosync_password(&pool, user.id)
         .await
-        .unwrap();
+        .unwrap()
+        .password;
     Reader {
         app: kosync_router(AppState::new(pool.clone())),
         token: auth_test_support::bearer_token(&pool, user.id).await,
@@ -249,7 +250,7 @@ mod users_create {
 
             let res = r.app.clone().oneshot(req).await.unwrap();
 
-            assert_eq!(res.status(), StatusCode::FORBIDDEN);
+            assert_eq!(res.status(), StatusCode::PAYMENT_REQUIRED);
             assert_eq!(
                 body_json::<Value>(res).await,
                 json!({
@@ -401,6 +402,20 @@ mod put_progress {
             let res = send(&r, "PUT", "/kosync/syncs/progress", Some(body)).await;
 
             assert_eq!(res.status(), StatusCode::OK, "{percentage}");
+            let epub = web_epub(&r, &uuid).await.unwrap();
+            assert_eq!(epub.progress_percent, Some(stored), "{percentage}");
+        }
+    }
+
+    #[tokio::test]
+    async fn put_syncs_progress_floors_a_percentage_binary_floating_point_stores_just_below() {
+        let r = reader().await;
+        let (uuid, document, _file) = seeded_book(&r).await;
+        for (percentage, stored) in [(0.29, 29), (0.57, 57), (0.58, 58)] {
+            let body = push_body(&document, SECOND_PARAGRAPH_XPOINTER, percentage);
+
+            send(&r, "PUT", "/kosync/syncs/progress", Some(body)).await;
+
             let epub = web_epub(&r, &uuid).await.unwrap();
             assert_eq!(epub.progress_percent, Some(stored), "{percentage}");
         }
@@ -624,5 +639,55 @@ mod get_progress {
 
         assert_eq!(res.status(), StatusCode::OK);
         assert_eq!(body_json::<Value>(res).await, json!({}));
+    }
+}
+
+mod db_unavailable {
+    use axum::{
+        body::Bytes,
+        extract::{Path, State},
+    };
+
+    use super::super::{auth::KosyncUser, progress};
+    use super::*;
+
+    async fn closed() -> AppState {
+        let r = reader().await;
+        let state = AppState::new(r.pool.clone());
+        r.pool.close().await;
+        state
+    }
+
+    #[tokio::test]
+    async fn authorizing_answers_500_when_the_db_is_unavailable() {
+        let r = reader().await;
+        r.pool.close().await;
+
+        let res = send(&r, "GET", "/kosync/users/auth", None).await;
+
+        assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test]
+    async fn put_progress_answers_500_when_the_db_is_unavailable() {
+        let body = push_body(&"0".repeat(32), SECOND_PARAGRAPH_XPOINTER, 0.5);
+
+        let res = progress::put_progress(
+            KosyncUser(1),
+            State(closed().await),
+            Bytes::from(body.to_string()),
+        )
+        .await;
+
+        assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test]
+    async fn get_progress_answers_500_when_the_db_is_unavailable() {
+        let res =
+            progress::get_progress(KosyncUser(1), State(closed().await), Path("0".repeat(32)))
+                .await;
+
+        assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
     }
 }

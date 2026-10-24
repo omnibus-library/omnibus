@@ -81,3 +81,43 @@ async fn kosync_routes_return_401_without_a_session() {
         assert_eq!(res.status(), StatusCode::UNAUTHORIZED, "{method}");
     }
 }
+
+fn caller() -> crate::auth::AuthUser {
+    crate::auth::AuthUser {
+        id: 1,
+        username: "reader".to_string(),
+        is_admin: false,
+        can_upload: false,
+        can_edit: false,
+        can_download: false,
+        kindle_email: None,
+        display_name: None,
+        has_avatar: false,
+        hidden_formats: Vec::new(),
+        book_detail_scroll_stops: false,
+        stack_series: false,
+        share_stats: true,
+        session_id: 1,
+        session_kind: db::auth::SessionKind::Bearer,
+    }
+}
+
+#[tokio::test]
+async fn get_kosync_returns_500_when_the_db_is_unavailable() {
+    let (_app, state, pool) = fixture().await;
+    pool.close().await;
+
+    let res = super::get_kosync(caller(), axum::extract::State(state)).await;
+
+    assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+}
+
+#[tokio::test]
+async fn post_kosync_returns_500_when_the_db_is_unavailable() {
+    let (_app, state, pool) = fixture().await;
+    pool.close().await;
+
+    let res = super::post_kosync(caller(), axum::extract::State(state)).await;
+
+    assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+}

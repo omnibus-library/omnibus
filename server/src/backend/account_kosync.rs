@@ -45,11 +45,7 @@ pub(super) async fn get_kosync(user: AuthUser, State(state): State<AppState>) ->
 )]
 pub(super) async fn post_kosync(user: AuthUser, State(state): State<AppState>) -> Response {
     match db::kosync::generate_kosync_password(&state.pool, user.id).await {
-        Ok(password) => Json(KosyncPassword {
-            username: user.username,
-            password,
-        })
-        .into_response(),
+        Ok(login) => Json(login).into_response(),
         Err(e) => internal("generate kosync password", e),
     }
 }

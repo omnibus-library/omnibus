@@ -83,6 +83,20 @@ pub async fn upsert_progress(
     Ok(record)
 }
 
+/// [`upsert_progress`] for a KOReader write that also stores the device's XPointer verbatim.
+pub async fn upsert_koreader_progress(
+    pool: &SqlitePool,
+    user_id: i64,
+    update: &ProgressUpdate,
+    xpointer: Option<&str>,
+) -> Result<ProgressRecord, ProgressError> {
+    // BEGIN IMMEDIATE avoids a stale-snapshot 517 on concurrent writes (#1862).
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+    let record = upsert_koreader_progress_tx(&mut tx, user_id, update, xpointer).await?;
+    tx.commit().await?;
+    Ok(record)
+}
+
 /// Transaction-scoped [`upsert_progress`], for callers that batch it with
 /// other writes (e.g. the Kobo `put_state` handler) inside one shared
 /// `Transaction` so a mid-batch failure rolls back every entry, not just the

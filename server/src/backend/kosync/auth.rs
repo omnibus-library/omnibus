@@ -1,7 +1,8 @@
 //! `KosyncUser` — the `x-auth-user` / `x-auth-key` extractor for the kosync routes. The key is
 //! the MD5 of the password the reader generated in Settings. There is no account lockout (it
 //! would let a stranger lock a reader's sync by username); instead each IP gets a budget of
-//! failed checks, and a correct key is never charged against it.
+//! failed checks (an `Arc<RateLimiter>` layered on the router), and a correct key is never charged
+//! against it.
 
 use std::sync::Arc;
 
@@ -15,16 +16,7 @@ use omnibus_db as db;
 use super::error;
 use crate::backend::AppState;
 use crate::http_errors::internal;
-use crate::rate_limit::{client_ip, RateLimiter, RateLimits};
-
-/// Per-IP budget of failed credential checks, layered on the router as an `Extension`.
-pub(super) struct AuthFailures(RateLimiter);
-
-impl AuthFailures {
-    pub(super) fn new(limits: RateLimits) -> Self {
-        Self(RateLimiter::new().with_limits(limits))
-    }
-}
+use crate::rate_limit::{client_ip, RateLimiter};
 
 /// The reader a request authenticated as.
 pub(super) struct KosyncUser(pub i64);
@@ -46,10 +38,9 @@ impl FromRequestParts<AppState> for KosyncUser {
         }
         let failures = parts
             .extensions
-            .get::<Arc<AuthFailures>>()
-            .ok_or_else(|| internal("kosync auth", "missing AuthFailures extension"))?;
+            .get::<Arc<RateLimiter>>()
+            .ok_or_else(|| internal("kosync auth", "missing RateLimiter extension"))?;
         if !failures
-            .0
             .allow(client_ip(&parts.extensions, &parts.headers))
             .await
         {

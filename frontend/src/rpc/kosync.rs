@@ -24,15 +24,7 @@ pub async fn rpc_kosync_status() -> Result<KosyncStatus> {
 /// is returned.
 #[post("/api/rpc/kosync/generate", pool: PoolExt, user: AuthUser)]
 pub async fn rpc_generate_kosync_password() -> Result<KosyncPassword> {
-    let password = db::kosync::generate_kosync_password(&pool.0, user.id)
+    db::kosync::generate_kosync_password(&pool.0, user.id)
         .await
-        .map_err(|e| internal_rpc_error("generate kosync password", e))?;
-    match db::auth::get_user_by_id(&pool.0, user.id).await {
-        Ok(Some(account)) => Ok(KosyncPassword {
-            username: account.username,
-            password,
-        }),
-        Ok(None) => Err(ServerFnError::new("account not found").into()),
-        Err(e) => Err(internal_rpc_error("look up username", e).into()),
-    }
+        .map_err(|e| internal_rpc_error("generate kosync password", e).into())
 }

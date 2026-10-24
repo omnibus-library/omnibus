@@ -168,7 +168,10 @@ mod credentials {
 
     async fn reader_with_password(pool: &SqlitePool, name: &str) -> (i64, String) {
         let id = user(pool, name).await;
-        (id, generate_kosync_password(pool, id).await.unwrap())
+        (
+            id,
+            generate_kosync_password(pool, id).await.unwrap().password,
+        )
     }
 
     mod generate_kosync_password {
@@ -179,10 +182,20 @@ mod credentials {
             let pool = init_db("sqlite::memory:").await.unwrap();
             let id = user(&pool, "ada").await;
 
-            let password = generate_kosync_password(&pool, id).await.unwrap();
+            let password = generate_kosync_password(&pool, id).await.unwrap().password;
 
             let shape = regex::Regex::new(r"^[a-hjkmnp-z2-9]{5}(-[a-hjkmnp-z2-9]{5}){3}$").unwrap();
             assert!(shape.is_match(&password), "{password}");
+        }
+
+        #[tokio::test]
+        async fn returns_the_username_of_the_user_it_rotated() {
+            let pool = init_db("sqlite::memory:").await.unwrap();
+            let id = user(&pool, "ada").await;
+
+            let login = generate_kosync_password(&pool, id).await.unwrap();
+
+            assert_eq!(login.username, "ada");
         }
 
         #[tokio::test]
@@ -273,7 +286,7 @@ mod credentials {
             let pool = init_db("sqlite::memory:").await.unwrap();
             let (id, old) = reader_with_password(&pool, "ada").await;
 
-            let new = generate_kosync_password(&pool, id).await.unwrap();
+            let new = generate_kosync_password(&pool, id).await.unwrap().password;
 
             assert_eq!(
                 verify_kosync_key(&pool, "ada", &md5_hex(&old))

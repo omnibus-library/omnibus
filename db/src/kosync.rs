@@ -6,6 +6,7 @@ use std::{collections::BTreeSet, path::Path};
 
 use anyhow::Context;
 use md5::{Digest, Md5};
+use omnibus_shared::KosyncPassword;
 use sqlx::SqlitePool;
 
 use crate::{auth::hash_token, books::resolve_canonical_book_uuid, partial_md5::partial_md5};
@@ -61,18 +62,23 @@ pub async fn record_export_digest(
     Ok(())
 }
 
-/// A new kosync password for `user_id`, shown as `xxxxx-xxxxx-xxxxx-xxxxx` (~99 bits). Only the
-/// SHA-256 of its MD5 is stored, and generating again replaces it. Hashing is not Argon2 because the
-/// secret is server-generated and high-entropy, and it is checked on every sync request.
-pub async fn generate_kosync_password(pool: &SqlitePool, user_id: i64) -> anyhow::Result<String> {
+/// A new kosync password for `user_id` with the username it signs in as, the password shown as
+/// `xxxxx-xxxxx-xxxxx-xxxxx` (~99 bits). Only the SHA-256 of its MD5 is stored, and generating again
+/// replaces it. Hashing is not Argon2 because the secret is server-generated and high-entropy, and it
+/// is checked on every sync request.
+pub async fn generate_kosync_password(
+    pool: &SqlitePool,
+    user_id: i64,
+) -> anyhow::Result<KosyncPassword> {
     let password = random_password()?;
-    let updated = sqlx::query("UPDATE users SET kosync_key_hash = ? WHERE id = ?")
-        .bind(hash_token(&md5_hex(&password)))
-        .bind(user_id)
-        .execute(pool)
-        .await?;
-    anyhow::ensure!(updated.rows_affected() == 1, "user {user_id} not found");
-    Ok(password)
+    let username: Option<String> =
+        sqlx::query_scalar("UPDATE users SET kosync_key_hash = ? WHERE id = ? RETURNING username")
+            .bind(hash_token(&md5_hex(&password)))
+            .bind(user_id)
+            .fetch_optional(pool)
+            .await?;
+    let username = username.with_context(|| format!("user {user_id} not found"))?;
+    Ok(KosyncPassword { username, password })
 }
 
 /// Whether `user_id` has generated a kosync password.
@@ -92,13 +98,24 @@ pub async fn verify_kosync_key(
     username: &str,
     md5_hex: &str,
 ) -> anyhow::Result<Option<i64>> {
-    Ok(sqlx::query_scalar(
-        "SELECT id FROM users WHERE username = ? COLLATE NOCASE AND kosync_key_hash = ?",
-    )
-    .bind(username)
-    .bind(hash_token(&md5_hex.to_ascii_lowercase()))
-    .fetch_optional(pool)
-    .await?)
+    let found: Option<(i64, Option<Vec<u8>>)> =
+        sqlx::query_as("SELECT id, kosync_key_hash FROM users WHERE username = ? COLLATE NOCASE")
+            .bind(username)
+            .fetch_optional(pool)
+            .await?;
+    let presented = hash_token(&md5_hex.to_ascii_lowercase());
+    let user_id = found.as_ref().map(|(id, _)| *id);
+    let stored = found.and_then(|(_, hash)| hash);
+    // An unknown user or a reader with no key still pays one compare, so the answer's timing
+    // does not say which usernames exist.
+    let expected = stored.clone().unwrap_or_else(|| hash_token(""));
+    let matches = constant_time_eq(&presented, &expected);
+    Ok(user_id.filter(|_| matches && stored.is_some()))
+}
+
+/// Byte comparison that does not short-circuit on the first differing byte.
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
 fn md5_hex(text: &str) -> String {
