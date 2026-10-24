@@ -11,11 +11,20 @@ import {
   authorPhotoUrl,
   authorQuery,
   type Book,
-  type BookState,
   type FilterClause,
 } from "../../api";
 import { AuthorPhotoEdit } from "../../components/AuthorPhotoEdit/AuthorPhotoEdit";
-import { CoverImage } from "../../components/Cover/CoverImage";
+import {
+  BookCard,
+  BookGrid,
+  ProgressMeter,
+} from "../../components/Browse/BookShelf";
+import {
+  type BookStates,
+  currentBook,
+  shelfMeta,
+  tally,
+} from "../../components/Browse/bookStates";
 import { Loading, Stale } from "../../components/Loading/Loading";
 import { PageError, PageNotFound } from "../../components/PageState/PageState";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
@@ -24,15 +33,10 @@ import { readerHref } from "../../resume";
 import { saveShelfSelection } from "../../viewPrefs";
 import { AuthorMoreMenu } from "./AuthorMoreMenu";
 import {
-  type BookStates,
-  currentBook,
   currentMeta,
   groupBySeries,
   heroMeta,
   seriesCount,
-  shelfMeta,
-  tally,
-  tileBar,
 } from "./authorProgress";
 
 /** The portrait under its Edit button: the cached photo, else the name's initial; a photo that fails to load falls back to the initial for that URL. */
@@ -119,45 +123,6 @@ function AuthorHero({ author }: { author: AuthorPage }) {
   );
 }
 
-function CurrentCard({
-  book,
-  state,
-  meta,
-}: {
-  book: Book;
-  state: BookState;
-  meta: string;
-}) {
-  return (
-    <div className="au-current" data-testid="author-current">
-      <Link
-        to={`/books/${book.uuid}`}
-        className="au-current-cover"
-        aria-hidden="true"
-        tabIndex={-1}
-      >
-        <CoverImage book={book} sizes="64px" />
-      </Link>
-      <div className="au-current-body">
-        <Link to={`/books/${book.uuid}`} className="au-current-title">
-          {book.title}
-        </Link>
-        <p className="au-current-meta">{meta}</p>
-      </div>
-      {/* A physical-only copy can be marked reading, but there is nothing to open. */}
-      {book.formats.length > 0 && (
-        <Link
-          to={readerHref(book.uuid, book.formats, state.format, state.fileId)}
-          className="au-resume"
-          data-testid="author-resume"
-        >
-          Resume
-        </Link>
-      )}
-    </div>
-  );
-}
-
 /** How far the reader is through an author: one bar, the three counts, and the book in progress with a Resume. */
 function ReadingStrip({
   books,
@@ -169,24 +134,10 @@ function ReadingStrip({
   if (books.length === 0) return null;
   const t = tally(books, states);
   const current = currentBook(books, states);
-  const pct = (n: number) => Math.floor((n * 100) / books.length);
   return (
     <section className="au-reading" data-testid="author-reading">
       <div className="au-progress">
-        <div
-          className="au-meter"
-          role="img"
-          aria-label={`${t.finished} of ${books.length} finished, ${t.reading} reading`}
-        >
-          <span
-            className="au-meter-done"
-            style={{ width: `${pct(t.finished)}%` }}
-          />
-          <span
-            className="au-meter-now"
-            style={{ width: `${pct(t.reading)}%` }}
-          />
-        </div>
+        <ProgressMeter total={books.length} counts={t} />
         <p className="au-tally">
           <span>
             <b>{t.finished}</b> finished
@@ -200,48 +151,26 @@ function ReadingStrip({
         </p>
       </div>
       {current && (
-        <CurrentCard
+        <BookCard
           book={current.book}
-          state={current.state}
           meta={currentMeta(
             current.book,
             current.state,
             nowSecs(),
             -new Date().getTimezoneOffset() * 60,
           )}
+          action="Resume"
+          to={readerHref(
+            current.book.uuid,
+            current.book.formats,
+            current.state.format,
+            current.state.fileId,
+          )}
+          testid="author-current"
+          actionTestid="author-resume"
         />
       )}
     </section>
-  );
-}
-
-/** A row of covers, each with the reader's bar under it. */
-function ShelfGrid({ books, states }: { books: Book[]; states: BookStates }) {
-  return (
-    // biome-ignore lint/a11y/useSemanticElements: the Atrium grid styles divs; list elements would bring the browser's list margins and padding
-    <div className="au-grid" role="list">
-      {books.map((book) => {
-        const bar = tileBar(states.get(book.uuid));
-        return (
-          // biome-ignore lint/a11y/useSemanticElements: the list role sits on a wrapper so the tile stays a link to assistive tech
-          <div key={book.uuid} className="au-tile-item" role="listitem">
-            <Link
-              to={`/books/${book.uuid}`}
-              className="au-tile"
-              aria-label={`Open details for ${book.title}`}
-            >
-              <CoverImage book={book} sizes="(max-width: 720px) 30vw, 150px" />
-              <span className="au-tile-bar" aria-hidden="true">
-                {bar !== null && (
-                  <span className="au-tile-fill" style={{ width: `${bar}%` }} />
-                )}
-              </span>
-              <span className="au-tile-title">{book.title}</span>
-            </Link>
-          </div>
-        );
-      })}
-    </div>
   );
 }
 
@@ -274,7 +203,7 @@ function AuthorShelves({
               </Link>
             )}
           </header>
-          <ShelfGrid books={shelf.books} states={states} />
+          <BookGrid books={shelf.books} states={states} />
         </section>
       ))}
       {standalone.length > 0 && (
@@ -285,7 +214,7 @@ function AuthorShelves({
               {shelfMeta(standalone, states)}
             </span>
           </header>
-          <ShelfGrid books={standalone} states={states} />
+          <BookGrid books={standalone} states={states} />
         </section>
       )}
     </div>

@@ -41,7 +41,7 @@ const OWNERS = [
   ["components/FormatSwitcher/FormatSwitcher.css", (c) => c.startsWith("format-") || c.startsWith("kindle-toast") || c.startsWith("kobo-toast")],
   ["components/CopyButton/CopyButton.css", (c) => c.startsWith("copy-feedback")],
   ["pages/Settings/Settings.css", (c) => c.startsWith("profile-") || c.startsWith("pref-") || c.startsWith("hidden-format") || c === "kindle-delivery" || (c.startsWith("kobo-") && !c.startsWith("kobo-toast"))],
-  ["pages/Authors/Authors.css", (c) => c.startsWith("au-")],
+  ["components/Browse/Browse.css", (c) => c.startsWith("au-")],
   ["components/AuthorPhotoEdit/AuthorPhotoEdit.css", (c) => c.startsWith("author-photo-edit") || c.startsWith("author-delete-modal")],
   ["pages/Series/Series.css", (c) => c.startsWith("idx-")],
   ["pages/SeriesDetail/SeriesDetail.css", (c) => c === "series-cards" || c.startsWith("series-card")],

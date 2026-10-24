@@ -1,12 +1,16 @@
-import { letterFrag } from "./authorsOrder";
+import { letterFrag } from "./browseOrder";
+import "./Browse.css";
 
 const ALPHABET = [..."ABCDEFGHIJKLMNOPQRSTUVWXYZ", "#"];
 
-/** The A–Z rail beside the authors list: present letters jump to their group, absent ones are dimmed, hidden text. */
+/** The A–Z rail beside a browse list: present letters jump to their group, absent ones are dimmed, hidden text. */
 export function LetterRail({
+  testid,
   present,
   active,
 }: {
+  /** Each present letter's test id is `{testid}-letter-{L}`. */
+  testid: string;
   present: string[];
   active: string | null;
 }) {
@@ -32,7 +36,7 @@ export function LetterRail({
             className={on ? "au-rail-letter is-active" : "au-rail-letter"}
             href={`#letter-${frag}`}
             aria-current={on ? "location" : undefined}
-            data-testid={`authors-letter-${frag}`}
+            data-testid={`${testid}-letter-${frag}`}
           >
             {letter}
           </a>

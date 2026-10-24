@@ -1,60 +1,22 @@
 import type { AuthorId, AuthorReading, AuthorSummary } from "../../api";
-import type { DiscoveryPrefs } from "../../viewPrefs";
+import {
+  type BrowseSort,
+  dictionaryCmp,
+  dictionaryKey,
+  foldForMatch,
+  type Groups,
+  groupByLetter,
+  isNonAlphaKey,
+  letterForKey,
+} from "../../components/Browse/browseOrder";
 
-export type AuthorSort = DiscoveryPrefs["authors_sort"];
+export type AuthorSort = BrowseSort;
 
 /** The reader's progress per author id, once it has loaded. */
 export type ReadingMap = Map<number, AuthorReading>;
 
 export const byAuthor = (rows: AuthorReading[]): ReadingMap =>
   new Map(rows.map((r) => [r.authorId, r]));
-
-/** Where the authors list stands; a failed refresh keeps its rows, so only a first load that fails is "failed". */
-export type ListPhase = "loading" | "failed" | "empty" | "ready";
-
-export function listPhase(list: {
-  isPending: boolean;
-  isError: boolean;
-  hasRows: boolean;
-}): ListPhase {
-  if (list.isPending) return "loading";
-  if (list.hasRows) return "ready";
-  return list.isError ? "failed" : "empty";
-}
-
-/** Case and accents folded away, for matching typed text; mirrors `fold_for_match` in `shared/`. */
-export function foldForMatch(text: string): string {
-  return text.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase();
-}
-
-// Mirrors `dictionary_key` in `shared/src/sort_order.rs`: the comma files below every printable character.
-const dictionaryKey = (text: string) =>
-  foldForMatch(text).replaceAll(",", "\0");
-
-function compareCodePoints(a: string, b: string): number {
-  let i = 0;
-  let j = 0;
-  while (i < a.length && j < b.length) {
-    const x = a.codePointAt(i) ?? 0;
-    const y = b.codePointAt(j) ?? 0;
-    if (x !== y) return x - y;
-    i += x > 0xffff ? 2 : 1;
-    j += y > 0xffff ? 2 : 1;
-  }
-  return a.length - i - (b.length - j);
-}
-
-/**
- * The library's dictionary order: accents and case ignored, the plain spelling first
- * only when two names are otherwise identical. `fold` lets a sort memoise the key.
- */
-export function dictionaryCmp(
-  a: string,
-  b: string,
-  fold: (text: string) => string = dictionaryKey,
-): number {
-  return compareCodePoints(fold(a), fold(b)) || compareCodePoints(a, b);
-}
 
 /** A display name as `Surname, Given`; a name with a comma, or a mononym, is kept. */
 function authorSortKey(name: string): string {
@@ -74,20 +36,8 @@ export function creatorSortKey(fileAs: string | null, name: string): string {
 
 const sortKey = (a: AuthorSummary) => creatorSortKey(a.sort, a.name);
 
-const foldedInitial = (key: string) =>
-  foldForMatch([...key][0] ?? "").charAt(0);
-
-const isAlpha = (c: string) => /^[a-z]$/i.test(c);
-
 /** The letter an author files under: the folded initial of their key, or `#` outside A–Z. */
-export function firstLetter(a: AuthorSummary): string {
-  const initial = foldedInitial(sortKey(a));
-  return isAlpha(initial) ? initial.toUpperCase() : "#";
-}
-
-/** A URL-fragment-safe slug for a letter: `#` would start a second fragment. */
-export const letterFrag = (letter: string) =>
-  letter === "#" ? "hash" : letter;
+export const firstLetter = (a: AuthorSummary) => letterForKey(sortKey(a));
 
 /** The row's name as [surname, given names]; a mononym has no given names. */
 export function nameParts(a: AuthorSummary): [string, string] {
@@ -112,7 +62,7 @@ export function sortAuthors(
   };
   const rows = authors.map((author) => {
     const key = sortKey(author);
-    return { author, key, alpha: isAlpha(foldedInitial(key)) };
+    return { author, key, alpha: !isNonAlphaKey(key) };
   });
   type Row = (typeof rows)[number];
   // Non-alpha keys trail the alphabet under `#`, as their letter does.
@@ -128,12 +78,6 @@ export function sortAuthors(
   return rows.sort(order[sort]).map((row) => row.author);
 }
 
-export type AuthorGroups = {
-  filtered: AuthorSummary[];
-  /** The same rows bucketed by surname letter under the Surname sort, else empty. */
-  letters: [string, AuthorSummary[]][];
-};
-
 export type ListQuery = {
   text: string;
   sort: AuthorSort;
@@ -147,7 +91,7 @@ export type ListQuery = {
 export function computeAuthorGroups(
   all: AuthorSummary[],
   { text, sort, reading, onlyReading }: ListQuery,
-): AuthorGroups {
+): Groups<AuthorSummary> {
   const query = foldForMatch(text);
   let rows = query
     ? all.filter((a) => foldForMatch(a.name).includes(query))
@@ -156,16 +100,10 @@ export function computeAuthorGroups(
     rows = rows.filter((a) => (reading.get(a.id)?.reading ?? 0) > 0);
   }
   const filtered = sortAuthors(rows, sort, reading);
-  const letters: AuthorGroups["letters"] = [];
-  if (sort === "name") {
-    for (const a of filtered) {
-      const letter = firstLetter(a);
-      const last = letters.at(-1);
-      if (last?.[0] === letter) last[1].push(a);
-      else letters.push([letter, [a]]);
-    }
-  }
-  return { filtered, letters };
+  return {
+    filtered,
+    letters: sort === "name" ? groupByLetter(filtered, firstLetter) : [],
+  };
 }
 
 /** Whoever the reader read most recently, else the first by surname; `null` for an empty library. */
