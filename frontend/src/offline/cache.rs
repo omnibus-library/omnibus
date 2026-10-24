@@ -77,6 +77,11 @@ pub mod keys {
     pub fn shelves() -> String {
         "shelves".into()
     }
+    /// The prefix a shelf's detail and its pages share: [`shelf`] and [`shelf_page`],
+    /// not the unkeyed [`shelves`] list.
+    pub fn shelf_prefix() -> &'static str {
+        "shelf"
+    }
     /// `GET /api/shelves/{id}`.
     pub fn shelf(id: i64) -> String {
         format!("shelf:{id}")

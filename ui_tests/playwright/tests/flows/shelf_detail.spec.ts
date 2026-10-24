@@ -1,4 +1,6 @@
+import { scan } from "../contracts/scan";
 import { shelves } from "../contracts/shelves";
+import { type BookRef, buildExternalBook, notInLibrary } from "../data/scan";
 import { buildShelfUpdate, smartShelfBy } from "../data/shelves";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/pageFixtures";
@@ -54,6 +56,51 @@ test.describe("shelf page", () => {
 
     await test.step("check the book page shows", async () => {
       await bookDetailPage.assertDisplayedFor(alpha);
+    });
+  });
+
+  test("update the count after a check-in adds to this shelf", async ({
+    shelfPage,
+    adminWishlist,
+    createdBookUuids,
+    expectMutation,
+  }) => {
+    const overlay = shelfPage.checkInOverlay;
+    const book = buildExternalBook();
+    let before = 0;
+
+    await test.step("open the wishlist shelf", async () => {
+      await shelfPage.goto(adminWishlist.id);
+      await expect(shelfPage.count).toHaveText(/^\d+$/);
+      before = Number(await shelfPage.count.innerText());
+    });
+
+    await test.step("look up a book only the providers know", async () => {
+      await overlay.stubIsbnLookup(notInLibrary(book));
+      await shelfPage.topNav.openCheckIn();
+      await expectMutation(scan.resolve(book.isbn13), () =>
+        overlay.lookUpIsbn(book.isbn13),
+      );
+      await expect(overlay.chooseScreen).toBeVisible();
+    });
+
+    await test.step("add it to the wishlist", async () => {
+      const { response } = await expectMutation(scan.wishlist("manual"), () =>
+        overlay.addToWishlist(),
+      );
+      const added: BookRef = await response.json();
+      createdBookUuids.add(added.book_uuid);
+      await expect(overlay.successScreen).toContainText("On your wishlist");
+    });
+
+    await test.step("close the overlay", async () => {
+      await overlay.close();
+      await overlay.assertDismissed();
+    });
+
+    await test.step("check the shelf counts and lists the new book", async () => {
+      await expect(shelfPage.count).toHaveText(String(before + 1));
+      await expect(shelfPage.bookGrid).toContainText(book.title);
     });
   });
 

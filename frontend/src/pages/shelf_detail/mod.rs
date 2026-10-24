@@ -256,9 +256,12 @@ fn use_shelf_effects(
     // effect on navigation between shelves — see `BookDetailPage` for why.
     let shelf_url = server_url.clone();
     let generation = crate::use_cache_generation();
+    // A check-in from the overlay adds to a shelf without remounting this page.
+    let check_in_writes = crate::pages::use_check_in_writes();
     use_effect(use_reactive!(|id| {
         let url = shelf_url.clone();
         let _ = reload();
+        let _ = check_in_writes();
         // Re-run on cache-revalidation bumps; the refetch is a cache hit.
         let _ = generation();
         spawn(async move {
@@ -288,6 +291,7 @@ fn use_shelf_effects(
         let url = page_url.clone();
         let key = sort_key();
         let _ = reload();
+        let _ = check_in_writes();
         // Re-run on cache-revalidation bumps; the refetch is a cache hit.
         let _ = generation();
         spawn(async move {
