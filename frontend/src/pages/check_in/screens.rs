@@ -24,13 +24,15 @@ pub(super) fn ResolvingScreen() -> Element {
 }
 
 /// 3a — confirm checking in a copy of a book the library already holds, or
-/// one on the reader's own wishlist (`wishlisted`). A book only another reader
-/// wants also offers the reader a wishlist entry of their own.
+/// one on the reader's own wishlist (`wishlisted`). A book the lookup found held
+/// only by another reader's wish (`another_wish`) also offers the reader a
+/// wishlist entry of their own.
 #[component]
 pub(super) fn ConfirmScreen(
     book: ScanBook,
     isbn: String,
     wishlisted: bool,
+    another_wish: bool,
     state: FlowState,
     on_check_in: EventHandler<ScanBook>,
     on_wishlist: EventHandler<WishlistAddRequest>,
@@ -41,11 +43,13 @@ pub(super) fn ConfirmScreen(
     let viewer_id = use_current_user_summary()().map(|u| u.id);
     let target = book.clone();
     let wish_req = wishlist_request_for_book(&book, (state.found_via)());
-    let offers_wishlist = on_another_readers_wishlist(&book, wishlisted);
+    // Which button the shared busy flag belongs to, so only it shows the wait.
+    let mut wishing = use_signal(|| false);
+    let wish_pending = busy() && wishing();
     rsx! {
         div { class: "check-in-screen", "data-testid": "check-in-confirm",
             h1 { "Check in this copy" }
-            p { class: "subtitle", {confirm_subtitle(&book, wishlisted, viewer_id)} }
+            p { class: "subtitle", {confirm_subtitle(&book, wishlisted, another_wish, viewer_id)} }
             LibraryBookCard { book }
             div { class: "settings-field",
                 label { r#for: "check-in-note", "Edition note (optional)" }
@@ -65,19 +69,26 @@ pub(super) fn ConfirmScreen(
                     r#type: "button",
                     class: "btn primary",
                     disabled: busy(),
-                    "aria-busy": if busy() { "true" } else { "false" },
+                    "aria-busy": if busy() && !wish_pending { "true" } else { "false" },
                     "data-testid": "check-in-confirm-submit",
-                    onclick: move |_| on_check_in.call(target.clone()),
-                    BusyLabel { busy: busy(), label: "Check in", busy_label: "Checking in\u{2026}" }
+                    onclick: move |_| {
+                        wishing.set(false);
+                        on_check_in.call(target.clone());
+                    },
+                    BusyLabel { busy: busy() && !wish_pending, label: "Check in", busy_label: "Checking in\u{2026}" }
                 }
-                if offers_wishlist {
+                if another_wish {
                     button {
                         r#type: "button",
                         class: "btn ghost",
                         disabled: busy(),
+                        "aria-busy": if wish_pending { "true" } else { "false" },
                         "data-testid": "check-in-confirm-wishlist",
-                        onclick: move |_| on_wishlist.call(wish_req.clone()),
-                        "Add to my wishlist"
+                        onclick: move |_| {
+                            wishing.set(true);
+                            on_wishlist.call(wish_req.clone());
+                        },
+                        BusyLabel { busy: wish_pending, label: "Add to my wishlist", busy_label: "Adding\u{2026}" }
                     }
                 }
                 button {
@@ -93,18 +104,22 @@ pub(super) fn ConfirmScreen(
     }
 }
 
-/// Whether the library holds the book only because another reader wants it: no
-/// file, no copy, and not on the viewer's own wishlist.
-pub(super) fn on_another_readers_wishlist(book: &ScanBook, wishlisted: bool) -> bool {
-    !book.has_files && !book.has_physical && !wishlisted
+/// Whether nothing but a wish holds the book in the library: no file and no copy.
+/// The exact-ISBN lookup reads that as another reader's wish, since the
+/// reader's own would have come back as `on_wishlist`.
+pub(super) fn held_only_by_a_wish(book: &ScanBook) -> bool {
+    !book.has_files && !book.has_physical
 }
 
 /// The confirm screen's one-line framing of what the copy is being added
 /// to, worded from the book's actual holdings and, for a print copy, whose it
 /// is: copies belong to the household, so the line says who already holds one.
+/// `another_wish` is only true when the lookup proved another reader wants the
+/// book; a book reached by picking from a list gets the neutral line instead.
 pub(super) fn confirm_subtitle(
     book: &ScanBook,
     wishlisted: bool,
+    another_wish: bool,
     viewer_id: Option<i64>,
 ) -> String {
     if wishlisted {
@@ -116,46 +131,37 @@ pub(super) fn confirm_subtitle(
             .to_string();
     }
     if !book.has_physical {
-        return "Not in your library \u{2014} it's on another reader's wishlist.".to_string();
+        return if another_wish {
+            "Not in your library \u{2014} it's on another reader's wishlist.".to_string()
+        } else {
+            "This one is in your library without a file \u{2014} this adds your print copy."
+                .to_string()
+        };
     }
-    match print_copy_holder(book, viewer_id) {
-        PrintCopyHolder::Viewer => {
+    print_copy_line(book, viewer_id)
+}
+
+/// Who already holds a print copy: the viewer when they filed one, else the
+/// first reader still named on one, else the household. An unknown viewer is
+/// never guessed at.
+fn print_copy_line(book: &ScanBook, viewer_id: Option<i64>) -> String {
+    let filers = &book.copy_filers;
+    match viewer_id {
+        Some(id) if filers.iter().any(|f| f.user_id == Some(id)) => {
             "You already have a print copy of this one \u{2014} this adds another.".to_string()
         }
-        PrintCopyHolder::Reader(name) => {
-            format!("{name} already has a print copy of this one \u{2014} this adds yours.")
-        }
-        PrintCopyHolder::Household => {
-            "The household already has a print copy of this one \u{2014} this adds yours."
-                .to_string()
-        }
+        Some(_) => match filers.iter().find_map(|f| f.name.as_deref()) {
+            Some(name) => {
+                format!("{name} already has a print copy of this one \u{2014} this adds yours.")
+            }
+            None => household_line(),
+        },
+        None => household_line(),
     }
 }
 
-/// Whose print copy a paper-only book carries, as far as the filers say.
-enum PrintCopyHolder {
-    Viewer,
-    Reader(String),
-    Household,
-}
-
-/// The viewer when they filed a copy, else the first reader still named on one,
-/// else the household. An unknown viewer is never guessed at.
-fn print_copy_holder(book: &ScanBook, viewer_id: Option<i64>) -> PrintCopyHolder {
-    let Some(viewer_id) = viewer_id else {
-        return PrintCopyHolder::Household;
-    };
-    if book
-        .copy_filers
-        .iter()
-        .any(|f| f.user_id == Some(viewer_id))
-    {
-        return PrintCopyHolder::Viewer;
-    }
-    match book.copy_filers.iter().find_map(|f| f.name.clone()) {
-        Some(name) => PrintCopyHolder::Reader(name),
-        None => PrintCopyHolder::Household,
-    }
+fn household_line() -> String {
+    "The household already has a print copy of this one \u{2014} this adds yours.".to_string()
 }
 
 /// 2b — the fuzzy (title, author) hits. Never auto-resolved: the reader picks

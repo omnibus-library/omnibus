@@ -22,6 +22,8 @@ export type Stage =
       book: ScanBook;
       isbn: string;
       wishlisted: boolean;
+      /** The exact-ISBN lookup found the book held only by another reader's wish; a pick from a list never claims that. */
+      anotherWish: boolean;
       via: FoundVia;
     }
   | {
@@ -50,6 +52,7 @@ export function stageFor(
         book: outcome.book,
         isbn,
         wishlisted: true,
+        anotherWish: false,
         via,
       };
     case "in_library_unowned":
@@ -58,6 +61,7 @@ export function stageFor(
         book: outcome.book,
         isbn,
         wishlisted: false,
+        anotherWish: heldOnlyByAWish(outcome.book),
         via,
       };
     case "close_match":
@@ -120,9 +124,9 @@ export const wishlistSource = {
   search: "search",
 } satisfies Record<FoundVia, WishlistAddRequest["source"]>;
 
-/** Whether the library holds the book only because another reader wants it: no file, no copy, and not on the viewer's own wishlist. */
-export const onAnotherReadersWishlist = (book: ScanBook, wishlisted: boolean) =>
-  !book.has_files && !book.has_physical && !wishlisted;
+/** Whether nothing but a wish holds the book: no file and no copy. The exact-ISBN lookup reads that as another reader's wish, since the reader's own comes back as `on_wishlist`. */
+export const heldOnlyByAWish = (book: ScanBook) =>
+  !book.has_files && !book.has_physical;
 
 /** The wishlist request for a library book that only another reader wants, filed against the existing book. */
 export const wishlistRequestForBook = (
@@ -145,10 +149,11 @@ function printCopyLine(book: ScanBook, viewerId: number | null): string {
     : "The household already has a print copy of this one — this adds yours.";
 }
 
-/** The confirm screen's framing of what the copy is added to, worded from the book's holdings and, for a print copy, whose it is. */
+/** The confirm screen's framing of what the copy is added to, worded from the book's holdings and, for a print copy, whose it is. `anotherWish` is only true when the lookup proved another reader wants the book. */
 export function confirmSubtitle(
   book: ScanBook,
   wishlisted: boolean,
+  anotherWish: boolean,
   viewerId: number | null,
 ): string {
   if (wishlisted) {
@@ -157,9 +162,10 @@ export function confirmSubtitle(
   if (book.has_files) {
     return "You already have this one digitally — this adds your print copy.";
   }
-  return book.has_physical
-    ? printCopyLine(book, viewerId)
-    : "Not in your library — it's on another reader's wishlist.";
+  if (book.has_physical) return printCopyLine(book, viewerId);
+  return anotherWish
+    ? "Not in your library — it's on another reader's wishlist."
+    : "This one is in your library without a file — this adds your print copy.";
 }
 
 /** The close-match screen's four strings, by whether it offers one candidate or several and how the ISBN was reached. */

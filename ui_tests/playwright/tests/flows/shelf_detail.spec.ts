@@ -99,8 +99,11 @@ test.describe("shelf page", () => {
     });
 
     await test.step("check the shelf counts and lists the new book", async () => {
-      await expect(shelfPage.count).toHaveText(String(before + 1));
+      // Other specs write the admin's wishlist too, so the count only has to rise.
       await expect(shelfPage.bookGrid).toContainText(book.title);
+      await expect
+        .poll(async () => Number(await shelfPage.count.innerText()))
+        .toBeGreaterThan(before);
     });
   });
 

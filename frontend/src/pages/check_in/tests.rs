@@ -5,9 +5,7 @@
 
 use super::entry::apply_key;
 use super::link::{scan_book_from_hit, truncation_note};
-use super::screens::{
-    byline, confirm_subtitle, meta_details, on_another_readers_wishlist, CloseMatchCopy,
-};
+use super::screens::{byline, confirm_subtitle, held_only_by_a_wish, meta_details, CloseMatchCopy};
 use super::*;
 use omnibus_shared::{CopyFiler, MetadataProvider, PaletteBookHit};
 
@@ -138,6 +136,7 @@ fn stage_for_on_wishlist_opens_the_check_in_confirm_marked_as_wishlisted() {
         book,
         isbn,
         wishlisted,
+        ..
     }) = stage_for(outcome, "9780441013593")
     else {
         panic!("expected the confirm stage");
@@ -154,6 +153,7 @@ fn stage_for_in_library_unowned_opens_the_check_in_confirm() {
         book,
         isbn,
         wishlisted,
+        ..
     }) = stage_for(outcome, "9780441013593")
     else {
         panic!("expected the confirm stage");
@@ -201,14 +201,14 @@ fn stage_for_close_match_flattens_the_wire_head_and_tail_into_one_picker() {
 #[test]
 fn confirm_subtitle_claims_a_digital_copy_only_for_a_book_with_a_file() {
     let digital = scan_book();
-    assert!(confirm_subtitle(&digital, false, None).contains("digitally"));
+    assert!(confirm_subtitle(&digital, false, false, None).contains("digitally"));
 
     let paper_only = ScanBook {
         has_files: false,
         has_physical: true,
         ..scan_book()
     };
-    let paper = confirm_subtitle(&paper_only, false, None);
+    let paper = confirm_subtitle(&paper_only, false, false, None);
     assert!(!paper.contains("digitally"), "got: {paper}");
     assert!(paper.contains("print copy"), "got: {paper}");
 }
@@ -220,7 +220,7 @@ fn confirm_subtitle_says_a_book_nobody_holds_is_on_another_readers_wishlist() {
         has_physical: false,
         ..scan_book()
     };
-    let line = confirm_subtitle(&wish_only, false, Some(1));
+    let line = confirm_subtitle(&wish_only, false, true, Some(1));
     assert_eq!(
         line,
         "Not in your library \u{2014} it's on another reader's wishlist."
@@ -246,7 +246,7 @@ fn paper_only_filed_by(filers: &[(Option<i64>, Option<&str>)]) -> ScanBook {
 fn confirm_subtitle_says_the_viewer_already_has_a_print_copy_when_they_filed_one() {
     let book = paper_only_filed_by(&[(Some(2), Some("Sam")), (Some(1), Some("Ada"))]);
     assert_eq!(
-        confirm_subtitle(&book, false, Some(1)),
+        confirm_subtitle(&book, false, false, Some(1)),
         "You already have a print copy of this one \u{2014} this adds another."
     );
 }
@@ -256,7 +256,7 @@ fn confirm_subtitle_names_the_first_named_filer_when_the_viewer_filed_none() {
     // A deleted account's copy leads the list but names nobody.
     let book = paper_only_filed_by(&[(None, None), (Some(2), Some("Sam"))]);
     assert_eq!(
-        confirm_subtitle(&book, false, Some(1)),
+        confirm_subtitle(&book, false, false, Some(1)),
         "Sam already has a print copy of this one \u{2014} this adds yours."
     );
 }
@@ -266,7 +266,7 @@ fn confirm_subtitle_says_the_household_has_a_print_copy_when_no_filer_is_named()
     for filers in [vec![], vec![(None, None)]] {
         let book = paper_only_filed_by(&filers);
         assert_eq!(
-            confirm_subtitle(&book, false, Some(1)),
+            confirm_subtitle(&book, false, false, Some(1)),
             "The household already has a print copy of this one \u{2014} this adds yours."
         );
     }
@@ -276,25 +276,61 @@ fn confirm_subtitle_says_the_household_has_a_print_copy_when_no_filer_is_named()
 fn confirm_subtitle_does_not_guess_who_filed_a_copy_while_the_viewer_is_unknown() {
     let book = paper_only_filed_by(&[(Some(2), Some("Sam"))]);
     assert_eq!(
-        confirm_subtitle(&book, false, None),
+        confirm_subtitle(&book, false, false, None),
         "The household already has a print copy of this one \u{2014} this adds yours."
     );
 }
 
 #[test]
-fn on_another_readers_wishlist_holds_only_for_a_book_with_no_file_copy_or_own_wish() {
+fn held_only_by_a_wish_holds_only_for_a_book_with_no_file_and_no_copy() {
     let wish_only = ScanBook {
         has_files: false,
         has_physical: false,
         ..scan_book()
     };
-    assert!(on_another_readers_wishlist(&wish_only, false));
-    assert!(!on_another_readers_wishlist(&wish_only, true));
-    assert!(!on_another_readers_wishlist(&scan_book(), false));
-    assert!(!on_another_readers_wishlist(
-        &paper_only_filed_by(&[]),
-        false
+    assert!(held_only_by_a_wish(&wish_only));
+    assert!(!held_only_by_a_wish(&scan_book()));
+    assert!(!held_only_by_a_wish(&paper_only_filed_by(&[])));
+}
+
+#[test]
+fn stage_for_blames_another_readers_wish_only_for_an_unowned_book_nobody_holds() {
+    let wish_only = ScanBook {
+        has_files: false,
+        has_physical: false,
+        ..scan_book()
+    };
+    let stage = stage_for(ScanOutcome::InLibraryUnowned { book: wish_only }, "isbn");
+    assert!(matches!(
+        stage,
+        Some(Stage::Confirm {
+            another_wish: true,
+            ..
+        })
     ));
+    let filed = stage_for(ScanOutcome::InLibraryUnowned { book: scan_book() }, "isbn");
+    assert!(matches!(
+        filed,
+        Some(Stage::Confirm {
+            another_wish: false,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn confirm_subtitle_stays_neutral_for_a_wishless_book_picked_from_the_library_search() {
+    let hit = PaletteBookHit {
+        formats: Vec::new(),
+        has_physical: false,
+        ..palette_hit()
+    };
+    let book = scan_book_from_hit(&hit);
+
+    let line = confirm_subtitle(&book, false, false, Some(1));
+
+    assert!(!line.contains("another reader"), "got: {line}");
+    assert!(line.contains("without a file"), "got: {line}");
 }
 
 #[test]
@@ -312,7 +348,7 @@ fn confirm_subtitle_says_a_wishlisted_book_comes_off_the_wishlist() {
         has_physical: false,
         ..scan_book()
     };
-    let line = confirm_subtitle(&wished, true, None);
+    let line = confirm_subtitle(&wished, true, false, None);
     assert!(line.contains("on your wishlist"), "got: {line}");
     assert!(line.contains("takes it off"), "got: {line}");
 }
@@ -567,7 +603,7 @@ fn scan_book_from_hit_reports_a_paper_only_book_as_a_print_copy() {
     let book = scan_book_from_hit(&hit);
     assert!(!book.has_files);
     assert!(book.has_physical);
-    assert!(confirm_subtitle(&book, false, None).contains("print copy of this one"));
+    assert!(confirm_subtitle(&book, false, false, None).contains("print copy of this one"));
 }
 
 #[test]

@@ -219,6 +219,8 @@ export function CheckIn() {
             book={stage.book}
             isbn={stage.isbn}
             wishlisted={stage.wishlisted}
+            anotherWish={stage.anotherWish}
+            wishing={wishlist.isPending}
             via={stage.via}
             viewerId={viewerId}
             note={note}
@@ -243,6 +245,7 @@ export function CheckIn() {
                 book,
                 isbn: stage.scanned.isbn13,
                 wishlisted: false,
+                anotherWish: false,
                 via: stage.via,
               })
             }
@@ -275,6 +278,7 @@ export function CheckIn() {
                 book,
                 isbn: stage.isbn,
                 wishlisted: false,
+                anotherWish: false,
                 via: stage.via,
               })
             }

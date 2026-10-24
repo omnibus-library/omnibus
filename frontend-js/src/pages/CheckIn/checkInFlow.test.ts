@@ -7,10 +7,10 @@ import {
   closeMatchCopy,
   confirmSubtitle,
   foundViaLine,
+  heldOnlyByAWish,
   isbnRejection,
   manualFallback,
   metaDetails,
-  onAnotherReadersWishlist,
   someIfFilled,
   stageFor,
   truncationNote,
@@ -71,6 +71,7 @@ describe("stageFor", () => {
       book,
       isbn: "9780134685991",
       wishlisted,
+      anotherWish: false,
       via: "scan",
     });
   });
@@ -159,13 +160,13 @@ describe("confirmSubtitle", () => {
     [aScanBook({ has_files: false, has_physical: true }), false, "print copy"],
     [aScanBook(), true, "takes it off"],
   ])("words the holdings of %#", (book, wishlisted, fragment) => {
-    expect(confirmSubtitle(book, wishlisted, 1)).toContain(fragment);
+    expect(confirmSubtitle(book, wishlisted, false, 1)).toContain(fragment);
   });
 
   it("says a book nobody holds is on another reader's wishlist", () => {
     const wishOnly = aScanBook({ has_files: false, has_physical: false });
 
-    expect(confirmSubtitle(wishOnly, false, 1)).toBe(
+    expect(confirmSubtitle(wishOnly, false, true, 1)).toBe(
       "Not in your library — it's on another reader's wishlist.",
     );
   });
@@ -182,7 +183,7 @@ describe("confirmSubtitle", () => {
         { user_id: 1, name: "Ada" },
       ]);
 
-      expect(confirmSubtitle(book, false, 1)).toBe(
+      expect(confirmSubtitle(book, false, false, 1)).toBe(
         "You already have a print copy of this one — this adds another.",
       );
     });
@@ -193,7 +194,7 @@ describe("confirmSubtitle", () => {
         { user_id: 2, name: "Sam" },
       ]);
 
-      expect(confirmSubtitle(book, false, 1)).toBe(
+      expect(confirmSubtitle(book, false, false, 1)).toBe(
         "Sam already has a print copy of this one — this adds yours.",
       );
     });
@@ -202,7 +203,7 @@ describe("confirmSubtitle", () => {
       ["no filers", []],
       ["only a deleted filer", [{ user_id: null, name: null }]],
     ])("is the household's with %s", (_case, filers) => {
-      expect(confirmSubtitle(paperOnly(filers), false, 1)).toBe(
+      expect(confirmSubtitle(paperOnly(filers), false, false, 1)).toBe(
         "The household already has a print copy of this one — this adds yours.",
       );
     });
@@ -210,26 +211,52 @@ describe("confirmSubtitle", () => {
     it("does not guess who filed it while the viewer is unknown", () => {
       const book = paperOnly([{ user_id: 2, name: "Sam" }]);
 
-      expect(confirmSubtitle(book, false, null)).toBe(
+      expect(confirmSubtitle(book, false, false, null)).toBe(
         "The household already has a print copy of this one — this adds yours.",
       );
     });
   });
 });
 
-describe("onAnotherReadersWishlist", () => {
-  it("holds only for a book with no file, no copy and no wish of the viewer's", () => {
+describe("heldOnlyByAWish", () => {
+  it("holds only for a book with no file and no copy", () => {
     const wishOnly = aScanBook({ has_files: false, has_physical: false });
 
-    expect(onAnotherReadersWishlist(wishOnly, false)).toBe(true);
-    expect(onAnotherReadersWishlist(wishOnly, true)).toBe(false);
-    expect(onAnotherReadersWishlist(aScanBook(), false)).toBe(false);
+    expect(heldOnlyByAWish(wishOnly)).toBe(true);
+    expect(heldOnlyByAWish(aScanBook())).toBe(false);
     expect(
-      onAnotherReadersWishlist(
-        aScanBook({ has_files: false, has_physical: true }),
-        false,
-      ),
+      heldOnlyByAWish(aScanBook({ has_files: false, has_physical: true })),
     ).toBe(false);
+  });
+});
+
+describe("stageFor", () => {
+  const wishOnly = aScanBook({ has_files: false, has_physical: false });
+
+  it("blames another reader's wish for an unowned book nobody holds", () => {
+    expect(
+      stageFor({ kind: "in_library_unowned", book: wishOnly }, "9780", "isbn"),
+    ).toMatchObject({ kind: "confirm", anotherWish: true });
+  });
+
+  it("does not blame anyone for a book with a file", () => {
+    expect(
+      stageFor(
+        { kind: "in_library_unowned", book: aScanBook() },
+        "9780",
+        "isbn",
+      ),
+    ).toMatchObject({ kind: "confirm", anotherWish: false });
+  });
+});
+
+describe("confirmSubtitle without a proven wish", () => {
+  it("stays neutral for a wishless book picked from the library search", () => {
+    const wishOnly = aScanBook({ has_files: false, has_physical: false });
+
+    expect(confirmSubtitle(wishOnly, false, false, 1)).toBe(
+      "This one is in your library without a file — this adds your print copy.",
+    );
   });
 });
 
