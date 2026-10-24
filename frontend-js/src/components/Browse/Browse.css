@@ -615,7 +615,7 @@
     min-height: 0;
   }
   .au-page[data-pane="index"] .au-detail,
-  .au-page[data-pane="author"] .au-list {
+  .au-page:not([data-pane="index"]) .au-list {
     display: none;
   }
   .au-list {

@@ -1,13 +1,11 @@
 import type { AuthorId, AuthorReading, AuthorSummary } from "../../api";
 import {
   type BrowseSort,
-  dictionaryCmp,
-  dictionaryKey,
   foldForMatch,
   type Groups,
   groupByLetter,
-  isNonAlphaKey,
   letterForKey,
+  sortRows,
 } from "../../components/Browse/browseOrder";
 
 export type AuthorSort = BrowseSort;
@@ -52,30 +50,11 @@ export function sortAuthors(
   sort: AuthorSort,
   reading: ReadingMap | null,
 ): AuthorSummary[] {
-  const folds = new Map<string, string>();
-  const fold = (text: string) => {
-    const known = folds.get(text);
-    if (known !== undefined) return known;
-    const key = dictionaryKey(text);
-    folds.set(text, key);
-    return key;
-  };
-  const rows = authors.map((author) => {
-    const key = sortKey(author);
-    return { author, key, alpha: !isNonAlphaKey(key) };
+  return sortRows(authors, sort, {
+    key: sortKey,
+    count: (a) => a.bookCount,
+    lastRead: (a) => reading?.get(a.id)?.lastReadAt ?? -1,
   });
-  type Row = (typeof rows)[number];
-  // Non-alpha keys trail the alphabet under `#`, as their letter does.
-  const byName = (a: Row, b: Row) =>
-    Number(!a.alpha) - Number(!b.alpha) || dictionaryCmp(a.key, b.key, fold);
-  const lastRead = (row: Row) => reading?.get(row.author.id)?.lastReadAt ?? -1;
-  const order = {
-    name: byName,
-    book_count: (a: Row, b: Row) =>
-      b.author.bookCount - a.author.bookCount || byName(a, b),
-    recent: (a: Row, b: Row) => lastRead(b) - lastRead(a) || byName(a, b),
-  } satisfies Record<AuthorSort, (a: Row, b: Row) => number>;
-  return rows.sort(order[sort]).map((row) => row.author);
 }
 
 export type ListQuery = {

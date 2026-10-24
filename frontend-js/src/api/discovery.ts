@@ -11,6 +11,7 @@ import {
   getPutAuthorPhotoUrl,
   getPutAuthorPhotoUrlUrl,
   getSeriesById,
+  getSeriesReading,
   listSeries,
   postAuthorPhotoScan,
 } from "./generated/omnibus";
@@ -19,6 +20,7 @@ import type {
   AuthorSummary as AuthorSummaryWire,
   BookReading as BookReadingWire,
   ProgressFormat,
+  SeriesReading as SeriesReadingWire,
   SeriesSummary as SeriesSummaryWire,
 } from "./generated/schemas";
 
@@ -164,7 +166,8 @@ export async function scanAuthorPhoto(id: AuthorId): Promise<boolean> {
   return ok(await postAuthorPhotoScan(id)).resolved;
 }
 
-function toSeriesSummary(wire: SeriesSummaryWire) {
+/** The screen's shape of one `GET /api/series` entry. */
+export function toSeriesSummary(wire: SeriesSummaryWire) {
   return {
     id: wire.id as SeriesId,
     name: wire.name,
@@ -185,6 +188,28 @@ export async function fetchSeriesList(): Promise<SeriesSummary[]> {
 export const seriesListQuery = queryOptions({
   queryKey: ["series"],
   queryFn: fetchSeriesList,
+});
+
+export function toSeriesReading(wire: SeriesReadingWire) {
+  return {
+    seriesId: wire.series_id as SeriesId,
+    finished: wire.finished,
+    reading: wire.reading,
+    lastReadAt: wire.last_read_at ?? null,
+  };
+}
+
+/** The reader's own progress through one series' books. */
+export type SeriesReading = ReturnType<typeof toSeriesReading>;
+
+/** The reader's progress through each series they have started. */
+export async function fetchSeriesReading(): Promise<SeriesReading[]> {
+  return ok(await getSeriesReading()).map(toSeriesReading);
+}
+
+export const seriesReadingQuery = queryOptions({
+  queryKey: ["series", "reading"],
+  queryFn: fetchSeriesReading,
 });
 
 /** A book on a series page: the listing shape, plus who is credited and in what role. */

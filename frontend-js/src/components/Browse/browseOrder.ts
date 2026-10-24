@@ -72,6 +72,44 @@ export function letterForKey(key: string): string {
 export const letterFrag = (letter: string) =>
   letter === "#" ? "hash" : letter;
 
+/** What a row sorts by: its filing key, its book count, and when the reader last read it (`-1` for never). */
+export type RowOrder<T> = {
+  key: (row: T) => string;
+  count: (row: T) => number;
+  lastRead: (row: T) => number;
+};
+
+/** `rows` ordered along `sort`; the non-alphabetic bucket trails the alphabet under `#`, as its letter does. */
+export function sortRows<T>(
+  rows: T[],
+  sort: BrowseSort,
+  { key, count, lastRead }: RowOrder<T>,
+): T[] {
+  const folds = new Map<string, string>();
+  const fold = (text: string) => {
+    const known = folds.get(text);
+    if (known !== undefined) return known;
+    const folded = dictionaryKey(text);
+    folds.set(text, folded);
+    return folded;
+  };
+  const keyed = rows.map((row) => {
+    const k = key(row);
+    return { row, key: k, alpha: !isNonAlphaKey(k) };
+  });
+  type Keyed = (typeof keyed)[number];
+  const byName = (a: Keyed, b: Keyed) =>
+    Number(!a.alpha) - Number(!b.alpha) || dictionaryCmp(a.key, b.key, fold);
+  const order = {
+    name: byName,
+    book_count: (a: Keyed, b: Keyed) =>
+      count(b.row) - count(a.row) || byName(a, b),
+    recent: (a: Keyed, b: Keyed) =>
+      lastRead(b.row) - lastRead(a.row) || byName(a, b),
+  } satisfies Record<BrowseSort, (a: Keyed, b: Keyed) => number>;
+  return keyed.sort(order[sort]).map((k) => k.row);
+}
+
 /** Buckets consecutive same-letter rows of an already-sorted list. */
 export function groupByLetter<T>(
   sorted: T[],
