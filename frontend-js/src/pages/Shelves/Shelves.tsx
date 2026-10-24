@@ -28,7 +28,6 @@ import {
 } from "./shelvesIndex";
 import "../../components/Chip/Chip.css";
 import "../../components/DiscPage/DiscPage.css";
-import "../Series/Series.css";
 import "./Shelves.css";
 
 const SORTS = [

@@ -11,6 +11,7 @@ import {
   getPutAuthorPhotoUrl,
   getPutAuthorPhotoUrlUrl,
   getSeriesById,
+  getSeriesReading,
   listSeries,
   postAuthorPhotoScan,
 } from "./generated/omnibus";
@@ -19,6 +20,7 @@ import type {
   AuthorSummary as AuthorSummaryWire,
   BookReading as BookReadingWire,
   ProgressFormat,
+  SeriesReading as SeriesReadingWire,
   SeriesSummary as SeriesSummaryWire,
 } from "./generated/schemas";
 
@@ -164,7 +166,8 @@ export async function scanAuthorPhoto(id: AuthorId): Promise<boolean> {
   return ok(await postAuthorPhotoScan(id)).resolved;
 }
 
-function toSeriesSummary(wire: SeriesSummaryWire) {
+/** The screen's shape of one `GET /api/series` entry. */
+export function toSeriesSummary(wire: SeriesSummaryWire) {
   return {
     id: wire.id as SeriesId,
     name: wire.name,
@@ -187,8 +190,44 @@ export const seriesListQuery = queryOptions({
   queryFn: fetchSeriesList,
 });
 
-/** A series' name, how many of its books the library holds, and those books in reading order; `null` when no series has that id. */
-export async function fetchSeries(id: SeriesId) {
+export function toSeriesReading(wire: SeriesReadingWire) {
+  return {
+    seriesId: wire.series_id as SeriesId,
+    finished: wire.finished,
+    reading: wire.reading,
+    lastReadAt: wire.last_read_at ?? null,
+  };
+}
+
+/** The reader's own progress through one series' books. */
+export type SeriesReading = ReturnType<typeof toSeriesReading>;
+
+/** The reader's progress through each series they have started. */
+export async function fetchSeriesReading(): Promise<SeriesReading[]> {
+  return ok(await getSeriesReading()).map(toSeriesReading);
+}
+
+export const seriesReadingQuery = queryOptions({
+  queryKey: ["series", "reading"],
+  queryFn: fetchSeriesReading,
+});
+
+/** A book on a series page: the listing shape, plus who is credited and in what role. */
+export type SeriesBook = Book & {
+  creators: { name: string; id: AuthorId | null; role: string | null }[];
+};
+
+export type SeriesPage = {
+  id: SeriesId;
+  name: string;
+  bookCount: number;
+  books: SeriesBook[];
+  /** The reader's state on each book they have opened or marked, by book uuid. */
+  reading: Map<string, BookState>;
+};
+
+/** A series, how many of its books the library holds, those books in reading order and the reader's state on each; `null` when no series has that id. */
+export async function fetchSeries(id: SeriesId): Promise<SeriesPage | null> {
   const res = await getSeriesById(id);
   if (res.status === 404) return null;
   const data = ok(res);
@@ -198,8 +237,15 @@ export async function fetchSeries(id: SeriesId) {
     bookCount: data.book_count,
     books: data.books.map((b) => ({
       ...toBook(b),
-      description: b.description ?? null,
+      creators: b.creators.map((c) => ({
+        name: c.name,
+        id: c.id == null ? null : (c.id as AuthorId),
+        role: c.role ?? null,
+      })),
     })),
+    reading: new Map(
+      (data.reading ?? []).map((r) => [r.book_uuid, toBookState(r)]),
+    ),
   };
 }
 

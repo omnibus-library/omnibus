@@ -1,5 +1,5 @@
 // Usage: node tools/extract-atrium.cjs [--write] [--force]
-// Copies the atrium.css + loading.css + filter_bar.css + authors.css rules the React markup can match into
+// Copies the atrium.css + loading.css + filter_bar.css + authors.css + series.css rules the React markup can match into
 // per-component files: a selector is kept when every class it needs appears in
 // src/**/*.tsx, and filed under the owner of its first class (OWNERS below).
 // --write creates the CSS files that don't exist yet; --force rewrites them all.
@@ -41,10 +41,11 @@ const OWNERS = [
   ["components/FormatSwitcher/FormatSwitcher.css", (c) => c.startsWith("format-") || c.startsWith("kindle-toast") || c.startsWith("kobo-toast")],
   ["components/CopyButton/CopyButton.css", (c) => c.startsWith("copy-feedback")],
   ["pages/Settings/Settings.css", (c) => c.startsWith("profile-") || c.startsWith("pref-") || c.startsWith("hidden-format") || c === "kindle-delivery" || (c.startsWith("kobo-") && !c.startsWith("kobo-toast"))],
-  ["pages/Authors/Authors.css", (c) => c.startsWith("au-")],
+  ["components/Browse/Browse.css", (c) => c.startsWith("au-")],
   ["components/AuthorPhotoEdit/AuthorPhotoEdit.css", (c) => c.startsWith("author-photo-edit") || c.startsWith("author-delete-modal")],
-  ["pages/Series/Series.css", (c) => c.startsWith("idx-")],
-  ["pages/SeriesDetail/SeriesDetail.css", (c) => c === "series-cards" || c.startsWith("series-card")],
+  ["pages/Shelves/Shelves.css", (c) => c.startsWith("idx-")],
+  ["pages/Series/Series.css", (c) => c.startsWith("se-row")],
+  ["pages/SeriesDetail/SeriesDetail.css", (c) => c.startsWith("se-") && !c.startsWith("se-row")],
   ["components/MoreMenu/MoreMenu.css", (c) => c === "shd-more" || c.startsWith("shd-menu") || c === "shelf-actions-menu" || c.startsWith("shelf-menu-")],
   ["pages/ShelfDetail/ShelfDetail.css", (c) => c.startsWith("shd-") || c === "shelf-grid", true],
   ["pages/Shelves/Shelves.css", (c) => ["shv-page", "shv-header", "shv-head-row", "shv-admin-note", "shv-new", "shv-new-plus", "shv-toolbar", "shv-owners", "shv-owner-chip", "shv-owner-chip--all", "shv-chip-av", "shv-empty", "shv-empty-msg", "shv-body", "shv-group", "shv-group-head", "shv-group-av", "shv-group-title", "shv-group-count", "shv-grid", "shv-cell"].includes(c)],
@@ -181,7 +182,7 @@ function visit(node, wrappers) {
   }
 }
 
-for (const name of ["atrium.css", "loading.css", "filter_bar.css", "authors.css"]) {
+for (const name of ["atrium.css", "loading.css", "filter_bar.css", "authors.css", "series.css"]) {
   const css = fs.readFileSync(path.join(root, "frontend/assets", name), "utf8");
   for (const node of postcss.parse(css).nodes) visit(node, []);
 }

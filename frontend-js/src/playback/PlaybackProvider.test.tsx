@@ -314,14 +314,18 @@ describe("PlaybackProvider", () => {
       expect(audio().getAttribute("src")).toBeNull();
     });
 
-    it("marks the read status and shelves stale, and not the edit form, once the first play writes its read status", async () => {
+    it("marks the read status, shelves and series progress stale, and not the edit form, once the first play writes its read status", async () => {
       const client = mount();
       const key = ["book", UUID, "readStatus"];
       const shelves = ["book", UUID, "shelves"];
       const edit = ["book", UUID, "edit"];
+      const seriesReading = ["series", "reading"];
+      const seriesPage = ["series", 4];
       client.setQueryData(key, null);
       client.setQueryData(shelves, null);
       client.setQueryData(edit, null);
+      client.setQueryData(seriesReading, []);
+      client.setQueryData(seriesPage, null);
       act(() => player.open(UUID, null));
       await waitFor(() => expect(player.ready).toBe(true));
 
@@ -333,6 +337,8 @@ describe("PlaybackProvider", () => {
         expect(client.getQueryState(key)?.isInvalidated).toBe(true),
       );
       expect(client.getQueryState(shelves)?.isInvalidated).toBe(true);
+      expect(client.getQueryState(seriesReading)?.isInvalidated).toBe(true);
+      expect(client.getQueryState(seriesPage)?.isInvalidated).toBe(true);
       expect(client.getQueryState(edit)?.isInvalidated).toBe(false);
       expect(wrote(writes, "PUT /api/read-status")).toEqual([
         { book_uuid: UUID, status: "reading" },

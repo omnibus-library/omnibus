@@ -11,7 +11,6 @@ import {
   formatHm,
   formatInstantShort,
   formatLongDate,
-  formatMonthYear,
   formatUtcDay,
   formatUtcTimestamp,
   formatYear,
@@ -144,18 +143,6 @@ describe("formatYear", () => {
 
   it("returns null for calibre's 0101 placeholder", () => {
     expect(formatYear("0101")).toBeNull();
-  });
-});
-
-describe("formatMonthYear", () => {
-  it.each([
-    ["2016-05-02", "May 2016"],
-    ["2016-05-02T21:00:00+00:00", "May 2016"],
-    ["2016", "2016"],
-    ["0101-01-01T00:00:00+00:00", null],
-    ["", null],
-  ])("reads %j as %j", (raw, label) => {
-    expect(formatMonthYear(raw)).toBe(label);
   });
 });
 

@@ -1,135 +1,217 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
-import { Link } from "react-router";
-import { type SeriesSummary, seriesListQuery } from "../../api";
-import { Loading } from "../../components/Loading/Loading";
-import { PageError } from "../../components/PageState/PageState";
-import { PageTitle } from "../../components/PageTitle/PageTitle";
-import { loadDiscoveryPrefs, saveDiscoverySort } from "../../viewPrefs";
+import { useMemo, useRef, useState } from "react";
 import {
-  filterAndSortSeries,
-  type SeriesSort,
-  splitLastWord,
-} from "./seriesIndex";
-import "../../components/DiscPage/DiscPage.css";
+  Link,
+  Outlet,
+  useLocation,
+  useOutletContext,
+  useParams,
+} from "react-router";
+import {
+  parseSeriesId,
+  type SeriesId,
+  type SeriesReading,
+  type SeriesSummary,
+  seriesListQuery,
+  seriesReadingQuery,
+} from "../../api";
+import {
+  ListBody,
+  type ListCopy,
+  ListHead,
+  type Preview,
+  previewOf,
+  type ReadingState,
+  RowBar,
+  readingStateOf,
+  useRevealShown,
+} from "../../components/Browse/BrowseList";
+import { listPhase } from "../../components/Browse/browseOrder";
+import { Loading } from "../../components/Loading/Loading";
+import { PageTitle } from "../../components/PageTitle/PageTitle";
+import {
+  useScrollRestore,
+  useScrollRestoreOnChange,
+} from "../../scrollRestore";
+import { loadDiscoveryPrefs, saveDiscoverySort } from "../../viewPrefs";
+import { SeriesPane } from "../SeriesDetail/SeriesPane";
+import {
+  bySeries,
+  computeSeriesGroups,
+  defaultSeries,
+  firstLetter,
+  type ReadingMap,
+  rowLabel,
+} from "./seriesOrder";
 import "./Series.css";
 
-const SORTS = [
-  ["name", "A–Z", "series-sort-name"],
-  ["book_count", "Most books", "series-sort-count"],
-] as const satisfies readonly [SeriesSort, string, string][];
+/** Said when no series has a book: the library may hold standalones only. */
+const NO_SERIES = "No series yet — no book in the library belongs to one.";
 
-function SeriesCard({ series }: { series: SeriesSummary }) {
-  const [rest, last] = splitLastWord(series.name);
+const COPY: ListCopy = {
+  title: "Series",
+  noun: "series",
+  testid: "series",
+  filterPlaceholder: "Filter by name or author…",
+  filterLabel: "Filter series by name or author",
+  nameSort: "A–Z",
+  empty: NO_SERIES,
+};
+
+const NO_SERIES_ROWS: SeriesSummary[] = [];
+
+function SeriesRow({
+  series,
+  progress,
+  state,
+  shown,
+  current,
+}: {
+  series: SeriesSummary;
+  progress: SeriesReading | undefined;
+  state: ReadingState;
+  shown: boolean;
+  current: boolean;
+}) {
   return (
     <Link
       to={`/series/${series.id}`}
-      className="idx-card idx-card-series"
-      style={series.accent ? { "--accent": series.accent } : undefined}
+      className={shown ? "au-row se-row is-shown" : "au-row se-row"}
+      style={{ "--au-accent": series.accent ?? "var(--accent)" }}
+      aria-current={current ? "page" : undefined}
+      aria-label={rowLabel(series, progress)}
       data-testid="series-card"
     >
-      <div className="idx-series-spine" aria-hidden="true" />
-      <div className="idx-card-body">
-        <div className="idx-card-title">
-          {rest && <span className="idx-card-name-rest">{`${rest} `}</span>}
-          <span className="idx-card-name-last">{last}</span>
-        </div>
-        {series.primaryAuthor && (
-          <div className="mono idx-series-author">{series.primaryAuthor}</div>
+      <span className="se-row-text">
+        <span className="au-row-name se-row-name">{series.name}</span>
+        {series.primaryAuthor !== null && (
+          <span className="se-row-author">{series.primaryAuthor}</span>
         )}
-        <div className="idx-card-stats">
-          <div className="idx-stat">
-            <div className="mono idx-stat-label">Books</div>
-            <div className="idx-stat-value">{series.bookCount}</div>
-          </div>
-        </div>
-      </div>
+      </span>
+      <RowBar
+        count={series.bookCount}
+        progress={progress}
+        state={state}
+        testid="series-row-bar"
+      />
+      <span className="au-row-count">{series.bookCount}</span>
     </Link>
   );
 }
 
-/** `/series`: every series as a card, filtered by name or author and ordered A–Z or by size. */
+/** List + pane for both series routes; the list keeps its filter, sort and scroll while the pane changes. */
 export function Series() {
-  const query = useQuery(seriesListQuery);
+  const { id } = useParams();
+  const routed = parseSeriesId(id);
+  const series = useQuery(seriesListQuery);
+  const reading = useQuery(seriesReadingQuery);
   const [filter, setFilter] = useState("");
   const [sort, setSort] = useState(() => loadDiscoveryPrefs().series_sort);
+  const [onlyReading, setOnlyReading] = useState(false);
+  const list = useRef<HTMLDivElement>(null);
+  const pathname = useLocation().pathname;
+  useScrollRestore(series.data !== undefined, pathname);
+  useScrollRestoreOnChange(pathname);
 
-  if (!query.data) {
-    return query.isError ? (
-      <PageError message={query.error.message} />
-    ) : (
-      <Loading kind="page" label="Gathering every series" />
-    );
-  }
-  const all = query.data;
-  const shown = filterAndSortSeries(all, filter, sort);
-  const books = all.reduce((sum, s) => sum + s.bookCount, 0);
+  const rows = series.data ?? NO_SERIES_ROWS;
+  const readingState = readingStateOf(reading);
+  const progress = useMemo<ReadingMap | null>(
+    () => (reading.data ? bySeries(reading.data) : null),
+    [reading.data],
+  );
+  const groups = useMemo(
+    () =>
+      computeSeriesGroups(rows, {
+        text: filter,
+        sort,
+        reading: progress,
+        onlyReading,
+      }),
+    [rows, filter, sort, progress, onlyReading],
+  );
+
+  const phase = listPhase({
+    isPending: series.isPending,
+    isError: series.isError,
+    hasRows: rows.length > 0,
+  });
+  const preview = useMemo(
+    () => previewOf(phase, readingState, () => defaultSeries(rows, progress)),
+    [rows, phase, readingState, progress],
+  );
+  const shown = routed ?? (preview.kind === "item" ? preview.id : null);
+  const readingCount = progress
+    ? [...progress.values()].filter((r) => r.reading > 0).length
+    : null;
+  const total = phase === "loading" || phase === "failed" ? null : rows.length;
+  // Recent orders by progress, so it has no order to show until that lands.
+  const waiting =
+    phase === "loading" || (sort === "recent" && readingState === "pending");
+  useRevealShown(list, shown !== null && rows.length > 0 && !waiting);
+
+  const shownSeries = groups.filtered.find((s) => s.id === shown);
+  const activeLetter = shownSeries ? firstLetter(shownSeries) : null;
 
   return (
-    <div className="idx-page">
-      <PageTitle page="Series" />
-      <div className="idx-header">
-        <div className="idx-head-row">
-          <div>
-            <span className="label">Library lens</span>
-            <h1 className="disc-hero-title">
-              By <em>series</em>.
-            </h1>
-            <p className="idx-subtitle">
-              {`${all.length} series · ${books} books across them.`}
-            </p>
-          </div>
-        </div>
-        <div className="idx-toolbar">
-          <div className="idx-search">
-            <input
-              type="search"
-              placeholder="Filter series by name or author…"
-              aria-label="Filter series"
-              value={filter}
-              data-testid="series-filter"
-              onChange={(e) => setFilter(e.target.value)}
+    <div className="au-page" data-pane={id === undefined ? "index" : "series"}>
+      <aside className="au-list" aria-label="Series">
+        <ListHead
+          copy={COPY}
+          total={total}
+          filter={filter}
+          sort={sort}
+          readingCount={readingCount}
+          onlyReading={onlyReading}
+          onFilter={setFilter}
+          onSort={(next) => {
+            setSort(next);
+            saveDiscoverySort("series_sort", next);
+          }}
+          onOnlyReading={setOnlyReading}
+        />
+        <ListBody
+          copy={COPY}
+          groups={groups}
+          sort={sort}
+          waiting={waiting}
+          active={activeLetter}
+          failure={phase === "failed" ? (series.error?.message ?? "") : null}
+          any={rows.length > 0}
+          listRef={list}
+          row={(s) => (
+            <SeriesRow
+              key={s.id}
+              series={s}
+              progress={progress?.get(s.id)}
+              state={readingState}
+              shown={shown === s.id}
+              current={routed === s.id}
             />
-          </div>
-          <div className="idx-sort">
-            <span className="label">Sort</span>
-            {SORTS.map(([axis, label, testid]) => (
-              <button
-                key={axis}
-                type="button"
-                className="idx-btn"
-                aria-pressed={
-                  sort === axis || (axis === "name" && sort === "recent")
-                }
-                data-testid={testid}
-                onClick={() => {
-                  setSort(axis);
-                  saveDiscoverySort("series_sort", axis);
-                }}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-      <div className="idx-body">
-        {shown.length === 0 ? (
-          <p className="subtitle idx-empty">
-            {all.length === 0
-              ? "No series yet — index a library to see them here."
-              : "No series match that filter."}
-          </p>
-        ) : (
-          <div className="idx-series-grid">
-            {shown.map((s) => (
-              <div key={s.id}>
-                <SeriesCard series={s} />
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+          )}
+        />
+      </aside>
+      <section className="au-detail">
+        <Outlet context={preview} />
+      </section>
     </div>
+  );
+}
+
+/** `/series`' pane: the previewed series' page, without claiming the route. */
+export function SeriesIndexPane() {
+  const preview = useOutletContext<Preview<SeriesId>>();
+  return (
+    <>
+      <PageTitle page="Series" />
+      {preview.kind === "pending" ? (
+        <Loading kind="section" label="Gathering every series" />
+      ) : preview.kind === "unavailable" ? (
+        <p className="au-pane-empty subtitle">Couldn’t load series.</p>
+      ) : preview.kind === "empty" ? (
+        <p className="au-pane-empty subtitle">{NO_SERIES}</p>
+      ) : (
+        <SeriesPane key={preview.id} id={preview.id} preview />
+      )}
+    </>
   );
 }
