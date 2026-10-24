@@ -522,24 +522,30 @@ fn BookCard(
 }
 
 /// The dot-separated fact line under a provider card's byline: first-publish
-/// year, publisher, page count — whichever the provider carried. `None` when
-/// it carried none of them, so the card renders no empty line.
+/// year, then the edition to be filed (publisher, format, pages, ISBN) —
+/// whichever the provider carried. `None` when it carried none of them, so the
+/// card renders no empty line.
 pub(super) fn meta_details(meta: &ExternalBookMeta) -> Option<String> {
-    let mut parts = Vec::new();
-    if let Some(year) = meta.first_publish_year {
-        parts.push(format!("First published {year}"));
-    }
-    if let Some(publisher) = meta
-        .publisher
-        .as_deref()
-        .map(str::trim)
-        .filter(|p| !p.is_empty())
-    {
-        parts.push(publisher.to_string());
-    }
-    if let Some(pages) = meta.pages.filter(|p| *p > 0) {
-        parts.push(format!("{pages} pages"));
-    }
+    let text = |s: &Option<String>| {
+        s.as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+    };
+    let isbn = Some(meta.isbn13.trim()).filter(|i| !i.is_empty());
+    let parts: Vec<String> = [
+        meta.first_publish_year
+            .map(|year| format!("First published {year}")),
+        text(&meta.publisher),
+        text(&meta.format),
+        meta.pages
+            .filter(|p| *p > 0)
+            .map(|pages| format!("{pages} pages")),
+        isbn.map(|isbn| format!("ISBN {isbn}")),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
     (!parts.is_empty()).then(|| parts.join(" \u{b7} "))
 }
 

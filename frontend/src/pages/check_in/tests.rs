@@ -460,24 +460,40 @@ fn friendly_error_keeps_the_original_when_stripping_leaves_nothing() {
 }
 
 #[test]
-fn meta_details_joins_the_facts_the_provider_carried() {
+fn meta_details_joins_the_edition_facts_the_provider_carried() {
     let mut meta = external();
-    meta.first_publish_year = Some(1965);
-    meta.publisher = Some("Chilton Books".into());
-    meta.pages = Some(412);
+    meta.first_publish_year = Some(2016);
+    meta.publisher = Some("Orbit".into());
+    meta.format = Some("Paperback".into());
+    meta.pages = Some(410);
+    meta.isbn13 = "9780316229265".into();
     assert_eq!(
         meta_details(&meta).as_deref(),
-        Some("First published 1965 \u{b7} Chilton Books \u{b7} 412 pages")
+        Some(
+            "First published 2016 \u{b7} Orbit \u{b7} Paperback \u{b7} 410 pages \u{b7} ISBN 9780316229265"
+        )
+    );
+}
+
+#[test]
+fn meta_details_skips_absent_facts_without_stray_separators() {
+    let mut meta = external();
+    meta.format = Some("Paperback".into());
+    assert_eq!(
+        meta_details(&meta).as_deref(),
+        Some("Paperback \u{b7} ISBN 9780441013593")
     );
 }
 
 #[test]
 fn meta_details_is_none_when_the_provider_carried_nothing() {
-    // `external()` has no first-publish year, publisher, or page count.
-    assert_eq!(meta_details(&external()), None);
-    // A blank publisher and a zero page count don't count as facts either.
+    // `external()` has no first-publish year, publisher, format or page count.
     let mut meta = external();
+    meta.isbn13 = String::new();
+    assert_eq!(meta_details(&meta), None);
+    // Blank text and a zero page count don't count as facts either.
     meta.publisher = Some("   ".into());
+    meta.format = Some(" ".into());
     meta.pages = Some(0);
     assert_eq!(meta_details(&meta), None);
 }

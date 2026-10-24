@@ -193,12 +193,15 @@ export function byline(authors: string[]): string {
   return names.length ? `${names.join(", ")} and ${last}` : last;
 }
 
-/** The dot-separated facts under a provider card's byline, or `null` when the provider carried none. */
+/** The dot-separated facts under a provider card's byline: first publication, then the edition to be filed (publisher, format, pages, ISBN). `null` when the provider carried none. */
 export function metaDetails(meta: ExternalBookMeta): string | null {
+  const isbn = meta.isbn13.trim();
   const parts = [
     meta.first_publish_year ? `First published ${meta.first_publish_year}` : "",
     meta.publisher?.trim() ?? "",
+    meta.format?.trim() ?? "",
     meta.pages && meta.pages > 0 ? `${meta.pages} pages` : "",
+    isbn ? `ISBN ${isbn}` : "",
   ].filter(Boolean);
   return parts.length ? parts.join(" · ") : null;
 }

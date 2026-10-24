@@ -17,6 +17,7 @@ const NAME_OF_THE_WIND = buildExternalBook({
   year: "2008",
   pages: 662,
   publisher: "DAW Books",
+  format: "Paperback",
   series: "The Kingkiller Chronicle",
   first_publish_year: 2007,
 });
@@ -45,7 +46,9 @@ test.describe("check-in title search", () => {
       await expect(result).toContainText("The Kingkiller Chronicle");
       await expect(result).toContainText("First published 2007");
       await expect(result).toContainText("DAW Books");
+      await expect(result).toContainText("Paperback");
       await expect(result).toContainText("662 pages");
+      await expect(result).toContainText(`ISBN ${NAME_OF_THE_WIND.isbn13}`);
     });
 
     await test.step("pick the book from the results", async () => {

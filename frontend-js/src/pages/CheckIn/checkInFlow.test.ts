@@ -257,10 +257,30 @@ describe("byline", () => {
 });
 
 describe("metaDetails", () => {
-  it("joins whichever facts the provider carried", () => {
-    expect(metaDetails(anExternalBook())).toBe(
-      "First published 2019 · Lantern Press · 320 pages",
+  it("joins the edition facts the provider carried", () => {
+    const meta = anExternalBook({
+      first_publish_year: 2016,
+      publisher: "Orbit",
+      format: "Paperback",
+      pages: 410,
+      isbn13: "9780316229265",
+    });
+
+    expect(metaDetails(meta)).toBe(
+      "First published 2016 · Orbit · Paperback · 410 pages · ISBN 9780316229265",
     );
+  });
+
+  it("skips absent facts without stray separators", () => {
+    const meta = anExternalBook({
+      first_publish_year: null,
+      publisher: null,
+      pages: null,
+      format: "Paperback",
+      isbn13: "9780316229265",
+    });
+
+    expect(metaDetails(meta)).toBe("Paperback · ISBN 9780316229265");
   });
 
   it("is null when it carried none", () => {
@@ -269,7 +289,9 @@ describe("metaDetails", () => {
         anExternalBook({
           first_publish_year: null,
           publisher: " ",
+          format: " ",
           pages: 0,
+          isbn13: "",
         }),
       ),
     ).toBeNull();
