@@ -12,7 +12,7 @@ use crate::components::chip_editor::{collect_suggestions, SuggestionItem};
 use crate::data;
 use crate::shelf_selection::ShelfSelection;
 
-use super::shelf_gallery::selection_off_rail;
+use super::rail::selection_off_rail;
 use super::PAGE_SIZE;
 
 /// How many resume points the continue-reading hero carousel shows.
@@ -287,7 +287,7 @@ pub(super) fn spawn_shelves_list_effect(
     generation: Signal<u64>,
     mut shelves: Signal<Vec<ShelfSummary>>,
     (mut shelves_loaded, mut answered): (Signal<bool>, Signal<bool>),
-    mut selection: Signal<ShelfSelection>,
+    selection: Signal<ShelfSelection>,
     viewer: ReadSignal<Option<UserSummary>>,
 ) {
     use_effect(move || {

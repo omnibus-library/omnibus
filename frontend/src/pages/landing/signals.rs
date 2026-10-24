@@ -20,7 +20,7 @@ use super::effects::{
     spawn_suggestion_pools_effect, FetchKey, FetchSignals, ShelfFetchSignals, ShelfMembersKey,
     SuggestionPools,
 };
-use super::shelf_gallery::selection_off_rail;
+use super::rail::selection_off_rail;
 use crate::components::chip_editor::SuggestionItem;
 use crate::shelf_selection::{self, ShelfSelection};
 use crate::view_prefs;
