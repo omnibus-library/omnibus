@@ -17,7 +17,7 @@ pub use data::{
     SUGGESTIONS_TTL_SECS,
 };
 pub use filter::{filter_candidates, is_entry_point, is_same_author, is_same_series, Candidate};
-pub use hardcover::{rejected_key_status, HardcoverConfig, HardcoverError};
+pub use hardcover::{rejected_key_message, rejected_key_status, HardcoverConfig, HardcoverError};
 
 #[cfg(test)]
 mod tests;

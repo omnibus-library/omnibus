@@ -26,7 +26,8 @@ use crate::metadata_overrides::upsert_one_in_tx;
 use crate::normalize::{normalize_author, normalize_title};
 use crate::physical::{
     add_physical_copy, add_physical_copy_in_tx, add_wishlist_entry_in_tx,
-    create_fileless_book_in_tx, get_wishlist_entry, FilelessBook, FilelessCover, PhysicalError,
+    create_fileless_book_in_tx, get_wishlist_entry, CreatedFileless, FilelessBook, FilelessCover,
+    PhysicalError,
 };
 use crate::taxonomy::resolve_or_insert_series;
 
@@ -198,12 +199,20 @@ pub(crate) async fn add_physical_only_with(
 ) -> Result<String, ScanError> {
     let cover = fetch_candidate_cover(meta, image_config).await;
     let mut tx = pool.begin().await?;
-    let uuid = create_fileless_from_meta(&mut tx, meta, cover, added_by_user_id).await?;
+    let created = create_fileless_from_meta(&mut tx, meta, cover, added_by_user_id).await?;
     // Store the canonical ISBN per copy (meta arrives over the wire — untrusted).
     let isbn = canonical_isbn(meta);
-    add_physical_copy_in_tx(&mut tx, &uuid, isbn.as_deref(), added_by_user_id, note).await?;
+    add_physical_copy_in_tx(
+        &mut tx,
+        &created.uuid,
+        isbn.as_deref(),
+        added_by_user_id,
+        note,
+    )
+    .await?;
     tx.commit().await?;
-    Ok(uuid)
+    created.settle_cover(pool).await;
+    Ok(created.uuid)
 }
 
 /// Add a book to a user's physical wishlist — an existing library book
@@ -242,15 +251,20 @@ pub(crate) async fn wishlist_add_with(
         _ => None,
     };
     let mut tx = pool.begin().await?;
-    let uuid = match (book_uuid, meta) {
-        (Some(uuid), _) => uuid.to_string(),
+    let (created, uuid) = match (book_uuid, meta) {
+        (Some(uuid), _) => (None, uuid.to_string()),
         (None, Some(meta)) => {
-            create_fileless_from_meta(&mut tx, meta, cover, Some(user_id)).await?
+            let created = create_fileless_from_meta(&mut tx, meta, cover, Some(user_id)).await?;
+            let uuid = created.uuid.clone();
+            (Some(created), uuid)
         }
         (None, None) => return Err(ScanError::MissingWishlistTarget),
     };
     let entry = add_wishlist_entry_in_tx(&mut tx, user_id, &uuid, source).await?;
     tx.commit().await?;
+    if let Some(created) = &created {
+        created.settle_cover(pool).await;
+    }
     Ok(entry.book_uuid)
 }
 
@@ -284,8 +298,8 @@ async fn create_fileless_from_meta(
     meta: &ExternalBookMeta,
     cover: Option<FilelessCover>,
     filed_by: Option<i64>,
-) -> Result<String, ScanError> {
-    let (book_id, uuid) = create_fileless_book_in_tx(
+) -> Result<CreatedFileless, ScanError> {
+    let created = create_fileless_book_in_tx(
         tx,
         FilelessBook {
             title: meta.title.clone(),
@@ -300,13 +314,13 @@ async fn create_fileless_from_meta(
         },
     )
     .await?;
-    link_series_from_meta(tx, book_id, meta.series.as_deref()).await?;
+    link_series_from_meta(tx, created.id, meta.series.as_deref()).await?;
     if let (Some(pages), Some(user_id)) = (meta.pages, filed_by) {
-        store_pages(tx, &uuid, pages, user_id).await?;
+        store_pages(tx, &created.uuid, pages, user_id).await?;
     }
-    // The series and pages are in the index only once they are written.
-    crate::sync::upsert_fts(tx, book_id).await?;
-    Ok(uuid)
+    // Indexed once, after the series and pages it carries are written.
+    crate::sync::upsert_fts(tx, created.id).await?;
+    Ok(created)
 }
 
 /// Link the book to the series a statement such as "The Broken Earth #2" names,

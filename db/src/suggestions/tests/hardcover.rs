@@ -9,8 +9,8 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use super::config_for;
 use crate::suggestions::hardcover::{
-    book_description, co_listed_counts, curated_list_ids, fetch_candidates, rejected_key_status,
-    resolve_book, HardcoverError,
+    book_description, co_listed_counts, curated_list_ids, fetch_candidates, rejected_key_message,
+    rejected_key_status, resolve_book, HardcoverError,
 };
 
 #[tokio::test]
@@ -414,4 +414,15 @@ async fn rejected_key_status_ignores_a_server_error_and_a_graphql_error() {
     assert_eq!(rejected_key_status(&status_error_for(500).await), None);
     let graphql = anyhow::Error::from(HardcoverError::Graphql("boom".into()));
     assert_eq!(rejected_key_status(&graphql), None);
+}
+
+#[tokio::test]
+async fn rejected_key_message_names_the_provider_and_the_status_of_a_refusal() {
+    let err = status_error_for(401).await;
+    let status = rejected_key_status(&err).expect("a 401 is a rejected key");
+
+    assert_eq!(
+        rejected_key_message(status),
+        "Hardcover rejected the API key (HTTP 401); suggestions are paused until it is replaced"
+    );
 }

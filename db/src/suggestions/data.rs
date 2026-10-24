@@ -209,30 +209,30 @@ pub async fn get_suggestion_cover(
 /// by the RPC immediately *before* posting a resolution task so a burst of
 /// concurrent first-viewers collapses to a single posted job.
 pub async fn mark_pending(pool: &SqlitePool, book_uuid: &str) -> Result<(), SuggestionsDataError> {
-    sqlx::query(
-        "INSERT INTO book_suggestion_state (book_uuid, state, fetched_at)
-              VALUES (?, 'pending', strftime('%s','now'))
-         ON CONFLICT(book_uuid) DO UPDATE SET
-              state      = 'pending',
-              fetched_at = strftime('%s','now')",
-    )
-    .bind(book_uuid)
-    .execute(pool)
-    .await?;
-    Ok(())
+    mark_state(pool, book_uuid, SuggestionState::Pending).await
 }
 
 /// Mark a book's lookup `failed` (upsert state + reset the `fetched_at` clock),
 /// so the read path settles instead of waiting on a result that is not coming.
 pub async fn mark_failed(pool: &SqlitePool, book_uuid: &str) -> Result<(), SuggestionsDataError> {
+    mark_state(pool, book_uuid, SuggestionState::Failed).await
+}
+
+/// Upsert a book's marker to `state`, stamping `fetched_at` now.
+async fn mark_state(
+    pool: &SqlitePool,
+    book_uuid: &str,
+    state: SuggestionState,
+) -> Result<(), SuggestionsDataError> {
     sqlx::query(
         "INSERT INTO book_suggestion_state (book_uuid, state, fetched_at)
-              VALUES (?, 'failed', strftime('%s','now'))
+              VALUES (?, ?, strftime('%s','now'))
          ON CONFLICT(book_uuid) DO UPDATE SET
-              state      = 'failed',
-              fetched_at = strftime('%s','now')",
+              state      = excluded.state,
+              fetched_at = excluded.fetched_at",
     )
     .bind(book_uuid)
+    .bind(state.as_str())
     .execute(pool)
     .await?;
     Ok(())

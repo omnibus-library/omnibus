@@ -92,6 +92,14 @@ pub fn rejected_key_status(e: &anyhow::Error) -> Option<reqwest::StatusCode> {
     }
 }
 
+/// What the admin health page's error list says when Hardcover refuses the key.
+pub fn rejected_key_message(status: reqwest::StatusCode) -> String {
+    format!(
+        "Hardcover rejected the API key (HTTP {}); suggestions are paused until it is replaced",
+        status.as_u16()
+    )
+}
+
 /// The Hardcover book a library book resolved to, plus the fields the filter
 /// needs to exclude same-author / same-series candidates.
 #[derive(Debug, Clone, PartialEq, Eq)]

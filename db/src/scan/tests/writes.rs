@@ -359,6 +359,25 @@ async fn add_physical_only_stores_no_pages_when_nobody_filed_the_copy() {
 }
 
 #[tokio::test]
+async fn add_physical_only_leaves_no_cover_file_behind_when_the_copy_cannot_be_filed() {
+    let pool = pool().await;
+    let covers = CoversTempDir::new("add_physical_only_rolled_back_cover");
+    let origin = MockServer::start().await;
+    mount_redirected_cover(&origin).await;
+    let mut meta = title_hit_meta();
+    meta.cover_url = Some(format!("{}/cover.jpg", origin.uri()));
+
+    let result =
+        add_physical_only_with(&pool, &meta, None, Some(9_999), &loopback_cover_config()).await;
+
+    assert!(result.is_err());
+    let files = std::fs::read_dir(&covers.path)
+        .map(|dir| dir.count())
+        .unwrap_or(0);
+    assert_eq!(files, 0, "a rolled-back check-in must not leave its cover");
+}
+
+#[tokio::test]
 async fn add_physical_only_leaves_no_book_behind_when_the_copy_cannot_be_filed() {
     let pool = pool().await;
 

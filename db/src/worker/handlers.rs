@@ -431,10 +431,7 @@ impl Worker {
             .err()
             .and_then(crate::suggestions::rejected_key_status)
         {
-            tracing::error!(
-                "Hardcover rejected the API key (HTTP {}); suggestions are paused until it is replaced",
-                status.as_u16()
-            );
+            tracing::error!("{}", crate::suggestions::rejected_key_message(status));
         }
         anyhow_outcome("suggestions lookup", result)
     }
