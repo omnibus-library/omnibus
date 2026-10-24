@@ -24,9 +24,9 @@ pub(super) fn ResolvingScreen() -> Element {
 }
 
 /// 3a — confirm checking in a copy of a book the library already holds, or
-/// one on the reader's own wishlist (`wishlisted`). A book the lookup found held
-/// only by another reader's wish (`another_wish`) also offers the reader a
-/// wishlist entry of their own.
+/// one on the reader's own wishlist (`wishlisted`). A book held only by a wish
+/// also offers the reader a wishlist entry of their own; `another_wish` only
+/// words the subtitle, since just the exact-ISBN lookup proves whose wish it is.
 #[component]
 pub(super) fn ConfirmScreen(
     book: ScanBook,
@@ -43,6 +43,7 @@ pub(super) fn ConfirmScreen(
     let viewer_id = use_current_user_summary()().map(|u| u.id);
     let target = book.clone();
     let wish_req = wishlist_request_for_book(&book, (state.found_via)());
+    let offer_wishlist = offers_wishlist_entry(&book, wishlisted);
     // Which button the shared busy flag belongs to, so only it shows the wait.
     let mut wishing = use_signal(|| false);
     let wish_pending = busy() && wishing();
@@ -77,7 +78,7 @@ pub(super) fn ConfirmScreen(
                     },
                     BusyLabel { busy: busy() && !wish_pending, label: "Check in", busy_label: "Checking in\u{2026}" }
                 }
-                if another_wish {
+                if offer_wishlist {
                     button {
                         r#type: "button",
                         class: "btn ghost",
@@ -109,6 +110,12 @@ pub(super) fn ConfirmScreen(
 /// reader's own would have come back as `on_wishlist`.
 pub(super) fn held_only_by_a_wish(book: &ScanBook) -> bool {
     !book.has_files && !book.has_physical
+}
+
+/// Whether the confirm screen offers "Add to my wishlist": the book is held only
+/// by a wish and not yet on the reader's own list, whichever door reached it.
+pub(super) fn offers_wishlist_entry(book: &ScanBook, wishlisted: bool) -> bool {
+    !wishlisted && held_only_by_a_wish(book)
 }
 
 /// The confirm screen's one-line framing of what the copy is being added

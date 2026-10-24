@@ -15,6 +15,7 @@ import {
   type FoundVia,
   foundViaLine,
   metaDetails,
+  offersWishlistEntry,
   wishlistRequestForBook,
   wishlistSource,
 } from "./checkInFlow";
@@ -212,7 +213,7 @@ type ConfirmProps = {
   onCancel: () => void;
 };
 
-/** Confirms filing a copy against a book the library holds, or one on the reader's wishlist; a book only another reader wants also offers the reader a wish of their own. */
+/** Confirms filing a copy against a book the library holds, or one on the reader's wishlist; a book held only by a wish also offers the reader one of their own (`anotherWish` only words the subtitle). */
 export function ConfirmScreen({
   book,
   isbn,
@@ -262,7 +263,7 @@ export function ConfirmScreen({
             busyLabel="Checking in…"
           />
         </Button>
-        {anotherWish && (
+        {offersWishlistEntry(book, wishlisted) && (
           <Button
             variant="ghost"
             disabled={busy}

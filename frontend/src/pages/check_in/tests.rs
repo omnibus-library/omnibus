@@ -5,7 +5,10 @@
 
 use super::entry::apply_key;
 use super::link::{scan_book_from_hit, truncation_note};
-use super::screens::{byline, confirm_subtitle, held_only_by_a_wish, meta_details, CloseMatchCopy};
+use super::screens::{
+    byline, confirm_subtitle, held_only_by_a_wish, meta_details, offers_wishlist_entry,
+    CloseMatchCopy,
+};
 use super::*;
 use omnibus_shared::{CopyFiler, MetadataProvider, PaletteBookHit};
 
@@ -291,6 +294,32 @@ fn held_only_by_a_wish_holds_only_for_a_book_with_no_file_and_no_copy() {
     assert!(held_only_by_a_wish(&wish_only));
     assert!(!held_only_by_a_wish(&scan_book()));
     assert!(!held_only_by_a_wish(&paper_only_filed_by(&[])));
+}
+
+#[test]
+fn offers_wishlist_entry_for_a_wish_only_book_whichever_door_reached_it() {
+    let wish_only = ScanBook {
+        has_files: false,
+        has_physical: false,
+        ..scan_book()
+    };
+    assert!(offers_wishlist_entry(&wish_only, false));
+    assert!(!offers_wishlist_entry(&wish_only, true));
+    assert!(!offers_wishlist_entry(&scan_book(), false));
+    assert!(!offers_wishlist_entry(&paper_only_filed_by(&[]), false));
+}
+
+#[test]
+fn confirm_subtitle_stays_neutral_for_a_wish_only_book_picked_from_a_close_match() {
+    let wish_only = ScanBook {
+        has_files: false,
+        has_physical: false,
+        ..scan_book()
+    };
+
+    let line = confirm_subtitle(&wish_only, false, false, Some(1));
+
+    assert!(!line.contains("another reader"), "got: {line}");
 }
 
 #[test]

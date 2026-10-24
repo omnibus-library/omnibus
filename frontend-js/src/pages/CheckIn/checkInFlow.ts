@@ -128,6 +128,10 @@ export const wishlistSource = {
 export const heldOnlyByAWish = (book: ScanBook) =>
   !book.has_files && !book.has_physical;
 
+/** Whether the confirm screen offers "Add to my wishlist": the book is held only by a wish and not yet on the reader's own list, whichever door reached it. */
+export const offersWishlistEntry = (book: ScanBook, wishlisted: boolean) =>
+  !wishlisted && heldOnlyByAWish(book);
+
 /** The wishlist request for a library book that only another reader wants, filed against the existing book. */
 export const wishlistRequestForBook = (
   book: ScanBook,

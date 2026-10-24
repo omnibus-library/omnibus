@@ -11,6 +11,7 @@ import {
   isbnRejection,
   manualFallback,
   metaDetails,
+  offersWishlistEntry,
   someIfFilled,
   stageFor,
   truncationNote,
@@ -56,6 +57,22 @@ describe("isbnRejection", () => {
       expect(isbnRejection(isbn)).toBe("ISBN has an invalid check digit");
     },
   );
+});
+
+describe("offersWishlistEntry", () => {
+  it("offers the wishlist action for a wish-only book not yet on the reader's list", () => {
+    const wishOnly = aScanBook({ has_files: false, has_physical: false });
+
+    expect(offersWishlistEntry(wishOnly, false)).toBe(true);
+    expect(offersWishlistEntry(wishOnly, true)).toBe(false);
+    expect(offersWishlistEntry(aScanBook(), false)).toBe(false);
+    expect(
+      offersWishlistEntry(
+        aScanBook({ has_files: false, has_physical: true }),
+        false,
+      ),
+    ).toBe(false);
+  });
 });
 
 describe("stageFor", () => {
