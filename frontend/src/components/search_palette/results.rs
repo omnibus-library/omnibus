@@ -11,12 +11,48 @@ use omnibus_shared::{
     PaletteTagHit,
 };
 
-use super::model::{facet_query, is_selected, plural, FlatItem};
+use super::model::{facet_query, is_selected, option_id, plural, FlatItem, LISTBOX_ID};
 use super::PaletteOpen;
 use crate::components::glyphs::{server_glyph, sliders_glyph};
 use crate::pages::{SettingsEntry, SettingsTarget};
 use crate::routes::link_target;
 use crate::{use_server_url, Route};
+
+/// What a row says about itself to assistive tech: its `option` id (from its
+/// place in the flat list) and whether it is the highlighted one.
+#[derive(Clone, PartialEq)]
+struct OptionState {
+    id: String,
+    selected: bool,
+}
+
+impl OptionState {
+    /// The row's state for `item`: its flat-list id, and selected only once the
+    /// reader has navigated and it is the one at `sel`.
+    fn of(items: &[FlatItem], sel: usize, has_nav: bool, item: &FlatItem) -> Self {
+        let index = items.iter().position(|i| i == item).unwrap_or_default();
+        Self {
+            id: option_id(index),
+            selected: has_nav && is_selected(items, sel, item),
+        }
+    }
+
+    fn class(&self) -> &'static str {
+        if self.selected {
+            "sp-row selected"
+        } else {
+            "sp-row"
+        }
+    }
+
+    fn aria_selected(&self) -> &'static str {
+        if self.selected {
+            "true"
+        } else {
+            "false"
+        }
+    }
+}
 
 /// Build a row click handler that navigates to `route` and closes the palette.
 fn navigate_and_close(
@@ -49,70 +85,86 @@ pub(super) fn SpResultsList(
     let sel = selected();
     let has_nav = has_navigated();
 
+    let state = |item: FlatItem| OptionState::of(&items, sel, has_nav, &item);
+
     rsx! {
-        div { class: "sp-results",
+        div {
+            class: "sp-results",
+            id: LISTBOX_ID,
+            role: "listbox",
+            "aria-label": "Search results",
             if let Some(ref r) = *res {
                 // Books
                 if !r.books.is_empty() {
-                    SpGroupHead { label: "Books", count: r.books.len() }
-                    for book in r.books.iter() {
-                        SpBookRow {
-                            key: "{book.id}",
-                            book: book.clone(),
-                            selected: has_nav && is_selected(&items, sel, &FlatItem::Book { uuid: book.uuid.clone(), title: book.title.clone() }),
-                            on_click: navigate_and_close(nav, open, Route::BookDetail { uuid: book.uuid.clone() }),
+                    div { role: "group", "aria-labelledby": "sp-group-books",
+                        SpGroupHead { label: "Books", count: r.books.len() }
+                        for book in r.books.iter() {
+                            SpBookRow {
+                                key: "{book.id}",
+                                book: book.clone(),
+                                option: state(FlatItem::Book { uuid: book.uuid.clone(), title: book.title.clone() }),
+                                on_click: navigate_and_close(nav, open, Route::BookDetail { uuid: book.uuid.clone() }),
+                            }
                         }
                     }
                 }
 
                 // Authors
                 if !r.authors.is_empty() {
-                    SpGroupHead { label: "Authors", count: r.authors.len() }
-                    for author in r.authors.iter() {
-                        SpAuthorRow {
-                            key: "{author.id}",
-                            author: author.clone(),
-                            selected: has_nav && is_selected(&items, sel, &FlatItem::Author { id: author.id, name: author.name.clone() }),
-                            on_click: navigate_and_close(nav, open, Route::AuthorDetail { id: author.id }),
+                    div { role: "group", "aria-labelledby": "sp-group-authors",
+                        SpGroupHead { label: "Authors", count: r.authors.len() }
+                        for author in r.authors.iter() {
+                            SpAuthorRow {
+                                key: "{author.id}",
+                                author: author.clone(),
+                                option: state(FlatItem::Author { id: author.id, name: author.name.clone() }),
+                                on_click: navigate_and_close(nav, open, Route::AuthorDetail { id: author.id }),
+                            }
                         }
                     }
                 }
 
                 // Series
                 if !r.series.is_empty() {
-                    SpGroupHead { label: "Series", count: r.series.len() }
-                    for s in r.series.iter() {
-                        SpSeriesRow {
-                            key: "{s.id}",
-                            series: s.clone(),
-                            selected: has_nav && is_selected(&items, sel, &FlatItem::Series { id: s.id, name: s.name.clone() }),
-                            on_click: navigate_and_close(nav, open, Route::SeriesDetail { id: s.id }),
+                    div { role: "group", "aria-labelledby": "sp-group-series",
+                        SpGroupHead { label: "Series", count: r.series.len() }
+                        for s in r.series.iter() {
+                            SpSeriesRow {
+                                key: "{s.id}",
+                                series: s.clone(),
+                                option: state(FlatItem::Series { id: s.id, name: s.name.clone() }),
+                                on_click: navigate_and_close(nav, open, Route::SeriesDetail { id: s.id }),
+                            }
                         }
                     }
                 }
 
                 // Tags
                 if !r.tags.is_empty() {
-                    SpGroupHead { label: "Tags", count: r.tags.len() }
-                    for tag in r.tags.iter() {
-                        SpTagRow {
-                            key: "{tag.id}",
-                            tag: tag.clone(),
-                            selected: has_nav && is_selected(&items, sel, &FlatItem::Tag { id: tag.id, name: tag.name.clone() }),
-                            on_click: navigate_and_close(nav, open, Route::Search { query: facet_query("tag", &tag.name) }),
+                    div { role: "group", "aria-labelledby": "sp-group-tags",
+                        SpGroupHead { label: "Tags", count: r.tags.len() }
+                        for tag in r.tags.iter() {
+                            SpTagRow {
+                                key: "{tag.id}",
+                                tag: tag.clone(),
+                                option: state(FlatItem::Tag { id: tag.id, name: tag.name.clone() }),
+                                on_click: navigate_and_close(nav, open, Route::Search { query: facet_query("tag", &tag.name) }),
+                            }
                         }
                     }
                 }
 
                 // Genres
                 if !r.genres.is_empty() {
-                    SpGroupHead { label: "Genres", count: r.genres.len() }
-                    for genre in r.genres.iter() {
-                        SpGenreRow {
-                            key: "{genre.name}",
-                            genre: genre.clone(),
-                            selected: has_nav && is_selected(&items, sel, &FlatItem::Genre { name: genre.name.clone() }),
-                            on_click: navigate_and_close(nav, open, Route::Search { query: facet_query("genre", &genre.name) }),
+                    div { role: "group", "aria-labelledby": "sp-group-genres",
+                        SpGroupHead { label: "Genres", count: r.genres.len() }
+                        for genre in r.genres.iter() {
+                            SpGenreRow {
+                                key: "{genre.name}",
+                                genre: genre.clone(),
+                                option: state(FlatItem::Genre { name: genre.name.clone() }),
+                                on_click: navigate_and_close(nav, open, Route::Search { query: facet_query("genre", &genre.name) }),
+                            }
                         }
                     }
                 }
@@ -120,17 +172,19 @@ pub(super) fn SpResultsList(
 
             // Matched on the client, so outside the server-results guard.
             if !settings.read().is_empty() {
-                SpGroupHead { label: "Settings", count: settings.read().len() }
-                for entry in settings.read().iter().copied() {
-                    SpSettingRow {
-                        key: "{entry.label}",
-                        entry,
-                        selected: has_nav && is_selected(&items, sel, &FlatItem::Setting(entry)),
-                        on_click: move |_| {
-                            nav.push(link_target(entry.target.route()));
-                            let mut open = open;
-                            open.0.set(false);
-                        },
+                div { role: "group", "aria-labelledby": "sp-group-settings",
+                    SpGroupHead { label: "Settings", count: settings.read().len() }
+                    for entry in settings.read().iter().copied() {
+                        SpSettingRow {
+                            key: "{entry.label}",
+                            entry,
+                            option: state(FlatItem::Setting(entry)),
+                            on_click: move |_| {
+                                nav.push(link_target(entry.target.route()));
+                                let mut open = open;
+                                open.0.set(false);
+                            },
+                        }
                     }
                 }
             }
@@ -144,18 +198,19 @@ pub(super) fn SpResultsList(
 /// guard, so `count` is never zero.
 #[component]
 fn SpGroupHead(label: &'static str, count: usize) -> Element {
+    let id = format!("sp-group-{}", label.to_lowercase());
     rsx! {
-        div { class: "sp-group-head label", "{label} · {count}" }
+        div { class: "sp-group-head label", id: "{id}", "{label} · {count}" }
     }
 }
 
 #[component]
-fn SpBookRow(book: PaletteBookHit, selected: bool, on_click: EventHandler<MouseEvent>) -> Element {
-    let sel_class = if selected {
-        "sp-row selected"
-    } else {
-        "sp-row"
-    };
+fn SpBookRow(
+    book: PaletteBookHit,
+    option: OptionState,
+    on_click: EventHandler<MouseEvent>,
+) -> Element {
+    let sel_class = option.class();
     let server_url = use_server_url();
     // A transient thumb-fetch failure otherwise renders the browser's
     // broken-image icon with no self-heal until a full reload. Tracks the
@@ -209,6 +264,9 @@ fn SpBookRow(book: PaletteBookHit, selected: bool, on_click: EventHandler<MouseE
     rsx! {
         div {
             class: "{sel_class}",
+            id: "{option.id}",
+            role: "option",
+            "aria-selected": option.aria_selected(),
             "data-testid": "sp-book-row",
             onclick: move |evt| on_click.call(evt),
             {cover}
@@ -229,14 +287,10 @@ fn SpBookRow(book: PaletteBookHit, selected: bool, on_click: EventHandler<MouseE
 #[component]
 fn SpAuthorRow(
     author: PaletteAuthorHit,
-    selected: bool,
+    option: OptionState,
     on_click: EventHandler<MouseEvent>,
 ) -> Element {
-    let sel_class = if selected {
-        "sp-row selected"
-    } else {
-        "sp-row"
-    };
+    let sel_class = option.class();
     let initial = author
         .name
         .chars()
@@ -248,6 +302,9 @@ fn SpAuthorRow(
     rsx! {
         div {
             class: "{sel_class}",
+            id: "{option.id}",
+            role: "option",
+            "aria-selected": option.aria_selected(),
             "data-testid": "sp-author-row",
             onclick: move |evt| on_click.call(evt),
             div { class: "sp-avatar", "{initial}" }
@@ -264,18 +321,17 @@ fn SpAuthorRow(
 #[component]
 fn SpSeriesRow(
     series: PaletteSeriesHit,
-    selected: bool,
+    option: OptionState,
     on_click: EventHandler<MouseEvent>,
 ) -> Element {
-    let sel_class = if selected {
-        "sp-row selected"
-    } else {
-        "sp-row"
-    };
+    let sel_class = option.class();
 
     rsx! {
         div {
             class: "{sel_class}",
+            id: "{option.id}",
+            role: "option",
+            "aria-selected": option.aria_selected(),
             "data-testid": "sp-series-row",
             onclick: move |evt| on_click.call(evt),
             div { class: "sp-avatar", "S" }
@@ -293,16 +349,19 @@ fn SpSeriesRow(
 }
 
 #[component]
-fn SpTagRow(tag: PaletteTagHit, selected: bool, on_click: EventHandler<MouseEvent>) -> Element {
-    let sel_class = if selected {
-        "sp-row selected"
-    } else {
-        "sp-row"
-    };
+fn SpTagRow(
+    tag: PaletteTagHit,
+    option: OptionState,
+    on_click: EventHandler<MouseEvent>,
+) -> Element {
+    let sel_class = option.class();
 
     rsx! {
         div {
             class: "{sel_class}",
+            id: "{option.id}",
+            role: "option",
+            "aria-selected": option.aria_selected(),
             "data-testid": "sp-tag-row",
             onclick: move |evt| on_click.call(evt),
             span { class: "sp-tag-chip", "# {tag.name}" }
@@ -318,18 +377,17 @@ fn SpTagRow(tag: PaletteTagHit, selected: bool, on_click: EventHandler<MouseEven
 #[component]
 fn SpGenreRow(
     genre: PaletteGenreHit,
-    selected: bool,
+    option: OptionState,
     on_click: EventHandler<MouseEvent>,
 ) -> Element {
-    let sel_class = if selected {
-        "sp-row selected"
-    } else {
-        "sp-row"
-    };
+    let sel_class = option.class();
 
     rsx! {
         div {
             class: "{sel_class}",
+            id: "{option.id}",
+            role: "option",
+            "aria-selected": option.aria_selected(),
             "data-testid": "sp-genre-row",
             onclick: move |evt| on_click.call(evt),
             span { class: "sp-tag-chip", "{genre.name}" }
@@ -346,14 +404,10 @@ fn SpGenreRow(
 #[component]
 fn SpSettingRow(
     entry: &'static SettingsEntry,
-    selected: bool,
+    option: OptionState,
     on_click: EventHandler<MouseEvent>,
 ) -> Element {
-    let sel_class = if selected {
-        "sp-row selected"
-    } else {
-        "sp-row"
-    };
+    let sel_class = option.class();
     let glyph = match entry.target {
         SettingsTarget::Personal(_) => sliders_glyph(16),
         SettingsTarget::Admin(..) => server_glyph(16),
@@ -362,6 +416,9 @@ fn SpSettingRow(
     rsx! {
         div {
             class: "{sel_class}",
+            id: "{option.id}",
+            role: "option",
+            "aria-selected": option.aria_selected(),
             "data-testid": "sp-setting-row",
             onclick: move |evt| on_click.call(evt),
             div { class: "sp-avatar", {glyph} }

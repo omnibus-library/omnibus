@@ -3,9 +3,11 @@ import { toPalette } from "../../api";
 import { matchingSettings } from "../../settingsIndex";
 import { aWirePalette } from "../../testing/wire";
 import {
+  activeOptionId,
   itemHref,
   itemKey,
   moveSelection,
+  optionId,
   paletteGroups,
   selectedIndex,
 } from "./selection";
@@ -82,5 +84,30 @@ describe("itemHref", () => {
     expect(itemHref({ kind: "tag", hit })).toBe(
       "/search/tag%3A%22space%20opera%22",
     );
+  });
+});
+
+describe("optionId", () => {
+  it("is unique per flat index", () => {
+    expect(optionId(0)).toBe("sp-option-0");
+    expect(optionId(1)).not.toBe(optionId(2));
+  });
+});
+
+describe("activeOptionId", () => {
+  const items = rows(results, []);
+
+  it("names the highlighted row by its flat index", () => {
+    const third = items.slice(2, 3).map(itemKey)[0] ?? "";
+
+    expect(activeOptionId(items, third)).toBe(optionId(2));
+  });
+
+  it("is absent until a row is highlighted", () => {
+    expect(activeOptionId(items, null)).toBeUndefined();
+  });
+
+  it("is absent when nothing is listed", () => {
+    expect(activeOptionId([], "book:gone")).toBeUndefined();
   });
 });

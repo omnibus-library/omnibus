@@ -347,6 +347,49 @@ test.describe("search palette", () => {
       });
     });
 
+    test("expose the highlighted result to assistive tech", async ({
+      libraryPage,
+    }) => {
+      const palette = libraryPage.topNav.searchPalette;
+
+      await test.step("search for a title", async () => {
+        await libraryPage.goto();
+        await palette.search("dracula");
+        await expect(palette.row("book")).not.toHaveCount(0);
+      });
+
+      await test.step("check the input controls a listbox of options", async () => {
+        await expect(palette.combobox).toHaveAttribute("aria-expanded", "true");
+        await expect(palette.combobox).toHaveAttribute(
+          "aria-autocomplete",
+          "list",
+        );
+        await expect(palette.listbox).toBeVisible();
+        await expect(palette.combobox).toHaveAttribute(
+          "aria-controls",
+          (await palette.listbox.getAttribute("id")) ?? "",
+        );
+        await expect(palette.combobox).not.toHaveAttribute(
+          "aria-activedescendant",
+          /.+/,
+        );
+      });
+
+      await test.step("press the down arrow", async () => {
+        await palette.selectNextResult();
+      });
+
+      await test.step("check the input points at the selected option", async () => {
+        const id = await palette.selectedOption.getAttribute("id");
+        expect(id).toMatch(/^sp-option-\d+$/);
+        await expect(palette.combobox).toHaveAttribute(
+          "aria-activedescendant",
+          id ?? "",
+        );
+        await expect(palette.selectedOption).toHaveCount(1);
+      });
+    });
+
     test("open an author from its result", async ({
       libraryPage,
       authorPage,
