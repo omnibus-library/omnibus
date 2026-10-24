@@ -18,8 +18,11 @@ export function tally(books: readonly Book[], states: BookStates): Tally {
 }
 
 /** The book in progress the reader touched last. */
-export function currentBook(books: readonly Book[], states: BookStates) {
-  let best: { book: Book; state: BookState } | null = null;
+export function currentBook<B extends Book>(
+  books: readonly B[],
+  states: BookStates,
+) {
+  let best: { book: B; state: BookState } | null = null;
   for (const book of books) {
     const state = states.get(book.uuid);
     if (state?.status !== "reading") continue;

@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { SeriesSummary } from "../../api";
 import {
   filterAndSortSeries,
-  seriesEyebrow,
   seriesSortKey,
   splitLastWord,
 } from "./seriesIndex";
@@ -94,28 +93,5 @@ describe("splitLastWord", () => {
     ["Dune", ["", "Dune"]],
   ])("splits %s", (name, parts) => {
     expect(splitLastWord(name)).toEqual(parts);
-  });
-});
-
-describe("seriesEyebrow", () => {
-  const book = (index: string | null, published: string | null) => ({
-    series: { index },
-    published,
-  });
-
-  it("pairs the index with a real date", () => {
-    expect(seriesEyebrow(book("1", "2016-05-02"))).toBe("Book #1 · May 2016");
-  });
-
-  it("reads the same for an absent and a sentinel date", () => {
-    expect(seriesEyebrow(book("1", null))).toBe("Book #1");
-    expect(seriesEyebrow(book("1", "0101-01-01T00:00:00+00:00"))).toBe(
-      "Book #1",
-    );
-  });
-
-  it("drops the separator when only a date is present", () => {
-    expect(seriesEyebrow(book(null, "2016-05"))).toBe("May 2016");
-    expect(seriesEyebrow(book(null, null))).toBe("");
   });
 });

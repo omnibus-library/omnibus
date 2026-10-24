@@ -187,8 +187,22 @@ export const seriesListQuery = queryOptions({
   queryFn: fetchSeriesList,
 });
 
-/** A series' name, how many of its books the library holds, and those books in reading order; `null` when no series has that id. */
-export async function fetchSeries(id: SeriesId) {
+/** A book on a series page: the listing shape, plus who is credited and in what role. */
+export type SeriesBook = Book & {
+  creators: { name: string; id: AuthorId | null; role: string | null }[];
+};
+
+export type SeriesPage = {
+  id: SeriesId;
+  name: string;
+  bookCount: number;
+  books: SeriesBook[];
+  /** The reader's state on each book they have opened or marked, by book uuid. */
+  reading: Map<string, BookState>;
+};
+
+/** A series, how many of its books the library holds, those books in reading order and the reader's state on each; `null` when no series has that id. */
+export async function fetchSeries(id: SeriesId): Promise<SeriesPage | null> {
   const res = await getSeriesById(id);
   if (res.status === 404) return null;
   const data = ok(res);
@@ -198,8 +212,15 @@ export async function fetchSeries(id: SeriesId) {
     bookCount: data.book_count,
     books: data.books.map((b) => ({
       ...toBook(b),
-      description: b.description ?? null,
+      creators: b.creators.map((c) => ({
+        name: c.name,
+        id: c.id == null ? null : (c.id as AuthorId),
+        role: c.role ?? null,
+      })),
     })),
+    reading: new Map(
+      (data.reading ?? []).map((r) => [r.book_uuid, toBookState(r)]),
+    ),
   };
 }
 

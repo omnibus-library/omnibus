@@ -1,5 +1,4 @@
 import type { SeriesSummary } from "../../api";
-import { formatMonthYear } from "../../format";
 import type { DiscoveryPrefs } from "../../viewPrefs";
 
 export type SeriesSort = DiscoveryPrefs["series_sort"];
@@ -38,14 +37,4 @@ export function filterAndSortSeries(
 export function splitLastWord(name: string): [rest: string, last: string] {
   const at = name.lastIndexOf(" ");
   return at < 0 ? ["", name] : [name.slice(0, at), name.slice(at + 1)];
-}
-
-/** The series card's eyebrow, "Book #1 · May 2016", dropping either half the book lacks. */
-export function seriesEyebrow(book: {
-  series: { index: string | null } | null;
-  published: string | null;
-}): string {
-  const index = book.series?.index ? `Book #${book.series.index}` : null;
-  const date = book.published ? formatMonthYear(book.published) : null;
-  return [index, date].filter(Boolean).join(" · ");
 }

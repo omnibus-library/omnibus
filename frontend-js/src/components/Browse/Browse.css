@@ -542,6 +542,10 @@
     color: var(--ink-0);
   }
 }
+.au-shelf-meta.se-gaps {
+  color: color-mix(in oklch, var(--au-tint) 80%, var(--ink-2));
+  white-space: normal;
+}
 
 .au-grid {
   display: grid;
@@ -583,13 +587,27 @@
   height: 100%;
   background: var(--au-tint);
 }
+.au-tile-caption,
+.au-tile-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.au-tile-caption {
+  margin-top: 9px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
 .au-tile-title {
   margin-top: 8px;
   font-size: 14px;
   color: var(--ink-1);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+}
+.au-tile-caption + .au-tile-title {
+  margin-top: 3px;
 }
 @media (max-width: 900px) {
   .au-page {
