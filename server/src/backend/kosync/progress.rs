@@ -13,7 +13,9 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use omnibus_db::{self as db, kobo::KoboBookState, progress::ProgressError};
+use omnibus_db::{
+    self as db, kobo::KoboBookState, kosync::KosyncDocument, progress::ProgressError,
+};
 use omnibus_shared::{ProgressFormat, ProgressUpdate, EPUB_CFI_MAX_LEN};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -21,7 +23,7 @@ use sqlx::SqlitePool;
 
 use super::auth::KosyncUser;
 use super::error;
-use crate::backend::koreader::state::{convert, position_xpointer};
+use crate::backend::koreader::state::{convert, epub_source, position_xpointer};
 use crate::backend::AppState;
 use crate::http_errors::internal;
 
@@ -57,9 +59,21 @@ fn is_digest(document: &str) -> bool {
     document.len() == 32 && document.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
-/// The book a document names, or `None` when Omnibus cannot say.
-async fn resolve(pool: &SqlitePool, document: &str) -> anyhow::Result<Option<String>> {
+/// The book and edition a document names, or `None` when Omnibus cannot say.
+async fn resolve(pool: &SqlitePool, document: &str) -> anyhow::Result<Option<KosyncDocument>> {
     db::kosync::resolve_document(pool, &document.to_ascii_lowercase()).await
+}
+
+/// Whether the device holds the book's source edition, the one every stored CFI is in.
+async fn holds_source(pool: &SqlitePool, uuid: &str, held: Option<i64>) -> bool {
+    let Some(held) = held else {
+        return false;
+    };
+    epub_source(pool, uuid)
+        .await
+        .ok()
+        .flatten()
+        .is_some_and(|(source, _)| source == held)
 }
 
 /// The answer to a push no book can take: success, so the device does not queue and retry it
@@ -98,18 +112,24 @@ pub(super) async fn put_progress(
     {
         return invalid_request();
     }
-    let uuid = match resolve(state.pool(), &document).await {
-        Ok(Some(uuid)) => uuid,
+    let (uuid, held) = match resolve(state.pool(), &document).await {
+        Ok(Some(found)) => (found.book_uuid, found.book_file_id),
         Ok(None) => return accepted_unstored(&document),
         Err(e) => return internal("kosync resolve document", e),
     };
 
-    // Read-only, so it stays outside the transaction; a miss stores the percent alone.
-    let xpointer = progress.clone();
-    let epub_cfi = convert(state.pool(), &uuid, move |source| {
-        db::koreader_position::xpointer_to_cfi(source, &xpointer)
-    })
-    .await;
+    // A path only addresses its own edition: a CFI is taken from the source edition alone, and
+    // the XPointer is kept only beside the edition it was written in. Read-only, so it stays
+    // outside the transaction; a miss stores the percent alone.
+    let epub_cfi = if holds_source(state.pool(), &uuid, held).await {
+        let xpointer = progress.clone();
+        convert(state.pool(), &uuid, move |source| {
+            db::koreader_position::xpointer_to_cfi(source, &xpointer)
+        })
+        .await
+    } else {
+        None
+    };
     let update = ProgressUpdate {
         book_uuid: uuid,
         format: ProgressFormat::Epub,
@@ -118,14 +138,14 @@ pub(super) async fn put_progress(
         // Floored (rule 11); the epsilon undoes binary rounding such as 0.29 * 100 = 28.999999999999996.
         progress_percent: Some((percentage * 100.0 + 1e-9).floor() as i64),
         kobo_location: None,
-        book_file_id: None,
+        book_file_id: held,
         client_updated_at: None,
     };
     let stored = match db::progress::upsert_koreader_progress(
         state.pool(),
         user.0,
         &update,
-        Some(&progress),
+        held.and(Some(progress.as_str())),
         Some(percentage),
     )
     .await
@@ -165,8 +185,8 @@ pub(super) async fn get_progress(
     if !is_digest(&document) {
         return nothing();
     }
-    let uuid = match resolve(state.pool(), &document).await {
-        Ok(Some(uuid)) => uuid,
+    let (uuid, held) = match resolve(state.pool(), &document).await {
+        Ok(Some(found)) => (found.book_uuid, found.book_file_id),
         Ok(None) => return nothing(),
         Err(e) => return internal("kosync resolve document", e),
     };
@@ -186,8 +206,16 @@ pub(super) async fn get_progress(
     let Some(percent) = stored.percent else {
         return nothing();
     };
-    // A percentage without a progress would send KOReader to a nil position.
-    let Some(progress) = xpointer_for(state.pool(), &uuid, &stored, percent).await else {
+    // Another edition gets nothing exact: its paths address different text. And a
+    // percentage without a progress would send KOReader to a nil position.
+    let progress = if holds_source(state.pool(), &uuid, held).await {
+        xpointer_for(state.pool(), &uuid, &stored, percent).await
+    } else if held.is_some() && stored.book_file_id == held {
+        stored.koreader_xpointer.clone()
+    } else {
+        None
+    };
+    let Some(progress) = progress else {
         return nothing();
     };
     Json(Pull {

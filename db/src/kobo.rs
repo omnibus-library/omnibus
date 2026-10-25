@@ -392,6 +392,8 @@ pub struct KoboBookState {
     pub koreader_xpointer: Option<String>,
     /// The exact fraction KOReader sent through kosync beside that XPointer, cleared with it.
     pub koreader_percentage: Option<f64>,
+    /// The `book_files` edition the position was taken in, when the writer named one.
+    pub book_file_id: Option<i64>,
     /// Newest of the read-status and progress timestamps — the value the
     /// per-device delta compares against its snapshot to decide whether a
     /// device's state is stale.
@@ -458,6 +460,7 @@ fn reading_state_sql(placeholders: &str) -> String {
                 rp.epub_cfi AS epub_cfi,
                 rp.koreader_xpointer AS koreader_xpointer,
                 rp.koreader_percentage AS koreader_percentage,
+                rp.book_file_id AS book_file_id,
                 rp.kobo_spent_reading_minutes AS kobo_spent_reading_minutes,
                 rp.kobo_remaining_time_minutes AS kobo_remaining_time_minutes,
                 rp.kobo_statistics_updated_at AS kobo_statistics_updated_at,
@@ -521,6 +524,7 @@ fn row_to_kobo_state(row: &sqlx::sqlite::SqliteRow) -> Result<(String, KoboBookS
         epub_cfi: row.try_get::<Option<String>, _>("epub_cfi")?,
         koreader_xpointer: row.try_get::<Option<String>, _>("koreader_xpointer")?,
         koreader_percentage: row.try_get::<Option<f64>, _>("koreader_percentage")?,
+        book_file_id: row.try_get::<Option<i64>, _>("book_file_id")?,
         state_updated_at: row.try_get::<i64, _>("state_updated_at")?,
         progress_updated_at: row.try_get::<i64, _>("progress_updated_at")?,
         status_updated_at: row.try_get::<i64, _>("status_updated_at")?,

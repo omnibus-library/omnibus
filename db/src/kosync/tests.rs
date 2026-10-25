@@ -45,8 +45,12 @@ mod record_export_digest {
         let bake = dir.path().join("bake.epub");
         std::fs::write(&bake, b"baked bytes").unwrap();
 
-        record_export_digest(&pool, &uuid, &bake).await.unwrap();
-        record_export_digest(&pool, &uuid, &bake).await.unwrap();
+        record_export_digest(&pool, &uuid, None, &bake)
+            .await
+            .unwrap();
+        record_export_digest(&pool, &uuid, None, &bake)
+            .await
+            .unwrap();
 
         let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM book_export_digests")
             .fetch_one(&pool)
@@ -59,13 +63,29 @@ mod record_export_digest {
 mod resolve_document {
     use super::*;
 
+    /// The book `digest` names, edition aside.
+    async fn book_of(pool: &SqlitePool, digest: &str) -> Option<String> {
+        resolve_document(pool, digest)
+            .await
+            .unwrap()
+            .map(|document| document.book_uuid)
+    }
+
+    async fn file_id_with(pool: &SqlitePool, digest: &str) -> i64 {
+        sqlx::query_scalar("SELECT id FROM book_files WHERE partial_md5 = ?")
+            .bind(digest)
+            .fetch_one(pool)
+            .await
+            .unwrap()
+    }
+
     #[tokio::test]
     async fn finds_a_book_by_its_original_file() {
         let pool = init_db("sqlite::memory:").await.unwrap();
         let uuid = seed_hashed_epub(&pool, "a.epub", DIGEST_A).await;
         seed_hashed_epub(&pool, "b.epub", DIGEST_B).await;
 
-        assert_eq!(resolve_document(&pool, DIGEST_A).await.unwrap(), Some(uuid));
+        assert_eq!(book_of(&pool, DIGEST_A).await, Some(uuid));
     }
 
     #[tokio::test]
@@ -73,7 +93,7 @@ mod resolve_document {
         let pool = init_db("sqlite::memory:").await.unwrap();
         seed_hashed_epub(&pool, "a.epub", DIGEST_A).await;
 
-        assert_eq!(resolve_document(&pool, DIGEST_B).await.unwrap(), None);
+        assert_eq!(book_of(&pool, DIGEST_B).await, None);
     }
 
     #[tokio::test]
@@ -82,7 +102,7 @@ mod resolve_document {
         seed_hashed_epub(&pool, "a.epub", DIGEST_A).await;
         seed_hashed_epub(&pool, "b.epub", DIGEST_A).await;
 
-        assert_eq!(resolve_document(&pool, DIGEST_A).await.unwrap(), None);
+        assert_eq!(book_of(&pool, DIGEST_A).await, None);
     }
 
     #[tokio::test]
@@ -95,7 +115,7 @@ mod resolve_document {
             .await
             .unwrap();
 
-        assert_eq!(resolve_document(&pool, DIGEST_A).await.unwrap(), None);
+        assert_eq!(book_of(&pool, DIGEST_A).await, None);
     }
 
     #[tokio::test]
@@ -104,7 +124,7 @@ mod resolve_document {
         let uuid = seed_hashed_epub(&pool, "a.epub", DIGEST_A).await;
         record_digest(&pool, DIGEST_B, &uuid).await;
 
-        assert_eq!(resolve_document(&pool, DIGEST_B).await.unwrap(), Some(uuid));
+        assert_eq!(book_of(&pool, DIGEST_B).await, Some(uuid));
     }
 
     #[tokio::test]
@@ -115,7 +135,7 @@ mod resolve_document {
         record_digest(&pool, DIGEST_B, &a).await;
         record_digest(&pool, DIGEST_B, &b).await;
 
-        assert_eq!(resolve_document(&pool, DIGEST_B).await.unwrap(), None);
+        assert_eq!(book_of(&pool, DIGEST_B).await, None);
     }
 
     #[tokio::test]
@@ -128,10 +148,7 @@ mod resolve_document {
             .unwrap();
         record_digest(&pool, DIGEST_B, &loser).await;
 
-        assert_eq!(
-            resolve_document(&pool, DIGEST_B).await.unwrap(),
-            Some(survivor)
-        );
+        assert_eq!(book_of(&pool, DIGEST_B).await, Some(survivor));
     }
 
     #[tokio::test]
@@ -145,7 +162,48 @@ mod resolve_document {
 
         assert_eq!(
             resolve_document(&pool, DIGEST_B).await.unwrap(),
-            Some(survivor)
+            Some(KosyncDocument {
+                book_uuid: survivor,
+                book_file_id: Some(file_id_with(&pool, DIGEST_B).await),
+            }),
+            "the merged-in edition is the one named"
+        );
+    }
+
+    #[tokio::test]
+    async fn names_no_edition_for_a_copy_recorded_without_one() {
+        let pool = init_db("sqlite::memory:").await.unwrap();
+        let uuid = seed_hashed_epub(&pool, "a.epub", DIGEST_A).await;
+        record_digest(&pool, DIGEST_B, &uuid).await;
+
+        assert_eq!(
+            resolve_document(&pool, DIGEST_B).await.unwrap(),
+            Some(KosyncDocument {
+                book_uuid: uuid,
+                book_file_id: None
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn names_the_edition_a_served_copy_was_made_from() {
+        let pool = init_db("sqlite::memory:").await.unwrap();
+        let uuid = seed_hashed_epub(&pool, "a.epub", DIGEST_A).await;
+        let file = file_id_with(&pool, DIGEST_A).await;
+        let dir = tempfile::tempdir().unwrap();
+        let copy = dir.path().join("copy.epub");
+        std::fs::write(&copy, b"served bytes").unwrap();
+        record_export_digest(&pool, &uuid, Some(file), &copy)
+            .await
+            .unwrap();
+        let digest = partial_md5(&copy).unwrap();
+
+        assert_eq!(
+            resolve_document(&pool, &digest).await.unwrap(),
+            Some(KosyncDocument {
+                book_uuid: uuid,
+                book_file_id: Some(file)
+            })
         );
     }
 }

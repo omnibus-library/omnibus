@@ -23,6 +23,8 @@ use crate::backend::{rest_router, AppState};
 
 use super::kosync_router;
 
+mod editions;
+
 const ACCEPT: &str = "application/vnd.koreader.v1+json";
 const USERNAME: &str = "ada";
 

@@ -102,13 +102,17 @@ impl StateBody {
     }
 }
 
-/// The path of the book's source EPUB: `Ok(None)` for a book that has none, `Err` when the
-/// lookup itself fails, which a caller must not mistake for a book without an EPUB.
-pub(super) async fn epub_source(pool: &SqlitePool, uuid: &str) -> anyhow::Result<Option<PathBuf>> {
+/// The book's source EPUB, the edition every stored CFI is in: its `book_files` id and path.
+/// `Ok(None)` for a book that has none, `Err` when the lookup itself fails, which a caller
+/// must not mistake for a book without an EPUB.
+pub(in crate::backend) async fn epub_source(
+    pool: &SqlitePool,
+    uuid: &str,
+) -> anyhow::Result<Option<(i64, PathBuf)>> {
     let Some(book_id) = db::resolve_book_id_by_uuid(pool, uuid).await? else {
         return Ok(None);
     };
-    Ok(db::book_file_path(pool, book_id, "EPUB").await?)
+    Ok(db::book_file_with_id(pool, book_id, "EPUB").await?)
 }
 
 /// Convert between an XPointer and a CFI against the book's source EPUB, off the async
@@ -118,7 +122,7 @@ pub(in crate::backend) async fn convert(
     uuid: &str,
     run: impl FnOnce(&FsPath) -> anyhow::Result<Option<String>> + Send + 'static,
 ) -> Option<String> {
-    let source = epub_source(pool, uuid).await.ok().flatten()?;
+    let (_, source) = epub_source(pool, uuid).await.ok().flatten()?;
     match tokio::task::spawn_blocking(move || run(&source)).await {
         Ok(Ok(converted)) => converted,
         Ok(Err(e)) => {
@@ -132,15 +136,26 @@ pub(in crate::backend) async fn convert(
     }
 }
 
-/// The exact position to report: the device's own XPointer, else one derived from the CFI
-/// another surface stored.
+/// The exact position to report to a device holding the source edition: a KOReader's own
+/// XPointer when it was taken in that edition, else one derived from the CFI another surface
+/// stored. A stored XPointer naming no edition is the plugin's, which only ever holds the source.
 pub(in crate::backend) async fn position_xpointer(
     pool: &SqlitePool,
     uuid: &str,
     stored: &KoboBookState,
 ) -> Option<String> {
     if let Some(xpointer) = &stored.koreader_xpointer {
-        return Some(xpointer.clone());
+        let in_source = match stored.book_file_id {
+            None => true,
+            Some(edition) => epub_source(pool, uuid)
+                .await
+                .ok()
+                .flatten()
+                .is_some_and(|(source, _)| source == edition),
+        };
+        if in_source {
+            return Some(xpointer.clone());
+        }
     }
     let cfi = stored.epub_cfi.clone()?;
     convert(pool, uuid, move |source| {

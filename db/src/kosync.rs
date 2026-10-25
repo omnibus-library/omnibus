@@ -15,48 +15,72 @@ use crate::{auth::hash_token, books::resolve_canonical_book_uuid, partial_md5::p
 const PASSWORD_ALPHABET: &[u8; 31] = b"abcdefghjkmnpqrstuvwxyz23456789";
 const PASSWORD_LEN: usize = 20;
 
-/// The book a KOReader partial MD5 names: an original EPUB file or a served bake. `None` when
-/// no file matches or the digest matches more than one book (never guess).
-pub async fn resolve_document(pool: &SqlitePool, digest: &str) -> anyhow::Result<Option<String>> {
-    let candidates: Vec<String> = sqlx::query_scalar(
-        "SELECT b.uuid FROM book_files bf JOIN books b ON b.id = bf.book_id \
+/// What a KOReader document digest names: the book, and the EPUB file (the edition) the
+/// device holds when that is known. A precise position is only exact in its own edition.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KosyncDocument {
+    pub book_uuid: String,
+    pub book_file_id: Option<i64>,
+}
+
+/// The book a KOReader partial MD5 names: an original EPUB file or a served copy. `None` when
+/// no file matches or the digest matches more than one book (never guess); the edition is
+/// `None` unless every match names the same file.
+pub async fn resolve_document(
+    pool: &SqlitePool,
+    digest: &str,
+) -> anyhow::Result<Option<KosyncDocument>> {
+    let candidates: Vec<(String, Option<i64>)> = sqlx::query_as(
+        "SELECT b.uuid, bf.id FROM book_files bf JOIN books b ON b.id = bf.book_id \
          WHERE bf.partial_md5 = ?1 AND bf.format = 'EPUB' COLLATE NOCASE \
          UNION \
-         SELECT book_uuid FROM book_export_digests WHERE partial_md5 = ?1",
+         SELECT book_uuid, book_file_id FROM book_export_digests WHERE partial_md5 = ?1",
     )
     .bind(digest)
     .fetch_all(pool)
     .await?;
-    // A bake recorded before a merge may still name the merged-away uuid.
+    // A copy recorded before a merge may still name the merged-away uuid.
     let mut books = BTreeSet::new();
-    for uuid in candidates {
+    let mut files = BTreeSet::new();
+    for (uuid, file) in candidates {
         books.extend(resolve_canonical_book_uuid(pool, &uuid).await?);
+        files.insert(file);
     }
-    Ok(if books.len() == 1 {
-        books.pop_first()
-    } else {
-        None
-    })
+    if books.len() != 1 {
+        return Ok(None);
+    }
+    Ok(books.pop_first().map(|book_uuid| KosyncDocument {
+        book_uuid,
+        book_file_id: if files.len() == 1 {
+            files.pop_first().flatten()
+        } else {
+            None
+        },
+    }))
 }
 
-/// Remember the partial MD5 of the served EPUB at `path` as `book_uuid`'s, so a device that
-/// downloaded it resolves at once and keeps resolving after the next override edit replaces it.
+/// Remember the partial MD5 of the served EPUB at `path` as `book_uuid`'s, made from the
+/// `book_file_id` edition, so a device that downloaded it resolves at once, and keeps
+/// resolving after the next override edit replaces it.
 pub async fn record_export_digest(
     pool: &SqlitePool,
     book_uuid: &str,
+    book_file_id: Option<i64>,
     path: &Path,
 ) -> anyhow::Result<()> {
     let path = path.to_path_buf();
     let digest = tokio::task::spawn_blocking(move || partial_md5(&path))
         .await
         .context("hash task join failed")?
-        .context("hash baked epub")?;
+        .context("hash served epub")?;
     sqlx::query(
-        "INSERT OR IGNORE INTO book_export_digests (partial_md5, book_uuid, created_at) \
-         VALUES (?, ?, strftime('%s', 'now'))",
+        "INSERT INTO book_export_digests (partial_md5, book_uuid, book_file_id, created_at) \
+         VALUES (?, ?, ?, strftime('%s', 'now')) \
+         ON CONFLICT(partial_md5, book_uuid) DO UPDATE SET book_file_id = excluded.book_file_id",
     )
     .bind(digest)
     .bind(book_uuid)
+    .bind(book_file_id)
     .execute(pool)
     .await?;
     Ok(())

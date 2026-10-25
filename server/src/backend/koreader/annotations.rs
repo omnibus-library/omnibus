@@ -203,7 +203,7 @@ async fn to_cfis(
     anchors: Vec<(String, String)>,
 ) -> anyhow::Result<Vec<Option<String>>> {
     let count = anchors.len();
-    let Some(source) = epub_source(pool, uuid).await? else {
+    let Some((_, source)) = epub_source(pool, uuid).await? else {
         return Ok(vec![None; count]);
     };
     off_runtime(move || db::koreader_position::annotation_cfis(&source, &anchors)).await
@@ -220,7 +220,7 @@ async fn to_xpointers(
     if count == 0 {
         return Ok(Vec::new());
     }
-    let Some(source) = epub_source(pool, uuid).await? else {
+    let Some((_, source)) = epub_source(pool, uuid).await? else {
         return Ok(vec![None; count]);
     };
     off_runtime(move || db::koreader_position::annotation_xpointers(&source, &cfis)).await

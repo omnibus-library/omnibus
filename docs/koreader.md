@@ -154,6 +154,11 @@ What to expect:
   with the same name but different bytes, is not recognised: pushing its position
   answers success and stores nothing, and pulling answers that there is none.
   Switching KOReader to *filename* checksums doesn't work either.
+- **One edition at a time.** A book merged from two EPUB editions keeps both, and
+  an exact spot in one is a different passage in the other. A position pushed from
+  an edition reads back exactly only to a device holding that same edition; one
+  holding the other gets no position. Only the edition the web reader opens (the
+  first) shares its spot with the web reader and other devices.
 - **EPUB positions only.** A PDF or comic isn't matched, and no read status
   travels, only the place.
 - **Positions read back as from device "Omnibus".** Omnibus doesn't keep which
