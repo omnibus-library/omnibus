@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Tests for scripts/koreader-dev.sh: require_docker() and require_dev_server(),
 # the checks `just koreader` runs before it builds anything (a missing Docker or
-# dev server is one readable line), its usage line, and the KOReader pin file.
+# dev server is one readable line), the networking it picks from the engine,
+# its usage line, and the KOReader pin file.
 #
 # No Docker, no server: the real script is sourced (it does not run `main` when
-# sourced) and only `docker` and `probe_health` are stubbed, as in
+# sourced) and only `docker`, `uname` and `probe_health` are stubbed, as in
 # scratch-server-make-scratch-dir.test.sh.
 #
 # Usage: scripts/tests/koreader-dev-preflight.test.sh
@@ -48,6 +49,24 @@ check "require_docker prints the engine's arch" "0|arm64|" "$(run require_docker
 
 docker() { return 1; }
 check "require_docker fails readably when the daemon is down" "1||$docker_down_msg" "$(run require_docker)"
+
+uname() { echo Linux; }
+docker() { echo 'Arch Linux|["name=seccomp,profile=builtin","name=cgroupns"]'; }
+check "docker_network_mode shares the host's network on a native rootful Linux engine" \
+    "0|host|" "$(run docker_network_mode)"
+
+docker() { echo 'Arch Linux|["name=seccomp,profile=builtin","name=rootless","name=cgroupns"]'; }
+check "docker_network_mode publishes ports on a rootless Linux engine" \
+    "0|published|" "$(run docker_network_mode)"
+
+docker() { echo 'Docker Desktop|["name=seccomp,profile=unconfined","name=cgroupns"]'; }
+check "docker_network_mode publishes ports on Docker Desktop for Linux" \
+    "0|published|" "$(run docker_network_mode)"
+
+uname() { echo Darwin; }
+docker() { echo 'Docker Desktop|["name=seccomp,profile=unconfined"]'; }
+check "docker_network_mode publishes ports on macOS" "0|published|" "$(run docker_network_mode)"
+unset -f uname
 
 unset -f docker
 without_docker() {

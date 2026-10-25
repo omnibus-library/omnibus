@@ -42,6 +42,22 @@ require_dev_server() {
     echo "$port"
 }
 
+# Prints `host` where the container can share the host's network (a native, rootful Linux
+# engine), else `published`: Docker Desktop and rootless Docker run the engine in a VM or its
+# own network namespace, where `--network host` never reaches the developer's host.
+docker_network_mode() {
+    local info
+    if [ "$(uname -s)" != Linux ]; then
+        echo published
+        return
+    fi
+    info="$(docker info --format '{{.OperatingSystem}}|{{json .SecurityOptions}}' 2>/dev/null || true)"
+    case "$info" in
+    *"Docker Desktop"* | *rootless*) echo published ;;
+    *) echo host ;;
+    esac
+}
+
 free_port() {
     python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])'
 }
@@ -89,10 +105,10 @@ main() {
 
     name="omnibus-koreader-$(printf '%s' "$home" | { sha256sum 2>/dev/null || shasum -a 256; } | cut -c1-8)"
     novnc_port="$(free_port)"
-    net=(-p "127.0.0.1:$novnc_port:6080")
+    # A Linux engine defines no `host.docker.internal` itself, so name the host gateway.
+    net=(-p "127.0.0.1:$novnc_port:6080" --add-host host.docker.internal:host-gateway)
     origin="http://host.docker.internal:$dev_port"
-    if [ "$(uname -s)" = Linux ]; then
-        # shortcut: Docker Desktop for Linux and rootless docker take this branch and won't reach the host; detect via `docker info` if anyone uses them.
+    if [ "$(docker_network_mode)" = host ]; then
         net=(--network host -e "NOVNC_LISTEN=127.0.0.1:$novnc_port" -e "VNC_PORT=$(free_port)")
         origin="http://127.0.0.1:$dev_port"
     fi

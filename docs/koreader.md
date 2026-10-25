@@ -232,8 +232,11 @@ KOReader cleanly, so its settings are saved.
   with. After the dev server moves port or its database is reset, delete the home
   and launch it again.
 
-On Linux the container shares the host network, as the lane's does, so it reaches
-the dev server on `127.0.0.1`; elsewhere it uses `host.docker.internal`. The
+On a native Linux engine the container shares the host network, as the lane's
+does, so it reaches the dev server on `127.0.0.1`. Docker Desktop (macOS or Linux)
+and rootless Docker can't share it — the engine runs in a VM or its own network
+namespace, which `docker info` reports — so there the noVNC port is published on
+the host's loopback and KOReader reaches the server at `host.docker.internal`. The
 screen's VNC and noVNC ports sit on the host's loopback and are password-protected
 with a key made for each launch, which the opened URL carries. The
 image is the lane's, with a VNC server added; it is built for the engine's
