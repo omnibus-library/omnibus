@@ -31,6 +31,7 @@ use crate::auth::AuthUser;
         (status = 200, description = "The highlight.", body = Highlight),
         (status = 400, description = "`book_uuid` or `epub_cfi_range` is blank, a field is too long, `client_id` is blank, or `client_created_at` is negative."),
         (status = 404, description = "No book has that `book_uuid`."),
+        (status = 410, description = "That `client_id` was deleted; a delete is final, so repeating the create can never succeed."),
     ),
 )]
 pub(super) async fn post_highlight(
@@ -64,6 +65,9 @@ pub(super) async fn post_highlight(
         }
         Err(HighlightError::BookNotFound) => {
             (axum::http::StatusCode::NOT_FOUND, "book not found").into_response()
+        }
+        Err(HighlightError::Gone) => {
+            (axum::http::StatusCode::GONE, "highlight was deleted").into_response()
         }
         // NotFound on create means the just-inserted row couldn't be re-read —
         // a server invariant break, not a missing client resource. Surface 500.

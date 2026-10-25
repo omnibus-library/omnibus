@@ -10,16 +10,16 @@ use std::path::Path;
 use anyhow::Context;
 use epub::doc::EpubDoc;
 
-pub(super) type Doc = EpubDoc<BufReader<File>>;
+pub(crate) type Doc = EpubDoc<BufReader<File>>;
 
 /// Open an EPUB (or KEPUB) container from disk.
-pub(super) fn open_doc(path: &Path) -> anyhow::Result<Doc> {
+pub(crate) fn open_doc(path: &Path) -> anyhow::Result<Doc> {
     EpubDoc::new(path).with_context(|| format!("open epub {}", path.display()))
 }
 
 /// The OPF-relative href of spine item `i` — the string a KoboSpan
 /// `Location.Source` carries.
-pub(super) fn spine_href(doc: &Doc, i: usize) -> Option<String> {
+pub(crate) fn spine_href(doc: &Doc, i: usize) -> Option<String> {
     let idref = &doc.spine.get(i)?.idref;
     let res = doc.resources.get(idref)?;
     let rel = res.path.strip_prefix(&doc.root_base).unwrap_or(&res.path);
@@ -29,7 +29,7 @@ pub(super) fn spine_href(doc: &Doc, i: usize) -> Option<String> {
 /// Resolve a `Location.Source` href to its spine index. Exact
 /// OPF-relative match first, then a suffix match for containers whose
 /// Source carries extra leading path segments.
-pub(super) fn spine_index_for_source(doc: &Doc, source: &str) -> Option<usize> {
+pub(crate) fn spine_index_for_source(doc: &Doc, source: &str) -> Option<usize> {
     let normalized = source.trim_start_matches("./");
     let exact = (0..doc.spine.len()).find(|&i| spine_href(doc, i).as_deref() == Some(normalized));
     exact.or_else(|| {
@@ -41,7 +41,7 @@ pub(super) fn spine_index_for_source(doc: &Doc, source: &str) -> Option<usize> {
 }
 
 /// Read spine item `i`'s document bytes.
-pub(super) fn read_spine_entry(doc: &mut Doc, i: usize) -> anyhow::Result<Vec<u8>> {
+pub(crate) fn read_spine_entry(doc: &mut Doc, i: usize) -> anyhow::Result<Vec<u8>> {
     let idref = doc
         .spine
         .get(i)

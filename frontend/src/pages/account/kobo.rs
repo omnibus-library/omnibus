@@ -11,7 +11,7 @@ use dioxus::prelude::*;
 use dioxus_router::Link;
 use omnibus_shared::{DeviceKind, KoboDeviceView};
 
-use crate::components::clipboard::CopyButton;
+use crate::components::clipboard::ReadonlyCopyField;
 use crate::components::confirm_modal::{confirm_dialog, Confirm};
 use crate::components::credential_card::action_status;
 use crate::components::loading::RowSkeletons;
@@ -500,48 +500,24 @@ fn KoboDeviceRow(
                 span { class: "users-badge", "data-testid": "device-kind-badge", "{kind}" }
             }
             if kobo {
-                div { class: "settings-field",
-                    label { r#for: "kobo-endpoint-{id}", "Wireless sync endpoint" }
-                    div { class: "kobo-endpoint-row",
-                        input {
-                            r#type: "text",
-                            id: "kobo-endpoint-{id}",
-                            class: "kobo-endpoint-url",
-                            "data-testid": "kobo-endpoint-url",
-                            translate: "no",
-                            spellcheck: "false",
-                            readonly: true,
-                            value: "{endpoint}",
-                        }
-                        CopyButton {
-                            text: endpoint.clone(),
-                            label: "Copy URL",
-                            testid: "kobo-endpoint-copy",
-                            aria_label: format!("Copy the endpoint URL for {name}"),
-                        }
-                    }
+                ReadonlyCopyField {
+                    id: "kobo-endpoint-{id}",
+                    label: "Wireless sync endpoint",
+                    value: endpoint.clone(),
+                    input_testid: "kobo-endpoint-url",
+                    copy_label: "Copy URL",
+                    copy_testid: "kobo-endpoint-copy",
+                    copy_aria_label: format!("Copy the endpoint URL for {name}"),
                 }
             } else {
-                div { class: "settings-field",
-                    label { r#for: "koreader-token-{id}", "Device token" }
-                    div { class: "kobo-endpoint-row",
-                        input {
-                            r#type: "text",
-                            id: "koreader-token-{id}",
-                            class: "kobo-endpoint-url",
-                            "data-testid": "koreader-device-token",
-                            translate: "no",
-                            spellcheck: "false",
-                            readonly: true,
-                            value: "{device.token}",
-                        }
-                        CopyButton {
-                            text: device.token.clone(),
-                            label: "Copy token",
-                            testid: "koreader-token-copy",
-                            aria_label: format!("Copy the device token for {name}"),
-                        }
-                    }
+                ReadonlyCopyField {
+                    id: "koreader-token-{id}",
+                    label: "Device token",
+                    value: device.token.clone(),
+                    input_testid: "koreader-device-token",
+                    copy_label: "Copy token",
+                    copy_testid: "koreader-token-copy",
+                    copy_aria_label: format!("Copy the device token for {name}"),
                 }
                 p { class: "subtitle", "data-testid": "koreader-last-sync", "{last_sync}" }
                 if let Some(error) = &device.last_sync_error {

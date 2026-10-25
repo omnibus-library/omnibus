@@ -6,6 +6,7 @@
 mod archive;
 mod bulk;
 mod cache;
+mod digests;
 mod opf_cover;
 
 use std::io::Cursor;

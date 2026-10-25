@@ -29,6 +29,7 @@ mod tests;
 
 use extractor::KoboAuthUser;
 pub use reading_services::reading_services_router;
+pub(crate) use resources::{serve_cover, CoverEtag};
 
 /// Build the wireless Kobo router. `Extension(pool)` is layered here so the
 /// router is self-contained for integration tests; the live server adds the
