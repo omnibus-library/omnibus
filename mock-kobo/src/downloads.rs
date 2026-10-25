@@ -150,21 +150,18 @@ async fn write_body(response: &mut reqwest::Response, path: &Path) -> Result<(),
     file.sync_all().await.map_err(WriteError::Io)
 }
 
-/// Record what `attempt_one` found out onto `id`'s book.
+/// Record what `attempt_one` found out onto `id`'s book. A failure leaves
+/// it undownloaded, even one re-fetching a missing file, so `wanted` retries it.
 pub fn apply_outcome(device: &mut Device, id: &str, outcome: Outcome) {
     let Some(book) = device.library.get_mut(id) else {
         return;
     };
-    match outcome {
-        Outcome::Downloaded => {
-            book.downloaded = true;
-            book.download_problem = None;
-        }
-        Outcome::NoUrl => book.download_problem = Some("no download URL".to_owned()),
-        Outcome::Rejected(problem) | Outcome::Transport(problem) => {
-            book.download_problem = Some(problem);
-        }
-    }
+    book.downloaded = matches!(outcome, Outcome::Downloaded);
+    book.download_problem = match outcome {
+        Outcome::Downloaded => None,
+        Outcome::NoUrl => Some("no download URL".to_owned()),
+        Outcome::Rejected(problem) | Outcome::Transport(problem) => Some(problem),
+    };
 }
 
 /// Read a response body to its end without keeping any of it.

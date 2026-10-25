@@ -284,6 +284,29 @@ async fn attempt_download_leaves_the_book_undownloaded_when_its_file_cannot_be_w
 }
 
 #[tokio::test]
+async fn attempt_download_unmarks_a_book_whose_missing_file_fails_to_download_again() {
+    let stub = spawn_stub(Stub {
+        download_status: StatusCode::NOT_FOUND,
+        ..Stub::default()
+    })
+    .await;
+    let dir = tempfile::TempDir::new().unwrap();
+    let mut device = Device::new("HW-1");
+    device.storage = Some(dir.path().join("kobo.books"));
+    device
+        .library
+        .insert("book-1".into(), book(true, false, None));
+    device.download_urls.insert(
+        "book-1".into(),
+        format!("{}/kobo/{STUB_TOKEN}/v1/download/book-1", stub.origin),
+    );
+
+    attempt_download(&mut device, &stub.endpoint, &["book-1".into()]).await;
+
+    assert!(!device.library["book-1"].downloaded);
+}
+
+#[tokio::test]
 async fn attempt_download_fails_with_transport_when_the_server_is_unreachable() {
     let mut device = Device::new("HW-1");
     device
