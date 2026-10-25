@@ -117,10 +117,15 @@ scratch-server-test:
 koreader-dev-test:
     bash scripts/tests/koreader-dev-preflight.test.sh
 
+# Unit tests for scripts/koreader_home.py (linking a new KOReader home to the
+# dev server). Stdlib unittest against a fake server, like explore-test.
+koreader-home-test:
+    python3 scripts/tests/koreader-home.test.py
+
 # Run every unit/integration suite: the Rust matrix first, then the script
 # suites. Rust leads so a failing script suite can't stop the recipe
 # before the cargo results are in.
-test: test-rust explore-test module-map-test koreader-report-test koreader-plugin-test scratch-server-test koreader-dev-test
+test: test-rust explore-test module-map-test koreader-report-test koreader-plugin-test scratch-server-test koreader-dev-test koreader-home-test
 
 # The Rust half of `just test`: the full matrix via cargo-nextest (the same
 # runner CI uses, so local and CI results match; no doctests in the tree, which

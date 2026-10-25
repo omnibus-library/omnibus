@@ -97,6 +97,9 @@ main() {
         origin="http://127.0.0.1:$dev_port"
     fi
 
+    python3 scripts/koreader_home.py --home "$home" --api "http://127.0.0.1:$dev_port" \
+        --origin "$origin" --state-dir "$RUNTIME_DIR/koreader"
+
     echo "koreader: KOReader reaches the dev server at $origin"
     open_when_ready "$novnc_port" &
     trap 'kill %1 2>/dev/null || true' EXIT

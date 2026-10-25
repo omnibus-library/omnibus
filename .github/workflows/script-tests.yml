@@ -1,6 +1,6 @@
 # Runs the script suites: the TestFlight scripts', the module map's
 # (`just modules`), the KOReader lane report's, scratch-server.sh's
-# scratch-dir regression test, and `just koreader`'s preflight checks.
+# scratch-dir regression test, and `just koreader`'s preflight checks and home linking.
 #
 # The TestFlight scripts only ever execute against Apple's live API — one
 # during a release dispatch, one on a daily schedule — so a regression is
@@ -33,6 +33,8 @@ on:
       - "scripts/lib/scratch-server.sh"
       - "scripts/tests/scratch-server-make-scratch-dir.test.sh"
       - "scripts/koreader-dev.sh"
+      - "scripts/koreader_home.py"
+      - "scripts/tests/koreader-home.test.py"
       - "scripts/tests/koreader-dev-preflight.test.sh"
       - ".github/workflows/script-tests.yml"
   pull_request:
@@ -49,6 +51,8 @@ on:
       - "scripts/lib/scratch-server.sh"
       - "scripts/tests/scratch-server-make-scratch-dir.test.sh"
       - "scripts/koreader-dev.sh"
+      - "scripts/koreader_home.py"
+      - "scripts/tests/koreader-home.test.py"
       - "scripts/tests/koreader-dev-preflight.test.sh"
       - ".github/workflows/script-tests.yml"
 
@@ -133,3 +137,16 @@ jobs:
 
       - name: Run suite
         run: bash scripts/tests/koreader-dev-preflight.test.sh
+
+  koreader-home:
+    name: koreader_home.py
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run suite
+        run: python scripts/tests/koreader-home.test.py
