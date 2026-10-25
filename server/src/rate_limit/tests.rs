@@ -21,6 +21,17 @@ async fn rate_limiter_allow_up_to_max_then_blocks() {
 }
 
 #[tokio::test]
+async fn rate_limiter_exhausted_reports_a_spent_budget_without_charging_it() {
+    let rl = RateLimiter::with_policy(Duration::from_secs(60), 2);
+    let ip: IpAddr = "127.0.0.1".parse().unwrap();
+    assert!(rl.allow(ip).await);
+    assert!(!rl.exhausted(ip).await);
+    assert!(!rl.exhausted(ip).await);
+    assert!(rl.allow(ip).await, "asking must not spend the budget");
+    assert!(rl.exhausted(ip).await);
+}
+
+#[tokio::test]
 async fn rate_limiter_allow_separate_ips_have_separate_buckets() {
     let rl = RateLimiter::with_policy(Duration::from_secs(60), 1);
     let a: IpAddr = "127.0.0.1".parse().unwrap();

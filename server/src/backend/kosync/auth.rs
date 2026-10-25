@@ -1,8 +1,8 @@
 //! `KosyncUser` — the `x-auth-user` / `x-auth-key` extractor for the kosync routes. The key is
 //! the MD5 of the password the reader generated in Settings. There is no account lockout (it
 //! would let a stranger lock a reader's sync by username); instead each IP gets a budget of
-//! failed checks (an `Arc<RateLimiter>` layered on the router), and a correct key is never charged
-//! against it.
+//! failed checks (an `Arc<RateLimiter>` layered on the router). A correct key is never charged
+//! against it, but an IP that has spent it gets 429 before any lookup until the window resets.
 
 use std::sync::Arc;
 
@@ -28,6 +28,21 @@ impl FromRequestParts<AppState> for KosyncUser {
         parts: &mut Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
+        let failures = parts
+            .extensions
+            .get::<Arc<RateLimiter>>()
+            .ok_or_else(|| internal("kosync auth", "missing RateLimiter extension"))?;
+        let ip = client_ip(&parts.extensions, &parts.headers);
+        let too_many = || {
+            error(
+                StatusCode::TOO_MANY_REQUESTS,
+                429,
+                "Too many failed attempts. Try again later.",
+            )
+        };
+        if failures.exhausted(ip).await {
+            return Err(too_many());
+        }
         let header = |name: &str| parts.headers.get(name).and_then(|v| v.to_str().ok());
         if let (Some(username), Some(key)) = (header("x-auth-user"), header("x-auth-key")) {
             match db::kosync::verify_kosync_key(state.pool(), username, key).await {
@@ -36,19 +51,8 @@ impl FromRequestParts<AppState> for KosyncUser {
                 Err(e) => return Err(internal("kosync auth", e)),
             }
         }
-        let failures = parts
-            .extensions
-            .get::<Arc<RateLimiter>>()
-            .ok_or_else(|| internal("kosync auth", "missing RateLimiter extension"))?;
-        if !failures
-            .allow(client_ip(&parts.extensions, &parts.headers))
-            .await
-        {
-            return Err(error(
-                StatusCode::TOO_MANY_REQUESTS,
-                429,
-                "Too many failed attempts. Try again later.",
-            ));
+        if !failures.allow(ip).await {
+            return Err(too_many());
         }
         Err(error(StatusCode::UNAUTHORIZED, 2001, "Unauthorized"))
     }
