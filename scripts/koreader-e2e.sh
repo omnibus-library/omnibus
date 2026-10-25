@@ -41,7 +41,7 @@ source scripts/lib/scratch-server.sh
 
 label=koreader
 kept_hint="server.log, results/"
-deb="$(awk '{print $2}' ui_tests/koreader/koreader.sha256)"
+deb="$(awk '/_amd64\.deb$/ {print $2}' ui_tests/koreader/koreader.sha256)"
 docker build -t "omnibus-koreader:$deb" ui_tests/koreader
 bundle_web_app
 
