@@ -13,7 +13,7 @@ import { PageTitle } from "../../components/PageTitle/PageTitle";
 import { ToastProvider } from "../../components/Toast/Toast";
 import { prefersReducedMotion } from "../../motion";
 import { type BookDialog, BookDialogs } from "./BookDialogs";
-import { BookTabs, panelId, useBookTabs } from "./BookTabs";
+import { BookTabs, panelId, tabId, useBookTabs } from "./BookTabs";
 import { FilesDetails } from "./FilesDetails";
 import { Hero } from "./Hero";
 import { HighlightsJournal } from "./HighlightsJournal";
@@ -76,8 +76,10 @@ function Page({ book }: { book: Detail }) {
       block: "center",
     });
   };
+  // Focus lands on the tab, so the next Tab goes into the reviews rather than back to the hero.
   const openReviews = async () => {
     await selectTab("reviews");
+    document.getElementById(tabId("reviews"))?.focus({ preventScroll: true });
     document.getElementById(panelId("reviews"))?.scrollIntoView({
       behavior: prefersReducedMotion() ? "auto" : "smooth",
       block: "start",

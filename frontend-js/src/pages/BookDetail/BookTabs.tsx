@@ -45,7 +45,8 @@ export function useBookTabs() {
   return { tab, entering, selectTab };
 }
 
-const tabId = (id: TabId) => `bp-tab-${id}`;
+/** The id of a tab, for a caller that moves focus onto it. */
+export const tabId = (id: TabId) => `bp-tab-${id}`;
 /** The id of a tab's panel, for a caller that reaches into one once it is shown. */
 export const panelId = (id: TabId) => `bp-panel-${id}`;
 

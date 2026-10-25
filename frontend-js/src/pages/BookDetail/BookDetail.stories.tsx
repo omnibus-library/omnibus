@@ -263,6 +263,7 @@ export const HouseholdRatingOpensTheReviewsTab: Story = {
         "true",
       ),
     );
+    await expect(canvas.getByRole("tab", { name: "Reviews" })).toHaveFocus();
     const panel = canvas.getByRole("tabpanel", { name: "Reviews" });
     await waitFor(() => {
       const box = panel.getBoundingClientRect();
