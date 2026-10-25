@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Tests for require_docker() and require_dev_server() in scripts/koreader-dev.sh
-# — the two checks `just koreader` runs before it builds anything, so a missing
-# Docker or dev server is one readable line, not a build failure.
+# Tests for scripts/koreader-dev.sh: require_docker() and require_dev_server(),
+# the checks `just koreader` runs before it builds anything (a missing Docker or
+# dev server is one readable line), its usage line, and the KOReader pin file.
 #
 # No Docker, no server: the real script is sourced (it does not run `main` when
 # sourced) and only `docker` and `probe_health` are stubbed, as in
@@ -74,6 +74,13 @@ check "require_dev_server fails readably when nothing answers on the port" \
 probe_health() { echo "{\"app\":\"omnibus\",\"repo_root\":\"$MY_REPO_ROOT\"}"; }
 check "require_dev_server prints the port when this worktree's server answers" \
     "0|3571|" "$(run require_dev_server)"
+
+usage_msg="koreader: usage: just koreader [--home DIR]"
+check "main rejects an unknown argument with the usage line" "2||$usage_msg" "$(run main --bogus)"
+check "main rejects --home without a directory with the usage line" "2||$usage_msg" "$(run main --home)"
+
+pin_versions="$(sed -E 's/.*koreader_([^_]*-1)_.*/\1/' ui_tests/koreader/koreader.sha256 | sort -u | wc -l)"
+check "every arch's KOReader pin names the same version" "1" "$((pin_versions))"
 
 echo "---"
 echo "$pass passed, $fail failed"
