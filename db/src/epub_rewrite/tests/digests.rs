@@ -1,12 +1,12 @@
-//! The fingerprint of each served bake: `rewritten_epub_path` records it so a
-//! KOReader that downloaded the baked file still resolves to its book.
+//! The fingerprint of each served file, bake or original: `rewritten_epub_path`
+//! records it so a KOReader that downloaded the file resolves to its book.
 
 use omnibus_shared::MetadataOverrides;
 
 use crate::ebook::test_support::fixture;
 use crate::kosync::resolve_document;
 use crate::partial_md5::partial_md5;
-use crate::test_support::{count_rows, EnvVarGuard};
+use crate::test_support::EnvVarGuard;
 
 /// A seeded book with a title override saved, ready to bake: `(pool, uuid, id)`.
 async fn overridden_book(title: &str) -> (sqlx::SqlitePool, String, i64) {
@@ -83,7 +83,9 @@ async fn rewritten_epub_path_keeps_resolving_an_older_bake_after_another_overrid
 }
 
 #[tokio::test]
-async fn rewritten_epub_path_records_nothing_for_a_book_without_overrides() {
+async fn rewritten_epub_path_records_the_served_originals_partial_md5_for_a_book_without_overrides()
+{
+    // The file's own digest waits on a backfill, and a device may download before it runs.
     let export = tempfile::tempdir().unwrap();
     let _env = EnvVarGuard::set_os("OMNIBUS_EXPORT_EPUB_DIR", Some(export.path().as_os_str()));
     let pool = crate::pool::init_db("sqlite::memory:").await.unwrap();
@@ -92,15 +94,15 @@ async fn rewritten_epub_path_records_nothing_for_a_book_without_overrides() {
         .await
         .unwrap()
         .unwrap();
+    let source = fixture("alpha.epub");
 
-    super::super::rewritten_epub_path(&pool, id, &fixture("alpha.epub"))
+    let served = super::super::rewritten_epub_path(&pool, id, &source)
         .await
         .unwrap();
 
-    assert_eq!(
-        count_rows(&pool, "SELECT COUNT(*) FROM book_export_digests").await,
-        0
-    );
+    assert_eq!(served, None, "no override, so the original is served");
+    let digest = partial_md5(&source).unwrap();
+    assert_eq!(resolve_document(&pool, &digest).await.unwrap(), Some(uuid));
 }
 
 #[tokio::test]

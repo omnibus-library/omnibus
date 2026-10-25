@@ -1,6 +1,6 @@
 //! What a KOReader progress-sync request names: the book behind a partial MD5 document id.
 //! Called by the `/kosync` routes; digests come from `book_files.partial_md5` (original
-//! files) and `book_export_digests` (override-baked downloads).
+//! files) and `book_export_digests` (every served download, baked or not).
 
 use std::{collections::BTreeSet, path::Path};
 
@@ -39,8 +39,8 @@ pub async fn resolve_document(pool: &SqlitePool, digest: &str) -> anyhow::Result
     })
 }
 
-/// Remember the partial MD5 of the baked EPUB at `path` as `book_uuid`'s, so a device that
-/// downloaded this bake keeps resolving after the next override edit replaces the file.
+/// Remember the partial MD5 of the served EPUB at `path` as `book_uuid`'s, so a device that
+/// downloaded it resolves at once and keeps resolving after the next override edit replaces it.
 pub async fn record_export_digest(
     pool: &SqlitePool,
     book_uuid: &str,
