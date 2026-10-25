@@ -215,6 +215,27 @@ async fn touch_state_changed(
     Ok(())
 }
 
+/// Make every Kobo of `user_id` that synced `book_uuid` at or after `event_at` see its state
+/// again: a write dated by its own earlier event time never passes their `synced_at`.
+pub(crate) async fn reannounce_state_since(
+    tx: &mut Transaction<'_, Sqlite>,
+    user_id: i64,
+    book_uuid: &str,
+    event_at: i64,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE kobo_books_sync SET synced_at = ?3 - 1
+          WHERE book_uuid = ?2 AND synced_at >= ?3
+            AND device_id IN (SELECT id FROM kobo_devices WHERE user_id = ?1)",
+    )
+    .bind(user_id)
+    .bind(book_uuid)
+    .bind(event_at)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
 /// Mark the device's rows for `uuids` to resend as new, chunked to stay under SQLite's
 /// bound-parameter limit. [`upsert_synced`] clears the mark.
 async fn mark_resend(

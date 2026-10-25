@@ -164,7 +164,19 @@ pub async fn set_read_status_at_tx(
     .bind(event_at)
     .execute(&mut **tx)
     .await?;
-    read_back(tx, user_id, book_uuid).await
+    let record = read_back(tx, user_id, book_uuid).await?;
+    // A landed write keeps its event time (never later than `event_at`), which a Kobo
+    // that synced since would read as already seen.
+    if record.updated_at <= event_at {
+        crate::kobo::delta::reannounce_state_since(
+            tx,
+            user_id,
+            &record.book_uuid,
+            record.updated_at,
+        )
+        .await?;
+    }
+    Ok(record)
 }
 
 /// Fetch the current read state for `(user, book_uuid)`. Returns `Ok(None)` for
