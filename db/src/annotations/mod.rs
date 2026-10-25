@@ -473,7 +473,11 @@ pub async fn ingest_kobo_annotations(
         .await?
         .ok_or(HighlightError::BookNotFound)?;
 
-    let mut tx = pool.begin().await.map_err(HighlightError::Sqlx)?;
+    // BEGIN IMMEDIATE: the tombstone read before the upsert would otherwise risk a stale-snapshot 517.
+    let mut tx = pool
+        .begin_with("BEGIN IMMEDIATE")
+        .await
+        .map_err(HighlightError::Sqlx)?;
     upsert_kobo_annotations(&mut tx, user_id, &canonical, updates).await?;
     delete_kobo_annotations(&mut tx, user_id, deleted_client_ids).await?;
     tx.commit().await.map_err(HighlightError::Sqlx)?;

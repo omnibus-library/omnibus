@@ -489,3 +489,31 @@ async fn served_kobo_annotations_propagates_db_error_when_pool_is_closed() {
     let err = served_kobo_annotations(&pool, 1, "uuid").await.unwrap_err();
     assert!(matches!(err, HighlightError::Sqlx(_)));
 }
+
+#[tokio::test]
+async fn ingest_kobo_annotations_succeeds_for_many_concurrent_writers_on_a_file_backed_pool() {
+    // Each ingest reads tombstones before it writes; WAL needs a real file for a deferred
+    // read-then-write to fail with a stale-snapshot 517 when another writer commits between.
+    let dir = tempfile::tempdir().unwrap();
+    let url = format!("sqlite://{}?mode=rwc", dir.path().join("omnibus.db").display());
+    let pool = init_db(&url).await.unwrap();
+    let user = seed_user(&pool, "alice").await;
+    let (_, uuid) = seed(&pool, "/lib", "Book A").await;
+
+    for round in 0..5 {
+        let mut handles = Vec::new();
+        for i in 0..5 {
+            let (pool, uuid) = (pool.clone(), uuid.clone());
+            handles.push(tokio::spawn(async move {
+                let upload = kobo_upload(&format!("k{round}-{i}"), HighlightColor::Green, None);
+                ingest_kobo_annotations(&pool, user, &uuid, &[upload], &[]).await
+            }));
+        }
+        for handle in handles {
+            handle
+                .await
+                .expect("writer task panicked")
+                .expect("concurrent ingest_kobo_annotations must not surface a database error");
+        }
+    }
+}
