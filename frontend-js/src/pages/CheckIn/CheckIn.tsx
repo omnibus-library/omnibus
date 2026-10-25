@@ -348,6 +348,7 @@ export function CheckIn() {
           aria-label="Cancel check-in"
           title="Cancel"
           onClick={close}
+          disabled={writing}
         >
           ×
         </button>

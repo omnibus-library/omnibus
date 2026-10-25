@@ -232,6 +232,9 @@ export const EscapeWaitsForTheCheckInToLand: Story = {
     await expect(
       canvas.queryByRole("heading", { name: "Library" }),
     ).not.toBeInTheDocument();
+    await expect(
+      canvas.getByRole("button", { name: "Cancel check-in" }),
+    ).toBeDisabled();
     gate.release();
     await expect(
       await canvas.findByTestId("check-in-success"),

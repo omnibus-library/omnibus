@@ -72,9 +72,14 @@ html:has(.check-in-overlay-scrim) {
   line-height: 1;
   cursor: pointer;
 }
-.check-in-close:hover {
+.check-in-close:hover:not(:disabled) {
   background: var(--bg-2);
   color: var(--ink-1);
+}
+/* A write in flight holds the dialog open, as Escape and the scrim do. */
+.check-in-close:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 .check-in-provider-note {
   margin: 0;
