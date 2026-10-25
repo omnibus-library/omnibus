@@ -270,11 +270,11 @@ impl Control {
         Ok(self.view())
     }
 
-    /// Point the device at a new URL or token and save it. A URL retarget
-    /// keeps everything; a token retarget keeps the library but drops the
-    /// sync token and cached download URLs, so the next sync is a full
-    /// resync that re-delivers every held book with URLs carrying the new
-    /// token. Every arm also drops `reading_services_host`: it was learned
+    /// Point the device at a new URL or token and save it. Every arm keeps
+    /// the library; a token retarget, or a URL retarget to another origin,
+    /// drops the sync token and cached download URLs, so the next sync is a
+    /// full resync that re-delivers every held book with URLs for the new
+    /// target. Every arm also drops `reading_services_host`: it was learned
     /// from the old target's `v1/initialization`, so a highlight or a
     /// post-download annotations GET made before the next sync must not
     /// reach whichever server that was. Turned away while a sync runs.
@@ -287,18 +287,20 @@ impl Control {
             match to {
                 Retarget::Url(url) => {
                     live.saved.url = Some(url.clone());
+                    live.saved.device.forget_server(false, &url);
                     live.url = url;
-                    live.saved.device.forget_server(false);
                 }
                 Retarget::Token(token) => {
                     live.saved.token = token;
                     live.saved.wired_url = None;
-                    live.saved.device.forget_server(true);
+                    let url = live.url.clone();
+                    live.saved.device.forget_server(true, &url);
                 }
                 Retarget::Wired { token, url } => {
                     live.saved.token = token;
                     live.saved.wired_url = Some(url);
-                    live.saved.device.forget_server(true);
+                    let url = live.url.clone();
+                    live.saved.device.forget_server(true, &url);
                 }
             }
             let needs_wire = !live.saved.token_wired_for(&live.url);

@@ -540,7 +540,7 @@ async fn retarget_url_pins_url_in_state_file() {
 }
 
 #[tokio::test]
-async fn retarget_url_keeps_library_sync_token_and_hardware_id() {
+async fn retarget_url_keeps_library_and_hardware_id() {
     let old = spawn_stub(dune_stub()).await;
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("kobo.json");
@@ -558,15 +558,15 @@ async fn retarget_url_keeps_library_sync_token_and_hardware_id() {
     assert_eq!(retargeted.view, after);
     assert_eq!(after.hardware_id, before.hardware_id);
     assert_eq!(after.library, before.library);
-    assert_eq!(after.sync_token, before.sync_token);
     assert_eq!(after.last_sync, before.last_sync);
     let saved_after = state::load(&path).await.unwrap().unwrap();
     let only_the_url_moved = SavedState {
         url: Some("http://new.example:3000".to_owned()),
         device: Device {
-            // The prior sync learned a `reading_services_host` for the old
-            // server; a retarget must drop it too, so it is excluded here.
+            // What the prior sync learned from the old server goes with it.
             reading_services_host: None,
+            sync_token: None,
+            download_urls: Default::default(),
             ..saved_before.device.clone()
         },
         ..saved_before
@@ -750,6 +750,27 @@ async fn retarget_wired_saves_token_and_wired_url() {
     let saved = state::load(&path).await.unwrap().unwrap();
     assert_eq!(saved.token, "minted-token");
     assert_eq!(saved.wired_url, Some("http://now.example:1".to_owned()));
+}
+
+#[tokio::test]
+async fn retarget_url_clears_cached_download_urls_and_sync_token_when_the_origin_changes() {
+    let stub = spawn_stub(dune_stub()).await;
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("kobo.json");
+    let control = stub_control(&stub, path.clone());
+    control.sync(DownloadPolicy::None).await.unwrap();
+    let before = state::load(&path).await.unwrap().unwrap();
+    assert!(!before.device.download_urls.is_empty());
+    assert!(before.device.sync_token.is_some());
+
+    control
+        .retarget(Retarget::Url("http://new.example:3000".into()))
+        .await
+        .unwrap();
+
+    let after = state::load(&path).await.unwrap().unwrap();
+    assert!(after.device.download_urls.is_empty());
+    assert_eq!(after.device.sync_token, None);
 }
 
 #[tokio::test]

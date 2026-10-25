@@ -141,15 +141,19 @@ impl Device {
 
     /// Drop what was learned about the server this device last talked to:
     /// always `reading_services_host` (the next sync re-learns it from
-    /// `v1/initialization`), and when the device's token changed, also
-    /// `sync_token` and `download_urls` — the same state a token retarget
-    /// drops, because a new token means a full resync. Shared by
-    /// `Control::retarget` and `startup::start`, so a device that comes
-    /// back from a restart pointed at a different server or token never
-    /// keeps talking to the old one.
-    pub fn forget_server(&mut self, token_changed: bool) {
+    /// `v1/initialization`), and when the token changed or a cached download
+    /// URL is not under `url`, also `sync_token` and `download_urls`, so the
+    /// next sync is a full resync that re-delivers every URL. Shared by
+    /// `Control::retarget` and `startup::start`.
+    pub fn forget_server(&mut self, token_changed: bool, url: &str) {
         self.reading_services_host = None;
-        if token_changed {
+        let under_url = format!("{url}/");
+        if token_changed
+            || self
+                .download_urls
+                .values()
+                .any(|u| !u.starts_with(&under_url))
+        {
             self.sync_token = None;
             self.download_urls.clear();
         }

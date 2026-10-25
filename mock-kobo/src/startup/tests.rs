@@ -590,3 +590,26 @@ async fn start_drops_sync_token_and_download_urls_when_the_resolved_token_change
     assert_eq!(saved.device.sync_token, None);
     assert!(saved.device.download_urls.is_empty());
 }
+
+#[tokio::test]
+async fn start_drops_sync_token_and_download_urls_when_the_resolved_origin_changed() {
+    let stub_a = spawn_stub(dune_stub()).await;
+    let stub_b = spawn_stub(Stub::default()).await;
+    let dir = TempDir::new().unwrap();
+    let given_a = args_in(&dir, Some(&stub_a.origin), Some(STUB_TOKEN));
+    let first = Arc::new(
+        start(&given_a, None, &no_runtime(&dir))
+            .await
+            .unwrap()
+            .control,
+    );
+    first.sync(DownloadPolicy::None).await.unwrap();
+    drop(first);
+    let given_b = args_in(&dir, Some(&stub_b.origin), Some(STUB_TOKEN));
+
+    start(&given_b, None, &no_runtime(&dir)).await.unwrap();
+
+    let saved = state::load(&given_b.state).await.unwrap().unwrap();
+    assert_eq!(saved.device.sync_token, None);
+    assert!(saved.device.download_urls.is_empty());
+}
