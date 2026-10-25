@@ -102,6 +102,9 @@ required-features = ["server"]
 
 [dev-dependencies]
 tower = "0.5"
+# kosync tests derive the `x-auth-key` a KOReader sends (MD5 of the password); the same
+# `md-5` `omnibus-db` uses to fingerprint files.
+md-5 = "0.10"
 # Test-only view of the same db crate, with `test-support` on so integration
 # tests can reuse `EnvVarGuard` instead of hand-rolling env isolation. Cargo
 # unifies this with the optional `omnibus-db` above for test builds only.

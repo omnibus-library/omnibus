@@ -259,3 +259,29 @@ async fn gc_deletes_the_purged_books_kobo_annotation_sync_state() {
         "orphaned watermark rows must purge with the book"
     );
 }
+
+#[tokio::test]
+async fn gc_deletes_the_purged_books_export_digests_without_being_guarded_by_them() {
+    let _covers = CoversTempDir::new("gc_export_digests");
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let uuid = seed_and_make_missing(&pool, "gone-baked.epub").await;
+    backdate_missing_since(&pool, &uuid, 40).await;
+    sqlx::query(
+        "INSERT INTO book_export_digests (partial_md5, book_uuid, created_at) VALUES ('bake', ?, 1)",
+    )
+    .bind(&uuid)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let purged = gc_books_missing_files(&pool, MISSING_FILES_RETENTION_DAYS)
+        .await
+        .unwrap();
+
+    assert_eq!(purged, 1, "a served bake alone must not guard a victim");
+    let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM book_export_digests")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(rows, 0, "the bake's digest must purge with the book");
+}

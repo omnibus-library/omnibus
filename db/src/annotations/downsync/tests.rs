@@ -559,3 +559,76 @@ async fn downsync_book_id_annotations_propagates_db_error_when_pool_is_closed() 
     pool.close().await;
     assert!(downsync_book_id_annotations(&pool, book_id).await.is_err());
 }
+
+/// Move a derived highlight's CFI as a KOReader upsert would.
+async fn koreader_move(pool: &SqlitePool, user: i64, uuid: &str, cfi: &str) {
+    let moved = crate::annotations::KoreaderUpsert {
+        client_id: "web-1".into(),
+        epub_cfi_range: cfi.into(),
+        color: HighlightColor::Amber,
+        text: None,
+        note: None,
+        created_at: 0,
+        event_at: i64::MAX,
+    };
+    let mut tx = pool.begin().await.unwrap();
+    crate::annotations::upsert_koreader_annotation(&mut tx, user, uuid, &moved)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+}
+
+#[tokio::test]
+async fn a_koreader_move_keeps_the_served_row_when_the_new_anchor_cannot_be_derived() {
+    let (pool, user, book_id, uuid, dir) = fixture("move_fails").await;
+    let _guard = kepub_cache(&dir, book_id);
+    create_highlight(&pool, user, &web_highlight(&uuid, WEB_CFI, Some("web-1")))
+        .await
+        .unwrap();
+    downsync_book_annotations(&pool, None, user, &uuid)
+        .await
+        .unwrap();
+    let before = served_kobo_annotations(&pool, user, &uuid).await.unwrap();
+
+    koreader_move(&pool, user, &uuid, "epubcfi(/6/2!/4/40,/1:0,/1:3)").await;
+    let stats = downsync_book_annotations(&pool, None, user, &uuid)
+        .await
+        .unwrap();
+
+    assert_eq!(stats.derived, 0);
+    let after = served_kobo_annotations(&pool, user, &uuid).await.unwrap();
+    assert_eq!(
+        after.len(),
+        1,
+        "the Kobo must not lose its copy by omission"
+    );
+    assert_eq!(after[0].kobo_location, before[0].kobo_location);
+}
+
+#[tokio::test]
+async fn a_koreader_move_is_rederived_and_the_stale_flag_cleared() {
+    let (pool, user, book_id, uuid, dir) = fixture("move_derives").await;
+    let _guard = kepub_cache(&dir, book_id);
+    create_highlight(&pool, user, &web_highlight(&uuid, WEB_CFI, Some("web-1")))
+        .await
+        .unwrap();
+    downsync_book_annotations(&pool, None, user, &uuid)
+        .await
+        .unwrap();
+
+    // "First sentence here." — all of `kobo.1.1`.
+    koreader_move(&pool, user, &uuid, "epubcfi(/6/2!/4/2,/1:0,/1:20)").await;
+    let stats = downsync_book_annotations(&pool, None, user, &uuid)
+        .await
+        .unwrap();
+
+    assert_eq!(stats.derived, 1);
+    let served = served_kobo_annotations(&pool, user, &uuid).await.unwrap();
+    let range = parse_annotation_location(&served[0].kobo_location).expect("kobospan range");
+    assert_eq!((range.start.n, range.start.m), (1, 1));
+    let stale: i64 = sqlx::query_scalar("SELECT kobo_location_stale FROM annotations")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(stale, 0);
+}

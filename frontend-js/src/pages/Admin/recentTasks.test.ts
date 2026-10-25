@@ -12,6 +12,7 @@ describe("recordKindLabel", () => {
     ["backfill_chapters", "Audiobook chapter extraction"],
     ["backfill_word_counts", "Word count backfill"],
     ["backfill_page_counts", "Page count backfill"],
+    ["backfill_partial_md5", "Book fingerprint backfill"],
     ["backfill_epub_structure", "EPUB structure backfill"],
     ["backfill_covers", "Cover backfill"],
     ["backfill_thumbs", "Thumbnail backfill"],

@@ -472,3 +472,47 @@ async fn api_post_highlight_400_on_negative_client_created_at() {
     let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
     assert!(String::from_utf8_lossy(&bytes).contains("client_created_at"));
 }
+
+#[tokio::test]
+async fn api_post_highlight_answers_410_for_a_client_id_the_user_deleted() {
+    let (app, _state, pool) = fixture().await;
+    let (_, uuid) = seed_book_with_uuid(&pool, "/lib", "Book A").await;
+    let user = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+    let send = |method: &str, uri: &str, body: Option<serde_json::Value>| {
+        let mut req = Request::builder()
+            .uri(uri)
+            .method(method)
+            .header(AUTHORIZATION, format!("Bearer {token}"));
+        let body = match body {
+            Some(b) => {
+                req = req.header("content-type", "application/json");
+                Body::from(b.to_string())
+            }
+            None => Body::empty(),
+        };
+        app.clone().oneshot(req.body(body).unwrap())
+    };
+    let create = serde_json::json!({
+        "book_uuid": uuid, "epub_cfi_range": "epubcfi(/6/4!/4/2,/1:0,/1:10)",
+        "color": "amber", "client_id": "x1",
+    });
+    assert_eq!(
+        send("POST", "/api/highlights", Some(create.clone()))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::OK
+    );
+    assert_eq!(
+        send("DELETE", "/api/highlights/x1", None)
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::NO_CONTENT
+    );
+
+    let replay = send("POST", "/api/highlights", Some(create)).await.unwrap();
+
+    assert_eq!(replay.status(), StatusCode::GONE);
+}

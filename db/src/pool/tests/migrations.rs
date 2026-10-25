@@ -561,3 +561,135 @@ async fn migration_0106_leaves_existing_devices_unsynced() {
     .unwrap();
     assert_eq!((at, error), (None, None));
 }
+
+#[tokio::test]
+async fn migration_0109_leaves_existing_files_unhashed_for_the_backfill() {
+    const PARTIAL_MD5_VERSION: i64 = 109;
+    static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .unwrap();
+    for m in MIGRATOR.iter().filter(|m| m.version < PARTIAL_MD5_VERSION) {
+        sqlx::raw_sql(&m.sql).execute(&pool).await.unwrap();
+    }
+    sqlx::query("INSERT INTO scan_roots (id, path, display_name) VALUES (1, '/lib', 'lib')")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO books (id, uuid, library_id, path, title) VALUES (1, 'u', 1, '', 'T')",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO book_files (book_id, format, filename, size_bytes) VALUES (1, 'EPUB', 'f', 1)",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let m = MIGRATOR
+        .iter()
+        .find(|m| m.version == PARTIAL_MD5_VERSION)
+        .expect("0109 must exist");
+    sqlx::raw_sql(&m.sql).execute(&pool).await.unwrap();
+
+    let digest: Option<String> = sqlx::query_scalar("SELECT partial_md5 FROM book_files")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(digest, None);
+}
+
+/// An in-memory database with every migration below `version` applied, and the migrator to apply the rest.
+async fn migrated_below(version: i64) -> (sqlx::SqlitePool, &'static sqlx::migrate::Migrator) {
+    static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .unwrap();
+    for m in MIGRATOR.iter().filter(|m| m.version < version) {
+        sqlx::raw_sql(&m.sql).execute(&pool).await.unwrap();
+    }
+    (pool, &MIGRATOR)
+}
+
+async fn apply(pool: &sqlx::SqlitePool, migrator: &sqlx::migrate::Migrator, version: i64) {
+    let m = migrator
+        .iter()
+        .find(|m| m.version == version)
+        .expect("the migration exists");
+    sqlx::raw_sql(&m.sql).execute(pool).await.unwrap();
+}
+
+#[tokio::test]
+async fn migration_0110_creates_book_export_digests_that_accept_a_row() {
+    let (pool, migrator) = migrated_below(110).await;
+
+    apply(&pool, migrator, 110).await;
+
+    sqlx::query(
+        "INSERT INTO book_export_digests (partial_md5, book_uuid, created_at) VALUES ('d', 'u', 1)",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM book_export_digests")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(rows, 1);
+}
+
+#[tokio::test]
+async fn migration_0111_leaves_existing_users_without_a_kosync_key() {
+    let (pool, migrator) = migrated_below(111).await;
+    sqlx::query(
+        "INSERT INTO users (id, username, password_hash, is_admin) VALUES (1, 'u', 'h', 0)",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    apply(&pool, migrator, 111).await;
+
+    let key: Option<Vec<u8>> = sqlx::query_scalar("SELECT kosync_key_hash FROM users WHERE id = 1")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(key, None);
+}
+
+#[tokio::test]
+async fn migration_0114_keeps_existing_digests_and_lets_two_books_share_one() {
+    let (pool, migrator) = migrated_below(114).await;
+    sqlx::query(
+        "INSERT INTO book_export_digests (partial_md5, book_uuid, created_at) VALUES ('d', 'u1', 5)",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    apply(&pool, migrator, 114).await;
+
+    sqlx::query(
+        "INSERT INTO book_export_digests (partial_md5, book_uuid, created_at) VALUES ('d', 'u2', 6)",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let rows: Vec<(String, String, i64)> = sqlx::query_as(
+        "SELECT partial_md5, book_uuid, created_at FROM book_export_digests ORDER BY book_uuid",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        rows,
+        vec![("d".into(), "u1".into(), 5), ("d".into(), "u2".into(), 6)]
+    );
+}
