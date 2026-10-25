@@ -195,6 +195,44 @@ title, authors, series (and its number), description and cover.
   first sync after the book is no longer kept that way. The default location
   (*doc*) isn't affected.
 
+## Interactive KOReader
+
+`just koreader` opens a real KOReader, in Docker, in a browser tab (a 600x800
+screen shown through noVNC), already syncing with this worktree's dev server.
+Use it to try a change by hand where the lane only checks scripted scenarios.
+
+```bash
+just dev-up                                          # the dev server must be running
+just koreader                                        # the default home
+just koreader --home .claude/runtime/koreader/second # a second home is a second device
+```
+
+It needs Docker running (Docker Desktop on macOS) and a dev server for this
+worktree, and never starts either: without them it prints one line saying so and
+exits. Ctrl-C, or quitting KOReader, stops the container.
+
+- **First launch of a home** signs in as `OMNIBUS_DEV_SEED_USER`, registers a
+  KOReader device (**Dev KOReader**, or **Dev KOReader (<folder>)** for any
+  other home) and installs the Omnibus plugin the Settings page would
+  download. It also adds the OPDS catalog **Omnibus (dev)** and turns on stock
+  Progress sync. Later launches of that home make no requests.
+- **Homes** live under `.claude/runtime/koreader/` (`home/` by default), keeping
+  KOReader's settings, books and progress between launches. Each home maps to one
+  container, so the same home can't open twice.
+- **Progress sync** uses one login for every home, because the account has a
+  single kosync password: its key is saved in `.claude/runtime/koreader/kosync.json`.
+  Delete that file only together with the homes, or the first home's login stops
+  working.
+- **A sync needs a shelf set to sync** (the shelf's sync toggle), as on a device.
+- **Relinking:** a home keeps the dev server port and device token it was linked
+  with. After the dev server moves port or its database is reset, delete the home
+  and launch it again.
+
+On Linux the container shares the host network, as the lane's does, so it reaches
+the dev server on `127.0.0.1`; elsewhere it uses `host.docker.internal`. The
+image is the lane's, with a VNC server added; it is built for the engine's
+architecture.
+
 ## Test lane
 
 `just koreader-e2e` proves the path a KOReader user takes against Omnibus:
@@ -255,12 +293,12 @@ fingerprints or the lane itself, and nightly.
 
 ### Bumping KOReader
 
-The version lives in one line:
+The version lives in one line per architecture (amd64 and arm64) of
 [`ui_tests/koreader/koreader.sha256`](../ui_tests/koreader/koreader.sha256).
-Edit it with the `.deb`'s sha256 and file name from the [KOReader
+Edit both with each `.deb`'s sha256 and file name from the [KOReader
 release](https://github.com/koreader/koreader/releases) — the image derives
-the download URL from the file name and verifies the checksum before
-installing, so nothing else pins or fetches KOReader.
+the download URL from its architecture's file name and verifies the checksum
+before installing, so nothing else pins or fetches KOReader.
 
 ### Adding a scenario
 
@@ -271,6 +309,7 @@ the same result JSON contract, so the report and CI need no changes.
 
 ### Requirements
 
-Linux/amd64 with docker only: the lane uses `--network host` and the amd64
-`.deb`. `OMNIBUS_E2E_RELEASE=1` bundles `--release` instead of a debug
+The lane is Linux/amd64 with docker only: it uses `--network host` and the amd64
+`.deb`. `just koreader` runs on Linux and macOS (Intel or Apple Silicon).
+`OMNIBUS_E2E_RELEASE=1` bundles `--release` instead of a debug
 build, as it does for `just e2e-ci`.
