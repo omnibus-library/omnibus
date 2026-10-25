@@ -23,6 +23,11 @@ if [ -z "${DISPLAY:-}" ]; then
     exit "$status"
 fi
 
+# Armed first: a stop during startup must end it cleanly, not kill the script.
+kpid=""
+stopped=0
+trap 'stopped=1; [ -z "$kpid" ] || kill -TERM -- -"$kpid" 2>/dev/null || true' INT TERM
+
 : "${VNC_PASSWORD:?VNC_PASSWORD must be set}"
 VNC_PORT="${VNC_PORT:-5900}"
 NOVNC_LISTEN="${NOVNC_LISTEN:-0.0.0.0:6080}"
@@ -62,15 +67,20 @@ require_listening x11vnc $! "$VNC_PORT"
 websockify --web /usr/share/novnc "$NOVNC_LISTEN" "127.0.0.1:$VNC_PORT" >/tmp/websockify.log 2>&1 &
 require_listening websockify $! "${NOVNC_LISTEN##*:}"
 
+[ "$stopped" = 0 ] || exit 0
+
 # Job control gives KOReader's wrapper and luajit one process group to signal;
 # the file browser opens on the books dir, not the data dir.
 set -m
 koreader /ko-home/books &
 kpid=$!
-stopped=0
-trap 'stopped=1; kill -TERM -- -"$kpid" 2>/dev/null || true' INT TERM
 status=0
 wait "$kpid" || status=$?
-while kill -0 -- -"$kpid" 2>/dev/null; do sleep 0.2; done # luajit outlives the wrapper while it flushes
+for ((n = 1; ; n++)); do # luajit outlives the wrapper while it flushes
+    kill -0 -- -"$kpid" 2>/dev/null || break
+    # KOReader drops a TERM that lands before its UI loop runs, so ask again while it lives.
+    [ "$stopped" = 0 ] || [ $((n % 10)) -ne 0 ] || kill -TERM -- -"$kpid" 2>/dev/null || true
+    sleep 0.2
+done
 [ "$stopped" = 0 ] || exit 0
 exit "$status"
