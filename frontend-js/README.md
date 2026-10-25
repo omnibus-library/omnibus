@@ -61,8 +61,9 @@ face beside the journal's entries, and Files & Details has each file's name,
 size and length with Send to Kindle and Kobo, Export, the sync line, physical
 copies and the wishlist, the details with an Add link on each one that is unset,
 and the curator's edit, merge and delete. Finishing a book plays a ribbon burst
-and shows what is next. The alignment modal and the check-in overlay (the top bar
-links to the `/check-in` page instead) are left to the screens that own them.
+and shows what is next. The alignment modal is left to the screen that owns it.
+`/check-in` is a child route of `/`: the check-in flow is a dialog over the
+blurred library, which stays mounted beneath it.
 `/books/:uuid/edit` is a child route of `/books/:uuid`: the book page stays
 mounted and the metadata editor rises over it as a sheet, so a deep link, a
 refresh and Back all draw both. The sheet's tabs are Details, Artwork and

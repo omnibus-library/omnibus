@@ -219,9 +219,6 @@ export const ACardForEachHouseholdReader: Story = {
         }),
       ).not.toBeInTheDocument();
     }
-    // Each card is a place to land: focusable, and found by the reader's id.
-    await expect(cards[0]).toHaveAttribute("id", "review-7");
-    await expect(cards[0]).toHaveAttribute("tabindex", "-1");
   },
 };
 

@@ -62,20 +62,6 @@
 .bp-rated-only {
   color: var(--ink-2);
 }
-.bp-review-card {
-  transition:
-    background-color 700ms ease-out,
-    box-shadow 700ms ease-out;
-}
-.bp-review-card:focus-visible {
-  outline: 2px solid var(--ink-0);
-  outline-offset: 2px;
-}
-.bp-review-card.is-flash {
-  background: color-mix(in oklch, var(--accent) 18%, var(--bg-1));
-  box-shadow: inset 0 0 0 2px var(--bp-accent-text);
-  transition-duration: 160ms;
-}
 .bp-review-veil {
   display: flex;
   flex-wrap: wrap;
@@ -92,11 +78,5 @@
   .bp-reviews {
     grid-template-columns: minmax(0, 1fr);
     gap: 40px;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .bp-review-card {
-    transition: none;
   }
 }
