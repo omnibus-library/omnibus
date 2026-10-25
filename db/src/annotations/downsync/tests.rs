@@ -632,3 +632,55 @@ async fn a_koreader_move_is_rederived_and_the_stale_flag_cleared() {
         .unwrap();
     assert_eq!(stale, 0);
 }
+
+#[tokio::test]
+async fn a_rederived_koreader_move_reports_the_book_to_a_kobo_that_acked_the_old_anchor() {
+    use crate::kobo::annotations::{
+        ack_served, changed_book_uuids, fingerprint, mark_adopted, mark_downloaded,
+    };
+
+    let (pool, user, book_id, uuid, dir) = fixture("move_reported").await;
+    let _guard = kepub_cache(&dir, book_id);
+    create_highlight(&pool, user, &web_highlight(&uuid, WEB_CFI, Some("web-1")))
+        .await
+        .unwrap();
+    downsync_book_annotations(&pool, None, user, &uuid)
+        .await
+        .unwrap();
+    let device =
+        crate::kobo_devices::create_device(&pool, user, "Kobo", omnibus_shared::DeviceKind::Kobo)
+            .await
+            .unwrap()
+            .id;
+    mark_adopted(&pool, device, &uuid).await.unwrap();
+    mark_downloaded(&pool, device, &uuid).await.unwrap();
+    let served = served_kobo_annotations(&pool, user, &uuid).await.unwrap();
+    ack_served(&pool, device, &uuid, &fingerprint(&served))
+        .await
+        .unwrap();
+
+    // Only the anchor moves: colour and text stay what the device already holds.
+    let moved = crate::annotations::KoreaderUpsert {
+        client_id: "web-1".into(),
+        epub_cfi_range: "epubcfi(/6/2!/4/2,/1:0,/1:20)".into(),
+        color: HighlightColor::Amber,
+        text: Some("Second sentence follows.".into()),
+        note: None,
+        created_at: 0,
+        event_at: i64::MAX,
+    };
+    let mut tx = pool.begin().await.unwrap();
+    crate::annotations::upsert_koreader_annotation(&mut tx, user, &uuid, &moved)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    let stats = downsync_book_annotations(&pool, None, user, &uuid)
+        .await
+        .unwrap();
+
+    assert_eq!(stats.derived, 1);
+    assert_eq!(
+        changed_book_uuids(&pool, user, device).await.unwrap(),
+        vec![uuid]
+    );
+}

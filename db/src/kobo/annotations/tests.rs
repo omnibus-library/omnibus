@@ -344,11 +344,13 @@ async fn fingerprint_is_order_independent_and_reacts_to_content_and_membership()
     );
     assert_ne!(fingerprint(&[]), fp_ab);
 
-    // Anchors and timestamps are deliberately excluded.
+    // A moved anchor must reach the device; a timestamp alone is no change.
     let mut moved = a.clone();
     moved.kobo_location = r#"{"other":1}"#.into();
-    moved.updated_at = 99;
-    assert_eq!(fingerprint(&[moved, b]), fp_ab);
+    assert_ne!(fingerprint(&[moved, b.clone()]), fp_ab);
+    let mut retouched = a.clone();
+    retouched.updated_at = 99;
+    assert_eq!(fingerprint(&[retouched, b]), fp_ab);
 }
 
 #[tokio::test]
