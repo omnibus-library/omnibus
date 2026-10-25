@@ -8,10 +8,11 @@ export type SuggestionItem = {
   cover_url: string | null;
 };
 
-/** The three answers `POST /api/rpc/ebook-suggestions` gives the strip. */
+/** The answers `POST /api/rpc/ebook-suggestions` gives the strip. */
 export type SuggestionsResponse =
   | { status: "not_configured" }
   | { status: "pending" }
+  | { status: "unavailable" }
   | { status: "ready"; items: SuggestionItem[] };
 
 /** The suggestion ranked `rank`, titled and authored so no two share a name. */

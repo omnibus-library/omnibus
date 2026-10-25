@@ -850,6 +850,8 @@ html, body { overscroll-behavior: none; }
 .bd-phys-pill-row { display: flex; }
 .bd-phys-pill {
   color: var(--accent); border-color: var(--accent);
+  /* A reader's display name can be long and unbroken; the pill wraps rather than overflows. */
+  overflow-wrap: anywhere;
 }
 .bd-phys-copies { display: flex; flex-direction: column; gap: 10px; }
 .bd-phys-copy { padding: 14px 16px; }

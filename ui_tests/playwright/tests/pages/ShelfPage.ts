@@ -1,5 +1,6 @@
 import type { Locator, Page } from "@playwright/test";
 import { AddBooksModalComponent } from "../components/AddBooksModalComponent";
+import { CheckInOverlayComponent } from "../components/CheckInOverlayComponent";
 import { EditShelfModalComponent } from "../components/EditShelfModalComponent";
 import { FilterBarComponent } from "../components/FilterBarComponent";
 import { TopNavComponent } from "../components/TopNavComponent";
@@ -15,6 +16,7 @@ export class ShelfPage extends BasePage {
 
   readonly topNav: TopNavComponent;
   readonly addBooksModal: AddBooksModalComponent;
+  readonly checkInOverlay: CheckInOverlayComponent;
   readonly editShelfModal: EditShelfModalComponent;
   readonly filterBar: FilterBarComponent;
 
@@ -50,6 +52,7 @@ export class ShelfPage extends BasePage {
     super(page);
     this.topNav = new TopNavComponent(page);
     this.addBooksModal = new AddBooksModalComponent(page);
+    this.checkInOverlay = new CheckInOverlayComponent(page);
     this.editShelfModal = new EditShelfModalComponent(page);
     this.filterBar = new FilterBarComponent(page);
     this.titleHeading = page.getByRole("heading", { level: 1 });

@@ -66,6 +66,12 @@ export const AdminSeesEveryCopyAndItsFiler: Story = {
     const [mine, theirs] = await canvas.findAllByTestId("physical-copy-card");
     await expect(mine).toHaveTextContent("Checked in 2 days ago by you");
     await expect(mine).toHaveTextContent("ISBN 9781234567897");
+    await expect(
+      within(mine as HTMLElement).getByTestId("physical-pill"),
+    ).toHaveAccessibleName("In your physical collection");
+    await expect(
+      within(theirs as HTMLElement).getByTestId("physical-pill"),
+    ).toHaveAccessibleName("In grace's physical collection");
     await expect(theirs).toHaveTextContent("Checked in 3 hours ago by grace");
     await expect(theirs).toHaveTextContent("Second printing");
     await expect(
@@ -114,6 +120,9 @@ export const FilerWhoseAccountIsGoneIsLeftOut: Story = {
     await expect(
       canvas.getByTestId("physical-copy-card"),
     ).not.toHaveTextContent(" by ");
+    await expect(canvas.getByTestId("physical-pill")).toHaveAccessibleName(
+      "In the household's physical collection",
+    );
   },
 };
 

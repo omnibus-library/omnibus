@@ -45,6 +45,7 @@ import {
   formatProgressLabels,
   formatTitleSub,
   NO_LOCATION,
+  percentToSave,
   type ReaderStatus,
   relocateWrite,
   resolveChapterPosition,
@@ -159,7 +160,7 @@ function EpubPage({
           // Best-effort: a failed write must not interrupt reading, and the next turn retries.
           saveReadingPosition(uuid, {
             anchor: write.post,
-            percent: Math.min(data.pct, 100),
+            percent: percentToSave(data),
           }).catch(() => {});
         }
         setStatus((s) => (clearedByRelocate(s) ? "ready" : s));

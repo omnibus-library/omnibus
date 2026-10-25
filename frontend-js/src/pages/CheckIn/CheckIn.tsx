@@ -8,9 +8,11 @@ import {
   resolveBook,
   resolveMeta,
   type ScanOutcome,
+  type WishlistAddRequest,
   wishlistScanned,
 } from "../../api";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
+import { useCurrentUser } from "../../session";
 import {
   cleanIsbn,
   type FoundVia,
@@ -40,6 +42,7 @@ const LOOKUP: Stage = { kind: "lookup" };
 export function CheckIn() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const viewerId = useCurrentUser().id;
   const [stage, setStage] = useState<Stage>(LOOKUP);
   // The book page's "Check in when acquired" brings the ISBN it already holds.
   const [params] = useSearchParams();
@@ -132,10 +135,11 @@ export function CheckIn() {
     onError: (e) => setError(`Could not add that book: ${e.message}`),
   });
   const wishlist = useMutation({
-    mutationFn: wishlistScanned,
-    onSuccess: (uuid, req) => {
+    mutationFn: ({ req }: { req: WishlistAddRequest; title: string }) =>
+      wishlistScanned(req),
+    onSuccess: (uuid, { title }) => {
       wrote(uuid);
-      setStage({ kind: "wishlisted", title: req.meta?.title ?? "" });
+      setStage({ kind: "wishlisted", title });
     },
     onError: (e) => setError(`Could not add to your wishlist: ${e.message}`),
   });
@@ -215,11 +219,17 @@ export function CheckIn() {
             book={stage.book}
             isbn={stage.isbn}
             wishlisted={stage.wishlisted}
+            anotherWish={stage.anotherWish}
+            wishing={wishlist.isPending}
             via={stage.via}
+            viewerId={viewerId}
             note={note}
             busy={busy}
             onNote={setNote}
             onCheckIn={() => checkIn.mutate(stage)}
+            onWishlist={(req) =>
+              wishlist.mutate({ req, title: stage.book.title })
+            }
             onCancel={restart}
           />
         );
@@ -235,6 +245,7 @@ export function CheckIn() {
                 book,
                 isbn: stage.scanned.isbn13,
                 wishlisted: false,
+                anotherWish: false,
                 via: stage.via,
               })
             }
@@ -251,7 +262,9 @@ export function CheckIn() {
             busy={busy}
             onOwnIt={(meta) => ownIt.mutate(meta)}
             onLink={() => toLink(stage.online.isbn13, stage.via)}
-            onWishlist={(req) => wishlist.mutate(req)}
+            onWishlist={(req) =>
+              wishlist.mutate({ req, title: req.meta?.title ?? "" })
+            }
             onRestart={restart}
           />
         );
@@ -265,6 +278,7 @@ export function CheckIn() {
                 book,
                 isbn: stage.isbn,
                 wishlisted: false,
+                anotherWish: false,
                 via: stage.via,
               })
             }

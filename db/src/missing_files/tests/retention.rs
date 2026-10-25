@@ -186,6 +186,7 @@ async fn gc_keeps_fileless_wishlist_book_stamped_by_boot_backfill() {
         cover_url: None,
         series: None,
         first_publish_year: None,
+        format: None,
         source: MetadataProvider::OpenLibrary,
     };
     let uuid = crate::scan::wishlist_add(&pool, user_id, None, Some(&meta), WishlistSource::Scan)

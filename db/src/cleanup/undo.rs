@@ -8,6 +8,7 @@ use std::collections::HashSet;
 use omnibus_shared::{CleanupAction, CleanupKind};
 use sqlx::{Sqlite, SqlitePool, Transaction};
 
+use crate::sort_keys::refresh_author_sort;
 use crate::sync::upsert_fts_batch;
 use crate::taxonomy::delete_orphan_taxonomy;
 
@@ -233,6 +234,9 @@ async fn undo_merge(
     }
 
     let touched: Vec<i64> = touched.into_iter().collect();
+    if entity == MergeEntity::Author {
+        refresh_author_sort(tx, &touched).await?;
+    }
     upsert_fts_batch(tx, &touched).await?;
     Ok(())
 }
@@ -282,6 +286,7 @@ async fn undo_delete_author(
         .await?;
 
     let book_ids: Vec<i64> = snap.links.iter().map(|link| link.book_id).collect();
+    refresh_author_sort(tx, &book_ids).await?;
     upsert_fts_batch(tx, &book_ids).await?;
     Ok(())
 }

@@ -15,7 +15,8 @@ use crate::sync::upsert_fts;
 
 use super::fts::rebuild_fts_for_book;
 use super::links::{
-    materialize_author_rows, materialize_genre_rows, materialize_series_link, materialize_tag_rows,
+    current_override_series, materialize_author_rows, materialize_genre_rows,
+    materialize_series_link, materialize_tag_rows, prune_override_series_links,
 };
 
 mod cover;
@@ -277,6 +278,7 @@ pub(crate) async fn upsert_one_in_tx(
     user_id: i64,
 ) -> Result<(), MetadataOverridesError> {
     let json = serde_json::to_string(overrides)?;
+    let replaced = current_override_series(tx, book_uuid).await?;
     upsert_overrides_row(
         &mut **tx,
         book_uuid,
@@ -286,7 +288,7 @@ pub(crate) async fn upsert_one_in_tx(
         user_id,
     )
     .await?;
-    materialize_series_link(tx, book_uuid, overrides).await?;
+    materialize_series_link(tx, book_uuid, overrides, replaced).await?;
     materialize_tag_rows(tx, overrides).await?;
     materialize_genre_rows(tx, overrides).await?;
     materialize_author_rows(tx, overrides).await?;
@@ -366,6 +368,7 @@ pub(crate) async fn delete_one_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
     book_uuid: &str,
 ) -> Result<Option<i64>, MetadataOverridesError> {
+    let replaced = current_override_series(tx, book_uuid).await?;
     sqlx::query("DELETE FROM metadata_overrides WHERE book_uuid = ?")
         .bind(book_uuid)
         .execute(&mut **tx)
@@ -374,6 +377,8 @@ pub(crate) async fn delete_one_in_tx(
     // A uuid with no live book has no FTS row to restore.
     let book_id = resolve_book_id_by_uuid_exec(&mut **tx, book_uuid).await?;
     if let Some(id) = book_id {
+        // The override's series link goes with it, leaving the scanned one.
+        prune_override_series_links(tx, id, None, replaced).await?;
         upsert_fts(tx, id).await?;
     }
     touch_book_last_modified(tx, book_uuid).await?;

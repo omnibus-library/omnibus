@@ -67,9 +67,19 @@ pub(super) fn scan_book_cols(effective: bool, with_isbn: bool) -> String {
         "b.uuid AS uuid, {title} AS title, b.has_cover AS has_cover, {authors} AS authors,
          EXISTS (SELECT 1 FROM physical_copies pc WHERE pc.book_uuid = b.uuid) AS has_physical,
          EXISTS (SELECT 1 FROM book_files bf WHERE bf.book_id = b.id) AS has_files,
-         {isbn} AS isbn"
+         {isbn} AS isbn,
+         {COPY_FILERS} AS copy_filers"
     )
 }
+
+/// Who filed each of the book's copies, oldest first, as a JSON array. The name
+/// reads as `PhysicalCopy::added_by_name` does; a deleted filer is null twice.
+const COPY_FILERS: &str =
+    "(SELECT json_group_array(json_object('user_id', filer_id, 'name', filer_name))
+            FROM (SELECT pc.added_by_user_id AS filer_id,
+                         (SELECT COALESCE(u.display_name, u.username) FROM users u
+                           WHERE u.id = pc.added_by_user_id) AS filer_name
+                    FROM physical_copies pc WHERE pc.book_uuid = b.uuid ORDER BY pc.id))";
 
 /// The override blob, coerced to an empty object when it does not parse, so
 /// neither `json_extract` nor `json_each` can abort the query on it.
@@ -91,7 +101,12 @@ pub(super) fn row_to_scan_book(r: sqlx::sqlite::SqliteRow) -> ScanBook {
     let has_physical: i64 = r.get("has_physical");
     let has_files: i64 = r.get("has_files");
     let isbn = r.get::<Option<String>, _>("isbn").filter(|s| !s.is_empty());
+    let copy_filers = r
+        .get::<Option<String>, _>("copy_filers")
+        .and_then(|json| serde_json::from_str(&json).ok())
+        .unwrap_or_default();
     ScanBook {
+        copy_filers,
         cover_url: (has_cover != 0).then(|| format!("/api/covers/{uuid}")),
         isbn,
         authors: authors

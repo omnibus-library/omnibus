@@ -21,14 +21,15 @@ export const pickerTargets = (all: readonly Shelf[], viewer: User) =>
 const named = (all: readonly Shelf[], ids: readonly number[]) =>
   all.filter((s) => ids.includes(s.id));
 
-/** Every shelf holding the book, in the order the block draws them: hand-picked, matching smart, then the viewer's own Wishlist when wished. */
+/** Every shelf of the viewer's holding the book, in the order the block draws them: hand-picked, matching smart, then the Wishlist when wished. Another reader's shelf is theirs, not a place the viewer filed the book. */
 export function heldShelves(facts: ShelfFacts, viewer: User): Shelf[] {
+  const mine = (s: Shelf) => s.owner.id === viewer.id;
   const wishlist = facts.wished
-    ? facts.all.filter((s) => s.kind === "wishlist" && s.owner.id === viewer.id)
+    ? facts.all.filter((s) => s.kind === "wishlist" && mine(s))
     : [];
   return [
-    ...named(facts.all, facts.manualIds),
-    ...named(facts.all, facts.smartIds),
+    ...named(facts.all, facts.manualIds).filter(mine),
+    ...named(facts.all, facts.smartIds).filter(mine),
     ...wishlist,
   ];
 }

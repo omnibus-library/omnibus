@@ -360,7 +360,10 @@ class CatalogTests(CatalogTestCase):
 
     def test_real_catalog_parses_and_keeps_the_ios_agent_off_the_web_only_flows(self):
         web_only = {"adding_book", "merging_books", "deleting_a_book"}
-        kobo_only = {"syncing_a_kobo", "choosing_kobo_shelves"}
+        kobo_only = {
+            "syncing_a_kobo", "choosing_kobo_shelves", "reading_on_a_kobo",
+            "highlighting_on_a_kobo",
+        }
         for seed in range(10):
             out = draw(None, "--agents", "2", "--flows-per-agent", "4",
                        "--seed", str(seed), "--ios")
@@ -371,16 +374,21 @@ class CatalogTests(CatalogTestCase):
             self.assertEqual({k for k, v in ios["excluded"].items() if v == "surface ios"},
                              web_only | kobo_only)
 
-    def test_real_catalog_gives_the_kobo_agent_its_two_flows_in_order_and_keeps_web_off_them(self):
-        kobo_only = ["syncing_a_kobo", "choosing_kobo_shelves"]
+    def test_real_catalog_gives_the_kobo_agent_its_four_flows_in_order_and_keeps_web_off_them(self):
+        kobo_only = {
+            "syncing_a_kobo", "choosing_kobo_shelves", "reading_on_a_kobo",
+            "highlighting_on_a_kobo",
+        }
         for seed in range(10):
             out = draw(None, "--agents", "1", "--kobo", "1", "--seed", str(seed))
             web, kobo = out["agents"]
             self.assertEqual(kobo["surface"], "kobo")
-            self.assertEqual(flows_of(kobo), kobo_only, f"seed {seed}: drawn after must put syncing first")
-            self.assertEqual(kobo["capped"], "2 kobo flow(s) available after exclusions; --flows-per-agent is 4")
-            self.assertFalse(set(flows_of(web)) & set(kobo_only), f"seed {seed}")
-            self.assertEqual({k for k, v in web["excluded"].items() if v == "surface web"}, set(kobo_only))
+            drawn = flows_of(kobo)
+            self.assertEqual(drawn[0], "syncing_a_kobo", f"seed {seed}: drawn after must put syncing first")
+            self.assertEqual(set(drawn), kobo_only, f"seed {seed}")
+            self.assertNotIn("capped", kobo, f"seed {seed}: 4 flows available matches --flows-per-agent")
+            self.assertFalse(set(flows_of(web)) & kobo_only, f"seed {seed}")
+            self.assertEqual({k for k, v in web["excluded"].items() if v == "surface web"}, kobo_only)
 
 
 if __name__ == "__main__":

@@ -103,6 +103,16 @@ pub(crate) struct RelocateData {
     pub(crate) echo: bool,
 }
 
+impl RelocateData {
+    /// The `progress_percent` a save may carry: the exact whole-book figure, or
+    /// none while `pct` is the glue's coarse stand-in, so the server's own
+    /// figure for the CFI is the only one stored.
+    #[cfg_attr(not(any(feature = "web", feature = "mobile")), allow(dead_code))]
+    pub(crate) fn percent_to_post(&self) -> Option<i64> {
+        (!self.pct_approx).then(|| i64::from(self.pct.min(100)))
+    }
+}
+
 /// The percent readout: "N%" once the whole-book locations map has
 /// resolved, "~N%" while `pct` is still the coarse spine approximation —
 /// honest instead of falsely precise.

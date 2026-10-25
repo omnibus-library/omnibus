@@ -150,6 +150,23 @@ async fn author_position(pool: &SqlitePool, book_id: i64, author_id: i64) -> Opt
         .unwrap()
 }
 
+async fn set_author_sort(pool: &SqlitePool, book_id: i64, key: &str) {
+    sqlx::query("UPDATE books SET author_sort = ? WHERE id = ?")
+        .bind(key)
+        .bind(book_id)
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
+async fn author_sort_of(pool: &SqlitePool, book_id: i64) -> Option<String> {
+    sqlx::query_scalar("SELECT author_sort FROM books WHERE id = ?")
+        .bind(book_id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
 async fn count_rows(pool: &SqlitePool, sql: &str) -> i64 {
     sqlx::query_scalar(sql).fetch_one(pool).await.unwrap()
 }

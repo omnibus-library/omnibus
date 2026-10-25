@@ -3,7 +3,7 @@ import { suggestionsUrls } from "../contracts/suggestions";
 import type { SuggestionItem, SuggestionsResponse } from "../data/bookDetail";
 import { BaseComponent } from "./BaseComponent";
 
-/** The "Readers also enjoyed" strip: a connect prompt, a pending note, an empty note or cards. */
+/** The "Readers also enjoyed" strip: a connect prompt, a pending note, an unavailable note, an empty note or cards. */
 export class SuggestionsStripComponent extends BaseComponent {
   readonly root: Locator;
   readonly heading: Locator;
@@ -13,6 +13,8 @@ export class SuggestionsStripComponent extends BaseComponent {
   readonly pending: Locator;
   readonly pendingText: Locator;
   readonly spinner: Locator;
+  readonly unavailable: Locator;
+  readonly unavailableText: Locator;
   readonly empty: Locator;
   readonly emptyText: Locator;
   readonly cards: Locator;
@@ -32,6 +34,10 @@ export class SuggestionsStripComponent extends BaseComponent {
     this.pending = page.getByTestId("suggestions-pending");
     this.pendingText = page.getByText("Looking for read-alikes via Hardcover…");
     this.spinner = page.getByTestId("suggestions-spinner");
+    this.unavailable = page.getByTestId("suggestions-unavailable");
+    this.unavailableText = page.getByText(
+      "Suggestions are unavailable right now.",
+    );
     this.empty = page.getByTestId("suggestions-empty");
     this.emptyText = page.getByText("No read-alikes found for this book yet.");
     this.cards = this.root.getByTestId("suggestion-card");
@@ -52,6 +58,11 @@ export class SuggestionsStripComponent extends BaseComponent {
   /** Answers as a server that has queued the lookup and cached nothing yet. */
   async stubPending(): Promise<void> {
     await this.stubResponse({ status: "pending" });
+  }
+
+  /** Answers as a server whose last lookup failed. */
+  async stubUnavailable(): Promise<void> {
+    await this.stubResponse({ status: "unavailable" });
   }
 
   /** Answers as a server whose cache holds `items`, none of them for an empty list. */

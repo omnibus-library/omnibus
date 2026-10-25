@@ -139,16 +139,18 @@ fn relocate_moved(new: &Option<String>, last_posted: &Option<String>) -> bool {
 /// the event time the server's conditional upsert arbitrates on; without
 /// it a write degrades to receipt-time last-write-wins.
 #[cfg(feature = "web")]
-async fn post_epub_progress(uuid: String, cfi: String, percent_for_post: i64) {
-    let body = serde_json::json!({
+async fn post_epub_progress(uuid: String, cfi: String, percent_for_post: Option<i64>) {
+    let mut body = serde_json::json!({
         "update": {
             "book_uuid": uuid,
             "format": "epub",
             "epub_cfi": cfi,
-            "progress_percent": percent_for_post,
             "client_updated_at": crate::time::now_unix(),
         }
     });
+    if let Some(percent) = percent_for_post {
+        body["update"]["progress_percent"] = percent.into();
+    }
     if let Ok(req) = gloo_net::http::Request::post("/api/rpc/progress").json(&body) {
         let _ = req.send().await;
     }
@@ -191,15 +193,10 @@ fn build_relocate_callback(
                 // writes.
                 if !hold_first_write.replace(false) {
                     crate::reader_progress::save(&uuid_for_save, &cfi);
-                    // `progress_percent` is the same whole-book figure the
-                    // footer/ribbon render (`data.pct`) — sending it keeps the
-                    // landing hero's stored percent in step with what the
-                    // reader itself is showing (issue #1909, AC2).
-                    let percent_for_post = i64::from(data.pct.min(100));
                     wasm_bindgen_futures::spawn_local(post_epub_progress(
                         uuid_for_save.clone(),
                         cfi,
-                        percent_for_post,
+                        data.percent_to_post(),
                     ));
                 }
             }

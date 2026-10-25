@@ -99,6 +99,16 @@ class KoboVocabularyTests(unittest.TestCase):
     def test_an_unlisted_kobo_verb_is_not_out_of_scope(self) -> None:
         self.assertNotEqual(vocabulary.classify("kobo.reset").kind, vocabulary.OUT_OF_SCOPE)
 
+    def test_a_kobo_download_is_out_of_scope_as_device_state(self) -> None:
+        cls = vocabulary.classify("kobo.download")
+        self.assertEqual(cls.kind, vocabulary.OUT_OF_SCOPE)
+        self.assertEqual(cls.detail, vocabulary.SCOPE_DEVICE)
+
+    def test_a_kobo_remove_download_is_out_of_scope_as_device_state(self) -> None:
+        cls = vocabulary.classify("kobo.remove-download")
+        self.assertEqual(cls.kind, vocabulary.OUT_OF_SCOPE)
+        self.assertEqual(cls.detail, vocabulary.SCOPE_DEVICE)
+
 
 class ParserTests(unittest.TestCase):
     def test_parse_rating_reads_prose_and_explicit_clears(self) -> None:

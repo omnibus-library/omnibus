@@ -111,7 +111,11 @@ pub async fn by_ref(
 /// per-call-site bookkeeping. Google Books does not surface the `reqwest::Error`
 /// (its retry loop bails with a plain string), so it records at its own call
 /// site. No `Retry-After` is available here, so these fall back to the schedule.
-fn note_throttle(config: &MetadataLookupConfig, provider: MetadataProvider, error: &anyhow::Error) {
+pub(super) fn note_throttle(
+    config: &MetadataLookupConfig,
+    provider: MetadataProvider,
+    error: &anyhow::Error,
+) {
     let throttled = error
         .chain()
         .filter_map(|cause| cause.downcast_ref::<reqwest::Error>())

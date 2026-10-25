@@ -174,6 +174,39 @@ async fn delete_author_removes_links_and_inserts_blocklist_row() {
     assert_eq!(creators, vec!["Real Author"]);
 }
 #[tokio::test]
+async fn delete_author_rekeys_author_sort_to_the_next_linked_author() {
+    let _covers = CoversTempDir::new("delete_author_sort");
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    replace_books(
+        &pool,
+        "/lib",
+        vec![indexed(
+            "b.epub",
+            Some("B"),
+            &["Junk Author", "Ursula Le Guin"],
+            &[],
+            None,
+            None,
+        )],
+    )
+    .await
+    .unwrap();
+    let junk_id: i64 = sqlx::query_scalar("SELECT id FROM authors WHERE name = ?")
+        .bind("Junk Author")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+    delete_author(&pool, junk_id).await.unwrap();
+
+    let key: String = sqlx::query_scalar("SELECT author_sort FROM books WHERE title = 'B'")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(key, "Guin, Ursula Le");
+}
+
+#[tokio::test]
 async fn delete_author_is_no_op_for_missing_id() {
     let pool = init_db("sqlite::memory:").await.unwrap();
     let unlinked = delete_author(&pool, 99_999).await.unwrap();

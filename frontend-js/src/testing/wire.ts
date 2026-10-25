@@ -32,6 +32,7 @@ import type {
   ReviewSummary,
   RulePreview,
   SeriesDetail,
+  SeriesReading,
   SeriesStack,
   SeriesSummary,
   SessionLogEntry,
@@ -581,6 +582,19 @@ export function aWireBookReading(
     last_read_at: 1_760_000_000,
     format: "epub",
     book_file_id: null,
+    ...overrides,
+  };
+}
+
+/** The reader's progress through a series as `GET /api/series/reading` sends it: one finished, one in progress. */
+export function aWireSeriesReading(
+  overrides: Partial<SeriesReading> = {},
+): SeriesReading {
+  return {
+    series_id: 4,
+    finished: 1,
+    reading: 1,
+    last_read_at: 1_760_000_000,
     ...overrides,
   };
 }

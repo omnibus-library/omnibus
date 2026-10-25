@@ -22,7 +22,7 @@ import { Login } from "./pages/Login/Login";
 import { NotFound } from "./pages/NotFound/NotFound";
 import { Register } from "./pages/Register/Register";
 import { Search } from "./pages/Search/Search";
-import { Series } from "./pages/Series/Series";
+import { Series, SeriesIndexPane } from "./pages/Series/Series";
 import { SeriesDetail } from "./pages/SeriesDetail/SeriesDetail";
 import { ShelfDetail } from "./pages/ShelfDetail/ShelfDetail";
 import { Shelves } from "./pages/Shelves/Shelves";
@@ -115,8 +115,14 @@ export const routes: RouteObject[] = [
                       { path: ":id", element: <AuthorDetail /> },
                     ],
                   },
-                  { path: "/series", element: <Series /> },
-                  { path: "/series/:id", element: <SeriesDetail /> },
+                  {
+                    path: "/series",
+                    element: <Series />,
+                    children: [
+                      { index: true, element: <SeriesIndexPane /> },
+                      { path: ":id", element: <SeriesDetail /> },
+                    ],
+                  },
                   { path: "/stats", element: <Stats /> },
                   { path: "/stats/chart", element: <StatsChart /> },
                   { path: "/shelves", element: <Shelves /> },

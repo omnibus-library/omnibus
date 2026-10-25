@@ -7,6 +7,9 @@ import { BaseComponent } from "./BaseComponent";
 export class SearchPaletteComponent extends BaseComponent {
   readonly panel: Locator;
   readonly input: Locator;
+  readonly combobox: Locator;
+  readonly listbox: Locator;
+  readonly selectedOption: Locator;
   readonly resultCountText: Locator;
   readonly booksGroupHeading: Locator;
   readonly errorMessage: Locator;
@@ -18,6 +21,9 @@ export class SearchPaletteComponent extends BaseComponent {
     super(page);
     this.panel = page.getByTestId("sp-panel");
     this.input = page.getByTestId("sp-input");
+    this.combobox = page.getByRole("combobox", { name: "Search" });
+    this.listbox = this.panel.getByRole("listbox");
+    this.selectedOption = this.panel.getByRole("option", { selected: true });
     this.resultCountText = page.getByTestId("sp-result-count");
     this.booksGroupHeading = page.getByText(/^Books · \d+$/);
     this.errorMessage = page.getByRole("alert");

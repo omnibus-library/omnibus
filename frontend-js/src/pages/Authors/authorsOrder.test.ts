@@ -10,11 +10,7 @@ import {
   computeAuthorGroups,
   creatorSortKey,
   defaultAuthor,
-  dictionaryCmp,
   firstLetter,
-  foldForMatch,
-  letterFrag,
-  listPhase,
   nameParts,
   sortAuthors,
 } from "./authorsOrder";
@@ -33,39 +29,6 @@ function anAuthor(
 const names = (authors: AuthorSummary[]) => authors.map((a) => a.name);
 
 const noFilter = { text: "", reading: null, onlyReading: false };
-
-describe("foldForMatch", () => {
-  it("drops accents and case", () => {
-    expect(foldForMatch("Benito Pérez Galdós")).toBe("benito perez galdos");
-  });
-});
-
-describe("dictionaryCmp", () => {
-  const inOrder = [
-    "Perez, Ana",
-    "Pérez Galdós, Benito",
-    "Perry, Anne",
-    "Pettichord, Bret",
-    "Polk, Sarah",
-  ];
-
-  it("files accented names in dictionary order", () => {
-    expect([...inOrder].reverse().sort((a, b) => dictionaryCmp(a, b))).toEqual(
-      inOrder,
-    );
-  });
-
-  it("puts the plain spelling first on a tie", () => {
-    expect(dictionaryCmp("Perez", "Pérez")).toBeLessThan(0);
-    expect(dictionaryCmp("Pérez", "Perez")).toBeGreaterThan(0);
-    expect(dictionaryCmp("Pérez", "Pérez")).toBe(0);
-  });
-
-  it("ignores case before breaking the tie on it", () => {
-    expect(dictionaryCmp("apple", "Banana")).toBeLessThan(0);
-    expect(dictionaryCmp("Apple", "apple")).toBeLessThan(0);
-  });
-});
 
 describe("creatorSortKey", () => {
   it.each([
@@ -112,13 +75,6 @@ describe("firstLetter", () => {
 
   it.each(["1984", "[Anonymous]", "中文"])("files %s under #", (name) => {
     expect(firstLetter(anAuthor(name))).toBe("#");
-  });
-});
-
-describe("letterFrag", () => {
-  it("spells # as hash and leaves a letter alone", () => {
-    expect(letterFrag("#")).toBe("hash");
-    expect(letterFrag("Q")).toBe("Q");
   });
 });
 
@@ -292,37 +248,5 @@ describe("defaultAuthor", () => {
 
   it("is null for an empty library", () => {
     expect(defaultAuthor([], null)).toBeNull();
-  });
-});
-
-describe("listPhase", () => {
-  it.each([
-    [
-      "still loading",
-      { isPending: true, isError: false, hasRows: false },
-      "loading",
-    ],
-    [
-      "failed with nothing to show",
-      { isPending: false, isError: true, hasRows: false },
-      "failed",
-    ],
-    [
-      "a failed refresh that kept its rows",
-      { isPending: false, isError: true, hasRows: true },
-      "ready",
-    ],
-    [
-      "answered with no authors",
-      { isPending: false, isError: false, hasRows: false },
-      "empty",
-    ],
-    [
-      "answered with authors",
-      { isPending: false, isError: false, hasRows: true },
-      "ready",
-    ],
-  ] as const)("is %s", (_case, list, phase) => {
-    expect(listPhase(list)).toBe(phase);
   });
 });

@@ -46,9 +46,11 @@ Cargo workspace with seven crates:
   wireless sync: speaks the firmware's side of `/kobo/<token>/v1/*` and enforces
   the firmware behaviours behind past Kobo regressions, each a named
   `firmware::Quirk` citing its evidence. `mock-kobo serve` runs one device
-  behind a loopback control API (`POST /actions/sync`, `GET /device`,
-  `GET /requests`, `PUT /reset`; replies `{status, code, message, details}`),
-  keeps a JSON state file, and auto-wires the dev seed admin's device;
+  behind a loopback control API (`POST /actions/{sync,download,remove-download,
+  read,finish,highlight,delete-highlight,read-to,highlight-words}`, `GET /device`,
+  `GET /requests`, `PUT /reset`; replies
+  `{status, code, message, details}`), keeps a JSON state file, and
+  auto-wires the dev seed admin's device;
   `mock-kobo tui` drives that same device from a terminal UI while serving the
   same API. Dev tooling only — it ships in neither the server binary nor the
   Docker image — and it depends on no `omnibus-*` crate, so its wire types can

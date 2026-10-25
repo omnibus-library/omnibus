@@ -99,4 +99,101 @@ mod render {
         assert!(html.contains("Kobo devices"), "{html}");
         assert!(html.contains("Settings \u{203A} Devices"), "{html}");
     }
+
+    /// A book and an author with the highlight on the author, as the palette
+    /// draws it after one ArrowDown.
+    #[component]
+    fn ResultsHost() -> Element {
+        let results = use_signal(|| {
+            Some(PaletteResults {
+                books: vec![PaletteBookHit {
+                    id: 1,
+                    uuid: "book-uuid".into(),
+                    title: "Dracula".into(),
+                    ..PaletteBookHit::default()
+                }],
+                authors: vec![omnibus_shared::PaletteAuthorHit {
+                    id: 7,
+                    name: "Bram Stoker".into(),
+                    book_count: 1,
+                    ..Default::default()
+                }],
+                ..PaletteResults::default()
+            })
+        });
+        let settings = use_memo(Vec::new);
+        let flat_items = use_memo(move || build_flat_items(&results.read(), &settings.read()));
+        rsx! {
+            SpResultsList {
+                results,
+                settings,
+                flat_items,
+                selected: use_signal(|| 1_usize),
+                has_navigated: use_signal(|| true),
+                open: PaletteOpen(use_signal(|| true)),
+            }
+        }
+    }
+
+    #[derive(Clone, Debug, PartialEq, Routable)]
+    enum ResultsRoute {
+        #[route("/")]
+        ResultsHost {},
+    }
+
+    #[test]
+    fn sp_results_list_is_a_listbox_of_labelled_groups_of_options() {
+        let html = render_in_vdom(|| rsx! { Router::<ResultsRoute> {} });
+
+        assert!(html.contains("role=\"listbox\""), "{html}");
+        assert!(html.contains("id=\"sp-listbox\""), "{html}");
+        assert_eq!(html.matches("role=\"group\"").count(), 2, "{html}");
+        assert!(
+            html.contains("aria-labelledby=\"sp-group-books\""),
+            "{html}"
+        );
+        assert!(html.contains("id=\"sp-group-books\""), "{html}");
+        assert_eq!(html.matches("role=\"option\"").count(), 2, "{html}");
+    }
+
+    #[test]
+    fn sp_results_list_gives_each_option_its_flat_index_id_and_marks_only_the_highlighted_one() {
+        let html = render_in_vdom(|| rsx! { Router::<ResultsRoute> {} });
+
+        assert!(html.contains("id=\"sp-option-0\""), "{html}");
+        assert!(html.contains("id=\"sp-option-1\""), "{html}");
+        assert_eq!(html.matches("aria-selected=\"true\"").count(), 1, "{html}");
+        assert_eq!(html.matches("aria-selected=\"false\"").count(), 1, "{html}");
+    }
+
+    #[component]
+    fn EmptyHost() -> Element {
+        let results = use_signal(|| None::<PaletteResults>);
+        let settings = use_memo(Vec::new);
+        let flat_items = use_memo(move || build_flat_items(&results.read(), &settings.read()));
+        rsx! {
+            SpResultsList {
+                results,
+                settings,
+                flat_items,
+                selected: use_signal(|| 0_usize),
+                has_navigated: use_signal(|| false),
+                open: PaletteOpen(use_signal(|| true)),
+            }
+        }
+    }
+
+    #[derive(Clone, Debug, PartialEq, Routable)]
+    enum EmptyRoute {
+        #[route("/")]
+        EmptyHost {},
+    }
+
+    #[test]
+    fn sp_results_list_is_not_a_listbox_while_it_lists_nothing() {
+        let html = render_in_vdom(|| rsx! { Router::<EmptyRoute> {} });
+
+        assert!(!html.contains("role=\"listbox\""), "{html}");
+        assert!(!html.contains("id=\"sp-listbox\""), "{html}");
+    }
 }

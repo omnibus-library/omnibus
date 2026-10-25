@@ -3,10 +3,10 @@
 //! `(user_id, book_uuid)`, so re-wishlisting is idempotent.
 
 use omnibus_shared::physical::{WishlistEntry, WishlistRemoval, WishlistSource};
-use sqlx::SqlitePool;
+use sqlx::{SqlitePool, Transaction};
 
 use super::{PhysicalError, PHYSICAL_LIBRARY_PATH};
-use crate::books::resolve_canonical_book_uuid;
+use crate::books::{resolve_canonical_book_uuid, resolve_canonical_book_uuid_exec};
 
 /// Hard cap on how many entries `list_wishlist` returns for a single user.
 /// Practical usage stays well under this; the cap exists so a pathological
@@ -41,7 +41,21 @@ pub async fn add_wishlist_entry(
     book_uuid: &str,
     source: WishlistSource,
 ) -> Result<WishlistEntry, PhysicalError> {
-    let canonical = resolve_canonical_book_uuid(pool, book_uuid)
+    let mut tx = pool.begin().await?;
+    let entry = add_wishlist_entry_in_tx(&mut tx, user_id, book_uuid, source).await?;
+    tx.commit().await?;
+    Ok(entry)
+}
+
+/// [`add_wishlist_entry`] on the caller's transaction, so a book created in the
+/// same commit and its wishlist entry land together or not at all.
+pub(crate) async fn add_wishlist_entry_in_tx(
+    tx: &mut Transaction<'_, sqlx::Sqlite>,
+    user_id: i64,
+    book_uuid: &str,
+    source: WishlistSource,
+) -> Result<WishlistEntry, PhysicalError> {
+    let canonical = resolve_canonical_book_uuid_exec(&mut **tx, book_uuid)
         .await?
         .ok_or(PhysicalError::BookNotFound)?;
 
@@ -57,7 +71,7 @@ pub async fn add_wishlist_entry(
     .bind(user_id)
     .bind(&canonical)
     .bind(source.as_str())
-    .fetch_one(pool)
+    .fetch_one(&mut **tx)
     .await?;
     Ok(map_entry(row))
 }

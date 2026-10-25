@@ -13,13 +13,16 @@ mod wishlist;
 #[cfg(test)]
 mod tests;
 
+pub(crate) use copies::add_physical_copy_in_tx;
 pub use copies::{
     add_physical_copy, delete_physical_copy, list_physical_copies,
     list_physical_copies_by_canonical_uuid_exec, update_physical_copy_note,
 };
 pub use fileless::{create_fileless_book, FilelessBook, FilelessCover};
+pub(crate) use fileless::{create_fileless_book_in_tx, CreatedFileless};
 pub(crate) use promote::{promote_filed_physical_book, promote_filed_physical_books};
 pub use remove::delete_fileless_book;
+pub(crate) use wishlist::add_wishlist_entry_in_tx;
 pub use wishlist::{
     add_wishlist_entry, get_wishlist_entry, list_wishlist, remove_wishlist_entry,
     LIST_WISHLIST_LIMIT,

@@ -70,6 +70,29 @@ test.describe("suggestions strip", () => {
     });
   });
 
+  test("show an unavailable note when the lookup failed", async ({
+    bookDetailPage,
+    request,
+    expectMutation,
+  }) => {
+    const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+    const strip = bookDetailPage.suggestions;
+
+    await test.step("open the book whose lookup failed", async () => {
+      await strip.stubUnavailable();
+      await expectMutation(suggestions.fetch(), () =>
+        bookDetailPage.goto(uuid),
+      );
+    });
+
+    await test.step("check the note shows in place of the spinner", async () => {
+      await expect(strip.unavailable).toBeVisible();
+      await expect(strip.unavailableText).toBeVisible();
+      await expect(strip.pending).toHaveCount(0);
+      await expect(strip.spinner).toHaveCount(0);
+    });
+  });
+
   test("show an empty note when the cache resolved with no matches", async ({
     bookDetailPage,
     request,

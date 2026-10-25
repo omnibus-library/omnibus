@@ -76,3 +76,28 @@ fn keep_selection_starts_at_the_top_when_the_highlighted_row_is_gone() {
 
     assert_eq!(keep_selection(&before, 1, &after), 0);
 }
+
+#[test]
+fn option_id_is_unique_per_flat_index() {
+    assert_eq!(option_id(0), "sp-option-0");
+    assert_ne!(option_id(1), option_id(2));
+}
+
+#[test]
+fn active_descendant_names_the_selected_row_once_the_reader_has_navigated() {
+    let items = build_flat_items(&Some(one_book_and_one_genre()), &[]);
+
+    assert_eq!(
+        active_descendant(&items, 1, true).as_deref(),
+        Some("sp-option-1")
+    );
+}
+
+#[test]
+fn active_descendant_is_absent_until_the_reader_navigates_or_when_nothing_is_listed() {
+    let items = build_flat_items(&Some(one_book_and_one_genre()), &[]);
+
+    assert_eq!(active_descendant(&items, 0, false), None);
+    assert_eq!(active_descendant(&[], 0, true), None);
+    assert_eq!(active_descendant(&items, 5, true), None);
+}

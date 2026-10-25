@@ -14,6 +14,8 @@ export type ExternalBookMeta = {
   /** The server leaves this out when unknown, and `first_publish_year` too. */
   series?: string;
   first_publish_year?: number;
+  /** The edition's physical format, such as `Paperback`; left out when unknown. */
+  format?: string;
   source: "open_library";
 };
 

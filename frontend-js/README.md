@@ -122,8 +122,8 @@ components both screens kept (the review and journal composers, the export menu,
 the cover editor, the add page's form) and are pruned when a class loses its last
 user.
 
-Elsewhere, each CSS file holds only the `atrium.css`, `loading.css`, `filter_bar.css` and
-`authors.css` rules its markup can match, copied by `tools/extract-atrium.cjs`.
+Elsewhere, each CSS file holds only the `atrium.css`, `loading.css`, `filter_bar.css`,
+`authors.css` and `series.css` rules its markup can match, copied by `tools/extract-atrium.cjs`.
 The components keep the Dioxus class names, which is what lets the copy apply
 unchanged: when sign-in, the library grid and book detail were first ported,
 their computed styles and screenshots matched the `atrium.css` build exactly.
@@ -241,8 +241,8 @@ shell provides it.
   schema, the rules a field is refused by and the override diff), `dirty`,
   `editionFields` and `fetch`, the View Transition helper `viewTransition`, `uploads`,
   check-in's `checkInFlow` and `scan`, the scanner's `scanStatus` and
-  `loadScanner`, the discovery pages' `authorsOrder`, `authorProgress`,
-  `seriesIndex`, `shelvesIndex`, the shelf rules' `rules`, the picker's
+  `loadScanner`, the discovery pages' `browseOrder`, `bookStates`, `authorsOrder`,
+  `authorProgress`, `seriesOrder`, `seriesProgress`, `shelvesIndex`, the shelf rules' `rules`, the picker's
   `picker`, the shelf page's `shelfAccess` and `narrow`, the readers' `pager`,
   `pdfAnchors`, `start`, `relocate`, `typography`, `epubGlue`, `pdfGlue`,
   `readingSession` and `autoReadStatus`, the player's `PlaybackProvider`,

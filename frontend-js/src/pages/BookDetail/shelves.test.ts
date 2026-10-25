@@ -67,6 +67,25 @@ describe("heldShelves", () => {
     expect(heldShelves(facts, ADA).map((s) => s.id)).toEqual([1, 3, 2, 4]);
   });
 
+  it("never names another reader's hand-picked or smart shelf", () => {
+    const theirs = [
+      aShelf({ id: 6, owner: stranger }),
+      aShelf({ id: 7, kind: "smart", owner: stranger }),
+    ];
+
+    const held = heldShelves(
+      {
+        ...facts,
+        all: [...all, ...theirs],
+        manualIds: [3, 1, 6],
+        smartIds: [2, 7],
+      },
+      ADA,
+    );
+
+    expect(held.map((s) => s.id)).toEqual([1, 3, 2, 4]);
+  });
+
   it("leaves the wishlist out when the book is not wished", () => {
     expect(
       heldShelves({ ...facts, wished: false }, ADA).map((s) => s.id),

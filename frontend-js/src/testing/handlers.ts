@@ -17,6 +17,7 @@ import {
   getGetReadStatusMockHandler200,
   getGetRegistrationMockHandler200,
   getGetSeriesByIdMockHandler200,
+  getGetSeriesReadingMockHandler200,
   getGetSessionLogMockHandler200,
   getGetSuggestionsMockHandler200,
   getGetTagsMockHandler200,
@@ -59,6 +60,7 @@ import {
   type RulePreview,
   RulePreviewRequest,
   type SeriesDetail,
+  type SeriesReading,
   type SeriesStack,
   type SeriesSummary,
   type SessionLogEntry,
@@ -351,16 +353,19 @@ export function authorsHandlers({
   ];
 }
 
-/** `GET /api/series` and `GET /api/series/{id}`. */
+/** `GET /api/series`, the reader's `GET /api/series/reading` and `GET /api/series/{id}`. */
 export function seriesHandlers({
   list = [],
+  reading = [],
   detail,
 }: {
   list?: SeriesSummary[];
+  reading?: SeriesReading[];
   detail?: SeriesDetail;
 }) {
   return [
     getListSeriesMockHandler200(list),
+    getGetSeriesReadingMockHandler200(reading),
     ...(detail ? [getGetSeriesByIdMockHandler200(detail)] : []),
   ];
 }

@@ -13,9 +13,13 @@ use ratatui::Frame;
 use crate::client::RequestRecord;
 use crate::control::{DeviceView, LastSync};
 use crate::device::Book;
+use crate::reading::ReadStatus;
 use crate::tui::app::{App, Edit, Field, Mode, Status};
 
-const HELP: &str = "s sync · r reset · u edit URL · t edit token · w wire · q quit";
+pub mod reader;
+
+const HELP: &str =
+    "↑/↓ select · Enter open · d download · p read % · f finish · x remove · s sync · r reset · u edit URL · t edit token · w wire · q quit";
 const EDIT_HELP: &str = "Enter save · Esc cancel";
 
 /// Rows the status line may wrap onto before the rest is cut.
@@ -30,8 +34,14 @@ pub struct Screen<'a> {
     pub app: &'a App,
 }
 
-/// Draw `screen`: header, library, last sync, request log, status line, key help.
+/// Draw `screen`: the reader when one is open, else the library screen
+/// (header, library, last sync, request log, status line, key help).
 pub fn draw(frame: &mut Frame, screen: &Screen) {
+    if let Mode::Reading(open) = &screen.app.mode {
+        let book = screen.view.library.get(&open.book);
+        reader::draw(frame, frame.area(), open, book, screen.app.status.as_ref());
+        return;
+    }
     let [header, library, last_sync, requests, footer] = Layout::vertical([
         Constraint::Length(4),
         Constraint::Percentage(35),
@@ -41,7 +51,7 @@ pub fn draw(frame: &mut Frame, screen: &Screen) {
     ])
     .areas(frame.area());
     draw_header(frame, header, screen);
-    draw_library(frame, library, screen.view);
+    draw_library(frame, library, screen.view, screen.app.selected_book());
     draw_last_sync(frame, last_sync, screen.view);
     draw_requests(frame, requests, screen.requests);
     draw_footer(frame, footer, screen.app);
@@ -58,20 +68,64 @@ fn draw_header(frame: &mut Frame, area: Rect, screen: &Screen) {
     frame.render_widget(Paragraph::new(lines), area);
 }
 
-fn draw_library(frame: &mut Frame, area: Rect, view: &DeviceView) {
+fn draw_library(frame: &mut Frame, area: Rect, view: &DeviceView, selected: Option<&str>) {
     let lines: Vec<Line> = if view.library.is_empty() {
         vec![Line::raw("no books: press s to sync")]
     } else {
-        view.library.values().map(book_line).collect()
+        view.library
+            .iter()
+            .map(|(id, book)| book_line(book, Some(id.as_str()) == selected))
+            .collect()
     };
     let block = Block::bordered().title(format!("Library ({})", view.library.len()));
-    frame.render_widget(Paragraph::new(lines).block(block), area);
+    let rows = usize::from(block.inner(area).height);
+    // Selecting past the visible rows (or wrapping Up to the last book) must
+    // not hide the marker: scroll just far enough to keep it in view.
+    let index = selected.and_then(|id| view.library.keys().position(|k| k == id));
+    let offset = index.map_or(0, |i| i.saturating_sub(rows.saturating_sub(1)));
+    let offset = u16::try_from(offset).unwrap_or(u16::MAX);
+    let paragraph = Paragraph::new(lines).block(block).scroll((offset, 0));
+    frame.render_widget(paragraph, area);
 }
 
-fn book_line(book: &Book) -> Line<'static> {
+fn book_line(book: &Book, selected: bool) -> Line<'static> {
+    let marker = if selected { "> " } else { "  " };
     let archived = if book.archived { " (archived)" } else { "" };
     let authors = book.authors.join(", ");
-    Line::raw(format!("{} — {authors}{archived}", book.title))
+    let status = book_status(book);
+    let status = if status.is_empty() {
+        String::new()
+    } else {
+        format!(" [{status}]")
+    };
+    let text = format!("{marker}{} — {authors}{archived}{status}", book.title);
+    if selected {
+        Line::styled(text, Style::new().add_modifier(Modifier::BOLD))
+    } else {
+        Line::raw(text)
+    }
+}
+
+/// `downloaded`/`download failed`, the bookmark percent, or `finished` — whichever apply.
+fn book_status(book: &Book) -> String {
+    let mut parts = Vec::new();
+    if book.reading.status == ReadStatus::Finished {
+        parts.push("finished".to_owned());
+    } else if let Some(percent) = book.reading.bookmark.as_ref().and_then(|b| b.percent) {
+        parts.push(format!("{}%", u8::from(percent)));
+    }
+    match &book.download_problem {
+        Some(_) => parts.push("download failed".to_owned()),
+        None if book.downloaded => parts.push("downloaded".to_owned()),
+        None => {}
+    }
+    if !book.annotations.is_empty() {
+        parts.push(format!("{} highlights", book.annotations.len()));
+    }
+    if book.dropped_annotations > 0 {
+        parts.push(format!("{} highlights dropped", book.dropped_annotations));
+    }
+    parts.join(" · ")
 }
 
 fn draw_last_sync(frame: &mut Frame, area: Rect, view: &DeviceView) {
@@ -114,23 +168,23 @@ fn draw_footer(frame: &mut Frame, area: Rect, app: &App) {
             draw_edit(frame, edit_area, edit);
             frame.render_widget(Line::raw(EDIT_HELP), help_area);
         }
+        // `draw` dispatches `Reading` to `reader::draw` before this runs.
+        Mode::Reading(_) => {}
     }
 }
 
-fn status_line(status: &Status) -> Line<'_> {
+pub(super) fn status_line(status: &Status) -> Line<'_> {
     match status {
         Status::Info(message) => Line::raw(message.as_str()),
         Status::Error(message) => Line::styled(message.as_str(), Style::new().fg(Color::Red)),
     }
 }
 
-/// The prompt, with the terminal cursor after what has been typed (kept on screen).
-fn draw_edit(frame: &mut Frame, area: Rect, edit: &Edit) {
-    let label = match edit.field {
-        Field::Url => "URL",
-        Field::Token => "token",
-    };
-    let prompt = Line::raw(format!("{label}: {}", edit.buffer));
+/// A one-line `label: buffer` prompt with the terminal cursor kept just
+/// after what's been typed — shared by the library's edit fields and the
+/// reader's note prompt.
+pub(super) fn draw_prompt(frame: &mut Frame, area: Rect, label: &str, buffer: &str) {
+    let prompt = Line::raw(format!("{label}: {buffer}"));
     let typed = u16::try_from(prompt.width()).unwrap_or(u16::MAX);
     let x = area
         .x
@@ -138,6 +192,15 @@ fn draw_edit(frame: &mut Frame, area: Rect, edit: &Edit) {
         .min(area.right().saturating_sub(1));
     frame.set_cursor_position((x, area.y));
     frame.render_widget(prompt, area);
+}
+
+fn draw_edit(frame: &mut Frame, area: Rect, edit: &Edit) {
+    let label = match &edit.field {
+        Field::Url => "URL",
+        Field::Token => "token",
+        Field::Percent(_) => "percent",
+    };
+    draw_prompt(frame, area, label, &edit.buffer);
 }
 
 #[cfg(test)]

@@ -8,6 +8,7 @@ import {
   formatProgressLabels,
   formatTitleSub,
   NO_LOCATION,
+  percentToSave,
   relocateWrite,
   resolveChapterPosition,
 } from "./relocate";
@@ -96,6 +97,20 @@ describe("relocateWrite", () => {
 
   it("keeps the hold through an echo", () => {
     expect(relocateWrite("a", true, null, true).hold).toBe(true);
+  });
+});
+
+describe("percentToSave", () => {
+  it("leaves the percent to the server while the glue's figure is approximate", () => {
+    expect(percentToSave({ pct: 38, pctApprox: true })).toBeUndefined();
+  });
+
+  it("sends an exact percent", () => {
+    expect(percentToSave({ pct: 38, pctApprox: false })).toBe(38);
+  });
+
+  it("caps an exact percent at 100", () => {
+    expect(percentToSave({ pct: 104, pctApprox: false })).toBe(100);
   });
 });
 

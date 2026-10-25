@@ -263,6 +263,14 @@ type CopyRowProps = {
   uuid: BookUuid;
 };
 
+/** Whose physical collection the copy sits in: yours, the reader who filed it, or the household's once the filer is gone. */
+const collectionLabel = (copy: PhysicalCopy, viewerId: number) =>
+  copy.filerId === viewerId
+    ? "In your physical collection"
+    : copy.filerName
+      ? `In ${copy.filerName}'s physical collection`
+      : "In the household's physical collection";
+
 function CopyRow({
   copy,
   mayChange,
@@ -274,6 +282,7 @@ function CopyRow({
   uuid,
 }: CopyRowProps) {
   const filer = copy.filerId === viewerId ? "you" : copy.filerName;
+  const collection = collectionLabel(copy, viewerId);
   const when = ago(nowSecs(), copy.checkedInAt);
   const hasNote = Boolean(copy.note?.trim());
   return (
@@ -282,7 +291,7 @@ function CopyRow({
         role="img"
         className="format-badge rx-ic"
         data-testid="format-badge-physical"
-        title="In your physical collection"
+        title={collection}
         aria-label="Physical"
       >
         <BookGlyph size={15} />
@@ -294,7 +303,7 @@ function CopyRow({
             role="img"
             className="rx-statusdot"
             data-testid="physical-pill"
-            aria-label="In your physical collection"
+            aria-label={collection}
           />
           {filer ? `Checked in ${when} by ${filer}` : `Checked in ${when}`}
           {copy.isbn && (

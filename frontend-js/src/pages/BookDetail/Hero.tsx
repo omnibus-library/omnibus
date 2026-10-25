@@ -1,7 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
-import type { BookDetail as Detail, UserId } from "../../api";
+import {
+  type BookDetail as Detail,
+  isWishlistOnly,
+  type UserId,
+} from "../../api";
 import { ChevronRightGlyph } from "../../components/Glyphs/Glyphs";
 import { fmtStars } from "../../components/StarRating/stars";
 import { UserAvatar } from "../../components/UserAvatar/UserAvatar";
@@ -21,7 +25,7 @@ import type { MyRating } from "./useMyRating";
 /** The burst plays for two seconds; this is the moment it is taken down, a little after the last piece fades. */
 const BURST_MS = 2300;
 
-/** The authors, each linking to their page when the library knows it, then the series, which jumps to its fan on the Overview. */
+/** The authors, each linking to their page when the library has one, then the series, which jumps to its fan on the Overview. */
 function Byline({
   book,
   onShowSeries,
@@ -30,14 +34,15 @@ function Byline({
   onShowSeries: () => void;
 }) {
   const { series, seriesId } = book;
+  const linked = !isWishlistOnly(book);
   if (book.creators.length === 0 && !series) return null;
   return (
     <p className="bp-byline" data-testid="book-authors">
       {book.creators.map(({ name, id }, i) => (
         <Fragment key={`${id}:${name}`}>
           {i > 0 && ", "}
-          {id === null ? (
-            <span className="bd-author-link">{name}</span>
+          {id === null || !linked ? (
+            <span>{name}</span>
           ) : (
             <Link to={`/authors/${id}`} className="bd-author-link">
               {name}

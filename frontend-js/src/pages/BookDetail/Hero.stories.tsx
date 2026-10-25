@@ -195,6 +195,27 @@ export const Standalone: Story = {
   },
 };
 
+export const WishlistOnlyBookDoesNotLinkItsAuthors: Story = {
+  args: { book: aBook({ formats: [], book_files: [], has_physical: false }) },
+  play: async ({ canvas }) => {
+    const byline = canvas.getByTestId("book-authors");
+
+    await expect(byline).toHaveTextContent("Sora Inkwell");
+    await expect(within(byline).queryByRole("link")).not.toBeInTheDocument();
+    await expect(byline.querySelector(".bd-author-link")).toBeNull();
+  },
+};
+
+export const BookWithAFileLinksItsAuthors: Story = {
+  play: async ({ canvas }) => {
+    await expect(
+      within(canvas.getByTestId("book-authors")).getByRole("link", {
+        name: "Sora Inkwell",
+      }),
+    ).toHaveAttribute("href", "/authors/2");
+  },
+};
+
 export const BlankSeriesName: Story = {
   args: { book: aBook({ series: "  ", series_id: 4 }) },
   play: async ({ canvas }) => {

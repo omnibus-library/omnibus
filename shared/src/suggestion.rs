@@ -71,6 +71,8 @@ pub enum SuggestionsResponse {
     NotConfigured,
     /// The server is fetching suggestions and has none cached yet. Ask again later.
     Pending,
+    /// The lookup failed; it is tried again later.
+    Unavailable,
     /// The cached suggestions. An empty `items` means Hardcover had nothing usable, and
     /// that answer is cached too.
     Ready { items: Vec<BookSuggestion> },

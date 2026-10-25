@@ -12,7 +12,8 @@ use crate::books::{get_books_by_ids, resolve_book_ids_bulk};
 
 use super::super::fts::{rebuild_fts_for_book, rebuild_fts_for_books_batch};
 use super::super::links::{
-    materialize_author_rows, materialize_genre_rows, materialize_series_link, materialize_tag_rows,
+    current_override_series, materialize_author_rows, materialize_genre_rows,
+    materialize_series_link, materialize_tag_rows,
 };
 use super::{
     invalidate_composition_cache, touch_book_last_modified, upsert_overrides_row,
@@ -79,6 +80,7 @@ async fn merge_one_in_tx(
     };
 
     let json = serde_json::to_string(&merged)?;
+    let replaced = current_override_series(tx, book_uuid).await?;
     upsert_overrides_row(
         &mut **tx,
         book_uuid,
@@ -88,7 +90,7 @@ async fn merge_one_in_tx(
         user_id,
     )
     .await?;
-    materialize_series_link(tx, book_uuid, &merged).await?;
+    materialize_series_link(tx, book_uuid, &merged, replaced).await?;
     materialize_tag_rows(tx, &merged).await?;
     materialize_genre_rows(tx, &merged).await?;
     materialize_author_rows(tx, &merged).await?;

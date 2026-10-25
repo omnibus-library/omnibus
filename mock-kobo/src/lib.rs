@@ -5,13 +5,18 @@
 //! API; `mock-kobo tui` shows the same device in a terminal UI while serving
 //! that API; `mock-kobo --help` lists the flags and env vars.
 
+pub mod annotations;
 pub mod api;
 pub mod autowire;
 pub mod cli;
 pub mod client;
 pub mod control;
+pub mod covers;
 pub mod device;
+pub mod downloads;
 pub mod firmware;
+pub mod kepub;
+pub mod reading;
 pub mod session;
 pub mod startup;
 pub mod state;

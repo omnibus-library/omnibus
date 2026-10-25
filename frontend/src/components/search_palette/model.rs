@@ -84,6 +84,25 @@ pub(super) fn is_selected(items: &[FlatItem], selected_idx: usize, candidate: &F
     items.get(selected_idx) == Some(candidate)
 }
 
+/// The listbox's id, which the input's `aria-controls` names.
+pub(super) const LISTBOX_ID: &str = "sp-listbox";
+
+/// The id of the row at flat `index`, which the input's `aria-activedescendant`
+/// names while the row is the highlighted one.
+pub(super) fn option_id(index: usize) -> String {
+    format!("sp-option-{index}")
+}
+
+/// The id the input reports as active: the highlighted row, once the reader has
+/// driven the highlight with the arrow keys; none until then or past the list.
+pub(super) fn active_descendant(
+    items: &[FlatItem],
+    selected: usize,
+    has_navigated: bool,
+) -> Option<String> {
+    (has_navigated && selected < items.len()).then(|| option_id(selected))
+}
+
 /// Simple English plural suffix.
 pub(super) fn plural(n: usize) -> &'static str {
     if n == 1 {

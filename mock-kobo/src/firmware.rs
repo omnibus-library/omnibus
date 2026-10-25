@@ -25,6 +25,8 @@ pub enum Quirk {
     PortlessHost,
     /// `library_sync` and `get_tests_request` come only from the adopted
     /// `Resources` map, never from `api_endpoint`. Evidence: #2684. Observed.
+    /// The same holds for Reading Services: its host comes only from
+    /// `reading_services_host`. Evidence: `server/src/backend/kobo/auth.rs`. Inferred.
     ResourcesOnly,
     /// `library_sync` pages are followed while the server says
     /// `x-kobo-sync: continue`, echoing each `x-kobo-synctoken` back; past
@@ -40,6 +42,43 @@ pub enum Quirk {
     /// A `ChangedEntitlement` with `IsRemoved` archives the book rather than
     /// deleting it. Evidence: `server/src/backend/kobo/dto.rs`. Inferred.
     RemovalArchives,
+    /// A cover is cached per `(ImageId, width, height)` and never
+    /// revalidated: a changed cover under an unchanged `CoverImageId` is
+    /// never refetched. Widths observed; heights, quality and greyscale
+    /// inferred. Evidence: #2684. Observed.
+    CoverCache,
+    /// Only a JPEG or PNG cover whose content type and magic bytes agree
+    /// renders; anything else (a WebP, say) caches as undecodable and shows
+    /// no cover. Evidence: #2116. Observed.
+    CoverDecode,
+    /// A non-2xx download, or no answer at all, leaves the book
+    /// undownloaded and is retried on the next sync, whatever the policy.
+    /// Evidence: #2116. Observed.
+    DownloadFailure,
+    /// Reading status and bookmark are reconciled against the server
+    /// independently, each adopted only when stamped and strictly newer
+    /// than the device's own. Evidence: `server/src/backend/kobo/dto.rs`. Observed.
+    StateArbitration,
+    /// A state PUT's reply must read `Success` on every sub-result, or the
+    /// write is treated as failed. Evidence: `server/src/backend/kobo/dto.rs`
+    /// (`StateResponse`). Inferred.
+    StatePutResult,
+    /// Annotations for a book the device hasn't downloaded are dropped
+    /// rather than held, and the server keeps reporting the book until it is
+    /// served once downloaded — [`Quirk::AnnotationsOnDownload`] is how a
+    /// dropped set comes back. Evidence: #1647. Observed. That a downloaded
+    /// book's set is instead *replaced wholesale* by each served set (never
+    /// merged) is inferred from `server/src/backend/kobo/reading_services.rs`,
+    /// not itself observed.
+    AnnotationsUnheld,
+    /// A download triggers one unconditional `GET .../annotations`, whether
+    /// or not `checkforchanges` ever named the book. Evidence: #1647. Observed.
+    AnnotationsOnDownload,
+    /// A served `highlightColor` hex swatch maps onto the device's
+    /// `Bookmark.Color` index; anything else — a CSS name, an unknown hex,
+    /// or none at all — lands on yellow (`Bookmark.Color` 0). Evidence:
+    /// #1629. Unverified.
+    HighlightColor,
 }
 
 /// The header `v1/initialization` must carry ([`Quirk::ApiToken`]).
@@ -64,3 +103,19 @@ pub const STORE_PATHS: [&str; 4] = [
     "/v1/products/books/subscriptions",
     "/v1/deals",
 ];
+
+/// The sizes, in order, every cover is fetched at ([`Quirk::CoverCache`]).
+/// Width observed (#2684); heights, quality, greyscale inferred.
+pub const COVER_SIZES: [(u32, u32); 3] = [(149, 223), (400, 600), (1072, 1448)];
+
+/// The `{Quality}` every cover request fills in. Inferred.
+pub const COVER_QUALITY: u32 = 90;
+
+/// The size whose cache entry `Book::cover` shows (the library list). Inferred.
+pub const SHOWN_COVER_SIZE: (u32, u32) = (149, 223);
+
+/// Every checkforchanges-driven annotations GET's `If-None-Match`; the
+/// post-download GET ([`Quirk::AnnotationsOnDownload`]) sends none at all.
+/// Firmware always sends this value rather than echoing a prior ETag.
+/// Evidence: `server/src/backend/kobo/reading_services.rs`. Inferred.
+pub const ANNOTATIONS_IF_NONE_MATCH: &str = "W/\"0\"";

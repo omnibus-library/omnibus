@@ -32,25 +32,29 @@ pub(super) fn strip_url(e: reqwest::Error) -> reqwest::Error {
     e.without_url()
 }
 
-/// GET + parse JSON, degrading every failure to `None` with a debug log. For
+/// GET + parse JSON, keeping the failure so a caller can tell a 429 from a miss.
+pub(super) async fn get_json<T: serde::de::DeserializeOwned>(
+    config: &MetadataLookupConfig,
+    url: &str,
+) -> anyhow::Result<T> {
+    let resp = client()?
+        .get(url)
+        .timeout(config.timeout)
+        .send()
+        .await
+        .map_err(strip_url)?
+        .error_for_status()
+        .map_err(strip_url)?;
+    Ok(resp.json::<T>().await.map_err(strip_url)?)
+}
+
+/// [`get_json`] degrading every failure to `None` with a debug log. For
 /// best-effort side lookups (enrichment) that must never fail their caller.
 pub(super) async fn get_json_best_effort<T: serde::de::DeserializeOwned>(
     config: &MetadataLookupConfig,
     url: &str,
 ) -> Option<T> {
-    let result: anyhow::Result<T> = async {
-        let resp = client()?
-            .get(url)
-            .timeout(config.timeout)
-            .send()
-            .await
-            .map_err(strip_url)?
-            .error_for_status()
-            .map_err(strip_url)?;
-        Ok(resp.json::<T>().await.map_err(strip_url)?)
-    }
-    .await;
-    match result {
+    match get_json(config, url).await {
         Ok(v) => Some(v),
         Err(e) => {
             tracing::debug!("provider side-lookup miss: {e:#}");

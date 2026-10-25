@@ -10,7 +10,8 @@ use sqlx::SqlitePool;
 
 use crate::author_photos::{fetch_remote_image_with, RemoteImageConfig};
 use crate::suggestions::data::{
-    replace_suggestions, suggestion_state, NewSuggestion, SuggestionState, SUGGESTIONS_TTL_SECS,
+    mark_failed, replace_suggestions, suggestion_state, NewSuggestion, SuggestionState,
+    SUGGESTIONS_TTL_SECS,
 };
 use crate::suggestions::filter::{filter_candidates, Candidate};
 use crate::suggestions::hardcover::{
@@ -51,9 +52,25 @@ pub async fn resolve(pool: &SqlitePool, book_uuid: &str) -> anyhow::Result<()> {
 /// [`resolve`] with injectable Hardcover + remote-image configs (for a local
 /// `wiremock` in tests). Resolves the library book to a Hardcover book
 /// (ISBN-first, title fallback), ranks books co-listed with it, and caches the
-/// top 10 with cover bytes. A clean miss writes the sticky `empty` marker; a
-/// transient network error leaves the marker untouched so the debounce re-posts.
+/// top 10 with cover bytes. A clean miss writes the sticky `empty` marker; an
+/// error marks the book `failed` and is still returned, so the worker logs it.
 pub async fn resolve_with(
+    pool: &SqlitePool,
+    book_uuid: &str,
+    config: &HardcoverConfig,
+    image_config: &RemoteImageConfig,
+) -> anyhow::Result<()> {
+    let result = resolve_and_cache(pool, book_uuid, config, image_config).await;
+    if result.is_err() {
+        if let Err(e) = mark_failed(pool, book_uuid).await {
+            tracing::warn!(book_uuid, error = %e, "could not mark a failed suggestions lookup");
+        }
+    }
+    result
+}
+
+/// The body of [`resolve_with`]: every error it returns marks the book `failed`.
+async fn resolve_and_cache(
     pool: &SqlitePool,
     book_uuid: &str,
     config: &HardcoverConfig,

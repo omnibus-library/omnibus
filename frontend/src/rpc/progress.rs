@@ -20,14 +20,16 @@ use super::{internal_rpc_error, AuthUser, PoolExt};
 
 /// Progress-sync save. Mobile uses the analogous REST route in
 /// `server::backend::progress`. POST because Dioxus `#[get]` server functions
-/// can't carry an argument body, as for `rpc_get_ebook`. An accepted epub CFI
-/// write with no percent gets one derived asynchronously
-/// (`spawn_epub_percent_derivation`), so the returned record may predate it.
+/// can't carry an argument body, as for `rpc_get_ebook`. An epub CFI write is
+/// stored with the CFI's own percent from the book's spine stats, and a book
+/// without stats gets one derived asynchronously (`spawn_epub_percent_derivation`),
+/// so the returned record may predate it.
 #[post("/api/rpc/progress", pool: PoolExt, user: AuthUser)]
-pub async fn rpc_save_progress(update: ProgressUpdate) -> Result<ProgressRecord> {
+pub async fn rpc_save_progress(mut update: ProgressUpdate) -> Result<ProgressRecord> {
     if let Err(msg) = update.validate() {
         return Err(ServerFnError::new(msg).into());
     }
+    db::progress::scale_epub_percent(&pool.0, &mut update).await;
     match db::progress::upsert_progress(&pool.0, user.id, &update).await {
         Ok(rec) => {
             db::progress::spawn_epub_percent_derivation(pool.0.clone(), user.id, &rec);

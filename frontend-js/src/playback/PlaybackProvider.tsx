@@ -27,6 +27,7 @@ import {
   type SessionReport,
   saveListeningPosition,
   savePlaybackRate,
+  seriesListQuery,
 } from "../api";
 import { applyAutoReadStatus } from "../autoReadStatus";
 import { nowSecs } from "../format";
@@ -313,13 +314,14 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     );
   }, []);
 
-  // The read status may have moved; only it and the smart shelves read it (not the edit form's query).
+  // The read status may have moved; only it, the smart shelves and the series' per-reader progress read it (not the edit form's query).
   const markRead = useCallback(
     (uuid: BookUuid, atEnd: boolean) =>
       void applyAutoReadStatus(uuid, atEnd).then(() => {
         for (const { queryKey } of [
           readStatusQuery(uuid),
           shelvesQuery(uuid),
+          seriesListQuery,
         ]) {
           void client.invalidateQueries({ queryKey });
         }

@@ -5,7 +5,7 @@
 //! confirm subtitle words itself from.
 
 use omnibus_shared::physical::WishlistSource;
-use omnibus_shared::scan::ScanOutcome;
+use omnibus_shared::scan::{CopyFiler, ScanOutcome};
 use sqlx::SqlitePool;
 use wiremock::MockServer;
 
@@ -268,4 +268,64 @@ async fn resolve_scan_still_offers_a_close_match_whose_override_blob_is_corrupt(
         }
         other => panic!("expected CloseMatch, got {other:?}"),
     }
+}
+
+#[tokio::test]
+async fn resolve_scan_copy_filers_name_each_reader_who_filed_a_copy_oldest_first() {
+    let pool = pool().await;
+    seed_book(&pool, "u1", "Effective Java", "Joshua Bloch", Some(ISBN)).await;
+    let alice = seed_user(&pool, "alice").await;
+    let bob = seed_user(&pool, "bob").await;
+    sqlx::query("UPDATE users SET display_name = 'Bob B.' WHERE id = ?")
+        .bind(bob)
+        .execute(&pool)
+        .await
+        .unwrap();
+    for filer in [Some(alice), Some(bob), None] {
+        add_physical_copy(&pool, "u1", Some(ISBN), filer, None)
+            .await
+            .unwrap();
+    }
+    let server = MockServer::start().await; // must not be hit
+
+    let outcome = resolve_scan(&pool, USER_ID, ISBN, &config_for(&server))
+        .await
+        .unwrap();
+
+    let ScanOutcome::AlreadyOwned { book } = outcome else {
+        panic!("expected AlreadyOwned, got {outcome:?}");
+    };
+    assert_eq!(
+        book.copy_filers,
+        [
+            CopyFiler {
+                user_id: Some(alice),
+                name: Some("alice".into())
+            },
+            CopyFiler {
+                user_id: Some(bob),
+                name: Some("Bob B.".into())
+            },
+            CopyFiler {
+                user_id: None,
+                name: None
+            },
+        ]
+    );
+}
+
+#[tokio::test]
+async fn resolve_scan_copy_filers_is_empty_for_a_book_nobody_checked_in() {
+    let pool = pool().await;
+    seed_book(&pool, "u1", "Effective Java", "Joshua Bloch", Some(ISBN)).await;
+    let server = MockServer::start().await; // must not be hit
+
+    let outcome = resolve_scan(&pool, USER_ID, ISBN, &config_for(&server))
+        .await
+        .unwrap();
+
+    let ScanOutcome::InLibraryUnowned { book } = outcome else {
+        panic!("expected InLibraryUnowned, got {outcome:?}");
+    };
+    assert!(book.copy_filers.is_empty());
 }

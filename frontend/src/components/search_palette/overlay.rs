@@ -12,7 +12,9 @@ use dioxus_router::use_navigator;
 use omnibus_shared::PaletteResults;
 
 use super::keyboard::{make_keydown_handler, KeyboardContext};
-use super::model::{build_flat_items, keep_selection, plural, FlatItem};
+use super::model::{
+    active_descendant, build_flat_items, keep_selection, plural, FlatItem, LISTBOX_ID,
+};
 use super::results::SpResultsList;
 use super::PaletteOpen;
 use crate::components::glyphs::search_glyph;
@@ -239,6 +241,10 @@ pub(super) fn SpOverlay(open: PaletteOpen) -> Element {
                 SpInputRow {
                     query,
                     is_loading,
+                    listbox: ListboxState {
+                        expanded: !flat_items.read().is_empty(),
+                        active: active_descendant(&flat_items.read(), selected(), has_navigated()),
+                    },
                     on_input: move |v: String| {
                         query.set(v.clone());
                         spawn_search(v);
@@ -277,11 +283,24 @@ pub(super) fn SpOverlay(open: PaletteOpen) -> Element {
     }
 }
 
+/// What the query input tells assistive tech about the results listbox it
+/// controls: whether rows are listed, and which one is highlighted.
+#[derive(Clone, PartialEq)]
+struct ListboxState {
+    expanded: bool,
+    active: Option<String>,
+}
+
 /// Search-icon + autofocused query input, with the debounce/RPC dispatch
 /// delegated to `on_input` and the loading spinner shown while a search runs.
 /// Keystrokes typed before real focus lands are buffered into `query`.
 #[component]
-fn SpInputRow(query: Signal<String>, is_loading: bool, on_input: EventHandler<String>) -> Element {
+fn SpInputRow(
+    query: Signal<String>,
+    is_loading: bool,
+    listbox: ListboxState,
+    on_input: EventHandler<String>,
+) -> Element {
     let buffer: PrefocusKeyBufferHolder = use_hook(Rc::default);
     // Safety net: detach if the overlay closes (e.g. Escape) before real
     // focus ever lands, so a stale listener doesn't outlive this instance.
@@ -294,11 +313,17 @@ fn SpInputRow(query: Signal<String>, is_loading: bool, on_input: EventHandler<St
     let focus_buffer = Rc::clone(&buffer);
     rsx! {
         div { class: "sp-input-wrap",
-            {search_glyph(18, "sp-input-icon", false)}
+            {search_glyph(18, "sp-input-icon", true)}
             input {
                 class: "sp-input",
                 "data-testid": "sp-input",
                 r#type: "text",
+                role: "combobox",
+                "aria-label": "Search",
+                "aria-controls": if listbox.expanded { Some(LISTBOX_ID) } else { None },
+                "aria-expanded": if listbox.expanded { "true" } else { "false" },
+                "aria-autocomplete": "list",
+                "aria-activedescendant": listbox.active,
                 placeholder: "Search books, authors, series, tags, settings…",
                 autofocus: true,
                 // `autofocus` only fires on initial page load.

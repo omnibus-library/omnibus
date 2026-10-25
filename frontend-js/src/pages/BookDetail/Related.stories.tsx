@@ -289,6 +289,27 @@ export const MoreByWithoutAnAuthorIdHasNoLinks: Story = {
   },
 };
 
+export const MoreByIsAbsentForAWishlistOnlyBook: Story = {
+  args: {
+    book: aBook({
+      series: null,
+      series_id: null,
+      formats: [],
+      book_files: [],
+      has_physical: false,
+    }),
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("bp-related");
+    await expect(
+      canvas.queryByRole("link", { name: "Author page" }),
+    ).not.toBeInTheDocument();
+    await expect(
+      canvas.queryByRole("heading", { name: /^More by/ }),
+    ).not.toBeInTheDocument();
+  },
+};
+
 const READY = {
   status: "ready",
   items: [1, 2, 3, 4, 5, 6, 7, 8].map((n) =>
@@ -373,6 +394,22 @@ export const SuggestionsPendingThenReady: Story = {
     await expect(
       await canvas.findAllByTestId("suggestion-card", {}, { timeout: 6000 }),
     ).toHaveLength(8);
+    await expect(
+      canvas.queryByTestId("suggestions-pending"),
+    ).not.toBeInTheDocument();
+  },
+};
+
+export const SuggestionsSayUnavailableWhenTheLookupFailed: Story = {
+  beforeEach({ msw }) {
+    msw.use(getGetSuggestionsMockHandler200({ status: "unavailable" }));
+  },
+  play: async ({ canvas }) => {
+    const note = await canvas.findByTestId("suggestions-unavailable");
+    await expect(note).toHaveTextContent(
+      "Suggestions are unavailable right now.",
+    );
+    await expect(note.closest('[role="status"]')).not.toBeNull();
     await expect(
       canvas.queryByTestId("suggestions-pending"),
     ).not.toBeInTheDocument();

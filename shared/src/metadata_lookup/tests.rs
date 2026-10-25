@@ -15,6 +15,7 @@ fn valid_meta() -> ExternalBookMeta {
         cover_url: Some("https://example.com/cover.jpg".into()),
         series: Some("Penguin English Library".into()),
         first_publish_year: Some(1813),
+        format: None,
         source: MetadataProvider::OpenLibrary,
     }
 }
@@ -509,4 +510,26 @@ fn fill_missing_from_does_not_fill_an_absent_field_with_a_blank_one() {
     detail.fill_missing_from(&blank);
     assert_eq!(detail.publisher, None);
     assert_eq!(detail.cover_url, None);
+}
+
+#[test]
+fn external_book_meta_decodes_a_payload_without_format_and_omits_it_when_absent() {
+    let mut json = serde_json::to_value(valid_meta()).unwrap();
+    assert!(json.get("format").is_none(), "got: {json}");
+    json["format"] = serde_json::json!("Paperback");
+    let with: ExternalBookMeta = serde_json::from_value(json.clone()).unwrap();
+    assert_eq!(with.format.as_deref(), Some("Paperback"));
+    json.as_object_mut().unwrap().remove("format");
+    let without: ExternalBookMeta = serde_json::from_value(json).unwrap();
+    assert_eq!(without.format, None);
+}
+
+#[test]
+fn external_book_meta_validate_rejects_an_oversized_format() {
+    let mut meta = valid_meta();
+    meta.format = Some("x".repeat(ExternalBookMeta::NAME_MAX_LEN + 1));
+    let err = meta
+        .validate()
+        .expect_err("an oversized format must be rejected");
+    assert!(err.contains("format"), "got: {err}");
 }

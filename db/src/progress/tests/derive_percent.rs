@@ -219,6 +219,49 @@ async fn derive_epub_percent_agrees_with_stored_spine_stats() {
     assert_eq!(row.updated_at, saved.updated_at);
 }
 
+// ── the stored percent shares the ruler with the derived one ────────
+
+#[tokio::test]
+async fn scale_epub_percent_replaces_the_client_percent_with_the_stored_stats_percent() {
+    let (pool, user, uuid, _) = seed_measured_epub("scale_replaces").await;
+    // The reader's own estimate said 38; the start of chapter 2 is 50 on the
+    // spine-stats ruler every server-side figure uses.
+    let mut update = cfi_update(&uuid, "epubcfi(/6/4!/4/2/1:0)", 1_000);
+    update.progress_percent = Some(38);
+
+    scale_epub_percent(&pool, &mut update).await;
+    let saved = upsert_progress(&pool, user, &update).await.unwrap();
+
+    assert_eq!(saved.progress_percent, Some(50));
+    let stored = get_progress(&pool, user, &uuid, ProgressFormat::Epub)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.progress_percent, Some(50));
+}
+
+#[tokio::test]
+async fn scale_epub_percent_keeps_the_client_percent_for_a_page_anchor() {
+    let (pool, _, uuid, _) = seed_measured_epub("scale_page_anchor").await;
+    let mut update = cfi_update(&uuid, "pdf-page:3", 1_000);
+    update.progress_percent = Some(38);
+
+    scale_epub_percent(&pool, &mut update).await;
+
+    assert_eq!(update.progress_percent, Some(38));
+}
+
+#[tokio::test]
+async fn scale_epub_percent_keeps_the_client_percent_for_a_book_without_spine_stats() {
+    let (pool, _, uuid) = seed_epub_on_disk("scale_unmeasured").await;
+    let mut update = cfi_update(&uuid, "epubcfi(/6/4!/4/2/1:0)", 1_000);
+    update.progress_percent = Some(38);
+
+    scale_epub_percent(&pool, &mut update).await;
+
+    assert_eq!(update.progress_percent, Some(38));
+}
+
 // ── derived resume CFI for a percent-only row (#2446) ────────────────
 
 /// [`seed_epub_on_disk`] with the spine stats extracted, which is what places

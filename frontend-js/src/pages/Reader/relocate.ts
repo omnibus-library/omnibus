@@ -36,6 +36,10 @@ export function relocateWrite(
   return { post: hold ? null : cfi, lastPosted: cfi, hold: false };
 }
 
+/** The percent a save may carry: none while the glue's figure is its coarse stand-in, so the server's own figure for the cfi is the one stored. */
+export const percentToSave = (loc: Pick<Relocate, "pct" | "pctApprox">) =>
+  loc.pctApprox ? undefined : Math.min(loc.pct, 100);
+
 /** The chapter number and total from the flat TOC's own order, not the glue's pair; carries the previous chapter when the title matches no entry. */
 export function resolveChapterPosition(
   toc: readonly TocEntry[],

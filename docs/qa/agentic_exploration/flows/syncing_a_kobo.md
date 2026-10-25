@@ -101,8 +101,8 @@ page shows.
 ## Sharp edges
 
 - **Not covered here: the reading-position round trip** — a position the
-  device writes and the browser shows, and the reverse. It waits until the
-  device can write reading state (#2725); do not fake it with `curl`.
+  device writes and the browser shows, and the reverse. See
+  [reading_on_a_kobo.md](reading_on_a_kobo.md).
 - Only opted-in shelves sync. A book in the library on no synced shelf is
   correctly absent from the device.
 - A shelf write after your last `kobo.sync` leaves that entry unjudged, so the

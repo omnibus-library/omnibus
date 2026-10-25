@@ -1,4 +1,3 @@
-import { Fragment } from "react";
 import { Link } from "react-router";
 import { formatYear, initialOf, plural } from "../../format";
 import { settingsPlace } from "../../settingsIndex";
@@ -7,6 +6,8 @@ import { ServerGlyph, SlidersGlyph } from "../Glyphs/Glyphs";
 import {
   itemHref,
   itemKey,
+  LISTBOX_ID,
+  optionId,
   type PaletteGroup,
   type PaletteItem,
 } from "./selection";
@@ -32,32 +33,46 @@ type ResultsListProps = {
   onPick: () => void;
 };
 
-/** The grouped rows, in the order the arrow keys walk them. */
+/** The grouped rows, in the order the arrow keys walk them: a listbox of labelled groups of options. */
 export function ResultsList({ groups, highlighted, onPick }: ResultsListProps) {
+  let flatIndex = 0;
+  // Only a list with rows is a listbox, matching the input's `aria-expanded`.
+  const listbox =
+    groups.length > 0
+      ? { id: LISTBOX_ID, role: "listbox", "aria-label": "Search results" }
+      : {};
   return (
-    <div className="sp-results">
-      {groups.map((group) => (
-        <Fragment key={group.label}>
-          <div className="sp-group-head label">
-            {group.label} · {group.items.length}
+    <div className="sp-results" {...listbox}>
+      {groups.map((group) => {
+        const headId = `sp-group-${group.label.toLowerCase()}`;
+        return (
+          // biome-ignore lint/a11y/useSemanticElements: a fieldset brings a border and min-width the palette never resets
+          <div key={group.label} role="group" aria-labelledby={headId}>
+            <div className="sp-group-head label" id={headId}>
+              {group.label} · {group.items.length}
+            </div>
+            {group.items.map((item) => {
+              const key = itemKey(item);
+              const selected = key === highlighted;
+              return (
+                <Link
+                  key={key}
+                  id={optionId(flatIndex++)}
+                  role="option"
+                  aria-selected={selected}
+                  to={itemHref(item)}
+                  className={selected ? "sp-row selected" : "sp-row"}
+                  ref={selected ? keepInView : undefined}
+                  data-testid={TEST_IDS[item.kind]}
+                  onClick={onPick}
+                >
+                  <RowContent item={item} />
+                </Link>
+              );
+            })}
           </div>
-          {group.items.map((item) => {
-            const key = itemKey(item);
-            return (
-              <Link
-                key={key}
-                to={itemHref(item)}
-                className={key === highlighted ? "sp-row selected" : "sp-row"}
-                ref={key === highlighted ? keepInView : undefined}
-                data-testid={TEST_IDS[item.kind]}
-                onClick={onPick}
-              >
-                <RowContent item={item} />
-              </Link>
-            );
-          })}
-        </Fragment>
-      ))}
+        );
+      })}
     </div>
   );
 }

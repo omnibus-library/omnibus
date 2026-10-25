@@ -45,6 +45,7 @@ mod mobile_filter_sheet;
 mod pull_refresh;
 
 mod body;
+mod rail;
 mod signals;
 mod view;
 

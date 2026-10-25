@@ -82,6 +82,28 @@ async fn api_suggestions_ready_serves_cached_rows() {
 }
 
 #[tokio::test]
+async fn api_suggestions_unavailable_while_a_failed_lookup_is_held() {
+    let (app, _state, pool) = fixture().await;
+    omnibus_db::set_hardcover_api_key(&pool, Some("hc_test_key_value"))
+        .await
+        .unwrap();
+    replace_suggestions(&pool, "book-1", &[], SuggestionState::Failed)
+        .await
+        .unwrap();
+    let user = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+
+    let res = app
+        .oneshot(get_with_bearer("/api/ebooks/book-1/suggestions", &token))
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), StatusCode::OK);
+    let body = body_string(res).await;
+    assert!(body.contains("\"status\":\"unavailable\""), "{body}");
+}
+
+#[tokio::test]
 async fn api_suggestion_cover_returns_404_on_miss() {
     let (app, _state, pool) = fixture().await;
     let user = auth_test_support::create_user(&pool, "alice").await;

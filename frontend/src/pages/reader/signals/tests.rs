@@ -208,6 +208,20 @@ fn format_title_sub_and_ambient_page_and_contents_mark_approximate_pct() {
     assert_eq!(format_ambient_page(&bare), "~47%");
 }
 
+// The reader's approximation is a different ruler from the server's, so a save
+// carries the percent only once the glue's locations map has made it exact.
+#[test]
+fn percent_to_post_omits_an_approximate_pct_and_clamps_an_exact_one() {
+    let at = |pct, pct_approx| RelocateData {
+        pct,
+        pct_approx,
+        ..Default::default()
+    };
+    assert_eq!(at(38, true).percent_to_post(), None);
+    assert_eq!(at(38, false).percent_to_post(), Some(38));
+    assert_eq!(at(104, false).percent_to_post(), Some(100));
+}
+
 // The glue's relocate payload flags the approximation as `pctApprox`;
 // a payload without it (older glue, tests) must decode as exact.
 #[test]

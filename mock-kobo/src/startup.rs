@@ -78,7 +78,11 @@ pub enum StartError {
 
 /// Load the state file, resolve the target, auto-wire if no token is known,
 /// mint a hardware id for a new device, save, and return the running device.
-/// The notice is set only when auto-wire reused a server device for a device with no state file.
+/// A restored device always forgets the old server's `reading_services_host`
+/// (`Device::forget_server`), and when the resolved token or origin differs
+/// from the saved one, its `sync_token` and `download_urls` too — the same
+/// state a retarget drops. The notice is set only when auto-wire reused a
+/// server device for a device with no state file.
 pub async fn start(
     args: &ServeArgs,
     seed_user: Option<&str>,
@@ -101,7 +105,12 @@ pub async fn start(
         }
     };
     let device = match saved {
-        Some(saved) => saved.device,
+        Some(saved) => {
+            let token_changed = saved.token != token;
+            let mut device = saved.device;
+            device.forget_server(token_changed, &target.url);
+            device
+        }
         None => new_device()?,
     };
     let saved = SavedState {

@@ -4,7 +4,7 @@
 //! `filter_candidates`.
 
 use crate::suggestions::data::{
-    decide, SuggestionState, PENDING_DEBOUNCE_SECS, SUGGESTIONS_TTL_SECS,
+    decide, is_unavailable, SuggestionState, PENDING_DEBOUNCE_SECS, SUGGESTIONS_TTL_SECS,
 };
 use crate::suggestions::filter::{
     filter_candidates, is_entry_point, is_same_author, is_same_series, Candidate,
@@ -58,6 +58,40 @@ fn decide_keeps_sticky_empty_quiet_until_ttl() {
         1_000 + SUGGESTIONS_TTL_SECS + 1,
     );
     assert!(stale.serve && stale.enqueue);
+}
+
+#[test]
+fn decide_serves_nothing_and_holds_a_failed_marker_until_the_debounce_lapses() {
+    let at_limit = decide(
+        Some((SuggestionState::Failed, 1_000)),
+        1_000 + PENDING_DEBOUNCE_SECS,
+    );
+    assert!(!at_limit.enqueue && !at_limit.serve);
+    let past = decide(
+        Some((SuggestionState::Failed, 1_000)),
+        1_000 + PENDING_DEBOUNCE_SECS + 1,
+    );
+    assert!(past.enqueue && !past.serve);
+}
+
+#[test]
+fn is_unavailable_only_for_a_failed_marker_this_read_did_not_retry() {
+    let failed = Some((SuggestionState::Failed, 1_000));
+    let held = decide(failed, 1_000 + 10);
+    assert!(is_unavailable(failed, held));
+    let retried = decide(failed, 1_000 + PENDING_DEBOUNCE_SECS + 1);
+    assert!(!is_unavailable(failed, retried));
+    let pending = Some((SuggestionState::Pending, 1_000));
+    assert!(!is_unavailable(pending, decide(pending, 1_000 + 10)));
+}
+
+#[test]
+fn failed_state_round_trips_through_its_database_string() {
+    assert_eq!(SuggestionState::Failed.as_str(), "failed");
+    assert_eq!(
+        SuggestionState::parse("failed"),
+        Some(SuggestionState::Failed)
+    );
 }
 
 #[test]

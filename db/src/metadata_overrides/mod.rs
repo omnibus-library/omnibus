@@ -29,3 +29,4 @@ pub use upsert::{
 };
 
 pub(crate) use fts::{rebuild_fts_for_book, rebuild_fts_for_books_batch};
+pub(crate) use links::restore_override_series_link;

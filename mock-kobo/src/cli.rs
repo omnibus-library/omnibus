@@ -35,7 +35,23 @@ OPTIONS (each flag wins over its env var, for both commands):
     -h, --help        print this text
 
 KEYS IN THE TUI:
-    s sync    r reset    u edit URL    t edit token    w wire a token    q quit
+    up/down select book    Enter open      d download    p read to a percent
+    f mark finished        x remove download             s sync
+    r reset                u edit URL      t edit token   w wire a token
+    q quit
+
+IN THE READER:
+    left/right page (crosses chapters)     [/] jump to a chapter's first page
+    up/down move the cursor word by word   v start a word selection
+    h highlights list                      Esc close (sends the page's position)
+
+WHILE SELECTING A WORD RANGE:
+    left/right extend the selection        1-4 highlight in yellow/pink/blue/green
+    n type a note                          Esc cancel the selection
+
+IN THE HIGHLIGHTS LIST:
+    up/down move the selected row          x delete the selected highlight
+    Esc back to the page
 
 WITH NO ARGUMENTS:
     The device follows this worktree's dev server (.claude/runtime/port, else

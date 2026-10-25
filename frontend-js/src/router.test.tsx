@@ -112,8 +112,6 @@ describe("routes", () => {
     });
 
     it.each([
-      ["/series", "Gathering every series"],
-      ["/series/4", "Gathering the series"],
       ["/shelves", "Gathering your shelves"],
       ["/shelves/9", "Opening the shelf"],
       ["/stats?user=2", "Tallying your reading"],
@@ -134,6 +132,18 @@ describe("routes", () => {
       ).toBeInTheDocument();
       expect(screen.queryByText("Not ported yet")).not.toBeInTheDocument();
     });
+
+    it.each([["/series"], ["/series/4"]])(
+      "renders %s as the series browser, not a stub",
+      async (path) => {
+        renderRoute(path);
+
+        expect(
+          await screen.findByRole("heading", { level: 1, name: "Series" }),
+        ).toBeInTheDocument();
+        expect(screen.queryByText("Not ported yet")).not.toBeInTheDocument();
+      },
+    );
 
     it.each([["/authors"], ["/authors/12"]])(
       "renders %s as the authors browser, not a stub",

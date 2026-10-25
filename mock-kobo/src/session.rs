@@ -1,12 +1,23 @@
 //! One "Sync now" press, end to end: the handshake, the store paths, and the
 //! library sync, run the way the firmware runs them.
 
+use crate::annotations;
 use crate::client::{Client, RequestRecord};
+use crate::covers;
 use crate::device::Device;
+use crate::downloads::{self, DownloadPolicy};
 use crate::firmware::{
     Quirk, API_TOKEN_HEADER, MAX_SYNC_PAGES, STORE_PATHS, SYNC_CONTINUE_HEADER, SYNC_TOKEN_HEADER,
 };
-use crate::wire::{Initialization, SyncItem};
+use crate::reading;
+use crate::wire::{Initialization, StateResponse, SyncItem};
+
+/// Which sub-objects a state PUT carries: a read sends status and bookmark, a finish status only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StateSent {
+    Read,
+    Finish,
+}
 
 /// What one successful sync did.
 #[derive(Clone, Debug, PartialEq)]
@@ -32,20 +43,26 @@ pub enum SyncFailure {
     /// The request got no answer at all.
     #[error("sync failed: no answer from the server: {0}")]
     Transport(String),
+    /// The device's token is auto-wired for another server; refused before any request.
+    #[error("{0}")]
+    Refused(String),
 }
 
-/// One "Sync now" press whatever its outcome: every request made, and how it ended.
+/// One exchange with the server whatever its outcome: every request made, and how it ended.
 #[derive(Debug)]
-pub struct SyncAttempt {
+pub struct Attempt<T> {
     /// Every request the device made, in order, token redacted.
     pub requests: Vec<RequestRecord>,
-    /// The `library_sync` pages fetched, or why the sync failed.
-    pub outcome: Result<usize, SyncFailure>,
+    pub outcome: Result<T, SyncFailure>,
 }
 
 /// Press "Sync now" on `device`, configured with `api_endpoint`.
-pub async fn sync_now(device: &mut Device, api_endpoint: &str) -> Result<SyncReport, SyncFailure> {
-    let attempt = attempt_sync(device, api_endpoint).await;
+pub async fn sync_now(
+    device: &mut Device,
+    api_endpoint: &str,
+    policy: &DownloadPolicy,
+) -> Result<SyncReport, SyncFailure> {
+    let attempt = attempt_sync(device, api_endpoint, policy).await;
     attempt.outcome.map(|pages| SyncReport {
         requests: attempt.requests,
         pages,
@@ -53,25 +70,33 @@ pub async fn sync_now(device: &mut Device, api_endpoint: &str) -> Result<SyncRep
 }
 
 /// Press "Sync now", keeping the request log even when the sync fails.
-pub async fn attempt_sync(device: &mut Device, api_endpoint: &str) -> SyncAttempt {
+pub async fn attempt_sync(
+    device: &mut Device,
+    api_endpoint: &str,
+    policy: &DownloadPolicy,
+) -> Attempt<usize> {
     let mut client = match Client::new(api_endpoint, &device.hardware_id) {
         Ok(client) => client,
         Err(failure) => {
-            return SyncAttempt {
+            return Attempt {
                 requests: Vec::new(),
                 outcome: Err(failure),
             }
         }
     };
-    let outcome = run_sync(&mut client, device).await;
-    SyncAttempt {
+    let outcome = run_sync(&mut client, device, policy).await;
+    Attempt {
         requests: client.into_requests(),
         outcome,
     }
 }
 
-/// The handshake, store paths and library sync; returns the pages fetched.
-async fn run_sync(client: &mut Client, device: &mut Device) -> Result<usize, SyncFailure> {
+/// The handshake, store paths, library sync, covers and downloads; returns the pages fetched.
+async fn run_sync(
+    client: &mut Client,
+    device: &mut Device,
+    policy: &DownloadPolicy,
+) -> Result<usize, SyncFailure> {
     let initialization = client.initialization().await?;
     require_not_rejected(client, &initialization)?;
     if !initialization.headers().contains_key(API_TOKEN_HEADER) {
@@ -84,13 +109,18 @@ async fn run_sync(client: &mut Client, device: &mut Device) -> Result<usize, Syn
         .decode::<Initialization>(initialization)
         .await?
         .resources;
+    device.reading_services_host = Some(resources.reading_services_host.clone());
     let tests = client.get_tests(&resources.get_tests_request).await?;
     require_success(client, &tests, Quirk::GetTestsPost)?;
     for path in STORE_PATHS {
         let store = client.store_path(path).await?;
         require_success(client, &store, Quirk::StorePaths)?;
     }
-    sync_library(client, &resources.library_sync, device).await
+    let pages = sync_library(client, &resources.library_sync, device).await?;
+    covers::fetch_covers(client, device, &resources.image_url_quality_template).await;
+    downloads::download_books(client, device, policy).await;
+    annotations::fetch_changed_annotations(client, device).await;
+    Ok(pages)
 }
 
 /// Fetch and apply `library_sync` pages until the server stops asking for more,
@@ -126,6 +156,259 @@ async fn sync_library(
     }
     let detail = format!("library_sync still continuing after {MAX_SYNC_PAGES} pages");
     Err(tripped(Quirk::SyncPaging, detail))
+}
+
+/// Download each of `books` not yet downloaded, recording a problem on any
+/// that fail the way [`downloads::download_books`] does. Unlike a sync's own
+/// download pass, a failure here surfaces in the outcome: `Transport` when
+/// any book got no answer at all, else a [`Quirk::DownloadFailure`] naming
+/// every book that answered non-2xx.
+pub async fn attempt_download(
+    device: &mut Device,
+    api_endpoint: &str,
+    books: &[String],
+) -> Attempt<()> {
+    let mut client = match Client::new(api_endpoint, &device.hardware_id) {
+        Ok(client) => client,
+        Err(failure) => {
+            return Attempt {
+                requests: Vec::new(),
+                outcome: Err(failure),
+            }
+        }
+    };
+    let outcome = run_download(&mut client, device, books).await;
+    Attempt {
+        requests: client.into_requests(),
+        outcome,
+    }
+}
+
+async fn run_download(
+    client: &mut Client,
+    device: &mut Device,
+    books: &[String],
+) -> Result<(), SyncFailure> {
+    let mut rejected = Vec::new();
+    let mut transport = None;
+    for id in books {
+        if already_downloaded(device, id).await {
+            continue;
+        }
+        let outcome = downloads::attempt_one(client, device, id).await;
+        if let downloads::Outcome::Transport(message) = &outcome {
+            transport.get_or_insert_with(|| message.clone());
+        }
+        if matches!(
+            outcome,
+            downloads::Outcome::Rejected(_) | downloads::Outcome::NoUrl
+        ) {
+            rejected.push(id.clone());
+        }
+        let downloaded = matches!(outcome, downloads::Outcome::Downloaded);
+        downloads::apply_outcome(device, id, outcome);
+        if downloaded {
+            annotations::fetch_after_download(client, device, id).await;
+        }
+    }
+    if let Some(message) = transport {
+        return Err(SyncFailure::Transport(message));
+    }
+    if !rejected.is_empty() {
+        return Err(tripped(
+            Quirk::DownloadFailure,
+            format!("could not download: {}", rejected.join(", ")),
+        ));
+    }
+    Ok(())
+}
+
+/// Whether `id` is marked downloaded *and* its file is still on disk — a
+/// state file carried over from before storage was wired, or a file
+/// removed out-of-band, must not silently skip a re-download.
+async fn already_downloaded(device: &Device, id: &str) -> bool {
+    if !device.library.get(id).is_some_and(|b| b.downloaded) {
+        return false;
+    }
+    match device.book_file(id) {
+        Some(path) => tokio::fs::try_exists(&path).await.unwrap_or(false),
+        None => true, // no storage configured; trust the flag as before
+    }
+}
+
+/// Which PATCH shape a device-made highlight action sends, under its id.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AnnotationSent {
+    Upsert(String),
+    Delete(String),
+}
+
+/// PATCH one device-made highlight or delete to Reading Services. `book`
+/// must be held, and for an upsert must already hold the annotation `sent`
+/// names (as `Device::highlight` leaves it) — this only sends it, it never
+/// mutates the device. Rejected before any request when no sync has named a
+/// `reading_services_host` yet.
+pub async fn attempt_annotation(
+    device: &mut Device,
+    api_endpoint: &str,
+    book: &str,
+    sent: AnnotationSent,
+    now: i64,
+) -> Attempt<()> {
+    let mut client = match Client::new(api_endpoint, &device.hardware_id) {
+        Ok(client) => client,
+        Err(failure) => {
+            return Attempt {
+                requests: Vec::new(),
+                outcome: Err(failure),
+            }
+        }
+    };
+    let outcome = run_annotation(&mut client, device, book, &sent, now).await;
+    Attempt {
+        requests: client.into_requests(),
+        outcome,
+    }
+}
+
+async fn run_annotation(
+    client: &mut Client,
+    device: &Device,
+    book: &str,
+    sent: &AnnotationSent,
+    now: i64,
+) -> Result<(), SyncFailure> {
+    let Some(host) = device.reading_services_host.clone() else {
+        return Err(SyncFailure::Rejected(
+            "no reading_services_host yet; sync first".to_owned(),
+        ));
+    };
+    let body = annotation_patch_body(device, book, sent, now)?;
+    let response = client.patch_annotations(&host, book, &body).await?;
+    if response.status().is_success() {
+        Ok(())
+    } else {
+        Err(SyncFailure::Rejected(rejection(client, &response)))
+    }
+}
+
+/// The device's own current state of `sent`'s highlight, as the PATCH body
+/// `reading_services/dto.rs::parse_patch` expects (see `annotations.rs`'s module doc).
+/// Rejected, with no request, for an upsert naming a highlight the device
+/// no longer holds (deleted locally since it was minted, say).
+fn annotation_patch_body(
+    device: &Device,
+    book: &str,
+    sent: &AnnotationSent,
+    now: i64,
+) -> Result<serde_json::Value, SyncFailure> {
+    match sent {
+        AnnotationSent::Upsert(id) => {
+            let highlight = device
+                .library
+                .get(book)
+                .and_then(|b| b.annotations.iter().find(|a| &a.id == id))
+                .ok_or_else(|| {
+                    SyncFailure::Rejected(format!("the device holds no highlight {id}"))
+                })?;
+            let mut entry = serde_json::json!({
+                "id": highlight.id,
+                "type": if highlight.note.is_some() { "note" } else { "highlight" },
+                "highlightColor": highlight.color.hex(),
+                "highlightedText": highlight.text,
+                "clientLastModifiedUtc": reading::rfc3339(now),
+                "location": highlight.location,
+            });
+            if let Some(note) = &highlight.note {
+                entry["noteText"] = serde_json::Value::String(note.clone());
+            }
+            Ok(serde_json::json!({ "updatedAnnotations": [entry] }))
+        }
+        AnnotationSent::Delete(id) => Ok(serde_json::json!({ "deletedAnnotationIds": [id] })),
+    }
+}
+
+/// Send `book`'s current reading state to the server with one state PUT.
+/// `device` must hold `book`; its own `Device::read`/`Device::finish` is
+/// expected to have already set what this sends.
+pub async fn attempt_state(
+    device: &mut Device,
+    api_endpoint: &str,
+    book: &str,
+    sent: StateSent,
+) -> Attempt<()> {
+    let mut client = match Client::new(api_endpoint, &device.hardware_id) {
+        Ok(client) => client,
+        Err(failure) => {
+            return Attempt {
+                requests: Vec::new(),
+                outcome: Err(failure),
+            }
+        }
+    };
+    let outcome = run_state(&mut client, device, book, sent).await;
+    Attempt {
+        requests: client.into_requests(),
+        outcome,
+    }
+}
+
+async fn run_state(
+    client: &mut Client,
+    device: &Device,
+    book: &str,
+    sent: StateSent,
+) -> Result<(), SyncFailure> {
+    let Some(reading) = device.library.get(book).map(|b| b.reading.clone()) else {
+        return Err(SyncFailure::BadResponse(format!(
+            "no such book on device: {book}"
+        )));
+    };
+    let body = reading::state_put_body(&reading, sent);
+    let response = client.put_state(book, &body).await?;
+    check_state_reply(client, response).await
+}
+
+/// A non-2xx answer rejects the sync as usual; a 2xx body that doesn't
+/// parse as a [`StateResponse`] is a bad response; every sub-result reading
+/// anything but `Success` trips [`Quirk::StatePutResult`].
+async fn check_state_reply(
+    client: &Client,
+    response: reqwest::Response,
+) -> Result<(), SyncFailure> {
+    if !response.status().is_success() {
+        return Err(SyncFailure::Rejected(rejection(client, &response)));
+    }
+    let state: StateResponse = client.decode(response).await?;
+    let mut problems = Vec::new();
+    if state.request_result != "Success" {
+        problems.push(format!("RequestResult: {}", state.request_result));
+    }
+    for update in &state.update_results {
+        if update.status_info_result.result != "Success" {
+            problems.push(format!(
+                "StatusInfoResult: {}",
+                update.status_info_result.result
+            ));
+        }
+        if update.current_bookmark_result.result != "Success" {
+            problems.push(format!(
+                "CurrentBookmarkResult: {}",
+                update.current_bookmark_result.result
+            ));
+        }
+    }
+    if problems.is_empty() {
+        Ok(())
+    } else {
+        Err(tripped(
+            Quirk::StatePutResult,
+            format!(
+                "state PUT returned a non-success result: {}",
+                problems.join(", ")
+            ),
+        ))
+    }
 }
 
 /// Firmware aborts the whole sync on a non-2xx answer to these requests.

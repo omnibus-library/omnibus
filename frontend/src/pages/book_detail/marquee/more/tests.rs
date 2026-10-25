@@ -142,6 +142,33 @@ fn held_shelves_never_names_another_readers_wishlist() {
 }
 
 #[test]
+fn held_shelves_never_names_another_readers_manual_or_smart_shelf() {
+    let all = vec![
+        shelf(1, 9, ShelfKind::Manual, "user-9's picks"),
+        shelf(3, 9, ShelfKind::Smart, "user-9's rule"),
+    ];
+    let held = held_shelves(&facts(all, &[1], &[3]), Some(VIEWER_ID), false, "b", true);
+    assert!(held.is_empty());
+}
+
+#[test]
+fn held_shelves_keeps_the_viewers_own_smart_shelf_beside_another_readers() {
+    let all = vec![
+        shelf(3, VIEWER_ID, ShelfKind::Smart, "Austen"),
+        shelf(5, 9, ShelfKind::Smart, "user-9's rule"),
+    ];
+    let held = held_shelves(&facts(all, &[], &[3, 5]), Some(VIEWER_ID), false, "b", true);
+    assert_eq!(names(&held), vec!["Austen"]);
+}
+
+#[test]
+fn held_shelves_names_no_hand_picked_shelf_while_the_viewer_is_unknown() {
+    let all = vec![shelf(1, VIEWER_ID, ShelfKind::Manual, "Beach")];
+    let held = held_shelves(&facts(all, &[1], &[]), None, false, "b", true);
+    assert!(held.is_empty());
+}
+
+#[test]
 fn held_shelves_skips_a_member_id_the_shelf_list_does_not_carry() {
     let all = vec![shelf(1, VIEWER_ID, ShelfKind::Manual, "Beach")];
     let held = held_shelves(

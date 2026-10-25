@@ -85,6 +85,95 @@ async fn api_post_progress_accepts_an_epub_percent_without_a_cfi() {
     assert_eq!(res.status(), StatusCode::OK);
 }
 
+/// An on-disk two-chapter EPUB with stored spine stats of 40 and 60 visible
+/// characters, so the start of chapter 2 is 40% on the server's ruler.
+async fn seed_measured_epub(pool: &sqlx::SqlitePool) -> String {
+    let dir = omnibus_db::test_support::make_test_dir("post_progress_measured");
+    let chapter =
+        "<html><head><title>C</title></head><body><p>Some chapter text.</p></body></html>";
+    std::fs::write(
+        dir.join("book.epub"),
+        omnibus_db::test_support::build_test_epub(&[("c1.xhtml", chapter), ("c2.xhtml", chapter)]),
+    )
+    .unwrap();
+    let book = omnibus_db::ebook::IndexedBook {
+        metadata: omnibus_shared::EbookMetadata {
+            filename: "book.epub".into(),
+            title: Some("Measured".into()),
+            ..Default::default()
+        },
+        cover: None,
+        mtime_epoch: 0,
+        size_bytes: 0,
+        word_count: None,
+    };
+    omnibus_db::replace_books(pool, dir.to_str().unwrap(), vec![book])
+        .await
+        .unwrap();
+    let file_id: i64 = sqlx::query_scalar("SELECT id FROM book_files LIMIT 1")
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    let spine = [("c1.xhtml", 40), ("c2.xhtml", 60)]
+        .iter()
+        .enumerate()
+        .map(
+            |(i, (href, visible_chars))| omnibus_db::ebook::toc::SpineStat {
+                spine_index: i as i64,
+                href: (*href).into(),
+                visible_chars: *visible_chars,
+            },
+        )
+        .collect();
+    omnibus_db::epub_structure::replace_structure(
+        pool,
+        file_id,
+        &omnibus_db::ebook::toc::EpubStructure {
+            spine,
+            chapters: Vec::new(),
+        },
+    )
+    .await
+    .unwrap();
+    sqlx::query_scalar("SELECT uuid FROM books LIMIT 1")
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn api_post_progress_stores_the_stats_percent_for_an_epub_cfi() {
+    let (app, _state, pool) = fixture().await;
+    let user = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+    let uuid = seed_measured_epub(&pool).await;
+    // The reader's own estimate said 38; chapter 2 starts at 40 of 100 characters.
+    let body = serde_json::json!({
+        "book_uuid": uuid,
+        "format": "epub",
+        "epub_cfi": "epubcfi(/6/4!/4/2/1:0)",
+        "progress_percent": 38,
+    });
+
+    let res = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/progress")
+                .method("POST")
+                .header("content-type", "application/json")
+                .header(AUTHORIZATION, format!("Bearer {token}"))
+                .body(Body::from(body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), StatusCode::OK);
+    let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let rec: omnibus_shared::ProgressRecord = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(rec.progress_percent, Some(40));
+}
+
 #[tokio::test]
 async fn api_post_progress_rejects_cross_format_field() {
     // `{format:"epub", audio_position_seconds:…}` must 400 at the

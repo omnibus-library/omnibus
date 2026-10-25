@@ -4,8 +4,8 @@
 
 use crate::pool::init_db;
 use crate::suggestions::data::{
-    delete_suggestions, get_suggestion_cover, get_suggestions, mark_pending, replace_suggestions,
-    suggestion_state, NewSuggestion, SuggestionState, SuggestionsDataError,
+    delete_suggestions, get_suggestion_cover, get_suggestions, mark_failed, mark_pending,
+    replace_suggestions, suggestion_state, NewSuggestion, SuggestionState, SuggestionsDataError,
 };
 
 fn new_suggestion(id: i64, title: &str, cover: bool) -> NewSuggestion {
@@ -26,6 +26,17 @@ async fn mark_pending_sets_pending_state() {
     mark_pending(&pool, "book-1").await.unwrap();
     let (state, _) = suggestion_state(&pool, "book-1").await.unwrap().unwrap();
     assert_eq!(state, SuggestionState::Pending);
+}
+
+#[tokio::test]
+async fn mark_failed_replaces_a_pending_marker_with_the_failed_one() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    mark_pending(&pool, "book-1").await.unwrap();
+
+    mark_failed(&pool, "book-1").await.unwrap();
+
+    let (state, _) = suggestion_state(&pool, "book-1").await.unwrap().unwrap();
+    assert_eq!(state, SuggestionState::Failed);
 }
 
 #[tokio::test]
@@ -119,4 +130,52 @@ async fn mark_pending_propagates_db_error_when_pool_is_closed() {
     pool.close().await;
     let err = mark_pending(&pool, "any-uuid").await.unwrap_err();
     assert!(matches!(err, SuggestionsDataError::Db(_)));
+}
+
+/// Version of `0106_suggestion_state_failed.sql`.
+const FAILED_STATE_VERSION: i64 = 106;
+
+#[tokio::test]
+async fn migration_0106_keeps_every_marker_and_admits_the_failed_state() {
+    static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .unwrap();
+    for m in MIGRATOR.iter().filter(|m| m.version < FAILED_STATE_VERSION) {
+        sqlx::raw_sql(&m.sql).execute(&pool).await.unwrap();
+    }
+    sqlx::raw_sql(
+        "INSERT INTO book_suggestion_state (book_uuid, state, fetched_at)
+              VALUES ('a', 'pending', 10), ('b', 'resolved', 20), ('c', 'empty', 30);",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let m = MIGRATOR
+        .iter()
+        .find(|m| m.version == FAILED_STATE_VERSION)
+        .expect("0106 must exist");
+    sqlx::raw_sql(&m.sql).execute(&pool).await.unwrap();
+
+    let kept: Vec<(String, String, i64)> = sqlx::query_as(
+        "SELECT book_uuid, state, fetched_at FROM book_suggestion_state ORDER BY book_uuid",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        kept,
+        [
+            ("a".to_string(), "pending".to_string(), 10),
+            ("b".to_string(), "resolved".to_string(), 20),
+            ("c".to_string(), "empty".to_string(), 30),
+        ]
+    );
+    sqlx::query("INSERT INTO book_suggestion_state (book_uuid, state) VALUES ('d', 'failed')")
+        .execute(&pool)
+        .await
+        .expect("the rebuilt table admits 'failed'");
 }
