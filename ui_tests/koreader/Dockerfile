@@ -27,7 +27,7 @@ RUN set -eux; \
         -o "/tmp/$deb" \
         "https://github.com/koreader/koreader/releases/download/v$ver/$deb"; \
     (cd /tmp && sha256sum -c koreader.pin); \
-    apt-get install -y --no-install-recommends "/tmp/$deb" xvfb xauth; \
+    apt-get install -y --no-install-recommends "/tmp/$deb" xvfb xauth x11vnc novnc websockify; \
     rm -rf /var/lib/apt/lists/* /tmp/koreader.sha256 /tmp/koreader.pin "/tmp/$deb"
 
 # KO_HOME is KOReader's data dir, its patches dir, and — as the CMD's
@@ -35,5 +35,9 @@ RUN set -eux; \
 # the invoking uid (--user $(id -u):$(id -g)).
 ENV KO_HOME=/ko-home
 RUN mkdir -p /ko-home && chmod 777 /ko-home
+
+# The interactive entry for `just koreader` (scripts/koreader-dev.sh); the lane
+# runs the CMD below and never this.
+COPY koreader-vnc.sh /usr/local/bin/koreader-vnc
 
 CMD ["xvfb-run", "-a", "koreader", "/ko-home"]

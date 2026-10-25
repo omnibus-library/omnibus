@@ -65,6 +65,14 @@ dev-bounce:
 kobo *args:
     scripts/with-dev-env.sh default cargo run -q -p omnibus-mock-kobo -- tui "$@"
 
+# Run an interactive KOReader in a browser tab (Docker; run `just dev-up` first),
+# syncing with this worktree's dev server. Ctrl-C or quitting KOReader stops it.
+# `--home DIR` picks the KOReader home, so a second one is a second device:
+# `just koreader --home .claude/runtime/koreader/second` (docs/koreader.md).
+[positional-arguments]
+koreader *args:
+    scripts/with-dev-env.sh default scripts/koreader-dev.sh "$@"
+
 # Ensure the public-domain test fixtures are present (one-time ~156 MB
 # download from the fixtures-vN release asset, then an instant no-op).
 # Runs outside the nix shell on purpose — curl + tar only. Auto-run by
@@ -104,10 +112,15 @@ koreader-plugin-test:
 scratch-server-test:
     bash scripts/tests/scratch-server-make-scratch-dir.test.sh
 
+# Tests for the readable failures `just koreader` prints before it builds
+# anything. Plain bash with stubbed I/O, like scratch-server-test.
+koreader-dev-test:
+    bash scripts/tests/koreader-dev-preflight.test.sh
+
 # Run every unit/integration suite: the Rust matrix first, then the script
 # suites. Rust leads so a failing script suite can't stop the recipe
 # before the cargo results are in.
-test: test-rust explore-test module-map-test koreader-report-test koreader-plugin-test scratch-server-test
+test: test-rust explore-test module-map-test koreader-report-test koreader-plugin-test scratch-server-test koreader-dev-test
 
 # The Rust half of `just test`: the full matrix via cargo-nextest (the same
 # runner CI uses, so local and CI results match; no doctests in the tree, which

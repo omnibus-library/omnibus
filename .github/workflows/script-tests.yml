@@ -1,6 +1,6 @@
 # Runs the script suites: the TestFlight scripts', the module map's
-# (`just modules`), the KOReader lane report's, and scratch-server.sh's
-# scratch-dir regression test.
+# (`just modules`), the KOReader lane report's, scratch-server.sh's
+# scratch-dir regression test, and `just koreader`'s preflight checks.
 #
 # The TestFlight scripts only ever execute against Apple's live API — one
 # during a release dispatch, one on a daily schedule — so a regression is
@@ -32,6 +32,8 @@ on:
       - "scripts/lib/dev-port.sh"
       - "scripts/lib/scratch-server.sh"
       - "scripts/tests/scratch-server-make-scratch-dir.test.sh"
+      - "scripts/koreader-dev.sh"
+      - "scripts/tests/koreader-dev-preflight.test.sh"
       - ".github/workflows/script-tests.yml"
   pull_request:
     paths:
@@ -46,6 +48,8 @@ on:
       - "scripts/lib/dev-port.sh"
       - "scripts/lib/scratch-server.sh"
       - "scripts/tests/scratch-server-make-scratch-dir.test.sh"
+      - "scripts/koreader-dev.sh"
+      - "scripts/tests/koreader-dev-preflight.test.sh"
       - ".github/workflows/script-tests.yml"
 
 permissions:
@@ -120,3 +124,12 @@ jobs:
 
       - name: Run suite
         run: bash scripts/tests/scratch-server-make-scratch-dir.test.sh
+
+  koreader-dev:
+    name: koreader-dev.sh
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run suite
+        run: bash scripts/tests/koreader-dev-preflight.test.sh
