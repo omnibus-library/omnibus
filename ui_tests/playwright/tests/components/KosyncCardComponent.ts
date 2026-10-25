@@ -7,6 +7,8 @@ export class KosyncCardComponent extends BaseComponent {
   readonly heading: Locator;
   readonly loading: Locator;
   readonly status: Locator;
+  /** The result line under the card: the last generate's success or error. */
+  readonly statusMessage: Locator;
   readonly generateButton: Locator;
   readonly revealed: Locator;
   readonly serverUrlField: Locator;
@@ -26,6 +28,7 @@ export class KosyncCardComponent extends BaseComponent {
     });
     this.loading = page.getByTestId("kosync-loading");
     this.status = page.getByTestId("kosync-status");
+    this.statusMessage = page.getByTestId("kosync-card-status");
     this.generateButton = page.getByTestId("kosync-generate");
     this.revealed = page.getByTestId("kosync-revealed");
     this.serverUrlField = page.getByTestId("kosync-url");

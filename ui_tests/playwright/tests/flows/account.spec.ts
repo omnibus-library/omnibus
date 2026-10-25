@@ -191,6 +191,31 @@ test.describe("devices section", () => {
       );
     });
 
+    await test.step("fail a replacement and check the shown login stays", async () => {
+      const shown = await kosync.passwordField.inputValue();
+      await readerSettingsPage.forceServerError(account.kosyncPassword());
+      await kosync.generate();
+      await readerExpectMutation(failing(account.kosyncPassword()), () =>
+        kosync.confirmReplace(),
+      );
+      await expect(kosync.statusMessage).toHaveClass(/error/);
+      await expect(kosync.statusMessage).not.toBeEmpty();
+      await expect(kosync.passwordField).toHaveValue(shown);
+      await expect(kosync.status).toHaveText("On");
+      await expect(kosync.generateButton).toBeEnabled();
+    });
+
+    await test.step("retry and check a new password shows", async () => {
+      const shown = await kosync.passwordField.inputValue();
+      await readerSettingsPage.stopForcingServerError(account.kosyncPassword());
+      await kosync.generate();
+      await readerExpectMutation(account.kosyncPassword(), () =>
+        kosync.confirmReplace(),
+      );
+      await expect(kosync.statusMessage).toHaveClass(/success/);
+      await expect(kosync.passwordField).not.toHaveValue(shown);
+    });
+
     await test.step("reload and check the password is gone", async () => {
       await readerSettingsPage.goto("devices");
       await expect(kosync.status).toHaveText("On");
