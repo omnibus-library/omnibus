@@ -4,12 +4,12 @@
 //! text, so a position maps by aligned text offset. Called by the Kobo sync
 //! handlers; every failure degrades to "no derived position", never a wrong one.
 
-mod book;
+pub(crate) mod book;
 pub(crate) mod cfi;
 mod location;
 #[cfg(test)]
 mod tests;
-mod walk;
+pub(crate) mod walk;
 
 use std::path::Path;
 

@@ -299,7 +299,7 @@ test.describe("shelf page", () => {
       });
     });
 
-    test("turn on Kobo sync from the More menu", async ({
+    test("turn on device sync from the More menu", async ({
       shelfPage,
       ownShelf,
       expectMutation,
@@ -315,15 +315,15 @@ test.describe("shelf page", () => {
         );
       });
 
-      await test.step("turn Sync to Kobo on", async () => {
+      await test.step("turn Sync to my devices on", async () => {
         await expectMutation(
           shelves.update(shelf.id, buildShelfUpdate({ sync_to_kobo: true })),
           () => shelfPage.toggleKoboSync(),
         );
       });
 
-      await test.step("check the shelf wears the Kobo badge", async () => {
-        await expect(shelfPage.koboBadge).toBeVisible();
+      await test.step("check the shelf wears the sync badge", async () => {
+        await expect(shelfPage.koboBadge).toHaveText("Syncs to my devices");
       });
     });
 

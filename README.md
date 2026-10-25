@@ -40,6 +40,7 @@ and admin recovery are all in the [Docker guide](docs/docker.md).
 | [**Feature tour**](https://omnibus-library.github.io/omnibus/) | What Omnibus does, with screenshots |
 | [**Deploy with Docker**](docs/docker.md) | Volumes, env vars, TLS, PUID/PGID, admin recovery |
 | [**Kobo sync & KEPUB**](docs/kobo.md) | Wired one-click transfer, wireless sync setup, two-way highlights |
+| [**KOReader plugin**](docs/koreader.md) | Install the Omnibus plugin, sync shelves to KOReader, the lane that tests it |
 | [**Local development**](docs/local-development.md) | Nix shells, `just` recipes, tests, mobile builds, project layout |
 | [**Architecture**](docs/architecture.md) | Crates, request flows, mobile auth; the [iOS app](docs/ios.md)'s design |
 | [**REST API**](#rest-api) | The OpenAPI contract every client builds against |

@@ -12,6 +12,7 @@ mod session;
 mod state;
 mod upsert;
 mod upsert_audio;
+mod upsert_koreader;
 mod upsert_logging;
 mod upsert_status;
 

@@ -29,9 +29,14 @@ async fn fixture() -> (Router, SqlitePool, i64, i64) {
     let pool = db::init_db("sqlite::memory:").await.unwrap();
     let app = reading_services_router(AppState::new(pool.clone()));
     let user = auth_test_support::create_user(&pool, "kobo-reader").await;
-    let device = db::kobo_devices::create_device(&pool, user.id, "Test Kobo")
-        .await
-        .unwrap();
+    let device = db::kobo_devices::create_device(
+        &pool,
+        user.id,
+        "Test Kobo",
+        omnibus_shared::DeviceKind::Kobo,
+    )
+    .await
+    .unwrap();
     db::kobo_devices::learn_kobo_device_id(&pool, device.id, HW_ID)
         .await
         .unwrap();

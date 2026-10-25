@@ -7,7 +7,7 @@
 | **Surfaces** | kobo |
 | **Actions** | `kobo.sync`, `kobo.show`, `kobo.requests`, `shelf.create`, `shelf.edit` |
 
-Wireless sync is never whole-library: only shelves marked **Sync to Kobo** go
+Wireless sync is never whole-library: only shelves marked **Sync to my devices** go
 to your device, and the device follows the shelves as they change. This flow
 turns shelves on and off and checks the device follows, one `act sync` at a
 time. It builds on [syncing_a_kobo.md](syncing_a_kobo.md), which proves the
@@ -22,21 +22,21 @@ Use only books that were in the library before the run started, on every shelf
 here: one another agent uploads or merges this run can change under you.
 
 1. **Shelf A on the device.** If the previous flow left a hand-picked shelf
-   with **Sync to Kobo** On, that is A. Otherwise make one with three books,
+   with **Sync to my devices** On, that is A. Otherwise make one with three books,
    switch it On under **Edit shelf**, run `act sync`, and journal the sync.
    Note which books the device holds (`act show`).
 2. **Turn a second shelf on.** Make a hand-picked shelf B with three books, one
-   of them also on A. Open **Edit shelf**, switch **Sync to Kobo** On, save,
+   of them also on A. Open **Edit shelf**, switch **Sync to my devices** On, save,
    and reload to confirm it stuck. Journal `shelf.create` and `shelf.edit`
    with `sync_to_kobo` as `{"old": false, "new": true}`. Run `act sync`, then
    `act show`: B's books have joined, A's are still there, and the book on both
    appears once.
-3. **Turn the first shelf off.** Switch A's **Sync to Kobo** Off, save, journal
+3. **Turn the first shelf off.** Switch A's **Sync to my devices** Off, save, journal
    `shelf.edit` (`{"old": true, "new": false}`), then `act sync` and
    `act show`. The books only A held show `"archived": true`; the book on both
    shelves, and B's books, stay as they were.
 4. **An empty shelf still offers the opt-in.** Make a hand-picked shelf C with
-   no books. Open **Edit shelf**: the **Sync to Kobo** toggle is offered even
+   no books. Open **Edit shelf**: the **Sync to my devices** toggle is offered even
    though the shelf is empty. Switch it On and save; journal `shelf.create` and
    `shelf.edit`. Nothing arrives for it: after the next sync the device library
    is what it was.
@@ -46,7 +46,7 @@ here: one another agent uploads or merges this run can change under you.
    and not an empty one.
 6. **A Smart shelf, judged by eye.** The audit leaves a sync unjudged while a
    Smart shelf is On, so you are the judge here. Make a Smart shelf, switch
-   **Sync to Kobo** On, `act sync`, and check with `act show` that its current
+   **Sync to my devices** On, `act sync`, and check with `act show` that its current
    books arrived. Then switch it Off again before the last step. Journal
    `shelf.create` and both edits as `shelf.edit`.
 7. **End on a sync.** After your last shelf edit, run `act sync` and `act show`

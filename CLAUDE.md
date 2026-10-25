@@ -96,6 +96,7 @@ just react                                                  # React client (fron
 just dev-up
 source .claude/runtime/env.sh                               # picks up OMNIBUS_PORT + PLAYWRIGHT_BASE_URL
 just kobo                                                   # mock Kobo e-reader in a terminal UI against the dev server (docs/kobo.md)
+just koreader                                              # interactive KOReader in a browser tab (Docker), syncing with the dev server (docs/koreader.md)
 
 # Fullstack dev (serves SSR + WASM hydration at http://localhost:8080 by default)
 dx serve --platform web -p omnibus
@@ -140,6 +141,7 @@ just lint-ts                                                # biome + typecheck 
 # KOReader E2E lane: a real KOReader in Docker over OPDS against a scratch
 # server. Linux + docker only.
 just koreader-e2e                                           # PASS/FAIL per scenario (docs/koreader.md)
+just koreader-plugin-test                                   # the Omnibus plugin's sync logic, under plain luajit
 
 # Native iOS app (omnibus-ios/; system xcodebuild + simctl, no nix shell)
 just ios-build                                              # compile check (generic simulator destination)

@@ -104,6 +104,13 @@ struct CreateBody<'a> {
 struct DeviceRow {
     name: String,
     token: String,
+    /// Absent from servers that predate sync-device kinds, which only have Kobos.
+    #[serde(default = "kobo_kind")]
+    kind: String,
+}
+
+fn kobo_kind() -> String {
+    "kobo".to_owned()
 }
 
 /// The device token auto-wire found or made, and which of the two it was.
@@ -144,7 +151,10 @@ async fn reuse_or_create(
     let list_url = format!("{url}/api/rpc/kobo/devices");
     let devices: Vec<DeviceRow> =
         post(http, LIST_STEP, &list_url, Some(session), &json!({})).await?;
-    if let Some(device) = devices.into_iter().find(|device| device.name == name) {
+    if let Some(device) = devices
+        .into_iter()
+        .find(|device| device.name == name && device.kind == "kobo")
+    {
         return Ok(Wired {
             token: device.token,
             reused: true,

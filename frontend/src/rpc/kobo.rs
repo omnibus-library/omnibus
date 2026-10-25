@@ -5,7 +5,7 @@
 
 use dioxus::fullstack::post;
 use dioxus::prelude::*;
-use omnibus_shared::KoboDeviceView;
+use omnibus_shared::{DeviceKind, KoboDeviceView};
 
 // Only the server-gated `rpc_create_kobo_device` body validates the name, so on
 // the WASM/mobile client builds (which stub the bodies) the import is unused.
@@ -36,13 +36,19 @@ pub async fn rpc_list_kobo_devices() -> Result<Vec<KoboDeviceView>> {
     }
 }
 
-/// Register a new Kobo, minting a fresh token. Returns the created view.
+/// Register a new device (a Kobo unless `kind` says otherwise), minting a fresh
+/// token. Returns the created view.
 #[post("/api/rpc/kobo/devices/create", pool: PoolExt, user: AuthUser)]
-pub async fn rpc_create_kobo_device(name: String) -> Result<KoboDeviceView> {
+pub async fn rpc_create_kobo_device(
+    name: String,
+    kind: Option<DeviceKind>,
+) -> Result<KoboDeviceView> {
     if kobo_device_name_invalid(&name) {
         return Err(ServerFnError::new(kobo_device_name_message()).into());
     }
-    match db::kobo_devices::create_device(&pool.0, user.id, name.trim()).await {
+    match db::kobo_devices::create_device(&pool.0, user.id, name.trim(), kind.unwrap_or_default())
+        .await
+    {
         Ok(dev) => Ok(dev.into()),
         Err(e) => Err(map_err("create kobo device", e).into()),
     }

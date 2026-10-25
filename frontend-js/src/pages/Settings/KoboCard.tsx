@@ -91,8 +91,8 @@ function Setup({ open }: { open: boolean }) {
         <li>Eject safely. Your next sync on the device talks to Omnibus.</li>
       </ol>
       <p className="subtitle kobo-shelf-rule" data-testid="kobo-shelf-rule">
-        Only shelves marked <b>Sync to Kobo</b> are synced, so set that on a
-        shelf before the first sync.{" "}
+        Only shelves marked <b>Sync to my devices</b> are synced, so set that on
+        a shelf before the first sync.{" "}
         <Link to="/shelves" data-testid="kobo-shelves-link">
           Choose shelves to sync
         </Link>
@@ -186,12 +186,14 @@ function DeviceRow({ device, disabled, onAsk }: RowProps) {
 export function KoboCard() {
   const queryClient = useQueryClient();
   const devices = useQuery(koboDevicesQuery);
+  // The list also holds KOReaders, which have no endpoint to show here.
+  const kobos = devices.data?.filter((d) => d.kind === "kobo");
   const [status, setStatus] = useState<Status | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
   // Decided when the list first answers: adding the first Kobo must not fold the steps away mid-read.
   const [setupOpen, setSetupOpen] = useState<boolean | null>(null);
-  if (setupOpen === null && devices.data) {
-    setSetupOpen(devices.data.length === 0);
+  if (setupOpen === null && kobos) {
+    setSetupOpen(kobos.length === 0);
   }
   const form = useForm({
     resolver: zodResolver(NameSchema),
@@ -314,14 +316,14 @@ export function KoboCard() {
           <RowSkeletons count={1} avatar={false} />
         </div>
       )}
-      {devices.data?.length === 0 && (
+      {kobos?.length === 0 && (
         <p className="settings-status" data-testid="kobo-devices-empty">
           No Kobo registered yet.
         </p>
       )}
-      {devices.data && devices.data.length > 0 && (
+      {kobos && kobos.length > 0 && (
         <ul className="kobo-device-list" data-testid="kobo-device-list">
-          {devices.data.map((device) => (
+          {kobos.map((device) => (
             <DeviceRow
               key={device.id}
               device={device}

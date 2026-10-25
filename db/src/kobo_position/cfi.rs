@@ -9,6 +9,9 @@
 pub struct Cfi {
     pub spine_index: usize,
     pub tail: CfiTail,
+    /// The CFI ended on an element step with no text step, so `tail` is that element's first
+    /// text position rather than a text node it names.
+    pub element_anchored: bool,
 }
 
 /// The intra-document half of a CFI, after the `!` indirection.
@@ -43,9 +46,11 @@ pub fn parse_cfi(raw: &str) -> Option<Cfi> {
         return None;
     }
     let (package, tail) = inner.split_once('!')?;
+    let (tail, element_anchored) = parse_anchored_tail(tail)?;
     Some(Cfi {
         spine_index: parse_package(package)?,
-        tail: parse_tail(tail)?,
+        tail,
+        element_anchored,
     })
 }
 
@@ -172,6 +177,11 @@ fn parse_steps(path: &str) -> Option<Vec<Step>> {
 }
 
 fn parse_tail(tail: &str) -> Option<CfiTail> {
+    parse_anchored_tail(tail).map(|(tail, _)| tail)
+}
+
+/// [`parse_tail`] plus whether the path ended on an element step.
+fn parse_anchored_tail(tail: &str) -> Option<(CfiTail, bool)> {
     let steps = parse_steps(tail)?;
     // Only the terminal step may carry a `:offset`.
     if steps
@@ -185,18 +195,24 @@ fn parse_tail(tail: &str) -> Option<CfiTail> {
     let last = steps.last()?;
     if last.step % 2 == 1 {
         let element_steps = steps[..steps.len() - 1].iter().map(|s| s.step).collect();
-        Some(CfiTail {
-            element_steps,
-            text_index: last.step,
-            offset_utf16: last.offset.unwrap_or(0),
-        })
+        Some((
+            CfiTail {
+                element_steps,
+                text_index: last.step,
+                offset_utf16: last.offset.unwrap_or(0),
+            },
+            false,
+        ))
     } else {
         // Element-anchored CFI (no text step): resolve to the element's
         // first text position.
-        Some(CfiTail {
-            element_steps: steps.iter().map(|s| s.step).collect(),
-            text_index: 1,
-            offset_utf16: 0,
-        })
+        Some((
+            CfiTail {
+                element_steps: steps.iter().map(|s| s.step).collect(),
+                text_index: 1,
+                offset_utf16: 0,
+            },
+            true,
+        ))
     }
 }

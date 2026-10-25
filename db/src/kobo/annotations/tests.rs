@@ -23,9 +23,10 @@ async fn seed_user(pool: &SqlitePool, name: &str) -> i64 {
 async fn fixture() -> (SqlitePool, i64, i64, String) {
     let pool = init_db("sqlite::memory:").await.unwrap();
     let user = seed_user(&pool, "kobo-reader").await;
-    let device = crate::kobo_devices::create_device(&pool, user, "Kobo")
-        .await
-        .unwrap();
+    let device =
+        crate::kobo_devices::create_device(&pool, user, "Kobo", omnibus_shared::DeviceKind::Kobo)
+            .await
+            .unwrap();
     let uuid = seed_synced_ebook(&pool, "dune.epub", "Dune", "Herbert").await;
     (pool, user, device.id, uuid)
 }
@@ -144,10 +145,15 @@ async fn changed_book_uuids_never_reports_an_unadopted_empty_pair() {
 #[tokio::test]
 async fn changed_book_uuids_reports_an_unadopted_pair_once_another_device_populated_it() {
     let (pool, user, device_a, uuid) = fixture().await;
-    let device_b = crate::kobo_devices::create_device(&pool, user, "Second Kobo")
-        .await
-        .unwrap()
-        .id;
+    let device_b = crate::kobo_devices::create_device(
+        &pool,
+        user,
+        "Second Kobo",
+        omnibus_shared::DeviceKind::Kobo,
+    )
+    .await
+    .unwrap()
+    .id;
 
     // Device A uploads its annotations; device B has never PATCHed this book.
     ingest_kobo_annotations(
@@ -215,10 +221,11 @@ async fn changed_book_uuids_computes_the_correct_set_across_multiple_candidate_b
     // book, and a book whose ack went stale after a web-side recolor.
     let pool = init_db("sqlite::memory:").await.unwrap();
     let user = seed_user(&pool, "kobo-reader").await;
-    let device = crate::kobo_devices::create_device(&pool, user, "Kobo")
-        .await
-        .unwrap()
-        .id;
+    let device =
+        crate::kobo_devices::create_device(&pool, user, "Kobo", omnibus_shared::DeviceKind::Kobo)
+            .await
+            .unwrap()
+            .id;
     let quiet = seed_synced_ebook(&pool, "quiet.epub", "Quiet", "A").await;
     let never_acked = seed_synced_ebook(&pool, "never.epub", "Never Acked", "B").await;
     let stale = seed_synced_ebook(&pool, "stale.epub", "Stale", "C").await;
@@ -272,10 +279,15 @@ async fn changed_book_uuids_computes_the_correct_set_across_multiple_candidate_b
 async fn changed_book_uuids_is_scoped_to_the_devices_user() {
     let (pool, alice, _alice_device, uuid) = fixture().await;
     let bob = seed_user(&pool, "bob").await;
-    let bobs_device = crate::kobo_devices::create_device(&pool, bob, "Bob Kobo")
-        .await
-        .unwrap()
-        .id;
+    let bobs_device = crate::kobo_devices::create_device(
+        &pool,
+        bob,
+        "Bob Kobo",
+        omnibus_shared::DeviceKind::Kobo,
+    )
+    .await
+    .unwrap()
+    .id;
 
     ingest_kobo_annotations(
         &pool,

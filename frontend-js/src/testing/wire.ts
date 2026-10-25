@@ -664,6 +664,7 @@ export function aWireKoboDevice(
   return {
     id: 1,
     name: "Clara",
+    kind: "kobo",
     token: "tok-clara",
     created_at: 1_760_000_000,
     last_seen_at: 1_760_000_000,

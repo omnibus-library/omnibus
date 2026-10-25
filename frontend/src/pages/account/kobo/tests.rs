@@ -1,4 +1,4 @@
-//! Tests for the Kobo devices card: setup steps, confirms and the device list.
+//! Tests for the sync devices card: setup steps, confirms and the device list.
 
 use super::*;
 
@@ -16,6 +16,30 @@ fn endpoint_url_trims_a_trailing_slash_on_the_origin() {
         endpoint_url("http://localhost:3000/", "abc"),
         "http://localhost:3000/kobo/abc"
     );
+}
+
+fn device_of(kind: omnibus_shared::DeviceKind) -> KoboDeviceView {
+    KoboDeviceView {
+        id: 1,
+        name: "Device".to_string(),
+        kind,
+        token: "tok".to_string(),
+        created_at: 0,
+        last_seen_at: 0,
+        last_sync_at: None,
+        last_sync_error: None,
+    }
+}
+
+#[test]
+fn setup_opens_by_default_when_the_reader_has_no_kobo() {
+    use omnibus_shared::DeviceKind::{Kobo, Koreader};
+    assert!(setup_opens_by_default(&[]));
+    assert!(setup_opens_by_default(&[device_of(Koreader)]));
+    assert!(!setup_opens_by_default(&[
+        device_of(Koreader),
+        device_of(Kobo)
+    ]));
 }
 
 #[test]
@@ -38,6 +62,8 @@ fn kobo_confirm_text_names_the_device_being_removed() {
 mod render_tests {
     use dioxus_router::{Routable, Router};
 
+    use omnibus_shared::DeviceKind;
+
     use super::*;
     use crate::test_support::render_in_vdom;
 
@@ -57,24 +83,56 @@ mod render_tests {
         rsx! { Router::<KoboRoute> {} }
     }
 
+    fn device_row() -> Element {
+        row_of(DeviceKind::Kobo, "Kobo Clara")
+    }
+
+    fn koreader_row() -> Element {
+        row_of(DeviceKind::Koreader, "Libra")
+    }
+
     /// `Callback::new` needs a live runtime, so the row is built inside the
     /// throwaway `VirtualDom` rather than via a bare `render`.
-    fn device_row() -> Element {
+    fn row_of(kind: DeviceKind, name: &str) -> Element {
+        row_with(KoboDeviceView {
+            kind,
+            ..device_of_named(name)
+        })
+    }
+
+    fn device_of_named(name: &str) -> KoboDeviceView {
+        KoboDeviceView {
+            name: name.to_string(),
+            token: "tok123".to_string(),
+            ..device_of(DeviceKind::Kobo)
+        }
+    }
+
+    fn row_with(device: KoboDeviceView) -> Element {
+        row_for(device, true)
+    }
+
+    fn row_for(device: KoboDeviceView, can_download: bool) -> Element {
         rsx! {
             KoboDeviceRow {
-                device: KoboDeviceView {
-                    id: 1,
-                    name: "Kobo Clara".to_string(),
-                    token: "tok123".to_string(),
-                    created_at: 0,
-                    last_seen_at: 0,
-                },
+                device,
                 endpoint: "https://omni.example.com/kobo/tok123".to_string(),
+                plugin_url: "https://omni.example.com/api/account/kobo-devices/1/koreader-plugin".to_string(),
+                can_download,
                 disabled: false,
                 on_regenerate: Callback::new(|_| {}),
                 on_remove: Callback::new(|_| {}),
             }
         }
+    }
+
+    fn koreader_synced_at(last_sync_at: Option<i64>, last_sync_error: Option<&str>) -> Element {
+        row_with(KoboDeviceView {
+            kind: DeviceKind::Koreader,
+            last_sync_at,
+            last_sync_error: last_sync_error.map(str::to_string),
+            ..device_of_named("Libra")
+        })
     }
 
     /// The warning sits at card level, above the list, so it is present on the
@@ -116,7 +174,14 @@ mod render_tests {
     }
 
     fn empty_device_list() -> Element {
-        render_kobo_device_list(&[], "", false, Callback::new(|_| {}), Callback::new(|_| {}))
+        render_kobo_device_list(
+            &[],
+            "",
+            true,
+            false,
+            Callback::new(|_| {}),
+            Callback::new(|_| {}),
+        )
     }
 
     #[test]
@@ -126,6 +191,7 @@ mod render_tests {
             html.contains("data-testid=\"kobo-devices-empty\""),
             "{html}"
         );
+        assert!(html.contains("No devices registered yet."), "{html}");
     }
 
     /// The row is what actually exposes the endpoint URL; assert it renders so
@@ -150,7 +216,7 @@ mod render_tests {
             rule_at > ol_end,
             "the shelf rule must sit after the procedure list, not inside it"
         );
-        assert!(html.contains("Sync to Kobo"));
+        assert!(html.contains("Sync to my devices"));
     }
 
     /// Step 2 and step 4 must name the same thing: the whole URL the field
@@ -173,6 +239,26 @@ mod render_tests {
             "{html}"
         );
         assert!(html.contains(r#"aria-label="Remove Kobo Clara""#), "{html}");
+        let koreader = render_in_vdom(koreader_row);
+        assert!(
+            koreader.contains(r#"aria-label="Download the plugin for Libra""#),
+            "{koreader}"
+        );
+    }
+
+    #[test]
+    fn kobo_device_row_hides_the_plugin_download_when_the_reader_may_not_download() {
+        let html = render_in_vdom(|| {
+            row_for(
+                KoboDeviceView {
+                    kind: DeviceKind::Koreader,
+                    ..device_of_named("Libra")
+                },
+                false,
+            )
+        });
+        assert!(!html.contains("koreader-plugin-download"), "{html}");
+        assert!(html.contains("Libra"), "{html}");
     }
 
     #[test]
@@ -181,6 +267,55 @@ mod render_tests {
         assert!(html.contains(r#"translate="no""#), "{html}");
         assert!(
             html.contains(r#"data-testid="kobo-endpoint-copy""#),
+            "{html}"
+        );
+    }
+
+    #[test]
+    fn kobo_device_row_offers_a_koreader_its_plugin_download() {
+        let html = render_in_vdom(koreader_row);
+        assert!(
+            html.contains(r#"data-testid="koreader-plugin-download""#),
+            "{html}"
+        );
+        assert!(
+            html.contains(
+                r#"href="https://omni.example.com/api/account/kobo-devices/1/koreader-plugin""#
+            ),
+            "{html}"
+        );
+        assert!(
+            html.contains(r#"download="omnibus-koreader-1.zip""#),
+            "{html}"
+        );
+        assert!(!render_in_vdom(device_row).contains("koreader-plugin-download"));
+    }
+
+    #[test]
+    fn kobo_device_row_says_a_koreader_has_not_synced_yet() {
+        let html = render_in_vdom(|| koreader_synced_at(None, None));
+        assert!(html.contains("Not synced yet"), "{html}");
+        assert!(!html.contains("koreader-last-error"), "{html}");
+    }
+
+    #[test]
+    fn kobo_device_row_shows_the_date_of_a_koreaders_last_sync() {
+        let html = render_in_vdom(|| koreader_synced_at(Some(1_704_067_200), None));
+        assert!(html.contains("Last sync Jan 1, 2024"), "{html}");
+        assert!(!html.contains("Not synced yet"), "{html}");
+    }
+
+    #[test]
+    fn kobo_device_row_shows_a_koreaders_last_sync_error() {
+        let html = render_in_vdom(|| {
+            koreader_synced_at(Some(1_704_067_200), Some("Couldn't download Alpha: 404"))
+        });
+        assert!(
+            html.contains(r#"data-testid="koreader-last-error""#),
+            "{html}"
+        );
+        assert!(
+            html.contains("Last sync failed: Couldn&#39;t download Alpha: 404"),
             "{html}"
         );
     }
@@ -282,9 +417,87 @@ mod render_tests {
     }
 
     #[test]
-    fn kobo_card_names_its_add_action() {
+    fn kobo_card_names_its_add_actions() {
         let html = render_in_vdom(card);
-        assert!(html.contains("<h3>Kobo wireless sync</h3>"), "{html}");
-        assert!(html.contains("Add device"), "{html}");
+        assert!(html.contains("<h3>Sync devices</h3>"), "{html}");
+        assert!(html.contains("Add a Kobo"), "{html}");
+        assert!(html.contains("Add a KOReader"), "{html}");
+    }
+
+    #[test]
+    fn kobo_card_keeps_the_kobo_add_as_the_form_submit_and_the_koreader_add_as_a_plain_button() {
+        let html = render_in_vdom(card);
+        let kobo = html
+            .find("data-testid=\"kobo-device-add\"")
+            .expect("kobo add");
+        let koreader = html
+            .find("data-testid=\"koreader-device-add\"")
+            .expect("koreader add");
+        let kobo_tag = &html[html[..kobo].rfind("<button").unwrap()..kobo];
+        let koreader_tag = &html[html[..koreader].rfind("<button").unwrap()..koreader];
+        assert!(kobo_tag.contains("type=\"submit\""), "{html}");
+        assert!(koreader_tag.contains("type=\"button\""), "{html}");
+    }
+
+    #[test]
+    fn kobo_device_row_shows_the_kind_badge() {
+        let kobo = render_in_vdom(device_row);
+        let koreader = render_in_vdom(koreader_row);
+        for (html, label) in [(kobo, "Kobo"), (koreader, "KOReader")] {
+            let badge = html
+                .find("data-testid=\"device-kind-badge\"")
+                .unwrap_or_else(|| panic!("no badge: {html}"));
+            assert!(
+                html[badge..].starts_with(&format!("data-testid=\"device-kind-badge\">{label}<")),
+                "{html}"
+            );
+        }
+    }
+
+    #[test]
+    fn kobo_device_row_shows_a_koreader_its_token_instead_of_an_endpoint() {
+        let html = render_in_vdom(koreader_row);
+        assert!(
+            html.contains("data-testid=\"koreader-device-token\""),
+            "{html}"
+        );
+        assert!(html.contains("value=\"tok123\""), "{html}");
+        assert!(html.contains("Copy token"), "{html}");
+        assert!(
+            html.contains(r#"aria-label="Copy the device token for Libra""#),
+            "{html}"
+        );
+        assert!(
+            !html.contains("data-testid=\"kobo-endpoint-url\""),
+            "{html}"
+        );
+        assert!(!html.contains("/kobo/tok123"), "{html}");
+    }
+
+    #[test]
+    fn kobo_device_row_offers_a_koreader_no_regenerate() {
+        let html = render_in_vdom(koreader_row);
+        assert!(
+            !html.contains("data-testid=\"kobo-device-regenerate\""),
+            "{html}"
+        );
+        assert!(
+            html.contains("data-testid=\"kobo-device-remove\""),
+            "{html}"
+        );
+    }
+
+    #[test]
+    fn kobo_device_row_keeps_a_kobo_its_endpoint_and_regenerate() {
+        let html = render_in_vdom(device_row);
+        assert!(html.contains("data-testid=\"kobo-endpoint-url\""), "{html}");
+        assert!(
+            html.contains("data-testid=\"kobo-device-regenerate\""),
+            "{html}"
+        );
+        assert!(
+            !html.contains("data-testid=\"koreader-device-token\""),
+            "{html}"
+        );
     }
 }

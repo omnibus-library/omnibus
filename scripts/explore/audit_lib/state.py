@@ -104,7 +104,7 @@ class ActorState:
         return _uuids_in(self._shelf_page(shelf_id))
 
     def kobo_synced(self) -> list[tuple[dict[str, Any], dict[str, Any]]]:
-        """`(shelf detail, shelf page)` for each of this actor's shelves with Sync to Kobo on."""
+        """`(shelf detail, shelf page)` for each of this actor's shelves with Sync to my devices on."""
 
         def fetch() -> list[tuple[dict[str, Any], dict[str, Any]]]:
             out = []
