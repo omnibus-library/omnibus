@@ -445,21 +445,27 @@ async fn reset_removes_every_file_in_the_books_dir() {
 }
 
 #[tokio::test]
-async fn reset_refuses_a_sync_until_the_books_dir_is_cleared() {
+async fn reset_reports_syncing_until_it_has_saved() {
     let dir = TempDir::new().unwrap();
     let (control, _stub) = crate::test_support::control_with_downloaded_book(
         crate::test_support::READER_KEPUB,
         dir.path().join("kobo.json"),
     )
     .await;
+    let file = dir.path().join("kobo.books").join("book-1.kepub.epub");
+    // Held so the reset parks at its save, after the books dir is cleared.
+    let saving = control.save_lock.lock().await;
+    let resetting = tokio::spawn({
+        let control = Arc::clone(&control);
+        async move { control.reset().await }
+    });
+    wait_until(|| !file.exists()).await;
 
-    let (reset, synced) = tokio::join!(control.reset(), control.sync(DownloadPolicy::All));
+    let syncing = control.view().syncing;
 
-    reset.unwrap();
-    assert!(
-        matches!(synced, Err(ControlError::SyncInProgress)),
-        "{synced:?}"
-    );
+    drop(saving);
+    resetting.await.unwrap().unwrap();
+    assert!(syncing);
 }
 
 #[tokio::test]

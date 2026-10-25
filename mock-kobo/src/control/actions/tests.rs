@@ -256,24 +256,27 @@ async fn remove_download_returns_sync_in_progress_while_a_sync_runs() {
 }
 
 #[tokio::test]
-async fn remove_download_refuses_a_download_until_its_file_is_removed() {
+async fn remove_download_reports_syncing_until_it_has_saved() {
     let dir = TempDir::new().unwrap();
     let (control, _stub) = crate::test_support::control_with_downloaded_book(
         crate::test_support::READER_KEPUB,
         dir.path().join("kobo.json"),
     )
     .await;
+    let file = dir.path().join("kobo.books").join("book-1.kepub.epub");
+    // Held so the removal parks at its save, after the file is gone.
+    let saving = control.save_lock.lock().await;
+    let removing = tokio::spawn({
+        let control = Arc::clone(&control);
+        async move { control.remove_download("book-1").await }
+    });
+    wait_until(|| !file.exists()).await;
 
-    let (removed, downloaded) = tokio::join!(
-        control.remove_download("book-1"),
-        control.download(vec!["book-1".into()]),
-    );
+    let syncing = control.view().syncing;
 
-    removed.unwrap();
-    assert!(
-        matches!(downloaded, Err(ControlError::SyncInProgress)),
-        "{downloaded:?}"
-    );
+    drop(saving);
+    removing.await.unwrap().unwrap();
+    assert!(syncing);
 }
 
 #[tokio::test]
