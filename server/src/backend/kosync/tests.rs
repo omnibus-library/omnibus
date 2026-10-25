@@ -9,7 +9,9 @@ use axum::{
 };
 use md5::{Digest, Md5};
 use omnibus_db::{self as db, test_support::EnvVarGuard};
-use omnibus_shared::{BookProgress, MetadataOverrides, ProgressFormat, ProgressRecord};
+use omnibus_shared::{
+    BookProgress, MetadataOverrides, ProgressFormat, ProgressRecord, ReadStatus, SetReadStatus,
+};
 use serde_json::{json, Value};
 use sqlx::SqlitePool;
 use tower::ServiceExt;
@@ -336,6 +338,34 @@ mod put_progress {
         let epub = web_epub(&r, &uuid).await.unwrap();
         assert_eq!(epub.progress_percent, Some(63));
         assert_eq!(epub.epub_cfi.as_deref(), Some(SECOND_PARAGRAPH_CFI));
+    }
+
+    #[tokio::test]
+    async fn put_syncs_progress_starts_a_book_marked_unread_before_it() {
+        let r = reader().await;
+        let (uuid, document, _file) = seeded_book(&r).await;
+        let marked_unread = SetReadStatus {
+            book_uuid: uuid.clone(),
+            status: ReadStatus::Unread,
+        };
+        db::read_status::set_read_status(&r.pool, r.user_id, &marked_unread)
+            .await
+            .unwrap();
+
+        let res = send(
+            &r,
+            "PUT",
+            "/kosync/syncs/progress",
+            Some(push_body(&document, SECOND_PARAGRAPH_XPOINTER, 0.6378)),
+        )
+        .await;
+
+        assert_eq!(res.status(), StatusCode::OK);
+        let status = db::read_status::get_read_status(&r.pool, r.user_id, &uuid)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(status.status, ReadStatus::Reading);
     }
 
     #[tokio::test]

@@ -227,7 +227,7 @@ mod put {
     #[tokio::test]
     async fn put_state_does_not_sync_an_abandoned_status() {
         let (app, pool, token, uid, uuid) = seeded().await;
-        web_status(&pool, uid, &uuid, ReadStatus::Unread, now() - 100).await;
+        web_status(&pool, uid, &uuid, ReadStatus::Finished, now() - 100).await;
 
         let res = put(
             &app,
@@ -240,13 +240,13 @@ mod put {
         assert_eq!(res.status(), StatusCode::OK);
         let (epub, status) = web_view(&pool, uid, &uuid).await;
         assert_eq!(epub.unwrap().progress_percent, Some(30));
-        assert_eq!(status.unwrap().status, ReadStatus::Unread);
+        assert_eq!(status.unwrap().status, ReadStatus::Finished);
     }
 
     #[tokio::test]
     async fn put_state_does_not_sync_an_unknown_status() {
         let (app, pool, token, uid, uuid) = seeded().await;
-        web_status(&pool, uid, &uuid, ReadStatus::Unread, now() - 100).await;
+        web_status(&pool, uid, &uuid, ReadStatus::Finished, now() - 100).await;
 
         let res = put(
             &app,
@@ -259,7 +259,7 @@ mod put {
         assert_eq!(res.status(), StatusCode::OK);
         let (epub, status) = web_view(&pool, uid, &uuid).await;
         assert_eq!(epub.unwrap().progress_percent, Some(30));
-        assert_eq!(status.unwrap().status, ReadStatus::Unread);
+        assert_eq!(status.unwrap().status, ReadStatus::Finished);
     }
 
     #[tokio::test]
@@ -305,6 +305,47 @@ mod put {
             (status.status, status.updated_at),
             (ReadStatus::Finished, t2)
         );
+    }
+
+    #[tokio::test]
+    async fn put_state_with_a_percent_only_starts_a_book_marked_unread_before_it() {
+        let (app, pool, token, uid, uuid) = seeded().await;
+        let (t1, t2) = (now() - 200, now() - 100);
+        web_status(&pool, uid, &uuid, ReadStatus::Unread, t1).await;
+
+        let res = put(
+            &app,
+            &token,
+            &uuid,
+            json!({ "percent": 12, "event_at": t2 }),
+        )
+        .await;
+
+        assert_eq!(res.status(), StatusCode::OK);
+        let status = web_view(&pool, uid, &uuid).await.1.unwrap();
+        assert_eq!(
+            (status.status, status.updated_at),
+            (ReadStatus::Reading, t2)
+        );
+    }
+
+    #[tokio::test]
+    async fn put_state_with_a_percent_only_keeps_an_unread_marked_after_it() {
+        let (app, pool, token, uid, uuid) = seeded().await;
+        let (t1, t2) = (now() - 200, now() - 100);
+        web_status(&pool, uid, &uuid, ReadStatus::Unread, t2).await;
+
+        let res = put(
+            &app,
+            &token,
+            &uuid,
+            json!({ "percent": 12, "event_at": t1 }),
+        )
+        .await;
+
+        assert_eq!(res.status(), StatusCode::OK);
+        let status = web_view(&pool, uid, &uuid).await.1.unwrap();
+        assert_eq!((status.status, status.updated_at), (ReadStatus::Unread, t2));
     }
 
     #[tokio::test]

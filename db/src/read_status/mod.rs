@@ -3,8 +3,8 @@
 //! so a pruned book detaches rather than deleting). `finished_at` is stamped when
 //! a book becomes `finished` and cleared otherwise, so the stats "finished"
 //! aggregations can window completions like the journal path windows `created_at`.
-//! The one other writer is a position: `progress::upsert_progress_tx` creates a
-//! `reading` row for a book that has none.
+//! The other writer is a position: `progress::upsert_progress_tx` creates a
+//! `reading` row for a book that has none, and a KOReader one starts an `unread` book.
 
 use omnibus_shared::{ReadStatus, ReadStatusRecord, SetReadStatus};
 use sqlx::{Row, Sqlite, SqlitePool, Transaction};
@@ -177,6 +177,31 @@ pub async fn set_read_status_at_tx(
         .await?;
     }
     Ok(record)
+}
+
+/// Move a canonical `book_uuid`'s `unread` to `reading` when a device position at `at` is
+/// newer, as opening it in the web reader does; any other status, or none, is left alone.
+pub async fn start_unread_at_tx(
+    tx: &mut Transaction<'_, Sqlite>,
+    user_id: i64,
+    book_uuid: &str,
+    at: i64,
+) -> Result<(), ReadStatusError> {
+    let status: Option<String> = sqlx::query_scalar(
+        "SELECT status FROM book_read_status WHERE user_id = ? AND book_uuid = ?",
+    )
+    .bind(user_id)
+    .bind(book_uuid)
+    .fetch_optional(&mut **tx)
+    .await?;
+    if status.as_deref() == Some(ReadStatus::Unread.as_str()) {
+        let update = SetReadStatus {
+            book_uuid: book_uuid.to_owned(),
+            status: ReadStatus::Reading,
+        };
+        set_read_status_at_tx(tx, user_id, &update, at).await?;
+    }
+    Ok(())
 }
 
 /// Fetch the current read state for `(user, book_uuid)`. Returns `Ok(None)` for

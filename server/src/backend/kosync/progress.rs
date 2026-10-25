@@ -141,8 +141,13 @@ pub(super) async fn put_progress(
         book_file_id: held,
         client_updated_at: None,
     };
-    let stored = match db::progress::upsert_koreader_progress(
-        state.pool(),
+    // BEGIN IMMEDIATE avoids a stale-snapshot 517 on concurrent writers (#1862).
+    let mut tx = match state.pool().begin_with("BEGIN IMMEDIATE").await {
+        Ok(tx) => tx,
+        Err(e) => return internal("kosync put_progress begin", e),
+    };
+    let stored = match db::progress::upsert_koreader_progress_tx(
+        &mut tx,
         user.0,
         &update,
         held.and(Some(progress.as_str())),
@@ -154,6 +159,18 @@ pub(super) async fn put_progress(
         Err(ProgressError::BookNotFound) => return accepted_unstored(&document),
         Err(ProgressError::Sqlx(e)) => return internal("kosync upsert_progress", e),
     };
+    let started = db::read_status::start_unread_at_tx(
+        &mut tx,
+        user.0,
+        &stored.book_uuid,
+        stored.client_updated_at,
+    );
+    if let Err(e) = started.await {
+        return internal("kosync start_unread", e);
+    }
+    if let Err(e) = tx.commit().await {
+        return internal("kosync put_progress commit", e);
+    }
     Json(json!({ "document": document, "timestamp": stored.client_updated_at })).into_response()
 }
 

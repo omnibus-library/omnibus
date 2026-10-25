@@ -283,11 +283,23 @@ pub async fn put_state(
             xpointer,
             None,
         );
-        stale = match upsert.await {
-            Ok(stored) => stored.client_updated_at > event_at,
+        let stored = match upsert.await {
+            Ok(stored) => stored,
             Err(ProgressError::BookNotFound) => return StatusCode::NOT_FOUND.into_response(),
             Err(ProgressError::Sqlx(e)) => return internal("koreader upsert_progress", e),
         };
+        stale = stored.client_updated_at > event_at;
+        if !stale && status.is_none() {
+            let started = db::read_status::start_unread_at_tx(
+                &mut tx,
+                device.user_id,
+                &stored.book_uuid,
+                event_at,
+            );
+            if let Err(e) = started.await {
+                return internal("koreader start_unread", e);
+            }
+        }
     }
     if let Err(e) = tx.commit().await {
         return internal("koreader put_state commit", e);

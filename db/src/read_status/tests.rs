@@ -462,3 +462,87 @@ async fn set_read_status_at_tx_returns_sqlx_when_the_table_is_gone() {
 
     assert!(matches!(err, ReadStatusError::Sqlx(_)));
 }
+
+/// Run [`start_unread_at_tx`] in its own committed transaction.
+async fn start_at(pool: &SqlitePool, user: i64, uuid: &str, at: i64) {
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await.unwrap();
+    start_unread_at_tx(&mut tx, user, uuid, at).await.unwrap();
+    tx.commit().await.unwrap();
+}
+
+#[tokio::test]
+async fn start_unread_at_tx_marks_an_older_unread_reading_at_the_position_time() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let (_, uuid) = seed(&pool, "/lib", "Dune").await;
+    let user = seed_user(&pool, "reader").await;
+    set_at(&pool, user, &uuid, ReadStatus::Unread, 1_000).await;
+
+    start_at(&pool, user, &uuid, 2_000).await;
+
+    let stored = get_read_status(&pool, user, &uuid).await.unwrap().unwrap();
+    assert_eq!(
+        (stored.status, stored.updated_at),
+        (ReadStatus::Reading, 2_000)
+    );
+}
+
+#[tokio::test]
+async fn start_unread_at_tx_keeps_an_unread_newer_than_the_position() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let (_, uuid) = seed(&pool, "/lib", "Dune").await;
+    let user = seed_user(&pool, "reader").await;
+    set_at(&pool, user, &uuid, ReadStatus::Unread, 2_000).await;
+
+    start_at(&pool, user, &uuid, 1_000).await;
+
+    let stored = get_read_status(&pool, user, &uuid).await.unwrap().unwrap();
+    assert_eq!(
+        (stored.status, stored.updated_at),
+        (ReadStatus::Unread, 2_000)
+    );
+}
+
+#[tokio::test]
+async fn start_unread_at_tx_leaves_a_finished_book_finished() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let (_, uuid) = seed(&pool, "/lib", "Dune").await;
+    let user = seed_user(&pool, "reader").await;
+    set_at(&pool, user, &uuid, ReadStatus::Finished, 1_000).await;
+
+    start_at(&pool, user, &uuid, 2_000).await;
+
+    let stored = get_read_status(&pool, user, &uuid).await.unwrap().unwrap();
+    assert_eq!(
+        (stored.status, stored.updated_at),
+        (ReadStatus::Finished, 1_000)
+    );
+}
+
+#[tokio::test]
+async fn start_unread_at_tx_adds_no_status_to_an_untouched_book() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let (_, uuid) = seed(&pool, "/lib", "Dune").await;
+    let user = seed_user(&pool, "reader").await;
+
+    start_at(&pool, user, &uuid, 2_000).await;
+
+    assert_eq!(get_read_status(&pool, user, &uuid).await.unwrap(), None);
+}
+
+#[tokio::test]
+async fn start_unread_at_tx_returns_sqlx_when_the_table_is_gone() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let (_, uuid) = seed(&pool, "/lib", "Dune").await;
+    let user = seed_user(&pool, "reader").await;
+    sqlx::query("DROP TABLE book_read_status")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await.unwrap();
+
+    let err = start_unread_at_tx(&mut tx, user, &uuid, 1_000)
+        .await
+        .unwrap_err();
+
+    assert!(matches!(err, ReadStatusError::Sqlx(_)));
+}

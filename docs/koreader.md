@@ -67,7 +67,8 @@ and the other way round.
   whichever reached the server last. Position and status are decided
   separately, and the device sends only what it changed: finishing a book there
   leaves a position saved elsewhere alone, and moving the page leaves the
-  status alone.
+  status alone, except on a book marked *Unread* before the move: reading it
+  marks it *Reading* again, as opening it in the web reader does.
   A device whose clock is behind loses to a newer change from another device;
   one whose clock is ahead is held to the server's time. Opening a book and
   closing it without reading changes nothing, so a stale device can't overwrite
@@ -160,7 +161,8 @@ What to expect:
   holding the other gets no position. Only the edition the web reader opens (the
   first) shares its spot with the web reader and other devices.
 - **EPUB positions only.** A PDF or comic isn't matched, and no read status
-  travels, only the place.
+  travels, only the place, except that a push to a book marked *Unread* marks it
+  *Reading* again.
 - **Positions read back as from device "Omnibus".** Omnibus doesn't keep which
   device pushed a position, so KOReader's prompt names "Omnibus" whichever
   device or the web reader last moved. Your own push reads back as already
