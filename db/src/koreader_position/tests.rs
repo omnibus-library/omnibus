@@ -485,6 +485,34 @@ mod annotation_ranges {
     }
 
     #[test]
+    fn converts_a_range_from_an_inline_element_into_the_text_after_it_both_ways() {
+        let epub = one_chapter("inline_then_tail", "<p><em>start</em>tail</p>");
+        let start = "/body/DocFragment/body/p/em/text().1";
+        let end = "/body/DocFragment/body/p/text().2";
+
+        let cfi = range_cfi(&epub, start, end).expect("a forward range converts");
+
+        assert_eq!(
+            range_xpointers(&epub, &cfi),
+            Some((start.to_owned(), end.to_owned()))
+        );
+    }
+
+    #[test]
+    fn yields_nothing_for_a_range_reversed_across_an_inline_element() {
+        let epub = one_chapter("tail_then_inline", "<p><em>start</em>tail</p>");
+
+        assert_eq!(
+            range_cfi(
+                &epub,
+                "/body/DocFragment/body/p/text().2",
+                "/body/DocFragment/body/p/em/text().1"
+            ),
+            None
+        );
+    }
+
+    #[test]
     fn leaves_a_slot_empty_without_disturbing_the_others_in_the_batch() {
         let epub = one_chapter("batch", "<pre>code</pre><p>one</p><p>two</p>");
         let anchors = [

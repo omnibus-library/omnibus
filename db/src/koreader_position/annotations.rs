@@ -6,7 +6,8 @@
 
 use std::path::Path;
 
-use super::{point_tail, tail_xpointer, xpointer, Walks};
+use super::{exact_cluster, point_tail, spine_file_index, tail_xpointer, xpointer, Walks};
+use crate::kobo_position::walk::FileIndex;
 use crate::kobo_position::{book, format_range_cfi, parse_range_cfi, CfiTail};
 
 /// KOReader→web: one range CFI per `(pos0, pos1)`; `None` when either end is unprovable,
@@ -57,7 +58,7 @@ fn range_cfi(
     let Some((end_spine_index, end)) = point_tail(doc, walks, &end)? else {
         return Ok(None);
     };
-    if end_spine_index != spine_index || document_position(&end) < document_position(&start) {
+    if end_spine_index != spine_index || !in_order(doc, walks, spine_index, &start, &end)? {
         return Ok(None);
     }
     Ok(Some(format_range_cfi(spine_index, &start, &end)))
@@ -77,16 +78,39 @@ fn range_xpointers(
     let Some(end) = tail_xpointer(doc, walks, range.spine_index, &range.end, false)? else {
         return Ok(None);
     };
-    if document_position(&range.end) < document_position(&range.start) {
+    if !in_order(doc, walks, range.spine_index, &range.start, &range.end)? {
         return Ok(None);
     }
     Ok(Some((start, end)))
 }
 
-/// A sortable key for where a tail sits in its document: CFI steps are numbered
-/// in document order, so the element steps, text step and offset compare lexicographically.
-fn document_position(tail: &CfiTail) -> (Vec<u32>, u32) {
-    let mut steps = tail.element_steps.clone();
-    steps.push(tail.text_index);
-    (steps, tail.offset_utf16)
+/// Whether `end` sits at or after `start` in spine item `spine_index`; `false` when either is unresolved.
+fn in_order(
+    doc: &mut book::Doc,
+    walks: &mut Walks,
+    spine_index: usize,
+    start: &CfiTail,
+    end: &CfiTail,
+) -> anyhow::Result<bool> {
+    let Some(index) = spine_file_index(doc, walks, spine_index)? else {
+        return Ok(false);
+    };
+    let (start, end) = (
+        document_position(index, start),
+        document_position(index, end),
+    );
+    // `None` sorts first, so an unresolved end fails the comparison and only a start needs checking.
+    Ok(start.is_some() && start <= end)
+}
+
+/// Where a tail sits in its document: its text node's place in the walk, which
+/// keeps them in document order, then its offset. The CFI steps don't sort, as the
+/// walker numbers text nodes apart from the element children between them.
+fn document_position(index: &FileIndex, tail: &CfiTail) -> Option<(usize, u32)> {
+    let cluster = exact_cluster(index, tail)?;
+    let at = index
+        .clusters()
+        .iter()
+        .position(|c| std::ptr::eq(c, cluster))?;
+    Some((at, tail.offset_utf16))
 }
