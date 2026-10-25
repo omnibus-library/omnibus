@@ -721,3 +721,17 @@ pub(crate) async fn seed_downloadable_book_with(
         .await
         .unwrap();
 }
+
+/// Give `uuid` an override cover of [`TINY_PNG`]; the caller holds a [`CoversDirGuard`].
+pub(crate) async fn seed_override_cover(pool: &sqlx::SqlitePool, uuid: &str, user_id: i64) {
+    db::write_override_cover(uuid, "image/png", TINY_PNG).unwrap();
+    db::upsert_metadata_overrides(
+        pool,
+        uuid,
+        &omnibus_shared::MetadataOverrides::default(),
+        true,
+        user_id,
+    )
+    .await
+    .unwrap();
+}

@@ -7,15 +7,23 @@
 # What it does:
 #   1. `dx bundle` the web app and starts the bundle's standalone server on a
 #      scratch DB with a seeded library: the two committed fixture EPUBs
-#      (test_data/epubs/generated/alpha.epub, beta.epub) and the first
-#      (admin) account, registered here as on CI.
-#   2. Seeds the `delivery` scenario through the REST API: a shelf holding
-#      Alpha that syncs to devices, and a KOReader whose preconfigured plugin
-#      it downloads from the real Settings route.
+#      (test_data/epubs/generated/alpha.epub, beta.epub), the two the `precise`
+#      scenario puts on the shelf (standalone-lagoon.epub, frontmatter-relay.epub)
+#      and the first (admin) account, registered here as on CI.
+#   2. Seeds the `delivery`, `roundtrip`, `metadata`, `precise` and `highlights` scenarios through the REST API: a shelf
+#      holding Alpha that syncs to devices, and a KOReader whose preconfigured plugin
+#      it downloads from the real Settings route. The `kosync` scenario gets a progress-sync
+#      password and an override-baked Alpha downloaded as the web would serve it, and no plugin.
 #   3. Builds ui_tests/koreader (pinned KOReader under Xvfb) and runs one
 #      container per scenario; its user patch drives KOReader's own OPDS
 #      plugin through add-catalog, browse, search, download and open, and the
-#      Omnibus plugin through a sync that delivers and one that removes.
+#      Omnibus plugin through a sync that delivers and one that removes, and
+#      through opening a book at the web's position and closing it at its own,
+#      through a web edit of a book's title and cover reaching it, through a
+#      position inside a paragraph travelling both ways, and through a highlight
+#      and its note travelling out and a recolour, a delete and a new highlight
+#      travelling back, and through stock KOReader's own Progress sync (no Omnibus
+#      plugin) pushing a position to the web and pulling the web's back.
 #   4. Reports each scenario's result JSON (scripts/koreader_report.py) and
 #      exits non-zero on any failure, keeping the scratch dir (results,
 #      screenshot, logs) and naming it.
@@ -33,7 +41,7 @@ source scripts/lib/scratch-server.sh
 
 label=koreader
 kept_hint="server.log, results/"
-deb="$(awk '{print $2}' ui_tests/koreader/koreader.sha256)"
+deb="$(awk '/_amd64\.deb$/ {print $2}' ui_tests/koreader/koreader.sha256)"
 docker build -t "omnibus-koreader:$deb" ui_tests/koreader
 bundle_web_app
 
@@ -41,7 +49,7 @@ bundle_web_app
 # boot scan off on nothing.
 make_scratch_dir
 mkdir -p "$scratch/library" "$scratch/results"
-cp test_data/epubs/generated/alpha.epub test_data/epubs/generated/beta.epub "$scratch/library/"
+cp test_data/epubs/generated/{alpha,beta,standalone-lagoon,frontmatter-relay}.epub "$scratch/library/"
 start_scratch_server "EBOOK_LIBRARY_PATH=$scratch/library"
 
 user=koreader
@@ -53,7 +61,9 @@ curl -fsS -X POST -H 'Content-Type: application/json' \
 deadline=$(($(date +%s) + 60))
 until body="$(curl -fsS -u "$user:$password" "$base_url/opds/all" 2>/dev/null)" &&
     printf '%s' "$body" | grep -q ">Alpha<" &&
-    printf '%s' "$body" | grep -q ">Beta in the Series<"; do
+    printf '%s' "$body" | grep -q ">Beta in the Series<" &&
+    printf '%s' "$body" | grep -q ">Lagoon of Ligatures<" &&
+    printf '%s' "$body" | grep -q ">Frontmatter Relay<"; do
     if [ "$(date +%s)" -ge "$deadline" ]; then
         echo "$label: library never indexed" >&2
         exit 1
@@ -61,7 +71,7 @@ until body="$(curl -fsS -u "$user:$password" "$base_url/opds/all" 2>/dev/null)" 
     sleep 1
 done
 
-# The `delivery` scenario's seed. The REST calls need a session, so sign in with a
+# The `delivery`, `roundtrip`, `metadata`, `precise` and `highlights` scenarios' seed. The REST calls need a session, so sign in with a
 # bearer token; the plugin is the zip the Settings download hands a reader.
 json_field() { python3 -c 'import json,sys; print(json.load(sys.stdin)[sys.argv[1]])' "$1"; }
 session="$(curl -fsS -X POST -H 'Content-Type: application/json' \
@@ -69,8 +79,13 @@ session="$(curl -fsS -X POST -H 'Content-Type: application/json' \
     "$base_url/api/auth/login" | json_field token)"
 api() { curl -fsS -H "Authorization: Bearer $session" -H 'Content-Type: application/json' "$@"; }
 
-alpha_uuid="$(api "$base_url/api/ebooks" | python3 -c \
-    'import json,sys; print(next(b["unique_identifier"] for b in json.load(sys.stdin)["books"] if b["title"] == "Alpha"))')"
+book_uuid() {
+    api "$base_url/api/ebooks" | python3 -c \
+        'import json,sys; print(next(b["unique_identifier"] for b in json.load(sys.stdin)["books"] if b["title"] == sys.argv[1]))' "$1"
+}
+alpha_uuid="$(book_uuid Alpha)"
+lagoon_uuid="$(book_uuid "Lagoon of Ligatures")"
+relay_uuid="$(book_uuid "Frontmatter Relay")"
 shelf_id="$(api -X POST -d "{\"kind\":\"manual\",\"name\":\"KOReader lane\",\"book_uuids\":[\"$alpha_uuid\"]}" \
     "$base_url/api/shelves" | json_field id)"
 api -X PATCH -d '{"sync_to_kobo":true}' "$base_url/api/shelves/$shelf_id" >/dev/null
@@ -80,10 +95,35 @@ mkdir -p "$scratch/plugins"
 api -o "$scratch/plugin.zip" "$base_url/api/account/kobo-devices/$device_id/koreader-plugin"
 python3 -m zipfile -e "$scratch/plugin.zip" "$scratch/plugins"
 
+# Stock KOReader's progress sync signs in with a password generated in Settings, and
+# matches books by the fingerprint of the file it holds.
+kosync_password="$(api -X POST "$base_url/api/account/kosync" | json_field password)"
+
+# The `kosync` scenario reads a book the web served with an override baked in, so the digest
+# it syncs under is the bake's, not the library file's. Set only here: the scenarios before
+# it expect Alpha's title as it is.
+prepare_kosync() {
+    mkdir -p "$scratch/results/kosync"
+    api -X POST -d '{"title":"Alpha (kosync)"}' "$base_url/api/ebooks/$alpha_uuid/overrides" >/dev/null
+    api -o "$scratch/results/kosync/alpha.epub" "$base_url/api/ebooks/$alpha_uuid/download"
+}
+
 # Scenario names live here; the fixture titles live beside them in the
-# patch's opds scenario.
-scenarios=(opds delivery)
+# patch's opds scenario. `metadata` retitles Alpha on the shared server, and `precise` and then
+# `highlights` come last because they add two books to the shelf the earlier scenarios expect
+# to hold Alpha alone. `kosync` is last of all: it runs on stock KOReader with no Omnibus plugin.
+scenarios=(opds delivery roundtrip metadata precise highlights kosync)
+# The token must never reach KOReader's log: a leak there is a leak to anyone who shares it.
+device_token="$(json_field token <"$scratch/plugins/omnibus.koplugin/omnibus.json")"
+leaked=0
 for scenario in "${scenarios[@]}"; do
+    plugin_mount=(-v "$scratch/plugins/omnibus.koplugin:/ko-home/plugins/omnibus.koplugin:ro")
+    kosync_env=()
+    if [ "$scenario" = kosync ]; then
+        prepare_kosync
+        plugin_mount=()
+        kosync_env=(-e "OMNIBUS_KOSYNC_PASSWORD=$kosync_password" -e "OMNIBUS_ALPHA_UUID=$alpha_uuid")
+    fi
     set +e
     timeout -k 15 300 docker run --init --rm --network host \
         --user "$(id -u):$(id -g)" \
@@ -95,16 +135,24 @@ for scenario in "${scenarios[@]}"; do
         -e OMNIBUS_PASSWORD="$password" \
         -e OMNIBUS_SESSION_TOKEN="$session" \
         -e OMNIBUS_SHELF_ID="$shelf_id" \
+        -e OMNIBUS_LAGOON_UUID="$lagoon_uuid" \
+        -e OMNIBUS_RELAY_UUID="$relay_uuid" \
+        "${kosync_env[@]}" \
         -v "$PWD/ui_tests/koreader/patches:/ko-home/patches:ro" \
-        -v "$scratch/plugins/omnibus.koplugin:/ko-home/plugins/omnibus.koplugin:ro" \
+        "${plugin_mount[@]}" \
         -v "$scratch/results:/results" \
         "omnibus-koreader:$deb" \
         >"$scratch/results/$scenario.koreader.log" 2>&1
     set -e
+    if grep -qF -- "$device_token" "$scratch/results/$scenario.koreader.log"; then
+        echo "FAIL $scenario: the device token appears in KOReader's log" >&2
+        leaked=1
+    fi
 done
 
 set +e
 python3 scripts/koreader_report.py "$scratch/results" "${scenarios[@]}"
 status=$?
 set -e
+[ "$leaked" -eq 0 ] || status=1
 exit "$status"

@@ -1,11 +1,20 @@
 --[[--
 Omnibus: a "Sync now" menu entry that mirrors the shelves marked "Sync to my devices"
-into an Omnibus folder. The decisions live in omnibussync.lua; this file is the wiring
+into an Omnibus folder, and keeps each delivered book's reading position and status in
+step with the server: pulled when the book opens, pushed when it closes, the device
+suspends or Sync now runs. An EPUB's highlights and notes are reconciled both ways when it
+opens and closes and on Sync now in the reader. A book edited in Omnibus gets its title, authors, series,
+description and cover written into KOReader's custom metadata on the next sync. The
+decisions live in omnibussync.lua; this file is the wiring
 to KOReader (menu, HTTP, files, UI). omnibus.json, written by the server's plugin
 download, holds the server URL and this device's token.
 --]]--
 
+local BookList = require("ui/widget/booklist")
 local DataStorage = require("datastorage")
+local DocSettings = require("docsettings")
+local DocumentRegistry = require("document/documentregistry")
+local Event = require("ui/event")
 local InfoMessage = require("ui/widget/infomessage")
 local JSON = require("json")
 local LuaSettings = require("luasettings")
@@ -28,6 +37,28 @@ local sync = require("omnibussync")
 
 local FOLDER = "Omnibus"
 local MISSING_CONFIG = _("Download the plugin from Omnibus Settings › Devices.")
+-- Reading state is a few bytes, and a book open or close waits on it: give up sooner than a download.
+local STATE_BLOCK_TIMEOUT, STATE_TOTAL_TIMEOUT = 5, 15
+
+-- Seeded once; only the fallback for new_id reads it.
+math.randomseed(os.time() + math.floor(os.clock() * 1000000))
+
+-- An id for a highlight this device creates: 16 random bytes in hex, from the system's source
+-- where it can be read, so two devices or two runs never mint the same one.
+local function new_id()
+    local source = io.open("/dev/urandom", "rb")
+    local bytes = source and source:read(16)
+    if source then
+        source:close()
+    end
+    local digits = {}
+    for i = 1, 16 do
+        digits[i] = string.format("%02x", bytes and #bytes == 16 and bytes:byte(i) or math.random(0, 255))
+    end
+    return table.concat(digits)
+end
+
+local string_or_nil = sync.string_or_nil
 
 local Omnibus = WidgetContainer:extend{
     name = "omnibus",
@@ -36,6 +67,14 @@ local Omnibus = WidgetContainer:extend{
 
 function Omnibus:init()
     self.ui.menu:registerToMainMenu(self)
+    -- Only a reader has this: the file manager's instance never pulls a position.
+    if self.ui.registerPostReaderReadyCallback then
+        -- After the book restored its local position, before it is first shown.
+        self.ui:registerPostReaderReadyCallback(function()
+            self:guarded("pull", self.pull_on_open)
+            self:guarded("annotations", self.sync_annotations)
+        end)
+    end
 end
 
 function Omnibus:addToMainMenu(menu_items)
@@ -78,14 +117,15 @@ end
 
 -- One request with the device token and no redirects, so the token only ever reaches the
 -- configured server. `opts.sink` builds the sink after the timeouts are set, because
--- socketutil's sinks read them. Returns the status code, or nil and the error.
+-- socketutil's sinks read them; `opts.if_none_match` makes the GET conditional. Returns the
+-- status code and the response headers (names in lower case), or nil and the error.
 local function request(url, token, opts)
     socketutil:set_timeout(opts.block_timeout, opts.total_timeout)
-    local ok, code = pcall(function()
+    local ok, code, headers = pcall(function()
         local req = {
             url = url,
             method = opts.method or "GET",
-            headers = { Authorization = "Bearer " .. token },
+            headers = { Authorization = "Bearer " .. token, ["If-None-Match"] = opts.if_none_match },
             sink = opts.sink(),
             redirect = false,
         }
@@ -98,26 +138,35 @@ local function request(url, token, opts)
     end)
     socketutil:reset_timeout()
     if ok and type(code) == "number" then
-        return code
+        return code, headers
     end
     return nil, tostring(code)
 end
 
+-- One JSON call to the server: the status code and the decoded body (nil when unreadable), or
+-- nil, nil and the error. `body` is a table to send as JSON.
+local function call_json(config, method, path, body, block_timeout, total_timeout)
+    local chunks = {}
+    local code, err = request(config.server_url .. path, config.token, {
+        method = method,
+        body = body and JSON.encode(body),
+        sink = function()
+            return socketutil.table_sink(chunks)
+        end,
+        block_timeout = block_timeout,
+        total_timeout = total_timeout,
+    })
+    if not code then
+        return nil, nil, err
+    end
+    local ok, decoded = pcall(JSON.decode, table.concat(chunks))
+    return code, ok and decoded or nil
+end
+
 function Omnibus:library_getter(config)
     return function()
-        local chunks = {}
-        local code, err = request(config.server_url .. "/koreader/v1/library", config.token, {
-            sink = function()
-                return socketutil.table_sink(chunks)
-            end,
-            block_timeout = socketutil.LARGE_BLOCK_TIMEOUT,
-            total_timeout = socketutil.LARGE_TOTAL_TIMEOUT,
-        })
-        if not code then
-            return nil, nil, err
-        end
-        local ok, body = pcall(JSON.decode, table.concat(chunks))
-        return code, ok and body or nil
+        return call_json(config, "GET", "/koreader/v1/library", nil,
+            socketutil.LARGE_BLOCK_TIMEOUT, socketutil.LARGE_TOTAL_TIMEOUT)
     end
 end
 
@@ -136,8 +185,11 @@ local function publish(part, path)
     return renamed, rename_err
 end
 
+-- Download one book to `path` through a `.part` file, so a failed download leaves the book the
+-- reader already has. With `if_none_match`, a 304 keeps the file: returns true, nil, true.
+-- A new file returns true and its ETag.
 function Omnibus:book_downloader(config)
-    return function(book, path)
+    return function(book, path, if_none_match)
         local url = sync.book_url(config.server_url, book)
         if not url then
             return false, "unexpected download address. Download the plugin again from Settings › Devices."
@@ -147,25 +199,129 @@ function Omnibus:book_downloader(config)
         if not file then
             return false, open_err
         end
-        local code, err = request(url, config.token, {
+        local code, headers = request(url, config.token, {
             sink = function()
                 return socketutil.file_sink(file)
             end,
             block_timeout = socketutil.FILE_BLOCK_TIMEOUT,
             total_timeout = socketutil.FILE_TOTAL_TIMEOUT,
+            if_none_match = if_none_match,
         })
         -- LuaSocket skips the sink's terminator when a request fails before the body.
         pcall(file.close, file)
-        if code ~= 200 then
+        if code == 304 then
             os.remove(part)
-            return false, code and ("HTTP " .. code) or err
+            return true, nil, true
+        elseif code ~= 200 then
+            os.remove(part)
+            return false, code and ("HTTP " .. code) or headers
         end
         local renamed, rename_err = publish(part, path)
         if not renamed then
             os.remove(part)
             return false, rename_err
         end
+        return true, headers.etag
+    end
+end
+
+local CUSTOM_PROP_KEYS = { "title", "authors", "series", "series_index", "description" }
+
+-- The properties of the book's own file, which "Reset custom" restores; nil when it can't be read.
+local function file_props(path)
+    if not DocumentRegistry:hasProvider(path) then
+        return nil
+    end
+    local document = DocumentRegistry:openDocument(path)
+    if not document then
+        return nil
+    end
+    local props
+    if not document.loadDocument or document:loadDocument(false) then -- metadata only
+        props = document:getProps()
+    end
+    document:close()
+    return props
+end
+
+-- Write the book's metadata as KOReader's own "custom metadata", the way Book information
+-- does: the five fields over a copy of the file's own, which the file itself is never edited for.
+local function write_custom_props(book, path)
+    local props = sync.custom_props(book)
+    local custom = DocSettings.openSettingsFile(DocSettings:findCustomMetadataFile(path))
+    local own = file_props(path)
+    if own or not custom:readSetting("doc_props") then
+        custom:saveSetting("doc_props", own or {})
+    end
+    local custom_props = custom:readSetting("custom_props", {})
+    for _, key in ipairs(CUSTOM_PROP_KEYS) do
+        custom_props[key] = props[key]
+    end
+    if not custom:flushCustomMetadata(path) then
+        return false, "couldn't write the custom metadata"
+    end
+    return true
+end
+
+local function remove_custom_cover(path)
+    local old = DocSettings:findCustomCoverFile(path)
+    if old then
+        os.remove(old)
+    end
+end
+
+-- Make the server's cover the book's custom cover. A book the server has no usable cover for
+-- (none, or a type KOReader can't show) loses the custom one and shows its own.
+function Omnibus:write_custom_cover(config, book, path)
+    local url = sync.cover_url(config.server_url, book)
+    if not url then
+        remove_custom_cover(path)
         return true
+    end
+    local chunks = {}
+    local code, headers = request(url, config.token, {
+        sink = function()
+            return socketutil.table_sink(chunks)
+        end,
+        block_timeout = socketutil.LARGE_BLOCK_TIMEOUT,
+        total_timeout = socketutil.LARGE_TOTAL_TIMEOUT,
+    })
+    local extension = code == 200 and sync.cover_extension(headers["content-type"])
+    if code == 404 or code == 200 and not extension then
+        remove_custom_cover(path)
+        return true
+    elseif code ~= 200 then
+        return false, code and ("cover HTTP " .. code) or headers
+    end
+    local cache = DataStorage:getDataDir() .. "/cache"
+    util.makePath(cache)
+    local image = cache .. "/omnibus-cover." .. extension
+    local written, write_err = util.writeToFile(table.concat(chunks), image)
+    if not written then
+        return false, write_err
+    end
+    local old = DocSettings:findCustomCoverFile(path)
+    local flushed = DocSettings:flushCustomCover(path, image)
+    os.remove(image)
+    if not flushed then
+        return false, "couldn't write the custom cover"
+    end
+    -- The new cover replaced a same-named one; a different extension leaves the old to remove.
+    if old and old:match("[^/]*$") ~= "cover." .. extension then
+        os.remove(old)
+    end
+    return true
+end
+
+function Omnibus:metadata_applier(config)
+    return function(book, path)
+        local ok, reason = write_custom_props(book, path)
+        if ok then
+            ok, reason = self:write_custom_cover(config, book, path)
+        end
+        -- The file manager keeps a row per book; make it read the new title and cover.
+        UIManager:broadcastEvent(Event:new("InvalidateMetadataCache", path))
+        return ok, reason
     end
 end
 
@@ -182,6 +338,248 @@ function Omnibus:reporter(config)
     end
 end
 
+-- GET one book's server-side state: the status code and decoded body, or nil, nil and the error.
+function Omnibus:state_getter(config)
+    return function(uuid)
+        return call_json(config, "GET", "/koreader/v1/books/" .. uuid .. "/state", nil,
+            STATE_BLOCK_TIMEOUT, STATE_TOTAL_TIMEOUT)
+    end
+end
+
+-- PUT one book's state: the status code and the state the server now holds, or nil, nil and the error.
+function Omnibus:state_putter(config)
+    return function(uuid, body)
+        return call_json(config, "PUT", "/koreader/v1/books/" .. uuid .. "/state", body,
+            STATE_BLOCK_TIMEOUT, STATE_TOTAL_TIMEOUT)
+    end
+end
+
+-- The side effects `sync.sync_annotations` needs for the open book: the annotation routes,
+-- and adding and removing a highlight the way the reader itself does.
+function Omnibus:annotation_deps(config, uuid)
+    local ui = self.ui
+    local path = "/koreader/v1/books/" .. uuid .. "/annotations"
+    return {
+        now = os.time,
+        encode = JSON.encode,
+        new_id = new_id,
+        post = function(body)
+            return call_json(config, "POST", path, body, socketutil.LARGE_BLOCK_TIMEOUT,
+                socketutil.LARGE_TOTAL_TIMEOUT)
+        end,
+        get = function(since)
+            local cursor = type(since) == "number" and string.format("%d", since) or since
+            return call_json(config, "GET", path .. "?since=" .. cursor, nil,
+                socketutil.LARGE_BLOCK_TIMEOUT, socketutil.LARGE_TOTAL_TIMEOUT)
+        end,
+        add = function(wire)
+            local document = ui.document
+            if not (document:isXPointerInDocument(wire.pos0) and document:isXPointerInDocument(wire.pos1)) then
+                return nil
+            end
+            local item = {
+                page = wire.pos0,
+                pos0 = wire.pos0,
+                pos1 = wire.pos1,
+                text = string_or_nil(wire.text),
+                note = string_or_nil(wire.note),
+                color = string_or_nil(wire.color),
+                drawer = "lighten",
+                datetime = os.date("%Y-%m-%d %H:%M:%S", type(wire.created_at) == "number" and wire.created_at or nil),
+                chapter = ui.toc:getTocTitleByPage(wire.pos0),
+                omnibus_id = wire.id,
+            }
+            local index = ui.annotation:addItem(item)
+            ui:handleEvent(Event:new("AnnotationsModified", { item, nb_highlights_added = 1,
+                nb_notes_added = item.note and 1 or nil, index_modified = index }))
+            return item
+        end,
+        remove = function(item)
+            for index, candidate in ipairs(ui.annotation.annotations) do
+                if candidate == item then
+                    ui.bookmark:removeItemByIndex(index)
+                    return
+                end
+            end
+        end,
+    }
+end
+
+-- The per-book reading state (see omnibussync.lua) in its own settings file, loaded at each use
+-- because the file manager's and the reader's instances of this plugin both read and write it.
+-- Returns the books table and a function that saves it.
+local function state_store()
+    local settings = LuaSettings:open(DataStorage:getSettingsDir() .. "/omnibus_state.lua")
+    local books = settings:readSetting("books", {})
+    sync.upgrade(books)
+    return books, function()
+        settings:saveSetting("books", books)
+        settings:flush()
+    end
+end
+
+-- Run `method` and log a failure instead of raising it: reading state must never stop a
+-- book from opening or closing. Returns what `method` returned, or nil after a failure.
+function Omnibus:guarded(what, method, ...)
+    local ok, result = pcall(method, self, ...)
+    if not ok then
+        logger.warn("omnibus reading state", what, "failed:", result)
+        return nil
+    end
+    return result
+end
+
+-- The uuid of the open book if this plugin delivered it; a sideloaded book is never synced.
+function Omnibus:open_book_uuid()
+    local document = self.ui.document
+    if not document then
+        return nil
+    end
+    local settings = LuaSettings:open(DataStorage:getSettingsDir() .. "/omnibus.lua")
+    return sync.uuid_for_path(settings:readSetting("manifest", {}), document.file)
+end
+
+-- The open book's whole percent, status and (reflowable books only) XPointer as the device holds them.
+function Omnibus:current_state()
+    local ui = self.ui
+    local paged = ui.document.info.has_pages
+    local module = paged and ui.paging or ui.rolling
+    local summary = ui.doc_settings:readSetting("summary")
+    return {
+        percent = sync.percent(module:getLastPercent()),
+        status = summary and summary.status,
+        xpointer = not paged and ui.rolling:getLastProgress() or nil,
+    }
+end
+
+-- Mark the open book `status` the way the reader's own "Mark as finished" does.
+function Omnibus:set_status(status)
+    local summary = self.ui.doc_settings:readSetting("summary", {})
+    summary.status = status
+    summary.modified = os.date("%Y-%m-%d", os.time())
+    BookList.setBookInfoCacheProperty(self.ui.document.file, "status", status)
+end
+
+-- Push every pending book in `books`; a failure leaves them pending and is logged (the message
+-- never carries the token or the request).
+function Omnibus:push_pending(config, books, save)
+    local result = sync.flush(books, { put_state = self:state_putter(config), save = save })
+    if not result.ok then
+        logger.warn("omnibus reading state push failed:", result.message)
+    end
+    return result
+end
+
+-- Open: baseline an unseen book, push what waits, then move to the server's state where it is
+-- newer. A first-seen book the server knows nothing about pushes the device's own state instead.
+function Omnibus:pull_on_open()
+    local config = self:loadConfig()
+    local uuid = self:open_book_uuid()
+    if not config or not uuid then
+        return
+    end
+    local books, save = state_store()
+    local current = self:current_state()
+    local first_sight = not books[uuid]
+    if first_sight then
+        -- Time 0 so any server state outranks a book the device only just met.
+        sync.settle(books, uuid, current, { percent_at = 0, status_at = 0 })
+        save()
+    end
+    if not NetworkMgr:isOnline() then
+        return
+    end
+    self:push_pending(config, books, save)
+    local code, remote = self:state_getter(config)(uuid)
+    if code ~= 200 or type(remote) ~= "table" then
+        return
+    end
+    if first_sight and sync.adopt_empty_server(books, uuid, current, remote, os.time()) then
+        save()
+        self:push_pending(config, books, save)
+        return
+    end
+    local plan = sync.pull_plan(books[uuid], remote, current)
+    if not plan then
+        return
+    end
+    if plan.xpointer and self.ui.document:isXPointerInDocument(plan.xpointer) then
+        self.ui:handleEvent(Event:new("GotoXPointer", plan.xpointer))
+    elseif plan.percent then
+        self.ui:handleEvent(Event:new("GotoPercent", plan.percent))
+    end
+    if plan.status then
+        self:set_status(plan.status)
+    end
+    -- Read the position back: the device lands on a page, not on the exact percent asked for.
+    sync.settle(books, uuid, self:current_state(), plan)
+    save()
+end
+
+-- Close, suspend or Sync now: record a change to the open book (if a book is open), then push
+-- everything pending if there is a connection.
+function Omnibus:capture_and_flush()
+    local config = self:loadConfig()
+    if not config then
+        return
+    end
+    local books, save = state_store()
+    local uuid = self:open_book_uuid()
+    if uuid then
+        sync.capture(books, uuid, self:current_state(), os.time())
+        save()
+    end
+    if NetworkMgr:isOnline() then
+        self:push_pending(config, books, save)
+    end
+end
+
+-- The open document's highlights and notes against Omnibus: the device's changes go up first,
+-- then the server's come down. Only an EPUB (a rolling document) this plugin delivered takes
+-- part, and only online. Returns the result of `sync.sync_annotations`, or nil when it did not run.
+function Omnibus:sync_annotations()
+    local ui = self.ui
+    local config = self:loadConfig()
+    local uuid = self:open_book_uuid()
+    if not config or not uuid or not ui.rolling or not NetworkMgr:isOnline() then
+        return nil
+    end
+    local synced = ui.doc_settings:readSetting("omnibus_annotations") or {}
+    local result = sync.sync_annotations(ui.annotation.annotations, synced,
+        self:annotation_deps(config, uuid))
+    if result.changed then
+        -- On close the reader has already saved: write the list and what was agreed ourselves.
+        ui.doc_settings:saveSetting("annotations", ui.annotation.annotations)
+        ui.doc_settings:saveSetting("omnibus_annotations", synced)
+        ui.doc_settings:flush()
+        UIManager:setDirty(ui.dialog, "ui")
+    end
+    if not result.ok then
+        logger.warn("omnibus annotations failed:", result.message)
+    end
+    return result
+end
+
+function Omnibus:onCloseDocument()
+    self:guarded("close", self.capture_and_flush)
+    self:guarded("annotations", self.sync_annotations)
+end
+
+function Omnibus:onSuspend()
+    self:guarded("suspend", self.capture_and_flush)
+end
+
+-- Replacing a file whose sidecar KOReader keys by the file's content would orphan the reader's
+-- place and highlights: that is every file while the setting says so, and a file read under it
+-- until it is reopened.
+local function can_replace(path)
+    if G_reader_settings:readSetting("document_metadata_folder", "doc") == "hash" then
+        return false
+    end
+    local ok, hash_dir = pcall(DocSettings.getSidecarDir, DocSettings, path, "hash")
+    return ok and lfs.attributes(hash_dir, "mode") ~= "directory"
+end
+
 local function remove_file(path)
     if lfs.attributes(path, "mode") ~= "file" then
         return true
@@ -196,10 +594,15 @@ function Omnibus:sync()
         UIManager:show(InfoMessage:new{ text = MISSING_CONFIG })
         return { ok = false, added = 0, removed = 0, message = MISSING_CONFIG }
     end
+    -- Reading state goes up first. A removed device fails the library fetch below with the
+    -- same message, so a failed push needs no handling here.
+    self:guarded("push", self.capture_and_flush)
+    local annotations = self:guarded("annotations", self.sync_annotations)
     local dir = sync_dir()
     util.makePath(dir)
     local settings = LuaSettings:open(DataStorage:getSettingsDir() .. "/omnibus.lua")
     local manifest = settings:readSetting("manifest", {})
+    local files = settings:readSetting("files", {})
 
     local progress = InfoMessage:new{ text = _("Syncing with Omnibus…") }
     UIManager:show(progress)
@@ -208,12 +611,16 @@ function Omnibus:sync()
         dir = dir,
         open_path = self.ui.document and self.ui.document.file,
         manifest = manifest,
+        files = files,
+        can_replace = can_replace,
         save_manifest = function()
             settings:saveSetting("manifest", manifest)
+            settings:saveSetting("files", files)
             settings:flush()
         end,
         get_library = self:library_getter(config),
         download = self:book_downloader(config),
+        apply_metadata = self:metadata_applier(config),
         remove = remove_file,
         exists = function(path)
             return lfs.attributes(path, "mode") == "file"
@@ -228,6 +635,9 @@ function Omnibus:sync()
     if result.ok then
         Notification:notify(string.format(_("Omnibus synced: %d added, %d removed"),
             result.added, result.removed))
+        if annotations and not annotations.ok then
+            UIManager:show(InfoMessage:new{ text = annotations.message })
+        end
     else
         UIManager:show(InfoMessage:new{ text = result.message })
     end

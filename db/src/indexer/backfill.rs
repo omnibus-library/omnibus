@@ -9,6 +9,10 @@ use sqlx::{SqlitePool, Transaction};
 
 use crate::{audiobook, covers, ebook, sync, thumbs};
 
+mod partial_md5;
+
+pub(crate) use partial_md5::backfill_partial_md5;
+
 /// Rows per chunk for [`batch_update_books_column`]. Each row costs three
 /// binds (two in the `CASE`, one in the `IN` list), so 200 keeps a chunk
 /// comfortably under SQLite's 999-parameter cap — mirrors `ORDINAL_CHUNK` in

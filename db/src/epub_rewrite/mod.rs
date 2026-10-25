@@ -168,7 +168,14 @@ pub async fn rewritten_epub_path(
     } else {
         0
     };
-    rewrite_or_reuse_cache(book_id, source, &book, last_modified).await
+    let baked = rewrite_or_reuse_cache(book_id, source, &book, last_modified).await?;
+    // A device downloading this bake names the book by its digest; a failed record must never fail the download.
+    if let (Some(path), Some(uuid)) = (&baked, &book.unique_identifier) {
+        if let Err(e) = crate::kosync::record_export_digest(pool, uuid, path).await {
+            tracing::warn!(book_id, error = %e, "export_epub: recording the bake's digest failed");
+        }
+    }
+    Ok(baked)
 }
 
 /// Core of [`rewritten_epub_path`]: given a book's id, its on-disk EPUB

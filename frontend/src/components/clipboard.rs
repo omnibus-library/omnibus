@@ -103,5 +103,42 @@ pub fn CopyButton(
     }
 }
 
+/// A labelled, read-only text field holding a value the reader carries elsewhere (an endpoint
+/// URL, a token), with a [`CopyButton`] beside it.
+#[component]
+pub fn ReadonlyCopyField(
+    #[props(into)] id: String,
+    #[props(into)] label: String,
+    #[props(into)] value: String,
+    #[props(into)] input_testid: String,
+    #[props(into)] copy_label: String,
+    #[props(into)] copy_testid: String,
+    #[props(into)] copy_aria_label: String,
+) -> Element {
+    rsx! {
+        div { class: "settings-field",
+            label { r#for: "{id}", "{label}" }
+            div { class: "kobo-endpoint-row",
+                input {
+                    r#type: "text",
+                    id: "{id}",
+                    class: "kobo-endpoint-url",
+                    "data-testid": "{input_testid}",
+                    translate: "no",
+                    spellcheck: "false",
+                    readonly: true,
+                    value: "{value}",
+                }
+                CopyButton {
+                    text: value.clone(),
+                    label: copy_label,
+                    testid: copy_testid,
+                    aria_label: copy_aria_label,
+                }
+            }
+        }
+    }
+}
+
 #[cfg(all(test, feature = "server"))]
 mod tests;

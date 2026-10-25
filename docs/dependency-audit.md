@@ -125,6 +125,13 @@ this list.
   yanked-not-vulnerable notice, and both parents are well-maintained.
   `deny.toml` sets `[advisories] yanked = "warn"` with a matching comment.
 
+## KOReader sync
+
+- `md-5` (MIT/Apache-2.0) — `db::partial_md5`, the document fingerprint a
+  KOReader device sends over its progress sync. It names a file, it does not
+  protect anything. It rides the RustCrypto `digest` 0.10 that `sha2` already
+  uses and was already in `Cargo.lock` via `lopdf`, so it adds no crate.
+
 ## PDF crates (issue #2568)
 
 - `hayro` (Apache-2.0/MIT) — pure-Rust PDF parser + rasterizer behind
