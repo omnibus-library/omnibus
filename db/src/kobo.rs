@@ -377,7 +377,7 @@ fn row_to_book(row: &sqlx::sqlite::SqliteRow) -> Result<KoboBookRow, sqlx::Error
 
 /// One book's per-user reading state, as the Kobo protocol wants it: a read
 /// status, plus the position halves a device can act on.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct KoboBookState {
     pub status: ReadStatus,
     pub percent: Option<i64>,
@@ -390,6 +390,8 @@ pub struct KoboBookState {
     /// The XPointer a KOReader device last wrote, verbatim; any newer
     /// position from another surface clears it.
     pub koreader_xpointer: Option<String>,
+    /// The exact fraction KOReader sent through kosync beside that XPointer, cleared with it.
+    pub koreader_percentage: Option<f64>,
     /// Newest of the read-status and progress timestamps — the value the
     /// per-device delta compares against its snapshot to decide whether a
     /// device's state is stale.
@@ -455,6 +457,7 @@ fn reading_state_sql(placeholders: &str) -> String {
                 rp.kobo_location AS kobo_location,
                 rp.epub_cfi AS epub_cfi,
                 rp.koreader_xpointer AS koreader_xpointer,
+                rp.koreader_percentage AS koreader_percentage,
                 rp.kobo_spent_reading_minutes AS kobo_spent_reading_minutes,
                 rp.kobo_remaining_time_minutes AS kobo_remaining_time_minutes,
                 rp.kobo_statistics_updated_at AS kobo_statistics_updated_at,
@@ -517,6 +520,7 @@ fn row_to_kobo_state(row: &sqlx::sqlite::SqliteRow) -> Result<(String, KoboBookS
         kobo_location: row.try_get::<Option<String>, _>("kobo_location")?,
         epub_cfi: row.try_get::<Option<String>, _>("epub_cfi")?,
         koreader_xpointer: row.try_get::<Option<String>, _>("koreader_xpointer")?,
+        koreader_percentage: row.try_get::<Option<f64>, _>("koreader_percentage")?,
         state_updated_at: row.try_get::<i64, _>("state_updated_at")?,
         progress_updated_at: row.try_get::<i64, _>("progress_updated_at")?,
         status_updated_at: row.try_get::<i64, _>("status_updated_at")?,

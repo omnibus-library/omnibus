@@ -32,7 +32,7 @@ async fn put_koreader(
     xpointer: Option<&str>,
 ) {
     let mut tx = pool.begin_with("BEGIN IMMEDIATE").await.unwrap();
-    upsert_koreader_progress_tx(&mut tx, user, update, xpointer)
+    upsert_koreader_progress_tx(&mut tx, user, update, xpointer, None)
         .await
         .unwrap();
     tx.commit().await.unwrap();

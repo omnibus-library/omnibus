@@ -261,8 +261,13 @@ pub async fn put_state(
     // A won write stores exactly the clamped time, so a larger stored one is a newer position.
     let mut stale = false;
     if let Some(position) = &position {
-        let upsert =
-            db::progress::upsert_koreader_progress_tx(&mut tx, device.user_id, position, xpointer);
+        let upsert = db::progress::upsert_koreader_progress_tx(
+            &mut tx,
+            device.user_id,
+            position,
+            xpointer,
+            None,
+        );
         stale = match upsert.await {
             Ok(stored) => stored.client_updated_at > event_at,
             Err(ProgressError::BookNotFound) => return StatusCode::NOT_FOUND.into_response(),

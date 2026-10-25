@@ -1,8 +1,9 @@
 //! `PUT /syncs/progress` and `GET /syncs/progress/{document}` — one book's position in
 //! KOReader's vocabulary. A document is the partial MD5 of the file the device holds. A push is
-//! stored as a whole percent (floored) plus the device's XPointer verbatim, converted to a CFI
-//! when the converter can prove it; a pull answers the stored XPointer, else one derived from the
-//! CFI or percent another surface wrote. The protocol carries no device clock, so a push is dated
+//! stored as a whole percent (floored) plus the device's XPointer and exact fraction verbatim, the
+//! XPointer converted to a CFI when the converter can prove it; a pull answers the stored XPointer
+//! and fraction (stock KOReader reads an equal percentage as already in sync), else ones derived
+//! from the CFI or percent another surface wrote. The protocol carries no device clock, so a push is dated
 //! when it arrives, and no device name, so every position reads back as from device "Omnibus".
 
 use axum::{
@@ -125,6 +126,7 @@ pub(super) async fn put_progress(
         user.0,
         &update,
         Some(&progress),
+        Some(percentage),
     )
     .await
     {
@@ -190,7 +192,7 @@ pub(super) async fn get_progress(
     };
     Json(Pull {
         document: &document,
-        percentage: percent as f64 / 100.0,
+        percentage: stored.koreader_percentage.unwrap_or(percent as f64 / 100.0),
         progress,
         device: DEVICE_NAME,
         device_id: DEVICE_ID,

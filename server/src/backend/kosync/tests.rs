@@ -540,10 +540,36 @@ mod get_progress {
         assert_eq!(res.status(), StatusCode::OK);
         let body: Value = body_json(res).await;
         assert_eq!(body["progress"], spelled);
-        assert_eq!(body["percentage"], 0.63);
+        assert_eq!(body["percentage"], 0.6378);
         assert_eq!(body["device"], "Omnibus");
         assert_eq!(body["device_id"], "omnibus");
         assert_eq!(body["document"], document);
+    }
+
+    #[tokio::test]
+    async fn get_syncs_progress_tells_apart_two_pushes_in_the_same_whole_percent() {
+        // Stock KOReader takes an equal percentage as already in sync, whatever the XPointer.
+        let r = reader().await;
+        let (_uuid, document, _file) = seeded_book(&r).await;
+        for (xpointer, percentage) in [
+            (FIRST_PARAGRAPH_XPOINTER, 0.6301),
+            (SECOND_PARAGRAPH_XPOINTER, 0.6399),
+        ] {
+            let body = push_body(&document, xpointer, percentage);
+            send(&r, "PUT", "/kosync/syncs/progress", Some(body)).await;
+        }
+
+        let res = send(
+            &r,
+            "GET",
+            &format!("/kosync/syncs/progress/{document}"),
+            None,
+        )
+        .await;
+
+        let body: Value = body_json(res).await;
+        assert_eq!(body["progress"], SECOND_PARAGRAPH_XPOINTER);
+        assert_eq!(body["percentage"], 0.6399);
     }
 
     #[tokio::test]
