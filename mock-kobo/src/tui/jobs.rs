@@ -97,7 +97,7 @@ fn acted_status(ok_label: &str, result: Result<Acted, ControlError>) -> Status {
     }
 }
 
-async fn remove_download(control: &Control, book: String) -> Status {
+async fn remove_download(control: &Arc<Control>, book: String) -> Status {
     match control.remove_download(&book).await {
         Ok(_) => Status::Info("removed".to_owned()),
         Err(error) => failure(error),
@@ -112,7 +112,7 @@ async fn sync(control: &Arc<Control>) -> Status {
     }
 }
 
-async fn reset(control: &Control) -> Status {
+async fn reset(control: &Arc<Control>) -> Status {
     match control.reset().await {
         Ok(_) => Status::Info(RESET_MESSAGE.to_owned()),
         Err(error) => failure(error),

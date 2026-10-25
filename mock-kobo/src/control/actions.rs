@@ -2,7 +2,7 @@
 //! finish, highlight and delete-highlight. All but remove-download share the
 //! sync's busy slot and token-wire refusal, running through
 //! `Control::run_exchange`; remove-download touches nothing but the device,
-//! and is refused only while something else is running.
+//! but still holds the busy slot until its file is gone.
 
 use std::sync::Arc;
 
@@ -14,7 +14,7 @@ use crate::session::{
     SyncFailure,
 };
 
-use super::{acted, Acted, Control, ControlError, DeviceView};
+use super::{acted, Acted, Control, ControlError, DeviceView, SyncingGuard};
 
 /// `time::OffsetDateTime::now_utc().unix_timestamp()`, read once at this boundary.
 fn now() -> i64 {
@@ -45,8 +45,8 @@ impl Control {
 
     /// Clear a book's downloaded flag and problem, and delete its file
     /// from storage; local only, no request. Refused while a sync or
-    /// another action is running, like `reset`.
-    pub async fn remove_download(&self, book: &str) -> Result<DeviceView, ControlError> {
+    /// another action is running, and holds the busy slot until saved.
+    pub async fn remove_download(self: &Arc<Self>, book: &str) -> Result<DeviceView, ControlError> {
         let file = {
             let mut live = self.live();
             if live.syncing {
@@ -54,12 +54,15 @@ impl Control {
             }
             let file = live.saved.device.book_file(book);
             live.saved.device.remove_download(book)?;
+            live.syncing = true;
             file
         };
+        let busy = SyncingGuard(Arc::clone(self));
         if let Some(file) = file {
             super::remove_file_best_effort(&file).await?;
         }
         self.persist().await?;
+        drop(busy);
         Ok(self.view())
     }
 

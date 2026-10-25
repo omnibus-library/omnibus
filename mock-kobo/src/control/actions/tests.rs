@@ -256,6 +256,27 @@ async fn remove_download_returns_sync_in_progress_while_a_sync_runs() {
 }
 
 #[tokio::test]
+async fn remove_download_refuses_a_download_until_its_file_is_removed() {
+    let dir = TempDir::new().unwrap();
+    let (control, _stub) = crate::test_support::control_with_downloaded_book(
+        crate::test_support::READER_KEPUB,
+        dir.path().join("kobo.json"),
+    )
+    .await;
+
+    let (removed, downloaded) = tokio::join!(
+        control.remove_download("book-1"),
+        control.download(vec!["book-1".into()]),
+    );
+
+    removed.unwrap();
+    assert!(
+        matches!(downloaded, Err(ControlError::SyncInProgress)),
+        "{downloaded:?}"
+    );
+}
+
+#[tokio::test]
 async fn remove_download_returns_state_not_saved_when_state_file_cannot_be_written() {
     let stub = spawn_stub(Stub::default()).await;
     let dir = TempDir::new().unwrap();

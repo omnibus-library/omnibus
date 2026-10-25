@@ -251,7 +251,7 @@ impl Control {
     /// cache — by replacing it outright; keep who it is and where it
     /// syncs. Also removes every downloaded file from the books dir, so a
     /// reset device's storage matches its now-empty library.
-    pub async fn reset(&self) -> Result<DeviceView, ControlError> {
+    pub async fn reset(self: &Arc<Self>) -> Result<DeviceView, ControlError> {
         let books_dir = {
             let mut live = self.live();
             if live.syncing {
@@ -263,10 +263,14 @@ impl Control {
             live.saved.device.storage = Some(books_dir.clone());
             live.last_sync = None;
             live.requests.clear();
+            live.syncing = true;
             books_dir
         };
+        // Held until saved, so no sync downloads into the dir being cleared.
+        let busy = SyncingGuard(Arc::clone(self));
         clear_books_dir(&books_dir).await?;
         self.persist().await?;
+        drop(busy);
         Ok(self.view())
     }
 
@@ -438,7 +442,8 @@ enum Begun {
     Refused(String),
 }
 
-/// Clears `syncing` when a sync ends for any reason, including its task panicking.
+/// Clears `syncing` when a sync or local action ends for any reason,
+/// including its task panicking. Create it only after the `live` lock drops.
 struct SyncingGuard(Arc<Control>);
 
 impl Drop for SyncingGuard {
