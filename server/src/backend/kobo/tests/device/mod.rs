@@ -47,9 +47,14 @@ async fn spawn_omnibus() -> Omnibus {
 
 /// Enrol a second `kobo_devices` row for `omnibus`'s user, returning its `{base}/kobo/{token}`.
 async fn add_device(omnibus: &Omnibus, name: &str) -> String {
-    let device = db::kobo_devices::create_device(&omnibus.pool, omnibus.user_id, name)
-        .await
-        .unwrap();
+    let device = db::kobo_devices::create_device(
+        &omnibus.pool,
+        omnibus.user_id,
+        name,
+        omnibus_shared::DeviceKind::Kobo,
+    )
+    .await
+    .unwrap();
     format!("{}/kobo/{}", omnibus.base, device.token)
 }
 
