@@ -514,6 +514,42 @@ mod cover {
     }
 
     #[tokio::test]
+    async fn serves_a_cover_replaced_within_the_same_second_to_the_old_validator() {
+        let _covers = CoversDirGuard::new("koreader_cover_same_second");
+        let (app, pool, token, uid) = fixture().await;
+        let uuid = db::test_support::seed_synced_ebook(&pool, "alpha.epub", "Alpha", "Ada").await;
+        seed_override_cover(&pool, &uuid, uid).await;
+        let pin_last_modified = || {
+            sqlx::query("UPDATE books SET last_modified = 1 WHERE uuid = ?")
+                .bind(&uuid)
+                .execute(&pool)
+        };
+        pin_last_modified().await.unwrap();
+        let first = app
+            .clone()
+            .oneshot(get_with_bearer(&cover_uri(&uuid), &token))
+            .await
+            .unwrap();
+        let etag = first.headers()[header::ETAG].to_str().unwrap().to_owned();
+        let replaced = [TINY_PNG, &[0]].concat();
+        db::write_override_cover(&uuid, "image/png", &replaced).unwrap();
+        pin_last_modified().await.unwrap();
+
+        let res = app
+            .oneshot(get_with_bearer_and_if_none_match(
+                &cover_uri(&uuid),
+                &token,
+                &etag,
+            ))
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::OK);
+        let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(&bytes[..], &replaced[..]);
+    }
+
+    #[tokio::test]
     async fn answers_404_for_a_book_without_a_cover() {
         let (app, pool, token, _uid) = fixture().await;
         let uuid = db::test_support::seed_synced_ebook(&pool, "alpha.epub", "Alpha", "Ada").await;
