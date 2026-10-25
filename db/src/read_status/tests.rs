@@ -285,3 +285,180 @@ async fn set_read_status_drops_the_cached_stats_summary() {
         after.finished_books
     );
 }
+
+/// Run [`set_read_status_at_tx`] in its own committed transaction.
+async fn set_at(
+    pool: &SqlitePool,
+    user: i64,
+    uuid: &str,
+    status: ReadStatus,
+    event_at: i64,
+) -> ReadStatusRecord {
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await.unwrap();
+    let record = set_read_status_at_tx(&mut tx, user, &set(uuid, status), event_at)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    record
+}
+
+#[tokio::test]
+async fn set_read_status_at_tx_stamps_the_event_time() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let (_, uuid) = seed(&pool, "/lib", "Dune").await;
+    let user = seed_user(&pool, "reader").await;
+
+    let reading = set_at(&pool, user, &uuid, ReadStatus::Reading, 1_000).await;
+    assert_eq!((reading.updated_at, reading.finished_at), (1_000, None));
+
+    let finished = set_at(&pool, user, &uuid, ReadStatus::Finished, 2_000).await;
+    assert_eq!(finished.status, ReadStatus::Finished);
+    assert_eq!(
+        (finished.updated_at, finished.finished_at),
+        (2_000, Some(2_000))
+    );
+}
+
+#[tokio::test]
+async fn set_read_status_at_tx_keeps_a_newer_stored_status() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let (_, uuid) = seed(&pool, "/lib", "Dune").await;
+    let user = seed_user(&pool, "reader").await;
+    set_at(&pool, user, &uuid, ReadStatus::Finished, 2_000).await;
+
+    let survivor = set_at(&pool, user, &uuid, ReadStatus::Reading, 1_000).await;
+
+    assert_eq!(survivor.status, ReadStatus::Finished);
+    assert_eq!(survivor.updated_at, 2_000);
+    assert_eq!(survivor.finished_at, Some(2_000));
+}
+
+#[tokio::test]
+async fn set_read_status_at_tx_lets_an_equal_event_time_win() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let (_, uuid) = seed(&pool, "/lib", "Dune").await;
+    let user = seed_user(&pool, "reader").await;
+    set_at(&pool, user, &uuid, ReadStatus::Reading, 1_000).await;
+
+    let survivor = set_at(&pool, user, &uuid, ReadStatus::Finished, 1_000).await;
+
+    assert_eq!(survivor.status, ReadStatus::Finished);
+}
+
+#[tokio::test]
+async fn set_read_status_at_tx_clamps_a_future_event_time_to_now() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let (_, uuid) = seed(&pool, "/lib", "Dune").await;
+    let user = seed_user(&pool, "reader").await;
+    let before: i64 = sqlx::query_scalar("SELECT CAST(strftime('%s','now') AS INTEGER)")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+    let record = set_at(&pool, user, &uuid, ReadStatus::Finished, before + 3_600).await;
+
+    assert!(record.updated_at <= before + 5, "got {}", record.updated_at);
+    assert_eq!(record.finished_at, Some(record.updated_at));
+}
+
+#[tokio::test]
+async fn set_read_status_at_tx_returns_book_not_found_for_unknown_uuid() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool, "reader").await;
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await.unwrap();
+
+    let err = set_read_status_at_tx(&mut tx, user, &set("nope", ReadStatus::Reading), 1_000)
+        .await
+        .unwrap_err();
+
+    assert!(matches!(err, ReadStatusError::BookNotFound));
+}
+
+#[tokio::test]
+async fn set_read_status_at_tx_beats_the_reading_status_a_position_started() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let (_, uuid) = seed(&pool, "/lib", "Dune").await;
+    let user = seed_user(&pool, "reader").await;
+    // A position at t2 starts the book: the server, not the reader, chose `reading`.
+    let position = omnibus_shared::ProgressUpdate {
+        book_uuid: uuid.clone(),
+        format: omnibus_shared::ProgressFormat::Epub,
+        epub_cfi: None,
+        audio_position_seconds: None,
+        progress_percent: Some(60),
+        kobo_location: None,
+        book_file_id: None,
+        client_updated_at: Some(2_000),
+    };
+    crate::progress::upsert_progress(&pool, user, &position)
+        .await
+        .unwrap();
+
+    let survivor = set_at(&pool, user, &uuid, ReadStatus::Finished, 1_000).await;
+
+    assert_eq!(survivor.status, ReadStatus::Finished);
+    assert_eq!(survivor.finished_at, Some(1_000));
+}
+
+#[tokio::test]
+async fn set_read_status_at_tx_keeps_a_newer_explicit_reading_over_an_older_finished() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let (_, uuid) = seed(&pool, "/lib", "Dune").await;
+    let user = seed_user(&pool, "reader").await;
+    set_at(&pool, user, &uuid, ReadStatus::Reading, 2_000).await;
+
+    let survivor = set_at(&pool, user, &uuid, ReadStatus::Finished, 1_000).await;
+
+    assert_eq!(
+        (survivor.status, survivor.updated_at),
+        (ReadStatus::Reading, 2_000)
+    );
+}
+
+#[tokio::test]
+async fn set_read_status_tx_makes_an_auto_started_status_explicit() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let (_, uuid) = seed(&pool, "/lib", "Dune").await;
+    let user = seed_user(&pool, "reader").await;
+    let position = omnibus_shared::ProgressUpdate {
+        book_uuid: uuid.clone(),
+        format: omnibus_shared::ProgressFormat::Epub,
+        epub_cfi: None,
+        audio_position_seconds: None,
+        progress_percent: Some(60),
+        kobo_location: None,
+        book_file_id: None,
+        client_updated_at: Some(2_000),
+    };
+    crate::progress::upsert_progress(&pool, user, &position)
+        .await
+        .unwrap();
+    // The reader picks `reading` themselves; from here an older device Finished must lose.
+    set_read_status(&pool, user, &set(&uuid, ReadStatus::Reading))
+        .await
+        .unwrap();
+    let stamped = get_read_status(&pool, user, &uuid).await.unwrap().unwrap();
+
+    let survivor = set_at(&pool, user, &uuid, ReadStatus::Finished, 1_000).await;
+
+    assert_eq!(survivor.status, ReadStatus::Reading);
+    assert_eq!(survivor.updated_at, stamped.updated_at);
+}
+
+#[tokio::test]
+async fn set_read_status_at_tx_returns_sqlx_when_the_table_is_gone() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let (_, uuid) = seed(&pool, "/lib", "Dune").await;
+    let user = seed_user(&pool, "reader").await;
+    sqlx::query("DROP TABLE book_read_status")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await.unwrap();
+
+    let err = set_read_status_at_tx(&mut tx, user, &set(&uuid, ReadStatus::Reading), 1_000)
+        .await
+        .unwrap_err();
+
+    assert!(matches!(err, ReadStatusError::Sqlx(_)));
+}

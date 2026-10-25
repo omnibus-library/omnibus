@@ -50,6 +50,11 @@ pub struct KoboDeviceView {
     pub created_at: i64,
     /// When the device last synced, in Unix seconds.
     pub last_seen_at: i64,
+    /// When a KOReader last reported finishing a sync, in Unix seconds. `null` for a Kobo
+    /// and for a KOReader that has not synced yet.
+    pub last_sync_at: Option<i64>,
+    /// What went wrong in a KOReader's last reported sync. `null` when it succeeded.
+    pub last_sync_error: Option<String>,
 }
 
 /// The label and kind for a new device.

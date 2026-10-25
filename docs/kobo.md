@@ -12,6 +12,9 @@ both:
 Either way the book is converted to a **KEPUB** — Kobo's own EPUB variant, which
 gets noticeably faster page turns than a plain EPUB.
 
+Reading on KOReader instead? See [KOReader](koreader.md) for its plugin, which
+syncs the same shelves.
+
 No device to hand? Developers can [test wireless sync with a mock
 Kobo](#testing-without-a-device) instead.
 

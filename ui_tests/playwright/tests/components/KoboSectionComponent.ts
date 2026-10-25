@@ -64,6 +64,23 @@ export class KoboSectionComponent extends BaseComponent {
     return this.deviceRow(name).getByTestId("koreader-device-token");
   }
 
+  /** A KOReader row's Download plugin link. */
+  pluginDownload(name: string): Locator {
+    return this.deviceRow(name).getByTestId("koreader-plugin-download");
+  }
+
+  /** Clicks a KOReader's Download plugin link; the file name the browser saves it under. */
+  async downloadPlugin(name: string): Promise<string> {
+    const download = this.page.waitForEvent("download");
+    await this.pluginDownload(name).click();
+    return (await download).suggestedFilename();
+  }
+
+  /** A KOReader row's last-sync line. */
+  lastSync(name: string): Locator {
+    return this.deviceRow(name).getByTestId("koreader-last-sync");
+  }
+
   regenerateButton(name: string): Locator {
     return this.page.getByRole("button", {
       name: `Regenerate token for ${name}`,

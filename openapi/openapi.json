@@ -271,6 +271,54 @@
         }
       }
     },
+    "/api/account/kobo-devices/{id}/koreader-plugin": {
+      "get": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Download a KOReader's plugin",
+        "description": "The Omnibus plugin for one of your KOReaders, as a zip already set to this server and\ncarrying that KOReader's token. Unzip it into KOReader's `plugins` folder. The zip holds\nthe token, so treat the file like a password. Needs the download permission.",
+        "operationId": "download_koreader_plugin",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The KOReader's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The plugin, zipped.",
+            "headers": {
+              "Content-Disposition": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`attachment`, with the file name."
+              }
+            },
+            "content": {
+              "application/zip": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileBytes"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Your account lacks the download permission."
+          },
+          "404": {
+            "description": "No KOReader of yours has that id."
+          }
+        }
+      }
+    },
     "/api/account/kobo-devices/{id}/regenerate": {
       "post": {
         "tags": [
@@ -304,6 +352,48 @@
           },
           "404": {
             "description": "None of your devices has that id."
+          }
+        }
+      }
+    },
+    "/api/account/kosync": {
+      "get": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Check your KOReader sync password",
+        "description": "Whether you have generated a password for stock KOReader's Progress sync. The password\nitself cannot be read back, only replaced.",
+        "operationId": "get_kosync",
+        "responses": {
+          "200": {
+            "description": "Whether a password exists.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KosyncStatus"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Generate a KOReader sync password",
+        "description": "Creates the password stock KOReader's Progress sync signs in with, together with your\nusername, and shows it once. Generating again replaces it, so the old one stops working.",
+        "operationId": "post_kosync",
+        "responses": {
+          "200": {
+            "description": "The new password, shown only in this response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KosyncPassword"
+                }
+              }
+            }
           }
         }
       }
@@ -4524,6 +4614,9 @@
           },
           "404": {
             "description": "No book has that `book_uuid`."
+          },
+          "410": {
+            "description": "That `client_id` was deleted; a delete is final, so repeating the create can never succeed."
           }
         }
       }
@@ -12687,6 +12780,21 @@
             "format": "int64",
             "description": "When the device last synced, in Unix seconds."
           },
+          "last_sync_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "When a KOReader last reported finishing a sync, in Unix seconds. `null` for a Kobo\nand for a KOReader that has not synced yet."
+          },
+          "last_sync_error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "What went wrong in a KOReader's last reported sync. `null` when it succeeded."
+          },
           "name": {
             "type": "string",
             "description": "The label you gave it."
@@ -12694,6 +12802,37 @@
           "token": {
             "type": "string",
             "description": "The device's secret. Treat it like a password: anyone holding it can sync as you."
+          }
+        }
+      },
+      "KosyncPassword": {
+        "type": "object",
+        "description": "A freshly generated progress-sync password, shown once.",
+        "required": [
+          "username",
+          "password"
+        ],
+        "properties": {
+          "password": {
+            "type": "string",
+            "description": "The new password. It replaces any earlier one, which stops working at once."
+          },
+          "username": {
+            "type": "string",
+            "description": "The username to enter in KOReader's Progress sync login."
+          }
+        }
+      },
+      "KosyncStatus": {
+        "type": "object",
+        "description": "Whether you have generated a KOReader progress-sync password.",
+        "required": [
+          "configured"
+        ],
+        "properties": {
+          "configured": {
+            "type": "boolean",
+            "description": "`true` once a password exists; it is not retrievable, only replaceable."
           }
         }
       },

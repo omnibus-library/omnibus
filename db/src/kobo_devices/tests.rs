@@ -518,3 +518,53 @@ async fn deleting_the_user_cascades_the_device() {
         .unwrap()
         .is_none());
 }
+
+#[tokio::test]
+async fn record_sync_report_stores_the_error_and_the_time() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool, "reader").await;
+    let dev = create_device(&pool, user, "KOReader", DeviceKind::Koreader)
+        .await
+        .unwrap();
+    assert!(dev.last_sync_at.is_none() && dev.last_sync_error.is_none());
+
+    record_sync_report(&pool, dev.id, Some("Couldn't download Alpha: 404"))
+        .await
+        .unwrap();
+
+    let after = get_device_for_user(&pool, user, dev.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        after.last_sync_error.as_deref(),
+        Some("Couldn't download Alpha: 404")
+    );
+    assert!(after.last_sync_at.is_some_and(|t| t > 0));
+}
+
+#[tokio::test]
+async fn record_sync_report_clears_the_error_on_success() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool, "reader").await;
+    let dev = create_device(&pool, user, "KOReader", DeviceKind::Koreader)
+        .await
+        .unwrap();
+    record_sync_report(&pool, dev.id, Some("boom"))
+        .await
+        .unwrap();
+    sqlx::query("UPDATE kobo_devices SET last_sync_at = 1 WHERE id = ?")
+        .bind(dev.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    record_sync_report(&pool, dev.id, None).await.unwrap();
+
+    let after = get_device_for_user(&pool, user, dev.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(after.last_sync_error.is_none());
+    assert!(after.last_sync_at.is_some_and(|t| t > 1), "the time moved");
+}

@@ -81,6 +81,11 @@ pub enum Task {
     /// `library_path` (mutual exclusion with the scan on the same library); does
     /// not consume the scan semaphore (light per-file IO).
     BackfillPageCounts { library_path: String },
+    /// Backfill `book_files.partial_md5` for EPUB files not yet fingerprinted, the
+    /// document identity a KOReader device names a book by. Posted by the
+    /// [`Task::Scan`] handler on success and at boot. Keyed on `library_path`; does
+    /// not consume the scan semaphore (reads at most 12 KiB per file).
+    BackfillPartialMd5 { library_path: String },
     /// Backfill `epub_spine_stats` + `ebook_chapters` for EPUB and PDF files with
     /// no extracted structure yet. Posted by the [`Task::Scan`] handler on success;
     /// a Changed file re-creates its `book_files` row, cascade clears stale
@@ -181,6 +186,7 @@ impl Task {
             Task::BackfillChapters { library_path } => Some(format!("audiobooks:{library_path}")),
             Task::BackfillWordCounts { library_path } => Some(library_path.clone()),
             Task::BackfillPageCounts { library_path } => Some(library_path.clone()),
+            Task::BackfillPartialMd5 { library_path } => Some(library_path.clone()),
             Task::BackfillEpubStructure { library_path } => Some(library_path.clone()),
             Task::BackfillCovers { library_path } => Some(library_path.clone()),
             Task::BackfillThumbs { library_path } => Some(library_path.clone()),
@@ -212,6 +218,7 @@ impl Task {
             Task::BackfillChapters { .. } => false,
             Task::BackfillWordCounts { .. } => false,
             Task::BackfillPageCounts { .. } => false,
+            Task::BackfillPartialMd5 { .. } => false,
             Task::BackfillEpubStructure { .. } => false,
             Task::BackfillCovers { .. } => false,
             Task::BackfillThumbs { .. } => false,
@@ -257,6 +264,7 @@ impl Task {
             Task::BackfillChapters { .. } => "backfill_chapters",
             Task::BackfillWordCounts { .. } => "backfill_word_counts",
             Task::BackfillPageCounts { .. } => "backfill_page_counts",
+            Task::BackfillPartialMd5 { .. } => "backfill_partial_md5",
             Task::BackfillEpubStructure { .. } => "backfill_epub_structure",
             Task::BackfillCovers { .. } => "backfill_covers",
             Task::BackfillThumbs { .. } => "backfill_thumbs",
@@ -290,6 +298,8 @@ impl Task {
             Task::BackfillWordCounts { .. } => TaskKind::Scan,
             // Same reuse as BackfillWordCounts, its sibling scan-follow-up.
             Task::BackfillPageCounts { .. } => TaskKind::Scan,
+            // Same reuse: a scan-follow-up with no dedicated widget of its own.
+            Task::BackfillPartialMd5 { .. } => TaskKind::Scan,
             // Same reuse again — a scan-follow-up with no dedicated widget.
             Task::BackfillEpubStructure { .. } => TaskKind::Scan,
             // Same reuse: a scan-follow-up with no dedicated widget of its own.

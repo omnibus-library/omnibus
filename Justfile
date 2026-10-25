@@ -65,6 +65,13 @@ dev-bounce:
 kobo *args:
     scripts/with-dev-env.sh default cargo run -q -p omnibus-mock-kobo -- tui "$@"
 
+# Interactive KOReader in a browser tab (Docker), syncing with this worktree's dev
+# server (run `just dev-up` first); Ctrl-C stops it. `--home DIR` picks the home,
+# so a second one is a second device (docs/koreader.md).
+[positional-arguments]
+koreader *args:
+    scripts/with-dev-env.sh default scripts/koreader-dev.sh "$@"
+
 # Ensure the public-domain test fixtures are present (one-time ~156 MB
 # download from the fixtures-vN release asset, then an instant no-op).
 # Runs outside the nix shell on purpose — curl + tar only. Auto-run by
@@ -94,15 +101,30 @@ module-map-test:
 koreader-report-test:
     python3 scripts/tests/koreader-report.test.py
 
+# Unit tests for the KOReader plugin's sync logic (koreader/omnibus.koplugin/omnibussync.lua),
+# under plain luajit; main.lua is proven by the KOReader lane.
+koreader-plugin-test:
+    luajit koreader/tests/omnibussync.test.lua
+
 # Regression tests for scripts/lib/scratch-server.sh's scratch-dir ownership.
 # Plain bash with stubbed I/O, like dev-port-choose-port.test.sh.
 scratch-server-test:
     bash scripts/tests/scratch-server-make-scratch-dir.test.sh
 
+# Tests for the readable failures `just koreader` prints before it builds
+# anything. Plain bash with stubbed I/O, like scratch-server-test.
+koreader-dev-test:
+    bash scripts/tests/koreader-dev-preflight.test.sh
+
+# Unit tests for scripts/koreader_home.py (linking a new KOReader home to the
+# dev server). Stdlib unittest against a fake server, like explore-test.
+koreader-home-test:
+    python3 scripts/tests/koreader-home.test.py
+
 # Run every unit/integration suite: the Rust matrix first, then the script
 # suites. Rust leads so a failing script suite can't stop the recipe
 # before the cargo results are in.
-test: test-rust explore-test module-map-test koreader-report-test scratch-server-test
+test: test-rust explore-test module-map-test koreader-report-test koreader-plugin-test scratch-server-test koreader-dev-test koreader-home-test
 
 # The Rust half of `just test`: the full matrix via cargo-nextest (the same
 # runner CI uses, so local and CI results match; no doctests in the tree, which

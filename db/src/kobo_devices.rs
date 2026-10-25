@@ -12,7 +12,8 @@ use crate::auth::{generate_token, AuthResult};
 
 /// Column list shared by every row-returning query, matched by [`row_to_device`].
 const COLS: &str =
-    "id, user_id, token, name, kind, kobo_device_id, sync_cursor, created_at, last_seen_at";
+    "id, user_id, token, name, kind, kobo_device_id, sync_cursor, created_at, last_seen_at, \
+     last_sync_at, last_sync_error";
 
 /// Hard cap on devices `list_devices` returns for one user (matches `LIST_SHELVES_LIMIT`/`LIST_BOOKMARKS_LIMIT`).
 pub const LIST_DEVICES_LIMIT: i64 = 100;
@@ -31,6 +32,10 @@ pub struct KoboDevice {
     pub sync_cursor: Option<String>,
     pub created_at: i64,
     pub last_seen_at: i64,
+    /// When the plugin last reported a sync, in Unix seconds; `None` until it has.
+    pub last_sync_at: Option<i64>,
+    /// The failure the last report carried; `None` when it succeeded.
+    pub last_sync_error: Option<String>,
 }
 
 impl From<KoboDevice> for omnibus_shared::KoboDeviceView {
@@ -43,6 +48,8 @@ impl From<KoboDevice> for omnibus_shared::KoboDeviceView {
             token: d.token,
             created_at: d.created_at,
             last_seen_at: d.last_seen_at,
+            last_sync_at: d.last_sync_at,
+            last_sync_error: d.last_sync_error,
         }
     }
 }
@@ -210,6 +217,24 @@ pub async fn resolve_device_by_token(
     }))
 }
 
+/// Store the outcome the KOReader plugin reported for a sync: now as `last_sync_at`, and
+/// `error` (`None` for a success) as `last_sync_error`.
+pub async fn record_sync_report(
+    pool: &SqlitePool,
+    device_id: i64,
+    error: Option<&str>,
+) -> Result<(), KoboDeviceError> {
+    sqlx::query(
+        "UPDATE kobo_devices SET last_sync_at = strftime('%s', 'now'), last_sync_error = ?
+         WHERE id = ?",
+    )
+    .bind(error)
+    .bind(device_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 /// Bind the `x-kobo-deviceid` hardware id to this device row, so token-less
 /// Reading Services calls can map back to it. Steal-on-learn: the id is cleared
 /// from any other row first, so the hardware id follows the row whose *token*
@@ -291,6 +316,8 @@ fn row_to_device(row: &sqlx::sqlite::SqliteRow) -> KoboDevice {
         sync_cursor: row.get("sync_cursor"),
         created_at: row.get("created_at"),
         last_seen_at: row.get("last_seen_at"),
+        last_sync_at: row.get("last_sync_at"),
+        last_sync_error: row.get("last_sync_error"),
     }
 }
 

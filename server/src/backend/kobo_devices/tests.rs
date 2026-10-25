@@ -291,3 +291,121 @@ async fn delete_kobo_device_returns_404_for_another_readers_or_unknown_device() 
         .unwrap();
     assert_eq!(remaining.len(), 1);
 }
+
+mod koreader_plugin {
+    use super::*;
+
+    /// A reader with a bearer token and one registered device of `kind`.
+    async fn reader_with_kind(
+        pool: &sqlx::SqlitePool,
+        username: &str,
+        kind: omnibus_shared::DeviceKind,
+    ) -> (i64, String, db::kobo_devices::KoboDevice) {
+        let user = auth_test_support::create_user(pool, username).await;
+        let token = auth_test_support::bearer_token(pool, user.id).await;
+        let device = db::kobo_devices::create_device(pool, user.id, "Reader", kind)
+            .await
+            .unwrap();
+        (user.id, token, device)
+    }
+
+    fn plugin_request(id: i64, token: &str) -> Request<Body> {
+        Request::builder()
+            .uri(format!("/api/account/kobo-devices/{id}/koreader-plugin"))
+            .header(AUTHORIZATION, format!("Bearer {token}"))
+            .header("host", "omni.test")
+            .body(Body::empty())
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn serves_the_owners_koreader_a_zip_for_this_server_and_its_token() {
+        let (app, _state, pool) = fixture().await;
+        let (_uid, token, device) =
+            reader_with_kind(&pool, "ada", omnibus_shared::DeviceKind::Koreader).await;
+
+        let res = app
+            .oneshot(plugin_request(device.id, &token))
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::OK);
+        let headers = res.headers().clone();
+        assert_eq!(headers["content-type"], "application/zip");
+        assert_eq!(
+            headers["content-disposition"],
+            format!(
+                "attachment; filename=\"omnibus-koreader-{}.zip\"",
+                device.id
+            )
+        );
+        assert_eq!(headers["cache-control"], "no-store");
+        let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
+        let config: serde_json::Value =
+            serde_json::from_reader(archive.by_name("omnibus.koplugin/omnibus.json").unwrap())
+                .unwrap();
+        assert_eq!(
+            config,
+            serde_json::json!({ "server_url": "http://omni.test", "token": device.token })
+        );
+    }
+
+    #[tokio::test]
+    async fn answers_404_for_a_device_that_is_not_the_callers_koreader() {
+        let (app, _state, pool) = fixture().await;
+        let (uid, token, _own) =
+            reader_with_kind(&pool, "ada", omnibus_shared::DeviceKind::Koreader).await;
+        let own_kobo =
+            db::kobo_devices::create_device(&pool, uid, "Clara", omnibus_shared::DeviceKind::Kobo)
+                .await
+                .unwrap();
+        let (_, _, theirs) =
+            reader_with_kind(&pool, "grace", omnibus_shared::DeviceKind::Koreader).await;
+
+        for (case, id) in [
+            ("another reader's device", theirs.id),
+            ("an unknown id", 9999),
+            ("a Kobo of the caller's own", own_kobo.id),
+        ] {
+            let res = app
+                .clone()
+                .oneshot(plugin_request(id, &token))
+                .await
+                .unwrap();
+            assert_eq!(res.status(), StatusCode::NOT_FOUND, "{case}");
+        }
+    }
+
+    #[tokio::test]
+    async fn answers_401_without_a_session() {
+        let (app, _state, pool) = fixture().await;
+        let (_, _, device) =
+            reader_with_kind(&pool, "ada", omnibus_shared::DeviceKind::Koreader).await;
+
+        let res = app
+            .oneshot(get_anon(&format!(
+                "/api/account/kobo-devices/{}/koreader-plugin",
+                device.id
+            )))
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn answers_403_when_the_reader_may_not_download() {
+        let (app, _state, pool) = fixture().await;
+        let (uid, token, device) =
+            reader_with_kind(&pool, "ada", omnibus_shared::DeviceKind::Koreader).await;
+        revoke_can_download(&pool, uid).await;
+
+        let res = app
+            .oneshot(plugin_request(device.id, &token))
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::FORBIDDEN);
+    }
+}

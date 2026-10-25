@@ -154,6 +154,44 @@ async fn merge_moves_highlights_to_target() {
 }
 
 #[tokio::test]
+async fn merge_lists_a_source_books_tombstone_under_the_target_uuid() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool).await;
+    let target = seed_ebook(&pool, "A/Dracula.epub", "Dracula", "Bram Stoker").await;
+    let source = seed_audiobook(&pool, "B/Drakula.m4b", "Drakula", "Bram Stoker").await;
+    let highlight = crate::annotations::create_highlight(
+        &pool,
+        user,
+        &omnibus_shared::CreateHighlight {
+            client_id: Some("gone".into()),
+            book_uuid: source.clone(),
+            epub_cfi_range: "epubcfi(/6/4!/4/2,/1:0,/1:100)".into(),
+            color: omnibus_shared::HighlightColor::Blue,
+            text: None,
+        },
+    )
+    .await
+    .unwrap();
+    crate::annotations::delete_highlight(&pool, user, highlight.id)
+        .await
+        .unwrap();
+
+    merge_books(&pool, &source, &target, Some(user))
+        .await
+        .unwrap();
+
+    let listing = crate::annotations::koreader_annotations_since(
+        &pool,
+        user,
+        &target,
+        &crate::annotations::KoreaderCursor::default(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(listing.deleted, vec!["gone"]);
+}
+
+#[tokio::test]
 async fn merge_retargets_kobo_annotation_sync_state_preferring_the_targets_row() {
     // #1278: the per-device annotation watermark follows the merge. Where a
     // device tracks both uuids the target's row wins (PK collision); a

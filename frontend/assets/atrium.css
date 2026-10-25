@@ -5588,7 +5588,9 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
+  overflow-wrap: anywhere;
 }
+.kobo-device-row .subtitle { margin-bottom: 0; }
 .kobo-device-head { display: flex; justify-content: space-between; align-items: baseline; }
 .kobo-device-name { font-weight: 600; color: var(--ink-0); min-width: 0; overflow-wrap: anywhere; }
 .kobo-endpoint-url { font-family: var(--mono, ui-monospace, monospace); font-size: 0.85rem; }
