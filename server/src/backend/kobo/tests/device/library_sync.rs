@@ -2,7 +2,9 @@
 //! in its library, and what it shows for each before any download.
 
 use omnibus_db::test_support::seed_synced_ebook;
-use omnibus_mock_kobo::{device::Device, session::sync_now, wire::Series};
+use omnibus_mock_kobo::{
+    device::Device, downloads::DownloadPolicy, session::sync_now, wire::Series,
+};
 use omnibus_shared::{Contributor, MetadataOverrides};
 
 use super::*;
@@ -17,7 +19,12 @@ async fn set_overrides(omnibus: &Omnibus, uuid: &str, overrides: MetadataOverrid
 async fn sync_now_completes_handshake_on_a_non_standard_port() {
     let omnibus = spawn_omnibus().await;
 
-    let result = sync_now(&mut Device::new("HW-1"), &omnibus.endpoint).await;
+    let result = sync_now(
+        &mut Device::new("HW-1"),
+        &omnibus.endpoint,
+        &DownloadPolicy::None,
+    )
+    .await;
 
     assert!(result.is_ok(), "{result:?}");
 }
@@ -35,7 +42,9 @@ async fn sync_now_delivers_only_opted_in_shelf_books() {
     .await;
     let mut device = Device::new("HW-1");
 
-    sync_now(&mut device, &omnibus.endpoint).await.unwrap();
+    sync_now(&mut device, &omnibus.endpoint, &DownloadPolicy::None)
+        .await
+        .unwrap();
 
     let titles: Vec<(&str, &str)> = device
         .library
@@ -51,7 +60,9 @@ async fn sync_now_archives_books_after_shelf_opt_out() {
     let uuid = seed_synced_ebook(&omnibus.pool, "dune.epub", "Dune", "Frank Herbert").await;
     let shelf = opt_in(&omnibus.pool, omnibus.user_id, std::slice::from_ref(&uuid)).await;
     let mut device = Device::new("HW-1");
-    sync_now(&mut device, &omnibus.endpoint).await.unwrap();
+    sync_now(&mut device, &omnibus.endpoint, &DownloadPolicy::None)
+        .await
+        .unwrap();
     let opt_out = omnibus_shared::UpdateShelfRequest {
         sync_to_kobo: Some(false),
         ..Default::default()
@@ -60,7 +71,9 @@ async fn sync_now_archives_books_after_shelf_opt_out() {
         .await
         .unwrap();
 
-    sync_now(&mut device, &omnibus.endpoint).await.unwrap();
+    sync_now(&mut device, &omnibus.endpoint, &DownloadPolicy::None)
+        .await
+        .unwrap();
 
     let book = &device.library[&uuid];
     assert_eq!((book.title.as_str(), book.archived), ("Dune", true));
@@ -78,7 +91,9 @@ async fn sync_now_delivers_description_before_download() {
     opt_in(&omnibus.pool, omnibus.user_id, std::slice::from_ref(&uuid)).await;
     let mut device = Device::new("HW-1");
 
-    sync_now(&mut device, &omnibus.endpoint).await.unwrap();
+    sync_now(&mut device, &omnibus.endpoint, &DownloadPolicy::None)
+        .await
+        .unwrap();
 
     assert_eq!(device.library[&uuid].description, "Arrakis, desert planet.");
 }
@@ -99,7 +114,9 @@ async fn sync_now_delivers_every_author_in_order_before_download() {
     opt_in(&omnibus.pool, omnibus.user_id, std::slice::from_ref(&uuid)).await;
     let mut device = Device::new("HW-1");
 
-    sync_now(&mut device, &omnibus.endpoint).await.unwrap();
+    sync_now(&mut device, &omnibus.endpoint, &DownloadPolicy::None)
+        .await
+        .unwrap();
 
     assert_eq!(
         device.library[&uuid].authors,
@@ -120,7 +137,9 @@ async fn sync_now_delivers_series_before_download() {
     opt_in(&omnibus.pool, omnibus.user_id, std::slice::from_ref(&uuid)).await;
     let mut device = Device::new("HW-1");
 
-    sync_now(&mut device, &omnibus.endpoint).await.unwrap();
+    sync_now(&mut device, &omnibus.endpoint, &DownloadPolicy::None)
+        .await
+        .unwrap();
 
     let expected = Series {
         name: "The Expanse".into(),
@@ -142,7 +161,9 @@ async fn sync_now_refreshes_metadata_without_redownload_when_book_changes() {
         .unwrap();
     opt_in(&omnibus.pool, omnibus.user_id, std::slice::from_ref(&uuid)).await;
     let mut device = Device::new("HW-1");
-    sync_now(&mut device, &omnibus.endpoint).await.unwrap();
+    sync_now(&mut device, &omnibus.endpoint, &DownloadPolicy::None)
+        .await
+        .unwrap();
     device.library.get_mut(&uuid).unwrap().downloaded = true;
     let description = MetadataOverrides {
         description: Some("Arrakis, desert planet.".into()),
@@ -150,7 +171,9 @@ async fn sync_now_refreshes_metadata_without_redownload_when_book_changes() {
     };
     set_overrides(&omnibus, &uuid, description).await;
 
-    sync_now(&mut device, &omnibus.endpoint).await.unwrap();
+    sync_now(&mut device, &omnibus.endpoint, &DownloadPolicy::None)
+        .await
+        .unwrap();
 
     let book = &device.library[&uuid];
     assert_eq!(

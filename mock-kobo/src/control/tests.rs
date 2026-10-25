@@ -8,20 +8,21 @@ use serde_json::json;
 use tempfile::TempDir;
 use tokio::sync::Notify;
 
-use crate::device::Device;
+use crate::annotations::{NewHighlight, Swatch};
+use crate::device::{Device, DeviceError};
+use crate::downloads::DownloadPolicy;
 use crate::state;
 use crate::test_support::{
-    control_wired_against, dune_stub, never_answers, new_entitlement, request_lines, spawn_stub,
-    spawn_sync, stub_control, stub_control_with, wait_until, Stub, STUB_TOKEN,
+    control_wired_against, control_with_downloaded_book, device_holding, dune_stub, never_answers,
+    new_entitlement, request_lines, spawn_stub, spawn_sync, stub_control, stub_control_with,
+    wait_until, Stub, STUB_TOKEN,
 };
 
 use super::*;
 
 /// A device already holding the book "Dune".
 fn device_with_dune() -> Device {
-    let mut device = Device::new("HW-1");
-    device.apply(serde_json::from_value(new_entitlement("book-1", "Dune")).unwrap());
-    device
+    device_holding("book-1", "Dune")
 }
 
 #[tokio::test]
@@ -30,7 +31,7 @@ async fn sync_records_synced_last_sync_and_library_against_healthy_stub() {
     let dir = TempDir::new().unwrap();
     let control = stub_control(&stub, dir.path().join("kobo.json"));
 
-    let last_sync = control.sync().await.unwrap();
+    let last_sync = control.sync(DownloadPolicy::None).await.unwrap();
 
     assert_eq!(last_sync, LastSync::Synced { pages: 1 });
     let view = control.view();
@@ -54,7 +55,7 @@ async fn sync_records_failed_last_sync_with_quirk_when_store_path_returns_404() 
             .into(),
     };
 
-    let last_sync = control.sync().await.unwrap();
+    let last_sync = control.sync(DownloadPolicy::None).await.unwrap();
 
     assert_eq!(last_sync, failed);
     assert_eq!(control.view().last_sync, Some(failed));
@@ -76,7 +77,7 @@ async fn sync_records_failed_last_sync_without_quirk_when_server_unreachable() {
         dir.path().join("kobo.json"),
     ));
 
-    let last_sync = control.sync().await.unwrap();
+    let last_sync = control.sync(DownloadPolicy::None).await.unwrap();
 
     let LastSync::Failed { quirk, message } = last_sync else {
         panic!("expected a failed sync, got {last_sync:?}");
@@ -104,7 +105,7 @@ async fn sync_refuses_token_wired_for_another_server() {
         ),
     };
 
-    let last_sync = control.sync().await.unwrap();
+    let last_sync = control.sync(DownloadPolicy::None).await.unwrap();
 
     assert_eq!(last_sync, refused);
     assert_eq!(control.view().last_sync, Some(refused));
@@ -123,7 +124,7 @@ async fn sync_sends_token_wired_for_the_live_server() {
         dir.path().join("kobo.json"),
     );
 
-    let last_sync = control.sync().await.unwrap();
+    let last_sync = control.sync(DownloadPolicy::None).await.unwrap();
 
     assert_eq!(last_sync, LastSync::Synced { pages: 1 });
     let initialization = format!("/kobo/{STUB_TOKEN}/v1/initialization");
@@ -140,8 +141,8 @@ async fn sync_appends_requests_of_failed_sync_to_request_log() {
     let dir = TempDir::new().unwrap();
     let control = stub_control(&stub, dir.path().join("kobo.json"));
 
-    control.sync().await.unwrap();
-    control.sync().await.unwrap();
+    control.sync(DownloadPolicy::None).await.unwrap();
+    control.sync(DownloadPolicy::None).await.unwrap();
 
     let lines = request_lines(&control.requests());
     let one_failed_sync = [
@@ -160,7 +161,7 @@ async fn sync_returns_sync_in_progress_while_another_sync_runs() {
     let running = spawn_sync(&control);
     wait_until(|| control.view().syncing).await;
 
-    let second = tokio::time::timeout(Duration::from_secs(5), control.sync())
+    let second = tokio::time::timeout(Duration::from_secs(5), control.sync(DownloadPolicy::None))
         .await
         .expect("a second sync is turned away at once");
 
@@ -270,7 +271,7 @@ async fn sync_saves_state_file_after_sync() {
     let path = dir.path().join("kobo.json");
     let control = stub_control(&stub, path.clone());
 
-    control.sync().await.unwrap();
+    control.sync(DownloadPolicy::None).await.unwrap();
 
     let saved = state::load(&path).await.unwrap().unwrap();
     assert_eq!(saved.token, STUB_TOKEN);
@@ -286,7 +287,7 @@ async fn sync_returns_state_not_saved_when_state_file_cannot_be_written() {
     std::fs::write(&parent, "").unwrap();
     let control = stub_control(&stub, parent.join("kobo.json"));
 
-    let result = control.sync().await;
+    let result = control.sync(DownloadPolicy::None).await;
 
     assert!(matches!(result, Err(ControlError::StateNotSaved(_))));
     assert_eq!(
@@ -300,7 +301,7 @@ async fn reset_wipes_library_sync_token_last_sync_and_requests() {
     let stub = spawn_stub(dune_stub()).await;
     let dir = TempDir::new().unwrap();
     let control = stub_control(&stub, dir.path().join("kobo.json"));
-    control.sync().await.unwrap();
+    control.sync(DownloadPolicy::None).await.unwrap();
 
     let view = control.reset().await.unwrap();
 
@@ -316,12 +317,15 @@ async fn reset_keeps_hardware_id_and_token() {
     let stub = spawn_stub(dune_stub()).await;
     let dir = TempDir::new().unwrap();
     let control = stub_control(&stub, dir.path().join("kobo.json"));
-    control.sync().await.unwrap();
+    control.sync(DownloadPolicy::None).await.unwrap();
 
     let view = control.reset().await.unwrap();
 
     assert_eq!(view.hardware_id, "HW-1");
-    assert_eq!(control.sync().await.unwrap(), LastSync::Synced { pages: 1 });
+    assert_eq!(
+        control.sync(DownloadPolicy::None).await.unwrap(),
+        LastSync::Synced { pages: 1 }
+    );
     assert_eq!(control.view().library["book-1"].title, "Dune");
 }
 
@@ -353,7 +357,7 @@ async fn reset_saves_wiped_state_file() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("kobo.json");
     let control = stub_control(&stub, path.clone());
-    control.sync().await.unwrap();
+    control.sync(DownloadPolicy::None).await.unwrap();
 
     control.reset().await.unwrap();
 
@@ -391,6 +395,137 @@ async fn reset_returns_sync_in_progress_while_sync_runs() {
 }
 
 #[tokio::test]
+async fn download_keeps_the_books_file_beside_the_state_file() {
+    let stub = spawn_stub(dune_stub()).await;
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("kobo.json");
+    let control = stub_control(&stub, path);
+    control.sync(DownloadPolicy::None).await.unwrap();
+
+    control.download(vec!["book-1".into()]).await.unwrap();
+
+    let file = dir.path().join("kobo.books").join("book-1.kepub.epub");
+    assert!(file.exists());
+}
+
+#[tokio::test]
+async fn download_refetches_a_downloaded_book_whose_file_is_missing() {
+    let stub = spawn_stub(dune_stub()).await;
+    let dir = TempDir::new().unwrap();
+    let control = stub_control(&stub, dir.path().join("kobo.json"));
+    control.sync(DownloadPolicy::None).await.unwrap();
+    control.download(vec!["book-1".into()]).await.unwrap();
+    let file = dir.path().join("kobo.books").join("book-1.kepub.epub");
+    assert!(file.exists());
+    // Removed out-of-band (or never written by a state file carried over
+    // from before this book had a file) — the device's flag still says
+    // downloaded.
+    std::fs::remove_file(&file).unwrap();
+
+    control.download(vec!["book-1".into()]).await.unwrap();
+
+    assert!(file.exists(), "a missing file must be re-fetched");
+}
+
+#[tokio::test]
+async fn reset_removes_every_file_in_the_books_dir() {
+    let dir = TempDir::new().unwrap();
+    let (control, _stub) = crate::test_support::control_with_downloaded_book(
+        crate::test_support::READER_KEPUB,
+        dir.path().join("kobo.json"),
+    )
+    .await;
+    let books_dir = dir.path().join("kobo.books");
+    assert!(books_dir.join("book-1.kepub.epub").exists());
+
+    control.reset().await.unwrap();
+
+    let remaining: Vec<_> = std::fs::read_dir(&books_dir).unwrap().collect();
+    assert!(remaining.is_empty(), "{remaining:?}");
+}
+
+#[tokio::test]
+async fn reset_reports_syncing_until_it_has_saved() {
+    let dir = TempDir::new().unwrap();
+    let (control, _stub) = crate::test_support::control_with_downloaded_book(
+        crate::test_support::READER_KEPUB,
+        dir.path().join("kobo.json"),
+    )
+    .await;
+    let file = dir.path().join("kobo.books").join("book-1.kepub.epub");
+    // Held so the reset parks at its save, after the books dir is cleared.
+    let saving = control.save_lock.lock().await;
+    let resetting = tokio::spawn({
+        let control = Arc::clone(&control);
+        async move { control.reset().await }
+    });
+    wait_until(|| !file.exists()).await;
+
+    let syncing = control.view().syncing;
+
+    drop(saving);
+    resetting.await.unwrap().unwrap();
+    assert!(syncing);
+}
+
+#[tokio::test]
+async fn reset_keeps_downloading_into_the_same_storage() {
+    let stub = spawn_stub(dune_stub()).await;
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("kobo.json");
+    let control = stub_control(&stub, path);
+    control.sync(DownloadPolicy::None).await.unwrap();
+    control.download(vec!["book-1".into()]).await.unwrap();
+    let file = dir.path().join("kobo.books").join("book-1.kepub.epub");
+    assert!(file.exists());
+
+    control.reset().await.unwrap();
+    control.sync(DownloadPolicy::None).await.unwrap();
+    control.download(vec!["book-1".into()]).await.unwrap();
+
+    assert!(file.exists());
+}
+
+#[tokio::test]
+async fn book_file_names_a_downloaded_books_file_beside_the_state_file() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("kobo.json");
+    let (control, _stub) =
+        control_with_downloaded_book(crate::test_support::READER_KEPUB, path).await;
+
+    let file = control.book_file("book-1").unwrap();
+
+    assert_eq!(
+        file,
+        dir.path().join("kobo.books").join("book-1.kepub.epub")
+    );
+    assert!(file.exists());
+}
+
+#[tokio::test]
+async fn book_file_returns_not_downloaded_for_a_held_book_not_yet_downloaded() {
+    let stub = spawn_stub(dune_stub()).await;
+    let dir = TempDir::new().unwrap();
+    let control = stub_control(&stub, dir.path().join("kobo.json"));
+    control.sync(DownloadPolicy::None).await.unwrap();
+
+    let error = control.book_file("book-1").unwrap_err();
+
+    assert!(matches!(error, DeviceError::NotDownloaded(_)));
+}
+
+#[tokio::test]
+async fn book_file_returns_unknown_book_for_a_book_it_lacks() {
+    let stub = spawn_stub(Stub::default()).await;
+    let dir = TempDir::new().unwrap();
+    let control = stub_control(&stub, dir.path().join("kobo.json"));
+
+    let error = control.book_file("book-1").unwrap_err();
+
+    assert!(matches!(error, DeviceError::UnknownBook(_)));
+}
+
+#[tokio::test]
 async fn retarget_url_syncs_against_new_url() {
     let old = spawn_stub(Stub::default()).await;
     let new = spawn_stub(dune_stub()).await;
@@ -401,7 +536,7 @@ async fn retarget_url_syncs_against_new_url() {
         .retarget(Retarget::Url(new.origin.clone()))
         .await
         .unwrap();
-    let last_sync = control.sync().await.unwrap();
+    let last_sync = control.sync(DownloadPolicy::None).await.unwrap();
 
     assert_eq!(retargeted.view.url, new.origin);
     assert_eq!(control.view().url, new.origin);
@@ -429,12 +564,12 @@ async fn retarget_url_pins_url_in_state_file() {
 }
 
 #[tokio::test]
-async fn retarget_url_keeps_library_sync_token_and_hardware_id() {
+async fn retarget_url_keeps_library_and_hardware_id() {
     let old = spawn_stub(dune_stub()).await;
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("kobo.json");
     let control = stub_control(&old, path.clone());
-    control.sync().await.unwrap();
+    control.sync(DownloadPolicy::None).await.unwrap();
     let before = control.view();
     let saved_before = state::load(&path).await.unwrap().unwrap();
 
@@ -447,14 +582,80 @@ async fn retarget_url_keeps_library_sync_token_and_hardware_id() {
     assert_eq!(retargeted.view, after);
     assert_eq!(after.hardware_id, before.hardware_id);
     assert_eq!(after.library, before.library);
-    assert_eq!(after.sync_token, before.sync_token);
     assert_eq!(after.last_sync, before.last_sync);
     let saved_after = state::load(&path).await.unwrap().unwrap();
     let only_the_url_moved = SavedState {
         url: Some("http://new.example:3000".to_owned()),
+        device: Device {
+            // What the prior sync learned from the old server goes with it.
+            reading_services_host: None,
+            sync_token: None,
+            download_urls: Default::default(),
+            ..saved_before.device.clone()
+        },
         ..saved_before
     };
     assert_eq!(saved_after, only_the_url_moved);
+}
+
+#[tokio::test]
+async fn retarget_clears_reading_services_host_so_a_highlight_refuses_before_any_request() {
+    let stub_a = spawn_stub(dune_stub()).await;
+    let dir = TempDir::new().unwrap();
+    let control = stub_control(&stub_a, dir.path().join("kobo.json"));
+    control.sync(DownloadPolicy::All).await.unwrap();
+    assert!(control.view().library["book-1"].downloaded);
+    let requests_after_sync = stub_a.paths().len();
+
+    control
+        .retarget(Retarget::Url("http://elsewhere.example:1".into()))
+        .await
+        .unwrap();
+    let result = control
+        .highlight(
+            "book-1".into(),
+            NewHighlight {
+                text: "a passage".into(),
+                color: Swatch::Blue,
+                note: None,
+                location: None,
+            },
+        )
+        .await;
+
+    assert!(matches!(result, Err(ControlError::NotSynced)), "{result:?}");
+    assert!(control.view().library["book-1"].annotations.is_empty());
+    assert_eq!(stub_a.paths().len(), requests_after_sync);
+}
+
+#[tokio::test]
+async fn retarget_token_clears_reading_services_host_so_a_highlight_refuses_before_any_request() {
+    let stub = spawn_stub(dune_stub()).await;
+    let dir = TempDir::new().unwrap();
+    let control = stub_control(&stub, dir.path().join("kobo.json"));
+    control.sync(DownloadPolicy::All).await.unwrap();
+    assert!(control.view().library["book-1"].downloaded);
+    let requests_after_sync = stub.paths().len();
+
+    control
+        .retarget(Retarget::Token("typed-token".into()))
+        .await
+        .unwrap();
+    let result = control
+        .highlight(
+            "book-1".into(),
+            NewHighlight {
+                text: "a passage".into(),
+                color: Swatch::Blue,
+                note: None,
+                location: None,
+            },
+        )
+        .await;
+
+    assert!(matches!(result, Err(ControlError::NotSynced)), "{result:?}");
+    assert!(control.view().library["book-1"].annotations.is_empty());
+    assert_eq!(stub.paths().len(), requests_after_sync);
 }
 
 #[tokio::test]
@@ -531,6 +732,31 @@ async fn retarget_token_saves_token_and_clears_wired_url() {
 }
 
 #[tokio::test]
+async fn retarget_token_clears_cached_download_urls_and_sync_token() {
+    let stub = spawn_stub(dune_stub()).await;
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("kobo.json");
+    let control = stub_control(&stub, path.clone());
+    control.sync(DownloadPolicy::None).await.unwrap();
+    let before = state::load(&path).await.unwrap().unwrap();
+    assert!(!before.device.download_urls.is_empty());
+    assert!(before.device.sync_token.is_some());
+
+    control
+        .retarget(Retarget::Token("typed-token".into()))
+        .await
+        .unwrap();
+
+    let after = state::load(&path).await.unwrap().unwrap();
+    assert!(after.device.download_urls.is_empty());
+    assert_eq!(after.device.sync_token, None);
+    assert_eq!(
+        after.device.library, before.device.library,
+        "retarget keeps the library"
+    );
+}
+
+#[tokio::test]
 async fn retarget_wired_saves_token_and_wired_url() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("kobo.json");
@@ -548,6 +774,27 @@ async fn retarget_wired_saves_token_and_wired_url() {
     let saved = state::load(&path).await.unwrap().unwrap();
     assert_eq!(saved.token, "minted-token");
     assert_eq!(saved.wired_url, Some("http://now.example:1".to_owned()));
+}
+
+#[tokio::test]
+async fn retarget_url_clears_cached_download_urls_and_sync_token_when_the_origin_changes() {
+    let stub = spawn_stub(dune_stub()).await;
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("kobo.json");
+    let control = stub_control(&stub, path.clone());
+    control.sync(DownloadPolicy::None).await.unwrap();
+    let before = state::load(&path).await.unwrap().unwrap();
+    assert!(!before.device.download_urls.is_empty());
+    assert!(before.device.sync_token.is_some());
+
+    control
+        .retarget(Retarget::Url("http://new.example:3000".into()))
+        .await
+        .unwrap();
+
+    let after = state::load(&path).await.unwrap().unwrap();
+    assert!(after.device.download_urls.is_empty());
+    assert_eq!(after.device.sync_token, None);
 }
 
 #[tokio::test]

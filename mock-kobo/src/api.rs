@@ -4,16 +4,21 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use axum::body::Bytes;
 use axum::extract::State;
 use axum::http::{Method, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post, put};
 use axum::{Json, Router};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
+use crate::annotations::{NewHighlight, SpanRange, Swatch};
 use crate::client::RequestRecord;
-use crate::control::{Control, ControlError, DeviceView, LastSync, RESET_MESSAGE};
+use crate::control::{Acted, Control, ControlError, DeviceView, LastSync, RESET_MESSAGE};
+use crate::device::DeviceError;
+use crate::downloads::DownloadPolicy;
 use crate::firmware::Quirk;
+use crate::reading::{KoboSpan, Percent};
 
 /// Every control API reply, success or failure: `{status, code, message, details}`.
 #[derive(Debug, Serialize)]
@@ -51,6 +56,38 @@ pub enum ReplyCode {
     NotFound,
     /// 405: the path exists, but not for this method.
     MethodNotAllowed,
+    /// 400: the request body couldn't be used.
+    InvalidRequest,
+    /// 200: `POST /actions/download` downloaded every listed book.
+    Downloaded,
+    /// 502: a download failed.
+    DownloadFailed,
+    /// 200: `POST /actions/remove-download` cleared a book's downloaded flag.
+    DownloadRemoved,
+    /// 404: a book the device doesn't hold.
+    UnknownBook,
+    /// 409: the book named isn't downloaded yet.
+    NotDownloaded,
+    /// 404: a highlight id the book doesn't hold.
+    UnknownHighlight,
+    /// 200: `POST /actions/read` or `POST /actions/finish` sent the state PUT.
+    StateSent,
+    /// 502: the state PUT failed.
+    StateFailed,
+    /// 200: `POST /actions/highlight` or `POST /actions/delete-highlight` sent the PATCH.
+    AnnotationSent,
+    /// 502: the PATCH failed.
+    AnnotationFailed,
+    /// 404: no run of whole words in the book matches the given passage.
+    PassageNotFound,
+    /// 409: the downloaded file isn't a KEPUB `Kepub::open`/`parse` can read.
+    BookUnreadable,
+    /// 409: the downloaded file has no koboSpan markup (a plain EPUB).
+    NoKoboSpans,
+    /// 409: no sync since the device started, so it has no `reading_services_host` yet.
+    NotSynced,
+    /// 500: a downloaded file could not be removed.
+    FileRemoval,
 }
 
 /// What a reply's `details` carries, for routes whose outcomes differ.
@@ -87,6 +124,14 @@ pub fn router(control: Arc<Control>) -> Router {
     Router::new()
         .route("/device", get(get_device))
         .route("/actions/sync", post(post_sync))
+        .route("/actions/download", post(post_download))
+        .route("/actions/remove-download", post(post_remove_download))
+        .route("/actions/read", post(post_read))
+        .route("/actions/finish", post(post_finish))
+        .route("/actions/highlight", post(post_highlight))
+        .route("/actions/delete-highlight", post(post_delete_highlight))
+        .route("/actions/read-to", post(post_read_to))
+        .route("/actions/highlight-words", post(post_highlight_words))
         .route("/requests", get(get_requests))
         .route("/reset", put(put_reset))
         .method_not_allowed_fallback(method_not_allowed)
@@ -98,8 +143,268 @@ async fn get_device(State(control): State<Arc<Control>>) -> Reply<DeviceView> {
     Reply::new(StatusCode::OK, ReplyCode::Ok, "ok", control.view())
 }
 
-async fn post_sync(State(control): State<Arc<Control>>) -> Reply<Details> {
-    sync_reply(control.sync().await)
+async fn post_sync(State(control): State<Arc<Control>>, body: Bytes) -> Reply<Details> {
+    match parse_sync_policy(&body) {
+        Ok(policy) => sync_reply(control.sync(policy).await),
+        Err(message) => invalid_request_reply(message),
+    }
+}
+
+/// `{"download": "none" | "all" | ["<uuid>", …]}`; an absent body or absent
+/// field means [`DownloadPolicy::None`]. Parsed from raw bytes (no
+/// `Content-Type` required) with `deny_unknown_fields`, so a misspelt key is
+/// a rejection rather than a silent `None`.
+fn parse_sync_policy(body: &[u8]) -> Result<DownloadPolicy, String> {
+    if body.is_empty() {
+        return Ok(DownloadPolicy::None);
+    }
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct SyncBody {
+        #[serde(default)]
+        download: Option<DownloadField>,
+    }
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum DownloadField {
+        Named(String),
+        Listed(Vec<String>),
+    }
+    let parsed: SyncBody =
+        serde_json::from_slice(body).map_err(|e| format!("invalid sync body: {e}"))?;
+    match parsed.download {
+        None => Ok(DownloadPolicy::None),
+        Some(DownloadField::Listed(uuids)) => Ok(DownloadPolicy::Listed(uuids)),
+        Some(DownloadField::Named(name)) if name == "none" => Ok(DownloadPolicy::None),
+        Some(DownloadField::Named(name)) if name == "all" => Ok(DownloadPolicy::All),
+        Some(DownloadField::Named(other)) => Err(format!(
+            "invalid sync body: unknown download value \"{other}\""
+        )),
+    }
+}
+
+async fn post_download(State(control): State<Arc<Control>>, body: Bytes) -> Reply<Details> {
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct DownloadBody {
+        books: Vec<String>,
+    }
+    let books = match serde_json::from_slice::<DownloadBody>(&body) {
+        Ok(parsed) if !parsed.books.is_empty() => parsed.books,
+        Ok(_) => return invalid_request_reply("\"books\" must not be empty"),
+        Err(e) => return invalid_request_reply(format!("invalid download body: {e}")),
+    };
+    acted_reply(control.download(books).await)
+}
+
+async fn post_remove_download(State(control): State<Arc<Control>>, body: Bytes) -> Reply<Details> {
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct RemoveDownloadBody {
+        book: String,
+    }
+    let book = match serde_json::from_slice::<RemoveDownloadBody>(&body) {
+        Ok(parsed) => parsed.book,
+        Err(e) => return invalid_request_reply(format!("invalid remove-download body: {e}")),
+    };
+    match control.remove_download(&book).await {
+        Ok(view) => {
+            let details = Details::Device(view);
+            Reply::new(
+                StatusCode::OK,
+                ReplyCode::DownloadRemoved,
+                "download removed",
+                details,
+            )
+        }
+        Err(error) => error_reply(&error),
+    }
+}
+
+/// The reply for a finished action whose outcome is an [`Acted`]:
+/// `Done` under `success`/`success_message`, `Failed` under `failure`.
+/// Shared by download, read/finish and the two highlight actions, so each
+/// only names its own codes and message.
+fn acted_reply_as(
+    result: Result<Acted, ControlError>,
+    success: ReplyCode,
+    success_message: &str,
+    failure: ReplyCode,
+) -> Reply<Details> {
+    match result {
+        Ok(Acted::Done(view)) => Reply::new(
+            StatusCode::OK,
+            success,
+            success_message,
+            Details::Device(view),
+        ),
+        Ok(Acted::Failed { quirk, message }) => Reply::new(
+            StatusCode::BAD_GATEWAY,
+            failure,
+            message,
+            Details::Quirk { quirk },
+        ),
+        Err(error) => error_reply(&error),
+    }
+}
+
+/// The reply for a finished download action.
+fn acted_reply(result: Result<Acted, ControlError>) -> Reply<Details> {
+    acted_reply_as(
+        result,
+        ReplyCode::Downloaded,
+        "downloaded",
+        ReplyCode::DownloadFailed,
+    )
+}
+
+/// The reply for a finished highlight or delete-highlight action.
+fn annotation_reply(result: Result<Acted, ControlError>) -> Reply<Details> {
+    acted_reply_as(
+        result,
+        ReplyCode::AnnotationSent,
+        "annotation sent",
+        ReplyCode::AnnotationFailed,
+    )
+}
+
+async fn post_read(State(control): State<Arc<Control>>, body: Bytes) -> Reply<Details> {
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct ReadBody {
+        book: String,
+        percent: Percent,
+        #[serde(default)]
+        location: Option<LocationBody>,
+    }
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct LocationBody {
+        source: String,
+        value: String,
+    }
+    let parsed: ReadBody = match serde_json::from_slice(&body) {
+        Ok(parsed) => parsed,
+        Err(e) => return invalid_request_reply(format!("invalid read body: {e}")),
+    };
+    let location = parsed.location.map(|l| KoboSpan {
+        source: l.source,
+        value: l.value,
+    });
+    state_reply(control.read(parsed.book, parsed.percent, location).await)
+}
+
+async fn post_finish(State(control): State<Arc<Control>>, body: Bytes) -> Reply<Details> {
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct FinishBody {
+        book: String,
+    }
+    let parsed: FinishBody = match serde_json::from_slice(&body) {
+        Ok(parsed) => parsed,
+        Err(e) => return invalid_request_reply(format!("invalid finish body: {e}")),
+    };
+    state_reply(control.finish(parsed.book).await)
+}
+
+/// The reply for a finished read or finish action.
+fn state_reply(result: Result<Acted, ControlError>) -> Reply<Details> {
+    acted_reply_as(
+        result,
+        ReplyCode::StateSent,
+        "state sent",
+        ReplyCode::StateFailed,
+    )
+}
+
+async fn post_highlight(State(control): State<Arc<Control>>, body: Bytes) -> Reply<Details> {
+    // `SpanRange` and `Swatch` already derive `Deserialize` in the request
+    // body's own shape (`deny_unknown_fields`, snake_case), so the body
+    // parses straight into them — no separate wire type to keep in sync.
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct HighlightBody {
+        book: String,
+        text: String,
+        color: Swatch,
+        #[serde(default)]
+        note: Option<String>,
+        // Required: a real device never highlights without a KoboSpan range.
+        location: SpanRange,
+    }
+    let parsed: HighlightBody = match serde_json::from_slice(&body) {
+        Ok(parsed) => parsed,
+        Err(e) => return invalid_request_reply(format!("invalid highlight body: {e}")),
+    };
+    if parsed.text.trim().is_empty() {
+        return invalid_request_reply("\"text\" must not be empty");
+    }
+    let new = NewHighlight {
+        text: parsed.text,
+        color: parsed.color,
+        note: parsed.note,
+        location: Some(parsed.location),
+    };
+    annotation_reply(control.highlight(parsed.book, new).await)
+}
+
+async fn post_delete_highlight(State(control): State<Arc<Control>>, body: Bytes) -> Reply<Details> {
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct DeleteHighlightBody {
+        book: String,
+        highlight: String,
+    }
+    let parsed: DeleteHighlightBody = match serde_json::from_slice(&body) {
+        Ok(parsed) => parsed,
+        Err(e) => return invalid_request_reply(format!("invalid delete-highlight body: {e}")),
+    };
+    annotation_reply(
+        control
+            .delete_highlight(parsed.book, parsed.highlight)
+            .await,
+    )
+}
+
+async fn post_read_to(State(control): State<Arc<Control>>, body: Bytes) -> Reply<Details> {
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct ReadToBody {
+        book: String,
+        passage: String,
+    }
+    let parsed: ReadToBody = match serde_json::from_slice(&body) {
+        Ok(parsed) => parsed,
+        Err(e) => return invalid_request_reply(format!("invalid read-to body: {e}")),
+    };
+    if parsed.passage.trim().is_empty() {
+        return invalid_request_reply("\"passage\" must not be empty");
+    }
+    state_reply(control.read_to(parsed.book, parsed.passage).await)
+}
+
+async fn post_highlight_words(State(control): State<Arc<Control>>, body: Bytes) -> Reply<Details> {
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct HighlightWordsBody {
+        book: String,
+        passage: String,
+        color: Swatch,
+        #[serde(default)]
+        note: Option<String>,
+    }
+    let parsed: HighlightWordsBody = match serde_json::from_slice(&body) {
+        Ok(parsed) => parsed,
+        Err(e) => return invalid_request_reply(format!("invalid highlight-words body: {e}")),
+    };
+    if parsed.passage.trim().is_empty() {
+        return invalid_request_reply("\"passage\" must not be empty");
+    }
+    annotation_reply(
+        control
+            .highlight_words(parsed.book, parsed.passage, parsed.color, parsed.note)
+            .await,
+    )
 }
 
 async fn get_requests(State(control): State<Arc<Control>>) -> Reply<Details> {
@@ -147,6 +452,16 @@ fn sync_reply(result: Result<LastSync, ControlError>) -> Reply<Details> {
     }
 }
 
+/// The reply for a request body that couldn't be parsed or validated.
+fn invalid_request_reply(message: impl Into<String>) -> Reply<Details> {
+    Reply::new(
+        StatusCode::BAD_REQUEST,
+        ReplyCode::InvalidRequest,
+        message,
+        Details::Empty(NoDetails {}),
+    )
+}
+
 /// The reply for a control problem, whichever action hit it.
 fn error_reply(error: &ControlError) -> Reply<Details> {
     let (status, code) = match error {
@@ -154,6 +469,24 @@ fn error_reply(error: &ControlError) -> Reply<Details> {
         ControlError::StateNotSaved(_) => {
             (StatusCode::INTERNAL_SERVER_ERROR, ReplyCode::StateNotSaved)
         }
+        ControlError::Device(DeviceError::UnknownBook(_)) => {
+            (StatusCode::NOT_FOUND, ReplyCode::UnknownBook)
+        }
+        ControlError::Device(DeviceError::NotDownloaded(_)) => {
+            (StatusCode::CONFLICT, ReplyCode::NotDownloaded)
+        }
+        ControlError::Device(DeviceError::UnknownHighlight(_)) => {
+            (StatusCode::NOT_FOUND, ReplyCode::UnknownHighlight)
+        }
+        ControlError::PassageNotFound(_) => (StatusCode::NOT_FOUND, ReplyCode::PassageNotFound),
+        ControlError::Kepub(crate::kepub::KepubError::Unreadable(_)) => {
+            (StatusCode::CONFLICT, ReplyCode::BookUnreadable)
+        }
+        ControlError::Kepub(crate::kepub::KepubError::NoSpans) => {
+            (StatusCode::CONFLICT, ReplyCode::NoKoboSpans)
+        }
+        ControlError::NotSynced => (StatusCode::CONFLICT, ReplyCode::NotSynced),
+        ControlError::FileRemoval(_) => (StatusCode::INTERNAL_SERVER_ERROR, ReplyCode::FileRemoval),
     };
     Reply::new(
         status,
