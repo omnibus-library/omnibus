@@ -1,21 +1,27 @@
 //! Translation between the crengine XPointers KOReader reads and writes and the
 //! EPUB CFIs the web and iOS readers speak, so a book opens on the same
-//! paragraph on either. Called by the KOReader state routes. A conversion is
+//! paragraph on either, and a highlight on the same passage. Called by the
+//! KOReader state and annotation routes. A conversion is
 //! only returned when every proof rule holds (a grammar-valid path that
 //! resolves in the XHTML, no SVG/MathML/`pre` text, no run crengine may split
 //! or read differently, an offset inside the node); otherwise `Ok(None)`, and
 //! the caller keeps the whole-book percent. Reuses the Kobo module's EPUB glue,
 //! XHTML walk and CFI parser — it adds no second parser.
 
+mod annotations;
 mod crengine_text;
 #[cfg(test)]
 mod tests;
 mod xpointer;
 
+use std::collections::hash_map::Entry;
+use std::collections::HashMap;
 use std::path::Path;
 
 use crate::kobo_position::walk::{Cluster, Element, FileIndex};
 use crate::kobo_position::{book, format_cfi, parse_cfi, CfiTail};
+
+pub use annotations::{annotation_cfis, annotation_xpointers};
 
 /// crengine splits a text run into separate nodes at this many source chars.
 const TEXT_SPLIT_SIZE: usize = 8192;
@@ -30,13 +36,8 @@ pub fn xpointer_to_cfi(source_epub: &Path, xpointer: &str) -> anyhow::Result<Opt
         return Ok(None);
     };
     let mut doc = book::open_doc(source_epub)?;
-    let Some(spine_index) = spine_index_of(&doc, xp.fragment) else {
-        return Ok(None);
-    };
-    let Some(index) = spine_file_index(&mut doc, spine_index)? else {
-        return Ok(None);
-    };
-    Ok(cfi_tail_for(&index, &xp).map(|tail| format_cfi(spine_index, &tail)))
+    let tail = point_tail(&mut doc, &mut Walks::new(), &xp)?;
+    Ok(tail.map(|(spine_index, tail)| format_cfi(spine_index, &tail)))
 }
 
 /// Web→KOReader: the canonical XPointer for a stored point CFI. Same `Ok(None)` / `Err` split.
@@ -45,21 +46,53 @@ pub fn cfi_to_xpointer(source_epub: &Path, cfi: &str) -> anyhow::Result<Option<S
         return Ok(None);
     };
     let mut doc = book::open_doc(source_epub)?;
-    // The CFI parser bounds the step to a u32, so the +1 fits.
-    let fragment = (parsed.spine_index + 1) as u32;
-    let Some(spine_index) = spine_index_of(&doc, Some(fragment)) else {
+    tail_xpointer(
+        &mut doc,
+        &mut Walks::new(),
+        parsed.spine_index,
+        &parsed.tail,
+        parsed.element_anchored,
+    )
+}
+
+/// Each spine item's walk, kept so a batch parses every XHTML file once;
+/// `None` records an item whose XHTML can't be parsed.
+type Walks = HashMap<usize, Option<FileIndex>>;
+
+/// The spine index and CFI tail for a parsed XPointer; `None` when a proof rule fails.
+fn point_tail(
+    doc: &mut book::Doc,
+    walks: &mut Walks,
+    xp: &xpointer::XPointer,
+) -> anyhow::Result<Option<(usize, CfiTail)>> {
+    let Some(spine_index) = spine_index_of(doc, xp.fragment) else {
         return Ok(None);
     };
-    let Some(index) = spine_file_index(&mut doc, spine_index)? else {
+    let Some(index) = spine_file_index(doc, walks, spine_index)? else {
+        return Ok(None);
+    };
+    Ok(cfi_tail_for(index, xp).map(|tail| (spine_index, tail)))
+}
+
+/// The canonical XPointer for a CFI tail in 0-based spine item `spine_index`.
+fn tail_xpointer(
+    doc: &mut book::Doc,
+    walks: &mut Walks,
+    spine_index: usize,
+    tail: &CfiTail,
+    element_anchored: bool,
+) -> anyhow::Result<Option<String>> {
+    let Ok(fragment) = u32::try_from(spine_index + 1) else {
+        return Ok(None);
+    };
+    let Some(spine_index) = spine_index_of(doc, Some(fragment)) else {
         return Ok(None);
     };
     let named = (doc.spine.len() > 1).then_some(fragment);
-    Ok(xpointer_for(
-        &index,
-        &parsed.tail,
-        parsed.element_anchored,
-        named,
-    ))
+    let Some(index) = spine_file_index(doc, walks, spine_index)? else {
+        return Ok(None);
+    };
+    Ok(xpointer_for(index, tail, element_anchored, named))
 }
 
 /// The 0-based spine index a `DocFragment` names: bare only for a one-item
@@ -79,9 +112,16 @@ fn spine_index_of(doc: &book::Doc, fragment: Option<u32>) -> Option<usize> {
 }
 
 /// The walk of spine item `i`; `Ok(None)` when its XHTML can't be parsed.
-fn spine_file_index(doc: &mut book::Doc, i: usize) -> anyhow::Result<Option<FileIndex>> {
-    let bytes = book::read_spine_entry(doc, i)?;
-    Ok(crate::kobo_position::walk::index_file(&bytes).ok())
+fn spine_file_index<'a>(
+    doc: &mut book::Doc,
+    walks: &'a mut Walks,
+    i: usize,
+) -> anyhow::Result<Option<&'a FileIndex>> {
+    if let Entry::Vacant(slot) = walks.entry(i) {
+        let bytes = book::read_spine_entry(doc, i)?;
+        slot.insert(crate::kobo_position::walk::index_file(&bytes).ok());
+    }
+    Ok(walks.get(&i).and_then(Option::as_ref))
 }
 
 /// The CFI tail for a parsed XPointer, or `None` when a proof rule fails.

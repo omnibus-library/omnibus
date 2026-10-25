@@ -87,6 +87,85 @@ and the other way round.
 - **Sideloaded books** (files you copied in yourself, not delivered by the
   plugin) are never read or written.
 
+## Highlights and notes
+
+The plugin keeps an EPUB's highlights and notes in step with Omnibus, so a
+passage marked on a KOReader shows in the web reader and on an iPhone at the
+same words, and the other way round.
+
+- **When:** the plugin syncs a delivered EPUB's highlights when the book opens
+  and closes, and on **Sync now** while it is open. **Sync now** from the file
+  manager syncs the library, not highlights: a closed book's highlights wait
+  for its next open. A highlight made in Omnibus appears the next time you open
+  the book.
+- **What follows:** new highlights, note edits, recolours and deletes, both
+  ways. A highlight is matched by an id KOReader keeps with it in the book's
+  metadata, so the same one is never added twice.
+- **Colours:** KOReader has nine, Omnibus five.
+
+  | KOReader → Omnibus | Omnibus → KOReader |
+  |---|---|
+  | yellow, orange, gray, any other → amber | amber → yellow |
+  | red → rose | rose → red |
+  | green, olive → green | green → green |
+  | cyan, blue → blue | blue → blue |
+  | purple → violet | violet → purple |
+
+  A highlight keeps the colour KOReader gave it: an orange one stays orange
+  after a note edit on the web, and only a recolour on the web repaints it, in
+  the KOReader colour the table gives.
+- **Newest wins:** whichever edit happened last on its own device wins, as for
+  the reading position, and a device whose clock is ahead is held to the
+  server's time. A delete wins over an edit: a highlight deleted on one side is
+  deleted on the other even if it was edited meanwhile, and is never brought
+  back. Two KOReaders editing one highlight offline can settle on the edit that
+  reaches the server first.
+- **Exact places only:** a highlight is stored at the passage it covers, using
+  the same rules as the reading position. One Omnibus can't place exactly
+  (unusual markup, text inside `pre`, SVG) stays on the device, and one KOReader
+  can't place stays in Omnibus.
+- **Offline:** changes wait on the device and go with the next open, close or
+  **Sync now** that finds a connection. A lost or reset book metadata file makes
+  the device pull everything again; it never deletes highlights it merely
+  stopped seeing.
+- **Not synced:** bookmarks (no highlighted text), PDF and CBZ annotations, and
+  highlights in sideloaded books.
+
+## Progress sync without the plugin
+
+Stock KOReader's own **Progress sync** can keep your place in step with Omnibus
+without installing the plugin. It speaks the same protocol as KOReader's sync
+server, which Omnibus serves at `/kosync`.
+
+1. In Omnibus, open **Settings › Devices** and click **Generate password** under
+   **KOReader progress sync**. The server URL, your username and the password are
+   shown once; copy them now. Generating again replaces the password, and the old
+   one stops working.
+2. In KOReader, open **Progress sync › Custom sync server** and enter
+   `https://<host>/kosync`, with no trailing slash.
+3. Choose **Login** and enter your Omnibus username and that password. **Register**
+   is refused, because the password is made in Omnibus.
+
+What to expect:
+
+- **Only books downloaded from Omnibus match.** KOReader names a book by a
+  fingerprint of the file it holds, and Omnibus knows the fingerprint of every EPUB
+  in the library and of every edited copy it has served. A sideloaded book, or one
+  with the same name but different bytes, is not recognised: pushing its position
+  answers success and stores nothing, and pulling answers that there is none.
+  Switching KOReader to *filename* checksums doesn't work either.
+- **EPUB positions only.** A PDF or comic isn't matched, and no read status
+  travels, only the place.
+- **Positions read back as from device "Omnibus".** Omnibus doesn't keep which
+  device pushed a position, so KOReader's prompt names "Omnibus" whichever
+  device or the web reader last moved. Your own push reads back as already
+  synced.
+- **A push is dated when it reaches the server.** The protocol carries no time, so
+  a push KOReader queued while offline can replace a newer position from the web
+  when it finally arrives.
+- **The plugin and Progress sync can both run,** but need not: the plugin keeps
+  the place on its own at open and close.
+
 ## Metadata
 
 An edit made in Omnibus reaches the book on the device with the next sync: the
@@ -116,6 +195,48 @@ title, authors, series (and its number), description and cover.
   first sync after the book is no longer kept that way. The default location
   (*doc*) isn't affected.
 
+## Interactive KOReader
+
+`just koreader` opens a real KOReader, in Docker, in a browser tab (a 600x800
+screen shown through noVNC), already syncing with this worktree's dev server.
+Use it to try a change by hand where the lane only checks scripted scenarios.
+
+```bash
+just dev-up                                          # the dev server must be running
+just koreader                                        # the default home
+just koreader --home .claude/runtime/koreader/second # a second home is a second device
+```
+
+It needs Docker running (Docker Desktop on macOS) and a dev server for this
+worktree, and never starts either: without them it prints one line saying so and
+exits. Ctrl-C, or quitting KOReader, stops the container; one Ctrl-C closes
+KOReader cleanly, so its settings are saved.
+
+- **First launch of a home** signs in as `OMNIBUS_DEV_SEED_USER`, registers a
+  KOReader device (**Dev KOReader**, or **Dev KOReader (<folder> <hash>)** for
+  any other home, the hash telling same-named folders apart) and installs the Omnibus plugin the Settings page would
+  download. It also adds the OPDS catalog **Omnibus (dev)** and turns on stock
+  Progress sync. Later launches of that home make no requests.
+- **Homes** live under `.claude/runtime/koreader/` (`home/` by default), keeping
+  KOReader's settings, books and progress between launches. Each home maps to one
+  container, so the same home can't open twice.
+- **Progress sync** uses one login for every home, because the account has a
+  single kosync password: its key is saved in `.claude/runtime/koreader/kosync.json`.
+  Delete that file only together with the homes, or the first home's login stops
+  working. If the server already holds a password and no key is saved, linking
+  replaces it (and says so), which signs out any home linked before.
+- **A sync needs a shelf set to sync** (the shelf's sync toggle), as on a device.
+- **Relinking:** a home keeps the dev server port and device token it was linked
+  with. After the dev server moves port or its database is reset, delete the home
+  and launch it again.
+
+On Linux the container shares the host network, as the lane's does, so it reaches
+the dev server on `127.0.0.1`; elsewhere it uses `host.docker.internal`. The
+screen's VNC and noVNC ports sit on the host's loopback and are password-protected
+with a key made for each launch, which the opened URL carries. The
+image is the lane's, with a VNC server added; it is built for the engine's
+architecture.
+
 ## Test lane
 
 `just koreader-e2e` proves the path a KOReader user takes against Omnibus:
@@ -129,8 +250,11 @@ and fails if the device token appears in KOReader's log; then retitle and
 re-cover a book on the web, which the next sync shows without losing the reader's
 place or highlights (the `metadata` scenario), and carry a spot inside a
 paragraph both ways, so the device and the web reader open on the same
-sentence (the `precise` scenario) — driven by a real KOReader in Docker, with
-nothing stubbed. Each scenario prints one PASS/FAIL line.
+sentence (the `precise` scenario), and carry a highlight with a note out and a
+recolour, a delete and a new highlight back (the `highlights` scenario), and push
+a position through stock KOReader's own Progress sync with no Omnibus plugin and pull
+the web's back (the `kosync` scenario) —
+driven by a real KOReader in Docker, with nothing stubbed. Each scenario prints one PASS/FAIL line.
 
 ```bash
 just koreader-e2e
@@ -139,17 +263,20 @@ just koreader-e2e
 # PASS roundtrip
 # PASS metadata
 # PASS precise
+# PASS highlights
+# PASS kosync
 # or: FAIL opds: search: expected "Alpha" in search results, got ["Beta in the Series"] (screenshot: /tmp/omnibus-koreader.XXXXXX/results/opds.png)
 ```
 
 The lane boots a scratch server (its own DB, a fresh admin, four
 committed fixture EPUBs from `test_data/epubs/generated/`: Alpha and Beta, plus the
-two `precise` puts on the shelf), builds
+two `precise` and `highlights` put on the shelf), builds
 [`ui_tests/koreader/`](../ui_tests/koreader/) — a pinned KOReader release
 under Xvfb — and runs one container per scenario. The scenario is a KOReader
 user patch (`ui_tests/koreader/patches/2-omnibus-e2e.lua`) that drives
-KOReader's own OPDS plugin, or the Omnibus plugin the runner downloaded
-from the real Settings route, and writes a result JSON the report turns into
+KOReader's own OPDS plugin, the Omnibus plugin the runner downloaded
+from the real Settings route, or (`kosync`, with no Omnibus plugin mounted) its
+built-in Progress sync, and writes a result JSON the report turns into
 the verdict line. Exits non-zero on any failure. The plugin's sync logic is
 also unit-tested without KOReader by `just koreader-plugin-test`.
 
@@ -164,18 +291,18 @@ A failure keeps the scratch dir and names it (`kept /tmp/omnibus-koreader.XXX`):
 
 In CI the same directory is uploaded as the `koreader-lane` artifact
 (retention 7 days) by [`.github/workflows/koreader.yml`](../.github/workflows/koreader.yml),
-which runs the lane on PRs touching OPDS/auth code, the position and
-status stores, the metadata and export-EPUB code or the lane itself, and
-nightly.
+which runs the lane on PRs touching OPDS/auth code, the position, status and
+annotation stores, the metadata and export-EPUB code, the kosync routes and file
+fingerprints or the lane itself, and nightly.
 
 ### Bumping KOReader
 
-The version lives in one line:
+The version lives in one line per architecture (amd64 and arm64) of
 [`ui_tests/koreader/koreader.sha256`](../ui_tests/koreader/koreader.sha256).
-Edit it with the `.deb`'s sha256 and file name from the [KOReader
+Edit both with each `.deb`'s sha256 and file name from the [KOReader
 release](https://github.com/koreader/koreader/releases) — the image derives
-the download URL from the file name and verifies the checksum before
-installing, so nothing else pins or fetches KOReader.
+the download URL from its architecture's file name and verifies the checksum
+before installing, so nothing else pins or fetches KOReader.
 
 ### Adding a scenario
 
@@ -186,6 +313,7 @@ the same result JSON contract, so the report and CI need no changes.
 
 ### Requirements
 
-Linux/amd64 with docker only: the lane uses `--network host` and the amd64
-`.deb`. `OMNIBUS_E2E_RELEASE=1` bundles `--release` instead of a debug
+The lane is Linux/amd64 with docker only: it uses `--network host` and the amd64
+`.deb`. `just koreader` runs on Linux and macOS (Intel or Apple Silicon).
+`OMNIBUS_E2E_RELEASE=1` bundles `--release` instead of a debug
 build, as it does for `just e2e-ci`.

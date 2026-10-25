@@ -424,3 +424,174 @@ mod fixture_round_trips {
         assert!(seen > 20, "only {seen} fixtures found");
     }
 }
+
+mod annotation_ranges {
+    use super::*;
+
+    fn anchor(start: &str, end: &str) -> (String, String) {
+        (start.to_owned(), end.to_owned())
+    }
+
+    fn range_cfi(epub: &Path, start: &str, end: &str) -> Option<String> {
+        annotation_cfis(epub, &[anchor(start, end)])
+            .unwrap()
+            .remove(0)
+    }
+
+    fn range_xpointers(epub: &Path, cfi: &str) -> Option<(String, String)> {
+        annotation_xpointers(epub, &[cfi.to_owned()])
+            .unwrap()
+            .remove(0)
+    }
+
+    /// Both directions of one hand-worked pair.
+    fn assert_range_pair(epub: &Path, start: &str, end: &str, cfi: &str) {
+        assert_eq!(range_cfi(epub, start, end).as_deref(), Some(cfi));
+        assert_eq!(
+            range_xpointers(epub, cfi),
+            Some((start.to_owned(), end.to_owned()))
+        );
+    }
+
+    #[test]
+    fn converts_a_range_in_a_long_chapter_both_ways() {
+        assert_range_pair(
+            &fixture("standalone-lagoon.epub"),
+            "/body/DocFragment/body/p[23]/text().43",
+            "/body/DocFragment/body/p[23]/text().53",
+            "epubcfi(/6/2!/4/48,/1:43,/1:53)",
+        );
+    }
+
+    #[test]
+    fn converts_a_range_in_the_sixth_spine_item_both_ways() {
+        assert_range_pair(
+            &fixture("frontmatter-relay.epub"),
+            "/body/DocFragment[6]/body/p/text().10",
+            "/body/DocFragment[6]/body/p/text().14",
+            "epubcfi(/6/12!/4/4,/1:10,/1:14)",
+        );
+    }
+
+    #[test]
+    fn converts_a_range_across_two_paragraphs_both_ways() {
+        let epub = one_chapter("across", "<p>one</p><p>two</p>");
+        assert_range_pair(
+            &epub,
+            "/body/DocFragment/body/p[1]/text().2",
+            "/body/DocFragment/body/p[2]/text().3",
+            "epubcfi(/6/2!/4,/2/1:2,/4/1:3)",
+        );
+    }
+
+    #[test]
+    fn leaves_a_slot_empty_without_disturbing_the_others_in_the_batch() {
+        let epub = one_chapter("batch", "<pre>code</pre><p>one</p><p>two</p>");
+        let anchors = [
+            anchor(
+                "/body/DocFragment/body/p[1]/text().0",
+                "/body/DocFragment/body/p[1]/text().3",
+            ),
+            anchor(
+                "/body/DocFragment/body/p[1]/text().0",
+                "/body/DocFragment/body/pre/text().2",
+            ),
+            anchor(
+                "/body/DocFragment/body/p[2]/text().1",
+                "/body/DocFragment/body/p[2]/text().3",
+            ),
+        ];
+        let cfis = annotation_cfis(&epub, &anchors).unwrap();
+        assert_eq!(
+            cfis,
+            vec![
+                Some("epubcfi(/6/2!/4/4,/1:0,/1:3)".to_owned()),
+                None,
+                Some("epubcfi(/6/2!/4/6,/1:1,/1:3)".to_owned()),
+            ]
+        );
+    }
+
+    #[test]
+    fn yields_nothing_when_the_ends_sit_in_different_spine_items() {
+        let epub = epub_of("two_items", &["<p>one</p>", "<p>two</p>"]);
+        assert_eq!(
+            range_cfi(
+                &epub,
+                "/body/DocFragment[1]/body/p/text().1",
+                "/body/DocFragment[2]/body/p/text().1"
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn yields_nothing_when_the_end_precedes_the_start() {
+        let epub = one_chapter("inverted", "<p>one</p><p>two</p>");
+        let later = "/body/DocFragment/body/p[2]/text().1";
+        let earlier = "/body/DocFragment/body/p[1]/text().1";
+        assert_eq!(range_cfi(&epub, later, earlier), None);
+        assert_eq!(
+            range_cfi(
+                &epub,
+                "/body/DocFragment/body/p[1]/text().3",
+                "/body/DocFragment/body/p[1]/text().1"
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn yields_nothing_for_unparseable_xpointer_ends() {
+        let epub = one_chapter("junk_ends", "<p>one</p>");
+        let good = "/body/DocFragment/body/p/text().1";
+        assert_eq!(range_cfi(&epub, "junk", good), None);
+        assert_eq!(range_cfi(&epub, good, ""), None);
+    }
+
+    #[test]
+    fn annotation_xpointers_yields_nothing_for_points_garbage_and_unprovable_ends() {
+        let epub = one_chapter("bad_ranges", "<pre>code</pre><p>Hello</p>");
+        let cases = [
+            ("point cfi", "epubcfi(/6/2!/4/4/1:1)"),
+            ("garbage", "not a cfi"),
+            ("preformatted end", "epubcfi(/6/2!/4,/4/1:0,/2/1:2)"),
+            ("spine item past the end", "epubcfi(/6/4!/4,/4/1:0,/4/1:2)"),
+        ];
+        let converted: Vec<_> = cases
+            .into_iter()
+            .filter(|(_, cfi)| range_xpointers(&epub, cfi).is_some())
+            .map(|(case, _)| case)
+            .collect();
+        assert!(converted.is_empty(), "converted: {converted:?}");
+    }
+
+    #[test]
+    fn annotation_xpointers_yields_nothing_when_the_end_precedes_the_start() {
+        let epub = one_chapter("inverted_cfi", "<p>one</p><p>two</p>");
+
+        assert_eq!(
+            range_xpointers(&epub, "epubcfi(/6/2!/4,/4/1:1,/2/1:1)"),
+            None
+        );
+        assert_eq!(range_xpointers(&epub, "epubcfi(/6/2!/4/2,/1:3,/1:1)"), None);
+    }
+
+    #[test]
+    fn empty_input_yields_empty_output_without_opening_the_file() {
+        let missing = Path::new("/nonexistent/omnibus/book.epub");
+        assert_eq!(annotation_cfis(missing, &[]).unwrap(), Vec::new());
+        assert_eq!(annotation_xpointers(missing, &[]).unwrap(), Vec::new());
+    }
+
+    #[test]
+    fn both_directions_fail_when_the_epub_does_not_exist() {
+        let missing = Path::new("/nonexistent/omnibus/book.epub");
+        let anchors = [anchor(
+            "/body/DocFragment/body/p/text().1",
+            "/body/DocFragment/body/p/text().2",
+        )];
+        assert!(annotation_cfis(missing, &anchors).is_err());
+        assert!(annotation_xpointers(missing, &["epubcfi(/6/2!/4,/2/1:0,/4/1:2)".into()]).is_err());
+    }
+}

@@ -43,6 +43,9 @@ mod kindle;
 mod cross_format;
 #[cfg(not(feature = "mobile"))]
 mod kobo;
+// KOReader progress-sync password — web (server-fn) + SSR stubs; web-only like `kobo`.
+#[cfg(not(feature = "mobile"))]
+mod kosync;
 #[cfg(not(feature = "mobile"))]
 mod logs;
 // Hosted /mcp endpoint toggle (#2314) — web (gloo REST) + SSR stubs; the
@@ -105,6 +108,8 @@ pub use journals::*;
 pub use kindle::*;
 #[cfg(not(feature = "mobile"))]
 pub use kobo::*;
+#[cfg(not(feature = "mobile"))]
+pub use kosync::*;
 #[cfg(not(feature = "mobile"))]
 pub use logs::*;
 #[cfg(not(feature = "mobile"))]

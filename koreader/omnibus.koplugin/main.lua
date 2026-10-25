@@ -2,7 +2,8 @@
 Omnibus: a "Sync now" menu entry that mirrors the shelves marked "Sync to my devices"
 into an Omnibus folder, and keeps each delivered book's reading position and status in
 step with the server: pulled when the book opens, pushed when it closes, the device
-suspends or Sync now runs. A book edited in Omnibus gets its title, authors, series,
+suspends or Sync now runs. An EPUB's highlights and notes are reconciled both ways when it
+opens and closes and on Sync now in the reader. A book edited in Omnibus gets its title, authors, series,
 description and cover written into KOReader's custom metadata on the next sync. The
 decisions live in omnibussync.lua; this file is the wiring
 to KOReader (menu, HTTP, files, UI). omnibus.json, written by the server's plugin
@@ -39,6 +40,26 @@ local MISSING_CONFIG = _("Download the plugin from Omnibus Settings › Devices.
 -- Reading state is a few bytes, and a book open or close waits on it: give up sooner than a download.
 local STATE_BLOCK_TIMEOUT, STATE_TOTAL_TIMEOUT = 5, 15
 
+-- Seeded once; only the fallback for new_id reads it.
+math.randomseed(os.time() + math.floor(os.clock() * 1000000))
+
+-- An id for a highlight this device creates: 16 random bytes in hex, from the system's source
+-- where it can be read, so two devices or two runs never mint the same one.
+local function new_id()
+    local source = io.open("/dev/urandom", "rb")
+    local bytes = source and source:read(16)
+    if source then
+        source:close()
+    end
+    local digits = {}
+    for i = 1, 16 do
+        digits[i] = string.format("%02x", bytes and #bytes == 16 and bytes:byte(i) or math.random(0, 255))
+    end
+    return table.concat(digits)
+end
+
+local string_or_nil = sync.string_or_nil
+
 local Omnibus = WidgetContainer:extend{
     name = "omnibus",
     is_doc_only = false,
@@ -51,6 +72,7 @@ function Omnibus:init()
         -- After the book restored its local position, before it is first shown.
         self.ui:registerPostReaderReadyCallback(function()
             self:guarded("pull", self.pull_on_open)
+            self:guarded("annotations", self.sync_annotations)
         end)
     end
 end
@@ -332,6 +354,57 @@ function Omnibus:state_putter(config)
     end
 end
 
+-- The side effects `sync.sync_annotations` needs for the open book: the annotation routes,
+-- and adding and removing a highlight the way the reader itself does.
+function Omnibus:annotation_deps(config, uuid)
+    local ui = self.ui
+    local path = "/koreader/v1/books/" .. uuid .. "/annotations"
+    return {
+        now = os.time,
+        encode = JSON.encode,
+        new_id = new_id,
+        post = function(body)
+            return call_json(config, "POST", path, body, socketutil.LARGE_BLOCK_TIMEOUT,
+                socketutil.LARGE_TOTAL_TIMEOUT)
+        end,
+        get = function(since)
+            local cursor = type(since) == "number" and string.format("%d", since) or since
+            return call_json(config, "GET", path .. "?since=" .. cursor, nil,
+                socketutil.LARGE_BLOCK_TIMEOUT, socketutil.LARGE_TOTAL_TIMEOUT)
+        end,
+        add = function(wire)
+            local document = ui.document
+            if not (document:isXPointerInDocument(wire.pos0) and document:isXPointerInDocument(wire.pos1)) then
+                return nil
+            end
+            local item = {
+                page = wire.pos0,
+                pos0 = wire.pos0,
+                pos1 = wire.pos1,
+                text = string_or_nil(wire.text),
+                note = string_or_nil(wire.note),
+                color = string_or_nil(wire.color),
+                drawer = "lighten",
+                datetime = os.date("%Y-%m-%d %H:%M:%S", type(wire.created_at) == "number" and wire.created_at or nil),
+                chapter = ui.toc:getTocTitleByPage(wire.pos0),
+                omnibus_id = wire.id,
+            }
+            local index = ui.annotation:addItem(item)
+            ui:handleEvent(Event:new("AnnotationsModified", { item, nb_highlights_added = 1,
+                nb_notes_added = item.note and 1 or nil, index_modified = index }))
+            return item
+        end,
+        remove = function(item)
+            for index, candidate in ipairs(ui.annotation.annotations) do
+                if candidate == item then
+                    ui.bookmark:removeItemByIndex(index)
+                    return
+                end
+            end
+        end,
+    }
+end
+
 -- The per-book reading state (see omnibussync.lua) in its own settings file, loaded at each use
 -- because the file manager's and the reader's instances of this plugin both read and write it.
 -- Returns the books table and a function that saves it.
@@ -346,12 +419,14 @@ local function state_store()
 end
 
 -- Run `method` and log a failure instead of raising it: reading state must never stop a
--- book from opening or closing.
+-- book from opening or closing. Returns what `method` returned, or nil after a failure.
 function Omnibus:guarded(what, method, ...)
-    local ok, err = pcall(method, self, ...)
+    local ok, result = pcall(method, self, ...)
     if not ok then
-        logger.warn("omnibus reading state", what, "failed:", err)
+        logger.warn("omnibus reading state", what, "failed:", result)
+        return nil
     end
+    return result
 end
 
 -- The uuid of the open book if this plugin delivered it; a sideloaded book is never synced.
@@ -459,8 +534,35 @@ function Omnibus:capture_and_flush()
     end
 end
 
+-- The open document's highlights and notes against Omnibus: the device's changes go up first,
+-- then the server's come down. Only an EPUB (a rolling document) this plugin delivered takes
+-- part, and only online. Returns the result of `sync.sync_annotations`, or nil when it did not run.
+function Omnibus:sync_annotations()
+    local ui = self.ui
+    local config = self:loadConfig()
+    local uuid = self:open_book_uuid()
+    if not config or not uuid or not ui.rolling or not NetworkMgr:isOnline() then
+        return nil
+    end
+    local synced = ui.doc_settings:readSetting("omnibus_annotations") or {}
+    local result = sync.sync_annotations(ui.annotation.annotations, synced,
+        self:annotation_deps(config, uuid))
+    if result.changed then
+        -- On close the reader has already saved: write the list and what was agreed ourselves.
+        ui.doc_settings:saveSetting("annotations", ui.annotation.annotations)
+        ui.doc_settings:saveSetting("omnibus_annotations", synced)
+        ui.doc_settings:flush()
+        UIManager:setDirty(ui.dialog, "ui")
+    end
+    if not result.ok then
+        logger.warn("omnibus annotations failed:", result.message)
+    end
+    return result
+end
+
 function Omnibus:onCloseDocument()
     self:guarded("close", self.capture_and_flush)
+    self:guarded("annotations", self.sync_annotations)
 end
 
 function Omnibus:onSuspend()
@@ -495,6 +597,7 @@ function Omnibus:sync()
     -- Reading state goes up first. A removed device fails the library fetch below with the
     -- same message, so a failed push needs no handling here.
     self:guarded("push", self.capture_and_flush)
+    local annotations = self:guarded("annotations", self.sync_annotations)
     local dir = sync_dir()
     util.makePath(dir)
     local settings = LuaSettings:open(DataStorage:getSettingsDir() .. "/omnibus.lua")
@@ -532,6 +635,9 @@ function Omnibus:sync()
     if result.ok then
         Notification:notify(string.format(_("Omnibus synced: %d added, %d removed"),
             result.added, result.removed))
+        if annotations and not annotations.ok then
+            UIManager:show(InfoMessage:new{ text = annotations.message })
+        end
     else
         UIManager:show(InfoMessage:new{ text = result.message })
     end

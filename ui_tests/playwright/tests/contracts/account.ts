@@ -11,6 +11,7 @@ export const accountUrls = {
   profile: /\/api\/rpc\/account\/profile(?:\?|$)/,
   avatar: /\/api\/account\/avatar(?:\?|$)/,
   hiddenFormats: /\/api\/rpc\/account\/hidden-formats(?:\?|$)/,
+  kosyncGenerate: /\/api\/rpc\/kosync\/generate(?:\?|$)/,
   sessions: /\/api\/auth\/sessions(?:\?|$)/,
   sessionRevoke: /\/api\/auth\/sessions\/\d+(?:\?|$)/,
   annualGoal: /\/api\/rpc\/stats-goal(?:\?|$)/,
@@ -65,6 +66,8 @@ export const account = {
       accountUrls.hiddenFormats,
       formats === undefined ? undefined : { formats },
     ),
+
+  kosyncPassword: (): ExpectMutationOptions => post(accountUrls.kosyncGenerate),
 
   annualGoal: (target: number): ExpectMutationOptions =>
     post(accountUrls.annualGoal, { update: { target }, ...UTC }),
