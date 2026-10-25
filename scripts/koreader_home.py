@@ -16,14 +16,17 @@ A home keeps the origin and token it was linked with: delete it to relink.
 from __future__ import annotations
 
 import argparse
+import fcntl
 import hashlib
+import http.client
+import ipaddress
 import json
 import os
-import re
 import shutil
 import sys
 import tempfile
 import urllib.error
+import urllib.parse
 import urllib.request
 import zipfile
 from io import BytesIO
@@ -58,7 +61,8 @@ def device_name(home: Path, state_dir: Path) -> str:
     """`Dev KOReader` for the default home, else the name carries the home's folder."""
     if home.resolve() == (state_dir / "home").resolve():
         return DEFAULT_DEVICE_NAME
-    return f"{DEFAULT_DEVICE_NAME} ({home.name})"
+    where = hashlib.sha256(str(home.resolve()).encode()).hexdigest()[:8]  # koreader-dev.sh names the container the same way
+    return f"{DEFAULT_DEVICE_NAME} ({home.name[:60]} {where})"
 
 
 def parse_seed_user(value: str | None) -> tuple[str, str]:
@@ -69,12 +73,24 @@ def parse_seed_user(value: str | None) -> tuple[str, str]:
     return user, password
 
 
+def _is_loopback_ip(host: str) -> bool:
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
 class Api:
     """The few bearer-authed routes a link needs, each failure naming its route and status."""
 
     def __init__(self, base: str):
+        host = urllib.parse.urlsplit(base).hostname or ""
+        if host != "localhost" and not _is_loopback_ip(host):
+            raise LinkError(f"--api must be a loopback address, not {base}: it is sent the seed password")
         self.base = base.rstrip("/")
         self.token: str | None = None
+        # An empty proxy map: a proxy configured in the environment must never see the seed password.
+        self.opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
     def call(self, method: str, route: str, body=None, *, raw: bool = False):
         request = urllib.request.Request(
@@ -86,14 +102,18 @@ class Api:
         if self.token:
             request.add_header("Authorization", f"Bearer {self.token}")
         try:
-            with urllib.request.urlopen(request, timeout=30) as response:
+            with self.opener.open(request, timeout=30) as response:
                 data = response.read()
+            return data if raw or not data else json.loads(data)
         except urllib.error.HTTPError as e:
             e.close()
             raise LinkError(f"{method} {route} answered {e.code}") from e
         except urllib.error.URLError as e:
             raise LinkError(f"can't reach {self.base}: {e.reason}") from e
-        return data if raw or not data else json.loads(data)
+        except ValueError as e:
+            raise LinkError(f"{method} {route} answered something that isn't JSON") from e
+        except (OSError, http.client.HTTPException) as e:
+            raise LinkError(f"{method} {route} failed: {e}") from e
 
     def login(self, user: str, password: str) -> None:
         body = {"username": user, "password": password, "client_kind": "bearer", "device_name": SESSION_DEVICE_NAME}
@@ -122,15 +142,27 @@ def find_or_create_device(api: Api, name: str) -> int:
 def kosync_key(api: Api, state_dir: Path) -> dict:
     """The progress-sync login every home shares: the password is the account's, not the device's."""
     saved = state_dir / "kosync.json"
-    if api.call("GET", "/api/account/kosync")["configured"] and saved.is_file():
-        return json.loads(saved.read_text())
+    configured = api.call("GET", "/api/account/kosync")["configured"]
+    key = _read_saved_key(saved)
+    if configured and key:
+        return key
+    if configured:
+        print("koreader: replacing the account's progress-sync password: no saved key for it was found", file=sys.stderr)
     credentials = api.call("POST", "/api/account/kosync")
     key = {"username": credentials["username"], "userkey": hashlib.md5(credentials["password"].encode()).hexdigest()}
-    saved.parent.mkdir(parents=True, exist_ok=True)
-    saved.touch(mode=0o600)
-    saved.chmod(0o600)  # touch only sets the mode of a file it creates
-    saved.write_text(json.dumps(key))
+    fd, temp = tempfile.mkstemp(dir=state_dir, prefix=".kosync-")  # mkstemp creates it 0600
+    with os.fdopen(fd, "w") as f:
+        json.dump(key, f)
+    os.replace(temp, saved)
     return key
+
+
+def _read_saved_key(saved: Path) -> dict | None:
+    try:
+        key = json.loads(saved.read_text())
+        return key if isinstance(key, dict) and {"username", "userkey"} <= key.keys() else None
+    except (OSError, ValueError):
+        return None
 
 
 def install_plugin(home: Path, archive: bytes, origin: str) -> None:
@@ -145,6 +177,7 @@ def install_plugin(home: Path, archive: bytes, origin: str) -> None:
         config = json.loads(config_path.read_text())
         config["server_url"] = origin
         config_path.write_text(json.dumps(config))
+        shutil.rmtree(plugins / PLUGIN_DIR, ignore_errors=True)  # a half-made folder from an earlier attempt
         (staging / PLUGIN_DIR).rename(plugins / PLUGIN_DIR)
     finally:
         shutil.rmtree(staging, ignore_errors=True)
@@ -172,9 +205,17 @@ def write_settings(home: Path, origin: str, seed: tuple[str, str], key: dict) ->
 
 def link_home(home: Path, api: str, origin: str, state_dir: Path, seed: tuple[str, str]) -> bool:
     """Link `home` to the dev server; `True` when it was linked now, `False` when it already was."""
+    state_dir.mkdir(parents=True, exist_ok=True)
+    with open(state_dir / ".link.lock", "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)  # two launches of one home must not both link it
+        return _link_unlocked(home, api, origin, state_dir, seed)
+
+
+def _link_unlocked(home: Path, api: str, origin: str, state_dir: Path, seed: tuple[str, str]) -> bool:
     if (home / "plugins" / PLUGIN_DIR / "omnibus.json").is_file():
         return False
     session = Api(api)
+    home.chmod(0o700)  # opds.lua and omnibus.json hold the seed password and the device token
     session.login(*seed)
     try:
         device = find_or_create_device(session, device_name(home, state_dir))
@@ -200,6 +241,9 @@ def main(argv: list[str]) -> int:
             print(f"koreader: linked {args.home} as {device_name(args.home, args.state_dir)!r}")
     except LinkError as e:
         print(f"koreader: {e}", file=sys.stderr)
+        return 1
+    except (OSError, ValueError, KeyError, zipfile.BadZipFile) as e:
+        print(f"koreader: linking failed: {type(e).__name__}: {e}", file=sys.stderr)
         return 1
     return 0
 
