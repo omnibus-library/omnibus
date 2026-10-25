@@ -328,9 +328,7 @@ export function CheckIn() {
 
   // Back the way the reader came, else to the library, so Back never reopens the dialog.
   const close = () =>
-    location.key === "default"
-      ? navigate("/", { replace: true })
-      : navigate(-1);
+    location.state?.fromApp ? navigate(-1) : navigate("/", { replace: true });
 
   return (
     <Modal

@@ -225,12 +225,31 @@ describe("routes", () => {
     it("closes the check-in dialog back to the page it opened from", async () => {
       const { router } = renderRoute("/");
       await screen.findByRole("heading", { level: 1, name: "Your Library" });
-      await act(() => router.navigate("/check-in"));
+      await act(() =>
+        router.navigate("/check-in", { state: { fromApp: true } }),
+      );
       await screen.findByRole("dialog", { name: "Check in a book" });
 
       await userEvent.keyboard("{Escape}");
 
       await waitFor(() => expect(router.state.historyAction).toBe("POP"));
+      expect(router.state.location.pathname).toBe("/");
+    });
+
+    it("closes a check-in reached by a redirect onto the library", async () => {
+      const { router } = renderRoute("/");
+      await screen.findByRole("heading", { level: 1, name: "Your Library" });
+      // As the sign-in redirect lands it: a replace, so no entry to go back to.
+      await act(() => router.navigate("/check-in", { replace: true }));
+      await screen.findByRole("dialog", { name: "Check in a book" });
+
+      await userEvent.keyboard("{Escape}");
+
+      await waitFor(() =>
+        expect(
+          screen.queryByRole("dialog", { name: "Check in a book" }),
+        ).not.toBeInTheDocument(),
+      );
       expect(router.state.location.pathname).toBe("/");
     });
 

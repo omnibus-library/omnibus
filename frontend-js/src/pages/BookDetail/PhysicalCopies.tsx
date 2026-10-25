@@ -98,6 +98,7 @@ export function WishlistCtas({ book }: { book: BookDetail }) {
               ? `/check-in?isbn=${encodeURIComponent(book.isbn13)}`
               : "/check-in"
           }
+          state={{ fromApp: true }}
           data-testid="wishlist-check-in"
         >
           Check in when acquired
