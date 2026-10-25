@@ -505,7 +505,8 @@ async fn upsert_kobo_annotations(
         // The CFI conflict rule keeps the stored web anchor truthful: a
         // moved kobo_location takes the fresh derivation even when it's
         // NULL (a stale CFI is a wrong location), while an unmoved anchor
-        // keeps an existing CFI over a derivation that merely failed. Each
+        // keeps an existing CFI over a derivation that merely failed — and
+        // over any derivation once a KOReader move has left it stale. Each
         // conflicting row in the batch resolves this independently against
         // its own `excluded.*` values.
         let sql = format!(
@@ -516,6 +517,7 @@ async fn upsert_kobo_annotations(
                  epub_cfi_range = CASE
                      WHEN annotations.kobo_location IS NOT excluded.kobo_location
                          THEN excluded.epub_cfi_range
+                     WHEN annotations.kobo_location_stale = 1 THEN annotations.epub_cfi_range
                      ELSE COALESCE(excluded.epub_cfi_range, annotations.epub_cfi_range)
                  END,
                  kobo_location_stale = CASE

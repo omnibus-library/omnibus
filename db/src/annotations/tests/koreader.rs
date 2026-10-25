@@ -481,6 +481,52 @@ mod upsert_koreader_annotation {
     }
 
     #[tokio::test]
+    async fn keeps_the_moved_cfi_when_the_kobo_edits_at_its_stale_anchor() {
+        let pool = init_db("sqlite::memory:").await.unwrap();
+        let user = seed_user(&pool, "alice").await;
+        let (_, uuid) = seed(&pool, "/lib", "Book A").await;
+        let from_kobo = IngestKoboAnnotation {
+            client_id: "k1".into(),
+            color: HighlightColor::Green,
+            text: None,
+            note: None,
+            kobo_location: r#"{"span":{"startPath":"span#kobo\\.1\\.2","startChar":3}}"#.into(),
+            epub_cfi_range: Some(CFI.into()),
+        };
+        ingest_kobo_annotations(&pool, user, &uuid, std::slice::from_ref(&from_kobo), &[])
+            .await
+            .unwrap();
+        stamp(&pool, "k1", 5000).await;
+        let moved_cfi = "epubcfi(/6/2!/4/50,/1:0,/1:5)";
+        let moved = KoreaderUpsert {
+            epub_cfi_range: moved_cfi.into(),
+            ..device_upsert("k1", 6000)
+        };
+        upsert(&pool, user, &uuid, &moved).await.unwrap();
+        // The Kobo still holds the old anchor, so its colour edit derives the old CFI again.
+        let recoloured = IngestKoboAnnotation {
+            color: HighlightColor::Blue,
+            ..from_kobo
+        };
+
+        ingest_kobo_annotations(&pool, user, &uuid, &[recoloured], &[])
+            .await
+            .unwrap();
+
+        let (cfi, color, stale): (String, String, i64) = sqlx::query_as(
+            "SELECT epub_cfi_range, color, kobo_location_stale FROM annotations
+              WHERE client_id = 'k1'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            (cfi.as_str(), color.as_str(), stale),
+            (moved_cfi, HighlightColor::Blue.as_str(), 1)
+        );
+    }
+
+    #[tokio::test]
     async fn keeps_the_kobo_anchor_current_when_the_cfi_is_unchanged() {
         let (location, stale) = kobo_anchor_after_upsert(CFI).await;
 
