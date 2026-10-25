@@ -100,7 +100,12 @@ export const routes: RouteObject[] = [
               {
                 errorElement: <RouteError />,
                 children: [
-                  { path: "/", element: <Library /> },
+                  {
+                    path: "/",
+                    element: <Library />,
+                    // Check-in is a dialog over the library, which stays mounted beneath it.
+                    children: [{ path: "check-in", element: <CheckIn /> }],
+                  },
                   {
                     path: "/books/:uuid",
                     element: <BookDetail />,
@@ -149,16 +154,6 @@ export const routes: RouteObject[] = [
                     element: <Navigate to="/settings" replace />,
                   },
                   { path: "/add-books", element: <AddBooks /> },
-                  {
-                    path: "/check-in",
-                    // The dialog floats over the library, which closing it returns to.
-                    element: (
-                      <>
-                        <Library />
-                        <CheckIn />
-                      </>
-                    ),
-                  },
                   { path: "*", element: <NotFound /> },
                 ],
               },

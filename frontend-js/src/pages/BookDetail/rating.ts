@@ -57,13 +57,3 @@ export function starsMeta(
   if (review?.stars == null) return "Not rated yet";
   return `rated ${ago(now, review.ratedAt ?? review.updatedAt)} · ${fmtStars(review.stars)} of 5`;
 }
-
-/** The household's mean rating and how many readers gave one; `null` while nobody has. */
-export function householdRating(
-  stars: (number | null)[],
-): { average: number; count: number } | null {
-  const given = stars.filter((s) => s !== null);
-  if (given.length === 0) return null;
-  const total = given.reduce((sum, s) => sum + s, 0);
-  return { average: total / given.length, count: given.length };
-}

@@ -1,11 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  type ReactNode,
-  type RefObject,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { Link } from "react-router";
 import {
   type BookUuid,
@@ -100,12 +94,10 @@ function ShelfEntry({
 }
 
 // Which way the row can still scroll, kept current as it scrolls, resizes and gains entries.
-function useRowReach(row: RefObject<HTMLDivElement | null>, shown: boolean) {
+function useRowReach(el: HTMLDivElement | null) {
   const [before, setBefore] = useState(false);
   const [after, setAfter] = useState(false);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `shown` is the cue that the row remounted, not a value the effect reads
   useEffect(() => {
-    const el = row.current;
     if (!el) return;
     // The 4px slack absorbs sub-pixel scroll widths, which would leave the right arrow lit on a row with no overflow.
     const measure = () => {
@@ -130,7 +122,7 @@ function useRowReach(row: RefObject<HTMLDivElement | null>, shown: boolean) {
       mutation.disconnect();
       el.removeEventListener("scroll", measure);
     };
-  }, [row, shown]);
+  }, [el]);
   return { before, after };
 }
 
@@ -162,10 +154,11 @@ export function ShelfGallery({
   const rail = shelves.data ? railShelves(shelves.data, viewerId) : [];
   // Only a list that loaded can say there is nothing to show; a failed one keeps the row.
   const shown = !(shelves.isSuccess && rail.length === 0);
-  const row = useRef<HTMLDivElement>(null);
-  const reach = useRowReach(row, shown);
+  // A callback ref, so a row that remounts is measured again.
+  const [row, setRow] = useState<HTMLDivElement | null>(null);
+  const reach = useRowReach(row);
   const page = (dir: 1 | -1) => {
-    const el = row.current;
+    const el = row;
     if (!el) return;
     const origin = el.getBoundingClientRect().left - el.scrollLeft;
     const starts = [...el.children].map(
@@ -231,7 +224,7 @@ export function ShelfGallery({
           >
             <CaretRightGlyph />
           </button>
-          <div ref={row} className="lmq-shtx" id="lmq-shelf-row">
+          <div ref={setRow} className="lmq-shtx" id="lmq-shelf-row">
             <button
               type="button"
               className="lmq-shent"

@@ -207,6 +207,33 @@ describe("routes", () => {
       ).toBeInTheDocument();
     });
 
+    it("keeps the library mounted beneath the check-in dialog", async () => {
+      const { router } = renderRoute("/");
+      const heading = await screen.findByRole("heading", {
+        level: 1,
+        name: "Your Library",
+      });
+
+      await act(() => router.navigate("/check-in"));
+
+      await screen.findByRole("dialog", { name: "Check in a book" });
+      expect(
+        screen.getByRole("heading", { level: 1, name: "Your Library" }),
+      ).toBe(heading);
+    });
+
+    it("closes the check-in dialog back to the page it opened from", async () => {
+      const { router } = renderRoute("/");
+      await screen.findByRole("heading", { level: 1, name: "Your Library" });
+      await act(() => router.navigate("/check-in"));
+      await screen.findByRole("dialog", { name: "Check in a book" });
+
+      await userEvent.keyboard("{Escape}");
+
+      await waitFor(() => expect(router.state.historyAction).toBe("POP"));
+      expect(router.state.location.pathname).toBe("/");
+    });
+
     it("closes the check-in dialog onto the library on Escape", async () => {
       const { router } = renderRoute("/check-in");
       await screen.findByRole("dialog", { name: "Check in a book" });

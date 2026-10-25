@@ -19,7 +19,6 @@ html:has(.check-in-overlay-scrim) {
 }
 .check-in-overlay-panel {
   width: min(560px, 100%);
-  max-height: calc(100dvh - 48px);
   display: flex;
   animation: check-in-panel-in 0.16s ease-out;
 }
@@ -68,9 +67,10 @@ html:has(.check-in-overlay-scrim) {
   border: 1px solid var(--line);
   background: var(--bg-1);
   color: var(--ink-2);
+  padding: 0;
   font-size: 20px;
   line-height: 1;
-  text-decoration: none;
+  cursor: pointer;
 }
 .check-in-close:hover {
   background: var(--bg-2);

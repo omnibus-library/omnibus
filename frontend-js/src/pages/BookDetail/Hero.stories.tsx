@@ -297,7 +297,16 @@ export const NoHouseholdAverageWhenNobodyRated: Story = {
 export const RatingCountsTowardTheHouseholdAverage: Story = {
   beforeEach({ msw }) {
     writes.length = 0;
-    msw.use(...reviewHandlers({}, writes));
+    msw.use(
+      ...reviewHandlers(
+        {
+          others: [
+            aWireOtherReview({ user_id: 7, username: "grace", stars: 5 }),
+          ],
+        },
+        writes,
+      ),
+    );
   },
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(await starButton(canvas, "Rate 4 stars"));
@@ -306,10 +315,10 @@ export const RatingCountsTowardTheHouseholdAverage: Story = {
       name: "Household average",
     });
     await expect(
-      within(household).getByRole("img", { name: "4 out of 5 stars" }),
+      within(household).getByRole("img", { name: "4.5 out of 5 stars" }),
     ).toBeInTheDocument();
     await expect(
-      within(household).getByRole("button", { name: "1 review" }),
+      within(household).getByRole("button", { name: "2 reviews" }),
     ).toBeInTheDocument();
     await waitFor(() => expect(writes).toEqual([{ stars: 4 }]));
     await expect(canvas.getByTestId("review-stars-meta")).toHaveTextContent(
@@ -403,17 +412,35 @@ export const ArrowKeysRateInHalfSteps: Story = {
   },
 };
 
+export const NoHouseholdAverageForOneRating: Story = {
+  beforeEach({ msw }) {
+    msw.use(...reviewHandlers({ mine: aWireReview({ stars: 4 }) }));
+  },
+  play: async ({ canvas }) => {
+    await waitFor(() =>
+      expect(canvas.getByTestId("review-stars-meta")).toHaveTextContent(
+        "You rated it 4",
+      ),
+    );
+    // One reader's stars are not an average.
+    await expect(
+      canvas.queryByRole("group", { name: "Household average" }),
+    ).not.toBeInTheDocument();
+  },
+};
+
 export const TheReviewCountOpensTheReviewsTab: Story = {
   beforeEach({ msw }) {
     msw.use(
       ...reviewHandlers({
+        mine: aWireReview({ stars: 4 }),
         others: [aWireOtherReview({ user_id: 7, username: "grace", stars: 5 })],
       }),
     );
   },
   play: async ({ args, canvas, userEvent }) => {
     await userEvent.click(
-      await canvas.findByRole("button", { name: "1 review" }),
+      await canvas.findByRole("button", { name: "2 reviews" }),
     );
 
     await expect(args.onOpenReviews).toHaveBeenCalledOnce();
@@ -1388,7 +1415,7 @@ export const AFinishedBookOpensWithoutTheBurst: Story = {
 
 let reviewsRead = false;
 
-export const HouseholdAverageWithoutAServerSummary: Story = {
+export const NoHouseholdAverageWithoutAServerSummary: Story = {
   beforeEach({ msw }) {
     reviewsRead = false;
     msw.use(
@@ -1405,8 +1432,15 @@ export const HouseholdAverageWithoutAServerSummary: Story = {
   },
   play: async ({ canvas }) => {
     await waitFor(() => expect(reviewsRead).toBe(true));
-    // The average is drawn whether or not the server summed the raters.
-    await canvas.findByRole("group", { name: "Household average" });
+    await waitFor(() =>
+      expect(canvas.getByTestId("review-stars-meta")).toHaveTextContent(
+        "You rated it 5",
+      ),
+    );
+    // The threshold is the server's, never recomputed here.
+    await expect(
+      canvas.queryByRole("group", { name: "Household average" }),
+    ).not.toBeInTheDocument();
   },
 };
 

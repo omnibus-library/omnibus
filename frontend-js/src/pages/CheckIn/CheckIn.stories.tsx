@@ -56,11 +56,9 @@ export const Lookup: Story = {
     await expect(
       canvas.getByRole("heading", { level: 1, name: "Check in a book" }),
     ).toBeInTheDocument();
-    await expect(canvas.getByTestId("check-in-close")).toHaveAttribute(
-      "href",
-      "/",
-    );
-    await expect(canvas.getByLabelText("Cancel check-in")).toBeInTheDocument();
+    await expect(
+      canvas.getByRole("button", { name: "Cancel check-in" }),
+    ).toBeInTheDocument();
     await expect(screen).toHaveTextContent(
       "Enter the ISBN from the back cover",
     );
@@ -209,6 +207,35 @@ export const ConfirmsACopyOfALibraryBook: Story = {
       { book_uuid: BOOK.uuid, isbn: ISBN, note: "Paperback" },
     ]);
     await expectInvalidated(CHECK_IN_KEYS);
+  },
+};
+
+export const EscapeWaitsForTheCheckInToLand: Story = {
+  beforeEach({ msw }) {
+    gate = deferred();
+    msw.use(
+      http.post("/api/scan/check-in", async () => {
+        await gate.promise;
+        return HttpResponse.json({ book_uuid: BOOK.uuid });
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await lookUp({ canvas, userEvent });
+    await userEvent.click(await canvas.findByTestId("check-in-confirm-submit"));
+    const dialog = canvas.getByRole("dialog", { name: "Check in a book" });
+    // The pressed button is disabled while it saves, so the key goes to the dialog.
+    dialog.focus();
+
+    await userEvent.keyboard("{Escape}");
+
+    await expect(
+      canvas.queryByRole("heading", { name: "Library" }),
+    ).not.toBeInTheDocument();
+    gate.release();
+    await expect(
+      await canvas.findByTestId("check-in-success"),
+    ).toHaveTextContent("In your physical collection");
   },
 };
 

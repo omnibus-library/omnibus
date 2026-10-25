@@ -15,13 +15,13 @@
   <body>
     <!-- No SSR draws a loader, so this one paints before the bundle runs: the
          markup the signed-in gate's <Loading kind="page"> renders, so the
-         hand-off is seamless, styled by the stylesheet the build links above. -->
+         hand-off is seamless (src/indexHtml.test.ts holds the two together). -->
     <div id="root">
       <div class="atrium">
         <script>
           try {
             // THEME_STORAGE_KEY and THEMES in src/components/Theme/AtriumRoot.tsx.
-            var theme = localStorage.getItem("omn.theme");
+            const theme = localStorage.getItem("omn.theme");
             if (/^(dark|black|light|sepia)$/.test(theme || ""))
               document.currentScript.parentElement.setAttribute("data-theme", theme);
           } catch {}
@@ -31,12 +31,13 @@
             <span class="ld-rf-book">
               <span class="ld-rf-page l"></span>
               <span class="ld-rf-page r"></span>
-              <span class="ld-rf-leaf n0" style="--i: 0"><span class="ld-rf-face front"></span><span class="ld-rf-face back"></span></span>
-              <span class="ld-rf-leaf n1" style="--i: 1"><span class="ld-rf-face front"></span><span class="ld-rf-face back"></span></span>
-              <span class="ld-rf-leaf n2" style="--i: 2"><span class="ld-rf-face front"></span><span class="ld-rf-face back"></span></span>
+              <span class="ld-rf-leaf n0" style="--i:0"><span class="ld-rf-face front"></span><span class="ld-rf-face back"></span></span>
+              <span class="ld-rf-leaf n1" style="--i:1"><span class="ld-rf-face front"></span><span class="ld-rf-face back"></span></span>
+              <span class="ld-rf-leaf n2" style="--i:2"><span class="ld-rf-face front"></span><span class="ld-rf-face back"></span></span>
             </span>
           </span>
           <p class="ld-label">Opening your library</p>
+          <div class="ld-slot"></div>
         </div>
       </div>
     </div>

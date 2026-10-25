@@ -465,7 +465,7 @@ export const SuggestionsScrollWithAThinBarOnAFinePointer: Story = {
 export const TouchTargetsAtPhoneWidth: Story = {
   ...phone,
   play: async ({ canvas, canvasElement, userEvent }) => {
-    const go = await canvas.findByRole("button", { name: /^\d+ reviews?$/ });
+    const go = await canvas.findByRole("button", { name: "3 reviews" });
     await expect(
       Math.min(sizeOf(go).width, sizeOf(go).height),
     ).toBeGreaterThanOrEqual(44);
@@ -501,18 +501,13 @@ export const TouchTargetsAtPhoneWidth: Story = {
   },
 };
 
-export const ALongTitleAndANameStayInsideAPhone: Story = {
+export const ALongTitleAndTheHouseholdStayInsideAPhone: Story = {
   ...phone,
   beforeEach({ msw }) {
     msw.use(
       ...reviewHandlers({
         mine: aWireReview({ stars: 4 }),
-        others: [
-          aWireOtherReview({
-            stars: 4,
-            username: "Bartholomew-Fitzgerald-Montgomery-Throckmorton",
-          }),
-        ],
+        others: [aWireOtherReview({ stars: 4 })],
       }),
       ...bookDetailHandlers(
         aWireBook({

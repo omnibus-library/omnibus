@@ -17,7 +17,7 @@ import { HeroActions } from "./HeroActions";
 import { HeroCover } from "./HeroCover";
 import { MiniStars } from "./MiniStars";
 import { reviewsQuery, useWish } from "./queries";
-import { heroRatingNote, householdRating } from "./rating";
+import { heroRatingNote } from "./rating";
 import { factLine } from "./readout";
 import { StarPicker } from "./StarPicker";
 import type { MyRating } from "./useMyRating";
@@ -77,7 +77,7 @@ function Byline({
 const seriesLabel = ({ name, index }: NonNullable<Detail["series"]>) =>
   index ? `${name}, book ${index}` : name;
 
-/** Your stars, then the household's average and a count that opens the Reviews tab; the average is absent while nobody has rated. */
+/** Your stars, then the household's average and a count that opens the Reviews tab; the average waits for the server's summary. */
 function Ratings({
   book,
   rating,
@@ -92,10 +92,8 @@ function Ratings({
   const mine = reviews.data?.mine?.stars ?? null;
   // Until it is read, your own rating is not "none": the stars wait rather than offer a write over it.
   const read = reviews.data ? "ready" : reviews.isError ? "failed" : "loading";
-  const household = householdRating([
-    mine,
-    ...(reviews.data?.others ?? []).map((review) => review.stars),
-  ]);
+  // The server sends a summary only once enough readers rated; its threshold is never recomputed here.
+  const household = reviews.data?.summary ?? null;
   return (
     <div className="bp-ratings">
       <StarPicker
@@ -116,7 +114,7 @@ function Ratings({
             className="bp-rating-avg-go"
             onClick={onOpenReviews}
           >
-            {household.count} review{plural(household.count)}
+            {household.ratings} review{plural(household.ratings)}
             <ChevronRightGlyph size={16} />
           </button>
         </div>

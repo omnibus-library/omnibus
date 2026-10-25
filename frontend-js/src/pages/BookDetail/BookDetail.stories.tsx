@@ -930,7 +930,7 @@ export const EmptyHousehold: Story = {
     await expect(await heading(canvas, "Your reading")).toBeInTheDocument();
     await settled(canvas);
     await expect(
-      canvas.queryByRole("list", { name: "Household ratings" }),
+      canvas.queryByRole("group", { name: "Household average" }),
     ).not.toBeInTheDocument();
     // No other reader has opened the book, so Your reading has no Household block.
     await expect(
