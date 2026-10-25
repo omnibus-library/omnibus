@@ -45,6 +45,8 @@ jobs:
               - "shared/**"
               - "server/**"
               - "db/**"
+              # The KOReader plugin, embedded in the server by `include_str!`.
+              - "koreader/**"
               - "ui_tests/playwright/**"
               # The iOS reader's glue; `tests/ios_glue/` is its only test lane.
               # Not in the bundle key below: nothing in the web bundle reads it.
@@ -82,7 +84,7 @@ jobs:
       - name: Compute bundle cache key
         id: bundle-key
         run: |
-          key="dx-bundle-${{ runner.os }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '**/Dioxus.toml', 'flake.lock', 'flake.nix', 'frontend/**', 'shared/**', 'server/**', 'db/**', '.github/workflows/e2e.yml') }}"
+          key="dx-bundle-${{ runner.os }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '**/Dioxus.toml', 'flake.lock', 'flake.nix', 'frontend/**', 'shared/**', 'server/**', 'db/**', 'koreader/**', '.github/workflows/e2e.yml') }}"
           echo "key=$key" >> "$GITHUB_OUTPUT"
 
       # Split restore + save so the save happens as a normal step right after
