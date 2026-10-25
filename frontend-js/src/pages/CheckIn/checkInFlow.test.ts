@@ -268,11 +268,11 @@ describe("stageFor", () => {
 });
 
 describe("confirmSubtitle without a proven wish", () => {
-  it("stays neutral for a wishless book picked from the library search", () => {
+  it("says a wish holds a fileless, copyless book picked from a list", () => {
     const wishOnly = aScanBook({ has_files: false, has_physical: false });
 
     expect(confirmSubtitle(wishOnly, false, false, 1)).toBe(
-      "This one is in your library without a file — this adds your print copy.",
+      "Not in your library — it's on a wishlist.",
     );
   });
 });

@@ -348,7 +348,7 @@ fn stage_for_blames_another_readers_wish_only_for_an_unowned_book_nobody_holds()
 }
 
 #[test]
-fn confirm_subtitle_stays_neutral_for_a_wishless_book_picked_from_the_library_search() {
+fn confirm_subtitle_says_a_wish_holds_a_fileless_copyless_book_picked_from_a_list() {
     let hit = PaletteBookHit {
         formats: Vec::new(),
         has_physical: false,
@@ -358,8 +358,7 @@ fn confirm_subtitle_stays_neutral_for_a_wishless_book_picked_from_the_library_se
 
     let line = confirm_subtitle(&book, false, false, Some(1));
 
-    assert!(!line.contains("another reader"), "got: {line}");
-    assert!(line.contains("without a file"), "got: {line}");
+    assert_eq!(line, "Not in your library \u{2014} it's on a wishlist.");
 }
 
 #[test]

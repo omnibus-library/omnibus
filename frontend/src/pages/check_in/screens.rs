@@ -122,7 +122,8 @@ pub(super) fn offers_wishlist_entry(book: &ScanBook, wishlisted: bool) -> bool {
 /// to, worded from the book's actual holdings and, for a print copy, whose it
 /// is: copies belong to the household, so the line says who already holds one.
 /// `another_wish` is only true when the lookup proved another reader wants the
-/// book; a book reached by picking from a list gets the neutral line instead.
+/// book; a book reached by picking from a list gets the neutral line instead,
+/// since the wish holding it may be the reader's own.
 pub(super) fn confirm_subtitle(
     book: &ScanBook,
     wishlisted: bool,
@@ -141,8 +142,7 @@ pub(super) fn confirm_subtitle(
         return if another_wish {
             "Not in your library \u{2014} it's on another reader's wishlist.".to_string()
         } else {
-            "This one is in your library without a file \u{2014} this adds your print copy."
-                .to_string()
+            "Not in your library \u{2014} it's on a wishlist.".to_string()
         };
     }
     print_copy_line(book, viewer_id)

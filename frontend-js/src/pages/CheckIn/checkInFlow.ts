@@ -169,7 +169,7 @@ export function confirmSubtitle(
   if (book.has_physical) return printCopyLine(book, viewerId);
   return anotherWish
     ? "Not in your library — it's on another reader's wishlist."
-    : "This one is in your library without a file — this adds your print copy.";
+    : "Not in your library — it's on a wishlist.";
 }
 
 /** The close-match screen's four strings, by whether it offers one candidate or several and how the ISBN was reached. */
