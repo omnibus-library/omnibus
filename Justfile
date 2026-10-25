@@ -65,10 +65,9 @@ dev-bounce:
 kobo *args:
     scripts/with-dev-env.sh default cargo run -q -p omnibus-mock-kobo -- tui "$@"
 
-# Run an interactive KOReader in a browser tab (Docker; run `just dev-up` first),
-# syncing with this worktree's dev server. Ctrl-C or quitting KOReader stops it.
-# `--home DIR` picks the KOReader home, so a second one is a second device:
-# `just koreader --home .claude/runtime/koreader/second` (docs/koreader.md).
+# Interactive KOReader in a browser tab (Docker), syncing with this worktree's dev
+# server (run `just dev-up` first); Ctrl-C stops it. `--home DIR` picks the home,
+# so a second one is a second device (docs/koreader.md).
 [positional-arguments]
 koreader *args:
     scripts/with-dev-env.sh default scripts/koreader-dev.sh "$@"

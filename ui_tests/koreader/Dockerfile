@@ -1,19 +1,12 @@
-# KOReader test lane image: the pinned KOReader release under Xvfb, driven by
-# the user patch scripts/koreader-e2e.sh mounts at /ko-home/patches.
-#
-# The KOReader version lives in ONE place: the koreader.sha256 pin, one line
-# per architecture. A file name carries the version (koreader_<ver>-1_<arch>.deb),
-# so the release URL is derived from it and nothing else fetches KOReader.
-# Bumping is a one-line edit per arch of koreader.sha256 (hash and file name
-# from the release page).
+# KOReader image: the pinned release under Xvfb, driven by the lane's user patch
+# or shown in a browser by `just koreader`. The version is pinned in one file,
+# koreader.sha256: one line per arch, all the same version, and the URL derives from it.
 FROM debian:trixie-slim
 
 COPY koreader.sha256 /tmp/koreader.sha256
 
-# The .deb's own Depends: is the runtime KOReader declares, so apt pulls
-# exactly that and none of it is hand-listed here. sha256sum -c gates the
-# download before anything from it is installed, and only the line for this
-# build's own architecture is read, so a missing pin fails closed.
+# The .deb's own Depends: is KOReader's runtime, so none of it is hand-listed here.
+# sha256sum -c gates this arch's pin line before anything is installed; no pin fails the build.
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends ca-certificates curl; \

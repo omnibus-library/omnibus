@@ -209,11 +209,12 @@ just koreader --home .claude/runtime/koreader/second # a second home is a second
 
 It needs Docker running (Docker Desktop on macOS) and a dev server for this
 worktree, and never starts either: without them it prints one line saying so and
-exits. Ctrl-C, or quitting KOReader, stops the container.
+exits. Ctrl-C, or quitting KOReader, stops the container; one Ctrl-C closes
+KOReader cleanly, so its settings are saved.
 
 - **First launch of a home** signs in as `OMNIBUS_DEV_SEED_USER`, registers a
-  KOReader device (**Dev KOReader**, or **Dev KOReader (<folder>)** for any
-  other home) and installs the Omnibus plugin the Settings page would
+  KOReader device (**Dev KOReader**, or **Dev KOReader (<folder> <hash>)** for
+  any other home, the hash telling same-named folders apart) and installs the Omnibus plugin the Settings page would
   download. It also adds the OPDS catalog **Omnibus (dev)** and turns on stock
   Progress sync. Later launches of that home make no requests.
 - **Homes** live under `.claude/runtime/koreader/` (`home/` by default), keeping
@@ -222,7 +223,8 @@ exits. Ctrl-C, or quitting KOReader, stops the container.
 - **Progress sync** uses one login for every home, because the account has a
   single kosync password: its key is saved in `.claude/runtime/koreader/kosync.json`.
   Delete that file only together with the homes, or the first home's login stops
-  working.
+  working. If the server already holds a password and no key is saved, linking
+  replaces it (and says so), which signs out any home linked before.
 - **A sync needs a shelf set to sync** (the shelf's sync toggle), as on a device.
 - **Relinking:** a home keeps the dev server port and device token it was linked
   with. After the dev server moves port or its database is reset, delete the home
@@ -230,6 +232,8 @@ exits. Ctrl-C, or quitting KOReader, stops the container.
 
 On Linux the container shares the host network, as the lane's does, so it reaches
 the dev server on `127.0.0.1`; elsewhere it uses `host.docker.internal`. The
+screen's VNC and noVNC ports sit on the host's loopback and are password-protected
+with a key made for each launch, which the opened URL carries. The
 image is the lane's, with a VNC server added; it is built for the engine's
 architecture.
 

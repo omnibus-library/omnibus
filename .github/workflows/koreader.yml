@@ -117,6 +117,25 @@ jobs:
       - name: Unit-test the plugin
         run: nix develop .#web --command just koreader-plugin-test
 
+      # `just koreader`'s entry: noVNC answers, and `docker stop` ends KOReader
+      # through its own exit path, which writes settings.reader.lua.
+      - name: Smoke the interactive entry
+        run: |
+          docker build -t koreader-smoke ui_tests/koreader
+          home="$(mktemp -d)"
+          docker run -d --init --name koreader-smoke -p 127.0.0.1:6080:6080 \
+            --user "$(id -u):$(id -g)" -e HOME=/tmp -e VNC_PASSWORD=smoke-pw \
+            -v "$home:/ko-home" koreader-smoke koreader-vnc
+          for _ in $(seq 90); do
+            [ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:6080/vnc.html)" = 200 ] &&
+              [ -e "$home/settings/hotkeys.lua" ] && break
+            sleep 1
+          done
+          [ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:6080/vnc.html)" = 200 ]
+          docker stop -t 15 koreader-smoke
+          [ "$(docker inspect -f '{{.State.ExitCode}}' koreader-smoke)" = 0 ]
+          test -e "$home/settings.reader.lua"
+
       - name: Run the KOReader lane
         run: nix develop .#web --command scripts/koreader-e2e.sh
 

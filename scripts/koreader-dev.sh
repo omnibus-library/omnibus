@@ -49,7 +49,7 @@ free_port() {
 # Opens the tab once noVNC answers; the URL is printed regardless.
 open_when_ready() {
     local port="$1" url deadline
-    url="http://127.0.0.1:$port/vnc.html?autoconnect=1&resize=scale"
+    url="http://127.0.0.1:$port/vnc.html?autoconnect=1&resize=scale&password=$VNC_PASSWORD"
     echo "koreader: $url"
     deadline=$(($(date +%s) + 60))
     until curl -fsS -o /dev/null "http://127.0.0.1:$port/vnc.html" 2>/dev/null; do
@@ -80,7 +80,7 @@ main() {
     dev_port="$(require_dev_server)"
 
     mkdir -p "$home/books"
-    home="$(cd "$home" && pwd)"
+    home="$(cd "$home" && pwd -P)"
 
     deb="$(awk -v arch="$arch" '$2 ~ "_" arch "\\.deb$" {print $2}' ui_tests/koreader/koreader.sha256)"
     [ -n "$deb" ] || die "no KOReader pin for $arch in ui_tests/koreader/koreader.sha256"
@@ -100,6 +100,9 @@ main() {
     python3 scripts/koreader_home.py --home "$home" --api "http://127.0.0.1:$dev_port" \
         --origin "$origin" --state-dir "$RUNTIME_DIR/koreader"
 
+    # Docker takes the variable from the environment, so the password is never on a command line.
+    VNC_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(6))')"
+    export VNC_PASSWORD
     echo "koreader: KOReader reaches the dev server at $origin"
     open_when_ready "$novnc_port" &
     trap 'kill %1 2>/dev/null || true' EXIT
@@ -107,6 +110,7 @@ main() {
         --user "$(id -u):$(id -g)" \
         -e HOME=/tmp \
         -e XDG_DOCUMENTS_DIR=/ko-home/books \
+        -e VNC_PASSWORD \
         -v "$home:/ko-home" \
         "$tag" koreader-vnc
 }

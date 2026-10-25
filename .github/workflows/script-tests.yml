@@ -36,6 +36,7 @@ on:
       - "scripts/koreader_home.py"
       - "scripts/tests/koreader-home.test.py"
       - "scripts/tests/koreader-dev-preflight.test.sh"
+      - "ui_tests/koreader/koreader.sha256"
       - ".github/workflows/script-tests.yml"
   pull_request:
     paths:
@@ -54,6 +55,7 @@ on:
       - "scripts/koreader_home.py"
       - "scripts/tests/koreader-home.test.py"
       - "scripts/tests/koreader-dev-preflight.test.sh"
+      - "ui_tests/koreader/koreader.sha256"
       - ".github/workflows/script-tests.yml"
 
 permissions:
