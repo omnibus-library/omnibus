@@ -495,7 +495,10 @@ async fn ingest_kobo_annotations_succeeds_for_many_concurrent_writers_on_a_file_
     // Each ingest reads tombstones before it writes; WAL needs a real file for a deferred
     // read-then-write to fail with a stale-snapshot 517 when another writer commits between.
     let dir = tempfile::tempdir().unwrap();
-    let url = format!("sqlite://{}?mode=rwc", dir.path().join("omnibus.db").display());
+    let url = format!(
+        "sqlite://{}?mode=rwc",
+        dir.path().join("omnibus.db").display()
+    );
     let pool = init_db(&url).await.unwrap();
     let user = seed_user(&pool, "alice").await;
     let (_, uuid) = seed(&pool, "/lib", "Book A").await;
