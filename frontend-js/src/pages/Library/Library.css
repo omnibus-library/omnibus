@@ -561,7 +561,12 @@
 }
 .lmq
   > *:where(
-    :not(.shelf-modal-overlay, .author-photo-modal-backdrop, .bulk-edit-bar)
+    :not(
+      .shelf-modal-overlay,
+      .author-photo-modal-backdrop,
+      .bulk-edit-bar,
+      .check-in-overlay-scrim
+    )
   ) {
   position: relative;
   z-index: 1;
