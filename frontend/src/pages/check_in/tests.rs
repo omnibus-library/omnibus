@@ -5,9 +5,12 @@
 
 use super::entry::apply_key;
 use super::link::{scan_book_from_hit, truncation_note};
-use super::screens::{byline, confirm_subtitle, meta_details, CloseMatchCopy};
+use super::screens::{
+    byline, confirm_subtitle, held_only_by_a_wish, meta_details, offers_wishlist_entry,
+    CloseMatchCopy,
+};
 use super::*;
-use omnibus_shared::{MetadataProvider, PaletteBookHit};
+use omnibus_shared::{CopyFiler, MetadataProvider, PaletteBookHit};
 
 fn scan_book() -> ScanBook {
     ScanBook {
@@ -18,6 +21,7 @@ fn scan_book() -> ScanBook {
         has_physical: false,
         has_files: true,
         isbn: Some("9780441013593".into()),
+        copy_filers: Vec::new(),
     }
 }
 
@@ -33,6 +37,7 @@ fn external() -> ExternalBookMeta {
         cover_url: None,
         series: None,
         first_publish_year: None,
+        format: None,
         source: MetadataProvider::OpenLibrary,
     }
 }
@@ -134,6 +139,7 @@ fn stage_for_on_wishlist_opens_the_check_in_confirm_marked_as_wishlisted() {
         book,
         isbn,
         wishlisted,
+        ..
     }) = stage_for(outcome, "9780441013593")
     else {
         panic!("expected the confirm stage");
@@ -150,6 +156,7 @@ fn stage_for_in_library_unowned_opens_the_check_in_confirm() {
         book,
         isbn,
         wishlisted,
+        ..
     }) = stage_for(outcome, "9780441013593")
     else {
         panic!("expected the confirm stage");
@@ -197,25 +204,169 @@ fn stage_for_close_match_flattens_the_wire_head_and_tail_into_one_picker() {
 #[test]
 fn confirm_subtitle_claims_a_digital_copy_only_for_a_book_with_a_file() {
     let digital = scan_book();
-    assert!(confirm_subtitle(&digital, false).contains("digitally"));
+    assert!(confirm_subtitle(&digital, false, false, None).contains("digitally"));
 
     let paper_only = ScanBook {
         has_files: false,
         has_physical: true,
         ..scan_book()
     };
-    let paper = confirm_subtitle(&paper_only, false);
+    let paper = confirm_subtitle(&paper_only, false, false, None);
     assert!(!paper.contains("digitally"), "got: {paper}");
     assert!(paper.contains("print copy"), "got: {paper}");
+}
 
-    let wished = ScanBook {
+#[test]
+fn confirm_subtitle_says_a_book_nobody_holds_is_on_another_readers_wishlist() {
+    let wish_only = ScanBook {
         has_files: false,
         has_physical: false,
         ..scan_book()
     };
-    let fileless = confirm_subtitle(&wished, false);
-    assert!(!fileless.contains("digitally"), "got: {fileless}");
-    assert!(fileless.contains("without a file"), "got: {fileless}");
+    let line = confirm_subtitle(&wish_only, false, true, Some(1));
+    assert_eq!(
+        line,
+        "Not in your library \u{2014} it's on another reader's wishlist."
+    );
+}
+
+fn paper_only_filed_by(filers: &[(Option<i64>, Option<&str>)]) -> ScanBook {
+    ScanBook {
+        has_files: false,
+        has_physical: true,
+        copy_filers: filers
+            .iter()
+            .map(|(user_id, name)| CopyFiler {
+                user_id: *user_id,
+                name: name.map(str::to_string),
+            })
+            .collect(),
+        ..scan_book()
+    }
+}
+
+#[test]
+fn confirm_subtitle_says_the_viewer_already_has_a_print_copy_when_they_filed_one() {
+    let book = paper_only_filed_by(&[(Some(2), Some("Sam")), (Some(1), Some("Ada"))]);
+    assert_eq!(
+        confirm_subtitle(&book, false, false, Some(1)),
+        "You already have a print copy of this one \u{2014} this adds another."
+    );
+}
+
+#[test]
+fn confirm_subtitle_names_the_first_named_filer_when_the_viewer_filed_none() {
+    // A deleted account's copy leads the list but names nobody.
+    let book = paper_only_filed_by(&[(None, None), (Some(2), Some("Sam"))]);
+    assert_eq!(
+        confirm_subtitle(&book, false, false, Some(1)),
+        "Sam already has a print copy of this one \u{2014} this adds yours."
+    );
+}
+
+#[test]
+fn confirm_subtitle_says_the_household_has_a_print_copy_when_no_filer_is_named() {
+    for filers in [vec![], vec![(None, None)]] {
+        let book = paper_only_filed_by(&filers);
+        assert_eq!(
+            confirm_subtitle(&book, false, false, Some(1)),
+            "The household already has a print copy of this one \u{2014} this adds yours."
+        );
+    }
+}
+
+#[test]
+fn confirm_subtitle_does_not_guess_who_filed_a_copy_while_the_viewer_is_unknown() {
+    let book = paper_only_filed_by(&[(Some(2), Some("Sam"))]);
+    assert_eq!(
+        confirm_subtitle(&book, false, false, None),
+        "The household already has a print copy of this one \u{2014} this adds yours."
+    );
+}
+
+#[test]
+fn held_only_by_a_wish_holds_only_for_a_book_with_no_file_and_no_copy() {
+    let wish_only = ScanBook {
+        has_files: false,
+        has_physical: false,
+        ..scan_book()
+    };
+    assert!(held_only_by_a_wish(&wish_only));
+    assert!(!held_only_by_a_wish(&scan_book()));
+    assert!(!held_only_by_a_wish(&paper_only_filed_by(&[])));
+}
+
+#[test]
+fn offers_wishlist_entry_for_a_wish_only_book_whichever_door_reached_it() {
+    let wish_only = ScanBook {
+        has_files: false,
+        has_physical: false,
+        ..scan_book()
+    };
+    assert!(offers_wishlist_entry(&wish_only, false));
+    assert!(!offers_wishlist_entry(&wish_only, true));
+    assert!(!offers_wishlist_entry(&scan_book(), false));
+    assert!(!offers_wishlist_entry(&paper_only_filed_by(&[]), false));
+}
+
+#[test]
+fn confirm_subtitle_stays_neutral_for_a_wish_only_book_picked_from_a_close_match() {
+    let wish_only = ScanBook {
+        has_files: false,
+        has_physical: false,
+        ..scan_book()
+    };
+
+    let line = confirm_subtitle(&wish_only, false, false, Some(1));
+
+    assert!(!line.contains("another reader"), "got: {line}");
+}
+
+#[test]
+fn stage_for_blames_another_readers_wish_only_for_an_unowned_book_nobody_holds() {
+    let wish_only = ScanBook {
+        has_files: false,
+        has_physical: false,
+        ..scan_book()
+    };
+    let stage = stage_for(ScanOutcome::InLibraryUnowned { book: wish_only }, "isbn");
+    assert!(matches!(
+        stage,
+        Some(Stage::Confirm {
+            another_wish: true,
+            ..
+        })
+    ));
+    let filed = stage_for(ScanOutcome::InLibraryUnowned { book: scan_book() }, "isbn");
+    assert!(matches!(
+        filed,
+        Some(Stage::Confirm {
+            another_wish: false,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn confirm_subtitle_says_a_wish_holds_a_fileless_copyless_book_picked_from_a_list() {
+    let hit = PaletteBookHit {
+        formats: Vec::new(),
+        has_physical: false,
+        ..palette_hit()
+    };
+    let book = scan_book_from_hit(&hit);
+
+    let line = confirm_subtitle(&book, false, false, Some(1));
+
+    assert_eq!(line, "Not in your library \u{2014} it's on a wishlist.");
+}
+
+#[test]
+fn wishlist_request_for_book_targets_the_existing_book_by_uuid() {
+    let req = wishlist_request_for_book(&scan_book(), FoundVia::BarcodeScan);
+    assert_eq!(req.book_uuid.as_deref(), Some("book-uuid"));
+    assert!(req.meta.is_none());
+    assert_eq!(req.source, WishlistSource::Scan);
 }
 
 #[test]
@@ -225,7 +376,7 @@ fn confirm_subtitle_says_a_wishlisted_book_comes_off_the_wishlist() {
         has_physical: false,
         ..scan_book()
     };
-    let line = confirm_subtitle(&wished, true);
+    let line = confirm_subtitle(&wished, true, false, None);
     assert!(line.contains("on your wishlist"), "got: {line}");
     assert!(line.contains("takes it off"), "got: {line}");
 }
@@ -373,24 +524,40 @@ fn friendly_error_keeps_the_original_when_stripping_leaves_nothing() {
 }
 
 #[test]
-fn meta_details_joins_the_facts_the_provider_carried() {
+fn meta_details_joins_the_edition_facts_the_provider_carried() {
     let mut meta = external();
-    meta.first_publish_year = Some(1965);
-    meta.publisher = Some("Chilton Books".into());
-    meta.pages = Some(412);
+    meta.first_publish_year = Some(2016);
+    meta.publisher = Some("Orbit".into());
+    meta.format = Some("Paperback".into());
+    meta.pages = Some(410);
+    meta.isbn13 = "9780316229265".into();
     assert_eq!(
         meta_details(&meta).as_deref(),
-        Some("First published 1965 \u{b7} Chilton Books \u{b7} 412 pages")
+        Some(
+            "First published 2016 \u{b7} Orbit \u{b7} Paperback \u{b7} 410 pages \u{b7} ISBN 9780316229265"
+        )
+    );
+}
+
+#[test]
+fn meta_details_skips_absent_facts_without_stray_separators() {
+    let mut meta = external();
+    meta.format = Some("Paperback".into());
+    assert_eq!(
+        meta_details(&meta).as_deref(),
+        Some("Paperback \u{b7} ISBN 9780441013593")
     );
 }
 
 #[test]
 fn meta_details_is_none_when_the_provider_carried_nothing() {
-    // `external()` has no first-publish year, publisher, or page count.
-    assert_eq!(meta_details(&external()), None);
-    // A blank publisher and a zero page count don't count as facts either.
+    // `external()` has no first-publish year, publisher, format or page count.
     let mut meta = external();
+    meta.isbn13 = String::new();
+    assert_eq!(meta_details(&meta), None);
+    // Blank text and a zero page count don't count as facts either.
     meta.publisher = Some("   ".into());
+    meta.format = Some(" ".into());
     meta.pages = Some(0);
     assert_eq!(meta_details(&meta), None);
 }
@@ -464,7 +631,7 @@ fn scan_book_from_hit_reports_a_paper_only_book_as_a_print_copy() {
     let book = scan_book_from_hit(&hit);
     assert!(!book.has_files);
     assert!(book.has_physical);
-    assert!(confirm_subtitle(&book, false).contains("print copy of this one"));
+    assert!(confirm_subtitle(&book, false, false, None).contains("print copy of this one"));
 }
 
 #[test]

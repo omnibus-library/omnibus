@@ -29,7 +29,9 @@ const RECENT_LIMIT_CAP: i64 = 20;
 /// position wins, judged by `client_updated_at` (the server's clock when absent), so a
 /// write older than the stored position changes nothing. An `audio` position without
 /// `book_file_id` also loses to a stored one that names a file of a multi-file audiobook.
-/// The response is the position the server kept, yours or the stored one. A book you
+/// For an EPUB `epub_cfi` the server stores its own `progress_percent` for that position, where
+/// it has measured the book, in place of the one you sent. The response is the position the
+/// server kept, yours or the stored one. A book you
 /// haven't given a read status becomes `reading`; one you have keeps its status.
 #[utoipa::path(
     post,
@@ -45,15 +47,16 @@ const RECENT_LIMIT_CAP: i64 = 20;
 pub(super) async fn post_progress(
     user: AuthUser,
     State(state): State<AppState>,
-    Json(update): Json<ProgressUpdate>,
+    Json(mut update): Json<ProgressUpdate>,
 ) -> Response {
     if let Err(msg) = update.validate() {
         return (axum::http::StatusCode::BAD_REQUEST, msg).into_response();
     }
+    db::progress::scale_epub_percent(&state.pool, &mut update).await;
     match db::progress::upsert_progress(&state.pool, user.id, &update).await {
         Ok(rec) => {
-            // Epub CFI writes without a percent get one derived off-path;
-            // the response carries the record as stored, percent follows.
+            // A book without spine stats keeps the client's percent, or gets
+            // one derived off-path when it sent none; the response is as stored.
             db::progress::spawn_epub_percent_derivation(state.pool.clone(), user.id, &rec);
             Json(rec).into_response()
         }

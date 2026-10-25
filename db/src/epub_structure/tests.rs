@@ -164,6 +164,33 @@ fn fraction_at_keeps_sub_percent_precision_that_percent_at_floors() {
 }
 
 #[test]
+fn percent_at_reads_forty_or_more_one_character_past_the_forty_percent_position() {
+    // Floor semantics put `position_at_fraction(.., 0.40)` just short of 40% on
+    // most lengths, so a reader placed there reads back a figure below 40.
+    for total in 3..=400i64 {
+        let stats = vec![
+            SpineStatRow {
+                spine_index: 0,
+                href: "c1.xhtml".into(),
+                visible_chars: total / 3,
+                chars_before: 0,
+            },
+            SpineStatRow {
+                spine_index: 1,
+                href: "c2.xhtml".into(),
+                visible_chars: total - total / 3,
+                chars_before: total / 3,
+            },
+        ];
+        let (spine, offset) = position_at_fraction(&stats, 0.40).unwrap();
+        assert!(
+            percent_at(&stats, spine, offset + 1).unwrap() >= 40,
+            "total {total}: one character past {spine}:{offset} is below 40"
+        );
+    }
+}
+
+#[test]
 fn percent_at_reports_zero_for_an_empty_book() {
     let stats = vec![SpineStatRow {
         spine_index: 0,

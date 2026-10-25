@@ -12,6 +12,7 @@ use sqlx::{Sqlite, SqlitePool, Transaction};
 use crate::metadata_overrides::{
     get_metadata_overrides_exec, rebuild_fts_for_book, upsert_one_in_tx, MetadataOverridesError,
 };
+use crate::sort_keys::refresh_author_sort;
 use crate::sync::upsert_fts;
 use crate::taxonomy::{delete_orphan_taxonomy, resolve_or_insert_tag};
 
@@ -34,6 +35,8 @@ mod tests;
 pub enum CleanupApplyError {
     #[error(transparent)]
     Db(#[from] sqlx::Error),
+    #[error(transparent)]
+    SortKeys(#[from] crate::sort_keys::SortKeysError),
     #[error("cleanup snapshot encode/decode failed: {0}")]
     Snapshot(#[from] serde_json::Error),
     #[error(transparent)]
@@ -160,6 +163,11 @@ async fn apply_merge(
         &sources,
     )
     .await?;
+
+    if entity == MergeEntity::Author {
+        let books: Vec<i64> = affected.iter().copied().collect();
+        refresh_author_sort(&mut tx, &books).await?;
+    }
 
     delete_sources_and_reap_taxonomy(&mut tx, entity, source_ids).await?;
 
@@ -523,6 +531,9 @@ pub async fn apply_delete_author(
         .execute(&mut *tx)
         .await?;
     delete_orphan_taxonomy(&mut tx).await?;
+
+    let book_ids: Vec<i64> = links.iter().map(|link| link.book_id).collect();
+    refresh_author_sort(&mut tx, &book_ids).await?;
 
     for link in &links {
         upsert_fts(&mut tx, link.book_id).await?;

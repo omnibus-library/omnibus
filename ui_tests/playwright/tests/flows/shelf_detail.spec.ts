@@ -1,4 +1,6 @@
+import { scan } from "../contracts/scan";
 import { shelves } from "../contracts/shelves";
+import { type BookRef, buildExternalBook, notInLibrary } from "../data/scan";
 import { buildShelfUpdate, smartShelfBy } from "../data/shelves";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/pageFixtures";
@@ -54,6 +56,53 @@ test.describe("shelf page", () => {
 
     await test.step("check the book page shows", async () => {
       await bookDetailPage.assertDisplayedFor(alpha);
+    });
+  });
+
+  test("update the count after a check-in adds to this shelf", async ({
+    readerShelfPage,
+    readerWishlist,
+    createdBookUuids,
+    readerExpectMutation,
+  }) => {
+    // The reader's own wishlist: no other spec writes it while this one runs.
+    const overlay = readerShelfPage.checkInOverlay;
+    const book = buildExternalBook();
+    let before = 0;
+
+    await test.step("open the wishlist shelf", async () => {
+      await readerShelfPage.goto(readerWishlist.id);
+      await expect(readerShelfPage.count).toHaveText(/^\d+$/);
+      before = Number(await readerShelfPage.count.innerText());
+    });
+
+    await test.step("look up a book only the providers know", async () => {
+      await overlay.stubIsbnLookup(notInLibrary(book));
+      await readerShelfPage.topNav.openCheckIn();
+      await readerExpectMutation(scan.resolve(book.isbn13), () =>
+        overlay.lookUpIsbn(book.isbn13),
+      );
+      await expect(overlay.chooseScreen).toBeVisible();
+    });
+
+    await test.step("add it to the wishlist", async () => {
+      const { response } = await readerExpectMutation(
+        scan.wishlist("manual"),
+        () => overlay.addToWishlist(),
+      );
+      const added: BookRef = await response.json();
+      createdBookUuids.add(added.book_uuid);
+      await expect(overlay.successScreen).toContainText("On your wishlist");
+    });
+
+    await test.step("close the overlay", async () => {
+      await overlay.close();
+      await overlay.assertDismissed();
+    });
+
+    await test.step("check the shelf counts and lists the new book", async () => {
+      await expect(readerShelfPage.bookGrid).toContainText(book.title);
+      await expect(readerShelfPage.count).toHaveText(String(before + 1));
     });
   });
 

@@ -63,6 +63,7 @@ fn provider_meta(source: MetadataProvider) -> ExternalBookMeta {
         cover_url: None,
         series: None,
         first_publish_year: None,
+        format: None,
         source,
     }
 }
@@ -76,6 +77,7 @@ fn library_book() -> ScanBook {
         has_physical: false,
         has_files: true,
         isbn: None,
+        copy_filers: Vec::new(),
     }
 }
 

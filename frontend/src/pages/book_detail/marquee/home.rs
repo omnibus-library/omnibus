@@ -10,7 +10,7 @@ use dioxus_router::Link;
 use omnibus_shared::physical::WishlistEntry;
 use omnibus_shared::summary::summary_is_sparse;
 use omnibus_shared::{
-    AlignmentEbookChapter, AlignmentView, BookFileInfo, BookInsights, EbookMetadata,
+    AlignmentEbookChapter, AlignmentView, BookFileInfo, BookInsights, Contributor, EbookMetadata,
     MetadataOverrides, ProgressRecord,
 };
 
@@ -27,11 +27,40 @@ use crate::pages::book_detail::physical::{find_a_copy_url, remove_from_wishlist}
 use crate::pages::book_detail::read_status::BdReadStatusControl;
 use crate::pages::book_detail::reviews::{BdReviewsJumpLink, ReviewsCtx};
 use crate::pages::book_detail::sync_link::BdSyncPanel;
+use crate::pages::book_detail::view::is_wishlist_only;
 use crate::pages::book_detail::PhysSignals;
 use crate::routes::link_target;
 use crate::{data, use_server_url, Route};
 
 use super::{MarqueeProgress, MarqueeViewFacts};
+
+/// "by A, B" under the title. An author with an id links to their page, unless
+/// the book is `linked: false` (held only for a wish), whose authors have no
+/// page of the library's to open.
+#[component]
+fn MarqueeByline(creators: Vec<Contributor>, linked: bool) -> Element {
+    rsx! {
+        p { class: "bdmq-by", "data-testid": "book-authors",
+            "by "
+            for (i, creator) in creators.iter().enumerate() {
+                if i > 0 { ", " }
+                if let Some(author_id) = creator.id.filter(|_| linked) {
+                    Link {
+                        key: "id-{author_id}",
+                        to: Route::AuthorDetail { id: author_id },
+                        class: "bd-author-link",
+                        "{creator.name}"
+                    }
+                } else {
+                    span {
+                        key: "name-{creator.name}-{creator.role:?}-{creator.file_as:?}",
+                        "{creator.name}"
+                    }
+                }
+            }
+        }
+    }
+}
 
 /// The Home stop.
 #[component]
@@ -103,26 +132,7 @@ pub(super) fn MarqueeHomeStop(
             "\u{270e} Edit"
         }
         if !b.creators.is_empty() {
-            p { class: "bdmq-by", "data-testid": "book-authors",
-                "by "
-                for (i, creator) in b.creators.iter().enumerate() {
-                    if i > 0 { ", " }
-                    if let Some(author_id) = creator.id {
-                        Link {
-                            key: "id-{author_id}",
-                            to: Route::AuthorDetail { id: author_id },
-                            class: "bd-author-link",
-                            "{creator.name}"
-                        }
-                    } else {
-                        span {
-                            key: "name-{creator.name}-{creator.role:?}-{creator.file_as:?}",
-                            class: "bd-author-link",
-                            "{creator.name}"
-                        }
-                    }
-                }
-            }
+            MarqueeByline { creators: b.creators.clone(), linked: !is_wishlist_only(&b) }
         }
         BdReviewsJumpLink {
             summary: reviews.summary(),

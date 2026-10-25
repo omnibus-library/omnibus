@@ -33,15 +33,67 @@ pub struct FilelessBook {
 
 /// Create a fileless book and return its minted uuid. Inserts the `books` row
 /// under the synthetic Physical scan root, links each author, writes an `ISBN`
-/// identifier when present, and stores the cover, all in one transaction; a
-/// cover-write failure rolls the row back.
+/// identifier when present, and indexes it, all in one transaction. The cover
+/// file follows the commit; a write failure removes the row again.
 pub async fn create_fileless_book(
     pool: &SqlitePool,
     book: FilelessBook,
 ) -> Result<String, PhysicalError> {
     let mut tx = pool.begin().await?;
+    let created = create_fileless_book_in_tx(&mut tx, book).await?;
+    crate::sync::upsert_fts(&mut tx, created.id).await?;
+    tx.commit().await?;
+    if let Err(e) = created.write_cover() {
+        sqlx::query("DELETE FROM books WHERE id = ?")
+            .bind(created.id)
+            .execute(pool)
+            .await?;
+        return Err(e.into());
+    }
+    Ok(created.uuid)
+}
 
-    let library_id = ensure_physical_library(&mut tx).await?;
+/// A fileless book just inserted on a caller's transaction, with the cover it
+/// still owes the disk.
+pub(crate) struct CreatedFileless {
+    pub(crate) id: i64,
+    pub(crate) uuid: String,
+    cover: Option<FilelessCover>,
+}
+
+impl CreatedFileless {
+    /// Write the cover file. Called after the transaction commits, so a rolled-back
+    /// mint leaves no file behind and the blocking write holds no database lock.
+    pub(crate) fn write_cover(&self) -> std::io::Result<()> {
+        match &self.cover {
+            Some(cover) => write_cover_file(&self.uuid, &cover.mime, &cover.bytes),
+            None => Ok(()),
+        }
+    }
+
+    /// [`Self::write_cover`] for a book that stays whatever happens: a failed
+    /// write is logged and the book is unmarked as covered.
+    pub(crate) async fn settle_cover(&self, pool: &SqlitePool) {
+        let Err(e) = self.write_cover() else { return };
+        tracing::warn!(uuid = %self.uuid, error = %e, "cover write failed; book left without it");
+        if let Err(e) = sqlx::query("UPDATE books SET has_cover = 0 WHERE id = ?")
+            .bind(self.id)
+            .execute(pool)
+            .await
+        {
+            tracing::warn!(uuid = %self.uuid, error = %e, "could not unmark the missing cover");
+        }
+    }
+}
+
+/// [`create_fileless_book`]'s insert on the caller's transaction, so more of the
+/// book's rows can land in the same commit. The caller indexes the book and, once
+/// committed, writes the cover through the returned [`CreatedFileless`].
+pub(crate) async fn create_fileless_book_in_tx(
+    tx: &mut Transaction<'_, sqlx::Sqlite>,
+    book: FilelessBook,
+) -> Result<CreatedFileless, PhysicalError> {
+    let library_id = ensure_physical_library(tx).await?;
     let uuid = mint_uuid();
     let has_cover = i64::from(book.cover.is_some());
     // Surname-first sort key (#2342), matching the scanned write path.
@@ -68,10 +120,10 @@ pub async fn create_fileless_book(
     .bind(&book.description)
     .bind(normalize_title(&book.title))
     .bind(&author_norm)
-    .fetch_one(&mut *tx)
+    .fetch_one(&mut **tx)
     .await?;
 
-    link_authors(&mut tx, book_id, &book.authors).await?;
+    link_authors(tx, book_id, &book.authors).await?;
 
     if let Some(isbn) = book.isbn.as_deref().filter(|s| !s.is_empty()) {
         sqlx::query(
@@ -80,21 +132,15 @@ pub async fn create_fileless_book(
         )
         .bind(book_id)
         .bind(isbn)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
     }
 
-    // Index into `books_fts` through the single door so a physical-only book is
-    // searchable like any other (title/authors/ISBN) — the write paths that hide
-    // fileless books already include those with a physical copy.
-    crate::sync::upsert_fts(&mut tx, book_id).await?;
-
-    if let Some(cover) = &book.cover {
-        write_cover_file(&uuid, &cover.mime, &cover.bytes)?;
-    }
-
-    tx.commit().await?;
-    Ok(uuid)
+    Ok(CreatedFileless {
+        id: book_id,
+        uuid,
+        cover: book.cover,
+    })
 }
 
 /// Ensure the synthetic Physical scan root exists and return its id. Idempotent

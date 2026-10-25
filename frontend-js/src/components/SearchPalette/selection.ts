@@ -96,6 +96,22 @@ export function selectedIndex(
   );
 }
 
+/** The listbox's id, which the input's `aria-controls` names. */
+export const LISTBOX_ID = "sp-listbox";
+
+/** The id of the row at flat `index`, which the input reports while it is highlighted. */
+export const optionId = (index: number) => `sp-option-${index}`;
+
+/** The id the input reports as active: the highlighted row's, absent until the reader arrows or when nothing is listed. */
+export function activeOptionId(
+  items: readonly PaletteItem[],
+  highlighted: string | null,
+): string | undefined {
+  return highlighted === null || items.length === 0
+    ? undefined
+    : optionId(selectedIndex(items, highlighted));
+}
+
 /** Where a row opens: its detail page, a facet search, or a settings section. */
 export function itemHref(item: PaletteItem): string {
   switch (item.kind) {

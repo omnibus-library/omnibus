@@ -277,6 +277,135 @@ async fn backfill_author_sort_rekeys_a_commaless_file_as_from_the_linked_author(
     assert_eq!(keys, ["Tolkien, J.R.R.", "Craig, Erin A.", "Plato"]);
 }
 
+/// A comma-form key left behind by a link change is re-derived from the
+/// lowest-position author (gaps allowed), and a second pass changes nothing.
+#[tokio::test]
+async fn backfill_author_sort_heals_a_stale_comma_key_and_is_a_no_op_on_a_second_run() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    sqlx::query("INSERT INTO scan_roots (path, display_name) VALUES ('/lib', 'lib')")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let book_id: i64 = sqlx::query_scalar(
+        "INSERT INTO books (uuid, library_id, path, title, author_sort) \
+         VALUES ('u1', 1, '', 't', 'Steven, Laura') RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    for (name, sort, position) in [
+        ("Laura Steven", None, 4),
+        ("Benito Pérez Galdós", Some("Pérez Galdós, Benito"), 2),
+    ] {
+        let author_id: i64 =
+            sqlx::query_scalar("INSERT INTO authors (name, sort) VALUES (?, ?) RETURNING id")
+                .bind(name)
+                .bind(sort)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        sqlx::query("INSERT INTO books_authors_link (book, author, position) VALUES (?, ?, ?)")
+            .bind(book_id)
+            .bind(author_id)
+            .bind(position)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    let read = || async {
+        sqlx::query_scalar::<_, String>("SELECT author_sort FROM books WHERE id = ?")
+            .bind(book_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+    };
+
+    backfill_author_sort(&pool).await.unwrap();
+    assert_eq!(read().await, "Pérez Galdós, Benito");
+
+    backfill_author_sort(&pool).await.unwrap();
+    assert_eq!(read().await, "Pérez Galdós, Benito");
+}
+
+#[tokio::test]
+async fn backfill_author_sort_keeps_a_comma_key_on_a_book_with_no_author_link() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    sqlx::query("INSERT INTO scan_roots (path, display_name) VALUES ('/lib', 'lib')")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO books (uuid, library_id, path, title, author_sort) \
+         VALUES ('u1', 1, '', 't', 'Keep, Me')",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    backfill_author_sort(&pool).await.unwrap();
+
+    let key: String = sqlx::query_scalar("SELECT author_sort FROM books")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(key, "Keep, Me");
+}
+
+#[tokio::test]
+async fn backfill_author_sort_keys_a_linked_book_with_no_stored_key_and_leaves_an_unlinked_one_null(
+) {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    sqlx::query("INSERT INTO scan_roots (path, display_name) VALUES ('/lib', 'lib')")
+        .execute(&pool)
+        .await
+        .unwrap();
+    for (uuid, stored) in [
+        ("linked-null", None),
+        ("linked-empty", Some("")),
+        ("bare", None),
+    ] {
+        let book_id: i64 = sqlx::query_scalar(
+            "INSERT INTO books (uuid, library_id, path, title, author_sort) \
+             VALUES (?, 1, '', 't', ?) RETURNING id",
+        )
+        .bind(uuid)
+        .bind(stored)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        if uuid != "bare" {
+            let author_id: i64 =
+                sqlx::query_scalar("INSERT INTO authors (name) VALUES (?) RETURNING id")
+                    .bind(format!("Ada {uuid}"))
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap();
+            sqlx::query("INSERT INTO books_authors_link (book, author, position) VALUES (?, ?, 0)")
+                .bind(book_id)
+                .bind(author_id)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+    }
+
+    backfill_author_sort(&pool).await.unwrap();
+
+    let keys: Vec<Option<String>> =
+        sqlx::query_scalar("SELECT author_sort FROM books ORDER BY uuid")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        keys,
+        [
+            None,
+            Some("linked-empty, Ada".into()),
+            Some("linked-null, Ada".into())
+        ]
+    );
+}
+
 #[tokio::test]
 async fn backfill_author_sort_propagates_db_error_when_pool_is_closed() {
     let pool = init_db("sqlite::memory:").await.unwrap();

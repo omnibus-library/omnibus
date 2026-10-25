@@ -445,6 +445,163 @@ async fn search_by_title_maps_open_library_docs_and_skips_isbnless_ones() {
     );
 }
 
+/// A search answer holding one *work*, whose own `isbn` list spans editions in
+/// several languages.
+fn ol_work_hit() -> serde_json::Value {
+    json!({
+        "docs": [{
+            "key": "/works/OL1W",
+            "title": "Effective Java",
+            "author_name": ["Joshua Bloch"],
+            "first_publish_year": 2001,
+            "isbn": ["9780306406157", ISBN13],
+            "cover_i": 8511809,
+        }]
+    })
+}
+
+async fn mount_ol_editions(server: &MockServer, response: ResponseTemplate) {
+    Mock::given(method("GET"))
+        .and(path("/works/OL1W/editions.json"))
+        .respond_with(response)
+        .mount(server)
+        .await;
+}
+
+#[tokio::test]
+async fn search_by_title_resolves_an_open_library_work_to_its_english_paperback() {
+    let server = MockServer::start().await;
+    mount_ol_search(&server, ol_work_hit()).await;
+    mount_ol_editions(
+        &server,
+        ResponseTemplate::new(200).set_body_json(json!({ "entries": [
+            { "isbn_13": ["9780306406157"], "publishers": ["Alfa Yayinlari"],
+              "number_of_pages": 300, "physical_format": "Paperback",
+              "languages": [{ "key": "/languages/tur" }] },
+            { "isbn_13": [ISBN13], "publishers": ["Addison-Wesley"],
+              "number_of_pages": 416, "physical_format": "Paperback",
+              "languages": [{ "key": "/languages/eng" }] },
+        ]})),
+    )
+    .await;
+
+    let results = search_provider_by_title(&config_for(&server), QUERY)
+        .await
+        .unwrap();
+
+    assert_eq!(results.len(), 1);
+    let meta = &results[0];
+    assert_eq!(meta.isbn13, ISBN13);
+    assert_eq!(meta.publisher.as_deref(), Some("Addison-Wesley"));
+    assert_eq!(meta.pages, Some(416));
+    assert_eq!(meta.format.as_deref(), Some("Paperback"));
+    // The card's year is the work's first publication, not an edition's date.
+    assert_eq!(meta.first_publish_year, Some(2001));
+    assert_eq!(meta.year, None);
+}
+
+#[tokio::test]
+async fn search_by_title_drops_the_work_instead_of_filing_its_search_isbn_when_the_editions_call_fails(
+) {
+    let server = MockServer::start().await;
+    mount_ol_search(&server, ol_work_hit()).await;
+    mount_ol_editions(&server, ResponseTemplate::new(500)).await;
+    mount_gb_search(&server, json!({ "totalItems": 0 })).await;
+
+    let results = search_provider_by_title(&config_for(&server), QUERY)
+        .await
+        .unwrap();
+
+    assert!(results.is_empty(), "got {results:?}");
+}
+
+#[tokio::test]
+async fn search_by_title_records_a_cooldown_when_open_library_throttles_the_editions_call() {
+    let server = MockServer::start().await;
+    mount_ol_search(&server, ol_work_hit()).await;
+    mount_ol_editions(&server, ResponseTemplate::new(429)).await;
+    mount_gb_search(&server, json!({ "totalItems": 0 })).await;
+    let config = config_for(&server);
+
+    let results = search_provider_by_title(&config, QUERY).await.unwrap();
+
+    assert!(results.is_empty(), "got {results:?}");
+    assert!(config
+        .throttle
+        .remaining(MetadataProvider::OpenLibrary)
+        .is_some());
+}
+
+#[tokio::test]
+async fn search_by_title_reports_a_provider_error_when_open_library_is_last_and_every_editions_call_fails(
+) {
+    let server = MockServer::start().await;
+    mount_ol_search(&server, ol_work_hit()).await;
+    mount_ol_editions(&server, ResponseTemplate::new(500)).await;
+    mount_gb_search(&server, json!({ "totalItems": 0 })).await;
+
+    let result = search_provider_by_title(&keyed_config_for(&server), QUERY).await;
+
+    assert!(matches!(result, Err(MetadataLookupError::Provider(_))));
+}
+
+#[tokio::test]
+async fn resolving_open_library_editions_makes_no_request_and_files_no_work_isbn_while_it_is_throttled(
+) {
+    let server = MockServer::start().await;
+    mount_ol_editions(
+        &server,
+        ResponseTemplate::new(200).set_body_json(json!({ "entries": [] })),
+    )
+    .await;
+    let config = config_for(&server);
+    config.throttle.record(MetadataProvider::OpenLibrary, None);
+    let work = omnibus_shared::metadata_lookup::ProviderEdition {
+        source: MetadataProvider::OpenLibrary,
+        provider_ref: "/works/OL1W".into(),
+        isbn13: Some("9780306406157".into()),
+        isbn10: None,
+        title: "Effective Java".into(),
+        authors: vec!["Joshua Bloch".into()],
+        year: None,
+        pages: None,
+        publisher: None,
+        description: None,
+        cover_url: None,
+        series: None,
+        series_index: None,
+        first_publish_year: None,
+        genres: Vec::new(),
+        relevance: None,
+    };
+
+    let resolved = resolve_open_library_editions(&config, vec![work]).await;
+
+    assert!(resolved.is_err(), "a cooling-down lookup is not an answer");
+    assert!(server.received_requests().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn search_by_title_drops_an_open_library_work_whose_editions_carry_no_isbn() {
+    let server = MockServer::start().await;
+    mount_ol_search(&server, ol_work_hit()).await;
+    mount_ol_editions(
+        &server,
+        ResponseTemplate::new(200).set_body_json(json!({ "entries": [
+            { "publishers": ["Unnumbered Press"], "physical_format": "Paperback",
+              "languages": [{ "key": "/languages/eng" }] },
+        ]})),
+    )
+    .await;
+    mount_gb_search(&server, json!({ "totalItems": 0 })).await;
+
+    let results = search_provider_by_title(&config_for(&server), QUERY)
+        .await
+        .unwrap();
+
+    assert!(results.is_empty());
+}
+
 #[tokio::test]
 async fn search_by_title_falls_through_to_google_books_when_open_library_is_empty() {
     let server = MockServer::start().await;

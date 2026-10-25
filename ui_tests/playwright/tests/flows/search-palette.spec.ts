@@ -19,6 +19,24 @@ test.describe("search palette", () => {
     });
   });
 
+  // The word is hidden below 900px, so the button has to carry its own name.
+  test.describe("phone viewport", () => {
+    test.use({ viewport: { width: 390, height: 844 } });
+
+    test("name the search button for assistive tech", async ({
+      libraryPage,
+    }) => {
+      await test.step("open the library", async () => {
+        await libraryPage.goto();
+        await libraryPage.assertDisplayed();
+      });
+
+      await test.step("check the button resolves by its role and name", async () => {
+        await expect(libraryPage.topNav.searchButtonByName).toBeVisible();
+      });
+    });
+  });
+
   test("open on clicking the search button", async ({ libraryPage }) => {
     const palette = libraryPage.topNav.searchPalette;
 
@@ -326,6 +344,49 @@ test.describe("search palette", () => {
       await test.step("press the down arrow", async () => {
         await palette.selectNextResult();
         await expect(palette.topResult("book")).toHaveClass(/selected/);
+      });
+    });
+
+    test("expose the highlighted result to assistive tech", async ({
+      libraryPage,
+    }) => {
+      const palette = libraryPage.topNav.searchPalette;
+
+      await test.step("search for a title", async () => {
+        await libraryPage.goto();
+        await palette.search("dracula");
+        await expect(palette.row("book")).not.toHaveCount(0);
+      });
+
+      await test.step("check the input controls a listbox of options", async () => {
+        await expect(palette.combobox).toHaveAttribute("aria-expanded", "true");
+        await expect(palette.combobox).toHaveAttribute(
+          "aria-autocomplete",
+          "list",
+        );
+        await expect(palette.listbox).toBeVisible();
+        await expect(palette.combobox).toHaveAttribute(
+          "aria-controls",
+          (await palette.listbox.getAttribute("id")) ?? "",
+        );
+        await expect(palette.combobox).not.toHaveAttribute(
+          "aria-activedescendant",
+          /.+/,
+        );
+      });
+
+      await test.step("press the down arrow", async () => {
+        await palette.selectNextResult();
+      });
+
+      await test.step("check the input points at the selected option", async () => {
+        const id = await palette.selectedOption.getAttribute("id");
+        expect(id).toMatch(/^sp-option-\d+$/);
+        await expect(palette.combobox).toHaveAttribute(
+          "aria-activedescendant",
+          id ?? "",
+        );
+        await expect(palette.selectedOption).toHaveCount(1);
       });
     });
 

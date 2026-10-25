@@ -76,8 +76,10 @@ fn SpTriggerButton(open: PaletteOpen) -> Element {
             class: "sp-trigger",
             "data-testid": "search-trigger",
             r#type: "button",
+            // The visible word is hidden below 900px, so the button names itself.
+            "aria-label": "Search",
             onclick: move |_| open.0.set(true),
-            {search_glyph(15, "sp-trigger-icon", false)}
+            {search_glyph(15, "sp-trigger-icon", true)}
             span { "Search" }
             kbd { class: "sp-trigger-kbd", "⌘K" }
         }

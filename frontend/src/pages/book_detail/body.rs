@@ -179,7 +179,8 @@ fn AuthorLead(author: String, owned: usize, rest: usize, author_route: Option<Ro
 
 /// "Readers also enjoyed" — Hardcover read-alikes below the metadata. Renders
 /// its own divider + section head, then one of: a connect message (no key), a
-/// quiet placeholder (resolving), the cover strip (results), or an empty note.
+/// quiet placeholder (resolving), the cover strip (results), an empty note, or an
+/// unavailable note (the lookup failed).
 /// The section is always present (stable `suggestions-strip` testid); only its
 /// inner content varies by state.
 #[component]
@@ -199,25 +200,36 @@ pub(super) fn BdSuggestionsStrip(
             title: "Suggested for you".to_string(),
         }
         div { class: "bd-suggest", "data-testid": "suggestions-strip",
-            match suggestions {
-                Some(SuggestionsResponse::Ready { items }) if !items.is_empty() => rsx! {
+            // The settled states live in a status region, so a lookup that ends
+            // as unavailable (or empty) is announced rather than swapped in silently.
+            div { role: "status",
+                match &suggestions {
+                    Some(SuggestionsResponse::Ready { items }) if !items.is_empty() => rsx! {},
+                    Some(SuggestionsResponse::Ready { .. }) => rsx! {
+                        div { class: "bd-suggest-pending card", "data-testid": "suggestions-empty",
+                            p { class: "mono bd-stub-hint", "No read-alikes found for this book yet." }
+                        }
+                    },
+                    Some(SuggestionsResponse::NotConfigured) => rsx! {
+                        SuggestionsConnectCard { is_admin }
+                    },
+                    Some(SuggestionsResponse::Unavailable) => rsx! {
+                        div { class: "bd-suggest-pending card", "data-testid": "suggestions-unavailable",
+                            p { class: "mono bd-stub-hint", "Suggestions are unavailable right now." }
+                        }
+                    },
+                    None | Some(SuggestionsResponse::Pending) => rsx! {
+                        div { class: "bd-suggest-pending bd-suggest-loading card", "data-testid": "suggestions-pending",
+                            SuggestionsSpinner {}
+                            p { class: "mono bd-stub-hint", "Looking for read-alikes via Hardcover\u{2026}" }
+                        }
+                    },
+                }
+            }
+            if let Some(SuggestionsResponse::Ready { items }) = suggestions {
+                if !items.is_empty() {
                     BdSuggestionsList { items, server_url }
-                },
-                Some(SuggestionsResponse::Ready { .. }) => rsx! {
-                    div { class: "bd-suggest-pending card", "data-testid": "suggestions-empty",
-                        p { class: "mono bd-stub-hint", "No read-alikes found for this book yet." }
-                    }
-                },
-                Some(SuggestionsResponse::NotConfigured) => rsx! {
-                    SuggestionsConnectCard { is_admin }
-                },
-                // None (first paint, pre-fetch) or Pending → loading placeholder.
-                _ => rsx! {
-                    div { class: "bd-suggest-pending bd-suggest-loading card", "data-testid": "suggestions-pending",
-                        SuggestionsSpinner {}
-                        p { class: "mono bd-stub-hint", "Looking for read-alikes via Hardcover\u{2026}" }
-                    }
-                },
+                }
             }
         }
     }
@@ -361,3 +373,6 @@ mod render_tests {
     // here is that "loading" and "no others" are distinguishable states, which
     // is exactly what #2478 collapsed.
 }
+
+#[cfg(all(test, feature = "server"))]
+mod tests;

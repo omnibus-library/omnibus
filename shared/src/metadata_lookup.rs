@@ -130,6 +130,9 @@ pub struct ExternalBookMeta {
     /// own date.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub first_publish_year: Option<i64>,
+    /// The edition's physical format as the provider names it, such as `Paperback`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub format: Option<String>,
     pub source: MetadataProvider,
 }
 
@@ -182,6 +185,7 @@ impl ExternalBookMeta {
         check("year", &self.year, Self::NAME_MAX_LEN)?;
         check("publisher", &self.publisher, Self::NAME_MAX_LEN)?;
         check("series", &self.series, Self::NAME_MAX_LEN)?;
+        check("format", &self.format, Self::NAME_MAX_LEN)?;
         check("description", &self.description, Self::DESCRIPTION_MAX_LEN)?;
         if let Some(ref cover_url) = self.cover_url {
             if cover_url.len() > Self::COVER_URL_MAX_LEN {
@@ -339,7 +343,7 @@ impl TryFrom<ProviderEdition> for ExternalBookMeta {
 
     /// Narrow a search candidate to the check-in payload, dropping the fields that
     /// type doesn't carry (`provider_ref`, `isbn10`, `series_index`, `relevance`,
-    /// `genres`). Fails with [`NoIsbn`] when the candidate has none: check-in stores
+    /// `genres`) and leaving `format` for the provider that knows it to fill. Fails with [`NoIsbn`] when the candidate has none: check-in stores
     /// the ISBN per physical copy and the iOS client decodes `isbn13` as a
     /// non-optional `String`, so a blank would break it.
     fn try_from(e: ProviderEdition) -> Result<Self, Self::Error> {
@@ -354,6 +358,7 @@ impl TryFrom<ProviderEdition> for ExternalBookMeta {
             cover_url: e.cover_url,
             series: e.series,
             first_publish_year: e.first_publish_year,
+            format: None,
             source: e.source,
         })
     }

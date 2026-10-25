@@ -31,6 +31,7 @@ pub(crate) fn scan_book_from_hit(hit: &PaletteBookHit) -> ScanBook {
         has_physical: hit.has_physical,
         has_files: !hit.formats.is_empty(),
         isbn: None,
+        copy_filers: Vec::new(),
     }
 }
 

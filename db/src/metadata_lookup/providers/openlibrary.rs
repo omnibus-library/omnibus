@@ -12,8 +12,8 @@ use serde::Deserialize;
 use super::super::query::SearchQuery;
 use super::super::{MetadataLookupConfig, SEARCH_LIMIT};
 use super::http::{
-    base_url, client, get_json_best_effort, paired_isbn10, publication_year, sanitize_genres,
-    strip_url,
+    base_url, client, get_json, get_json_best_effort, paired_isbn10, publication_year,
+    sanitize_genres, strip_url,
 };
 
 /// The `jscmd=data` response is a map keyed `"ISBN:<isbn>"`; a missing key means
@@ -271,6 +271,140 @@ fn map_search_doc(doc: OlSearchDoc) -> Option<ProviderEdition> {
     })
 }
 
+// ── Edition of a work ────────────────────────────────────────────
+
+/// One entry of `/works/<id>/editions.json`. Only what picking a printing
+/// reads; `publishers` is a plain string list here, unlike `jscmd=data`.
+#[derive(Debug, Deserialize)]
+struct OlEditionEntry {
+    #[serde(default)]
+    isbn_13: Vec<String>,
+    #[serde(default)]
+    isbn_10: Vec<String>,
+    #[serde(default)]
+    publishers: Vec<String>,
+    #[serde(default)]
+    number_of_pages: Option<i64>,
+    #[serde(default)]
+    physical_format: Option<String>,
+    #[serde(default)]
+    languages: Vec<OlLanguage>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OlLanguage {
+    #[serde(default)]
+    key: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct OlEditions {
+    #[serde(default)]
+    entries: Vec<OlEditionEntry>,
+}
+
+/// The printing of a work chosen to stand for it at a shelf.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(in crate::metadata_lookup) struct WorkEdition {
+    pub(in crate::metadata_lookup) isbn13: String,
+    pub(in crate::metadata_lookup) publisher: Option<String>,
+    pub(in crate::metadata_lookup) pages: Option<i64>,
+    pub(in crate::metadata_lookup) format: Option<String>,
+}
+
+/// How many of a work's editions are read; the list is newest-first and a
+/// popular work has hundreds.
+const EDITIONS_LIMIT: &str = "50";
+
+/// Whether `format` names a book on paper. An unnamed format is not known to be
+/// print, and a format that is a recording, a screen or large type never is.
+fn is_print(format: Option<&str>) -> bool {
+    let Some(format) = format.map(str::to_lowercase) else {
+        return false;
+    };
+    let non_print = [
+        "audio",
+        "cassette",
+        "ebook",
+        "e-book",
+        "kindle",
+        "large print",
+        "playaway",
+        "disc",
+        "mp3",
+        "epub",
+        "mobi",
+        "pdf",
+    ]
+    .iter()
+    .any(|word| format.contains(word))
+        || format
+            .split(|c: char| !c.is_alphanumeric())
+            .any(|token| matches!(token, "cd" | "mp3" | "dvd"));
+    !format.trim().is_empty() && !non_print
+}
+
+/// The edition to file for a work, best first: English print, any print,
+/// English, then the first with an ISBN. Ties keep Open Library's order.
+fn best_edition(entries: Vec<OlEditionEntry>) -> Option<WorkEdition> {
+    let mut best: Option<(u8, WorkEdition)> = None;
+    for entry in entries {
+        let Some(isbn13) = entry
+            .isbn_13
+            .iter()
+            .chain(&entry.isbn_10)
+            .find_map(|v| normalize_isbn(v).ok())
+        else {
+            continue;
+        };
+        let print = is_print(entry.physical_format.as_deref());
+        let english = entry.languages.iter().any(|l| l.key == "/languages/eng");
+        let score = match (english, print) {
+            (true, true) => 3,
+            (false, true) => 2,
+            (true, false) => 1,
+            (false, false) => 0,
+        };
+        if best.as_ref().is_some_and(|(top, _)| *top >= score) {
+            continue;
+        }
+        let name_ok = |v: &String| {
+            !v.trim().is_empty() && v.chars().count() <= ExternalBookMeta::NAME_MAX_LEN
+        };
+        let edition = WorkEdition {
+            isbn13,
+            publisher: entry.publishers.into_iter().find(name_ok),
+            pages: entry.number_of_pages.filter(|p| *p > 0),
+            format: entry.physical_format.filter(name_ok),
+        };
+        best = Some((score, edition));
+    }
+    best.map(|(_, edition)| edition)
+}
+
+/// The printing to file for the work at `work_key`, from its editions list.
+/// `Ok(None)` when the key isn't a work path this crate will address or no
+/// edition carries an ISBN; `Err` when the call fails, which the caller reads
+/// off for a 429.
+pub(in crate::metadata_lookup) async fn work_edition(
+    config: &MetadataLookupConfig,
+    work_key: &str,
+) -> anyhow::Result<Option<WorkEdition>> {
+    if !work_key.starts_with("/works/") || !is_record_key(work_key) {
+        return Ok(None);
+    }
+    let mut url = base_url(
+        &config.openlibrary_base,
+        &format!("{work_key}/editions.json"),
+        "open library",
+    )?;
+    url.query_pairs_mut().append_pair("limit", EDITIONS_LIMIT);
+    let editions: OlEditions = get_json(config, url.as_str())
+        .await
+        .context("open library editions request failed")?;
+    Ok(best_edition(editions.entries))
+}
+
 // ── Enrichment ───────────────────────────────────────────────────
 
 /// Bonus fields for an already-resolved ISBN, filled best-effort from Open
@@ -487,62 +621,4 @@ pub async fn describe(config: &MetadataLookupConfig, key: &str) -> Option<String
 }
 
 #[cfg(test)]
-mod tests {
-    use super::is_record_key;
-
-    // `base_url` concatenates rather than joining, so what reaches `Url::parse`
-    // is `{base}{key}.json`. That makes `is_record_key` the only thing standing
-    // between a client-supplied `provider_ref` and a request of its choosing —
-    // these cases are the ones that would otherwise get through.
-
-    #[test]
-    fn is_record_key_accepts_the_two_record_paths_open_library_actually_mints() {
-        assert!(is_record_key("/works/OL893414W"));
-        assert!(is_record_key("/books/OL7353617M"));
-        assert!(is_record_key("/works/OL_1-2W"));
-    }
-
-    #[test]
-    fn is_record_key_rejects_the_isbn_fallback_ref_every_provider_shares() {
-        // Not a path at all: concatenated onto the base it addresses
-        // `https://openlibrary.orgisbn:978….json`, which is not a record.
-        assert!(!is_record_key("isbn:9780134685991"));
-    }
-
-    #[test]
-    fn is_record_key_rejects_a_traversal_segment() {
-        // `/works/../../../some/other/path.json` parses to `/some/other/path.json`
-        // — a different endpoint on the same host.
-        assert!(!is_record_key("/works/../../../some/other/path"));
-        assert!(!is_record_key("/books/OL1M/.."));
-    }
-
-    #[test]
-    fn is_record_key_rejects_a_ref_that_rewrites_the_host() {
-        // The dangerous shape: `{base}@evil.example/x.json` parses with
-        // `openlibrary.org…` as *userinfo* and `evil.example` as the host, so a
-        // ref carrying `@`, a scheme, or `//` must never reach the URL.
-        assert!(!is_record_key("@evil.example/x"));
-        assert!(!is_record_key("/works/OL1W@evil.example/x"));
-        assert!(!is_record_key("https://evil.example/x"));
-        assert!(!is_record_key("//evil.example/x"));
-        assert!(!is_record_key("/works/OL1W?x=y"));
-        assert!(!is_record_key("/works/OL1W#frag"));
-    }
-
-    #[test]
-    fn is_record_key_rejects_an_over_long_ref() {
-        // `EditionHydrateRequest::validate` caps at 256 bytes, four times this
-        // guard's own limit, so the length check has to hold on its own.
-        let long = format!("/works/{}", "O".repeat(64));
-        assert!(long.len() > 64);
-        assert!(!is_record_key(&long));
-    }
-
-    #[test]
-    fn is_record_key_rejects_a_path_outside_the_two_record_prefixes() {
-        assert!(!is_record_key("/search.json"));
-        assert!(!is_record_key("/authors/OL1A"));
-        assert!(!is_record_key(""));
-    }
-}
+mod tests;

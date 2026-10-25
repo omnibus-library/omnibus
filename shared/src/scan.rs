@@ -28,6 +28,22 @@ pub struct ScanBook {
     /// the scanned ISBN. Absent when the book has none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub isbn: Option<String>,
+    /// Who filed each of the book's physical copies, oldest copy first. Empty when the
+    /// book has no copy.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub copy_filers: Vec<CopyFiler>,
+}
+
+/// Who filed one of a book's physical copies.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct CopyFiler {
+    /// The reader's id. Null once their account is deleted.
+    pub user_id: Option<i64>,
+    /// The reader's display name, or username without one. Null once their account is
+    /// deleted.
+    pub name: Option<String>,
 }
 
 /// What an ISBN, or a picked title-search result, matched, and so what a client can

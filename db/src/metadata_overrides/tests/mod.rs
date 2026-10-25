@@ -10,6 +10,7 @@ mod fts;
 mod genres;
 mod links;
 mod precedence;
+mod series_override;
 
 use omnibus_shared::{Contributor, MetadataOverrides};
 

@@ -402,6 +402,9 @@ pub async fn rpc_get_suggestions(uuid: String) -> Result<SuggestionsResponse> {
             book_uuid: uuid.clone(),
         });
     }
+    if db::is_unavailable(state, decision) {
+        return Ok(SuggestionsResponse::Unavailable);
+    }
     if decision.serve {
         let items = db::get_suggestions(&pool.0, &uuid)
             .await

@@ -42,6 +42,8 @@ pub enum MergeError {
     UndoConflict(String),
     #[error(transparent)]
     Db(#[from] sqlx::Error),
+    #[error(transparent)]
+    SortKeys(#[from] crate::sort_keys::SortKeysError),
     #[error("merge snapshot encode/decode failed: {0}")]
     Snapshot(#[from] serde_json::Error),
     #[error(transparent)]

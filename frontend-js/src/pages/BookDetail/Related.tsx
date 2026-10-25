@@ -5,6 +5,7 @@ import {
   authorBooksQuery,
   type Book,
   type BookDetail,
+  isWishlistOnly,
   type Suggestion,
   seriesQuery,
   thumbSrcSet,
@@ -14,7 +15,11 @@ import { Cover } from "../../components/Cover/Cover";
 import { ChevronRightGlyph } from "../../components/Glyphs/Glyphs";
 import { Loading, Ring } from "../../components/Loading/Loading";
 import { bookCount, formatYear } from "../../format";
-import { suggestionPollMs, suggestionsQuery } from "./queries";
+import {
+  suggestionPollMs,
+  suggestionsQuery,
+  suggestionsUnavailable,
+} from "./queries";
 import "./Overview.css";
 
 /** The series fan's id, where the byline's series scrolls to. */
@@ -141,7 +146,7 @@ function SeriesFan({ book, seriesId }: { book: BookDetail; seriesId: number }) {
 /** The author's other books in the library, up to four, with a link to their page; nothing until there is one. */
 function MoreBy({ book }: { book: BookDetail }) {
   const author = book.authors[0] ?? "";
-  const id = book.creators[0]?.id ?? null;
+  const id = isWishlistOnly(book) ? null : (book.creators[0]?.id ?? null);
   const page = useQuery(authorBooksQuery(id));
   // The author's page is the source; without one read, or an author it doesn't know, there is nothing to list.
   const others = (page.data ?? []).filter((b) => b.uuid !== book.uuid);
@@ -172,18 +177,19 @@ function MoreBy({ book }: { book: BookDetail }) {
   );
 }
 
-/** Hardcover's read-alikes, in one row that scrolls sideways. Nothing unless the server has some, or is still looking. */
+/** Hardcover's read-alikes, in one row that scrolls sideways. Nothing unless the server has some, is still looking, or gave up. */
 function Suggestions({ book }: { book: BookDetail }) {
   const client = useQueryClient();
   const { queryKey } = suggestionsQuery(book.uuid);
   const answer = useQuery(suggestionsQuery(book.uuid)).data;
-  // Asked as often as it will be, and still no answer: settles as empty.
-  const searching =
-    suggestionPollMs(
-      answer,
-      client.getQueryState(queryKey)?.dataUpdateCount ?? 0,
-    ) !== false;
-  if (!searching && !(answer?.status === "ready" && answer.items.length > 0))
+  const answers = client.getQueryState(queryKey)?.dataUpdateCount ?? 0;
+  const searching = suggestionPollMs(answer, answers) !== false;
+  const unavailable = suggestionsUnavailable(answer, answers);
+  if (
+    !searching &&
+    !unavailable &&
+    !(answer?.status === "ready" && answer.items.length > 0)
+  )
     return null;
   return (
     <section data-testid="suggestions-strip" aria-labelledby="bp-suggest-title">
@@ -214,9 +220,21 @@ function Suggestions({ book }: { book: BookDetail }) {
           ))}
         </ul>
       ) : (
-        <div className="bp-suggest-pending" data-testid="suggestions-pending">
-          <Ring />
-          <p className="bp-quiet">Looking for read-alikes via Hardcover…</p>
+        // A status region, so a lookup that gives up is announced, not swapped in silently.
+        <div role="status">
+          {unavailable ? (
+            <p className="bp-quiet" data-testid="suggestions-unavailable">
+              Suggestions are unavailable right now.
+            </p>
+          ) : (
+            <div
+              className="bp-suggest-pending"
+              data-testid="suggestions-pending"
+            >
+              <Ring />
+              <p className="bp-quiet">Looking for read-alikes via Hardcover…</p>
+            </div>
+          )}
         </div>
       )}
     </section>
