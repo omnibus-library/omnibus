@@ -43,6 +43,7 @@ fn status(user_id: i64, status: &str, ts: i64) -> ReadStatusRow {
         status: status.into(),
         updated_at: ts,
         finished_at: (status == "finished").then_some(ts),
+        auto_started: false,
     }
 }
 
@@ -71,14 +72,16 @@ impl Ctx {
 
 async fn seed_status(pool: &sqlx::SqlitePool, book_uuid: &str, row: &ReadStatusRow) {
     sqlx::query(
-        "INSERT INTO book_read_status (user_id, book_uuid, status, updated_at, finished_at)
-         VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO book_read_status (user_id, book_uuid, status, updated_at, finished_at,
+                                       auto_started)
+         VALUES (?, ?, ?, ?, ?, ?)",
     )
     .bind(row.user_id)
     .bind(book_uuid)
     .bind(&row.status)
     .bind(row.updated_at)
     .bind(row.finished_at)
+    .bind(row.auto_started)
     .execute(pool)
     .await
     .unwrap();
@@ -138,7 +141,7 @@ type Curation = (Option<ReadStatusRow>, Option<ReviewRow>);
 
 async fn curation_of(pool: &sqlx::SqlitePool, user: i64, book_uuid: &str) -> Curation {
     let read_status = sqlx::query_as(
-        "SELECT user_id, status, updated_at, finished_at FROM book_read_status
+        "SELECT user_id, status, updated_at, finished_at, auto_started FROM book_read_status
           WHERE user_id = ? AND book_uuid = ?",
     )
     .bind(user)

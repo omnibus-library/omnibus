@@ -169,11 +169,18 @@ fn read_status_says_the_same_ignores_updated_at_but_not_finished_at() {
         status: status.into(),
         updated_at,
         finished_at,
+        auto_started: false,
     };
     assert!(row("reading", 1, None).same_value(&row("reading", 9, None)));
     assert!(!row("reading", 1, None).same_value(&row("finished", 1, Some(5))));
     // When the reader finished is part of the statement, not bookkeeping.
     assert!(!row("finished", 1, Some(5)).same_value(&row("finished", 1, Some(9))));
+    // So is whether the reader chose it: making an automatic status explicit re-curates.
+    let automatic = ReadStatusRow {
+        auto_started: true,
+        ..row("reading", 1, None)
+    };
+    assert!(!automatic.same_value(&row("reading", 1, None)));
 }
 
 #[test]
