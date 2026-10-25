@@ -20,20 +20,19 @@ import { sortLockReason } from "./sorting";
 
 /**
  * The shelves the row carries: the reader's own, plus other readers' public
- * shelves, minus any wishlist nobody has put a book in. The server's order is
- * kept and nothing is capped, as the row pages sideways.
+ * shelves, minus any with no books in. The server's order is kept and nothing
+ * is capped, as the row pages sideways.
  */
 export function railShelves(all: Shelf[], viewerId: UserId): Shelf[] {
   return all.filter((s) => {
     const own = s.owner.id === viewerId;
     // A wishlist is provisioned per account rather than chosen, so another reader's is noise.
     const sharedByAnother = s.visibility === "public" && s.kind !== "wishlist";
-    const unusedWishlist = s.kind === "wishlist" && s.bookCount === 0;
-    return (own || sharedByAnother) && !unusedWishlist;
+    return (own || sharedByAnother) && s.bookCount > 0;
   });
 }
 
-/** Whether a saved shelf pick names a shelf the row no longer shows: gone, emptied (the reader's wishlist) or no longer shared. */
+/** Whether a saved shelf pick names a shelf the row no longer shows: gone, emptied or no longer shared. */
 export function selectionOffRail(
   selection: ShelfSelection,
   all: Shelf[],

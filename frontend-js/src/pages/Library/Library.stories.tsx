@@ -834,6 +834,31 @@ export const ShelvesFailing: Story = {
   },
 };
 
+export const NoShelvesWithBooks: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      libraryHandler(aWireLibrary(6), 10),
+      shelvesHandler([
+        aWireShelf({ id: 1, name: "Someday", book_count: 0 }),
+        aWireShelf({
+          id: 2,
+          kind: "wishlist",
+          name: "Wishlist",
+          book_count: 0,
+        }),
+      ]),
+    );
+  },
+  play: async ({ canvas }) => {
+    await canvas.findAllByRole("link", { name: /^Open details for/ });
+    await waitFor(() =>
+      expect(
+        canvas.queryByRole("region", { name: "Shelves" }),
+      ).not.toBeInTheDocument(),
+    );
+  },
+};
+
 export const ShelfPickPersists: Story = {
   beforeEach({ msw }) {
     msw.use(

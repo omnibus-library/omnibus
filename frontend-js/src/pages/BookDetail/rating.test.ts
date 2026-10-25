@@ -3,6 +3,7 @@ import {
   halfAfterKey,
   halfStarLabel,
   heroRatingNote,
+  householdRating,
   previewNote,
   ratingAfterClick,
   starsMeta,
@@ -123,5 +124,22 @@ describe("halfAfterKey", () => {
 
   it("ignores any other key", () => {
     expect(halfAfterKey(3, "a")).toBeNull();
+  });
+});
+
+describe("householdRating", () => {
+  it("averages every readers stars", () => {
+    expect(householdRating([4, 3, 5])).toEqual({ average: 4, count: 3 });
+  });
+
+  it("leaves out a reader who gave no stars", () => {
+    expect(householdRating([null, 4.5, 3])).toEqual({
+      average: 3.75,
+      count: 2,
+    });
+  });
+
+  it("is null while nobody has rated", () => {
+    expect(householdRating([null, null])).toBeNull();
   });
 });

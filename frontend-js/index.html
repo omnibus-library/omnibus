@@ -4,42 +4,41 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Omnibus (React PoC)</title>
+    <link rel="icon" type="image/png" href="/src/assets/omnibus-stoat.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       rel="stylesheet"
       href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400..700;1,400..700&family=Instrument+Sans:ital,wght@0,400..700;1,400..700&family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap"
     />
-    <!-- No SSR draws a loader, so this one paints before the bundle arrives,
-         tinted by the saved theme; React replaces it on its first render. -->
-    <script>
-      try {
-        document.documentElement.dataset.bootTheme =
-          // THEME_STORAGE_KEY in src/components/Theme/AtriumRoot.tsx.
-          localStorage.getItem("omn.theme") || "dark";
-      } catch {}
-    </script>
-    <!-- The loader paints its own colours over the whole viewport: the bundle's
-         CSS, which arrives first in a build, styles <body> for the app. -->
-    <style>
-      .boot { background: oklch(0.135 0.006 70); color: oklch(0.62 0.012 70); }
-      [data-boot-theme="black"] .boot { background: oklch(0 0 0); color: oklch(0.63 0 0); }
-      [data-boot-theme="light"] .boot { background: oklch(0.985 0.003 75); color: oklch(0.52 0.01 70); }
-      [data-boot-theme="sepia"] .boot { background: oklch(0.945 0.022 80); color: oklch(0.52 0.032 58); }
-      .boot {
-        position: fixed;
-        inset: 0;
-        display: grid;
-        place-items: center;
-        font: 500 10.5px/1 "Space Mono", ui-monospace, monospace;
-        letter-spacing: 0.14em;
-        text-transform: uppercase;
-      }
-    </style>
   </head>
   <body>
+    <!-- No SSR draws a loader, so this one paints before the bundle runs: the
+         markup the signed-in gate's <Loading kind="page"> renders, so the
+         hand-off is seamless, styled by the stylesheet the build links above. -->
     <div id="root">
-      <div class="boot" role="status" aria-live="polite">Opening your library</div>
+      <div class="atrium">
+        <script>
+          try {
+            // THEME_STORAGE_KEY and THEMES in src/components/Theme/AtriumRoot.tsx.
+            var theme = localStorage.getItem("omn.theme");
+            if (/^(dark|black|light|sepia)$/.test(theme || ""))
+              document.currentScript.parentElement.setAttribute("data-theme", theme);
+          } catch {}
+        </script>
+        <div class="ld ld-page" role="status" aria-live="polite">
+          <span class="ld-riffle lg" aria-hidden="true">
+            <span class="ld-rf-book">
+              <span class="ld-rf-page l"></span>
+              <span class="ld-rf-page r"></span>
+              <span class="ld-rf-leaf n0" style="--i: 0"><span class="ld-rf-face front"></span><span class="ld-rf-face back"></span></span>
+              <span class="ld-rf-leaf n1" style="--i: 1"><span class="ld-rf-face front"></span><span class="ld-rf-face back"></span></span>
+              <span class="ld-rf-leaf n2" style="--i: 2"><span class="ld-rf-face front"></span><span class="ld-rf-face back"></span></span>
+            </span>
+          </span>
+          <p class="ld-label">Opening your library</p>
+        </div>
+      </div>
     </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

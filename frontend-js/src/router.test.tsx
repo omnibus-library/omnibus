@@ -198,6 +198,27 @@ describe("routes", () => {
       ).toBeInTheDocument();
     });
 
+    it("draws the library behind the check-in dialog", async () => {
+      renderRoute("/check-in");
+
+      await screen.findByRole("dialog", { name: "Check in a book" });
+      expect(
+        await screen.findByRole("heading", { level: 1, name: "Your Library" }),
+      ).toBeInTheDocument();
+    });
+
+    it("closes the check-in dialog onto the library on Escape", async () => {
+      const { router } = renderRoute("/check-in");
+      await screen.findByRole("dialog", { name: "Check in a book" });
+
+      await userEvent.keyboard("{Escape}");
+
+      await waitFor(() => expect(router.state.location.pathname).toBe("/"));
+      expect(
+        screen.queryByRole("dialog", { name: "Check in a book" }),
+      ).not.toBeInTheDocument();
+    });
+
     it("renders the cleanup review at /admin/cleanup/tag, not a stub", async () => {
       renderRoute("/admin/cleanup/tag");
 

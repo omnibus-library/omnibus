@@ -465,9 +465,7 @@ export const SuggestionsScrollWithAThinBarOnAFinePointer: Story = {
 export const TouchTargetsAtPhoneWidth: Story = {
   ...phone,
   play: async ({ canvas, canvasElement, userEvent }) => {
-    const go = await canvas.findByRole("button", {
-      name: /^See grace.s review/,
-    });
+    const go = await canvas.findByRole("button", { name: /^\d+ reviews?$/ });
     await expect(
       Math.min(sizeOf(go).width, sizeOf(go).height),
     ).toBeGreaterThanOrEqual(44);
@@ -528,11 +526,14 @@ export const ALongTitleAndANameStayInsideAPhone: Story = {
   },
   play: async ({ canvas }) => {
     const title = await canvas.findByRole("heading", { level: 1 });
-    const list = await canvas.findByRole("list", { name: "Household ratings" });
+    const household = await canvas.findByRole("group", {
+      name: "Household average",
+    });
 
     await expect(title.scrollWidth).toBeLessThanOrEqual(title.clientWidth + 1);
-    const row = list.querySelector(".bp-reader") as HTMLElement;
-    await expect(sizeOf(row).right).toBeLessThanOrEqual(window.innerWidth);
+    await expect(sizeOf(household).right).toBeLessThanOrEqual(
+      window.innerWidth,
+    );
   },
 };
 

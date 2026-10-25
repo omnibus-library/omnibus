@@ -6,7 +6,6 @@ import {
   coverUrl,
   type BookDetail as Detail,
   parseBookUuid,
-  type UserId,
 } from "../../api";
 import { Loading } from "../../components/Loading/Loading";
 import { PageError, PageNotFound } from "../../components/PageState/PageState";
@@ -18,7 +17,6 @@ import { BookTabs, panelId, useBookTabs } from "./BookTabs";
 import { FilesDetails } from "./FilesDetails";
 import { Hero } from "./Hero";
 import { HighlightsJournal } from "./HighlightsJournal";
-import { reviewCardId } from "./OtherReviews";
 import { Overview } from "./Overview";
 import { bookQuery } from "./queries";
 import { SERIES_ID } from "./Related";
@@ -26,9 +24,6 @@ import { ReviewsTab } from "./ReviewsTab";
 import { useMyRating } from "./useMyRating";
 import "./BookDetail.css";
 import "./BookPage.css";
-
-/** How long a card the hero brought the reader to keeps its glow. */
-const FLASH_MS = 1600;
 
 /** Whether the element is out of the viewport, so a drifting backdrop can stop. */
 function useOffscreen(target: RefObject<HTMLElement | null>) {
@@ -81,30 +76,12 @@ function Page({ book }: { book: Detail }) {
       block: "center",
     });
   };
-  // One card glows at a time, for a moment after the hero's chevron brings the reader to it.
-  const flashed = useRef<{
-    card: HTMLElement;
-    timer: ReturnType<typeof setTimeout>;
-  } | null>(null);
-  useEffect(() => () => clearTimeout(flashed.current?.timer), []);
-  const openReview = async (reader: UserId) => {
+  const openReviews = async () => {
     await selectTab("reviews");
-    const card = document.getElementById(reviewCardId(reader));
-    if (!card) return;
-    card.focus({ preventScroll: true });
-    card.scrollIntoView({
+    document.getElementById(panelId("reviews"))?.scrollIntoView({
       behavior: prefersReducedMotion() ? "auto" : "smooth",
-      block: "center",
+      block: "start",
     });
-    if (flashed.current) {
-      clearTimeout(flashed.current.timer);
-      flashed.current.card.classList.remove("is-flash");
-    }
-    card.classList.add("is-flash");
-    flashed.current = {
-      card,
-      timer: setTimeout(() => card.classList.remove("is-flash"), FLASH_MS),
-    };
   };
   const showSeries = async () => {
     await selectTab("overview");
@@ -133,7 +110,7 @@ function Page({ book }: { book: Detail }) {
               book={book}
               rating={rating}
               onShowSeries={showSeries}
-              onOpenReview={openReview}
+              onOpenReviews={openReviews}
               onOpenDialog={setDialog}
               onLeaveReview={leaveReview}
             />

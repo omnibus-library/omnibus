@@ -11,6 +11,7 @@ import {
   type WishlistAddRequest,
   wishlistScanned,
 } from "../../api";
+import { Modal } from "../../components/Modal/Modal";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
 import { useCurrentUser } from "../../session";
 import {
@@ -38,7 +39,7 @@ import "./CheckIn.css";
 
 const LOOKUP: Stage = { kind: "lookup" };
 
-/** Check in: type an ISBN, then follow it wherever the ladder lands. */
+/** Check in, in a dialog over the page: type an ISBN, then follow it wherever the ladder lands. */
 export function CheckIn() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -323,7 +324,12 @@ export function CheckIn() {
   }
 
   return (
-    <>
+    <Modal
+      label="Check in a book"
+      backdropClass="check-in-overlay-scrim"
+      dialogClass="check-in-overlay-panel"
+      onClose={() => navigate("/")}
+    >
       <PageTitle page="Check in" />
       <section className="card check-in" data-testid="check-in">
         {/* Present on every stage so a mid-flow abort never strands the reader. */}
@@ -347,6 +353,6 @@ export function CheckIn() {
           </p>
         )}
       </section>
-    </>
+    </Modal>
   );
 }

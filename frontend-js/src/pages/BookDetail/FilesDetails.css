@@ -92,7 +92,9 @@
 .bp-root .bp-files .format-filename {
   overflow-wrap: anywhere;
 }
+/* The actions run from the panel's edge, in line with Export below them. */
 .bp-root .bp-files .rx-copy .format-actions {
+  grid-column: 1 / -1;
   gap: 8px;
   margin-top: 4px;
 }

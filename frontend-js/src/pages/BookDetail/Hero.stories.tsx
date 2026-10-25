@@ -98,7 +98,7 @@ const meta = {
   args: {
     book: aBook(),
     onShowSeries: fn(),
-    onOpenReview: fn(),
+    onOpenReviews: fn(),
     onOpenDialog: fn(),
     onLeaveReview: fn(),
   },
@@ -245,7 +245,7 @@ export const Authors: Story = {
   },
 };
 
-export const YourStarsSitBesideTheHouseholdsRatings: Story = {
+export const TheHouseholdAverageSitsBesideYourStars: Story = {
   beforeEach({ msw }) {
     msw.use(
       ...reviewHandlers({
@@ -253,7 +253,7 @@ export const YourStarsSitBesideTheHouseholdsRatings: Story = {
         others: [
           aWireOtherReview({ user_id: 7, username: "grace", stars: 4.5 }),
           aWireOtherReview({ user_id: 8, username: "linus", stars: 3 }),
-          // Said something but gave no stars: nothing to list.
+          // Said something but gave no stars: not counted.
           aWireOtherReview({ user_id: 9, username: "tove", stars: null }),
         ],
       }),
@@ -263,29 +263,19 @@ export const YourStarsSitBesideTheHouseholdsRatings: Story = {
     await expect(
       await canvas.findByRole("group", { name: "Your rating" }),
     ).toBeInTheDocument();
-    const list = await canvas.findByRole("list", {
-      name: "Household ratings",
+    const household = await canvas.findByRole("group", {
+      name: "Household average",
     });
-    const rows = within(list).getAllByRole("listitem");
-    await expect(rows).toHaveLength(3);
-    await expect(rows[0]).toHaveTextContent("grace");
     await expect(
-      within(rows[0] as HTMLElement).getByRole("img", {
-        name: "4.5 out of 5 stars",
-      }),
+      within(household).getByRole("img", { name: "3.8 out of 5 stars" }),
     ).toBeInTheDocument();
-    await expect(rows[0]).toHaveTextContent("4.5");
-    await expect(rows[1]).toHaveTextContent("linus");
-    await expect(rows[2]).toHaveTextContent("You");
     await expect(
-      within(rows[2] as HTMLElement).getByRole("img", {
-        name: "4 out of 5 stars",
-      }),
+      within(household).getByRole("button", { name: "3 reviews" }),
     ).toBeInTheDocument();
   },
 };
 
-export const NoHouseholdListWhenNobodyRated: Story = {
+export const NoHouseholdAverageWhenNobodyRated: Story = {
   beforeEach({ msw }) {
     msw.use(...reviewHandlers({}));
   },
@@ -299,12 +289,12 @@ export const NoHouseholdListWhenNobodyRated: Story = {
       ),
     );
     await expect(
-      canvas.queryByRole("list", { name: "Household ratings" }),
+      canvas.queryByRole("group", { name: "Household average" }),
     ).not.toBeInTheDocument();
   },
 };
 
-export const RatingAddsAYouRow: Story = {
+export const RatingCountsTowardTheHouseholdAverage: Story = {
   beforeEach({ msw }) {
     writes.length = 0;
     msw.use(...reviewHandlers({}, writes));
@@ -312,12 +302,14 @@ export const RatingAddsAYouRow: Story = {
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(await starButton(canvas, "Rate 4 stars"));
 
-    const list = await canvas.findByRole("list", {
-      name: "Household ratings",
+    const household = await canvas.findByRole("group", {
+      name: "Household average",
     });
-    await expect(within(list).getByRole("listitem")).toHaveTextContent("You");
     await expect(
-      within(list).getByRole("img", { name: "4 out of 5 stars" }),
+      within(household).getByRole("img", { name: "4 out of 5 stars" }),
+    ).toBeInTheDocument();
+    await expect(
+      within(household).getByRole("button", { name: "1 review" }),
     ).toBeInTheDocument();
     await waitFor(() => expect(writes).toEqual([{ stars: 4 }]));
     await expect(canvas.getByTestId("review-stars-meta")).toHaveTextContent(
@@ -411,7 +403,7 @@ export const ArrowKeysRateInHalfSteps: Story = {
   },
 };
 
-export const ChevronAsksForThatReadersReview: Story = {
+export const TheReviewCountOpensTheReviewsTab: Story = {
   beforeEach({ msw }) {
     msw.use(
       ...reviewHandlers({
@@ -421,10 +413,10 @@ export const ChevronAsksForThatReadersReview: Story = {
   },
   play: async ({ args, canvas, userEvent }) => {
     await userEvent.click(
-      await canvas.findByRole("button", { name: "See grace's review" }),
+      await canvas.findByRole("button", { name: "1 review" }),
     );
 
-    await expect(args.onOpenReview).toHaveBeenCalledWith(7);
+    await expect(args.onOpenReviews).toHaveBeenCalledOnce();
   },
 };
 
@@ -1396,7 +1388,7 @@ export const AFinishedBookOpensWithoutTheBurst: Story = {
 
 let reviewsRead = false;
 
-export const HouseholdRatingsListWithoutAServerSummary: Story = {
+export const HouseholdAverageWithoutAServerSummary: Story = {
   beforeEach({ msw }) {
     reviewsRead = false;
     msw.use(
@@ -1413,8 +1405,8 @@ export const HouseholdRatingsListWithoutAServerSummary: Story = {
   },
   play: async ({ canvas }) => {
     await waitFor(() => expect(reviewsRead).toBe(true));
-    // The raters are listed whether or not the server summed them.
-    await canvas.findByRole("list", { name: "Household ratings" });
+    // The average is drawn whether or not the server summed the raters.
+    await canvas.findByRole("group", { name: "Household average" });
   },
 };
 

@@ -1,7 +1,52 @@
+/* The flow's card, centred over a blurred scrim of the library, which holds still beneath it. */
+html:has(.check-in-overlay-scrim) {
+  overflow: hidden;
+}
+.check-in-overlay-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: color-mix(in oklch, var(--bg-0) 70%, transparent);
+  backdrop-filter: blur(6px);
+  animation: check-in-scrim-in 0.12s ease-out;
+}
+.check-in-overlay-scrim:focus {
+  outline: none;
+}
+.check-in-overlay-panel {
+  width: min(560px, 100%);
+  max-height: calc(100dvh - 48px);
+  display: flex;
+  animation: check-in-panel-in 0.16s ease-out;
+}
+/* A screen taller than the viewport (the scanner, confirm with a note) scrolls inside the card. */
 .check-in {
-  max-width: 560px;
-  margin-inline: auto;
   position: relative;
+  width: 100%;
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
+  box-shadow: 0 24px 60px color-mix(in oklch, black 55%, transparent);
+}
+@keyframes check-in-scrim-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes check-in-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .check-in-overlay-scrim,
+  .check-in-overlay-panel {
+    animation: none;
+  }
 }
 .check-in-screen {
   display: flex;

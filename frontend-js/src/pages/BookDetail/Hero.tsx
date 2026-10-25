@@ -1,23 +1,23 @@
 import { useQuery } from "@tanstack/react-query";
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
-import { Link } from "react-router";
 import {
-  type BookDetail as Detail,
-  isWishlistOnly,
-  type UserId,
-} from "../../api";
+  Fragment,
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
+import { Link } from "react-router";
+import { type BookDetail as Detail, isWishlistOnly } from "../../api";
 import { ChevronRightGlyph } from "../../components/Glyphs/Glyphs";
-import { fmtStars } from "../../components/StarRating/stars";
-import { UserAvatar } from "../../components/UserAvatar/UserAvatar";
-import { formatLongDate, wishlistSource } from "../../format";
+import { formatLongDate, plural, wishlistSource } from "../../format";
 import { prefersReducedMotion } from "../../motion";
-import { useCurrentUser } from "../../session";
 import type { BookDialog } from "./BookDialogs";
 import { HeroActions } from "./HeroActions";
 import { HeroCover } from "./HeroCover";
 import { MiniStars } from "./MiniStars";
 import { reviewsQuery, useWish } from "./queries";
-import { heroRatingNote } from "./rating";
+import { heroRatingNote, householdRating } from "./rating";
 import { factLine } from "./readout";
 import { StarPicker } from "./StarPicker";
 import type { MyRating } from "./useMyRating";
@@ -77,24 +77,25 @@ function Byline({
 const seriesLabel = ({ name, index }: NonNullable<Detail["series"]>) =>
   index ? `${name}, book ${index}` : name;
 
-/** Your stars beside each other reader's, and a row for you once you rate; absent while nobody has. */
+/** Your stars, then the household's average and a count that opens the Reviews tab; the average is absent while nobody has rated. */
 function Ratings({
   book,
   rating,
-  onOpenReview,
+  onOpenReviews,
 }: {
   book: Detail;
   rating: MyRating;
-  onOpenReview: (reader: UserId) => void;
+  onOpenReviews: () => void;
 }) {
-  const me = useCurrentUser();
   const reviews = useQuery(reviewsQuery(book.uuid));
+  const labelId = useId();
   const mine = reviews.data?.mine?.stars ?? null;
   // Until it is read, your own rating is not "none": the stars wait rather than offer a write over it.
   const read = reviews.data ? "ready" : reviews.isError ? "failed" : "loading";
-  const others = (reviews.data?.others ?? []).filter(
-    (review) => review.stars !== null,
-  );
+  const household = householdRating([
+    mine,
+    ...(reviews.data?.others ?? []).map((review) => review.stars),
+  ]);
   return (
     <div className="bp-ratings">
       <StarPicker
@@ -103,45 +104,22 @@ function Ratings({
         disabled={read !== "ready"}
         note={heroRatingNote(rating.starsFailed, mine, read)}
       />
-      {(others.length > 0 || mine !== null) && (
-        <ul className="bp-readers" aria-label="Household ratings">
-          {others.map(({ reader, stars }) => (
-            <li key={reader.id} className="bp-reader">
-              <UserAvatar
-                user={reader}
-                className="bp-avatar"
-                photoClassName="bp-avatar-photo"
-              />
-              <span className="bp-reader-name">{reader.name}</span>
-              {stars !== null && (
-                <>
-                  <MiniStars stars={stars} />
-                  <span className="bp-reader-score">{fmtStars(stars)}</span>
-                </>
-              )}
-              <button
-                type="button"
-                className="bp-reader-go"
-                aria-label={`See ${reader.name}'s review`}
-                onClick={() => onOpenReview(reader.id)}
-              >
-                <ChevronRightGlyph size={16} />
-              </button>
-            </li>
-          ))}
-          {mine !== null && (
-            <li className="bp-reader">
-              <UserAvatar
-                user={me}
-                className="bp-avatar"
-                photoClassName="bp-avatar-photo"
-              />
-              <span className="bp-reader-name">You</span>
-              <MiniStars stars={mine} />
-              <span className="bp-reader-score">{fmtStars(mine)}</span>
-            </li>
-          )}
-        </ul>
+      {household && (
+        // biome-ignore lint/a11y/useSemanticElements: a fieldset brings a border and min-width the hero row never resets
+        <div className="bp-rating-avg" role="group" aria-labelledby={labelId}>
+          <span id={labelId} className="bp-rating-avg-label">
+            Household average
+          </span>
+          <MiniStars stars={household.average} />
+          <button
+            type="button"
+            className="bp-rating-avg-go"
+            onClick={onOpenReviews}
+          >
+            {household.count} review{plural(household.count)}
+            <ChevronRightGlyph size={16} />
+          </button>
+        </div>
       )}
     </div>
   );
@@ -153,8 +131,8 @@ type HeroProps = {
   rating: MyRating;
   /** Selects the Overview and brings the series fan into view. */
   onShowSeries: () => void;
-  /** Opens that reader's review on the Reviews tab. */
-  onOpenReview: (reader: UserId) => void;
+  /** Selects the Reviews tab and brings it into view. */
+  onOpenReviews: () => void;
   /** Opens one of the book's dialogs from the More menu. */
   onOpenDialog: (dialog: BookDialog) => void;
   /** Takes the reader to their rating on the Reviews tab. */
@@ -166,7 +144,7 @@ export function Hero({
   book,
   rating,
   onShowSeries,
-  onOpenReview,
+  onOpenReviews,
   onOpenDialog,
   onLeaveReview,
 }: HeroProps) {
@@ -207,7 +185,7 @@ export function Hero({
             Tracking since {formatLongDate(wish.addedAt)}
           </p>
         )}
-        <Ratings book={book} rating={rating} onOpenReview={onOpenReview} />
+        <Ratings book={book} rating={rating} onOpenReviews={onOpenReviews} />
         <HeroActions
           book={book}
           wish={wish}

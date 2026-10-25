@@ -7,9 +7,6 @@ import { MiniStars } from "./MiniStars";
 import { RenderedMarkdown } from "./RenderedMarkdown";
 import { needsReadMore, spoilerVeiled } from "./reviews";
 
-/** The id a reader's card carries, which the hero's chevron for them focuses. */
-export const reviewCardId = (readerId: number) => `review-${readerId}`;
-
 /** One household reader: who, when, their stars and then their text, a spoiler's behind a reveal; "Rated only" when they wrote nothing. */
 function HouseholdCard({
   review,
@@ -25,8 +22,6 @@ function HouseholdCard({
   const clipped = md !== null && needsReadMore(md) && !expanded;
   return (
     <article
-      id={reviewCardId(reader.id)}
-      tabIndex={-1}
       aria-label={`${reader.name}'s review`}
       className="bp-panel bp-entry bp-review-card"
       data-testid="review-card"

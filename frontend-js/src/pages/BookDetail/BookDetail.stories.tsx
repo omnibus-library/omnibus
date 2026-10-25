@@ -254,7 +254,7 @@ export const HouseholdRatingOpensTheReviewsTab: Story = {
   },
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(
-      await canvas.findByRole("button", { name: "See grace's review" }),
+      await canvas.findByRole("button", { name: "2 reviews" }),
     );
 
     await waitFor(() =>
@@ -263,52 +263,11 @@ export const HouseholdRatingOpensTheReviewsTab: Story = {
         "true",
       ),
     );
-  },
-};
-
-export const ChevronOpensThatReadersReview: Story = {
-  beforeEach({ msw }) {
-    msw.use(
-      ...reviewHandlers({
-        mine: aWireReview({ stars: 4 }),
-        others: [
-          aWireOtherReview({ user_id: 7, username: "Maya R.", stars: 5 }),
-          aWireOtherReview({
-            user_id: 8,
-            username: "Jordan K.",
-            stars: 4,
-            body_md: "Slow in the mines, then it takes off.",
-            body_html: "<p>Slow in the mines, then it takes off.</p>",
-          }),
-        ],
-      }),
-      ...bookDetailHandlers(BOOK),
-    );
-  },
-  play: async ({ canvas, userEvent }) => {
-    await userEvent.click(
-      await canvas.findByRole("button", { name: "See Jordan K.'s review" }),
-    );
-
-    await waitFor(() =>
-      expect(canvas.getByRole("tab", { name: "Reviews" })).toHaveAttribute(
-        "aria-selected",
-        "true",
-      ),
-    );
-    const card = await canvas.findByRole("article", {
-      name: "Jordan K.'s review",
-    });
-    await waitFor(() => expect(card).toHaveFocus());
+    const panel = canvas.getByRole("tabpanel", { name: "Reviews" });
     await waitFor(() => {
-      const box = card.getBoundingClientRect();
+      const box = panel.getBoundingClientRect();
       expect(box.top).toBeGreaterThanOrEqual(0);
-      expect(box.bottom).toBeLessThanOrEqual(window.innerHeight);
-    });
-    // It glows for a moment, then rests.
-    await expect(card).toHaveClass("is-flash");
-    await waitFor(() => expect(card).not.toHaveClass("is-flash"), {
-      timeout: 4000,
+      expect(box.top).toBeLessThan(window.innerHeight);
     });
   },
 };

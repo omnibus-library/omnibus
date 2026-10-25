@@ -100,9 +100,10 @@ function ShelfEntry({
 }
 
 // Which way the row can still scroll, kept current as it scrolls, resizes and gains entries.
-function useRowReach(row: RefObject<HTMLDivElement | null>) {
+function useRowReach(row: RefObject<HTMLDivElement | null>, shown: boolean) {
   const [before, setBefore] = useState(false);
   const [after, setAfter] = useState(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `shown` is the cue that the row remounted, not a value the effect reads
   useEffect(() => {
     const el = row.current;
     if (!el) return;
@@ -129,7 +130,7 @@ function useRowReach(row: RefObject<HTMLDivElement | null>) {
       mutation.disconnect();
       el.removeEventListener("scroll", measure);
     };
-  }, [row]);
+  }, [row, shown]);
   return { before, after };
 }
 
@@ -159,8 +160,10 @@ export function ShelfGallery({
   const client = useQueryClient();
   const [creating, setCreating] = useState(false);
   const rail = shelves.data ? railShelves(shelves.data, viewerId) : [];
+  // Only a list that loaded can say there is nothing to show; a failed one keeps the row.
+  const shown = !(shelves.isSuccess && rail.length === 0);
   const row = useRef<HTMLDivElement>(null);
-  const reach = useRowReach(row);
+  const reach = useRowReach(row, shown);
   const page = (dir: 1 | -1) => {
     const el = row.current;
     if (!el) return;
@@ -179,6 +182,7 @@ export function ShelfGallery({
       behavior: prefersReducedMotion() ? "auto" : "smooth",
     });
   };
+  if (!shown) return null;
   return (
     <>
       <section className="lmq-shelves" aria-labelledby="lmq-shelves-title">

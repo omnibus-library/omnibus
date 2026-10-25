@@ -149,7 +149,16 @@ export const routes: RouteObject[] = [
                     element: <Navigate to="/settings" replace />,
                   },
                   { path: "/add-books", element: <AddBooks /> },
-                  { path: "/check-in", element: <CheckIn /> },
+                  {
+                    path: "/check-in",
+                    // The dialog floats over the library, which closing it returns to.
+                    element: (
+                      <>
+                        <Library />
+                        <CheckIn />
+                      </>
+                    ),
+                  },
                   { path: "*", element: <NotFound /> },
                 ],
               },
