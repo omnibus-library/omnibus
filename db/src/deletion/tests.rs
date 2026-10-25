@@ -165,6 +165,7 @@ async fn delete_book_items_purges_the_book_and_its_user_data_when_every_item_goe
         "journal_entries",
         "physical_copies",
         "reading_progress",
+        "book_export_digests",
     ] {
         let sql = format!("SELECT COUNT(*) FROM {table}");
         assert_eq!(count_rows(&pool, &sql).await, 0, "{table} not purged");
@@ -723,6 +724,13 @@ async fn seed_user_data(pool: &SqlitePool, user_id: i64, uuid: &str) -> i64 {
             .await
             .unwrap();
     }
+    sqlx::query(
+        "INSERT INTO book_export_digests (partial_md5, book_uuid, created_at) VALUES ('digest-' || ?1, ?1, 1)",
+    )
+    .bind(uuid)
+    .execute(pool)
+    .await
+    .unwrap();
     crate::physical::add_physical_copy(pool, uuid, None, Some(user_id), None)
         .await
         .unwrap()

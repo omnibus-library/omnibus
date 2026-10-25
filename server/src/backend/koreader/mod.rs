@@ -18,9 +18,9 @@ mod extractor;
 mod library;
 pub(super) mod plugin;
 mod report;
-mod state;
+pub(super) mod state;
 #[cfg(test)]
-mod test_support;
+pub(super) mod test_support;
 #[cfg(test)]
 mod tests;
 

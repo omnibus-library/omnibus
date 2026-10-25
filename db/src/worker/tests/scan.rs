@@ -150,6 +150,33 @@ async fn task_scan_posts_backfill_thumbs_that_pregenerates_all_sizes_for_a_cover
     }
 }
 
+/// A successful `Task::Scan` posts `Task::BackfillPartialMd5`, so a scanned EPUB
+/// carries its KOReader fingerprint once the follow-ups drain.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn task_scan_posts_backfill_partial_md5_that_fingerprints_a_scanned_epub() {
+    let thumbs_dir = tempfile::tempdir().unwrap();
+    let covers_dir = tempfile::tempdir().unwrap();
+    let _env = EnvVarGuard::set_os("OMNIBUS_THUMBS_DIR", Some(thumbs_dir.path().as_os_str()))
+        .also_set_os("OMNIBUS_COVERS_DIR", Some(covers_dir.path().as_os_str()));
+    let lib = tempfile::tempdir().unwrap();
+    copy_fixture_into("alpha.epub", lib.path());
+
+    let w = make_worker_default(pool().await);
+    w.post(Task::Scan {
+        library_path: lib.path().to_str().unwrap().to_string(),
+    });
+
+    assert!(
+        poll_maps_empty(&w).await,
+        "scan and its follow-up backfills did not drain in time"
+    );
+    let digest: Option<String> = sqlx::query_scalar("SELECT partial_md5 FROM book_files")
+        .fetch_one(&w.pool)
+        .await
+        .unwrap();
+    assert_eq!(digest.as_deref(), Some("279e27fb695d12d161736300a93e255d"));
+}
+
 /// [`crate::indexer::backfill_thumbs`] (via `Task::BackfillThumbs`) skips a
 /// book whose three thumbnail sizes already exist for its `last_modified` —
 /// the already-caught-up case a re-scan of an unchanged library hits on every

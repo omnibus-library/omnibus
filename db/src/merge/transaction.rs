@@ -365,7 +365,7 @@ async fn move_book_files(
 
 /// Every table that soft-references `books.uuid` and must follow the book
 /// across a merge; the contract is in `.claude/rules/06-migrations.md`.
-pub(super) const RETARGET_TABLES: [&str; 19] = [
+pub(super) const RETARGET_TABLES: [&str; 20] = [
     "reading_progress",
     "reading_progress_marks",
     "reading_progress_daily",
@@ -385,6 +385,7 @@ pub(super) const RETARGET_TABLES: [&str; 19] = [
     "wishlist_entries",
     "cross_format_links",
     "book_content_chapters",
+    "book_export_digests",
 ];
 
 /// The `book_uuid`-keyed tables the merge deliberately leaves alone, each
@@ -435,7 +436,7 @@ pub(super) struct Collision {
 /// The subset of [`RETARGET_TABLES`] with a `UNIQUE` key to settle, resolved by
 /// [`dedupe_collisions`] before the retarget runs. Which rule fits which row,
 /// and how each deleted row stays undoable, is in `.claude/rules/06-migrations.md`.
-pub(super) const COLLISION_TABLES: [Collision; 9] = [
+pub(super) const COLLISION_TABLES: [Collision; 10] = [
     Collision {
         table: "reading_progress",
         keys: &["user_id", "format"],
@@ -495,6 +496,13 @@ pub(super) const COLLISION_TABLES: [Collision; 9] = [
     Collision {
         table: "book_content_chapters",
         keys: &["spine_index"],
+        keep: Keep::Target,
+    },
+    // Both books baked to one digest: the pair is the same fact either way, so the
+    // target's row stands.
+    Collision {
+        table: "book_export_digests",
+        keys: &["partial_md5"],
         keep: Keep::Target,
     },
 ];
