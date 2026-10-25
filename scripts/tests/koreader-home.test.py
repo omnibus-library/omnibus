@@ -48,7 +48,9 @@ def plugin_zip(token: str) -> bytes:
 class FakeOmnibus:
     """The REST routes link_home calls, answering from this object's state."""
 
-    def __init__(self, *, login_ok=True, devices=None, kosync_configured=False, fail_route=None, login_body=None):
+    def __init__(
+        self, *, login_ok=True, devices=None, kosync_configured=False, kosync_userkey=None, fail_route=None, login_body=None
+    ):
         self.login_ok = login_ok
         self.login_body = login_body
         self.fail_route = fail_route
@@ -57,7 +59,7 @@ class FakeOmnibus:
         self.requests: list[tuple[str, str]] = []
         self.logins: list[dict] = []
         self.created: list[dict] = []
-        self.kosync_password: str | None = None
+        self.kosync_userkey = kosync_userkey  # the key /kosync/users/auth accepts
         fake = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -88,6 +90,13 @@ class FakeOmnibus:
                     return self.json_reply({"user": {"username": body["username"]}, "token": "session-1"})
                 if (method, self.path) == fake.fail_route:
                     return self.json_reply({"error": "boom"}, 500)
+                if (method, self.path) == ("GET", "/kosync/users/auth"):
+                    if self.headers.get("Accept") != "application/vnd.koreader.v1+json":
+                        return self.json_reply({"code": 101}, 412)
+                    key = (self.headers.get("x-auth-user"), self.headers.get("x-auth-key"))
+                    if fake.kosync_userkey is None or key != (SEED[0], fake.kosync_userkey):
+                        return self.json_reply({"code": 2001, "message": "Unauthorized"}, 401)
+                    return self.json_reply({"authorized": "OK"})
                 if self.headers.get("Authorization") != "Bearer session-1":
                     return self.json_reply({"error": "unauthorized"}, 401)
                 if (method, self.path) == ("POST", "/api/auth/logout"):
@@ -105,8 +114,8 @@ class FakeOmnibus:
                     return self.json_reply({"configured": fake.kosync_configured})
                 if (method, self.path) == ("POST", "/api/account/kosync"):
                     fake.kosync_configured = True
-                    fake.kosync_password = "generated-kosync-pw"
-                    return self.json_reply({"username": SEED[0], "password": fake.kosync_password})
+                    fake.kosync_userkey = KOSYNC_USERKEY
+                    return self.json_reply({"username": SEED[0], "password": "generated-kosync-pw"})
                 self.json_reply({"error": "no such route"}, 404)
 
             def do_GET(self):
@@ -139,6 +148,10 @@ class LinkHomeTests(unittest.TestCase):
 
     def link(self, fake: FakeOmnibus, home: Path | None = None) -> bool:
         return link_home(home or self.home, fake.url, ORIGIN, self.state, SEED)
+
+    def save_key(self, fake: FakeOmnibus, userkey: str, account: str = SEED[0]) -> Path:
+        """A key cached by an earlier link to `fake` as `account`."""
+        return self.save_kosync(json.dumps({"server": fake.url, "account": account, "username": account, "userkey": userkey}))
 
     def save_kosync(self, text: str, mode: int = 0o644) -> Path:
         saved = self.state / "kosync.json"
@@ -234,13 +247,48 @@ class LinkHomeTests(unittest.TestCase):
         self.assertEqual(fake.created, [{"name": name, "kind": "koreader"}])
 
     def test_reuses_saved_kosync_key_when_server_has_one(self):
-        fake = self.omnibus(kosync_configured=True)
-        self.save_kosync(json.dumps({"username": "admin", "userkey": "0" * 32}))
+        fake = self.omnibus(kosync_configured=True, kosync_userkey="0" * 32)
+        self.save_key(fake, "0" * 32)
 
         self.link(fake)
 
         self.assertNotIn(("POST", "/api/account/kosync"), fake.requests)
         self.assertIn('userkey = "' + "0" * 32 + '"', (self.home / "settings/kosync.lua").read_text())
+
+    def test_generates_kosync_password_when_saved_key_belongs_to_another_account(self):
+        fake = self.omnibus(kosync_configured=True, kosync_userkey="0" * 32)
+        self.save_key(fake, "0" * 32, account="someone-else")
+
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.link(fake)
+
+        self.assertIn(("POST", "/api/account/kosync"), fake.requests)
+        saved = json.loads((self.state / "kosync.json").read_text())
+        self.assertEqual((saved["account"], saved["userkey"]), (SEED[0], KOSYNC_USERKEY))
+
+    def test_generates_kosync_password_when_saved_key_was_cached_for_another_server(self):
+        fake = self.omnibus(kosync_configured=True, kosync_userkey="0" * 32)
+        self.save_kosync(
+            json.dumps({"server": "http://127.0.0.1:1", "account": SEED[0], "username": SEED[0], "userkey": "0" * 32})
+        )
+
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.link(fake)
+
+        self.assertIn(("POST", "/api/account/kosync"), fake.requests)
+        self.assertEqual(json.loads((self.state / "kosync.json").read_text())["server"], fake.url)
+
+    def test_generates_kosync_password_when_the_server_rejects_the_saved_key(self):
+        fake = self.omnibus(kosync_configured=True, kosync_userkey="1" * 32)
+        self.save_key(fake, "0" * 32)
+        stderr = io.StringIO()
+
+        with contextlib.redirect_stderr(stderr):
+            self.link(fake)
+
+        self.assertIn(("POST", "/api/account/kosync"), fake.requests)
+        self.assertEqual(json.loads((self.state / "kosync.json").read_text())["userkey"], KOSYNC_USERKEY)
+        self.assertIn("the server rejected the saved key", stderr.getvalue())
 
     def test_generates_kosync_password_when_server_has_none(self):
         fake = self.omnibus(kosync_configured=False)

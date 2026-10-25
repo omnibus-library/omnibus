@@ -124,6 +124,23 @@ class Api:
                 raise LinkError("the dev server rejected the login in OMNIBUS_DEV_SEED_USER") from e
             raise
 
+    def kosync_accepts(self, key: dict) -> bool:
+        """Whether the server's stock Progress sync still takes `key` (a reader may have replaced the password)."""
+        headers = {"Accept": "application/vnd.koreader.v1+json", "x-auth-user": key["username"], "x-auth-key": key["userkey"]}
+        request = urllib.request.Request(self.base + "/kosync/users/auth", headers=headers)
+        try:
+            with self.opener.open(request, timeout=30):
+                return True
+        except urllib.error.HTTPError as e:
+            e.close()
+            if e.code == 401:
+                return False
+            raise LinkError(f"GET /kosync/users/auth answered {e.code}") from e
+        except urllib.error.URLError as e:
+            raise LinkError(f"can't reach {self.base}: {e.reason}") from e
+        except (OSError, http.client.HTTPException) as e:
+            raise LinkError(f"GET /kosync/users/auth failed: {e}") from e
+
     def logout(self) -> None:
         try:
             self.call("POST", "/api/auth/logout")
@@ -139,17 +156,25 @@ def find_or_create_device(api: Api, name: str) -> int:
     return api.call("POST", "/api/account/kobo-devices", {"name": name, "kind": "koreader"})["id"]
 
 
-def kosync_key(api: Api, state_dir: Path) -> dict:
-    """The progress-sync login every home shares: the password is the account's, not the device's."""
+def kosync_key(api: Api, state_dir: Path, account: str) -> dict:
+    """The progress-sync login every home shares: the password is the account's, not the device's.
+    Cached per server and account, and reused only while the server still accepts it."""
     saved = state_dir / "kosync.json"
     configured = api.call("GET", "/api/account/kosync")["configured"]
-    key = _read_saved_key(saved)
+    key = _read_saved_key(saved, api.base, account)
     if configured and key:
-        return key
-    if configured:
+        if api.kosync_accepts(key):
+            return key
+        print("koreader: replacing the account's progress-sync password: the server rejected the saved key", file=sys.stderr)
+    elif configured:
         print("koreader: replacing the account's progress-sync password: no saved key for it was found", file=sys.stderr)
     credentials = api.call("POST", "/api/account/kosync")
-    key = {"username": credentials["username"], "userkey": hashlib.md5(credentials["password"].encode()).hexdigest()}
+    key = {
+        "server": api.base,
+        "account": account,
+        "username": credentials["username"],
+        "userkey": hashlib.md5(credentials["password"].encode()).hexdigest(),
+    }
     fd, temp = tempfile.mkstemp(dir=state_dir, prefix=".kosync-")  # mkstemp creates it 0600
     with os.fdopen(fd, "w") as f:
         json.dump(key, f)
@@ -157,12 +182,15 @@ def kosync_key(api: Api, state_dir: Path) -> dict:
     return key
 
 
-def _read_saved_key(saved: Path) -> dict | None:
+def _read_saved_key(saved: Path, server: str, account: str) -> dict | None:
+    """The saved key when it was cached for this server and account, else `None`."""
     try:
         key = json.loads(saved.read_text())
-        return key if isinstance(key, dict) and {"username", "userkey"} <= key.keys() else None
     except (OSError, ValueError):
         return None
+    if not isinstance(key, dict) or not {"username", "userkey"} <= key.keys():
+        return None
+    return key if (key.get("server"), key.get("account")) == (server, account) else None
 
 
 def install_plugin(home: Path, archive: bytes, origin: str) -> None:
@@ -220,7 +248,7 @@ def _link_unlocked(home: Path, api: str, origin: str, state_dir: Path, seed: tup
     try:
         device = find_or_create_device(session, device_name(home, state_dir))
         archive = session.call("GET", f"/api/account/kobo-devices/{device}/koreader-plugin", raw=True)
-        key = kosync_key(session, state_dir)
+        key = kosync_key(session, state_dir, seed[0])
         write_settings(home, origin, seed, key)
         install_plugin(home, archive, origin)
     finally:

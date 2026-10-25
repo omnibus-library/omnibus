@@ -221,10 +221,12 @@ KOReader cleanly, so its settings are saved.
   KOReader's settings, books and progress between launches. Each home maps to one
   container, so the same home can't open twice.
 - **Progress sync** uses one login for every home, because the account has a
-  single kosync password: its key is saved in `.claude/runtime/koreader/kosync.json`.
-  Delete that file only together with the homes, or the first home's login stops
-  working. If the server already holds a password and no key is saved, linking
-  replaces it (and says so), which signs out any home linked before.
+  single kosync password: its key is saved in `.claude/runtime/koreader/kosync.json`,
+  for the server and account it was made for. Delete that file only together with
+  the homes, or the first home's login stops working. If the server already holds a
+  password and no key is saved for it, or the server rejects the saved one (a
+  password generated in Settings since), linking replaces it (and says so), which
+  signs out any home linked before.
 - **A sync needs a shelf set to sync** (the shelf's sync toggle), as on a device.
 - **Relinking:** a home keeps the dev server port and device token it was linked
   with. After the dev server moves port or its database is reset, delete the home
