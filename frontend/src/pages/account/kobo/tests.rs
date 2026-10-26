@@ -28,6 +28,7 @@ fn device_of(kind: omnibus_shared::DeviceKind) -> KoboDeviceView {
         last_seen_at: 0,
         last_sync_at: None,
         last_sync_error: None,
+        kosync_login: None,
     }
 }
 

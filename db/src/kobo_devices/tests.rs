@@ -65,6 +65,24 @@ async fn create_device_stores_the_kind_it_is_given() {
 }
 
 #[tokio::test]
+async fn register_device_leaves_no_device_behind_when_the_login_claim_fails() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool, "reader").await;
+    sqlx::query(
+        "CREATE TRIGGER refuse_claim BEFORE UPDATE OF kosync_key_hash ON users
+         BEGIN SELECT RAISE(ABORT, 'refused'); END",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let err = register_device(&pool, user, "Libra", DeviceKind::Kosync).await;
+
+    assert!(matches!(err, Err(KoboDeviceError::Kosync(_))));
+    assert!(list_devices(&pool, user).await.unwrap().is_empty());
+}
+
+#[tokio::test]
 async fn create_device_propagates_db_error_when_pool_is_closed() {
     let pool = init_db("sqlite::memory:").await.unwrap();
     pool.close().await;

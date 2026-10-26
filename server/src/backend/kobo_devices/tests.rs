@@ -292,6 +292,104 @@ async fn delete_kobo_device_returns_404_for_another_readers_or_unknown_device() 
     assert_eq!(remaining.len(), 1);
 }
 
+mod progress_sync_login {
+    use axum::Router;
+    use md5::Digest;
+    use omnibus_shared::KosyncPassword;
+    use serde_json::{json, Value};
+
+    use super::*;
+    use crate::backend::kosync_router;
+
+    const ACCEPT: &str = "application/vnd.koreader.v1+json";
+
+    async fn add_device(app: &Router, token: &str, kind: &str) -> Value {
+        let body = json!({ "name": "Libra", "kind": kind });
+        let res = app
+            .clone()
+            .oneshot(request("POST", "/api/account/kobo-devices", token, Some(body)))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        json_of(res).await
+    }
+
+    fn revealed(device: &Value) -> KosyncPassword {
+        serde_json::from_value(device["kosync_login"].clone()).unwrap()
+    }
+
+    /// What `/kosync` answers a KOReader signing in as `ada` with `password`.
+    async fn kosync_sign_in(state: &AppState, password: &str) -> StatusCode {
+        let key = format!("{:x}", md5::Md5::digest(password.as_bytes()));
+        let req = Request::builder()
+            .uri("/kosync/users/auth")
+            .header("accept", ACCEPT)
+            .header("x-auth-user", "ada")
+            .header("x-auth-key", key)
+            .body(Body::empty())
+            .unwrap();
+        kosync_router(state.clone()).oneshot(req).await.unwrap().status()
+    }
+
+    #[tokio::test]
+    async fn adding_a_no_plugin_koreader_reveals_a_login_that_signs_in() {
+        let (app, state, pool) = fixture().await;
+        let (_, token) = reader(&pool, "ada").await;
+
+        let device = add_device(&app, &token, "kosync").await;
+
+        assert_eq!(device["kind"], "kosync");
+        let login = revealed(&device);
+        assert_eq!(login.username, "ada");
+        assert_eq!(kosync_sign_in(&state, &login.password).await, StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn adding_a_second_no_plugin_koreader_shows_no_login_and_keeps_the_first() {
+        let (app, state, pool) = fixture().await;
+        let (_, token) = reader(&pool, "ada").await;
+        let first = revealed(&add_device(&app, &token, "kosync").await);
+
+        let second = add_device(&app, &token, "kosync").await;
+
+        assert!(!second.as_object().unwrap().contains_key("kosync_login"));
+        assert_eq!(kosync_sign_in(&state, &first.password).await, StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn adding_a_no_plugin_koreader_keeps_a_password_generated_on_its_own() {
+        let (app, state, pool) = fixture().await;
+        let (_, token) = reader(&pool, "ada").await;
+        let res = app
+            .clone()
+            .oneshot(request("POST", "/api/account/kosync", &token, None))
+            .await
+            .unwrap();
+        let standalone: KosyncPassword = json_of(res).await;
+
+        let device = add_device(&app, &token, "kosync").await;
+
+        assert!(!device.as_object().unwrap().contains_key("kosync_login"));
+        assert_eq!(
+            kosync_sign_in(&state, &standalone.password).await,
+            StatusCode::OK
+        );
+    }
+
+    #[tokio::test]
+    async fn adding_a_kobo_or_a_plugin_koreader_shows_no_login_and_creates_none() {
+        let (app, _state, pool) = fixture().await;
+        let (uid, token) = reader(&pool, "ada").await;
+
+        for kind in ["kobo", "koreader"] {
+            let device = add_device(&app, &token, kind).await;
+            assert!(!device.as_object().unwrap().contains_key("kosync_login"), "{kind}");
+        }
+
+        assert!(!db::kosync::kosync_configured(&pool, uid).await.unwrap());
+    }
+}
+
 mod koreader_plugin {
     use super::*;
 

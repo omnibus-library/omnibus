@@ -281,6 +281,39 @@ mod credentials {
         }
     }
 
+    mod claim_kosync_password {
+        use super::*;
+
+        async fn claim(pool: &SqlitePool, id: i64) -> Option<KosyncPassword> {
+            let mut conn = pool.acquire().await.unwrap();
+            claim_kosync_password(&mut conn, id).await.unwrap()
+        }
+
+        #[tokio::test]
+        async fn returns_a_login_the_reader_can_sign_in_with_when_they_have_none() {
+            let pool = init_db("sqlite::memory:").await.unwrap();
+            let id = user(&pool, "ada").await;
+
+            let login = claim(&pool, id).await.expect("a login is claimed");
+
+            assert_eq!(login.username, "ada");
+            let found = verify_kosync_key(&pool, "ada", &md5_hex(&login.password)).await;
+            assert_eq!(found.unwrap(), Some(id));
+        }
+
+        #[tokio::test]
+        async fn leaves_an_existing_login_untouched() {
+            let pool = init_db("sqlite::memory:").await.unwrap();
+            let (id, password) = reader_with_password(&pool, "ada").await;
+
+            let claimed = claim(&pool, id).await;
+
+            assert_eq!(claimed, None);
+            let found = verify_kosync_key(&pool, "ada", &md5_hex(&password)).await;
+            assert_eq!(found.unwrap(), Some(id));
+        }
+    }
+
     mod kosync_configured {
         use super::*;
 

@@ -7,7 +7,7 @@ use std::{collections::BTreeSet, path::Path};
 use anyhow::Context;
 use md5::{Digest, Md5};
 use omnibus_shared::KosyncPassword;
-use sqlx::SqlitePool;
+use sqlx::{SqliteConnection, SqlitePool};
 
 use crate::{auth::hash_token, books::resolve_canonical_book_uuid, partial_md5::partial_md5};
 
@@ -103,6 +103,25 @@ pub async fn generate_kosync_password(
             .await?;
     let username = username.with_context(|| format!("user {user_id} not found"))?;
     Ok(KosyncPassword { username, password })
+}
+
+/// A kosync password for `user_id`, set only when the reader has none: `None` when a login
+/// already exists, which is left untouched. Runs on the caller's connection so it can share a
+/// transaction.
+pub async fn claim_kosync_password(
+    conn: &mut SqliteConnection,
+    user_id: i64,
+) -> anyhow::Result<Option<KosyncPassword>> {
+    let password = random_password()?;
+    let username: Option<String> = sqlx::query_scalar(
+        "UPDATE users SET kosync_key_hash = ? WHERE id = ? AND kosync_key_hash IS NULL \
+         RETURNING username",
+    )
+    .bind(hash_token(&md5_hex(&password)))
+    .bind(user_id)
+    .fetch_optional(conn)
+    .await?;
+    Ok(username.map(|username| KosyncPassword { username, password }))
 }
 
 /// Whether `user_id` has generated a kosync password.

@@ -6,6 +6,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::kosync::KosyncPassword;
+
 /// Maximum length, in characters, of a user-supplied Kobo device label.
 pub const KOBO_DEVICE_NAME_MAX_LEN: usize = 100;
 
@@ -59,6 +61,10 @@ pub struct KoboDeviceView {
     pub last_sync_at: Option<i64>,
     /// What went wrong in a KOReader's last reported sync. `null` when it succeeded.
     pub last_sync_error: Option<String>,
+    /// The Progress sync login, shown once: only on the response that adds a no-plugin KOReader
+    /// to an account that had no login yet. Absent everywhere else.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kosync_login: Option<KosyncPassword>,
 }
 
 /// The label and kind for a new device.

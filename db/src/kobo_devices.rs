@@ -4,11 +4,14 @@
 //! shown again (AC2); the delta `sync_cursor` lives here too, independent of the
 //! token, so a regenerate never disturbs sync state. See migration 0053.
 
-use omnibus_shared::DeviceKind;
+use omnibus_shared::{DeviceKind, KosyncPassword};
 use serde::Serialize;
 use sqlx::{Row, SqlitePool};
 
-use crate::auth::{generate_token, AuthResult};
+use crate::{
+    auth::{generate_token, AuthResult},
+    kosync::claim_kosync_password,
+};
 
 /// Column list shared by every row-returning query, matched by [`row_to_device`].
 const COLS: &str =
@@ -50,6 +53,7 @@ impl From<KoboDevice> for omnibus_shared::KoboDeviceView {
             last_seen_at: d.last_seen_at,
             last_sync_at: d.last_sync_at,
             last_sync_error: d.last_sync_error,
+            kosync_login: None,
         }
     }
 }
@@ -71,6 +75,8 @@ pub enum KoboDeviceError {
     #[error("token generation failed: {0}")]
     Token(String),
     #[error(transparent)]
+    Kosync(anyhow::Error),
+    #[error(transparent)]
     Sqlx(#[from] sqlx::Error),
 }
 
@@ -85,6 +91,27 @@ pub async fn create_device(
     create_device_with_token(pool, user_id, name, kind, generate_token).await
 }
 
+/// [`create_device`], and for a no-plugin KOReader also the account's Progress sync login when
+/// it has none yet. The two share a transaction, so no device exists whose login was never shown.
+pub async fn register_device(
+    pool: &SqlitePool,
+    user_id: i64,
+    name: &str,
+    kind: DeviceKind,
+) -> Result<(KoboDevice, Option<KosyncPassword>), KoboDeviceError> {
+    let token = generate_token().map_err(|e| KoboDeviceError::Token(e.to_string()))?;
+    let mut tx = pool.begin().await?;
+    let device = insert_device(&mut *tx, user_id, name, kind, &token).await?;
+    let login = match kind {
+        DeviceKind::Kosync => claim_kosync_password(&mut tx, user_id)
+            .await
+            .map_err(KoboDeviceError::Kosync)?,
+        DeviceKind::Kobo | DeviceKind::Koreader => None,
+    };
+    tx.commit().await?;
+    Ok((device, login))
+}
+
 /// `create_device` with the token generator passed in, so a test can inject a
 /// forced failure without depending on the OS CSPRNG actually erroring.
 async fn create_device_with_token(
@@ -95,16 +122,26 @@ async fn create_device_with_token(
     token_fn: impl FnOnce() -> AuthResult<String>,
 ) -> Result<KoboDevice, KoboDeviceError> {
     let token = token_fn().map_err(|e| KoboDeviceError::Token(e.to_string()))?;
+    insert_device(pool, user_id, name, kind, &token).await
+}
+
+async fn insert_device<'e>(
+    db: impl sqlx::Executor<'e, Database = sqlx::Sqlite>,
+    user_id: i64,
+    name: &str,
+    kind: DeviceKind,
+    token: &str,
+) -> Result<KoboDevice, KoboDeviceError> {
     let row = sqlx::query(&format!(
         "INSERT INTO kobo_devices (user_id, token, name, kind)
          VALUES (?, ?, ?, ?)
          RETURNING {COLS}"
     ))
     .bind(user_id)
-    .bind(&token)
+    .bind(token)
     .bind(name)
     .bind(kind.as_str())
-    .fetch_one(pool)
+    .fetch_one(db)
     .await?;
     Ok(row_to_device(&row))
 }
