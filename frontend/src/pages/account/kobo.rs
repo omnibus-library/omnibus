@@ -10,11 +10,10 @@ use dioxus::prelude::*;
 use dioxus_router::Link;
 use omnibus_shared::{DeviceKind, KoboDeviceView};
 
-use super::device_form::{render_add_form, AddForm, NAME_REQUIRED};
+use super::device_form::{render_add_form, render_list_loading, AddForm, NAME_REQUIRED};
 use crate::components::clipboard::ReadonlyCopyField;
 use crate::components::confirm_modal::{confirm_dialog, Confirm};
 use crate::components::credential_card::action_status;
-use crate::components::loading::RowSkeletons;
 use crate::pages::settings::use_instance_origin;
 use crate::{data, use_server_url, Route};
 
@@ -187,6 +186,11 @@ fn render_kobo_device_list(
     }
 }
 
+/// The list's stand-in until it answers; a refused add never hides it.
+fn render_pending_list(load_failed: bool) -> Element {
+    render_list_loading(load_failed, "kobo", "Kobos")
+}
+
 /// Card body: warning, setup steps, add form, then the Kobo list. Every
 /// mutation folds the server's answer into the list.
 #[component]
@@ -201,6 +205,7 @@ pub fn KoboDevicesCard() -> Element {
     let mut name_input = use_signal(String::new);
     let mut msg = use_signal(|| None::<String>);
     let mut msg_is_error = use_signal(|| false);
+    let mut load_failed = use_signal(|| false);
     let mut in_flight = use_signal(|| false);
     let mut pending = use_signal(|| None::<PendingKobo>);
     // Decided once, when the list first answers, because adding the first Kobo
@@ -218,7 +223,8 @@ pub fn KoboDevicesCard() -> Element {
                     devices.set(Some(list));
                 }
                 Err(e) => {
-                    msg.set(Some(format!("Couldn\u{2019}t load your devices: {e}")));
+                    load_failed.set(true);
+                    msg.set(Some(format!("Couldn\u{2019}t load your Kobos: {e}")));
                     msg_is_error.set(true);
                 }
             }
@@ -322,7 +328,7 @@ pub fn KoboDevicesCard() -> Element {
 
     rsx! {
         section { class: "card", "data-testid": "kobo-devices-card",
-            h3 { "Kobo" }
+            h3 { id: "kobo-card-title", "Kobo" }
             p { class: "subtitle",
                 "Sync your shelves, reading position and highlights to a Kobo over Wi-Fi, through its built-in store sync."
             }
@@ -341,14 +347,7 @@ pub fn KoboDevicesCard() -> Element {
             })}
             match device_list.as_deref() {
                 Some(list) => render_kobo_device_list(list, &endpoint_origin(), in_flight(), on_ask_regenerate, on_ask_remove),
-                // The form's status line carries the failure.
-                None if msg_is_error() => rsx! {},
-                None => rsx! {
-                    div { role: "status", "aria-live": "polite", "data-testid": "kobo-devices-loading",
-                        span { class: "ld-sr", "Finding your devices" }
-                        RowSkeletons { count: 1, avatar: false }
-                    }
-                },
+                None => render_pending_list(load_failed()),
             }
         }
         if let Some(ask) = pending() {

@@ -12,11 +12,10 @@ use dioxus::prelude::*;
 use dioxus_router::Link;
 use omnibus_shared::{DeviceKind, KoboDeviceView, KosyncPassword};
 
-use super::device_form::{render_add_form, AddForm, NAME_REQUIRED};
+use super::device_form::{render_add_form, render_list_loading, AddForm, NAME_REQUIRED};
 use crate::components::clipboard::ReadonlyCopyField;
 use crate::components::confirm_modal::{confirm_dialog, Confirm};
 use crate::components::credential_card::action_status;
-use crate::components::loading::RowSkeletons;
 use crate::pages::settings::use_instance_origin;
 use crate::pages::settings::users::fmt_date;
 use crate::{data, use_server_url, Route};
@@ -123,14 +122,6 @@ fn is_last_no_plugin(devices: &[KoboDeviceView], id: i64) -> bool {
             .any(|d| d.id == id && d.kind == DeviceKind::Kosync)
 }
 
-/// The earliest no-plugin KOReader other than `id`: the one a reuse panel says the login was shown on.
-fn first_other_no_plugin(devices: &[KoboDeviceView], id: i64) -> Option<String> {
-    devices
-        .iter()
-        .find(|d| d.kind == DeviceKind::Kosync && d.id != id)
-        .map(|d| d.name.clone())
-}
-
 /// The names of every no-plugin KOReader in `devices`.
 fn no_plugin_names(devices: &[KoboDeviceView]) -> Vec<String> {
     devices
@@ -215,8 +206,6 @@ struct ProgressSync {
     signed_out: bool,
     server_url: String,
     username: String,
-    /// The earliest other no-plugin KOReader, which a reuse panel names as where the login was shown.
-    first_other: Option<String>,
     /// Every no-plugin KOReader's name, as a sentence fragment.
     all_names: String,
 }
@@ -264,7 +253,6 @@ fn render_koreader_device_list(
                         signed_out: view.signed_out,
                         server_url: kosync_url(view.origin),
                         username: view.username.to_string(),
-                        first_other: first_other_no_plugin(device_list, dev.id),
                         all_names: all_names.clone(),
                     },
                 }
@@ -307,6 +295,11 @@ fn render_no_plugin_option(no_plugin: Signal<bool>, disabled: bool) -> Element {
     }
 }
 
+/// The list's stand-in until it answers; a refused add never hides it.
+fn render_pending_list(load_failed: bool) -> Element {
+    render_list_loading(load_failed, "koreader", "KOReaders")
+}
+
 /// Card body: setup steps, add form, then the KOReader list. Every mutation folds the
 /// server's answer into the list.
 #[component]
@@ -320,6 +313,7 @@ pub fn KoreaderDevicesCard() -> Element {
     let mut no_plugin = use_signal(|| false);
     let mut msg = use_signal(|| None::<String>);
     let mut msg_is_error = use_signal(|| false);
+    let mut load_failed = use_signal(|| false);
     let mut in_flight = use_signal(|| false);
     let mut pending = use_signal(|| None::<Pending>);
     let mut panels = use_signal(Vec::<(i64, RowPanel)>::new);
@@ -339,7 +333,8 @@ pub fn KoreaderDevicesCard() -> Element {
                     devices.set(Some(list));
                 }
                 Err(e) => {
-                    msg.set(Some(format!("Couldn\u{2019}t load your devices: {e}")));
+                    load_failed.set(true);
+                    msg.set(Some(format!("Couldn\u{2019}t load your KOReaders: {e}")));
                     msg_is_error.set(true);
                 }
             }
@@ -469,7 +464,7 @@ pub fn KoreaderDevicesCard() -> Element {
 
     rsx! {
         section { class: "card", "data-testid": "koreader-devices-card",
-            h3 { "KOReader" }
+            h3 { id: "koreader-card-title", "KOReader" }
             p { class: "subtitle",
                 "Sync your shelves, reading position and highlights to KOReader with the Omnibus plugin, on any device that runs KOReader."
             }
@@ -498,14 +493,7 @@ pub fn KoreaderDevicesCard() -> Element {
                     on_ask_generate,
                     on_ask_remove,
                 ),
-                // The form's status line carries the failure.
-                None if msg_is_error() => rsx! {},
-                None => rsx! {
-                    div { role: "status", "aria-live": "polite", "data-testid": "koreader-devices-loading",
-                        span { class: "ld-sr", "Finding your devices" }
-                        RowSkeletons { count: 1, avatar: false }
-                    }
-                },
+                None => render_pending_list(load_failed()),
             }
         }
         if let Some(ask) = pending() {
@@ -576,7 +564,7 @@ fn login_field(device_id: i64, key: &str, label: &str, value: &str, name: &str) 
 fn render_login_panel(
     title: &str,
     tip: String,
-    sync: &ProgressSync,
+    server_url: &str,
     login: &KosyncPassword,
     id: i64,
     name: &str,
@@ -584,7 +572,7 @@ fn render_login_panel(
     rsx! {
         div { class: "kosync-login", "data-testid": "koreader-login-panel",
             p { class: "kosync-login-title", "{title}" }
-            {login_field(id, "url", "Server URL", &sync.server_url, name)}
+            {login_field(id, "url", "Server URL", server_url, name)}
             {login_field(id, "username", "Username", &login.username, name)}
             {login_field(id, "password", "Password", &login.password, name)}
             p { class: "subtitle", "{tip}" }
@@ -598,7 +586,7 @@ fn render_progress_sync(sync: &ProgressSync, id: i64, name: &str) -> Element {
         Some(RowPanel::Fresh(login)) => render_login_panel(
             "Progress sync login (shown once)",
             "In KOReader: Progress sync \u{203a} Custom sync server, then Login with these. Every no-plugin KOReader shares this one login. Only books downloaded from Omnibus match.".to_string(),
-            sync,
+            &sync.server_url,
             login,
             id,
             name,
@@ -609,21 +597,17 @@ fn render_progress_sync(sync: &ProgressSync, id: i64, name: &str) -> Element {
                 "Log in again on every no-plugin KOReader (here, {}): Progress sync \u{203a} Custom sync server \u{203a} Login.",
                 sync.all_names
             ),
-            sync,
+            &sync.server_url,
             login,
             id,
             name,
         ),
         Some(RowPanel::Reuse) => {
-            let (who, when) = match &sync.first_other {
-                Some(first) => (first.as_str(), "when that device was added"),
-                None => ("your other Progress sync devices", "when it was generated"),
-            };
             rsx! {
                 div { class: "kosync-login", "data-testid": "koreader-login-panel",
                     p { class: "kosync-login-title", "Uses your existing Progress sync login" }
                     p { class: "subtitle",
-                        "Log in on this KOReader with the same server URL, username and password as {who}. The password was shown once, {when}."
+                        "Log in on this KOReader with the same server URL, username and password as your other no-plugin KOReaders. The password was shown once, when it was generated."
                     }
                     {login_field(id, "url", "Server URL", &sync.server_url, name)}
                     {login_field(id, "username", "Username", &sync.username, name)}
@@ -721,7 +705,7 @@ fn KoreaderDeviceRow(
                         class: download_class,
                         href: "{plugin_url}",
                         download: "omnibus-koreader-{id}.zip",
-                        "aria-label": "Download the plugin for {name}",
+                        "aria-label": "{download_label} for {name}",
                         "data-testid": "koreader-plugin-download",
                         "{download_label}"
                     }

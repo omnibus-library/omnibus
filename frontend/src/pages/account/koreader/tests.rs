@@ -4,25 +4,12 @@
 use omnibus_shared::{DeviceKind, KoboDeviceView, KosyncPassword};
 
 use super::*;
+use crate::pages::account::test_support::device_view as device;
 
 fn login() -> KosyncPassword {
     KosyncPassword {
         username: "ada".to_string(),
         password: "abcde-fghjk-mnpqr-stuvw".to_string(),
-    }
-}
-
-fn device(kind: DeviceKind) -> KoboDeviceView {
-    KoboDeviceView {
-        id: 1,
-        name: "Libra".to_string(),
-        kind,
-        token: "tok123".to_string(),
-        created_at: 0,
-        last_seen_at: 0,
-        last_sync_at: None,
-        last_sync_error: None,
-        kosync_login: None,
     }
 }
 
@@ -195,31 +182,6 @@ fn removing_the_last_no_plugin_koreader_is_known_from_the_list() {
     );
 }
 
-#[test]
-fn first_other_no_plugin_names_the_earliest_other_no_plugin_koreader() {
-    let list = vec![
-        KoboDeviceView {
-            id: 1,
-            name: "Plugin".to_string(),
-            ..device(DeviceKind::Koreader)
-        },
-        KoboDeviceView {
-            id: 2,
-            name: "First".to_string(),
-            ..device(DeviceKind::Kosync)
-        },
-        KoboDeviceView {
-            id: 3,
-            name: "Second".to_string(),
-            ..device(DeviceKind::Kosync)
-        },
-    ];
-
-    assert_eq!(first_other_no_plugin(&list, 3).as_deref(), Some("First"));
-    assert_eq!(first_other_no_plugin(&list, 2).as_deref(), Some("Second"));
-    assert_eq!(first_other_no_plugin(&list[..2], 2), None);
-}
-
 // SSR render-smoke coverage. These need the `server` feature (`dioxus::ssr`).
 #[cfg(feature = "server")]
 mod render_tests {
@@ -273,7 +235,7 @@ mod render_tests {
     fn koreader_card_names_itself_and_offers_to_add_a_koreader() {
         let html = render_in_vdom(card);
 
-        assert!(html.contains("<h3>KOReader</h3>"), "{html}");
+        assert!(html.contains("<h3 id=\"koreader-card-title\">KOReader</h3>"), "{html}");
         assert!(html.contains("Add a KOReader"), "{html}");
         assert!(!html.contains("Add a Kobo"), "{html}");
     }
@@ -438,7 +400,7 @@ mod render_tests {
         let html = render_in_vdom(|| plugin_row(None, None));
 
         assert!(
-            html.contains(r#"aria-label="Download the plugin for Libra""#),
+            html.contains(r#"aria-label="Download plugin for Libra""#),
             "{html}"
         );
         assert!(html.contains(r#"aria-label="Remove Libra""#), "{html}");
@@ -552,20 +514,15 @@ mod render_tests {
     }
 
     #[test]
-    fn koreader_device_row_says_it_reuses_the_login_and_names_the_first_device_that_showed_it() {
-        let html = render_in_vdom(|| {
-            no_plugin_row(ProgressSync {
-                first_other: Some("Clara".to_string()),
-                ..sync_of(Some(RowPanel::Reuse))
-            })
-        });
+    fn koreader_device_row_says_it_reuses_the_login_without_naming_another_device() {
+        let html = render_in_vdom(|| no_plugin_row(sync_of(Some(RowPanel::Reuse))));
 
         assert!(
             html.contains("Uses your existing Progress sync login"),
             "{html}"
         );
         assert!(
-            html.contains("with the same server URL, username and password as Clara. The password was shown once, when that device was added."),
+            html.contains("Log in on this KOReader with the same server URL, username and password as your other no-plugin KOReaders. The password was shown once, when it was generated."),
             "{html}"
         );
         assert!(html.contains("data-testid=\"kosync-url\""), "{html}");
@@ -575,16 +532,6 @@ mod render_tests {
             html.contains(
                 "A new password signs out every no-plugin KOReader until you log in again."
             ),
-            "{html}"
-        );
-    }
-
-    #[test]
-    fn koreader_device_row_credits_the_old_card_when_no_other_no_plugin_koreader_exists() {
-        let html = render_in_vdom(|| no_plugin_row(sync_of(Some(RowPanel::Reuse))));
-
-        assert!(
-            html.contains("as your other Progress sync devices. The password was shown once, when it was generated."),
             "{html}"
         );
     }
@@ -633,5 +580,44 @@ mod render_tests {
         assert!(!html.contains("kosync-password"), "{html}");
         assert!(!html.contains("koreader-signed-out"), "{html}");
         assert!(html.contains(r#"aria-label="Remove Libra""#), "{html}");
+    }
+
+    #[test]
+    fn koreader_card_keeps_the_loading_skeleton_when_only_the_add_form_was_refused() {
+        let html = render_in_vdom(|| render_pending_list(false));
+
+        assert!(
+            html.contains("data-testid=\"koreader-devices-loading\""),
+            "{html}"
+        );
+        assert!(html.contains("Finding your KOReaders"), "{html}");
+    }
+
+    #[test]
+    fn koreader_card_draws_no_skeleton_once_the_list_failed_to_load() {
+        let html = render_in_vdom(|| render_pending_list(true));
+
+        assert!(!html.contains("koreader-devices-loading"), "{html}");
+    }
+
+    #[test]
+    fn koreader_device_row_names_the_redownload_link_with_its_visible_text() {
+        let html = render_in_vdom(|| plugin_row(Some(1_704_067_200), None));
+
+        assert!(
+            html.contains(r#"aria-label="Redownload plugin for Libra""#),
+            "{html}"
+        );
+    }
+
+    #[test]
+    fn koreader_card_names_its_device_name_field_after_the_card() {
+        let html = render_in_vdom(card);
+
+        assert!(html.contains(r#"id="koreader-card-title""#), "{html}");
+        assert!(
+            html.contains(r#"aria-labelledby="koreader-card-title koreader-device-name-label""#),
+            "{html}"
+        );
     }
 }

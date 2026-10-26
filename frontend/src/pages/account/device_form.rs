@@ -4,6 +4,7 @@
 
 use dioxus::prelude::*;
 
+use crate::components::loading::RowSkeletons;
 use crate::components::BusyLabel;
 
 /// What a card tells a reader who adds a device without naming it.
@@ -48,12 +49,14 @@ pub(super) fn render_add_form(form: AddForm) -> Element {
             },
             div { class: "device-add-row",
                 div { class: "settings-field",
-                    label { r#for: "{prefix}-device-name", "Device name" }
+                    label { id: "{prefix}-device-name-label", r#for: "{prefix}-device-name", "Device name" }
                     input {
                         r#type: "text",
                         id: "{prefix}-device-name",
                         name: "{prefix}_device_name",
                         "data-testid": "{prefix}-device-name-input",
+                        // Named by its card too: both cards' fields read "Device name".
+                        "aria-labelledby": "{prefix}-card-title {prefix}-device-name-label",
                         autocomplete: "off",
                         placeholder,
                         maxlength: "100",
@@ -72,6 +75,20 @@ pub(super) fn render_add_form(form: AddForm) -> Element {
             }
             {extra}
             div { class: "settings-actions", {status} }
+        }
+    }
+}
+
+/// The list's stand-in until the first answer: a skeleton, or nothing once the load failed (the
+/// status line then says why). A refused add never hides it.
+pub(super) fn render_list_loading(load_failed: bool, prefix: &str, what: &str) -> Element {
+    if load_failed {
+        return rsx! {};
+    }
+    rsx! {
+        div { role: "status", "aria-live": "polite", "data-testid": "{prefix}-devices-loading",
+            span { class: "ld-sr", "Finding your {what}" }
+            RowSkeletons { count: 1, avatar: false }
         }
     }
 }

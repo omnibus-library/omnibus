@@ -1,6 +1,7 @@
 //! Tests for the sync devices card: setup steps, confirms and the device list.
 
 use super::*;
+use crate::pages::account::test_support::device_view as device_of;
 
 #[test]
 fn endpoint_url_joins_origin_and_token() {
@@ -16,20 +17,6 @@ fn endpoint_url_trims_a_trailing_slash_on_the_origin() {
         endpoint_url("http://localhost:3000/", "abc"),
         "http://localhost:3000/kobo/abc"
     );
-}
-
-fn device_of(kind: omnibus_shared::DeviceKind) -> KoboDeviceView {
-    KoboDeviceView {
-        id: 1,
-        name: "Device".to_string(),
-        kind,
-        token: "tok".to_string(),
-        created_at: 0,
-        last_seen_at: 0,
-        last_sync_at: None,
-        last_sync_error: None,
-        kosync_login: None,
-    }
 }
 
 #[test]
@@ -314,7 +301,7 @@ mod render_tests {
     fn kobo_card_names_itself_and_offers_only_to_add_a_kobo() {
         let html = render_in_vdom(card);
 
-        assert!(html.contains("<h3>Kobo</h3>"), "{html}");
+        assert!(html.contains("<h3 id=\"kobo-card-title\">Kobo</h3>"), "{html}");
         assert!(html.contains("Add a Kobo"), "{html}");
         assert!(!html.contains("Add a KOReader"), "{html}");
         assert!(!html.contains("koreader-device-add"), "{html}");
@@ -346,5 +333,34 @@ mod render_tests {
             "{html}"
         );
         assert!(!html.contains("koreader"), "{html}");
+    }
+
+    #[test]
+    fn kobo_card_keeps_the_loading_skeleton_when_only_the_add_form_was_refused() {
+        let html = render_in_vdom(|| render_pending_list(false));
+
+        assert!(
+            html.contains("data-testid=\"kobo-devices-loading\""),
+            "{html}"
+        );
+        assert!(html.contains("Finding your Kobos"), "{html}");
+    }
+
+    #[test]
+    fn kobo_card_draws_no_skeleton_once_the_list_failed_to_load() {
+        let html = render_in_vdom(|| render_pending_list(true));
+
+        assert!(!html.contains("kobo-devices-loading"), "{html}");
+    }
+
+    #[test]
+    fn kobo_card_names_its_device_name_field_after_the_card() {
+        let html = render_in_vdom(card);
+
+        assert!(html.contains(r#"id="kobo-card-title""#), "{html}");
+        assert!(
+            html.contains(r#"aria-labelledby="kobo-card-title kobo-device-name-label""#),
+            "{html}"
+        );
     }
 }
