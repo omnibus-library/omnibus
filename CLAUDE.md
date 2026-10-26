@@ -32,6 +32,8 @@ Numbered rules in [.claude/rules/](.claude/rules/), applied in order. Follow the
 
 **Reviews:** every code review also applies [CODING_STANDARDS.md](CODING_STANDARDS.md), the judgement rules no linter or test can check.
 
+**Design:** [DESIGN.md](DESIGN.md) is the visual system both web clients share — tokens, type, depth, components, do's and don'ts. Read it before any UI change; `.impeccable/design.json` is its machine-readable sidecar.
+
 **Line-count cap:** every file in `CLAUDE.md`, `AGENTS.md`, and `.claude/` stays under ~200 lines. Split by topic when it grows past that — enforced by rule 99.
 
 **Path-scoped rules:** a topic rule opens with `paths:` frontmatter, so Claude Code loads it only once a matching file is touched; only 01, 02, 03, 05, 98 and 99 load every session. Give a new topic rule the same — Claude Code warns once the always-loaded instruction files pass 120k chars in total.
