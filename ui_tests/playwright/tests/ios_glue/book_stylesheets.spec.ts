@@ -108,7 +108,12 @@ test.describe("ios reader book stylesheets", () => {
 
     await test.step("check the missing face is pointed at nothing", async () => {
       const [css] = await iosGluePage.inlinedBookCss();
-      expect(css).toContain('src: url("data:,") format("woff2"), url("data:');
+      expect(css).toContain(
+        'src: url("data:,") format("woff2"), url("data:font/woff2;',
+      );
+      await expect
+        .poll(async () => (await iosGluePage.fontFaces(FAMILY)).statuses)
+        .toContain("loaded");
     });
 
     await test.step("check the image is pointed at the image", async () => {
@@ -116,6 +121,38 @@ test.describe("ios reader book stylesheets", () => {
       const image = /body \{ background-image: url\("(blob:[^"]+)"\)/.exec(css);
       expect(image).not.toBeNull();
       expect(await iosGluePage.blobType(image?.[1] ?? "")).toBe("image/png");
+    });
+
+    await test.step("check nothing was requested outside the book", async () => {
+      expect(iosGluePage.unservedRequests()).toEqual([]);
+    });
+  });
+
+  // epub.js replaces each file's relative path wherever it appears, so a
+  // missing Face.woff rewrites the inside of Face.woff2's url() too.
+  test("point each url at its own file when one file's path is inside another's", async ({
+    iosGluePage,
+  }) => {
+    await test.step("open a book missing a face whose path the real face's contains", async () => {
+      await iosGluePage.openBook(
+        await bookWithSheetFont({
+          family: FAMILY,
+          font: BOOK_FONT,
+          missingAsset: true,
+          missingFace: "BookFace.woff",
+          refilledTable: true,
+        }),
+      );
+      await expect
+        .poll(async () => (await iosGluePage.fontFaces(FAMILY)).statuses)
+        .toContain("loaded");
+    });
+
+    await test.step("check the real face is pointed at its own file", async () => {
+      const [css] = await iosGluePage.inlinedBookCss();
+      expect(css).toContain(
+        'src: url("data:,") format("woff2"), url("data:font/woff2;',
+      );
     });
 
     await test.step("check nothing was requested outside the book", async () => {

@@ -206,7 +206,8 @@ const BOOK_IMAGE: Buffer = Buffer.from(
  * and names it first in the face's src; `missingSheet` lists a sheet the zip
  * lacks ahead of the real one. `refilledTable` adds a real image after the
  * missing file and lists the sheet last, so epub.js's write-back of the sheet
- * makes its short table full length again.
+ * makes its short table full length again. `missingFace` names the missing
+ * face's file in `fonts/` (default `Absent.woff2`).
  */
 export function bookWithSheetFont(opts: {
   family: string;
@@ -215,14 +216,16 @@ export function bookWithSheetFont(opts: {
   missingAsset?: boolean;
   missingSheet?: boolean;
   refilledTable?: boolean;
+  missingFace?: string;
 }): Promise<Buffer> {
   const prose = Array.from(
     { length: 12 },
     (_, i) =>
       `<p>Paragraph ${i + 1} of the harbour, set in the book's face.</p>`,
   ).join("");
+  const missingFace = opts.missingFace ?? "Absent.woff2";
   const absent = opts.missingAsset
-    ? 'url("../fonts/Absent.woff2") format("woff2"), '
+    ? `url("../fonts/${missingFace}") format("woff2"), `
     : "";
   const sheet = `
 @font-face { font-family: "${opts.family}"; src: ${absent}url("../fonts/BookFace.woff2") format("woff2"); }
@@ -245,7 +248,7 @@ ${opts.refilledTable ? 'body { background-image: url("../images/bg.png"); }' : "
       : {}),
     files: {
       ...(opts.missingAsset
-        ? { "fonts/Absent.woff2": { data: null, mediaType: "font/woff2" } }
+        ? { [`fonts/${missingFace}`]: { data: null, mediaType: "font/woff2" } }
         : {}),
       ...(opts.missingSheet
         ? { "styles/absent.css": { data: null, mediaType: "text/css" } }

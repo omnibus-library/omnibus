@@ -989,9 +989,9 @@
     }
   }
 
-  // A book sheet's inlined text by path, read and substituted once per book:
-  // substitute() scans the CSS once per manifest asset, and every section
-  // render inlines every sheet again. Kept on the book, so it goes with it.
+  // A book sheet's inlined text by path, read and substituted once per book,
+  // since every section render inlines every sheet again. Kept on the book,
+  // so it goes with it.
   function bookSheetText(path) {
     var b = book;
     var byPath = b.__omnibusSheetText || (b.__omnibusSheetText = {});
@@ -1008,21 +1008,40 @@
       var whole = res.urls.every(function (href) {
         return b.resolve(href) in cache;
       });
-      if (whole) return res.substitute(css, path);
       // epub.js drops a file it could not read from replacementUrls, and its
       // write-back of a later sheet can refill the short table to full length,
       // so neither lines up with the assets. Pair each by asset instead: the
-      // font data: patched at its own index, else the cached copy, else an
-      // empty data:, as a raw url() would reach the host.
-      var paired = Object.create(res);
-      paired.replacementUrls = res.urls.map(function (href, i) {
+      // font data: patched at its own index, else the cached copy.
+      var byFile = Object.create(null);
+      res.urls.forEach(function (href, i) {
         var own = res.replacementUrls[i];
-        if (typeof own === "string" && own.indexOf("data:") === 0) return own;
-        return cache[b.resolve(href)] || "data:,";
+        var file = b.resolve(href);
+        var data = typeof own === "string" && own.indexOf("data:") === 0;
+        byFile[file] = whole || data ? own : cache[file];
       });
-      return paired.substitute(css, path);
+      return substituteSheetUrls(b, css, path, byFile);
     });
     return byPath[path];
+  }
+
+  var CSS_URL_RE = /url\(\s*(?:"([^"]*)"|'([^']*)'|([^)\s"']*))\s*\)/gi;
+  var URL_SCHEME_RE = /^[a-z][a-z0-9+.-]*:/i;
+
+  // Rewrite each whole url() token by the book file it resolves to from the
+  // sheet's folder. epub.js's substitute() replaces each relative path as a
+  // substring, so a missing Face.woff rewrites Face.woff2's url() too. Any
+  // other file gets an empty data:, as a raw url() would reach the host.
+  function substituteSheetUrls(b, css, sheetPath, byFile) {
+    var sheet = new b.path.constructor(sheetPath);
+    return css.replace(CSS_URL_RE, function (token, dq, sq, bare) {
+      var ref = dq != null ? dq : sq != null ? sq : bare;
+      if (!ref || ref.charAt(0) === "#" || URL_SCHEME_RE.test(ref)) {
+        return token;
+      }
+      var hash = ref.indexOf("#") < 0 ? "" : ref.slice(ref.indexOf("#"));
+      var file = sheet.resolve(ref.split(/[?#]/)[0]);
+      return 'url("' + (byFile[file] || "data:,") + hash + '")';
+    });
   }
 
   var FONT_EXT_RE = /\.(woff2|woff|ttf|otf|ttc)$/i;
