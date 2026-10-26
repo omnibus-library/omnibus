@@ -549,7 +549,7 @@ export function KoreaderCard() {
         placeholder="e.g. Kobo Libra (KOReader)…"
         label="Add a KOReader"
         form={form}
-        busy={busy}
+        busy={busy || !devices.isSuccess}
         adding={add.isPending}
         onAdd={(name) =>
           add.mutate({ name, kind: noPlugin ? "kosync" : "koreader" })

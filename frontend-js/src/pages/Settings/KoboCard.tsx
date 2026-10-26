@@ -268,7 +268,7 @@ export function KoboCard() {
         placeholder="e.g. Kobo Clara…"
         label="Add a Kobo"
         form={form}
-        busy={busy}
+        busy={busy || !devices.isSuccess}
         adding={add.isPending}
         onAdd={(name) => add.mutate(name)}
         onRefuse={(message) => report(message, true)}

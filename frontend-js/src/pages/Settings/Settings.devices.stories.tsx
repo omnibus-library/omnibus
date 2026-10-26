@@ -359,7 +359,8 @@ export const AddsAKobo: Story = {
 
 export const AsksForANameBeforeAdding: Story = {
   play: async ({ canvas, userEvent }) => {
-    await userEvent.click(await canvas.findByTestId("kobo-device-add"));
+    await canvas.findByTestId("kobo-devices-empty");
+    await userEvent.click(canvas.getByTestId("kobo-device-add"));
 
     await said(canvas, "kobo-devices-status", "Enter a name for your device.");
     await expect(server.kobo).toEqual([]);
@@ -480,31 +481,23 @@ export const ShowsWhatServerHoldsWhenARemoveFindsNothing: Story = {
   },
 };
 
-export const KeepsEarlierKobosWhenTheListFailedBeforeAnAdd: Story = {
+export const WaitsForTheKobosBeforeAddingOne: Story = {
   beforeEach({ msw }) {
-    withKobos();
-    let reads = 0;
-    msw.use(
-      http.get("/api/account/kobo-devices", () => {
-        reads += 1;
-        return reads === 1
-          ? new HttpResponse("list is down", { status: 500 })
-          : HttpResponse.json(server.kobo);
-      }),
-    );
+    msw.use(hanging("/api/account/kobo-devices"));
   },
-  play: async ({ canvas, userEvent }) => {
-    await said(canvas, "kobo-devices-status", "list is down");
-    await userEvent.type(
-      await canvas.findByTestId("kobo-device-name-input"),
-      "Aurora",
-    );
-    await userEvent.click(canvas.getByTestId("kobo-device-add"));
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("kobo-devices-loading");
+    await expect(canvas.getByTestId("kobo-device-add")).toBeDisabled();
+  },
+};
 
-    // The two it already had come back with the new one: the list was read again.
-    await waitFor(() =>
-      expect(canvas.getAllByTestId("kobo-device-row")).toHaveLength(3),
-    );
+export const OffersNoAddWhileTheKobosFailedToLoad: Story = {
+  beforeEach({ msw }) {
+    msw.use(failing("get", "/api/account/kobo-devices", 500));
+  },
+  play: async ({ canvas }) => {
+    await said(canvas, "kobo-devices-status", "Couldn’t load your Kobos");
+    await expect(canvas.getByTestId("kobo-device-add")).toBeDisabled();
   },
 };
 

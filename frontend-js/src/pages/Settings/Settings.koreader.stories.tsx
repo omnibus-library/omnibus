@@ -118,7 +118,8 @@ export const SaysWhyTheKoreadersDidNotLoad: Story = {
 
 export const AsksForANameBeforeAddingAKoreader: Story = {
   play: async ({ canvas, userEvent }) => {
-    await userEvent.click(await canvas.findByTestId("koreader-device-add"));
+    await canvas.findByTestId("koreader-devices-empty");
+    await userEvent.click(canvas.getByTestId("koreader-device-add"));
 
     await said(
       canvas,
@@ -462,5 +463,15 @@ export const NamesEachCardsDeviceNameFieldAfterItsCard: Story = {
     await expect(
       canvas.getByTestId("kobo-device-name-input"),
     ).toHaveAccessibleName("Kobo Device name");
+  },
+};
+
+export const WaitsForTheKoreadersBeforeAddingOne: Story = {
+  beforeEach({ msw }) {
+    msw.use(hanging("/api/account/kobo-devices"));
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("koreader-devices-loading");
+    await expect(canvas.getByTestId("koreader-device-add")).toBeDisabled();
   },
 };
