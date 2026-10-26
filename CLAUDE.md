@@ -32,7 +32,7 @@ Numbered rules in [.claude/rules/](.claude/rules/), applied in order. Follow the
 
 **Reviews:** every code review also applies [CODING_STANDARDS.md](CODING_STANDARDS.md), the judgement rules no linter or test can check.
 
-**Design:** [DESIGN.md](DESIGN.md) is the visual system both web clients share — tokens, type, depth, components, do's and don'ts. Read it before any UI change; `.impeccable/design.json` is its machine-readable sidecar.
+**Design:** [DESIGN.md](DESIGN.md) is the visual system both web clients share — tokens, type, depth, components, do's and don'ts. Read it before any UI change; `.impeccable/design.json` is its machine-readable sidecar. [PRODUCT.md](PRODUCT.md) holds the product truth behind it (users, positioning, principles), and [omnibus-ios/PRODUCT.md](omnibus-ios/PRODUCT.md) adds what is specific to iOS.
 
 **Line-count cap:** every file in `CLAUDE.md`, `AGENTS.md`, and `.claude/` stays under ~200 lines. Split by topic when it grows past that — enforced by rule 99.
 
