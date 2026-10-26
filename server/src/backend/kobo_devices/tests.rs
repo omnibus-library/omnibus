@@ -307,7 +307,12 @@ mod progress_sync_login {
         let body = json!({ "name": "Libra", "kind": kind });
         let res = app
             .clone()
-            .oneshot(request("POST", "/api/account/kobo-devices", token, Some(body)))
+            .oneshot(request(
+                "POST",
+                "/api/account/kobo-devices",
+                token,
+                Some(body),
+            ))
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::OK);
@@ -318,17 +323,59 @@ mod progress_sync_login {
         serde_json::from_value(device["kosync_login"].clone()).unwrap()
     }
 
-    /// What `/kosync` answers a KOReader signing in as `ada` with `password`.
-    async fn kosync_sign_in(state: &AppState, password: &str) -> StatusCode {
-        let key = format!("{:x}", md5::Md5::digest(password.as_bytes()));
+    /// What `/kosync` answers a KOReader signing in with `login`.
+    async fn kosync_sign_in(state: &AppState, login: &KosyncPassword) -> StatusCode {
+        let key = format!("{:x}", md5::Md5::digest(login.password.as_bytes()));
         let req = Request::builder()
             .uri("/kosync/users/auth")
             .header("accept", ACCEPT)
-            .header("x-auth-user", "ada")
+            .header("x-auth-user", &login.username)
             .header("x-auth-key", key)
             .body(Body::empty())
             .unwrap();
-        kosync_router(state.clone()).oneshot(req).await.unwrap().status()
+        kosync_router(state.clone())
+            .oneshot(req)
+            .await
+            .unwrap()
+            .status()
+    }
+
+    /// The reader's Progress sync login after `register_device` added `count` no-plugin KOReaders.
+    async fn reader_with_no_plugin_koreaders(
+        pool: &sqlx::SqlitePool,
+        name: &str,
+        count: usize,
+    ) -> (i64, String, KosyncPassword, Vec<i64>) {
+        let (uid, token) = reader(pool, name).await;
+        let mut login = None;
+        let mut ids = Vec::new();
+        for _ in 0..count {
+            let (device, revealed) = db::kobo_devices::register_device(
+                pool,
+                uid,
+                "Libra",
+                omnibus_shared::DeviceKind::Kosync,
+            )
+            .await
+            .unwrap();
+            login = login.or(revealed);
+            ids.push(device.id);
+        }
+        (uid, token, login.unwrap(), ids)
+    }
+
+    async fn delete_device(app: &Router, token: &str, id: i64) {
+        let res = app
+            .clone()
+            .oneshot(request(
+                "DELETE",
+                &format!("/api/account/kobo-devices/{id}"),
+                token,
+                None,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::NO_CONTENT);
     }
 
     #[tokio::test]
@@ -341,7 +388,7 @@ mod progress_sync_login {
         assert_eq!(device["kind"], "kosync");
         let login = revealed(&device);
         assert_eq!(login.username, "ada");
-        assert_eq!(kosync_sign_in(&state, &login.password).await, StatusCode::OK);
+        assert_eq!(kosync_sign_in(&state, &login).await, StatusCode::OK);
     }
 
     #[tokio::test]
@@ -353,7 +400,7 @@ mod progress_sync_login {
         let second = add_device(&app, &token, "kosync").await;
 
         assert!(!second.as_object().unwrap().contains_key("kosync_login"));
-        assert_eq!(kosync_sign_in(&state, &first.password).await, StatusCode::OK);
+        assert_eq!(kosync_sign_in(&state, &first).await, StatusCode::OK);
     }
 
     #[tokio::test]
@@ -370,10 +417,7 @@ mod progress_sync_login {
         let device = add_device(&app, &token, "kosync").await;
 
         assert!(!device.as_object().unwrap().contains_key("kosync_login"));
-        assert_eq!(
-            kosync_sign_in(&state, &standalone.password).await,
-            StatusCode::OK
-        );
+        assert_eq!(kosync_sign_in(&state, &standalone).await, StatusCode::OK);
     }
 
     #[tokio::test]
@@ -383,10 +427,67 @@ mod progress_sync_login {
 
         for kind in ["kobo", "koreader"] {
             let device = add_device(&app, &token, kind).await;
-            assert!(!device.as_object().unwrap().contains_key("kosync_login"), "{kind}");
+            assert!(
+                !device.as_object().unwrap().contains_key("kosync_login"),
+                "{kind}"
+            );
         }
 
         assert!(!db::kosync::kosync_configured(&pool, uid).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn removing_the_last_no_plugin_koreader_signs_its_login_out() {
+        let (app, state, pool) = fixture().await;
+        let (_, token, login, ids) = reader_with_no_plugin_koreaders(&pool, "ada", 2).await;
+
+        delete_device(&app, &token, ids[0]).await;
+        assert_eq!(kosync_sign_in(&state, &login).await, StatusCode::OK);
+        delete_device(&app, &token, ids[1]).await;
+
+        assert_eq!(
+            kosync_sign_in(&state, &login).await,
+            StatusCode::UNAUTHORIZED
+        );
+    }
+
+    #[tokio::test]
+    async fn removing_a_kobo_or_a_plugin_koreader_keeps_a_standalone_login() {
+        let (app, state, pool) = fixture().await;
+        let (uid, token) = reader(&pool, "ada").await;
+        let res = app
+            .clone()
+            .oneshot(request("POST", "/api/account/kosync", &token, None))
+            .await
+            .unwrap();
+        let login: KosyncPassword = json_of(res).await;
+
+        for kind in [
+            omnibus_shared::DeviceKind::Kobo,
+            omnibus_shared::DeviceKind::Koreader,
+        ] {
+            let device = db::kobo_devices::create_device(&pool, uid, "Reader", kind)
+                .await
+                .unwrap();
+            delete_device(&app, &token, device.id).await;
+        }
+
+        assert_eq!(kosync_sign_in(&state, &login).await, StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn another_readers_no_plugin_koreaders_do_not_keep_a_login_alive() {
+        let (app, state, pool) = fixture().await;
+        let (_, token, login, ids) = reader_with_no_plugin_koreaders(&pool, "ada", 1).await;
+        let (_, _, theirs, _) = reader_with_no_plugin_koreaders(&pool, "grace", 1).await;
+
+        delete_device(&app, &token, ids[0]).await;
+
+        assert_eq!(
+            kosync_sign_in(&state, &login).await,
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(kosync_sign_in(&state, &theirs).await, StatusCode::OK);
     }
 }
 

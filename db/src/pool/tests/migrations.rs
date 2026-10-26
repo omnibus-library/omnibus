@@ -718,12 +718,11 @@ async fn migration_0119_keeps_a_devices_sync_state_and_admits_the_no_plugin_kind
 
     apply_migration(&pool, 119).await;
 
-    let device: (i64, String, String, Option<String>, Option<String>) = sqlx::query_as(
-        "SELECT id, token, kind, kobo_device_id, sync_cursor FROM kobo_devices",
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let device: (i64, String, String, Option<String>, Option<String>) =
+        sqlx::query_as("SELECT id, token, kind, kobo_device_id, sync_cursor FROM kobo_devices")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     assert_eq!(
         device,
         (
@@ -734,11 +733,12 @@ async fn migration_0119_keeps_a_devices_sync_state_and_admits_the_no_plugin_kind
             Some("cursor-1".into())
         )
     );
-    let snapshot: (String, i64) =
-        sqlx::query_as("SELECT book_uuid, last_modified_seen FROM kobo_books_sync WHERE device_id = 7")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+    let snapshot: (String, i64) = sqlx::query_as(
+        "SELECT book_uuid, last_modified_seen FROM kobo_books_sync WHERE device_id = 7",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
     assert_eq!(snapshot, ("book-1".into(), 42));
     let fingerprint: Option<String> = sqlx::query_scalar(
         "SELECT acked_fingerprint FROM kobo_annotations_sync WHERE device_id = 7",
@@ -754,5 +754,7 @@ async fn migration_0119_keeps_a_devices_sync_state_and_admits_the_no_plugin_kind
             .execute(&pool)
     };
     insert_of("kosync").await.expect("kosync is a device kind");
-    insert_of("bogus").await.expect_err("an unknown kind is refused");
+    insert_of("bogus")
+        .await
+        .expect_err("an unknown kind is refused");
 }

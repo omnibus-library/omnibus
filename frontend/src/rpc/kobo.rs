@@ -47,13 +47,8 @@ pub async fn rpc_create_kobo_device(
     if kobo_device_name_invalid(&name) {
         return Err(ServerFnError::new(kobo_device_name_message()).into());
     }
-    match db::kobo_devices::register_device(
-        &pool.0,
-        user.id,
-        name.trim(),
-        kind.unwrap_or_default(),
-    )
-    .await
+    match db::kobo_devices::register_device(&pool.0, user.id, name.trim(), kind.unwrap_or_default())
+        .await
     {
         Ok((dev, kosync_login)) => Ok(KoboDeviceView {
             kosync_login,

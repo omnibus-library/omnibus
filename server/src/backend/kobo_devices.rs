@@ -120,7 +120,9 @@ pub(super) async fn regenerate_kobo_device(
 
 /// Remove a sync device
 ///
-/// Deletes the registration, so the device's token stops working.
+/// Deletes the registration, so the device's token stops working. Removing your last
+/// no-plugin KOReader (`kosync`) also turns off your Progress sync password, so it stops
+/// working too. Removing any other device leaves that password alone.
 #[utoipa::path(
     delete,
     path = "/api/account/kobo-devices/{id}",

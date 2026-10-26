@@ -247,7 +247,7 @@
           "Account"
         ],
         "summary": "Remove a sync device",
-        "description": "Deletes the registration, so the device's token stops working.",
+        "description": "Deletes the registration, so the device's token stops working. Removing your last\nno-plugin KOReader (`kosync`) also turns off your Progress sync password, so it stops\nworking too. Removing any other device leaves that password alone.",
         "operationId": "delete_kobo_device",
         "parameters": [
           {
@@ -382,7 +382,7 @@
           "Account"
         ],
         "summary": "Generate a KOReader sync password",
-        "description": "Creates the password stock KOReader's Progress sync signs in with, together with your\nusername, and shows it once. Generating again replaces it, so the old one stops working.",
+        "description": "Creates the password stock KOReader's Progress sync signs in with, together with your\nusername, and shows it once. Generating again replaces it, so the old one stops working\nand every no-plugin KOReader must sign in again with the new one.",
         "operationId": "post_kosync",
         "responses": {
           "200": {

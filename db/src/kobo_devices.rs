@@ -207,21 +207,34 @@ pub async fn regenerate_token(
         .ok_or(KoboDeviceError::NotFound)
 }
 
-/// Remove a registered Kobo, revoking its token. `NotFound` when the id is
-/// unknown or not owned by `user_id` (AC4).
+/// Remove a registered device, revoking its token. Removing the account's last no-plugin
+/// KOReader also turns off its Progress sync login, in the same transaction. `NotFound` when
+/// the id is unknown or not owned by `user_id` (AC4).
 pub async fn revoke_device(
     pool: &SqlitePool,
     user_id: i64,
     device_id: i64,
 ) -> Result<(), KoboDeviceError> {
-    let res = sqlx::query("DELETE FROM kobo_devices WHERE id = ? AND user_id = ?")
-        .bind(device_id)
-        .bind(user_id)
-        .execute(pool)
-        .await?;
-    if res.rows_affected() == 0 {
+    let mut tx = pool.begin().await?;
+    let kind: Option<String> =
+        sqlx::query_scalar("DELETE FROM kobo_devices WHERE id = ? AND user_id = ? RETURNING kind")
+            .bind(device_id)
+            .bind(user_id)
+            .fetch_optional(&mut *tx)
+            .await?;
+    let Some(kind) = kind else {
         return Err(KoboDeviceError::NotFound);
+    };
+    if kind == DeviceKind::Kosync.as_str() {
+        sqlx::query(
+            "UPDATE users SET kosync_key_hash = NULL WHERE id = ?1 AND NOT EXISTS \
+             (SELECT 1 FROM kobo_devices WHERE user_id = ?1 AND kind = 'kosync')",
+        )
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
     }
+    tx.commit().await?;
     Ok(())
 }
 

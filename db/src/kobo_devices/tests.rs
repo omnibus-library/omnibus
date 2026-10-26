@@ -337,6 +337,27 @@ async fn revoke_device_removes_the_token() {
 }
 
 #[tokio::test]
+async fn revoke_device_keeps_the_device_when_turning_the_login_off_fails() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool, "reader").await;
+    let (device, _login) = register_device(&pool, user, "Libra", DeviceKind::Kosync)
+        .await
+        .unwrap();
+    sqlx::query(
+        "CREATE TRIGGER refuse_revoke BEFORE UPDATE OF kosync_key_hash ON users
+         BEGIN SELECT RAISE(ABORT, 'refused'); END",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let err = revoke_device(&pool, user, device.id).await;
+
+    assert!(matches!(err, Err(KoboDeviceError::Sqlx(_))));
+    assert_eq!(list_devices(&pool, user).await.unwrap().len(), 1);
+}
+
+#[tokio::test]
 async fn revoke_device_rejects_a_device_owned_by_another_user() {
     let pool = init_db("sqlite::memory:").await.unwrap();
     let owner = seed_user(&pool, "owner").await;
