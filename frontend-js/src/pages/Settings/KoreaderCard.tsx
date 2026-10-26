@@ -213,8 +213,6 @@ type Sync = {
   /** A new password was generated here since the page loaded, so every no-plugin KOReader must log in again. */
   signedOut: boolean;
   username: string;
-  /** The earliest other no-plugin KOReader, which a reuse panel names as where the login was shown. */
-  firstOther: string | undefined;
   /** Every no-plugin KOReader's name, as a sentence fragment. */
   allNames: string;
 };
@@ -249,10 +247,6 @@ function ProgressSync({
       </p>
     );
   if (panel.kind === "reuse") {
-    const who = sync.firstOther ?? "your other Progress sync devices";
-    const when = sync.firstOther
-      ? "when that device was added"
-      : "when it was generated";
     return (
       <div className="kosync-login" data-testid="koreader-login-panel">
         <p className="kosync-login-title">
@@ -260,7 +254,8 @@ function ProgressSync({
         </p>
         <p className="subtitle">
           Log in on this KOReader with the same server URL, username and
-          password as {who}. The password was shown once, {when}.
+          password as your other no-plugin KOReaders. The password was shown
+          once, when it was generated.
         </p>
         {field("url", "Server URL", serverUrl)}
         {field("username", "Username", sync.username)}
@@ -296,7 +291,7 @@ function PluginState({ device }: { device: KoboDeviceView }) {
   return (
     <>
       <p className="subtitle" data-testid="koreader-last-sync">
-        {device.last_sync_at
+        {device.last_sync_at != null
           ? `Last sync ${formatUtcDay(device.last_sync_at)}`
           : addedLabel(device.created_at, nowSecs())}
       </p>
@@ -388,7 +383,7 @@ function DeviceRow({
               className={classes("btn", !synced && "primary")}
               href={pluginUrl(device.id)}
               download={`omnibus-koreader-${device.id}.zip`}
-              aria-label={`Download the plugin for ${device.name}`}
+              aria-label={`${synced ? "Redownload plugin" : "Download plugin"} for ${device.name}`}
               data-testid="koreader-plugin-download"
             >
               {synced ? "Redownload plugin" : "Download plugin"}
@@ -507,9 +502,6 @@ export function KoreaderCard() {
     panel: panels.find((p) => p.id === device.id)?.panel,
     signedOut,
     username: user.username,
-    firstOther: koreaders?.find(
-      (d) => d.kind === "kosync" && d.id !== device.id,
-    )?.name,
     allNames,
   });
   const askRemove = (device: KoboDeviceView) => {
@@ -546,7 +538,7 @@ export function KoreaderCard() {
         };
   return (
     <section className="card" data-testid="koreader-devices-card">
-      <h3>KOReader</h3>
+      <h3 id="koreader-card-title">KOReader</h3>
       <p className="subtitle">
         Sync your shelves, reading position and highlights to KOReader with the
         Omnibus plugin, on any device that runs KOReader.

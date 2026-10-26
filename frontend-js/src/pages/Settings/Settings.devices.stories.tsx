@@ -560,3 +560,15 @@ export const KeepsARemovalWhenTheAddsRereadLandsLate: Story = {
     await expect(canvas.queryByText("Clara")).toBeNull();
   },
 };
+
+export const SitsTheKoboNameFieldAndAddButtonOnOneRow: Story = {
+  play: async ({ canvas }) => {
+    const row = (await canvas.findByTestId("kobo-device-name-input")).closest(
+      ".device-add-row",
+    );
+    await expect(row).not.toBeNull();
+    await expect(
+      within(row as HTMLElement).getByTestId("kobo-device-add"),
+    ).toBeVisible();
+  },
+};

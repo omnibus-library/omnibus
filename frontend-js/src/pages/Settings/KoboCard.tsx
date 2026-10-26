@@ -256,7 +256,7 @@ export function KoboCard() {
   );
   return (
     <section className="card" data-testid="kobo-devices-card">
-      <h3>Kobo</h3>
+      <h3 id="kobo-card-title">Kobo</h3>
       <p className="subtitle">
         Sync your shelves, reading position and highlights to a Kobo over Wi-Fi,
         through its built-in store sync.

@@ -203,7 +203,9 @@ test.describe("devices section", () => {
       await expect(koreader.loginPanel(second)).toContainText(
         "Uses your existing Progress sync login",
       );
-      await expect(koreader.loginPanel(second)).toContainText(first);
+      await expect(koreader.loginPanel(second)).toContainText(
+        "as your other no-plugin KOReaders",
+      );
       await expect(koreader.passwordField(second)).toHaveCount(0);
     });
 

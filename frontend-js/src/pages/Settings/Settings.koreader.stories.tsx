@@ -176,6 +176,7 @@ export const OffersARedownloadOnceSyncedAndAskForOneAfterAFailure: Story = {
     const download = within(synced as HTMLElement).getByTestId(
       "koreader-plugin-download",
     );
+    await expect(download).toHaveAccessibleName("Redownload plugin for Libra");
     await expect(download).toHaveTextContent("Redownload plugin");
     await expect(download).not.toHaveClass("primary");
     await expect(failed).toHaveTextContent(
@@ -273,7 +274,7 @@ export const ReusesTheLoginForASecondNoPluginKoreader: Story = {
       "Uses your existing Progress sync login",
     );
     await expect(sage).toHaveTextContent(
-      "same server URL, username and password as Clara. The password was shown once, when that device was added.",
+      "same server URL, username and password as your other no-plugin KOReaders. The password was shown once, when it was generated.",
     );
     await expect(
       within(sage as HTMLElement).queryByTestId("kosync-password"),
@@ -294,7 +295,7 @@ export const UsesAStandaloneLoginForTheFirstNoPluginKoreader: Story = {
     await expect(
       await canvas.findByTestId("koreader-login-panel"),
     ).toHaveTextContent(
-      "as your other Progress sync devices. The password was shown once, when it was generated.",
+      "same server URL, username and password as your other no-plugin KOReaders. The password was shown once, when it was generated.",
     );
   },
 };
@@ -438,5 +439,28 @@ export const SaysTheLoginGoesWithTheLastNoPluginKoreader: Story = {
     await said(canvas, "koreader-devices-status", "KOReader removed.");
     await expect(server.kosyncConfigured).toBe(false);
     await expect(server.kobo.map((d) => d.name)).toEqual(["Libra"]);
+  },
+};
+
+export const SitsTheNameFieldAndAddButtonOnOneRow: Story = {
+  play: async ({ canvas }) => {
+    const row = (
+      await canvas.findByTestId("koreader-device-name-input")
+    ).closest(".device-add-row");
+    await expect(row).not.toBeNull();
+    await expect(
+      within(row as HTMLElement).getByTestId("koreader-device-add"),
+    ).toBeVisible();
+  },
+};
+
+export const NamesEachCardsDeviceNameFieldAfterItsCard: Story = {
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByTestId("koreader-device-name-input"),
+    ).toHaveAccessibleName("KOReader Device name");
+    await expect(
+      canvas.getByTestId("kobo-device-name-input"),
+    ).toHaveAccessibleName("Kobo Device name");
   },
 };

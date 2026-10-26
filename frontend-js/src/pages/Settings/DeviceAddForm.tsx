@@ -63,11 +63,17 @@ export function DeviceAddForm({
     >
       <div className="device-add-row">
         <div className="settings-field">
-          <label htmlFor={`${prefix}-device-name`}>Device name</label>
+          <label
+            id={`${prefix}-device-name-label`}
+            htmlFor={`${prefix}-device-name`}
+          >
+            Device name
+          </label>
           <input
             type="text"
             id={`${prefix}-device-name`}
             data-testid={`${prefix}-device-name-input`}
+            aria-labelledby={`${prefix}-card-title ${prefix}-device-name-label`}
             autoComplete="off"
             placeholder={placeholder}
             maxLength={100}
