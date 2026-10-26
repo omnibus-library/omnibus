@@ -45,6 +45,8 @@ Auto-discoverable skills in [.claude/skills/](.claude/skills/) — Claude Code l
 - [add-playwright-flow](.claude/skills/add-playwright-flow/SKILL.md) — adding a new E2E spec.
 - [create-github-issue](.claude/skills/create-github-issue/SKILL.md) — filing GitHub issues in the omnibus house style: bracketed `[Scope]` title prefixes, a standard body template, consistent labels, and native sub-issue linking.
 - [ui-validate](.claude/skills/ui-validate/SKILL.md) — bring up a port-walking dev server, log in as the seeded admin, drive the browser, poll `/api/_health` for rebuild signal, and check the change against its flow doc.
+- [kobo-validate](.claude/skills/kobo-validate/SKILL.md) — hands-on Kobo sync checks with `mock-kobo serve`'s control API, against a dev server or omnibus-test, cross-client interleavings included.
+- [koreader-validate](.claude/skills/koreader-validate/SKILL.md) — hands-on KOReader sync checks with a real KOReader in Docker (`just koreader`, or the image run by hand against a remote server).
 - [ios-validate](.claude/skills/ios-validate/SKILL.md) — screenshot tours of the native iOS app: a scratch server, a simulator per worktree, screens opened by DEBUG deep link.
 
 ### Browser tools
