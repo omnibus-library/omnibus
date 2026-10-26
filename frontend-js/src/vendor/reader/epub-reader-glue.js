@@ -1231,8 +1231,7 @@
         }
       });
       paths.forEach(function (path) {
-        book.archive
-          .getText(path)
+        bookSheetText(path)
           .then(function (css) {
             if (!css || !doc.head) return;
             var style = doc.createElement("style");
@@ -1249,6 +1248,39 @@
     } catch (e) {
       /* never let styling break rendering */
     }
+  }
+
+  // A book sheet's inlined text by path, read and substituted once per book:
+  // substitute() scans the CSS once per manifest asset, and every section
+  // render inlines every sheet again.
+  var bookSheetCache = { book: null, byPath: {} };
+
+  function bookSheetText(path) {
+    if (bookSheetCache.book !== book) {
+      bookSheetCache = { book: book, byPath: {} };
+    }
+    var cached = bookSheetCache.byPath[path];
+    if (cached) return cached;
+    var b = book;
+    cached = b.archive.getText(path).then(function (css) {
+      var res = b.resources;
+      // The sheet's url()s are relative to the sheet, and inline they would
+      // resolve against the section: point them at epub.js's copies of the
+      // book's files, as it does for the <link> it rewrites. Skipped when a
+      // failed entry has unpaired the parallel arrays (inlineFontReplacements).
+      if (
+        !css ||
+        !res ||
+        !res.urls ||
+        !res.replacementUrls ||
+        res.replacementUrls.length !== res.urls.length
+      ) {
+        return css;
+      }
+      return res.substitute(css, path);
+    });
+    bookSheetCache.byPath[path] = cached;
+    return cached;
   }
 
   var FONT_EXT_RE = /\.(woff2|woff|ttf|otf|ttc)$/i;

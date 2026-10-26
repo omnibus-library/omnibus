@@ -2,6 +2,7 @@ import { TYPEFACES } from "../components/ReaderDisplayPanelComponent";
 import { highlights } from "../contracts/highlights";
 import { progress } from "../contracts/progress";
 import { MID_PARAGRAPH_RANGE } from "../data/highlights";
+import { BOOK_FONT, buildChapterEpub } from "../data/iosGlue";
 import { koboPosition, savedCfi } from "../data/progress";
 import { EMBEDDED_FONT_FAMILY, FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/pageFixtures";
@@ -1039,6 +1040,63 @@ test.describe("epub reader", () => {
           ),
           "an errored face means a copy was requested and refused",
         ).toEqual([]);
+      });
+
+      // Last, because the awaits above outlast the console's delivery.
+      await test.step("check no font was refused by font-src", async () => {
+        expect(fontRefusals, "no font may be refused by font-src").toEqual([]);
+      });
+    });
+
+    // The glue inlines each book sheet into the section, where a url() written
+    // relative to the sheet would resolve against the chapter's folder.
+    test("open a book in its embedded font from a sheet in another folder", async ({
+      epubReaderPage,
+      request,
+    }) => {
+      const section = epubReaderPage.section;
+      const fontRefusals = epubReaderPage.recordFontCspRefusals();
+      const uuid = await fetchBookUuidByTitle(request, FONT_BOOK.title);
+      const epub = await buildChapterEpub(
+        Array.from(
+          { length: 12 },
+          (_, i) => `<p>Paragraph ${i + 1}, set in the book's face.</p>`,
+        ).join(""),
+        {
+          head: '<link href="styles/book.css" rel="stylesheet" type="text/css"/>',
+          files: {
+            "styles/book.css": {
+              data: `@font-face { font-family: "${EMBEDDED_FONT_FAMILY}"; src: url("../fonts/Face.woff2") format("woff2"); }
+p { font-family: "${EMBEDDED_FONT_FAMILY}", serif; }`,
+              mediaType: "text/css",
+            },
+            "fonts/Face.woff2": { data: BOOK_FONT, mediaType: "font/woff2" },
+          },
+        },
+      );
+
+      // The stand-in leaves the real file and its saved position untouched.
+      const state =
+        await test.step("open the stand-in book and wait for its face", async () => {
+          await epubReaderPage.stubBookFile(uuid, epub);
+          await epubReaderPage.goto(uuid);
+          await expect
+            .poll(() => section.fontState(), { timeout: 20_000 })
+            .toMatchObject({
+              faces: expect.arrayContaining([
+                { family: EMBEDDED_FONT_FAMILY, status: "loaded" },
+              ]),
+            });
+          return section.fontState();
+        });
+
+      // A failed copy falls through to the next, so a loaded face proves nothing
+      // about the others: check each declaration points into the book.
+      await test.step("check every copy of the face is declared from the book", async () => {
+        expect(state?.embeddedSrcs.length).toBeGreaterThan(0);
+        for (const src of state?.embeddedSrcs ?? []) {
+          expect(src).toMatch(/^url\("data:font\/woff2;/);
+        }
       });
 
       // Last, because the awaits above outlast the console's delivery.

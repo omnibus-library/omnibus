@@ -491,6 +491,8 @@ private struct SectionFontState {
     /// How many `FontFace`s for that family are in `error` — a face that was
     /// requested and could not be had.
     var erroredEmbedded: Int
+    /// The status of every `FontFace` for that family, one per copy declared.
+    var embeddedStatuses: [String]
     /// Families with at least one `loaded` face. The only field here that is
     /// evidence a face was actually *had*.
     var loadedFamilies: [String]
@@ -544,6 +546,7 @@ private func sectionFontState(
       embeddedSrcs: embeddedSrcs,
       erroredEmbedded: faces.filter(
         (f) => f.family === embedded && f.status === "error").length,
+      embeddedStatuses: faces.filter((f) => f.family === embedded).map((f) => f.status),
       loadedFamilies: faces.filter((f) => f.status === "loaded").map((f) => f.family),
       paragraphFamily: getComputedStyle(p).fontFamily,
       namedFaceUsable: doc.fonts.check('16px "' + named + '"'),
@@ -558,13 +561,36 @@ private func sectionFontState(
     guard let dict = result as? [String: Any],
           let srcs = dict["embeddedSrcs"] as? [String],
           let errored = dict["erroredEmbedded"] as? Int,
+          let statuses = dict["embeddedStatuses"] as? [String],
           let loaded = dict["loadedFamilies"] as? [String],
           let paragraph = dict["paragraphFamily"] as? String,
           let usable = dict["namedFaceUsable"] as? Bool
     else { throw ReaderFontTestError.badJSResult }
     return SectionFontState(
-        embeddedSrcs: srcs, erroredEmbedded: errored, loadedFamilies: loaded,
+        embeddedSrcs: srcs, erroredEmbedded: errored, embeddedStatuses: statuses,
+        loadedFamilies: loaded,
         paragraphFamily: paragraph, namedFaceUsable: usable
+    )
+}
+
+/// Ask the section to load every face for `family` it has not tried yet.
+///
+/// WebKit stops at the first copy that fails and leaves the rest `unloaded`,
+/// so which copies it fetches is up to its fallback; loading each one makes
+/// every declared url() a request the test can see.
+@MainActor
+private func loadEveryFace(_ webView: WKWebView, family: String) async throws {
+    let js = """
+    const iframe = document.querySelector("#stage iframe");
+    const doc = iframe && iframe.contentDocument;
+    if (!doc) { return; }
+    for (const face of Array.from(doc.fonts)) {
+      if (face.family.replace(/["']/g, "") !== family) { continue; }
+      if (face.status === "unloaded") { face.load().catch(() => {}); }
+    }
+    """
+    _ = try await webView.callAsyncJavaScript(
+        js, arguments: ["family": family], contentWorld: .page
     )
 }
 
@@ -668,24 +694,29 @@ struct ReaderEmbeddedFontTests {
         )
         defer { reader.teardown() }
 
-        // The face never decodes, so an errored one is the engine done with it
-        // — and a copy it had to fetch was asked for before it could error.
+        // Two copies of the face: the blob-linked sheet's, and the inlined one.
+        // Every copy is loaded, and none decodes, so all of them settled is the
+        // engine done — and a copy it had to fetch was asked for before then.
         var state: SectionFontState?
         let tried = await waitUntil(timeout: fontLoadBudget) {
+            try? await loadEveryFace(reader.webView, family: sheetFamily)
             state = try? await sectionFontState(reader.webView, embedded: sheetFamily)
-            return (state?.erroredEmbedded ?? 0) > 0
+            guard let statuses = state?.embeddedStatuses, statuses.count >= 2 else {
+                return false
+            }
+            return statuses.allSatisfy { $0 == "error" || $0 == "loaded" }
         }
         reader.phases.mark(tried ? "sheetFaceTried" : "fontTimeout")
         #expect(tried, "the sheet's face was never tried: \(String(describing: state)); \(reader.phases)")
 
         // Anything under `app/` that isn't a bundled asset is a file the real
         // handler failed — `noteResourceFailure`, and before ready, the
-        // "couldn't open" screen.
+        // "couldn't open" screen. `controller.failed` can't show that here:
+        // ready resets it, and the note is ignored once ready.
         let strays = reader.served.filter { served in
             guard let url = URL(string: served), url.host == "app" else { return false }
             return ReaderWebView.Coordinator.bundledAssetURL(named: url.lastPathComponent) == nil
         }
         #expect(strays == [], "asked the scheme handler for files outside the book: \(strays)")
-        #expect(!reader.controller.failed)
     }
 }
