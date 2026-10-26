@@ -233,6 +233,9 @@ pub fn KoboDevicesCard() -> Element {
 
     let add_url = server_url.clone();
     let on_add = use_callback(move |()| {
+        if devices.peek().is_none() {
+            return;
+        }
         let name = name_input().trim().to_string();
         if name.is_empty() {
             msg.set(Some(NAME_REQUIRED.to_string()));
@@ -341,6 +344,8 @@ pub fn KoboDevicesCard() -> Element {
                 label: "Add a Kobo",
                 name_input,
                 in_flight: in_flight(),
+                // An add that lands first would be overwritten by the list's first answer.
+                waiting: devices.read().is_none(),
                 extra: rsx! {},
                 status: action_status("kobo-devices-status", msg().as_deref(), msg_is_error()),
                 on_submit: on_add,

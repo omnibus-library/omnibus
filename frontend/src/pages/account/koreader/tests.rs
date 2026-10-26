@@ -632,4 +632,15 @@ mod render_tests {
             "{html}"
         );
     }
+
+    #[test]
+    fn koreader_card_disables_add_until_the_device_list_has_loaded() {
+        let html = render_in_vdom(card);
+
+        let add = html
+            .find("data-testid=\"koreader-device-add\"")
+            .expect("the add button");
+        let tag = &html[html[..add].rfind("<button").unwrap()..add];
+        assert!(tag.contains("disabled"), "{html}");
+    }
 }

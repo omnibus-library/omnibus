@@ -19,6 +19,8 @@ pub(super) struct AddForm {
     pub label: &'static str,
     pub name_input: Signal<String>,
     pub in_flight: bool,
+    /// The Add button is off for a reason besides a request in flight, such as the list not having loaded.
+    pub waiting: bool,
     /// Controls under the name row, such as the KOReader card's checkbox.
     pub extra: Element,
     /// The card's result line.
@@ -35,6 +37,7 @@ pub(super) fn render_add_form(form: AddForm) -> Element {
         label,
         name_input,
         in_flight,
+        waiting,
         extra,
         status,
         on_submit,
@@ -67,7 +70,7 @@ pub(super) fn render_add_form(form: AddForm) -> Element {
                 button {
                     r#type: "submit",
                     class: "btn primary",
-                    disabled: in_flight,
+                    disabled: in_flight || waiting,
                     "aria-busy": "{in_flight}",
                     "data-testid": "{prefix}-device-add",
                     BusyLabel { busy: in_flight, label, busy_label: "Adding\u{2026}" }
