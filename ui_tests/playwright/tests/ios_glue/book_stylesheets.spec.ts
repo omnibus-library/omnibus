@@ -58,12 +58,13 @@ test.describe("ios reader book stylesheets", () => {
   test("make no request outside the book when a listed file is missing", async ({
     iosGluePage,
   }) => {
-    await test.step("open a book missing a file listed ahead of its font", async () => {
+    await test.step("open a book missing a file and a sheet listed ahead of its own", async () => {
       await iosGluePage.openBook(
         await bookWithSheetFont({
           family: FAMILY,
           font: BOOK_FONT,
           missingAsset: true,
+          missingSheet: true,
         }),
       );
       await expect
@@ -71,11 +72,50 @@ test.describe("ios reader book stylesheets", () => {
         .toContain("loaded");
     });
 
+    await test.step("check the sheet the book has is still inlined", async () => {
+      await expect.poll(() => iosGluePage.inlinedBookCss()).toHaveLength(1);
+    });
+
     // epub.js's own copy, in the blob: sheet it links, keeps a relative url()
     // that cannot resolve against a blob: and so asks for nothing.
     await test.step("check the inlined face is declared from the book", async () => {
-      const { srcs } = await iosGluePage.fontFaces(FAMILY);
-      expect(srcs.some((src) => /^url\("blob:/.test(src))).toBe(true);
+      const [css] = await iosGluePage.inlinedBookCss();
+      expect(css).toContain('src: url("data:,") format("woff2"), url("blob:');
+      expect(css).not.toContain("../");
+    });
+
+    await test.step("check nothing was requested outside the book", async () => {
+      expect(iosGluePage.unservedRequests()).toEqual([]);
+    });
+  });
+
+  // epub.js writes each sheet it rewrites back at the sheet's own index, so a
+  // sheet listed last refills the short table to full length, out of step.
+  test("point each url at its own file when a missing one is listed ahead", async ({
+    iosGluePage,
+  }) => {
+    await test.step("open a book missing a file listed ahead of an image", async () => {
+      await iosGluePage.openBook(
+        await bookWithSheetFont({
+          family: FAMILY,
+          font: BOOK_FONT,
+          missingAsset: true,
+          refilledTable: true,
+        }),
+      );
+      await expect.poll(() => iosGluePage.inlinedBookCss()).toHaveLength(1);
+    });
+
+    await test.step("check the missing face is pointed at nothing", async () => {
+      const [css] = await iosGluePage.inlinedBookCss();
+      expect(css).toContain('src: url("data:,") format("woff2"), url("data:');
+    });
+
+    await test.step("check the image is pointed at the image", async () => {
+      const [css = ""] = await iosGluePage.inlinedBookCss();
+      const image = /body \{ background-image: url\("(blob:[^"]+)"\)/.exec(css);
+      expect(image).not.toBeNull();
+      expect(await iosGluePage.blobType(image?.[1] ?? "")).toBe("image/png");
     });
 
     await test.step("check nothing was requested outside the book", async () => {

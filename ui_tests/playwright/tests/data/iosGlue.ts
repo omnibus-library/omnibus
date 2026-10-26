@@ -191,28 +191,47 @@ export const BOOK_FONT: Buffer = readFileSync(
   ),
 );
 
+/** A 1x1 transparent PNG, for a book image whose pixels nothing reads. */
+const BOOK_IMAGE: Buffer = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+  "base64",
+);
+
 /**
  * A book in the shape Calibre gives one: the sheet in `styles/`, the chapters
  * a folder up, and the sheet embedding `font` from `fonts/` by a url()
  * relative to itself, for every paragraph in `family`. `twoChapters` adds a
- * second chapter, "Two", that links the sheet too; `missingAsset` lists a file
- * the zip lacks ahead of the font, which epub.js drops from its replacements.
+ * second chapter, "Two", that links the sheet too. `missingAsset` lists a face
+ * the zip lacks ahead of the font, which epub.js drops from its replacements,
+ * and names it first in the face's src; `missingSheet` lists a sheet the zip
+ * lacks ahead of the real one. `refilledTable` adds a real image after the
+ * missing file and lists the sheet last, so epub.js's write-back of the sheet
+ * makes its short table full length again.
  */
 export function bookWithSheetFont(opts: {
   family: string;
   font: Buffer;
   twoChapters?: boolean;
   missingAsset?: boolean;
+  missingSheet?: boolean;
+  refilledTable?: boolean;
 }): Promise<Buffer> {
   const prose = Array.from(
     { length: 12 },
     (_, i) =>
       `<p>Paragraph ${i + 1} of the harbour, set in the book's face.</p>`,
   ).join("");
+  const absent = opts.missingAsset
+    ? 'url("../fonts/Absent.woff2") format("woff2"), '
+    : "";
   const sheet = `
-@font-face { font-family: "${opts.family}"; src: url("../fonts/BookFace.woff2") format("woff2"); }
+@font-face { font-family: "${opts.family}"; src: ${absent}url("../fonts/BookFace.woff2") format("woff2"); }
 p { font-family: "${opts.family}", serif; }
+${opts.refilledTable ? 'body { background-image: url("../images/bg.png"); }' : ""}
 `;
+  const sheetFile = {
+    "styles/book.css": { data: sheet, mediaType: "text/css" },
+  };
   return buildChapterEpub(prose, {
     head: '<link href="styles/book.css" rel="stylesheet" type="text/css"/>',
     ...(opts.twoChapters
@@ -226,10 +245,16 @@ p { font-family: "${opts.family}", serif; }
       : {}),
     files: {
       ...(opts.missingAsset
-        ? { "images/absent.png": { data: null, mediaType: "image/png" } }
+        ? { "fonts/Absent.woff2": { data: null, mediaType: "font/woff2" } }
         : {}),
-      "styles/book.css": { data: sheet, mediaType: "text/css" },
+      ...(opts.missingSheet
+        ? { "styles/absent.css": { data: null, mediaType: "text/css" } }
+        : {}),
+      ...(opts.refilledTable
+        ? { "images/bg.png": { data: BOOK_IMAGE, mediaType: "image/png" } }
+        : sheetFile),
       "fonts/BookFace.woff2": { data: opts.font, mediaType: "font/woff2" },
+      ...(opts.refilledTable ? sheetFile : {}),
     },
   });
 }

@@ -155,6 +155,29 @@ export class IosGluePage extends BasePage {
     }, family);
   }
 
+  /** The text of each book sheet the glue inlined into the section. */
+  async inlinedBookCss(): Promise<string[]> {
+    return this.page.evaluate(() => {
+      const doc =
+        document.querySelector<HTMLIFrameElement>(
+          "#stage iframe",
+        )?.contentDocument;
+      if (!doc) throw new Error("no section document");
+      return Array.from(
+        doc.querySelectorAll("style[data-omnibus-book-css]"),
+        (style) => style.textContent ?? "",
+      );
+    });
+  }
+
+  /** The media type of the file behind a `blob:` URL the reader minted. */
+  async blobType(url: string): Promise<string> {
+    return this.page.evaluate(
+      async (url) => (await (await fetch(url)).blob()).type,
+      url,
+    );
+  }
+
   /** Holds the book frame's `document.fonts.ready` for `ms`; call before `openBook`. */
   async holdFontsReady(ms: number): Promise<void> {
     await this.page.addInitScript((ms) => {

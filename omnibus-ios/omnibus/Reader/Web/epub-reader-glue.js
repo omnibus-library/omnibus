@@ -964,7 +964,13 @@
         }
       });
       paths.forEach(function (path) {
-        bookSheetText(path)
+        var text;
+        try {
+          text = bookSheetText(path);
+        } catch (e) {
+          return; /* one bad sheet never keeps the rest out */
+        }
+        text
           .then(function (css) {
             if (!css || !doc.head) return;
             var style = doc.createElement("style");
@@ -990,21 +996,29 @@
     var b = book;
     var byPath = b.__omnibusSheetText || (b.__omnibusSheetText = {});
     if (byPath[path]) return byPath[path];
-    byPath[path] = b.archive.getText(path).then(function (css) {
+    var read = b.archive.getText(path); // undefined for a sheet the zip lacks
+    if (!read || !read.then) return (byPath[path] = Promise.resolve(null));
+    byPath[path] = read.then(function (css) {
       var res = b.resources;
       if (!css || !res || !res.urls || !res.replacementUrls) return css;
       // The sheet's url()s are relative to the sheet, and inline they would
       // resolve against the section: point them at epub.js's copies of the
       // book's files, as it does for the <link> it rewrites.
-      if (res.replacementUrls.length === res.urls.length) {
-        return res.substitute(css, path);
-      }
-      // A file missing from the zip drops out of replacementUrls, unpairing
-      // the arrays: pair each asset with its copy in the archive's cache
-      // instead, keyed as epub.js minted it. Raw url()s would reach the host.
+      var cache = b.archive.urlCache || {};
+      var whole = res.urls.every(function (href) {
+        return b.resolve(href) in cache;
+      });
+      if (whole) return res.substitute(css, path);
+      // epub.js drops a file it could not read from replacementUrls, and its
+      // write-back of a later sheet can refill the short table to full length,
+      // so neither lines up with the assets. Pair each by asset instead: the
+      // font data: patched at its own index, else the cached copy, else an
+      // empty data:, as a raw url() would reach the host.
       var paired = Object.create(res);
-      paired.replacementUrls = res.urls.map(function (href) {
-        return b.archive.urlCache[b.resolve(href)];
+      paired.replacementUrls = res.urls.map(function (href, i) {
+        var own = res.replacementUrls[i];
+        if (typeof own === "string" && own.indexOf("data:") === 0) return own;
+        return cache[b.resolve(href)] || "data:,";
       });
       return paired.substitute(css, path);
     });
