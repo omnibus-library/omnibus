@@ -248,6 +248,11 @@
   border-radius: 0 calc(var(--w) * 0.035) calc(var(--w) * 0.035) 0;
   overflow: hidden;
 }
+.ld-rf-face.back {
+  transform: rotateY(180deg);
+  border-radius: calc(var(--w) * 0.035) 0 0 calc(var(--w) * 0.035);
+}
+/* Light and shade ride the leaf's own clock (same `--i`, same delay). */
 .ld-rf-face::after {
   content: "";
   position: absolute;
@@ -262,6 +267,14 @@
     transparent,
     color-mix(in oklch, white 55%, transparent)
   );
+}
+.ld-rf-face.back::after {
+  background: linear-gradient(
+    270deg,
+    color-mix(in oklch, var(--bg-0) 10%, transparent),
+    color-mix(in oklch, var(--bg-0) 70%, transparent)
+  );
+  animation-name: ld-shade;
 }
 .ld-sheen {
   color: var(--ink-3);
@@ -691,6 +704,17 @@
     opacity: 0.55;
   }
   36%,
+  100% {
+    opacity: 0;
+  }
+}
+/* Back face: darkest just after vertical, clearing as it settles flat. */
+@keyframes ld-shade {
+  0%,
+  34% {
+    opacity: 1;
+  }
+  64%,
   100% {
     opacity: 0;
   }

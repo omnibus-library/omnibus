@@ -83,6 +83,7 @@ a copy of this repository to run it. A folder and a compose file are enough.
 | `PUID`, `PGID` | Run as this user and group. Files land owned by you. |
 | `OMNIBUS_PUBLIC_ORIGIN` | The address you open in the browser. Must match, or login fails. Comma-separate several. Kobo sync also reads it. A Kobo leaves the port off its requests, so its download and cover links take the port from the entry with the same scheme and host. |
 | `OMNIBUS_SECURE_COOKIES` | `0` on plain http. `1` or removed behind HTTPS. |
+| `OMNIBUS_REACT` | Optional. `1` also serves the React client at `/react/`, beside the default web client at `/`. Remove it to go back. |
 | `EBOOK_LIBRARY_PATH`, `AUDIOBOOK_LIBRARY_PATH` | Library folders inside the container. Leave as is. Remove **both** to set libraries in the app instead. |
 
 More optional settings: [`.env.example`](../.env.example).

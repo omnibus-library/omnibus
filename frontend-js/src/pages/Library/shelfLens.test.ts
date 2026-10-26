@@ -15,7 +15,7 @@ const THEM = userId(2);
 describe("railShelves", () => {
   it("keeps the readers own shelves whatever their visibility or kind", () => {
     const all = [
-      aShelf({ id: 1, visibility: "private", bookCount: 0 }),
+      aShelf({ id: 1, visibility: "private" }),
       aShelf({ id: 2, kind: "smart", visibility: "public" }),
     ];
 
@@ -51,10 +51,14 @@ describe("railShelves", () => {
     expect(railShelves(all, ME)).toEqual([]);
   });
 
-  it("drops an empty wishlist and keeps a stocked one", () => {
-    expect(
-      railShelves([aShelf({ kind: "wishlist", bookCount: 0 })], ME),
-    ).toEqual([]);
+  it.each(["manual", "smart", "wishlist"] as const)(
+    "drops an empty %s shelf",
+    (kind) => {
+      expect(railShelves([aShelf({ kind, bookCount: 0 })], ME)).toEqual([]);
+    },
+  );
+
+  it("keeps a stocked wishlist", () => {
     expect(
       railShelves([aShelf({ id: 9, kind: "wishlist", bookCount: 1 })], ME).map(
         (s) => s.id,

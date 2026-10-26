@@ -26,6 +26,8 @@ result-*
 
 # Node / Playwright (E2E only, not part of the server bundle).
 ui_tests/**/node_modules/
+frontend-js/node_modules/
+frontend-js/dist/
 
 # Local secrets — must not leak into an image layer.
 .env

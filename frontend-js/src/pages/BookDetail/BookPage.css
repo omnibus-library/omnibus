@@ -326,7 +326,7 @@ button.bp-byline-series {
   font-variant-numeric: tabular-nums;
 }
 
-/* Ratings: yours, then each household reader's own. */
+/* Ratings: yours, then the household's average. */
 .bp-ratings {
   display: flex;
   align-items: center;
@@ -338,23 +338,19 @@ button.bp-byline-series {
   font: 400 16px / 1.3 var(--sans);
   white-space: nowrap;
 }
-.bp-readers {
-  display: grid;
-  gap: 4px;
-  margin: 0;
-  padding: 0 0 4px 24px;
-  list-style: none;
-  border-left: 1px solid color-mix(in oklch, var(--ink-0) 16%, transparent);
-}
-.bp-reader {
+.bp-rating-avg {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  min-width: 0;
-  max-width: 100%;
-  gap: 8px;
+  gap: 4px 10px;
+  padding-left: 24px;
+  border-left: 1px solid color-mix(in oklch, var(--ink-0) 16%, transparent);
   color: var(--ink-1);
   font-size: 15px;
-  white-space: nowrap;
+}
+.bp-rating-avg-label {
+  color: var(--ink-0);
+  font-weight: 600;
 }
 .bp-avatar {
   display: grid;
@@ -372,16 +368,6 @@ button.bp-byline-series {
   width: 100%;
   height: 100%;
   object-fit: cover;
-}
-.bp-reader-name {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--ink-0);
-  font-weight: 600;
-  text-overflow: ellipsis;
-}
-.bp-reader-score {
-  font-variant-numeric: tabular-nums;
 }
 .bp-mini-stars {
   display: inline-flex;
@@ -411,23 +397,23 @@ button.bp-byline-series {
   fill: currentColor;
   stroke: currentColor;
 }
-.bp-reader-go {
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  margin-left: -2px;
-  padding: 0;
+.bp-rating-avg-go {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 32px;
+  padding: 0 6px 0 10px;
   border: 0;
-  border-radius: 50%;
+  border-radius: 999px;
   background: none;
-  color: var(--ink-2);
+  color: var(--ink-1);
+  font: inherit;
   cursor: pointer;
   transition:
     background-color 160ms ease-out,
     color 160ms ease-out;
 }
-.bp-reader-go svg {
+.bp-rating-avg-go svg {
   width: 16px;
   height: 16px;
   fill: none;
@@ -436,11 +422,13 @@ button.bp-byline-series {
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-.bp-reader:hover .bp-reader-go {
-  background: var(--bp-fill);
-  color: var(--ink-0);
+@media (hover: hover) {
+  .bp-rating-avg-go:hover {
+    background: var(--bp-fill);
+    color: var(--ink-0);
+  }
 }
-.bp-reader-go:focus-visible {
+.bp-rating-avg-go:focus-visible {
   outline: 2px solid var(--ink-0);
   outline-offset: 1px;
   color: var(--ink-0);
@@ -1234,14 +1222,13 @@ button.bp-byline-series {
     flex-direction: column;
     gap: 10px;
   }
-  .bp-readers {
-    justify-items: center;
-    gap: 6px;
+  .bp-rating-avg {
+    justify-content: center;
     padding: 0;
     border-left: 0;
   }
-  .bp-reader-name {
-    min-width: 0;
+  .bp-rating-avg-go {
+    min-height: 44px;
   }
   .bp-progress {
     max-width: none;
@@ -1305,12 +1292,6 @@ button.bp-byline-series {
   }
   .bp-entry {
     padding: 18px 20px;
-  }
-  /* Phone targets are fingers: the row's chevron is as big as one, the row itself no taller for it. */
-  .bp-reader-go {
-    width: 44px;
-    height: 44px;
-    margin: -6px -6px -6px -8px;
   }
   /* Stacked under the card, the ring keeps to its edges. */
   .bp-finish-next:focus-visible {

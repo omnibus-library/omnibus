@@ -53,23 +53,25 @@ export function DetailsPanel({
           edited={edited("Authors")}
           hint="Primary author first"
         />
-        <Controller
-          name="authors"
-          control={control}
-          render={({ field }) => (
-            <ChipInput
-              label="Authors"
-              values={field.value}
-              onChange={field.onChange}
-              suggestions={pools.author}
-              placeholder="+ add author…"
-              removeLabel="Remove"
-              inputClass="me-chip-input"
-              avatar
-              testId="me-authors-input"
-            />
-          )}
-        />
+        <div className="me-chip-row">
+          <Controller
+            name="authors"
+            control={control}
+            render={({ field }) => (
+              <ChipInput
+                label="Authors"
+                values={field.value}
+                onChange={field.onChange}
+                suggestions={pools.author}
+                placeholder="+ add author…"
+                removeLabel="Remove"
+                inputClass="me-chip-input"
+                avatar
+                testId="me-authors-input"
+              />
+            )}
+          />
+        </div>
       </div>
       <MeField
         label="Series"
@@ -142,39 +144,43 @@ export function DetailsPanel({
       />
       <div className="me-field me-field-w2">
         <MeLabel text="Tags" edited={edited("Tags")} />
-        <Controller
-          name="tags"
-          control={control}
-          render={({ field }) => (
-            <ChipInput
-              label="Tags"
-              values={field.value}
-              onChange={field.onChange}
-              suggestions={pools.tag}
-              placeholder="+ add tag…"
-              removeLabel="Remove tag"
-              testId="me-tags-input"
-            />
-          )}
-        />
+        <div className="me-tag-chips">
+          <Controller
+            name="tags"
+            control={control}
+            render={({ field }) => (
+              <ChipInput
+                label="Tags"
+                values={field.value}
+                onChange={field.onChange}
+                suggestions={pools.tag}
+                placeholder="+ add tag…"
+                removeLabel="Remove tag"
+                testId="me-tags-input"
+              />
+            )}
+          />
+        </div>
       </div>
       <div className="me-field me-field-w2" data-testid="me-genres-section">
         <MeLabel text="Genres" edited={edited("Genres")} />
-        <Controller
-          name="genres"
-          control={control}
-          render={({ field }) => (
-            <ChipInput
-              label="Genres"
-              values={field.value}
-              onChange={field.onChange}
-              suggestions={pools.genre}
-              placeholder="+ add genre…"
-              removeLabel="Remove genre"
-              testId="me-genres-input"
-            />
-          )}
-        />
+        <div className="me-tag-chips">
+          <Controller
+            name="genres"
+            control={control}
+            render={({ field }) => (
+              <ChipInput
+                label="Genres"
+                values={field.value}
+                onChange={field.onChange}
+                suggestions={pools.genre}
+                placeholder="+ add genre…"
+                removeLabel="Remove genre"
+                testId="me-genres-input"
+              />
+            )}
+          />
+        </div>
       </div>
       {hasOverride && (
         <div className="me-field me-field-w2 es-revert">

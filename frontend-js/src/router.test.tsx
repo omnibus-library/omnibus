@@ -198,6 +198,73 @@ describe("routes", () => {
       ).toBeInTheDocument();
     });
 
+    it("draws the library behind the check-in dialog", async () => {
+      renderRoute("/check-in");
+
+      await screen.findByRole("dialog", { name: "Check in a book" });
+      expect(
+        await screen.findByRole("heading", { level: 1, name: "Your Library" }),
+      ).toBeInTheDocument();
+    });
+
+    it("keeps the library mounted beneath the check-in dialog", async () => {
+      const { router } = renderRoute("/");
+      const heading = await screen.findByRole("heading", {
+        level: 1,
+        name: "Your Library",
+      });
+
+      await act(() => router.navigate("/check-in"));
+
+      await screen.findByRole("dialog", { name: "Check in a book" });
+      expect(
+        screen.getByRole("heading", { level: 1, name: "Your Library" }),
+      ).toBe(heading);
+    });
+
+    it("closes the check-in dialog back to the page it opened from", async () => {
+      const { router } = renderRoute("/");
+      await screen.findByRole("heading", { level: 1, name: "Your Library" });
+      await act(() =>
+        router.navigate("/check-in", { state: { fromApp: true } }),
+      );
+      await screen.findByRole("dialog", { name: "Check in a book" });
+
+      await userEvent.keyboard("{Escape}");
+
+      await waitFor(() => expect(router.state.historyAction).toBe("POP"));
+      expect(router.state.location.pathname).toBe("/");
+    });
+
+    it("closes a check-in reached by a redirect onto the library", async () => {
+      const { router } = renderRoute("/");
+      await screen.findByRole("heading", { level: 1, name: "Your Library" });
+      // As the sign-in redirect lands it: a replace, so no entry to go back to.
+      await act(() => router.navigate("/check-in", { replace: true }));
+      await screen.findByRole("dialog", { name: "Check in a book" });
+
+      await userEvent.keyboard("{Escape}");
+
+      await waitFor(() =>
+        expect(
+          screen.queryByRole("dialog", { name: "Check in a book" }),
+        ).not.toBeInTheDocument(),
+      );
+      expect(router.state.location.pathname).toBe("/");
+    });
+
+    it("closes the check-in dialog onto the library on Escape", async () => {
+      const { router } = renderRoute("/check-in");
+      await screen.findByRole("dialog", { name: "Check in a book" });
+
+      await userEvent.keyboard("{Escape}");
+
+      await waitFor(() => expect(router.state.location.pathname).toBe("/"));
+      expect(
+        screen.queryByRole("dialog", { name: "Check in a book" }),
+      ).not.toBeInTheDocument();
+    });
+
     it("renders the cleanup review at /admin/cleanup/tag, not a stub", async () => {
       renderRoute("/admin/cleanup/tag");
 
