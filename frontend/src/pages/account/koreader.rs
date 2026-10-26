@@ -1,15 +1,19 @@
-//! KOReader card (Settings › Devices): the KOReaders registered to the reader.
+//! KOReader card (Settings › Devices): the KOReaders registered to the reader, with the plugin
+//! or without it.
 //!
 //! Reads top to bottom: the setup steps (a disclosure, open by default only for a reader with
-//! no KOReader yet), the add form, then the registered KOReaders. A plugin row downloads its
-//! preconfigured plugin and reports its last sync; Remove asks first. The list and the
-//! disclosure's default start unanswered so SSR and the first WASM paint agree.
+//! no KOReader yet), the add form with its no-plugin checkbox, then the registered KOReaders.
+//! A plugin row downloads its preconfigured plugin and reports its last sync. A no-plugin row
+//! stands for a KOReader on stock Progress sync: the account has one login for all of them, shown
+//! once on the row that created it and replaceable from any row. Remove asks first. The list and
+//! the disclosure's default start unanswered so SSR and the first WASM paint agree.
 
 use dioxus::prelude::*;
 use dioxus_router::Link;
-use omnibus_shared::{DeviceKind, KoboDeviceView};
+use omnibus_shared::{DeviceKind, KoboDeviceView, KosyncPassword};
 
 use super::device_form::{render_add_form, AddForm, NAME_REQUIRED};
+use crate::components::clipboard::ReadonlyCopyField;
 use crate::components::confirm_modal::{confirm_dialog, Confirm};
 use crate::components::credential_card::action_status;
 use crate::components::loading::RowSkeletons;
@@ -54,18 +58,86 @@ fn added_label(created_at: i64, now: i64) -> String {
 
 /// The card status line after `device` was added.
 fn added_message(device: &KoboDeviceView) -> String {
-    format!(
-        "Added {}. Download its plugin and put it on the device.",
-        device.name
+    let name = &device.name;
+    match (device.kind, &device.kosync_login) {
+        (DeviceKind::Kosync, Some(_)) => {
+            format!("Added {name}. Copy its login now: the password is shown once.")
+        }
+        (DeviceKind::Kosync, None) => format!("Added {name}."),
+        _ => format!("Added {name}. Download its plugin and put it on the device."),
+    }
+}
+
+/// The custom sync server a reader types into KOReader: `{origin}/kosync`, no trailing slash.
+fn kosync_url(origin: &str) -> String {
+    format!("{}/kosync", origin.trim_end_matches('/'))
+}
+
+/// `names` as a sentence fragment: "A", "A and B", "A, B and C".
+fn join_names(names: &[String]) -> String {
+    match names {
+        [] => String::new(),
+        [only] => only.clone(),
+        [init @ .., last] => format!("{} and {last}", init.join(", ")),
+    }
+}
+
+/// The generate dialog's title and body, naming every no-plugin KOReader it signs out.
+fn generate_confirm_text(names: &[String]) -> (String, String) {
+    let (verb, its, them) = if names.len() == 1 {
+        ("stops", "its", "it")
+    } else {
+        ("stop", "their", "them")
+    };
+    (
+        "Generate a new Progress sync password?".to_string(),
+        format!(
+            "{} {verb} syncing {its} place until you log in on {them} again with the new \
+             password. Every no-plugin KOReader shares this one login. Plugin KOReaders and \
+             Kobos aren\u{2019}t affected.",
+            join_names(names)
+        ),
     )
 }
 
-/// A remove dialog's title and body for the KOReader `name`.
-fn remove_confirm_text(name: &str) -> (String, String) {
-    (
-        format!("Remove {name}?"),
-        format!("{name} stops syncing with Omnibus. To sync it again, add it as a new device."),
-    )
+/// A remove dialog's title and body for the KOReader `name`; the last no-plugin KOReader also
+/// takes the Progress sync login with it.
+fn remove_confirm_text(name: &str, last_no_plugin: bool) -> (String, String) {
+    let body = if last_no_plugin {
+        format!(
+            "{name} stops syncing with Omnibus. It\u{2019}s your last no-plugin KOReader, so this \
+             also turns off Progress sync: its password stops working."
+        )
+    } else {
+        format!("{name} stops syncing with Omnibus. To sync it again, add it as a new device.")
+    };
+    (format!("Remove {name}?"), body)
+}
+
+/// Whether removing device `id` removes the account's last no-plugin KOReader.
+fn is_last_no_plugin(devices: &[KoboDeviceView], id: i64) -> bool {
+    let no_plugin = |d: &&KoboDeviceView| d.kind == DeviceKind::Kosync;
+    devices.iter().filter(no_plugin).count() == 1
+        && devices
+            .iter()
+            .any(|d| d.id == id && d.kind == DeviceKind::Kosync)
+}
+
+/// The earliest no-plugin KOReader other than `id`: the one a reuse panel says the login was shown on.
+fn first_other_no_plugin(devices: &[KoboDeviceView], id: i64) -> Option<String> {
+    devices
+        .iter()
+        .find(|d| d.kind == DeviceKind::Kosync && d.id != id)
+        .map(|d| d.name.clone())
+}
+
+/// The names of every no-plugin KOReader in `devices`.
+fn no_plugin_names(devices: &[KoboDeviceView]) -> Vec<String> {
+    devices
+        .iter()
+        .filter(|d| d.kind == DeviceKind::Kosync)
+        .map(|d| d.name.clone())
+        .collect()
 }
 
 /// The "how to connect" procedure behind a disclosure, plus the standing shelf rule beneath
@@ -123,12 +195,47 @@ fn render_koreader_setup(open: bool) -> Element {
     }
 }
 
+/// What a no-plugin row shows under its name this session. Nothing here survives a reload: the
+/// server keeps no password to show.
+#[derive(Clone, Debug, PartialEq)]
+enum RowPanel {
+    /// The login this row's add created.
+    Fresh(KosyncPassword),
+    /// This row's add reused the account's existing login.
+    Reuse,
+    /// The login a Generate from this row just made.
+    Regenerated(KosyncPassword),
+}
+
+/// Everything a no-plugin row needs beyond its device.
+#[derive(Clone, Debug, Default, PartialEq)]
+struct ProgressSync {
+    panel: Option<RowPanel>,
+    /// A new password was generated here since the page loaded, so every no-plugin KOReader must log in again.
+    signed_out: bool,
+    server_url: String,
+    username: String,
+    /// The earliest other no-plugin KOReader, which a reuse panel names as where the login was shown.
+    first_other: Option<String>,
+    /// Every no-plugin KOReader's name, as a sentence fragment.
+    all_names: String,
+}
+
+/// The list's data besides the devices themselves.
+struct ListView<'a> {
+    origin: &'a str,
+    can_download: bool,
+    in_flight: bool,
+    signed_out: bool,
+    username: &'a str,
+    panels: &'a [(i64, RowPanel)],
+}
+
 /// Registered-KOReader list, or the empty-state line when there are none yet.
 fn render_koreader_device_list(
     device_list: &[KoboDeviceView],
-    server_url: &str,
-    can_download: bool,
-    in_flight: bool,
+    view: &ListView,
+    on_generate: Callback<i64>,
     on_remove: Callback<i64>,
 ) -> Element {
     if device_list.is_empty() {
@@ -140,27 +247,64 @@ fn render_koreader_device_list(
             }
         };
     }
+    let all_names = join_names(&no_plugin_names(device_list));
     rsx! {
         ul { class: "kobo-device-list", "data-testid": "koreader-device-list",
             for dev in device_list.iter() {
                 KoreaderDeviceRow {
                     key: "{dev.id}",
-                    plugin_url: plugin_download_url(server_url, dev.id),
-                    can_download,
+                    plugin_url: plugin_download_url(view.origin, dev.id),
+                    can_download: view.can_download,
                     device: dev.clone(),
-                    disabled: in_flight,
+                    disabled: view.in_flight,
                     on_remove,
+                    on_generate,
+                    sync: ProgressSync {
+                        panel: view.panels.iter().find(|(id, _)| *id == dev.id).map(|(_, p)| p.clone()),
+                        signed_out: view.signed_out,
+                        server_url: kosync_url(view.origin),
+                        username: view.username.to_string(),
+                        first_other: first_other_no_plugin(device_list, dev.id),
+                        all_names: all_names.clone(),
+                    },
                 }
             }
         }
     }
 }
 
-/// The device awaiting a Remove confirmation.
+/// The action awaiting confirmation.
 #[derive(Clone, Debug, PartialEq)]
-struct PendingRemove {
-    id: i64,
-    name: String,
+enum Pending {
+    Remove {
+        id: i64,
+        name: String,
+        last_no_plugin: bool,
+    },
+    /// Generating from row `id`, which signs out every KOReader in `names`.
+    Generate { id: i64, names: Vec<String> },
+}
+
+/// The checkbox that makes the next add a no-plugin KOReader, with the line saying what that means.
+fn render_no_plugin_option(no_plugin: Signal<bool>, disabled: bool) -> Element {
+    rsx! {
+        div { class: "device-add-option",
+            label { class: "device-add-check", r#for: "koreader-no-plugin",
+                input {
+                    r#type: "checkbox",
+                    id: "koreader-no-plugin",
+                    "data-testid": "koreader-no-plugin",
+                    checked: no_plugin(),
+                    disabled,
+                    onchange: move |e| { let mut no_plugin = no_plugin; no_plugin.set(e.checked()) },
+                }
+                span { "Connect without the plugin (Progress sync only)" }
+            }
+            p { class: "subtitle device-add-hint",
+                "For a KOReader you\u{2019}d rather not install the plugin on. It uses KOReader\u{2019}s built-in Progress sync, which keeps only your place in step: no shelves, no highlights."
+            }
+        }
+    }
 }
 
 /// Card body: setup steps, add form, then the KOReader list. Every mutation folds the
@@ -173,10 +317,13 @@ pub fn KoreaderDevicesCard() -> Element {
     // `None` until the first answer: never "No KOReader registered yet." meanwhile.
     let mut devices = use_signal(|| None::<Vec<KoboDeviceView>>);
     let mut name_input = use_signal(String::new);
+    let mut no_plugin = use_signal(|| false);
     let mut msg = use_signal(|| None::<String>);
     let mut msg_is_error = use_signal(|| false);
     let mut in_flight = use_signal(|| false);
-    let mut pending = use_signal(|| None::<PendingRemove>);
+    let mut pending = use_signal(|| None::<Pending>);
+    let mut panels = use_signal(Vec::<(i64, RowPanel)>::new);
+    let mut signed_out = use_signal(|| false);
     // Decided once, when the list first answers, because adding the first KOReader must not
     // fold the steps away while the reader is still following them.
     let mut setup_open = use_signal(|| false);
@@ -207,12 +354,28 @@ pub fn KoreaderDevicesCard() -> Element {
             msg_is_error.set(true);
             return;
         }
+        let kind = if no_plugin() {
+            DeviceKind::Kosync
+        } else {
+            DeviceKind::Koreader
+        };
         let url = add_url.clone();
         in_flight.set(true);
         spawn(async move {
-            match data::create_kobo_device(&url, name, DeviceKind::Koreader).await {
+            match data::create_kobo_device(&url, name, kind).await {
                 Ok(dev) => {
                     name_input.set(String::new());
+                    no_plugin.set(false);
+                    if kind == DeviceKind::Kosync {
+                        let panel = match &dev.kosync_login {
+                            Some(login) => RowPanel::Fresh(login.clone()),
+                            None => RowPanel::Reuse,
+                        };
+                        if dev.kosync_login.is_some() {
+                            signed_out.set(false);
+                        }
+                        panels.write().push((dev.id, panel));
+                    }
                     msg.set(Some(added_message(&dev)));
                     msg_is_error.set(false);
                     devices.write().get_or_insert_with(Vec::new).push(dev);
@@ -227,14 +390,22 @@ pub fn KoreaderDevicesCard() -> Element {
     });
 
     let on_ask_remove = use_callback(move |id: i64| {
-        let name = devices
-            .peek()
+        let list = devices.peek();
+        let list = list.as_deref().unwrap_or_default();
+        let name = list
             .iter()
-            .flatten()
             .find(|d| d.id == id)
             .map(|d| d.name.clone())
             .unwrap_or_default();
-        pending.set(Some(PendingRemove { id, name }));
+        pending.set(Some(Pending::Remove {
+            id,
+            name,
+            last_no_plugin: is_last_no_plugin(list, id),
+        }));
+    });
+    let on_ask_generate = use_callback(move |id: i64| {
+        let names = no_plugin_names(devices.peek().as_deref().unwrap_or_default());
+        pending.set(Some(Pending::Generate { id, names }));
     });
 
     let revoke_url = server_url.clone();
@@ -246,8 +417,37 @@ pub fn KoreaderDevicesCard() -> Element {
                 Ok(()) => {
                     if let Some(list) = devices.write().as_mut() {
                         list.retain(|d| d.id != id);
+                        if no_plugin_names(list).is_empty() {
+                            signed_out.set(false);
+                        }
                     }
+                    panels.write().retain(|(panel_id, _)| *panel_id != id);
                     msg.set(Some("KOReader removed.".to_string()));
+                    msg_is_error.set(false);
+                }
+                Err(e) => {
+                    msg.set(Some(e.to_string()));
+                    msg_is_error.set(true);
+                }
+            }
+            in_flight.set(false);
+            pending.set(None);
+        });
+    });
+
+    let generate_url = server_url.clone();
+    let on_generate = use_callback(move |id: i64| {
+        let url = generate_url.clone();
+        in_flight.set(true);
+        spawn(async move {
+            match data::generate_kosync_password(&url).await {
+                Ok(login) => {
+                    // The old password is dead, so no earlier panel may still claim to show it.
+                    panels.set(vec![(id, RowPanel::Regenerated(login))]);
+                    signed_out.set(true);
+                    msg.set(Some(
+                        "New password generated. Copy it now: it is shown once.".to_string(),
+                    ));
                     msg_is_error.set(false);
                 }
                 Err(e) => {
@@ -265,6 +465,7 @@ pub fn KoreaderDevicesCard() -> Element {
     // unresolved so SSR and the first client paint agree.
     let user = crate::use_current_user_summary();
     let can_download = user().map(|u| u.can_download).unwrap_or(true);
+    let username = user().map(|u| u.username).unwrap_or_default();
 
     rsx! {
         section { class: "card", "data-testid": "koreader-devices-card",
@@ -279,12 +480,24 @@ pub fn KoreaderDevicesCard() -> Element {
                 label: "Add a KOReader",
                 name_input,
                 in_flight: in_flight(),
-                extra: rsx! {},
+                extra: render_no_plugin_option(no_plugin, in_flight()),
                 status: action_status("koreader-devices-status", msg().as_deref(), msg_is_error()),
                 on_submit: on_add,
             })}
             match device_list.as_deref() {
-                Some(list) => render_koreader_device_list(list, &origin(), can_download, in_flight(), on_ask_remove),
+                Some(list) => render_koreader_device_list(
+                    list,
+                    &ListView {
+                        origin: &origin(),
+                        can_download,
+                        in_flight: in_flight(),
+                        signed_out: signed_out(),
+                        username: &username,
+                        panels: &panels(),
+                    },
+                    on_ask_generate,
+                    on_ask_remove,
+                ),
                 // The form's status line carries the failure.
                 None if msg_is_error() => rsx! {},
                 None => rsx! {
@@ -296,36 +509,157 @@ pub fn KoreaderDevicesCard() -> Element {
             }
         }
         if let Some(ask) = pending() {
-            {remove_confirm(ask, in_flight(), pending, on_remove)}
+            {pending_confirm(ask, in_flight(), pending, on_generate, on_remove)}
         }
     }
 }
 
-/// The dialog confirming a pending Remove, naming the device.
-fn remove_confirm(
-    ask: PendingRemove,
+/// The dialog confirming a pending Remove or Generate, naming the devices it affects.
+fn pending_confirm(
+    ask: Pending,
     busy: bool,
-    mut pending: Signal<Option<PendingRemove>>,
+    mut pending: Signal<Option<Pending>>,
+    on_generate: Callback<i64>,
     on_remove: Callback<i64>,
 ) -> Element {
-    let (title, body) = remove_confirm_text(&ask.name);
-    let id = ask.id;
+    let (testid, (title, body), action, busy_label, run) = match ask {
+        Pending::Remove {
+            id,
+            name,
+            last_no_plugin,
+        } => (
+            "koreader-remove-dialog",
+            remove_confirm_text(&name, last_no_plugin),
+            "Remove device",
+            "Removing\u{2026}",
+            EventHandler::new(move |()| on_remove.call(id)),
+        ),
+        Pending::Generate { id, names } => (
+            "kosync-replace-dialog",
+            generate_confirm_text(&names),
+            "Generate new password",
+            "Generating\u{2026}",
+            EventHandler::new(move |()| on_generate.call(id)),
+        ),
+    };
     confirm_dialog(
         Confirm {
-            testid: "koreader-remove-dialog",
+            testid,
             title: &title,
             body: &body,
-            action: "Remove device",
-            busy_label: "Removing\u{2026}",
+            action,
+            busy_label,
         },
         busy,
         EventHandler::new(move |()| pending.set(None)),
-        EventHandler::new(move |()| on_remove.call(id)),
+        run,
     )
 }
 
-/// One plugin-KOReader row: its name and sync state, the plugin download, and Remove (which
-/// asks before acting).
+/// One revealed value: a label, a read-only field and a copy button. The id carries the device
+/// id, so two rows showing a login never share one.
+fn login_field(device_id: i64, key: &str, label: &str, value: &str, name: &str) -> Element {
+    rsx! {
+        ReadonlyCopyField {
+            id: "kosync-{key}-{device_id}",
+            label: label.to_string(),
+            value: value.to_string(),
+            input_testid: "kosync-{key}",
+            copy_label: "Copy",
+            copy_testid: "kosync-{key}-copy",
+            copy_aria_label: format!("Copy the {} for {name}", label.to_lowercase()),
+        }
+    }
+}
+
+/// A login shown once: its three fields under `title`, with `tip` beneath.
+fn render_login_panel(
+    title: &str,
+    tip: String,
+    sync: &ProgressSync,
+    login: &KosyncPassword,
+    id: i64,
+    name: &str,
+) -> Element {
+    rsx! {
+        div { class: "kosync-login", "data-testid": "koreader-login-panel",
+            p { class: "kosync-login-title", "{title}" }
+            {login_field(id, "url", "Server URL", &sync.server_url, name)}
+            {login_field(id, "username", "Username", &login.username, name)}
+            {login_field(id, "password", "Password", &login.password, name)}
+            p { class: "subtitle", "{tip}" }
+        }
+    }
+}
+
+/// A no-plugin row's body: the login it just showed, the login it reuses, or a steady line.
+fn render_progress_sync(sync: &ProgressSync, id: i64, name: &str) -> Element {
+    match &sync.panel {
+        Some(RowPanel::Fresh(login)) => render_login_panel(
+            "Progress sync login (shown once)",
+            "In KOReader: Progress sync \u{203a} Custom sync server, then Login with these. Every no-plugin KOReader shares this one login. Only books downloaded from Omnibus match.".to_string(),
+            sync,
+            login,
+            id,
+            name,
+        ),
+        Some(RowPanel::Regenerated(login)) => render_login_panel(
+            "New Progress sync login (shown once)",
+            format!(
+                "Log in again on every no-plugin KOReader (here, {}): Progress sync \u{203a} Custom sync server \u{203a} Login.",
+                sync.all_names
+            ),
+            sync,
+            login,
+            id,
+            name,
+        ),
+        Some(RowPanel::Reuse) => {
+            let (who, when) = match &sync.first_other {
+                Some(first) => (first.as_str(), "when that device was added"),
+                None => ("your other Progress sync devices", "when it was generated"),
+            };
+            rsx! {
+                div { class: "kosync-login", "data-testid": "koreader-login-panel",
+                    p { class: "kosync-login-title", "Uses your existing Progress sync login" }
+                    p { class: "subtitle",
+                        "Log in on this KOReader with the same server URL, username and password as {who}. The password was shown once, {when}."
+                    }
+                    {login_field(id, "url", "Server URL", &sync.server_url, name)}
+                    {login_field(id, "username", "Username", &sync.username, name)}
+                    p { class: "subtitle",
+                        "A new password signs out every no-plugin KOReader until you log in again."
+                    }
+                }
+            }
+        }
+        None => rsx! {
+            p { class: "subtitle", "Syncs your place through KOReader\u{2019}s Progress sync." }
+        },
+    }
+}
+
+/// A plugin row's sync line: when it was added, or its last sync and any failure.
+fn render_plugin_state(device: &KoboDeviceView) -> Element {
+    let line = match device.last_sync_at {
+        Some(at) => format!("Last sync {}", fmt_date(at)),
+        None => added_label(device.created_at, crate::time::now_unix()),
+    };
+    rsx! {
+        p { class: "subtitle", "data-testid": "koreader-last-sync", "{line}" }
+        if let Some(error) = &device.last_sync_error {
+            p { class: "settings-status error", "data-testid": "koreader-last-error",
+                "Last sync failed: {error}"
+            }
+            p { class: "subtitle",
+                "Redownload the plugin and replace the old copy on the device, then sync again."
+            }
+        }
+    }
+}
+
+/// One KOReader row: its name and state, then what that kind of KOReader does (a plugin
+/// download, or the Progress sync login), and Remove, which asks before acting.
 #[component]
 fn KoreaderDeviceRow(
     device: KoboDeviceView,
@@ -333,38 +667,56 @@ fn KoreaderDeviceRow(
     can_download: bool,
     disabled: bool,
     on_remove: Callback<i64>,
+    on_generate: Callback<i64>,
+    #[props(default)] sync: ProgressSync,
 ) -> Element {
     let id = device.id;
-    let name = device.name;
+    let no_plugin = device.kind == DeviceKind::Kosync;
     let synced = device.last_sync_at.is_some();
-    let line = match device.last_sync_at {
-        Some(at) => format!("Last sync {}", fmt_date(at)),
-        None => added_label(device.created_at, crate::time::now_unix()),
-    };
     let (download_label, download_class) = if synced {
         ("Redownload plugin", "btn")
     } else {
         ("Download plugin", "btn primary")
     };
+    let name = device.name.clone();
     rsx! {
         li { class: "kobo-device-row", "data-testid": "koreader-device-row",
             div { class: "kobo-device-head",
-                span { class: "kobo-device-name", "{name}" }
-                if !synced {
-                    span { class: "users-badge", "data-testid": "koreader-device-badge", "Not synced yet" }
+                div { class: "kobo-device-title",
+                    span { class: "kobo-device-name", "{name}" }
+                    if no_plugin {
+                        span { class: "users-badge", "data-testid": "koreader-device-badge", "No plugin" }
+                    } else if !synced {
+                        span { class: "users-badge", "data-testid": "koreader-device-badge", "Not synced yet" }
+                    }
+                }
+                if no_plugin {
+                    if sync.signed_out {
+                        span { class: "kobo-row-status error", "data-testid": "koreader-signed-out",
+                            "Signed out \u{b7} log in again"
+                        }
+                    } else {
+                        span { class: "kobo-row-status", "Progress sync" }
+                    }
                 }
             }
-            p { class: "subtitle", "data-testid": "koreader-last-sync", "{line}" }
-            if let Some(error) = &device.last_sync_error {
-                p { class: "settings-status error", "data-testid": "koreader-last-error",
-                    "Last sync failed: {error}"
-                }
-                p { class: "subtitle",
-                    "Redownload the plugin and replace the old copy on the device, then sync again."
-                }
+            if no_plugin {
+                {render_progress_sync(&sync, id, &name)}
+            } else {
+                {render_plugin_state(&device)}
             }
             div { class: "settings-actions",
-                if can_download {
+                if no_plugin {
+                    button {
+                        r#type: "button",
+                        class: "btn ghost",
+                        disabled,
+                        "aria-label": "Generate a new password for {name}",
+                        "data-testid": "kosync-generate",
+                        onclick: move |_| on_generate.call(id),
+                        "Generate a new password"
+                    }
+                } else if can_download {
                     a {
                         class: download_class,
                         href: "{plugin_url}",

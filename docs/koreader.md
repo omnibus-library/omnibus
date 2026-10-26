@@ -139,14 +139,21 @@ Stock KOReader's own **Progress sync** can keep your place in step with Omnibus
 without installing the plugin. It speaks the same protocol as KOReader's sync
 server, which Omnibus serves at `/kosync`.
 
-1. In Omnibus, open **Settings › Devices** and click **Generate password** under
-   **KOReader progress sync**. The server URL, your username and the password are
-   shown once; copy them now. Generating again replaces the password, and the old
-   one stops working.
+1. In Omnibus, open **Settings › Devices**. In the **KOReader** card, name the
+   device, tick **Connect without the plugin (Progress sync only)** and click
+   **Add a KOReader**. The server URL, your username and the password are shown
+   once on its row; copy them now. Every no-plugin KOReader shares that one login,
+   so adding another shows the same login's details without the password.
 2. In KOReader, open **Progress sync › Custom sync server** and enter
    `https://<host>/kosync`, with no trailing slash.
 3. Choose **Login** and enter your Omnibus username and that password. **Register**
    is refused, because the password is made in Omnibus.
+
+**Generate a new password** on a no-plugin row replaces the login, so the old
+password stops working. The page marks every no-plugin KOReader *Signed out ·
+log in again* until you reload; log in on each one with the new password.
+Removing your last no-plugin KOReader turns Progress sync off, and its password
+stops working.
 
 What to expect:
 

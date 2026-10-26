@@ -1,9 +1,16 @@
 //! Tests for the KOReader card: which devices it lists, the labels a plugin row wears before
 //! and after its first sync, and what SSR paints before the device list answers.
 
-use omnibus_shared::{DeviceKind, KoboDeviceView};
+use omnibus_shared::{DeviceKind, KoboDeviceView, KosyncPassword};
 
 use super::*;
+
+fn login() -> KosyncPassword {
+    KosyncPassword {
+        username: "ada".to_string(),
+        password: "abcde-fghjk-mnpqr-stuvw".to_string(),
+    }
+}
 
 fn device(kind: DeviceKind) -> KoboDeviceView {
     KoboDeviceView {
@@ -73,14 +80,144 @@ fn added_message_tells_a_plugin_koreaders_owner_to_download_its_plugin() {
 }
 
 #[test]
-fn remove_confirm_text_names_the_koreader_being_removed() {
-    let (title, body) = remove_confirm_text("Libra");
+fn added_message_asks_for_the_login_to_be_copied_when_a_no_plugin_koreader_made_it() {
+    let added = KoboDeviceView {
+        kosync_login: Some(login()),
+        ..device(DeviceKind::Kosync)
+    };
 
-    assert_eq!(title, "Remove Libra?");
+    assert_eq!(
+        added_message(&added),
+        "Added Libra. Copy its login now: the password is shown once."
+    );
+}
+
+#[test]
+fn added_message_is_plain_when_a_no_plugin_koreader_reuses_the_login() {
+    assert_eq!(added_message(&device(DeviceKind::Kosync)), "Added Libra.");
+}
+
+#[test]
+fn kosync_url_joins_the_origin_and_the_kosync_path() {
+    assert_eq!(
+        kosync_url("https://omni.example.com"),
+        "https://omni.example.com/kosync"
+    );
+}
+
+#[test]
+fn kosync_url_has_no_trailing_slash_even_when_the_origin_does() {
+    assert_eq!(
+        kosync_url("http://localhost:3000/"),
+        "http://localhost:3000/kosync"
+    );
+}
+
+#[test]
+fn join_names_reads_as_a_list() {
+    let names = |n: &[&str]| n.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+
+    assert_eq!(join_names(&names(&["Libra"])), "Libra");
+    assert_eq!(join_names(&names(&["Libra", "Clara"])), "Libra and Clara");
+    assert_eq!(
+        join_names(&names(&["Libra", "Clara", "Sage"])),
+        "Libra, Clara and Sage"
+    );
+}
+
+#[test]
+fn generate_confirm_text_names_the_one_koreader_it_signs_out() {
+    let (title, body) = generate_confirm_text(&["Libra".to_string()]);
+
+    assert_eq!(title, "Generate a new Progress sync password?");
+    assert_eq!(
+        body,
+        "Libra stops syncing its place until you log in on it again with the new password. \
+         Every no-plugin KOReader shares this one login. Plugin KOReaders and Kobos \
+         aren\u{2019}t affected."
+    );
+}
+
+#[test]
+fn generate_confirm_text_names_every_koreader_it_signs_out() {
+    let (_, body) = generate_confirm_text(&["Libra".to_string(), "Clara".to_string()]);
+
     assert!(
-        body.starts_with("Libra stops syncing with Omnibus."),
+        body.starts_with("Libra and Clara stop syncing their place until you log in on them again"),
         "{body}"
     );
+}
+
+#[test]
+fn remove_confirm_text_names_the_koreader_being_removed() {
+    let (title, body) = remove_confirm_text("Libra", false);
+
+    assert_eq!(title, "Remove Libra?");
+    assert_eq!(
+        body,
+        "Libra stops syncing with Omnibus. To sync it again, add it as a new device."
+    );
+}
+
+#[test]
+fn remove_confirm_text_says_the_progress_sync_login_goes_with_the_last_no_plugin_koreader() {
+    let (title, body) = remove_confirm_text("Libra", true);
+
+    assert_eq!(title, "Remove Libra?");
+    assert_eq!(
+        body,
+        "Libra stops syncing with Omnibus. It\u{2019}s your last no-plugin KOReader, so this \
+         also turns off Progress sync: its password stops working."
+    );
+}
+
+#[test]
+fn removing_the_last_no_plugin_koreader_is_known_from_the_list() {
+    let list = |kinds: &[DeviceKind]| -> Vec<KoboDeviceView> {
+        kinds
+            .iter()
+            .enumerate()
+            .map(|(i, kind)| KoboDeviceView {
+                id: i as i64 + 1,
+                ..device(*kind)
+            })
+            .collect()
+    };
+
+    let only = list(&[DeviceKind::Koreader, DeviceKind::Kosync]);
+    let two = list(&[DeviceKind::Kosync, DeviceKind::Kosync]);
+
+    assert!(is_last_no_plugin(&only, 2));
+    assert!(!is_last_no_plugin(&two, 2));
+    assert!(
+        !is_last_no_plugin(&only, 1),
+        "a plugin KOReader is never the last"
+    );
+}
+
+#[test]
+fn first_other_no_plugin_names_the_earliest_other_no_plugin_koreader() {
+    let list = vec![
+        KoboDeviceView {
+            id: 1,
+            name: "Plugin".to_string(),
+            ..device(DeviceKind::Koreader)
+        },
+        KoboDeviceView {
+            id: 2,
+            name: "First".to_string(),
+            ..device(DeviceKind::Kosync)
+        },
+        KoboDeviceView {
+            id: 3,
+            name: "Second".to_string(),
+            ..device(DeviceKind::Kosync)
+        },
+    ];
+
+    assert_eq!(first_other_no_plugin(&list, 3).as_deref(), Some("First"));
+    assert_eq!(first_other_no_plugin(&list, 2).as_deref(), Some("Second"));
+    assert_eq!(first_other_no_plugin(&list[..2], 2), None);
 }
 
 // SSR render-smoke coverage. These need the `server` feature (`dioxus::ssr`).
@@ -116,6 +253,7 @@ mod render_tests {
                 can_download,
                 disabled: false,
                 on_remove: Callback::new(|_| {}),
+                on_generate: Callback::new(|_| {}),
             }
         }
     }
@@ -314,5 +452,186 @@ mod render_tests {
             html.contains(r#"download="omnibus-koreader-1.zip""#),
             "{html}"
         );
+    }
+
+    fn no_plugin_row(sync: ProgressSync) -> Element {
+        rsx! {
+            KoreaderDeviceRow {
+                device: device(DeviceKind::Kosync),
+                plugin_url: "https://omni.example.com/api/account/kobo-devices/1/koreader-plugin".to_string(),
+                can_download: true,
+                disabled: false,
+                on_remove: Callback::new(|_| {}),
+                on_generate: Callback::new(|_| {}),
+                sync,
+            }
+        }
+    }
+
+    fn sync_of(panel: Option<RowPanel>) -> ProgressSync {
+        ProgressSync {
+            panel,
+            server_url: "https://omni.example.com/kosync".to_string(),
+            username: "ada".to_string(),
+            all_names: "Libra and Clara".to_string(),
+            ..ProgressSync::default()
+        }
+    }
+
+    #[test]
+    fn koreader_card_offers_the_no_plugin_checkbox_unticked_between_the_name_row_and_the_status() {
+        let html = render_in_vdom(card);
+        let at = |needle: &str| {
+            html.find(needle)
+                .unwrap_or_else(|| panic!("missing {needle}: {html}"))
+        };
+
+        let add = at("data-testid=\"koreader-device-add\"");
+        let checkbox = at("data-testid=\"koreader-no-plugin\"");
+        let status = at("data-testid=\"koreader-devices-status\"");
+
+        assert!(add < checkbox && checkbox < status, "{html}");
+        let tag = &html[html[..checkbox].rfind("<input").unwrap()..checkbox];
+        assert!(tag.contains("type=\"checkbox\""), "{html}");
+        assert!(!tag.contains("checked"), "{html}");
+        assert!(
+            html.contains("Connect without the plugin (Progress sync only)"),
+            "{html}"
+        );
+        assert!(
+            html.contains("It uses KOReader\u{2019}s built-in Progress sync, which keeps only your place in step: no shelves, no highlights."),
+            "{html}"
+        );
+    }
+
+    #[test]
+    fn koreader_device_row_marks_a_no_plugin_koreader_and_offers_no_plugin_download() {
+        let html = render_in_vdom(|| no_plugin_row(sync_of(None)));
+
+        assert!(html.contains("No plugin"), "{html}");
+        assert!(html.contains("Progress sync"), "{html}");
+        assert!(!html.contains("koreader-plugin-download"), "{html}");
+        assert!(!html.contains("Not synced yet"), "{html}");
+        assert!(!html.contains("koreader-last-sync"), "{html}");
+    }
+
+    #[test]
+    fn koreader_device_row_shows_a_fresh_login_once_with_a_copy_button_per_field() {
+        let html = render_in_vdom(|| no_plugin_row(sync_of(Some(RowPanel::Fresh(login())))));
+
+        assert!(html.contains("Progress sync login (shown once)"), "{html}");
+        for (testid, value) in [
+            ("kosync-url", "https://omni.example.com/kosync"),
+            ("kosync-username", "ada"),
+            ("kosync-password", "abcde-fghjk-mnpqr-stuvw"),
+        ] {
+            assert!(
+                html.contains(&format!("data-testid=\"{testid}\"")),
+                "{testid}: {html}"
+            );
+            assert!(
+                html.contains(&format!("value=\"{value}\"")),
+                "{value}: {html}"
+            );
+            assert!(
+                html.contains(&format!("data-testid=\"{testid}-copy\"")),
+                "{testid}: {html}"
+            );
+        }
+        assert!(
+            html.contains("Every no-plugin KOReader shares this one login. Only books downloaded from Omnibus match."),
+            "{html}"
+        );
+    }
+
+    #[test]
+    fn koreader_device_row_ids_its_login_fields_by_device_so_two_rows_never_share_one() {
+        let html = render_in_vdom(|| no_plugin_row(sync_of(Some(RowPanel::Fresh(login())))));
+
+        assert!(html.contains("id=\"kosync-password-1\""), "{html}");
+    }
+
+    #[test]
+    fn koreader_device_row_says_it_reuses_the_login_and_names_the_first_device_that_showed_it() {
+        let html = render_in_vdom(|| {
+            no_plugin_row(ProgressSync {
+                first_other: Some("Clara".to_string()),
+                ..sync_of(Some(RowPanel::Reuse))
+            })
+        });
+
+        assert!(
+            html.contains("Uses your existing Progress sync login"),
+            "{html}"
+        );
+        assert!(
+            html.contains("with the same server URL, username and password as Clara. The password was shown once, when that device was added."),
+            "{html}"
+        );
+        assert!(html.contains("data-testid=\"kosync-url\""), "{html}");
+        assert!(html.contains("data-testid=\"kosync-username\""), "{html}");
+        assert!(!html.contains("kosync-password"), "{html}");
+        assert!(
+            html.contains(
+                "A new password signs out every no-plugin KOReader until you log in again."
+            ),
+            "{html}"
+        );
+    }
+
+    #[test]
+    fn koreader_device_row_credits_the_old_card_when_no_other_no_plugin_koreader_exists() {
+        let html = render_in_vdom(|| no_plugin_row(sync_of(Some(RowPanel::Reuse))));
+
+        assert!(
+            html.contains("as your other Progress sync devices. The password was shown once, when it was generated."),
+            "{html}"
+        );
+    }
+
+    #[test]
+    fn koreader_device_row_shows_a_regenerated_login_with_the_devices_to_log_in_again() {
+        let html = render_in_vdom(|| no_plugin_row(sync_of(Some(RowPanel::Regenerated(login())))));
+
+        assert!(
+            html.contains("New Progress sync login (shown once)"),
+            "{html}"
+        );
+        assert!(html.contains("data-testid=\"kosync-password\""), "{html}");
+        assert!(
+            html.contains("Log in again on every no-plugin KOReader (here, Libra and Clara): Progress sync \u{203a} Custom sync server \u{203a} Login."),
+            "{html}"
+        );
+    }
+
+    #[test]
+    fn koreader_device_row_reads_signed_out_after_a_new_password_was_generated() {
+        let html = render_in_vdom(|| {
+            no_plugin_row(ProgressSync {
+                signed_out: true,
+                ..sync_of(None)
+            })
+        });
+
+        assert!(
+            html.contains("data-testid=\"koreader-signed-out\""),
+            "{html}"
+        );
+        assert!(html.contains("Signed out \u{b7} log in again"), "{html}");
+    }
+
+    #[test]
+    fn koreader_device_row_gives_a_steady_no_plugin_koreader_a_line_and_a_generate_button() {
+        let html = render_in_vdom(|| no_plugin_row(sync_of(None)));
+
+        assert!(
+            html.contains("Syncs your place through KOReader\u{2019}s Progress sync."),
+            "{html}"
+        );
+        assert!(html.contains("data-testid=\"kosync-generate\""), "{html}");
+        assert!(html.contains("Generate a new password"), "{html}");
+        assert!(!html.contains("kosync-password"), "{html}");
+        assert!(!html.contains("koreader-signed-out"), "{html}");
+        assert!(html.contains(r#"aria-label="Remove Libra""#), "{html}");
     }
 }

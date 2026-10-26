@@ -1,9 +1,11 @@
 import type { Locator, Page } from "@playwright/test";
+import { accountUrls } from "../contracts/account";
 import { koboUrls } from "../contracts/kobo";
 import type { KoboDeviceListing } from "../data/account";
+import { recordRequests } from "../utils/api";
 import { BaseComponent } from "./BaseComponent";
 
-/** Settings › Devices → KOReader: the plugin KOReaders of the signed-in user. */
+/** Settings › Devices → KOReader: the signed-in user's KOReaders, with the plugin or without it. */
 export class KoreaderCardComponent extends BaseComponent {
   readonly card: Locator;
   readonly dataLossWarning: Locator;
@@ -16,6 +18,11 @@ export class KoreaderCardComponent extends BaseComponent {
   readonly nameField: Locator;
   readonly addButton: Locator;
   readonly confirmRemoveButton: Locator;
+  readonly noPluginCheckbox: Locator;
+  readonly noPluginHint: Locator;
+  readonly replaceDialog: Locator;
+  readonly confirmReplaceButton: Locator;
+  readonly cancelReplaceButton: Locator;
 
   constructor(page: Page) {
     super(page);
@@ -34,6 +41,15 @@ export class KoreaderCardComponent extends BaseComponent {
     this.confirmRemoveButton = page.getByTestId(
       "koreader-remove-dialog-confirm",
     );
+    this.noPluginCheckbox = page.getByTestId("koreader-no-plugin");
+    this.noPluginHint = this.card.getByText(
+      "It uses KOReader’s built-in Progress sync",
+    );
+    this.replaceDialog = page.getByTestId("kosync-replace-dialog");
+    this.confirmReplaceButton = page.getByTestId(
+      "kosync-replace-dialog-confirm",
+    );
+    this.cancelReplaceButton = page.getByTestId("kosync-replace-dialog-cancel");
   }
 
   deviceRow(name: string): Locator {
@@ -76,9 +92,60 @@ export class KoreaderCardComponent extends BaseComponent {
     return this.page.getByRole("dialog", { name: `Remove ${name}?` });
   }
 
+  /** A row's Progress sync login panel: the login shown once, or the one it reuses. */
+  loginPanel(name: string): Locator {
+    return this.deviceRow(name).getByTestId("koreader-login-panel");
+  }
+
+  serverUrlField(name: string): Locator {
+    return this.deviceRow(name).getByTestId("kosync-url");
+  }
+
+  usernameField(name: string): Locator {
+    return this.deviceRow(name).getByTestId("kosync-username");
+  }
+
+  passwordField(name: string): Locator {
+    return this.deviceRow(name).getByTestId("kosync-password");
+  }
+
+  /** "Signed out · log in again", which a row wears after a new password was generated. */
+  signedOut(name: string): Locator {
+    return this.deviceRow(name).getByTestId("koreader-signed-out");
+  }
+
+  generateButton(name: string): Locator {
+    return this.deviceRow(name).getByTestId("kosync-generate");
+  }
+
   async addDevice(name: string): Promise<void> {
     await this.nameField.fill(name);
     await this.addButton.click();
+  }
+
+  /** Ticks the no-plugin checkbox, then adds; wrap it in `expectMutation` to assert the write. */
+  async addNoPluginDevice(name: string): Promise<void> {
+    await this.noPluginCheckbox.check();
+    await this.addDevice(name);
+  }
+
+  /** Clicks a row's generate button, which asks first. */
+  async startGenerate(name: string): Promise<void> {
+    await this.generateButton(name).click();
+  }
+
+  async cancelGenerate(): Promise<void> {
+    await this.cancelReplaceButton.click();
+  }
+
+  /** Confirms the generate dialog; wrap it in `expectMutation` to assert the write. */
+  async confirmGenerate(): Promise<void> {
+    await this.confirmReplaceButton.click();
+  }
+
+  /** The methods of every password generation sent from now on. */
+  recordGenerates(): string[] {
+    return recordRequests(this.page, accountUrls.kosyncGenerate);
   }
 
   async openSetupSteps(): Promise<void> {

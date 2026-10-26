@@ -148,92 +148,133 @@ test.describe("devices section", () => {
       );
     });
 
-    await test.step("check the kosync card", async () => {
-      await expect(settingsPage.kosync.heading).toBeVisible();
-      await expect(settingsPage.kosync.generateButton).toBeVisible();
-    });
   });
 
-  test("generate a KOReader sync password", async ({
+  // Adding a no-plugin KOReader changes the account's one Progress sync login, so the
+  // reader account runs it, not the shared admin.
+  test("connect KOReaders without the plugin", async ({
     readerSettingsPage,
     readerExpectMutation,
   }) => {
-    const { kosync } = readerSettingsPage;
+    const { koreader } = readerSettingsPage;
+    const first = `E2E Libra ${uniqueSuffix()}`;
+    const second = `E2E Clara ${uniqueSuffix()}`;
+    const passwordShape = /^[a-hjkmnp-z2-9]{5}(-[a-hjkmnp-z2-9]{5}){3}$/;
+    let firstId = 0;
+    let secondId = 0;
 
-    await test.step("open the devices section of a reader with no password", async () => {
+    await test.step("open the devices section of a reader with no KOReader", async () => {
       await readerSettingsPage.goto("devices");
-      await expect(kosync.heading).toBeVisible();
-      await expect(kosync.status).toHaveText("Off");
-      await expect(kosync.revealed).toHaveCount(0);
+      await expect(koreader.deviceRows).toHaveCount(0);
+      await expect(koreader.noPluginCheckbox).not.toBeChecked();
+      await expect(koreader.noPluginHint).toBeVisible();
     });
 
-    await test.step("generate a password", async () => {
-      await readerExpectMutation(account.kosyncPassword(), () =>
-        kosync.generate(),
+    await test.step("add the first no-plugin KOReader", async () => {
+      const { response } = await readerExpectMutation(
+        kobo.create(first, "kosync"),
+        () => koreader.addNoPluginDevice(first),
       );
+      const created: CreatedKoboDevice = await response.json();
+      expect(created.kosync_login?.password).toMatch(passwordShape);
+      firstId = created.id;
     });
 
-    await test.step("check the login is shown once", async () => {
-      await expect(kosync.status).toHaveText("On");
-      await expect(kosync.passwordField).toHaveValue(
-        /^[a-hjkmnp-z2-9]{5}(-[a-hjkmnp-z2-9]{5}){3}$/,
+    await test.step("check its login is shown once", async () => {
+      await expect(koreader.statusMessage).toHaveText(
+        `Added ${first}. Copy its login now: the password is shown once.`,
       );
-      await expect(kosync.serverUrlField).toHaveValue(/\/kosync$/);
-      await expect(kosync.usernameField).not.toHaveValue("");
-      await expect(kosync.generateButton).toHaveText("Generate a new password");
+      await expect(koreader.badge(first)).toHaveText("No plugin");
+      await expect(koreader.pluginDownload(first)).toHaveCount(0);
+      await expect(koreader.passwordField(first)).toHaveValue(passwordShape);
+      await expect(koreader.serverUrlField(first)).toHaveValue(/\/kosync$/);
+      await expect(koreader.usernameField(first)).not.toHaveValue("");
+      await expect(koreader.noPluginCheckbox).not.toBeChecked();
     });
 
-    await test.step("ask to replace it and back out", async () => {
-      const shown = await kosync.passwordField.inputValue();
-      await kosync.generate();
-      await expect(kosync.replaceDialog).toBeVisible();
-      await kosync.cancelReplace();
-      await expect(kosync.replaceDialog).toBeHidden();
-      await expect(kosync.passwordField).toHaveValue(shown);
-      await expect(kosync.status).toHaveText("On");
-    });
-
-    await test.step("replace it and check a new password shows", async () => {
-      const before = await kosync.passwordField.inputValue();
-      await kosync.generate();
-      await readerExpectMutation(account.kosyncPassword(), () =>
-        kosync.confirmReplace(),
+    await test.step("add a second one and check it reuses the login", async () => {
+      const { response } = await readerExpectMutation(
+        kobo.create(second, "kosync"),
+        () => koreader.addNoPluginDevice(second),
       );
-      await expect(kosync.passwordField).not.toHaveValue(before);
-      await expect(kosync.passwordField).toHaveValue(
-        /^[a-hjkmnp-z2-9]{5}(-[a-hjkmnp-z2-9]{5}){3}$/,
+      const created: CreatedKoboDevice = await response.json();
+      expect(created.kosync_login).toBeUndefined();
+      secondId = created.id;
+      await expect(koreader.statusMessage).toHaveText(`Added ${second}.`);
+      await expect(koreader.loginPanel(second)).toContainText(
+        "Uses your existing Progress sync login",
       );
+      await expect(koreader.loginPanel(second)).toContainText(first);
+      await expect(koreader.passwordField(second)).toHaveCount(0);
     });
 
-    await test.step("fail a replacement and check the shown login stays", async () => {
-      const shown = await kosync.passwordField.inputValue();
+    const before = await koreader.passwordField(first).inputValue();
+    const generates = koreader.recordGenerates();
+
+    await test.step("ask to generate a new password and back out", async () => {
+      await koreader.startGenerate(second);
+      await expect(koreader.replaceDialog).toContainText(first);
+      await expect(koreader.replaceDialog).toContainText(second);
+      await koreader.cancelGenerate();
+      await expect(koreader.replaceDialog).toHaveCount(0);
+      expect(generates).toEqual([]);
+    });
+
+    await test.step("fail a generate and check the shown login stays", async () => {
       await readerSettingsPage.forceServerError(account.kosyncPassword());
-      await kosync.generate();
+      await koreader.startGenerate(second);
       await readerExpectMutation(failing(account.kosyncPassword()), () =>
-        kosync.confirmReplace(),
+        koreader.confirmGenerate(),
       );
-      await expect(kosync.statusMessage).toHaveClass(/error/);
-      await expect(kosync.statusMessage).not.toBeEmpty();
-      await expect(kosync.passwordField).toHaveValue(shown);
-      await expect(kosync.status).toHaveText("On");
-      await expect(kosync.generateButton).toBeEnabled();
-    });
-
-    await test.step("retry and check a new password shows", async () => {
-      const shown = await kosync.passwordField.inputValue();
+      await expect(koreader.statusMessage).toHaveClass(/error/);
+      await expect(koreader.passwordField(first)).toHaveValue(before);
+      await expect(koreader.signedOut(first)).toHaveCount(0);
       await readerSettingsPage.stopForcingServerError(account.kosyncPassword());
-      await kosync.generate();
-      await readerExpectMutation(account.kosyncPassword(), () =>
-        kosync.confirmReplace(),
-      );
-      await expect(kosync.statusMessage).toHaveClass(/success/);
-      await expect(kosync.passwordField).not.toHaveValue(shown);
     });
 
-    await test.step("reload and check the password is gone", async () => {
-      await readerSettingsPage.goto("devices");
-      await expect(kosync.status).toHaveText("On");
-      await expect(kosync.revealed).toHaveCount(0);
+    await test.step("generate a new password", async () => {
+      await koreader.startGenerate(second);
+      await readerExpectMutation(account.kosyncPassword(), () =>
+        koreader.confirmGenerate(),
+      );
+    });
+
+    await test.step("check the new login shows and both KOReaders read signed out", async () => {
+      await expect(koreader.statusMessage).toHaveText(
+        "New password generated. Copy it now: it is shown once.",
+      );
+      await expect(koreader.loginPanel(second)).toContainText(
+        "New Progress sync login (shown once)",
+      );
+      await expect(koreader.passwordField(second)).toHaveValue(passwordShape);
+      await expect(koreader.passwordField(second)).not.toHaveValue(before);
+      await expect(koreader.signedOut(first)).toBeVisible();
+      await expect(koreader.signedOut(second)).toBeVisible();
+    });
+
+    await test.step("remove one and check it asks plainly", async () => {
+      await koreader.startRemove(second);
+      await expect(koreader.removeConfirmation(second)).not.toContainText(
+        "last no-plugin",
+      );
+      await readerExpectMutation(kobo.revoke(secondId), () =>
+        koreader.confirmRemove(),
+      );
+      await expect(koreader.deviceRow(second)).toHaveCount(0);
+    });
+
+    await test.step("remove the last one and check it says the login goes", async () => {
+      await koreader.startRemove(first);
+      await expect(koreader.removeConfirmation(first)).toContainText(
+        "last no-plugin KOReader",
+      );
+      await expect(koreader.removeConfirmation(first)).toContainText(
+        "its password stops working",
+      );
+      await readerExpectMutation(kobo.revoke(firstId), () =>
+        koreader.confirmRemove(),
+      );
+      await expect(koreader.deviceRow(first)).toHaveCount(0);
     });
   });
 

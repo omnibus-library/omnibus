@@ -24,8 +24,6 @@ pub(crate) mod kobo;
 #[cfg(not(feature = "mobile"))]
 pub(crate) mod koreader;
 #[cfg(not(feature = "mobile"))]
-pub(crate) mod kosync;
-#[cfg(not(feature = "mobile"))]
 pub(crate) mod profile;
 #[cfg(not(feature = "mobile"))]
 pub(crate) mod sessions;

@@ -1,10 +1,13 @@
 import type { BrowserContext } from "@playwright/test";
 
-/** The part of `POST /api/rpc/kobo/devices/create`'s answer a test keeps. */
-export type CreatedKoboDevice = { id: number };
+/** A Progress sync login, shown once. */
+export type KosyncLogin = { username: string; password: string };
 
-/** Which kind of reader a registered device is. */
-export type DeviceKind = "kobo" | "koreader";
+/** The part of `POST /api/rpc/kobo/devices/create`'s answer a test keeps. */
+export type CreatedKoboDevice = { id: number; kosync_login?: KosyncLogin };
+
+/** Which kind of reader a registered device is; `kosync` is a KOReader without the plugin. */
+export type DeviceKind = "kobo" | "koreader" | "kosync";
 
 /** What a stubbed device list needs of each device; the kind defaults to a Kobo. */
 export type KoboDeviceListing = { id: number; name: string; kind?: DeviceKind };
