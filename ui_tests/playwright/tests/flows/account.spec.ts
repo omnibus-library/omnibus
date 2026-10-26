@@ -147,7 +147,6 @@ test.describe("devices section", () => {
         await topEdge(kobo.devicesCard),
       );
     });
-
   });
 
   // Adding a no-plugin KOReader changes the account's one Progress sync login, so the
