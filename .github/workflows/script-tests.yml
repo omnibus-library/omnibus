@@ -1,5 +1,5 @@
-# Runs the stdlib-Python script suites: the TestFlight scripts' and the module
-# map's (`just modules`).
+# Runs the stdlib-Python script suites (the TestFlight scripts' and the module
+# map's, `just modules`) and the Docker entrypoint's bash suite.
 #
 # Those scripts only ever execute against Apple's live API — one during a
 # release dispatch, one on a daily schedule — so a regression is invisible
@@ -9,7 +9,7 @@
 # they can gate every change to the scripts here instead.
 #
 # Deliberately scoped to these suites rather than all of scripts/tests/: the
-# sibling bash tests expect a Nix dev shell and a worktree layout that this
+# other bash tests expect a Nix dev shell and a worktree layout that this
 # runner does not have.
 name: Script tests
 
@@ -25,6 +25,8 @@ on:
       - "scripts/tests/testflight-feedback.test.py"
       - "scripts/module_map.py"
       - "scripts/tests/module-map.test.py"
+      - "docker/entrypoint.sh"
+      - "scripts/tests/docker-entrypoint-react.test.sh"
       - ".github/workflows/script-tests.yml"
   pull_request:
     paths:
@@ -34,6 +36,8 @@ on:
       - "scripts/tests/testflight-feedback.test.py"
       - "scripts/module_map.py"
       - "scripts/tests/module-map.test.py"
+      - "docker/entrypoint.sh"
+      - "scripts/tests/docker-entrypoint-react.test.sh"
       - ".github/workflows/script-tests.yml"
 
 permissions:
@@ -86,3 +90,12 @@ jobs:
 
       - name: Run suite
         run: python scripts/tests/module-map.test.py
+
+  docker-entrypoint:
+    name: docker/entrypoint.sh
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run suite
+        run: bash scripts/tests/docker-entrypoint-react.test.sh
