@@ -99,27 +99,45 @@ fn generate_confirm_text(names: &[String]) -> (String, String) {
     )
 }
 
-/// A remove dialog's title and body for the KOReader `name`; the last no-plugin KOReader also
-/// takes the Progress sync login with it.
-fn remove_confirm_text(name: &str, last_no_plugin: bool) -> (String, String) {
-    let body = if last_no_plugin {
-        format!(
-            "{name} stops syncing with Omnibus. It\u{2019}s your last no-plugin KOReader, so this \
-             also turns off Progress sync: its password stops working."
-        )
-    } else {
-        format!("{name} stops syncing with Omnibus. To sync it again, add it as a new device.")
-    };
-    (format!("Remove {name}?"), body)
+/// What removing a KOReader does to the account's Progress sync login.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Removal {
+    /// A plugin KOReader: the login is untouched.
+    Plugin,
+    /// One of several no-plugin KOReaders: the shared login keeps working.
+    NoPlugin,
+    /// The last no-plugin KOReader: the login is turned off with it.
+    LastNoPlugin,
 }
 
-/// Whether removing device `id` removes the account's last no-plugin KOReader.
-fn is_last_no_plugin(devices: &[KoboDeviceView], id: i64) -> bool {
-    let no_plugin = |d: &&KoboDeviceView| d.kind == DeviceKind::Kosync;
-    devices.iter().filter(no_plugin).count() == 1
-        && devices
-            .iter()
-            .any(|d| d.id == id && d.kind == DeviceKind::Kosync)
+/// What removing device `id` does to the login.
+fn removal_of(devices: &[KoboDeviceView], id: i64) -> Removal {
+    let is_no_plugin = devices
+        .iter()
+        .any(|d| d.id == id && d.kind == DeviceKind::Kosync);
+    match (is_no_plugin, no_plugin_names(devices).len()) {
+        (false, _) => Removal::Plugin,
+        (true, 1) => Removal::LastNoPlugin,
+        (true, _) => Removal::NoPlugin,
+    }
+}
+
+/// A remove dialog's title and body for the KOReader `name`.
+fn remove_confirm_text(name: &str, removal: Removal) -> (String, String) {
+    let body = match removal {
+        Removal::Plugin => format!(
+            "{name} stops syncing with Omnibus. To sync it again, add it as a new device."
+        ),
+        Removal::NoPlugin => format!(
+            "{name} is removed from this list, but it can still sync its place until you generate a \
+             new password: every no-plugin KOReader shares one login."
+        ),
+        Removal::LastNoPlugin => format!(
+            "{name} stops syncing with Omnibus. It\u{2019}s your last no-plugin KOReader, so this \
+             also turns off Progress sync: its password stops working."
+        ),
+    };
+    (format!("Remove {name}?"), body)
 }
 
 /// The names of every no-plugin KOReader in `devices`.
@@ -267,7 +285,7 @@ enum Pending {
     Remove {
         id: i64,
         name: String,
-        last_no_plugin: bool,
+        removal: Removal,
     },
     /// Generating from row `id`, which signs out every KOReader in `names`.
     Generate { id: i64, names: Vec<String> },
@@ -395,7 +413,7 @@ pub fn KoreaderDevicesCard() -> Element {
         pending.set(Some(Pending::Remove {
             id,
             name,
-            last_no_plugin: is_last_no_plugin(list, id),
+            removal: removal_of(list, id),
         }));
     });
     let on_ask_generate = use_callback(move |id: i64| {
@@ -511,13 +529,9 @@ fn pending_confirm(
     on_remove: Callback<i64>,
 ) -> Element {
     let (testid, (title, body), action, busy_label, run) = match ask {
-        Pending::Remove {
-            id,
-            name,
-            last_no_plugin,
-        } => (
+        Pending::Remove { id, name, removal } => (
             "koreader-remove-dialog",
-            remove_confirm_text(&name, last_no_plugin),
+            remove_confirm_text(&name, removal),
             "Remove device",
             "Removing\u{2026}",
             EventHandler::new(move |()| on_remove.call(id)),

@@ -136,8 +136,8 @@ fn generate_confirm_text_names_every_koreader_it_signs_out() {
 }
 
 #[test]
-fn remove_confirm_text_names_the_koreader_being_removed() {
-    let (title, body) = remove_confirm_text("Libra", false);
+fn remove_confirm_text_names_the_plugin_koreader_being_removed() {
+    let (title, body) = remove_confirm_text("Libra", Removal::Plugin);
 
     assert_eq!(title, "Remove Libra?");
     assert_eq!(
@@ -147,8 +147,20 @@ fn remove_confirm_text_names_the_koreader_being_removed() {
 }
 
 #[test]
+fn remove_confirm_text_says_a_no_plugin_koreader_keeps_syncing_until_the_password_changes() {
+    let (title, body) = remove_confirm_text("Libra", Removal::NoPlugin);
+
+    assert_eq!(title, "Remove Libra?");
+    assert_eq!(
+        body,
+        "Libra is removed from this list, but it can still sync its place until you generate a \
+         new password: every no-plugin KOReader shares one login."
+    );
+}
+
+#[test]
 fn remove_confirm_text_says_the_progress_sync_login_goes_with_the_last_no_plugin_koreader() {
-    let (title, body) = remove_confirm_text("Libra", true);
+    let (title, body) = remove_confirm_text("Libra", Removal::LastNoPlugin);
 
     assert_eq!(title, "Remove Libra?");
     assert_eq!(
@@ -159,7 +171,7 @@ fn remove_confirm_text_says_the_progress_sync_login_goes_with_the_last_no_plugin
 }
 
 #[test]
-fn removing_the_last_no_plugin_koreader_is_known_from_the_list() {
+fn removal_of_tells_a_plugin_a_shared_and_a_last_no_plugin_koreader_apart() {
     let list = |kinds: &[DeviceKind]| -> Vec<KoboDeviceView> {
         kinds
             .iter()
@@ -174,12 +186,9 @@ fn removing_the_last_no_plugin_koreader_is_known_from_the_list() {
     let only = list(&[DeviceKind::Koreader, DeviceKind::Kosync]);
     let two = list(&[DeviceKind::Kosync, DeviceKind::Kosync]);
 
-    assert!(is_last_no_plugin(&only, 2));
-    assert!(!is_last_no_plugin(&two, 2));
-    assert!(
-        !is_last_no_plugin(&only, 1),
-        "a plugin KOReader is never the last"
-    );
+    assert_eq!(removal_of(&only, 2), Removal::LastNoPlugin);
+    assert_eq!(removal_of(&two, 2), Removal::NoPlugin);
+    assert_eq!(removal_of(&only, 1), Removal::Plugin);
 }
 
 // SSR render-smoke coverage. These need the `server` feature (`dioxus::ssr`).

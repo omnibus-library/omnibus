@@ -403,23 +403,29 @@ export const KeepsTheShownLoginWhenAGenerateIsRefused: Story = {
   },
 };
 
-export const RemovesOneOfSeveralNoPluginKoreadersWithThePlainCopy: Story = {
-  beforeEach() {
-    withNoPlugin(NO_PLUGIN, SAGE);
-  },
-  play: async ({ canvas, userEvent }) => {
-    await userEvent.click(
-      await canvas.findByRole("button", { name: "Remove Clara" }),
-    );
-    const dialog = await canvas.findByTestId("koreader-remove-dialog");
-    await expect(dialog).toHaveTextContent("Remove Clara?");
-    await expect(dialog).not.toHaveTextContent("last no-plugin KOReader");
-    await userEvent.click(canvas.getByTestId("koreader-remove-dialog-confirm"));
+export const RemovesOneOfSeveralNoPluginKoreadersAndSaysItKeepsSyncing: Story =
+  {
+    beforeEach() {
+      withNoPlugin(NO_PLUGIN, SAGE);
+    },
+    play: async ({ canvas, userEvent }) => {
+      await userEvent.click(
+        await canvas.findByRole("button", { name: "Remove Clara" }),
+      );
+      const dialog = await canvas.findByTestId("koreader-remove-dialog");
+      await expect(dialog).toHaveTextContent("Remove Clara?");
+      await expect(dialog).toHaveTextContent(
+        "Clara is removed from this list, but it can still sync its place until you generate a new password: every no-plugin KOReader shares one login.",
+      );
+      await expect(dialog).not.toHaveTextContent("last no-plugin KOReader");
+      await userEvent.click(
+        canvas.getByTestId("koreader-remove-dialog-confirm"),
+      );
 
-    await said(canvas, "koreader-devices-status", "KOReader removed.");
-    await expect(server.kosyncConfigured).toBe(true);
-  },
-};
+      await said(canvas, "koreader-devices-status", "KOReader removed.");
+      await expect(server.kosyncConfigured).toBe(true);
+    },
+  };
 
 export const SaysTheLoginGoesWithTheLastNoPluginKoreader: Story = {
   beforeEach() {

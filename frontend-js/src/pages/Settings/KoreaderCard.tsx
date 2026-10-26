@@ -67,14 +67,17 @@ function generateConfirmText(names: string[]) {
   };
 }
 
-/** A remove dialog's text; the last no-plugin KOReader also takes the Progress sync login with it. */
-function removeConfirmText(name: string, lastNoPlugin: boolean) {
-  return {
-    title: `Remove ${name}?`,
-    body: lastNoPlugin
-      ? `${name} stops syncing with Omnibus. It’s your last no-plugin KOReader, so this also turns off Progress sync: its password stops working.`
-      : `${name} stops syncing with Omnibus. To sync it again, add it as a new device.`,
-  };
+/** What removing a KOReader does to the account's Progress sync login. */
+type Removal = "plugin" | "noPlugin" | "lastNoPlugin";
+
+/** A remove dialog's text for the KOReader `name`. */
+function removeConfirmText(name: string, removal: Removal) {
+  const body = {
+    plugin: `${name} stops syncing with Omnibus. To sync it again, add it as a new device.`,
+    noPlugin: `${name} is removed from this list, but it can still sync its place until you generate a new password: every no-plugin KOReader shares one login.`,
+    lastNoPlugin: `${name} stops syncing with Omnibus. It’s your last no-plugin KOReader, so this also turns off Progress sync: its password stops working.`,
+  }[removal];
+  return { title: `Remove ${name}?`, body };
 }
 
 /** What a no-plugin row shows under its name this session; none of it survives a reload. */
@@ -84,7 +87,7 @@ type Panel =
   | { kind: "regenerated"; login: KosyncPassword };
 
 type Pending =
-  | { action: "remove"; device: KoboDeviceView; lastNoPlugin: boolean }
+  | { action: "remove"; device: KoboDeviceView; removal: Removal }
   | { action: "generate"; id: number; names: string[] };
 
 /** How to connect a KOReader, open by default only for a reader with none yet. */
@@ -509,8 +512,12 @@ export function KoreaderCard() {
     setPending({
       action: "remove",
       device,
-      lastNoPlugin:
-        device.kind === "kosync" && !others.some((d) => d.kind === "kosync"),
+      removal:
+        device.kind !== "kosync"
+          ? "plugin"
+          : others.some((d) => d.kind === "kosync")
+            ? "noPlugin"
+            : "lastNoPlugin",
     });
   };
   const askGenerate = (device: KoboDeviceView) =>
@@ -524,7 +531,7 @@ export function KoreaderCard() {
     pending?.action === "remove"
       ? {
           testId: "koreader-remove-dialog",
-          ...removeConfirmText(pending.device.name, pending.lastNoPlugin),
+          ...removeConfirmText(pending.device.name, pending.removal),
           action: "Remove device",
           busyLabel: "Removing…",
           onConfirm: () => remove.mutate(pending.device.id),
