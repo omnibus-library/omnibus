@@ -76,7 +76,7 @@ fn setup_opens_by_default(devices: &[KoboDeviceView]) -> bool {
 fn kind_label(kind: DeviceKind) -> &'static str {
     match kind {
         DeviceKind::Kobo => "Kobo",
-        DeviceKind::Koreader => "KOReader",
+        DeviceKind::Koreader | DeviceKind::Kosync => "KOReader",
     }
 }
 
@@ -309,7 +309,7 @@ pub fn KoboDevicesCard() -> Element {
                     devices.write().get_or_insert_with(Vec::new).push(dev);
                     let what = match kind {
                         DeviceKind::Kobo => "endpoint URL",
-                        DeviceKind::Koreader => "device token",
+                        DeviceKind::Koreader | DeviceKind::Kosync => "device token",
                     };
                     msg.set(Some(format!(
                         "{} added. Copy its {what} below.",

@@ -172,6 +172,38 @@ async fn resolve_device_by_token_returns_none_for_a_token_of_another_kind() {
 }
 
 #[tokio::test]
+async fn resolve_device_by_token_returns_none_for_a_no_plugin_koreader_whatever_kind_is_asked() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool, "reader").await;
+    let dev = create_device(&pool, user, "Libra", DeviceKind::Kosync)
+        .await
+        .unwrap();
+
+    for kind in [DeviceKind::Kobo, DeviceKind::Koreader] {
+        assert!(
+            resolve_device_by_token(&pool, &dev.token, kind)
+                .await
+                .unwrap()
+                .is_none(),
+            "{kind:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn list_devices_reports_a_no_plugin_koreader_as_one() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool, "reader").await;
+    create_device(&pool, user, "Libra", DeviceKind::Kosync)
+        .await
+        .unwrap();
+
+    let listed = list_devices(&pool, user).await.unwrap();
+
+    assert_eq!(listed[0].kind, DeviceKind::Kosync);
+}
+
+#[tokio::test]
 async fn resolve_device_by_token_returns_none_for_unknown_token() {
     let pool = init_db("sqlite::memory:").await.unwrap();
     let user = seed_user(&pool, "reader").await;

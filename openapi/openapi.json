@@ -236,7 +236,7 @@
             }
           },
           "422": {
-            "description": "The name is empty or longer than 100 characters once trimmed, or `kind` is not `kobo` or `koreader`."
+            "description": "The name is empty or longer than 100 characters once trimmed, or `kind` is not `kobo`, `koreader` or `kosync`."
           }
         }
       }
@@ -11534,7 +11534,8 @@
         "description": "Which kind of reader a registered device is. A token only authenticates the routes of\nits own kind.",
         "enum": [
           "kobo",
-          "koreader"
+          "koreader",
+          "kosync"
         ]
       },
       "DeviceView": {

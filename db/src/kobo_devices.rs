@@ -310,6 +310,7 @@ fn row_to_device(row: &sqlx::sqlite::SqliteRow) -> KoboDevice {
         name: row.get("name"),
         kind: match row.get("kind") {
             "koreader" => DeviceKind::Koreader,
+            "kosync" => DeviceKind::Kosync,
             _ => DeviceKind::Kobo,
         },
         kobo_device_id: row.get("kobo_device_id"),

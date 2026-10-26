@@ -18,8 +18,11 @@ pub enum DeviceKind {
     /// A Kobo e-reader, synced over `/kobo/{token}/…`.
     #[default]
     Kobo,
-    /// A KOReader install.
+    /// A KOReader install running the Omnibus plugin.
     Koreader,
+    /// A KOReader syncing its reading place through its built-in Progress sync, with no
+    /// plugin. Its token authenticates nothing; the device only stands for the connection.
+    Kosync,
 }
 
 impl DeviceKind {
@@ -28,6 +31,7 @@ impl DeviceKind {
         match self {
             Self::Kobo => "kobo",
             Self::Koreader => "koreader",
+            Self::Kosync => "kosync",
         }
     }
 }

@@ -360,6 +360,14 @@ mod koreader_plugin {
             db::kobo_devices::create_device(&pool, uid, "Clara", omnibus_shared::DeviceKind::Kobo)
                 .await
                 .unwrap();
+        let no_plugin = db::kobo_devices::create_device(
+            &pool,
+            uid,
+            "Libra",
+            omnibus_shared::DeviceKind::Kosync,
+        )
+        .await
+        .unwrap();
         let (_, _, theirs) =
             reader_with_kind(&pool, "grace", omnibus_shared::DeviceKind::Koreader).await;
 
@@ -367,6 +375,7 @@ mod koreader_plugin {
             ("another reader's device", theirs.id),
             ("an unknown id", 9999),
             ("a Kobo of the caller's own", own_kobo.id),
+            ("a no-plugin KOReader of the caller's own", no_plugin.id),
         ] {
             let res = app
                 .clone()
