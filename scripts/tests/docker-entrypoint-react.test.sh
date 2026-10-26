@@ -21,7 +21,7 @@ chmod +x "$stubs"/*
 # The OMNIBUS_REACT_DIR the server would boot with, or "unset".
 booted_react_dir() {
     env -u OMNIBUS_REACT -u OMNIBUS_REACT_DIR PATH="$stubs:$PATH" "$@" \
-        sh "$repo_root/docker/entrypoint.sh" sh -c 'echo "${OMNIBUS_REACT_DIR:-unset}"' \
+        sh "$repo_root/docker/entrypoint.sh" sh -c 'echo "${OMNIBUS_REACT_DIR-unset}"' \
         2>/dev/null | tail -n 1
 }
 
@@ -47,6 +47,8 @@ check "leaves react off when OMNIBUS_REACT is any other value" \
     "unset" "$(booted_react_dir OMNIBUS_REACT=true)"
 check "keeps an explicit OMNIBUS_REACT_DIR over OMNIBUS_REACT" \
     "/srv/my-build" "$(booted_react_dir OMNIBUS_REACT=1 OMNIBUS_REACT_DIR=/srv/my-build)"
+check "keeps an explicitly empty OMNIBUS_REACT_DIR over OMNIBUS_REACT" \
+    "" "$(booted_react_dir OMNIBUS_REACT=1 OMNIBUS_REACT_DIR=)"
 
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]
