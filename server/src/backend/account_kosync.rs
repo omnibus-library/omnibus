@@ -34,7 +34,8 @@ pub(super) async fn get_kosync(user: AuthUser, State(state): State<AppState>) ->
 /// Generate a KOReader sync password
 ///
 /// Creates the password stock KOReader's Progress sync signs in with, together with your
-/// username, and shows it once. Generating again replaces it, so the old one stops working.
+/// username, and shows it once. Generating again replaces it, so the old one stops working
+/// and every no-plugin KOReader must sign in again with the new one.
 #[utoipa::path(
     post,
     path = "/api/account/kosync",

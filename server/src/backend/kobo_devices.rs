@@ -58,8 +58,12 @@ pub(super) async fn list_kobo_devices(user: AuthUser, State(state): State<AppSta
 
 /// Register a sync device
 ///
-/// Adds a Kobo or KOReader (a Kobo when `kind` is omitted) under the given label and
-/// mints its token. A Kobo's sync address is `/kobo/{token}/…`.
+/// Adds a Kobo, a KOReader or a no-plugin KOReader (`kosync`) under the given label and
+/// mints its token. A Kobo is a Kobo when `kind` is omitted, and its sync address is
+/// `/kobo/{token}/…`. A `kosync` device authenticates nothing itself: it stands for a
+/// KOReader signed in to Progress sync, which uses one login per account. The first
+/// `kosync` device on an account with no Progress sync login creates it and returns it in
+/// `kosync_login`, shown only in that response; later ones reuse the login and return none.
 #[utoipa::path(
     post,
     path = "/api/account/kobo-devices",
@@ -67,7 +71,7 @@ pub(super) async fn list_kobo_devices(user: AuthUser, State(state): State<AppSta
     request_body = CreateKoboDevice,
     responses(
         (status = 200, description = "The new device, with its token.", body = KoboDeviceView),
-        (status = 422, description = "The name is empty or longer than 100 characters once trimmed, or `kind` is not `kobo` or `koreader`."),
+        (status = 422, description = "The name is empty or longer than 100 characters once trimmed, or `kind` is not `kobo`, `koreader` or `kosync`."),
     ),
 )]
 pub(super) async fn create_kobo_device(
@@ -78,8 +82,13 @@ pub(super) async fn create_kobo_device(
     if kobo_device_name_invalid(&body.name) {
         return (StatusCode::UNPROCESSABLE_ENTITY, kobo_device_name_message()).into_response();
     }
-    match db::kobo_devices::create_device(&state.pool, user.id, body.name.trim(), body.kind).await {
-        Ok(device) => Json(KoboDeviceView::from(device)).into_response(),
+    match db::kobo_devices::register_device(&state.pool, user.id, body.name.trim(), body.kind).await
+    {
+        Ok((device, kosync_login)) => Json(KoboDeviceView {
+            kosync_login,
+            ..KoboDeviceView::from(device)
+        })
+        .into_response(),
         Err(e) => failed("create kobo device", e),
     }
 }
@@ -111,7 +120,9 @@ pub(super) async fn regenerate_kobo_device(
 
 /// Remove a sync device
 ///
-/// Deletes the registration, so the device's token stops working.
+/// Deletes the registration, so the device's token stops working. Removing your last
+/// no-plugin KOReader (`kosync`) also turns off your Progress sync password, so it stops
+/// working too. Removing any other device leaves that password alone.
 #[utoipa::path(
     delete,
     path = "/api/account/kobo-devices/{id}",

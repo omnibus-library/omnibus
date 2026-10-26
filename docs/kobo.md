@@ -120,12 +120,11 @@ You need:
 
 Back up the device first — see the warning above.
 
-The same **Sync devices** card also adds a KOReader (**Add a KOReader**), which
-it lists with its token.
+A KOReader has its own card beside this one; see [KOReader](koreader.md).
 
 1. In a shelf's settings, turn on **Sync to my devices** for whatever you want the
    device to carry.
-2. Go to **Settings → Devices → Sync devices**, give your Kobo a name, and click
+2. Go to **Settings → Devices → Kobo**, give your Kobo a name, and click
    **Add a Kobo**. Omnibus prints that device's own sync endpoint —
    `<your_omnibus_server_url>/kobo/<token>`. The token identifies the device,
    so treat the URL as a secret and use a different one per Kobo. If the
@@ -152,7 +151,7 @@ it lists with its token.
 **Hidden items** in Explorer's View tab.)
 
 To stop syncing, point `api_endpoint` back at the Kobo store URL you replaced,
-or remove the device from **Settings → Devices → Sync devices**.
+or remove the device from **Settings → Devices → Kobo**.
 
 ### Highlights and notes
 

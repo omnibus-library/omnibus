@@ -8,6 +8,8 @@
 
 use dioxus::prelude::*;
 
+#[cfg(not(feature = "mobile"))]
+mod device_form;
 #[cfg(feature = "mobile")]
 mod downloads;
 // The one goals editor (annual + the two dailies), on Settings › Goals.
@@ -20,11 +22,13 @@ pub(crate) mod kindle;
 #[cfg(not(feature = "mobile"))]
 pub(crate) mod kobo;
 #[cfg(not(feature = "mobile"))]
-pub(crate) mod kosync;
+pub(crate) mod koreader;
 #[cfg(not(feature = "mobile"))]
 pub(crate) mod profile;
 #[cfg(not(feature = "mobile"))]
 pub(crate) mod sessions;
+#[cfg(all(test, not(feature = "mobile")))]
+mod test_support;
 #[cfg(not(feature = "mobile"))]
 pub(crate) mod user_settings;
 

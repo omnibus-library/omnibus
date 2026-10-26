@@ -26,9 +26,9 @@ export default defineConfig({
   server: {
     // Host stays the dev server's, so the API's Origin-vs-Host CSRF check
     // accepts cookie-authed POSTs (logout) without touching its allowlist.
-    // /kobo and /mcp too: the settings page builds both addresses from the page's own origin.
+    // /kobo, /kosync and /mcp too: the settings page builds those addresses from the page's own origin.
     proxy: Object.fromEntries(
-      ["/api", "/kobo", "/mcp"].map((path) => [
+      ["/api", "/kobo", "/kosync", "/mcp"].map((path) => [
         path,
         { target: `http://127.0.0.1:${apiPort}` },
       ]),

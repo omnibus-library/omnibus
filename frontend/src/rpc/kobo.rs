@@ -37,7 +37,8 @@ pub async fn rpc_list_kobo_devices() -> Result<Vec<KoboDeviceView>> {
 }
 
 /// Register a new device (a Kobo unless `kind` says otherwise), minting a fresh
-/// token. Returns the created view.
+/// token. Returns the created view, carrying the Progress sync login when a no-plugin
+/// KOReader's add created it.
 #[post("/api/rpc/kobo/devices/create", pool: PoolExt, user: AuthUser)]
 pub async fn rpc_create_kobo_device(
     name: String,
@@ -46,10 +47,13 @@ pub async fn rpc_create_kobo_device(
     if kobo_device_name_invalid(&name) {
         return Err(ServerFnError::new(kobo_device_name_message()).into());
     }
-    match db::kobo_devices::create_device(&pool.0, user.id, name.trim(), kind.unwrap_or_default())
+    match db::kobo_devices::register_device(&pool.0, user.id, name.trim(), kind.unwrap_or_default())
         .await
     {
-        Ok(dev) => Ok(dev.into()),
+        Ok((dev, kosync_login)) => Ok(KoboDeviceView {
+            kosync_login,
+            ..dev.into()
+        }),
         Err(e) => Err(map_err("create kobo device", e).into()),
     }
 }

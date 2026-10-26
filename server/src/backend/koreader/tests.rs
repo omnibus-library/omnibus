@@ -693,6 +693,21 @@ mod sync_report {
 
         assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
     }
+
+    #[tokio::test]
+    async fn rejects_a_no_plugin_kind_token() {
+        let (app, pool, _token, uid) = fixture().await;
+        let no_plugin = db::kobo_devices::create_device(&pool, uid, "Libra", DeviceKind::Kosync)
+            .await
+            .unwrap();
+
+        let res = app
+            .oneshot(post_report(&no_plugin.token, json!({ "error": null })))
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+    }
 }
 
 mod plugin_zip {

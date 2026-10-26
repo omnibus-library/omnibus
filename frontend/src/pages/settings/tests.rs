@@ -74,6 +74,23 @@ fn settings_page_marks_the_open_section_current() {
 }
 
 #[test]
+fn settings_devices_section_draws_the_kobo_card_then_the_koreader_card_with_the_warning_in_the_first(
+) {
+    let html = render_in_vdom(|| rsx! { Router::<DevicesRoute> {} });
+    let at = |needle: &str| {
+        html.find(needle)
+            .unwrap_or_else(|| panic!("missing {needle}: {html}"))
+    };
+
+    let kobo = at("data-testid=\"kobo-devices-card\"");
+    let warning = at("data-testid=\"kobo-data-loss-warning\"");
+    let koreader = at("data-testid=\"koreader-devices-card\"");
+
+    assert!(kobo < warning && warning < koreader, "{html}");
+    assert_eq!(html.matches("kobo-data-loss-warning").count(), 1, "{html}");
+}
+
+#[test]
 fn settings_page_reads_as_a_page_on_narrow_screens_once_a_section_is_named() {
     let named = render_in_vdom(|| rsx! { Router::<DevicesRoute> {} });
     assert!(named.contains("settings-layout has-section"), "{named}");

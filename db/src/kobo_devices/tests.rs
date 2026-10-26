@@ -17,6 +17,17 @@ async fn seed_user(pool: &SqlitePool, name: &str) -> i64 {
     .unwrap()
 }
 
+/// Makes every write to `users.kosync_key_hash` fail, so a login claim or revoke errors.
+async fn refuse_kosync_key_changes(pool: &SqlitePool) {
+    sqlx::query(
+        "CREATE TRIGGER refuse_key_change BEFORE UPDATE OF kosync_key_hash ON users
+         BEGIN SELECT RAISE(ABORT, 'refused'); END",
+    )
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
 #[tokio::test]
 async fn create_device_mints_a_token_and_lists_it() {
     let pool = init_db("sqlite::memory:").await.unwrap();
@@ -62,6 +73,77 @@ async fn create_device_stores_the_kind_it_is_given() {
             ("Clara".to_string(), DeviceKind::Kobo),
         ]
     );
+}
+
+#[tokio::test]
+async fn register_device_returns_the_login_with_a_no_plugin_koreader_and_none_for_other_kinds() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool, "reader").await;
+
+    let (no_plugin, login) = register_device(&pool, user, "Libra", DeviceKind::Kosync)
+        .await
+        .unwrap();
+    let (plugin, plugin_login) = register_device(&pool, user, "Clara", DeviceKind::Koreader)
+        .await
+        .unwrap();
+
+    assert_eq!(no_plugin.kind, DeviceKind::Kosync);
+    assert_eq!(login.map(|l| l.username).as_deref(), Some("reader"));
+    assert_eq!(plugin.kind, DeviceKind::Koreader);
+    assert_eq!(plugin_login, None);
+}
+
+#[tokio::test]
+async fn register_device_returns_no_login_when_the_account_already_has_one() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool, "reader").await;
+    register_device(&pool, user, "Libra", DeviceKind::Kosync)
+        .await
+        .unwrap();
+
+    let (_, second) = register_device(&pool, user, "Clara", DeviceKind::Kosync)
+        .await
+        .unwrap();
+
+    assert_eq!(second, None);
+}
+
+#[tokio::test]
+async fn register_device_propagates_db_error_when_pool_is_closed() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    pool.close().await;
+
+    let err = register_device(&pool, 1, "Kobo", DeviceKind::Kobo).await;
+
+    assert!(matches!(err, Err(KoboDeviceError::Sqlx(_))));
+}
+
+#[tokio::test]
+async fn register_device_surfaces_a_token_error_when_generation_fails() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool, "reader").await;
+
+    let err = register_device_with_token(&pool, user, "Kobo", DeviceKind::Kobo, || {
+        Err(crate::auth::AuthError::Crypto(
+            "forced CSPRNG failure for test".to_string(),
+        ))
+    })
+    .await;
+
+    assert!(matches!(err, Err(KoboDeviceError::Token(_))));
+    assert!(list_devices(&pool, user).await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn register_device_leaves_no_device_behind_when_the_login_claim_fails() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool, "reader").await;
+    refuse_kosync_key_changes(&pool).await;
+
+    let err = register_device(&pool, user, "Libra", DeviceKind::Kosync).await;
+
+    assert!(matches!(err, Err(KoboDeviceError::Kosync(_))));
+    assert!(list_devices(&pool, user).await.unwrap().is_empty());
 }
 
 #[tokio::test]
@@ -169,6 +251,38 @@ async fn resolve_device_by_token_returns_none_for_a_token_of_another_kind() {
             .unwrap()
             .is_some()
     );
+}
+
+#[tokio::test]
+async fn resolve_device_by_token_returns_none_for_a_no_plugin_koreader_whatever_kind_is_asked() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool, "reader").await;
+    let dev = create_device(&pool, user, "Libra", DeviceKind::Kosync)
+        .await
+        .unwrap();
+
+    for kind in [DeviceKind::Kobo, DeviceKind::Koreader] {
+        assert!(
+            resolve_device_by_token(&pool, &dev.token, kind)
+                .await
+                .unwrap()
+                .is_none(),
+            "{kind:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn list_devices_reports_a_no_plugin_koreader_as_one() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool, "reader").await;
+    create_device(&pool, user, "Libra", DeviceKind::Kosync)
+        .await
+        .unwrap();
+
+    let listed = list_devices(&pool, user).await.unwrap();
+
+    assert_eq!(listed[0].kind, DeviceKind::Kosync);
 }
 
 #[tokio::test]
@@ -284,6 +398,21 @@ async fn revoke_device_removes_the_token() {
         .await
         .unwrap()
         .is_none());
+}
+
+#[tokio::test]
+async fn revoke_device_keeps_the_device_when_turning_the_login_off_fails() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool, "reader").await;
+    let (device, _login) = register_device(&pool, user, "Libra", DeviceKind::Kosync)
+        .await
+        .unwrap();
+    refuse_kosync_key_changes(&pool).await;
+
+    let err = revoke_device(&pool, user, device.id).await;
+
+    assert!(matches!(err, Err(KoboDeviceError::Sqlx(_))));
+    assert_eq!(list_devices(&pool, user).await.unwrap().len(), 1);
 }
 
 #[tokio::test]
