@@ -52,8 +52,11 @@ export class KoreaderCardComponent extends BaseComponent {
     this.cancelReplaceButton = page.getByTestId("kosync-replace-dialog-cancel");
   }
 
+  /** The row named `name`; a login panel may mention another device by name, so the name itself is matched. */
   deviceRow(name: string): Locator {
-    return this.deviceRows.filter({ hasText: name });
+    return this.deviceRows.filter({
+      has: this.page.getByText(name, { exact: true }),
+    });
   }
 
   /** The badge beside a row's name: "Not synced yet" until the plugin first reports. */
