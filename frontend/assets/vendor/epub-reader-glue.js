@@ -1252,35 +1252,30 @@
 
   // A book sheet's inlined text by path, read and substituted once per book:
   // substitute() scans the CSS once per manifest asset, and every section
-  // render inlines every sheet again.
-  var bookSheetCache = { book: null, byPath: {} };
-
+  // render inlines every sheet again. Kept on the book, so it goes with it.
   function bookSheetText(path) {
-    if (bookSheetCache.book !== book) {
-      bookSheetCache = { book: book, byPath: {} };
-    }
-    var cached = bookSheetCache.byPath[path];
-    if (cached) return cached;
     var b = book;
-    cached = b.archive.getText(path).then(function (css) {
+    var byPath = b.__omnibusSheetText || (b.__omnibusSheetText = {});
+    if (byPath[path]) return byPath[path];
+    byPath[path] = b.archive.getText(path).then(function (css) {
       var res = b.resources;
+      if (!css || !res || !res.urls || !res.replacementUrls) return css;
       // The sheet's url()s are relative to the sheet, and inline they would
       // resolve against the section: point them at epub.js's copies of the
-      // book's files, as it does for the <link> it rewrites. Skipped when a
-      // failed entry has unpaired the parallel arrays (inlineFontReplacements).
-      if (
-        !css ||
-        !res ||
-        !res.urls ||
-        !res.replacementUrls ||
-        res.replacementUrls.length !== res.urls.length
-      ) {
-        return css;
+      // book's files, as it does for the <link> it rewrites.
+      if (res.replacementUrls.length === res.urls.length) {
+        return res.substitute(css, path);
       }
-      return res.substitute(css, path);
+      // A file missing from the zip drops out of replacementUrls, unpairing
+      // the arrays: pair each asset with its copy in the archive's cache
+      // instead, keyed as epub.js minted it. Raw url()s would reach the host.
+      var paired = Object.create(res);
+      paired.replacementUrls = res.urls.map(function (href) {
+        return b.archive.urlCache[b.resolve(href)];
+      });
+      return paired.substitute(css, path);
     });
-    bookSheetCache.byPath[path] = cached;
-    return cached;
+    return byPath[path];
   }
 
   var FONT_EXT_RE = /\.(woff2|woff|ttf|otf|ttc)$/i;

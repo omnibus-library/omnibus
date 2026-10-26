@@ -81,17 +81,18 @@ export interface GlueWindow {
 }
 
 /**
- * A one-chapter EPUB3 whose chapter body is `body`. `head` lands in the
+ * A one-chapter EPUB3 whose chapter body is `body`. `head` lands in every
  * chapter's `<head>`; `files` are extra `OEBPS/`-relative resources, each
- * listed in the manifest under the given media type; `toc` is the nav's
- * `[label, href]` entries, one "One" entry for the chapter by default.
- * `chapters` are the bodies of further spine items, `chapter2.xhtml` on.
+ * listed in the manifest under the given media type, and left out of the zip
+ * when its `data` is null; `toc` is the nav's `[label, href]` entries, one
+ * "One" entry for the chapter by default. `chapters` are the bodies of
+ * further spine items, `chapter2.xhtml` on.
  */
 export async function buildChapterEpub(
   body: string,
   opts: {
     head?: string;
-    files?: Record<string, { data: Buffer | string; mediaType: string }>;
+    files?: Record<string, { data: Buffer | string | null; mediaType: string }>;
     toc?: [string, string][];
     chapters?: string[];
   } = {},
@@ -160,13 +161,13 @@ export async function buildChapterEpub(
       `OEBPS/${c.href}`,
       `<?xml version="1.0" encoding="utf-8"?>
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
-<head><title>${c.id}</title></head>
+<head><title>${c.id}</title>${opts.head ?? ""}</head>
 <body>${c.body}</body>
 </html>`,
     );
   }
   for (const [href, f] of Object.entries(files)) {
-    zip.file(`OEBPS/${href}`, f.data);
+    if (f.data !== null) zip.file(`OEBPS/${href}`, f.data);
   }
   return zip.generateAsync({ type: "nodebuffer" });
 }
@@ -189,6 +190,49 @@ export const BOOK_FONT: Buffer = readFileSync(
     "EBGaramond-Regular.woff2",
   ),
 );
+
+/**
+ * A book in the shape Calibre gives one: the sheet in `styles/`, the chapters
+ * a folder up, and the sheet embedding `font` from `fonts/` by a url()
+ * relative to itself, for every paragraph in `family`. `twoChapters` adds a
+ * second chapter, "Two", that links the sheet too; `missingAsset` lists a file
+ * the zip lacks ahead of the font, which epub.js drops from its replacements.
+ */
+export function bookWithSheetFont(opts: {
+  family: string;
+  font: Buffer;
+  twoChapters?: boolean;
+  missingAsset?: boolean;
+}): Promise<Buffer> {
+  const prose = Array.from(
+    { length: 12 },
+    (_, i) =>
+      `<p>Paragraph ${i + 1} of the harbour, set in the book's face.</p>`,
+  ).join("");
+  const sheet = `
+@font-face { font-family: "${opts.family}"; src: url("../fonts/BookFace.woff2") format("woff2"); }
+p { font-family: "${opts.family}", serif; }
+`;
+  return buildChapterEpub(prose, {
+    head: '<link href="styles/book.css" rel="stylesheet" type="text/css"/>',
+    ...(opts.twoChapters
+      ? {
+          chapters: [prose],
+          toc: [
+            ["One", "chapter.xhtml"],
+            ["Two", "chapter2.xhtml"],
+          ],
+        }
+      : {}),
+    files: {
+      ...(opts.missingAsset
+        ? { "images/absent.png": { data: null, mediaType: "image/png" } }
+        : {}),
+      "styles/book.css": { data: sheet, mediaType: "text/css" },
+      "fonts/BookFace.woff2": { data: opts.font, mediaType: "font/woff2" },
+    },
+  });
+}
 
 /** Where a selection row ends, in host-window y. */
 export const bottomOf = (row: SelectionRect): number => row.y + row.height;

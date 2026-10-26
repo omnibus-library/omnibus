@@ -1,28 +1,7 @@
-import { BOOK_FONT, buildChapterEpub } from "../data/iosGlue";
+import { BOOK_FONT, bookWithSheetFont } from "../data/iosGlue";
 import { expect, test } from "../fixtures/pageFixtures";
 
 const FAMILY = "Harbour Serif";
-
-// The shape Calibre gives a book: the sheet in one folder and the chapters in
-// another, the sheet embedding its font by a url() relative to itself.
-const SHEET = `
-@font-face { font-family: "${FAMILY}"; src: url("../fonts/HarbourSerif.woff2") format("woff2"); }
-p { font-family: "${FAMILY}", serif; }
-`;
-const PROSE = Array.from(
-  { length: 12 },
-  (_, i) => `<p>Paragraph ${i + 1} of the harbour, set in the book's face.</p>`,
-).join("");
-
-function bookWithSheetFont(font: Buffer): Promise<Buffer> {
-  return buildChapterEpub(PROSE, {
-    head: '<link href="styles/book.css" rel="stylesheet" type="text/css"/>',
-    files: {
-      "styles/book.css": { data: SHEET, mediaType: "text/css" },
-      "fonts/HarbourSerif.woff2": { data: font, mediaType: "font/woff2" },
-    },
-  });
-}
 
 // The glue inlines each book sheet into the section, where its url()s would
 // resolve against the chapter's folder. On iOS every request the reader can't
@@ -35,7 +14,9 @@ test.describe("ios reader book stylesheets", () => {
     iosGluePage,
   }) => {
     await test.step("open a book whose sheet embeds its font", async () => {
-      await iosGluePage.openBook(await bookWithSheetFont(BOOK_FONT));
+      await iosGluePage.openBook(
+        await bookWithSheetFont({ family: FAMILY, font: BOOK_FONT }),
+      );
       await expect
         .poll(async () => (await iosGluePage.fontFaces(FAMILY)).statuses)
         .toContain("loaded");
@@ -59,10 +40,42 @@ test.describe("ios reader book stylesheets", () => {
   }) => {
     await test.step("open a book whose embedded font is noise", async () => {
       const noise = Buffer.from("an encrypted face, as epub.js reads one");
-      await iosGluePage.openBook(await bookWithSheetFont(noise));
+      await iosGluePage.openBook(
+        await bookWithSheetFont({ family: FAMILY, font: noise }),
+      );
       await expect
         .poll(async () => (await iosGluePage.fontFaces(FAMILY)).statuses)
         .toEqual(["error", "error"]);
+    });
+
+    await test.step("check nothing was requested outside the book", async () => {
+      expect(iosGluePage.unservedRequests()).toEqual([]);
+    });
+  });
+
+  // epub.js drops a file it could not read from its replacement table, which
+  // then no longer lines up with the book's assets.
+  test("make no request outside the book when a listed file is missing", async ({
+    iosGluePage,
+  }) => {
+    await test.step("open a book missing a file listed ahead of its font", async () => {
+      await iosGluePage.openBook(
+        await bookWithSheetFont({
+          family: FAMILY,
+          font: BOOK_FONT,
+          missingAsset: true,
+        }),
+      );
+      await expect
+        .poll(async () => (await iosGluePage.fontFaces(FAMILY)).statuses)
+        .toContain("loaded");
+    });
+
+    // epub.js's own copy, in the blob: sheet it links, keeps a relative url()
+    // that cannot resolve against a blob: and so asks for nothing.
+    await test.step("check the inlined face is declared from the book", async () => {
+      const { srcs } = await iosGluePage.fontFaces(FAMILY);
+      expect(srcs.some((src) => /^url\("blob:/.test(src))).toBe(true);
     });
 
     await test.step("check nothing was requested outside the book", async () => {

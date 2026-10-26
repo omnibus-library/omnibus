@@ -39,8 +39,8 @@ XCUITest cannot see inside the web view, and the iOS unit suite has no DOM.
 `pages/IosGluePage.ts` is that harness: its `openBook` does the routing, the
 recorders and `init`, and the `iosGluePage` fixture injects it. The book comes
 from `buildChapterEpub` in `data/iosGlue.ts` (further spine items via
-`chapters`, for anything that crosses a chapter), so a spec supplies only its
-chapters and its drive.
+`chapters`, for anything that crosses a chapter; `bookWithSheetFont` for one
+whose sheet embeds a font), so a spec supplies only its chapters and its drive.
 
 The one-layout-test rule in 04 is for `tests/flows/`; a glue spec has no page
 of its own to lay out. It needs no server, but it runs under the suite's
