@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { HttpResponse, http } from "msw";
-import { expect, waitFor } from "storybook/test";
+import { expect, waitFor, within } from "storybook/test";
 import { storyClient } from "../../testing/AppHarness";
 import { deferred, failing, hanging } from "../../testing/handlers";
 import { SettingsRoutes, said } from "../../testing/SettingsRoutes";
@@ -301,25 +301,45 @@ export const ListsEachKoboWithItsEndpoint: Story = {
   },
 };
 
-export const HidesAKoreaderDevice: Story = {
+export const ListsAKoreaderInItsOwnCardNotTheKoboCard: Story = {
   beforeEach() {
     server.kobo = [
       CLARA,
       aWireKoboDevice({ id: 2, name: "Libra", kind: "koreader" }),
+      aWireKoboDevice({ id: 3, name: "Sage", kind: "kosync" }),
     ];
   },
   play: async ({ canvas }) => {
-    const rows = await canvas.findAllByTestId("kobo-device-row");
-    await expect(rows).toHaveLength(1);
-    await expect(rows[0]).toHaveTextContent("Clara");
-    await expect(canvas.queryByText("Libra")).toBeNull();
+    const kobos = await canvas.findAllByTestId("kobo-device-row");
+    await expect(kobos).toHaveLength(1);
+    await expect(kobos[0]).toHaveTextContent("Clara");
+    const koreaders = await canvas.findAllByTestId("koreader-device-row");
+    await expect(koreaders.map((row) => row.textContent)).toEqual([
+      expect.stringContaining("Libra"),
+      expect.stringContaining("Sage"),
+    ]);
+    await expect(canvas.getByTestId("kobo-data-loss-warning")).toBeVisible();
+  },
+};
+
+export const KeepsTheDataLossWarningOnTheKoboCardOnly: Story = {
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("koreader-devices-empty");
+    await expect(canvas.getAllByTestId("kobo-data-loss-warning")).toHaveLength(
+      1,
+    );
+    await expect(
+      within(canvas.getByTestId("koreader-devices-card")).queryByTestId(
+        "kobo-data-loss-warning",
+      ),
+    ).toBeNull();
   },
 };
 
 export const AddsAKobo: Story = {
   play: async ({ canvas, userEvent }) => {
     await userEvent.type(
-      await canvas.findByLabelText("Device name"),
+      await canvas.findByTestId("kobo-device-name-input"),
       "  Clara  ",
     );
     await userEvent.click(canvas.getByTestId("kobo-device-add"));
@@ -332,7 +352,7 @@ export const AddsAKobo: Story = {
     await expect(
       await canvas.findByTestId("kobo-device-row"),
     ).toHaveTextContent("Clara");
-    await expect(canvas.getByLabelText("Device name")).toHaveValue("");
+    await expect(canvas.getByTestId("kobo-device-name-input")).toHaveValue("");
     await expect(canvas.queryByTestId("kobo-devices-empty")).toBeNull();
   },
 };
@@ -341,7 +361,7 @@ export const AsksForANameBeforeAdding: Story = {
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(await canvas.findByTestId("kobo-device-add"));
 
-    await said(canvas, "kobo-devices-status", "Enter a name for your Kobo.");
+    await said(canvas, "kobo-devices-status", "Enter a name for your device.");
     await expect(server.kobo).toEqual([]);
   },
 };
@@ -359,7 +379,10 @@ export const RefusesAKoboName: Story = {
     );
   },
   play: async ({ canvas, userEvent }) => {
-    await userEvent.type(await canvas.findByLabelText("Device name"), "Clara");
+    await userEvent.type(
+      await canvas.findByTestId("kobo-device-name-input"),
+      "Clara",
+    );
     await userEvent.click(canvas.getByTestId("kobo-device-add"));
 
     await said(
@@ -472,7 +495,10 @@ export const KeepsEarlierKobosWhenTheListFailedBeforeAnAdd: Story = {
   },
   play: async ({ canvas, userEvent }) => {
     await said(canvas, "kobo-devices-status", "list is down");
-    await userEvent.type(await canvas.findByLabelText("Device name"), "Aurora");
+    await userEvent.type(
+      await canvas.findByTestId("kobo-device-name-input"),
+      "Aurora",
+    );
     await userEvent.click(canvas.getByTestId("kobo-device-add"));
 
     // The two it already had come back with the new one: the list was read again.
@@ -506,7 +532,10 @@ export const KeepsARemovalWhenTheAddsRereadLandsLate: Story = {
     );
   },
   play: async ({ canvas, userEvent }) => {
-    await userEvent.type(await canvas.findByLabelText("Device name"), "Aurora");
+    await userEvent.type(
+      await canvas.findByTestId("kobo-device-name-input"),
+      "Aurora",
+    );
     await userEvent.click(canvas.getByTestId("kobo-device-add"));
     await waitFor(() =>
       expect(canvas.getAllByTestId("kobo-device-row")).toHaveLength(3),

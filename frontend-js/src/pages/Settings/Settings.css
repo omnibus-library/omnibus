@@ -19,6 +19,64 @@
   justify-content: space-between;
   align-items: baseline;
 }
+.kobo-device-title {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.kobo-row-status {
+  font-size: 0.8rem;
+  color: var(--ink-2);
+}
+.kobo-row-status.error {
+  color: var(--bad);
+}
+.device-add-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.75rem;
+}
+.device-add-row .settings-field {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.device-add-row .btn {
+  flex: none;
+}
+.device-add-option {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.device-add-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  color: var(--ink-0);
+}
+.device-add-hint {
+  margin: 0;
+  padding-left: 1.5rem;
+}
+.kosync-login {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: var(--bg-1);
+}
+.kosync-login p {
+  margin: 0;
+}
+.kosync-login-title {
+  font-weight: 600;
+  color: var(--ink-0);
+}
 .kobo-device-name {
   font-weight: 600;
   color: var(--ink-0);
