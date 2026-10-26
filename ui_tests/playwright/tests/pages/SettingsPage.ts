@@ -3,6 +3,7 @@ import { AccountSectionComponent } from "../components/AccountSectionComponent";
 import { ApiTokensSectionComponent } from "../components/ApiTokensSectionComponent";
 import { KindleSectionComponent } from "../components/KindleSectionComponent";
 import { KoboSectionComponent } from "../components/KoboSectionComponent";
+import { KoreaderCardComponent } from "../components/KoreaderCardComponent";
 import { KosyncCardComponent } from "../components/KosyncCardComponent";
 import { SettingsShellPage } from "./SettingsShellPage";
 
@@ -19,6 +20,7 @@ export class SettingsPage extends SettingsShellPage<SettingsSection> {
   readonly account: AccountSectionComponent;
   readonly kindle: KindleSectionComponent;
   readonly kobo: KoboSectionComponent;
+  readonly koreader: KoreaderCardComponent;
   readonly kosync: KosyncCardComponent;
   readonly apiTokens: ApiTokensSectionComponent;
 
@@ -34,6 +36,7 @@ export class SettingsPage extends SettingsShellPage<SettingsSection> {
     this.account = new AccountSectionComponent(page);
     this.kindle = new KindleSectionComponent(page);
     this.kobo = new KoboSectionComponent(page);
+    this.koreader = new KoreaderCardComponent(page);
     this.kosync = new KosyncCardComponent(page);
     this.apiTokens = new ApiTokensSectionComponent(page);
     this.adminLink = page.getByTestId("settings-nav-admin");

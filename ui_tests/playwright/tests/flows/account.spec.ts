@@ -5,7 +5,7 @@ import { uniqueSuffix } from "../data/unique";
 import { expect, test } from "../fixtures/pageFixtures";
 import { failing } from "../utils/api";
 import { TEST_PASSWORD } from "../utils/auth";
-import { topEdge } from "../utils/dom";
+import { sharesALine, topEdge } from "../utils/dom";
 
 // The seeded admin covers the plain-user sections: Profile, Preferences, Goals,
 // Devices and Sign-in & security. Other specs read its stack series, hidden
@@ -103,7 +103,7 @@ test.describe("preferences section", () => {
 
 test.describe("devices section", () => {
   test("show the devices section layout", async ({ settingsPage }) => {
-    const { kindle, kobo } = settingsPage;
+    const { kindle, kobo, koreader } = settingsPage;
 
     await test.step("open the devices section", async () => {
       await settingsPage.goto("devices");
@@ -132,6 +132,20 @@ test.describe("devices section", () => {
       await expect(kobo.dataLossWarning).toBeVisible();
       await expect(kobo.setupToggle).toBeVisible();
       await expect(kobo.shelvesLink).toHaveAttribute("href", "/shelves");
+      expect(await sharesALine(kobo.nameField, kobo.addButton)).toBe(true);
+    });
+
+    await test.step("check the koreader card sits below the kobo card without its warning", async () => {
+      await expect(koreader.card).toBeVisible();
+      await expect(koreader.setupToggle).toBeVisible();
+      await expect(koreader.shelvesLink).toHaveAttribute("href", "/shelves");
+      await expect(koreader.dataLossWarning).toHaveCount(0);
+      expect(await sharesALine(koreader.nameField, koreader.addButton)).toBe(
+        true,
+      );
+      expect(await topEdge(koreader.card)).toBeGreaterThan(
+        await topEdge(kobo.devicesCard),
+      );
     });
 
     await test.step("check the kosync card", async () => {
@@ -385,10 +399,6 @@ test.describe("devices section", () => {
     });
 
     // A Kobo on its own Wi-Fi can't resolve a bare path against the web app's origin.
-    await test.step("check it is labelled a kobo", async () => {
-      await expect(section.kindBadge(name)).toHaveText("Kobo");
-    });
-
     await test.step("check its endpoint is a full url", async () => {
       await expect(section.endpointField(name)).toHaveValue(
         /^https?:\/\/[^/]+\/kobo\/[^/]+$/,
@@ -407,7 +417,7 @@ test.describe("devices section", () => {
     createdKoboDeviceIds,
     expectMutation,
   }) => {
-    const { kobo: section } = settingsPage;
+    const { koreader } = settingsPage;
     const name = `E2E KOReader ${uniqueSuffix()}`;
 
     await test.step("open the devices section", async () => {
@@ -417,38 +427,68 @@ test.describe("devices section", () => {
     const id = await test.step("add a koreader", async () => {
       const { response } = await expectMutation(
         kobo.create(name, "koreader"),
-        () => section.addKoreaderDevice(name),
+        () => koreader.addDevice(name),
       );
       const created: CreatedKoboDevice = await response.json();
       createdKoboDeviceIds.add(created.id);
       return created.id;
     });
 
-    await test.step("check the row is a koreader with a token and no endpoint", async () => {
-      await expect(section.statusMessage).toHaveText(
-        "KOReader added. Copy its device token below.",
+    await test.step("check the row offers the plugin and no token", async () => {
+      await expect(koreader.statusMessage).toHaveText(
+        `Added ${name}. Download its plugin and put it on the device.`,
       );
-      await expect(section.kindBadge(name)).toHaveText("KOReader");
-      await expect(section.tokenField(name)).not.toHaveValue("");
-      await expect(section.endpointField(name)).toHaveCount(0);
-      await expect(section.lastSync(name)).toHaveText("Not synced yet");
+      await expect(koreader.badge(name)).toHaveText("Not synced yet");
+      await expect(koreader.lastSync(name)).toHaveText("Added just now");
+      await expect(koreader.pluginDownload(name)).toHaveText("Download plugin");
+      await expect(koreader.tokenField(name)).toHaveCount(0);
     });
 
     await test.step("download the plugin", async () => {
-      expect(await section.downloadPlugin(name)).toBe(
+      expect(await koreader.downloadPlugin(name)).toBe(
         `omnibus-koreader-${id}.zip`,
       );
     });
 
     await test.step("remove it", async () => {
-      await section.startRemove(name);
-      await expectMutation(kobo.revoke(id), () => section.confirmRemove());
+      await koreader.startRemove(name);
+      await expect(koreader.removeConfirmation(name)).toBeVisible();
+      await expectMutation(kobo.revoke(id), () => koreader.confirmRemove());
       createdKoboDeviceIds.delete(id);
     });
 
     await test.step("check the row is gone", async () => {
-      await expect(section.statusMessage).toHaveText("KOReader removed.");
-      await expect(section.deviceRow(name)).toHaveCount(0);
+      await expect(koreader.statusMessage).toHaveText("KOReader removed.");
+      await expect(koreader.deviceRow(name)).toHaveCount(0);
+    });
+  });
+
+  test("ask for a name when adding a device without one", async ({
+    settingsPage,
+  }) => {
+    const { kobo: kobos, koreader } = settingsPage;
+    const writes = kobos.recordCreates();
+
+    await test.step("open the devices section", async () => {
+      await settingsPage.goto("devices");
+    });
+
+    await test.step("add a kobo with no name", async () => {
+      await kobos.addButton.click();
+      await expect(kobos.statusMessage).toHaveText(
+        "Enter a name for your device.",
+      );
+    });
+
+    await test.step("add a koreader with no name", async () => {
+      await koreader.addButton.click();
+      await expect(koreader.statusMessage).toHaveText(
+        "Enter a name for your device.",
+      );
+    });
+
+    await test.step("check nothing was sent", async () => {
+      expect(writes).toEqual([]);
     });
   });
 
@@ -551,6 +591,43 @@ test.describe("devices section", () => {
     await test.step("check the steps are already open", async () => {
       await expect(kobo.emptyMessage).toBeVisible();
       await expect(kobo.setupSteps).toBeVisible();
+    });
+  });
+
+  test("open the koreader setup steps from their disclosure", async ({
+    settingsPage,
+  }) => {
+    const { koreader } = settingsPage;
+
+    await test.step("open the devices section with one koreader", async () => {
+      await koreader.stubDevices([{ id: 1, name: "Kobo Libra" }]);
+      await settingsPage.goto("devices");
+      await expect(koreader.deviceRows).toHaveCount(1);
+    });
+
+    await test.step("check the steps start folded away", async () => {
+      await expect(koreader.setupSteps).toBeHidden();
+    });
+
+    await test.step("open the steps", async () => {
+      await koreader.openSetupSteps();
+      await expect(koreader.setupSteps).toBeVisible();
+    });
+  });
+
+  test("show the koreader setup steps to a reader with no koreader yet", async ({
+    settingsPage,
+  }) => {
+    const { koreader } = settingsPage;
+
+    await test.step("open the devices section with no koreader", async () => {
+      await koreader.stubDevices([]);
+      await settingsPage.goto("devices");
+    });
+
+    await test.step("check the steps are already open", async () => {
+      await expect(koreader.emptyMessage).toBeVisible();
+      await expect(koreader.setupSteps).toBeVisible();
     });
   });
 });

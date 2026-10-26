@@ -5593,6 +5593,10 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
   overflow-wrap: anywhere;
 }
 .kobo-device-row .subtitle { margin-bottom: 0; }
+/* The Settings › Devices add form: the name field and its Add button share a line. */
+.device-add-row { display: flex; align-items: flex-end; gap: 0.75rem; }
+.device-add-row .settings-field { flex: 1 1 auto; min-width: 0; }
+.device-add-row .btn { flex: none; }
 .kobo-device-head { display: flex; justify-content: space-between; align-items: baseline; }
 .kobo-device-name { font-weight: 600; color: var(--ink-0); min-width: 0; overflow-wrap: anywhere; }
 .kobo-endpoint-url { font-family: var(--mono, ui-monospace, monospace); font-size: 0.85rem; }

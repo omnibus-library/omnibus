@@ -4,7 +4,7 @@ import type { KoboDeviceListing } from "../data/account";
 import { recordRequests } from "../utils/api";
 import { BaseComponent } from "./BaseComponent";
 
-/** Settings › Devices → Sync devices: the Kobos and KOReaders of the signed-in user. */
+/** Settings › Devices → Kobo: the Kobos of the signed-in user. */
 export class KoboSectionComponent extends BaseComponent {
   readonly devicesCard: Locator;
   readonly dataLossWarning: Locator;
@@ -17,7 +17,6 @@ export class KoboSectionComponent extends BaseComponent {
   readonly deviceRows: Locator;
   readonly nameField: Locator;
   readonly addButton: Locator;
-  readonly addKoreaderButton: Locator;
   readonly cancelRegenerateButton: Locator;
   readonly confirmRemoveButton: Locator;
 
@@ -25,12 +24,12 @@ export class KoboSectionComponent extends BaseComponent {
     super(page);
     this.devicesCard = page.getByTestId("kobo-devices-card");
     this.dataLossWarning = page.getByTestId("kobo-data-loss-warning");
-    this.setupToggle = page.getByText("How to connect a Kobo");
+    this.setupToggle = this.devicesCard.getByText("How to connect a Kobo");
     this.setupSteps = page.getByTestId("kobo-setup-steps");
     this.backupToolLink = this.setupSteps.getByRole("link", {
       name: "omnibus-library/kobo-backup",
     });
-    this.shelvesLink = page.getByRole("link", {
+    this.shelvesLink = this.devicesCard.getByRole("link", {
       name: "Choose shelves to sync",
     });
     this.emptyMessage = page.getByTestId("kobo-devices-empty");
@@ -38,9 +37,6 @@ export class KoboSectionComponent extends BaseComponent {
     this.deviceRows = page.getByTestId("kobo-device-row");
     this.nameField = page.getByTestId("kobo-device-name-input");
     this.addButton = page.getByTestId("kobo-device-add");
-    this.addKoreaderButton = page.getByRole("button", {
-      name: "Add a KOReader",
-    });
     this.cancelRegenerateButton = page.getByTestId(
       "kobo-regenerate-dialog-cancel",
     );
@@ -53,32 +49,6 @@ export class KoboSectionComponent extends BaseComponent {
 
   endpointField(name: string): Locator {
     return this.deviceRow(name).getByTestId("kobo-endpoint-url");
-  }
-
-  kindBadge(name: string): Locator {
-    return this.deviceRow(name).getByTestId("device-kind-badge");
-  }
-
-  /** A KOReader row's readonly token field. */
-  tokenField(name: string): Locator {
-    return this.deviceRow(name).getByTestId("koreader-device-token");
-  }
-
-  /** A KOReader row's Download plugin link. */
-  pluginDownload(name: string): Locator {
-    return this.deviceRow(name).getByTestId("koreader-plugin-download");
-  }
-
-  /** Clicks a KOReader's Download plugin link; the file name the browser saves it under. */
-  async downloadPlugin(name: string): Promise<string> {
-    const download = this.page.waitForEvent("download");
-    await this.pluginDownload(name).click();
-    return (await download).suggestedFilename();
-  }
-
-  /** A KOReader row's last-sync line. */
-  lastSync(name: string): Locator {
-    return this.deviceRow(name).getByTestId("koreader-last-sync");
   }
 
   regenerateButton(name: string): Locator {
@@ -108,11 +78,6 @@ export class KoboSectionComponent extends BaseComponent {
     await this.addButton.click();
   }
 
-  async addKoreaderDevice(name: string): Promise<void> {
-    await this.nameField.fill(name);
-    await this.addKoreaderButton.click();
-  }
-
   async openSetupSteps(): Promise<void> {
     await this.setupToggle.click();
   }
@@ -128,6 +93,11 @@ export class KoboSectionComponent extends BaseComponent {
   /** The methods of every token regeneration sent from now on. */
   recordRegenerates(): string[] {
     return recordRequests(this.page, koboUrls.regenerate);
+  }
+
+  /** The methods of every device creation sent from now on. */
+  recordCreates(): string[] {
+    return recordRequests(this.page, koboUrls.create);
   }
 
   async startRemove(name: string): Promise<void> {

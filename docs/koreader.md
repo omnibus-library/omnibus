@@ -7,8 +7,8 @@ your place travels when you open and close a book.
 
 ## Setup
 
-1. In Omnibus, open **Settings › Devices**, name the device and click **Add a
-   KOReader**.
+1. In Omnibus, open **Settings › Devices**, name the device in the **KOReader**
+   card and click **Add a KOReader**.
 2. Click **Download plugin** on its row. The zip is already set to this server
    and to that KOReader's token. The token is a password: anyone holding the zip
    can sync as you, so don't share it.
@@ -37,7 +37,8 @@ for the same shelf rule, which both device kinds share.
 - The plugin only deletes files it delivered itself. Anything else in the
   `Omnibus` folder, or anywhere else on the device, is never touched.
 - The device shows the outcome. A failure is also sent to the server, so
-  **Settings › Devices** shows the date of the last sync and the last error.
+  **Settings › Devices** shows the date of the last sync and the last error,
+  and asks you to redownload the plugin after a failure.
   If the device can't reach the server, only the device says so.
 - Removing the KOReader in Settings revokes its token. The next sync on the
   device says it was removed; download the plugin again from a new KOReader.

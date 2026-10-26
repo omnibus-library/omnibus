@@ -36,3 +36,10 @@ export async function bottomEdge(locator: Locator): Promise<number> {
   const box = await locator.boundingBox();
   return box ? box.y + box.height : Number.NaN;
 }
+
+/** Whether `a` and `b` share a line: their boxes overlap vertically. */
+export async function sharesALine(a: Locator, b: Locator): Promise<boolean> {
+  const [boxA, boxB] = [await a.boundingBox(), await b.boundingBox()];
+  if (!boxA || !boxB) return false;
+  return boxA.y < boxB.y + boxB.height && boxB.y < boxA.y + boxA.height;
+}
