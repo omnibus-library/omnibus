@@ -39,7 +39,7 @@ export function TopNav() {
       </div>
       <SearchPaletteTrigger />
       <div className="atrium-actions">
-        <ButtonLink to="/check-in" size="sm">
+        <ButtonLink to="/check-in" state={{ fromApp: true }} size="sm">
           Check in
         </ButtonLink>
         {user.canUpload && (

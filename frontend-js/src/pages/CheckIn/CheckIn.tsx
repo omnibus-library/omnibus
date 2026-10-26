@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router";
+import { useLocation, useNavigate, useSearchParams } from "react-router";
 import {
   addPhysicalOnly,
   checkInBook,
@@ -11,6 +11,7 @@ import {
   type WishlistAddRequest,
   wishlistScanned,
 } from "../../api";
+import { Modal } from "../../components/Modal/Modal";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
 import { useCurrentUser } from "../../session";
 import {
@@ -38,10 +39,11 @@ import "./CheckIn.css";
 
 const LOOKUP: Stage = { kind: "lookup" };
 
-/** Check in: type an ISBN, then follow it wherever the ladder lands. */
+/** Check in, in a dialog over the page: type an ISBN, then follow it wherever the ladder lands. */
 export function CheckIn() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const location = useLocation();
   const viewerId = useCurrentUser().id;
   const [stage, setStage] = useState<Stage>(LOOKUP);
   // The book page's "Check in when acquired" brings the ISBN it already holds.
@@ -143,6 +145,8 @@ export function CheckIn() {
     },
     onError: (e) => setError(`Could not add to your wishlist: ${e.message}`),
   });
+  // Only a write may hold the dialog open; a lookup can always be walked away from.
+  const writing = checkIn.isPending || ownIt.isPending || wishlist.isPending;
   const busy =
     resolve.isPending ||
     pick.isPending ||
@@ -322,20 +326,32 @@ export function CheckIn() {
     }
   }
 
+  // Back the way the reader came, else to the library, so Back never reopens the dialog.
+  const close = () =>
+    location.state?.fromApp ? navigate(-1) : navigate("/", { replace: true });
+
   return (
-    <>
+    <Modal
+      label="Check in a book"
+      backdropClass="check-in-overlay-scrim"
+      dialogClass="check-in-overlay-panel"
+      onClose={close}
+      busy={writing}
+    >
       <PageTitle page="Check in" />
       <section className="card check-in" data-testid="check-in">
         {/* Present on every stage so a mid-flow abort never strands the reader. */}
-        <Link
-          to="/"
+        <button
+          type="button"
           className="check-in-close"
           data-testid="check-in-close"
           aria-label="Cancel check-in"
           title="Cancel"
+          onClick={close}
+          disabled={writing}
         >
           ×
-        </Link>
+        </button>
         {screen()}
         {error && (
           <p
@@ -347,6 +363,6 @@ export function CheckIn() {
           </p>
         )}
       </section>
-    </>
+    </Modal>
   );
 }

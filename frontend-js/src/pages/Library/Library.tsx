@@ -1,6 +1,6 @@
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import { useLocation, useNavigate } from "react-router";
+import { Outlet, useLocation, useNavigate } from "react-router";
 import { fetchBookPage, invalidateShelf, type LibraryQuery } from "../../api";
 import { AddBooksModal } from "../../components/AddBooksModal/AddBooksModal";
 import { Button } from "../../components/Button/Button";
@@ -366,6 +366,7 @@ export function Library() {
           }}
         />
       )}
+      <Outlet />
     </div>
   );
 }
