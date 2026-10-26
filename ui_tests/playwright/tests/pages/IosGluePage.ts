@@ -47,6 +47,11 @@ export class IosGluePage extends BasePage {
 
   readonly stageFrame: Locator;
 
+  // What the page asked the origin for that it does not serve. On iOS each is
+  // a scheme-handler failure, and one before `ready` is the "couldn't open"
+  // screen.
+  private readonly unserved: string[] = [];
+
   constructor(page: Page) {
     super(page);
     this.stageFrame = page.locator("#stage iframe");
@@ -72,6 +77,7 @@ export class IosGluePage extends BasePage {
       if (GLUE_FILES.has(file)) {
         return route.fulfill({ path: resolve(GLUE_DIR, file) });
       }
+      this.unserved.push(file);
       return route.fulfill({ status: 404 });
     });
     await this.page.goto(`${GLUE_ORIGIN}/reader.html`);
@@ -108,6 +114,45 @@ export class IosGluePage extends BasePage {
       undefined,
       { timeout: 15_000 },
     );
+  }
+
+  /** The paths the page requested that are neither the reader nor the book. */
+  unservedRequests(): string[] {
+    return [...this.unserved];
+  }
+
+  /** Every `@font-face` src the section declares for `family`, and each face's load status. */
+  async fontFaces(
+    family: string,
+  ): Promise<{ srcs: string[]; statuses: FontFaceLoadStatus[] }> {
+    return this.page.evaluate((family) => {
+      const doc =
+        document.querySelector<HTMLIFrameElement>(
+          "#stage iframe",
+        )?.contentDocument;
+      if (!doc) throw new Error("no section document");
+      const named = (value: string) => value.replace(/["']/g, "").trim();
+      const srcs: string[] = [];
+      for (const sheet of Array.from(doc.styleSheets)) {
+        let rules: CSSRuleList;
+        try {
+          rules = sheet.cssRules;
+        } catch {
+          continue; // a sheet this document may not read
+        }
+        // Numeric type: the iframe's rules come from another realm's constructors.
+        for (const rule of Array.from(rules)) {
+          if (rule.type !== CSSRule.FONT_FACE_RULE) continue;
+          const style = (rule as CSSFontFaceRule).style;
+          if (named(style.getPropertyValue("font-family")) !== family) continue;
+          srcs.push(style.getPropertyValue("src"));
+        }
+      }
+      const statuses = Array.from(doc.fonts)
+        .filter((face) => named(face.family) === family)
+        .map((face) => face.status);
+      return { srcs, statuses };
+    }, family);
   }
 
   /** Holds the book frame's `document.fonts.ready` for `ms`; call before `openBook`. */

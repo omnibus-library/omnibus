@@ -952,6 +952,7 @@
       }
       doc.__omnibusBookCss = true;
       var manifest = book.packaging.manifest || {};
+      var resources = book.resources;
       var paths = [];
       Object.keys(manifest).forEach(function (id) {
         var item = manifest[id];
@@ -970,7 +971,12 @@
             if (!css || !doc.head) return;
             var style = doc.createElement("style");
             style.setAttribute("data-omnibus-book-css", "");
-            style.textContent = css;
+            // The sheet's url()s are relative to the sheet, and inline they
+            // would resolve against the section: point them at epub.js's
+            // copies of the book's files, as it does for the <link> it rewrites.
+            style.textContent = resources
+              ? resources.substitute(css, path)
+              : css;
             // Prepend so book CSS sits ahead of the reader baseline, which
             // only touches html/body and should win any tie (e.g. hyphens).
             doc.head.insertBefore(style, doc.head.firstChild);

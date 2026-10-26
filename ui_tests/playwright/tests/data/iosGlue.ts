@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import JSZip from "jszip";
 
 // Types and the in-memory book for the iOS reader glue lane (rule 04b): what
@@ -168,6 +170,25 @@ export async function buildChapterEpub(
   }
   return zip.generateAsync({ type: "nodebuffer" });
 }
+
+/**
+ * A font for a book to embed: the reader's own EB Garamond bytes, which a
+ * book's sheet names under a family of its own.
+ */
+export const BOOK_FONT: Buffer = readFileSync(
+  resolve(
+    __dirname,
+    "..",
+    "..",
+    "..",
+    "..",
+    "omnibus-ios",
+    "omnibus",
+    "Reader",
+    "Web",
+    "EBGaramond-Regular.woff2",
+  ),
+);
 
 /** Where a selection row ends, in host-window y. */
 export const bottomOf = (row: SelectionRect): number => row.y + row.height;

@@ -22,6 +22,10 @@
 //  2. A named face resolves from the app bundle. Editorial's woff2 travels
 //     through the same scheme handler as the scripts, so this is the offline
 //     proof — with no network, the face has to come from `Reader/Web/`.
+//  3. A book sheet's url()s resolve inside the book. The glue inlines each
+//     sheet into the section, where a url() written relative to the sheet
+//     would resolve against the chapter's folder: a file the scheme handler
+//     can't serve, and before ready that failure is the "couldn't open" screen.
 //
 //  Mirrors `fontState` in
 //  `ui_tests/playwright/tests/components/ReaderSectionComponent.ts`
@@ -60,6 +64,65 @@ private func fixtureEPUB() throws -> Data {
         throw ReaderFontTestError.fixtureMissing(epub.path)
     }
     return data
+}
+
+/// The family `sheetInAnotherFolderEPUB` declares.
+private let sheetFamily = "Sheet Serif"
+
+/// A book laid out the way Calibre lays one out: the chapter in `text/`, the
+/// sheet at the root embedding its font by a url() relative to itself. The
+/// font is noise, as an encrypted face reads to epub.js — which is what makes
+/// WebKit fall through to the inlined copy of the sheet and request its font.
+private func sheetInAnotherFolderEPUB() -> Data {
+    let paragraphs = (1...12)
+        .map { "<p>Paragraph \($0), set in the book's own face.</p>" }
+        .joined()
+    let entries: [(String, String)] = [
+        ("mimetype", "application/epub+zip"),
+        ("META-INF/container.xml", """
+        <?xml version="1.0"?>
+        <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+          <rootfiles><rootfile full-path="content.opf" media-type="application/oebps-package+xml"/></rootfiles>
+        </container>
+        """),
+        ("content.opf", """
+        <?xml version="1.0" encoding="utf-8"?>
+        <package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid">
+          <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <dc:identifier id="uid">urn:uuid:sheet-in-another-folder</dc:identifier>
+            <dc:title>Sheet in Another Folder</dc:title>
+            <dc:language>en</dc:language>
+          </metadata>
+          <manifest>
+            <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+            <item id="ch1" href="text/chapter.xhtml" media-type="application/xhtml+xml"/>
+            <item id="css" href="stylesheet.css" media-type="text/css"/>
+            <item id="font" href="fonts/face.ttf" media-type="application/x-font-truetype"/>
+          </manifest>
+          <spine><itemref idref="ch1"/></spine>
+        </package>
+        """),
+        ("nav.xhtml", """
+        <?xml version="1.0" encoding="utf-8"?>
+        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+        <head><title>Contents</title></head>
+        <body><nav epub:type="toc"><ol><li><a href="text/chapter.xhtml">One</a></li></ol></nav></body>
+        </html>
+        """),
+        ("stylesheet.css", """
+        @font-face { font-family: "\(sheetFamily)"; src: url(fonts/face.ttf); }
+        p { font-family: "\(sheetFamily)", serif; }
+        """),
+        ("text/chapter.xhtml", """
+        <?xml version="1.0" encoding="utf-8"?>
+        <html xmlns="http://www.w3.org/1999/xhtml">
+        <head><title>One</title><link href="../stylesheet.css" rel="stylesheet" type="text/css"/></head>
+        <body>\(paragraphs)</body>
+        </html>
+        """),
+        ("fonts/face.ttf", "an encrypted face, as epub.js reads one"),
+    ]
+    return buildStoredZip(entries.map { ($0.0, Data($0.1.utf8)) })
 }
 
 private enum ReaderFontTestError: Error, CustomStringConvertible {
@@ -193,6 +256,9 @@ private final class BootedReader {
     /// When each boot phase landed, from the moment the window was made.
     let phases: PhaseLog
 
+    /// Every URL the page has asked the scheme handler for, in order.
+    var served: [String] { handler.served }
+
     init(controller: ReaderController, webView: WKWebView, window: UIWindow,
          coordinator: ReaderWebView.Coordinator, handler: FixtureSchemeHandler,
          phases: PhaseLog)
@@ -277,25 +343,29 @@ private final class BootedReader {
     }
 }
 
-/// Boot `reader.html` on the fixture book and wait for the glue to report ready.
+/// Boot `reader.html` on a book — the committed fixture unless `bytes` is given
+/// — and wait for the glue to report ready.
 ///
 /// The web view is in a real key window at a real phone size on purpose:
 /// epub.js paginates from the stage's measured box, and a zero-sized or
 /// unhosted view never lays a section out — so nothing would ever render, and
 /// a font that is never used is never loaded.
 @MainActor
-private func bootFixtureReader() async throws -> BootedReader {
+private func bootFixtureReader(
+    bytes: Data? = nil, uuid: String = "lagoon-fixture-uuid"
+) async throws -> BootedReader {
     let phases = PhaseLog()
-    let epub = try fixtureEPUB()
+    let epub = try bytes ?? fixtureEPUB()
     let entry = try #require(ReaderWebView.entryURL)
 
     // Explicit settings: Original, and nothing read from the host's stored
     // blob. This suite never writes `omnibus.readerSettings` — see the named
     // -face test for why it drives the glue directly instead.
     let controller = ReaderController(settings: ReaderSettings())
+    // Its own uuid per book: the glue caches pagination under it.
     let book = Book(
         id: 1, filename: "standalone-lagoon.epub", title: "Lagoon of Ligatures",
-        uniqueIdentifier: "lagoon-fixture-uuid"
+        uniqueIdentifier: uuid
     )
     controller.configure(book: book, startCFI: nil, highlights: [])
 
@@ -415,11 +485,11 @@ private func waitUntil(
 /// in `ui_tests/playwright/tests/components/ReaderSectionComponent.ts` — same
 /// fields, same reasons.
 private struct SectionFontState {
-    /// Every `src` declared for `embeddedFamily`, across every stylesheet the
-    /// section holds (the blob-linked one included).
+    /// Every `src` declared for the family asked about, across every stylesheet
+    /// the section holds (the blob-linked one included).
     var embeddedSrcs: [String]
-    /// How many `FontFace`s for `embeddedFamily` are in `error` — a face that
-    /// was requested and could not be had.
+    /// How many `FontFace`s for that family are in `error` — a face that was
+    /// requested and could not be had.
     var erroredEmbedded: Int
     /// Families with at least one `loaded` face. The only field here that is
     /// evidence a face was actually *had*.
@@ -443,7 +513,9 @@ private struct SectionFontState {
 }
 
 @MainActor
-private func sectionFontState(_ webView: WKWebView) async throws -> SectionFontState? {
+private func sectionFontState(
+    _ webView: WKWebView, embedded family: String = embeddedFamily
+) async throws -> SectionFontState? {
     let js = """
     const iframe = document.querySelector("#stage iframe");
     const doc = iframe && iframe.contentDocument;
@@ -479,7 +551,7 @@ private func sectionFontState(_ webView: WKWebView) async throws -> SectionFontS
     """
     let result = try await webView.callAsyncJavaScript(
         js,
-        arguments: ["embedded": embeddedFamily, "named": namedFamily],
+        arguments: ["embedded": family, "named": namedFamily],
         contentWorld: .page
     )
     guard let result else { return nil }
@@ -587,5 +659,33 @@ struct ReaderEmbeddedFontTests {
         #expect(font.namedFaceUsable)
         #expect(font.leadingParagraphFamily == namedFamily, "stack: \(font.paragraphFamily)")
         #expect(font.erroredEmbedded == 0)
+    }
+
+    @Test("a sheet in another folder resolves its font inside the book, so the scheme handler is never asked for one")
+    func sheetFontStaysInsideTheBook() async throws {
+        let reader = try await bootFixtureReader(
+            bytes: sheetInAnotherFolderEPUB(), uuid: "sheet-folder-fixture-uuid"
+        )
+        defer { reader.teardown() }
+
+        // The face never decodes, so an errored one is the engine done with it
+        // — and a copy it had to fetch was asked for before it could error.
+        var state: SectionFontState?
+        let tried = await waitUntil(timeout: fontLoadBudget) {
+            state = try? await sectionFontState(reader.webView, embedded: sheetFamily)
+            return (state?.erroredEmbedded ?? 0) > 0
+        }
+        reader.phases.mark(tried ? "sheetFaceTried" : "fontTimeout")
+        #expect(tried, "the sheet's face was never tried: \(String(describing: state)); \(reader.phases)")
+
+        // Anything under `app/` that isn't a bundled asset is a file the real
+        // handler failed — `noteResourceFailure`, and before ready, the
+        // "couldn't open" screen.
+        let strays = reader.served.filter { served in
+            guard let url = URL(string: served), url.host == "app" else { return false }
+            return ReaderWebView.Coordinator.bundledAssetURL(named: url.lastPathComponent) == nil
+        }
+        #expect(strays == [], "asked the scheme handler for files outside the book: \(strays)")
+        #expect(!reader.controller.failed)
     }
 }
