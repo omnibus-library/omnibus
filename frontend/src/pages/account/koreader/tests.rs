@@ -235,7 +235,10 @@ mod render_tests {
     fn koreader_card_names_itself_and_offers_to_add_a_koreader() {
         let html = render_in_vdom(card);
 
-        assert!(html.contains("<h3 id=\"koreader-card-title\">KOReader</h3>"), "{html}");
+        assert!(
+            html.contains("<h3 id=\"koreader-card-title\">KOReader</h3>"),
+            "{html}"
+        );
         assert!(html.contains("Add a KOReader"), "{html}");
         assert!(!html.contains("Add a Kobo"), "{html}");
     }

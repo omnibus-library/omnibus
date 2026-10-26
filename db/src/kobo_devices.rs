@@ -99,7 +99,18 @@ pub async fn register_device(
     name: &str,
     kind: DeviceKind,
 ) -> Result<(KoboDevice, Option<KosyncPassword>), KoboDeviceError> {
-    let token = generate_token().map_err(|e| KoboDeviceError::Token(e.to_string()))?;
+    register_device_with_token(pool, user_id, name, kind, generate_token).await
+}
+
+/// `register_device` with the token generator passed in, like [`create_device_with_token`].
+async fn register_device_with_token(
+    pool: &SqlitePool,
+    user_id: i64,
+    name: &str,
+    kind: DeviceKind,
+    token_fn: impl FnOnce() -> AuthResult<String>,
+) -> Result<(KoboDevice, Option<KosyncPassword>), KoboDeviceError> {
+    let token = token_fn().map_err(|e| KoboDeviceError::Token(e.to_string()))?;
     let mut tx = pool.begin().await?;
     let device = insert_device(&mut *tx, user_id, name, kind, &token).await?;
     let login = match kind {

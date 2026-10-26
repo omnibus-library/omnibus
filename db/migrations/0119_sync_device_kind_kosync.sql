@@ -4,6 +4,8 @@
 -- pragma is a no-op), so their rows are parked in temp tables and put back.
 CREATE TEMP TABLE kobo_books_sync_keep AS SELECT * FROM kobo_books_sync;
 CREATE TEMP TABLE kobo_annotations_sync_keep AS SELECT * FROM kobo_annotations_sync;
+-- The id high-water mark goes with the dropped table; reusing a deleted id would let stale references match a new device.
+CREATE TEMP TABLE kobo_devices_seq AS SELECT seq FROM sqlite_sequence WHERE name = 'kobo_devices';
 
 CREATE TABLE kobo_devices_new (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -35,5 +37,12 @@ CREATE UNIQUE INDEX kobo_devices_hardware_id_idx
 
 INSERT INTO kobo_books_sync SELECT * FROM kobo_books_sync_keep;
 INSERT INTO kobo_annotations_sync SELECT * FROM kobo_annotations_sync_keep;
+INSERT INTO sqlite_sequence (name, seq)
+    SELECT 'kobo_devices', seq FROM kobo_devices_seq
+    WHERE NOT EXISTS (SELECT 1 FROM sqlite_sequence WHERE name = 'kobo_devices');
+UPDATE sqlite_sequence
+    SET seq = max(seq, coalesce((SELECT seq FROM kobo_devices_seq), 0))
+    WHERE name = 'kobo_devices';
+DROP TABLE kobo_devices_seq;
 DROP TABLE kobo_books_sync_keep;
 DROP TABLE kobo_annotations_sync_keep;

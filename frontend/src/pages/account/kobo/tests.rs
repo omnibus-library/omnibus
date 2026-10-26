@@ -301,7 +301,10 @@ mod render_tests {
     fn kobo_card_names_itself_and_offers_only_to_add_a_kobo() {
         let html = render_in_vdom(card);
 
-        assert!(html.contains("<h3 id=\"kobo-card-title\">Kobo</h3>"), "{html}");
+        assert!(
+            html.contains("<h3 id=\"kobo-card-title\">Kobo</h3>"),
+            "{html}"
+        );
         assert!(html.contains("Add a Kobo"), "{html}");
         assert!(!html.contains("Add a KOReader"), "{html}");
         assert!(!html.contains("koreader-device-add"), "{html}");

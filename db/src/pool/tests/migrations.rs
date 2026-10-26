@@ -758,3 +758,35 @@ async fn migration_0119_keeps_a_devices_sync_state_and_admits_the_no_plugin_kind
         .await
         .expect_err("an unknown kind is refused");
 }
+
+#[tokio::test]
+async fn migration_0119_never_reuses_the_id_of_a_deleted_device() {
+    let pool = pool_before(119).await;
+    sqlx::query(
+        "INSERT INTO users (id, username, password_hash, is_admin) VALUES (1, 'u', 'h', 0)",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    for token in ["a", "b", "c"] {
+        sqlx::query("INSERT INTO kobo_devices (user_id, token, name) VALUES (1, ?, 'n')")
+            .bind(token)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    sqlx::query("DELETE FROM kobo_devices WHERE id = 3")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    apply_migration(&pool, 119).await;
+
+    let next: i64 = sqlx::query_scalar(
+        "INSERT INTO kobo_devices (user_id, token, name) VALUES (1, 'd', 'n') RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(next, 4);
+}
