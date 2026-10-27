@@ -192,6 +192,42 @@ test.describe("ios reader book stylesheets", () => {
       expect(css).toContain('content: "url(x)";');
     });
 
+    // Its sheet is inlined on its own, and an @import the section can't load
+    // logs an error on every render.
+    await test.step("check the import is dropped from the inlined sheet", async () => {
+      const css = (await iosGluePage.inlinedBookCss()).join("\n");
+      expect(css).not.toContain("@import");
+    });
+
+    await test.step("check nothing was requested outside the book", async () => {
+      expect(iosGluePage.unservedRequests()).toEqual([]);
+    });
+  });
+
+  // A string that runs past its line must end there, or the scan reads every
+  // later quote out of step and leaves the face's url() as written.
+  test("load a face declared after a string left unclosed", async ({
+    iosGluePage,
+  }) => {
+    await test.step("open a book whose sheet leaves a string unclosed", async () => {
+      await iosGluePage.openBook(
+        await bookWithSheetFont({
+          family: FAMILY,
+          font: BOOK_FONT,
+          unclosedString: true,
+        }),
+      );
+      await expect
+        .poll(async () => (await iosGluePage.fontFaces(FAMILY)).statuses)
+        .toContain("loaded");
+    });
+
+    await test.step("check every copy of the face is declared from the book", async () => {
+      const { srcs } = await iosGluePage.fontFaces(FAMILY);
+      expect(srcs.length).toBeGreaterThan(0);
+      for (const src of srcs) expect(src).toMatch(/^url\("data:font\/woff2;/);
+    });
+
     await test.step("check nothing was requested outside the book", async () => {
       expect(iosGluePage.unservedRequests()).toEqual([]);
     });

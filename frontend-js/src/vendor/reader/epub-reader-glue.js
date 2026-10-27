@@ -1291,10 +1291,12 @@
     return byPath[path];
   }
 
-  // A comment, a url() token, a string @import, or a bare string: scanning
-  // whole tokens keeps a url( inside a comment or a string as written.
+  // A comment, a url() token, a string @import rule, or a bare string:
+  // scanning whole tokens keeps a url( inside a comment or a string as
+  // written. A string ends at its line and a comment at the file's end, as in
+  // CSS, so an unclosed one can't throw the scan out of step.
   var CSS_TOKEN_RE =
-    /\/\*[\s\S]*?\*\/|url\(\s*(?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'|([^)\s"']*))\s*\)|@import\s*(?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)')|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/gi;
+    /\/\*[\s\S]*?(?:\*\/|$)|url\(\s*(?:"((?:[^"\\\r\n\f]|\\[\s\S])*)"|'((?:[^'\\\r\n\f]|\\[\s\S])*)'|([^)\s"']*))\s*\)|@import\s*(?:"((?:[^"\\\r\n\f]|\\[\s\S])*)"|'((?:[^'\\\r\n\f]|\\[\s\S])*)')[^;{}]*;?|"(?:[^"\\\r\n\f]|\\[\s\S])*"?|'(?:[^'\\\r\n\f]|\\[\s\S])*'?/gi;
   var URL_SCHEME_RE = /^[a-z][a-z0-9+.-]*:/i;
 
   // One spelling for a path, as a sheet and the manifest may percent-encode a
@@ -1321,8 +1323,8 @@
       var imported = idq != null ? idq : isq;
       if (imported != null) {
         // Every manifest sheet is inlined on its own, and epub.js's blob: copy
-        // can't load in the section, so an imported book sheet loads nothing.
-        return isBookRef(imported) ? '@import url("data:,")' : token;
+        // can't load in the section, so a book sheet's @import rule is dropped.
+        return isBookRef(imported) ? "" : token;
       }
       var ref = dq != null ? dq : sq != null ? sq : bare;
       if (!isBookRef(ref)) return token; // a comment, a string, or not the book's

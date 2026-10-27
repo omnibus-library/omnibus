@@ -224,6 +224,7 @@ export function bookWithSheetFont(opts: {
   faceFile?: string;
   importedFace?: boolean;
   quotedUrl?: boolean;
+  unclosedString?: boolean;
 }): Promise<Buffer> {
   const prose = Array.from(
     { length: 12 },
@@ -235,7 +236,9 @@ export function bookWithSheetFont(opts: {
     ? `url("../fonts/${missingFace}") format("woff2"), `
     : "";
   const faceFile = opts.faceFile ?? "BookFace.woff2";
-  const face = `@font-face { font-family: "${opts.family}"; src: ${absent}url("../fonts/${faceFile}") format("woff2"); }`;
+  // CSS ends an unclosed string at its line, so the face below still loads.
+  const broken = opts.unclosedString ? 'p::after { content: "oops;\n}\n' : "";
+  const face = `${broken}@font-face { font-family: "${opts.family}"; src: ${absent}url("../fonts/${faceFile}") format("woff2"); }`;
   const sheet = `${opts.importedFace ? '@import "fonts.css";' : face}
 p { font-family: "${opts.family}", serif; }
 ${opts.quotedUrl ? 'p::before { content: "url(x)"; }' : ""}
