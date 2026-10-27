@@ -21,3 +21,24 @@ it. The case this rule comes from: an iOS setting moved from a toolbar, which
 restacked the grid itself, into Settings, which restacked it only through an
 identity refresh that swallows failures, so a refresh that failed after a
 successful save left every grid in the old layout.
+
+## A broken book degrades like Apple Books
+
+When a reader change handles a malformed book (a manifest entry the zip lacks,
+a sheet or font that won't load, a url() that names no file), compare what the
+reader shows with what Apple Books shows for the same book:
+
+- **A missing file** shows nothing: no picture, the fallback font. Its request
+  still reaches the iOS host as written, never pointed at another file's copy
+  or a stand-in, so the host still hears of it.
+- **Every other file** shows from its own copy, never a neighbour's.
+
+A finding's failure scenario stands on a book that exists: a public-domain
+fixture, a user's report, or a test book opened in Apple Books to compare. A
+case that only a hand-built spelling reaches is a follow-up, not a fix in the
+same PR. The case this rule comes from: a fix for an error flash grew, over
+seven rounds of review fixes, a CSS scanner for spellings no book was known to
+use, while a manifest entry the zip lacked shifted every later file onto the
+next one's copy, so chapters showed the wrong pictures. Apple Books showed
+nothing for the missing file and every other file correctly, and matching it
+took one function run at book open.
