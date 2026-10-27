@@ -160,49 +160,52 @@ test.describe("ios reader book stylesheets", () => {
     });
   });
 
-  // A sheet's string @import, a name the manifest percent-encodes and a CSS
-  // string that reads like a url() each slip past a scan for url( alone.
-  test("load a face from an imported sheet that spells its name decoded", async ({
-    iosGluePage,
-  }) => {
-    await test.step("open a book whose sheet imports the face's sheet", async () => {
-      await iosGluePage.openBook(
-        await bookWithSheetFont({
-          family: FAMILY,
-          font: BOOK_FONT,
-          faceFile: "Book Face.woff2",
-          importedFace: true,
-          quotedUrl: true,
-        }),
-      );
-      await expect
-        .poll(async () => (await iosGluePage.fontFaces(FAMILY)).statuses)
-        .toContain("loaded");
-    });
+  // A sheet's @import, a name the manifest percent-encodes and a CSS string
+  // that reads like a url() each slip past a scan for url( alone; a url()
+  // spelling of the @import must not be read as a face's url().
+  for (const spelling of ["string", "url"] as const) {
+    test(`load a face from a sheet imported by ${spelling} that spells its name decoded`, async ({
+      iosGluePage,
+    }) => {
+      await test.step("open a book whose sheet imports the face's sheet", async () => {
+        await iosGluePage.openBook(
+          await bookWithSheetFont({
+            family: FAMILY,
+            font: BOOK_FONT,
+            faceFile: "Book Face.woff2",
+            importedFace: spelling,
+            quotedUrl: true,
+          }),
+        );
+        await expect
+          .poll(async () => (await iosGluePage.fontFaces(FAMILY)).statuses)
+          .toContain("loaded");
+      });
 
-    await test.step("check the face is declared from the book", async () => {
-      const { srcs } = await iosGluePage.fontFaces(FAMILY);
-      expect(srcs).toContainEqual(
-        expect.stringMatching(/^url\("data:font\/woff2;/),
-      );
-    });
+      await test.step("check the face is declared from the book", async () => {
+        const { srcs } = await iosGluePage.fontFaces(FAMILY);
+        expect(srcs).toContainEqual(
+          expect.stringMatching(/^url\("data:font\/woff2;/),
+        );
+      });
 
-    await test.step("check the content string is left as written", async () => {
-      const css = (await iosGluePage.inlinedBookCss()).join("\n");
-      expect(css).toContain('content: "url(x)";');
-    });
+      await test.step("check the content string is left as written", async () => {
+        const css = (await iosGluePage.inlinedBookCss()).join("\n");
+        expect(css).toContain('content: "url(x)";');
+      });
 
-    // Its sheet is inlined on its own, and an @import the section can't load
-    // logs an error on every render.
-    await test.step("check the import is dropped from the inlined sheet", async () => {
-      const css = (await iosGluePage.inlinedBookCss()).join("\n");
-      expect(css).not.toContain("@import");
-    });
+      // Its sheet is inlined on its own, and an @import the section can't load
+      // logs an error on every render.
+      await test.step("check the import is dropped from the inlined sheet", async () => {
+        const css = (await iosGluePage.inlinedBookCss()).join("\n");
+        expect(css).not.toContain("@import");
+      });
 
-    await test.step("check nothing was requested outside the book", async () => {
-      expect(iosGluePage.unservedRequests()).toEqual([]);
+      await test.step("check nothing was requested outside the book", async () => {
+        expect(iosGluePage.unservedRequests()).toEqual([]);
+      });
     });
-  });
+  }
 
   // A string that runs past its line must end there, or the scan reads every
   // later quote out of step and leaves the face's url() as written.

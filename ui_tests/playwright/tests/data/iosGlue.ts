@@ -210,8 +210,9 @@ const BOOK_IMAGE: Buffer = Buffer.from(
  * face's file in `fonts/` (default `Absent.woff2`). `faceFile` names the font
  * as the sheet spells it, percent-encoded in the manifest (default
  * `BookFace.woff2`); `importedFace` moves the face into `styles/fonts.css`,
- * which the sheet pulls in by a string `@import`; `quotedUrl` adds a
- * `content` string that reads like a url().
+ * which the sheet pulls in by an `@import` spelt as a string or a url();
+ * `quotedUrl` adds a `content` string that reads like a url();
+ * `unclosedString` leaves a string open to its line ahead of the face.
  */
 export function bookWithSheetFont(opts: {
   family: string;
@@ -222,7 +223,7 @@ export function bookWithSheetFont(opts: {
   refilledTable?: boolean;
   missingFace?: string;
   faceFile?: string;
-  importedFace?: boolean;
+  importedFace?: "string" | "url";
   quotedUrl?: boolean;
   unclosedString?: boolean;
 }): Promise<Buffer> {
@@ -239,7 +240,11 @@ export function bookWithSheetFont(opts: {
   // CSS ends an unclosed string at its line, so the face below still loads.
   const broken = opts.unclosedString ? 'p::after { content: "oops;\n}\n' : "";
   const face = `${broken}@font-face { font-family: "${opts.family}"; src: ${absent}url("../fonts/${faceFile}") format("woff2"); }`;
-  const sheet = `${opts.importedFace ? '@import "fonts.css";' : face}
+  const imports = {
+    string: '@import "fonts.css";',
+    url: '@import url("fonts.css");',
+  };
+  const sheet = `${opts.importedFace ? imports[opts.importedFace] : face}
 p { font-family: "${opts.family}", serif; }
 ${opts.quotedUrl ? 'p::before { content: "url(x)"; }' : ""}
 ${opts.refilledTable ? 'body { background-image: url("../images/bg.png"); }' : ""}

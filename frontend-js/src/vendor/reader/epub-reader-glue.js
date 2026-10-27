@@ -1291,12 +1291,12 @@
     return byPath[path];
   }
 
-  // A comment, a url() token, a string @import rule, or a bare string:
-  // scanning whole tokens keeps a url( inside a comment or a string as
-  // written. A string ends at its line and a comment at the file's end, as in
+  // A comment, an @import rule (string or url() form), a url() token, or a
+  // bare string: scanning whole tokens keeps a url( inside a comment or a
+  // string as written, and the rule comes first so its url() is its own. A string ends at its line and a comment at the file's end, as in
   // CSS, so an unclosed one can't throw the scan out of step.
   var CSS_TOKEN_RE =
-    /\/\*[\s\S]*?(?:\*\/|$)|url\(\s*(?:"((?:[^"\\\r\n\f]|\\[\s\S])*)"|'((?:[^'\\\r\n\f]|\\[\s\S])*)'|([^)\s"']*))\s*\)|@import\s*(?:"((?:[^"\\\r\n\f]|\\[\s\S])*)"|'((?:[^'\\\r\n\f]|\\[\s\S])*)')[^;{}]*;?|"(?:[^"\\\r\n\f]|\\[\s\S])*"?|'(?:[^'\\\r\n\f]|\\[\s\S])*'?/gi;
+    /\/\*[\s\S]*?(?:\*\/|$)|@import\s*(?:"((?:[^"\\\r\n\f]|\\[\s\S])*)"|'((?:[^'\\\r\n\f]|\\[\s\S])*)'|url\(\s*(?:"((?:[^"\\\r\n\f]|\\[\s\S])*)"|'((?:[^'\\\r\n\f]|\\[\s\S])*)'|([^)\s"']*))\s*\))[^;{}]*;?|url\(\s*(?:"((?:[^"\\\r\n\f]|\\[\s\S])*)"|'((?:[^'\\\r\n\f]|\\[\s\S])*)'|([^)\s"']*))\s*\)|"(?:[^"\\\r\n\f]|\\[\s\S])*"?|'(?:[^'\\\r\n\f]|\\[\s\S])*'?/gi;
   var URL_SCHEME_RE = /^[a-z][a-z0-9+.-]*:/i;
 
   // One spelling for a path, as a sheet and the manifest may percent-encode a
@@ -1319,19 +1319,28 @@
   // other file gets an empty data:, as a raw url() would reach the host.
   function substituteSheetUrls(b, css, sheetPath, byFile) {
     var sheet = new b.path.constructor(sheetPath);
-    return css.replace(CSS_TOKEN_RE, function (token, dq, sq, bare, idq, isq) {
-      var imported = idq != null ? idq : isq;
-      if (imported != null) {
-        // Every manifest sheet is inlined on its own, and epub.js's blob: copy
-        // can't load in the section, so a book sheet's @import rule is dropped.
-        return isBookRef(imported) ? "" : token;
-      }
-      var ref = dq != null ? dq : sq != null ? sq : bare;
-      if (!isBookRef(ref)) return token; // a comment, a string, or not the book's
-      var hash = ref.indexOf("#") < 0 ? "" : ref.slice(ref.indexOf("#"));
-      var file = decodePath(sheet.resolve(ref.split(/[?#]/)[0]));
-      return 'url("' + (byFile[file] || "data:,") + hash + '")';
-    });
+    return css.replace(
+      CSS_TOKEN_RE,
+      function (token, idq, isq, iudq, iusq, iubare, dq, sq, bare) {
+        var imported = firstSet(idq, isq, firstSet(iudq, iusq, iubare));
+        if (imported != null) {
+          // Every manifest sheet is inlined on its own, and epub.js's blob:
+          // copy can't load in the section, so a book sheet's @import rule is
+          // dropped.
+          return isBookRef(imported) ? "" : token;
+        }
+        var ref = firstSet(dq, sq, bare);
+        if (!isBookRef(ref)) return token; // a comment, a string, or not the book's
+        var hash = ref.indexOf("#") < 0 ? "" : ref.slice(ref.indexOf("#"));
+        var file = decodePath(sheet.resolve(ref.split(/[?#]/)[0]));
+        return 'url("' + (byFile[file] || "data:,") + hash + '")';
+      },
+    );
+  }
+
+  // The first of a token's alternative capture groups that matched.
+  function firstSet(a, b, c) {
+    return a != null ? a : b != null ? b : c;
   }
 
   var FONT_EXT_RE = /\.(woff2|woff|ttf|otf|ttc)$/i;
