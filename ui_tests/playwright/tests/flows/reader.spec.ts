@@ -1089,7 +1089,7 @@ test.describe("epub reader", () => {
         }
       });
 
-      // The second chapter inlines the sheet from the glue's per-book cache.
+      // Each section inlines the book's sheets again.
       await test.step("turn to the second chapter", async () => {
         await epubReaderPage.openContents();
         await expect(contents.root).toBeVisible();

@@ -1,12 +1,13 @@
-import { BOOK_FONT, bookWithSheetFont } from "../data/iosGlue";
+import { BOOK_FONT, bookWithSheetFont, PICTURE_WIDTH } from "../data/iosGlue";
 import { expect, test } from "../fixtures/pageFixtures";
 
 const FAMILY = "Harbour Serif";
 
 // The glue inlines each book sheet into the section, where its url()s would
-// resolve against the chapter's folder. On iOS every request the reader can't
-// serve is a scheme-handler failure, and one before the book is ready puts up
-// the "couldn't open" screen.
+// resolve against the chapter's folder; epub.js points the book's links at its
+// own copies of the book's files. On iOS every request the reader can't serve
+// is a scheme-handler failure, and one before the book is ready puts up the
+// "couldn't open" screen.
 test.describe("ios reader book stylesheets", () => {
   test.use({ viewport: { width: 402, height: 874 } });
 
@@ -53,186 +54,60 @@ test.describe("ios reader book stylesheets", () => {
     });
   });
 
-  // epub.js drops a file it could not read from its replacement table, which
-  // then no longer lines up with the book's assets.
-  test("make no request outside the book when a listed file is missing", async ({
+  // epub.js reads a sheet the zip lacks as nothing at all, which must not
+  // keep the sheets listed after it out of the section.
+  test("inline a book's sheet listed after one it lacks", async ({
     iosGluePage,
   }) => {
-    await test.step("open a book missing a file and a sheet listed ahead of its own", async () => {
+    await test.step("open a book listing a sheet it lacks ahead of its own", async () => {
       await iosGluePage.openBook(
         await bookWithSheetFont({
           family: FAMILY,
           font: BOOK_FONT,
-          missingAsset: true,
           missingSheet: true,
         }),
       );
-      await expect
-        .poll(async () => (await iosGluePage.fontFaces(FAMILY)).statuses)
-        .toContain("loaded");
     });
 
-    await test.step("check the sheet the book has is still inlined", async () => {
-      await expect.poll(() => iosGluePage.inlinedBookCss()).toHaveLength(1);
-    });
-
-    // epub.js's own copy, in the blob: sheet it links, keeps a relative url()
-    // that cannot resolve against a blob: and so asks for nothing.
-    await test.step("check the inlined face is declared from the book", async () => {
-      const [css] = await iosGluePage.inlinedBookCss();
-      expect(css).toContain('src: url("data:,") format("woff2"), url("blob:');
-      expect(css).not.toContain("../");
-    });
-
-    await test.step("check nothing was requested outside the book", async () => {
-      expect(iosGluePage.unservedRequests()).toEqual([]);
+    await test.step("check the sheet the book has is inlined", async () => {
+      await expect.poll(() => iosGluePage.inlinedSheetCount()).toBe(1);
     });
   });
 
-  // epub.js writes each sheet it rewrites back at the sheet's own index, so a
-  // sheet listed last refills the short table to full length, out of step.
-  test("point each url at its own file when a missing one is listed ahead", async ({
+  // epub.js leaves a file the zip lacks out of its table of copies, which
+  // shifts every file listed after it onto the next one's copy.
+  test("show each file from its own copy when the book lists one it lacks", async ({
     iosGluePage,
   }) => {
-    await test.step("open a book missing a file listed ahead of an image", async () => {
+    await test.step("open a book listing a picture it lacks ahead of the rest", async () => {
       await iosGluePage.openBook(
         await bookWithSheetFont({
           family: FAMILY,
           font: BOOK_FONT,
-          missingAsset: true,
-          refilledTable: true,
+          missingFile: true,
         }),
       );
-      await expect.poll(() => iosGluePage.inlinedBookCss()).toHaveLength(1);
     });
 
-    await test.step("check the missing face is pointed at nothing", async () => {
-      const [css] = await iosGluePage.inlinedBookCss();
-      expect(css).toContain(
-        'src: url("data:,") format("woff2"), url("data:font/woff2;',
-      );
+    await test.step("check the picture listed after it is its own file", async () => {
+      await expect
+        .poll(() => iosGluePage.imageWidth("#picture"))
+        .toBe(PICTURE_WIDTH);
+    });
+
+    await test.step("check the sheet's face loads", async () => {
       await expect
         .poll(async () => (await iosGluePage.fontFaces(FAMILY)).statuses)
         .toContain("loaded");
     });
 
-    await test.step("check the image is pointed at the image", async () => {
-      const [css = ""] = await iosGluePage.inlinedBookCss();
-      const image = /body \{ background-image: url\("(blob:[^"]+)"\)/.exec(css);
-      expect(image).not.toBeNull();
-      expect(await iosGluePage.blobType(image?.[1] ?? "")).toBe("image/png");
-    });
-
-    await test.step("check nothing was requested outside the book", async () => {
-      expect(iosGluePage.unservedRequests()).toEqual([]);
-    });
-  });
-
-  // epub.js replaces each file's relative path wherever it appears, so a
-  // missing Face.woff rewrites the inside of Face.woff2's url() too.
-  test("point each url at its own file when one file's path is inside another's", async ({
-    iosGluePage,
-  }) => {
-    await test.step("open a book missing a face whose path the real face's contains", async () => {
-      await iosGluePage.openBook(
-        await bookWithSheetFont({
-          family: FAMILY,
-          font: BOOK_FONT,
-          missingAsset: true,
-          missingFace: "BookFace.woff",
-          refilledTable: true,
-        }),
-      );
+    // The host's check is what reports a broken book, so the file the book
+    // lacks must still be asked of it rather than pointed at another.
+    await test.step("check the missing picture is asked of the host", async () => {
       await expect
-        .poll(async () => (await iosGluePage.fontFaces(FAMILY)).statuses)
-        .toContain("loaded");
-    });
-
-    await test.step("check the real face is pointed at its own file", async () => {
-      const [css] = await iosGluePage.inlinedBookCss();
-      expect(css).toContain(
-        'src: url("data:,") format("woff2"), url("data:font/woff2;',
-      );
-    });
-
-    await test.step("check nothing was requested outside the book", async () => {
-      expect(iosGluePage.unservedRequests()).toEqual([]);
-    });
-  });
-
-  // A sheet's @import, a name the manifest percent-encodes and a CSS string
-  // that reads like a url() each slip past a scan for url( alone; a url()
-  // spelling of the @import must not be read as a face's url().
-  for (const spelling of ["string", "url"] as const) {
-    test(`load a face from a sheet imported by ${spelling} that spells its name decoded`, async ({
-      iosGluePage,
-    }) => {
-      await test.step("open a book whose sheet imports the face's sheet", async () => {
-        await iosGluePage.openBook(
-          await bookWithSheetFont({
-            family: FAMILY,
-            font: BOOK_FONT,
-            faceFile: "Book Face.woff2",
-            importedFace: spelling,
-            quotedUrl: true,
-          }),
-        );
-        await expect
-          .poll(async () => (await iosGluePage.fontFaces(FAMILY)).statuses)
-          .toContain("loaded");
-      });
-
-      await test.step("check the face is declared from the book", async () => {
-        const { srcs } = await iosGluePage.fontFaces(FAMILY);
-        expect(srcs).toContainEqual(
-          expect.stringMatching(/^url\("data:font\/woff2;/),
-        );
-      });
-
-      await test.step("check the content string is left as written", async () => {
-        const css = (await iosGluePage.inlinedBookCss()).join("\n");
-        expect(css).toContain('content: "url(x)";');
-      });
-
-      // Its sheet is inlined on its own, and an @import the section can't load
-      // logs an error on every render.
-      await test.step("check the import is dropped from the inlined sheet", async () => {
-        const css = (await iosGluePage.inlinedBookCss()).join("\n");
-        expect(css).not.toContain("@import");
-      });
-
-      await test.step("check nothing was requested outside the book", async () => {
-        expect(iosGluePage.unservedRequests()).toEqual([]);
-      });
-    });
-  }
-
-  // A string that runs past its line must end there, or the scan reads every
-  // later quote out of step and leaves the face's url() as written.
-  test("load a face declared after a string left unclosed", async ({
-    iosGluePage,
-  }) => {
-    await test.step("open a book whose sheet leaves a string unclosed", async () => {
-      await iosGluePage.openBook(
-        await bookWithSheetFont({
-          family: FAMILY,
-          font: BOOK_FONT,
-          unclosedString: true,
-        }),
-      );
-      await expect
-        .poll(async () => (await iosGluePage.fontFaces(FAMILY)).statuses)
-        .toContain("loaded");
-    });
-
-    await test.step("check every copy of the face is declared from the book", async () => {
-      const { srcs } = await iosGluePage.fontFaces(FAMILY);
-      expect(srcs.length).toBeGreaterThan(0);
-      for (const src of srcs) expect(src).toMatch(/^url\("data:font\/woff2;/);
-    });
-
-    await test.step("check nothing was requested outside the book", async () => {
-      expect(iosGluePage.unservedRequests()).toEqual([]);
+        .poll(() => iosGluePage.unservedRequests())
+        .toEqual(["OEBPS/images/absent.png"]);
+      expect(await iosGluePage.imageWidth("#absent")).toBe(0);
     });
   });
 });
