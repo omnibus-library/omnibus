@@ -367,7 +367,7 @@ async fn move_book_files(
 
 /// Every table that soft-references `books.uuid` and must follow the book
 /// across a merge; the contract is in `.claude/rules/06-migrations.md`.
-pub(super) const RETARGET_TABLES: [&str; 18] = [
+pub(super) const RETARGET_TABLES: [&str; 20] = [
     "reading_progress",
     "reading_progress_marks",
     "reading_progress_daily",
@@ -377,6 +377,7 @@ pub(super) const RETARGET_TABLES: [&str; 18] = [
     "reading_sessions",
     "listening_sessions",
     "annotations",
+    "annotation_tombstones",
     "kobo_annotations_sync",
     "journal_entries",
     "book_read_status",
@@ -386,7 +387,19 @@ pub(super) const RETARGET_TABLES: [&str; 18] = [
     "wishlist_entries",
     "cross_format_links",
     "book_content_chapters",
+    "book_export_digests",
 ];
+
+/// The `SET` clause moving a [`RETARGET_TABLES`] row to the book bound at `?1`.
+/// A KOReader device lists annotations by `updated_at`, so a moved one is stamped
+/// now or a device already past it would never see it.
+pub(super) fn retarget_set(table: &str) -> &'static str {
+    if table == "annotations" {
+        "book_uuid = ?1, updated_at = strftime('%s','now')"
+    } else {
+        "book_uuid = ?1"
+    }
+}
 
 /// The `book_uuid`-keyed tables the merge deliberately leaves alone, each
 /// with the reason. Not a list to grow casually: an entry here means the rows
@@ -436,7 +449,7 @@ pub(super) struct Collision {
 /// The subset of [`RETARGET_TABLES`] with a `UNIQUE` key to settle, resolved by
 /// [`dedupe_collisions`] before the retarget runs. Which rule fits which row,
 /// and how each deleted row stays undoable, is in `.claude/rules/06-migrations.md`.
-pub(super) const COLLISION_TABLES: [Collision; 9] = [
+pub(super) const COLLISION_TABLES: [Collision; 10] = [
     Collision {
         table: "reading_progress",
         keys: &["user_id", "format"],
@@ -498,6 +511,13 @@ pub(super) const COLLISION_TABLES: [Collision; 9] = [
         keys: &["spine_index"],
         keep: Keep::Target,
     },
+    // Both books baked to one digest: the pair is the same fact either way, so the
+    // target's row stands.
+    Collision {
+        table: "book_export_digests",
+        keys: &["partial_md5"],
+        keep: Keep::Target,
+    },
 ];
 
 /// Re-parent every row keyed on the source's uuid onto the target (reader
@@ -548,7 +568,10 @@ async fn move_progress_and_history(
     .execute(&mut **tx)
     .await?;
     for table in RETARGET_TABLES {
-        let sql = format!("UPDATE {table} SET book_uuid = ?1 WHERE book_uuid = ?2");
+        let sql = format!(
+            "UPDATE {table} SET {} WHERE book_uuid = ?2",
+            retarget_set(table)
+        );
         sqlx::query(&sql)
             .bind(&target_uuid)
             .bind(&source_uuid)

@@ -382,16 +382,37 @@ async fn resolve_readable_path(
         Ok(None) => return Err(StatusCode::NOT_FOUND.into_response()),
         Err(e) => return Err(internal("resolve_book_id_by_uuid", e)),
     };
-    // CBZ outranks PDF: a book carrying both is a comic scanned twice, and the
-    // comic pipeline is the one that is offline-verified.
-    for (format, mime) in [("EPUB", EPUB_MIME), ("CBZ", CBZ_MIME), ("PDF", PDF_MIME)] {
-        match db::book_file_path(&state.pool, id, format).await {
-            Ok(Some(path)) => return Ok((path, mime)),
-            Ok(None) => continue,
-            Err(e) => return Err(internal("book_file_path", e)),
+    match device_file(state, id).await {
+        Ok(Some(DeviceFile::Epub(path))) => Ok((path, EPUB_MIME)),
+        Ok(Some(DeviceFile::Other(path, mime))) => Ok((path, mime)),
+        Ok(None) => Err(StatusCode::NOT_FOUND.into_response()),
+        Err(e) => Err(internal("device_file", e)),
+    }
+}
+
+/// The file a device download serves for one book: its EPUB (the caller picks the bytes, so
+/// it can convert or rewrite) or a CBZ/PDF to stream as-is with its mime.
+pub(super) enum DeviceFile {
+    Epub(std::path::PathBuf),
+    Other(std::path::PathBuf, &'static str),
+}
+
+/// Resolve a book's [`DeviceFile`] on the shared ladder: EPUB, else CBZ, else PDF.
+/// CBZ outranks PDF: a book carrying both is a comic scanned twice, and the comic
+/// pipeline is the one that is offline-verified. `None` when the book has none of them.
+pub(super) async fn device_file(
+    state: &AppState,
+    book_id: i64,
+) -> anyhow::Result<Option<DeviceFile>> {
+    if let Some(epub) = db::book_file_path(&state.pool, book_id, "EPUB").await? {
+        return Ok(Some(DeviceFile::Epub(epub)));
+    }
+    for (format, mime) in [("CBZ", CBZ_MIME), ("PDF", PDF_MIME)] {
+        if let Some(path) = db::book_file_path(&state.pool, book_id, format).await? {
+            return Ok(Some(DeviceFile::Other(path, mime)));
         }
     }
-    Err(StatusCode::NOT_FOUND.into_response())
+    Ok(None)
 }
 
 /// Get a book's file

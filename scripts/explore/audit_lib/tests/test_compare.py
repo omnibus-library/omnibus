@@ -235,7 +235,7 @@ class KoboLibraryCompareTests(unittest.TestCase):
         with self.assertRaises(compare.NotJudged) as raised:
             compare.check(self._expect(set()), state)
         self.assertIn("Rules of thumb", str(raised.exception))
-        self.assertIn("turn its Sync to Kobo off", str(raised.exception))
+        self.assertIn("turn its Sync to my devices off", str(raised.exception))
 
     def test_check_all_reports_a_smart_shelf_as_not_judged_rather_than_a_finding(self) -> None:
         state = FakeState(kobo_books={BOOK}, kobo_smart_shelves=["Rules of thumb"])

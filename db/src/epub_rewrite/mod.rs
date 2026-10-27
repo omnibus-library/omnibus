@@ -168,7 +168,44 @@ pub async fn rewritten_epub_path(
     } else {
         0
     };
-    rewrite_or_reuse_cache(book_id, source, &book, last_modified).await
+    let baked = rewrite_or_reuse_cache(book_id, source, &book, last_modified).await?;
+    // A device downloading this file names the book by its digest, the original's included (its
+    // `book_files` digest waits on a backfill); a failed record must never fail the download.
+    if let Some(uuid) = &book.unique_identifier {
+        let served = baked.as_deref().unwrap_or(source);
+        let recorded = match epub_file_id(pool, book_id, source).await {
+            Ok(file) => crate::kosync::record_export_digest(pool, uuid, file, served).await,
+            Err(e) => Err(e),
+        };
+        if let Err(e) = recorded {
+            tracing::warn!(book_id, error = %e, "export_epub: recording the served digest failed");
+        }
+    }
+    Ok(baked)
+}
+
+/// The `book_files` id of `source` among `book_id`'s EPUBs: the edition a served copy is of.
+async fn epub_file_id(
+    pool: &SqlitePool,
+    book_id: i64,
+    source: &Path,
+) -> anyhow::Result<Option<i64>> {
+    let ids: Vec<i64> = sqlx::query_scalar(
+        "SELECT id FROM book_files WHERE book_id = ? AND format = 'EPUB' COLLATE NOCASE",
+    )
+    .bind(book_id)
+    .fetch_all(pool)
+    .await?;
+    for id in ids {
+        if crate::book_file_path_by_id(pool, book_id, id, Some("EPUB"))
+            .await?
+            .as_deref()
+            == Some(source)
+        {
+            return Ok(Some(id));
+        }
+    }
+    Ok(None)
 }
 
 /// Core of [`rewritten_epub_path`]: given a book's id, its on-disk EPUB

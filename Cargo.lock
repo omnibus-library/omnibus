@@ -5045,6 +5045,7 @@ dependencies = [
  "futures-util",
  "hmac",
  "httpdate",
+ "md-5",
  "omnibus-db",
  "omnibus-frontend",
  "omnibus-mcp",
@@ -5068,6 +5069,7 @@ dependencies = [
  "utoipa",
  "utoipa-axum",
  "wiremock",
+ "zip 9.0.5",
 ]
 
 [[package]]
@@ -5088,6 +5090,7 @@ dependencies = [
  "image",
  "lettre",
  "lofty",
+ "md-5",
  "omnibus-db",
  "omnibus-shared",
  "pdf-extract",

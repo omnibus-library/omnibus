@@ -1,6 +1,7 @@
-//! Tests for the Kobo devices card: setup steps, confirms and the device list.
+//! Tests for the sync devices card: setup steps, confirms and the device list.
 
 use super::*;
+use crate::pages::account::test_support::device_view as device_of;
 
 #[test]
 fn endpoint_url_joins_origin_and_token() {
@@ -16,6 +17,27 @@ fn endpoint_url_trims_a_trailing_slash_on_the_origin() {
         endpoint_url("http://localhost:3000/", "abc"),
         "http://localhost:3000/kobo/abc"
     );
+}
+
+#[test]
+fn setup_opens_by_default_when_the_reader_has_no_kobo() {
+    use omnibus_shared::DeviceKind::{Kobo, Koreader};
+    assert!(setup_opens_by_default(&[]));
+    assert!(setup_opens_by_default(&[device_of(Koreader)]));
+    assert!(!setup_opens_by_default(&[
+        device_of(Koreader),
+        device_of(Kobo)
+    ]));
+}
+
+#[test]
+fn kobos_only_drops_koreaders_and_no_plugin_koreaders() {
+    use omnibus_shared::DeviceKind::{Kobo, Koreader, Kosync};
+    let all = vec![device_of(Koreader), device_of(Kobo), device_of(Kosync)];
+
+    let kept: Vec<_> = kobos_only(all).into_iter().map(|d| d.kind).collect();
+
+    assert_eq!(kept, [Kobo]);
 }
 
 #[test]
@@ -38,6 +60,8 @@ fn kobo_confirm_text_names_the_device_being_removed() {
 mod render_tests {
     use dioxus_router::{Routable, Router};
 
+    use omnibus_shared::DeviceKind;
+
     use super::*;
     use crate::test_support::render_in_vdom;
 
@@ -57,18 +81,24 @@ mod render_tests {
         rsx! { Router::<KoboRoute> {} }
     }
 
+    fn device_row() -> Element {
+        row_with(device_of_named("Kobo Clara"))
+    }
+
     /// `Callback::new` needs a live runtime, so the row is built inside the
     /// throwaway `VirtualDom` rather than via a bare `render`.
-    fn device_row() -> Element {
+    fn device_of_named(name: &str) -> KoboDeviceView {
+        KoboDeviceView {
+            name: name.to_string(),
+            token: "tok123".to_string(),
+            ..device_of(DeviceKind::Kobo)
+        }
+    }
+
+    fn row_with(device: KoboDeviceView) -> Element {
         rsx! {
             KoboDeviceRow {
-                device: KoboDeviceView {
-                    id: 1,
-                    name: "Kobo Clara".to_string(),
-                    token: "tok123".to_string(),
-                    created_at: 0,
-                    last_seen_at: 0,
-                },
+                device,
                 endpoint: "https://omni.example.com/kobo/tok123".to_string(),
                 disabled: false,
                 on_regenerate: Callback::new(|_| {}),
@@ -126,6 +156,7 @@ mod render_tests {
             html.contains("data-testid=\"kobo-devices-empty\""),
             "{html}"
         );
+        assert!(html.contains("No Kobo registered yet."), "{html}");
     }
 
     /// The row is what actually exposes the endpoint URL; assert it renders so
@@ -150,7 +181,7 @@ mod render_tests {
             rule_at > ol_end,
             "the shelf rule must sit after the procedure list, not inside it"
         );
-        assert!(html.contains("Sync to Kobo"));
+        assert!(html.contains("Sync to my devices"));
     }
 
     /// Step 2 and step 4 must name the same thing: the whole URL the field
@@ -201,7 +232,7 @@ mod render_tests {
             html.find(needle)
                 .unwrap_or_else(|| panic!("missing {needle}: {html}"))
         };
-        let intro = at("Sync your shelves to a Kobo");
+        let intro = at("Sync your shelves, reading position and highlights to a Kobo");
         let warning = at("data-testid=\"kobo-data-loss-warning\"");
         let setup = at("data-testid=\"kobo-setup\"");
         let form = at("id=\"kobo-add-form\"");
@@ -267,24 +298,83 @@ mod render_tests {
     }
 
     #[test]
-    fn kobo_card_makes_add_device_the_primary_action_in_the_form_footer() {
+    fn kobo_card_names_itself_and_offers_only_to_add_a_kobo() {
         let html = render_in_vdom(card);
-        let footer = html
-            .find("class=\"settings-actions\"")
-            .expect("a footer row");
-        let add = html.find("data-testid=\"kobo-device-add\"").expect("add");
-        assert!(footer < add, "{html}");
-        assert!(html[footer..add].contains("btn primary"), "{html}");
+
         assert!(
-            html[footer..add].contains("data-testid=\"kobo-devices-status\""),
+            html.contains("<h3 id=\"kobo-card-title\">Kobo</h3>"),
+            "{html}"
+        );
+        assert!(html.contains("Add a Kobo"), "{html}");
+        assert!(!html.contains("Add a KOReader"), "{html}");
+        assert!(!html.contains("koreader-device-add"), "{html}");
+    }
+
+    #[test]
+    fn kobo_card_puts_the_name_field_and_add_button_in_one_row_above_the_status() {
+        let html = render_in_vdom(card);
+        let at = |needle: &str| {
+            html.find(needle)
+                .unwrap_or_else(|| panic!("missing {needle}: {html}"))
+        };
+
+        let row = at("class=\"device-add-row\"");
+        let input = at("data-testid=\"kobo-device-name-input\"");
+        let add = at("data-testid=\"kobo-device-add\"");
+        let status = at("data-testid=\"kobo-devices-status\"");
+
+        assert!(row < input && input < add && add < status, "{html}");
+    }
+
+    #[test]
+    fn kobo_device_row_keeps_a_kobo_its_endpoint_and_regenerate_without_a_plugin() {
+        let html = render_in_vdom(device_row);
+
+        assert!(html.contains("data-testid=\"kobo-endpoint-url\""), "{html}");
+        assert!(
+            html.contains("data-testid=\"kobo-device-regenerate\""),
+            "{html}"
+        );
+        assert!(!html.contains("koreader"), "{html}");
+    }
+
+    #[test]
+    fn kobo_card_keeps_the_loading_skeleton_when_only_the_add_form_was_refused() {
+        let html = render_in_vdom(|| render_pending_list(false));
+
+        assert!(
+            html.contains("data-testid=\"kobo-devices-loading\""),
+            "{html}"
+        );
+        assert!(html.contains("Finding your Kobos"), "{html}");
+    }
+
+    #[test]
+    fn kobo_card_draws_no_skeleton_once_the_list_failed_to_load() {
+        let html = render_in_vdom(|| render_pending_list(true));
+
+        assert!(!html.contains("kobo-devices-loading"), "{html}");
+    }
+
+    #[test]
+    fn kobo_card_names_its_device_name_field_after_the_card() {
+        let html = render_in_vdom(card);
+
+        assert!(html.contains(r#"id="kobo-card-title""#), "{html}");
+        assert!(
+            html.contains(r#"aria-labelledby="kobo-card-title kobo-device-name-label""#),
             "{html}"
         );
     }
 
     #[test]
-    fn kobo_card_names_its_add_action() {
+    fn kobo_card_disables_add_until_the_device_list_has_loaded() {
         let html = render_in_vdom(card);
-        assert!(html.contains("<h3>Kobo wireless sync</h3>"), "{html}");
-        assert!(html.contains("Add device"), "{html}");
+
+        let add = html
+            .find("data-testid=\"kobo-device-add\"")
+            .expect("the add button");
+        let tag = &html[html[..add].rfind("<button").unwrap()..add];
+        assert!(tag.contains("disabled"), "{html}");
     }
 }

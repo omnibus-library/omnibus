@@ -10,6 +10,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use omnibus_db as db;
+use omnibus_shared::DeviceKind;
 use sqlx::SqlitePool;
 
 use crate::http_errors::internal;
@@ -46,7 +47,13 @@ where
                 )
             })?;
 
-        let resolved = match db::kobo_devices::resolve_device_by_token(&pool, &token).await {
+        let resolved = match db::kobo_devices::resolve_device_by_token(
+            &pool,
+            &token,
+            DeviceKind::Kobo,
+        )
+        .await
+        {
             Ok(Some(r)) => r,
             Ok(None) => return Err(unauthorized()),
             Err(e) => return Err(internal("kobo extractor", e)),

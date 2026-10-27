@@ -7,7 +7,10 @@ use sqlx::SqlitePool;
 
 use super::*;
 use crate::anchor::AnnotationOrder;
-use crate::annotations::{ingest_kobo_annotations, list_highlights, IngestKoboAnnotation};
+use crate::annotations::{
+    ingest_kobo_annotations, koreader_annotations_since, list_highlights, IngestKoboAnnotation,
+    KoreaderCursor,
+};
 use crate::init_db;
 use crate::test_support::{build_test_epub, build_test_kepub, make_test_dir, EnvVarGuard};
 
@@ -117,6 +120,36 @@ async fn backfill_kobo_annotation_cfis_derives_ranges_for_rows_missing_them() {
         rows[0].epub_cfi_range.as_deref(),
         Some("epubcfi(/6/2!/4/2,/1:21,/1:45)")
     );
+}
+
+#[tokio::test]
+async fn backfill_kobo_annotation_cfis_lists_a_derived_row_to_a_koreader_device_already_past_it() {
+    let (pool, user, book_id, uuid, dir) = fixture("koreader").await;
+    let kepub_dir = dir.join("kepub");
+    std::fs::create_dir_all(&kepub_dir).unwrap();
+    std::fs::write(
+        kepub_dir.join(format!("{book_id}.kepub.epub")),
+        build_test_kepub(&[("c1.xhtml", KEPUB_C1)]),
+    )
+    .unwrap();
+    let _guard = EnvVarGuard::set("OMNIBUS_KEPUB_DIR", Some(kepub_dir.to_str().unwrap()));
+    ingest_kobo_annotations(&pool, user, &uuid, &[upload(LOCATION)], &[])
+        .await
+        .unwrap();
+    sqlx::query("UPDATE annotations SET updated_at = updated_at - 100")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let synced = koreader_annotations_since(&pool, user, &uuid, &KoreaderCursor::default())
+        .await
+        .unwrap();
+
+    backfill_kobo_annotation_cfis(&pool).await.unwrap();
+
+    let next = koreader_annotations_since(&pool, user, &uuid, &synced.cursor)
+        .await
+        .unwrap();
+    assert_eq!(next.annotations[0].client_id, "kobo-1");
 }
 
 #[tokio::test]

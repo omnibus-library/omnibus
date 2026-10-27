@@ -174,20 +174,21 @@ pub async fn changed_book_uuids(
 
 /// Content fingerprint of a servable annotation set: SHA-256 over the rows
 /// sorted by `client_id`, each field length-prefixed so concatenation is
-/// unambiguous. Anchors are excluded on purpose — the device already holds
-/// them; membership, color, note, and text are what it needs re-delivered.
+/// unambiguous. Membership, color, note, text and anchor are what the device
+/// needs re-delivered — an anchor re-derived after a KOReader move included.
 pub fn fingerprint(rows: &[ServedKoboAnnotation]) -> String {
     let mut sorted: Vec<&ServedKoboAnnotation> = rows.iter().collect();
     sorted.sort_by(|a, b| a.client_id.cmp(&b.client_id));
 
     let mut hasher = Sha256::new();
-    hasher.update(b"omnibus-kobo-annotations-v1");
+    hasher.update(b"omnibus-kobo-annotations-v2");
     for row in sorted {
         for field in [
             Some(row.client_id.as_str()),
             Some(row.color.as_str()),
             row.note.as_deref(),
             row.text.as_deref(),
+            Some(row.kobo_location.as_str()),
         ] {
             match field {
                 Some(value) => {

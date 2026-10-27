@@ -1,0 +1,169 @@
+# The KOReader E2E lane: a real KOReader in Docker browsing, searching,
+# downloading and opening over OPDS, syncing shelves through the Omnibus
+# plugin, and syncing progress through its own built-in sync, against a
+# freshly seeded scratch server (docs/koreader.md).
+#
+# No workflow-level paths: (same reasoning as rust.yml); the changes job gates the lane.
+name: KOReader
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  # Nightly on the default branch (main).
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: koreader-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # Whether this PR touches anything that can change the lane: the OPDS/auth
+  # server code it exercises, the KOReader image/driver/runner/report, or the
+  # shared scratch-server helpers. Only consulted on pull_request events.
+  changes:
+    name: detect changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      koreader: ${{ steps.filter.outputs.koreader }}
+    steps:
+      # Gated to PRs: a scheduled run has no PR base to diff against.
+      - uses: dorny/paths-filter@v3
+        id: filter
+        if: github.event_name == 'pull_request'
+        with:
+          filters: |
+            koreader:
+              - "server/src/backend/opds/**"
+              - "server/src/auth/**"
+              - "server/src/backend.rs"
+              - "server/src/main.rs"
+              - "server/src/backend/ebooks.rs"
+              - "server/src/backend/highlights.rs"
+              - "server/src/backend/koreader/**"
+              - "server/src/backend/kosync/**"
+              - "server/src/backend/kobo_devices.rs"
+              - "server/src/backend/kobo/resources.rs"
+              - "server/src/backend/overrides.rs"
+              - "db/src/annotations/**"
+              - "db/src/epub_rewrite/**"
+              - "db/src/metadata_overrides/**"
+              - "db/src/kobo.rs"
+              - "db/src/koreader_position/**"
+              - "db/src/kobo_position/**"
+              - "db/src/progress*"
+              - "db/src/progress/**"
+              - "db/src/read_status/**"
+              - "db/migrations/**"
+              - "db/src/kobo_devices*"
+              - "db/src/kosync*"
+              - "db/src/partial_md5*"
+              - "koreader/**"
+              - "ui_tests/koreader/**"
+              - "test_data/epubs/generated/alpha.epub"
+              - "test_data/epubs/generated/beta.epub"
+              - "test_data/epubs/generated/standalone-lagoon.epub"
+              - "test_data/epubs/generated/frontmatter-relay.epub"
+              - "scripts/koreader-e2e.sh"
+              - "scripts/koreader_report.py"
+              - "scripts/lib/scratch-server.sh"
+              - "scripts/lib/dev-port.sh"
+              - "Justfile"
+              - "flake.nix"
+              - ".github/workflows/koreader.yml"
+
+  koreader:
+    name: koreader
+    needs: changes
+    if: ${{ needs.changes.outputs.koreader == 'true' || github.event_name != 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      actions: write
+    env:
+      CARGO_TARGET_DIR: ./target
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v22
+
+      # Distinct cache from rust.yml/e2e.yml (`nix-rust-`/`nix-e2e-`) so the
+      # workflows don't clobber each other; shared across runs via the prefix.
+      - name: Cache Nix store
+        uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-koreader-${{ runner.os }}-${{ hashFiles('flake.lock', 'flake.nix') }}
+          restore-prefixes-first-match: nix-koreader-${{ runner.os }}-
+          purge: true
+          purge-prefixes: nix-koreader-${{ runner.os }}-
+          purge-last-accessed: 604800
+          purge-primary-key: never
+          gc-max-store-size-linux: 5G
+
+      # Same `shared-key` as rust.yml/e2e.yml so a warm `cargo` target dir
+      # primes this lane's debug `dx bundle`.
+      - name: Cache cargo registry and target
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+          shared-key: omnibus
+
+      - name: Unit-test the plugin
+        run: nix develop .#web --command just koreader-plugin-test
+
+      # `just koreader`'s entry: noVNC answers, and `docker stop` ends KOReader
+      # through its own exit path, which writes settings.reader.lua.
+      - name: Smoke the interactive entry
+        run: |
+          docker build -t koreader-smoke ui_tests/koreader
+          home="$(mktemp -d)"
+          docker run -d --init --name koreader-smoke -p 127.0.0.1:6080:6080 \
+            --user "$(id -u):$(id -g)" -e HOME=/tmp -e VNC_PASSWORD=smoke-pw \
+            -v "$home:/ko-home" koreader-smoke koreader-vnc
+          # KOReader logs this line as it starts its UI, the point where it handles a stop.
+          for _ in $(seq 90); do
+            [ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:6080/vnc.html)" = 200 ] &&
+              docker logs koreader-smoke 2>&1 | grep -q 'Restoring user input handling' && ready=1 && break
+            sleep 1
+          done
+          docker stop -t 15 koreader-smoke
+          code="$(docker inspect -f '{{.State.ExitCode}}' koreader-smoke)"
+          if [ "${ready:-}" != 1 ] || [ "$code" != 0 ] || [ ! -e "$home/settings.reader.lua" ]; then
+            echo "ready=${ready:-0} exit code=$code"
+            docker logs koreader-smoke 2>&1 | tail -n 40
+            ls -la "$home"
+            exit 1
+          fi
+
+      - name: Run the KOReader lane
+        run: nix develop .#web --command scripts/koreader-e2e.sh
+
+      # The kept scratch dir: result JSON, screenshot, KOReader log, server.log.
+      - name: Upload failure artifacts
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@v4
+        with:
+          name: koreader-lane
+          path: /tmp/omnibus-koreader.*/
+          retention-days: 7
+
+  # The required status check for this workflow. Always runs (no paths filter +
+  # `if: always()`), so branch protection gets a resolved status on every PR —
+  # green when koreader passed or was skipped, red when it failed.
+  koreader-required:
+    name: 🔒 KOReader Required
+    needs: [changes, koreader]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: seamus-sloan/gh-actions/ci-gate@ci-gate-v1
+        with:
+          needs: ${{ toJSON(needs) }}

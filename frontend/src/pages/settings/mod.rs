@@ -163,6 +163,7 @@ fn section_content(section: SettingsSection) -> Element {
         SettingsSection::Devices => rsx! {
             account::kindle::KindleEmailCard {}
             account::kobo::KoboDevicesCard {}
+            account::koreader::KoreaderDevicesCard {}
         },
         SettingsSection::Security => rsx! {
             account::ChangePasswordCard {}

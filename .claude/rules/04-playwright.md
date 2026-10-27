@@ -1,5 +1,5 @@
 ---
-paths: "ui_tests/**, test_data/**, db/tests/fixture_epubs.rs, .github/workflows/e2e.yml, scripts/e2e-ci.sh, omnibus-ios/omnibusUITests/**, scripts/explore/driver/package.json, flake.nix"
+paths: "ui_tests/**, test_data/**, db/tests/fixture_epubs.rs, .github/workflows/e2e.yml, scripts/e2e-ci.sh, scripts/lib/scratch-server.sh, omnibus-ios/omnibusUITests/**, scripts/explore/driver/package.json, flake.nix"
 ---
 # 04 — Playwright E2E conventions
 

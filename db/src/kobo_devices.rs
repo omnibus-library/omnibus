@@ -1,23 +1,28 @@
-//! Per-device Kobo wireless-sync auth tokens. Each row is one registered Kobo
-//! owned by a `user_id`, carrying a re-displayable path token the reader pastes
-//! into its `api_endpoint`. The token is stored in the clear because it must be
+//! Per-device sync auth tokens. Each row is one registered Kobo or KOReader
+//! owned by a `user_id`, carrying a re-displayable token (a Kobo pastes it into
+//! its `api_endpoint`) that only authenticates routes of the row's kind. The token is stored in the clear because it must be
 //! shown again (AC2); the delta `sync_cursor` lives here too, independent of the
 //! token, so a regenerate never disturbs sync state. See migration 0053.
 
+use omnibus_shared::{DeviceKind, KosyncPassword};
 use serde::Serialize;
 use sqlx::{Row, SqlitePool};
 
-use crate::auth::{generate_token, AuthResult};
+use crate::{
+    auth::{generate_token, AuthResult},
+    kosync::claim_kosync_password,
+};
 
 /// Column list shared by every row-returning query, matched by [`row_to_device`].
 const COLS: &str =
-    "id, user_id, token, name, kobo_device_id, sync_cursor, created_at, last_seen_at";
+    "id, user_id, token, name, kind, kobo_device_id, sync_cursor, created_at, last_seen_at, \
+     last_sync_at, last_sync_error";
 
 /// Hard cap on devices `list_devices` returns for one user (matches `LIST_SHELVES_LIMIT`/`LIST_BOOKMARKS_LIMIT`).
 pub const LIST_DEVICES_LIMIT: i64 = 100;
 
-/// One registered Kobo: its owning user, the re-displayable path token, a
-/// user-visible label, the learned `x-kobo-deviceid` (once seen), the opaque
+/// One registered Kobo or KOReader: its owning user, the re-displayable token, a
+/// user-visible label, its kind, the learned `x-kobo-deviceid` (once seen), the opaque
 /// per-device delta cursor, and timestamps.
 #[derive(Debug, Clone, Serialize)]
 pub struct KoboDevice {
@@ -25,10 +30,15 @@ pub struct KoboDevice {
     pub user_id: i64,
     pub token: String,
     pub name: String,
+    pub kind: DeviceKind,
     pub kobo_device_id: Option<String>,
     pub sync_cursor: Option<String>,
     pub created_at: i64,
     pub last_seen_at: i64,
+    /// When the plugin last reported a sync, in Unix seconds; `None` until it has.
+    pub last_sync_at: Option<i64>,
+    /// The failure the last report carried; `None` when it succeeded.
+    pub last_sync_error: Option<String>,
 }
 
 impl From<KoboDevice> for omnibus_shared::KoboDeviceView {
@@ -37,9 +47,13 @@ impl From<KoboDevice> for omnibus_shared::KoboDeviceView {
         Self {
             id: d.id,
             name: d.name,
+            kind: d.kind,
             token: d.token,
             created_at: d.created_at,
             last_seen_at: d.last_seen_at,
+            last_sync_at: d.last_sync_at,
+            last_sync_error: d.last_sync_error,
+            kosync_login: None,
         }
     }
 }
@@ -61,17 +75,52 @@ pub enum KoboDeviceError {
     #[error("token generation failed: {0}")]
     Token(String),
     #[error(transparent)]
+    Kosync(anyhow::Error),
+    #[error(transparent)]
     Sqlx(#[from] sqlx::Error),
 }
 
-/// Register a new Kobo for `user_id`, minting a fresh token. Returns the full
+/// Register a new device of `kind` for `user_id`, minting a fresh token. Returns the full
 /// row (including the raw token — the caller shows it in the Settings card).
 pub async fn create_device(
     pool: &SqlitePool,
     user_id: i64,
     name: &str,
+    kind: DeviceKind,
 ) -> Result<KoboDevice, KoboDeviceError> {
-    create_device_with_token(pool, user_id, name, generate_token).await
+    create_device_with_token(pool, user_id, name, kind, generate_token).await
+}
+
+/// [`create_device`], and for a no-plugin KOReader also the account's Progress sync login when
+/// it has none yet. The two share a transaction, so no device exists whose login was never shown.
+pub async fn register_device(
+    pool: &SqlitePool,
+    user_id: i64,
+    name: &str,
+    kind: DeviceKind,
+) -> Result<(KoboDevice, Option<KosyncPassword>), KoboDeviceError> {
+    register_device_with_token(pool, user_id, name, kind, generate_token).await
+}
+
+/// `register_device` with the token generator passed in, like [`create_device_with_token`].
+async fn register_device_with_token(
+    pool: &SqlitePool,
+    user_id: i64,
+    name: &str,
+    kind: DeviceKind,
+    token_fn: impl FnOnce() -> AuthResult<String>,
+) -> Result<(KoboDevice, Option<KosyncPassword>), KoboDeviceError> {
+    let token = token_fn().map_err(|e| KoboDeviceError::Token(e.to_string()))?;
+    let mut tx = pool.begin().await?;
+    let device = insert_device(&mut *tx, user_id, name, kind, &token).await?;
+    let login = match kind {
+        DeviceKind::Kosync => claim_kosync_password(&mut tx, user_id)
+            .await
+            .map_err(KoboDeviceError::Kosync)?,
+        DeviceKind::Kobo | DeviceKind::Koreader => None,
+    };
+    tx.commit().await?;
+    Ok((device, login))
 }
 
 /// `create_device` with the token generator passed in, so a test can inject a
@@ -80,23 +129,35 @@ async fn create_device_with_token(
     pool: &SqlitePool,
     user_id: i64,
     name: &str,
+    kind: DeviceKind,
     token_fn: impl FnOnce() -> AuthResult<String>,
 ) -> Result<KoboDevice, KoboDeviceError> {
     let token = token_fn().map_err(|e| KoboDeviceError::Token(e.to_string()))?;
+    insert_device(pool, user_id, name, kind, &token).await
+}
+
+async fn insert_device<'e>(
+    db: impl sqlx::Executor<'e, Database = sqlx::Sqlite>,
+    user_id: i64,
+    name: &str,
+    kind: DeviceKind,
+    token: &str,
+) -> Result<KoboDevice, KoboDeviceError> {
     let row = sqlx::query(&format!(
-        "INSERT INTO kobo_devices (user_id, token, name)
-         VALUES (?, ?, ?)
+        "INSERT INTO kobo_devices (user_id, token, name, kind)
+         VALUES (?, ?, ?, ?)
          RETURNING {COLS}"
     ))
     .bind(user_id)
-    .bind(&token)
+    .bind(token)
     .bind(name)
-    .fetch_one(pool)
+    .bind(kind.as_str())
+    .fetch_one(db)
     .await?;
     Ok(row_to_device(&row))
 }
 
-/// List every Kobo registered by `user_id`, oldest first. Scoped to the user
+/// List every device registered by `user_id`, oldest first. Scoped to the user
 /// (AC4) — one user never sees another's devices.
 pub async fn list_devices(
     pool: &SqlitePool,
@@ -157,40 +218,55 @@ pub async fn regenerate_token(
         .ok_or(KoboDeviceError::NotFound)
 }
 
-/// Remove a registered Kobo, revoking its token. `NotFound` when the id is
-/// unknown or not owned by `user_id` (AC4).
+/// Remove a registered device, revoking its token. Removing the account's last no-plugin
+/// KOReader also turns off its Progress sync login, in the same transaction. `NotFound` when
+/// the id is unknown or not owned by `user_id` (AC4).
 pub async fn revoke_device(
     pool: &SqlitePool,
     user_id: i64,
     device_id: i64,
 ) -> Result<(), KoboDeviceError> {
-    let res = sqlx::query("DELETE FROM kobo_devices WHERE id = ? AND user_id = ?")
-        .bind(device_id)
-        .bind(user_id)
-        .execute(pool)
-        .await?;
-    if res.rows_affected() == 0 {
+    let mut tx = pool.begin().await?;
+    let kind: Option<String> =
+        sqlx::query_scalar("DELETE FROM kobo_devices WHERE id = ? AND user_id = ? RETURNING kind")
+            .bind(device_id)
+            .bind(user_id)
+            .fetch_optional(&mut *tx)
+            .await?;
+    let Some(kind) = kind else {
         return Err(KoboDeviceError::NotFound);
+    };
+    if kind == DeviceKind::Kosync.as_str() {
+        sqlx::query(
+            "UPDATE users SET kosync_key_hash = NULL WHERE id = ?1 AND NOT EXISTS \
+             (SELECT 1 FROM kobo_devices WHERE user_id = ?1 AND kind = 'kosync')",
+        )
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
     }
+    tx.commit().await?;
     Ok(())
 }
 
-/// Resolve a raw path token to its owning device + user, touching
-/// `last_seen_at`. `Ok(None)` for an unknown (invalid or revoked) token — the
-/// extractor maps that to `401`. This is the authentication hot path for every
+/// Resolve a raw token to its owning device + user, touching `last_seen_at`.
+/// `Ok(None)` for an unknown (invalid or revoked) token, or one of another
+/// `kind` — the extractor maps that to `401`. This is the authentication hot path for every
 /// wireless-sync request.
 pub async fn resolve_device_by_token(
     pool: &SqlitePool,
     token: &str,
+    kind: DeviceKind,
 ) -> Result<Option<ResolvedKoboDevice>, KoboDeviceError> {
     // Validate the token, touch `last_seen_at`, and return the ids in one
     // roundtrip — this runs on every wireless-sync request.
     let Some(row) = sqlx::query(
         "UPDATE kobo_devices SET last_seen_at = strftime('%s', 'now')
-         WHERE token = ?
+         WHERE token = ? AND kind = ?
          RETURNING id, user_id",
     )
     .bind(token)
+    .bind(kind.as_str())
     .fetch_optional(pool)
     .await?
     else {
@@ -200,6 +276,24 @@ pub async fn resolve_device_by_token(
         device_id: row.get("id"),
         user_id: row.get("user_id"),
     }))
+}
+
+/// Store the outcome the KOReader plugin reported for a sync: now as `last_sync_at`, and
+/// `error` (`None` for a success) as `last_sync_error`.
+pub async fn record_sync_report(
+    pool: &SqlitePool,
+    device_id: i64,
+    error: Option<&str>,
+) -> Result<(), KoboDeviceError> {
+    sqlx::query(
+        "UPDATE kobo_devices SET last_sync_at = strftime('%s', 'now'), last_sync_error = ?
+         WHERE id = ?",
+    )
+    .bind(error)
+    .bind(device_id)
+    .execute(pool)
+    .await?;
+    Ok(())
 }
 
 /// Bind the `x-kobo-deviceid` hardware id to this device row, so token-less
@@ -239,7 +333,7 @@ pub async fn resolve_device_by_hardware_id(
 ) -> Result<Option<ResolvedKoboDevice>, KoboDeviceError> {
     let Some(row) = sqlx::query(
         "UPDATE kobo_devices SET last_seen_at = strftime('%s', 'now')
-         WHERE kobo_device_id = ?
+         WHERE kobo_device_id = ? AND kind = 'kobo'
          RETURNING id, user_id",
     )
     .bind(hardware_id)
@@ -275,10 +369,17 @@ fn row_to_device(row: &sqlx::sqlite::SqliteRow) -> KoboDevice {
         user_id: row.get("user_id"),
         token: row.get("token"),
         name: row.get("name"),
+        kind: match row.get("kind") {
+            "koreader" => DeviceKind::Koreader,
+            "kosync" => DeviceKind::Kosync,
+            _ => DeviceKind::Kobo,
+        },
         kobo_device_id: row.get("kobo_device_id"),
         sync_cursor: row.get("sync_cursor"),
         created_at: row.get("created_at"),
         last_seen_at: row.get("last_seen_at"),
+        last_sync_at: row.get("last_sync_at"),
+        last_sync_error: row.get("last_sync_error"),
     }
 }
 

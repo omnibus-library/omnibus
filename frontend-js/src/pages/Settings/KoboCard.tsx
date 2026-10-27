@@ -1,9 +1,6 @@
-import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { useForm } from "react-hook-form";
 import { Link } from "react-router";
-import { z } from "zod";
 import {
   createKoboDevice,
   deleteKoboDevice,
@@ -14,17 +11,14 @@ import {
 import { Button } from "../../components/Button/Button";
 import { ConfirmDialog } from "../../components/ConfirmModal/ConfirmModal";
 import { CopyButton } from "../../components/CopyButton/CopyButton";
-import { BusyLabel, RowSkeletons } from "../../components/Loading/Loading";
+import { RowSkeletons } from "../../components/Loading/Loading";
 import {
   External,
   type Status,
   StatusLine,
   statusOrLoadError,
 } from "../../components/SettingsShell/SettingsShell";
-
-const NameSchema = z.object({
-  name: z.string().trim().min(1, "Enter a name for your Kobo."),
-});
+import { DeviceAddForm, useNameForm } from "./DeviceAddForm";
 
 const KOBO_BACKUP_URL = "https://github.com/omnibus-library/kobo-backup";
 
@@ -71,7 +65,7 @@ function Setup({ open }: { open: boolean }) {
       <summary className="kobo-setup-summary">How to connect a Kobo</summary>
       <ol className="subtitle kobo-setup-steps" data-testid="kobo-setup-steps">
         <li>
-          Give your Kobo a name and click <b>Add device</b> below.
+          Give your Kobo a name and click <b>Add a Kobo</b> below.
         </li>
         <li>
           Copy the whole <b>Wireless sync endpoint</b> URL shown for it. It must
@@ -91,8 +85,8 @@ function Setup({ open }: { open: boolean }) {
         <li>Eject safely. Your next sync on the device talks to Omnibus.</li>
       </ol>
       <p className="subtitle kobo-shelf-rule" data-testid="kobo-shelf-rule">
-        Only shelves marked <b>Sync to Kobo</b> are synced, so set that on a
-        shelf before the first sync.{" "}
+        Only shelves marked <b>Sync to my devices</b> are synced, so set that on
+        a shelf before the first sync.{" "}
         <Link to="/shelves" data-testid="kobo-shelves-link">
           Choose shelves to sync
         </Link>
@@ -182,21 +176,20 @@ function DeviceRow({ device, disabled, onAsk }: RowProps) {
   );
 }
 
-/** The reader's Kobos: add one, copy its sync address, regenerate that address or remove the device. */
+/** The reader's Kobos: add one, copy its sync address, regenerate that address or remove the device. KOReaders have their own card. */
 export function KoboCard() {
   const queryClient = useQueryClient();
   const devices = useQuery(koboDevicesQuery);
+  // The list also holds KOReaders, which the KOReader card shows.
+  const kobos = devices.data?.filter((d) => d.kind === "kobo");
   const [status, setStatus] = useState<Status | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
   // Decided when the list first answers: adding the first Kobo must not fold the steps away mid-read.
   const [setupOpen, setSetupOpen] = useState<boolean | null>(null);
-  if (setupOpen === null && devices.data) {
-    setSetupOpen(devices.data.length === 0);
+  if (setupOpen === null && kobos) {
+    setSetupOpen(kobos.length === 0);
   }
-  const form = useForm({
-    resolver: zodResolver(NameSchema),
-    defaultValues: { name: "" },
-  });
+  const form = useNameForm();
 
   // A read still in flight would land over the patch, so it is dropped first; only a list that has answered is patched.
   const setList = async (
@@ -216,7 +209,7 @@ export function KoboCard() {
     void queryClient.invalidateQueries({ queryKey: koboDevicesQuery.queryKey });
   };
   const add = useMutation({
-    mutationFn: createKoboDevice,
+    mutationFn: (name: string) => createKoboDevice(name, "kobo"),
     onMutate: () => setStatus(null),
     onSuccess: async (device) => {
       form.reset();
@@ -263,47 +256,27 @@ export function KoboCard() {
   );
   return (
     <section className="card" data-testid="kobo-devices-card">
-      <h3>Kobo wireless sync</h3>
-      <p className="subtitle">Sync your shelves to a Kobo over Wi-Fi.</p>
+      <h3 id="kobo-card-title">Kobo</h3>
+      <p className="subtitle">
+        Sync your shelves, reading position and highlights to a Kobo over Wi-Fi,
+        through its built-in store sync.
+      </p>
       <Warning />
       <Setup open={setupOpen ?? false} />
-      <form
-        id="kobo-add-form"
-        className="settings-form"
-        onSubmit={form.handleSubmit(
-          ({ name }) => add.mutate(name),
-          (errors) => report(errors.name?.message ?? "", true),
-        )}
-      >
-        <div className="settings-field">
-          <label htmlFor="kobo-device-name">Device name</label>
-          <input
-            type="text"
-            id="kobo-device-name"
-            data-testid="kobo-device-name-input"
-            autoComplete="off"
-            placeholder="e.g. Kobo Clara…"
-            maxLength={100}
-            {...form.register("name", { onChange: () => setStatus(null) })}
-          />
-        </div>
-        <div className="settings-actions">
+      <DeviceAddForm
+        prefix="kobo"
+        placeholder="e.g. Kobo Clara…"
+        label="Add a Kobo"
+        form={form}
+        busy={busy || !devices.isSuccess}
+        adding={add.isPending}
+        onAdd={(name) => add.mutate(name)}
+        onRefuse={(message) => report(message, true)}
+        onEdit={() => setStatus(null)}
+        status={
           <StatusLine testId="kobo-devices-status" status={shown} action />
-          <Button
-            type="submit"
-            variant="primary"
-            disabled={busy}
-            aria-busy={add.isPending}
-            data-testid="kobo-device-add"
-          >
-            <BusyLabel
-              busy={add.isPending}
-              label="Add device"
-              busyLabel="Adding…"
-            />
-          </Button>
-        </div>
-      </form>
+        }
+      />
       {devices.isPending && (
         <div
           role="status"
@@ -314,14 +287,14 @@ export function KoboCard() {
           <RowSkeletons count={1} avatar={false} />
         </div>
       )}
-      {devices.data?.length === 0 && (
+      {kobos?.length === 0 && (
         <p className="settings-status" data-testid="kobo-devices-empty">
           No Kobo registered yet.
         </p>
       )}
-      {devices.data && devices.data.length > 0 && (
+      {kobos && kobos.length > 0 && (
         <ul className="kobo-device-list" data-testid="kobo-device-list">
-          {devices.data.map((device) => (
+          {kobos.map((device) => (
             <DeviceRow
               key={device.id}
               device={device}

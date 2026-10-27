@@ -79,10 +79,15 @@ async fn state_push_is_scoped_to_the_tokens_owner() {
     // first.
     let (app, pool, _owner_token, owner_id) = fixture().await;
     let other = auth_test_support::create_user(&pool, "other-reader").await;
-    let other_token = db::kobo_devices::create_device(&pool, other.id, "Other Kobo")
-        .await
-        .unwrap()
-        .token;
+    let other_token = db::kobo_devices::create_device(
+        &pool,
+        other.id,
+        "Other Kobo",
+        omnibus_shared::DeviceKind::Kobo,
+    )
+    .await
+    .unwrap()
+    .token;
     let uuid = seed_synced_ebook(&pool, "dune.epub", "Dune", "Herbert").await;
 
     let body = serde_json::json!({

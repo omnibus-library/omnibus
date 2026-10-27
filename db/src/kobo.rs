@@ -137,15 +137,24 @@ impl KoboSeries {
 }
 
 impl KoboBookRow {
-    /// The `DownloadUrl.Format` the entitlement advertises, on the same
-    /// ladder `resources::download` serves: KEPUB, else CBZ, else PDF.
-    pub fn download_format(&self) -> &'static str {
+    /// The format of the file a device download serves, on the one ladder:
+    /// EPUB, else CBZ, else PDF.
+    pub fn file_format(&self) -> &'static str {
         if self.has_epub {
-            "KEPUB"
+            "EPUB"
         } else if self.has_cbz {
             "CBZ"
         } else {
             "PDF"
+        }
+    }
+
+    /// The `DownloadUrl.Format` the entitlement advertises: [`Self::file_format`],
+    /// with the EPUB rung served to a Kobo as `KEPUB`.
+    pub fn download_format(&self) -> &'static str {
+        match self.file_format() {
+            "EPUB" => "KEPUB",
+            other => other,
         }
     }
 }
@@ -368,7 +377,7 @@ fn row_to_book(row: &sqlx::sqlite::SqliteRow) -> Result<KoboBookRow, sqlx::Error
 
 /// One book's per-user reading state, as the Kobo protocol wants it: a read
 /// status, plus the position halves a device can act on.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct KoboBookState {
     pub status: ReadStatus,
     pub percent: Option<i64>,
@@ -378,6 +387,13 @@ pub struct KoboBookState {
     /// reader. Sync-out derives a KoboSpan from it when `kobo_location`
     /// is absent; it is never emitted to the device directly.
     pub epub_cfi: Option<String>,
+    /// The XPointer a KOReader device last wrote, verbatim; any newer
+    /// position from another surface clears it.
+    pub koreader_xpointer: Option<String>,
+    /// The exact fraction KOReader sent through kosync beside that XPointer, cleared with it.
+    pub koreader_percentage: Option<f64>,
+    /// The `book_files` edition the position was taken in, when the writer named one.
+    pub book_file_id: Option<i64>,
     /// Newest of the read-status and progress timestamps — the value the
     /// per-device delta compares against its snapshot to decide whether a
     /// device's state is stale.
@@ -442,6 +458,9 @@ fn reading_state_sql(placeholders: &str) -> String {
                 rp.progress_percent AS progress_percent,
                 rp.kobo_location AS kobo_location,
                 rp.epub_cfi AS epub_cfi,
+                rp.koreader_xpointer AS koreader_xpointer,
+                rp.koreader_percentage AS koreader_percentage,
+                rp.book_file_id AS book_file_id,
                 rp.kobo_spent_reading_minutes AS kobo_spent_reading_minutes,
                 rp.kobo_remaining_time_minutes AS kobo_remaining_time_minutes,
                 rp.kobo_statistics_updated_at AS kobo_statistics_updated_at,
@@ -503,6 +522,9 @@ fn row_to_kobo_state(row: &sqlx::sqlite::SqliteRow) -> Result<(String, KoboBookS
         percent: row.try_get::<Option<i64>, _>("progress_percent")?,
         kobo_location: row.try_get::<Option<String>, _>("kobo_location")?,
         epub_cfi: row.try_get::<Option<String>, _>("epub_cfi")?,
+        koreader_xpointer: row.try_get::<Option<String>, _>("koreader_xpointer")?,
+        koreader_percentage: row.try_get::<Option<f64>, _>("koreader_percentage")?,
+        book_file_id: row.try_get::<Option<i64>, _>("book_file_id")?,
         state_updated_at: row.try_get::<i64, _>("state_updated_at")?,
         progress_updated_at: row.try_get::<i64, _>("progress_updated_at")?,
         status_updated_at: row.try_get::<i64, _>("status_updated_at")?,

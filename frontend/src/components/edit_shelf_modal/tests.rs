@@ -41,7 +41,7 @@ fn Harness(kind: ShelfKind, sync_to_kobo: bool) -> Element {
 #[test]
 fn edit_shelf_modal_renders_the_kobo_toggle_off_when_the_shelf_does_not_sync() {
     let html = render(rsx! { Harness { kind: ShelfKind::Manual, sync_to_kobo: false } });
-    assert!(html.contains("Sync to Kobo"));
+    assert!(html.contains("Sync to my devices"));
     assert!(tag_with_testid(&html, "edit-shelf-kobo-off").contains("aria-pressed=\"true\""));
     assert!(tag_with_testid(&html, "edit-shelf-kobo-on").contains("aria-pressed=\"false\""));
 }
@@ -56,7 +56,7 @@ fn edit_shelf_modal_prefills_the_kobo_toggle_on_from_the_shelf() {
 #[test]
 fn edit_shelf_modal_hides_the_kobo_toggle_for_system_shelves() {
     let html = render(rsx! { Harness { kind: ShelfKind::Wishlist, sync_to_kobo: false } });
-    assert!(!html.contains("Sync to Kobo"));
+    assert!(!html.contains("Sync to my devices"));
     assert!(!html.contains("edit-shelf-kobo-on"));
 }
 

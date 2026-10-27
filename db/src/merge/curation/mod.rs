@@ -23,13 +23,16 @@ use super::MergeError;
 #[cfg(test)]
 mod tests;
 
-/// A `book_read_status` row without its book or surrogate id.
+/// A `book_read_status` row without its book or surrogate id. Snapshots written
+/// before the automatic mark existed lack `auto_started`, read as explicit.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, sqlx::FromRow)]
 pub(super) struct ReadStatusRow {
     pub user_id: i64,
     pub status: String,
     pub updated_at: i64,
     pub finished_at: Option<i64>,
+    #[serde(default)]
+    pub auto_started: bool,
 }
 
 /// A `reviews` row without its book or surrogate id. Snapshots written before
@@ -145,7 +148,9 @@ impl CurationRow for ReadStatusRow {
     }
 
     fn same_value(&self, other: &Self) -> bool {
-        self.status == other.status && self.finished_at == other.finished_at
+        self.status == other.status
+            && self.finished_at == other.finished_at
+            && self.auto_started == other.auto_started
     }
 }
 
@@ -409,7 +414,7 @@ async fn load_status(
     book_uuid: &str,
 ) -> Result<Vec<ReadStatusRow>, sqlx::Error> {
     sqlx::query_as(
-        "SELECT user_id, status, updated_at, finished_at FROM book_read_status
+        "SELECT user_id, status, updated_at, finished_at, auto_started FROM book_read_status
           WHERE book_uuid = ? ORDER BY user_id",
     )
     .bind(book_uuid)
@@ -459,18 +464,21 @@ async fn restore_status(
     for (book_uuid, rows) in [(target_uuid, plan.to_target), (source_uuid, plan.to_source)] {
         for row in rows {
             sqlx::query(
-                "INSERT INTO book_read_status (user_id, book_uuid, status, updated_at, finished_at)
-                 VALUES (?, ?, ?, ?, ?)
+                "INSERT INTO book_read_status
+                     (user_id, book_uuid, status, updated_at, finished_at, auto_started)
+                 VALUES (?, ?, ?, ?, ?, ?)
                  ON CONFLICT(user_id, book_uuid) DO UPDATE SET
                    status = excluded.status,
                    updated_at = excluded.updated_at,
-                   finished_at = excluded.finished_at",
+                   finished_at = excluded.finished_at,
+                   auto_started = excluded.auto_started",
             )
             .bind(row.user_id)
             .bind(book_uuid)
             .bind(&row.status)
             .bind(row.updated_at)
             .bind(row.finished_at)
+            .bind(row.auto_started)
             .execute(&mut **tx)
             .await?;
         }

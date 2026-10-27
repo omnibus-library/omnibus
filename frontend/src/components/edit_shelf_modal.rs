@@ -209,12 +209,12 @@ fn edit_shelf_head(
     }
 }
 
-/// The Kobo sync opt-in row (off/on segmented toggle). Only mounted for
+/// The device sync opt-in row (off/on segmented toggle). Only mounted for
 /// non-system shelves — see `show_kobo` at the call site.
 fn edit_shelf_kobo_toggle(mut sync_to_kobo: Signal<bool>) -> Element {
     rsx! {
         div { class: "shelf-modal-kobo",
-            span { class: "shelf-kobo-label", "Sync to Kobo" }
+            span { class: "shelf-kobo-label", "Sync to my devices" }
             div { class: "shelf-kobo-toggle",
                 button {
                     r#type: "button",
