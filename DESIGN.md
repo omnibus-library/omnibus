@@ -270,7 +270,7 @@ The most important object on any screen.
 - **Missing cover:** a neutral plate with the author in spaced uppercase sans on top and the title in balanced serif below, both sized to the cover with container units.
 
 ### Loading
-Every wait draws from the shared loading kit (`frontend/src/components/loading.rs`, `frontend-js/src/components/Loading/`): a breathing ring (11, 14, 22 or 30px) on a 1.7s beat. Loaders that would show for less than 160ms never appear.
+Every wait draws from the shared loading kit (`frontend/src/components/loading.rs`, `frontend-js/src/components/Loading/`), and the mark follows the shape being filled: the riffle for a page or a reader stage (the line for an audio stage), the line for a section or sheet, and the ring for a row or a busy button. Content whose shape is known gets skeletons instead. Marks breathe on a 1.7s beat, and loaders that would show for less than 160ms never appear. [Rule 12](.claude/rules/12-loading-states.md) is the full guide.
 
 ## Do's and Don'ts
 
