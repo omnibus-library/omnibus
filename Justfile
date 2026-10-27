@@ -121,10 +121,15 @@ koreader-dev-test:
 koreader-home-test:
     python3 scripts/tests/koreader-home.test.py
 
+# Tests that dev-down and dev-up's failure path stop the dev server's whole
+# process tree. Plain bash against stand-in trees, like scratch-server-test.
+dev-server-down-test:
+    bash scripts/tests/dev-server-down.test.sh
+
 # Run every unit/integration suite: the Rust matrix first, then the script
 # suites. Rust leads so a failing script suite can't stop the recipe
 # before the cargo results are in.
-test: test-rust explore-test module-map-test koreader-report-test koreader-plugin-test scratch-server-test koreader-dev-test koreader-home-test
+test: test-rust explore-test module-map-test koreader-report-test koreader-plugin-test scratch-server-test koreader-dev-test koreader-home-test dev-server-down-test
 
 # The Rust half of `just test`: the full matrix via cargo-nextest (the same
 # runner CI uses, so local and CI results match; no doctests in the tree, which

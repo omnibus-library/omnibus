@@ -11,10 +11,11 @@
 
 set -euo pipefail
 
-MY_REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-cd "$MY_REPO_ROOT"
-
-RUNTIME_DIR=".claude/runtime"
+cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+# MY_REPO_ROOT, RUNTIME_DIR and stop_process_tree come from here; dev-up's
+# failure path stops a server the same way.
+# shellcheck source=scripts/lib/dev-port.sh
+source scripts/lib/dev-port.sh
 
 if [ ! -f "$RUNTIME_DIR/server.pid" ]; then
     echo "dev-down: no server.pid; nothing to stop." >&2
@@ -24,8 +25,10 @@ fi
 pid="$(cat "$RUNTIME_DIR/server.pid" 2>/dev/null || true)"
 port="$(cat "$RUNTIME_DIR/port" 2>/dev/null || true)"
 
-if [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null; then
-    echo "dev-down: PID ${pid:-<empty>} is not running; cleaning stale runtime files." >&2
+# A PID file outlives the dx it named, and once the PID is reused the port
+# is silent and the identity check below passes: anything not dx is stale.
+if [ -z "$pid" ] || ! proc_is_live "$pid" || ! is_dx_process "$pid"; then
+    echo "dev-down: PID ${pid:-<empty>} is not a running dx; cleaning stale runtime files." >&2
     rm -f "$RUNTIME_DIR/server.pid" "$RUNTIME_DIR/port" "$RUNTIME_DIR/env.sh"
     exit 0
 fi
@@ -47,39 +50,8 @@ fi
 
 # Either ours by repo_root match, or wedged (no response) but recorded
 # in our PID file — either way, kill it.
-descendants() {
-    local kid
-    for kid in $(pgrep -P "$1" 2>/dev/null || true); do
-        echo "$kid"
-        descendants "$kid"
-    done
-}
-
-running() {
-    local p
-    for p in $tree; do
-        kill -0 "$p" 2>/dev/null && return 0
-    done
-    return 1
-}
-
 echo "dev-down: stopping pid $pid (port ${port:-?})" >&2
-# dx runs the server as its child, and once dx exits that child belongs to
-# init where pgrep -P can't find it: name the whole tree before signalling.
-tree="$pid $(descendants "$pid" | tr '\n' ' ')"
-# shellcheck disable=SC2086
-kill $tree 2>/dev/null || true
-
-# Give it a moment to actually exit before we clean the runtime files.
-for _ in 1 2 3 4 5 6 7 8 9 10; do
-    running || break
-    sleep 0.5
-done
-if running; then
-    echo "dev-down: pid $pid's tree didn't exit after SIGTERM; sending SIGKILL." >&2
-    # shellcheck disable=SC2086
-    kill -9 $tree 2>/dev/null || true
-fi
+stop_process_tree "$pid"
 
 rm -f "$RUNTIME_DIR/server.pid" "$RUNTIME_DIR/port" "$RUNTIME_DIR/env.sh"
 

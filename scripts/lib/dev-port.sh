@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# Shared port-resolution helpers for the dev-server front doors.
+# Shared port-resolution and server-stop helpers for the dev-server scripts.
 #
 # Sourced by scripts/dev-server-up.sh (daemonized, for agents) and
 # scripts/dev-serve-fg.sh (foreground, for the `just serve` panes). Both
 # answer the same question — which port does THIS worktree's server belong
 # on — and a second copy of the walk would let the two front doors drift
-# and hand one port to two worktrees.
+# and hand one port to two worktrees. dev-server-down.sh sources it for
+# stop_process_tree, which dev-up's failure path shares.
 #
 # Callers must `cd` to the worktree root before sourcing; RUNTIME_DIR is
 # relative so log paths stay short in messages.
@@ -124,4 +125,89 @@ write_runtime_files() {
 export OMNIBUS_PORT=$port
 export PLAYWRIGHT_BASE_URL=http://127.0.0.1:$port
 EOF
+}
+
+# Basename of a process's command, or empty once it is gone.
+proc_name() {
+    ps -o comm= -p "$1" 2>/dev/null | awk '{
+        sub(/^[ \t]+/, ""); sub(/[ \t]+$/, ""); n = split($0, part, "/"); print part[n]
+    }'
+}
+
+# Whether a pid names a dx process. nix's makeWrapper execs `.dx-wrapped`,
+# which is the comm Linux reports; macOS reports the wrapper's argv[0], `dx`.
+is_dx_process() {
+    case "$(proc_name "$1")" in
+    dx | .dx-wrapped) return 0 ;;
+    *) return 1 ;;
+    esac
+}
+
+# A zombie still answers `kill -0`, and no signal will remove it.
+proc_is_live() {
+    kill -0 "$1" 2>/dev/null || return 1
+    case "$(ps -o stat= -p "$1" 2>/dev/null | tr -d '[:space:]')" in
+    Z*) return 1 ;;
+    esac
+}
+
+# A pid's descendants, one per line, from a single process-table
+# snapshot. sccache's server is shared by every worktree and is only under
+# dx by chance (whichever build woke it), so it and its subtree stay out.
+proc_tree() {
+    { ps -Ao pid=,ppid=,comm= 2>/dev/null || true; } | awk -v root="$1" '
+        {
+            pid = $1; ppid = $2; $1 = ""; $2 = ""
+            n = split($0, part, "/"); name = part[n]
+            gsub(/^[ (]+|[ )]+$/, "", name)
+            if (name != "sccache") kids[ppid] = kids[ppid] " " pid
+        }
+        END {
+            seen[root] = 1; queue[1] = root; head = 1; tail = 1
+            while (head <= tail) {
+                n = split(kids[queue[head++]], k, " ")
+                for (i = 1; i <= n; i++) {
+                    if (k[i] in seen) continue
+                    seen[k[i]] = 1; print k[i]; queue[++tail] = k[i]
+                }
+            }
+        }'
+}
+
+# Stop a dev server and everything under it: once dx exits, its server
+# child belongs to init, so the tree is named before anything is signalled.
+# SIGKILLs whatever outlives ~5 s of SIGTERM.
+stop_process_tree() {
+    local root="$1" tree prev_exit
+    prev_exit="$(trap -p EXIT)"
+    # Frozen, dx can't spawn a fresh server between the snapshot and the
+    # signal; the trap keeps an early exit from leaving it frozen.
+    # shellcheck disable=SC2064 # expand now: $root is out of scope at exit
+    trap "kill -CONT $root 2>/dev/null" EXIT
+    kill -STOP "$root" 2>/dev/null || true
+    # The root is named outright so no failed walk can skip its SIGCONT.
+    tree="$root $(proc_tree "$root" | tr '\n' ' ')"
+    # shellcheck disable=SC2086
+    kill -TERM $tree 2>/dev/null || true
+    # A stopped process only acts on the pending SIGTERM once continued.
+    # shellcheck disable=SC2086
+    kill -CONT $tree 2>/dev/null || true
+    eval "${prev_exit:-trap - EXIT}"
+
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+        # shellcheck disable=SC2086
+        tree_is_live $tree || return 0
+        sleep 0.5
+    done
+    echo "dev: pid $root's tree outlived SIGTERM; sending SIGKILL" >&2
+    # shellcheck disable=SC2086
+    kill -KILL $tree 2>/dev/null || true
+}
+
+tree_is_live() {
+    local p
+    for p in "$@"; do
+        proc_is_live "$p" && return 0
+    done
+    return 1
 }
