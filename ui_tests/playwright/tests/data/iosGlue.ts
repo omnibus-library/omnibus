@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import JSZip from "jszip";
 
 // Types and the in-memory book for the iOS reader glue lane (rule 04b): what
@@ -79,17 +81,18 @@ export interface GlueWindow {
 }
 
 /**
- * A one-chapter EPUB3 whose chapter body is `body`. `head` lands in the
+ * A one-chapter EPUB3 whose chapter body is `body`. `head` lands in every
  * chapter's `<head>`; `files` are extra `OEBPS/`-relative resources, each
- * listed in the manifest under the given media type; `toc` is the nav's
- * `[label, href]` entries, one "One" entry for the chapter by default.
- * `chapters` are the bodies of further spine items, `chapter2.xhtml` on.
+ * listed in the manifest under the given media type (stored in the zip under
+ * its decoded name), and left out of the zip when its `data` is null; `toc` is the nav's `[label, href]` entries, one
+ * "One" entry for the chapter by default. `chapters` are the bodies of
+ * further spine items, `chapter2.xhtml` on.
  */
 export async function buildChapterEpub(
   body: string,
   opts: {
     head?: string;
-    files?: Record<string, { data: Buffer | string; mediaType: string }>;
+    files?: Record<string, { data: Buffer | string | null; mediaType: string }>;
     toc?: [string, string][];
     chapters?: string[];
   } = {},
@@ -158,15 +161,128 @@ export async function buildChapterEpub(
       `OEBPS/${c.href}`,
       `<?xml version="1.0" encoding="utf-8"?>
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
-<head><title>${c.id}</title></head>
+<head><title>${c.id}</title>${opts.head ?? ""}</head>
 <body>${c.body}</body>
 </html>`,
     );
   }
   for (const [href, f] of Object.entries(files)) {
-    zip.file(`OEBPS/${href}`, f.data);
+    if (f.data !== null) zip.file(`OEBPS/${decodeURIComponent(href)}`, f.data);
   }
   return zip.generateAsync({ type: "nodebuffer" });
+}
+
+/**
+ * A font for a book to embed: the reader's own EB Garamond bytes, which a
+ * book's sheet names under a family of its own.
+ */
+export const BOOK_FONT: Buffer = readFileSync(
+  resolve(
+    __dirname,
+    "..",
+    "..",
+    "..",
+    "..",
+    "omnibus-ios",
+    "omnibus",
+    "Reader",
+    "Web",
+    "EBGaramond-Regular.woff2",
+  ),
+);
+
+/** A 1x1 transparent PNG, for a book image whose pixels nothing reads. */
+const BOOK_IMAGE: Buffer = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+  "base64",
+);
+
+/**
+ * A book in the shape Calibre gives one: the sheet in `styles/`, the chapters
+ * a folder up, and the sheet embedding `font` from `fonts/` by a url()
+ * relative to itself, for every paragraph in `family`. `twoChapters` adds a
+ * second chapter, "Two", that links the sheet too. `missingAsset` lists a face
+ * the zip lacks ahead of the font, which epub.js drops from its replacements,
+ * and names it first in the face's src; `missingSheet` lists a sheet the zip
+ * lacks ahead of the real one. `refilledTable` adds a real image after the
+ * missing file and lists the sheet last, so epub.js's write-back of the sheet
+ * makes its short table full length again. `missingFace` names the missing
+ * face's file in `fonts/` (default `Absent.woff2`). `faceFile` names the font
+ * as the sheet spells it, percent-encoded in the manifest (default
+ * `BookFace.woff2`); `importedFace` moves the face into `styles/fonts.css`,
+ * which the sheet pulls in by an `@import` spelt as a string or a url();
+ * `quotedUrl` adds a `content` string that reads like a url();
+ * `unclosedString` leaves a string open to its line ahead of the face.
+ */
+export function bookWithSheetFont(opts: {
+  family: string;
+  font: Buffer;
+  twoChapters?: boolean;
+  missingAsset?: boolean;
+  missingSheet?: boolean;
+  refilledTable?: boolean;
+  missingFace?: string;
+  faceFile?: string;
+  importedFace?: "string" | "url";
+  quotedUrl?: boolean;
+  unclosedString?: boolean;
+}): Promise<Buffer> {
+  const prose = Array.from(
+    { length: 12 },
+    (_, i) =>
+      `<p>Paragraph ${i + 1} of the harbour, set in the book's face.</p>`,
+  ).join("");
+  const missingFace = opts.missingFace ?? "Absent.woff2";
+  const absent = opts.missingAsset
+    ? `url("../fonts/${missingFace}") format("woff2"), `
+    : "";
+  const faceFile = opts.faceFile ?? "BookFace.woff2";
+  // CSS ends an unclosed string at its line, so the face below still loads.
+  const broken = opts.unclosedString ? 'p::after { content: "oops;\n}\n' : "";
+  const face = `${broken}@font-face { font-family: "${opts.family}"; src: ${absent}url("../fonts/${faceFile}") format("woff2"); }`;
+  const imports = {
+    string: '@import "fonts.css";',
+    url: '@import url("fonts.css");',
+  };
+  const sheet = `${opts.importedFace ? imports[opts.importedFace] : face}
+p { font-family: "${opts.family}", serif; }
+${opts.quotedUrl ? 'p::before { content: "url(x)"; }' : ""}
+${opts.refilledTable ? 'body { background-image: url("../images/bg.png"); }' : ""}
+`;
+  const sheetFile = {
+    "styles/book.css": { data: sheet, mediaType: "text/css" },
+    ...(opts.importedFace
+      ? { "styles/fonts.css": { data: face, mediaType: "text/css" } }
+      : {}),
+  };
+  return buildChapterEpub(prose, {
+    head: '<link href="styles/book.css" rel="stylesheet" type="text/css"/>',
+    ...(opts.twoChapters
+      ? {
+          chapters: [prose],
+          toc: [
+            ["One", "chapter.xhtml"],
+            ["Two", "chapter2.xhtml"],
+          ],
+        }
+      : {}),
+    files: {
+      ...(opts.missingAsset
+        ? { [`fonts/${missingFace}`]: { data: null, mediaType: "font/woff2" } }
+        : {}),
+      ...(opts.missingSheet
+        ? { "styles/absent.css": { data: null, mediaType: "text/css" } }
+        : {}),
+      ...(opts.refilledTable
+        ? { "images/bg.png": { data: BOOK_IMAGE, mediaType: "image/png" } }
+        : sheetFile),
+      [`fonts/${encodeURIComponent(faceFile)}`]: {
+        data: opts.font,
+        mediaType: "font/woff2",
+      },
+      ...(opts.refilledTable ? sheetFile : {}),
+    },
+  });
 }
 
 /** Where a selection row ends, in host-window y. */

@@ -14,11 +14,14 @@ XCUITest cannot see inside the web view, and the iOS unit suite has no DOM.
 - **Serve the files off disk on a routed origin.** `page.route` on
   `http://ios-glue.test/**` fulfils `reader.html` and its three scripts from
   `omnibus-ios/omnibus/Reader/Web/`, unchanged, plus a book. Never copy them
-  next to the spec — a copy only tests itself.
+  next to the spec — a copy only tests itself. Anything else the page asks
+  for is recorded (`unservedRequests`): on iOS each is a scheme-handler
+  failure, and one before `ready` is the "couldn't open" screen.
 - **Build the book in memory** with JSZip, shaped to the case. The
   public-domain fixtures are clean Gutenberg markup, which is exactly why they
-  never caught #2650: hidden page-break markers, in-body stylesheets and
-  `[hidden]` blocks are what commercial and Calibre-converted books carry.
+  never caught #2650: hidden page-break markers, in-body stylesheets,
+  `[hidden]` blocks and sheets in a folder apart from the chapters are what
+  commercial and Calibre-converted books carry.
 - **Replace the host callbacks before `init`.** `reader.html` bridges every
   `__omnibusOn*` callback to a WKWebView message handler that is not there (its
   `send` swallows the error); overwrite the ones a spec reads with ones that
@@ -36,8 +39,8 @@ XCUITest cannot see inside the web view, and the iOS unit suite has no DOM.
 `pages/IosGluePage.ts` is that harness: its `openBook` does the routing, the
 recorders and `init`, and the `iosGluePage` fixture injects it. The book comes
 from `buildChapterEpub` in `data/iosGlue.ts` (further spine items via
-`chapters`, for anything that crosses a chapter), so a spec supplies only its
-chapters and its drive.
+`chapters`, for anything that crosses a chapter; `bookWithSheetFont` for one
+whose sheet embeds a font), so a spec supplies only its chapters and its drive.
 
 The one-layout-test rule in 04 is for `tests/flows/`; a glue spec has no page
 of its own to lay out. It needs no server, but it runs under the suite's

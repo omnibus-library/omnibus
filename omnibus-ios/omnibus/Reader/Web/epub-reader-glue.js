@@ -964,8 +964,13 @@
         }
       });
       paths.forEach(function (path) {
-        book.archive
-          .getText(path)
+        var text;
+        try {
+          text = bookSheetText(path);
+        } catch (e) {
+          return; /* one bad sheet never keeps the rest out */
+        }
+        text
           .then(function (css) {
             if (!css || !doc.head) return;
             var style = doc.createElement("style");
@@ -982,6 +987,93 @@
     } catch (e) {
       /* never let styling break rendering */
     }
+  }
+
+  // A book sheet's inlined text by path, read and substituted once per book,
+  // since every section render inlines every sheet again. Kept on the book,
+  // so it goes with it.
+  function bookSheetText(path) {
+    var b = book;
+    var byPath = b.__omnibusSheetText || (b.__omnibusSheetText = {});
+    if (byPath[path]) return byPath[path];
+    var read = b.archive.getText(path); // undefined for a sheet the zip lacks
+    if (!read || !read.then) return (byPath[path] = Promise.resolve(null));
+    byPath[path] = read.then(function (css) {
+      var res = b.resources;
+      if (!css || !res || !res.urls || !res.replacementUrls) return css;
+      // The sheet's url()s are relative to the sheet, and inline they would
+      // resolve against the section: point them at epub.js's copies of the
+      // book's files, as it does for the <link> it rewrites.
+      var cache = b.archive.urlCache || {};
+      var whole = res.urls.every(function (href) {
+        return b.resolve(href) in cache;
+      });
+      // epub.js drops a file it could not read from replacementUrls, and its
+      // write-back of a later sheet can refill the short table to full length,
+      // so neither lines up with the assets. Pair each by asset instead: the
+      // font data: patched at its own index, else the cached copy.
+      var byFile = Object.create(null);
+      res.urls.forEach(function (href, i) {
+        var own = res.replacementUrls[i];
+        var file = b.resolve(href);
+        var data = typeof own === "string" && own.indexOf("data:") === 0;
+        byFile[decodePath(file)] = whole || data ? own : cache[file];
+      });
+      return substituteSheetUrls(b, css, path, byFile);
+    });
+    return byPath[path];
+  }
+
+  // A comment, an @import rule (string or url() form), a url() token, or a
+  // bare string: scanning whole tokens keeps a url( inside a comment or a
+  // string as written, and the rule comes first so its url() is its own. A string ends at its line and a comment at the file's end, as in
+  // CSS, so an unclosed one can't throw the scan out of step.
+  var CSS_TOKEN_RE =
+    /\/\*[\s\S]*?(?:\*\/|$)|@import\s*(?:"((?:[^"\\\r\n\f]|\\[\s\S])*)"|'((?:[^'\\\r\n\f]|\\[\s\S])*)'|url\(\s*(?:"((?:[^"\\\r\n\f]|\\[\s\S])*)"|'((?:[^'\\\r\n\f]|\\[\s\S])*)'|([^)\s"']*))\s*\))[^;{}]*;?|url\(\s*(?:"((?:[^"\\\r\n\f]|\\[\s\S])*)"|'((?:[^'\\\r\n\f]|\\[\s\S])*)'|([^)\s"']*))\s*\)|"(?:[^"\\\r\n\f]|\\[\s\S])*"?|'(?:[^'\\\r\n\f]|\\[\s\S])*'?/gi;
+  var URL_SCHEME_RE = /^[a-z][a-z0-9+.-]*:/i;
+
+  // One spelling for a path, as a sheet and the manifest may percent-encode a
+  // name differently; a malformed escape stays as written.
+  function decodePath(p) {
+    try {
+      return decodeURIComponent(p);
+    } catch (e) {
+      return p;
+    }
+  }
+
+  function isBookRef(ref) {
+    return !!ref && ref.charAt(0) !== "#" && !URL_SCHEME_RE.test(ref);
+  }
+
+  // Rewrite each whole url() token by the book file it resolves to from the
+  // sheet's folder. epub.js's substitute() replaces each relative path as a
+  // substring, so a missing Face.woff rewrites Face.woff2's url() too. Any
+  // other file gets an empty data:, as a raw url() would reach the host.
+  function substituteSheetUrls(b, css, sheetPath, byFile) {
+    var sheet = new b.path.constructor(sheetPath);
+    return css.replace(
+      CSS_TOKEN_RE,
+      function (token, idq, isq, iudq, iusq, iubare, dq, sq, bare) {
+        var imported = firstSet(idq, isq, firstSet(iudq, iusq, iubare));
+        if (imported != null) {
+          // Every manifest sheet is inlined on its own, and epub.js's blob:
+          // copy can't load in the section, so a book sheet's @import rule is
+          // dropped.
+          return isBookRef(imported) ? "" : token;
+        }
+        var ref = firstSet(dq, sq, bare);
+        if (!isBookRef(ref)) return token; // a comment, a string, or not the book's
+        var hash = ref.indexOf("#") < 0 ? "" : ref.slice(ref.indexOf("#"));
+        var file = decodePath(sheet.resolve(ref.split(/[?#]/)[0]));
+        return 'url("' + (byFile[file] || "data:,") + hash + '")';
+      },
+    );
+  }
+
+  // The first of a token's alternative capture groups that matched.
+  function firstSet(a, b, c) {
+    return a != null ? a : b != null ? b : c;
   }
 
   var FONT_EXT_RE = /\.(woff2|woff|ttf|otf|ttc)$/i;
