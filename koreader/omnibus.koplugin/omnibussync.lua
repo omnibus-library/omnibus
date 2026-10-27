@@ -647,10 +647,14 @@ end
 -- did not land and whether to stop there (no answer, or the device was removed): the pull is
 -- pointless then.
 local function push(upserts, deletes, deps, state)
-    local at_up, at_del, max_items = 1, 1, M.PUSH_BATCH
+    local at_up, at_del, max_items, upsert_alone = 1, 1, M.PUSH_BATCH, false
     local refused = {}
     while at_up <= #upserts or at_del <= #deletes do
         local sent, gone = take_batch(upserts, at_up, deletes, at_del, max_items, deps)
+        if upsert_alone then
+            gone = {}
+        end
+        upsert_alone = false
         -- An empty array may encode as an object, which the server would refuse.
         local wires = {}
         for _, up in ipairs(sent) do
@@ -658,8 +662,11 @@ local function push(upserts, deletes, deps, state)
         end
         local code, reply, err = deps.post({ upserts = #sent > 0 and wires or nil,
             deletes = #gone > 0 and gone or nil })
-        if code == 413 and #sent + #gone > 1 then
-            max_items = math.max(1, math.ceil(math.max(#sent, #gone) / 2))
+        if code == 413 and math.max(#sent, #gone) > 1 then
+            max_items = math.ceil(math.max(#sent, #gone) / 2)
+        elseif code == 413 and #sent == 1 and #gone == 1 then
+            -- A delete is only an id, so try the highlight without it.
+            upsert_alone = true
         elseif code == 413 then
             table.insert(refused, string.format("a highlight is too large for Omnibus to take (%s)",
                 sent[1] and sent[1].id or gone[1]))

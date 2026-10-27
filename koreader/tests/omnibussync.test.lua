@@ -1884,6 +1884,30 @@ test("sync_annotations reports a single highlight the server refuses as too larg
     eq(#items, 2)
 end)
 
+test("sync_annotations sends a refused highlight alone from a delete and still lands the delete", function()
+    local big = highlight({ omnibus_id = "big" })
+    local deleted, posts = nil, 0
+    local items, synced, deps = annotation_device({
+        items = { big },
+        post = function(body)
+            posts = posts + 1
+            assert(posts <= 10, "push never stopped retrying")
+            if body.upserts then
+                return 413
+            end
+            deleted = body.deletes
+            return 200, { results = {} }
+        end,
+    })
+    synced.agreed = { gone = { fp = "x", server_at = 1, server_color = "yellow" } }
+
+    local result = sync.sync_annotations(items, synced, deps)
+
+    eq(result.message:find("too large", 1, true) ~= nil, true)
+    eq(deleted[1], "gone")
+    eq(synced.agreed.gone, nil)
+end)
+
 test("sync_annotations counts a removal from the listing as a change even without an agreed entry", function()
     local item = highlight({ omnibus_id = "h1" })
     local items, synced, deps = annotation_device({
