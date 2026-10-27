@@ -42,6 +42,11 @@ async fn listed(pool: &SqlitePool, user: i64, uuid: &str, since: impl ToString) 
         .unwrap()
 }
 
+/// A cursor at `time` for both rows and tombstones, as the server would issue one.
+fn at(time: i64) -> String {
+    format!("{time}.0.{time}.")
+}
+
 /// The time a cursor's rows position stands at (its first wire part).
 fn row_time(cursor: &KoreaderCursor) -> i64 {
     cursor.encode().split('.').next().unwrap().parse().unwrap()
@@ -120,8 +125,8 @@ mod koreader_annotations_since {
             .await
             .unwrap();
 
-        let first = listed(&pool, user, &uuid, 0).await;
-        let second = listed(&pool, user, &uuid, 0).await;
+        let first = listed(&pool, user, &uuid, &at(0)).await;
+        let second = listed(&pool, user, &uuid, &at(0)).await;
 
         assert_eq!(first.annotations.len(), 1);
         let minted = &first.annotations[0];
@@ -142,7 +147,7 @@ mod koreader_annotations_since {
             stamp(&pool, id, at).await;
         }
 
-        let listing = listed(&pool, user, &uuid, 200).await;
+        let listing = listed(&pool, user, &uuid, &at(200)).await;
 
         assert_eq!(ids(&listing), vec!["edge", "new"]);
     }
@@ -154,7 +159,7 @@ mod koreader_annotations_since {
         let (_, uuid) = seed(&pool, "/lib", "Book A").await;
         let before = now(&pool).await;
 
-        let listing = listed(&pool, user, &uuid, 0).await;
+        let listing = listed(&pool, user, &uuid, &at(0)).await;
 
         assert!((before..=now(&pool).await).contains(&row_time(&listing.cursor)));
     }
@@ -179,7 +184,7 @@ mod koreader_annotations_since {
             .await
             .unwrap();
 
-        let listing = listed(&pool, user, &uuid, 0).await;
+        let listing = listed(&pool, user, &uuid, &at(0)).await;
 
         assert_eq!(ids(&listing), vec!["web"]);
     }
@@ -201,7 +206,7 @@ mod koreader_annotations_since {
                 .unwrap();
         }
 
-        let listing = listed(&pool, alice, &book_a, 0).await;
+        let listing = listed(&pool, alice, &book_a, &at(0)).await;
 
         assert_eq!(ids(&listing), vec!["mine"]);
     }
@@ -220,8 +225,8 @@ mod koreader_annotations_since {
             .await
             .unwrap();
 
-        let at_the_deletion = listed(&pool, user, &uuid, 500).await;
-        let after_it = listed(&pool, user, &uuid, 501).await;
+        let at_the_deletion = listed(&pool, user, &uuid, &at(500)).await;
+        let after_it = listed(&pool, user, &uuid, &at(501)).await;
 
         assert_eq!(at_the_deletion.deleted, vec!["gone"]);
         assert!(at_the_deletion.annotations.is_empty());
@@ -241,7 +246,7 @@ mod koreader_annotations_since {
             .await
             .unwrap();
 
-        let listing = listed(&pool, user, &uuid, 0).await;
+        let listing = listed(&pool, user, &uuid, &at(0)).await;
         assert_eq!(listing.deleted, vec!["kobo-1"]);
         assert!(listing.annotations.is_empty());
     }
@@ -263,7 +268,7 @@ mod koreader_annotations_since {
         .await
         .unwrap();
 
-        let listing = listed(&pool, user, &uuid, 0).await;
+        let listing = listed(&pool, user, &uuid, &at(0)).await;
 
         assert_eq!(listing.annotations.len() as i64, LIST_HIGHLIGHTS_LIMIT);
         assert_eq!(row_time(&listing.cursor), 10000 + LIST_HIGHLIGHTS_LIMIT);
@@ -310,7 +315,7 @@ mod delete_highlight {
         assert!(matches!(by_bob, HighlightError::NotFound));
         assert!(matches!(unknown, HighlightError::NotFound));
         assert!(stored(&pool, alice, "a1").await.is_some());
-        assert!(listed(&pool, alice, &uuid, 0).await.deleted.is_empty());
+        assert!(listed(&pool, alice, &uuid, &at(0)).await.deleted.is_empty());
     }
 }
 
@@ -601,9 +606,15 @@ mod delete_koreader_annotations {
         assert!(stored(&pool, alice, "mine").await.is_none());
         assert!(stored(&pool, alice, "other-book").await.is_some());
         assert!(stored(&pool, bob, "mine").await.is_some());
-        assert_eq!(listed(&pool, alice, &book_a, 0).await.deleted, vec!["mine"]);
-        assert!(listed(&pool, alice, &book_b, 0).await.deleted.is_empty());
-        assert!(listed(&pool, bob, &book_a, 0).await.deleted.is_empty());
+        assert_eq!(
+            listed(&pool, alice, &book_a, &at(0)).await.deleted,
+            vec!["mine"]
+        );
+        assert!(listed(&pool, alice, &book_b, &at(0))
+            .await
+            .deleted
+            .is_empty());
+        assert!(listed(&pool, bob, &book_a, &at(0)).await.deleted.is_empty());
     }
 }
 
@@ -623,7 +634,7 @@ mod deleted_ids_stay_deleted {
         let replay = create_highlight(&pool, user, &web_highlight(&uuid, Some("x1"))).await;
 
         assert!(matches!(replay, Err(HighlightError::Gone)));
-        let listing = listed(&pool, user, &uuid, "0").await;
+        let listing = listed(&pool, user, &uuid, &at(0)).await;
         assert!(listing.annotations.is_empty());
         assert_eq!(listing.deleted, vec!["x1"]);
     }
@@ -650,7 +661,10 @@ mod deleted_ids_stay_deleted {
             .await
             .unwrap();
 
-        assert!(listed(&pool, user, &uuid, "0").await.annotations.is_empty());
+        assert!(listed(&pool, user, &uuid, &at(0))
+            .await
+            .annotations
+            .is_empty());
         assert!(served_kobo_annotations(&pool, user, &uuid)
             .await
             .unwrap()
@@ -684,7 +698,7 @@ mod paging {
         seed_rows(&pool, user, &uuid, LIST_HIGHLIGHTS_LIMIT + 5, 10_000).await;
 
         let mut seen = std::collections::HashSet::new();
-        let mut cursor = "0".to_string();
+        let mut cursor = at(0);
         for _ in 0..4 {
             let page = listed(&pool, user, &uuid, &cursor).await;
             seen.extend(page.annotations.iter().map(|a| a.client_id.clone()));
@@ -715,7 +729,7 @@ mod paging {
         .unwrap();
 
         let mut seen = std::collections::HashSet::new();
-        let mut cursor = "0".to_string();
+        let mut cursor = at(0);
         for _ in 0..5 {
             let page = listed(&pool, user, &uuid, &cursor).await;
             assert!(page.deleted.len() as i64 <= LIST_HIGHLIGHTS_LIMIT);
@@ -730,25 +744,8 @@ mod paging {
     }
 
     #[tokio::test]
-    async fn still_reads_a_bare_integer_cursor_as_a_time() {
-        let pool = init_db("sqlite::memory:").await.unwrap();
-        let user = seed_user(&pool, "alice").await;
-        let (_, uuid) = seed(&pool, "/lib", "Book A").await;
-        for (id, at) in [("old", 100), ("edge", 200), ("new", 300)] {
-            create_highlight(&pool, user, &web_highlight(&uuid, Some(id)))
-                .await
-                .unwrap();
-            stamp(&pool, id, at).await;
-        }
-
-        let page = listed(&pool, user, &uuid, "200").await;
-
-        assert_eq!(ids(&page), vec!["edge", "new"]);
-    }
-
-    #[tokio::test]
     async fn rejects_a_cursor_it_did_not_issue() {
-        for junk in ["", "-1", "1.2", "x", "1.2.3.zz", "1.-2.3.00"] {
+        for junk in ["", "200", "-1", "1.2", "x", "1.2.3.zz", "1.-2.3.00"] {
             assert!(KoreaderCursor::parse(junk).is_none(), "{junk:?}");
         }
     }

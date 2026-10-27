@@ -368,8 +368,7 @@ function Omnibus:annotation_deps(config, uuid)
                 socketutil.LARGE_TOTAL_TIMEOUT)
         end,
         get = function(since)
-            local cursor = type(since) == "number" and string.format("%d", since) or since
-            return call_json(config, "GET", path .. "?since=" .. cursor, nil,
+            return call_json(config, "GET", since and path .. "?since=" .. since or path, nil,
                 socketutil.LARGE_BLOCK_TIMEOUT, socketutil.LARGE_TOTAL_TIMEOUT)
         end,
         add = function(wire)
@@ -411,7 +410,6 @@ end
 local function state_store()
     local settings = LuaSettings:open(DataStorage:getSettingsDir() .. "/omnibus_state.lua")
     local books = settings:readSetting("books", {})
-    sync.upgrade(books)
     return books, function()
         settings:saveSetting("books", books)
         settings:flush()

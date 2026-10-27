@@ -6,7 +6,7 @@ The manifest maps a book's uuid to the file this plugin delivered for it. It is 
 thing sync deletes by, so a file the plugin did not deliver is never touched.
 
 Reading state is kept per book in `books`: the percent and status the device last agreed
-with the server, when (`event_at`), and whether a change still waits to be pushed. A
+with the server, when each was set (`percent_at`, `status_at`), and which still wait to be pushed. A
 change is captured only when the device differs from that agreed state, so a stale device
 never overwrites a newer server position with a fresh timestamp.
 A reflowable book's XPointer is part of its percent field: it is captured, pushed and
@@ -147,15 +147,6 @@ function M.cover_extension(content_type)
     return COVER_EXTENSIONS[(content_type or ""):match("^[^;]*"):lower()]
 end
 
---- Bring `files` entries from before bytes and metadata had their own version up to date.
-function M.upgrade_files(files)
-    for _, entry in pairs(files) do
-        if entry.meta_version == nil then
-            entry.meta_version = entry.version
-        end
-    end
-end
-
 --- The delivered books to refresh, `{ book, path }` at their manifest path: those whose bytes
 --- or metadata are behind the server's version, or whose file extension is not the format the
 --- server now serves. The open document, a file that is gone and one outside `dir` are left
@@ -221,19 +212,6 @@ function M.settle(books, uuid, current, clocks)
     end
     if clocks.status_at then
         entry.status, entry.status_at, entry.dirty_status = wire_status(current.status), clocks.status_at, false
-    end
-end
-
---- Bring an entry saved with one `event_at` and `pending` flag up to one clock per field.
-function M.upgrade(books)
-    for _, entry in pairs(books) do
-        if entry.event_at ~= nil and entry.percent_at == nil then
-            entry.status = wire_status(entry.status)
-            entry.percent_at, entry.status_at = entry.event_at, entry.event_at
-            entry.dirty_percent = entry.pending == true
-            entry.dirty_status = entry.pending == true and entry.status ~= nil
-            entry.event_at, entry.pending = nil, nil
-        end
     end
 end
 
@@ -730,7 +708,7 @@ local function apply_listing(listing, synced, deps, state)
         end
     end
     local cursor = listing.cursor
-    if (type(cursor) == "string" or type(cursor) == "number") and cursor ~= synced.cursor then
+    if type(cursor) == "string" and cursor ~= synced.cursor then
         synced.cursor = cursor
         state.result.changed = true
     end
@@ -758,14 +736,13 @@ end
 --- Reconcile the open book's highlights with Omnibus: push what changed on the device, then
 --- pull what changed on the server (a refused or failed push is reported, and the pull still
 --- runs unless the server never answered). `items` is the document's annotation list
---- (highlights get an `omnibus_id` in place), `synced` = { cursor = string|int, agreed =
+--- (highlights get an `omnibus_id` in place), `synced` = { cursor = string|nil, agreed =
 --- { [id] = { fp, pos0, pos1, server_at, server_color, server_fp, local_only } } } is mutated,
 --- and `deps` = { now() -> epoch seconds, encode(table) -> JSON string, new_id() -> string,
 --- post(body) -> code|nil, reply|nil, err|nil, get(since) -> code|nil, listing|nil, err|nil,
 --- add(wire) -> item|nil, remove(item) }. `changed` says the caller has something to save,
 --- failure or not. Returns { ok, changed, message }.
 function M.sync_annotations(items, synced, deps)
-    synced.cursor = synced.cursor or 0
     synced.agreed = synced.agreed or {}
     local list, by_id, minted = numbered_highlights(items, synced.agreed, deps)
     local result = { ok = true, changed = minted }
@@ -906,7 +883,6 @@ function M.run(server_url, deps)
         return { ok = false, added = 0, removed = 0, refreshed = 0, replaced = 0, message = message }
     end
 
-    M.upgrade_files(deps.files)
     local plan = M.plan(deps.manifest, books, deps.dir, deps.exists, deps.open_path)
     local refresh = M.refresh_plan(deps.manifest, deps.files, books, deps.dir, deps.exists, deps.open_path)
     local result = { ok = true, added = 0, removed = 0, refreshed = 0, replaced = 0 }

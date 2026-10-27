@@ -30,7 +30,7 @@ pub struct KoreaderAnnotation {
 /// seen by `(updated_at, id)` and the last tombstone by `(deleted_at, client_id)`. Rows and
 /// tombstones page separately, so neither a second shared by more rows than a page holds nor a
 /// long run of deletes can stall a device. It is opaque on the wire: a device stores the string
-/// and sends it back, and a bare integer (a time, as older plugins stored) still reads as one.
+/// and sends it back.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct KoreaderCursor {
     row_at: i64,
@@ -40,21 +40,13 @@ pub struct KoreaderCursor {
 }
 
 impl KoreaderCursor {
-    /// Read a cursor this module issued, or a bare non-negative integer; `None` for anything else.
+    /// Read a cursor this module issued; `None` for anything else.
     pub fn parse(raw: &str) -> Option<Self> {
         let digits = |s: &str| {
             (!s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()))
                 .then(|| s.parse::<i64>().ok())
                 .flatten()
         };
-        if !raw.contains('.') {
-            let at = digits(raw)?;
-            return Some(Self {
-                row_at: at,
-                tomb_at: at,
-                ..Self::default()
-            });
-        }
         let parts: Vec<&str> = raw.split('.').collect();
         let [row_at, row_id, tomb_at, tomb_client_id] = parts.as_slice() else {
             return None;

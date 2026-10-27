@@ -32,8 +32,8 @@ mod tests;
 /// Most upserts, and most deletes, one push may carry.
 const MAX_BATCH: usize = 500;
 
-/// The `?since=` query of a listing: the opaque cursor the last page answered, or a bare
-/// integer an older plugin stored. Absent means from the start.
+/// The `?since=` query of a listing: the opaque cursor the last page answered. Absent means
+/// from the start.
 #[derive(Deserialize)]
 pub struct Since {
     since: Option<String>,

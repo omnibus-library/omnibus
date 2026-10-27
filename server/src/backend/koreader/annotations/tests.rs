@@ -35,6 +35,11 @@ fn uri(uuid: &str) -> String {
     format!("/koreader/v1/books/{uuid}/annotations")
 }
 
+/// A cursor at `time` for both rows and tombstones, as the server would issue one.
+fn at(time: i64) -> String {
+    format!("{time}.0.{time}.")
+}
+
 fn now() -> i64 {
     time::OffsetDateTime::now_utc().unix_timestamp()
 }
@@ -164,7 +169,7 @@ mod get {
         let (app, pool, token, uid, uuid) = seeded().await;
         web_create(&pool, uid, &uuid, SECOND_CFI, None).await;
 
-        let body = listed(&app, &token, &uuid, 0).await;
+        let body = listed(&app, &token, &uuid, at(0)).await;
 
         let annotations = body["annotations"].as_array().unwrap();
         assert_eq!(annotations.len(), 1);
@@ -190,7 +195,7 @@ mod get {
         let (app, pool, token, uid, uuid) = seeded().await;
         web_create(&pool, uid, &uuid, SPANNING_CFI, Some("span")).await;
 
-        let body = listed(&app, &token, &uuid, 0).await;
+        let body = listed(&app, &token, &uuid, at(0)).await;
 
         assert_eq!(body["annotations"][0]["pos0"], SPANNING_POS0);
         assert_eq!(body["annotations"][0]["pos1"], SPANNING_POS1);
@@ -200,12 +205,12 @@ mod get {
     async fn lists_a_web_recolour_and_a_web_delete() {
         let (app, pool, token, uid, uuid) = seeded().await;
         web_create(&pool, uid, &uuid, SECOND_CFI, None).await;
-        let id = listed(&app, &token, &uuid, 0).await["annotations"][0]["id"]
+        let id = listed(&app, &token, &uuid, at(0)).await["annotations"][0]["id"]
             .as_str()
             .unwrap()
             .to_owned();
         // Age the row so the cursor below sits between its creation and the web edits.
-        let cursor = 2000;
+        let cursor = &at(2000);
         sqlx::query("UPDATE annotations SET updated_at = 1000")
             .execute(&pool)
             .await
@@ -239,7 +244,7 @@ mod get {
         let (app, pool, token, uid, uuid) = seeded().await;
         web_create(&pool, uid, &uuid, "epubcfi(/6/2!/4/40,/1:0,/1:6)", None).await;
 
-        let body = listed(&app, &token, &uuid, 0).await;
+        let body = listed(&app, &token, &uuid, at(0)).await;
 
         assert_eq!(body["annotations"], json!([]));
     }
@@ -251,7 +256,7 @@ mod get {
             db::test_support::seed_synced_ebook(&pool, "berserk.cbz", "Berserk", "Miura").await;
         web_create(&pool, uid, &cbz, SECOND_CFI, None).await;
 
-        let body = listed(&app, &token, &cbz, 0).await;
+        let body = listed(&app, &token, &cbz, at(0)).await;
 
         assert_eq!(body["annotations"], json!([]));
     }
@@ -262,7 +267,7 @@ mod get {
         let uuid = db::test_support::seed_synced_ebook(&pool, "alpha.epub", "Alpha", "Ada").await;
         web_create(&pool, uid, &uuid, SECOND_CFI, None).await;
 
-        let res = get(&app, &token, &uuid, 0).await;
+        let res = get(&app, &token, &uuid, at(0)).await;
 
         assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
     }
@@ -276,7 +281,7 @@ mod get {
             .await
             .unwrap();
 
-        let res = get(&app, &token, &uuid, 0).await;
+        let res = get(&app, &token, &uuid, at(0)).await;
 
         assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
     }
@@ -286,7 +291,7 @@ mod get {
         let (app, pool, token, _uid, uuid) = seeded().await;
         pool.close().await;
 
-        let res = get(&app, &token, &uuid, 0).await;
+        let res = get(&app, &token, &uuid, at(0)).await;
 
         assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
     }
@@ -307,7 +312,7 @@ mod get {
         .await
         .unwrap();
 
-        let first = listed(&app, &token, &uuid, 0).await;
+        let first = listed(&app, &token, &uuid, at(0)).await;
         let cursor = first["cursor"].as_str().unwrap().to_owned();
         let res = get(&app, &token, &uuid, &cursor).await;
         let second: Value = body_json(res).await;
@@ -322,7 +327,7 @@ mod get {
     async fn answers_404_for_an_unknown_uuid() {
         let (app, _pool, token, _uid, _uuid) = seeded().await;
 
-        let res = get(&app, &token, MISSING, 0).await;
+        let res = get(&app, &token, MISSING, at(0)).await;
 
         assert_eq!(res.status(), StatusCode::NOT_FOUND);
     }
@@ -332,8 +337,8 @@ mod get {
         let (app, _pool, token, _uid, uuid) = seeded().await;
         let long = "a".repeat(omnibus_shared::BOOK_UUID_MAX_LEN + 1);
 
-        let negative = get(&app, &token, &uuid, -1).await;
-        let oversized = get(&app, &token, &long, 0).await;
+        let negative = get(&app, &token, &uuid, at(-1)).await;
+        let oversized = get(&app, &token, &long, at(0)).await;
 
         assert_eq!(negative.status(), StatusCode::BAD_REQUEST);
         assert_eq!(oversized.status(), StatusCode::BAD_REQUEST);
