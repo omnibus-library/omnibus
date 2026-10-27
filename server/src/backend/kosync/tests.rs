@@ -208,9 +208,9 @@ mod auth {
     }
 
     #[tokio::test]
-    async fn get_users_auth_answers_429_without_a_lookup_once_an_ip_is_out_of_budget() {
+    async fn get_users_auth_lets_a_correct_key_in_after_another_device_spent_the_ips_budget() {
         let r = reader().await;
-        let wrong = md5_hex("wrong");
+        let stale = md5_hex("an old password");
         let attempt = |key: &str| {
             let req = kosync_request(
                 "GET",
@@ -221,15 +221,13 @@ mod auth {
             );
             r.app.clone().oneshot(req)
         };
-        for _ in 0..10 {
-            attempt(&wrong).await.unwrap();
+        for _ in 0..11 {
+            attempt(&stale).await.unwrap();
         }
-        // A lookup now would fail with a 500, so a 429 proves none was made.
-        r.pool.close().await;
 
         let res = attempt(&r.key).await.unwrap();
 
-        assert_eq!(res.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(res.status(), StatusCode::OK);
     }
 
     #[tokio::test]

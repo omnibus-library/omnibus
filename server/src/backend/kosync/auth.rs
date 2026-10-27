@@ -2,7 +2,8 @@
 //! the MD5 of the password the reader generated in Settings. There is no account lockout (it
 //! would let a stranger lock a reader's sync by username); instead each IP gets a budget of
 //! failed checks (an `Arc<RateLimiter>` layered on the router). A correct key is never charged
-//! against it, but an IP that has spent it gets 429 before any lookup until the window resets.
+//! and always gets in, so one device holding a stale key can't lock out a household behind the
+//! same IP; the key's ~99 bits are what stop guessing, not the budget.
 
 use std::sync::Arc;
 
@@ -40,9 +41,6 @@ impl FromRequestParts<AppState> for KosyncUser {
                 "Too many failed attempts. Try again later.",
             )
         };
-        if failures.exhausted(ip).await {
-            return Err(too_many());
-        }
         let header = |name: &str| parts.headers.get(name).and_then(|v| v.to_str().ok());
         if let (Some(username), Some(key)) = (header("x-auth-user"), header("x-auth-key")) {
             match db::kosync::verify_kosync_key(state.pool(), username, key).await {

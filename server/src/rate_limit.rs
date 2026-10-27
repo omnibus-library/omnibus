@@ -149,16 +149,6 @@ impl RateLimiter {
         bucket.count += 1;
         true
     }
-
-    /// Whether `ip` has spent its budget for the current window, without recording a request.
-    pub async fn exhausted(&self, ip: IpAddr) -> bool {
-        if self.limits == RateLimits::Disabled {
-            return false;
-        }
-        let map = self.inner.lock().await;
-        map.get(&ip)
-            .is_some_and(|b| b.window_start.elapsed() < self.window && b.count >= self.max)
-    }
 }
 
 impl Default for RateLimiter {
