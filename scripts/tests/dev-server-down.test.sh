@@ -8,7 +8,8 @@
 # No dx, no network: bash trees shaped like dx's (a parent, a child, and a
 # grandchild under a second child) stand in for the server, each in a scratch
 # git repo whose PID file points at it. dev-down only stops a dx, so the
-# stand-in is bash run through a symlink named dx. With no port file the
+# stand-in is bash run through a symlink named dx (macOS's comm) or
+# .dx-wrapped (nix's on Linux). With no port file the
 # health check is skipped, which is the script's path for a server that
 # doesn't answer.
 #
@@ -19,16 +20,28 @@ repo_root="$(cd "$(dirname "$0")/../.." && pwd)"
 
 tmp="$(mktemp -d)"
 all_pids=""
+# The forking case's children; unique to this run so pgrep finds only them.
+spawn_pattern="sleep 300\\.$$\$"
 cleanup() {
     # shellcheck disable=SC2086
     [ -z "$all_pids" ] || kill -9 $all_pids 2>/dev/null || true
+    pkill -9 -f "$spawn_pattern" 2>/dev/null || true
     rm -rf "$tmp"
 }
 trap cleanup EXIT
 
-mkdir -p "$tmp/bin" "$tmp/upbin"
+mkdir -p "$tmp/bin" "$tmp/upbin" "$tmp/nops"
 ln -s "$(command -v bash)" "$tmp/bin/dx"
+ln -s "$(command -v bash)" "$tmp/bin/.dx-wrapped"
 ln -s "$(command -v bash)" "$tmp/bin/sccache"
+
+# A ps that can't name a process, as when ps is missing or BusyBox's.
+cat >"$tmp/nops/ps" <<NOPS
+#!/usr/bin/env bash
+[ "\${1:-}" = -o ] && [ "\${2:-}" = comm= ] && exit 0
+exec "$(command -v ps)" "\$@"
+NOPS
+chmod +x "$tmp/nops/ps"
 
 # dev-up runs `dx serve …`, so its stand-in is a script that records its tree.
 cat >"$tmp/upbin/dx" <<UP
@@ -132,6 +145,42 @@ settle $tree
 check "every process in the tree has exited" 0 "$(running $tree)"
 check "the PID file is removed" absent "$(pid_file_state "$repo")"
 
+# --- nix's .dx-wrapped is a dx too -------------------------------------
+repo="$(new_repo)"
+start_tree "$repo" 3 "$tmp/bin/.dx-wrapped" -c 'sleep 300 & bash -c "sleep 300 & wait" & wait'
+dev_down "$repo"
+# shellcheck disable=SC2086
+settle $tree
+# shellcheck disable=SC2086
+check "a .dx-wrapped tree has exited" 0 "$(running $tree)"
+check "the .dx-wrapped PID file is removed" absent "$(pid_file_state "$repo")"
+
+# --- a child forking while dev-down runs leaves nothing behind ----------
+repo="$(new_repo)"
+start_tree "$repo" 3 "$tmp/bin/dx" -c \
+    "bash -c 'for _ in \$(seq 1 200); do sleep 300.$$ & sleep 0.005; done; wait' & wait"
+dev_down "$repo"
+for _ in $(seq 1 20); do
+    # shellcheck disable=SC2046
+    [ "$(running $(pgrep -f "$spawn_pattern" || true))" = 0 ] && break
+    sleep 0.1
+done
+# shellcheck disable=SC2046
+check "nothing the forking child spawned survives" 0 \
+    "$(running $(pgrep -f "$spawn_pattern" || true))"
+# shellcheck disable=SC2086
+check "the forking tree has exited" 0 "$(running $tree)"
+
+# --- a live PID that ps can't name is left alone ------------------------
+repo="$(new_repo)"
+start_tree "$repo" 3 "$tmp/bin/dx" -c 'sleep 300 & bash -c "sleep 300 & wait" & wait'
+status=0
+(cd "$repo" && PATH="$tmp/nops:$PATH" scripts/dev-server-down.sh >/dev/null 2>&1) || status=$?
+check "dev-down refuses a PID ps can't name" 3 "$status"
+# shellcheck disable=SC2086
+check "the unnamed tree keeps running" 4 "$(running $tree)"
+check "its PID file is kept" present "$(pid_file_state "$repo")"
+
 # --- SIGKILL takes what ignores SIGTERM ---------------------------------
 repo="$(new_repo)"
 start_tree "$repo" 3 "$tmp/bin/dx" -c \
@@ -166,9 +215,11 @@ check "its stale port file is removed" absent \
     "$([ -e "$repo/.claude/runtime/port" ] && echo present || echo absent)"
 
 # --- dev-up stops the tree when the server never turns healthy ----------
+# A 1 s budget can tick over before the first poll, stopping the pid before
+# the stand-in has exec'd; 2 s always polls once, a second after the start.
 repo="$(new_repo)"
 (cd "$repo" && PATH="$tmp/upbin:$PATH" PORT=3950 OMNIBUS_DEV_SEED_USER=a:b \
-    OMNIBUS_DEV_BUILD_TIMEOUT_SECS=1 scripts/dev-server-up.sh >/dev/null 2>&1) || true
+    OMNIBUS_DEV_BUILD_TIMEOUT_SECS=2 scripts/dev-server-up.sh >/dev/null 2>&1) || true
 up_pids="$(tr '\n' ' ' <"$tmp/up.pids" 2>/dev/null || true)"
 all_pids="$all_pids $up_pids"
 # shellcheck disable=SC2086

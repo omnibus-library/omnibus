@@ -8,6 +8,7 @@
 #   0 — stopped (or already stopped). Emits OMNIBUS_DEV_READY action=stopped
 #       on stdout when an actual kill happened.
 #   2 — PID file points at a server whose repo_root != ours. Refused.
+#   3 — PID is live but ps can't name it, so it can't be checked. Refused.
 
 set -euo pipefail
 
@@ -25,13 +26,26 @@ fi
 pid="$(cat "$RUNTIME_DIR/server.pid" 2>/dev/null || true)"
 port="$(cat "$RUNTIME_DIR/port" 2>/dev/null || true)"
 
-# A PID file outlives the dx it named, and once the PID is reused the port
-# is silent and the identity check below passes: anything not dx is stale.
-if [ -z "$pid" ] || ! proc_is_live "$pid" || ! is_dx_process "$pid"; then
+clean_stale() {
     echo "dev-down: PID ${pid:-<empty>} is not a running dx; cleaning stale runtime files." >&2
     rm -f "$RUNTIME_DIR/server.pid" "$RUNTIME_DIR/port" "$RUNTIME_DIR/env.sh"
     exit 0
+}
+
+# A PID file outlives the dx it named, and once the PID is reused the port
+# is silent and the identity check below passes: anything not dx is stale.
+if [ -z "$pid" ] || ! proc_is_live "$pid"; then
+    clean_stale
 fi
+name="$(proc_name "$pid")"
+if [ -z "$name" ]; then
+    # Live but unnamed means ps can't answer, not that the PID is stale:
+    # dropping the files would orphan a server that may still be ours.
+    proc_is_live "$pid" || clean_stale
+    echo "dev-down: pid $pid is running but ps can't name it; left it and the runtime files alone. Stop it by hand if it is this worktree's dx." >&2
+    exit 3
+fi
+is_dx_name "$name" || clean_stale
 
 # Identity check via /api/_health.repo_root. If the server doesn't
 # respond, we have a wedged process — still ours by PID file, kill it.

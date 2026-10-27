@@ -134,10 +134,10 @@ proc_name() {
     }'
 }
 
-# Whether a pid names a dx process. nix's makeWrapper execs `.dx-wrapped`,
+# Whether a proc_name names dx. nix's makeWrapper execs `.dx-wrapped`,
 # which is the comm Linux reports; macOS reports the wrapper's argv[0], `dx`.
-is_dx_process() {
-    case "$(proc_name "$1")" in
+is_dx_name() {
+    case "$1" in
     dx | .dx-wrapped) return 0 ;;
     *) return 1 ;;
     esac
@@ -180,13 +180,12 @@ proc_tree() {
 stop_process_tree() {
     local root="$1" tree prev_exit
     prev_exit="$(trap -p EXIT)"
-    # Frozen, dx can't spawn a fresh server between the snapshot and the
-    # signal; the trap keeps an early exit from leaving it frozen.
-    # shellcheck disable=SC2064 # expand now: $root is out of scope at exit
-    trap "kill -CONT $root 2>/dev/null" EXIT
-    kill -STOP "$root" 2>/dev/null || true
-    # The root is named outright so no failed walk can skip its SIGCONT.
-    tree="$root $(proc_tree "$root" | tr '\n' ' ')"
+    # Global, not local: the trap reads it after this function's scope is
+    # gone, so an early exit never leaves part of the tree frozen.
+    STOPPED_TREE="$root"
+    trap 'kill -CONT $STOPPED_TREE 2>/dev/null' EXIT
+    freeze_tree "$root"
+    tree="$STOPPED_TREE"
     # shellcheck disable=SC2086
     kill -TERM $tree 2>/dev/null || true
     # A stopped process only acts on the pending SIGTERM once continued.
@@ -202,6 +201,25 @@ stop_process_tree() {
     echo "dev: pid $root's tree outlived SIGTERM; sending SIGKILL" >&2
     # shellcheck disable=SC2086
     kill -KILL $tree 2>/dev/null || true
+}
+
+# SIGSTOP $1 and its descendants into STOPPED_TREE. A running child (cargo
+# mid-rebuild) can fork after any one snapshot, so walk again until a pass
+# finds nothing new; the cap bounds a tree that never settles.
+freeze_tree() {
+    local p round grew
+    kill -STOP "$1" 2>/dev/null || true
+    for round in 1 2 3 4 5 6 7 8; do
+        grew=0
+        for p in $(proc_tree "$1"); do
+            case " $STOPPED_TREE " in *" $p "*) continue ;; esac
+            STOPPED_TREE="$STOPPED_TREE $p"
+            kill -STOP "$p" 2>/dev/null || true
+            grew=1
+        done
+        [ "$grew" -eq 1 ] || return 0
+    done
+    echo "dev: pid $1's tree still growing after $round passes; stopping what was found" >&2
 }
 
 tree_is_live() {
