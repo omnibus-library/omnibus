@@ -212,12 +212,15 @@ export const PICTURE_WIDTH = 3;
  * `images/absent.png` first and leaves it out of the zip, as a book whose
  * manifest names a file it lacks does; the chapter shows it as `#absent`,
  * and `images/picture.png` as `#picture`, listed just ahead of a decoy.
+ * `missingSheet` lists `styles/absent.css` ahead of the book's sheet and
+ * leaves it out of the zip.
  */
 export function bookWithSheetFont(opts: {
   family: string;
   font: Buffer;
   twoChapters?: boolean;
   missingFile?: boolean;
+  missingSheet?: boolean;
 }): Promise<Buffer> {
   const prose = Array.from(
     { length: 12 },
@@ -248,6 +251,9 @@ p { font-family: "${opts.family}", serif; }
             "images/picture.png": { data: PICTURE, mediaType: "image/png" },
             "images/decoy.png": { data: DECOY, mediaType: "image/png" },
           }
+        : {}),
+      ...(opts.missingSheet
+        ? { "styles/absent.css": { data: null, mediaType: "text/css" } }
         : {}),
       "styles/book.css": { data: sheet, mediaType: "text/css" },
       "fonts/BookFace.woff2": { data: opts.font, mediaType: "font/woff2" },

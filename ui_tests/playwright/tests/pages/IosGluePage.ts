@@ -165,6 +165,14 @@ export class IosGluePage extends BasePage {
       );
   }
 
+  /** How many of the book's sheets the glue inlined into the section. */
+  async inlinedSheetCount(): Promise<number> {
+    return this.stageFrame
+      .contentFrame()
+      .locator("style[data-omnibus-book-css]")
+      .count();
+  }
+
   /** Holds the book frame's `document.fonts.ready` for `ms`; call before `openBook`. */
   async holdFontsReady(ms: number): Promise<void> {
     await this.page.addInitScript((ms) => {

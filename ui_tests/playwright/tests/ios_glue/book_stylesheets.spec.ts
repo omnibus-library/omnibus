@@ -54,6 +54,26 @@ test.describe("ios reader book stylesheets", () => {
     });
   });
 
+  // epub.js reads a sheet the zip lacks as nothing at all, which must not
+  // keep the sheets listed after it out of the section.
+  test("inline a book's sheet listed after one it lacks", async ({
+    iosGluePage,
+  }) => {
+    await test.step("open a book listing a sheet it lacks ahead of its own", async () => {
+      await iosGluePage.openBook(
+        await bookWithSheetFont({
+          family: FAMILY,
+          font: BOOK_FONT,
+          missingSheet: true,
+        }),
+      );
+    });
+
+    await test.step("check the sheet the book has is inlined", async () => {
+      await expect.poll(() => iosGluePage.inlinedSheetCount()).toBe(1);
+    });
+  });
+
   // epub.js leaves a file the zip lacks out of its table of copies, which
   // shifts every file listed after it onto the next one's copy.
   test("show each file from its own copy when the book lists one it lacks", async ({

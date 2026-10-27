@@ -966,8 +966,10 @@
         }
       });
       paths.forEach(function (path) {
-        book.archive
-          .getText(path)
+        // Nothing comes back for a sheet the zip lacks; the rest still go in.
+        var read = book.archive.getText(path);
+        if (!read) return;
+        read
           .then(function (css) {
             if (!css || !doc.head) return;
             var style = doc.createElement("style");
