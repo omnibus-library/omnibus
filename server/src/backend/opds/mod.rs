@@ -110,9 +110,10 @@ fn now_rfc3339() -> String {
 /// timestamp never breaks Atom's mandatory `<updated>` element.
 fn entry_updated(added_at: Option<&str>) -> String {
     let parsed = added_at.and_then(|s| {
-        let format =
-            time::format_description::parse("[year]-[month]-[day] [hour]:[minute]:[second]")
-                .ok()?;
+        let format = time::format_description::parse_borrowed::<1>(
+            "[year]-[month]-[day] [hour]:[minute]:[second]",
+        )
+        .ok()?;
         time::PrimitiveDateTime::parse(s, &format).ok()
     });
     parsed
