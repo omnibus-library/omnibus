@@ -390,6 +390,17 @@ pub(super) const RETARGET_TABLES: [&str; 20] = [
     "book_export_digests",
 ];
 
+/// The `SET` clause moving a [`RETARGET_TABLES`] row to the book bound at `?1`.
+/// A KOReader device lists annotations by `updated_at`, so a moved one is stamped
+/// now or a device already past it would never see it.
+pub(super) fn retarget_set(table: &str) -> &'static str {
+    if table == "annotations" {
+        "book_uuid = ?1, updated_at = strftime('%s','now')"
+    } else {
+        "book_uuid = ?1"
+    }
+}
+
 /// The `book_uuid`-keyed tables the merge deliberately leaves alone, each
 /// with the reason. Not a list to grow casually: an entry here means the rows
 /// the source leaves behind were judged harmless, and
@@ -557,7 +568,10 @@ async fn move_progress_and_history(
     .execute(&mut **tx)
     .await?;
     for table in RETARGET_TABLES {
-        let sql = format!("UPDATE {table} SET book_uuid = ?1 WHERE book_uuid = ?2");
+        let sql = format!(
+            "UPDATE {table} SET {} WHERE book_uuid = ?2",
+            retarget_set(table)
+        );
         sqlx::query(&sql)
             .bind(&target_uuid)
             .bind(&source_uuid)

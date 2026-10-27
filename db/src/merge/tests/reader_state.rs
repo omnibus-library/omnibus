@@ -12,6 +12,53 @@ use crate::test_support::{
     seed_synced_ebook as seed_ebook,
 };
 
+/// One highlight on `book` that a KOReader device last listed 100s ago: its
+/// `updated_at` is backdated, and the cursor returned was issued after it.
+async fn highlight_a_device_is_past(
+    pool: &sqlx::SqlitePool,
+    user: i64,
+    book: &str,
+) -> crate::annotations::KoreaderCursor {
+    crate::annotations::create_highlight(
+        pool,
+        user,
+        &omnibus_shared::CreateHighlight {
+            client_id: Some("seen".into()),
+            book_uuid: book.into(),
+            epub_cfi_range: "epubcfi(/6/4!/4/2,/1:0,/1:100)".into(),
+            color: omnibus_shared::HighlightColor::Blue,
+            text: None,
+        },
+    )
+    .await
+    .unwrap();
+    sqlx::query("UPDATE annotations SET updated_at = updated_at - 100")
+        .execute(pool)
+        .await
+        .unwrap();
+    koreader_ids_since(pool, user, book, &Default::default())
+        .await
+        .1
+}
+
+/// The client ids a KOReader device listing `book` from `since` is shown, and its next cursor.
+async fn koreader_ids_since(
+    pool: &sqlx::SqlitePool,
+    user: i64,
+    book: &str,
+    since: &crate::annotations::KoreaderCursor,
+) -> (Vec<String>, crate::annotations::KoreaderCursor) {
+    let listing = crate::annotations::koreader_annotations_since(pool, user, book, since)
+        .await
+        .unwrap();
+    let ids = listing
+        .annotations
+        .into_iter()
+        .map(|a| a.client_id)
+        .collect();
+    (ids, listing.cursor)
+}
+
 #[tokio::test]
 async fn merge_books_moves_progress_with_latest_wins_on_collision() {
     let pool = init_db("sqlite::memory:").await.unwrap();
@@ -189,6 +236,44 @@ async fn merge_lists_a_source_books_tombstone_under_the_target_uuid() {
     .await
     .unwrap();
     assert_eq!(listing.deleted, vec!["gone"]);
+}
+
+#[tokio::test]
+async fn merge_lists_a_moved_highlight_to_a_koreader_device_already_past_the_target() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool).await;
+    let target = seed_ebook(&pool, "A/Dracula.epub", "Dracula", "Bram Stoker").await;
+    let source = seed_ebook(&pool, "B/Drakula.epub", "Drakula", "Bram Stoker").await;
+    highlight_a_device_is_past(&pool, user, &source).await;
+    let (_, past_target) = koreader_ids_since(&pool, user, &target, &Default::default()).await;
+
+    merge_books(&pool, &source, &target, Some(user))
+        .await
+        .unwrap();
+
+    let (ids, _) = koreader_ids_since(&pool, user, &target, &past_target).await;
+    assert_eq!(ids, vec!["seen"]);
+}
+
+#[tokio::test]
+async fn undo_merge_lists_a_returned_highlight_to_a_koreader_device_already_past_the_source() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool).await;
+    let target = seed_ebook(&pool, "A/Dracula.epub", "Dracula", "Bram Stoker").await;
+    let source = seed_ebook(&pool, "B/Drakula.epub", "Drakula", "Bram Stoker").await;
+    let past_source = highlight_a_device_is_past(&pool, user, &source).await;
+    let merged = merge_books(&pool, &source, &target, Some(user))
+        .await
+        .unwrap();
+    sqlx::query("UPDATE annotations SET updated_at = updated_at - 100")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    undo_merge(&pool, merged.merge_log_id).await.unwrap();
+
+    let (ids, _) = koreader_ids_since(&pool, user, &source, &past_source).await;
+    assert_eq!(ids, vec!["seen"]);
 }
 
 #[tokio::test]
