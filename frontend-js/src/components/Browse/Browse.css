@@ -485,7 +485,9 @@
   text-transform: uppercase;
   color: var(--ink-2);
 }
-.au-resume {
+/* Scoped under `.au-current` to outrank `.atrium a { color: inherit }`, which a
+   bare `.au-resume` loses to — white ink on the black theme's white button. */
+.au-current .au-resume {
   flex: none;
   display: inline-flex;
   align-items: center;
