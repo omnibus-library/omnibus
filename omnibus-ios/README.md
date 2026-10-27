@@ -462,6 +462,10 @@ of its neighbours, so the one gesture the control exists for can't be aimed. The
 three readouts under it are chapter elapsed, **book** remaining, chapter
 remaining — all at once, which is what pays for the chapter-scoped bar without
 needing a mode. The mini bar's hairline stays whole-book for the same reason.
+The lock screen and Control Center scrubber is chapter-scoped too, as Audible's
+is: Now Playing reports the chapter's elapsed time and length, so the position a
+`changePlaybackPositionCommand` sends back is chapter-relative and goes through
+`seekWithinChapter`.
 
 It's a hand-rolled `PlayerScrubber`, not a `Slider`: `Slider` draws a fixed 27pt
 pill thumb and its own inset chrome, and no amount of tinting gets it to the slim

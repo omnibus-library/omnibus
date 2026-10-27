@@ -1238,14 +1238,19 @@ final class AudioPlayer {
 
     // MARK: - Now Playing / remote commands
 
+    /// Reports the current chapter's span, not the book's, so the lock screen
+    /// scrubber is chapter-scoped like the in-app one; a book without chapter
+    /// marks falls back to the whole-book span.
     private func updateNowPlaying() {
         guard let book else { return }
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: currentChapter?.title ?? book.displayTitle,
             MPMediaItemPropertyAlbumTitle: book.displayTitle,
             MPMediaItemPropertyArtist: book.authorDisplay,
-            MPMediaItemPropertyPlaybackDuration: duration,
-            MPNowPlayingInfoPropertyElapsedPlaybackTime: position,
+            MPMediaItemPropertyPlaybackDuration: chapterDuration,
+            // A gap between chapters would read past the total; 0 is an unknown length.
+            MPNowPlayingInfoPropertyElapsedPlaybackTime: chapterDuration > 0
+                ? min(chapterOffset, chapterDuration) : chapterOffset,
             MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? rate : 0,
             MPNowPlayingInfoPropertyMediaType: MPNowPlayingInfoMediaType.audio.rawValue,
         ]
@@ -1316,7 +1321,8 @@ final class AudioPlayer {
         }
         center.changePlaybackPositionCommand.addTarget { [weak self] event in
             guard let event = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
-            Task { @MainActor in await self?.seek(to: event.positionTime) }
+            // Chapter-relative: `updateNowPlaying` reports the chapter's span.
+            Task { @MainActor in await self?.seekWithinChapter(to: event.positionTime) }
             return .success
         }
     }
