@@ -1248,7 +1248,9 @@ final class AudioPlayer {
             MPMediaItemPropertyAlbumTitle: book.displayTitle,
             MPMediaItemPropertyArtist: book.authorDisplay,
             MPMediaItemPropertyPlaybackDuration: chapterDuration,
-            MPNowPlayingInfoPropertyElapsedPlaybackTime: chapterOffset,
+            // A gap between chapters would read past the total; 0 is an unknown length.
+            MPNowPlayingInfoPropertyElapsedPlaybackTime: chapterDuration > 0
+                ? min(chapterOffset, chapterDuration) : chapterOffset,
             MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? rate : 0,
             MPNowPlayingInfoPropertyMediaType: MPNowPlayingInfoMediaType.audio.rawValue,
         ]
