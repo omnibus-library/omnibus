@@ -47,20 +47,38 @@ fi
 
 # Either ours by repo_root match, or wedged (no response) but recorded
 # in our PID file — either way, kill it.
+descendants() {
+    local kid
+    for kid in $(pgrep -P "$1" 2>/dev/null || true); do
+        echo "$kid"
+        descendants "$kid"
+    done
+}
+
+running() {
+    local p
+    for p in $tree; do
+        kill -0 "$p" 2>/dev/null && return 0
+    done
+    return 1
+}
+
 echo "dev-down: stopping pid $pid (port ${port:-?})" >&2
-kill "$pid" 2>/dev/null || true
-# Reap the dx serve grandchild (dx wraps the actual server in a subprocess).
-pkill -P "$pid" 2>/dev/null || true
+# dx runs the server as its child, and once dx exits that child belongs to
+# init where pgrep -P can't find it: name the whole tree before signalling.
+tree="$pid $(descendants "$pid" | tr '\n' ' ')"
+# shellcheck disable=SC2086
+kill $tree 2>/dev/null || true
 
 # Give it a moment to actually exit before we clean the runtime files.
 for _ in 1 2 3 4 5 6 7 8 9 10; do
-    kill -0 "$pid" 2>/dev/null || break
+    running || break
     sleep 0.5
 done
-if kill -0 "$pid" 2>/dev/null; then
-    echo "dev-down: pid $pid didn't exit after SIGTERM; sending SIGKILL." >&2
-    kill -9 "$pid" 2>/dev/null || true
-    pkill -9 -P "$pid" 2>/dev/null || true
+if running; then
+    echo "dev-down: pid $pid's tree didn't exit after SIGTERM; sending SIGKILL." >&2
+    # shellcheck disable=SC2086
+    kill -9 $tree 2>/dev/null || true
 fi
 
 rm -f "$RUNTIME_DIR/server.pid" "$RUNTIME_DIR/port" "$RUNTIME_DIR/env.sh"
