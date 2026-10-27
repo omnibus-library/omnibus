@@ -127,9 +127,9 @@ export PLAYWRIGHT_BASE_URL=http://127.0.0.1:$port
 EOF
 }
 
-# Basename of a process's command, or empty once it is gone.
+# Basename of a process's command, or empty once it is gone or ps fails.
 proc_name() {
-    ps -o comm= -p "$1" 2>/dev/null | awk '{
+    { ps -o comm= -p "$1" 2>/dev/null || true; } | awk '{
         sub(/^[ \t]+/, ""); sub(/[ \t]+$/, ""); n = split($0, part, "/"); print part[n]
     }'
 }

@@ -30,18 +30,30 @@ cleanup() {
 }
 trap cleanup EXIT
 
-mkdir -p "$tmp/bin" "$tmp/upbin" "$tmp/nops"
+mkdir -p "$tmp/bin" "$tmp/upbin" "$tmp/nops" "$tmp/raceps"
 ln -s "$(command -v bash)" "$tmp/bin/dx"
 ln -s "$(command -v bash)" "$tmp/bin/.dx-wrapped"
 ln -s "$(command -v bash)" "$tmp/bin/sccache"
 
-# A ps that can't name a process, as when ps is missing or BusyBox's.
+# A ps that can't name a process: BusyBox's rejects `-p` and exits 1.
 cat >"$tmp/nops/ps" <<NOPS
 #!/usr/bin/env bash
-[ "\${1:-}" = -o ] && [ "\${2:-}" = comm= ] && exit 0
+[ "\${1:-}" = -o ] && [ "\${2:-}" = comm= ] && exit 1
 exec "$(command -v ps)" "\$@"
 NOPS
 chmod +x "$tmp/nops/ps"
+
+# A ps that loses the race: the pid dies just before it is named, and ps
+# exits 1 for a pid it can't find.
+cat >"$tmp/raceps/ps" <<RACE
+#!/usr/bin/env bash
+if [ "\${1:-}" = -o ] && [ "\${2:-}" = comm= ]; then
+    kill -9 "\$4" 2>/dev/null
+    exit 1
+fi
+exec "$(command -v ps)" "\$@"
+RACE
+chmod +x "$tmp/raceps/ps"
 
 # dev-up runs `dx serve …`, so its stand-in is a script that records its tree.
 cat >"$tmp/upbin/dx" <<UP
@@ -180,6 +192,18 @@ check "dev-down refuses a PID ps can't name" 3 "$status"
 # shellcheck disable=SC2086
 check "the unnamed tree keeps running" 4 "$(running $tree)"
 check "its PID file is kept" present "$(pid_file_state "$repo")"
+
+# --- a PID that dies before ps names it is stale -------------------------
+repo="$(new_repo)"
+start_tree "$repo" 0 sleep 300
+echo 3999 >"$repo/.claude/runtime/port"
+touch "$repo/.claude/runtime/env.sh"
+status=0
+(cd "$repo" && PATH="$tmp/raceps:$PATH" scripts/dev-server-down.sh >/dev/null 2>&1) || status=$?
+check "dev-down treats a PID that died before naming as stale" 0 "$status"
+check "the raced PID file is removed" absent "$(pid_file_state "$repo")"
+check "the raced port and env files are removed" absent \
+    "$([ -e "$repo/.claude/runtime/port" ] || [ -e "$repo/.claude/runtime/env.sh" ] && echo present || echo absent)"
 
 # --- SIGKILL takes what ignores SIGTERM ---------------------------------
 repo="$(new_repo)"
