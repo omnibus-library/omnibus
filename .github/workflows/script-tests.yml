@@ -1,7 +1,8 @@
 # Runs the script suites: the TestFlight scripts', the module map's
 # (`just modules`), the KOReader lane report's, scratch-server.sh's
 # scratch-dir regression test, `just koreader`'s preflight checks and home
-# linking, and the Docker entrypoint's bash suite.
+# linking, the Docker entrypoint's bash suite, and the dev server's
+# process-tree stop.
 #
 # The TestFlight scripts only ever execute against Apple's live API — one
 # during a release dispatch, one on a daily schedule — so a regression is
@@ -12,8 +13,9 @@
 #
 # Deliberately scoped to these suites rather than all of scripts/tests/: the
 # dev-port/dev-serve/with-dev-env bash tests expect a Nix dev shell and a
-# worktree layout that this runner does not have. The scratch-server and
-# Docker entrypoint ones are plain bash with stubbed I/O, so they run here.
+# worktree layout that this runner does not have. The scratch-server, Docker
+# entrypoint and dev-server-down ones are plain bash with stubbed I/O or
+# stand-in processes, so they run here.
 name: Script tests
 
 # Path lists are spelled out twice because GitHub Actions does not support YAML
@@ -40,6 +42,9 @@ on:
       - "ui_tests/koreader/koreader.sha256"
       - "docker/entrypoint.sh"
       - "scripts/tests/docker-entrypoint-react.test.sh"
+      - "scripts/dev-server-down.sh"
+      - "scripts/dev-server-up.sh"
+      - "scripts/tests/dev-server-down.test.sh"
       - ".github/workflows/script-tests.yml"
   pull_request:
     paths:
@@ -61,6 +66,9 @@ on:
       - "ui_tests/koreader/koreader.sha256"
       - "docker/entrypoint.sh"
       - "scripts/tests/docker-entrypoint-react.test.sh"
+      - "scripts/dev-server-down.sh"
+      - "scripts/dev-server-up.sh"
+      - "scripts/tests/dev-server-down.test.sh"
       - ".github/workflows/script-tests.yml"
 
 permissions:
@@ -166,3 +174,12 @@ jobs:
 
       - name: Run suite
         run: bash scripts/tests/docker-entrypoint-react.test.sh
+
+  dev-server-down:
+    name: dev-server-down.sh
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run suite
+        run: bash scripts/tests/dev-server-down.test.sh
