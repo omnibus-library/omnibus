@@ -83,8 +83,8 @@ export interface GlueWindow {
 /**
  * A one-chapter EPUB3 whose chapter body is `body`. `head` lands in every
  * chapter's `<head>`; `files` are extra `OEBPS/`-relative resources, each
- * listed in the manifest under the given media type, and left out of the zip
- * when its `data` is null; `toc` is the nav's `[label, href]` entries, one
+ * listed in the manifest under the given media type (stored in the zip under
+ * its decoded name), and left out of the zip when its `data` is null; `toc` is the nav's `[label, href]` entries, one
  * "One" entry for the chapter by default. `chapters` are the bodies of
  * further spine items, `chapter2.xhtml` on.
  */
@@ -167,7 +167,7 @@ export async function buildChapterEpub(
     );
   }
   for (const [href, f] of Object.entries(files)) {
-    if (f.data !== null) zip.file(`OEBPS/${href}`, f.data);
+    if (f.data !== null) zip.file(`OEBPS/${decodeURIComponent(href)}`, f.data);
   }
   return zip.generateAsync({ type: "nodebuffer" });
 }
@@ -207,7 +207,11 @@ const BOOK_IMAGE: Buffer = Buffer.from(
  * lacks ahead of the real one. `refilledTable` adds a real image after the
  * missing file and lists the sheet last, so epub.js's write-back of the sheet
  * makes its short table full length again. `missingFace` names the missing
- * face's file in `fonts/` (default `Absent.woff2`).
+ * face's file in `fonts/` (default `Absent.woff2`). `faceFile` names the font
+ * as the sheet spells it, percent-encoded in the manifest (default
+ * `BookFace.woff2`); `importedFace` moves the face into `styles/fonts.css`,
+ * which the sheet pulls in by a string `@import`; `quotedUrl` adds a
+ * `content` string that reads like a url().
  */
 export function bookWithSheetFont(opts: {
   family: string;
@@ -217,6 +221,9 @@ export function bookWithSheetFont(opts: {
   missingSheet?: boolean;
   refilledTable?: boolean;
   missingFace?: string;
+  faceFile?: string;
+  importedFace?: boolean;
+  quotedUrl?: boolean;
 }): Promise<Buffer> {
   const prose = Array.from(
     { length: 12 },
@@ -227,13 +234,18 @@ export function bookWithSheetFont(opts: {
   const absent = opts.missingAsset
     ? `url("../fonts/${missingFace}") format("woff2"), `
     : "";
-  const sheet = `
-@font-face { font-family: "${opts.family}"; src: ${absent}url("../fonts/BookFace.woff2") format("woff2"); }
+  const faceFile = opts.faceFile ?? "BookFace.woff2";
+  const face = `@font-face { font-family: "${opts.family}"; src: ${absent}url("../fonts/${faceFile}") format("woff2"); }`;
+  const sheet = `${opts.importedFace ? '@import "fonts.css";' : face}
 p { font-family: "${opts.family}", serif; }
+${opts.quotedUrl ? 'p::before { content: "url(x)"; }' : ""}
 ${opts.refilledTable ? 'body { background-image: url("../images/bg.png"); }' : ""}
 `;
   const sheetFile = {
     "styles/book.css": { data: sheet, mediaType: "text/css" },
+    ...(opts.importedFace
+      ? { "styles/fonts.css": { data: face, mediaType: "text/css" } }
+      : {}),
   };
   return buildChapterEpub(prose, {
     head: '<link href="styles/book.css" rel="stylesheet" type="text/css"/>',
@@ -256,7 +268,10 @@ ${opts.refilledTable ? 'body { background-image: url("../images/bg.png"); }' : "
       ...(opts.refilledTable
         ? { "images/bg.png": { data: BOOK_IMAGE, mediaType: "image/png" } }
         : sheetFile),
-      "fonts/BookFace.woff2": { data: opts.font, mediaType: "font/woff2" },
+      [`fonts/${encodeURIComponent(faceFile)}`]: {
+        data: opts.font,
+        mediaType: "font/woff2",
+      },
       ...(opts.refilledTable ? sheetFile : {}),
     },
   });

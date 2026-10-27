@@ -159,4 +159,41 @@ test.describe("ios reader book stylesheets", () => {
       expect(iosGluePage.unservedRequests()).toEqual([]);
     });
   });
+
+  // A sheet's string @import, a name the manifest percent-encodes and a CSS
+  // string that reads like a url() each slip past a scan for url( alone.
+  test("load a face from an imported sheet that spells its name decoded", async ({
+    iosGluePage,
+  }) => {
+    await test.step("open a book whose sheet imports the face's sheet", async () => {
+      await iosGluePage.openBook(
+        await bookWithSheetFont({
+          family: FAMILY,
+          font: BOOK_FONT,
+          faceFile: "Book Face.woff2",
+          importedFace: true,
+          quotedUrl: true,
+        }),
+      );
+      await expect
+        .poll(async () => (await iosGluePage.fontFaces(FAMILY)).statuses)
+        .toContain("loaded");
+    });
+
+    await test.step("check the face is declared from the book", async () => {
+      const { srcs } = await iosGluePage.fontFaces(FAMILY);
+      expect(srcs).toContainEqual(
+        expect.stringMatching(/^url\("data:font\/woff2;/),
+      );
+    });
+
+    await test.step("check the content string is left as written", async () => {
+      const css = (await iosGluePage.inlinedBookCss()).join("\n");
+      expect(css).toContain('content: "url(x)";');
+    });
+
+    await test.step("check nothing was requested outside the book", async () => {
+      expect(iosGluePage.unservedRequests()).toEqual([]);
+    });
+  });
 });

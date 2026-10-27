@@ -1017,15 +1017,32 @@
         var own = res.replacementUrls[i];
         var file = b.resolve(href);
         var data = typeof own === "string" && own.indexOf("data:") === 0;
-        byFile[file] = whole || data ? own : cache[file];
+        byFile[decodePath(file)] = whole || data ? own : cache[file];
       });
       return substituteSheetUrls(b, css, path, byFile);
     });
     return byPath[path];
   }
 
-  var CSS_URL_RE = /url\(\s*(?:"([^"]*)"|'([^']*)'|([^)\s"']*))\s*\)/gi;
+  // A comment, a url() token, a string @import, or a bare string: scanning
+  // whole tokens keeps a url( inside a comment or a string as written.
+  var CSS_TOKEN_RE =
+    /\/\*[\s\S]*?\*\/|url\(\s*(?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'|([^)\s"']*))\s*\)|@import\s*(?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)')|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/gi;
   var URL_SCHEME_RE = /^[a-z][a-z0-9+.-]*:/i;
+
+  // One spelling for a path, as a sheet and the manifest may percent-encode a
+  // name differently; a malformed escape stays as written.
+  function decodePath(p) {
+    try {
+      return decodeURIComponent(p);
+    } catch (e) {
+      return p;
+    }
+  }
+
+  function isBookRef(ref) {
+    return !!ref && ref.charAt(0) !== "#" && !URL_SCHEME_RE.test(ref);
+  }
 
   // Rewrite each whole url() token by the book file it resolves to from the
   // sheet's folder. epub.js's substitute() replaces each relative path as a
@@ -1033,13 +1050,17 @@
   // other file gets an empty data:, as a raw url() would reach the host.
   function substituteSheetUrls(b, css, sheetPath, byFile) {
     var sheet = new b.path.constructor(sheetPath);
-    return css.replace(CSS_URL_RE, function (token, dq, sq, bare) {
-      var ref = dq != null ? dq : sq != null ? sq : bare;
-      if (!ref || ref.charAt(0) === "#" || URL_SCHEME_RE.test(ref)) {
-        return token;
+    return css.replace(CSS_TOKEN_RE, function (token, dq, sq, bare, idq, isq) {
+      var imported = idq != null ? idq : isq;
+      if (imported != null) {
+        // Every manifest sheet is inlined on its own, and epub.js's blob: copy
+        // can't load in the section, so an imported book sheet loads nothing.
+        return isBookRef(imported) ? '@import url("data:,")' : token;
       }
+      var ref = dq != null ? dq : sq != null ? sq : bare;
+      if (!isBookRef(ref)) return token; // a comment, a string, or not the book's
       var hash = ref.indexOf("#") < 0 ? "" : ref.slice(ref.indexOf("#"));
-      var file = sheet.resolve(ref.split(/[?#]/)[0]);
+      var file = decodePath(sheet.resolve(ref.split(/[?#]/)[0]));
       return 'url("' + (byFile[file] || "data:,") + hash + '")';
     });
   }
