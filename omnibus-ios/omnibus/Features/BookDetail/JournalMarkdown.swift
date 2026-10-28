@@ -16,6 +16,15 @@ enum JournalSpan: Equatable {
     case spoiler(String, id: Int)
 }
 
+/// One run of a line set on an always-visible surface — a row preview, a
+/// capped excerpt — where a spoiler cannot be opened.
+enum MaskedRun: Equatable {
+    case text(String)
+    /// Filler the length of a hidden span, drawn blurred in its place. Never
+    /// the span's own text: the surface is always on screen.
+    case veiled(String)
+}
+
 /// One block of a journal body, in the order the author wrote them.
 enum JournalBlock: Equatable {
     case heading(level: Int, spans: [JournalSpan])
@@ -91,16 +100,44 @@ enum JournalMarkdown {
         return out
     }
 
-    /// One line with every spoiler region replaced by censor bars. For the
+    /// Stands in for a spoiler while the line around it is parsed, so the
+    /// line's markdown resolves as it would with the span in place.
+    static let veilMark: Character = "\u{E000}"
+
+    /// Words a veiled run is cut from — once blurred, any text reads the same.
+    static let fillerWords = Array("lorem ipsum dolor sit amet consectetur adipiscing elit ")
+
+    /// One line with every spoiler region swapped for `veilMark`, and the
+    /// filler each mark becomes: the span's length, never its text. For the
     /// always-visible surfaces — a row excerpt can never leak one.
-    static func masked(_ line: String) -> String {
+    static func masked(_ line: String) -> (line: String, fillers: [String]) {
         var ignored = 0
-        return spans(line, from: &ignored).map { span in
+        var fillers: [String] = []
+        let marked = spans(line, from: &ignored).map { span in
             switch span {
-            case .prose(let text): text
-            case .spoiler: "\u{2588}\u{2588}\u{2588}"
+            case .prose(let text):
+                return text
+            case .spoiler(let text, _):
+                let count = inline(text).characters.count
+                fillers.append(String((0..<count).map { fillerWords[$0 % fillerWords.count] }))
+                return String(veilMark)
             }
         }.joined()
+        return (marked, fillers)
+    }
+
+    /// A masked line, parsed, split back into runs at its marks.
+    static func runs(_ resolved: String, fillers: [String]) -> [MaskedRun] {
+        var out: [MaskedRun] = []
+        var pending = fillers[...]
+        let pieces = resolved.split(separator: veilMark, omittingEmptySubsequences: false)
+        for (index, piece) in pieces.enumerated() {
+            if index > 0, let filler = pending.popFirst(), !filler.isEmpty {
+                out.append(.veiled(filler))
+            }
+            if !piece.isEmpty { out.append(.text(String(piece))) }
+        }
+        return out
     }
 
     /// One run of inline markdown — bold, italic, strikethrough, code, links.
@@ -117,9 +154,9 @@ enum JournalMarkdown {
     }
 
     /// The block as assistive tech should hear it: markup resolved, and every
-    /// still-hidden span named rather than read out. Masking a run by colour
-    /// hides it from exactly one audience and not from the other — VoiceOver
-    /// speaks the text under the bar — so the label has to censor it too.
+    /// still-hidden span named rather than read out. Blurring a run hides it
+    /// from exactly one audience and not from the other — VoiceOver speaks
+    /// the text under the blur — so the label has to censor it too.
     static func spoken(_ spans: [JournalSpan], revealed: Set<Int>) -> String {
         spans.map { span in
             switch span {
@@ -127,6 +164,16 @@ enum JournalMarkdown {
                 String(inline(text).characters)
             case .spoiler(let text, let id):
                 revealed.contains(id) ? String(inline(text).characters) : "spoiler, hidden"
+            }
+        }.joined()
+    }
+
+    /// A masked line as assistive tech should hear it — the filler is noise.
+    static func spoken(_ runs: [MaskedRun]) -> String {
+        runs.map { run in
+            switch run {
+            case .text(let text): text
+            case .veiled: "spoiler, hidden"
             }
         }.joined()
     }
@@ -390,7 +437,7 @@ extension JournalMarkdown {
 // MARK: - The reading face
 
 /// A journal body set as real blocks — paragraphs, lists, headings, quotes —
-/// rather than one run-on run. `||spoilers||` render as bars; where they are
+/// rather than one run-on run. `||spoilers||` render blurred; where they are
 /// revealable, tapping one opens it and tapping it again puts it back.
 struct JournalBody: View {
     let md: String
@@ -417,6 +464,7 @@ struct JournalBody: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .textRenderer(SpoilerRenderer(plate: palette.bg2Color))
         .environment(\.openURL, OpenURLAction { url in
             // Links the author wrote still open; only the reveal scheme is ours
             // to swallow.
@@ -482,8 +530,8 @@ struct JournalBody: View {
         )
     }
 
-    /// A block holding a masked span speaks a censored label — the colour
-    /// mask means nothing to VoiceOver — and, where its spans can be opened,
+    /// A block holding a masked span speaks a censored label — the blur
+    /// means nothing to VoiceOver — and, where its spans can be opened,
     /// offers one rotor action to open them, since the per-span reveal links
     /// the label replaces are no longer reachable.
     @ViewBuilder
@@ -521,12 +569,12 @@ struct JournalBody: View {
         }
     }
 
-    /// The inline runs of one block, spoilers masked or open. `ink` is the
-    /// block's own text colour, which an open spoiler has to restate: it keeps
-    /// its reveal link so a second tap re-hides it, and a link left to itself
+    /// The inline runs of one block, spoilers blurred or open. `ink` is the
+    /// block's own text colour, which a spoiler has to restate: it keeps its
+    /// reveal link so a second tap re-hides it, and a link left to itself
     /// would draw in the tint colour rather than as prose.
     private func text(_ spans: [JournalSpan], ink: Color) -> Text {
-        spans.reduce(Text(verbatim: "")) { line, span in line + piece(span, ink: ink) }
+        spans.reduce(Text(verbatim: "")) { line, span in Text("\(line)\(piece(span, ink: ink))") }
     }
 
     private func piece(_ span: JournalSpan, ink: Color) -> Text {
@@ -535,16 +583,10 @@ struct JournalBody: View {
             return Text(JournalMarkdown.inline(source))
         case .spoiler(let source, let id):
             var run = JournalMarkdown.inline(source)
-            if revealed.contains(id) {
-                run.foregroundColor = ink
-            } else {
-                // Ink the colour of its own bar: the region keeps the width it
-                // will have open, so a reveal never reflows the paragraph.
-                run.foregroundColor = palette.bg3Color
-                run.backgroundColor = palette.bg3Color
-            }
+            run.foregroundColor = ink
             if revealable { run.link = JournalMarkdown.revealURL(id) }
-            return Text(run)
+            // Blurred where it stands, so a reveal never reflows the paragraph.
+            return revealed.contains(id) ? Text(run) : Text(run).customAttribute(SpoilerRun())
         }
     }
 }

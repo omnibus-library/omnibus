@@ -109,17 +109,14 @@ enum DetailReviews {
     }
 
     /// A body as plain lines for the collapsed view: every line run through
-    /// the journal row's preview, so spoilers are already censored and
+    /// the journal row's preview, so spoilers are already veiled and
     /// Markdown syntax is resolved rather than shown.
-    static func excerpt(_ md: String) -> String {
-        md.replacingOccurrences(of: "\r\n", with: "\n")
+    static func excerpt(_ md: String) -> [MaskedRun] {
+        let lines = md.replacingOccurrences(of: "\r\n", with: "\n")
             .split(separator: "\n")
-            // An image parses to an attachment character the reading face
-            // has nothing to draw for.
-            .map { JournalRow.preview(String($0)).replacingOccurrences(of: "\u{FFFC}", with: "") }
-            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .map { JournalRow.preview(String($0)) }
             .filter { !$0.isEmpty }
-            .joined(separator: "\n")
+        return Array(lines.joined(separator: [.text("\n")]))
     }
 
     /// Whether a body has any text to set at all — an image-only review has
@@ -475,7 +472,7 @@ struct MyReviewCard: View {
         if uncapped {
             JournalBody(md: md)
         } else {
-            Text(DetailReviews.excerpt(md))
+            MaskedText(runs: DetailReviews.excerpt(md))
                 .font(.display(17))
                 .foregroundStyle(palette.ink1Color)
                 .lineSpacing(4)

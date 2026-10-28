@@ -381,7 +381,17 @@ fn render_ladder_row(
                     span { class: "at", "{meta_line}" }
                 }
                 span { class: "ex",
-                    "{excerpt} "
+                    for run in excerpt {
+                        if run.veiled {
+                            span { class: "spoiler-mask",
+                                span { class: "spoiler-text", "aria-hidden": "true", "{run.text}" }
+                                span { class: "sr-only", "spoiler" }
+                            }
+                        } else {
+                            "{run.text}"
+                        }
+                    }
+                    " "
                     span { class: "bdmq-lrow-read", "read \u{2192}" }
                 }
             }
@@ -422,33 +432,72 @@ fn marquee_journal_kicker(
 #[cfg(not(feature = "mobile"))]
 const LADDER_EXCERPT_CHARS: usize = 170;
 
-/// First non-empty line of a markdown body, markup stripped and spoilers
-/// masked, capped at [`LADDER_EXCERPT_CHARS`] for the ladder row.
+/// Words a veiled run is cut from — once blurred, any text reads the same.
 #[cfg(not(feature = "mobile"))]
-fn journal_excerpt(md: &str) -> String {
+const SPOILER_FILLER: &str = "lorem ipsum dolor sit amet consectetur adipiscing elit ";
+
+/// One run of a ladder excerpt: prose, or a veiled spoiler.
+#[cfg(not(feature = "mobile"))]
+#[derive(Debug, PartialEq)]
+struct ExcerptRun {
+    text: String,
+    /// `text` is filler the length of a `||spoiler||` span, set blurred in
+    /// its place — the row is always visible, so the span never reaches it.
+    veiled: bool,
+}
+
+/// First non-empty line of a markdown body, markup stripped and spoilers
+/// veiled, capped at [`LADDER_EXCERPT_CHARS`] for the ladder row.
+#[cfg(not(feature = "mobile"))]
+fn journal_excerpt(md: &str) -> Vec<ExcerptRun> {
     let line = md
         .lines()
         .map(str::trim)
         .find(|l| !l.is_empty())
         .unwrap_or("");
-    // `||spoiler||` spans must not leak into the always-visible excerpt —
-    // mask each span before stripping the remaining markers.
-    let mut masked = String::with_capacity(line.len());
-    for (i, seg) in line.split("||").enumerate() {
-        masked.push_str(if i % 2 == 0 {
-            seg
-        } else {
-            "\u{2588}\u{2588}\u{2588}"
-        });
-    }
-    let stripped: String = masked
+    let stripped: String = line
         .chars()
         .filter(|c| !matches!(c, '*' | '_' | '>' | '#' | '`'))
         .collect();
-    let stripped = stripped.trim_start_matches("- ").trim().to_string();
-    let mut out: String = stripped.chars().take(LADDER_EXCERPT_CHARS).collect();
-    if stripped.chars().count() > LADDER_EXCERPT_CHARS {
-        out.push('\u{2026}');
+    let stripped = stripped.trim_start_matches("- ").trim();
+    let runs = stripped.split("||").enumerate().map(|(i, seg)| {
+        let veiled = i % 2 == 1;
+        let text = if veiled {
+            SPOILER_FILLER
+                .chars()
+                .cycle()
+                .take(seg.chars().count())
+                .collect()
+        } else {
+            seg.to_string()
+        };
+        ExcerptRun { text, veiled }
+    });
+    cap_excerpt(runs)
+}
+
+/// Cuts runs at [`LADDER_EXCERPT_CHARS`] in all, closing on an ellipsis.
+#[cfg(not(feature = "mobile"))]
+fn cap_excerpt(runs: impl Iterator<Item = ExcerptRun>) -> Vec<ExcerptRun> {
+    let mut budget = LADDER_EXCERPT_CHARS;
+    let mut out = Vec::new();
+    for mut run in runs {
+        let len = run.text.chars().count();
+        if len > budget {
+            run.text = run.text.chars().take(budget).collect();
+            if !run.text.is_empty() {
+                out.push(run);
+            }
+            out.push(ExcerptRun {
+                text: "\u{2026}".to_string(),
+                veiled: false,
+            });
+            return out;
+        }
+        budget -= len;
+        if len > 0 {
+            out.push(run);
+        }
     }
     out
 }

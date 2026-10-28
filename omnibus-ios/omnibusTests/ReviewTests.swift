@@ -305,10 +305,13 @@ struct DetailReviewsTests {
         #expect(bars[0].value == nil)
     }
 
-    @Test("an excerpt censors spoilers and resolves Markdown")
+    @Test("an excerpt veils spoilers and resolves Markdown")
     func excerptIsSafe() {
         let md = "# Verdict\n\nThe **ending** — ||she lives|| — got me."
-        #expect(DetailReviews.excerpt(md) == "Verdict\nThe ending — \u{2588}\u{2588}\u{2588} — got me.")
+        #expect(DetailReviews.excerpt(md) == [
+            .text("Verdict"), .text("\n"),
+            .text("The ending — "), .veiled("lorem ips"), .text(" — got me."),
+        ])
     }
 
     @Test("Read more is offered exactly when the set text runs past the collapsed height")
@@ -322,7 +325,7 @@ struct DetailReviewsTests {
     func imageOnlyReviewHasNoText() {
         #expect(!DetailReviews.hasVisibleText("![](/api/journals/images/a.png)"))
         #expect(DetailReviews.hasVisibleText("Look: ![](/api/journals/images/a.png) the map"))
-        #expect(DetailReviews.excerpt("![](/x.png)\nwords") == "words")
+        #expect(DetailReviews.excerpt("![](/x.png)\nwords") == [.text("words")])
     }
 
     @Test("the marquee's hand-off names the other readers, or your own review")
