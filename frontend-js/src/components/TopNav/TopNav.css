@@ -86,13 +86,13 @@
 @media (max-width: 960px) {
   .atrium-topbar {
     padding-inline: 16px;
-    gap: 10px;
+    gap: 8px;
   }
   .atrium-nav {
     margin-left: 0;
   }
   .atrium-nav a {
-    padding: 6px;
+    padding: 6px 4px;
     letter-spacing: 0.04em;
   }
   .atrium-topbar .sp-trigger {

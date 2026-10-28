@@ -9388,9 +9388,9 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
    search trigger, so below 960px the trigger drops to an icon and the bar
    condenses. */
 @media (max-width: 960px) {
-  .atrium-topbar { padding-inline: 16px; gap: 10px; }
+  .atrium-topbar { padding-inline: 16px; gap: 8px; }
   .atrium-nav { margin-left: 0; }
-  .atrium-nav a { padding: 6px; letter-spacing: .04em; }
+  .atrium-nav a { padding: 6px 4px; letter-spacing: .04em; }
   .atrium-topbar .sp-trigger {
     padding: 0; width: 36px; gap: 0; justify-content: center; flex: none;
   }
