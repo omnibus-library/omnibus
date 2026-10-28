@@ -76,7 +76,7 @@ kobo *args:
 [no-cd]
 [positional-arguments]
 koreader *args:
-    {{justfile_directory()}}/scripts/with-dev-env.sh default {{justfile_directory()}}/scripts/koreader-dev.sh "$@"
+    "{{justfile_directory()}}/scripts/with-dev-env.sh" default "{{justfile_directory()}}/scripts/koreader-dev.sh" "$@"
 
 # Ensure the public-domain test fixtures are present (one-time ~156 MB
 # download from the fixtures-vN release asset, then an instant no-op).
