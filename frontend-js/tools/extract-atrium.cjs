@@ -53,7 +53,9 @@ const OWNERS = [
   ["components/ShelfForm/ShelfForm.css", (c) => c.startsWith("shelf-") && !c.startsWith("shelf-picker") && !c.startsWith("shelf-add-tile") && !c.startsWith("shelf-btn-") && !["shelf-modal-overlay", "shelf-modal-card", "shelf-modal-error", "shelf-modal-foot"].includes(c), true],
   ["components/ShelfTile/ShelfTile.css", (c) => c.startsWith("shv-") || c.startsWith("shelf-add-tile"), true],
   ["components/ShelfPicker/ShelfPicker.css", (c) => c.startsWith("shelf-picker") || c.startsWith("shelf-modal") || c.startsWith("shelf-btn-") || c.startsWith("pick-"), true],
-  ["pages/Listen/Listen.css", (c) => c.startsWith("lp-")],
+  // Before the `rd-` catch-all, which would otherwise claim the reader card's placement.
+  ["components/SyncOffer/SyncOffer.css", (c) => ["sync-offer-copy", "lp-sync-prompt", "rd-sync-banner"].includes(c)],
+  ["pages/Listen/Listen.css", (c) => c.startsWith("lp-") && c !== "lp-sync-prompt"],
   ["pages/Listen/MiniDock.css", (c) => c.startsWith("mini-dock")],
   ["layouts/ReaderDock.css", (c) => ["rd-host", "rd-dock-full", "rd-immersive"].includes(c)],
   ["pages/Library/Library.css", (c) => c.startsWith("lib-") || c.startsWith("lmq") || c.startsWith("ebook-") || c.startsWith("sort-th") || c.startsWith("ss-") || c.startsWith("bulk-edit") || ["landing-col", "library-empty", "cover-link"].includes(c)],

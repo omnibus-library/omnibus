@@ -780,3 +780,64 @@ export const FollowAtBootStartsAtTheMappedSpot: Story = {
     await expect(wrote(writes, "POST /api/progress")).toEqual([]);
   },
 };
+
+/** Follow off: the reading maps to 20:00 of the audio, which is offered rather than seeked to. */
+const followOff: Story["beforeEach"] = ({ msw }) => {
+  msw.use(
+    ...listenHandlers(BOOK, {
+      writes,
+      row: TEN_MINUTES_IN,
+      resume: {
+        state: "candidate",
+        follow: false,
+        candidate: {
+          book_file_id: 917,
+          audio_position_seconds: 1200,
+          confidence: "linear",
+          source_client_updated_at: 1_760_000_000,
+          source_format: "epub",
+          target: "audio",
+          source_ahead: true,
+        },
+      },
+    }),
+  );
+};
+
+export const WithFollowOffTheOfferSeeksOnlyOnGo: Story = {
+  beforeEach: followOff,
+  play: async ({ canvas, userEvent }) => {
+    const card = await canvas.findByTestId("sync-offer");
+    await expect(card).toHaveTextContent("Read further in the ebook");
+    await expect(card).toHaveTextContent("Your reading maps to about 20:00.");
+    const times = canvas.getByTestId("listen-scrub-times");
+    await expect(within(times).getByText("10:00")).toBeInTheDocument();
+    await expect(wrote(writes, "POST /api/progress")).toEqual([]);
+
+    await userEvent.click(within(card).getByRole("button", { name: "Go" }));
+
+    await waitFor(() =>
+      expect(wrote(writes, "POST /api/progress")).toMatchObject([
+        { audio_position_seconds: 1200 },
+      ]),
+    );
+    await expect(canvas.queryByTestId("sync-offer")).toBeNull();
+  },
+};
+
+export const WithFollowOffADismissedOfferStaysAwayForThatPosition: Story = {
+  beforeEach: followOff,
+  play: async ({ canvas, userEvent }) => {
+    const card = await canvas.findByTestId("sync-offer");
+    await userEvent.click(
+      within(card).getByRole("button", { name: "Dismiss" }),
+    );
+
+    await expect(canvas.queryByTestId("sync-offer")).toBeNull();
+    await expect(wrote(writes, "POST /api/progress")).toEqual([]);
+    // The reading position's clock is remembered, so it is not offered again.
+    await expect(
+      localStorage.getItem(`omn.syncprompt::${ADA.id}::${UUID}::audio`),
+    ).toBe("1760000000");
+  },
+};

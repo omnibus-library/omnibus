@@ -13,4 +13,12 @@ export class CrossFormatRequests extends BaseRequests {
   postUnlink(bookUuid: string): Promise<APIResponse> {
     return this.post("/api/rpc/cross-format/unlink", { uuid: bookUuid });
   }
+
+  /** Flips follow on a linked book, keeping the link. */
+  postFollow(bookUuid: string, enabled: boolean): Promise<APIResponse> {
+    return this.post("/api/rpc/cross-format/follow", {
+      uuid: bookUuid,
+      body: { enabled },
+    });
+  }
 }

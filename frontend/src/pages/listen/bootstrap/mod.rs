@@ -219,8 +219,10 @@ fn reset_per_book_signals(playback: &crate::PlaybackState, user_id: Option<i64>,
     let mut error = playback.error;
     let mut chapters = playback.chapters;
     let mut loaded_file_id = playback.loaded_file_id;
+    let mut sync_offer = playback.sync_offer;
 
     loaded_file_id.set(None);
+    sync_offer.set(None);
     duration.set(0.0_f64);
     elapsed.set(0.0_f64);
     playing.set(false);

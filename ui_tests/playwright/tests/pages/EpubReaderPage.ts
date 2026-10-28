@@ -9,6 +9,7 @@ import {
 } from "../components/ReaderDisplayPanelComponent";
 import { ReaderGesturesComponent } from "../components/ReaderGesturesComponent";
 import { ReaderSectionComponent } from "../components/ReaderSectionComponent";
+import { SyncOfferComponent } from "../components/SyncOfferComponent";
 import { progressUrls } from "../contracts/progress";
 import { expect } from "../fixtures/test";
 import { BasePage } from "./BasePage";
@@ -36,6 +37,7 @@ export class EpubReaderPage extends BasePage {
   readonly bookmarksDrawer: BookmarksDrawerComponent;
   readonly gestures: ReaderGesturesComponent;
   readonly miniDock: MiniDockComponent;
+  readonly syncOffer: SyncOfferComponent;
 
   readonly viewerPanel: Locator;
   readonly backButton: Locator;
@@ -71,6 +73,7 @@ export class EpubReaderPage extends BasePage {
     this.bookmarksDrawer = new BookmarksDrawerComponent(page);
     this.gestures = new ReaderGesturesComponent(page);
     this.miniDock = new MiniDockComponent(page);
+    this.syncOffer = new SyncOfferComponent(page);
     this.viewerPanel = page.getByTestId("reader-viewer");
     this.backButton = page.getByTestId("reader-back");
     this.contentsButton = page.getByTestId("reader-toc");

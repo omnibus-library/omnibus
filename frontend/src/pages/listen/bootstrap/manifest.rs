@@ -40,7 +40,7 @@ pub(super) async fn run_manifest_init(
 
     let row_file = server_row.as_ref().and_then(|r| r.book_file_id);
     let Some((follow_boot, boot_file)) =
-        resolve_boot_target(&uuid_for_fetch, file_id, row_file, &is_current).await
+        resolve_boot_target(&uuid_for_fetch, file_id, row_file, playback, &is_current).await
     else {
         return;
     };
@@ -126,12 +126,14 @@ fn boot_is_current(
 /// Resolve follow at boot: when the link follows the counterpart and the reading
 /// position maps newer, seed playback with the mapped spot instead of the stored
 /// row. Fetched even for an explicit `?file_id=`; `resolve_follow_boot` stands
-/// aside when the pick names a *different* file than the one mapped to. `None`
-/// when a newer book was selected mid-fetch.
+/// aside when the pick names a *different* file than the one mapped to. With
+/// follow off, publishes the offer for the player's prompt. `None` when a newer
+/// book was selected mid-fetch.
 async fn resolve_boot_target(
     uuid_for_fetch: &str,
     file_id: Option<i64>,
     row_file: Option<i64>,
+    playback: crate::PlaybackState,
     is_current: &impl Fn() -> bool,
 ) -> Option<(Option<(Option<i64>, f64)>, Option<i64>)> {
     // Resolved before boot, not by a post-boot corrective seek, which would race
@@ -141,6 +143,13 @@ async fn resolve_boot_target(
     if !is_current() {
         return None;
     }
+    let mut sync_offer = playback.sync_offer;
+    sync_offer.set(
+        follow_resume
+            .clone()
+            .and_then(super::super::sync_prompt::offer_candidate)
+            .map(|c| (uuid_for_fetch.to_string(), c)),
+    );
     let follow_boot = super::super::helpers::resolve_follow_boot(file_id, follow_resume.as_ref());
     let boot_file = follow_boot
         .as_ref()

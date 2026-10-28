@@ -10,6 +10,7 @@ import { AUDIOBOOK_BOOK_COUNT } from "../fixtures/audiobooks";
 import { AUTO_ATTACHED_PAIRS } from "../fixtures/dual_format";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/pageFixtures";
+import { PAGE_LABEL } from "../pages/EpubReaderPage";
 import { failing } from "../utils/api";
 import {
   audiobookFixturesDir,
@@ -71,7 +72,7 @@ test.describe("cross-format resume prompts", () => {
 
     await test.step("check the boot seeded the mapped position without a prompt", async () => {
       await expect(listenPage.syncHereButton).toBeVisible();
-      await expect(listenPage.removedSyncPrompt).toHaveCount(0);
+      await expect(listenPage.syncOffer.root).toHaveCount(0);
       await expect
         .poll(() => listenPage.seekPosition(), {
           timeout: 15_000,
@@ -367,6 +368,251 @@ test.describe("cross-format resume prompts", () => {
         "aria-checked",
         "true",
       );
+    });
+  });
+
+  test("offer the listening position in the reader when follow is off", async ({
+    epubReaderPage,
+    crossFormatRequests,
+    progressRequests,
+    resumePromptUuid: uuid,
+    eventClock,
+    newestStoredClock,
+    expectMutation,
+  }) => {
+    const { syncOffer } = epubReaderPage;
+
+    await test.step("turn follow off", async () => {
+      const off = await crossFormatRequests.postFollow(uuid, false);
+      await expect(off, "follow off").toBeOK();
+    });
+
+    // Earlier tests stored positions at wall time, which would outrank this
+    // test's synthetic clocks at the resume gate.
+    await test.step("move the clock past every stored position", async () => {
+      const newest = await newestStoredClock(uuid);
+      await expect
+        .poll(() => Math.floor(Date.now() / 1000), { timeout: 15_000 })
+        .toBeGreaterThan(newest + 3);
+      eventClock.reanchor();
+    });
+
+    await test.step("listen to the end, past the reading position", async () => {
+      const epub = await progressRequests.postEpubPercent(
+        uuid,
+        10,
+        eventClock.next(),
+      );
+      await expect(epub, "epub progress write").toBeOK();
+      const audio = await progressRequests.postAudioPosition(
+        uuid,
+        2,
+        eventClock.next(),
+      );
+      await expect(audio, "audio progress write").toBeOK();
+    });
+
+    await test.step("open the reader", async () => {
+      await epubReaderPage.goto(uuid);
+    });
+
+    await test.step("check the reader offers the spot without moving", async () => {
+      await expect(syncOffer.root).toContainText(
+        "Listened further in the audiobook",
+      );
+      await expect
+        .poll(() => epubReaderPage.settledPercent(), { timeout: 20_000 })
+        .toBeGreaterThanOrEqual(0);
+      expect(await epubReaderPage.settledPercent()).toBeLessThan(50);
+    });
+
+    await test.step("take the offer", async () => {
+      await expectMutation(progress.saveAfterJump(), () => syncOffer.go());
+    });
+
+    await test.step("check the reader moved to the mapped spot", async () => {
+      await expect(syncOffer.root).toHaveCount(0);
+      await expect(epubReaderPage.footerBar).toContainText(
+        /(8[6-9]|9\d|100)%/,
+        { timeout: 20_000 },
+      );
+    });
+  });
+
+  test("keep a dismissed offer away until the audiobook moves again", async ({
+    epubReaderPage,
+    crossFormatRequests,
+    progressRequests,
+    resumePromptUuid: uuid,
+    eventClock,
+    newestStoredClock,
+  }) => {
+    const { syncOffer } = epubReaderPage;
+    const clockPastStored = async () => {
+      const newest = await newestStoredClock(uuid);
+      await expect
+        .poll(() => Math.floor(Date.now() / 1000), { timeout: 15_000 })
+        .toBeGreaterThan(newest + 3);
+      eventClock.reanchor();
+    };
+
+    await test.step("turn follow off and listen past the reading position", async () => {
+      const off = await crossFormatRequests.postFollow(uuid, false);
+      await expect(off, "follow off").toBeOK();
+      await clockPastStored();
+      const epub = await progressRequests.postEpubPercent(
+        uuid,
+        10,
+        eventClock.next(),
+      );
+      await expect(epub, "epub progress write").toBeOK();
+      const audio = await progressRequests.postAudioPosition(
+        uuid,
+        1,
+        eventClock.next(),
+      );
+      await expect(audio, "audio progress write").toBeOK();
+    });
+
+    await test.step("dismiss the offer", async () => {
+      await epubReaderPage.goto(uuid);
+      await syncOffer.dismiss();
+      await expect(syncOffer.root).toHaveCount(0);
+    });
+
+    await test.step("check reopening the reader stays quiet", async () => {
+      await epubReaderPage.goto(uuid);
+      await expect(epubReaderPage.footerBar).toContainText(PAGE_LABEL, {
+        timeout: 20_000,
+      });
+      await expect(syncOffer.root).toHaveCount(0);
+    });
+
+    await test.step("listen further", async () => {
+      await clockPastStored();
+      const audio = await progressRequests.postAudioPosition(
+        uuid,
+        2,
+        eventClock.next(),
+      );
+      await expect(audio, "audio progress write").toBeOK();
+    });
+
+    await test.step("check the offer comes back", async () => {
+      await epubReaderPage.goto(uuid);
+      await expect(syncOffer.root).toBeVisible();
+    });
+  });
+
+  test("offer the reading position on the player when follow is off", async ({
+    listenPage,
+    crossFormatRequests,
+    progressRequests,
+    resumePromptUuid: uuid,
+    eventClock,
+    newestStoredClock,
+    expectMutation,
+  }) => {
+    const { syncOffer } = listenPage;
+
+    await test.step("turn follow off", async () => {
+      const off = await crossFormatRequests.postFollow(uuid, false);
+      await expect(off, "follow off").toBeOK();
+    });
+
+    await test.step("move the clock past every stored position", async () => {
+      const newest = await newestStoredClock(uuid);
+      await expect
+        .poll(() => Math.floor(Date.now() / 1000), { timeout: 15_000 })
+        .toBeGreaterThan(newest + 3);
+      eventClock.reanchor();
+    });
+
+    // Half the text maps to ~1s of the 2-second fixture.
+    await test.step("read ahead of the audio", async () => {
+      const audio = await progressRequests.postAudioPosition(
+        uuid,
+        0,
+        eventClock.next(),
+      );
+      await expect(audio, "audio progress write").toBeOK();
+      const epub = await progressRequests.postEpubPercent(
+        uuid,
+        50,
+        eventClock.next(),
+      );
+      await expect(epub, "epub progress write").toBeOK();
+    });
+
+    await test.step("open the player", async () => {
+      await listenPage.goto(uuid);
+    });
+
+    await test.step("check the player offers the spot without seeking", async () => {
+      await expect(syncOffer.root).toContainText("Read further in the ebook");
+      expect(await listenPage.seekPosition()).toBe(0);
+    });
+
+    await test.step("take the offer", async () => {
+      await expectMutation(progress.save(), () => syncOffer.go());
+    });
+
+    await test.step("check the player moved to the mapped spot", async () => {
+      await expect(syncOffer.root).toHaveCount(0);
+      await expect
+        .poll(() => listenPage.seekPosition(), { timeout: 15_000 })
+        .toBeGreaterThan(0);
+    });
+  });
+
+  // The boot restores the stored position at `loadedmetadata`, so a Go any
+  // earlier would be rewound to it.
+  test("hold the player's offer until the stored position has loaded", async ({
+    listenPage,
+    crossFormatRequests,
+    progressRequests,
+    resumePromptUuid: uuid,
+    eventClock,
+    newestStoredClock,
+  }) => {
+    const { syncOffer } = listenPage;
+
+    await test.step("turn follow off and read ahead of the audio", async () => {
+      const off = await crossFormatRequests.postFollow(uuid, false);
+      await expect(off, "follow off").toBeOK();
+      const newest = await newestStoredClock(uuid);
+      await expect
+        .poll(() => Math.floor(Date.now() / 1000), { timeout: 15_000 })
+        .toBeGreaterThan(newest + 3);
+      eventClock.reanchor();
+      const audio = await progressRequests.postAudioPosition(
+        uuid,
+        0,
+        eventClock.next(),
+      );
+      await expect(audio, "audio progress write").toBeOK();
+      const epub = await progressRequests.postEpubPercent(
+        uuid,
+        50,
+        eventClock.next(),
+      );
+      await expect(epub, "epub progress write").toBeOK();
+    });
+
+    const release = await listenPage.holdAudioParts();
+
+    await test.step("open the player with the audio held", async () => {
+      await listenPage.gotoUnsettled(uuid);
+      await listenPage.waitUntilPlayerReady();
+    });
+
+    await test.step("check the offer waits for the audio", async () => {
+      await expect(syncOffer.root).toHaveCount(0);
+    });
+
+    await test.step("let the audio load", async () => {
+      release();
+      await expect(syncOffer.root).toBeVisible();
     });
   });
 });

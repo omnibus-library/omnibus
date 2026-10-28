@@ -619,7 +619,7 @@ fn ReaderLayout(
                 on_back,
             }
 
-            {sync_banner_slot(&uuid)}
+            {sync_banner_slot(&uuid, status)}
 
             ReaderViewerStage { status, on_retry }
 
@@ -679,17 +679,20 @@ fn ReaderLayout(
     }
 }
 
-/// Web-only slot for the cross-format jump banner; the hybrid mobile
-/// shell renders nothing here.
+/// Web-only slot for the cross-format resume (follow jump or offer banner);
+/// the hybrid mobile shell renders nothing here.
 #[cfg(not(feature = "mobile"))]
-fn sync_banner_slot(uuid: &str) -> Element {
+fn sync_banner_slot(uuid: &str, status: ReaderStatus) -> Element {
     rsx! {
-        sync_banner::SyncJumpBanner { uuid: uuid.to_string() }
+        sync_banner::SyncJumpBanner {
+            uuid: uuid.to_string(),
+            failed: status == ReaderStatus::Failed,
+        }
     }
 }
 
 #[cfg(feature = "mobile")]
-fn sync_banner_slot(_uuid: &str) -> Element {
+fn sync_banner_slot(_uuid: &str, _status: ReaderStatus) -> Element {
     rsx! {}
 }
 

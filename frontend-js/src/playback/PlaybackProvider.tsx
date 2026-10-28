@@ -23,6 +23,7 @@ import {
   fetchListeningRow,
   fetchPlaybackRate,
   fetchTranscodeState,
+  type ListeningCandidate,
   postSessions,
   type SessionReport,
   saveListeningPosition,
@@ -38,6 +39,7 @@ import {
 } from "../pages/BookDetail/queries";
 import { SessionTracker } from "../readingSession";
 import { meQuery } from "../session";
+import { listeningOffer } from "../syncOffer";
 import {
   bootResumePosition,
   createPositionSaver,
@@ -81,6 +83,8 @@ type State = {
   chapters: Chapter[];
   rate: number;
   rateError: string | null;
+  /** With follow off, the reading position this boot found to offer; answering clears it. */
+  syncOffer: ListeningCandidate | null;
 };
 
 const IDLE: State = {
@@ -95,6 +99,7 @@ const IDLE: State = {
   chapters: [],
   rate: 1,
   rateError: null,
+  syncOffer: null,
 };
 
 export type Playback = State & {
@@ -118,6 +123,8 @@ export type Playback = State & {
   sleepFor(seconds: number): void;
   sleepAtChapterEnd(): void;
   toggleFade(): void;
+  /** Takes down the follow-off offer once it is answered. */
+  answerSyncOffer(): void;
 };
 
 const PlaybackContext = createContext<Playback | null>(null);
@@ -241,6 +248,7 @@ async function runBoot(boot: Boot) {
   if (!(await reconcileRate(boot))) return;
   const resume = await fetchListeningResume(uuid);
   if (!isCurrent()) return;
+  patch({ syncOffer: listeningOffer(resume) });
   const follow = resolveFollowBoot(fileId, resume);
   const bootFile = follow?.fileId ?? fileId ?? row?.fileId ?? null;
   let manifest = await fetchAudioManifest(uuid, bootFile);
@@ -529,6 +537,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     sleepAtChapterEnd: () =>
       timerRef.current?.endOfChapter(state.chapters, state.elapsed, state.rate),
     toggleFade: () => timerRef.current?.toggleFade(),
+    answerSyncOffer: () => patch({ syncOffer: null }),
   };
   return (
     <PlaybackContext value={playback}>
