@@ -204,12 +204,16 @@ enum UserDataService {
                 merged.resolved = record.resolved ?? point.record.resolved
                 point.record = merged
             } else {
+                // A drained answer older than the card's newer position in the other format.
+                if point.record.orderingClock > record.orderingClock { return points }
                 // The old card's duration, position and part describe the other format.
                 point.record = record
                 point.audioPart = nil
                 point.audioPartCount = nil
             }
-            points.remove(at: existing)
+            // All matches, not just `existing`: a cache written before one card per book
+            // can hold both formats.
+            points.removeAll { $0.matches(record) }
         } else {
             guard let book else { return nil }
             point = ResumePoint(

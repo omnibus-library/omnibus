@@ -123,6 +123,39 @@ struct ResumeSpliceTests {
         #expect(cards.first?.audioPartCount == nil)
     }
 
+    @Test("an older position in the other format leaves a newer card alone")
+    func olderOtherFormatPositionIsIgnored() throws {
+        // A drained answer can trail a newer save made in the other format.
+        let rail = [point(record(format: .audio, at: 900, clock: 1_700_000_100))]
+        let cards = try #require(
+            UserDataService.splice(
+                record(format: .epub, cfi: "epubcfi(/6/4)", clock: 1_700_000_000),
+                book: book(), into: rail
+            )
+        )
+
+        #expect(cards.count == 1)
+        #expect(cards.first?.record.format == .audio)
+        #expect(cards.first?.record.audioPositionSeconds == 900)
+    }
+
+    @Test("a cache holding both formats of a book collapses to one card")
+    func bothFormatsInTheCacheCollapseToOne() throws {
+        let rail = [
+            point(record(format: .epub, cfi: "epubcfi(/6/4)")),
+            point(record(format: .audio, at: 900)),
+            point(record(uuid: "book-2"), book: book(id: 2, uuid: "book-2")),
+        ]
+        let cards = try #require(
+            UserDataService.splice(
+                record(format: .audio, at: 1_800), book: nil, into: rail
+            )
+        )
+
+        #expect(cards.map(\.id) == ["book-1:audio", "book-2:epub"])
+        #expect(cards.first?.record.audioPositionSeconds == 1_800)
+    }
+
     @Test("saving a position moves its own card to the front")
     func savedCardMovesToTheFront() {
         let rail = [
