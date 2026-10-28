@@ -68,9 +68,7 @@ test.describe("always-on scrollbars", () => {
           await libraryPage.goto();
           await scroll.showClassicScrollbars();
           await expect.poll(() => scroll.scrollbarWidth()).toBeGreaterThan(0);
-          await libraryPage.page.evaluate(async () => {
-            await document.fonts.ready;
-          });
+          await scroll.waitForFonts();
         });
 
         await test.step("check every bar control shows and nothing scrolls sideways", async () => {
