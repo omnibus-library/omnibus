@@ -30,14 +30,12 @@ test.describe("shelves index", () => {
     });
   });
 
-  // The library's shelf section is the only way in: the top nav has no Shelves link.
   test("reach the index from the library's shelves row", async ({
     libraryPage,
     shelvesIndexPage,
   }) => {
     await test.step("open the library", async () => {
       await libraryPage.goto();
-      await expect(libraryPage.topNav.shelvesLink).toHaveCount(0);
     });
 
     await test.step("follow All shelves", async () => {
@@ -47,6 +45,39 @@ test.describe("shelves index", () => {
     await test.step("check the index shows", async () => {
       await shelvesIndexPage.assertDisplayed();
       await expect(shelvesIndexPage.indexRoot).toBeVisible();
+    });
+  });
+
+  test("reach a shelf from the top nav", async ({
+    libraryPage,
+    shelvesIndexPage,
+    shelfPage,
+    ownShelf,
+  }) => {
+    const shelf = await ownShelf("E2E Nav Shelf");
+    const { topNav } = libraryPage;
+
+    await test.step("open the library", async () => {
+      await libraryPage.goto();
+    });
+
+    await test.step("follow Shelves in the top nav", async () => {
+      await topNav.open("Shelves");
+    });
+
+    await test.step("check the index shows with Shelves active", async () => {
+      await shelvesIndexPage.assertDisplayed();
+      await expect(topNav.navLink("Shelves")).toHaveClass(/\bon\b/);
+    });
+
+    await test.step("open the shelf's card", async () => {
+      await shelvesIndexPage.openShelf(shelf.id);
+    });
+
+    await test.step("check the shelf shows with Shelves still active", async () => {
+      await shelfPage.assertDisplayedFor(shelf.id);
+      await expect(topNav.navLink("Shelves")).toHaveClass(/\bon\b/);
+      await expect(topNav.libraryLink).not.toHaveClass(/\bon\b/);
     });
   });
 

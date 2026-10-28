@@ -25,7 +25,6 @@ export class TopNavComponent extends BaseComponent {
   readonly searchPalette: SearchPaletteComponent;
   readonly breadcrumbNav: Locator;
 
-  readonly shelvesLink: Locator;
   readonly signOutButton: Locator;
   readonly settingsLink: Locator;
   readonly adminLink: Locator;
@@ -58,7 +57,6 @@ export class TopNavComponent extends BaseComponent {
     // Absent on top-level pages.
     this.breadcrumbNav = page.locator("nav.breadcrumb");
 
-    this.shelvesLink = this.root.getByRole("link", { name: "Shelves" });
     this.signOutButton = page.getByTestId("logout-button");
     this.settingsLink = page.getByRole("link", { name: "Settings" });
     this.adminLink = page.getByTestId("user-menu-admin");
@@ -85,7 +83,7 @@ export class TopNavComponent extends BaseComponent {
   }
 
   /** A link in the bar, by its label. */
-  navLink(name: "Authors" | "Series" | "Stats"): Locator {
+  navLink(name: "Shelves" | "Authors" | "Series" | "Stats"): Locator {
     return this.root.getByRole("link", { name });
   }
 
@@ -100,7 +98,7 @@ export class TopNavComponent extends BaseComponent {
   }
 
   /** Follows a nav link, an in-app transition rather than a reload. */
-  async open(name: "Authors" | "Series"): Promise<void> {
+  async open(name: "Shelves" | "Authors" | "Series"): Promise<void> {
     await this.navLink(name).click();
     await this.page.waitForURL(new RegExp(`/${name.toLowerCase()}$`));
   }
