@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { bookCount } from "../../format";
 import "../Chip/Chip.css";
 import "./ChipInput.css";
@@ -22,6 +22,8 @@ type ChipInputProps = {
   avatar?: boolean;
   /** The input's `data-testid`, which the E2E suite finds the editor by. */
   testId?: string;
+  /** Focuses the text input on mount, for an editor opened by the user. */
+  autoFocus?: boolean;
 };
 
 /** The first two capitals of a name: "Sora Inkwell" gives "SI". */
@@ -42,8 +44,10 @@ export function ChipInput({
   inputClass = "me-tag-input",
   avatar = false,
   testId,
+  autoFocus = false,
 }: ChipInputProps) {
   const [draft, setDraft] = useState("");
+  const input = useRef<HTMLInputElement>(null);
   const listId = useId();
   const picked = (name: string) => values.some((v) => sameName(v, name));
   const add = (text: string) => {
@@ -66,7 +70,14 @@ export function ChipInput({
             type="button"
             className="me-chip-remove"
             aria-label={`${removeLabel} ${value}`}
-            onClick={() => onChange(values.filter((_, j) => j !== i))}
+            // Safari doesn't focus a clicked button, so the input would blur and a host that closes on blur would drop this ✕ before the click.
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={(e) => {
+              // Only a keyboard remove leaves focus on this button, which is about to unmount.
+              const focused = document.activeElement === e.currentTarget;
+              onChange(values.filter((_, j) => j !== i));
+              if (focused) input.current?.focus();
+            }}
           >
             ✕
           </button>
@@ -74,6 +85,9 @@ export function ChipInput({
       ))}
       <div className="chip-editor-input-wrap">
         <input
+          ref={input}
+          // biome-ignore lint/a11y/noAutofocus: the editor opens on the user's own click
+          autoFocus={autoFocus}
           className={inputClass}
           aria-label={label}
           data-testid={testId}
