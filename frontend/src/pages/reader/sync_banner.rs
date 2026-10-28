@@ -44,13 +44,24 @@ pub(super) fn SyncJumpBanner(uuid: String) -> Element {
                 store_dismissed_clock(user_id, &go_uuid, "epub", clock);
                 offer.set(None);
                 jump_to(&c);
+                refocus_surface();
             },
             on_dismiss: move |_| {
                 store_dismissed_clock(user_id, &uuid, "epub", clock);
                 offer.set(None);
+                refocus_surface();
             },
         }
     }
+}
+
+/// Hand focus back to the page surface: the clicked button is removed with
+/// the card, and focus left on `<body>` stops the arrow keys turning pages.
+fn refocus_surface() {
+    #[cfg(feature = "web")]
+    let _ = dioxus::document::eval(
+        "requestAnimationFrame(() => document.querySelector('.rd-surface')?.focus({ preventScroll: true }));",
+    );
 }
 
 /// Move the text to the candidate's spot. The server-derived CFI is the

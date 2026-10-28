@@ -82,3 +82,87 @@ fn player_offer_copy_names_the_mapped_time_and_its_direction() {
     let (behind, _) = player_offer_copy(&candidate(Some(false))).expect("copy");
     assert_eq!(behind, "Re-reading earlier in the ebook");
 }
+
+#[test]
+fn newest_dismissed_never_moves_the_stored_clock_backwards() {
+    // An older tab answering clock 100 after another answered 101 must not
+    // re-arm the 101 offer.
+    assert_eq!(newest_dismissed(Some(101), 100), 101);
+    assert_eq!(newest_dismissed(Some(100), 101), 101);
+    assert_eq!(newest_dismissed(None, 100), 100);
+}
+
+#[test]
+fn dismissed_key_differs_per_account_for_the_same_book_and_target() {
+    assert_ne!(
+        dismissed_key(1, "book-a", "audio"),
+        dismissed_key(2, "book-a", "audio")
+    );
+}
+
+#[test]
+fn player_offer_visible_shows_a_booted_unanswered_offer_for_the_loaded_file() {
+    assert!(player_offer_visible(
+        &candidate(Some(true)),
+        true,
+        false,
+        Some(917),
+        None
+    ));
+}
+
+#[test]
+fn player_offer_visible_hides_until_this_book_has_booted() {
+    assert!(!player_offer_visible(
+        &candidate(Some(true)),
+        false,
+        false,
+        Some(917),
+        None
+    ));
+}
+
+#[test]
+fn player_offer_visible_hides_once_playback_has_failed() {
+    // Go would spend the offer on an element that cannot play.
+    assert!(!player_offer_visible(
+        &candidate(Some(true)),
+        true,
+        true,
+        Some(917),
+        None
+    ));
+}
+
+#[test]
+fn player_offer_visible_hides_when_another_file_is_loaded() {
+    // The candidate's seconds count from the start of file 917.
+    assert!(!player_offer_visible(
+        &candidate(Some(true)),
+        true,
+        false,
+        Some(940),
+        None
+    ));
+}
+
+#[test]
+fn player_offer_visible_hides_a_candidate_without_a_file_id() {
+    let c = CrossFormatCandidate {
+        book_file_id: None,
+        ..candidate(Some(true))
+    };
+    assert!(!player_offer_visible(&c, true, false, None, None));
+    assert!(!player_offer_visible(&c, true, false, Some(917), None));
+}
+
+#[test]
+fn player_offer_visible_hides_an_offer_already_answered() {
+    assert!(!player_offer_visible(
+        &candidate(Some(true)),
+        true,
+        false,
+        Some(917),
+        Some(100)
+    ));
+}

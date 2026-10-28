@@ -45,7 +45,14 @@ pub(crate) fn dismissed_clock(user_id: i64, uuid: &str, target: &str) -> Option<
 
 /// Remember an answered offer (see [`should_offer`]). Never a progress write.
 pub(crate) fn store_dismissed_clock(user_id: i64, uuid: &str, target: &str, clock: i64) {
-    crate::client_store::set(&dismissed_key(user_id, uuid, target), &clock.to_string());
+    let stored = newest_dismissed(dismissed_clock(user_id, uuid, target), clock);
+    crate::client_store::set(&dismissed_key(user_id, uuid, target), &stored.to_string());
+}
+
+/// The clock to store: never older than what another tab already answered,
+/// or that tab's newer offer would resurface.
+fn newest_dismissed(stored: Option<i64>, clock: i64) -> i64 {
+    stored.map_or(clock, |seen| seen.max(clock))
 }
 
 /// The reader offer's title and detail. An earlier listening position must
@@ -110,17 +117,36 @@ pub(crate) fn SyncOfferCard(
     }
 }
 
-/// The player's offer. Shown once the boot has finished, so Go can't race
-/// its restore seek, and only while the mapped file is the one loaded: the
-/// candidate's seconds count from the start of that file.
+/// Whether the player shows `c`: this book has booted, playback hasn't
+/// failed, the mapped file is the one loaded (the candidate's seconds count
+/// from its start), and the offer hasn't been answered.
+pub(crate) fn player_offer_visible(
+    c: &CrossFormatCandidate,
+    booted: bool,
+    failed: bool,
+    loaded_file: Option<i64>,
+    dismissed: Option<i64>,
+) -> bool {
+    booted
+        && !failed
+        && c.book_file_id.is_some()
+        && c.book_file_id == loaded_file
+        && should_offer(c.source_client_updated_at, dismissed)
+}
+
+/// The player's offer: the candidate the boot that loaded this book fetched
+/// (see [`player_offer_visible`]). Shown once the source is committed; a Go
+/// before the restore seek lands supersedes it in the audio shim.
 #[component]
 pub(super) fn SyncJumpPrompt(uuid: String) -> Element {
     let playback = crate::use_playback();
     let user = crate::use_current_user_summary();
-    // Follow on is the boot's to resolve, before the first play.
-    let mut offer = use_offer(uuid.clone(), "audio", false, |_| {});
+    let mut offer = playback.sync_offer;
 
-    let Some(c) = offer() else {
+    let Some(c) = offer()
+        .filter(|(for_uuid, _)| *for_uuid == uuid)
+        .map(|(_, c)| c)
+    else {
         return rsx! {};
     };
     let Some(user_id) = user().map(|u| u.id) else {
@@ -128,11 +154,13 @@ pub(super) fn SyncJumpPrompt(uuid: String) -> Element {
     };
     let booted = (playback.hls_ready)() && (playback.uuid)().as_deref() == Some(uuid.as_str());
     let clock = c.source_client_updated_at;
-    if !booted
-        || c.book_file_id.is_none()
-        || (playback.loaded_file_id)() != c.book_file_id
-        || !should_offer(clock, dismissed_clock(user_id, &uuid, "audio"))
-    {
+    if !player_offer_visible(
+        &c,
+        booted,
+        (playback.playback_failed)(),
+        (playback.loaded_file_id)(),
+        dismissed_clock(user_id, &uuid, "audio"),
+    ) {
         return rsx! {};
     }
     let (Some(seconds), Some((title, detail))) = (c.audio_position_seconds, player_offer_copy(&c))

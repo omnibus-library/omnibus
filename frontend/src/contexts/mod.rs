@@ -349,6 +349,10 @@ pub struct PlaybackState {
     /// restore or a part swap. The end-of-chapter sleep timer re-anchors on
     /// this and nothing else: it separates "the playhead jumped" from "playing".
     pub seek_epoch: Signal<u32>,
+    /// The follow-off cross-format offer the boot fetched, tagged with the
+    /// book it was fetched for. The player's offer reads it rather than
+    /// fetching again; answering clears it. Reset on every boot.
+    pub sync_offer: Signal<Option<(String, omnibus_shared::cross_format::CrossFormatCandidate)>>,
 }
 
 #[cfg(not(feature = "mobile"))]
@@ -374,6 +378,7 @@ impl PlaybackState {
             volume: Signal::new(1.0),
             reload_epoch: Signal::new(0),
             seek_epoch: Signal::new(0),
+            sync_offer: Signal::new(None),
         }
     }
 }

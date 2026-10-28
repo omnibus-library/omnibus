@@ -86,6 +86,11 @@ fn transport_controls_js() -> &'static str {
       seek: function(absSeconds){
         this._seeded = true;
         this._userActed = true;
+        // Supersedes a boot restore still waiting on metadata (see
+        // initDirect): a Go on the sync offer must not be rewound to the
+        // stored row. `_userSeekLocal` is the target in the loaded part.
+        this._userSought = true;
+        this._userSeekLocal = null;
         this._lastAbs = Math.max(0, absSeconds || 0);
         var s = Math.max(0, absSeconds || 0);
         // A seek is discrete user intent: push it to the transport display
@@ -112,9 +117,11 @@ fn transport_controls_js() -> &'static str {
             el.src = this._parts[i].url;
             el.load();
           } else {
+            this._userSeekLocal = local;
             try { el.currentTime = local; } catch(_) {}
           }
         } else {
+          this._userSeekLocal = s;
           try { el.currentTime = s; } catch(_) {}
         }
       },
@@ -358,6 +365,9 @@ fn direct_play_init_js() -> &'static str {
         // Nothing human has happened on this boot yet — the restore seek
         // below must render, never persist (#1972).
         this._userActed = false;
+        // A play before metadata still restores; only a seek supersedes it.
+        this._userSought = false;
+        this._userSeekLocal = null;
         this._parts = parts;
         var acc = 0;
         this._cumOffsets = [];
@@ -381,7 +391,14 @@ fn direct_play_init_js() -> &'static str {
         var oa = this;
         var onMeta = function(){
           el.removeEventListener('loadedmetadata', onMeta);
-          if (seedKnown) {
+          if (oa._userSought) {
+            // The user's seek wins. A cross-part seek lands through its own
+            // listener (null here); a same-part one is re-applied, since a
+            // pre-metadata `currentTime` write is not guaranteed to stick.
+            if (typeof oa._userSeekLocal === 'number') {
+              try { el.currentTime = oa._userSeekLocal; } catch(_) {}
+            }
+          } else if (seedKnown) {
             try { el.currentTime = local; } catch(_) {}
             oa._seeded = true;
           }
@@ -412,6 +429,8 @@ fn hls_init_js() -> &'static str {
         // Same rule as initDirect: the restore is not a human action, so
         // it renders without persisting (#1972).
         this._userActed = false;
+        this._userSought = false;
+        this._userSeekLocal = null;
         if (typeof Hls !== 'undefined' && Hls.isSupported()) {
           var hls = new Hls();
           hls.loadSource(url);
@@ -442,7 +461,11 @@ fn hls_init_js() -> &'static str {
           var hoa = this;
           var onMeta = function(){
             el.removeEventListener('loadedmetadata', onMeta);
-            try { el.currentTime = Math.max(0, initialPositionAbs); } catch(_) {}
+            // Same rule as initDirect: a seek before metadata supersedes.
+            var target = hoa._userSought && typeof hoa._userSeekLocal === 'number'
+              ? hoa._userSeekLocal
+              : Math.max(0, initialPositionAbs);
+            try { el.currentTime = target; } catch(_) {}
             hoa._seeded = true;
           };
           el.addEventListener('loadedmetadata', onMeta);
@@ -561,6 +584,30 @@ mod tests {
         assert!(
             js.contains("__omnibusOnAudioPause(t, !!oa._userActed)"),
             "pause flush does not pass the user-acted persistence gate"
+        );
+        // A seek issued before the boot's restore lands supersedes it: both
+        // inits reset the flag, seek sets it, and each restore defers to it.
+        // `play` must not set it — pressing play before metadata restores.
+        assert_eq!(
+            js.matches("this._userSought = false;").count(),
+            2,
+            "initDirect/initHls must each reset the user-seek flag"
+        );
+        assert!(
+            js.contains("this._userSought = true;"),
+            "seek does not flag the pending restore as superseded"
+        );
+        assert!(
+            js.contains("if (oa._userSought) {"),
+            "initDirect's restore does not defer to a user seek"
+        );
+        assert!(
+            js.contains("hoa._userSought && typeof hoa._userSeekLocal === 'number'"),
+            "initHls's restore does not defer to a user seek"
+        );
+        assert!(
+            !position_listeners_js().contains("_userSought"),
+            "a play/pause listener must not supersede the restore"
         );
         // Sanity: no stray `{{` / `}}` escape pairs leaked from a `format!`.
         assert!(!js.contains("{{"), "literal {{ leaked into JS");
