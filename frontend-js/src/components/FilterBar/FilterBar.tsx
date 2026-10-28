@@ -1,8 +1,9 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { type FilterClause, type FilterField, shelvesQuery } from "../../api";
 import { useCurrentUser } from "../../session";
 import { ChevronDownGlyph, XGlyph } from "../Glyphs/Glyphs";
+import { CreateShelfModal } from "../ShelfForm/CreateShelfModal";
 import { FilterPicker } from "./FilterPicker";
 import {
   FILTER_FIELDS,
@@ -12,12 +13,15 @@ import {
   withFieldClause,
   withoutField,
 } from "./filters";
+import { saveAsShelf } from "./saveAsShelf";
 import "./FilterBar.css";
 
 type FilterBarProps = {
   clauses: FilterClause[];
   /** Called with the whole next clause list. */
   onChange: (clauses: FilterClause[]) => void;
+  /** Offers to save the filters as a smart shelf; only right where the bar filters the whole library. */
+  saveAsShelf?: boolean;
 };
 
 function Facet({
@@ -96,21 +100,50 @@ function Facet({
 
 /** The library's filters as one facet per field; an active one names what it keeps. */
 export function FilterBar(props: FilterBarProps) {
+  const shelves = useQuery(shelvesQuery);
+  const viewerId = useCurrentUser().id;
+  const client = useQueryClient();
+  const [saving, setSaving] = useState(false);
+  const seed = saveAsShelf(props.clauses, shelves, viewerId);
+  const nothingToSave = seed.drafts.length === 0;
   return (
-    // biome-ignore lint/a11y/useSemanticElements: a fieldset brings a default border and min-width that the fb rules never reset
-    <div className="fb" role="group" aria-label="Library filters">
-      {FILTER_FIELDS.map((field) => (
-        <Facet key={field} field={field} {...props} />
-      ))}
-      {props.clauses.length > 0 && (
-        <button
-          type="button"
-          className="fb-clear"
-          onClick={() => props.onChange([])}
-        >
-          Clear all
-        </button>
+    <>
+      {/* biome-ignore lint/a11y/useSemanticElements: a fieldset brings a default border and min-width that the fb rules never reset */}
+      <div className="fb" role="group" aria-label="Library filters">
+        {FILTER_FIELDS.map((field) => (
+          <Facet key={field} field={field} {...props} />
+        ))}
+        {props.clauses.length > 0 && (
+          <button
+            type="button"
+            className="fb-clear"
+            onClick={() => props.onChange([])}
+          >
+            Clear all
+          </button>
+        )}
+        {props.clauses.length > 0 && props.saveAsShelf && (
+          <button
+            type="button"
+            className="fb-save"
+            disabled={nothingToSave}
+            title={nothingToSave ? seed.note : undefined}
+            onClick={() => setSaving(true)}
+          >
+            Save as shelf
+          </button>
+        )}
+      </div>
+      {saving && (
+        <CreateShelfModal
+          initial={seed}
+          onClose={() => setSaving(false)}
+          onCreated={() => {
+            setSaving(false);
+            client.invalidateQueries({ queryKey: shelvesQuery.queryKey });
+          }}
+        />
       )}
-    </div>
+    </>
   );
 }

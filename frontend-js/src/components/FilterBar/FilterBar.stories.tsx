@@ -3,14 +3,17 @@ import { HttpResponse, http } from "msw";
 import { useState } from "react";
 import { expect, waitFor, within } from "storybook/test";
 import type { FilterClause } from "../../api";
+import type { CreateShelfRequest } from "../../api/generated/schemas";
 import { storyClient } from "../../testing/AppHarness";
 import {
+  createShelfHandler,
   failing,
   filterOptionHandlers,
   hanging,
+  previewHandler,
   shelvesHandler,
 } from "../../testing/handlers";
-import { aWireShelf } from "../../testing/wire";
+import { aWireRulePreview, aWireShelf } from "../../testing/wire";
 import { FilterBar } from "./FilterBar";
 
 const TAGS = [
@@ -31,11 +34,21 @@ const SHELVES = [
 ];
 
 // FilterBar keeps no clauses of its own; this holds them and prints the latest.
-function Bar({ initial = [] }: { initial?: FilterClause[] }) {
+function Bar({
+  initial = [],
+  saveAsShelf,
+}: {
+  initial?: FilterClause[];
+  saveAsShelf?: boolean;
+}) {
   const [clauses, setClauses] = useState(initial);
   return (
     <>
-      <FilterBar clauses={clauses} onChange={setClauses} />
+      <FilterBar
+        clauses={clauses}
+        onChange={setClauses}
+        saveAsShelf={saveAsShelf}
+      />
       <code data-testid="clauses">{JSON.stringify(clauses)}</code>
     </>
   );
@@ -62,6 +75,7 @@ const include = (field: FilterClause["field"], ...values: string[]) =>
   ({ field, mode: "include", values }) satisfies FilterClause;
 
 export const Inactive: Story = {
+  args: { saveAsShelf: true },
   play: async ({ canvas }) => {
     const group = canvas.getByRole("group", { name: "Library filters" });
     const facets = within(group)
@@ -78,6 +92,9 @@ export const Inactive: Story = {
     ]);
     await expect(
       canvas.queryByRole("button", { name: "Clear all" }),
+    ).not.toBeInTheDocument();
+    await expect(
+      canvas.queryByRole("button", { name: "Save as shelf" }),
     ).not.toBeInTheDocument();
   },
 };
@@ -111,6 +128,124 @@ export const ActiveFacet: Story = {
 
     await userEvent.click(canvas.getByRole("button", { name: "Clear all" }));
     await expect(canvas.getByTestId("clauses")).toHaveTextContent("[]");
+  },
+};
+
+export const SaveAsShelfOffByDefault: Story = {
+  args: { initial: [include("tag", "cozy")] },
+  play: async ({ canvas }) => {
+    await expect(
+      canvas.getByRole("button", { name: "Clear all" }),
+    ).toBeInTheDocument();
+    await expect(
+      canvas.queryByRole("button", { name: "Save as shelf" }),
+    ).not.toBeInTheDocument();
+  },
+};
+
+const sent: CreateShelfRequest[] = [];
+const FROM_FILTERS = [
+  include("author", "Brandon Sanderson"),
+  include("format", "epub"),
+  include("shelf", "3"),
+];
+
+const saveBeforeEach: Story["beforeEach"] = ({ msw }) => {
+  sent.length = 0;
+  msw.use(createShelfHandler(sent), previewHandler([], aWireRulePreview()));
+};
+
+export const SaveAsShelf: Story = {
+  args: { initial: FROM_FILTERS, saveAsShelf: true },
+  beforeEach: saveBeforeEach,
+  play: async ({ canvas, userEvent }) => {
+    const pill = canvas.getByRole("button", { name: "Save as shelf" });
+    await expect(pill).toHaveClass("fb-save");
+    await expect(pill).toBeEnabled();
+    await expect(pill.previousElementSibling).toBe(
+      canvas.getByRole("button", { name: "Clear all" }),
+    );
+
+    await userEvent.click(pill);
+
+    const dialog = canvas.getByRole("dialog", { name: "New shelf" });
+    await expect(
+      canvas.getByRole("group", { name: "Library filters" }),
+    ).not.toContainElement(dialog);
+    await expect(
+      within(dialog).getByRole("textbox", { name: "Shelf name" }),
+    ).toHaveValue("Brandon Sanderson · EPUB");
+    await expect(
+      within(dialog).getByRole("combobox", { name: "Match" }),
+    ).toHaveValue("all");
+    const [author, format] = within(dialog).getAllByRole("textbox", {
+      name: "Condition value",
+    });
+    await expect(author).toHaveValue("Brandon Sanderson");
+    await expect(format).toHaveValue("epub");
+    await expect(
+      await within(dialog).findByText(
+        "From your filters: Author, Format carried. Shelf · Winter reads left out, a shelf can't be a condition.",
+      ),
+    ).toBeVisible();
+
+    const loadedAt = storyClient().getQueryState(["shelves"])?.dataUpdatedAt;
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Create" }),
+    );
+
+    await waitFor(() => expect(canvas.queryByRole("dialog")).toBeNull());
+    await expect(sent).toEqual([
+      {
+        kind: "smart",
+        name: "Brandon Sanderson · EPUB",
+        visibility: "private",
+        match_mode: "all",
+        rules: [
+          { field: "author", op: "is", value: "Brandon Sanderson" },
+          { field: "format", op: "includes", value: "epub" },
+        ],
+        book_uuids: [],
+      },
+    ]);
+    // The new shelf is not opened, but the shelf list is stale now.
+    await waitFor(() =>
+      expect(storyClient().getQueryState(["shelves"])?.dataUpdatedAt).not.toBe(
+        loadedAt,
+      ),
+    );
+    await expect(pill).toHaveFocus();
+  },
+};
+
+export const SaveAsShelfCancels: Story = {
+  args: { initial: FROM_FILTERS, saveAsShelf: true },
+  beforeEach: saveBeforeEach,
+  play: async ({ canvas, userEvent }) => {
+    const pill = canvas.getByRole("button", { name: "Save as shelf" });
+    await userEvent.click(pill);
+    await expect(canvas.getByRole("dialog")).toBeVisible();
+
+    await userEvent.keyboard("{Escape}");
+
+    await expect(canvas.queryByRole("dialog")).not.toBeInTheDocument();
+    await expect(sent).toEqual([]);
+    await expect(pill).toHaveFocus();
+  },
+};
+
+export const SaveAsShelfDisabled: Story = {
+  args: { initial: [include("shelf", "3")], saveAsShelf: true },
+  play: async ({ canvas }) => {
+    const pill = canvas.getByRole("button", { name: "Save as shelf" });
+
+    await expect(pill).toBeDisabled();
+    await waitFor(() =>
+      expect(pill).toHaveAttribute(
+        "title",
+        "From your filters: Shelf · Winter reads left out, a shelf can't be a condition.",
+      ),
+    );
   },
 };
 

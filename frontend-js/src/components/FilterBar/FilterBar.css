@@ -26,6 +26,27 @@
   color: var(--ink-0);
   border-color: var(--ink-3);
 }
+.fb-save {
+  height: 28px;
+  padding: 0 12px;
+  background: transparent;
+  border: 1px dashed var(--line-2);
+  border-radius: 999px;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    border-color 0.15s;
+}
+.fb-save:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.fb-save:disabled {
+  color: var(--ink-3);
+  cursor: not-allowed;
+}
 .fb-scrim {
   position: fixed;
   top: 0;
@@ -294,7 +315,8 @@
     display: none;
   }
   .fb-facet-wrap,
-  .fb-clear {
+  .fb-clear,
+  .fb-save {
     flex: none;
   }
   .fb-scrim {
