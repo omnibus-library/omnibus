@@ -38,8 +38,15 @@ describe("fetchRequest", () => {
     expect(fetchRequest("1984", "Orwell")).toMatchObject({ title: "1984" });
   });
 
-  it("returns null for a blank query", () => {
-    expect(fetchRequest("   ", "Sora Inkwell")).toBeNull();
+  it("asks by author alone when the title is blank", () => {
+    expect(fetchRequest("  ", "Sora Inkwell")).toEqual({
+      query: "Sora Inkwell",
+      author: "Sora Inkwell",
+    });
+  });
+
+  it("returns null when title and author are blank", () => {
+    expect(fetchRequest("  ", " ")).toBeNull();
   });
 });
 

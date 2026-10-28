@@ -145,7 +145,7 @@ type FetchViewProps = {
 };
 
 /**
- * Fetch metadata: one edition per provider for the title or ISBN asked, the picked one set
+ * Fetch metadata: one edition per provider for the title or ISBN and author asked, the picked one set
  * beside what the form holds, and the checked rows copied into the form for Done to save.
  */
 export function FetchView({
@@ -156,6 +156,9 @@ export function FetchView({
   onApplied,
 }: FetchViewProps) {
   const [query, setQuery] = useState(() => form.getValues("title").trim());
+  const [author, setAuthor] = useState(
+    () => form.getValues("authors")[0]?.trim() ?? "",
+  );
   const { picked, pick } = useHydrated();
   const search = useMutation({
     mutationFn: async (req: EditionSearchRequest) => {
@@ -166,13 +169,13 @@ export function FetchView({
       };
     },
   });
-  const ask = (text: string) => {
-    const request = fetchRequest(text, form.getValues("authors")[0] ?? "");
+  const ask = () => {
+    const request = fetchRequest(query, author);
     if (request) search.mutate(request);
   };
-  // Searches as it opens, on the form's title.
+  // Searches as it opens, on the form's title and first author.
   // biome-ignore lint/correctness/useExhaustiveDependencies: once, as the view opens
-  useEffect(() => ask(query), []);
+  useEffect(ask, []);
 
   const apply = (rows: DiffRow[], cover: string | null) => {
     if (picked === null) return;
@@ -211,7 +214,7 @@ export function FetchView({
         className="es-fetch-query"
         onSubmit={(e) => {
           e.preventDefault();
-          ask(query);
+          ask();
         }}
       >
         <label className="me-label" htmlFor="es-fetch-query">
@@ -226,9 +229,22 @@ export function FetchView({
             autoComplete="off"
             onChange={(e) => setQuery(e.target.value)}
           />
+        </div>
+        <label className="me-label" htmlFor="es-fetch-author">
+          Author
+        </label>
+        <div className="es-inline">
+          <input
+            id="es-fetch-author"
+            className="me-input"
+            type="search"
+            value={author}
+            autoComplete="off"
+            onChange={(e) => setAuthor(e.target.value)}
+          />
           <Button
             type="submit"
-            disabled={search.isPending || !fetchRequest(query, "")}
+            disabled={search.isPending || !fetchRequest(query, author)}
             aria-busy={search.isPending}
           >
             Search
