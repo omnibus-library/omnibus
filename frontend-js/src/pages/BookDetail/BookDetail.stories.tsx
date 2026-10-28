@@ -1077,6 +1077,35 @@ export const BackdropPansWithTheTab: Story = {
   },
 };
 
+export const BackdropJumpsUnderReducedMotion: Story = {
+  beforeEach: async ({ msw }) => {
+    msw.use(...bookDetailHandlers(BOOK));
+    // The CSS media block needs the real feature; a `matchMedia` stub never reaches it.
+    const { cdp } = await import("vitest/browser");
+    const session = cdp();
+    await session.send("Emulation.setEmulatedMedia", {
+      features: [{ name: "prefers-reduced-motion", value: "reduce" }],
+    });
+    return () =>
+      session.send("Emulation.setEmulatedMedia", {
+        features: [{ name: "prefers-reduced-motion", value: "" }],
+      });
+  },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    await canvas.findByRole("tab", { name: "Overview" });
+    const cam = canvasElement.querySelector<HTMLElement>(".bp-cam");
+    if (!cam) throw new Error("the stage has no .bp-cam");
+    const overview = cam.getBoundingClientRect().left;
+
+    await openTab(canvas, userEvent, "Files & Details");
+
+    await expect(getComputedStyle(cam).transitionDuration).toBe("0.001s");
+    await waitFor(() =>
+      expect(cam.getBoundingClientRect().left).not.toBe(overview),
+    );
+  },
+};
+
 const NO_COVER_NO_ACCENT = aWireBook({
   cover_url: null,
   accent: null,
