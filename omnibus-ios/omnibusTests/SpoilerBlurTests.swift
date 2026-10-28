@@ -155,6 +155,34 @@ private func pixels(_ view: some View, height: CGFloat = 90) -> [UInt8] {
 }
 
 @MainActor
+@Test func spoilerRendererLeavesProseAfterASpoilerOnItsOwnLineSharp() throws {
+    // A filter added to a context shared by the whole line would blur every
+    // run drawn after the spoiler, not only the spoiler itself.
+    let font = Font.display(18)
+    let veiled = Text("\(Text("dies").customAttribute(SpoilerRun()))      she was gone").font(font)
+    let plain = Text("dies      she was gone").font(font)
+    let renderer = SpoilerRenderer(plate: .gray)
+    let line = try #require(layoutLines(veiled).first)
+    let plate = try #require(SpoilerRenderer.plates(line).first)
+    // Columns right of the blur's halo hold only the prose that follows it.
+    let firstColumn = Int(((plate.maxX + 3 * renderer.radius) * pixelScale).rounded(.up))
+    let width = Int(280 * pixelScale)
+    let veiledPixels = pixels(veiled.textRenderer(renderer))
+    let plainPixels = pixels(plain.textRenderer(renderer))
+    #expect(!veiledPixels.isEmpty)
+    #expect(veiledPixels.count == plainPixels.count)
+    #expect(firstColumn < width)
+    func prose(_ bytes: [UInt8]) -> [UInt8] {
+        stride(from: 0, to: bytes.count, by: width * 4).flatMap { row in
+            bytes[(row + firstColumn * 4)..<(row + width * 4)]
+        }
+    }
+    let veiledProse = prose(veiledPixels)
+    #expect(veiledProse.contains { $0 != 0 })
+    #expect(veiledProse == prose(plainPixels))
+}
+
+@MainActor
 @Test func spoilerRendererDrawsUntaggedTextExactlyAsPlainTextDoes() {
     // A revealed span drops its tag, so it must render as if no spoiler
     // renderer were there at all.
