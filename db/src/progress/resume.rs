@@ -134,20 +134,12 @@ async fn mark_linked_points(
     user_id: i64,
     points: &mut [ResumePoint],
 ) -> Result<(), ProgressError> {
-    use std::collections::HashSet;
-    let uuids: HashSet<String> = points.iter().map(|p| p.record.book_uuid.clone()).collect();
-    let mut linked_uuids: HashSet<String> = HashSet::new();
-    for uuid in uuids {
-        if crate::cross_format::get_link(pool, user_id, &uuid)
+    for p in points.iter_mut() {
+        if crate::cross_format::get_link(pool, user_id, &p.record.book_uuid)
             .await
             .map_err(sqlx_of)?
-            .is_some()
+            .is_none()
         {
-            linked_uuids.insert(uuid);
-        }
-    }
-    for p in points.iter_mut() {
-        if !linked_uuids.contains(&p.record.book_uuid) {
             continue;
         }
         p.linked = true;

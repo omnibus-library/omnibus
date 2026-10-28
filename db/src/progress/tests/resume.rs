@@ -11,8 +11,8 @@ use crate::init_db;
 use super::super::enrich::mark_index_at;
 use super::super::*;
 use super::{
-    audio_update, seed, seed_audiobook, seed_epub_position, seed_null_client_updated_at,
-    seed_second_audiobook_file, seed_user,
+    audio_update, cfi_update, seed, seed_audiobook, seed_epub_position,
+    seed_null_client_updated_at, seed_second_audiobook_file, seed_user,
 };
 
 #[tokio::test]
@@ -136,32 +136,19 @@ async fn recent_progress_returns_rows_newest_first_within_limit() {
     assert_eq!(capped[0].book_uuid, uuid_b);
 }
 
-async fn seed_epub_write(pool: &SqlitePool, user: i64, uuid: &str, client_updated_at: i64) {
-    upsert_progress(
-        pool,
-        user,
-        &ProgressUpdate {
-            book_uuid: uuid.into(),
-            format: ProgressFormat::Epub,
-            epub_cfi: Some("epubcfi(/6/4!/4/2/1:0)".into()),
-            audio_position_seconds: None,
-            progress_percent: None,
-            kobo_location: None,
-            book_file_id: None,
-            client_updated_at: Some(client_updated_at),
-        },
-    )
-    .await
-    .unwrap();
-}
-
 #[tokio::test]
 async fn recent_progress_returns_one_row_per_book_in_its_newest_format() {
     let pool = init_db("sqlite::memory:").await.unwrap();
     let user = seed_user(&pool, "alice").await;
     let uuid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
     seed_audiobook(&pool, uuid).await;
-    seed_epub_write(&pool, user, uuid, 1000).await;
+    upsert_progress(
+        &pool,
+        user,
+        &cfi_update(uuid, "epubcfi(/6/4!/4/2/1:0)", 1000),
+    )
+    .await
+    .unwrap();
     upsert_progress(&pool, user, &audio_update(uuid, 450.0, None, 2000))
         .await
         .unwrap();
@@ -177,7 +164,13 @@ async fn recent_progress_breaks_a_same_time_tie_between_formats_toward_audio() {
     let user = seed_user(&pool, "alice").await;
     let uuid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
     seed_audiobook(&pool, uuid).await;
-    seed_epub_write(&pool, user, uuid, 1000).await;
+    upsert_progress(
+        &pool,
+        user,
+        &cfi_update(uuid, "epubcfi(/6/4!/4/2/1:0)", 1000),
+    )
+    .await
+    .unwrap();
     upsert_progress(&pool, user, &audio_update(uuid, 450.0, None, 1000))
         .await
         .unwrap();
@@ -199,11 +192,23 @@ async fn recent_progress_counts_its_limit_in_books_not_formats() {
     let dual = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
     seed_audiobook(&pool, dual).await;
     let (_, single) = seed(&pool, "/lib", "Single").await;
-    seed_epub_write(&pool, user, dual, 3000).await;
+    upsert_progress(
+        &pool,
+        user,
+        &cfi_update(dual, "epubcfi(/6/4!/4/2/1:0)", 3000),
+    )
+    .await
+    .unwrap();
     upsert_progress(&pool, user, &audio_update(dual, 450.0, None, 2000))
         .await
         .unwrap();
-    seed_epub_write(&pool, user, &single, 1000).await;
+    upsert_progress(
+        &pool,
+        user,
+        &cfi_update(&single, "epubcfi(/6/4!/4/2/1:0)", 1000),
+    )
+    .await
+    .unwrap();
 
     let rows = recent_progress(&pool, user, 2).await.unwrap();
     let uuids: Vec<&str> = rows.iter().map(|r| r.book_uuid.as_str()).collect();

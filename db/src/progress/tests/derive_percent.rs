@@ -9,7 +9,7 @@ use sqlx::SqlitePool;
 use crate::init_db;
 
 use super::super::*;
-use super::{seed, seed_named_file, seed_user};
+use super::{cfi_update, seed, seed_named_file, seed_user};
 
 // ── derived-percent attachment (#1864) ──────────────────────────────
 
@@ -39,19 +39,6 @@ async fn seed_epub_on_disk(tag: &str) -> (SqlitePool, i64, String) {
     let (_, uuid) = seed_named_file(&pool, dir.to_str().unwrap(), "Book", "book.epub").await;
     let user = seed_user(&pool, "alice").await;
     (pool, user, uuid)
-}
-
-fn cfi_update(uuid: &str, cfi: &str, client_updated_at: i64) -> ProgressUpdate {
-    ProgressUpdate {
-        book_uuid: uuid.to_string(),
-        format: ProgressFormat::Epub,
-        epub_cfi: Some(cfi.to_string()),
-        audio_position_seconds: None,
-        progress_percent: None,
-        kobo_location: None,
-        book_file_id: None,
-        client_updated_at: Some(client_updated_at),
-    }
 }
 
 #[tokio::test]

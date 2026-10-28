@@ -272,7 +272,7 @@ async fn resume_candidate_audio_target_aligns_and_stands_aside_without_a_placeab
 }
 
 #[tokio::test]
-async fn resume_points_collapse_a_linked_book_to_one_card_with_the_counterpart() {
+async fn resume_points_show_an_unlinked_book_once_and_mark_a_linked_book_with_its_counterpart() {
     let pool = init_db("sqlite::memory:").await.unwrap();
     let user = seed_user(&pool, "alice").await;
     let (_, uuid, audio) = seed_dual_book(&pool, &[600.0]).await;
@@ -307,7 +307,7 @@ async fn resume_points_collapse_a_linked_book_to_one_card_with_the_counterpart()
 }
 
 #[tokio::test]
-async fn resume_points_collapse_marks_a_stale_link_without_a_counterpart() {
+async fn resume_points_mark_a_stale_link_without_a_counterpart() {
     let pool = init_db("sqlite::memory:").await.unwrap();
     let user = seed_user(&pool, "alice").await;
     let (_, uuid, audio) = seed_dual_book(&pool, &[600.0]).await;
@@ -331,7 +331,7 @@ async fn resume_points_collapse_marks_a_stale_link_without_a_counterpart() {
         .unwrap();
 
     let points = progress::resume_points(&pool, user, 5).await.unwrap();
-    assert_eq!(points.len(), 1, "a stale link still collapses");
+    assert_eq!(points.len(), 1, "a stale link still shows one card");
     assert!(points[0].linked);
     assert!(
         points[0].cross_format.is_none(),

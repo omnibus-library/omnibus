@@ -133,6 +133,20 @@ async fn seed_audio_files(pool: &SqlitePool, book_id: i64, n: usize) -> Vec<i64>
     ids
 }
 
+/// Shorthand for an epub `ProgressUpdate` at `cfi`.
+fn cfi_update(uuid: &str, cfi: &str, client_updated_at: i64) -> ProgressUpdate {
+    ProgressUpdate {
+        book_uuid: uuid.to_string(),
+        format: ProgressFormat::Epub,
+        epub_cfi: Some(cfi.to_string()),
+        audio_position_seconds: None,
+        progress_percent: None,
+        kobo_location: None,
+        book_file_id: None,
+        client_updated_at: Some(client_updated_at),
+    }
+}
+
 /// Shorthand for an audio `ProgressUpdate` in the multi-file guard tests.
 fn audio_update(
     uuid: &str,
