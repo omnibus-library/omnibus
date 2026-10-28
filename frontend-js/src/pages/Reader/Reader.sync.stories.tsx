@@ -212,6 +212,31 @@ export const WithFollowOffADismissedOfferStaysAwayForThatPosition: Story = {
   },
 };
 
+export const WithFollowOffAFailedLoadHoldsTheOfferUntilARetryOpens: Story = {
+  beforeEach() {
+    followOff();
+    let tries = 0;
+    return r.install({
+      onInit() {
+        tries += 1;
+        window.__omnibusOnStatus?.(tries === 1 ? "error" : "ready");
+      },
+    });
+  },
+  play: async ({ canvas, userEvent }) => {
+    await expect(await canvas.findByRole("alert")).toHaveTextContent(
+      "This book couldn’t be loaded.",
+    );
+    await waitFor(() => expect(asked()).toBe(1));
+    // Not offered over the failed-load overlay, where it would sit in the tab order.
+    await expect(canvas.queryByTestId("sync-offer")).toBeNull();
+
+    await userEvent.click(canvas.getByRole("button", { name: "Retry" }));
+
+    await expect(await offer(canvas)).toBeVisible();
+  },
+};
+
 export const AnUnlinkedBookStaysPut: Story = {
   play: async (args) => {
     await afterTheAnswer(args);

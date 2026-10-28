@@ -90,6 +90,15 @@ export function listeningOffer(
   return resume.candidate;
 }
 
+/** Whether the reader shows an offer: not over the failed-load overlay, and not already answered. */
+export function readerOfferVisible(
+  sourceClock: number,
+  failed: boolean,
+  dismissed: number | null,
+): boolean {
+  return !failed && shouldOffer(sourceClock, dismissed);
+}
+
 /**
  * Whether the player shows `offer`: a source is committed, playback hasn't failed, the
  * mapped file is the one loaded (its seconds count from that file's start), and the offer

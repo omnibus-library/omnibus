@@ -7,6 +7,7 @@ import {
   playerOfferCopy,
   playerOfferVisible,
   readerOfferCopy,
+  readerOfferVisible,
   shouldOffer,
   storeDismissedClock,
 } from "./syncOffer";
@@ -102,6 +103,20 @@ describe("listeningOffer", () => {
   it("offers nothing when the formats are already aligned", () => {
     expect(listeningOffer(resume({ state: "aligned" }))).toBeNull();
     expect(listeningOffer(null)).toBeNull();
+  });
+});
+
+describe("readerOfferVisible", () => {
+  it("shows an unanswered offer", () => {
+    expect(readerOfferVisible(100, false, null)).toBe(true);
+  });
+
+  it("hides under the failed-load overlay, where it would sit in the tab order", () => {
+    expect(readerOfferVisible(100, true, null)).toBe(false);
+  });
+
+  it("hides an offer already answered", () => {
+    expect(readerOfferVisible(100, false, 100)).toBe(false);
   });
 });
 

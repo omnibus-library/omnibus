@@ -168,7 +168,6 @@ export async function saveListeningPosition(
   }).catch(() => {});
 }
 
-/** The other format's position mapped onto this one, with whether the link follows it. */
 /** A reading position mapped onto the audio, with what an offer of it needs to say. */
 export type ListeningCandidate = ListeningRow & {
   /** When the reading position was saved, in Unix seconds: the offer's re-arm clock. */
@@ -177,6 +176,7 @@ export type ListeningCandidate = ListeningRow & {
   sourceAhead: boolean | null;
 };
 
+/** The other format's position mapped onto this one, with whether the link follows it. */
 export type ListeningResume = {
   state: CrossFormatResumeState;
   follow: boolean;

@@ -233,7 +233,7 @@ shell provides it.
   sign-in page), so a form's rules live in the same schema style as the API's.
 - **Unit tests** (`pnpm run test:unit`, jsdom) cover the API parsers,
   formatting (`fixed` included), `safeNext`, the theme root, the session, and
-  the pure helpers behind the screens (`resume`, `password`, `settingsIndex`,
+  the pure helpers behind the screens (`resume`, `syncOffer`, `password`, `settingsIndex`,
   `hiddenFormats`, `goals`, `apiTokens`, `viewPrefs`, `focusTrap`, book
   detail's `readout`, `stats`, `lean`, `identifiers` (the details list included),
   `shelves`, `highlightAnchors`, `quietReaders`, `journalMarkdown`, `rating`,

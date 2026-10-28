@@ -14,7 +14,7 @@ import { meQuery } from "../../session";
 import {
   dismissedClock,
   readerOfferCopy,
-  shouldOffer,
+  readerOfferVisible,
   storeDismissedClock,
 } from "../../syncOffer";
 import type { Relocate } from "./epubGlue";
@@ -37,45 +37,46 @@ function jumpTo({ epub_cfi: cfi, fraction, percent }: Candidate) {
 
 /**
  * Where the audiobook has the reader, once per open: with follow on the text moves there
- * and nothing draws; with it off a banner offers the jump. `onAnswered` takes focus back,
- * since the clicked button goes with the banner.
+ * and nothing draws; with it off a banner offers the jump. `failed` hides it under the
+ * failed-load overlay; `onAnswered` takes focus back, since the clicked button goes with
+ * the banner.
  */
 export function SyncJumpBanner({
   uuid,
+  failed,
   onAnswered,
 }: {
   uuid: BookUuid;
+  failed: boolean;
   onAnswered(): void;
 }) {
   const userId = useQuery(meQuery).data?.id ?? null;
-  const [offer, setOffer] = useState<{
-    uuid: BookUuid;
-    candidate: Candidate;
-  } | null>(null);
+  const [candidate, setCandidate] = useState<Candidate | null>(null);
   useEffect(() => {
     let cancelled = false;
     fetchCrossFormatResume(uuid).then((resume) => {
       const mapped = resume?.candidate;
       if (cancelled || resume?.state !== "candidate" || !mapped) return;
       if (resume.follow) jumpTo(mapped);
-      else setOffer({ uuid, candidate: mapped });
+      else setCandidate(mapped);
     });
     return () => {
       cancelled = true;
     };
   }, [uuid]);
 
-  // Tagged with its book: the page outlives a swap of the route's uuid.
-  if (offer?.uuid !== uuid || userId === null) return null;
-  const { candidate } = offer;
+  if (!candidate || userId === null) return null;
   const clock = candidate.source_client_updated_at;
   const copy = readerOfferCopy(candidate.percent, candidate.source_ahead);
-  if (!copy || !shouldOffer(clock, dismissedClock(userId, uuid, "epub"))) {
-    return null;
-  }
+  const visible = readerOfferVisible(
+    clock,
+    failed,
+    dismissedClock(userId, uuid, "epub"),
+  );
+  if (!copy || !visible) return null;
   const answer = (go: boolean) => {
     storeDismissedClock(userId, uuid, "epub", clock);
-    setOffer(null);
+    setCandidate(null);
     if (go) jumpTo(candidate);
     onAnswered();
   };

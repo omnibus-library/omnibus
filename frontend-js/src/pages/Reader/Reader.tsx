@@ -328,6 +328,7 @@ function EpubPage({
       {deepLink === null && (
         <SyncJumpBanner
           uuid={uuid}
+          failed={status === "failed"}
           onAnswered={() => surface.current?.focus({ preventScroll: true })}
         />
       )}
