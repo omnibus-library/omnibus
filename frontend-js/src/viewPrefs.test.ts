@@ -1,6 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { FilterClause } from "./api";
+import { headerSort } from "./pages/Library/sorting";
 import {
   DEFAULT_PREFS,
   handoffClauses,
@@ -148,27 +149,41 @@ describe("reconcile", () => {
 });
 
 describe("useLibraryPrefs", () => {
-  beforeEach(() => localStorage.clear());
+  const handoff: FilterClause[] = [
+    { field: "author", mode: "include", values: ["Ada"] },
+  ];
 
-  it("keeps a sort picked while loading when page 1 names another library", () => {
-    savePrefs("/a", { ...SAVED, clauses: [], view: "table", dir: "desc" });
-    const handoff: FilterClause[] = [
-      { field: "author", mode: "include", values: ["Ada"] },
-    ];
-    const { result } = renderHook(() => useLibraryPrefs(handoff));
+  // The user acts while `/a` seeds the prefs, then page 1 names `/b`, saved as `stored`.
+  it.each([
+    {
+      pick: "a view change",
+      stored: DEFAULT_PREFS,
+      act: (prefs: Prefs): Prefs => ({ ...prefs, view: "table" }),
+      expected: { ...DEFAULT_PREFS, view: "table" },
+    },
+    {
+      pick: "a sort pick that keeps the direction",
+      stored: { ...DEFAULT_PREFS, sort: "newest_added", dir: "desc" },
+      act: (prefs: Prefs): Prefs => ({
+        ...prefs,
+        ...headerSort(prefs, "author"),
+      }),
+      expected: { ...DEFAULT_PREFS, sort: "author", dir: "asc" },
+    },
+  ] as const)(
+    "keeps $pick made while loading when page 1 names another library",
+    ({ stored, act: pick, expected }) => {
+      savePrefs("/b", stored);
+      savePrefs("/a", DEFAULT_PREFS);
+      const { result } = renderHook(() => useLibraryPrefs(handoff));
 
-    act(() =>
-      result.current.change({ ...result.current.prefs, sort: "series" }),
-    );
-    act(() => result.current.noteAnswered("/b", false));
+      act(() => result.current.change(pick(result.current.prefs)));
+      act(() => result.current.noteAnswered("/b", false));
 
-    expect(result.current.prefs).toEqual({
-      ...DEFAULT_PREFS,
-      sort: "series",
-      clauses: handoff,
-    });
-    expect(loadPrefs("/b")).toEqual(result.current.prefs);
-  });
+      expect(result.current.prefs).toEqual({ ...expected, clauses: handoff });
+      expect(loadPrefs("/b")).toEqual(result.current.prefs);
+    },
+  );
 });
 
 describe("saveShelfSelection", () => {

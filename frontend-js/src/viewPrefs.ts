@@ -146,7 +146,7 @@ export type Reconcile = "keep" | "adopt" | "save" | "rebase";
 /**
  * What page 1 naming the library `path` does to the prefs in memory.
  * `seededFrom` is the library they were read from, `null` when none seeded them:
- * an unsaved edit made on another library's view is filed under `path` only for its filter.
+ * an unsaved edit made on another library's view is filed under `path` with its filter and the fields the user changed.
  */
 export function reconcile(
   reconciled: string | null,
@@ -239,9 +239,11 @@ export function useLibraryPrefs(handoff: FilterClause[] | null = null) {
     if (plan.writeTo) savePrefs(plan.writeTo, next);
     if (plan.unsaved) {
       unsaved.current = true;
-      for (const key of Object.keys(next) as (keyof Prefs)[]) {
-        if (next[key] !== prefs[key])
-          Object.assign(edited.current, { [key]: next[key] });
+      if (next.view !== prefs.view) edited.current.view = next.view;
+      // One choice: an axis pick sets the direction with it.
+      if (next.sort !== prefs.sort || next.dir !== prefs.dir) {
+        edited.current.sort = next.sort;
+        edited.current.dir = next.dir;
       }
     }
     setPrefs(next);
