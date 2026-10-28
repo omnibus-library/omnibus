@@ -19,7 +19,7 @@ export const TABS = [
 
 export type TabId = (typeof TABS)[number]["id"];
 
-const indexOf = (id: TabId) => TABS.findIndex((tab) => tab.id === id);
+export const indexOf = (id: TabId) => TABS.findIndex((tab) => tab.id === id);
 
 /** The open tab and how to change it. The swap is a page turn, and `--dir` tells the turn which way to go. */
 export function useBookTabs() {

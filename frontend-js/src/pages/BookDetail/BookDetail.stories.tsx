@@ -963,6 +963,7 @@ export const OverviewTab: Story = {
       "aria-selected",
       "true",
     );
+    await expect(stageTab(canvas)).toBe("0");
     await expect(
       await panel.findByRole("heading", { name: "Your reading" }),
     ).toBeVisible();
@@ -984,6 +985,7 @@ export const ReviewsTabSelected: Story = {
       await panel.findByRole("heading", { name: "Your review" }),
     ).toBeVisible();
     await expect(canvasHero(canvas)).toHaveAttribute("data-tab", "reviews");
+    await expect(stageTab(canvas)).toBe("1");
   },
 };
 
@@ -1005,6 +1007,7 @@ export const HighlightsTabSelected: Story = {
       await panel.findByRole("heading", { name: "Journal 1" }),
     ).toBeVisible();
     await expect(canvasHero(canvas)).toHaveAttribute("data-tab", "highlights");
+    await expect(stageTab(canvas)).toBe("2");
   },
 };
 
@@ -1026,12 +1029,82 @@ export const FilesTabSelected: Story = {
       panel.getByRole("group", { name: "Available formats" }),
     ).toBeVisible();
     await expect(canvasHero(canvas)).toHaveAttribute("data-tab", "files");
+    await expect(stageTab(canvas)).toBe("3");
   },
 };
 
 /** The stage that carries `data-tab`. */
 const canvasHero = (canvas: ReturnType<typeof within>) =>
   canvas.getByRole("banner");
+
+/** The `--tab` index the backdrop camera pans on. */
+const stageTab = (canvas: ReturnType<typeof within>) =>
+  canvasHero(canvas).style.getPropertyValue("--tab");
+
+export const BackdropPansWithTheTab: Story = {
+  beforeEach({ msw }) {
+    msw.use(...bookDetailHandlers(BOOK));
+  },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    await canvas.findByRole("tab", { name: "Overview" });
+    const cam = canvasElement.querySelector<HTMLElement>(".bp-cam");
+    if (!cam) throw new Error("the stage has no .bp-cam");
+    cam.style.transition = "none";
+    const stage = () => canvasHero(canvas).getBoundingClientRect();
+    const camLeft = () => cam.getBoundingClientRect().left;
+
+    const overview = camLeft();
+    await expect(stage().left - overview).toBeGreaterThanOrEqual(
+      0.15 * stage().width,
+    );
+
+    await openTab(canvas, userEvent, "Reviews");
+    const reviews = camLeft();
+    await openTab(canvas, userEvent, "Files & Details");
+    const files = camLeft();
+    await expect(overview).toBeGreaterThan(reviews);
+    await expect(reviews).toBeGreaterThan(files);
+    await expect(Math.abs(files - overview)).toBeGreaterThan(
+      Math.abs(reviews - overview),
+    );
+    await expect(
+      cam.getBoundingClientRect().right - stage().right,
+    ).toBeGreaterThanOrEqual(0.15 * stage().width);
+
+    await openTab(canvas, userEvent, "Overview");
+    await expect(stageTab(canvas)).toBe("0");
+    await expect(camLeft()).toBeCloseTo(overview, 1);
+  },
+};
+
+export const BackdropJumpsUnderReducedMotion: Story = {
+  beforeEach: async ({ msw }) => {
+    msw.use(...bookDetailHandlers(BOOK));
+    // The CSS media block needs the real feature; a `matchMedia` stub never reaches it.
+    const { cdp } = await import("vitest/browser");
+    const session = cdp();
+    await session.send("Emulation.setEmulatedMedia", {
+      features: [{ name: "prefers-reduced-motion", value: "reduce" }],
+    });
+    return () =>
+      session.send("Emulation.setEmulatedMedia", {
+        features: [{ name: "prefers-reduced-motion", value: "" }],
+      });
+  },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    await canvas.findByRole("tab", { name: "Overview" });
+    const cam = canvasElement.querySelector<HTMLElement>(".bp-cam");
+    if (!cam) throw new Error("the stage has no .bp-cam");
+    const overview = cam.getBoundingClientRect().left;
+
+    await openTab(canvas, userEvent, "Files & Details");
+
+    await expect(getComputedStyle(cam).transitionDuration).toBe("0.001s");
+    await waitFor(() =>
+      expect(cam.getBoundingClientRect().left).not.toBe(overview),
+    );
+  },
+};
 
 const NO_COVER_NO_ACCENT = aWireBook({
   cover_url: null,
