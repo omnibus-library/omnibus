@@ -169,11 +169,10 @@ export function FetchView({
       };
     },
   });
+  const request = fetchRequest(query, author);
   const ask = () => {
-    const request = fetchRequest(query, author);
     if (request) search.mutate(request);
   };
-  // Searches as it opens, on the form's title and first author.
   // biome-ignore lint/correctness/useExhaustiveDependencies: once, as the view opens
   useEffect(ask, []);
 
@@ -217,38 +216,42 @@ export function FetchView({
           ask();
         }}
       >
-        <label className="me-label" htmlFor="es-fetch-query">
-          Title or ISBN
-        </label>
-        <div className="es-inline">
-          <input
-            id="es-fetch-query"
-            className="me-input"
-            type="search"
-            value={query}
-            autoComplete="off"
-            onChange={(e) => setQuery(e.target.value)}
-          />
+        <div className="me-field">
+          <label className="me-label" htmlFor="es-fetch-query">
+            Title or ISBN
+          </label>
+          <div className="es-inline">
+            <input
+              id="es-fetch-query"
+              className="me-input"
+              type="search"
+              value={query}
+              autoComplete="off"
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </div>
         </div>
-        <label className="me-label" htmlFor="es-fetch-author">
-          Author
-        </label>
-        <div className="es-inline">
-          <input
-            id="es-fetch-author"
-            className="me-input"
-            type="search"
-            value={author}
-            autoComplete="off"
-            onChange={(e) => setAuthor(e.target.value)}
-          />
-          <Button
-            type="submit"
-            disabled={search.isPending || !fetchRequest(query, author)}
-            aria-busy={search.isPending}
-          >
-            Search
-          </Button>
+        <div className="me-field">
+          <label className="me-label" htmlFor="es-fetch-author">
+            Author
+          </label>
+          <div className="es-inline">
+            <input
+              id="es-fetch-author"
+              className="me-input"
+              type="search"
+              value={author}
+              autoComplete="off"
+              onChange={(e) => setAuthor(e.target.value)}
+            />
+            <Button
+              type="submit"
+              disabled={search.isPending || !request}
+              aria-busy={search.isPending}
+            >
+              Search
+            </Button>
+          </div>
         </div>
       </form>
       {search.isPending && (

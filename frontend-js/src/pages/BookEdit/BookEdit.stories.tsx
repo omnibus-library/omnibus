@@ -1198,13 +1198,26 @@ export const FetchSearchesWithTheEditedAuthor: Story = {
     const author = view.getByLabelText("Author");
     await userEvent.clear(author);
     await userEvent.type(author, "Ada Quill");
-    await userEvent.click(view.getByRole("button", { name: "Search" }));
+    const search = view.getByRole("button", { name: "Search" });
+    await waitFor(() => expect(search).toBeEnabled());
+    await userEvent.click(search);
 
     await waitFor(() =>
       expect(asked.at(-1)).toEqual({
         query: "Aurora Station, Vol. 1 Ada Quill",
         title: "Aurora Station, Vol. 1",
         author: "Ada Quill",
+      }),
+    );
+
+    await userEvent.clear(author);
+    await waitFor(() => expect(search).toBeEnabled());
+    await userEvent.click(search);
+
+    await waitFor(() =>
+      expect(asked.at(-1)).toEqual({
+        query: "Aurora Station, Vol. 1",
+        title: "Aurora Station, Vol. 1",
       }),
     );
   },
@@ -1231,6 +1244,11 @@ export const FetchSearchesByAuthorAloneWhenTheTitleIsBlank: Story = {
         author: "Sora Inkwell",
       }),
     );
+
+    // Settled first, so a disabled button below means both fields are blank, not a search pending.
+    await waitFor(() => expect(search).toBeEnabled());
+    await userEvent.clear(view.getByLabelText("Author"));
+    await expect(search).toBeDisabled();
   },
 };
 
