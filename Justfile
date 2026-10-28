@@ -70,11 +70,13 @@ kobo *args:
 # Interactive KOReader in a browser tab (Docker), syncing with any Omnibus instance:
 # it asks for the plugin zip from the instance's Settings (or `--plugin PATH`), which
 # alone carries the server and device. `--local` follows this worktree's dev server
-# (run `just dev-up` first) and seeds its OPDS catalog and Progress sync. Ctrl-C
-# stops it; every launch starts from a fresh home removed on exit (docs/koreader.md).
+# (run `just dev-up` first) and seeds its OPDS catalog and Progress sync. It runs
+# where you ran it, so a relative --plugin path is yours. Ctrl-C stops it; every
+# launch starts from a fresh home removed on exit (docs/koreader.md).
+[no-cd]
 [positional-arguments]
 koreader *args:
-    scripts/with-dev-env.sh default scripts/koreader-dev.sh "$@"
+    {{justfile_directory()}}/scripts/with-dev-env.sh default {{justfile_directory()}}/scripts/koreader-dev.sh "$@"
 
 # Ensure the public-domain test fixtures are present (one-time ~156 MB
 # download from the fixtures-vN release asset, then an instant no-op).

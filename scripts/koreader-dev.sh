@@ -18,12 +18,18 @@
 # Sourceable without running `main`, so scripts/tests/koreader-dev-preflight.test.sh
 # can exercise the checks.
 set -euo pipefail
+# So a failed command inside `$(...)` stops the script, as it does outside one.
+shopt -s inherit_errexit
 
-cd "$(git rev-parse --show-toplevel)"
+# A relative --plugin path is taken from where the user ran `just koreader`.
+ORIG_PWD="$PWD"
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
 # shellcheck source=scripts/lib/dev-port.sh disable=SC1091
 source scripts/lib/dev-port.sh
 
-SCRATCH_ROOT="${TMPDIR:-/tmp}/omnibus-koreader-dev"
+# Inside the worktree, not $TMPDIR: a dev shell gives each launch its own $TMPDIR, so a
+# sweep there would never find a dead run. Absolute, because Docker needs an absolute mount.
+SCRATCH_ROOT="$PWD/$RUNTIME_DIR/koreader/runs"
 # The launch's run dir, set by main for the EXIT trap, which runs after main's locals are gone.
 RUN_DIR=""
 
@@ -85,7 +91,7 @@ container_name() {
 
 remove_run() {
     docker rm -f "$(container_name "$1")" >/dev/null 2>&1 || true
-    rm -rf "$1"
+    rm -rf "$1" 2>/dev/null || true
 }
 
 # Removes the run dirs of launches that are gone; one with no pid yet is a launch still starting.
@@ -98,12 +104,15 @@ sweep_runs() {
     done
 }
 
-# Prints the plugin zip path typed at the prompt; `read -e` completes names but leaves `~` alone.
+# Prints the plugin zip path typed at the prompt, as a shell would read it: one pair of quotes
+# or the backslash escapes are removed, and `~/` is expanded, which `read -e` leaves alone.
 prompt_plugin_path() {
     local path
     read -e -r -p 'Plugin zip: ' path || true
-    path="${path#"${path%%[![:space:]]*}"}"
-    path="${path%"${path##*[![:space:]]}"}"
+    case "$path" in
+    \'*\' | \"*\") path="${path:1:${#path}-2}" ;;
+    *) path="${path//\\/}" ;;
+    esac
     case "$path" in
     [~]/*) path="$HOME/${path#[~]/}" ;;
     esac
@@ -114,7 +123,7 @@ prompt_plugin_path() {
 # The EXIT trap: stops the browser opener and removes the run.
 cleanup() {
     kill %1 2>/dev/null || true
-    [ -z "$RUN_DIR" ] || remove_run "$RUN_DIR"
+    remove_run "$RUN_DIR"
 }
 
 free_port() {
@@ -138,17 +147,8 @@ open_when_ready() {
     fi
 }
 
-# Builds the lane's image for the engine's architecture and prints its tag.
-build_image() {
-    local deb
-    deb="$(awk -v arch="$1" '$2 ~ "_" arch "\\.deb$" {print $2}' ui_tests/koreader/koreader.sha256)"
-    [ -n "$deb" ] || die "no KOReader pin for $1 in ui_tests/koreader/koreader.sha256"
-    docker build -t "omnibus-koreader:$deb" ui_tests/koreader >&2
-    echo "omnibus-koreader:$deb"
-}
-
 main() {
-    local mode="" plugin="" arch dev_port="" tag novnc_port net origin="" usage="usage: just koreader [--local | --plugin PATH]"
+    local mode="" plugin="" arch dev_port="" deb tag novnc_port net origin="" usage="usage: just koreader [--local | --plugin PATH]"
     while [ $# -gt 0 ]; do
         case "$1" in
         --local)
@@ -166,10 +166,15 @@ main() {
         esac
     done
     if [ -z "$mode" ]; then
+        # Without a terminal there is nobody to answer, and an open pipe would hang the read.
         [ -t 0 ] || die "no plugin zip given: pass --plugin PATH"
         mode=plugin
         plugin="$(prompt_plugin_path)"
     fi
+    case "$plugin" in
+    /* | "") ;;
+    *) plugin="$ORIG_PWD/$plugin" ;;
+    esac
 
     if [ "$mode" = local ]; then
         arch="$(require_docker)"
@@ -182,11 +187,13 @@ main() {
 
     # The default bridge reaches any public https host and needs no host network.
     novnc_port="$(free_port)"
-    net=(-p "127.0.0.1:$novnc_port:6080" --add-host host.docker.internal:host-gateway)
+    net=(-p "127.0.0.1:$novnc_port:6080")
     if [ "$mode" = plugin ]; then
         python3 scripts/koreader_home.py --home "$RUN_DIR/home" --plugin "$plugin"
         arch="$(require_docker)"
     else
+        # A Linux engine defines no `host.docker.internal` itself, so name the host gateway.
+        net+=(--add-host host.docker.internal:host-gateway)
         origin="http://host.docker.internal:$dev_port"
         if [ "$(docker_network_mode)" = host ]; then
             net=(--network host -e "NOVNC_LISTEN=127.0.0.1:$novnc_port" -e "VNC_PORT=$(free_port)")
@@ -196,7 +203,10 @@ main() {
             --origin "$origin" --state-dir "$RUNTIME_DIR/koreader"
         echo "koreader: KOReader reaches the dev server at $origin"
     fi
-    tag="$(build_image "$arch")"
+    deb="$(awk -v arch="$arch" '$2 ~ "_" arch "\\.deb$" {print $2}' ui_tests/koreader/koreader.sha256)"
+    [ -n "$deb" ] || die "no KOReader pin for $arch in ui_tests/koreader/koreader.sha256"
+    tag="omnibus-koreader:$deb"
+    docker build -t "$tag" ui_tests/koreader
 
     # Docker takes the variable from the environment, so the password is never on a command line.
     VNC_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(6))')"

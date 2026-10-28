@@ -77,7 +77,8 @@ without_docker() {
 check "require_docker fails readably when docker is not installed" "1||$docker_down_msg" "$(run without_docker)"
 
 runtime="$(mktemp -d)"
-trap 'rm -rf "$runtime"' EXIT
+scratch="$(mktemp -d)"
+trap 'chmod -R u+w "$scratch" 2>/dev/null; rm -rf "$runtime" "$scratch"' EXIT
 RUNTIME_DIR="$runtime"
 
 check "require_dev_server fails readably when no port file exists" "1||$no_server_msg" "$(run require_dev_server)"
@@ -106,15 +107,17 @@ check "main rejects --plugin together with --local with the usage line" "2||$usa
 no_zip_msg="koreader: no plugin zip given: pass --plugin PATH"
 check "main asks for --plugin when run with no flags and no terminal" "1||$no_zip_msg" "$(run main </dev/null)"
 
-HOME="$(mktemp -d)"
+HOME="$scratch/home"
+mkdir "$HOME"
 path_from() { printf '%s\n' "$1" | prompt_plugin_path; }
 check "prompt_plugin_path trims whitespace around the path" "/tmp/p.zip" "$(path_from '  /tmp/p.zip  ')"
+check "prompt_plugin_path takes the path of a quoted answer as typed" "/tmp/a b.zip" "$(path_from "'/tmp/a b.zip'")"
+check "prompt_plugin_path takes the path of a double-quoted answer as typed" "/tmp/a b.zip" "$(path_from '"/tmp/a b.zip"')"
+check "prompt_plugin_path unescapes the backslashes of a completed name" "/tmp/a b.zip" "$(path_from '/tmp/a\ b.zip')"
 check "prompt_plugin_path expands a leading ~/ to the home dir" "$HOME/Downloads/p.zip" "$(path_from '~/Downloads/p.zip')"
 check "prompt_plugin_path dies readably on an empty answer" "1||$no_zip_msg" "$(run path_from '   ')"
 check "prompt_plugin_path dies readably when input ends" "1||$no_zip_msg" "$(run prompt_plugin_path </dev/null)"
 
-scratch="$(mktemp -d)"
-trap 'rm -rf "$runtime" "$scratch"' EXIT
 SCRATCH_ROOT="$scratch/root"
 DOCKER_LOG="$scratch/docker.log"
 : >"$DOCKER_LOG"
@@ -146,6 +149,14 @@ run_dir="$(make_run_dir)"
 remove_run "$run_dir"
 check "remove_run still removes the run dir when the container is already gone" "0" "$([ -e "$run_dir" ] && echo 1 || echo 0)"
 
+stuck="$(make_run_dir)"
+mkdir "$stuck/home/held"
+touch "$stuck/home/held/file"
+chmod a-w "$stuck/home/held"
+check "remove_run carries on when part of the run dir can't be removed" "0||" "$(run remove_run "$stuck")"
+chmod -R u+w "$stuck"
+rm -rf "$stuck"
+
 : >"$DOCKER_LOG"
 docker() { printf '%s\n' "$*" >>"$DOCKER_LOG"; }
 (exit 0) &
@@ -165,11 +176,14 @@ rm -rf "$SCRATCH_ROOT"
 
 CALLS="$scratch/calls.log"
 FAKE_PYTHON_STATUS=0
+FAKE_BUILD_STATUS=0
+FAKE_INFO='Arch Linux|["name=seccomp,profile=builtin"]'
 docker() {
     printf 'docker %s\n' "$*" >>"$CALLS"
     case "$1" in
     version) echo arm64 ;;
-    info) echo 'Arch Linux|["name=seccomp,profile=builtin"]' ;;
+    info) echo "$FAKE_INFO" ;;
+    build) return "$FAKE_BUILD_STATUS" ;;
     esac
 }
 python3() {
@@ -215,6 +229,18 @@ check "main --local shares the host's network on a rootful Linux engine" "1" "$(
 check "main --local force-removes its container on exit" "docker rm -f $named" "$(tail -n 1 "$CALLS")"
 check "main --local removes its run dir on exit" "0" "$(find "$SCRATCH_ROOT" -mindepth 1 | wc -l | tr -d ' ')"
 
+FAKE_INFO='Docker Desktop|["name=seccomp,profile=unconfined"]'
+launch --local
+check "main --local on Docker Desktop publishes the noVNC port and names the host gateway" "1" \
+    "$(calls_matching '^docker run.* -p 127.0.0.1:[0-9]*:6080 --add-host host.docker.internal:host-gateway ')"
+FAKE_INFO='Arch Linux|["name=seccomp,profile=builtin"]'
+
+FAKE_BUILD_STATUS=1
+launch --local
+check "main stops when the image build fails" "1" "$status"
+check "main starts no container when the image build fails" "0" "$(calls_matching '^docker run ')"
+FAKE_BUILD_STATUS=0
+
 zip="$scratch/plugin.zip"
 RUNTIME_DIR="$scratch/no-dev-server"
 launch --plugin "$zip"
@@ -227,7 +253,14 @@ check "main --plugin validates the zip before it touches docker" "python" \
 check "main --plugin publishes ports instead of sharing the host's network" "0" \
     "$(calls_matching '^docker run.* --network host ')"
 check "main --plugin links no dev server" "0" "$(calls_matching 'python.* --api ')"
+check "main --plugin names no host gateway, which only --local needs" "0" "$(calls_matching '^docker run.* --add-host ')"
 check "main --plugin removes its run dir on exit" "0" "$(find "$SCRATCH_ROOT" -mindepth 1 | wc -l | tr -d ' ')"
+
+ORIG_PWD="$scratch/where-it-ran"
+launch --plugin relative/plugin.zip
+check "main --plugin takes a relative path from where the launch was run" "$ORIG_PWD/relative/plugin.zip" "$(arg_after python --plugin)"
+launch --plugin /abs/plugin.zip
+check "main --plugin leaves an absolute path alone" "/abs/plugin.zip" "$(arg_after python --plugin)"
 
 FAKE_PYTHON_STATUS=1
 launch --plugin "$zip"
