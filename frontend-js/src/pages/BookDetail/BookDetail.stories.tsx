@@ -963,6 +963,7 @@ export const OverviewTab: Story = {
       "aria-selected",
       "true",
     );
+    await expect(stageTab(canvas)).toBe("0");
     await expect(
       await panel.findByRole("heading", { name: "Your reading" }),
     ).toBeVisible();
@@ -978,9 +979,6 @@ export const ReviewsTabSelected: Story = {
     msw.use(...bookDetailHandlers(BOOK));
   },
   play: async ({ canvas, userEvent }) => {
-    await canvas.findByRole("tab", { name: "Overview" });
-    await expect(stageTab(canvas)).toBe("0");
-
     const panel = await openTab(canvas, userEvent, "Reviews");
 
     await expect(
@@ -1042,6 +1040,42 @@ const canvasHero = (canvas: ReturnType<typeof within>) =>
 /** The `--tab` index the backdrop camera pans on. */
 const stageTab = (canvas: ReturnType<typeof within>) =>
   canvasHero(canvas).style.getPropertyValue("--tab");
+
+export const BackdropPansWithTheTab: Story = {
+  beforeEach({ msw }) {
+    msw.use(...bookDetailHandlers(BOOK));
+  },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    await canvas.findByRole("tab", { name: "Overview" });
+    const cam = canvasElement.querySelector<HTMLElement>(".bp-cam");
+    if (!cam) throw new Error("the stage has no .bp-cam");
+    cam.style.transition = "none";
+    const stage = () => canvasHero(canvas).getBoundingClientRect();
+    const camLeft = () => cam.getBoundingClientRect().left;
+
+    const overview = camLeft();
+    await expect(stage().left - overview).toBeGreaterThanOrEqual(
+      0.15 * stage().width,
+    );
+
+    await openTab(canvas, userEvent, "Reviews");
+    const reviews = camLeft();
+    await openTab(canvas, userEvent, "Files & Details");
+    const files = camLeft();
+    await expect(overview).toBeGreaterThan(reviews);
+    await expect(reviews).toBeGreaterThan(files);
+    await expect(Math.abs(files - overview)).toBeGreaterThan(
+      Math.abs(reviews - overview),
+    );
+    await expect(
+      cam.getBoundingClientRect().right - stage().right,
+    ).toBeGreaterThanOrEqual(0.15 * stage().width);
+
+    await openTab(canvas, userEvent, "Overview");
+    await expect(stageTab(canvas)).toBe("0");
+    await expect(camLeft()).toBeCloseTo(overview, 1);
+  },
+};
 
 const NO_COVER_NO_ACCENT = aWireBook({
   cover_url: null,
