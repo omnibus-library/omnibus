@@ -56,21 +56,27 @@ env-clear:
 dev-bounce:
     scripts/with-dev-env.sh web scripts/dev-server-bounce.sh
 
-# Run a mock Kobo e-reader in a terminal UI against this worktree's dev server
-# (run `just dev-up` first): s syncs, r resets, u/t edit the URL/token, w wires a
-# token, q quits. It auto-wires the "Mock Kobo" device with $OMNIBUS_DEV_SEED_USER
-# and serves the control API on a free loopback port its header shows. Flags pass
-# through: `just kobo --state .claude/runtime/other.json` is a second device.
+# Run a mock Kobo e-reader in a terminal UI against any Omnibus instance: it asks
+# for the device's sync URL (Settings > Devices), or take `--sync-url URL`.
+# `--local` follows this worktree's dev server instead (run `just dev-up` first) and
+# auto-wires the "Mock Kobo" device with $OMNIBUS_DEV_SEED_USER. s syncs, r resets,
+# u/t edit the URL/token, w wires a token, q quits. The control API runs on a free
+# loopback port the header shows. Every launch starts as a new device on a scratch
+# state removed on exit; `--state PATH` keeps one (docs/kobo.md).
 [positional-arguments]
 kobo *args:
     scripts/with-dev-env.sh default cargo run -q -p omnibus-mock-kobo -- tui "$@"
 
-# Interactive KOReader in a browser tab (Docker), syncing with this worktree's dev
-# server (run `just dev-up` first); Ctrl-C stops it. `--home DIR` picks the home,
-# so a second one is a second device (docs/koreader.md).
+# Interactive KOReader in a browser tab (Docker), syncing with any Omnibus instance:
+# it asks for the plugin zip from the instance's Settings (or `--plugin PATH`), which
+# alone carries the server and device. `--local` follows this worktree's dev server
+# (run `just dev-up` first) and seeds its OPDS catalog and Progress sync. It runs
+# where you ran it, so a relative --plugin path is yours. Ctrl-C stops it; every
+# launch starts from a fresh home removed on exit (docs/koreader.md).
+[no-cd]
 [positional-arguments]
 koreader *args:
-    scripts/with-dev-env.sh default scripts/koreader-dev.sh "$@"
+    "{{justfile_directory()}}/scripts/with-dev-env.sh" default "{{justfile_directory()}}/scripts/koreader-dev.sh" "$@"
 
 # Ensure the public-domain test fixtures are present (one-time ~156 MB
 # download from the fixtures-vN release asset, then an instant no-op).

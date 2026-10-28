@@ -17,6 +17,7 @@ pub mod downloads;
 pub mod firmware;
 pub mod kepub;
 pub mod reading;
+pub mod scratch;
 pub mod session;
 pub mod startup;
 pub mod state;

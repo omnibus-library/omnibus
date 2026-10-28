@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
-"""Link a KOReader home to the dev server on its first launch (`just koreader`).
+"""Link a fresh KOReader home to the dev server (`just koreader`).
 
     python3 scripts/koreader_home.py --home DIR --api URL --origin URL --state-dir DIR
+    python3 scripts/koreader_home.py --home DIR --plugin ZIP
 
-Signs in as $OMNIBUS_DEV_SEED_USER, finds or creates this home's KOReader device,
+Signs in as $OMNIBUS_DEV_SEED_USER, finds or creates the "Dev KOReader" device,
 installs the Omnibus plugin its Settings download hands a reader, and seeds
 KOReader's OPDS catalog and stock Progress sync. Exits 0 when the home was
-linked or already is, 1 with one `koreader:` line on stderr otherwise.
+linked, 1 with one `koreader:` line on stderr otherwise.
+
+`--plugin` installs a plugin zip downloaded from any instance as it is, and
+prints the server it will sync with; nothing is sent to that server.
 
 `--api` is the host-side URL the seed password is sent to; `--origin` is the
 dev server as the container reaches it, and is only written into the home.
-A home keeps the origin and token it was linked with: delete it to relink.
 """
 
 from __future__ import annotations
@@ -33,7 +36,7 @@ from io import BytesIO
 from pathlib import Path
 
 SESSION_DEVICE_NAME = "omnibus-koreader-dev"
-DEFAULT_DEVICE_NAME = "Dev KOReader"
+DEVICE_NAME = "Dev KOReader"  # one name for every launch, so fresh homes never pile up server devices
 PLUGIN_DIR = "omnibus.koplugin"
 
 
@@ -57,14 +60,6 @@ def lua_literal(value) -> str:
     raise TypeError(f"no Lua literal for {type(value).__name__}")
 
 
-def device_name(home: Path, state_dir: Path) -> str:
-    """`Dev KOReader` for the default home, else the name carries the home's folder."""
-    if home.resolve() == (state_dir / "home").resolve():
-        return DEFAULT_DEVICE_NAME
-    where = hashlib.sha256(str(home.resolve()).encode()).hexdigest()[:8]  # koreader-dev.sh names the container the same way
-    return f"{DEFAULT_DEVICE_NAME} ({home.name[:60]} {where})"
-
-
 def parse_seed_user(value: str | None) -> tuple[str, str]:
     """Split `user:password` at the first colon, as the server's own seeding does."""
     user, sep, password = (value or "").partition(":")
@@ -73,9 +68,19 @@ def parse_seed_user(value: str | None) -> tuple[str, str]:
     return user, password
 
 
-def _is_loopback_ip(host: str) -> bool:
+def _is_loopback_host(host: str) -> bool:
+    if host == "localhost":
+        return True
     try:
         return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def _is_unreachable_from_container(host: str) -> bool:
+    """Loopback is the container's own, and the unspecified address (`0.0.0.0`, `::`) reaches it too."""
+    try:
+        return _is_loopback_host(host) or ipaddress.ip_address(host).is_unspecified
     except ValueError:
         return False
 
@@ -85,7 +90,7 @@ class Api:
 
     def __init__(self, base: str):
         host = urllib.parse.urlsplit(base).hostname or ""
-        if host != "localhost" and not _is_loopback_ip(host):
+        if not _is_loopback_host(host):
             raise LinkError(f"--api must be a loopback address, not {base}: it is sent the seed password")
         self.base = base.rstrip("/")
         self.token: str | None = None
@@ -211,6 +216,40 @@ def install_plugin(home: Path, archive: bytes, origin: str) -> None:
         shutil.rmtree(staging, ignore_errors=True)
 
 
+def plugin_server_url(archive: bytes) -> str:
+    """The `server_url` in the zip's omnibus.json; ValueError with the reason when it is not a plugin zip."""
+    try:
+        with zipfile.ZipFile(BytesIO(archive)) as z:
+            config = json.loads(z.read(f"{PLUGIN_DIR}/omnibus.json"))
+    except zipfile.BadZipFile:
+        raise ValueError("not a zip file") from None
+    except KeyError:
+        raise ValueError(f"no {PLUGIN_DIR}/omnibus.json") from None
+    except ValueError:
+        config = None  # not UTF-8 or not JSON
+    server = config.get("server_url") if isinstance(config, dict) else None
+    parts = urllib.parse.urlsplit(server) if isinstance(server, str) else None
+    if parts is None or parts.scheme not in ("http", "https") or not parts.hostname:
+        raise ValueError("omnibus.json has no http(s) server_url")
+    return server
+
+
+def install_plugin_zip(home: Path, path: Path) -> str:
+    """Install the plugin zip at `path` as downloaded; returns the server it syncs with."""
+    try:
+        archive = path.read_bytes()
+    except FileNotFoundError:
+        raise LinkError(f"no such file: {path}") from None
+    try:
+        server = plugin_server_url(archive)
+    except ValueError as e:
+        raise LinkError(f"{path} is not an Omnibus plugin zip: {e}") from None
+    if _is_unreachable_from_container(urllib.parse.urlsplit(server).hostname or ""):
+        raise LinkError(f"{path} syncs with {server}, which the container can't reach: use --local for this worktree's dev server")
+    install_plugin(home, archive, server)
+    return server
+
+
 def write_settings(home: Path, origin: str, seed: tuple[str, str], key: dict) -> None:
     opds = {"servers": [{"title": "Omnibus (dev)", "url": f"{origin}/opds", "username": seed[0], "password": seed[1]}]}
     kosync = {
@@ -231,42 +270,44 @@ def write_settings(home: Path, origin: str, seed: tuple[str, str], key: dict) ->
     (settings / "kosync.lua").write_text(f"return {lua_literal(kosync)}\n")
 
 
-def link_home(home: Path, api: str, origin: str, state_dir: Path, seed: tuple[str, str]) -> bool:
-    """Link `home` to the dev server; `True` when it was linked now, `False` when it already was."""
+def link_home(home: Path, api: str, origin: str, state_dir: Path, seed: tuple[str, str]) -> None:
+    """Link `home` to the dev server."""
     state_dir.mkdir(parents=True, exist_ok=True)
     with open(state_dir / ".link.lock", "w") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)  # two launches of one home must not both link it
-        return _link_unlocked(home, api, origin, state_dir, seed)
-
-
-def _link_unlocked(home: Path, api: str, origin: str, state_dir: Path, seed: tuple[str, str]) -> bool:
-    if (home / "plugins" / PLUGIN_DIR / "omnibus.json").is_file():
-        return False
-    session = Api(api)
-    home.chmod(0o700)  # opds.lua and omnibus.json hold the seed password and the device token
-    session.login(*seed)
-    try:
-        device = find_or_create_device(session, device_name(home, state_dir))
-        archive = session.call("GET", f"/api/account/kobo-devices/{device}/koreader-plugin", raw=True)
-        key = kosync_key(session, state_dir, seed[0])
-        write_settings(home, origin, seed, key)
-        install_plugin(home, archive, origin)
-    finally:
-        session.logout()
-    return True
+        fcntl.flock(lock, fcntl.LOCK_EX)  # two launches must not both generate the account's kosync password
+        session = Api(api)
+        home.chmod(0o700)  # opds.lua and omnibus.json hold the seed password and the device token
+        session.login(*seed)
+        try:
+            device = find_or_create_device(session, DEVICE_NAME)
+            archive = session.call("GET", f"/api/account/kobo-devices/{device}/koreader-plugin", raw=True)
+            key = kosync_key(session, state_dir, seed[0])
+            write_settings(home, origin, seed, key)
+            install_plugin(home, archive, origin)
+        finally:
+            session.logout()
 
 
 def main(argv: list[str]) -> int:
-    parser = argparse.ArgumentParser(description="Link a KOReader home to the dev server.")
+    parser = argparse.ArgumentParser(description="Set up a fresh KOReader home for `just koreader`.")
     parser.add_argument("--home", type=Path, required=True)
-    parser.add_argument("--api", required=True)
-    parser.add_argument("--origin", required=True)
-    parser.add_argument("--state-dir", type=Path, required=True)
+    parser.add_argument("--plugin", type=Path, help="a plugin zip from any instance, installed as it is")
+    parser.add_argument("--api", help="link to the dev server: its host-side URL")
+    parser.add_argument("--origin", help="link to the dev server: its URL as the container reaches it")
+    parser.add_argument("--state-dir", type=Path, help="link to the dev server: where the kosync key is cached")
     args = parser.parse_args(argv)
+    link_args = (args.api, args.origin, args.state_dir)
+    if args.plugin is not None and any(a is not None for a in link_args):
+        parser.error("--plugin can't be combined with --api, --origin or --state-dir")
+    if args.plugin is None and None in link_args:
+        parser.error("--api, --origin and --state-dir are required without --plugin")
     try:
+        if args.plugin is not None:
+            print(f"koreader: KOReader will sync with {install_plugin_zip(args.home, args.plugin)}")
+            return 0
         seed = parse_seed_user(os.environ.get("OMNIBUS_DEV_SEED_USER"))
-        if link_home(args.home, args.api, args.origin, args.state_dir, seed):
-            print(f"koreader: linked {args.home} as {device_name(args.home, args.state_dir)!r}")
+        link_home(args.home, args.api, args.origin, args.state_dir, seed)
+        print(f"koreader: linked {args.home} as {DEVICE_NAME!r}")
     except LinkError as e:
         print(f"koreader: {e}", file=sys.stderr)
         return 1

@@ -1,8 +1,8 @@
 # Runs the script suites: the TestFlight scripts', the module map's
 # (`just modules`), the KOReader lane report's, scratch-server.sh's
-# scratch-dir regression test, `just koreader`'s preflight checks and home
-# linking, the Docker entrypoint's bash suite, and the dev server's
-# process-tree stop.
+# scratch-dir regression test, `just koreader`'s preflight checks, run-dir
+# lifecycle, and home linking and plugin-zip install, the Docker entrypoint's
+# bash suite, and the dev server's process-tree stop.
 #
 # The TestFlight scripts only ever execute against Apple's live API — one
 # during a release dispatch, one on a daily schedule — so a regression is

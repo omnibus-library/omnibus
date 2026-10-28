@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Tests for scripts/koreader_home.py, which links a new KOReader home to the
-dev server on its first launch (`just koreader`).
+"""Tests for scripts/koreader_home.py, which links a fresh KOReader home to the
+dev server (`just koreader`).
 
 link_home runs against a fake Omnibus server speaking the REST routes it uses,
 over real HTTP and real temp dirs.
@@ -27,7 +27,16 @@ from pathlib import Path
 SCRIPTS = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPTS))
 
-from koreader_home import LinkError, device_name, link_home, lua_literal, main, parse_seed_user  # noqa: E402
+from koreader_home import (  # noqa: E402
+    DEVICE_NAME,
+    LinkError,
+    install_plugin_zip,
+    link_home,
+    lua_literal,
+    main,
+    parse_seed_user,
+    plugin_server_url,
+)
 
 SEED = ("admin", "seed-pw:with-colon")
 ORIGIN = "http://device.test:3999"
@@ -146,8 +155,8 @@ class LinkHomeTests(unittest.TestCase):
         self.addCleanup(fake.close)
         return fake
 
-    def link(self, fake: FakeOmnibus, home: Path | None = None) -> bool:
-        return link_home(home or self.home, fake.url, ORIGIN, self.state, SEED)
+    def link(self, fake: FakeOmnibus, home: Path | None = None) -> None:
+        link_home(home or self.home, fake.url, ORIGIN, self.state, SEED)
 
     def save_key(self, fake: FakeOmnibus, userkey: str, account: str = SEED[0]) -> Path:
         """A key cached by an earlier link to `fake` as `account`."""
@@ -162,7 +171,7 @@ class LinkHomeTests(unittest.TestCase):
     def test_links_fresh_home_to_device_origin(self):
         fake = self.omnibus()
 
-        self.assertTrue(self.link(fake))
+        self.link(fake)
 
         config = json.loads((self.home / "plugins/omnibus.koplugin/omnibus.json").read_text())
         self.assertEqual(config, {"server_url": ORIGIN, "token": DEVICE_TOKEN})
@@ -195,39 +204,30 @@ class LinkHomeTests(unittest.TestCase):
 
         self.assertEqual(self.home.stat().st_mode & 0o777, 0o700)
 
-    def test_leaves_linked_home_alone(self):
-        fake = self.omnibus()
-        self.assertTrue(self.link(fake))
-        fake.requests.clear()
-
-        self.assertFalse(self.link(fake))
-
-        self.assertEqual(fake.requests, [])
-
     def test_replaces_a_plugin_folder_that_has_no_config(self):
         stale = self.home / "plugins/omnibus.koplugin"
         stale.mkdir(parents=True)
         (stale / "main.lua").write_text("-- stale")
 
-        self.assertTrue(self.link(self.omnibus()))
+        self.link(self.omnibus())
 
         self.assertEqual((stale / "main.lua").read_text(), "-- plugin")
         self.assertTrue((stale / "omnibus.json").is_file())
 
-    def test_links_a_home_once_when_two_launches_race(self):
+    def test_generates_the_kosync_password_once_when_two_launches_race(self):
         fake = self.omnibus()
-        results: list[bool] = []
-        launches = [threading.Thread(target=lambda: results.append(self.link(fake))) for _ in range(2)]
+        second = self.root / "second"
+        second.mkdir()
+        launches = [threading.Thread(target=self.link, args=(fake, home)) for home in (self.home, second)]
 
         for t in launches:
             t.start()
         for t in launches:
             t.join()
 
-        self.assertEqual(sorted(results), [False, True])
-        self.assertEqual(len(fake.created), 1)
+        self.assertEqual(fake.requests.count(("POST", "/api/account/kosync")), 1)
 
-    def test_reuses_device_named_for_home(self):
+    def test_reuses_the_koreader_device_named_dev_koreader(self):
         fake = self.omnibus(devices=[{"id": 7, "name": "Dev KOReader", "kind": "koreader", "token": DEVICE_TOKEN}])
 
         self.link(fake)
@@ -235,16 +235,23 @@ class LinkHomeTests(unittest.TestCase):
         self.assertEqual(fake.created, [])
         self.assertIn(("GET", "/api/account/kobo-devices/7/koreader-plugin"), fake.requests)
 
-    def test_creates_a_koreader_device_named_for_home_when_none_matches(self):
+    def test_creates_a_koreader_device_named_dev_koreader_when_none_matches(self):
         # A Kobo of the same name is a different device: only a koreader-kind one is reused.
+        fake = self.omnibus(devices=[{"id": 7, "name": "Dev KOReader", "kind": "kobo", "token": "k"}])
+
+        self.link(fake)
+
+        self.assertEqual(fake.created, [{"name": "Dev KOReader", "kind": "koreader"}])
+
+    def test_names_every_home_after_the_same_device(self):
+        fake = self.omnibus()
         second = self.root / "second"
         second.mkdir()
-        name = device_name(second, self.state)
-        fake = self.omnibus(devices=[{"id": 7, "name": name, "kind": "kobo", "token": "k"}])
 
+        self.link(fake)
         self.link(fake, second)
 
-        self.assertEqual(fake.created, [{"name": name, "kind": "koreader"}])
+        self.assertEqual(fake.created, [{"name": DEVICE_NAME, "kind": "koreader"}])
 
     def test_reuses_saved_kosync_key_when_server_has_one(self):
         fake = self.omnibus(kosync_configured=True, kosync_userkey="0" * 32)
@@ -305,7 +312,7 @@ class LinkHomeTests(unittest.TestCase):
         saved = self.save_kosync("")
 
         with contextlib.redirect_stderr(io.StringIO()):
-            self.assertTrue(self.link(fake))
+            self.link(fake)
 
         self.assertEqual(json.loads(saved.read_text())["userkey"], KOSYNC_USERKEY)
 
@@ -331,7 +338,7 @@ class LinkHomeTests(unittest.TestCase):
         fake = self.omnibus()
 
         with mock.patch.dict(os.environ, {"http_proxy": "http://127.0.0.1:9", "HTTP_PROXY": "http://127.0.0.1:9"}):
-            self.assertTrue(self.link(fake))
+            self.link(fake)
 
     def test_reports_rejected_login(self):
         with self.assertRaisesRegex(LinkError, "OMNIBUS_DEV_SEED_USER"):
@@ -393,6 +400,142 @@ class MainTests(unittest.TestCase):
         self.assertEqual(stderr, "koreader: POST /api/auth/login answered something that isn't JSON\n")
 
 
+def zip_of(files: dict[str, str]) -> bytes:
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w") as z:
+        for name, text in files.items():
+            z.writestr(name, text)
+    return out.getvalue()
+
+
+def plugin_zip_for(server_url, token: str = "plugin-token") -> bytes:
+    """A plugin zip as an instance's Settings download hands it out, baked for `server_url`."""
+    config = {"server_url": server_url, "token": token}
+    return zip_of({"omnibus.koplugin/main.lua": "-- plugin", "omnibus.koplugin/omnibus.json": json.dumps(config)})
+
+
+class PluginZipTests(unittest.TestCase):
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.root, True)
+        self.home = self.root / "home"
+        self.home.mkdir()
+
+    def write(self, data: bytes, name: str = "omnibus-koreader.zip") -> Path:
+        path = self.root / name
+        path.write_bytes(data)
+        return path
+
+    def refusal(self, data: bytes) -> str:
+        path = self.write(data)
+        with self.assertRaises(LinkError) as caught:
+            install_plugin_zip(self.home, path)
+        self.assertFalse((self.home / "plugins/omnibus.koplugin").exists())
+        return str(caught.exception).replace(str(path), "<path>")
+
+    def test_plugin_server_url_reads_the_server_url_of_the_zips_config(self):
+        self.assertEqual(plugin_server_url(plugin_zip_for("https://omnibus.example")), "https://omnibus.example")
+
+    def test_installs_the_plugin_with_the_zips_own_config_and_returns_its_server(self):
+        path = self.write(plugin_zip_for("https://omnibus.example", token="abc"))
+
+        server = install_plugin_zip(self.home, path)
+
+        self.assertEqual(server, "https://omnibus.example")
+        config = json.loads((self.home / "plugins/omnibus.koplugin/omnibus.json").read_text())
+        self.assertEqual(config, {"server_url": "https://omnibus.example", "token": "abc"})
+        self.assertTrue((self.home / "plugins/omnibus.koplugin/main.lua").is_file())
+
+    def test_refuses_a_file_that_is_not_a_zip(self):
+        self.assertEqual(self.refusal(b"hosts file"), "<path> is not an Omnibus plugin zip: not a zip file")
+
+    def test_refuses_a_zip_without_the_plugins_config(self):
+        data = zip_of({"omnibus.koplugin/main.lua": "-- plugin"})
+
+        self.assertEqual(
+            self.refusal(data), "<path> is not an Omnibus plugin zip: no omnibus.koplugin/omnibus.json"
+        )
+
+    def test_refuses_a_config_with_no_http_server_url(self):
+        reason = "<path> is not an Omnibus plugin zip: omnibus.json has no http(s) server_url"
+        for config in (
+            '{"token": "t"}',
+            '{"server_url": 5}',
+            '{"server_url": "ftp://h"}',
+            '{"server_url": "https://"}',
+            '{"server_url": "http:device.test"}',
+            "[]",
+            "not json",
+        ):
+            with self.subTest(config=config):
+                self.assertEqual(self.refusal(zip_of({"omnibus.koplugin/omnibus.json": config})), reason)
+
+    def test_refuses_a_loopback_server_url_and_points_at_local(self):
+        for server in (
+            "http://127.0.0.1:3000",
+            "http://localhost:3000",
+            "http://[::1]:3000",
+            "http://0.0.0.0:3000",
+            "http://[::]:3000",
+        ):
+            with self.subTest(server=server):
+                message = self.refusal(plugin_zip_for(server))
+                self.assertEqual(
+                    message,
+                    f"<path> syncs with {server}, which the container can't reach: use --local for this worktree's dev server",
+                )
+
+    def test_refuses_a_missing_file(self):
+        missing = self.root / "gone.zip"
+
+        with self.assertRaisesRegex(LinkError, f"^no such file: {missing}$"):
+            install_plugin_zip(self.home, missing)
+
+
+class MainPluginTests(unittest.TestCase):
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.root, True)
+        self.home = self.root / "home"
+        self.home.mkdir()
+        self.zip = self.root / "plugin.zip"
+        self.zip.write_bytes(plugin_zip_for("https://omnibus.example"))
+
+    def run_main(self, argv: list[str]) -> tuple[int, str, str]:
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            try:
+                status = main(argv)
+            except SystemExit as exit:
+                status = exit.code
+        return status, stdout.getvalue(), stderr.getvalue()
+
+    def test_says_which_server_the_plugin_will_sync_with(self):
+        status, stdout, stderr = self.run_main(["--home", str(self.home), "--plugin", str(self.zip)])
+
+        self.assertEqual((status, stdout, stderr), (0, "koreader: KOReader will sync with https://omnibus.example\n", ""))
+        self.assertTrue((self.home / "plugins/omnibus.koplugin/omnibus.json").is_file())
+
+    def test_reports_a_refused_zip_as_one_line(self):
+        self.zip.write_bytes(b"not a zip")
+
+        status, stdout, stderr = self.run_main(["--home", str(self.home), "--plugin", str(self.zip)])
+
+        self.assertEqual((status, stdout), (1, ""))
+        self.assertEqual(stderr, f"koreader: {self.zip} is not an Omnibus plugin zip: not a zip file\n")
+
+    def test_rejects_plugin_combined_with_the_link_arguments(self):
+        for extra in (["--api", "http://127.0.0.1:1"], ["--origin", ORIGIN], ["--state-dir", str(self.root)]):
+            with self.subTest(extra=extra):
+                argv = ["--home", str(self.home), "--plugin", str(self.zip), *extra]
+                self.assertEqual(self.run_main(argv)[0], 2)
+
+    def test_requires_all_three_link_arguments_without_plugin(self):
+        argv = ["--home", str(self.home), "--api", "http://127.0.0.1:1", "--origin", ORIGIN]
+
+        self.assertEqual(self.run_main(argv)[0], 2)
+
+
 class LuaLiteralTests(unittest.TestCase):
     def test_lua_literal_escapes_quotes_backslashes_and_newlines(self):
         self.assertEqual(lua_literal('a"b\\c\nd\re'), '"a\\"b\\\\c\\nd\\re"')
@@ -402,19 +545,7 @@ class LuaLiteralTests(unittest.TestCase):
         self.assertEqual(lua_literal(value), '{ list = { 1, "x", true }, off = false }')
 
 
-class NamingTests(unittest.TestCase):
-    def test_device_name_is_plain_for_the_default_home(self):
-        state = Path("/tmp/state")
-        self.assertEqual(device_name(state / "home", state), "Dev KOReader")
-
-    def test_device_name_marks_non_default_home_with_its_folder_and_path_hash(self):
-        state = Path("/tmp/state")
-        self.assertEqual(device_name(state / "second", state), "Dev KOReader (second 47e86e6b)")
-
-    def test_device_name_differs_for_homes_with_the_same_folder_name(self):
-        state = Path("/tmp/state")
-        self.assertNotEqual(device_name(Path("/tmp/a/home2"), state), device_name(Path("/tmp/b/home2"), state))
-
+class SeedUserTests(unittest.TestCase):
     def test_parse_seed_user_splits_at_first_colon(self):
         self.assertEqual(parse_seed_user("admin:pw:with:colons"), ("admin", "pw:with:colons"))
 
