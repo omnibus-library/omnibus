@@ -9,6 +9,7 @@ import {
 } from "../../testing/handlers";
 import { aWireLibrary, aWireRulePreview, uuidOf } from "../../testing/wire";
 import { CreateShelfModal } from "./CreateShelfModal";
+import { BLANK_DRAFT } from "./rules";
 
 const sent: CreateShelfRequest[] = [];
 
@@ -57,6 +58,61 @@ export const CreateSmart: Story = {
         visibility: "private",
         match_mode: "all",
         rules: [{ field: "tag", op: "is", value: "Fantasy" }],
+        book_uuids: [],
+      },
+    ]);
+  },
+};
+
+export const Prefilled: Story = {
+  args: {
+    initial: {
+      name: "Brandon Sanderson · EPUB",
+      matchMode: "all",
+      drafts: [
+        {
+          ...BLANK_DRAFT,
+          field: "author",
+          op: "is",
+          value: "Brandon Sanderson",
+        },
+        { ...BLANK_DRAFT, field: "format", op: "includes", value: "epub" },
+      ],
+      note: "From your filters: Author, Format carried.",
+    },
+  },
+  play: async ({ args, canvas, userEvent }) => {
+    await expect(
+      canvas.getByRole("textbox", { name: "Shelf name" }),
+    ).toHaveValue("Brandon Sanderson · EPUB");
+    await expect(canvas.getByRole("combobox", { name: "Match" })).toHaveValue(
+      "all",
+    );
+    await expect(
+      canvas.getAllByRole("combobox", { name: "Condition field" }),
+    ).toHaveLength(2);
+    const [author, format] = canvas.getAllByRole("textbox", {
+      name: "Condition value",
+    });
+    await expect(author).toHaveValue("Brandon Sanderson");
+    await expect(format).toHaveValue("epub");
+    await expect(
+      canvas.getByText("From your filters: Author, Format carried."),
+    ).toBeVisible();
+
+    await userEvent.click(canvas.getByRole("button", { name: "Create" }));
+
+    await waitFor(() => expect(args.onCreated).toHaveBeenCalledOnce());
+    await expect(sent).toEqual([
+      {
+        kind: "smart",
+        name: "Brandon Sanderson · EPUB",
+        visibility: "private",
+        match_mode: "all",
+        rules: [
+          { field: "author", op: "is", value: "Brandon Sanderson" },
+          { field: "format", op: "includes", value: "epub" },
+        ],
         book_uuids: [],
       },
     ]);
