@@ -117,6 +117,16 @@ pub(crate) fn SyncOfferCard(
     }
 }
 
+/// Whether the reader shows `c`: the book loaded (a failed load's error
+/// overlay covers the banner) and the offer hasn't been answered.
+pub(crate) fn reader_offer_visible(
+    c: &CrossFormatCandidate,
+    failed: bool,
+    dismissed: Option<i64>,
+) -> bool {
+    !failed && should_offer(c.source_client_updated_at, dismissed)
+}
+
 /// Whether the player shows `c`: this book's boot has restored its position,
 /// playback hasn't failed, the mapped file is the one loaded (the candidate's
 /// seconds count from its start), and the offer hasn't been answered.
@@ -215,13 +225,22 @@ fn use_restore_landed(playback: crate::PlaybackState) -> Signal<bool> {
 async fn metadata_loaded() -> bool {
     #[cfg(feature = "web")]
     {
+        // One controller drops every listener once any settles. `emptied`
+        // counts only with the source gone (`stop()`): the boot's own
+        // `load()` can queue a stale one while the new `src` is set.
         let mut eval = dioxus::document::eval(
             "const el = document.getElementById('omnibus-audio');\n\
              if (!el) { dioxus.send(false); }\n\
              else if (el.readyState >= 1) { dioxus.send(true); }\n\
              else {\n\
-               el.addEventListener('loadedmetadata', () => dioxus.send(true), { once: true });\n\
-               el.addEventListener('error', () => dioxus.send(false), { once: true });\n\
+               const ac = new AbortController();\n\
+               const opts = { once: true, signal: ac.signal };\n\
+               const done = (ok) => { ac.abort(); dioxus.send(ok); };\n\
+               el.addEventListener('loadedmetadata', () => done(true), opts);\n\
+               el.addEventListener('error', () => done(false), opts);\n\
+               el.addEventListener('emptied', () => {\n\
+                 if (!el.getAttribute('src')) { done(false); }\n\
+               }, { signal: ac.signal });\n\
              }",
         );
         eval.recv::<bool>().await.unwrap_or(false)

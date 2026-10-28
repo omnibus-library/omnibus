@@ -167,3 +167,23 @@ fn player_offer_visible_hides_an_offer_already_answered() {
         Some(100)
     ));
 }
+
+#[test]
+fn reader_offer_visible_shows_an_unanswered_offer_on_a_loaded_book() {
+    assert!(reader_offer_visible(&candidate(Some(true)), false, None));
+}
+
+#[test]
+fn reader_offer_visible_hides_while_the_book_has_failed_to_load() {
+    // The error overlay covers the banner; its Go must not take focus first.
+    assert!(!reader_offer_visible(&candidate(Some(true)), true, None));
+}
+
+#[test]
+fn reader_offer_visible_hides_an_offer_already_answered() {
+    assert!(!reader_offer_visible(
+        &candidate(Some(true)),
+        false,
+        Some(100)
+    ));
+}

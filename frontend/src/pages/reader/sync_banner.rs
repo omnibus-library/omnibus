@@ -9,15 +9,16 @@ use omnibus_shared::cross_format::CrossFormatCandidate;
 
 use crate::components::BusyLabel;
 use crate::pages::listen::sync_prompt::{
-    dismissed_clock, reader_offer_copy, should_offer, store_dismissed_clock, use_offer,
+    dismissed_clock, reader_offer_copy, reader_offer_visible, store_dismissed_clock, use_offer,
     SyncOfferCard, SYNCING,
 };
 
 /// The reader's cross-format resume: with follow on, applies the mapped
 /// position at open and renders nothing; with it off, offers it. SSR and
-/// the first WASM paint both render nothing, so they agree.
+/// the first WASM paint both render nothing, so they agree. `failed` hides
+/// it behind the load error (see [`reader_offer_visible`]).
 #[component]
-pub(super) fn SyncJumpBanner(uuid: String) -> Element {
+pub(super) fn SyncJumpBanner(uuid: String, failed: bool) -> Element {
     let user = crate::use_current_user_summary();
     let mut offer = use_offer(uuid.clone(), "epub", true, jump_to);
 
@@ -28,7 +29,7 @@ pub(super) fn SyncJumpBanner(uuid: String) -> Element {
         return rsx! {};
     };
     let clock = c.source_client_updated_at;
-    if !should_offer(clock, dismissed_clock(user_id, &uuid, "epub")) {
+    if !reader_offer_visible(&c, failed, dismissed_clock(user_id, &uuid, "epub")) {
         return rsx! {};
     }
     let Some((title, detail)) = reader_offer_copy(&c) else {

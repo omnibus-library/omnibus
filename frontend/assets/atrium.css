@@ -11176,8 +11176,8 @@ html {
   top: 86px;
   left: 50%;
   transform: translateX(-50%);
-  /* Above the stage (1) and status overlay (10), under the scrim (30). */
-  z-index: 25;
+  /* Above the stage (1), under the topbar (5) and its account menu. */
+  z-index: 4;
   display: flex;
   align-items: center;
   gap: 10px;
