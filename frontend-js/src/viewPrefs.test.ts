@@ -135,7 +135,7 @@ describe("reconcile", () => {
     [null, "/a", false, "/a", "adopt"],
     ["/a", "/b", false, "/a", "adopt"],
     [null, "/a", true, "/b", "rebase"],
-    [null, "/a", true, null, "rebase"],
+    [null, "/a", true, null, "save"],
   ] as const)(
     "from %s to %s (unsaved %s, seeded from %s) is %s",
     (was, path, unsaved, seededFrom, action) => {

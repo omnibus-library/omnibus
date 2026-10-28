@@ -145,8 +145,8 @@ export type Reconcile = "keep" | "adopt" | "save" | "rebase";
 
 /**
  * What page 1 naming the library `path` does to the prefs in memory.
- * `seededFrom` is the library they were read from: an unsaved edit made on
- * another library's view is filed under `path` only for its filter.
+ * `seededFrom` is the library they were read from, `null` when none seeded them:
+ * an unsaved edit made on another library's view is filed under `path` only for its filter.
  */
 export function reconcile(
   reconciled: string | null,
@@ -154,7 +154,9 @@ export function reconcile(
   unsaved: boolean,
   seededFrom: string | null,
 ): Reconcile {
-  if (unsaved) return seededFrom === path ? "save" : "rebase";
+  if (unsaved) {
+    return seededFrom === null || seededFrom === path ? "save" : "rebase";
+  }
   return reconciled === path ? "keep" : "adopt";
 }
 
