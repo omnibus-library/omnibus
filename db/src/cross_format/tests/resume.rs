@@ -287,16 +287,16 @@ async fn resume_points_collapse_a_linked_book_to_one_card_with_the_counterpart()
     .await
     .unwrap();
 
-    // Unlinked: the book competes with itself — two cards, neither linked.
     let before = progress::resume_points(&pool, user, 5).await.unwrap();
-    assert_eq!(before.len(), 2);
-    assert!(before.iter().all(|p| !p.linked && p.cross_format.is_none()));
+    assert_eq!(before.len(), 1, "an unlinked book shows once too");
+    assert_eq!(before[0].record.format, ProgressFormat::Epub);
+    assert!(!before[0].linked && before[0].cross_format.is_none());
 
     upsert_link(&pool, user, &uuid, CrossFormatLinkMode::Sequence, None)
         .await
         .unwrap();
     let after = progress::resume_points(&pool, user, 5).await.unwrap();
-    assert_eq!(after.len(), 1, "linked books collapse to the newest card");
+    assert_eq!(after.len(), 1, "a linked book shows as its newest card");
     let card = &after[0];
     assert_eq!(card.record.format, ProgressFormat::Epub);
     assert!(card.linked);
