@@ -166,9 +166,8 @@ impl StackEntry {
             veil_label,
             pct,
             accent_style,
-            // Dual-format but unlinked: the stack carries the link invitation
-            // the design draws under the two-card state. Linked dual-format
-            // books get the Immersive chip instead.
+            // Dual-format but unlinked: the stack carries the link invitation.
+            // Linked dual-format books get the Immersive chip instead.
             dual_unlinked: !point.linked && has_both_formats(&book),
             dual_linked: point.linked && has_both_formats(&book),
             counterpart: build_counterpart(point, &point.record.book_uuid),

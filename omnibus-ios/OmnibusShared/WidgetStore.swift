@@ -118,7 +118,7 @@ enum WidgetStore {
     }
 
     /// The name a book's cover is filed under. One per book rather than per
-    /// (book, format): a dual-format book is two cards showing one artwork.
+    /// (book, format): a book's cover is the same artwork in either format.
     static func thumbName(for bookUUID: String, ext: String) -> String {
         // The uuid is a UUIDv4 or a row id, so it is already path-safe — but
         // it arrives from the server, and a separator smuggled into one would
