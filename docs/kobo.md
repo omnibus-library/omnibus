@@ -248,20 +248,43 @@ address in `OMNIBUS_PUBLIC_ORIGIN`.
 
 ### In a terminal
 
-Start the dev server (`just dev-up`), then run:
+Run the TUI against any Omnibus instance, a deployed one or this worktree's dev server:
 
 ```bash
-just kobo
+just kobo                       # asks for the device's sync URL
+just kobo --sync-url URL        # skips the prompt
+just kobo --local               # this worktree's dev server, wired as "Mock Kobo"
 ```
 
-It follows this worktree's dev server, logs in as `OMNIBUS_DEV_SEED_USER`, and
-reuses or creates the Omnibus device named "Mock Kobo". The screen shows the
-device's hardware id, URL, library, last sync and the requests it made.
+With no flags it asks for a **Sync URL** before anything is sent. Copy it from the
+instance: **Settings → Devices → Kobo**
+(`https://<host>/kobo/<token>`). A URL of any other shape is refused with the
+reason and the prompt stays open; <kbd>Esc</kbd> or <kbd>Ctrl-C</kbd> quits.
+`--sync-url URL` takes the same URL as a flag, and can't be combined with `--url`,
+`--token` or `--local`. The device then syncs against that instance with that
+token. Pressing <kbd>w</kbd> to wire a token only works against a local server,
+as below.
 
-The seeded admin starts with a **Kobo library** smart shelf that holds every
-EPUB, CBZ and PDF and has **Sync to my devices** on, so the first sync downloads all
+`--local` needs the dev server (`just dev-up`) and `OMNIBUS_DEV_SEED_USER`. It
+follows this worktree's dev server, logs in as the seeded admin, and reuses or
+creates the Omnibus device named "Mock Kobo". The screen shows the device's
+hardware id, URL, library, last sync and the requests it made.
+
+**Every launch is a clean slate.** Without `--state`, the TUI keeps its state
+file and downloaded books in a scratch directory under
+`$TMPDIR/omnibus-mock-kobo/` (`/tmp/omnibus-mock-kobo/` when `TMPDIR` is unset)
+and removes it on exit. A launch that was killed leaves its directory behind; the
+next launch removes every directory no running TUI holds. `--state PATH` is the
+opt-out: that file persists, so the token, library and reading state carry over
+to the next launch. `.claude/runtime/mock-kobo.json` and `mock-kobo.books/` from
+earlier versions are no longer used; delete them by hand.
+
+The shelf a device syncs must have **Sync to my devices** on. The seeded dev admin
+starts with a **Kobo library** smart shelf that holds every
+EPUB, CBZ and PDF and has it on, so the first sync downloads all
 of them. The server adds that shelf only when it creates the admin. If your dev
-database already had an admin, mark a shelf **Sync to my devices** yourself.
+database already had an admin, or you point at another instance, mark a shelf
+**Sync to my devices** yourself.
 
 | Key | Does |
 |---|---|
@@ -327,7 +350,8 @@ done; press <kbd>q</kbd> or <kbd>Ctrl-C</kbd> again to quit at once. A running
 sync is always waited for, so the pages Omnibus recorded are saved; one more
 <kbd>Ctrl-C</kbd> kills the process.
 
-For a second device, give it its own state file; inside the gitignored
+For a second device, run a second terminal (each launch is its own device), or
+give it a state file of its own, which also persists it; inside the gitignored
 `.claude/runtime/`, because a state file holds the device token:
 
 ```bash
@@ -335,7 +359,7 @@ just kobo --state .claude/runtime/other.json   # the Omnibus device "Mock Kobo (
 ```
 
 A downloaded book's file is kept beside the state file, in `<state>.books/`
-(the default `.claude/runtime/mock-kobo.json` → `.claude/runtime/mock-kobo.books/<id>.kepub.epub`),
+(`.claude/runtime/other.json` → `.claude/runtime/other.books/<id>.kepub.epub`),
 so a second device's downloads never collide with the first's.
 
 #### Reader fixture
@@ -365,7 +389,9 @@ is listening:
 cargo run -p omnibus-mock-kobo -- serve
 ```
 
-Both commands take the same options; each flag wins over its env var:
+`serve` keeps its state in `.claude/runtime/mock-kobo.json` unless `--state` names
+another, and it persists between runs; only `tui` starts clean. Both commands
+take the same options; each flag wins over its env var:
 
 | Flag | Env var | Meaning |
 |---|---|---|
@@ -373,6 +399,8 @@ Both commands take the same options; each flag wins over its env var:
 | `--token <token>` | `OMNIBUS_MOCK_KOBO_TOKEN` | The device's path token; saved in the state file |
 | `--state <path>` | `OMNIBUS_MOCK_KOBO_STATE` | The device's JSON state file |
 | `--port <n>` | | The control API port on `127.0.0.1` (default: any free port) |
+
+`tui` also takes `--sync-url <url>` and `--local` (above), which `serve` refuses.
 
 With no token, the device logs in as the `user:password` in
 `OMNIBUS_DEV_SEED_USER`. `mock-kobo --help` lists the rest.

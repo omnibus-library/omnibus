@@ -95,8 +95,8 @@ just react                                                  # React client (fron
 # Used by the `ui-validate` skill; safe to re-run.
 just dev-up
 source .claude/runtime/env.sh                               # picks up OMNIBUS_PORT + PLAYWRIGHT_BASE_URL
-just kobo                                                   # mock Kobo e-reader in a terminal UI against the dev server (docs/kobo.md)
-just koreader                                              # interactive KOReader in a browser tab (Docker), syncing with the dev server (docs/koreader.md)
+just kobo                                                   # mock Kobo e-reader in a terminal UI against any instance (sync URL; `--local` for this worktree's dev server) (docs/kobo.md)
+just koreader                                              # interactive KOReader in a browser tab (Docker) against any instance (plugin zip; `--local` for this worktree's dev server) (docs/koreader.md)
 
 # Fullstack dev (serves SSR + WASM hydration at http://localhost:8080 by default)
 dx serve --platform web -p omnibus
