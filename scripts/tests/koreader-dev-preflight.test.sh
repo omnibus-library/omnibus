@@ -2,11 +2,12 @@
 # Tests for scripts/koreader-dev.sh: require_docker() and require_dev_server(),
 # the checks `just koreader` runs before it builds anything (a missing Docker or
 # dev server is one readable line), the networking it picks from the engine,
-# its usage line, and the KOReader pin file.
+# its usage line, the per-launch run dir (made, swept when its launch died,
+# removed on exit), and the KOReader pin file.
 #
 # No Docker, no server: the real script is sourced (it does not run `main` when
-# sourced) and only `docker`, `uname` and `probe_health` are stubbed, as in
-# scratch-server-make-scratch-dir.test.sh.
+# sourced) and only `docker`, `uname`, `python3` and `probe_health` are stubbed,
+# as in scratch-server-make-scratch-dir.test.sh.
 #
 # Usage: scripts/tests/koreader-dev-preflight.test.sh
 set -euo pipefail
@@ -94,9 +95,94 @@ probe_health() { echo "{\"app\":\"omnibus\",\"repo_root\":\"$MY_REPO_ROOT\"}"; }
 check "require_dev_server prints the port when this worktree's server answers" \
     "0|3571|" "$(run require_dev_server)"
 
-usage_msg="koreader: usage: just koreader [--home DIR]"
+usage_msg="koreader: usage: just koreader [--local | --plugin PATH]"
 check "main rejects an unknown argument with the usage line" "2||$usage_msg" "$(run main --bogus)"
-check "main rejects --home without a directory with the usage line" "2||$usage_msg" "$(run main --home)"
+check "main rejects the removed --home with the usage line" "2||$usage_msg" "$(run main --home x)"
+
+scratch="$(mktemp -d)"
+trap 'rm -rf "$runtime" "$scratch"' EXIT
+SCRATCH_ROOT="$scratch/root"
+DOCKER_LOG="$scratch/docker.log"
+: >"$DOCKER_LOG"
+docker() {
+    printf '%s\n' "$*" >>"$DOCKER_LOG"
+    case "$1" in
+    version) echo arm64 ;;
+    info) echo 'Arch Linux|["name=seccomp,profile=builtin"]' ;;
+    esac
+}
+
+mode_of() { stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"; }
+
+run_dir="$(make_run_dir)"
+check "make_run_dir makes a run.XXXXXX dir under the scratch root" "1" \
+    "$([[ "$run_dir" == "$SCRATCH_ROOT"/run.?????? && -d "$run_dir" ]] && echo 1 || echo 0)"
+check "make_run_dir records the script's pid" "$$" "$(cat "$run_dir/pid")"
+check "make_run_dir makes an empty home" "0" "$(find "$run_dir/home" -mindepth 1 | wc -l | tr -d ' ')"
+check "make_run_dir keeps the run dir and its home private" "700 700" "$(mode_of "$run_dir") $(mode_of "$run_dir/home")"
+
+check "container_name is named for the run dir's suffix" "omnibus-koreader-${run_dir##*run.}" "$(container_name "$run_dir")"
+
+remove_run "$run_dir"
+check "remove_run removes the run dir" "0" "$([ -e "$run_dir" ] && echo 1 || echo 0)"
+check "remove_run force-removes the run's container" "rm -f $(container_name "$run_dir")" "$(cat "$DOCKER_LOG")"
+
+docker() { return 1; }
+run_dir="$(make_run_dir)"
+remove_run "$run_dir"
+check "remove_run still removes the run dir when the container is already gone" "0" "$([ -e "$run_dir" ] && echo 1 || echo 0)"
+
+: >"$DOCKER_LOG"
+docker() { printf '%s\n' "$*" >>"$DOCKER_LOG"; }
+(exit 0) &
+dead_pid=$!
+wait "$dead_pid"
+dead="$(make_run_dir)"
+echo "$dead_pid" >"$dead/pid"
+live="$(make_run_dir)"
+starting="$SCRATCH_ROOT/run.starting"
+mkdir "$starting"
+sweep_runs
+check "sweep_runs removes a run whose launch is dead" "0" "$([ -e "$dead" ] && echo 1 || echo 0)"
+check "sweep_runs force-removes the dead run's container" "rm -f $(container_name "$dead")" "$(cat "$DOCKER_LOG")"
+check "sweep_runs keeps a run whose launch is alive" "1" "$([ -d "$live" ] && echo 1 || echo 0)"
+check "sweep_runs keeps a dir that has no pid file yet" "1" "$([ -d "$starting" ] && echo 1 || echo 0)"
+rm -rf "$SCRATCH_ROOT"
+
+: >"$DOCKER_LOG"
+SCRIPT_LOG="$scratch/script.log"
+docker() {
+    printf '%s\n' "$*" >>"$DOCKER_LOG"
+    case "$1" in
+    version) echo arm64 ;;
+    info) echo 'Arch Linux|["name=seccomp,profile=builtin"]' ;;
+    esac
+}
+python3() {
+    case "$*" in
+    *koreader_home.py*) printf '%s\n' "$*" >>"$SCRIPT_LOG" ;;
+    *) command python3 "$@" ;;
+    esac
+}
+open_when_ready() { :; }
+uname() { echo Linux; }
+status=0
+(main) >/dev/null 2>&1 || status=$?
+check "main runs a launch to the end" "0" "$status"
+docker_run="$(grep '^run ' "$DOCKER_LOG")"
+mounted="${docker_run##*-v }"
+mounted="${mounted%% *}"
+named="${docker_run##*--name }"
+named="${named%% *}"
+check "main mounts the run dir's home at /ko-home" "1" \
+    "$([[ "$mounted" == "$SCRATCH_ROOT"/run.??????/home:/ko-home ]] && echo 1 || echo 0)"
+run_suffix="${mounted#"$SCRATCH_ROOT"/run.}"
+check "main names the container for the run dir" "omnibus-koreader-${run_suffix%/home:/ko-home}" "$named"
+check "main links the run dir's home" "1" \
+    "$([[ "$(cat "$SCRIPT_LOG")" == *"--home ${mounted%:/ko-home} "* ]] && echo 1 || echo 0)"
+check "main force-removes its container on exit" "rm -f $named" "$(tail -n 1 "$DOCKER_LOG")"
+check "main removes its run dir on exit" "0" "$(find "$SCRATCH_ROOT" -mindepth 1 | wc -l | tr -d ' ')"
+unset -f docker python3 open_when_ready uname
 
 pin_versions="$(sed -E 's/.*koreader_([^_]*-1)_.*/\1/' ui_tests/koreader/koreader.sha256 | sort -u | wc -l)"
 check "every arch's KOReader pin names the same version" "1" "$((pin_versions))"

@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""Link a KOReader home to the dev server on its first launch (`just koreader`).
+"""Link a fresh KOReader home to the dev server (`just koreader`).
 
     python3 scripts/koreader_home.py --home DIR --api URL --origin URL --state-dir DIR
 
-Signs in as $OMNIBUS_DEV_SEED_USER, finds or creates this home's KOReader device,
+Signs in as $OMNIBUS_DEV_SEED_USER, finds or creates the "Dev KOReader" device,
 installs the Omnibus plugin its Settings download hands a reader, and seeds
 KOReader's OPDS catalog and stock Progress sync. Exits 0 when the home was
 linked or already is, 1 with one `koreader:` line on stderr otherwise.
 
 `--api` is the host-side URL the seed password is sent to; `--origin` is the
 dev server as the container reaches it, and is only written into the home.
-A home keeps the origin and token it was linked with: delete it to relink.
+A home keeps the origin and token it was linked with, so a fresh home is a relink.
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ from io import BytesIO
 from pathlib import Path
 
 SESSION_DEVICE_NAME = "omnibus-koreader-dev"
-DEFAULT_DEVICE_NAME = "Dev KOReader"
+DEVICE_NAME = "Dev KOReader"  # one name for every launch, so fresh homes never pile up server devices
 PLUGIN_DIR = "omnibus.koplugin"
 
 
@@ -55,14 +55,6 @@ def lua_literal(value) -> str:
     if isinstance(value, dict):
         return "{ " + ", ".join(f"{k} = {lua_literal(v)}" for k, v in value.items()) + " }"
     raise TypeError(f"no Lua literal for {type(value).__name__}")
-
-
-def device_name(home: Path, state_dir: Path) -> str:
-    """`Dev KOReader` for the default home, else the name carries the home's folder."""
-    if home.resolve() == (state_dir / "home").resolve():
-        return DEFAULT_DEVICE_NAME
-    where = hashlib.sha256(str(home.resolve()).encode()).hexdigest()[:8]  # koreader-dev.sh names the container the same way
-    return f"{DEFAULT_DEVICE_NAME} ({home.name[:60]} {where})"
 
 
 def parse_seed_user(value: str | None) -> tuple[str, str]:
@@ -246,7 +238,7 @@ def _link_unlocked(home: Path, api: str, origin: str, state_dir: Path, seed: tup
     home.chmod(0o700)  # opds.lua and omnibus.json hold the seed password and the device token
     session.login(*seed)
     try:
-        device = find_or_create_device(session, device_name(home, state_dir))
+        device = find_or_create_device(session, DEVICE_NAME)
         archive = session.call("GET", f"/api/account/kobo-devices/{device}/koreader-plugin", raw=True)
         key = kosync_key(session, state_dir, seed[0])
         write_settings(home, origin, seed, key)
@@ -266,7 +258,7 @@ def main(argv: list[str]) -> int:
     try:
         seed = parse_seed_user(os.environ.get("OMNIBUS_DEV_SEED_USER"))
         if link_home(args.home, args.api, args.origin, args.state_dir, seed):
-            print(f"koreader: linked {args.home} as {device_name(args.home, args.state_dir)!r}")
+            print(f"koreader: linked {args.home} as {DEVICE_NAME!r}")
     except LinkError as e:
         print(f"koreader: {e}", file=sys.stderr)
         return 1

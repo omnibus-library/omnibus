@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Tests for scripts/koreader_home.py, which links a new KOReader home to the
-dev server on its first launch (`just koreader`).
+"""Tests for scripts/koreader_home.py, which links a fresh KOReader home to the
+dev server (`just koreader`).
 
 link_home runs against a fake Omnibus server speaking the REST routes it uses,
 over real HTTP and real temp dirs.
@@ -27,7 +27,7 @@ from pathlib import Path
 SCRIPTS = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPTS))
 
-from koreader_home import LinkError, device_name, link_home, lua_literal, main, parse_seed_user  # noqa: E402
+from koreader_home import DEVICE_NAME, LinkError, link_home, lua_literal, main, parse_seed_user  # noqa: E402
 
 SEED = ("admin", "seed-pw:with-colon")
 ORIGIN = "http://device.test:3999"
@@ -227,7 +227,7 @@ class LinkHomeTests(unittest.TestCase):
         self.assertEqual(sorted(results), [False, True])
         self.assertEqual(len(fake.created), 1)
 
-    def test_reuses_device_named_for_home(self):
+    def test_reuses_the_koreader_device_named_dev_koreader(self):
         fake = self.omnibus(devices=[{"id": 7, "name": "Dev KOReader", "kind": "koreader", "token": DEVICE_TOKEN}])
 
         self.link(fake)
@@ -235,16 +235,23 @@ class LinkHomeTests(unittest.TestCase):
         self.assertEqual(fake.created, [])
         self.assertIn(("GET", "/api/account/kobo-devices/7/koreader-plugin"), fake.requests)
 
-    def test_creates_a_koreader_device_named_for_home_when_none_matches(self):
+    def test_creates_a_koreader_device_named_dev_koreader_when_none_matches(self):
         # A Kobo of the same name is a different device: only a koreader-kind one is reused.
+        fake = self.omnibus(devices=[{"id": 7, "name": "Dev KOReader", "kind": "kobo", "token": "k"}])
+
+        self.link(fake)
+
+        self.assertEqual(fake.created, [{"name": "Dev KOReader", "kind": "koreader"}])
+
+    def test_names_every_home_after_the_same_device(self):
+        fake = self.omnibus()
         second = self.root / "second"
         second.mkdir()
-        name = device_name(second, self.state)
-        fake = self.omnibus(devices=[{"id": 7, "name": name, "kind": "kobo", "token": "k"}])
 
+        self.link(fake)
         self.link(fake, second)
 
-        self.assertEqual(fake.created, [{"name": name, "kind": "koreader"}])
+        self.assertEqual(fake.created, [{"name": DEVICE_NAME, "kind": "koreader"}])
 
     def test_reuses_saved_kosync_key_when_server_has_one(self):
         fake = self.omnibus(kosync_configured=True, kosync_userkey="0" * 32)
@@ -402,19 +409,7 @@ class LuaLiteralTests(unittest.TestCase):
         self.assertEqual(lua_literal(value), '{ list = { 1, "x", true }, off = false }')
 
 
-class NamingTests(unittest.TestCase):
-    def test_device_name_is_plain_for_the_default_home(self):
-        state = Path("/tmp/state")
-        self.assertEqual(device_name(state / "home", state), "Dev KOReader")
-
-    def test_device_name_marks_non_default_home_with_its_folder_and_path_hash(self):
-        state = Path("/tmp/state")
-        self.assertEqual(device_name(state / "second", state), "Dev KOReader (second 47e86e6b)")
-
-    def test_device_name_differs_for_homes_with_the_same_folder_name(self):
-        state = Path("/tmp/state")
-        self.assertNotEqual(device_name(Path("/tmp/a/home2"), state), device_name(Path("/tmp/b/home2"), state))
-
+class SeedUserTests(unittest.TestCase):
     def test_parse_seed_user_splits_at_first_colon(self):
         self.assertEqual(parse_seed_user("admin:pw:with:colons"), ("admin", "pw:with:colons"))
 

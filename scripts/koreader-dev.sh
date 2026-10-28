@@ -2,12 +2,13 @@
 # `just koreader`: an interactive KOReader in a browser tab, in Docker, syncing
 # with this worktree's dev server (docs/koreader.md).
 #
-# Usage: scripts/koreader-dev.sh [--home DIR]
+# Usage: scripts/koreader-dev.sh [--local | --plugin PATH]
 #
 # Checks Docker and the dev server first (it never starts a server), builds the
-# lane's image, then runs it with the home mounted at /ko-home so settings,
-# books and progress persist. The foreground container is the session: Ctrl-C
-# or quitting KOReader ends it.
+# lane's image, then runs it with a fresh home mounted at /ko-home. The home
+# lives in a run dir under $SCRATCH_ROOT, removed on exit; a launch that was
+# killed leaves its run dir for the next launch to sweep. The foreground
+# container is the session: Ctrl-C or quitting KOReader ends it.
 #
 # Sourceable without running `main`, so scripts/tests/koreader-dev-preflight.test.sh
 # can exercise the checks.
@@ -16,6 +17,10 @@ set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 # shellcheck source=scripts/lib/dev-port.sh disable=SC1091
 source scripts/lib/dev-port.sh
+
+SCRATCH_ROOT="${TMPDIR:-/tmp}/omnibus-koreader-dev"
+# The launch's run dir, set by main for the EXIT trap, which runs after main's locals are gone.
+RUN_DIR=""
 
 die() {
     echo "koreader: $*" >&2
@@ -58,6 +63,42 @@ docker_network_mode() {
     esac
 }
 
+# Prints a new run dir holding this launch's pid and an empty home.
+make_run_dir() {
+    local run
+    mkdir -p "$SCRATCH_ROOT"
+    run="$(mktemp -d "$SCRATCH_ROOT/run.XXXXXX")"
+    echo "$$" >"$run/pid"
+    mkdir -m 0700 "$run/home"
+    echo "$run"
+}
+
+# The container a run dir's launch names; the suffix is the run dir's own.
+container_name() {
+    echo "omnibus-koreader-${1##*run.}"
+}
+
+remove_run() {
+    docker rm -f "$(container_name "$1")" >/dev/null 2>&1 || true
+    rm -rf "$1"
+}
+
+# Removes the run dirs of launches that are gone; one with no pid yet is a launch still starting.
+sweep_runs() {
+    local run pid
+    for run in "$SCRATCH_ROOT"/run.*; do
+        pid="$(cat "$run/pid" 2>/dev/null || true)"
+        [ -n "$pid" ] || continue
+        kill -0 "$pid" 2>/dev/null || remove_run "$run"
+    done
+}
+
+# The EXIT trap: stops the browser opener and removes the run.
+cleanup() {
+    kill %1 2>/dev/null || true
+    [ -z "$RUN_DIR" ] || remove_run "$RUN_DIR"
+}
+
 free_port() {
     python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])'
 }
@@ -80,14 +121,10 @@ open_when_ready() {
 }
 
 main() {
-    local home="$RUNTIME_DIR/koreader/home" arch dev_port deb tag name novnc_port origin net usage="usage: just koreader [--home DIR]"
+    local arch dev_port deb tag name novnc_port origin net usage="usage: just koreader [--local | --plugin PATH]"
     while [ $# -gt 0 ]; do
         case "$1" in
-        --home)
-            [ $# -ge 2 ] || die_status=2 die "$usage"
-            home="$2"
-            shift 2
-            ;;
+        --local) shift ;;
         *) die_status=2 die "$usage" ;;
         esac
     done
@@ -95,15 +132,17 @@ main() {
     arch="$(require_docker)"
     dev_port="$(require_dev_server)"
 
-    mkdir -p "$home/books"
-    home="$(cd "$home" && pwd -P)"
+    sweep_runs
+    RUN_DIR="$(make_run_dir)"
+    trap cleanup EXIT
+    mkdir -p "$RUN_DIR/home/books"
 
     deb="$(awk -v arch="$arch" '$2 ~ "_" arch "\\.deb$" {print $2}' ui_tests/koreader/koreader.sha256)"
     [ -n "$deb" ] || die "no KOReader pin for $arch in ui_tests/koreader/koreader.sha256"
     tag="omnibus-koreader:$deb"
     docker build -t "$tag" ui_tests/koreader
 
-    name="omnibus-koreader-$(printf '%s' "$home" | { sha256sum 2>/dev/null || shasum -a 256; } | cut -c1-8)"
+    name="$(container_name "$RUN_DIR")"
     novnc_port="$(free_port)"
     # A Linux engine defines no `host.docker.internal` itself, so name the host gateway.
     net=(-p "127.0.0.1:$novnc_port:6080" --add-host host.docker.internal:host-gateway)
@@ -113,7 +152,7 @@ main() {
         origin="http://127.0.0.1:$dev_port"
     fi
 
-    python3 scripts/koreader_home.py --home "$home" --api "http://127.0.0.1:$dev_port" \
+    python3 scripts/koreader_home.py --home "$RUN_DIR/home" --api "http://127.0.0.1:$dev_port" \
         --origin "$origin" --state-dir "$RUNTIME_DIR/koreader"
 
     # Docker takes the variable from the environment, so the password is never on a command line.
@@ -121,13 +160,12 @@ main() {
     export VNC_PASSWORD
     echo "koreader: KOReader reaches the dev server at $origin"
     open_when_ready "$novnc_port" &
-    trap 'kill %1 2>/dev/null || true' EXIT
     docker run --init --rm --name "$name" "${net[@]}" \
         --user "$(id -u):$(id -g)" \
         -e HOME=/tmp \
         -e XDG_DOCUMENTS_DIR=/ko-home/books \
         -e VNC_PASSWORD \
-        -v "$home:/ko-home" \
+        -v "$RUN_DIR/home:/ko-home" \
         "$tag" koreader-vnc
 }
 
