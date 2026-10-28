@@ -1,12 +1,13 @@
 //  ReaderFollowSeekTests.swift
 //  The reader's half of cross-format follow (#2942).
 //
-//  The follow jump's answer reaches the reader before the book has loaded, so
-//  a seek sent straight through landed on a page with nothing to jump in and
-//  was lost. And a close that re-saved the unmoved landing stamped a fresh
-//  clock on it, out-ordering the newer audiobook position at the clock gate.
-//  `ReaderView`'s `persist` is a SwiftUI method and can't be driven from here,
-//  so its guard is pinned at its input: `ReaderController.unsavedCFI`.
+//  The follow jump's answer reaches the reader before the book has loaded, and
+//  the glue parks it through the locations pass, so the seek is held until the
+//  glue reports it settled — a page rebooted meanwhile gets it again. And a
+//  close that re-saved the unmoved landing stamped a fresh clock on it,
+//  out-ordering the newer audiobook position at the clock gate. `ReaderView`'s
+//  `persist` is a SwiftUI method and can't be driven from here, so its guard
+//  is pinned at its input: `ReaderController.unsavedCFI`.
 
 import Foundation
 import Testing
@@ -28,6 +29,24 @@ private func bootedReader() -> ReaderController {
     return controller
 }
 
+@MainActor
+private func ready(_ controller: ReaderController) {
+    controller.handle(message: ["type": "status", "payload": "ready"])
+}
+
+/// A relocate as the glue posts it, naming the last seek it settled.
+@MainActor
+private func relocate(_ controller: ReaderController, to cfi: String, settledSeek: Int?) throws {
+    let data = RelocateData(cfi: cfi, settledSeek: settledSeek)
+    let json = String(decoding: try JSONEncoder().encode(data), as: UTF8.self)
+    controller.handle(message: ["type": "relocate", "payload": json])
+}
+
+@MainActor
+private func seeksSent(_ controller: ReaderController) -> [String] {
+    controller.evaluatedScripts.filter { $0.hasPrefix("OmnibusReader.seek(") }
+}
+
 @Suite("Reader follow seek")
 @MainActor
 struct ReaderFollowSeekTests {
@@ -35,20 +54,57 @@ struct ReaderFollowSeekTests {
     func seekWaitsForReady() {
         let controller = bootedReader()
         controller.seek(toFraction: 0.86)
-        #expect(!controller.evaluatedScripts.contains("OmnibusReader.seek(0.86)"))
-        #expect(controller.pendingSeek == 0.86)
+        #expect(seeksSent(controller).isEmpty)
 
-        controller.handle(message: ["type": "status", "payload": "ready"])
-        #expect(controller.evaluatedScripts.contains("OmnibusReader.seek(0.86)"))
-        #expect(controller.pendingSeek == nil)
+        ready(controller)
+        #expect(seeksSent(controller) == ["OmnibusReader.seek(0.86, 1)"])
     }
 
     @Test("a seek on a ready page goes straight through")
     func seekOnReadyPage() {
         let controller = bootedReader()
-        controller.handle(message: ["type": "status", "payload": "ready"])
+        ready(controller)
         controller.seek(toFraction: 1.4)
-        #expect(controller.evaluatedScripts.last == "OmnibusReader.seek(1.0)")
+        #expect(controller.evaluatedScripts.last == "OmnibusReader.seek(1.0, 1)")
+    }
+
+    /// The glue parks the seek through a locations pass that takes seconds on
+    /// a first open; WebContent reclaimed in that window reboots the page.
+    @Test("a seek the glue never settled goes again to a rebooted page")
+    func unsettledSeekSurvivesReboot() throws {
+        let controller = bootedReader()
+        controller.seek(toFraction: 0.86)
+        ready(controller)
+        // Posted before the glue took the seek, so it names none.
+        try relocate(controller, to: landing, settledSeek: nil)
+
+        controller.handle(message: ["type": "hostReady"])
+        ready(controller)
+        #expect(seeksSent(controller) == ["OmnibusReader.seek(0.86, 1)", "OmnibusReader.seek(0.86, 1)"])
+    }
+
+    @Test("a seek the glue settled is not sent again")
+    func settledSeekIsDone() throws {
+        let controller = bootedReader()
+        controller.seek(toFraction: 0.86)
+        ready(controller)
+        try relocate(controller, to: turnedTo, settledSeek: 1)
+        #expect(controller.pendingSeek == nil)
+
+        controller.handle(message: ["type": "hostReady"])
+        ready(controller)
+        #expect(seeksSent(controller).count == 1)
+    }
+
+    /// Accepting a sync offer while the follow jump waits on the page: the
+    /// reader's explicit choice must not be overwritten when `ready` lands.
+    @Test("a jump the reader chose drops a held seek")
+    func displayDropsHeldSeek() {
+        let controller = bootedReader()
+        controller.seek(toFraction: 0.86)
+        controller.display(turnedTo)
+        ready(controller)
+        #expect(seeksSent(controller).isEmpty)
         #expect(controller.pendingSeek == nil)
     }
 
@@ -70,9 +126,18 @@ struct ReaderFollowSeekTests {
             ReaderController.unsavedCFI(location: RelocateData(cfi: turnedTo, echo: false), saved: landing)
                 == turnedTo
         )
-        // A first open has nothing saved, so its landing still goes out on close.
+    }
+
+    /// A never-read book: the host skips its first relocate, and the locations
+    /// pass re-states that landing as an echo, which is all a close then finds.
+    @Test("a first open's landing is saved, even as an echo")
+    func firstLandingIsSaved() {
         #expect(
             ReaderController.unsavedCFI(location: RelocateData(cfi: landing, echo: false), saved: nil)
+                == landing
+        )
+        #expect(
+            ReaderController.unsavedCFI(location: RelocateData(cfi: landing, echo: true), saved: nil)
                 == landing
         )
     }

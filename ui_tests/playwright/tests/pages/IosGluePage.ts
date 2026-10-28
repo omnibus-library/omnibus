@@ -66,7 +66,7 @@ export class IosGluePage extends BasePage {
    * Serves the reader page byte for byte off disk on a routed origin, opens
    * `epub` in it as the host does, and resolves once the glue reports `ready`.
    * `early` calls land in the same tick as `init`, before any locations pass,
-   * or as `ready` lands.
+   * or a task after `ready` lands.
    */
   async openBook(
     epub: Buffer,
@@ -105,8 +105,10 @@ export class IosGluePage extends BasePage {
         };
         w.__omnibusOnStatus = (state) => {
           w.glueStatus = state;
-          if (state === "ready" && early.seekOnReady !== undefined) {
-            w.OmnibusReader.seek(early.seekOnReady);
+          const fraction = early.seekOnReady;
+          if (state === "ready" && fraction !== undefined) {
+            // A later task, as the host's reply is: never inside `unmute`.
+            setTimeout(() => w.OmnibusReader.seek(fraction, 1), 0);
           }
         };
         w.__omnibusOnTurnRequest = (dir) => {
@@ -317,13 +319,12 @@ export class IosGluePage extends BasePage {
     );
   }
 
-  /**
-   * The glue re-states the position as an echo once its locations pass lands;
-   * on an open with no restore to settle, that is the first echo it reports.
-   */
+  /** The glue re-states the position with page numbers once its locations pass lands. */
   async waitForLocationsPass(): Promise<void> {
     await this.page.waitForFunction(() =>
-      (window as unknown as GlueWindow).glueRelocates.some((r) => r.echo),
+      (window as unknown as GlueWindow).glueRelocates.some(
+        (r) => r.totalPages > 0,
+      ),
     );
   }
 

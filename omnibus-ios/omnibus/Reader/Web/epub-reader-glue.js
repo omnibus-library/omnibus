@@ -97,6 +97,13 @@
   // book's first open, where the pass takes seconds. Applied when the pass
   // lands; dropped by any navigation first (the reader's own move outranks it).
   var pendingSeek = null;
+  // The host's id for the parked seek, and for the last one applied or dropped.
+  // Relocates carry the latter, so the host stops re-sending a seek to a
+  // rebooted page once it is no longer parked here.
+  var pendingSeekId = null;
+  var settledSeekId = null;
+  // Whether this book has reported a position yet; see applyPendingSeek.
+  var relocateEmitted = false;
   // False while an initial CFI restore is still settling — mutes emitRelocate
   // so the first-pass landing (a page or two off until fonts/theme reflow) is
   // never persisted as reading progress.
@@ -206,6 +213,9 @@
     endSettleFade();
     locationsReady = false;
     pendingSeek = null;
+    pendingSeekId = null;
+    settledSeekId = null;
+    relocateEmitted = false;
     sectionRanges = null;
     tocFlat = [];
     sel = null;
@@ -367,6 +377,7 @@
       totalChapters: ch ? ch.total : tocFlat.length,
       chapterTitle: ch ? ch.title : "",
       chapterPagesLeft: pagesLeft,
+      settledSeek: settledSeekId,
     };
   }
 
@@ -724,14 +735,23 @@
     }
     data.echo = echo;
     if (data.cfi && typeof window.__omnibusOnRelocate === "function") {
+      relocateEmitted = true;
       window.__omnibusOnRelocate(JSON.stringify(data));
     }
+  }
+
+  // The reader's own move outranks a parked seek, and an applied one is done.
+  function dropPendingSeek() {
+    if (pendingSeek === null) return;
+    pendingSeek = null;
+    settledSeekId = pendingSeekId;
+    pendingSeekId = null;
   }
 
   function next() {
     if (!rendition) return;
     restoreEchoCfi = null;
-    pendingSeek = null;
+    dropPendingSeek();
     cancelResizeCorrection();
     return rendition.next();
   }
@@ -739,7 +759,7 @@
   function prev() {
     if (!rendition) return;
     restoreEchoCfi = null;
-    pendingSeek = null;
+    dropPendingSeek();
     cancelResizeCorrection();
     return rendition.prev();
   }
@@ -2527,7 +2547,7 @@
   // Resolves once the destination has painted.
   function turnInstant(dir) {
     peekInFlight = false;
-    pendingSeek = null;
+    dropPendingSeek();
     var kind = neighbourKind(dir);
     if (kind === "page") {
       var c = pageContainer();
@@ -2575,7 +2595,7 @@
   // Animate one page forward/back when the neighbouring page is rendered
   // in this section; use the atomic section hand-off at a boundary.
   function turnAnimated(dir) {
-    pendingSeek = null;
+    dropPendingSeek();
     var c = pageContainer();
     var d = pageDelta();
     if (!c || !d) {
@@ -2993,7 +3013,7 @@
           animateOffsetTo(c, dragBase, dragPx, 0, 180);
           return;
         }
-        pendingSeek = null;
+        dropPendingSeek();
         var target = dragBase + dir * d;
         if (target < -0.5 || target > maxScroll(c) + 0.5) {
           // Preserve the resisted drag in the outgoing snapshot so it
@@ -3767,7 +3787,7 @@
   function display(target) {
     if (!rendition || !target) return;
     restoreEchoCfi = null;
-    pendingSeek = null;
+    dropPendingSeek();
     var t = String(target);
     var hash = t.indexOf("#");
     // CFIs and bare hrefs pass straight through. Fragment hrefs resolve to
@@ -3807,29 +3827,58 @@
   // cross-format jumps' contract. Positions come from the locations pass, so a
   // seek that arrives first is parked until it lands rather than guessed at.
   // The host sends one only once the page is ready, so a restore has settled.
-  function seek(fraction) {
+  // `id` comes back as `settledSeek` once the seek is applied or dropped.
+  function seek(fraction, id) {
     if (!rendition) return;
     var f = Number(fraction);
     if (!isFinite(f)) return;
     pendingSeek = Math.max(0, Math.min(1, f));
+    pendingSeekId = id === undefined ? null : id;
     applyPendingSeek();
+  }
+
+  // A jump target already on screen is a restatement, not movement (#1972) —
+  // the web glue's guard of the same name.
+  function jumpIsCurrent(cfi) {
+    try {
+      if (!rendition || !rendition.location || !rendition.location.start) return false;
+      var c = new ePub.CFI();
+      var s = rendition.location.start.cfi;
+      if (c.compare(cfi, s) === 0) return true;
+      var e = rendition.location.end ? rendition.location.end.cfi : null;
+      return !!e && c.compare(cfi, s) >= 0 && c.compare(cfi, e) < 0;
+    } catch (err) {
+      return false;
+    }
   }
 
   function applyPendingSeek() {
     if (pendingSeek === null || !book || !book.locations || !locationsReady) return;
     var cfi = book.locations.cfiFromPercentage(pendingSeek);
-    pendingSeek = null;
-    if (!cfi) return;
-    // A landing still in the debounce goes out first, as itself. Folded into the
-    // jump's report it would be the host's first relocate, which it never saves.
+    // The landing goes out first, as itself: folded into the jump's report it
+    // would be the host's first relocate, which it never saves. Its own report
+    // may be in the debounce, or still a frame from firing at all.
     if (relocateTimer && rendition.location) {
       clearTimeout(relocateTimer);
       relocateTimer = null;
       emitRelocate(rendition.location);
+    } else if (!relocateEmitted) {
+      var loc = null;
+      try {
+        loc = rendition.currentLocation();
+      } catch (e) {
+        /* not rendered yet */
+      }
+      if (loc && loc.start) emitRelocate(loc);
     }
+    dropPendingSeek();
+    // No move: leave the restore's echo standing, and the stage still.
+    if (!cfi || jumpIsCurrent(cfi)) return;
     // A jump is movement: its landing must not be spent as the restore's echo,
     // or the host renders it and never saves it.
     restoreEchoPending = false;
+    // A rotation's correction still due would redisplay the pre-jump page.
+    cancelResizeCorrection();
     display(cfi);
   }
 

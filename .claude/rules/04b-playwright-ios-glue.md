@@ -39,7 +39,7 @@ XCUITest cannot see inside the web view, and the iOS unit suite has no DOM.
 `pages/IosGluePage.ts` is that harness: its `openBook` does the routing, the
 recorders and `init`, and the `iosGluePage` fixture injects it. Its `early`
 argument makes host calls in the same tick as `init` — the one way to land
-one before the locations pass — or from the `ready` callback, where the host
+one before the locations pass — or a task after `ready`, where the host
 sends a held follow jump. The book comes
 from `buildChapterEpub` in `data/iosGlue.ts` (further spine items via
 `chapters`, for anything that crosses a chapter; `bookWithSheetFont` for one

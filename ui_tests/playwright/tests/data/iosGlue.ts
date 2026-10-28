@@ -20,13 +20,18 @@ export interface GlueOptions {
   lineHeight?: number;
   spread?: "none" | "auto";
   minSpreadWidth?: number;
+  /** Caches the locations pass under this key, so a reopen skips it. */
+  locationsKey?: string;
 }
 
 /** Host calls `openBook` makes in the same tick as `init`, before any locations pass. */
 export interface EarlyCalls {
   seek?: number;
   display?: string;
-  /** Sent from the `ready` callback itself, as the host sends a held follow jump. */
+  /**
+   * Sent a task after `ready`, as the host's `evaluateJavaScript` lands a held
+   * follow jump, under seek id 1.
+   */
   seekOnReady?: number;
 }
 
@@ -35,6 +40,10 @@ export interface RelocatePayload {
   cfi: string;
   echo: boolean;
   pct: number;
+  /** 0 until the locations pass lands. */
+  totalPages: number;
+  /** The id of the last seek the glue applied or dropped. */
+  settledSeek: number | null;
   chapterTitle: string;
 }
 
@@ -67,7 +76,7 @@ export interface GlueWindow {
   OmnibusReader: {
     init(elementId: string, fileUrl: string, opts: object): void;
     next(): void;
-    seek(fraction: number): void;
+    seek(fraction: number, id?: number): void;
     display(target: string): void;
     setSpread(mode: "none" | "auto"): void;
     beginSelectionAt(x: number, y: number): boolean;
