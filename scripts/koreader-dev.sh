@@ -108,6 +108,8 @@ sweep_runs() {
 # or the backslash escapes are removed, and `~/` is expanded, which `read -e` leaves alone.
 prompt_plugin_path() {
     local path
+    # Completion works from here, and main resolves a relative answer against the same dir.
+    cd "$ORIG_PWD"
     read -e -r -p 'Plugin zip: ' path || true
     case "$path" in
     \'*\' | \"*\") path="${path:1:${#path}-2}" ;;
@@ -176,8 +178,9 @@ main() {
     *) plugin="$ORIG_PWD/$plugin" ;;
     esac
 
+    # Docker first: with the daemon down a sweep can't remove a dead run's container.
+    arch="$(require_docker)"
     if [ "$mode" = local ]; then
-        arch="$(require_docker)"
         dev_port="$(require_dev_server)"
     fi
     sweep_runs
@@ -190,7 +193,6 @@ main() {
     net=(-p "127.0.0.1:$novnc_port:6080")
     if [ "$mode" = plugin ]; then
         python3 scripts/koreader_home.py --home "$RUN_DIR/home" --plugin "$plugin"
-        arch="$(require_docker)"
     else
         # A Linux engine defines no `host.docker.internal` itself, so name the host gateway.
         net+=(--add-host host.docker.internal:host-gateway)

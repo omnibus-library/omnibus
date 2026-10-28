@@ -178,11 +178,15 @@ rm -rf "$SCRATCH_ROOT"
 CALLS="$scratch/calls.log"
 FAKE_PYTHON_STATUS=0
 FAKE_BUILD_STATUS=0
+FAKE_VERSION_STATUS=0
 FAKE_INFO='Arch Linux|["name=seccomp,profile=builtin"]'
 docker() {
     printf 'docker %s\n' "$*" >>"$CALLS"
     case "$1" in
-    version) echo arm64 ;;
+    version)
+        echo arm64
+        return "$FAKE_VERSION_STATUS"
+        ;;
     info) echo "$FAKE_INFO" ;;
     build) return "$FAKE_BUILD_STATUS" ;;
     esac
@@ -249,8 +253,8 @@ check "main --plugin runs a launch to the end without a dev server" "0" "$status
 mounted="$(arg_after 'docker run' -v)"
 check "main --plugin installs the zip into the run dir's home" "${mounted%:/ko-home}|$zip" \
     "$(arg_after python --home)|$(arg_after python --plugin)"
-check "main --plugin validates the zip before it touches docker" "python" \
-    "$(sed -n 1p "$CALLS" | cut -d' ' -f1)"
+check "main --plugin checks docker is reachable before anything else" "docker version --format {{.Server.Arch}}" \
+    "$(sed -n 1p "$CALLS")"
 check "main --plugin publishes ports instead of sharing the host's network" "0" \
     "$(calls_matching '^docker run.* --network host ')"
 check "main --plugin links no dev server" "0" "$(calls_matching 'python.* --api ')"
@@ -266,9 +270,36 @@ check "main --plugin leaves an absolute path alone" "/abs/plugin.zip" "$(arg_aft
 FAKE_PYTHON_STATUS=1
 launch --plugin "$zip"
 check "main --plugin stops when the zip is refused" "1" "$status"
-check "main --plugin makes no docker call but the cleanup when the zip is refused" "0" \
-    "$(grep '^docker' "$CALLS" | grep -vc '^docker rm -f' || true)"
+check "main --plugin builds and runs nothing when the zip is refused" "0" \
+    "$(grep '^docker' "$CALLS" | grep -vc '^docker \(rm -f\|version\)' || true)"
 check "main --plugin removes its run dir when the zip is refused" "0" "$(find "$SCRATCH_ROOT" -mindepth 1 | wc -l | tr -d ' ')"
+FAKE_PYTHON_STATUS=0
+
+dead_run="$SCRATCH_ROOT/run.deadrn"
+mkdir -p "$dead_run"
+(exit 0) &
+dead_pid=$!
+wait "$dead_pid"
+echo "$dead_pid" >"$dead_run/pid"
+FAKE_VERSION_STATUS=1
+launch --plugin "$zip"
+check "main stops when docker is unreachable" "1" "$status"
+check "main sweeps no run while docker is unreachable" "1" "$([ -d "$dead_run" ] && echo 1 || echo 0)"
+FAKE_VERSION_STATUS=0
+launch --plugin "$zip"
+check "main sweeps a dead launch's run once docker is reachable" "0" "$([ -d "$dead_run" ] && echo 1 || echo 0)"
+
+mkdir -p "$scratch/where-it-ran/sub"
+ORIG_PWD="$scratch/where-it-ran/sub"
+touch "$ORIG_PWD/plugin.zip"
+read() {
+    pwd >"$scratch/prompt.pwd"
+    builtin read "$@"
+}
+typed="$(printf 'plugin.zip\n' | prompt_plugin_path)"
+unset -f read
+check "prompt_plugin_path completes names from where the launch was run" "$ORIG_PWD" "$(cat "$scratch/prompt.pwd")"
+check "prompt_plugin_path's relative answer names the file there" "1" "$([ -f "$ORIG_PWD/$typed" ] && echo 1 || echo 0)"
 unset -f docker python3 open_when_ready uname
 
 pin_versions="$(sed -E 's/.*koreader_([^_]*-1)_.*/\1/' ui_tests/koreader/koreader.sha256 | sort -u | wc -l)"
