@@ -37,6 +37,7 @@ import {
 import { Library } from "./Library";
 
 const PREFS_KEY = `omnibus.view_prefs::${LIBRARY_PATH}`;
+const ELSEWHERE_KEY = "omnibus.view_prefs::/elsewhere";
 
 const meta = {
   title: "Pages/Library",
@@ -51,6 +52,7 @@ const meta = {
     );
     for (const key of [
       PREFS_KEY,
+      ELSEWHERE_KEY,
       "omnibus.view_prefs.last_library",
       "omnibus.landing_shelf",
     ]) {
@@ -492,6 +494,43 @@ export const OpensFilteredToTheAuthorAnotherPageSent: Story = {
     await waitFor(() =>
       expect(canvas.getByTestId("state")).toHaveTextContent(/^null$/),
     );
+  },
+};
+
+export const HandoffIntoFreshLibraryOpensGrid: Story = {
+  parameters: { path: "/start" },
+  beforeEach({ msw }) {
+    localStorage.setItem("omnibus.view_prefs.last_library", "/elsewhere");
+    localStorage.setItem(ELSEWHERE_KEY, TABLE_PREFS);
+    msw.use(libraryHandler(BY_TWO_AUTHORS, 10), ...AUTHOR_OPTIONS);
+  },
+  render: () => (
+    <Routes>
+      <Route
+        path="/start"
+        element={
+          <Navigate
+            to="/"
+            replace
+            state={{
+              clauses: [
+                { field: "author", mode: "include", values: ["Ada Lovelace"] },
+              ],
+            }}
+          />
+        }
+      />
+      <Route path="/" element={<Library />} />
+    </Routes>
+  ),
+  play: async ({ canvas }) => {
+    await waitFor(() => expect(tiles(canvas)).toHaveLength(3));
+    await expect(canvas.queryByRole("table")).not.toBeInTheDocument();
+    await waitFor(() => {
+      const saved = localStorage.getItem(PREFS_KEY);
+      expect(saved).toContain('"view_mode":"grid"');
+      expect(saved).toContain('"Ada Lovelace"');
+    });
   },
 };
 

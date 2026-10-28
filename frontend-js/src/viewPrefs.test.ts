@@ -129,15 +129,17 @@ describe("savePlan", () => {
 
 describe("reconcile", () => {
   it.each([
-    [null, "/a", true, "save"],
-    ["/a", "/a", true, "save"],
-    ["/a", "/a", false, "keep"],
-    [null, "/a", false, "adopt"],
-    ["/a", "/b", false, "adopt"],
+    [null, "/a", true, "/a", "save"],
+    ["/a", "/a", true, "/a", "save"],
+    ["/a", "/a", false, "/a", "keep"],
+    [null, "/a", false, "/a", "adopt"],
+    ["/a", "/b", false, "/a", "adopt"],
+    [null, "/a", true, "/b", "rebase"],
+    [null, "/a", true, null, "rebase"],
   ] as const)(
-    "from %s to %s (unsaved %s) is %s",
-    (was, path, unsaved, action) => {
-      expect(reconcile(was, path, unsaved)).toBe(action);
+    "from %s to %s (unsaved %s, seeded from %s) is %s",
+    (was, path, unsaved, seededFrom, action) => {
+      expect(reconcile(was, path, unsaved, seededFrom)).toBe(action);
     },
   );
 });
