@@ -88,9 +88,8 @@ struct WidgetSnapshotCodableTests {
 
     @Test
     func snapshot_entry_identity_separates_the_two_formats_of_one_book() {
-        // Mirrors `ResumePoint.id`: a book someone is both reading and
-        // listening to is two cards, and one identity would let a `ForEach`
-        // shuffle their state between them.
+        // Mirrors `ResumePoint.id`: the formats of one book never share an
+        // identity, so a `ForEach` can't shuffle state between them.
         #expect(entry(format: .epub).id != entry(format: .audio).id)
     }
 
@@ -210,8 +209,8 @@ struct WidgetRailCursorTests {
         #expect(shown.index == 0)
     }
 
-    /// The two formats of a dual-format book are two cards, so a cursor on the
-    /// audiobook must not be answered with the ebook.
+    /// The two formats of a dual-format book have separate identities, so a
+    /// cursor on the audiobook must not be answered with the ebook.
     @Test
     func showing_separates_the_two_formats_of_one_book() throws {
         let snapshot = WidgetSnapshot(
