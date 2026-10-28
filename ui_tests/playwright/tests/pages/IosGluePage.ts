@@ -3,6 +3,7 @@ import type { Locator, Page } from "@playwright/test";
 
 import type {
   Direction,
+  EarlyCalls,
   GlueOptions,
   GlueWindow,
   Point,
@@ -64,8 +65,14 @@ export class IosGluePage extends BasePage {
   /**
    * Serves the reader page byte for byte off disk on a routed origin, opens
    * `epub` in it as the host does, and resolves once the glue reports `ready`.
+   * `early` calls land in the same tick as `init`, before any locations pass,
+   * or a task after `ready` lands.
    */
-  async openBook(epub: Buffer, options: GlueOptions = {}): Promise<void> {
+  async openBook(
+    epub: Buffer,
+    options: GlueOptions = {},
+    early: EarlyCalls = {},
+  ): Promise<void> {
     await this.page.route(`${GLUE_ORIGIN}/**`, (route) => {
       const file = new URL(route.request().url()).pathname.slice(1);
       if (file === "book.epub") {
@@ -83,32 +90,52 @@ export class IosGluePage extends BasePage {
     await this.page.goto(`${GLUE_ORIGIN}/reader.html`);
     // The page's own callbacks post to a WKWebView message handler that is not
     // here; replace them with ones that keep what the glue reports.
-    await this.page.evaluate((options) => {
-      const w = window as unknown as GlueWindow;
-      w.glueSelections = [];
-      w.glueRelocates = [];
-      w.glueTurnRequests = [];
-      w.glueStatus = null;
-      w.__omnibusOnSelection = (json) => {
-        w.glueSelections.push(JSON.parse(json));
-      };
-      w.__omnibusOnRelocate = (json) => {
-        w.glueRelocates.push(JSON.parse(json));
-      };
-      w.__omnibusOnStatus = (state) => {
-        w.glueStatus = state;
-      };
-      w.__omnibusOnTurnRequest = (dir) => {
-        w.glueTurnRequests.push(dir);
-      };
-      w.OmnibusReader.init("stage", "/book.epub", {
-        theme: "light",
-        fontSize: 18,
-        spread: "none",
-        allowScriptedContent: true,
-        ...options,
-      });
-    }, options);
+    await this.page.evaluate(
+      ({ options, early }) => {
+        const w = window as unknown as GlueWindow;
+        w.glueSelections = [];
+        w.glueRelocates = [];
+        w.glueTurnRequests = [];
+        w.glueStatus = null;
+        w.__omnibusOnSelection = (json) => {
+          w.glueSelections.push(JSON.parse(json));
+        };
+        w.__omnibusOnRelocate = (json) => {
+          w.glueRelocates.push(JSON.parse(json));
+        };
+        w.__omnibusOnStatus = (state) => {
+          w.glueStatus = state;
+          const resizeAfter = early.resizeStageAfterMs;
+          if (state === "ready" && resizeAfter !== undefined) {
+            setTimeout(() => {
+              const stage = document.getElementById("stage");
+              if (stage) stage.style.right = "160px";
+            }, resizeAfter);
+          }
+          const fraction = early.seekOnReady;
+          if (state === "ready" && fraction !== undefined) {
+            // A later task, as the host's reply is: never inside `unmute`.
+            setTimeout(
+              () => w.OmnibusReader.seek(fraction, 1),
+              early.seekDelayMs ?? 0,
+            );
+          }
+        };
+        w.__omnibusOnTurnRequest = (dir) => {
+          w.glueTurnRequests.push(dir);
+        };
+        w.OmnibusReader.init("stage", "/book.epub", {
+          theme: "light",
+          fontSize: 18,
+          spread: "none",
+          allowScriptedContent: true,
+          ...options,
+        });
+        if (early.seek !== undefined) w.OmnibusReader.seek(early.seek);
+        if (early.display !== undefined) w.OmnibusReader.display(early.display);
+      },
+      { options, early },
+    );
     await this.page.waitForFunction(
       () => (window as unknown as GlueWindow).glueStatus === "ready",
       undefined,
@@ -299,6 +326,15 @@ export class IosGluePage extends BasePage {
   async waitForFirstRelocate(): Promise<void> {
     await this.page.waitForFunction(
       () => (window as unknown as GlueWindow).glueRelocates.length > 0,
+    );
+  }
+
+  /** The glue re-states the position with page numbers once its locations pass lands. */
+  async waitForLocationsPass(): Promise<void> {
+    await this.page.waitForFunction(() =>
+      (window as unknown as GlueWindow).glueRelocates.some(
+        (r) => r.totalPages > 0,
+      ),
     );
   }
 
