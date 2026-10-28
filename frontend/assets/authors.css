@@ -221,7 +221,9 @@
   margin: 8px 0 0; font-family: var(--mono); font-size: 11px; letter-spacing: .1em;
   text-transform: uppercase; color: var(--ink-2);
 }
-.au-resume {
+/* Scoped under `.au-current` to outrank `.atrium a { color: inherit }`, which a
+   bare `.au-resume` loses to — white ink on the black theme's white button. */
+.au-current .au-resume {
   flex: none; display: inline-flex; align-items: center; height: 42px; padding: 0 20px;
   border-radius: 11px; text-decoration: none;
   font-weight: 600; font-size: 15px; color: var(--accent-ink); background: var(--au-tint);
