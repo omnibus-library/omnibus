@@ -1,6 +1,7 @@
 //! `Scratch` and `sweep` against a real temp root: the filesystem is the boundary.
 
 use std::fs;
+use std::time::{Duration, SystemTime};
 
 use tempfile::TempDir;
 
@@ -85,6 +86,39 @@ fn sweep_keeps_a_dir_that_has_no_lock_file_yet() {
     sweep(root.path());
 
     assert!(starting.is_dir());
+}
+
+/// Backdate `dir`'s mtime, as if it had been sitting there for `age`.
+fn age(dir: &Path, age: Duration) {
+    fs::File::open(dir)
+        .unwrap()
+        .set_modified(SystemTime::now() - age)
+        .unwrap();
+}
+
+#[test]
+fn sweep_removes_a_dir_with_no_lock_file_once_it_is_old() {
+    let root = TempDir::new().unwrap();
+    let abandoned = root.path().join("run.abandoned");
+    fs::create_dir(&abandoned).unwrap();
+    age(&abandoned, Duration::from_secs(5 * 60));
+
+    sweep(root.path());
+
+    assert!(!abandoned.exists());
+}
+
+#[test]
+fn create_leaves_only_a_held_lock_file_for_a_sweep_to_find() {
+    let root = TempDir::new().unwrap();
+    let scratch = Scratch::create(root.path()).unwrap();
+    let dir = scratch.state_path().parent().unwrap().to_owned();
+
+    // The file named `lock` is the one that is held; the one being locked was another name.
+    assert!(dir.join(LOCK).is_file());
+    assert!(!dir.join(format!("{LOCK}.tmp")).exists());
+    let probe = fs::File::open(dir.join(LOCK)).unwrap();
+    assert!(probe.try_lock().is_err());
 }
 
 #[test]

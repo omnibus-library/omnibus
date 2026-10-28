@@ -84,30 +84,33 @@ async fn serve(args: ServeArgs, seed_user: Option<&str>) -> anyhow::Result<()> {
 
 /// Run one device under the terminal UI while the same device serves its control API.
 #[cfg(feature = "tui")]
-async fn tui(args: cli::TuiArgs, seed_user: Option<String>) -> anyhow::Result<()> {
+async fn tui(mut tui_args: cli::TuiArgs, seed_user: Option<String>) -> anyhow::Result<()> {
     use omnibus_mock_kobo::cli::SyncUrl;
     use omnibus_mock_kobo::scratch::{self, Scratch};
+    use omnibus_mock_kobo::state;
     use omnibus_mock_kobo::tui::jobs::Wiring;
     use omnibus_mock_kobo::tui::{self, prompt, Tui};
 
-    let cli::TuiArgs {
-        serve: mut args,
-        state_given,
-        local,
-    } = args;
+    let state_given = tui_args.state_given;
     let root = scratch::root();
     scratch::sweep(&root);
     // Named from the state path as parsed, so a scratch path doesn't rename the server device.
-    let name = device_name(&args.state);
+    let name = device_name(&tui_args.serve.state);
     // Held to the end of the function, so every exit path removes the scratch dir.
     let scratch = (!state_given)
         .then(|| Scratch::create(&root))
         .transpose()
         .context("cannot create a scratch state directory")?;
     if let Some(scratch) = &scratch {
-        args.state = scratch.state_path();
+        tui_args.serve.state = scratch.state_path();
     }
-    if !local && args.token.is_none() {
+    let saved_token = state::load(&tui_args.serve.state)
+        .await
+        .context("cannot read the state file")?
+        .is_some();
+    let prompt_needed = tui_args.needs_prompt(saved_token);
+    let mut args = tui_args.serve;
+    if prompt_needed {
         // Nothing has been sent yet, so quitting here leaves no trace on any server.
         let Some(SyncUrl { url, token }) = prompt::run().context("the sync URL prompt failed")?
         else {
@@ -136,7 +139,8 @@ async fn tui(args: cli::TuiArgs, seed_user: Option<String>) -> anyhow::Result<()
         port,
         state: args.state,
         wiring,
-        notice,
+        // A scratch state is always new, so the notice would repeat on every launch.
+        notice: notice.filter(|_| state_given),
     };
     let runtime = tokio::runtime::Handle::current();
     // Terminal input blocks, so it gets its own thread rather than a runtime worker.

@@ -60,7 +60,8 @@ IN THE HIGHLIGHTS LIST:
     Esc back to the page
 
 TUI WITHOUT --local:
-    Unless a token is given, it asks for the device's sync URL before anything is sent.
+    Unless a token is given (--token or its env var) or the --state file holds one,
+    it asks for the device's sync URL before anything is sent. --url needs --token.
 
 TUI --local:
     The device follows this worktree's dev server (.claude/runtime/port, else
@@ -107,6 +108,14 @@ pub struct TuiArgs {
     pub local: bool,
 }
 
+impl TuiArgs {
+    /// Whether the TUI must ask for a sync URL: no token is given, none is saved
+    /// in the named state file, and `--local` won't wire one.
+    pub fn needs_prompt(&self, saved_token: bool) -> bool {
+        !self.local && self.serve.token.is_none() && !saved_token
+    }
+}
+
 /// Why the command line can't be used.
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]
 pub enum CliError {
@@ -143,6 +152,7 @@ fn parse_tui(flags: &[String], env: impl Fn(&str) -> Option<String>) -> Result<T
     let mut sync_url = None;
     let mut local = false;
     let mut target_flag_given = false;
+    let mut url_flag_given = false;
     let mut flags = flags.iter();
     while let Some(flag) = flags.next() {
         match flag.as_str() {
@@ -153,6 +163,7 @@ fn parse_tui(flags: &[String], env: impl Fn(&str) -> Option<String>) -> Result<T
             },
             _ => {
                 target_flag_given |= matches!(flag.as_str(), "--url" | "--token");
+                url_flag_given |= flag == "--url";
                 shared.push(flag.clone());
                 shared.extend(flags.next().cloned());
             }
@@ -164,6 +175,11 @@ fn parse_tui(flags: &[String], env: impl Fn(&str) -> Option<String>) -> Result<T
         ));
     }
     let mut serve = parse_serve(&shared, &env)?;
+    if url_flag_given && serve.token.is_none() && !local {
+        return Err(CliError::Usage(
+            "--url needs --token or --local: otherwise the sync URL prompt replaces it".into(),
+        ));
+    }
     if let Some(sync_url) = sync_url {
         let SyncUrl { url, token } = valid_sync_url(sync_url)?;
         serve.url = Some(url);

@@ -6,12 +6,11 @@ use std::io;
 
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::layout::{Constraint, Layout};
-use ratatui::style::{Color, Style};
 use ratatui::text::Line;
 use ratatui::{DefaultTerminal, Frame};
 
 use crate::cli::{self, SyncUrl};
-use crate::tui::app::{is_ctrl_c, typed_char};
+use crate::tui::app::{is_ctrl_c, typed_char, Status};
 use crate::tui::render;
 
 /// How a key ended the prompt.
@@ -74,10 +73,8 @@ impl Prompt {
         );
         render::draw_prompt(frame, input, "Sync URL", &self.buffer);
         if let Some(message) = &self.error {
-            frame.render_widget(
-                Line::styled(message.as_str(), Style::new().fg(Color::Red)),
-                error,
-            );
+            let status = Status::Error(message.clone());
+            frame.render_widget(render::status_line(&status), error);
         }
         frame.render_widget(Line::raw("Enter connect · Esc quit"), help);
     }

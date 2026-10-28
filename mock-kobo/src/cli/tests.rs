@@ -506,3 +506,41 @@ fn parse_returns_usage_error_when_serve_is_given_a_tui_only_flag() {
         Err(CliError::Usage("unknown argument: --local".into()))
     );
 }
+
+#[test]
+fn needs_prompt_is_true_when_nothing_names_where_to_sync() {
+    assert!(tui(&["tui"]).needs_prompt(false));
+}
+
+#[test]
+fn needs_prompt_is_false_when_a_token_is_given() {
+    assert!(!tui(&["tui", "--token", "abc"]).needs_prompt(false));
+}
+
+#[test]
+fn needs_prompt_is_false_when_the_named_state_file_holds_a_token() {
+    assert!(!tui(&["tui", "--state", "x.json"]).needs_prompt(true));
+}
+
+#[test]
+fn needs_prompt_is_false_for_local() {
+    assert!(!tui(&["tui", "--local"]).needs_prompt(false));
+}
+
+#[test]
+fn parse_returns_usage_error_when_tui_url_has_neither_token_nor_local() {
+    assert!(matches!(
+        parse(args(&["tui", "--url", "http://h:9"]), no_env),
+        Err(CliError::Usage(_))
+    ));
+}
+
+#[test]
+fn parse_accepts_tui_url_with_a_token_or_with_local() {
+    assert!(parse(
+        args(&["tui", "--url", "http://h:9", "--token", "abc"]),
+        no_env
+    )
+    .is_ok());
+    assert!(parse(args(&["tui", "--url", "http://h:9", "--local"]), no_env).is_ok());
+}

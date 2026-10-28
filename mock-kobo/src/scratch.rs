@@ -1,18 +1,25 @@
 //! The scratch state directory `mock-kobo tui` runs on when no state file is
 //! named, so every launch starts as a new device. Each run holds an exclusive
 //! lock on `<dir>/lock` and removes the dir on drop; [`sweep`] clears the dirs
-//! of runs that were killed, which can't clean up after themselves.
+//! of runs that were killed, which can't clean up after themselves. The root sits
+//! inside the worktree's gitignored runtime dir, not `$TMPDIR`: a dev shell gives
+//! every launch a new `$TMPDIR`, so a sweep there would never meet a dead run.
 
 use std::fs::{self, File};
 use std::io;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+use crate::cli::RUNTIME_DIR;
 
 const LOCK: &str = "lock";
+/// How long a dir with no lock file may sit before it is taken for abandoned.
+const LOCKLESS_GRACE: Duration = Duration::from_secs(60);
 const STATE_FILE: &str = "mock-kobo.json";
 
-/// The directory holding every run's scratch dir.
+/// The directory holding every run's scratch dir, relative to the repo root as `just` runs from.
 pub fn root() -> PathBuf {
-    std::env::temp_dir().join("omnibus-mock-kobo")
+    Path::new(RUNTIME_DIR).join("mock-kobo/runs")
 }
 
 /// One run's scratch dir, removed when this is dropped.
@@ -26,8 +33,11 @@ impl Scratch {
     pub fn create(root: &Path) -> io::Result<Scratch> {
         fs::create_dir_all(root)?;
         let dir = tempfile::Builder::new().prefix("run.").tempdir_in(root)?;
-        let lock = File::create(dir.path().join(LOCK))?;
+        // Locked before it is named `lock`, so a sweep never meets the file unlocked.
+        let pending = dir.path().join("lock.tmp");
+        let lock = File::create(&pending)?;
         lock.try_lock().map_err(io::Error::from)?;
+        fs::rename(&pending, dir.path().join(LOCK))?;
         Ok(Scratch { dir, _lock: lock })
     }
 
@@ -45,14 +55,25 @@ pub fn sweep(root: &Path) {
     };
     for entry in entries.flatten() {
         let dir = entry.path();
-        // Only `Ok` proves the run is dead; a dir with no lock yet is a run still starting.
-        let Ok(lock) = File::open(dir.join(LOCK)) else {
-            continue;
+        // Only `Ok` proves the run is dead; a young dir with no lock is a run still starting.
+        let dead = match File::open(dir.join(LOCK)) {
+            Ok(lock) => lock.try_lock().is_ok(),
+            Err(_) => is_old(&dir),
         };
-        if lock.try_lock().is_ok() {
+        if dead {
             let _ = fs::remove_dir_all(&dir);
         }
     }
+}
+
+/// Whether `dir` was last changed longer ago than a launch takes to lock its dir.
+/// A run that has dropped can leave one behind: a download in flight recreates its dir.
+fn is_old(dir: &Path) -> bool {
+    fs::metadata(dir)
+        .and_then(|meta| meta.modified())
+        .ok()
+        .and_then(|modified| modified.elapsed().ok())
+        .is_some_and(|elapsed| elapsed > LOCKLESS_GRACE)
 }
 
 #[cfg(test)]
