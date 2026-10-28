@@ -56,11 +56,13 @@ env-clear:
 dev-bounce:
     scripts/with-dev-env.sh web scripts/dev-server-bounce.sh
 
-# Run a mock Kobo e-reader in a terminal UI against this worktree's dev server
-# (run `just dev-up` first): s syncs, r resets, u/t edit the URL/token, w wires a
-# token, q quits. It auto-wires the "Mock Kobo" device with $OMNIBUS_DEV_SEED_USER
-# and serves the control API on a free loopback port its header shows. Every launch
-# starts as a new device on a temp state removed on exit; `--state PATH` keeps one.
+# Run a mock Kobo e-reader in a terminal UI against any Omnibus instance: it asks
+# for the device's sync URL (Settings > Devices), or take `--sync-url URL`.
+# `--local` follows this worktree's dev server instead (run `just dev-up` first) and
+# auto-wires the "Mock Kobo" device with $OMNIBUS_DEV_SEED_USER. s syncs, r resets,
+# u/t edit the URL/token, w wires a token, q quits. The control API runs on a free
+# loopback port the header shows. Every launch starts as a new device on a temp
+# state removed on exit; `--state PATH` keeps one (docs/kobo.md).
 [positional-arguments]
 kobo *args:
     scripts/with-dev-env.sh default cargo run -q -p omnibus-mock-kobo -- tui "$@"

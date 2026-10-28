@@ -454,7 +454,7 @@ impl App {
 }
 
 /// Raw mode swallows SIGINT, so Ctrl-C arrives as a key.
-fn is_ctrl_c(key: KeyEvent) -> bool {
+pub(crate) fn is_ctrl_c(key: KeyEvent) -> bool {
     key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL)
 }
 

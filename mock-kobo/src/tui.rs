@@ -23,6 +23,7 @@ use self::render::Screen;
 
 pub mod app;
 pub mod jobs;
+pub mod prompt;
 pub mod reader;
 pub mod render;
 
@@ -46,6 +47,11 @@ type Finished = Result<Status, JoinError>;
 /// While a job runs the first quit waits for it and a second quits at once.
 /// Jobs run on `runtime`, so drawing never waits on the network.
 pub fn run(tui: Tui, runtime: Handle) -> io::Result<()> {
+    with_terminal(|terminal| event_loop(terminal, tui, &runtime))
+}
+
+/// Run `body` on the taken-over terminal, restoring it afterwards and on panic.
+fn with_terminal<T>(body: impl FnOnce(&mut DefaultTerminal) -> io::Result<T>) -> io::Result<T> {
     let mut terminal = match ratatui::try_init() {
         Ok(terminal) => terminal,
         Err(error) => {
@@ -53,7 +59,7 @@ pub fn run(tui: Tui, runtime: Handle) -> io::Result<()> {
             return Err(error);
         }
     };
-    let ended = event_loop(&mut terminal, tui, &runtime);
+    let ended = body(&mut terminal);
     ratatui::restore();
     ended
 }

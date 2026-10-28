@@ -365,3 +365,144 @@ fn parse_rejects_token_outside_url_safe_base64() {
     let from_env = parse(args(&["serve"]), env_of(&[(TOKEN_ENV, "a/b")]));
     assert!(is_invalid(from_env, "device token"), "as an env var");
 }
+
+fn sync(url: &str, token: &str) -> SyncUrl {
+    SyncUrl {
+        url: url.to_owned(),
+        token: token.to_owned(),
+    }
+}
+
+fn is_bad_sync_url(result: Result<SyncUrl, CliError>) -> bool {
+    result
+        == Err(CliError::Invalid {
+            name: "sync URL",
+            reason: "expected http(s)://<host>/kobo/<token>".into(),
+        })
+}
+
+#[test]
+fn valid_sync_url_splits_an_https_url_into_origin_and_token() {
+    assert_eq!(
+        valid_sync_url("https://h.example/kobo/AbC-_1".into()),
+        Ok(sync("https://h.example", "AbC-_1"))
+    );
+}
+
+#[test]
+fn valid_sync_url_accepts_a_trailing_slash() {
+    assert_eq!(
+        valid_sync_url("https://h.example/kobo/AbC-_1/".into()),
+        Ok(sync("https://h.example", "AbC-_1"))
+    );
+}
+
+#[test]
+fn valid_sync_url_keeps_the_port_of_a_loopback_http_url() {
+    assert_eq!(
+        valid_sync_url("http://127.0.0.1:3000/kobo/t".into()),
+        Ok(sync("http://127.0.0.1:3000", "t"))
+    );
+}
+
+#[test]
+fn valid_sync_url_refuses_what_is_not_a_kobo_sync_url() {
+    for url in [
+        "not a url",
+        "h.example/kobo/t",
+        "ftp://h.example/kobo/t",
+        "https://h.example",
+        "https://h.example/",
+        "https://h.example/kobo",
+        "https://h.example/kobo/",
+        "https://h.example/kobo//",
+        "https://h.example/kobo/t/v1/library",
+        "https://h.example/omnibus/kobo/t",
+        "https://h.example/other/t",
+        "https://h.example/kobo/t?x=1",
+        "https://h.example/kobo/t#top",
+        "https://user:pw@h.example/kobo/t",
+        "https://user@h.example/kobo/t",
+    ] {
+        assert!(is_bad_sync_url(valid_sync_url(url.into())), "{url:?}");
+    }
+}
+
+#[test]
+fn valid_sync_url_refuses_a_token_outside_url_safe_base64() {
+    for url in ["https://h.example/kobo/a.b", "https://h.example/kobo/a%20b"] {
+        assert!(
+            matches!(
+                valid_sync_url(url.into()),
+                Err(CliError::Invalid {
+                    name: "device token",
+                    ..
+                })
+            ),
+            "{url:?}"
+        );
+    }
+}
+
+#[test]
+fn parse_reads_the_url_and_token_of_tui_sync_url() {
+    let tui = tui(&["tui", "--sync-url", "https://h.example/kobo/tok"]);
+
+    assert_eq!(tui.serve.url, Some("https://h.example".to_owned()));
+    assert_eq!(tui.serve.token, Some("tok".to_owned()));
+    assert!(!tui.local);
+}
+
+#[test]
+fn parse_returns_usage_error_when_sync_url_is_combined_with_another_target() {
+    for extra in [
+        &["--url", "http://h:9"][..],
+        &["--token", "abc"],
+        &["--local"],
+    ] {
+        let mut list = vec!["tui", "--sync-url", "https://h.example/kobo/tok"];
+        list.extend_from_slice(extra);
+        assert!(
+            matches!(parse(args(&list), no_env), Err(CliError::Usage(_))),
+            "{extra:?}"
+        );
+    }
+}
+
+#[test]
+fn parse_rejects_a_malformed_tui_sync_url() {
+    let result = parse(
+        args(&["tui", "--sync-url", "https://h.example/kobo"]),
+        no_env,
+    );
+
+    assert!(is_invalid(result, "sync URL"));
+}
+
+#[test]
+fn parse_sets_local_for_tui_local() {
+    let tui = tui(&["tui", "--local"]);
+
+    assert!(tui.local);
+    assert_eq!(tui.serve.token, None);
+}
+
+#[test]
+fn parse_returns_usage_error_when_tui_sync_url_lacks_value() {
+    assert_eq!(
+        parse(args(&["tui", "--sync-url"]), no_env),
+        Err(CliError::Usage("--sync-url expects a value".into()))
+    );
+}
+
+#[test]
+fn parse_returns_usage_error_when_serve_is_given_a_tui_only_flag() {
+    assert_eq!(
+        parse(args(&["serve", "--sync-url", "https://h/kobo/t"]), no_env),
+        Err(CliError::Usage("unknown argument: --sync-url".into()))
+    );
+    assert_eq!(
+        parse(args(&["serve", "--local"]), no_env),
+        Err(CliError::Usage("unknown argument: --local".into()))
+    );
+}

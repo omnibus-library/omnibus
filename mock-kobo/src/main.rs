@@ -85,14 +85,15 @@ async fn serve(args: ServeArgs, seed_user: Option<&str>) -> anyhow::Result<()> {
 /// Run one device under the terminal UI while the same device serves its control API.
 #[cfg(feature = "tui")]
 async fn tui(args: cli::TuiArgs, seed_user: Option<String>) -> anyhow::Result<()> {
+    use omnibus_mock_kobo::cli::SyncUrl;
     use omnibus_mock_kobo::scratch::{self, Scratch};
     use omnibus_mock_kobo::tui::jobs::Wiring;
-    use omnibus_mock_kobo::tui::{self, Tui};
+    use omnibus_mock_kobo::tui::{self, prompt, Tui};
 
     let cli::TuiArgs {
         serve: mut args,
         state_given,
-        ..
+        local,
     } = args;
     let root = scratch::root();
     scratch::sweep(&root);
@@ -105,6 +106,15 @@ async fn tui(args: cli::TuiArgs, seed_user: Option<String>) -> anyhow::Result<()
         .context("cannot create a scratch state directory")?;
     if let Some(scratch) = &scratch {
         args.state = scratch.state_path();
+    }
+    if !local && args.token.is_none() {
+        // Nothing has been sent yet, so quitting here leaves no trace on any server.
+        let Some(SyncUrl { url, token }) = prompt::run().context("the sync URL prompt failed")?
+        else {
+            return Ok(());
+        };
+        args.url = Some(url);
+        args.token = Some(token);
     }
     let BroughtUp {
         control,
