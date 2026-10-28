@@ -212,24 +212,20 @@ export const WithFollowOffADismissedOfferStaysAwayForThatPosition: Story = {
   },
 };
 
-export const WithFollowOffAFailedLoadHoldsTheOfferUntilARetryOpens: Story = {
+export const WithFollowOffAFailedLoadHidesTheOfferUntilARetryOpens: Story = {
   beforeEach() {
     followOff();
-    let tries = 0;
-    return r.install({
-      onInit() {
-        tries += 1;
-        window.__omnibusOnStatus?.(tries === 1 ? "error" : "ready");
-      },
-    });
+    return relocatingTo({});
   },
   play: async ({ canvas, userEvent }) => {
+    await offer(canvas);
+
+    // The open fails after the offer landed: it must leave with the page, not sit in the tab order over the overlay.
+    window.__omnibusOnStatus?.("error");
     await expect(await canvas.findByRole("alert")).toHaveTextContent(
       "This book couldn’t be loaded.",
     );
-    await waitFor(() => expect(asked()).toBe(1));
-    // Not offered over the failed-load overlay, where it would sit in the tab order.
-    await expect(canvas.queryByTestId("sync-offer")).toBeNull();
+    await waitFor(() => expect(canvas.queryByTestId("sync-offer")).toBeNull());
 
     await userEvent.click(canvas.getByRole("button", { name: "Retry" }));
 
