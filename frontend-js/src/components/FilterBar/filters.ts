@@ -39,7 +39,7 @@ export const fieldLabel = (field: FilterField) => LABELS[field];
 export const fieldPlural = (field: FilterField) => PLURALS[field];
 
 /** The shelves query as a label sees it: no data and no error is still pending. */
-type ShelfLookup = { data?: Shelf[]; isError: boolean };
+export type ShelfLookup = { data?: Shelf[]; isError: boolean };
 
 /** One selectable value: what the filter stores, what the reader sees, and the book count when known. */
 export type FilterOption = {
