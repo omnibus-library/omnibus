@@ -43,6 +43,18 @@ export const InASection: Story = {
   },
 };
 
+export const OnAShelf: Story = {
+  parameters: { path: "/shelves/9" },
+  play: async ({ canvas }) => {
+    const shelves = canvas.getByRole("link", { name: "Shelves" });
+    await expect(shelves).toHaveClass("on");
+    await expect(shelves).toHaveAttribute("href", "/shelves");
+    await expect(canvas.getByRole("link", { name: "Library" })).not.toHaveClass(
+      "on",
+    );
+  },
+};
+
 /** The bar's height must be the one `--topbar-h` says, since full-screen overlays begin beneath it. */
 const heightMatchesToken = async (canvas: {
   getByRole: (r: string, o: { name: string }) => HTMLElement;

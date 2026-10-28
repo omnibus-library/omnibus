@@ -8,6 +8,7 @@ import "./TopNav.css";
 
 const SECTIONS = [
   { to: "/", label: "Library", end: true },
+  { to: "/shelves", label: "Shelves", end: false },
   { to: "/authors", label: "Authors", end: false },
   { to: "/series", label: "Series", end: false },
   { to: "/stats", label: "Stats", end: false },
