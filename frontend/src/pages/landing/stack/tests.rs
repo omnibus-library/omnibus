@@ -146,9 +146,8 @@ fn lead_accent_style_follows_the_front_book_and_is_empty_without_one() {
 
 #[test]
 fn stack_entries_keys_the_two_formats_of_one_book_apart() {
-    // Progress is stored per format, so a dual-format book open in both is two
-    // points sharing a uuid. Keying the fan on the uuid alone gave them one
-    // key, which mis-diffs the whole page (#2633).
+    // Progress is stored per format, so two points can share a uuid. The key
+    // keeps formats apart so siblings can never collide (#2633).
     let points = vec![
         point("dual", ProgressFormat::Epub, Some(30)),
         point("dual", ProgressFormat::Audio, Some(40)),
