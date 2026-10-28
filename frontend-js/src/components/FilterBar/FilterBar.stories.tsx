@@ -252,6 +252,9 @@ export const SaveAsShelfDisabled: Story = {
         "From your filters: Shelf · Winter reads left out, a shelf can't be a condition.",
       ),
     );
+    await expect(pill).toHaveAccessibleDescription(
+      "From your filters: Shelf · Winter reads left out, a shelf can't be a condition.",
+    );
     // It stays reachable by keyboard, so the reason can be read.
     pill.focus();
     await expect(pill).toHaveFocus();

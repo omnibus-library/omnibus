@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { type FilterClause, type FilterField, shelvesQuery } from "../../api";
 import { useCurrentUser } from "../../session";
 import { ChevronDownGlyph, XGlyph } from "../Glyphs/Glyphs";
@@ -111,6 +111,7 @@ export function FilterBar(props: FilterBarProps) {
       ? saveAsShelf(props.clauses, shelves, viewerId)
       : null;
   const nothingToSave = seed?.drafts.length === 0;
+  const noteId = useId();
   return (
     <>
       {/* biome-ignore lint/a11y/useSemanticElements: a fieldset brings a default border and min-width that the fb rules never reset */}
@@ -129,17 +130,25 @@ export function FilterBar(props: FilterBarProps) {
         )}
         {seed && (
           // aria-disabled, not disabled: a disabled button drops out of the tab order, taking its reason with it.
-          <button
-            type="button"
-            className="fb-save"
-            aria-disabled={nothingToSave}
-            title={nothingToSave ? seed.note : undefined}
-            onClick={() => {
-              if (!nothingToSave) setSaving(seed);
-            }}
-          >
-            Save as shelf
-          </button>
+          <>
+            <button
+              type="button"
+              className="fb-save"
+              aria-disabled={nothingToSave}
+              aria-describedby={nothingToSave ? noteId : undefined}
+              title={nothingToSave ? seed.note : undefined}
+              onClick={() => {
+                if (!nothingToSave) setSaving(seed);
+              }}
+            >
+              Save as shelf
+            </button>
+            {nothingToSave && (
+              <span id={noteId} className="sr-only">
+                {seed.note}
+              </span>
+            )}
+          </>
         )}
       </div>
       {saving && (
