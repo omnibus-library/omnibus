@@ -40,7 +40,8 @@ XCUITest cannot see inside the web view, and the iOS unit suite has no DOM.
 recorders and `init`, and the `iosGluePage` fixture injects it. Its `early`
 argument makes host calls in the same tick as `init` — the one way to land
 one before the locations pass — or a task after `ready`, where the host
-sends a held follow jump. The book comes
+sends a held follow jump (with a reflow of the stage, as a rotation, timed
+around it). The book comes
 from `buildChapterEpub` in `data/iosGlue.ts` (further spine items via
 `chapters`, for anything that crosses a chapter; `bookWithSheetFont` for one
 whose sheet embeds a font, or whose manifest lists a file the zip lacks), so a

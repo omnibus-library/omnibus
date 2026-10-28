@@ -111,6 +111,38 @@ test.describe("ios reader seek before the locations pass", () => {
     });
   });
 
+  // A reflow between the landing and its debounced report mutes relocates
+  // until its correction lands; the jump cancels it, and must not lose the landing.
+  test("report the landing before a jump sent mid-rotation", async ({
+    iosGluePage,
+  }) => {
+    const epub = await buildChapterEpub(PROSE);
+
+    await test.step("open the book once, so its locations are cached", async () => {
+      await iosGluePage.openBook(epub, { locationsKey: "follow-rotate" });
+      await iosGluePage.waitForLocationsPass();
+    });
+
+    await test.step("reopen it and seek while a reflow of the stage settles", async () => {
+      await iosGluePage.openBook(
+        epub,
+        { locationsKey: "follow-rotate" },
+        { seekOnReady: 0.8, seekDelayMs: 350, resizeStageAfterMs: 60 },
+      );
+    });
+
+    await test.step("check the landing was reported before the jump", async () => {
+      await expect
+        .poll(async () => jumpIndex(await iosGluePage.relocates()))
+        .toBeGreaterThan(0);
+      const [landing] = await iosGluePage.relocates();
+      expect(
+        landing?.pct ?? 100,
+        "the landing is the book's start",
+      ).toBeLessThan(50);
+    });
+  });
+
   // A stored position written under another device's pagination restores a
   // page off, and the follow fraction can resolve to the page now on screen.
   test("leave the restored page standing when the seek resolves to it", async ({

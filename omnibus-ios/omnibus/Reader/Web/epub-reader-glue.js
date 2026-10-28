@@ -3838,14 +3838,18 @@
   }
 
   // A jump target already on screen is a restatement, not movement (#1972) —
-  // the web glue's guard of the same name.
+  // the web glue's guard of the same name. `rendition.location` trails a turn
+  // by a frame, so the drawn page is read first.
   function jumpIsCurrent(cfi) {
     try {
-      if (!rendition || !rendition.location || !rendition.location.start) return false;
+      if (!rendition) return false;
+      var loc = rendition.currentLocation();
+      if (!loc || !loc.start) loc = rendition.location;
+      if (!loc || !loc.start) return false;
       var c = new ePub.CFI();
-      var s = rendition.location.start.cfi;
+      var s = loc.start.cfi;
       if (c.compare(cfi, s) === 0) return true;
-      var e = rendition.location.end ? rendition.location.end.cfi : null;
+      var e = loc.end ? loc.end.cfi : null;
       return !!e && c.compare(cfi, s) >= 0 && c.compare(cfi, e) < 0;
     } catch (err) {
       return false;
@@ -3855,6 +3859,10 @@
   function applyPendingSeek() {
     if (pendingSeek === null || !book || !book.locations || !locationsReady) return;
     var cfi = book.locations.cfiFromPercentage(pendingSeek);
+    var moves = !!cfi && !jumpIsCurrent(cfi);
+    // Before the landing goes out: a rotation's settle would mute it, and its
+    // correction would redisplay the pre-jump page.
+    if (moves) cancelResizeCorrection();
     // The landing goes out first, as itself: folded into the jump's report it
     // would be the host's first relocate, which it never saves. Its own report
     // may be in the debounce, or still a frame from firing at all.
@@ -3873,12 +3881,10 @@
     }
     dropPendingSeek();
     // No move: leave the restore's echo standing, and the stage still.
-    if (!cfi || jumpIsCurrent(cfi)) return;
+    if (!moves) return;
     // A jump is movement: its landing must not be spent as the restore's echo,
     // or the host renders it and never saves it.
     restoreEchoPending = false;
-    // A rotation's correction still due would redisplay the pre-jump page.
-    cancelResizeCorrection();
     display(cfi);
   }
 

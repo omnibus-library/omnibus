@@ -33,6 +33,10 @@ export interface EarlyCalls {
    * follow jump, under seek id 1.
    */
   seekOnReady?: number;
+  /** How long after `ready` `seekOnReady` lands; 0 when absent. */
+  seekDelayMs?: number;
+  /** How long after `ready` the stage narrows, as a rotation reflows it. */
+  resizeStageAfterMs?: number;
 }
 
 /** What `emitRelocate` posts to `__omnibusOnRelocate`. */

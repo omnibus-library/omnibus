@@ -64,6 +64,9 @@ struct ReaderView: View {
     /// The CFI the server and outbox already hold: the one the reader opened
     /// on, then each one saved since. Re-saving it is not a move (#1972).
     @State private var savedCFI: String?
+    /// Whether either side held a position for this book; a close saves an
+    /// unmoved landing only once the server has said `nowhere`.
+    @State private var stored: PositionSync.Stored = .unsettled
     /// A further position another device reached, waiting on the reader to
     /// accept it. Never applied on its own.
     @State private var syncOffer: String?
@@ -820,6 +823,7 @@ struct ReaderView: View {
                 // Beat the deadline and it is already the opening position, so
                 // this is a no-op; landed after it and it becomes an offer.
                 let settled = await remote.value
+                stored = PositionSync.Stored(local: openedProgress, remote: settled)
                 guard let cfi = ReaderController.openingCFI(for: settled), cfi != startCFI
                 else { return }
                 withAnimation(Motion.settle) { syncOffer = cfi }
@@ -878,7 +882,10 @@ struct ReaderView: View {
         // A close or backgrounding that finds nothing new writes nothing: the
         // drain that follows it still pushes a page turn the throttle queued.
         guard !controller.holdsStoredPosition, let location = controller.location,
-              let cfi = ReaderController.unsavedCFI(location: location, saved: savedCFI)
+              let cfi = ReaderController.unsavedCFI(
+                  location: location, saved: savedCFI, stored: stored,
+                  seekPending: controller.pendingSeek != nil
+              )
         else { return }
         savedCFI = cfi
         // The percent rides the op, so a position saved offline shows one in

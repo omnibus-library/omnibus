@@ -111,34 +111,60 @@ struct ReaderFollowSeekTests {
     @Test("an echo or the spot already saved is nothing to save")
     func unmovedIsNotSaved() {
         // The restore settling on the stored page, under any CFI spelling.
-        #expect(
-            ReaderController.unsavedCFI(location: RelocateData(cfi: turnedTo, echo: true), saved: landing) == nil
-        )
-        #expect(
-            ReaderController.unsavedCFI(location: RelocateData(cfi: landing, echo: false), saved: landing) == nil
-        )
-        #expect(ReaderController.unsavedCFI(location: nil, saved: landing) == nil)
+        #expect(unsaved(RelocateData(cfi: turnedTo, echo: true), saved: landing) == nil)
+        #expect(unsaved(RelocateData(cfi: landing, echo: false), saved: landing) == nil)
+        #expect(unsaved(nil, saved: landing) == nil)
     }
 
     @Test("a move off the saved spot is saved")
     func moveIsSaved() {
-        #expect(
-            ReaderController.unsavedCFI(location: RelocateData(cfi: turnedTo, echo: false), saved: landing)
-                == turnedTo
-        )
+        #expect(unsaved(RelocateData(cfi: turnedTo, echo: false), saved: landing) == turnedTo)
+        // A held seek never blocks the reader's own move.
+        #expect(unsaved(RelocateData(cfi: turnedTo, echo: false), saved: nil, seekPending: true) == turnedTo)
     }
 
     /// A never-read book: the host skips its first relocate, and the locations
     /// pass re-states that landing as an echo, which is all a close then finds.
     @Test("a first open's landing is saved, even as an echo")
     func firstLandingIsSaved() {
-        #expect(
-            ReaderController.unsavedCFI(location: RelocateData(cfi: landing, echo: false), saved: nil)
-                == landing
-        )
-        #expect(
-            ReaderController.unsavedCFI(location: RelocateData(cfi: landing, echo: true), saved: nil)
-                == landing
-        )
+        #expect(unsaved(RelocateData(cfi: landing, echo: false), saved: nil) == landing)
+        #expect(unsaved(RelocateData(cfi: landing, echo: true), saved: nil) == landing)
     }
+
+    /// The server's read missed the open's deadline, so the book opened at the
+    /// start over a position another device may hold.
+    @Test("an unmoved landing is not saved while the server's read is out")
+    func landingWaitsOnRemote() {
+        #expect(unsaved(RelocateData(cfi: landing, echo: true), saved: nil, stored: .unsettled) == nil)
+    }
+
+    /// The late answer became an offer, which never moves `savedCFI`.
+    @Test("an unmoved landing is not saved over a position the server holds")
+    func landingYieldsToRemote() {
+        #expect(unsaved(RelocateData(cfi: landing, echo: true), saved: nil, stored: .somewhere) == nil)
+    }
+
+    /// Closed between the locations pass and the follow jump's relocate.
+    @Test("an unmoved landing is not saved while a follow seek is held")
+    func landingWaitsOnSeek() {
+        #expect(unsaved(RelocateData(cfi: landing, echo: true), saved: nil, seekPending: true) == nil)
+    }
+
+    @Test("the open finds a position stored nowhere only when neither side holds one")
+    func storedSettlesFromBothSides() {
+        let row = ProgressRecord(bookUUID: "book-uuid", format: .epub, epubCFI: landing, updatedAt: 100)
+        let empty = ProgressRecord(bookUUID: "book-uuid", format: .epub, updatedAt: 100)
+        #expect(PositionSync.Stored(local: nil, remote: nil) == .nowhere)
+        #expect(PositionSync.Stored(local: empty, remote: nil) == .nowhere)
+        #expect(PositionSync.Stored(local: nil, remote: row) == .somewhere)
+        #expect(PositionSync.Stored(local: row, remote: nil) == .somewhere)
+    }
+}
+
+@MainActor
+private func unsaved(
+    _ location: RelocateData?, saved: String?,
+    stored: PositionSync.Stored = .nowhere, seekPending: Bool = false
+) -> String? {
+    ReaderController.unsavedCFI(location: location, saved: saved, stored: stored, seekPending: seekPending)
 }

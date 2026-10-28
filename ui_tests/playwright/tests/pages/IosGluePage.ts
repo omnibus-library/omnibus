@@ -105,10 +105,20 @@ export class IosGluePage extends BasePage {
         };
         w.__omnibusOnStatus = (state) => {
           w.glueStatus = state;
+          const resizeAfter = early.resizeStageAfterMs;
+          if (state === "ready" && resizeAfter !== undefined) {
+            setTimeout(() => {
+              const stage = document.getElementById("stage");
+              if (stage) stage.style.right = "160px";
+            }, resizeAfter);
+          }
           const fraction = early.seekOnReady;
           if (state === "ready" && fraction !== undefined) {
             // A later task, as the host's reply is: never inside `unmute`.
-            setTimeout(() => w.OmnibusReader.seek(fraction, 1), 0);
+            setTimeout(
+              () => w.OmnibusReader.seek(fraction, 1),
+              early.seekDelayMs ?? 0,
+            );
           }
         };
         w.__omnibusOnTurnRequest = (dir) => {

@@ -588,12 +588,13 @@ final class ReaderController: NSObject {
     /// echo of a saved spot (the restore's landing, a rotation) or the spot
     /// itself. Writing either stamps a fresh clock on an unmoved row, which
     /// out-orders a newer audiobook position at the cross-format clock gate
-    /// (#1972). With nothing saved, even an echo is new: a first open's landing.
-    static func unsavedCFI(location: RelocateData?, saved: String?) -> String? {
-        guard let location, let cfi = location.cfi, cfi != saved,
-              saved == nil || location.isMovement
-        else { return nil }
-        return cfi
+    /// (#1972). An echo is new only on a first open with no seek still to move it.
+    static func unsavedCFI(
+        location: RelocateData?, saved: String?, stored: PositionSync.Stored, seekPending: Bool
+    ) -> String? {
+        guard let location, let cfi = location.cfi, cfi != saved else { return nil }
+        if location.isMovement { return cfi }
+        return saved == nil && stored == .nowhere && !seekPending ? cfi : nil
     }
 
     /// The contents entry a fraction of the way through the book lands in.
