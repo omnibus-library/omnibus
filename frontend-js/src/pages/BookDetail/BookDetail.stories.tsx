@@ -978,12 +978,16 @@ export const ReviewsTabSelected: Story = {
     msw.use(...bookDetailHandlers(BOOK));
   },
   play: async ({ canvas, userEvent }) => {
+    await canvas.findByRole("tab", { name: "Overview" });
+    await expect(stageTab(canvas)).toBe("0");
+
     const panel = await openTab(canvas, userEvent, "Reviews");
 
     await expect(
       await panel.findByRole("heading", { name: "Your review" }),
     ).toBeVisible();
     await expect(canvasHero(canvas)).toHaveAttribute("data-tab", "reviews");
+    await expect(stageTab(canvas)).toBe("1");
   },
 };
 
@@ -1005,6 +1009,7 @@ export const HighlightsTabSelected: Story = {
       await panel.findByRole("heading", { name: "Journal 1" }),
     ).toBeVisible();
     await expect(canvasHero(canvas)).toHaveAttribute("data-tab", "highlights");
+    await expect(stageTab(canvas)).toBe("2");
   },
 };
 
@@ -1026,12 +1031,17 @@ export const FilesTabSelected: Story = {
       panel.getByRole("group", { name: "Available formats" }),
     ).toBeVisible();
     await expect(canvasHero(canvas)).toHaveAttribute("data-tab", "files");
+    await expect(stageTab(canvas)).toBe("3");
   },
 };
 
 /** The stage that carries `data-tab`. */
 const canvasHero = (canvas: ReturnType<typeof within>) =>
   canvas.getByRole("banner");
+
+/** The `--tab` index the backdrop camera pans on. */
+const stageTab = (canvas: ReturnType<typeof within>) =>
+  canvasHero(canvas).style.getPropertyValue("--tab");
 
 const NO_COVER_NO_ACCENT = aWireBook({
   cover_url: null,

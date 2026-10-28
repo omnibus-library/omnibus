@@ -73,10 +73,11 @@
   inset: 0;
   overflow: hidden;
 }
-/* The camera: one crop of the cover per tab. */
+/* The camera: pans one step per tab, centred on the middle of the four. */
 .bp-cam {
   position: absolute;
   inset: -12%;
+  transform: scale(1.4) translateX(calc((1.5 - var(--tab, 0)) * 11%));
   transition: transform 760ms var(--ease-out);
   will-change: transform;
 }
@@ -150,17 +151,8 @@
 .bp-stage[data-tab="files"] .bp-drift {
   animation-play-state: paused;
 }
-.bp-stage[data-tab="highlights"] .bp-cam {
-  transform: scale(2.1) translate(-16%, 14%);
-}
 .bp-stage[data-tab="highlights"] .bp-warm {
   opacity: 1;
-}
-.bp-stage[data-tab="reviews"] .bp-cam {
-  transform: scale(1.6) translate(18%, -10%);
-}
-.bp-stage[data-tab="files"] .bp-cam {
-  transform: scale(1.06) translate(0, -2%);
 }
 .bp-stage[data-tab="files"] .bp-warm {
   opacity: 0.1;
