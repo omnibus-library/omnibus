@@ -76,6 +76,7 @@ export function SearchPaletteTrigger() {
     <button
       type="button"
       className="sp-trigger"
+      aria-label="Search"
       data-testid="search-trigger"
       onClick={() => setOpen(true)}
     >
