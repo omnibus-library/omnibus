@@ -117,17 +117,17 @@ pub(crate) fn SyncOfferCard(
     }
 }
 
-/// Whether the player shows `c`: this book has booted, playback hasn't
-/// failed, the mapped file is the one loaded (the candidate's seconds count
-/// from its start), and the offer hasn't been answered.
+/// Whether the player shows `c`: this book's boot has restored its position,
+/// playback hasn't failed, the mapped file is the one loaded (the candidate's
+/// seconds count from its start), and the offer hasn't been answered.
 pub(crate) fn player_offer_visible(
     c: &CrossFormatCandidate,
-    booted: bool,
+    restored: bool,
     failed: bool,
     loaded_file: Option<i64>,
     dismissed: Option<i64>,
 ) -> bool {
-    booted
+    restored
         && !failed
         && c.book_file_id.is_some()
         && c.book_file_id == loaded_file
@@ -135,12 +135,12 @@ pub(crate) fn player_offer_visible(
 }
 
 /// The player's offer: the candidate the boot that loaded this book fetched
-/// (see [`player_offer_visible`]). Shown once the source is committed; a Go
-/// before the restore seek lands supersedes it in the audio shim.
+/// (see [`player_offer_visible`]).
 #[component]
 pub(super) fn SyncJumpPrompt(uuid: String) -> Element {
     let playback = crate::use_playback();
     let user = crate::use_current_user_summary();
+    let landed = use_restore_landed(playback);
     let mut offer = playback.sync_offer;
 
     let Some(c) = offer()
@@ -152,11 +152,11 @@ pub(super) fn SyncJumpPrompt(uuid: String) -> Element {
     let Some(user_id) = user().map(|u| u.id) else {
         return rsx! {};
     };
-    let booted = (playback.hls_ready)() && (playback.uuid)().as_deref() == Some(uuid.as_str());
+    let restored = landed() && (playback.uuid)().as_deref() == Some(uuid.as_str());
     let clock = c.source_client_updated_at;
     if !player_offer_visible(
         &c,
-        booted,
+        restored,
         (playback.playback_failed)(),
         (playback.loaded_file_id)(),
         dismissed_clock(user_id, &uuid, "audio"),
@@ -183,6 +183,52 @@ pub(super) fn SyncJumpPrompt(uuid: String) -> Element {
                 offer.set(None);
             },
         }
+    }
+}
+
+/// Whether the current boot's resume seek has run. The boot restores in a
+/// `loadedmetadata` listener, so a Go before then would be rewound to the
+/// stored row; the card waits for it instead. Armed only once the boot has
+/// committed its source: the element keeps the previous book's ready state
+/// until then.
+fn use_restore_landed(playback: crate::PlaybackState) -> Signal<bool> {
+    let mut landed = use_signal(|| false);
+    let mut generation = use_signal(|| 0_u64);
+    use_effect(move || {
+        let waiting = (playback.hls_ready)() && playback.sync_offer.read().is_some();
+        landed.set(false);
+        let mine = *generation.peek() + 1;
+        generation.set(mine);
+        if !waiting {
+            return;
+        }
+        spawn(async move {
+            if metadata_loaded().await && *generation.peek() == mine {
+                landed.set(true);
+            }
+        });
+    });
+    landed
+}
+
+/// Resolves once the player's element has metadata — true — or fails to load.
+async fn metadata_loaded() -> bool {
+    #[cfg(feature = "web")]
+    {
+        let mut eval = dioxus::document::eval(
+            "const el = document.getElementById('omnibus-audio');\n\
+             if (!el) { dioxus.send(false); }\n\
+             else if (el.readyState >= 1) { dioxus.send(true); }\n\
+             else {\n\
+               el.addEventListener('loadedmetadata', () => dioxus.send(true), { once: true });\n\
+               el.addEventListener('error', () => dioxus.send(false), { once: true });\n\
+             }",
+        );
+        eval.recv::<bool>().await.unwrap_or(false)
+    }
+    #[cfg(not(feature = "web"))]
+    {
+        false
     }
 }
 

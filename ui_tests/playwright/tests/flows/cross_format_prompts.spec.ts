@@ -564,4 +564,55 @@ test.describe("cross-format resume prompts", () => {
         .toBeGreaterThan(0);
     });
   });
+
+  // The boot restores the stored position at `loadedmetadata`, so a Go any
+  // earlier would be rewound to it.
+  test("hold the player's offer until the stored position has loaded", async ({
+    listenPage,
+    crossFormatRequests,
+    progressRequests,
+    resumePromptUuid: uuid,
+    eventClock,
+    newestStoredClock,
+  }) => {
+    const { syncOffer } = listenPage;
+
+    await test.step("turn follow off and read ahead of the audio", async () => {
+      const off = await crossFormatRequests.postFollow(uuid, false);
+      await expect(off, "follow off").toBeOK();
+      const newest = await newestStoredClock(uuid);
+      await expect
+        .poll(() => Math.floor(Date.now() / 1000), { timeout: 15_000 })
+        .toBeGreaterThan(newest + 3);
+      eventClock.reanchor();
+      const audio = await progressRequests.postAudioPosition(
+        uuid,
+        0,
+        eventClock.next(),
+      );
+      await expect(audio, "audio progress write").toBeOK();
+      const epub = await progressRequests.postEpubPercent(
+        uuid,
+        50,
+        eventClock.next(),
+      );
+      await expect(epub, "epub progress write").toBeOK();
+    });
+
+    const release = await listenPage.holdAudioParts();
+
+    await test.step("open the player with the audio held", async () => {
+      await listenPage.gotoUnsettled(uuid);
+      await listenPage.waitUntilPlayerReady();
+    });
+
+    await test.step("check the offer waits for the audio", async () => {
+      await expect(syncOffer.root).toHaveCount(0);
+    });
+
+    await test.step("let the audio load", async () => {
+      release();
+      await expect(syncOffer.root).toBeVisible();
+    });
+  });
 });

@@ -53,14 +53,8 @@ fn transport_controls_js() -> &'static str {
       _index: 0,
       _cumOffsets: [],
       _totalDuration: 0,
-      // The boot's restore target (absolute seconds) until its metadata
-      // lands; null once applied, superseded, or when the resume is unknown.
-      _pendingRestoreAbs: null,
-      // Bumped by every seek, so a part swap's pending write can tell a
-      // newer seek has superseded it.
-      _seekSeq: 0,
 
-      play:   function(){ var p = el.play(); if (p && p.catch) p.catch(function(){}); },
+      play:    function(){ var p = el.play(); if (p && p.catch) p.catch(function(){}); },
       pause:   function(){ el.pause(); },
       toggle:  function(){ if (el.paused) { this.play(); } else { this.pause(); } },
       // Track the rate on the shim as well as the element: a media `load()`
@@ -83,7 +77,6 @@ fn transport_controls_js() -> &'static str {
         try { el.removeAttribute('src'); el.load(); } catch(_) {}
         this._mode = null; this._parts = null; this._index = 0;
         this._cumOffsets = []; this._totalDuration = 0;
-        this._pendingRestoreAbs = null;
       },
 
       // Seek to an absolute (cross-part) second offset. For direct mode
@@ -93,13 +86,6 @@ fn transport_controls_js() -> &'static str {
       seek: function(absSeconds){
         this._seeded = true;
         this._userActed = true;
-        // Supersedes a boot restore still waiting on metadata (see
-        // initDirect): a Go on the sync offer must not be rewound to the
-        // stored row. `_userSeekLocal` is the target in the loaded part.
-        this._userSought = true;
-        this._userSeekLocal = null;
-        this._pendingRestoreAbs = null;
-        var seq = ++this._seekSeq;
         this._lastAbs = Math.max(0, absSeconds || 0);
         var s = Math.max(0, absSeconds || 0);
         // A seek is discrete user intent: push it to the transport display
@@ -115,17 +101,9 @@ fn transport_controls_js() -> &'static str {
           if (i !== this._index) {
             var wasPlaying = !el.paused;
             this._index = i;
-            var soa = this;
             var onMeta = function(){
               el.removeEventListener('loadedmetadata', onMeta);
-              // A newer seek owns the position: re-apply its same-part target
-              // (a pre-metadata write may not stick); a cross-part one lands
-              // through its own listener. The play resume still runs.
-              if (soa._seekSeq === seq) {
-                try { el.currentTime = local; } catch(_) {}
-              } else if (typeof soa._userSeekLocal === 'number') {
-                try { el.currentTime = soa._userSeekLocal; } catch(_) {}
-              }
+              try { el.currentTime = local; } catch(_) {}
               if (wasPlaying) {
                 var p = el.play(); if (p && p.catch) p.catch(function(){});
               }
@@ -134,22 +112,16 @@ fn transport_controls_js() -> &'static str {
             el.src = this._parts[i].url;
             el.load();
           } else {
-            this._userSeekLocal = local;
             try { el.currentTime = local; } catch(_) {}
           }
         } else {
-          this._userSeekLocal = s;
           try { el.currentTime = s; } catch(_) {}
         }
       },
 
       // Relative skip (+30 / -30). Computed in absolute terms so a skip
-      // straddling a part boundary works correctly. Before metadata the
-      // element still reads 0, so a skip steps from the pending restore.
-      skip: function(d){
-        var b = typeof this._pendingRestoreAbs === 'number' ? this._pendingRestoreAbs : absTime();
-        this.seek(b + d);
-      },
+      // straddling a part boundary works correctly.
+      skip: function(d){ this.seek(absTime() + d); },
 "#
 }
 
@@ -386,9 +358,6 @@ fn direct_play_init_js() -> &'static str {
         // Nothing human has happened on this boot yet — the restore seek
         // below must render, never persist (#1972).
         this._userActed = false;
-        // A play before metadata still restores; only a seek supersedes it.
-        this._userSought = false;
-        this._userSeekLocal = null;
         this._parts = parts;
         var acc = 0;
         this._cumOffsets = [];
@@ -409,21 +378,10 @@ fn direct_play_init_js() -> &'static str {
         while (idx < this._cumOffsets.length - 1 && s >= this._cumOffsets[idx + 1]) idx++;
         this._index = idx;
         var local = s - this._cumOffsets[idx];
-        this._pendingRestoreAbs = seedKnown ? s : null;
         var oa = this;
         var onMeta = function(){
           el.removeEventListener('loadedmetadata', onMeta);
-          // A newer boot owns the shared element; this shim's state is not its.
-          if (oa._stale) return;
-          oa._pendingRestoreAbs = null;
-          if (oa._userSought) {
-            // The user's seek wins. A cross-part seek lands through its own
-            // listener (null here); a same-part one is re-applied, since a
-            // pre-metadata `currentTime` write is not guaranteed to stick.
-            if (typeof oa._userSeekLocal === 'number') {
-              try { el.currentTime = oa._userSeekLocal; } catch(_) {}
-            }
-          } else if (seedKnown) {
+          if (seedKnown) {
             try { el.currentTime = local; } catch(_) {}
             oa._seeded = true;
           }
@@ -454,10 +412,6 @@ fn hls_init_js() -> &'static str {
         // Same rule as initDirect: the restore is not a human action, so
         // it renders without persisting (#1972).
         this._userActed = false;
-        this._userSought = false;
-        this._userSeekLocal = null;
-        var restoreAbs = typeof initialPositionAbs === 'number' ? Math.max(0, initialPositionAbs) : null;
-        this._pendingRestoreAbs = restoreAbs;
         if (typeof Hls !== 'undefined' && Hls.isSupported()) {
           var hls = new Hls();
           hls.loadSource(url);
@@ -484,24 +438,15 @@ fn hls_init_js() -> &'static str {
           // zero-wipe path (#1954).
           this._seeded = true;
         }
-        // Registered whatever the resume: a seek before metadata must be
-        // re-applied even on a book that boots at 0 or unattributed.
-        var hoa = this;
-        var onMeta = function(){
-          el.removeEventListener('loadedmetadata', onMeta);
-          if (hoa._stale) return;
-          hoa._pendingRestoreAbs = null;
-          // Same rule as initDirect: a seek before metadata supersedes.
-          if (hoa._userSought) {
-            if (typeof hoa._userSeekLocal === 'number') {
-              try { el.currentTime = hoa._userSeekLocal; } catch(_) {}
-            }
-          } else if (restoreAbs > 0) {
-            try { el.currentTime = restoreAbs; } catch(_) {}
-          }
-          if (restoreAbs > 0) hoa._seeded = true;
-        };
-        el.addEventListener('loadedmetadata', onMeta);
+        if (typeof initialPositionAbs === 'number' && initialPositionAbs > 0) {
+          var hoa = this;
+          var onMeta = function(){
+            el.removeEventListener('loadedmetadata', onMeta);
+            try { el.currentTime = Math.max(0, initialPositionAbs); } catch(_) {}
+            hoa._seeded = true;
+          };
+          el.addEventListener('loadedmetadata', onMeta);
+        }
         // See initDirect above — same booted confirmation for the HLS path.
         if (window.__omnibusOnAudioBooted) { window.__omnibusOnAudioBooted(0); }
       },"#
@@ -572,7 +517,7 @@ mod tests {
         // Both init paths report back once a source is actually committed —
         // this is what `hls_ready` now waits on instead of flipping
         // optimistically the instant the init eval is fired.
-        let booted_calls = js.matches("__omnibusOnAudioBooted(0)").count();
+        let booted_calls = js.matches("window.__omnibusOnAudioBooted").count();
         assert_eq!(
             booted_calls, 2,
             "expected one __omnibusOnAudioBooted call in each of initDirect/initHls, found {booted_calls}"
@@ -616,103 +561,6 @@ mod tests {
         assert!(
             js.contains("__omnibusOnAudioPause(t, !!oa._userActed)"),
             "pause flush does not pass the user-acted persistence gate"
-        );
-        // A seek issued before the boot's restore lands supersedes it: both
-        // inits reset the flag, seek sets it, and each restore defers to it.
-        // `play` must not set it — pressing play before metadata restores.
-        assert_eq!(
-            js.matches("this._userSought = false;").count(),
-            2,
-            "initDirect/initHls must each reset the user-seek flag"
-        );
-        assert!(
-            js.contains("this._userSought = true;"),
-            "seek does not flag the pending restore as superseded"
-        );
-        // Asserted per init body: `oa.` is a substring of `hoa.`, so a check
-        // against the whole script would pass on initHls's copy alone.
-        assert!(
-            direct_play_init_js().contains("if (oa._userSought) {"),
-            "initDirect's restore does not defer to a user seek"
-        );
-        assert!(
-            hls_init_js().contains("if (hoa._userSought) {"),
-            "initHls's restore does not defer to a user seek"
-        );
-        // A stale shim's boot listener must not move the next book's element.
-        assert!(
-            direct_play_init_js()
-                .contains("if (oa._stale) return;\n          oa._pendingRestoreAbs = null;"),
-            "initDirect's boot listener acts for a stale shim"
-        );
-        assert!(
-            hls_init_js()
-                .contains("if (hoa._stale) return;\n          hoa._pendingRestoreAbs = null;"),
-            "initHls's boot listener acts for a stale shim"
-        );
-        // A newer seek supersedes a pending part swap's write, and the swap's
-        // play resume still runs.
-        assert!(
-            transport_controls_js().contains("var seq = ++this._seekSeq;"),
-            "seek does not bump the seek counter"
-        );
-        assert!(
-            transport_controls_js().contains(
-                "if (soa._seekSeq === seq) {\n                try { el.currentTime = local; } catch(_) {}"
-            ),
-            "a part swap writes its target over a newer seek"
-        );
-        assert!(
-            transport_controls_js().contains(
-                "try { el.currentTime = soa._userSeekLocal; } catch(_) {}\n              }\n              if (wasPlaying) {"
-            ),
-            "a superseded part swap drops the newer same-part target or its play resume"
-        );
-        // initHls re-applies a pre-metadata seek even when the resume is 0 or
-        // null, so its listener must not hide behind a positive-resume check.
-        assert!(
-            !hls_init_js().contains("initialPositionAbs > 0"),
-            "initHls only listens for metadata when resuming past 0"
-        );
-        assert!(
-            js.contains("if (restoreAbs > 0) hoa._seeded = true;"),
-            "initHls seeds outside a positive resume"
-        );
-        // Before metadata the element reads 0, so a skip steps from the
-        // pending restore; each init records it and metadata or a seek clears it.
-        assert!(
-            js.contains(
-                "var b = typeof this._pendingRestoreAbs === 'number' ? this._pendingRestoreAbs : absTime();"
-            ),
-            "skip does not step from the pending restore"
-        );
-        assert!(
-            js.contains("this.seek(b + d);"),
-            "skip does not seek from its chosen base"
-        );
-        assert!(
-            js.contains("this._pendingRestoreAbs = seedKnown ? s : null;"),
-            "initDirect does not record its pending restore"
-        );
-        assert!(
-            js.contains("this._pendingRestoreAbs = restoreAbs;"),
-            "initHls does not record its pending restore"
-        );
-        assert!(
-            direct_play_init_js().contains("oa._pendingRestoreAbs = null;")
-                && hls_init_js().contains("hoa._pendingRestoreAbs = null;"),
-            "a boot's metadata does not clear its pending restore"
-        );
-        assert_eq!(
-            transport_controls_js()
-                .matches("this._pendingRestoreAbs = null;")
-                .count(),
-            2,
-            "seek and stop must each drop the pending restore"
-        );
-        assert!(
-            !position_listeners_js().contains("_userSought"),
-            "a play/pause listener must not supersede the restore"
         );
         // Sanity: no stray `{{` / `}}` escape pairs leaked from a `format!`.
         assert!(!js.contains("{{"), "literal {{ leaked into JS");

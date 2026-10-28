@@ -101,7 +101,7 @@ fn dismissed_key_differs_per_account_for_the_same_book_and_target() {
 }
 
 #[test]
-fn player_offer_visible_shows_a_booted_unanswered_offer_for_the_loaded_file() {
+fn player_offer_visible_shows_a_restored_unanswered_offer_for_the_loaded_file() {
     assert!(player_offer_visible(
         &candidate(Some(true)),
         true,
@@ -112,7 +112,8 @@ fn player_offer_visible_shows_a_booted_unanswered_offer_for_the_loaded_file() {
 }
 
 #[test]
-fn player_offer_visible_hides_until_this_book_has_booted() {
+fn player_offer_visible_hides_until_the_boot_has_restored_its_position() {
+    // A Go before the restore seek would be rewound to the stored row.
     assert!(!player_offer_visible(
         &candidate(Some(true)),
         false,
