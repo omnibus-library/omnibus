@@ -199,6 +199,7 @@ pub(super) fn ReadyPlayer(
                 },
             }
 
+            super::sync_prompt::SyncJumpPrompt { uuid: uuid.clone() }
 
             PlayerOverlays {
                 panes,

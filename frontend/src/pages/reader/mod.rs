@@ -679,8 +679,8 @@ fn ReaderLayout(
     }
 }
 
-/// Web-only slot for the cross-format jump banner; the hybrid mobile
-/// shell renders nothing here.
+/// Web-only slot for the cross-format resume (follow jump or offer banner);
+/// the hybrid mobile shell renders nothing here.
 #[cfg(not(feature = "mobile"))]
 fn sync_banner_slot(uuid: &str) -> Element {
     rsx! {

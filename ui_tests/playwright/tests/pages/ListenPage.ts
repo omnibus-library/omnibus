@@ -1,5 +1,6 @@
 import type { Locator, Page } from "@playwright/test";
 import { ListenDrawersComponent } from "../components/ListenDrawersComponent";
+import { SyncOfferComponent } from "../components/SyncOfferComponent";
 import { TopNavComponent } from "../components/TopNavComponent";
 import { crossFormatUrls } from "../contracts/crossFormat";
 import { playbackUrls } from "../contracts/playback";
@@ -57,7 +58,7 @@ export class ListenPage extends BasePage {
   readonly sleepScrim: Locator;
 
   readonly syncHereButton: Locator;
-  readonly removedSyncPrompt: Locator;
+  readonly syncOffer: SyncOfferComponent;
 
   private readonly scrubTimes: Locator;
   private readonly openPanel: Locator;
@@ -66,6 +67,7 @@ export class ListenPage extends BasePage {
     super(page);
     this.topNav = new TopNavComponent(page);
     this.drawers = new ListenDrawersComponent(page);
+    this.syncOffer = new SyncOfferComponent(page);
     this.audioElement = page.getByTestId("listen-audio");
     this.preparingOverlay = page.getByTestId("listen-preparing");
     this.failedOverlay = page.getByTestId("listen-failed");
@@ -91,8 +93,6 @@ export class ListenPage extends BasePage {
     this.sleepStatus = page.getByTestId("sleep-status");
     this.sleepScrim = page.locator(".lp-scrim");
     this.syncHereButton = page.getByTestId("listen-sync-here");
-    // Matches the retired sync prompt's copy, so its return fails here.
-    this.removedSyncPrompt = page.getByText(/Jump ahead|Sync to \d/);
     this.scrubTimes = page.getByTestId("listen-scrub-times");
     this.openPanel = page.locator(".lp-panel:focus-within");
   }

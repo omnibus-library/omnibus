@@ -1,60 +1,76 @@
-//! Cross-format follow resolution on the web reader, plus the "Synced here"
-//! footer pill. Follow-only: opening a linked book whose listening position is
-//! newer silently moves the text to the mapped spot (the server-derived CFI
-//! when available). There is no "jump ahead?" prompt — linking *is* turning
-//! sync on, and a linked book that still prompts reads as broken. Web-only.
+//! Cross-format resume on the web reader, plus the "Synced here" footer pill.
+//! Opening a linked book whose listening position is newer moves the text to
+//! the mapped spot (the server-derived CFI when available): silently with
+//! follow on, through a banner under the top bar with it off. Web-only.
 #![cfg(not(feature = "mobile"))]
 
 use dioxus::prelude::*;
+use omnibus_shared::cross_format::CrossFormatCandidate;
 
 use crate::components::BusyLabel;
-use crate::pages::listen::sync_prompt::SYNCING;
+use crate::pages::listen::sync_prompt::{
+    dismissed_clock, reader_offer_copy, should_offer, store_dismissed_clock, use_offer,
+    SyncOfferCard, SYNCING,
+};
 
-/// Invisible resolver: fetches the resume candidate once per mount and,
-/// in follow mode, applies the mapped position through the glue. Renders
-/// nothing on every target, so SSR and the first WASM paint agree.
+/// The reader's cross-format resume: with follow on, applies the mapped
+/// position at open and renders nothing; with it off, offers it. SSR and
+/// the first WASM paint both render nothing, so they agree.
 #[component]
 pub(super) fn SyncJumpBanner(uuid: String) -> Element {
-    let fetch_uuid = uuid.clone();
-    use_effect(move || {
-        let uuid = fetch_uuid.clone();
-        spawn(async move {
-            let Some(resume) =
-                crate::pages::listen::sync_prompt::fetch_resume_with(&uuid, "epub", true).await
-            else {
-                return;
-            };
-            if resume.state != omnibus_shared::cross_format::CrossFormatResumeState::Candidate {
-                return;
-            }
-            let Some(c) = resume.candidate else {
-                return;
-            };
-            if !resume.follow {
-                return;
-            }
-            // Only the web target has a glue to drive; SSR compiles the
-            // candidate binding but never consumes it.
-            #[cfg(not(feature = "web"))]
-            let _ = c;
-            // Resolve-at-open — move the text to the mapped spot silently.
-            // The server-derived CFI is the precise target (one ruler end
-            // to end); the locations-scale percentage is only the fallback.
-            #[cfg(feature = "web")]
-            {
-                if let Some(cfi) = c.epub_cfi.as_deref() {
-                    super::reader_call_json("displayCfi", cfi);
-                } else if let Some(pct) = c
-                    .fraction
-                    .map(|f| (f * 100.0).clamp(0.0, 100.0))
-                    .or(c.percent.map(|p| p as f64))
-                {
-                    super::reader_call("displayPercentage", &pct.to_string());
-                }
-            }
-        });
-    });
-    rsx! {}
+    let user = crate::use_current_user_summary();
+    let mut offer = use_offer(uuid.clone(), "epub", true, jump_to);
+
+    let Some(c) = offer() else {
+        return rsx! {};
+    };
+    let Some(user_id) = user().map(|u| u.id) else {
+        return rsx! {};
+    };
+    let clock = c.source_client_updated_at;
+    if !should_offer(clock, dismissed_clock(user_id, &uuid, "epub")) {
+        return rsx! {};
+    }
+    let Some((title, detail)) = reader_offer_copy(&c) else {
+        return rsx! {};
+    };
+    let go_uuid = uuid.clone();
+    rsx! {
+        SyncOfferCard {
+            class: "rd-sync-banner",
+            title,
+            detail,
+            on_go: move |_| {
+                store_dismissed_clock(user_id, &go_uuid, "epub", clock);
+                offer.set(None);
+                jump_to(&c);
+            },
+            on_dismiss: move |_| {
+                store_dismissed_clock(user_id, &uuid, "epub", clock);
+                offer.set(None);
+            },
+        }
+    }
+}
+
+/// Move the text to the candidate's spot. The server-derived CFI is the
+/// precise target (one ruler end to end); the locations-scale percentage is
+/// only the fallback. Only the web target has a glue to drive.
+fn jump_to(c: &CrossFormatCandidate) {
+    #[cfg(feature = "web")]
+    {
+        if let Some(cfi) = c.epub_cfi.as_deref() {
+            super::reader_call_json("displayCfi", cfi);
+        } else if let Some(pct) = c
+            .fraction
+            .map(|f| (f * 100.0).clamp(0.0, 100.0))
+            .or(c.percent.map(|p| p as f64))
+        {
+            super::reader_call("displayPercentage", &pct.to_string());
+        }
+    }
+    #[cfg(not(feature = "web"))]
+    let _ = c;
 }
 
 /// "Synced here" footer pill: declares the current reading position (full

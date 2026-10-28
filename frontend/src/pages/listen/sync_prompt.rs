@@ -1,19 +1,201 @@
-//! Cross-format transport for the web player: the resume fetch shared by
-//! the reader's follow resolver and the listen bootstrap, plus the
-//! "Synced here" toolbar control. Follow-only — the old "jump ahead?"
-//! card is gone (linking IS turning sync on), and follow resolution at
-//! boot owns the mapped position. Web-only surface, like the mini dock.
+//! Cross-format resume on the web reader and player: the resume fetch, the
+//! offer both surfaces show when follow is off, its dismissal memory, and
+//! the "Synced here" toolbar control. With follow on there is no offer — the
+//! listen boot and the reader's resolver move to the mapped spot silently.
+//! With it off nothing moves until the reader takes the offer, the shape the
+//! iOS client shares. Web-only surface, like the mini dock.
 #![cfg(not(feature = "mobile"))]
 
 use dioxus::prelude::*;
+use omnibus_shared::cross_format::{
+    CrossFormatCandidate, CrossFormatResume, CrossFormatResumeState,
+};
 
 use crate::components::BusyLabel;
+
+#[cfg(test)]
+mod tests;
+
+/// The candidate a follow-off link offers. Follow on resolves silently
+/// instead, so it never offers.
+pub(crate) fn offer_candidate(resume: CrossFormatResume) -> Option<CrossFormatCandidate> {
+    if resume.follow || resume.state != CrossFormatResumeState::Candidate {
+        return None;
+    }
+    resume.candidate
+}
+
+/// Re-arm rule: an offer the reader declined or took stays quiet until the
+/// other format's position is saved again.
+pub(crate) fn should_offer(source_clock: i64, dismissed: Option<i64>) -> bool {
+    dismissed.is_none_or(|seen| source_clock > seen)
+}
+
+/// Keyed per account: household readers can share a browser.
+fn dismissed_key(user_id: i64, uuid: &str, target: &str) -> String {
+    format!("omn.syncprompt::{user_id}::{uuid}::{target}")
+}
+
+/// The newest source clock this account declined or took for `(book, target)`.
+pub(crate) fn dismissed_clock(user_id: i64, uuid: &str, target: &str) -> Option<i64> {
+    crate::client_store::get(&dismissed_key(user_id, uuid, target))?
+        .parse()
+        .ok()
+}
+
+/// Remember an answered offer (see [`should_offer`]). Never a progress write.
+pub(crate) fn store_dismissed_clock(user_id: i64, uuid: &str, target: &str, clock: i64) {
+    crate::client_store::set(&dismissed_key(user_id, uuid, target), &clock.to_string());
+}
+
+/// The reader offer's title and detail. An earlier listening position must
+/// not read as further on. `None` without a percent to name.
+pub(crate) fn reader_offer_copy(c: &CrossFormatCandidate) -> Option<(&'static str, String)> {
+    let pct = c.percent?;
+    Some(if c.source_ahead == Some(false) {
+        (
+            "Audiobook is earlier in the book",
+            format!("Your listening maps to about {pct}% \u{2014} before this page."),
+        )
+    } else {
+        (
+            "Listened further in the audiobook",
+            format!("Your listening maps to about {pct}% through."),
+        )
+    })
+}
+
+/// The player offer's title and detail (see [`reader_offer_copy`]).
+fn player_offer_copy(c: &CrossFormatCandidate) -> Option<(&'static str, String)> {
+    let at = super::helpers::format_hms(c.audio_position_seconds?);
+    let title = if c.source_ahead == Some(false) {
+        "Re-reading earlier in the ebook"
+    } else {
+        "Read further in the ebook"
+    };
+    Some((title, format!("Your reading maps to about {at}.")))
+}
+
+/// The offer's markup on both surfaces; `class` places it.
+#[component]
+pub(crate) fn SyncOfferCard(
+    class: &'static str,
+    title: &'static str,
+    detail: String,
+    on_go: EventHandler<()>,
+    on_dismiss: EventHandler<()>,
+) -> Element {
+    rsx! {
+        div { class: "{class} card", role: "status", "data-testid": "sync-offer",
+            div { class: "sync-offer-copy",
+                strong { "{title}" }
+                span { "{detail}" }
+            }
+            button {
+                class: "btn sm",
+                r#type: "button",
+                "data-testid": "sync-offer-go",
+                onclick: move |_| on_go.call(()),
+                "Go"
+            }
+            button {
+                class: "btn ghost sm",
+                r#type: "button",
+                "data-testid": "sync-offer-dismiss",
+                "aria-label": "Dismiss",
+                onclick: move |_| on_dismiss.call(()),
+                "\u{2715}"
+            }
+        }
+    }
+}
+
+/// The player's offer. Shown once the boot has finished, so Go can't race
+/// its restore seek, and only while the mapped file is the one loaded: the
+/// candidate's seconds count from the start of that file.
+#[component]
+pub(super) fn SyncJumpPrompt(uuid: String) -> Element {
+    let playback = crate::use_playback();
+    let user = crate::use_current_user_summary();
+    // Follow on is the boot's to resolve, before the first play.
+    let mut offer = use_offer(uuid.clone(), "audio", false, |_| {});
+
+    let Some(c) = offer() else {
+        return rsx! {};
+    };
+    let Some(user_id) = user().map(|u| u.id) else {
+        return rsx! {};
+    };
+    let booted = (playback.hls_ready)() && (playback.uuid)().as_deref() == Some(uuid.as_str());
+    let clock = c.source_client_updated_at;
+    if !booted
+        || c.book_file_id.is_none()
+        || (playback.loaded_file_id)() != c.book_file_id
+        || !should_offer(clock, dismissed_clock(user_id, &uuid, "audio"))
+    {
+        return rsx! {};
+    }
+    let (Some(seconds), Some((title, detail))) = (c.audio_position_seconds, player_offer_copy(&c))
+    else {
+        return rsx! {};
+    };
+    let go_uuid = uuid.clone();
+    rsx! {
+        SyncOfferCard {
+            class: "lp-sync-prompt",
+            title,
+            detail,
+            on_go: move |_| {
+                store_dismissed_clock(user_id, &go_uuid, "audio", clock);
+                offer.set(None);
+                super::helpers::seek_to(seconds);
+            },
+            on_dismiss: move |_| {
+                store_dismissed_clock(user_id, &uuid, "audio", clock);
+                offer.set(None);
+            },
+        }
+    }
+}
+
+/// The follow-off candidate for `uuid`, fetched after mount and again on a
+/// book swap: the page outlives its route param, so an answer for a book no
+/// longer open is dropped. With follow on, `on_follow` takes the candidate
+/// instead and the signal stays empty.
+pub(crate) fn use_offer(
+    uuid: String,
+    target: &'static str,
+    derive_cfi: bool,
+    on_follow: fn(&CrossFormatCandidate),
+) -> Signal<Option<CrossFormatCandidate>> {
+    let mut offer = use_signal(|| None::<CrossFormatCandidate>);
+    let mut current = use_signal(String::new);
+    use_effect(use_reactive!(|uuid| {
+        offer.set(None);
+        current.set(uuid.clone());
+        spawn(async move {
+            let Some(resume) = fetch_resume_with(&uuid, target, derive_cfi).await else {
+                return;
+            };
+            if *current.peek() != uuid {
+                return;
+            }
+            match (resume.follow, &resume.candidate) {
+                (true, Some(c)) if resume.state == CrossFormatResumeState::Candidate => {
+                    on_follow(c)
+                }
+                _ => offer.set(offer_candidate(resume)),
+            }
+        });
+    }));
+    offer
+}
 
 /// Fetch the full cross-format resume for `(uuid, target)` — raw REST
 /// over the same-origin cookie session. `derive_cfi` asks the server to
 /// attach the mapped point CFI (`?derive=cfi`) — only the
 /// reader surfaces ask (`derive=cfi` opens the EPUB server-side), so the
-/// audio/boot callers stay on the plain fetch.
+/// audio callers stay on the plain fetch.
 pub(crate) async fn fetch_resume_with(
     uuid: &str,
     target: &str,
