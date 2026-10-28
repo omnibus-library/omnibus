@@ -252,9 +252,12 @@ export const SaveAsShelfDisabled: Story = {
         "From your filters: Shelf · Winter reads left out, a shelf can't be a condition.",
       ),
     );
-    await expect(pill).toHaveAccessibleDescription(
+    // The title would satisfy a description check on its own; the link to the hidden note is what keyboard users get.
+    const note = canvas.getByText(
       "From your filters: Shelf · Winter reads left out, a shelf can't be a condition.",
     );
+    await expect(note.id).not.toBe("");
+    await expect(pill).toHaveAttribute("aria-describedby", note.id);
     // It stays reachable by keyboard, so the reason can be read.
     pill.focus();
     await expect(pill).toHaveFocus();
