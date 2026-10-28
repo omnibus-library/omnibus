@@ -166,6 +166,11 @@ export const SaveAsShelf: Story = {
       canvas.getByRole("button", { name: "Clear all" }),
     );
 
+    // The form shows the note as it stood at the click, so let the shelf name resolve first.
+    await waitFor(() =>
+      expect(storyClient().getQueryState(["shelves"])?.status).toBe("success"),
+    );
+
     await userEvent.click(pill);
 
     const dialog = canvas.getByRole("dialog", { name: "New shelf" });
@@ -184,7 +189,7 @@ export const SaveAsShelf: Story = {
     await expect(author).toHaveValue("Brandon Sanderson");
     await expect(format).toHaveValue("epub");
     await expect(
-      await within(dialog).findByText(
+      within(dialog).getByText(
         "From your filters: Author, Format carried. Shelf · Winter reads left out, a shelf can't be a condition.",
       ),
     ).toBeVisible();
@@ -224,7 +229,8 @@ export const SaveAsShelfCancels: Story = {
   play: async ({ canvas, userEvent }) => {
     const pill = canvas.getByRole("button", { name: "Save as shelf" });
     await userEvent.click(pill);
-    await expect(canvas.getByRole("dialog")).toBeVisible();
+    // Escape only reaches the dialog once it has taken focus.
+    await waitFor(() => expect(canvas.getByRole("dialog")).toHaveFocus());
 
     await userEvent.keyboard("{Escape}");
 
@@ -236,16 +242,21 @@ export const SaveAsShelfCancels: Story = {
 
 export const SaveAsShelfDisabled: Story = {
   args: { initial: [include("shelf", "3")], saveAsShelf: true },
-  play: async ({ canvas }) => {
+  play: async ({ canvas, userEvent }) => {
     const pill = canvas.getByRole("button", { name: "Save as shelf" });
 
-    await expect(pill).toBeDisabled();
+    await expect(pill).toHaveAttribute("aria-disabled", "true");
     await waitFor(() =>
       expect(pill).toHaveAttribute(
         "title",
         "From your filters: Shelf · Winter reads left out, a shelf can't be a condition.",
       ),
     );
+    // It stays reachable by keyboard, so the reason can be read.
+    pill.focus();
+    await expect(pill).toHaveFocus();
+    await userEvent.click(pill);
+    await expect(canvas.queryByRole("dialog")).not.toBeInTheDocument();
   },
 };
 

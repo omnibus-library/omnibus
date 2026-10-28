@@ -78,6 +78,7 @@
   }
 }
 .shelf-smart-editor {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -90,6 +91,7 @@
   color: var(--ink-2);
   border: 1px dashed var(--line-2);
   border-radius: 8px;
+  overflow-wrap: anywhere;
 }
 .shelf-match-row {
   display: flex;

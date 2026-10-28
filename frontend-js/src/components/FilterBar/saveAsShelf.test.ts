@@ -131,6 +131,19 @@ describe("saveAsShelf", () => {
     );
   });
 
+  it("sets aside a clause over the cap before deciding the match mode", () => {
+    const { drafts, matchMode, note } = seed(
+      include("tag", ...manyValues(60)),
+      include("genre", "Fantasy", "Mystery"),
+    );
+
+    expect(matchMode).toBe("any");
+    expect(drafts.map((d) => d.value)).toEqual(["Fantasy", "Mystery"]);
+    expect(note).toBe(
+      "From your filters: Genre carried. Tag · v0 +59 left out, a shelf holds at most 50 conditions.",
+    );
+  });
+
   it("trims values, drops blank ones and ignores a clause with no usable value", () => {
     const { drafts, name, note } = seed(
       exclude("tag", "  Dark  ", " ", ""),

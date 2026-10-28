@@ -185,7 +185,7 @@ export function Library() {
           <h1 className="sr-only">Your Library</h1>
           <div className="lib-header-row">
             <FilterBar
-              saveAsShelf
+              saveAsShelf={shelfId === null}
               clauses={prefs.clauses}
               onChange={(clauses) => change({ ...prefs, clauses })}
             />

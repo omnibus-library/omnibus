@@ -96,7 +96,7 @@ export function shelfLabel(shelf: Shelf, viewerId: UserId): string {
 const UNAVAILABLE_SHELF = "unavailable shelf";
 
 /** A value's name, or `null` while a shelf name is still being worked out. */
-function valueLabel(
+export function valueLabel(
   field: FilterField,
   value: string,
   shelves: ShelfLookup,

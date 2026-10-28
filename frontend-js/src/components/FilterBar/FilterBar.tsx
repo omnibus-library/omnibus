@@ -4,6 +4,7 @@ import { type FilterClause, type FilterField, shelvesQuery } from "../../api";
 import { useCurrentUser } from "../../session";
 import { ChevronDownGlyph, XGlyph } from "../Glyphs/Glyphs";
 import { CreateShelfModal } from "../ShelfForm/CreateShelfModal";
+import type { ShelfSeed } from "../ShelfForm/rules";
 import { FilterPicker } from "./FilterPicker";
 import {
   FILTER_FIELDS,
@@ -103,9 +104,13 @@ export function FilterBar(props: FilterBarProps) {
   const shelves = useQuery(shelvesQuery);
   const viewerId = useCurrentUser().id;
   const client = useQueryClient();
-  const [saving, setSaving] = useState(false);
-  const seed = saveAsShelf(props.clauses, shelves, viewerId);
-  const nothingToSave = seed.drafts.length === 0;
+  // The seed the reader saved from, so the form shows what they clicked on.
+  const [saving, setSaving] = useState<ShelfSeed | null>(null);
+  const seed =
+    props.saveAsShelf && props.clauses.length > 0
+      ? saveAsShelf(props.clauses, shelves, viewerId)
+      : null;
+  const nothingToSave = seed?.drafts.length === 0;
   return (
     <>
       {/* biome-ignore lint/a11y/useSemanticElements: a fieldset brings a default border and min-width that the fb rules never reset */}
@@ -122,13 +127,16 @@ export function FilterBar(props: FilterBarProps) {
             Clear all
           </button>
         )}
-        {props.clauses.length > 0 && props.saveAsShelf && (
+        {seed && (
+          // aria-disabled, not disabled: a disabled button drops out of the tab order, taking its reason with it.
           <button
             type="button"
             className="fb-save"
-            disabled={nothingToSave}
+            aria-disabled={nothingToSave}
             title={nothingToSave ? seed.note : undefined}
-            onClick={() => setSaving(true)}
+            onClick={() => {
+              if (!nothingToSave) setSaving(seed);
+            }}
           >
             Save as shelf
           </button>
@@ -136,10 +144,10 @@ export function FilterBar(props: FilterBarProps) {
       </div>
       {saving && (
         <CreateShelfModal
-          initial={seed}
-          onClose={() => setSaving(false)}
+          initial={saving}
+          onClose={() => setSaving(null)}
           onCreated={() => {
-            setSaving(false);
+            setSaving(null);
             client.invalidateQueries({ queryKey: shelvesQuery.queryKey });
           }}
         />

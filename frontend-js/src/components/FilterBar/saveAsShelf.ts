@@ -4,7 +4,12 @@ import {
   type RuleDraft,
   type ShelfSeed,
 } from "../ShelfForm/rules";
-import { facetValue, fieldLabel, type ShelfLookup } from "./filters";
+import {
+  facetValue,
+  fieldLabel,
+  type ShelfLookup,
+  valueLabel,
+} from "./filters";
 
 // Mirrors MAX_PREVIEW_RULES in shared/src/shelves.rs (the create endpoint's cap).
 const MAX_SHELF_RULES = 50;
@@ -27,18 +32,22 @@ const refusal = ({ field, mode }: FilterClause) =>
 const hasSeveral = ({ clause, values }: Entry) =>
   clause.mode === "include" && values.length > 1;
 
-/** One condition per value: an exclusion is_not, a format includes, anything else is. */
 function draftsFor({ clause: { field, mode }, values }: Entry): RuleDraft[] {
+  // Only narrows the field to a rule's; a shelf clause is refused before it gets here.
   if (field === "shelf") return [];
   const op =
     mode === "exclude" ? "is_not" : field === "format" ? "includes" : "is";
   return values.map((value) => ({ ...BLANK_DRAFT, field, op, value }));
 }
 
-const valueName = ({ clause: { field, mode } }: Entry, value: string) => {
-  const shown = field === "format" ? value.toUpperCase() : value;
-  return mode === "exclude" ? `not ${shown}` : shown;
-};
+// A shelf is never carried, so its label is never pending here.
+const valueName = (
+  { clause: { field, mode } }: Entry,
+  value: string,
+  shelves: ShelfLookup,
+  viewerId: UserId,
+) =>
+  `${mode === "exclude" ? "not " : ""}${valueLabel(field, value, shelves, viewerId) ?? ""}`;
 
 const clip = (name: string) => {
   const chars = [...name];
@@ -64,9 +73,10 @@ export function saveAsShelf(
       values: clause.values.map((v) => v.trim()).filter(Boolean),
     }))
     .filter((e) => e.values.length > 0);
-  const several = usable.filter((e) => !refusal(e.clause) && hasSeveral(e));
-  const candidates = usable.filter((e) => !refusal(e.clause)).length;
-  const anyMode = several.length > 0 && several.length === candidates;
+  const fits = (e: Entry) => e.values.length <= MAX_SHELF_RULES;
+  const carriable = usable.filter((e) => !refusal(e.clause) && fits(e));
+  const several = carriable.filter(hasSeveral);
+  const anyMode = several.length > 0 && several.length === carriable.length;
 
   const carried: Entry[] = [];
   const leftOut: { entry: Entry; reason: string }[] = [];
@@ -74,11 +84,13 @@ export function saveAsShelf(
   for (const entry of usable) {
     const reason =
       refusal(entry.clause) ??
-      (hasSeveral(entry) && !(anyMode && entry === several[0])
-        ? MANY_REASON
-        : total + entry.values.length > MAX_SHELF_RULES
-          ? CAP_REASON
-          : null);
+      (!fits(entry)
+        ? CAP_REASON
+        : hasSeveral(entry) && !(anyMode && entry === several[0])
+          ? MANY_REASON
+          : total + entry.values.length > MAX_SHELF_RULES
+            ? CAP_REASON
+            : null);
     if (reason) {
       leftOut.push({ entry, reason });
     } else {
@@ -100,7 +112,9 @@ export function saveAsShelf(
 
   return {
     name: clip(
-      carried.flatMap((e) => e.values.map((v) => valueName(e, v))).join(" · "),
+      carried
+        .flatMap((e) => e.values.map((v) => valueName(e, v, shelves, viewerId)))
+        .join(" · "),
     ),
     matchMode: anyMode ? "any" : "all",
     drafts: carried.flatMap(draftsFor),
