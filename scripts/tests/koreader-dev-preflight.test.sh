@@ -114,6 +114,7 @@ check "prompt_plugin_path trims whitespace around the path" "/tmp/p.zip" "$(path
 check "prompt_plugin_path takes the path of a quoted answer as typed" "/tmp/a b.zip" "$(path_from "'/tmp/a b.zip'")"
 check "prompt_plugin_path takes the path of a double-quoted answer as typed" "/tmp/a b.zip" "$(path_from '"/tmp/a b.zip"')"
 check "prompt_plugin_path unescapes the backslashes of a completed name" "/tmp/a b.zip" "$(path_from '/tmp/a\ b.zip')"
+# shellcheck disable=SC2088 # the tilde is the typed input, expanded by the function under test
 check "prompt_plugin_path expands a leading ~/ to the home dir" "$HOME/Downloads/p.zip" "$(path_from '~/Downloads/p.zip')"
 check "prompt_plugin_path dies readably on an empty answer" "1||$no_zip_msg" "$(run path_from '   ')"
 check "prompt_plugin_path dies readably when input ends" "1||$no_zip_msg" "$(run prompt_plugin_path </dev/null)"

@@ -155,8 +155,8 @@ class LinkHomeTests(unittest.TestCase):
         self.addCleanup(fake.close)
         return fake
 
-    def link(self, fake: FakeOmnibus, home: Path | None = None) -> bool:
-        return link_home(home or self.home, fake.url, ORIGIN, self.state, SEED)
+    def link(self, fake: FakeOmnibus, home: Path | None = None) -> None:
+        link_home(home or self.home, fake.url, ORIGIN, self.state, SEED)
 
     def save_key(self, fake: FakeOmnibus, userkey: str, account: str = SEED[0]) -> Path:
         """A key cached by an earlier link to `fake` as `account`."""
@@ -171,7 +171,7 @@ class LinkHomeTests(unittest.TestCase):
     def test_links_fresh_home_to_device_origin(self):
         fake = self.omnibus()
 
-        self.assertTrue(self.link(fake))
+        self.link(fake)
 
         config = json.loads((self.home / "plugins/omnibus.koplugin/omnibus.json").read_text())
         self.assertEqual(config, {"server_url": ORIGIN, "token": DEVICE_TOKEN})
@@ -204,37 +204,28 @@ class LinkHomeTests(unittest.TestCase):
 
         self.assertEqual(self.home.stat().st_mode & 0o777, 0o700)
 
-    def test_leaves_linked_home_alone(self):
-        fake = self.omnibus()
-        self.assertTrue(self.link(fake))
-        fake.requests.clear()
-
-        self.assertFalse(self.link(fake))
-
-        self.assertEqual(fake.requests, [])
-
     def test_replaces_a_plugin_folder_that_has_no_config(self):
         stale = self.home / "plugins/omnibus.koplugin"
         stale.mkdir(parents=True)
         (stale / "main.lua").write_text("-- stale")
 
-        self.assertTrue(self.link(self.omnibus()))
+        self.link(self.omnibus())
 
         self.assertEqual((stale / "main.lua").read_text(), "-- plugin")
         self.assertTrue((stale / "omnibus.json").is_file())
 
-    def test_links_a_home_once_when_two_launches_race(self):
+    def test_generates_the_kosync_password_once_when_two_launches_race(self):
         fake = self.omnibus()
-        results: list[bool] = []
-        launches = [threading.Thread(target=lambda: results.append(self.link(fake))) for _ in range(2)]
+        second = self.root / "second"
+        second.mkdir()
+        launches = [threading.Thread(target=self.link, args=(fake, home)) for home in (self.home, second)]
 
         for t in launches:
             t.start()
         for t in launches:
             t.join()
 
-        self.assertEqual(sorted(results), [False, True])
-        self.assertEqual(len(fake.created), 1)
+        self.assertEqual(fake.requests.count(("POST", "/api/account/kosync")), 1)
 
     def test_reuses_the_koreader_device_named_dev_koreader(self):
         fake = self.omnibus(devices=[{"id": 7, "name": "Dev KOReader", "kind": "koreader", "token": DEVICE_TOKEN}])
@@ -321,7 +312,7 @@ class LinkHomeTests(unittest.TestCase):
         saved = self.save_kosync("")
 
         with contextlib.redirect_stderr(io.StringIO()):
-            self.assertTrue(self.link(fake))
+            self.link(fake)
 
         self.assertEqual(json.loads(saved.read_text())["userkey"], KOSYNC_USERKEY)
 
@@ -347,7 +338,7 @@ class LinkHomeTests(unittest.TestCase):
         fake = self.omnibus()
 
         with mock.patch.dict(os.environ, {"http_proxy": "http://127.0.0.1:9", "HTTP_PROXY": "http://127.0.0.1:9"}):
-            self.assertTrue(self.link(fake))
+            self.link(fake)
 
     def test_reports_rejected_login(self):
         with self.assertRaisesRegex(LinkError, "OMNIBUS_DEV_SEED_USER"):
@@ -472,7 +463,13 @@ class PluginZipTests(unittest.TestCase):
                 self.assertEqual(self.refusal(zip_of({"omnibus.koplugin/omnibus.json": config})), reason)
 
     def test_refuses_a_loopback_server_url_and_points_at_local(self):
-        for server in ("http://127.0.0.1:3000", "http://localhost:3000", "http://[::1]:3000"):
+        for server in (
+            "http://127.0.0.1:3000",
+            "http://localhost:3000",
+            "http://[::1]:3000",
+            "http://0.0.0.0:3000",
+            "http://[::]:3000",
+        ):
             with self.subTest(server=server):
                 message = self.refusal(plugin_zip_for(server))
                 self.assertEqual(
