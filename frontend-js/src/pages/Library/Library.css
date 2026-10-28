@@ -1586,6 +1586,7 @@
   }
 }
 .ebook-cell-editable {
+  position: relative;
   cursor: text;
   transition:
     outline 0.1s ease,
@@ -1646,6 +1647,11 @@ fieldset.ebook-cell-chip-host {
   color: inherit;
   text-align: left;
   cursor: inherit;
+}
+.ebook-cell-edit-btn::after {
+  content: "";
+  position: absolute;
+  inset: 0;
 }
 .ebook-cell-edit-btn:focus-visible {
   outline: 2px solid var(--accent);

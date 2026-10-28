@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { delay, HttpResponse, http } from "msw";
 import { Navigate, Route, Routes, useLocation } from "react-router";
-import { expect, waitFor, within } from "storybook/test";
+import { expect, fireEvent, waitFor, within } from "storybook/test";
 import { getGetShelfMockHandler404 } from "../../api/generated/omnibus.msw";
 import type {
   BulkOverridesRequest,
@@ -2174,20 +2174,32 @@ export const LensAddBooksUnavailable: Story = {
 
 const edits: MetadataOverrides[] = [];
 let gate = deferred();
+let listGate = deferred();
+let holdLists = false;
+let posts = 0;
+// The books the table is served, which a play may change on the server.
+let served: EbookMetadata[] = [];
 
-// The table over six books, with saves recorded in `edits`; `hold` keeps each POST until `gate.release`.
+// The table over six books, with saves recorded in `edits`.
+// `hold` keeps the first POST until `gate.release`, `refuseSecond` answers the second with a 400,
+// and `holdLists` keeps each list GET until `listGate.release`.
 function inlineEditHandlers({
   hold = false,
   refuse,
+  refuseSecond = false,
 }: {
   hold?: boolean;
   refuse?: string;
+  refuseSecond?: boolean;
 } = {}) {
   seedTable();
   requests.length = 0;
   edits.length = 0;
   gate = deferred();
-  const books: EbookMetadata[] = aWireLibrary(6).map((book, i) =>
+  listGate = deferred();
+  holdLists = false;
+  posts = 0;
+  served = aWireLibrary(6).map((book, i) =>
     i === 0
       ? {
           ...book,
@@ -2199,26 +2211,45 @@ function inlineEditHandlers({
         }
       : book,
   );
+  // A resolver that answers nothing hands the request on to the next handler.
   return [
-    // A resolver that answers nothing hands the request on to the next handler.
-    ...(hold
+    ...(refuseSecond
       ? [
-          http.post("/api/ebooks/:uuid/overrides", async () => {
-            await gate.promise;
+          http.post("/api/ebooks/:uuid/overrides", () => {
+            posts += 1;
+            if (posts === 2) {
+              return new HttpResponse("title too long", { status: 400 });
+            }
           }),
         ]
       : []),
-    overridesHandler(books, { saved: edits, refuse }),
-    libraryHandler(books, 10, { requests }),
+    ...(hold
+      ? [
+          http.post(
+            "/api/ebooks/:uuid/overrides",
+            async () => {
+              await gate.promise;
+            },
+            { once: true },
+          ),
+        ]
+      : []),
+    overridesHandler(served, { saved: edits, refuse }),
+    http.get("/api/ebooks", async () => {
+      if (holdLists) await listGate.promise;
+    }),
+    libraryHandler(served, 10, { requests }),
     ...BULK_OPTIONS,
   ];
 }
 
-const TITLE_1 = "Edit title: Aurora Station, Vol. 1";
+const TITLE = "Aurora Station, Vol. 1";
 
-// Every row's series, published and language buttons share a label, so a play asks the first row.
-const firstRow = async (canvas: ReturnType<typeof within>) =>
-  within((await canvas.findAllByRole("row"))[1] as HTMLElement);
+// The button that opens a cell; every row's has its own book in the name.
+const editLabel = (field: string, value: string, title = TITLE) =>
+  `Edit ${field} of ${title}: ${value}`;
+
+const TITLE_1 = editLabel("title", TITLE);
 
 export const InlineEditTitle: Story = {
   beforeEach({ msw }) {
@@ -2227,14 +2258,15 @@ export const InlineEditTitle: Story = {
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(await canvas.findByRole("button", { name: TITLE_1 }));
     const input = canvas.getByRole("textbox", { name: "Title" });
-    await expect(input).toHaveValue("Aurora Station, Vol. 1");
+    await expect(input).toHaveValue(TITLE);
     const fetched = requests.length;
 
     await userEvent.clear(input);
     await userEvent.type(input, "Aurora Rising{Enter}");
 
+    const renamed = editLabel("title", "Aurora Rising", "Aurora Rising");
     await expect(
-      await canvas.findByRole("button", { name: "Edit title: Aurora Rising" }),
+      await canvas.findByRole("button", { name: renamed }),
     ).toBeInTheDocument();
     await expect(edits).toEqual([]);
 
@@ -2242,7 +2274,7 @@ export const InlineEditTitle: Story = {
     await waitFor(() => expect(edits).toEqual([{ title: "Aurora Rising" }]));
     await waitFor(() => expect(requests.length).toBeGreaterThan(fetched));
     await expect(
-      await canvas.findByRole("button", { name: "Edit title: Aurora Rising" }),
+      await canvas.findByRole("button", { name: renamed }),
     ).toBeInTheDocument();
   },
 };
@@ -2269,7 +2301,83 @@ export const InlineEditUnchanged: Story = {
 
     // The writes for one row arrive in order, so this one landing alone means the others sent nothing.
     await userEvent.click(
-      (await firstRow(canvas)).getByRole("button", { name: /^Edit language:/ }),
+      canvas.getByRole("button", { name: editLabel("language", "none") }),
+    );
+    await userEvent.type(
+      canvas.getByRole("textbox", { name: "Language" }),
+      "fr{Enter}",
+    );
+    await waitFor(() => expect(edits).toEqual([{ language: "fr" }]));
+  },
+};
+
+export const InlineEditEmptyTitleCancels: Story = {
+  beforeEach({ msw }) {
+    msw.use(...inlineEditHandlers());
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByRole("button", { name: TITLE_1 }));
+    await userEvent.clear(canvas.getByRole("textbox", { name: "Title" }));
+
+    await userEvent.keyboard("{Enter}");
+
+    await expect(
+      await canvas.findByRole("button", { name: TITLE_1 }),
+    ).toBeInTheDocument();
+    await userEvent.click(
+      canvas.getByRole("button", { name: editLabel("language", "none") }),
+    );
+    await userEvent.type(
+      canvas.getByRole("textbox", { name: "Language" }),
+      "fr{Enter}",
+    );
+    await waitFor(() => expect(edits).toEqual([{ language: "fr" }]));
+  },
+};
+
+export const InlineEditIgnoresComposingEnter: Story = {
+  beforeEach({ msw }) {
+    msw.use(...inlineEditHandlers());
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByRole("button", { name: TITLE_1 }));
+    const input = canvas.getByRole("textbox", { name: "Title" });
+    await userEvent.type(input, " II");
+
+    // Enter that confirms an IME candidate is not a commit.
+    fireEvent.keyDown(input, { key: "Enter", isComposing: true });
+
+    await expect(input).toBeInTheDocument();
+    await expect(edits).toEqual([]);
+  },
+};
+
+export const InlineEditIgnoresRefetchedBaseline: Story = {
+  beforeEach({ msw }) {
+    msw.use(...inlineEditHandlers());
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByRole("button", { name: TITLE_1 }));
+    const first = served[0];
+    if (!first) throw new Error("no served book");
+    first.title = "Renamed on the server";
+    await storyClient().invalidateQueries({ queryKey: ["books"] });
+
+    // Nothing was typed, so the stale draft must not be written over the server's title.
+    await userEvent.keyboard("{Enter}");
+
+    const renamed = editLabel(
+      "title",
+      "Renamed on the server",
+      "Renamed on the server",
+    );
+    await expect(
+      await canvas.findByRole("button", { name: renamed }),
+    ).toBeInTheDocument();
+    await userEvent.click(
+      canvas.getByRole("button", {
+        name: editLabel("language", "none", "Renamed on the server"),
+      }),
     );
     await userEvent.type(
       canvas.getByRole("textbox", { name: "Language" }),
@@ -2289,16 +2397,21 @@ export const InlineEditBlurSaves: Story = {
 
     await userEvent.click(
       canvas.getByRole("button", {
-        name: "Edit title: Aurora Station, Vol. 2",
+        name: editLabel(
+          "title",
+          "Aurora Station, Vol. 2",
+          "Aurora Station, Vol. 2",
+        ),
       }),
     );
 
     await waitFor(() =>
       expect(edits).toEqual([{ title: "Aurora Station, Vol. 1 II" }]),
     );
+    const renamed = "Aurora Station, Vol. 1 II";
     await expect(
       await canvas.findByRole("button", {
-        name: "Edit title: Aurora Station, Vol. 1 II",
+        name: editLabel("title", renamed, renamed),
       }),
     ).toBeInTheDocument();
     await expect(
@@ -2313,8 +2426,8 @@ export const InlineEditClearsSeries: Story = {
   },
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(
-      (await firstRow(canvas)).getByRole("button", {
-        name: "Edit series: Aurora Station #1",
+      await canvas.findByRole("button", {
+        name: editLabel("series", "Aurora Station #1"),
       }),
     );
     const input = canvas.getByRole("textbox", { name: "Series" });
@@ -2325,7 +2438,7 @@ export const InlineEditClearsSeries: Story = {
 
     await waitFor(() => expect(edits).toEqual([{ series: "" }]));
     await expect(
-      await canvas.findByRole("button", { name: "Edit series: none" }),
+      await canvas.findByRole("button", { name: editLabel("series", "none") }),
     ).toBeInTheDocument();
   },
 };
@@ -2336,14 +2449,15 @@ export const InlineEditPublishedSeedsRaw: Story = {
   },
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(
-      (await firstRow(canvas)).getByRole("button", {
-        name: "Edit published: Mar 1st, 2021",
+      await canvas.findByRole("button", {
+        name: editLabel("published", "Mar 1st, 2021"),
       }),
     );
 
     const input = canvas.getByRole("textbox", { name: "Published" });
     await expect(input).toHaveValue("2021-03-01");
     await expect(input).toHaveAttribute("placeholder", "YYYY-MM-DD");
+    await expect(input).toHaveAttribute("spellcheck", "false");
   },
 };
 
@@ -2358,8 +2472,8 @@ export const InlineEditOneCellAtATime: Story = {
     ).toBeInTheDocument();
 
     await userEvent.click(
-      (await firstRow(canvas)).getByRole("button", {
-        name: "Edit series: Aurora Station #1",
+      canvas.getByRole("button", {
+        name: editLabel("series", "Aurora Station #1"),
       }),
     );
 
@@ -2383,7 +2497,9 @@ export const InlineEditRefused: Story = {
     await userEvent.type(input, "Too long{Enter}");
 
     await expect(
-      await canvas.findByText("Couldn’t save that change: title too long"),
+      await canvas.findByText(
+        `Couldn’t save the change to “${TITLE}”: title too long`,
+      ),
     ).toBeInTheDocument();
     await expect(
       await canvas.findByRole("button", { name: TITLE_1 }),
@@ -2409,7 +2525,7 @@ export const InlineEditAdminOnly: Story = {
   },
 };
 
-const TAGS_1 = "Edit tags: space opera";
+const TAGS_1 = editLabel("tags", "space opera");
 
 export const InlineEditAddsTag: Story = {
   beforeEach({ msw }) {
@@ -2428,6 +2544,26 @@ export const InlineEditAddsTag: Story = {
     );
     const row = (await canvas.findAllByRole("row"))[1];
     await expect(row).toHaveTextContent("cozy");
+  },
+};
+
+export const InlineEditAddsGenre: Story = {
+  beforeEach({ msw }) {
+    msw.use(...inlineEditHandlers());
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: editLabel("genres", "none") }),
+    );
+
+    await userEvent.type(
+      canvas.getByRole("combobox", { name: "Genres" }),
+      "Fantasy{Enter}",
+    );
+
+    await waitFor(() => expect(edits).toEqual([{ genres: ["Fantasy"] }]));
+    const row = (await canvas.findAllByRole("row"))[1];
+    await expect(row).toHaveTextContent("Fantasy");
   },
 };
 
@@ -2453,9 +2589,43 @@ export const InlineEditQueuedChipsLandInOrder: Story = {
     await userEvent.keyboard("{Escape}");
     await expect(
       await canvas.findByRole("button", {
-        name: "Edit tags: space opera, cozy, slow burn",
+        name: editLabel("tags", "space opera, cozy, slow burn"),
       }),
     ).toBeInTheDocument();
+  },
+};
+
+export const InlineEditRefusedChipKeepsTheEarlierSave: Story = {
+  beforeEach({ msw }) {
+    msw.use(...inlineEditHandlers({ hold: true, refuseSecond: true }));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByRole("button", { name: TAGS_1 }));
+    const input = canvas.getByRole("combobox", { name: "Tags" });
+    await userEvent.type(input, "cozy{Enter}");
+    await userEvent.type(input, "slow burn{Enter}");
+
+    // The list is not refetched after the first save, so the row cannot lean on it.
+    holdLists = true;
+    gate.release();
+
+    await expect(
+      await canvas.findByText(
+        `Couldn’t save the change to “${TITLE}”: title too long`,
+      ),
+    ).toBeInTheDocument();
+    const group = within(canvas.getByRole("group", { name: "Edit tags" }));
+    await expect(group.getByText("cozy")).toBeInTheDocument();
+    await expect(group.queryByText("slow burn")).not.toBeInTheDocument();
+
+    await userEvent.type(input, "found family{Enter}");
+    await waitFor(() =>
+      expect(edits).toEqual([
+        { subjects: ["space opera", "cozy"] },
+        { subjects: ["space opera", "cozy", "found family"] },
+      ]),
+    );
+    listGate.release();
   },
 };
 
@@ -2466,7 +2636,7 @@ export const InlineEditRemovesAuthor: Story = {
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(
       await canvas.findByRole("button", {
-        name: "Edit authors: Sora Inkwell, Ada Lovelace",
+        name: editLabel("authors", "Sora Inkwell, Ada Lovelace"),
       }),
     );
     canvas.getByRole("button", { name: "Remove Ada Lovelace" }).focus();
@@ -2481,6 +2651,31 @@ export const InlineEditRemovesAuthor: Story = {
     ).toHaveFocus();
     await expect(
       canvas.getByRole("group", { name: "Edit authors" }),
+    ).toBeInTheDocument();
+  },
+};
+
+export const InlineEditChipClicksKeepTheEditorOpen: Story = {
+  beforeEach({ msw }) {
+    msw.use(...inlineEditHandlers());
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByRole("button", { name: TAGS_1 }));
+    const group = canvas.getByRole("group", { name: "Edit tags" });
+
+    // A click on the chip's text is not a click away from the editor.
+    await userEvent.click(within(group).getByText("space opera"));
+    await expect(
+      canvas.getByRole("group", { name: "Edit tags" }),
+    ).toBeInTheDocument();
+
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Remove tag space opera" }),
+    );
+
+    await waitFor(() => expect(edits).toEqual([{ subjects: [] }]));
+    await expect(
+      canvas.getByRole("group", { name: "Edit tags" }),
     ).toBeInTheDocument();
   },
 };

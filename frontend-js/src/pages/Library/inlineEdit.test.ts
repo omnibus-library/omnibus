@@ -10,11 +10,12 @@ describe("applyEdit", () => {
   });
 
   describe("series", () => {
-    it("renames the series and keeps its index", () => {
-      expect(applyEdit(aBook(), { series: "Dawn" }).series).toEqual({
-        name: "Dawn",
-        index: "1",
-      });
+    it("renames the series", () => {
+      expect(applyEdit(aBook(), { series: "Dawn" }).series?.name).toBe("Dawn");
+    });
+
+    it("keeps the series index when renaming", () => {
+      expect(applyEdit(aBook(), { series: "Dawn" }).series?.index).toBe("1");
     });
 
     it("starts a series with no index for a book that had none", () => {
@@ -40,31 +41,42 @@ describe("applyEdit", () => {
     },
   );
 
-  it("sets published and language to the given text", () => {
-    const edited = applyEdit(aBook(), { published: "1999", language: "fr" });
-
-    expect(edited.published).toBe("1999");
-    expect(edited.language).toBe("fr");
+  it("sets published to the given text", () => {
+    expect(applyEdit(aBook(), { published: "1999" }).published).toBe("1999");
   });
 
-  it("gives the creators' names as authors", () => {
+  it("sets language to the given text", () => {
+    expect(applyEdit(aBook(), { language: "fr" }).language).toBe("fr");
+  });
+
+  it("gives creator names as authors", () => {
     expect(
       applyEdit(aBook(), { creators: [{ name: "Ada" }, { name: "Sora" }] })
         .authors,
     ).toEqual(["Ada", "Sora"]);
   });
 
-  it("replaces the tag and genre lists, including with none", () => {
-    const edited = applyEdit(aBook({ subjects: ["a"], genres: ["b"] }), {
+  it("replaces the tag list", () => {
+    const edited = applyEdit(aBook({ subjects: ["a"] }), {
       subjects: ["cozy"],
-      genres: [],
     });
 
     expect(edited.subjects).toEqual(["cozy"]);
-    expect(edited.genres).toEqual([]);
   });
 
-  it("returns the book's values unchanged for an empty edit", () => {
+  it("replaces the genre list", () => {
+    const edited = applyEdit(aBook({ genres: ["b"] }), { genres: ["Fantasy"] });
+
+    expect(edited.genres).toEqual(["Fantasy"]);
+  });
+
+  it("empties a list given none", () => {
+    expect(applyEdit(aBook({ genres: ["b"] }), { genres: [] }).genres).toEqual(
+      [],
+    );
+  });
+
+  it("returns the book unchanged for an empty edit", () => {
     const book = aBook({ subjects: ["a"], language: "en" });
 
     expect(applyEdit(book, {})).toEqual(book);

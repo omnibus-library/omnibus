@@ -115,6 +115,21 @@ export const RemoveByKeyboardKeepsFocusInTheEditor: Story = {
   },
 };
 
+export const RemoveByClickLeavesFocusAlone: Story = {
+  args: { values: ["cozy", "slow burn"] },
+  play: async ({ canvas, userEvent, args }) => {
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Remove tag cozy" }),
+    );
+
+    await expect(args.onChange).toHaveBeenLastCalledWith(["slow burn"]);
+    await expect(canvas.queryByText("cozy")).toBeNull();
+    await expect(
+      canvas.getByRole("combobox", { name: "Add tags" }),
+    ).not.toHaveFocus();
+  },
+};
+
 export const NoDuplicates: Story = {
   play: async ({ canvas, userEvent, args }) => {
     const input = canvas.getByRole("combobox", { name: "Add tags" });

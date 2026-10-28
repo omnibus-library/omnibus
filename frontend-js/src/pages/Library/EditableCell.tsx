@@ -11,6 +11,7 @@ const TEXT_CELLS = {
     open: "ebook-col-title ebook-cell-editable ebook-cell-editing",
     label: "Title",
     placeholder: undefined,
+    spellCheck: undefined,
   },
   series: {
     plain: "ebook-col-series",
@@ -18,6 +19,7 @@ const TEXT_CELLS = {
     open: "ebook-col-series ebook-cell-editable ebook-cell-editing",
     label: "Series",
     placeholder: undefined,
+    spellCheck: undefined,
   },
   published: {
     plain: "ebook-col-published",
@@ -25,6 +27,7 @@ const TEXT_CELLS = {
     open: "ebook-col-published ebook-cell-editable ebook-cell-editing",
     label: "Published",
     placeholder: "YYYY-MM-DD",
+    spellCheck: false,
   },
   language: {
     plain: "ebook-col-language",
@@ -32,6 +35,7 @@ const TEXT_CELLS = {
     open: "ebook-col-language ebook-cell-editable ebook-cell-editing",
     label: "Language",
     placeholder: "en",
+    spellCheck: false,
   },
 } as const;
 
@@ -41,21 +45,26 @@ export type TextField = keyof typeof TEXT_CELLS;
 function TextEditor({
   label,
   placeholder,
+  spellCheck,
   initial,
   settle,
 }: {
   label: string;
   placeholder: string | undefined;
+  spellCheck: boolean | undefined;
   initial: string;
-  /** `value` is the trimmed text to save, or `null` to drop it. */
+  /** `value` is the trimmed text to save, or `null` when it is dropped or unchanged. */
   settle: (value: string | null, refocus: boolean) => void;
 }) {
-  const [draft, setDraft] = useState(initial);
+  // What the cell held when it opened: a refetch while it is open does not move the baseline.
+  const [opened] = useState(initial);
+  const [draft, setDraft] = useState(opened);
   const settled = useRef(false);
   const finish = (save: boolean, refocus: boolean) => {
     if (settled.current) return;
     settled.current = true;
-    settle(save ? draft.trim() : null, refocus);
+    const next = draft.trim();
+    settle(save && next !== opened.trim() ? next : null, refocus);
   };
   return (
     <input
@@ -64,9 +73,11 @@ function TextEditor({
       autoFocus
       aria-label={label}
       placeholder={placeholder}
+      spellCheck={spellCheck}
       value={draft}
       onChange={(e) => setDraft(e.target.value)}
       onKeyDown={(e) => {
+        if (e.nativeEvent.isComposing) return;
         if (e.key === "Enter") {
           e.preventDefault();
           finish(true, true);
@@ -97,6 +108,7 @@ function useRefocus(open: boolean) {
 /** A title, series, published or language cell: a button until clicked, then an input that saves on Enter or blur. */
 export function TextCell({
   field,
+  bookTitle,
   display,
   initial,
   editable,
@@ -106,6 +118,8 @@ export function TextCell({
   onSave,
 }: {
   field: TextField;
+  /** The row's book, which names the edit button among the rows. */
+  bookTitle: string;
   /** What the cell reads when closed. */
   display: string;
   /** The raw value the input starts from, which is not always what is displayed. */
@@ -126,7 +140,8 @@ export function TextCell({
     );
   }
   const settle = (value: string | null, focusButton: boolean) => {
-    if (value !== null && value !== initial.trim()) onSave(value);
+    // A blank title is a cancel: the book keeps the one it has.
+    if (value !== null && (value !== "" || field !== "title")) onSave(value);
     if (focusButton) refocus();
     onClose();
   };
@@ -136,6 +151,7 @@ export function TextCell({
         <TextEditor
           label={cell.label}
           placeholder={cell.placeholder}
+          spellCheck={cell.spellCheck}
           initial={initial}
           settle={settle}
         />
@@ -144,7 +160,7 @@ export function TextCell({
           ref={button}
           type="button"
           className="ebook-cell-edit-btn"
-          aria-label={`Edit ${field}: ${initial.trim() ? display : "none"}`}
+          aria-label={`Edit ${field} of ${bookTitle}: ${initial.trim() ? display : "none"}`}
           onClick={onOpen}
         >
           <span className="ebook-title-cell">{display}</span>
@@ -207,8 +223,12 @@ function ChipEditor({
     <fieldset
       className="ebook-cell-chip-host"
       aria-label={`Edit ${field}`}
+      // Focus stays in the input unless the click is on it: a label, the gap or a ✕ in Safari would blur it and close the editor.
+      onMouseDown={(e) => {
+        if (!(e.target instanceof HTMLInputElement)) e.preventDefault();
+      }}
       onKeyDown={(e) => {
-        if (e.key === "Escape") close(true);
+        if (e.key === "Escape" && !e.nativeEvent.isComposing) close(true);
       }}
       onBlur={(e) => {
         if (!e.currentTarget.contains(e.relatedTarget)) close(false);
@@ -231,6 +251,7 @@ function ChipEditor({
 /** An authors, tags or genres cell: a button until clicked, then a chip editor. */
 export function ChipCell({
   field,
+  bookTitle,
   values,
   editable,
   open,
@@ -239,6 +260,8 @@ export function ChipCell({
   onChange,
 }: {
   field: ChipField;
+  /** The row's book, which names the edit button among the rows. */
+  bookTitle: string;
   values: string[];
   editable: boolean;
   open: boolean;
@@ -273,7 +296,7 @@ export function ChipCell({
           ref={button}
           type="button"
           className="ebook-cell-edit-btn"
-          aria-label={`Edit ${field}: ${display || "none"}`}
+          aria-label={`Edit ${field} of ${bookTitle}: ${display || "none"}`}
           onClick={onOpen}
         >
           <span className="ebook-title-cell">{display}</span>

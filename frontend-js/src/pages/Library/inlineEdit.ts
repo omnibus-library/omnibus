@@ -1,4 +1,8 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  type QueryKey,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import {
   type Book,
@@ -7,31 +11,25 @@ import {
   saveBookOverrides,
 } from "../../api";
 import { useToast } from "../../components/Toast/Toast";
+import type { ChipField, TextField } from "./EditableCell";
 
-export type EditField =
-  | "title"
-  | "series"
-  | "authors"
-  | "tags"
-  | "genres"
-  | "published"
-  | "language";
+export type EditField = TextField | ChipField;
 
 /** What an empty string means for a scalar: no value. */
 const text = (edit: string | null | undefined, current: string | null) =>
-  edit == null ? current : edit.trim() || null;
+  edit == null ? current : edit || null;
 
 /** The book as `edit` leaves it, shown until the server answers. */
 export function applyEdit(book: Book, edit: MetadataOverrides): Book {
   let series = book.series;
   if (edit.series != null) {
-    series = edit.series.trim()
+    series = edit.series
       ? { name: edit.series, index: book.series?.index ?? null }
       : null;
   }
   return {
     ...book,
-    title: edit.title?.trim() ? edit.title : book.title,
+    title: edit.title || book.title,
     authors: edit.creators?.map((c) => c.name) ?? book.authors,
     series,
     subjects: edit.subjects ?? book.subjects,
@@ -60,21 +58,26 @@ export function useRowEdit(book: Book) {
   const [editing, setEditing] = useState<EditField | null>(null);
   const [shown, setShown] = useState<Book | null>(null);
   const newest = useRef(0);
-  const pending = useRef(0);
+  // The newest answer the server gave, which a refused write falls back to while the list may still predate it.
+  const lastSaved = useRef<Book | null>(null);
   const view = shown ?? book;
+  const mutationKey = ["row-edit", book.uuid];
 
   // A refetch that lands with nothing in flight is the truth again.
   // biome-ignore lint/correctness/useExhaustiveDependencies: runs when a new `book` arrives, which the body does not read
   useEffect(() => {
-    if (pending.current === 0) setShown(null);
+    if (client.isMutating({ mutationKey }) > 0) return;
+    lastSaved.current = null;
+    setShown(null);
   }, [book]);
 
   const write = useMutation({
+    mutationKey,
     scope: { id: book.uuid },
     mutationFn: ({ edit }: Write) => saveBookOverrides(book.uuid, edit),
     onSuccess: (saved, { edit, id }) => {
       // The book's page, the lists and the resume row all read what an edit changes.
-      const stale: readonly (readonly unknown[])[] = [
+      const stale: QueryKey[] = [
         ["book", book.uuid],
         ["books"],
         ["shelf-page"],
@@ -87,21 +90,18 @@ export function useRowEdit(book: Book) {
       for (const queryKey of stale) {
         void client.invalidateQueries({ queryKey });
       }
+      lastSaved.current = saved;
       if (id === newest.current) setShown(saved);
     },
     onError: (error, { id }) => {
-      toast(`Couldn’t save that change: ${error.message}`);
+      toast(`Couldn’t save the change to “${book.title}”: ${error.message}`);
       if (id !== newest.current) return;
-      setShown(null);
+      setShown(lastSaved.current);
       void client.invalidateQueries({ queryKey: ["books"] });
-    },
-    onSettled: () => {
-      pending.current -= 1;
     },
   });
 
   const save = (edit: MetadataOverrides) => {
-    pending.current += 1;
     const id = ++newest.current;
     setShown((current) => applyEdit(current ?? book, edit));
     write.mutate({ edit, id });

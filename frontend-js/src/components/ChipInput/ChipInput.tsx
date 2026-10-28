@@ -70,10 +70,13 @@ export function ChipInput({
             type="button"
             className="me-chip-remove"
             aria-label={`${removeLabel} ${value}`}
-            onClick={() => {
+            // Safari doesn't focus a clicked button, so the input would blur and a host that closes on blur would drop this ✕ before the click.
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={(e) => {
+              // Only a keyboard remove leaves focus on this button, which is about to unmount.
+              const focused = document.activeElement === e.currentTarget;
               onChange(values.filter((_, j) => j !== i));
-              // The focused button unmounts with its chip, which would drop focus to the body.
-              input.current?.focus();
+              if (focused) input.current?.focus();
             }}
           >
             ✕

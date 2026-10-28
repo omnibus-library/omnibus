@@ -137,9 +137,18 @@ function Row({
 }) {
   const { view, editing, setEditing, save } = useRowEdit(book);
   const checked = select?.selected.has(book.uuid) ?? false;
-  const text = (field: TextField, display: string, initial: string) => (
+  const text = ({
+    field,
+    display,
+    initial,
+  }: {
+    field: TextField;
+    display: string;
+    initial: string;
+  }) => (
     <TextCell
       field={field}
+      bookTitle={view.title}
       display={display}
       initial={initial}
       editable={editable}
@@ -156,6 +165,7 @@ function Row({
   ) => (
     <ChipCell
       field={field}
+      bookTitle={view.title}
       values={values}
       editable={editable}
       open={editing === field}
@@ -177,24 +187,24 @@ function Row({
         </td>
       )}
       <RowCover book={view} />
-      {text("title", view.title, view.title)}
+      {text({ field: "title", display: view.title, initial: view.title })}
       {chips("authors", view.authors, (names) => ({
         creators: names.map((name) => ({ name })),
       }))}
-      {text(
-        "series",
-        view.series
+      {text({
+        field: "series",
+        display: view.series
           ? `${view.series.name}${view.series.index ? ` #${view.series.index}` : ""}`
           : "",
-        view.series?.name ?? "",
-      )}
+        initial: view.series?.name ?? "",
+      })}
       {chips("tags", view.subjects, (subjects) => ({ subjects }))}
       {chips("genres", view.genres, (genres) => ({ genres }))}
-      {text(
-        "published",
-        formatDateShort(view.published ?? "") ?? "—",
-        view.published ?? "",
-      )}
+      {text({
+        field: "published",
+        display: formatDateShort(view.published ?? "") ?? "—",
+        initial: view.published ?? "",
+      })}
       <td className="ebook-col-formats">
         <Formats book={view} />
       </td>
@@ -204,7 +214,11 @@ function Row({
       <td className="ebook-col-added">
         {formatInstantShort(view.addedAt ?? "") ?? "—"}
       </td>
-      {text("language", view.language ?? "", view.language ?? "")}
+      {text({
+        field: "language",
+        display: view.language ?? "",
+        initial: view.language ?? "",
+      })}
     </tr>
   );
 }
