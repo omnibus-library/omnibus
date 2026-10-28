@@ -70,7 +70,7 @@ TUI --local:
 
 STATE:
     serve keeps its state in .claude/runtime/mock-kobo.json unless --state names
-    another. tui starts as a new device in a temp dir it removes on exit; --state
+    another. tui starts as a new device in a scratch dir it removes on exit; --state
     keeps one across launches.
 ";
 

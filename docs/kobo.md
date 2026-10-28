@@ -262,7 +262,10 @@ instance: **Settings → Devices → Kobo**
 reason and the prompt stays open; <kbd>Esc</kbd> or <kbd>Ctrl-C</kbd> quits.
 `--sync-url URL` takes the same URL as a flag, and can't be combined with `--url`,
 `--token` or `--local`. The device then syncs against that instance with that
-token. Pressing <kbd>w</kbd> to wire a token only works against a local server,
+token. The URL holds the device's token, so as a flag it lands in the process
+list and shell history; the prompt keeps it out of both. A token from
+`OMNIBUS_MOCK_KOBO_TOKEN` (or `--token`) also skips the prompt, and `--url`
+is only accepted together with `--token` or `--local`. Pressing <kbd>w</kbd> to wire a token only works against a local server,
 as below.
 
 `--local` needs the dev server (`just dev-up`) and `OMNIBUS_DEV_SEED_USER`. It
@@ -272,12 +275,13 @@ hardware id, URL, library, last sync and the requests it made.
 
 **Every launch is a clean slate.** Without `--state`, the TUI keeps its state
 file and downloaded books in a scratch directory under
-`$TMPDIR/omnibus-mock-kobo/` (`/tmp/omnibus-mock-kobo/` when `TMPDIR` is unset)
-and removes it on exit. A launch that was killed leaves its directory behind; the
-next launch removes every directory no running TUI holds. `--state PATH` is the
-opt-out: that file persists, so the token, library and reading state carry over
-to the next launch. `.claude/runtime/mock-kobo.json` and `mock-kobo.books/` from
-earlier versions are no longer used; delete them by hand.
+`.claude/runtime/mock-kobo/runs/` (gitignored, per worktree) and removes it on
+exit. A launch that was killed leaves its directory behind; the next launch
+removes every directory no running TUI holds. `--state PATH` is the opt-out: that
+file persists, so the token, library and reading state carry over to the next
+launch, and a token saved in it skips the prompt. `tui` no longer uses
+`.claude/runtime/mock-kobo.json` or `mock-kobo.books/` (`serve` still does); delete
+them by hand if they are left over from earlier versions.
 
 The shelf a device syncs must have **Sync to my devices** on. The seeded dev admin
 starts with a **Kobo library** smart shelf that holds every
@@ -350,12 +354,13 @@ done; press <kbd>q</kbd> or <kbd>Ctrl-C</kbd> again to quit at once. A running
 sync is always waited for, so the pages Omnibus recorded are saved; one more
 <kbd>Ctrl-C</kbd> kills the process.
 
-For a second device, run a second terminal (each launch is its own device), or
-give it a state file of its own, which also persists it; inside the gitignored
+A second terminal is a second local device, but under `--local` every launch wires
+the same Omnibus device, "Mock Kobo". For a second, distinctly named one, give it a
+state file of its own, which also persists it; inside the gitignored
 `.claude/runtime/`, because a state file holds the device token:
 
 ```bash
-just kobo --state .claude/runtime/other.json   # the Omnibus device "Mock Kobo (other)"
+just kobo --local --state .claude/runtime/other.json   # the Omnibus device "Mock Kobo (other)"
 ```
 
 A downloaded book's file is kept beside the state file, in `<state>.books/`

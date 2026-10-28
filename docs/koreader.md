@@ -240,12 +240,11 @@ would download, and adds the OPDS catalog **Omnibus (dev)** and stock Progress
 sync. It needs the dev server and says so in one line if it isn't running.
 
 Docker must be running (Docker Desktop on macOS); the launcher never starts it.
-Ctrl-C, or quitting KOReader, stops the container; one Ctrl-C closes KOReader
-cleanly, so its settings are saved.
+Ctrl-C, or quitting KOReader, stops the container.
 
 - **Every launch is a clean slate.** KOReader's home (settings, books, progress)
-  lives in a run directory under `$TMPDIR/omnibus-koreader-dev/` (`/tmp/...` when
-  `TMPDIR` is unset), removed with its container on exit. A launch that was killed
+  lives in a run directory under `.claude/runtime/koreader/runs/` (gitignored, per
+  worktree), removed with its container on exit. A launch that was killed
   leaves them behind; the next launch removes any run whose process is gone. Two
   terminals are two homes and two containers, both linking **Dev KOReader**
   under `--local`. `.claude/runtime/koreader/home` from earlier versions is no

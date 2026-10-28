@@ -61,7 +61,7 @@ dev-bounce:
 # `--local` follows this worktree's dev server instead (run `just dev-up` first) and
 # auto-wires the "Mock Kobo" device with $OMNIBUS_DEV_SEED_USER. s syncs, r resets,
 # u/t edit the URL/token, w wires a token, q quits. The control API runs on a free
-# loopback port the header shows. Every launch starts as a new device on a temp
+# loopback port the header shows. Every launch starts as a new device on a scratch
 # state removed on exit; `--state PATH` keeps one (docs/kobo.md).
 [positional-arguments]
 kobo *args:
