@@ -2,11 +2,15 @@
 """Link a fresh KOReader home to the dev server (`just koreader`).
 
     python3 scripts/koreader_home.py --home DIR --api URL --origin URL --state-dir DIR
+    python3 scripts/koreader_home.py --home DIR --plugin ZIP
 
 Signs in as $OMNIBUS_DEV_SEED_USER, finds or creates the "Dev KOReader" device,
 installs the Omnibus plugin its Settings download hands a reader, and seeds
 KOReader's OPDS catalog and stock Progress sync. Exits 0 when the home was
 linked or already is, 1 with one `koreader:` line on stderr otherwise.
+
+`--plugin` installs a plugin zip downloaded from any instance as it is, and
+prints the server it will sync with; nothing is sent to that server.
 
 `--api` is the host-side URL the seed password is sent to; `--origin` is the
 dev server as the container reaches it, and is only written into the home.
@@ -65,7 +69,9 @@ def parse_seed_user(value: str | None) -> tuple[str, str]:
     return user, password
 
 
-def _is_loopback_ip(host: str) -> bool:
+def _is_loopback_host(host: str) -> bool:
+    if host == "localhost":
+        return True
     try:
         return ipaddress.ip_address(host).is_loopback
     except ValueError:
@@ -77,7 +83,7 @@ class Api:
 
     def __init__(self, base: str):
         host = urllib.parse.urlsplit(base).hostname or ""
-        if host != "localhost" and not _is_loopback_ip(host):
+        if not _is_loopback_host(host):
             raise LinkError(f"--api must be a loopback address, not {base}: it is sent the seed password")
         self.base = base.rstrip("/")
         self.token: str | None = None
@@ -203,6 +209,39 @@ def install_plugin(home: Path, archive: bytes, origin: str) -> None:
         shutil.rmtree(staging, ignore_errors=True)
 
 
+def plugin_server_url(archive: bytes) -> str:
+    """The `server_url` in the zip's omnibus.json; ValueError with the reason when it is not a plugin zip."""
+    try:
+        with zipfile.ZipFile(BytesIO(archive)) as z:
+            config = json.loads(z.read(f"{PLUGIN_DIR}/omnibus.json"))
+    except zipfile.BadZipFile:
+        raise ValueError("not a zip file") from None
+    except KeyError:
+        raise ValueError(f"no {PLUGIN_DIR}/omnibus.json") from None
+    except ValueError:
+        config = None  # not UTF-8 or not JSON
+    server = config.get("server_url") if isinstance(config, dict) else None
+    if not isinstance(server, str) or urllib.parse.urlsplit(server).scheme not in ("http", "https"):
+        raise ValueError("omnibus.json has no http(s) server_url")
+    return server
+
+
+def install_plugin_zip(home: Path, path: Path) -> str:
+    """Install the plugin zip at `path` as downloaded; returns the server it syncs with."""
+    try:
+        archive = path.read_bytes()
+    except FileNotFoundError:
+        raise LinkError(f"no such file: {path}") from None
+    try:
+        server = plugin_server_url(archive)
+    except ValueError as e:
+        raise LinkError(f"{path} is not an Omnibus plugin zip: {e}") from None
+    if _is_loopback_host(urllib.parse.urlsplit(server).hostname or ""):
+        raise LinkError(f"{path} syncs with {server}, which the container can't reach: use --local for this worktree's dev server")
+    install_plugin(home, archive, server)
+    return server
+
+
 def write_settings(home: Path, origin: str, seed: tuple[str, str], key: dict) -> None:
     opds = {"servers": [{"title": "Omnibus (dev)", "url": f"{origin}/opds", "username": seed[0], "password": seed[1]}]}
     kosync = {
@@ -249,13 +288,22 @@ def _link_unlocked(home: Path, api: str, origin: str, state_dir: Path, seed: tup
 
 
 def main(argv: list[str]) -> int:
-    parser = argparse.ArgumentParser(description="Link a KOReader home to the dev server.")
+    parser = argparse.ArgumentParser(description="Set up a fresh KOReader home for `just koreader`.")
     parser.add_argument("--home", type=Path, required=True)
-    parser.add_argument("--api", required=True)
-    parser.add_argument("--origin", required=True)
-    parser.add_argument("--state-dir", type=Path, required=True)
+    parser.add_argument("--plugin", type=Path, help="a plugin zip from any instance, installed as it is")
+    parser.add_argument("--api", help="link to the dev server: its host-side URL")
+    parser.add_argument("--origin", help="link to the dev server: its URL as the container reaches it")
+    parser.add_argument("--state-dir", type=Path, help="link to the dev server: where the kosync key is cached")
     args = parser.parse_args(argv)
+    link_args = (args.api, args.origin, args.state_dir)
+    if args.plugin is not None and any(a is not None for a in link_args):
+        parser.error("--plugin can't be combined with --api, --origin or --state-dir")
+    if args.plugin is None and None in link_args:
+        parser.error("--api, --origin and --state-dir are required without --plugin")
     try:
+        if args.plugin is not None:
+            print(f"koreader: KOReader will sync with {install_plugin_zip(args.home, args.plugin)}")
+            return 0
         seed = parse_seed_user(os.environ.get("OMNIBUS_DEV_SEED_USER"))
         if link_home(args.home, args.api, args.origin, args.state_dir, seed):
             print(f"koreader: linked {args.home} as {DEVICE_NAME!r}")

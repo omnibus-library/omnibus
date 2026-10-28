@@ -27,7 +27,16 @@ from pathlib import Path
 SCRIPTS = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPTS))
 
-from koreader_home import DEVICE_NAME, LinkError, link_home, lua_literal, main, parse_seed_user  # noqa: E402
+from koreader_home import (  # noqa: E402
+    DEVICE_NAME,
+    LinkError,
+    install_plugin_zip,
+    link_home,
+    lua_literal,
+    main,
+    parse_seed_user,
+    plugin_server_url,
+)
 
 SEED = ("admin", "seed-pw:with-colon")
 ORIGIN = "http://device.test:3999"
@@ -398,6 +407,128 @@ class MainTests(unittest.TestCase):
 
         self.assertEqual(status, 1)
         self.assertEqual(stderr, "koreader: POST /api/auth/login answered something that isn't JSON\n")
+
+
+def zip_of(files: dict[str, str]) -> bytes:
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w") as z:
+        for name, text in files.items():
+            z.writestr(name, text)
+    return out.getvalue()
+
+
+def plugin_zip_for(server_url, token: str = "plugin-token") -> bytes:
+    """A plugin zip as an instance's Settings download hands it out, baked for `server_url`."""
+    config = {"server_url": server_url, "token": token}
+    return zip_of({"omnibus.koplugin/main.lua": "-- plugin", "omnibus.koplugin/omnibus.json": json.dumps(config)})
+
+
+class PluginZipTests(unittest.TestCase):
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.root, True)
+        self.home = self.root / "home"
+        self.home.mkdir()
+
+    def write(self, data: bytes, name: str = "omnibus-koreader.zip") -> Path:
+        path = self.root / name
+        path.write_bytes(data)
+        return path
+
+    def refusal(self, data: bytes) -> str:
+        path = self.write(data)
+        with self.assertRaises(LinkError) as caught:
+            install_plugin_zip(self.home, path)
+        self.assertFalse((self.home / "plugins/omnibus.koplugin").exists())
+        return str(caught.exception).replace(str(path), "<path>")
+
+    def test_plugin_server_url_reads_the_server_url_of_the_zips_config(self):
+        self.assertEqual(plugin_server_url(plugin_zip_for("https://omnibus.example")), "https://omnibus.example")
+
+    def test_installs_the_plugin_with_the_zips_own_config_and_returns_its_server(self):
+        path = self.write(plugin_zip_for("https://omnibus.example", token="abc"))
+
+        server = install_plugin_zip(self.home, path)
+
+        self.assertEqual(server, "https://omnibus.example")
+        config = json.loads((self.home / "plugins/omnibus.koplugin/omnibus.json").read_text())
+        self.assertEqual(config, {"server_url": "https://omnibus.example", "token": "abc"})
+        self.assertTrue((self.home / "plugins/omnibus.koplugin/main.lua").is_file())
+
+    def test_refuses_a_file_that_is_not_a_zip(self):
+        self.assertEqual(self.refusal(b"hosts file"), "<path> is not an Omnibus plugin zip: not a zip file")
+
+    def test_refuses_a_zip_without_the_plugins_config(self):
+        data = zip_of({"omnibus.koplugin/main.lua": "-- plugin"})
+
+        self.assertEqual(
+            self.refusal(data), "<path> is not an Omnibus plugin zip: no omnibus.koplugin/omnibus.json"
+        )
+
+    def test_refuses_a_config_with_no_http_server_url(self):
+        reason = "<path> is not an Omnibus plugin zip: omnibus.json has no http(s) server_url"
+        for config in ('{"token": "t"}', '{"server_url": 5}', '{"server_url": "ftp://h"}', "[]", "not json"):
+            with self.subTest(config=config):
+                self.assertEqual(self.refusal(zip_of({"omnibus.koplugin/omnibus.json": config})), reason)
+
+    def test_refuses_a_loopback_server_url_and_points_at_local(self):
+        for server in ("http://127.0.0.1:3000", "http://localhost:3000", "http://[::1]:3000"):
+            with self.subTest(server=server):
+                message = self.refusal(plugin_zip_for(server))
+                self.assertEqual(
+                    message,
+                    f"<path> syncs with {server}, which the container can't reach: use --local for this worktree's dev server",
+                )
+
+    def test_refuses_a_missing_file(self):
+        missing = self.root / "gone.zip"
+
+        with self.assertRaisesRegex(LinkError, f"^no such file: {missing}$"):
+            install_plugin_zip(self.home, missing)
+
+
+class MainPluginTests(unittest.TestCase):
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.root, True)
+        self.home = self.root / "home"
+        self.home.mkdir()
+        self.zip = self.root / "plugin.zip"
+        self.zip.write_bytes(plugin_zip_for("https://omnibus.example"))
+
+    def run_main(self, argv: list[str]) -> tuple[int, str, str]:
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            try:
+                status = main(argv)
+            except SystemExit as exit:
+                status = exit.code
+        return status, stdout.getvalue(), stderr.getvalue()
+
+    def test_says_which_server_the_plugin_will_sync_with(self):
+        status, stdout, stderr = self.run_main(["--home", str(self.home), "--plugin", str(self.zip)])
+
+        self.assertEqual((status, stdout, stderr), (0, "koreader: KOReader will sync with https://omnibus.example\n", ""))
+        self.assertTrue((self.home / "plugins/omnibus.koplugin/omnibus.json").is_file())
+
+    def test_reports_a_refused_zip_as_one_line(self):
+        self.zip.write_bytes(b"not a zip")
+
+        status, stdout, stderr = self.run_main(["--home", str(self.home), "--plugin", str(self.zip)])
+
+        self.assertEqual((status, stdout), (1, ""))
+        self.assertEqual(stderr, f"koreader: {self.zip} is not an Omnibus plugin zip: not a zip file\n")
+
+    def test_rejects_plugin_combined_with_the_link_arguments(self):
+        for extra in (["--api", "http://127.0.0.1:1"], ["--origin", ORIGIN], ["--state-dir", str(self.root)]):
+            with self.subTest(extra=extra):
+                argv = ["--home", str(self.home), "--plugin", str(self.zip), *extra]
+                self.assertEqual(self.run_main(argv)[0], 2)
+
+    def test_requires_all_three_link_arguments_without_plugin(self):
+        argv = ["--home", str(self.home), "--api", "http://127.0.0.1:1", "--origin", ORIGIN]
+
+        self.assertEqual(self.run_main(argv)[0], 2)
 
 
 class LuaLiteralTests(unittest.TestCase):

@@ -67,9 +67,11 @@ dev-bounce:
 kobo *args:
     scripts/with-dev-env.sh default cargo run -q -p omnibus-mock-kobo -- tui "$@"
 
-# Interactive KOReader in a browser tab (Docker), syncing with this worktree's dev
-# server (run `just dev-up` first); Ctrl-C stops it. Every launch starts from a fresh
-# home removed on exit (docs/koreader.md).
+# Interactive KOReader in a browser tab (Docker), syncing with any Omnibus instance:
+# it asks for the plugin zip from the instance's Settings (or `--plugin PATH`), which
+# alone carries the server and device. `--local` follows this worktree's dev server
+# (run `just dev-up` first) and seeds its OPDS catalog and Progress sync. Ctrl-C
+# stops it; every launch starts from a fresh home removed on exit (docs/koreader.md).
 [positional-arguments]
 koreader *args:
     scripts/with-dev-env.sh default scripts/koreader-dev.sh "$@"

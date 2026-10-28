@@ -98,6 +98,20 @@ check "require_dev_server prints the port when this worktree's server answers" \
 usage_msg="koreader: usage: just koreader [--local | --plugin PATH]"
 check "main rejects an unknown argument with the usage line" "2||$usage_msg" "$(run main --bogus)"
 check "main rejects the removed --home with the usage line" "2||$usage_msg" "$(run main --home x)"
+check "main rejects --plugin without a path with the usage line" "2||$usage_msg" "$(run main --plugin)"
+check "main rejects --local together with --plugin with the usage line" "2||$usage_msg" \
+    "$(run main --local --plugin x.zip)"
+check "main rejects --plugin together with --local with the usage line" "2||$usage_msg" \
+    "$(run main --plugin x.zip --local)"
+no_zip_msg="koreader: no plugin zip given: pass --plugin PATH"
+check "main asks for --plugin when run with no flags and no terminal" "1||$no_zip_msg" "$(run main </dev/null)"
+
+HOME="$(mktemp -d)"
+path_from() { printf '%s\n' "$1" | prompt_plugin_path; }
+check "prompt_plugin_path trims whitespace around the path" "/tmp/p.zip" "$(path_from '  /tmp/p.zip  ')"
+check "prompt_plugin_path expands a leading ~/ to the home dir" "$HOME/Downloads/p.zip" "$(path_from '~/Downloads/p.zip')"
+check "prompt_plugin_path dies readably on an empty answer" "1||$no_zip_msg" "$(run path_from '   ')"
+check "prompt_plugin_path dies readably when input ends" "1||$no_zip_msg" "$(run prompt_plugin_path </dev/null)"
 
 scratch="$(mktemp -d)"
 trap 'rm -rf "$runtime" "$scratch"' EXIT
@@ -149,10 +163,10 @@ check "sweep_runs keeps a run whose launch is alive" "1" "$([ -d "$live" ] && ec
 check "sweep_runs keeps a dir that has no pid file yet" "1" "$([ -d "$starting" ] && echo 1 || echo 0)"
 rm -rf "$SCRATCH_ROOT"
 
-: >"$DOCKER_LOG"
-SCRIPT_LOG="$scratch/script.log"
+CALLS="$scratch/calls.log"
+FAKE_PYTHON_STATUS=0
 docker() {
-    printf '%s\n' "$*" >>"$DOCKER_LOG"
+    printf 'docker %s\n' "$*" >>"$CALLS"
     case "$1" in
     version) echo arm64 ;;
     info) echo 'Arch Linux|["name=seccomp,profile=builtin"]' ;;
@@ -160,28 +174,67 @@ docker() {
 }
 python3() {
     case "$*" in
-    *koreader_home.py*) printf '%s\n' "$*" >>"$SCRIPT_LOG" ;;
+    *koreader_home.py*)
+        printf 'python %s\n' "$*" >>"$CALLS"
+        return "$FAKE_PYTHON_STATUS"
+        ;;
     *) command python3 "$@" ;;
     esac
 }
 open_when_ready() { :; }
 uname() { echo Linux; }
-status=0
-(main) >/dev/null 2>&1 || status=$?
-check "main runs a launch to the end" "0" "$status"
-docker_run="$(grep '^run ' "$DOCKER_LOG")"
-mounted="${docker_run##*-v }"
-mounted="${mounted%% *}"
-named="${docker_run##*--name }"
-named="${named%% *}"
-check "main mounts the run dir's home at /ko-home" "1" \
+RUNTIME_DIR="$runtime"
+
+# Runs main as a background subshell, so `set -e` still stops it at a failed command as it does for the real script.
+launch() {
+    : >"$CALLS"
+    status=0
+    (main "$@") >/dev/null 2>&1 &
+    wait $! || status=$?
+}
+calls_matching() { grep -c "$1" "$CALLS" || true; }
+# The value after `flag` on the first call line starting with `prefix`.
+arg_after() {
+    local line
+    line="$(grep "^$1 " "$CALLS" | head -n 1)"
+    line="${line#*"$2" }"
+    echo "${line%% *}"
+}
+
+launch --local
+check "main --local runs a launch to the end" "0" "$status"
+mounted="$(arg_after 'docker run' -v)"
+named="$(arg_after 'docker run' --name)"
+check "main --local mounts the run dir's home at /ko-home" "1" \
     "$([[ "$mounted" == "$SCRATCH_ROOT"/run.??????/home:/ko-home ]] && echo 1 || echo 0)"
 run_suffix="${mounted#"$SCRATCH_ROOT"/run.}"
-check "main names the container for the run dir" "omnibus-koreader-${run_suffix%/home:/ko-home}" "$named"
-check "main links the run dir's home" "1" \
-    "$([[ "$(cat "$SCRIPT_LOG")" == *"--home ${mounted%:/ko-home} "* ]] && echo 1 || echo 0)"
-check "main force-removes its container on exit" "rm -f $named" "$(tail -n 1 "$DOCKER_LOG")"
-check "main removes its run dir on exit" "0" "$(find "$SCRATCH_ROOT" -mindepth 1 | wc -l | tr -d ' ')"
+check "main --local names the container for the run dir" "omnibus-koreader-${run_suffix%/home:/ko-home}" "$named"
+check "main --local links the run dir's home to the dev server" "${mounted%:/ko-home}|http://127.0.0.1:3571|$runtime/koreader" \
+    "$(arg_after python --home)|$(arg_after python --api)|$(arg_after python --state-dir)"
+check "main --local shares the host's network on a rootful Linux engine" "1" "$(calls_matching '^docker run.* --network host ')"
+check "main --local force-removes its container on exit" "docker rm -f $named" "$(tail -n 1 "$CALLS")"
+check "main --local removes its run dir on exit" "0" "$(find "$SCRATCH_ROOT" -mindepth 1 | wc -l | tr -d ' ')"
+
+zip="$scratch/plugin.zip"
+RUNTIME_DIR="$scratch/no-dev-server"
+launch --plugin "$zip"
+check "main --plugin runs a launch to the end without a dev server" "0" "$status"
+mounted="$(arg_after 'docker run' -v)"
+check "main --plugin installs the zip into the run dir's home" "${mounted%:/ko-home}|$zip" \
+    "$(arg_after python --home)|$(arg_after python --plugin)"
+check "main --plugin validates the zip before it touches docker" "python" \
+    "$(sed -n 1p "$CALLS" | cut -d' ' -f1)"
+check "main --plugin publishes ports instead of sharing the host's network" "0" \
+    "$(calls_matching '^docker run.* --network host ')"
+check "main --plugin links no dev server" "0" "$(calls_matching 'python.* --api ')"
+check "main --plugin removes its run dir on exit" "0" "$(find "$SCRATCH_ROOT" -mindepth 1 | wc -l | tr -d ' ')"
+
+FAKE_PYTHON_STATUS=1
+launch --plugin "$zip"
+check "main --plugin stops when the zip is refused" "1" "$status"
+check "main --plugin makes no docker call but the cleanup when the zip is refused" "0" \
+    "$(grep '^docker' "$CALLS" | grep -vc '^docker rm -f' || true)"
+check "main --plugin removes its run dir when the zip is refused" "0" "$(find "$SCRATCH_ROOT" -mindepth 1 | wc -l | tr -d ' ')"
 unset -f docker python3 open_when_ready uname
 
 pin_versions="$(sed -E 's/.*koreader_([^_]*-1)_.*/\1/' ui_tests/koreader/koreader.sha256 | sort -u | wc -l)"
