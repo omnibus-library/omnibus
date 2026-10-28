@@ -2187,7 +2187,18 @@ function inlineEditHandlers({
   requests.length = 0;
   edits.length = 0;
   gate = deferred();
-  const books: EbookMetadata[] = aWireLibrary(6);
+  const books: EbookMetadata[] = aWireLibrary(6).map((book, i) =>
+    i === 0
+      ? {
+          ...book,
+          creators: [
+            { name: "Sora Inkwell", role: null, file_as: null, id: 2 },
+            { name: "Ada Lovelace", role: null, file_as: null, id: 3 },
+          ],
+          subjects: ["space opera"],
+        }
+      : book,
+  );
   return [
     // A resolver that answers nothing hands the request on to the next handler.
     ...(hold
@@ -2199,6 +2210,7 @@ function inlineEditHandlers({
       : []),
     overridesHandler(books, { saved: edits, refuse }),
     libraryHandler(books, 10, { requests }),
+    ...BULK_OPTIONS,
   ];
 }
 
@@ -2341,7 +2353,9 @@ export const InlineEditOneCellAtATime: Story = {
   },
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(await canvas.findByRole("button", { name: TITLE_1 }));
-    await expect(canvas.getByRole("textbox", { name: "Title" })).toBeVisible();
+    await expect(
+      canvas.getByRole("textbox", { name: "Title" }),
+    ).toBeInTheDocument();
 
     await userEvent.click(
       (await firstRow(canvas)).getByRole("button", {
@@ -2349,7 +2363,9 @@ export const InlineEditOneCellAtATime: Story = {
       }),
     );
 
-    await expect(canvas.getByRole("textbox", { name: "Series" })).toBeVisible();
+    await expect(
+      canvas.getByRole("textbox", { name: "Series" }),
+    ).toBeInTheDocument();
     await expect(
       canvas.queryByRole("textbox", { name: "Title" }),
     ).not.toBeInTheDocument();
@@ -2390,5 +2406,118 @@ export const InlineEditAdminOnly: Story = {
     await expect(
       canvasElement.querySelector(".ebook-cell-editable"),
     ).toBeNull();
+  },
+};
+
+const TAGS_1 = "Edit tags: space opera";
+
+export const InlineEditAddsTag: Story = {
+  beforeEach({ msw }) {
+    msw.use(...inlineEditHandlers());
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByRole("button", { name: TAGS_1 }));
+
+    await userEvent.type(
+      canvas.getByRole("combobox", { name: "Tags" }),
+      "cozy{Enter}",
+    );
+
+    await waitFor(() =>
+      expect(edits).toEqual([{ subjects: ["space opera", "cozy"] }]),
+    );
+    const row = (await canvas.findAllByRole("row"))[1];
+    await expect(row).toHaveTextContent("cozy");
+  },
+};
+
+export const InlineEditQueuedChipsLandInOrder: Story = {
+  beforeEach({ msw }) {
+    msw.use(...inlineEditHandlers({ hold: true }));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByRole("button", { name: TAGS_1 }));
+    const input = canvas.getByRole("combobox", { name: "Tags" });
+
+    await userEvent.type(input, "cozy{Enter}");
+    await userEvent.type(input, "slow burn{Enter}");
+    await expect(edits).toEqual([]);
+
+    gate.release();
+    await waitFor(() =>
+      expect(edits).toEqual([
+        { subjects: ["space opera", "cozy"] },
+        { subjects: ["space opera", "cozy", "slow burn"] },
+      ]),
+    );
+    await userEvent.keyboard("{Escape}");
+    await expect(
+      await canvas.findByRole("button", {
+        name: "Edit tags: space opera, cozy, slow burn",
+      }),
+    ).toBeInTheDocument();
+  },
+};
+
+export const InlineEditRemovesAuthor: Story = {
+  beforeEach({ msw }) {
+    msw.use(...inlineEditHandlers());
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", {
+        name: "Edit authors: Sora Inkwell, Ada Lovelace",
+      }),
+    );
+    canvas.getByRole("button", { name: "Remove Ada Lovelace" }).focus();
+
+    await userEvent.keyboard("{Enter}");
+
+    await waitFor(() =>
+      expect(edits).toEqual([{ creators: [{ name: "Sora Inkwell" }] }]),
+    );
+    await expect(
+      canvas.getByRole("combobox", { name: "Authors" }),
+    ).toHaveFocus();
+    await expect(
+      canvas.getByRole("group", { name: "Edit authors" }),
+    ).toBeInTheDocument();
+  },
+};
+
+export const InlineEditChipEscape: Story = {
+  beforeEach({ msw }) {
+    msw.use(...inlineEditHandlers());
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByRole("button", { name: TAGS_1 }));
+    await expect(
+      canvas.getByRole("group", { name: "Edit tags" }),
+    ).toBeInTheDocument();
+
+    await userEvent.keyboard("{Escape}");
+
+    await expect(
+      canvas.queryByRole("group", { name: "Edit tags" }),
+    ).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(canvas.getByRole("button", { name: TAGS_1 })).toHaveFocus(),
+    );
+  },
+};
+
+export const InlineEditChipSuggestions: Story = {
+  beforeEach({ msw }) {
+    msw.use(...inlineEditHandlers());
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByRole("button", { name: TAGS_1 }));
+
+    // The book's own tag is a chip already, so only the library's other one is offered.
+    await waitFor(() =>
+      expect(
+        suggestions(canvas.getByRole("combobox", { name: "Tags" })),
+      ).toEqual(["cozy"]),
+    );
   },
 };

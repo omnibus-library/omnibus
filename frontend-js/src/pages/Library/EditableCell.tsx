@@ -1,4 +1,7 @@
+import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
+import { nameCountsQuery } from "../../api";
+import { ChipInput } from "../../components/ChipInput/ChipInput";
 
 // Spelled out whole, so the Atrium extractor finds each class.
 const TEXT_CELLS = {
@@ -142,6 +145,135 @@ export function TextCell({
           type="button"
           className="ebook-cell-edit-btn"
           aria-label={`Edit ${field}: ${initial.trim() ? display : "none"}`}
+          onClick={onOpen}
+        >
+          <span className="ebook-title-cell">{display}</span>
+        </button>
+      )}
+    </td>
+  );
+}
+
+const CHIP_CELLS = {
+  authors: {
+    plain: "ebook-col-author",
+    idle: "ebook-col-author ebook-cell-editable",
+    open: "ebook-col-author ebook-cell-editable ebook-cell-editing",
+    kind: "author",
+    label: "Authors",
+    placeholder: "+ add author…",
+    removeLabel: "Remove",
+    inputClass: "me-chip-input",
+  },
+  tags: {
+    plain: "ebook-col-tags",
+    idle: "ebook-col-tags ebook-cell-editable",
+    open: "ebook-col-tags ebook-cell-editable ebook-cell-editing",
+    kind: "tag",
+    label: "Tags",
+    placeholder: "+ add tag…",
+    removeLabel: "Remove tag",
+    inputClass: "me-tag-input",
+  },
+  genres: {
+    plain: "ebook-col-genres",
+    idle: "ebook-col-genres ebook-cell-editable",
+    open: "ebook-col-genres ebook-cell-editable ebook-cell-editing",
+    kind: "genre",
+    label: "Genres",
+    placeholder: "+ add genre…",
+    removeLabel: "Remove genre",
+    inputClass: "me-tag-input",
+  },
+} as const;
+
+export type ChipField = keyof typeof CHIP_CELLS;
+
+/** The open chip cell: every add or remove is saved at once, and Escape or focus leaving closes it. */
+function ChipEditor({
+  field,
+  values,
+  onChange,
+  close,
+}: {
+  field: ChipField;
+  values: string[];
+  onChange: (values: string[]) => void;
+  close: (refocus: boolean) => void;
+}) {
+  const cell = CHIP_CELLS[field];
+  const pool = useQuery(nameCountsQuery(cell.kind));
+  return (
+    <fieldset
+      className="ebook-cell-chip-host"
+      aria-label={`Edit ${field}`}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") close(true);
+      }}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget)) close(false);
+      }}
+    >
+      <ChipInput
+        autoFocus
+        label={cell.label}
+        values={values}
+        onChange={onChange}
+        suggestions={pool.data ?? []}
+        placeholder={cell.placeholder}
+        removeLabel={cell.removeLabel}
+        inputClass={cell.inputClass}
+      />
+    </fieldset>
+  );
+}
+
+/** An authors, tags or genres cell: a button until clicked, then a chip editor. */
+export function ChipCell({
+  field,
+  values,
+  editable,
+  open,
+  onOpen,
+  onClose,
+  onChange,
+}: {
+  field: ChipField;
+  values: string[];
+  editable: boolean;
+  open: boolean;
+  onOpen: () => void;
+  onClose: () => void;
+  onChange: (values: string[]) => void;
+}) {
+  const cell = CHIP_CELLS[field];
+  const { button, refocus } = useRefocus(open);
+  const display = values.join(", ");
+  if (!editable) {
+    return (
+      <td className={cell.plain}>
+        <div className="ebook-title-cell">{display}</div>
+      </td>
+    );
+  }
+  return (
+    <td className={open ? cell.open : cell.idle}>
+      {open ? (
+        <ChipEditor
+          field={field}
+          values={values}
+          onChange={onChange}
+          close={(focusButton) => {
+            if (focusButton) refocus();
+            onClose();
+          }}
+        />
+      ) : (
+        <button
+          ref={button}
+          type="button"
+          className="ebook-cell-edit-btn"
+          aria-label={`Edit ${field}: ${display || "none"}`}
           onClick={onOpen}
         >
           <span className="ebook-title-cell">{display}</span>

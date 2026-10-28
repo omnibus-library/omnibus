@@ -1,10 +1,21 @@
 import { type RefObject, useState } from "react";
 import { Link } from "react-router";
-import { type Book, type SortKey, thumbSrcSet, thumbUrl } from "../../api";
+import {
+  type Book,
+  type MetadataOverrides,
+  type SortKey,
+  thumbSrcSet,
+  thumbUrl,
+} from "../../api";
 import "../../components/FormatSwitcher/FormatSwitcher.css";
 import { formatDateShort, formatInstantShort } from "../../format";
 import type { Prefs } from "../../viewPrefs";
-import { TextCell, type TextField } from "./EditableCell";
+import {
+  ChipCell,
+  type ChipField,
+  TextCell,
+  type TextField,
+} from "./EditableCell";
 import { useRowEdit } from "./inlineEdit";
 
 type SortableColumn = { className: string; label: string; sort: SortKey };
@@ -138,6 +149,21 @@ function Row({
       onSave={(value) => save({ [field]: value })}
     />
   );
+  const chips = (
+    field: ChipField,
+    values: string[],
+    edit: (v: string[]) => MetadataOverrides,
+  ) => (
+    <ChipCell
+      field={field}
+      values={values}
+      editable={editable}
+      open={editing === field}
+      onOpen={() => setEditing(field)}
+      onClose={() => setEditing(null)}
+      onChange={(next) => save(edit(next))}
+    />
+  );
   return (
     <tr className="ebook-row">
       {select && (
@@ -152,9 +178,9 @@ function Row({
       )}
       <RowCover book={view} />
       {text("title", view.title, view.title)}
-      <td className="ebook-col-author">
-        <div className="ebook-title-cell">{view.authors.join(", ")}</div>
-      </td>
+      {chips("authors", view.authors, (names) => ({
+        creators: names.map((name) => ({ name })),
+      }))}
       {text(
         "series",
         view.series
@@ -162,12 +188,8 @@ function Row({
           : "",
         view.series?.name ?? "",
       )}
-      <td className="ebook-col-tags">
-        <div className="ebook-title-cell">{view.subjects.join(", ")}</div>
-      </td>
-      <td className="ebook-col-genres">
-        <div className="ebook-title-cell">{view.genres.join(", ")}</div>
-      </td>
+      {chips("tags", view.subjects, (subjects) => ({ subjects }))}
+      {chips("genres", view.genres, (genres) => ({ genres }))}
       {text(
         "published",
         formatDateShort(view.published ?? "") ?? "—",

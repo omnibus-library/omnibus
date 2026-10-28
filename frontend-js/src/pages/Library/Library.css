@@ -1629,6 +1629,12 @@
 .ebook-cell-chip-host .chip-editor-input-wrap {
   min-width: 80px;
 }
+fieldset.ebook-cell-chip-host {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
 .ebook-cell-edit-btn {
   display: block;
   width: 100%;
