@@ -59,6 +59,7 @@ test.describe("shelves index", () => {
 
     await test.step("open the library", async () => {
       await libraryPage.goto();
+      await expect(topNav.navLink("Shelves")).not.toHaveClass(/\bon\b/);
     });
 
     await test.step("follow Shelves in the top nav", async () => {
