@@ -218,6 +218,9 @@ export const WithFollowOffAFailedLoadHidesTheOfferUntilARetryOpens: Story = {
     return relocatingTo({});
   },
   play: async ({ canvas, userEvent }) => {
+    // The offer's fetch can answer before the glue opens; failing then would be overridden by the open's "ready".
+    await canvas.findByTestId("reader-header-chapter");
+    await waitFor(() => expect(r.inits()).toHaveLength(1));
     await offer(canvas);
 
     // The open fails after the offer landed: it must leave with the page, not sit in the tab order over the overlay.
