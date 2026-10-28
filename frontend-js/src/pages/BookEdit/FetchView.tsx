@@ -3,7 +3,6 @@ import { useEffect, useState } from "react";
 import type { UseFormReturn } from "react-hook-form";
 import {
   type EditionSearchRequest,
-  inStableOrder,
   type MetaForm,
   PROVIDERS,
   type ProviderEdition,
@@ -14,7 +13,7 @@ import { CaretLeftGlyph } from "../../components/Glyphs/Glyphs";
 import { Loading } from "../../components/Loading/Loading";
 import { SourceSummary } from "./EditionPicker";
 import { applyField, coverSrc, EMPTY, labelToId } from "./editionFields";
-import { type DiffRow, diffRows, fetchRequest, onePerProvider } from "./fetch";
+import { bestPerProvider, type DiffRow, diffRows, fetchRequest } from "./fetch";
 import { useHydrated } from "./useHydrated";
 
 /** "Pierce Brown · Del Rey 2014 · 382 pages": the parts an edition has, in that order. */
@@ -165,7 +164,7 @@ export function FetchView({
       const found = await searchEditions(req);
       return {
         sources: found.sources,
-        editions: onePerProvider(inStableOrder(found.editions, req.query)),
+        editions: bestPerProvider(found.editions, req),
       };
     },
   });

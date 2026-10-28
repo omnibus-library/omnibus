@@ -4,7 +4,12 @@ import {
   anEditableWireBook,
   aProviderEdition,
 } from "../../testing/metadataHandlers";
-import { diffRows, fetchRequest, onePerProvider } from "./fetch";
+import {
+  bestPerProvider,
+  diffRows,
+  fetchRequest,
+  onePerProvider,
+} from "./fetch";
 
 describe("fetchRequest", () => {
   it.each([
@@ -64,6 +69,28 @@ describe("onePerProvider", () => {
 
   it("keeps nothing from nothing", () => {
     expect(onePerProvider([])).toEqual([]);
+  });
+});
+
+describe("bestPerProvider", () => {
+  const messiah = aProviderEdition({
+    provider_ref: "m",
+    title: "Dune Messiah",
+  });
+  const dune = aProviderEdition({ provider_ref: "d", title: "Dune" });
+
+  it("keeps the provider's own first edition when the search has no title", () => {
+    const request = fetchRequest("", "Frank Herbert");
+    if (!request) throw new Error("an author-only search is a request");
+
+    expect(bestPerProvider([messiah, dune], request)).toEqual([messiah]);
+  });
+
+  it("keeps the best-ordered edition when the search has a title", () => {
+    const request = fetchRequest("Dune", "Frank Herbert");
+    if (!request) throw new Error("a titled search is a request");
+
+    expect(bestPerProvider([messiah, dune], request)).toEqual([dune]);
   });
 });
 

@@ -1,6 +1,7 @@
 import {
   type EditionSearchRequest,
   editionRequest,
+  inStableOrder,
   type MetaForm,
   type ProviderEdition,
 } from "../../api";
@@ -35,6 +36,19 @@ export function onePerProvider(editions: ProviderEdition[]): ProviderEdition[] {
     seen.add(source);
     return true;
   });
+}
+
+/**
+ * Each provider's top edition for the search. A search with no title comes back unscored in
+ * the provider's own order, so it keeps that order rather than sorting by title length.
+ */
+export function bestPerProvider(
+  editions: ProviderEdition[],
+  request: EditionSearchRequest,
+): ProviderEdition[] {
+  return onePerProvider(
+    request.title ? inStableOrder(editions, request.query) : editions,
+  );
 }
 
 /** One field the edition would change: what the form holds, what it offers, and whether applying should start on. */
