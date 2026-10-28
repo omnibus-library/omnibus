@@ -22,10 +22,19 @@ export interface GlueOptions {
   minSpreadWidth?: number;
 }
 
+/** Host calls `openBook` makes in the same tick as `init`, before any locations pass. */
+export interface EarlyCalls {
+  seek?: number;
+  display?: string;
+  /** Sent from the `ready` callback itself, as the host sends a held follow jump. */
+  seekOnReady?: number;
+}
+
 /** What `emitRelocate` posts to `__omnibusOnRelocate`. */
 export interface RelocatePayload {
   cfi: string;
   echo: boolean;
+  pct: number;
   chapterTitle: string;
 }
 
@@ -58,6 +67,8 @@ export interface GlueWindow {
   OmnibusReader: {
     init(elementId: string, fileUrl: string, opts: object): void;
     next(): void;
+    seek(fraction: number): void;
+    display(target: string): void;
     setSpread(mode: "none" | "auto"): void;
     beginSelectionAt(x: number, y: number): boolean;
     extendSelectionTo(x: number, y: number): void;

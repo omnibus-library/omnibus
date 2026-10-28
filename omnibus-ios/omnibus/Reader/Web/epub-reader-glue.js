@@ -93,6 +93,10 @@
   var bookIsRTLMemo = null;
   var relocateTimer = null;
   var locationsReady = false;
+  // A seek that arrived before the locations pass — the follow jump on a
+  // book's first open, where the pass takes seconds. Applied when the pass
+  // lands; dropped by any navigation first (the reader's own move outranks it).
+  var pendingSeek = null;
   // False while an initial CFI restore is still settling — mutes emitRelocate
   // so the first-pass landing (a page or two off until fonts/theme reflow) is
   // never persisted as reading progress.
@@ -201,6 +205,7 @@
     endSectionTurn();
     endSettleFade();
     locationsReady = false;
+    pendingSeek = null;
     sectionRanges = null;
     tocFlat = [];
     sel = null;
@@ -527,6 +532,7 @@
         if (rendition && rendition.location) {
           emitRelocate(rendition.location, true);
         }
+        applyPendingSeek();
       })
       .catch(function () {
         emitStatus("error");
@@ -725,6 +731,7 @@
   function next() {
     if (!rendition) return;
     restoreEchoCfi = null;
+    pendingSeek = null;
     cancelResizeCorrection();
     return rendition.next();
   }
@@ -732,6 +739,7 @@
   function prev() {
     if (!rendition) return;
     restoreEchoCfi = null;
+    pendingSeek = null;
     cancelResizeCorrection();
     return rendition.prev();
   }
@@ -2519,6 +2527,7 @@
   // Resolves once the destination has painted.
   function turnInstant(dir) {
     peekInFlight = false;
+    pendingSeek = null;
     var kind = neighbourKind(dir);
     if (kind === "page") {
       var c = pageContainer();
@@ -2566,6 +2575,7 @@
   // Animate one page forward/back when the neighbouring page is rendered
   // in this section; use the atomic section hand-off at a boundary.
   function turnAnimated(dir) {
+    pendingSeek = null;
     var c = pageContainer();
     var d = pageDelta();
     if (!c || !d) {
@@ -2983,6 +2993,7 @@
           animateOffsetTo(c, dragBase, dragPx, 0, 180);
           return;
         }
+        pendingSeek = null;
         var target = dragBase + dir * d;
         if (target < -0.5 || target > maxScroll(c) + 0.5) {
           // Preserve the resisted drag in the outgoing snapshot so it
@@ -3756,6 +3767,7 @@
   function display(target) {
     if (!rendition || !target) return;
     restoreEchoCfi = null;
+    pendingSeek = null;
     var t = String(target);
     var hash = t.indexOf("#");
     // CFIs and bare hrefs pass straight through. Fragment hrefs resolve to
@@ -3791,15 +3803,34 @@
     displaySettled(t);
   }
 
-  // Jump to a fraction (0–1) of the whole book — the scrubber's contract.
-  // Positions come from the locations pass, so this no-ops until page numbers
-  // exist rather than guessing and landing somewhere arbitrary.
+  // Jump to a fraction (0–1) of the whole book — the scrubber's and the
+  // cross-format jumps' contract. Positions come from the locations pass, so a
+  // seek that arrives first is parked until it lands rather than guessed at.
+  // The host sends one only once the page is ready, so a restore has settled.
   function seek(fraction) {
-    if (!rendition || !book || !book.locations || !locationsReady) return;
+    if (!rendition) return;
     var f = Number(fraction);
     if (!isFinite(f)) return;
-    var cfi = book.locations.cfiFromPercentage(Math.max(0, Math.min(1, f)));
-    if (cfi) display(cfi);
+    pendingSeek = Math.max(0, Math.min(1, f));
+    applyPendingSeek();
+  }
+
+  function applyPendingSeek() {
+    if (pendingSeek === null || !book || !book.locations || !locationsReady) return;
+    var cfi = book.locations.cfiFromPercentage(pendingSeek);
+    pendingSeek = null;
+    if (!cfi) return;
+    // A landing still in the debounce goes out first, as itself. Folded into the
+    // jump's report it would be the host's first relocate, which it never saves.
+    if (relocateTimer && rendition.location) {
+      clearTimeout(relocateTimer);
+      relocateTimer = null;
+      emitRelocate(rendition.location);
+    }
+    // A jump is movement: its landing must not be spent as the restore's echo,
+    // or the host renders it and never saves it.
+    restoreEchoPending = false;
+    display(cfi);
   }
 
   function copyText(text) {

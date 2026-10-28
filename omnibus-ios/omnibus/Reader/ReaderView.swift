@@ -61,6 +61,9 @@ struct ReaderView: View {
     /// The record the reader actually opened on, so a later answer from the
     /// server can be judged newer or older than what this device knew.
     @State private var openedProgress: ProgressRecord?
+    /// The CFI the server and outbox already hold: the one the reader opened
+    /// on, then each one saved since. Re-saving it is not a move (#1972).
+    @State private var savedCFI: String?
     /// A further position another device reached, waiting on the reader to
     /// accept it. Never applied on its own.
     @State private var syncOffer: String?
@@ -748,6 +751,7 @@ struct ReaderView: View {
             opening = settled
             if let cfi = ReaderController.openingCFI(for: settled) { startCFI = cfi }
         }
+        savedCFI = startCFI
 
         controller.configure(
             book: book,
@@ -834,7 +838,8 @@ struct ReaderView: View {
                 else { return }
                 if resume.follow == true {
                     // Follow mode: resolve-at-open — move the text to the
-                    // mapped spot silently, full precision, no banner.
+                    // mapped spot silently, full precision, no banner. This
+                    // answer beats the book's load; `seek` holds it until then.
                     let frac = candidate.fraction
                         ?? Double(candidate.percent ?? 0) / 100.0
                     controller.seek(toFraction: min(max(frac, 0.0), 1.0))
@@ -864,15 +869,18 @@ struct ReaderView: View {
     }
 
     /// Record where the reader is. The write into the replica and the outbox
-    /// happens on every relocate, unconditionally — that is what makes the
+    /// happens on every move, unconditionally — that is what makes the
     /// position survive a force-quit (#1666). `force` decides only whether
     /// this relocate is also worth a round trip of its own — a close, a
     /// backgrounding — as opposed to the steady trickle of page turns, which
     /// still queue immediately but push at most once every four seconds.
     private func persist(force: Bool) async {
+        // A close or backgrounding that finds nothing new writes nothing: the
+        // drain that follows it still pushes a page turn the throttle queued.
         guard !controller.holdsStoredPosition, let location = controller.location,
-              let cfi = location.cfi
+              let cfi = ReaderController.unsavedCFI(location: location, saved: savedCFI)
         else { return }
+        savedCFI = cfi
         // The percent rides the op, so a position saved offline shows one in
         // the replica before the server has derived its own.
         await UserDataService.saveProgress(

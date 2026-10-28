@@ -476,6 +476,9 @@ final class ReaderController: NSObject {
     /// What is currently drawn on the page, so a set arriving after first paint
     /// can be applied as a diff instead of a redraw.
     private var drawnHighlights: [Highlight] = []
+    /// A seek asked for before the page could take it — the follow jump's
+    /// answer arrives before the book has even loaded. The next `ready` sends it.
+    private(set) var pendingSeek: Double?
     /// A reload owed to a web-content process that went away while the app was
     /// in the background, where reloading would only feed another one to the
     /// same reclaim. Settled by `reloadIfNeeded` on the way back.
@@ -549,9 +552,26 @@ final class ReaderController: NSObject {
         run("OmnibusReader.display(\(target.jsQuoted))")
     }
 
-    /// Jump to a fraction (0–1) of the whole book, for the scrubber.
+    /// Jump to a fraction (0–1) of the whole book, for the scrubber and the
+    /// cross-format jumps. Held until the page is ready; the glue holds it
+    /// further until its locations exist.
     func seek(toFraction fraction: Double) {
-        run("OmnibusReader.seek(\(min(1, max(0, fraction))))")
+        let clamped = min(1, max(0, fraction))
+        guard isReady else {
+            pendingSeek = clamped
+            return
+        }
+        run("OmnibusReader.seek(\(clamped))")
+    }
+
+    /// The position a save would write, or `nil` when there is nothing new: an
+    /// echo (the restore's landing, a rotation) or the spot already saved.
+    /// Writing either stamps a fresh clock on an unmoved row, which out-orders
+    /// a newer audiobook position at the cross-format clock gate (#1972).
+    static func unsavedCFI(location: RelocateData?, saved: String?) -> String? {
+        guard let location, location.isMovement, let cfi = location.cfi, cfi != saved
+        else { return nil }
+        return cfi
     }
 
     /// The contents entry a fraction of the way through the book lands in.
@@ -866,6 +886,10 @@ final class ReaderController: NSObject {
                 // one path the reader already exercises.
                 syncSettings()
                 pageCurl?.pageChanged()
+                if let fraction = pendingSeek {
+                    pendingSeek = nil
+                    run("OmnibusReader.seek(\(fraction))")
+                }
             case "error":
                 failed = true
             default:
