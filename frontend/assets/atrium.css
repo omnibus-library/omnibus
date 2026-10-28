@@ -9406,8 +9406,8 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
     padding-bottom: calc(62px + env(safe-area-inset-bottom) + 12px);
   }
 
-  /* Slim the top bar to brand + search + actions. The Library/Authors/
-     Series links move into the tab bar, so hide them here. */
+  /* Slim the top bar to brand + search + actions. The section links
+     step aside for the tab bar, so hide them here. */
   .atrium-topbar { padding: 12px 16px; gap: 7px; }
   .atrium-nav { display: none; }
 

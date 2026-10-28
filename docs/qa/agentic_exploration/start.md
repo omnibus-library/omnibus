@@ -89,12 +89,13 @@ clicking. Do not guess a path, hand-edit one, or shortcut to a page you believe
 exists — an invented path is a different test, one no user runs, and the paths
 agents invent are usually the ones that were never built.
 
-The nav carries almost everything: **Library**, **Authors**, **Series**,
-**Stats**, **search**, **Check in**, **Add books**, and your avatar for the
-account menu, which is also where **Sign out** lives. On the web, **Check in**
-is a button that opens a dialog over the page you are on, not a page of its
-own. Shelves are a rail above the library on the web and a screen under
-**You** on iOS; on iOS, Check in lives behind the Library masthead's `+` →
+The nav carries almost everything: **Library**, **Shelves**, **Authors**,
+**Series**, **Stats**, **search**, **Check in**, **Add books**, and your avatar
+for the account menu, which is also where **Sign out** lives. On the web,
+**Check in** is a button that opens a dialog over the page you are on, not a
+page of its own. The nav's **Shelves** is the main way to the shelves on the
+web, with a rail above the library as a second; on iOS they are a screen under
+**You**, and Check in lives behind the Library masthead's `+` →
 **Add books** → **Scan a barcode**. Books open from the library grid, and
 everything about a book — reader, player, metadata editor, journal, saved
 passages, delete — opens from that book's own page.
