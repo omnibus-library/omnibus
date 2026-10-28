@@ -61,8 +61,8 @@ struct WidgetBook: Codable, Sendable, Equatable, Identifiable {
     /// `nil` when the book has no art, or none had reached the device.
     var thumb: String?
 
-    /// Scoped by format as well as book, mirroring `ResumePoint.id`: a
-    /// dual-format book someone is both reading and listening to is two cards.
+    /// Scoped by format as well as book, mirroring `ResumePoint.id`, so the
+    /// two formats of one book can never share an identity.
     var id: String { "\(bookUUID):\(format.rawValue)" }
 }
 

@@ -5638,7 +5638,7 @@
           "Progress"
         ],
         "summary": "List the books you were last in",
-        "description": "Your most recent positions, newest first, each with its book: a \"pick up where you left\noff\" list. Send `user_id` for another reader's list.",
+        "description": "Your most recent positions, newest first, each with its book: a \"pick up where you left\noff\" list. Each book appears once, for the format you used last. Send `user_id` for another reader's list.",
         "operationId": "get_recent_progress",
         "parameters": [
           {
@@ -5664,7 +5664,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The most recent positions, newest first.",
+            "description": "One position per book, in the format you used last, newest first.",
             "content": {
               "application/json": {
                 "schema": {
@@ -14629,7 +14629,7 @@
       },
       "ResumePoint": {
         "type": "object",
-        "description": "A book to pick up where you left off, as `GET /api/progress/recent` returns it.",
+        "description": "A book to pick up where you left off, as `GET /api/progress/recent` returns it. Each\nbook appears once, for the format you used last.",
         "required": [
           "record",
           "book"
@@ -14667,7 +14667,7 @@
           },
           "linked": {
             "type": "boolean",
-            "description": "Whether you have linked this book's ebook and audiobook. A linked book appears once,\nfor the format you used last."
+            "description": "Whether you have linked this book's ebook and audiobook."
           },
           "playback_rate": {
             "type": [

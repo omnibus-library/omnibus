@@ -38,6 +38,8 @@ ratatui = { version = "0.30", default-features = false, features = ["crossterm"]
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+# `mock-kobo tui`'s scratch state dir, removed on drop.
+tempfile = { workspace = true }
 thiserror = { workspace = true }
 # Same version/features `server/` uses for Kobo's RFC 3339 stamps, so cargo unifies on one build.
 time = { version = "0.3", features = ["formatting", "parsing"] }
@@ -47,4 +49,3 @@ zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["time"] }
-tempfile = { workspace = true }

@@ -1169,6 +1169,7 @@ export const FetchSearchesOnOpen: Story = {
     await expect(view.getByLabelText("Title or ISBN")).toHaveValue(
       "Aurora Station, Vol. 1",
     );
+    await expect(view.getByLabelText("Author")).toHaveValue("Sora Inkwell");
     // Asked on open, by title with the book's author, without a press of Search.
     await waitFor(() =>
       expect(asked).toEqual([
@@ -1181,6 +1182,73 @@ export const FetchSearchesOnOpen: Story = {
     );
     // The view takes the tabs' place.
     await expect(dialog.queryByRole("tablist")).not.toBeInTheDocument();
+  },
+};
+
+export const FetchSearchesWithTheEditedAuthor: Story = {
+  beforeEach({ msw }) {
+    asked.length = 0;
+    providers([VOLUME_ONE])({ msw });
+  },
+  play: async ({ canvas, userEvent }) => {
+    const dialog = await sheet(canvas);
+    const view = await openFetch(dialog, userEvent);
+    await waitFor(() => expect(asked).toHaveLength(1));
+
+    const author = view.getByLabelText("Author");
+    await userEvent.clear(author);
+    await userEvent.type(author, "Ada Quill");
+    const search = view.getByRole("button", { name: "Search" });
+    await waitFor(() => expect(search).toBeEnabled());
+    await userEvent.click(search);
+
+    await waitFor(() =>
+      expect(asked.at(-1)).toEqual({
+        query: "Aurora Station, Vol. 1 Ada Quill",
+        title: "Aurora Station, Vol. 1",
+        author: "Ada Quill",
+      }),
+    );
+
+    await userEvent.clear(author);
+    await waitFor(() => expect(search).toBeEnabled());
+    await userEvent.click(search);
+
+    await waitFor(() =>
+      expect(asked.at(-1)).toEqual({
+        query: "Aurora Station, Vol. 1",
+        title: "Aurora Station, Vol. 1",
+      }),
+    );
+  },
+};
+
+export const FetchSearchesByAuthorAloneWhenTheTitleIsBlank: Story = {
+  beforeEach({ msw }) {
+    asked.length = 0;
+    providers([VOLUME_ONE])({ msw });
+  },
+  play: async ({ canvas, userEvent }) => {
+    const dialog = await sheet(canvas);
+    const view = await openFetch(dialog, userEvent);
+    await waitFor(() => expect(asked).toHaveLength(1));
+
+    await userEvent.clear(view.getByLabelText("Title or ISBN"));
+    const search = view.getByRole("button", { name: "Search" });
+    await waitFor(() => expect(search).toBeEnabled());
+    await userEvent.click(search);
+
+    await waitFor(() =>
+      expect(asked.at(-1)).toEqual({
+        query: "Sora Inkwell",
+        author: "Sora Inkwell",
+      }),
+    );
+
+    // Settled first, so a disabled button below means both fields are blank, not a search pending.
+    await waitFor(() => expect(search).toBeEnabled());
+    await userEvent.clear(view.getByLabelText("Author"));
+    await expect(search).toBeDisabled();
   },
 };
 

@@ -178,13 +178,10 @@ enum UserDataService {
         await Cache.write(CacheKey.recentProgress, spliced)
     }
 
-    /// Put `record`'s card at the front of `points`, replacing the existing one
-    /// for the same **(book, format)** pair.
-    ///
-    /// Matching on the pair rather than the book is the whole point: a
-    /// dual-format book has a reading card and a listening card, and on the uuid
-    /// alone a saved listening position rewrote the reading one in place — same
-    /// book, wrong verb, and the reading position it had been holding was gone.
+    /// Put `record`'s card at the front of `points`, replacing the book's
+    /// existing one. The server sends one card per book, in the format used
+    /// last, so a save in the other format replaces the card rather than adding
+    /// a second.
     ///
     /// `book` is consulted only when no such card exists yet. `nil` for a book
     /// that isn't already on the rail returns `nil`: better to leave the rail
@@ -195,17 +192,28 @@ enum UserDataService {
         var points = points
         var point: ResumePoint
         if let existing = points.firstIndex(where: { $0.matches(record) }) {
-            // Keep the duration and resolved position the server computed —
-            // this device can't derive either, and a locally-written record
-            // carries only the position, so overwriting wholesale would blank
-            // the card's progress bar on every save.
             point = points[existing]
-            var merged = record
-            merged.totalDurationSeconds =
-                record.totalDurationSeconds ?? point.record.totalDurationSeconds
-            merged.resolved = record.resolved ?? point.record.resolved
-            point.record = merged
-            points.remove(at: existing)
+            if point.record.format == record.format {
+                // Keep the duration and resolved position the server computed —
+                // this device can't derive either, and a locally-written record
+                // carries only the position, so overwriting wholesale would blank
+                // the card's progress bar on every save.
+                var merged = record
+                merged.totalDurationSeconds =
+                    record.totalDurationSeconds ?? point.record.totalDurationSeconds
+                merged.resolved = record.resolved ?? point.record.resolved
+                point.record = merged
+            } else {
+                // A drained answer older than the card's newer position in the other format.
+                if point.record.orderingClock > record.orderingClock { return points }
+                // The old card's duration, position and part describe the other format.
+                point.record = record
+                point.audioPart = nil
+                point.audioPartCount = nil
+            }
+            // All matches, not just `existing`: a cache written before one card per book
+            // can hold both formats.
+            points.removeAll { $0.matches(record) }
         } else {
             guard let book else { return nil }
             point = ResumePoint(

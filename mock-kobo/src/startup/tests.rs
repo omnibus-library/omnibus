@@ -17,6 +17,9 @@ use crate::test_support::{
 
 use super::*;
 
+/// What `autowire::device_name` gives the `kobo.json` state files these tests save to.
+const NAME: &str = "Mock Kobo (kobo)";
+
 fn serve_args(url: Option<&str>, token: Option<&str>) -> ServeArgs {
     ServeArgs {
         url: url.map(str::to_owned),
@@ -209,7 +212,7 @@ async fn start_creates_state_file_with_minted_hardware_id() {
     let dir = TempDir::new().unwrap();
     let args = args_in(&dir, Some("http://127.0.0.1:1"), Some("tok-1"));
 
-    start(&args, None, &no_runtime(&dir)).await.unwrap();
+    start(&args, None, &no_runtime(&dir), NAME).await.unwrap();
 
     let saved = state::load(&args.state).await.unwrap().unwrap();
     assert_eq!(saved.token, "tok-1");
@@ -222,12 +225,20 @@ async fn start_restores_synced_library_after_restart() {
     let stub = spawn_stub(dune_stub()).await;
     let dir = TempDir::new().unwrap();
     let args = args_in(&dir, Some(&stub.origin), Some(STUB_TOKEN));
-    let first = Arc::new(start(&args, None, &no_runtime(&dir)).await.unwrap().control);
+    let first = Arc::new(
+        start(&args, None, &no_runtime(&dir), NAME)
+            .await
+            .unwrap()
+            .control,
+    );
     first.sync(DownloadPolicy::None).await.unwrap();
     let before = first.view();
     drop(first);
 
-    let second = start(&args, None, &no_runtime(&dir)).await.unwrap().control;
+    let second = start(&args, None, &no_runtime(&dir), NAME)
+        .await
+        .unwrap()
+        .control;
 
     let after = second.view();
     assert_eq!(after.hardware_id, before.hardware_id);
@@ -240,10 +251,10 @@ async fn start_persists_given_url_and_token_across_restarts() {
     let stub = spawn_stub(Stub::default()).await;
     let dir = TempDir::new().unwrap();
     let given = args_in(&dir, Some(&stub.origin), Some(STUB_TOKEN));
-    drop(start(&given, None, &no_runtime(&dir)).await.unwrap());
+    drop(start(&given, None, &no_runtime(&dir), NAME).await.unwrap());
 
     let second = Arc::new(
-        start(&args_in(&dir, None, None), None, &no_runtime(&dir))
+        start(&args_in(&dir, None, None), None, &no_runtime(&dir), NAME)
             .await
             .unwrap()
             .control,
@@ -263,7 +274,7 @@ async fn start_restores_url_set_by_retarget_after_restart() {
     let dir = TempDir::new().unwrap();
     let given = args_in(&dir, Some(&first.origin), Some(STUB_TOKEN));
     let running = Arc::new(
-        start(&given, None, &no_runtime(&dir))
+        start(&given, None, &no_runtime(&dir), NAME)
             .await
             .unwrap()
             .control,
@@ -275,7 +286,7 @@ async fn start_restores_url_set_by_retarget_after_restart() {
     drop(running);
 
     let restarted = Arc::new(
-        start(&args_in(&dir, None, None), None, &no_runtime(&dir))
+        start(&args_in(&dir, None, None), None, &no_runtime(&dir), NAME)
             .await
             .unwrap()
             .control,
@@ -296,7 +307,7 @@ async fn start_restores_token_set_by_retarget_after_restart() {
     let dir = TempDir::new().unwrap();
     let given = args_in(&dir, Some(&stub.origin), Some("wrong"));
     let running = Arc::new(
-        start(&given, None, &no_runtime(&dir))
+        start(&given, None, &no_runtime(&dir), NAME)
             .await
             .unwrap()
             .control,
@@ -308,7 +319,7 @@ async fn start_restores_token_set_by_retarget_after_restart() {
     drop(running);
 
     let restarted = Arc::new(
-        start(&args_in(&dir, None, None), None, &no_runtime(&dir))
+        start(&args_in(&dir, None, None), None, &no_runtime(&dir), NAME)
             .await
             .unwrap()
             .control,
@@ -328,7 +339,7 @@ async fn start_follows_dev_server_port_without_saving_it() {
     publish_dev_server(&runtime, &stub);
     let args = args_in(&dir, None, Some(STUB_TOKEN));
 
-    let control = start(&args, None, &runtime).await.unwrap().control;
+    let control = start(&args, None, &runtime, NAME).await.unwrap().control;
 
     assert_eq!(control.view().url, stub.origin);
     let saved = state::load(&args.state).await.unwrap().unwrap();
@@ -341,7 +352,7 @@ async fn start_fails_when_state_file_is_unreadable() {
     let args = args_in(&dir, None, Some("tok-1"));
     std::fs::write(&args.state, "not json").unwrap();
 
-    let result = start(&args, None, &no_runtime(&dir)).await;
+    let result = start(&args, None, &no_runtime(&dir), NAME).await;
 
     assert!(matches!(
         result,
@@ -357,7 +368,7 @@ async fn start_auto_wires_seed_admin_device_when_no_token_known() {
     let args = args_in(&dir, Some(&stub.origin), None);
 
     let control = Arc::new(
-        start(&args, Some("admin:omnibus-dev"), &no_runtime(&dir))
+        start(&args, Some("admin:omnibus-dev"), &no_runtime(&dir), NAME)
             .await
             .unwrap()
             .control,
@@ -376,12 +387,32 @@ async fn start_auto_wires_seed_admin_device_when_no_token_known() {
 }
 
 #[tokio::test]
+async fn start_names_the_wired_device_after_the_given_name_not_the_state_file() {
+    let stub = spawn_stub(Stub::default()).await;
+    let dir = TempDir::new().unwrap();
+    let args = args_in(&dir, Some(&stub.origin), None);
+
+    start(
+        &args,
+        Some("admin:omnibus-dev"),
+        &no_runtime(&dir),
+        "Mock Kobo",
+    )
+    .await
+    .unwrap();
+
+    let created = stub.requests_to("/api/rpc/kobo/devices/create");
+    let body: serde_json::Value = serde_json::from_str(&created[0].body).unwrap();
+    assert_eq!(body, json!({ "name": "Mock Kobo" }));
+}
+
+#[tokio::test]
 async fn start_records_wired_url_with_auto_wired_token() {
     let stub = spawn_stub(Stub::default()).await;
     let dir = TempDir::new().unwrap();
     let args = args_in(&dir, Some(&stub.origin), None);
 
-    start(&args, Some("admin:omnibus-dev"), &no_runtime(&dir))
+    start(&args, Some("admin:omnibus-dev"), &no_runtime(&dir), NAME)
         .await
         .unwrap();
 
@@ -396,7 +427,7 @@ async fn start_clears_wired_url_when_token_is_given() {
     let earlier = auto_wired("old-server-token", "http://old:1");
     state::save(&args.state, &earlier).await.unwrap();
 
-    start(&args, None, &no_runtime(&dir)).await.unwrap();
+    start(&args, None, &no_runtime(&dir), NAME).await.unwrap();
 
     let saved = state::load(&args.state).await.unwrap().unwrap();
     assert_eq!(saved.token, "given-token");
@@ -411,12 +442,12 @@ async fn start_rewires_when_dev_server_moves_to_another_server() {
     let runtime = no_runtime(&dir);
     let args = args_in(&dir, None, None);
     publish_dev_server(&runtime, &server_a);
-    start(&args, Some("admin:omnibus-dev"), &runtime)
+    start(&args, Some("admin:omnibus-dev"), &runtime, NAME)
         .await
         .unwrap();
     publish_dev_server(&runtime, &server_b);
 
-    start(&args, Some("admin:omnibus-dev"), &runtime)
+    start(&args, Some("admin:omnibus-dev"), &runtime, NAME)
         .await
         .unwrap();
 
@@ -433,11 +464,11 @@ async fn start_reuses_auto_wired_token_when_dev_server_is_unchanged() {
     let runtime = no_runtime(&dir);
     let args = args_in(&dir, None, None);
     publish_dev_server(&runtime, &server);
-    start(&args, Some("admin:omnibus-dev"), &runtime)
+    start(&args, Some("admin:omnibus-dev"), &runtime, NAME)
         .await
         .unwrap();
 
-    start(&args, Some("admin:omnibus-dev"), &runtime)
+    start(&args, Some("admin:omnibus-dev"), &runtime, NAME)
         .await
         .unwrap();
 
@@ -456,7 +487,7 @@ async fn start_notes_when_new_device_reuses_server_device() {
     let dir = TempDir::new().unwrap();
     let args = args_in(&dir, Some(&stub.origin), None);
 
-    let started = start(&args, Some("admin:omnibus-dev"), &no_runtime(&dir))
+    let started = start(&args, Some("admin:omnibus-dev"), &no_runtime(&dir), NAME)
         .await
         .unwrap();
 
@@ -472,7 +503,7 @@ async fn start_does_not_warn_when_auto_wire_creates_device() {
     let dir = TempDir::new().unwrap();
     let args = args_in(&dir, Some(&stub.origin), None);
 
-    let started = start(&args, Some("admin:omnibus-dev"), &no_runtime(&dir))
+    let started = start(&args, Some("admin:omnibus-dev"), &no_runtime(&dir), NAME)
         .await
         .unwrap();
 
@@ -487,12 +518,12 @@ async fn start_does_not_warn_when_existing_device_is_rewired() {
     let runtime = no_runtime(&dir);
     let args = args_in(&dir, None, None);
     publish_dev_server(&runtime, &server_a);
-    start(&args, Some("admin:omnibus-dev"), &runtime)
+    start(&args, Some("admin:omnibus-dev"), &runtime, NAME)
         .await
         .unwrap();
     publish_dev_server(&runtime, &server_b);
 
-    let started = start(&args, Some("admin:omnibus-dev"), &runtime)
+    let started = start(&args, Some("admin:omnibus-dev"), &runtime, NAME)
         .await
         .unwrap();
 
@@ -504,7 +535,7 @@ async fn start_refuses_to_auto_wire_against_non_local_server() {
     let dir = TempDir::new().unwrap();
     let args = args_in(&dir, Some("http://192.0.2.1:9"), None);
 
-    let result = start(&args, Some("admin:omnibus-dev"), &no_runtime(&dir)).await;
+    let result = start(&args, Some("admin:omnibus-dev"), &no_runtime(&dir), NAME).await;
 
     let Err(StartError::AutoWire(AutoWireError::NotLocal { url })) = result else {
         panic!("expected a refusal to auto-wire, got {:?}", result.err());
@@ -518,7 +549,7 @@ async fn start_fails_without_token_or_seed_user() {
     let dir = TempDir::new().unwrap();
     let args = args_in(&dir, Some("http://127.0.0.1:1"), None);
 
-    let result = start(&args, None, &no_runtime(&dir)).await;
+    let result = start(&args, None, &no_runtime(&dir), NAME).await;
 
     assert!(matches!(
         result,
@@ -534,7 +565,7 @@ async fn start_forgets_the_old_servers_reading_services_host_when_resolving_a_di
     let dir = TempDir::new().unwrap();
     let given_a = args_in(&dir, Some(&stub_a.origin), Some(STUB_TOKEN));
     let first = Arc::new(
-        start(&given_a, None, &no_runtime(&dir))
+        start(&given_a, None, &no_runtime(&dir), NAME)
             .await
             .unwrap()
             .control,
@@ -547,7 +578,7 @@ async fn start_forgets_the_old_servers_reading_services_host_when_resolving_a_di
     // dev server port-walked to a new one — same token, different origin.
     let given_b = args_in(&dir, Some(&stub_b.origin), Some(STUB_TOKEN));
     let restarted = Arc::new(
-        start(&given_b, None, &no_runtime(&dir))
+        start(&given_b, None, &no_runtime(&dir), NAME)
             .await
             .unwrap()
             .control,
@@ -569,7 +600,7 @@ async fn start_drops_sync_token_and_download_urls_when_the_resolved_token_change
     let dir = TempDir::new().unwrap();
     let given = args_in(&dir, Some(&stub.origin), Some(STUB_TOKEN));
     let first = Arc::new(
-        start(&given, None, &no_runtime(&dir))
+        start(&given, None, &no_runtime(&dir), NAME)
             .await
             .unwrap()
             .control,
@@ -579,7 +610,7 @@ async fn start_drops_sync_token_and_download_urls_when_the_resolved_token_change
     drop(first);
     let given_other_token = args_in(&dir, Some(&stub.origin), Some("other-token"));
 
-    start(&given_other_token, None, &no_runtime(&dir))
+    start(&given_other_token, None, &no_runtime(&dir), NAME)
         .await
         .unwrap();
 
@@ -598,7 +629,7 @@ async fn start_drops_sync_token_and_download_urls_when_the_resolved_origin_chang
     let dir = TempDir::new().unwrap();
     let given_a = args_in(&dir, Some(&stub_a.origin), Some(STUB_TOKEN));
     let first = Arc::new(
-        start(&given_a, None, &no_runtime(&dir))
+        start(&given_a, None, &no_runtime(&dir), NAME)
             .await
             .unwrap()
             .control,
@@ -607,7 +638,9 @@ async fn start_drops_sync_token_and_download_urls_when_the_resolved_origin_chang
     drop(first);
     let given_b = args_in(&dir, Some(&stub_b.origin), Some(STUB_TOKEN));
 
-    start(&given_b, None, &no_runtime(&dir)).await.unwrap();
+    start(&given_b, None, &no_runtime(&dir), NAME)
+        .await
+        .unwrap();
 
     let saved = state::load(&given_b.state).await.unwrap().unwrap();
     assert_eq!(saved.device.sync_token, None);

@@ -88,6 +88,16 @@ export const BLANK_DRAFT: RuleDraft = {
   unit: "d",
 };
 
+/** A smart-shelf form filled in ahead of the reader; the create modal starts from it instead of a blank form. */
+export type ShelfSeed = {
+  name: string;
+  matchMode: MatchMode;
+  /** `[]` when nothing can be carried. */
+  drafts: RuleDraft[];
+  /** The "From your filters: …" line. */
+  note: string;
+};
+
 /** The wire rule for a draft, or `null` until every input its op needs is filled. */
 export function toRule({ field, op, value, value2, unit }: RuleDraft) {
   const first = value.trim();

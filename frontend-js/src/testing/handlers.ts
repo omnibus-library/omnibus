@@ -46,6 +46,7 @@ import {
   KindleSendRequest,
   type LoginResponse,
   MergeBooksRequest,
+  MetadataOverrides,
   type PaletteResults,
   type PhysicalCopy,
   PostCrossFormatFollowBody,
@@ -314,6 +315,37 @@ export function bulkOverridesHandler(
     }
     return new HttpResponse(null, { status: 204 });
   });
+}
+
+/**
+ * `POST /api/ebooks/{uuid}/overrides`: applies the edit to the matching book of
+ * `books` in place, as the server does, so a refetch sees it, and answers that
+ * book. Each request lands in `saved`; with `refuse` set, a 400 whose plain text
+ * is that reason and nothing changes.
+ */
+export function overridesHandler(
+  books: EbookMetadata[],
+  { saved = [], refuse }: { saved?: MetadataOverrides[]; refuse?: string } = {},
+) {
+  return http.post(
+    "/api/ebooks/:uuid/overrides",
+    async ({ request, params }) => {
+      if (refuse) return new HttpResponse(refuse, { status: 400 });
+      const book = books.find((b) => b.unique_identifier === params.uuid);
+      if (!book) return new HttpResponse("book not found", { status: 404 });
+      const edit = MetadataOverrides.parse(await request.json());
+      saved.push(edit);
+      if (edit.title != null) book.title = edit.title;
+      if (edit.series != null) book.series = edit.series;
+      if (edit.published != null) book.published = edit.published;
+      if (edit.language != null) book.language = edit.language;
+      if (edit.creators)
+        book.creators = edit.creators.map(({ name }) => ({ name }));
+      if (edit.subjects) book.subjects = edit.subjects;
+      if (edit.genres) book.genres = edit.genres;
+      return HttpResponse.json(book);
+    },
+  );
 }
 
 /**

@@ -98,14 +98,14 @@ pub(super) async fn get_progress(
 /// List the books you were last in
 ///
 /// Your most recent positions, newest first, each with its book: a "pick up where you left
-/// off" list. Send `user_id` for another reader's list.
+/// off" list. Each book appears once, for the format you used last. Send `user_id` for another reader's list.
 #[utoipa::path(
     get,
     path = "/api/progress/recent",
     tag = "Progress",
     params(RecentProgressQuery),
     responses(
-        (status = 200, description = "The most recent positions, newest first.", body = Vec<ResumePoint>),
+        (status = 200, description = "One position per book, in the format you used last, newest first.", body = Vec<ResumePoint>),
         (status = 400, description = "`limit` or `user_id` isn't a whole number."),
         (status = 404, description = "`user_id` names no reader, or one who doesn't share their stats."),
     ),

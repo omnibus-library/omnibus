@@ -101,6 +101,35 @@ export const RemoveChip: Story = {
   },
 };
 
+export const RemoveByKeyboardKeepsFocusInTheEditor: Story = {
+  args: { values: ["cozy", "slow burn"] },
+  play: async ({ canvas, userEvent, args }) => {
+    canvas.getByRole("button", { name: "Remove tag cozy" }).focus();
+    await userEvent.keyboard("{Enter}");
+
+    await expect(args.onChange).toHaveBeenLastCalledWith(["slow burn"]);
+    await expect(canvas.queryByText("cozy")).toBeNull();
+    await expect(
+      canvas.getByRole("combobox", { name: "Add tags" }),
+    ).toHaveFocus();
+  },
+};
+
+export const RemoveByClickLeavesFocusAlone: Story = {
+  args: { values: ["cozy", "slow burn"] },
+  play: async ({ canvas, userEvent, args }) => {
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Remove tag cozy" }),
+    );
+
+    await expect(args.onChange).toHaveBeenLastCalledWith(["slow burn"]);
+    await expect(canvas.queryByText("cozy")).toBeNull();
+    await expect(
+      canvas.getByRole("combobox", { name: "Add tags" }),
+    ).not.toHaveFocus();
+  },
+};
+
 export const NoDuplicates: Story = {
   play: async ({ canvas, userEvent, args }) => {
     const input = canvas.getByRole("combobox", { name: "Add tags" });

@@ -213,42 +213,56 @@ title, authors, series (and its number), description and cover.
 ## Interactive KOReader
 
 `just koreader` opens a real KOReader, in Docker, in a browser tab (a 600x800
-screen shown through noVNC), already syncing with this worktree's dev server.
-Use it to try a change by hand where the lane only checks scripted scenarios.
+screen shown through noVNC), syncing with any Omnibus instance: a deployed one or
+this worktree's dev server. Use it to try a change by hand where the lane only
+checks scripted scenarios.
 
 ```bash
-just dev-up                                          # the dev server must be running
-just koreader                                        # the default home
-just koreader --home .claude/runtime/koreader/second # a second home is a second device
+just koreader                      # asks for the plugin zip
+just koreader --plugin PATH        # skips the prompt
+just koreader --local              # this worktree's dev server (run `just dev-up` first)
 ```
 
-It needs Docker running (Docker Desktop on macOS) and a dev server for this
-worktree, and never starts either: without them it prints one line saying so and
-exits. Ctrl-C, or quitting KOReader, stops the container; one Ctrl-C closes
-KOReader cleanly, so its settings are saved.
+With no flags it asks `Plugin zip:`. Download the zip from the instance, in
+**Settings › Devices** (**Download plugin** on a KOReader device's row, as under
+"Setup" above), and type its path (Tab completes it; `~/` works). The zip alone carries the server and
+the device token, so a remote launch needs no credentials, no dev server and
+makes no request of its own: no OPDS catalog and no Progress sync are set up, only
+the plugin. A file that is not an Omnibus plugin zip is refused before Docker
+starts, and so is one that was downloaded from a local server (a `localhost` or
+loopback address, which the container can't reach); use `--local` for that.
+`--plugin` and `--local` can't be combined. The instance's own origin is the one the
+zip names, so a plain `http://` server on another port needs no extra setup here.
 
-- **First launch of a home** signs in as `OMNIBUS_DEV_SEED_USER`, registers a
-  KOReader device (**Dev KOReader**, or **Dev KOReader (<folder> <hash>)** for
-  any other home, the hash telling same-named folders apart) and installs the Omnibus plugin the Settings page would
-  download. It also adds the OPDS catalog **Omnibus (dev)** and turns on stock
-  Progress sync. Later launches of that home make no requests.
-- **Homes** live under `.claude/runtime/koreader/` (`home/` by default), keeping
-  KOReader's settings, books and progress between launches. Each home maps to one
-  container, so the same home can't open twice.
-- **Progress sync** uses one login for every home, because the account has a
-  single kosync password: its key is saved in `.claude/runtime/koreader/kosync.json`,
-  for the server and account it was made for. Delete that file only together with
-  the homes, or the first home's login stops working. If the server already holds a
+`--local` is the original path: it signs in as `OMNIBUS_DEV_SEED_USER`, registers
+a KOReader device named **Dev KOReader**, installs the plugin the Settings page
+would download, and adds the OPDS catalog **Omnibus (dev)** and stock Progress
+sync. It needs the dev server and says so in one line if it isn't running.
+
+Docker must be running (Docker Desktop on macOS); the launcher never starts it.
+Ctrl-C, or quitting KOReader, stops the container.
+
+- **Every launch is a clean slate.** KOReader's home (settings, books, progress)
+  lives in a run directory under `.claude/runtime/koreader/runs/` (gitignored, per
+  worktree), removed with its container on exit. A launch that was killed
+  leaves them behind; the next launch removes any run whose process is gone. Two
+  terminals are two homes and two containers, both linking **Dev KOReader**
+  under `--local`. `.claude/runtime/koreader/home` from earlier versions is no
+  longer used; delete it by hand. Under rootless Docker, files KOReader wrote
+  as a sub-uid can't be removed by the launcher, so a run directory may stay.
+- **Progress sync** (`--local`) uses one login for every home, because the account
+  has a single kosync password: its key is saved in
+  `.claude/runtime/koreader/kosync.json`, for the server and account it was made
+  for, so a fresh home reuses it. If the server already holds a
   password and no key is saved for it, or the server rejects the saved one (a
   password generated in Settings since), linking replaces it (and says so), which
   signs out any home linked before.
 - **A sync needs a shelf set to sync** (the shelf's sync toggle), as on a device.
-- **Relinking:** a home keeps the dev server port and device token it was linked
-  with. After the dev server moves port or its database is reset, delete the home
-  and launch it again.
 
-On a native Linux engine the container shares the host network, as the lane's
-does, so it reaches the dev server on `127.0.0.1`. Docker Desktop (macOS or Linux)
+A remote launch publishes the noVNC port on the host's loopback and reaches the
+instance over Docker's default network, which works for any public https host.
+`--local` on a native Linux engine shares the host network, as the lane's does, so
+it reaches the dev server on `127.0.0.1`. Docker Desktop (macOS or Linux)
 and rootless Docker can't share it — the engine runs in a VM or its own network
 namespace, which `docker info` reports — so there the noVNC port is published on
 the host's loopback and KOReader reaches the server at `host.docker.internal`. The

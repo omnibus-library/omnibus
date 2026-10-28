@@ -6,7 +6,12 @@ import { ConfirmModal } from "../ConfirmModal/ConfirmModal";
 import { LibraryPicker } from "../LibraryPicker/LibraryPicker";
 import { ModalFoot } from "./ModalFoot";
 import { RuleBuilder } from "./RuleBuilder";
-import { BLANK_DRAFT, createRequest, type RuleDraft } from "./rules";
+import {
+  BLANK_DRAFT,
+  createRequest,
+  type RuleDraft,
+  type ShelfSeed,
+} from "./rules";
 import { VisibilityToggle } from "./VisibilityToggle";
 import "../ShelfPicker/ShelfPicker.css";
 import "./ShelfForm.css";
@@ -22,15 +27,22 @@ const KINDS = [
 export function CreateShelfModal({
   onClose,
   onCreated,
+  initial,
 }: {
   onClose: () => void;
   onCreated: (shelf: ShelfDetail) => void;
+  /** Starts the smart form filled in, instead of blank. */
+  initial?: ShelfSeed;
 }) {
-  const [name, setName] = useState("");
+  const [name, setName] = useState(initial?.name ?? "");
   const [kind, setKind] = useState<"smart" | "manual">("smart");
   const [visibility, setVisibility] = useState<"private" | "public">("private");
-  const [matchMode, setMatchMode] = useState<MatchMode>("all");
-  const [drafts, setDrafts] = useState<RuleDraft[]>([BLANK_DRAFT]);
+  const [matchMode, setMatchMode] = useState<MatchMode>(
+    initial?.matchMode ?? "all",
+  );
+  const [drafts, setDrafts] = useState<RuleDraft[]>(
+    initial?.drafts.length ? initial.drafts : [BLANK_DRAFT],
+  );
   const [picked, setPicked] = useState<Book[]>([]);
   const create = useMutation({
     mutationFn: createShelf,
@@ -78,6 +90,7 @@ export function CreateShelfModal({
           <RuleBuilder
             matchMode={matchMode}
             drafts={drafts}
+            note={initial?.note}
             onMatchMode={setMatchMode}
             onDrafts={setDrafts}
           />

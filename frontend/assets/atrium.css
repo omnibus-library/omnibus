@@ -9384,14 +9384,13 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
    parity) but never shown — the top bar carries navigation. */
 .app-shell .m-tabbar { display: none; }
 
-/* The search trigger collapses to an icon-only circle to save width. This
-   fires a breakpoint *above* the phone one because the topbar's mono
-   uppercase chrome is wider than the sans it replaced: between 720px (where
-   the nav steps aside for the tab bar) and ~900px the brand + nav + search +
-   actions no longer fit, and the right cluster runs off the edge. Dropping
-   the trigger's label and ⌘K hint buys back ~94px, more than the type
-   change costs. */
-@media (max-width: 900px) {
+/* Above the phone breakpoint the five-link bar needs ~917px with the full
+   search trigger, so below 960px the trigger drops to an icon and the bar
+   condenses. */
+@media (max-width: 960px) {
+  .atrium-topbar { padding-inline: 16px; gap: 8px; }
+  .atrium-nav { margin-left: 0; }
+  .atrium-nav a { padding: 6px 4px; letter-spacing: .04em; }
   .atrium-topbar .sp-trigger {
     padding: 0; width: 36px; gap: 0; justify-content: center; flex: none;
   }
@@ -9407,8 +9406,8 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
     padding-bottom: calc(62px + env(safe-area-inset-bottom) + 12px);
   }
 
-  /* Slim the top bar to brand + search + actions. The Library/Authors/
-     Series links move into the tab bar, so hide them here. */
+  /* Slim the top bar to brand + search + actions. The section links
+     step aside for the tab bar, so hide them here. */
   .atrium-topbar { padding: 12px 16px; gap: 7px; }
   .atrium-nav { display: none; }
 

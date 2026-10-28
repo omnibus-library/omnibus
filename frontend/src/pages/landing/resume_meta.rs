@@ -200,8 +200,8 @@ mod tests {
 
     #[test]
     fn resume_key_separates_the_two_formats_of_one_book() {
-        // The list surfaces render one card per stored position, so both
-        // formats of one book are siblings and must key apart (#2633).
+        // The key keeps formats apart so sibling points of one book can never
+        // collide (#2633).
         let epub = point(ProgressFormat::Epub, None, None);
         let audio = point(ProgressFormat::Audio, None, None);
 

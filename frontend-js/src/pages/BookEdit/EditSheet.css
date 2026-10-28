@@ -410,7 +410,7 @@
 }
 .es-fetch-query {
   display: grid;
-  gap: 8px;
+  gap: 20px;
 }
 .es-inline {
   display: flex;
