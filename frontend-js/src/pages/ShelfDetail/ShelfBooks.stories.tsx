@@ -164,6 +164,12 @@ export const Filtered: Story = {
     );
     await expect(canvas.getByTestId("shelf-count")).toHaveTextContent("2");
     await expect(asked.map((r) => r.get("filter"))).toContain(ADA);
+    await expect(
+      canvas.getByRole("button", { name: "Clear all" }),
+    ).toBeInTheDocument();
+    await expect(
+      canvas.queryByRole("button", { name: "Save as shelf" }),
+    ).not.toBeInTheDocument();
   },
 };
 

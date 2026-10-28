@@ -1,8 +1,10 @@
-import { useQuery } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useId, useRef, useState } from "react";
 import { type FilterClause, type FilterField, shelvesQuery } from "../../api";
 import { useCurrentUser } from "../../session";
 import { ChevronDownGlyph, XGlyph } from "../Glyphs/Glyphs";
+import { CreateShelfModal } from "../ShelfForm/CreateShelfModal";
+import type { ShelfSeed } from "../ShelfForm/rules";
 import { FilterPicker } from "./FilterPicker";
 import {
   FILTER_FIELDS,
@@ -12,12 +14,15 @@ import {
   withFieldClause,
   withoutField,
 } from "./filters";
+import { saveAsShelf } from "./saveAsShelf";
 import "./FilterBar.css";
 
 type FilterBarProps = {
   clauses: FilterClause[];
   /** Called with the whole next clause list. */
   onChange: (clauses: FilterClause[]) => void;
+  /** Offers to save the filters as a smart shelf; only right where the bar filters the whole library. */
+  saveAsShelf?: boolean;
 };
 
 function Facet({
@@ -96,21 +101,66 @@ function Facet({
 
 /** The library's filters as one facet per field; an active one names what it keeps. */
 export function FilterBar(props: FilterBarProps) {
+  const shelves = useQuery(shelvesQuery);
+  const viewerId = useCurrentUser().id;
+  const client = useQueryClient();
+  // The seed the reader saved from, so the form shows what they clicked on.
+  const [saving, setSaving] = useState<ShelfSeed | null>(null);
+  const seed =
+    props.saveAsShelf && props.clauses.length > 0
+      ? saveAsShelf(props.clauses, shelves, viewerId)
+      : null;
+  const nothingToSave = seed?.drafts.length === 0;
+  const noteId = useId();
   return (
-    // biome-ignore lint/a11y/useSemanticElements: a fieldset brings a default border and min-width that the fb rules never reset
-    <div className="fb" role="group" aria-label="Library filters">
-      {FILTER_FIELDS.map((field) => (
-        <Facet key={field} field={field} {...props} />
-      ))}
-      {props.clauses.length > 0 && (
-        <button
-          type="button"
-          className="fb-clear"
-          onClick={() => props.onChange([])}
-        >
-          Clear all
-        </button>
+    <>
+      {/* biome-ignore lint/a11y/useSemanticElements: a fieldset brings a default border and min-width that the fb rules never reset */}
+      <div className="fb" role="group" aria-label="Library filters">
+        {FILTER_FIELDS.map((field) => (
+          <Facet key={field} field={field} {...props} />
+        ))}
+        {props.clauses.length > 0 && (
+          <button
+            type="button"
+            className="fb-clear"
+            onClick={() => props.onChange([])}
+          >
+            Clear all
+          </button>
+        )}
+        {seed && (
+          // aria-disabled, not disabled: a disabled button drops out of the tab order, taking its reason with it.
+          <>
+            <button
+              type="button"
+              className="fb-save"
+              aria-disabled={nothingToSave}
+              aria-describedby={nothingToSave ? noteId : undefined}
+              title={nothingToSave ? seed.note : undefined}
+              onClick={() => {
+                if (!nothingToSave) setSaving(seed);
+              }}
+            >
+              Save as shelf
+            </button>
+            {nothingToSave && (
+              <span id={noteId} className="sr-only">
+                {seed.note}
+              </span>
+            )}
+          </>
+        )}
+      </div>
+      {saving && (
+        <CreateShelfModal
+          initial={saving}
+          onClose={() => setSaving(null)}
+          onCreated={() => {
+            setSaving(null);
+            client.invalidateQueries({ queryKey: shelvesQuery.queryKey });
+          }}
+        />
       )}
-    </div>
+    </>
   );
 }

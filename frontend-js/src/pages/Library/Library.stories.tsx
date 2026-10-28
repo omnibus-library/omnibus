@@ -614,6 +614,9 @@ export const FilterRestores: Story = {
     await expect(
       canvas.getByRole("button", { name: "Clear all" }),
     ).toBeInTheDocument();
+    await expect(
+      canvas.getByRole("button", { name: "Save as shelf" }),
+    ).toBeEnabled();
   },
 };
 
@@ -803,6 +806,10 @@ export const ShelfLensFiltered: Story = {
     await expect(
       canvas.getByRole("button", { name: "Winter reads, 5 books" }),
     ).toBeInTheDocument();
+    // A saved shelf would hold the filtered library, not this shelf's members.
+    await expect(
+      canvas.queryByRole("button", { name: "Save as shelf" }),
+    ).not.toBeInTheDocument();
   },
 };
 

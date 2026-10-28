@@ -256,6 +256,8 @@ function Preview({
 type RuleBuilderProps = {
   matchMode: MatchMode;
   drafts: RuleDraft[];
+  /** What a seeded form says it carried over, shown above the rows. */
+  note?: string;
   onMatchMode: (mode: MatchMode) => void;
   onDrafts: (drafts: RuleDraft[]) => void;
 };
@@ -264,12 +266,14 @@ type RuleBuilderProps = {
 export function RuleBuilder({
   matchMode,
   drafts,
+  note,
   onMatchMode,
   onDrafts,
 }: RuleBuilderProps) {
   return (
     <div className="shelf-smart">
       <div className="shelf-smart-editor">
+        {note && <p className="shelf-carried mono">{note}</p>}
         <div className="shelf-match-row">
           <span>Match</span>
           <select
