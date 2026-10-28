@@ -48,6 +48,13 @@ export class PageScrollComponent extends BaseComponent {
     );
   }
 
+  /** Resolves once the webfonts have swapped in, so a width measured next is the final one. */
+  async waitForFonts(): Promise<void> {
+    await this.page.evaluate(async () => {
+      await document.fonts.ready;
+    });
+  }
+
   /** Draws always-on scrollbars; only takes in a browser launched without `--hide-scrollbars`. */
   async showClassicScrollbars(): Promise<void> {
     await this.page.addStyleTag({

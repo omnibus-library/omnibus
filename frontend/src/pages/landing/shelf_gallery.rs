@@ -2,9 +2,9 @@
 //! hairline rule with up to three member covers peeking in above the name on
 //! hover, which costs ~110px instead of the 170px the cover-mosaic tiles took.
 //! Selecting filters the landing book list in place; only the heading's "All
-//! shelves" link leaves, for the full `/shelves` index, which is now the only
-//! way there since the top nav carries no Shelves link. Horizontal paging (the
-//! caret buttons at the row's ends) is driven by `marquee.js`.
+//! shelves" link leaves, for the full `/shelves` index (the top nav's Shelves
+//! link goes there too). Horizontal paging (the caret buttons at the row's
+//! ends) is driven by `marquee.js`.
 //!
 //! The row carries a subset of what the index lists: [`rail_shelves`] applies
 //! the same inclusion rule as the iOS landing rail, so another reader's
