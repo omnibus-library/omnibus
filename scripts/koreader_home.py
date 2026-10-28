@@ -228,7 +228,8 @@ def plugin_server_url(archive: bytes) -> str:
     except ValueError:
         config = None  # not UTF-8 or not JSON
     server = config.get("server_url") if isinstance(config, dict) else None
-    if not isinstance(server, str) or urllib.parse.urlsplit(server).scheme not in ("http", "https"):
+    parts = urllib.parse.urlsplit(server) if isinstance(server, str) else None
+    if parts is None or parts.scheme not in ("http", "https") or not parts.hostname:
         raise ValueError("omnibus.json has no http(s) server_url")
     return server
 

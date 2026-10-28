@@ -458,7 +458,15 @@ class PluginZipTests(unittest.TestCase):
 
     def test_refuses_a_config_with_no_http_server_url(self):
         reason = "<path> is not an Omnibus plugin zip: omnibus.json has no http(s) server_url"
-        for config in ('{"token": "t"}', '{"server_url": 5}', '{"server_url": "ftp://h"}', "[]", "not json"):
+        for config in (
+            '{"token": "t"}',
+            '{"server_url": 5}',
+            '{"server_url": "ftp://h"}',
+            '{"server_url": "https://"}',
+            '{"server_url": "http:device.test"}',
+            "[]",
+            "not json",
+        ):
             with self.subTest(config=config):
                 self.assertEqual(self.refusal(zip_of({"omnibus.koplugin/omnibus.json": config})), reason)
 
