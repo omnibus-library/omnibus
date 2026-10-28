@@ -3,7 +3,6 @@ import { useEffect, useState } from "react";
 import type { UseFormReturn } from "react-hook-form";
 import {
   type EditionSearchRequest,
-  inStableOrder,
   type MetaForm,
   PROVIDERS,
   type ProviderEdition,
@@ -14,7 +13,7 @@ import { CaretLeftGlyph } from "../../components/Glyphs/Glyphs";
 import { Loading } from "../../components/Loading/Loading";
 import { SourceSummary } from "./EditionPicker";
 import { applyField, coverSrc, EMPTY, labelToId } from "./editionFields";
-import { type DiffRow, diffRows, fetchRequest, onePerProvider } from "./fetch";
+import { bestPerProvider, type DiffRow, diffRows, fetchRequest } from "./fetch";
 import { useHydrated } from "./useHydrated";
 
 /** "Pierce Brown · Del Rey 2014 · 382 pages": the parts an edition has, in that order. */
@@ -145,7 +144,7 @@ type FetchViewProps = {
 };
 
 /**
- * Fetch metadata: one edition per provider for the title or ISBN asked, the picked one set
+ * Fetch metadata: one edition per provider for the title or ISBN and author asked, the picked one set
  * beside what the form holds, and the checked rows copied into the form for Done to save.
  */
 export function FetchView({
@@ -156,23 +155,25 @@ export function FetchView({
   onApplied,
 }: FetchViewProps) {
   const [query, setQuery] = useState(() => form.getValues("title").trim());
+  const [author, setAuthor] = useState(
+    () => form.getValues("authors")[0]?.trim() ?? "",
+  );
   const { picked, pick } = useHydrated();
   const search = useMutation({
     mutationFn: async (req: EditionSearchRequest) => {
       const found = await searchEditions(req);
       return {
         sources: found.sources,
-        editions: onePerProvider(inStableOrder(found.editions, req.query)),
+        editions: bestPerProvider(found.editions, req),
       };
     },
   });
-  const ask = (text: string) => {
-    const request = fetchRequest(text, form.getValues("authors")[0] ?? "");
+  const request = fetchRequest(query, author);
+  const ask = () => {
     if (request) search.mutate(request);
   };
-  // Searches as it opens, on the form's title.
   // biome-ignore lint/correctness/useExhaustiveDependencies: once, as the view opens
-  useEffect(() => ask(query), []);
+  useEffect(ask, []);
 
   const apply = (rows: DiffRow[], cover: string | null) => {
     if (picked === null) return;
@@ -211,28 +212,45 @@ export function FetchView({
         className="es-fetch-query"
         onSubmit={(e) => {
           e.preventDefault();
-          ask(query);
+          ask();
         }}
       >
-        <label className="me-label" htmlFor="es-fetch-query">
-          Title or ISBN
-        </label>
-        <div className="es-inline">
-          <input
-            id="es-fetch-query"
-            className="me-input"
-            type="search"
-            value={query}
-            autoComplete="off"
-            onChange={(e) => setQuery(e.target.value)}
-          />
-          <Button
-            type="submit"
-            disabled={search.isPending || !fetchRequest(query, "")}
-            aria-busy={search.isPending}
-          >
-            Search
-          </Button>
+        <div className="me-field">
+          <label className="me-label" htmlFor="es-fetch-query">
+            Title or ISBN
+          </label>
+          <div className="es-inline">
+            <input
+              id="es-fetch-query"
+              className="me-input"
+              type="search"
+              value={query}
+              autoComplete="off"
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </div>
+        </div>
+        <div className="me-field">
+          <label className="me-label" htmlFor="es-fetch-author">
+            Author
+          </label>
+          <div className="es-inline">
+            <input
+              id="es-fetch-author"
+              className="me-input"
+              type="search"
+              value={author}
+              autoComplete="off"
+              onChange={(e) => setAuthor(e.target.value)}
+            />
+            <Button
+              type="submit"
+              disabled={search.isPending || !request}
+              aria-busy={search.isPending}
+            >
+              Search
+            </Button>
+          </div>
         </div>
       </form>
       {search.isPending && (
