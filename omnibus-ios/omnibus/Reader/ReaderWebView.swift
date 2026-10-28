@@ -584,11 +584,11 @@ final class ReaderController: NSObject {
         run("OmnibusReader.seek(\(pendingSeek), \(seekID))")
     }
 
-    /// The position a save would write, or `nil` when there is nothing new: an
-    /// echo of a saved spot (the restore's landing, a rotation) or the spot
-    /// itself. Writing either stamps a fresh clock on an unmoved row, which
-    /// out-orders a newer audiobook position at the cross-format clock gate
-    /// (#1972). An echo is new only on a first open with no seek still to move it.
+    /// The position a save would write, or `nil` when there is nothing new: an echo
+    /// of a saved spot (the restore's landing, a rotation) or the spot itself.
+    /// Writing either stamps a fresh clock on an unmoved row, which out-orders a
+    /// newer audiobook position at the cross-format clock gate (#1972). An echo is
+    /// new only with `saved == nil`, `stored == .nowhere` and no seek pending.
     static func unsavedCFI(
         location: RelocateData?, saved: String?, stored: PositionSync.Stored, seekPending: Bool
     ) -> String? {
