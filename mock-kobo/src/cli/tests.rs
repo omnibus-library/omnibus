@@ -76,11 +76,15 @@ fn parse_reads_every_tui_flag() {
 
     assert_eq!(
         command,
-        Command::Tui(ServeArgs {
-            url: Some("http://h:9".into()),
-            token: Some("abc_-1".into()),
-            port: 8123,
-            state: "x.json".into(),
+        Command::Tui(TuiArgs {
+            serve: ServeArgs {
+                url: Some("http://h:9".into()),
+                token: Some("abc_-1".into()),
+                port: 8123,
+                state: "x.json".into(),
+            },
+            state_given: true,
+            local: false,
         })
     );
 }
@@ -97,13 +101,39 @@ fn parse_falls_back_to_env_for_tui() {
 
     assert_eq!(
         command,
-        Command::Tui(ServeArgs {
-            url: Some("http://env-host:1".into()),
-            token: Some("env-token".into()),
-            port: 0,
-            state: "env.json".into(),
+        Command::Tui(TuiArgs {
+            serve: ServeArgs {
+                url: Some("http://env-host:1".into()),
+                token: Some("env-token".into()),
+                port: 0,
+                state: "env.json".into(),
+            },
+            state_given: true,
+            local: false,
         })
     );
+}
+
+fn tui(list: &[&str]) -> TuiArgs {
+    match parse(args(list), no_env).unwrap() {
+        Command::Tui(tui) => tui,
+        Command::Serve(_) | Command::Help => panic!("expected a tui command"),
+    }
+}
+
+#[test]
+fn parse_leaves_tui_state_unnamed_and_default_when_not_given() {
+    let tui = tui(&["tui"]);
+
+    assert!(!tui.state_given);
+    assert_eq!(tui.serve.state, PathBuf::from(DEFAULT_STATE_PATH));
+}
+
+#[test]
+fn parse_marks_tui_state_given_when_only_the_env_var_names_it() {
+    let command = parse(args(&["tui"]), env_of(&[(STATE_ENV, "env.json")])).unwrap();
+
+    assert!(matches!(command, Command::Tui(tui) if tui.state_given));
 }
 
 #[test]

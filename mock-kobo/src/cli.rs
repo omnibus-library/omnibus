@@ -66,7 +66,7 @@ pub enum Command {
     /// Run one headless device behind its control API.
     Serve(ServeArgs),
     /// Run one device under a terminal UI, serving the same control API.
-    Tui(ServeArgs),
+    Tui(TuiArgs),
     /// Print the usage text.
     Help,
 }
@@ -82,6 +82,16 @@ pub struct ServeArgs {
     pub port: u16,
     /// `--state`, else `OMNIBUS_MOCK_KOBO_STATE`, else `DEFAULT_STATE_PATH`.
     pub state: PathBuf,
+}
+
+/// `tui`'s options: `serve`'s, plus whether a state file was named and how the device is first pointed.
+#[derive(Debug, PartialEq, Eq)]
+pub struct TuiArgs {
+    pub serve: ServeArgs,
+    /// `--state` or `OMNIBUS_MOCK_KOBO_STATE` was given; otherwise the run uses a scratch state.
+    pub state_given: bool,
+    /// `--local`: follow this worktree's dev server and auto-wire.
+    pub local: bool,
 }
 
 /// Why the command line can't be used.
@@ -109,9 +119,21 @@ where
     };
     match command.as_str() {
         "serve" => parse_serve(flags, env).map(Command::Serve),
-        "tui" => parse_serve(flags, env).map(Command::Tui),
+        "tui" => parse_tui(flags, env).map(Command::Tui),
         other => Err(CliError::Usage(format!("unknown command: {other}"))),
     }
+}
+
+/// `tui`'s flags: the shared ones, and whether a state file was named by flag or env var.
+fn parse_tui(flags: &[String], env: impl Fn(&str) -> Option<String>) -> Result<TuiArgs, CliError> {
+    let serve = parse_serve(flags, &env)?;
+    let state_given = flags.iter().any(|flag| flag == "--state")
+        || env(STATE_ENV).is_some_and(|value| !value.is_empty());
+    Ok(TuiArgs {
+        serve,
+        state_given,
+        local: false,
+    })
 }
 
 /// The flags `serve` and `tui` share, each falling back to its env var and then its default.

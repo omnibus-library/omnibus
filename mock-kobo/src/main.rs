@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use anyhow::Context;
 
-use omnibus_mock_kobo::autowire::SEED_USER_ENV;
+use omnibus_mock_kobo::autowire::{device_name, SEED_USER_ENV};
 use omnibus_mock_kobo::cli::{self, Command, ServeArgs};
 use omnibus_mock_kobo::control::Control;
 use omnibus_mock_kobo::startup::Started;
@@ -38,9 +38,14 @@ struct BroughtUp {
 }
 
 /// Start the device and bind its control API, before anything is printed or drawn.
-async fn bring_up(args: &ServeArgs, seed_user: Option<&str>) -> anyhow::Result<BroughtUp> {
+async fn bring_up(
+    args: &ServeArgs,
+    seed_user: Option<&str>,
+    device_name: &str,
+) -> anyhow::Result<BroughtUp> {
     let runtime_dir = Path::new(cli::RUNTIME_DIR);
-    let Started { control, notice } = startup::start(args, seed_user, runtime_dir).await?;
+    let Started { control, notice } =
+        startup::start(args, seed_user, runtime_dir, device_name).await?;
     let listener = api::listen(args.port)
         .await
         .with_context(|| format!("cannot bind 127.0.0.1:{}", args.port))?;
@@ -63,7 +68,7 @@ async fn serve(args: ServeArgs, seed_user: Option<&str>) -> anyhow::Result<()> {
         notice,
         listener,
         port,
-    } = bring_up(&args, seed_user).await?;
+    } = bring_up(&args, seed_user, &device_name(&args.state)).await?;
     let hardware_id = control.view().hardware_id;
     println!(
         "{}",
@@ -79,24 +84,41 @@ async fn serve(args: ServeArgs, seed_user: Option<&str>) -> anyhow::Result<()> {
 
 /// Run one device under the terminal UI while the same device serves its control API.
 #[cfg(feature = "tui")]
-async fn tui(args: ServeArgs, seed_user: Option<String>) -> anyhow::Result<()> {
-    use omnibus_mock_kobo::autowire::device_name;
+async fn tui(args: cli::TuiArgs, seed_user: Option<String>) -> anyhow::Result<()> {
+    use omnibus_mock_kobo::scratch::{self, Scratch};
     use omnibus_mock_kobo::tui::jobs::Wiring;
     use omnibus_mock_kobo::tui::{self, Tui};
 
+    let cli::TuiArgs {
+        serve: mut args,
+        state_given,
+        ..
+    } = args;
+    let root = scratch::root();
+    scratch::sweep(&root);
+    // Named from the state path as parsed, so a scratch path doesn't rename the server device.
+    let name = device_name(&args.state);
+    // Held to the end of the function, so every exit path removes the scratch dir.
+    let scratch = (!state_given)
+        .then(|| Scratch::create(&root))
+        .transpose()
+        .context("cannot create a scratch state directory")?;
+    if let Some(scratch) = &scratch {
+        args.state = scratch.state_path();
+    }
     let BroughtUp {
         control,
         notice,
         listener,
         port,
-    } = bring_up(&args, seed_user.as_deref()).await?;
+    } = bring_up(&args, seed_user.as_deref(), &name).await?;
     let api = tokio::spawn({
         let router = api::router(Arc::clone(&control));
         async move { axum::serve(listener, router).await }
     });
     let wiring = Wiring {
         seed_user,
-        device_name: device_name(&args.state),
+        device_name: name,
     };
     let running = Arc::clone(&control);
     let ui = Tui {
