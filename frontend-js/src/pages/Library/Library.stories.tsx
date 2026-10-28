@@ -6,17 +6,21 @@ import { getGetShelfMockHandler404 } from "../../api/generated/omnibus.msw";
 import type {
   BulkOverridesRequest,
   CreateShelfRequest,
+  EbookMetadata,
+  MetadataOverrides,
 } from "../../api/generated/schemas";
 import { storyClient } from "../../testing/AppHarness";
 import {
   addShelfBooksHandler,
   bulkOverridesHandler,
   createShelfHandler,
+  deferred,
   failing,
   filterOptionHandlers,
   hanging,
   LIBRARY_PATH,
   libraryHandler,
+  overridesHandler,
   recentProgressHandler,
   type ShelfWrite,
   shelfDetailHandlers,
@@ -209,9 +213,12 @@ export const Loading: Story = {
     msw.use(hanging("/api/ebooks"));
   },
   play: async ({ canvas }) => {
-    await expect(canvas.getByRole("status")).toHaveTextContent(
-      "Taking the books off the shelf",
-    );
+    // The toast's live region is a status too, so the loader is found by its words.
+    await expect(
+      canvas
+        .getByText("Taking the books off the shelf")
+        .closest("[role=status]"),
+    ).toBeInTheDocument();
   },
 };
 
@@ -376,9 +383,12 @@ export const TableLoading: Story = {
     msw.use(hanging("/api/ebooks"));
   },
   play: async ({ canvas, canvasElement }) => {
-    await expect(canvas.getByRole("status")).toHaveTextContent(
-      "Taking the books off the shelf",
-    );
+    // The toast's live region is a status too, so the loader is found by its words.
+    await expect(
+      canvas
+        .getByText("Taking the books off the shelf")
+        .closest("[role=status]"),
+    ).toBeInTheDocument();
     await expect(canvasElement.querySelector(".ld-rows")).not.toBeNull();
   },
 };
@@ -2159,5 +2169,226 @@ export const LensAddBooksUnavailable: Story = {
       ),
     );
     await expect(add).toHaveAttribute("aria-disabled", "true");
+  },
+};
+
+const edits: MetadataOverrides[] = [];
+let gate = deferred();
+
+// The table over six books, with saves recorded in `edits`; `hold` keeps each POST until `gate.release`.
+function inlineEditHandlers({
+  hold = false,
+  refuse,
+}: {
+  hold?: boolean;
+  refuse?: string;
+} = {}) {
+  seedTable();
+  requests.length = 0;
+  edits.length = 0;
+  gate = deferred();
+  const books: EbookMetadata[] = aWireLibrary(6);
+  return [
+    // A resolver that answers nothing hands the request on to the next handler.
+    ...(hold
+      ? [
+          http.post("/api/ebooks/:uuid/overrides", async () => {
+            await gate.promise;
+          }),
+        ]
+      : []),
+    overridesHandler(books, { saved: edits, refuse }),
+    libraryHandler(books, 10, { requests }),
+  ];
+}
+
+const TITLE_1 = "Edit title: Aurora Station, Vol. 1";
+
+// Every row's series, published and language buttons share a label, so a play asks the first row.
+const firstRow = async (canvas: ReturnType<typeof within>) =>
+  within((await canvas.findAllByRole("row"))[1] as HTMLElement);
+
+export const InlineEditTitle: Story = {
+  beforeEach({ msw }) {
+    msw.use(...inlineEditHandlers({ hold: true }));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByRole("button", { name: TITLE_1 }));
+    const input = canvas.getByRole("textbox", { name: "Title" });
+    await expect(input).toHaveValue("Aurora Station, Vol. 1");
+    const fetched = requests.length;
+
+    await userEvent.clear(input);
+    await userEvent.type(input, "Aurora Rising{Enter}");
+
+    await expect(
+      await canvas.findByRole("button", { name: "Edit title: Aurora Rising" }),
+    ).toBeInTheDocument();
+    await expect(edits).toEqual([]);
+
+    gate.release();
+    await waitFor(() => expect(edits).toEqual([{ title: "Aurora Rising" }]));
+    await waitFor(() => expect(requests.length).toBeGreaterThan(fetched));
+    await expect(
+      await canvas.findByRole("button", { name: "Edit title: Aurora Rising" }),
+    ).toBeInTheDocument();
+  },
+};
+
+export const InlineEditUnchanged: Story = {
+  beforeEach({ msw }) {
+    msw.use(...inlineEditHandlers());
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByRole("button", { name: TITLE_1 }));
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(canvas.getByRole("button", { name: TITLE_1 })).toHaveFocus(),
+    );
+
+    await userEvent.click(canvas.getByRole("button", { name: TITLE_1 }));
+    await userEvent.type(
+      canvas.getByRole("textbox", { name: "Title" }),
+      " extra{Escape}",
+    );
+    await waitFor(() =>
+      expect(canvas.getByRole("button", { name: TITLE_1 })).toHaveFocus(),
+    );
+
+    // The writes for one row arrive in order, so this one landing alone means the others sent nothing.
+    await userEvent.click(
+      (await firstRow(canvas)).getByRole("button", { name: /^Edit language:/ }),
+    );
+    await userEvent.type(
+      canvas.getByRole("textbox", { name: "Language" }),
+      "fr{Enter}",
+    );
+    await waitFor(() => expect(edits).toEqual([{ language: "fr" }]));
+  },
+};
+
+export const InlineEditBlurSaves: Story = {
+  beforeEach({ msw }) {
+    msw.use(...inlineEditHandlers());
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByRole("button", { name: TITLE_1 }));
+    await userEvent.type(canvas.getByRole("textbox", { name: "Title" }), " II");
+
+    await userEvent.click(
+      canvas.getByRole("button", {
+        name: "Edit title: Aurora Station, Vol. 2",
+      }),
+    );
+
+    await waitFor(() =>
+      expect(edits).toEqual([{ title: "Aurora Station, Vol. 1 II" }]),
+    );
+    await expect(
+      await canvas.findByRole("button", {
+        name: "Edit title: Aurora Station, Vol. 1 II",
+      }),
+    ).toBeInTheDocument();
+    await expect(
+      canvas.getAllByRole("textbox", { name: "Title" }),
+    ).toHaveLength(1);
+  },
+};
+
+export const InlineEditClearsSeries: Story = {
+  beforeEach({ msw }) {
+    msw.use(...inlineEditHandlers());
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      (await firstRow(canvas)).getByRole("button", {
+        name: "Edit series: Aurora Station #1",
+      }),
+    );
+    const input = canvas.getByRole("textbox", { name: "Series" });
+    await expect(input).toHaveValue("Aurora Station");
+
+    await userEvent.clear(input);
+    await userEvent.keyboard("{Enter}");
+
+    await waitFor(() => expect(edits).toEqual([{ series: "" }]));
+    await expect(
+      await canvas.findByRole("button", { name: "Edit series: none" }),
+    ).toBeInTheDocument();
+  },
+};
+
+export const InlineEditPublishedSeedsRaw: Story = {
+  beforeEach({ msw }) {
+    msw.use(...inlineEditHandlers());
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      (await firstRow(canvas)).getByRole("button", {
+        name: "Edit published: Mar 1st, 2021",
+      }),
+    );
+
+    const input = canvas.getByRole("textbox", { name: "Published" });
+    await expect(input).toHaveValue("2021-03-01");
+    await expect(input).toHaveAttribute("placeholder", "YYYY-MM-DD");
+  },
+};
+
+export const InlineEditOneCellAtATime: Story = {
+  beforeEach({ msw }) {
+    msw.use(...inlineEditHandlers());
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByRole("button", { name: TITLE_1 }));
+    await expect(canvas.getByRole("textbox", { name: "Title" })).toBeVisible();
+
+    await userEvent.click(
+      (await firstRow(canvas)).getByRole("button", {
+        name: "Edit series: Aurora Station #1",
+      }),
+    );
+
+    await expect(canvas.getByRole("textbox", { name: "Series" })).toBeVisible();
+    await expect(
+      canvas.queryByRole("textbox", { name: "Title" }),
+    ).not.toBeInTheDocument();
+  },
+};
+
+export const InlineEditRefused: Story = {
+  beforeEach({ msw }) {
+    msw.use(...inlineEditHandlers({ refuse: "title too long" }));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByRole("button", { name: TITLE_1 }));
+    const input = canvas.getByRole("textbox", { name: "Title" });
+    await userEvent.clear(input);
+    await userEvent.type(input, "Too long{Enter}");
+
+    await expect(
+      await canvas.findByText("Couldn’t save that change: title too long"),
+    ).toBeInTheDocument();
+    await expect(
+      await canvas.findByRole("button", { name: TITLE_1 }),
+    ).toBeInTheDocument();
+  },
+};
+
+export const InlineEditAdminOnly: Story = {
+  parameters: { user: NOT_ADMIN },
+  beforeEach({ msw }) {
+    msw.use(...inlineEditHandlers());
+  },
+  play: async ({ canvas, canvasElement }) => {
+    const row = (await canvas.findAllByRole("row"))[1];
+    await expect(row).toHaveTextContent("Aurora Station #1");
+
+    await expect(
+      canvas.queryByRole("button", { name: /^Edit / }),
+    ).not.toBeInTheDocument();
+    await expect(
+      canvasElement.querySelector(".ebook-cell-editable"),
+    ).toBeNull();
   },
 };

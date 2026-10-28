@@ -4,6 +4,8 @@ import { type Book, type SortKey, thumbSrcSet, thumbUrl } from "../../api";
 import "../../components/FormatSwitcher/FormatSwitcher.css";
 import { formatDateShort, formatInstantShort } from "../../format";
 import type { Prefs } from "../../viewPrefs";
+import { TextCell, type TextField } from "./EditableCell";
+import { useRowEdit } from "./inlineEdit";
 
 type SortableColumn = { className: string; label: string; sort: SortKey };
 
@@ -113,56 +115,74 @@ type Selection = {
   onChange: (uuids: string[], checked: boolean) => void;
 };
 
-function Row({ book, select }: { book: Book; select?: Selection }) {
+function Row({
+  book,
+  select,
+  editable,
+}: {
+  book: Book;
+  select?: Selection;
+  editable: boolean;
+}) {
+  const { view, editing, setEditing, save } = useRowEdit(book);
   const checked = select?.selected.has(book.uuid) ?? false;
+  const text = (field: TextField, display: string, initial: string) => (
+    <TextCell
+      field={field}
+      display={display}
+      initial={initial}
+      editable={editable}
+      open={editing === field}
+      onOpen={() => setEditing(field)}
+      onClose={() => setEditing(null)}
+      onSave={(value) => save({ [field]: value })}
+    />
+  );
   return (
     <tr className="ebook-row">
       {select && (
         <td className="ebook-col-select">
           <input
             type="checkbox"
-            aria-label={`Select ${book.title}`}
+            aria-label={`Select ${view.title}`}
             checked={checked}
             onChange={() => select.onChange([book.uuid], !checked)}
           />
         </td>
       )}
-      <RowCover book={book} />
-      <td className="ebook-col-title">
-        <div className="ebook-title-cell">{book.title}</div>
-      </td>
+      <RowCover book={view} />
+      {text("title", view.title, view.title)}
       <td className="ebook-col-author">
-        <div className="ebook-title-cell">{book.authors.join(", ")}</div>
+        <div className="ebook-title-cell">{view.authors.join(", ")}</div>
       </td>
-      <td className="ebook-col-series">
-        <div className="ebook-title-cell">
-          {book.series &&
-            `${book.series.name}${book.series.index ? ` #${book.series.index}` : ""}`}
-        </div>
-      </td>
+      {text(
+        "series",
+        view.series
+          ? `${view.series.name}${view.series.index ? ` #${view.series.index}` : ""}`
+          : "",
+        view.series?.name ?? "",
+      )}
       <td className="ebook-col-tags">
-        <div className="ebook-title-cell">{book.subjects.join(", ")}</div>
+        <div className="ebook-title-cell">{view.subjects.join(", ")}</div>
       </td>
       <td className="ebook-col-genres">
-        <div className="ebook-title-cell">{book.genres.join(", ")}</div>
+        <div className="ebook-title-cell">{view.genres.join(", ")}</div>
       </td>
-      <td className="ebook-col-published">
-        <div className="ebook-title-cell">
-          {formatDateShort(book.published ?? "") ?? "—"}
-        </div>
-      </td>
+      {text(
+        "published",
+        formatDateShort(view.published ?? "") ?? "—",
+        view.published ?? "",
+      )}
       <td className="ebook-col-formats">
-        <Formats book={book} />
+        <Formats book={view} />
       </td>
       <td className="ebook-col-updated">
-        {formatInstantShort(book.modified ?? "") ?? "—"}
+        {formatInstantShort(view.modified ?? "") ?? "—"}
       </td>
       <td className="ebook-col-added">
-        {formatInstantShort(book.addedAt ?? "") ?? "—"}
+        {formatInstantShort(view.addedAt ?? "") ?? "—"}
       </td>
-      <td className="ebook-col-language">
-        <div className="ebook-title-cell">{book.language ?? ""}</div>
-      </td>
+      {text("language", view.language ?? "", view.language ?? "")}
     </tr>
   );
 }
@@ -177,9 +197,11 @@ type BookTableProps = {
   select?: Selection;
   /** The select-all checkbox, where a closing dialog hands focus back. */
   selectAllRef?: RefObject<HTMLInputElement | null>;
+  /** Whether a cell can be edited in place. */
+  editable: boolean;
 };
 
-/** The dense table view: one read-only row per book, sortable by column header. */
+/** The dense table view: one row per book, sortable by column header and editable in place for those who may. */
 export function BookTable({
   books,
   prefs,
@@ -187,6 +209,7 @@ export function BookTable({
   onSort,
   select,
   selectAllRef,
+  editable,
 }: BookTableProps) {
   const all =
     books.length > 0 && books.every((book) => select?.selected.has(book.uuid));
@@ -234,7 +257,12 @@ export function BookTable({
         </thead>
         <tbody>
           {books.map((book) => (
-            <Row key={book.uuid} book={book} select={select} />
+            <Row
+              key={book.uuid}
+              book={book}
+              select={select}
+              editable={editable}
+            />
           ))}
         </tbody>
       </table>
