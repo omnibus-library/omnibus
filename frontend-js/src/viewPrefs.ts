@@ -227,6 +227,8 @@ export function useLibraryPrefs(handoff: FilterClause[] | null = null) {
   // A handed-off filter is in no library's store yet; page 1's reconcile files it.
   const unsaved = useRef(handoff !== null);
   const pageFailed = useRef(false);
+  // What the user changed before page 1 answered, which the rebase keeps over the new library's own.
+  const edited = useRef<Partial<Prefs>>({});
 
   const change = (next: Prefs) => {
     const plan = savePlan(
@@ -235,7 +237,13 @@ export function useLibraryPrefs(handoff: FilterClause[] | null = null) {
       lastLibrary(),
     );
     if (plan.writeTo) savePrefs(plan.writeTo, next);
-    if (plan.unsaved) unsaved.current = true;
+    if (plan.unsaved) {
+      unsaved.current = true;
+      for (const key of Object.keys(next) as (keyof Prefs)[]) {
+        if (next[key] !== prefs[key])
+          Object.assign(edited.current, { [key]: next[key] });
+      }
+    }
     setPrefs(next);
   };
 
@@ -258,13 +266,18 @@ export function useLibraryPrefs(handoff: FilterClause[] | null = null) {
         unsaved.current = false;
       }
       if (action === "rebase") {
-        const rebased = { ...loadPrefs(path), clauses: prefs.clauses };
+        const rebased = {
+          ...loadPrefs(path),
+          clauses: prefs.clauses,
+          ...edited.current,
+        };
         savePrefs(path, rebased);
         setPrefs(rebased);
         unsaved.current = false;
       }
       reconciled.current = path;
       seededFrom.current = path;
+      edited.current = {};
     },
     [prefs],
   );

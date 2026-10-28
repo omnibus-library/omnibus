@@ -1,4 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { act, renderHook } from "@testing-library/react";
+import { beforeEach, describe, expect, it } from "vitest";
+import type { FilterClause } from "./api";
 import {
   DEFAULT_PREFS,
   handoffClauses,
@@ -12,6 +14,7 @@ import {
   savePlan,
   savePrefs,
   saveShelfSelection,
+  useLibraryPrefs,
 } from "./viewPrefs";
 
 const SAVED: Prefs = {
@@ -142,6 +145,30 @@ describe("reconcile", () => {
       expect(reconcile(was, path, unsaved, seededFrom)).toBe(action);
     },
   );
+});
+
+describe("useLibraryPrefs", () => {
+  beforeEach(() => localStorage.clear());
+
+  it("keeps a sort picked while loading when page 1 names another library", () => {
+    savePrefs("/a", { ...SAVED, clauses: [], view: "table", dir: "desc" });
+    const handoff: FilterClause[] = [
+      { field: "author", mode: "include", values: ["Ada"] },
+    ];
+    const { result } = renderHook(() => useLibraryPrefs(handoff));
+
+    act(() =>
+      result.current.change({ ...result.current.prefs, sort: "series" }),
+    );
+    act(() => result.current.noteAnswered("/b", false));
+
+    expect(result.current.prefs).toEqual({
+      ...DEFAULT_PREFS,
+      sort: "series",
+      clauses: handoff,
+    });
+    expect(loadPrefs("/b")).toEqual(result.current.prefs);
+  });
 });
 
 describe("saveShelfSelection", () => {
