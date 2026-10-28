@@ -36,30 +36,78 @@ fn marquee_journal_kicker_reports_the_empty_and_wishlist_cases_without_counts() 
     assert_eq!(marquee_journal_kicker(3, 2, 1, true), "Empty");
 }
 
+fn prose(text: &str) -> ExcerptRun {
+    ExcerptRun {
+        text: text.to_string(),
+        veiled: false,
+    }
+}
+
+fn veiled(text: &str) -> ExcerptRun {
+    ExcerptRun {
+        text: text.to_string(),
+        veiled: true,
+    }
+}
+
+fn plain(runs: &[ExcerptRun]) -> String {
+    runs.iter().map(|r| r.text.as_str()).collect()
+}
+
 #[test]
 fn journal_excerpt_takes_the_first_non_empty_line_and_strips_markup() {
     assert_eq!(
         journal_excerpt("\n\n## **A held** breath\nsecond line"),
-        "A held breath"
+        vec![prose("A held breath")]
     );
 }
 
 #[test]
-fn journal_excerpt_masks_spoiler_spans_so_they_never_reach_the_row() {
-    // The row is always visible, so a `||spoiler||` span has to be blocked
-    // out rather than merely un-marked.
+fn journal_excerpt_veils_spoiler_spans_so_their_text_never_reaches_the_row() {
+    // The row is always visible, so a `||spoiler||` span becomes filler of
+    // its own length, never the span's text behind a blur.
+    let runs = journal_excerpt("she ||dies|| in chapter four");
     assert_eq!(
-        journal_excerpt("she ||dies|| in chapter four"),
-        "she \u{2588}\u{2588}\u{2588} in chapter four"
+        runs,
+        vec![prose("she "), veiled("lore"), prose(" in chapter four")]
+    );
+    assert!(!plain(&runs).contains("dies"));
+}
+
+#[test]
+fn journal_excerpt_splits_spoilers_before_stripping_markup_so_a_stray_marker_cannot_shift_them() {
+    // Stripping the `*` first would close a `||` early and leave the
+    // spoiler's text in a prose run.
+    let runs = journal_excerpt("The symbol |*| means nothing; ||Alice dies|| at the end.");
+    assert!(runs.iter().all(|r| !r.text.contains("Alice dies")));
+    assert_eq!(
+        runs,
+        vec![
+            prose("The symbol || means nothing; "),
+            veiled("lorem ipsu"),
+            prose(" at the end."),
+        ]
     );
 }
 
 #[test]
 fn journal_excerpt_truncates_past_the_row_cap() {
     let long = "x".repeat(LADDER_EXCERPT_CHARS + 40);
-    let out = journal_excerpt(&long);
+    let out = plain(&journal_excerpt(&long));
     assert_eq!(out.chars().count(), LADDER_EXCERPT_CHARS + 1);
     assert!(out.ends_with('\u{2026}'));
+}
+
+#[test]
+fn journal_excerpt_counts_veiled_filler_toward_the_row_cap() {
+    let line = format!(
+        "{}||the butler did it||",
+        "x".repeat(LADDER_EXCERPT_CHARS - 2)
+    );
+    let runs = journal_excerpt(&line);
+    assert_eq!(runs.len(), 3);
+    assert_eq!(runs[1], veiled("lo"));
+    assert_eq!(runs[2], prose("\u{2026}"));
 }
 
 // SSR render coverage for the ladder row. Needs the `server` feature
@@ -146,6 +194,29 @@ mod render_tests {
         assert!(!html.contains("at 42%"), "{html}");
         // Not the current user's entry — no "you" chip.
         assert!(!html.contains("\u{b7} you"), "{html}");
+    }
+
+    #[component]
+    fn SpoilerRowHost() -> Element {
+        let dates_ready = super::super::use_local_dates_ready();
+        let open_entry = use_signal(|| None::<i64>);
+        let mut entry = seeded_entry();
+        entry.body_md = "she ||dies|| in chapter four".to_string();
+        render_ladder_row(&entry, Some(3), dates_ready, open_entry)
+    }
+
+    fn render_spoiler_row() -> Element {
+        rsx! {
+            SpoilerRowHost {}
+        }
+    }
+
+    #[test]
+    fn ladder_row_sets_a_spoiler_as_blurred_filler_without_its_text() {
+        let html = render_in_vdom(render_spoiler_row);
+        assert!(html.contains("class=\"spoiler-mask\""), "{html}");
+        assert!(html.contains("lore"), "{html}");
+        assert!(!html.contains("dies"), "{html}");
     }
 
     fn stop_first_paint() -> Element {

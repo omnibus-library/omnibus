@@ -1635,18 +1635,24 @@ struct JournalRow: View {
     /// regex-stripped, so prose that happens to contain `#` or `_` (C#,
     /// snake_case) keeps its characters while real syntax is dropped.
     ///
-    /// The row is always visible, so a `||spoiler||` is censored before
-    /// anything else runs — the same guard the web ladder row applies.
-    static func preview(_ md: String) -> String {
-        guard let first = md.split(separator: "\n").first else { return "" }
-        let line = JournalMarkdown.masked(String(first))
+    /// The row is always visible, so a `||spoiler||` is swapped for filler
+    /// before anything else runs — the same guard the web ladder row applies.
+    static func preview(_ md: String) -> [MaskedRun] {
+        guard let first = md.split(separator: "\n").first else { return [] }
+        let masked = JournalMarkdown.masked(String(first))
+        let line = masked.line
             // A leading list, heading or quote marker is block syntax the
             // inline parser would pass through verbatim.
             .replacingOccurrences(
                 of: #"^\s*([-*+]\s+|\d{1,9}[.)]\s+|#{1,6}\s+|>\s?)"#,
                 with: "", options: .regularExpression)
         let parsed = String(JournalMarkdown.inline(line).characters)
-        return parsed.trimmingCharacters(in: .whitespaces)
+            // An image parses to an attachment character there is nothing to
+            // draw for.
+            .replacingOccurrences(of: "\u{FFFC}", with: "")
+        return JournalMarkdown.runs(
+            parsed.trimmingCharacters(in: .whitespaces), fillers: masked.fillers
+        )
     }
 
     var body: some View {
@@ -1678,7 +1684,7 @@ struct JournalRow: View {
                                     .foregroundStyle(palette.ink3Color)
                             }
                         }
-                        Text(Self.preview(entry.bodyMd))
+                        MaskedText(runs: Self.preview(entry.bodyMd))
                             .font(.ui(12.5))
                             .foregroundStyle(palette.ink1Color)
                             .lineSpacing(3)

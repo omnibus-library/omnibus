@@ -1623,9 +1623,11 @@ html, body { overscroll-behavior: none; }
    `role="button"` span rather than a `<button>`, so a long one wraps as prose
    instead of dropping whole to the next line. The blur sits on the inner text
    so the focus ring around the control stays sharp; `button.spoiler` is the
-   old markup, still in offline caches until they refetch. */
-.spoiler {
-  cursor: pointer;
+   old markup, still in offline caches until they refetch. `.spoiler-mask` is
+   the same plate on an always-visible excerpt, over filler rather than the
+   span's text, and never opens. */
+.spoiler { cursor: pointer; }
+.spoiler, .spoiler-mask {
   border-radius: 3px;
   background: var(--bg-2);
   -webkit-box-decoration-break: clone;
