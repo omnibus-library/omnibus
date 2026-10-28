@@ -75,6 +75,22 @@ fn journal_excerpt_veils_spoiler_spans_so_their_text_never_reaches_the_row() {
 }
 
 #[test]
+fn journal_excerpt_splits_spoilers_before_stripping_markup_so_a_stray_marker_cannot_shift_them() {
+    // Stripping the `*` first would close a `||` early and leave the
+    // spoiler's text in a prose run.
+    let runs = journal_excerpt("The symbol |*| means nothing; ||Alice dies|| at the end.");
+    assert!(runs.iter().all(|r| !r.text.contains("Alice dies")));
+    assert_eq!(
+        runs,
+        vec![
+            prose("The symbol || means nothing; "),
+            veiled("lorem ipsu"),
+            prose(" at the end."),
+        ]
+    );
+}
+
+#[test]
 fn journal_excerpt_truncates_past_the_row_cap() {
     let long = "x".repeat(LADDER_EXCERPT_CHARS + 40);
     let out = plain(&journal_excerpt(&long));

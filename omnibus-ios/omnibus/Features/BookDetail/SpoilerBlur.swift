@@ -24,20 +24,38 @@ struct SpoilerRenderer: TextRenderer {
 
     func draw(layout: Text.Layout, in ctx: inout GraphicsContext) {
         for line in layout {
+            for rect in Self.plates(line) {
+                ctx.fill(Path(roundedRect: rect, cornerRadius: 3), with: .color(plate))
+            }
             for run in line {
                 guard run[SpoilerRun.self] != nil else {
                     ctx.draw(run)
                     continue
                 }
-                ctx.fill(
-                    Path(roundedRect: run.typographicBounds.rect, cornerRadius: 3),
-                    with: .color(plate)
-                )
                 var blurred = ctx
                 blurred.addFilter(.blur(radius: radius))
                 blurred.draw(run)
             }
         }
+    }
+
+    /// One rect per stretch of consecutive tagged runs: a span crossing a font
+    /// change (bold, code, an emoji fallback) is several runs, and a plate
+    /// each would notch and step at every seam.
+    static func plates(_ line: Text.Layout.Line) -> [CGRect] {
+        var plates: [CGRect] = []
+        var open: CGRect?
+        for run in line {
+            if run[SpoilerRun.self] != nil {
+                let rect = run.typographicBounds.rect
+                open = open.map { $0.union(rect) } ?? rect
+            } else if let rect = open {
+                plates.append(rect)
+                open = nil
+            }
+        }
+        if let rect = open { plates.append(rect) }
+        return plates
     }
 }
 

@@ -455,25 +455,38 @@ fn journal_excerpt(md: &str) -> Vec<ExcerptRun> {
         .map(str::trim)
         .find(|l| !l.is_empty())
         .unwrap_or("");
-    let stripped: String = line
-        .chars()
-        .filter(|c| !matches!(c, '*' | '_' | '>' | '#' | '`'))
-        .collect();
-    let stripped = stripped.trim_start_matches("- ").trim();
-    let runs = stripped.split("||").enumerate().map(|(i, seg)| {
+    // Split before stripping: a stripped marker could close a `||` early and
+    // shift the spans, leaving a spoiler's text in a prose run.
+    let segments: Vec<&str> = line.split("||").collect();
+    let last = segments.len() - 1;
+    let runs = segments.into_iter().enumerate().map(|(i, seg)| {
         let veiled = i % 2 == 1;
-        let text = if veiled {
-            SPOILER_FILLER
+        let mut text = strip_markup(seg);
+        if veiled {
+            text = SPOILER_FILLER
                 .chars()
                 .cycle()
-                .take(seg.chars().count())
-                .collect()
+                .take(text.chars().count())
+                .collect();
         } else {
-            seg.to_string()
-        };
+            if i == 0 {
+                text = text.trim_start_matches("- ").trim_start().to_string();
+            }
+            if i == last {
+                text = text.trim_end().to_string();
+            }
+        }
         ExcerptRun { text, veiled }
     });
     cap_excerpt(runs)
+}
+
+/// `seg` without the inline markers a ladder row doesn't render.
+#[cfg(not(feature = "mobile"))]
+fn strip_markup(seg: &str) -> String {
+    seg.chars()
+        .filter(|c| !matches!(c, '*' | '_' | '>' | '#' | '`'))
+        .collect()
 }
 
 /// Cuts runs at [`LADDER_EXCERPT_CHARS`] in all, closing on an ellipsis.
