@@ -1,0 +1,39 @@
+/* Mirrors the cross-format offer block in frontend/assets/atrium.css. */
+.lp-sync-prompt {
+  position: absolute;
+  top: 86px;
+  left: 50%;
+  transform: translateX(-50%);
+  /* Above the stage (1) and status overlay (10), under the scrim (30). */
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  width: max-content;
+  max-width: min(560px, 92vw);
+  font-size: 12.5px;
+}
+.rd-sync-banner {
+  position: absolute;
+  top: calc(64px + env(safe-area-inset-top, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 7;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  width: max-content;
+  max-width: min(640px, 94vw);
+  font-size: 12.5px;
+}
+.sync-offer-copy {
+  flex: 1;
+  display: grid;
+  gap: 2px;
+}
+.sync-offer-copy strong {
+  font-weight: 600;
+  color: var(--ink-0);
+}

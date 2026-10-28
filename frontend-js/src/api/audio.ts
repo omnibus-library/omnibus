@@ -169,10 +169,18 @@ export async function saveListeningPosition(
 }
 
 /** The other format's position mapped onto this one, with whether the link follows it. */
+/** A reading position mapped onto the audio, with what an offer of it needs to say. */
+export type ListeningCandidate = ListeningRow & {
+  /** When the reading position was saved, in Unix seconds: the offer's re-arm clock. */
+  sourceClock: number;
+  /** False when the mapped spot is behind the listening position; `null` when there is none to compare. */
+  sourceAhead: boolean | null;
+};
+
 export type ListeningResume = {
   state: CrossFormatResumeState;
   follow: boolean;
-  candidate: ListeningRow | null;
+  candidate: ListeningCandidate | null;
 };
 
 /** The cross-format resume for the audio side, or `null` on any failure. */
@@ -192,6 +200,8 @@ export async function fetchListeningResume(
         ? {
             fileId: candidate.book_file_id ?? null,
             seconds: candidate.audio_position_seconds ?? null,
+            sourceClock: candidate.source_client_updated_at,
+            sourceAhead: candidate.source_ahead ?? null,
           }
         : null,
     };

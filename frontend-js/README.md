@@ -86,7 +86,8 @@ The readers are lazy chunks that mount the vendored epub.js and PDF.js glue from
 React effect; each saves its position as pages turn and records reading
 sessions and read status. The EPUB and PDF readers carry highlights, notes,
 quotes and bookmarks, and the EPUB reader adds contents, search, the Aa panel and
-cross-format follow. The audiobook mini dock on `/read` waits for the player.
+cross-format follow; with follow off, it and the player offer the jump instead.
+The audiobook mini dock on `/read` waits for the player.
 Administration shares `/settings`' frame, `SettingsShell`, which takes its
 navigation as data. Its eight sections are Sources, Maintenance, Metadata and
 Cleanup under Library; People, Integrations, Health and Logs under Server. A

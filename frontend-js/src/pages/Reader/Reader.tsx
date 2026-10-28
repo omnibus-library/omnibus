@@ -325,7 +325,12 @@ function EpubPage({
         onBack={back}
         onToggle={toggle}
       />
-      {deepLink === null && <SyncJumpBanner uuid={uuid} />}
+      {deepLink === null && (
+        <SyncJumpBanner
+          uuid={uuid}
+          onAnswered={() => surface.current?.focus({ preventScroll: true })}
+        />
+      )}
       <ViewerStage status={status} onRetry={() => setAttempt((n) => n + 1)} />
       <PageTurnGutters
         onPrev={() => turn("prev")}
