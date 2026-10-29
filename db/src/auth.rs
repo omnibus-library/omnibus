@@ -31,10 +31,11 @@ pub use device::{
 pub use login::verify_login;
 pub use password::{hash_password, validate_password, validate_username, verify_password};
 pub use session::{
-    create_session, list_sessions_for_user, lookup_session, prune_expired_sessions, resolve_token,
-    revoke_all_sessions_for_user, revoke_all_sessions_for_user_except, revoke_session,
-    revoke_session_checked, revoke_session_for_user, validate_session, SessionAuthError,
-    LIST_SESSIONS_LIMIT, MAX_USER_AGENT_CHARS,
+    create_impersonation_session, create_session, list_sessions_for_user, lookup_session,
+    prune_expired_sessions, resolve_token, revoke_all_sessions_for_user,
+    revoke_all_sessions_for_user_except, revoke_session, revoke_session_checked,
+    revoke_session_for_user, validate_session, SessionAuthError, LIST_SESSIONS_LIMIT,
+    MAX_USER_AGENT_CHARS,
 };
 pub use session_key::{get_session_key, load_or_create_session_key};
 pub use token::{
@@ -138,6 +139,8 @@ pub struct Session {
     pub id: i64,
     pub user_id: i64,
     pub device_id: Option<i64>,
+    /// The admin who opened this session as its user, or `None` for an ordinary sign-in.
+    pub impersonator_id: Option<i64>,
     pub kind: SessionKind,
     pub created_at: i64,
     pub last_used_at: i64,
