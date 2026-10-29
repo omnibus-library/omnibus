@@ -51,6 +51,9 @@ jobs:
               - "rust-toolchain*"
               - ".github/workflows/rust.yml"
               - "deny.toml"
+              # Embedded by sqlx::migrate!, and pinned by db/migrations.lock.
+              - "db/migrations/**"
+              - "db/migrations.lock"
               # Inputs to the OpenAPI freshness test that aren't Rust files.
               - "openapi/openapi.json"
               - "server/src/backend/openapi/overview.md"
