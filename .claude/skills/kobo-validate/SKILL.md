@@ -25,7 +25,7 @@ OMNIBUS_MOCK_KOBO_TOKEN=<token> cargo run -q -p omnibus-mock-kobo -- serve --url
 # prints: MOCK_KOBO_READY port=<n> hardware_id=… state=… pid=…
 ```
 
-Record what you'll change, so you can put it back: each book's epub position and read status, and the other shelves' `sync_to_kobo` flags.
+A device gets every synced shelf's books, and the seeded admin's **Kobo library** smart shelf holds every EPUB, so turn `sync_to_kobo` off on every other shelf holding either book, or scenario 6 never archives them. Record what you'll change, so you can put it back: each book's epub position and read status, and those shelves' flags.
 
 ## 3. Drive it
 

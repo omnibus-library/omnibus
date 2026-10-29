@@ -9,25 +9,16 @@ A real KOReader runs in Docker and syncs through the Omnibus plugin ([docs/korea
 
 ## 1. Pick the server and start KOReader
 
-- **Local:** `just dev-up`, then `just koreader`. It opens KOReader in a browser tab through noVNC, already linked as `OMNIBUS_DEV_SEED_USER`, with the plugin installed. `--home <dir>` is a second device. Docker must be running; on Linux, a permission error after joining the `docker` group means the running session predates the group.
-- **omnibus-test** (after the `omnibus-test-deploy` user skill): `just koreader` only links to a loopback dev server, so run the image by hand. Register a KOReader device as the QA user (`POST /api/account/kobo-devices` `{"name":"<name> <HHMMSS>","kind":"koreader"}`), download its plugin (`GET /api/account/kobo-devices/<id>/koreader-plugin`, a zip that carries the server URL and the device token: treat it as a password), unzip it into `<home>/plugins/`, then:
+- **Local:** `just dev-up`, then `just koreader --local`. It opens KOReader in a browser tab through noVNC, linked as `OMNIBUS_DEV_SEED_USER` through a device named **Dev KOReader**, with the plugin, the OPDS catalog and stock Progress sync set up. Every launch is a fresh home, removed on exit. Docker must be running; on Linux, a permission error after joining the `docker` group means the running session predates the group.
+- **omnibus-test** (after the `omnibus-test-deploy` user skill): register a KOReader device as the QA user (`POST /api/account/kobo-devices` `{"name":"<name> <HHMMSS>","kind":"koreader"}`), download its plugin (`GET /api/account/kobo-devices/<id>/koreader-plugin`, a zip that carries the server URL and the device token: treat it as a password), then `just koreader --plugin <zip>`. That sets up the plugin alone, with no OPDS catalog or Progress sync.
 
-```bash
-deb="$(awk '$2 ~ /_amd64\.deb$/ {print $2}' ui_tests/koreader/koreader.sha256)"
-docker build -t "omnibus-koreader:$deb" ui_tests/koreader
-export VNC_PASSWORD="$(openssl rand -hex 6)"   # open http://127.0.0.1:6080/vnc.html?autoconnect=1&resize=scale&password=$VNC_PASSWORD
-docker run --init --rm --network host -e NOVNC_LISTEN=127.0.0.1:6080 -e VNC_PORT=5999 \
-  --user "$(id -u):$(id -g)" -e HOME=/tmp -e XDG_DOCUMENTS_DIR=/ko-home/books \
-  -e VNC_PASSWORD -v "<home>:/ko-home" "omnibus-koreader:$deb" koreader-vnc
-```
-
-`--network host` needs a native Linux engine. On Docker Desktop, publish `-p 127.0.0.1:6080:6080` instead.
+`--local` turns on stock Progress sync's automatic sync, which carries the position over `/kosync` by itself and hides a broken plugin. Turn it off in KOReader before the plugin scenarios, and back on only for scenario 6.
 
 Use an **admin** QA account (a non-admin gets 403 on metadata reads, which looks like a product bug), keep its credentials in a mode-0600 file, and put seconds in every name you create. Same-minute names collide on a rerun.
 
 ## 2. Set up
 
-A shelf with two small EPUBs and its sync toggle on (`POST /api/shelves`, then `PATCH /api/shelves/<id>` `{"sync_to_kobo":true}`). Record each book's epub position, read status and highlights so you can put them back. In KOReader: **Tools › Omnibus › Sync now**.
+A shelf with two small EPUBs and its sync toggle on (`POST /api/shelves`, then `PATCH /api/shelves/<id>` `{"sync_to_kobo":true}`). A device gets every synced shelf's books, and the seeded admin's **Kobo library** smart shelf holds every EPUB, so turn `sync_to_kobo` off on every other shelf holding either book, or removal never removes them. Record those flags and each book's epub position, read status and highlights so you can put them back. In KOReader: **Tools › Omnibus › Sync now**.
 
 ## 3. Check from the web side
 
@@ -50,7 +41,7 @@ Then the **cross-client interleavings**, where one client changes one field and 
 - web marks **Unread**, then KOReader reads further → the web shows `reading` again;
 - web moves the position while KOReader changes the status (and the reverse): neither erases the other;
 - an offline change made in KOReader (Wi-Fi off) followed by a newer web change: the newer one wins once KOReader reconnects;
-- a second device (`just koreader --home …/second`) reading the same book.
+- a second device reading the same book: a second KOReader device's zip in another `just koreader --plugin` (omnibus-test only: the launcher refuses a loopback zip, and two `--local` launches are the same **Dev KOReader**).
 
 ## 5. Clean up and report
 
