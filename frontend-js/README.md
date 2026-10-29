@@ -234,7 +234,7 @@ shell provides it.
 - **Unit tests** (`pnpm run test:unit`, jsdom) cover the API parsers,
   formatting (`fixed` included), `safeNext`, the theme root, the session, and
   the pure helpers behind the screens (`resume`, `syncOffer`, `password`, `settingsIndex`,
-  `hiddenFormats`, `goals`, `apiTokens`, `viewPrefs`, `focusTrap`, book
+  `hiddenFormats`, `goals`, `apiTokens`, `impersonation`, `viewPrefs`, `focusTrap`, book
   detail's `readout`, `stats`, `lean`, `identifiers` (the details list included),
   `shelves`, `highlightAnchors`, `quietReaders`, `journalMarkdown`, `rating`,
   `reviews` (a patch applied to your review and the household's list, what a save sends, the composer's seed, spoiler veiling and Read more) and delete copy, the palette's `selection`, the results page's `results`, Register's

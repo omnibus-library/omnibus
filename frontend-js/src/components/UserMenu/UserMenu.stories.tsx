@@ -1,17 +1,70 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect } from "storybook/test";
+import { useQuery } from "@tanstack/react-query";
+import type { ReactNode } from "react";
+import { useLocation } from "react-router";
+import { expect, waitFor } from "storybook/test";
+import {
+  getLogoutMockHandler204,
+  getStopImpersonationMockHandler204,
+} from "../../api/generated/omnibus.msw";
+import { meQuery } from "../../session";
+import { storyClient } from "../../testing/AppHarness";
 import {
   failing,
   hanging,
   recentProgressHandler,
+  sessionHandler,
 } from "../../testing/handlers";
 import { aWireResumePoint, WIRE_ADA } from "../../testing/wire";
 import { UserMenu } from "./UserMenu";
+
+/** A member Ada is signed in as, with 25 minutes left (the story runs well inside the last one). */
+const WIRE_BEN = {
+  ...WIRE_ADA,
+  id: 7,
+  username: "ben",
+  display_name: "Ben Reader",
+  is_admin: false,
+  impersonation: {
+    impersonator_id: WIRE_ADA.id,
+    impersonator_name: "Ada Lovelace",
+    expires_at: Math.floor(Date.now() / 1000) + 25 * 60,
+  },
+};
+
+const stopped = { calls: 0 };
+const signedOut = { calls: 0 };
+
+function Where() {
+  const { pathname, search } = useLocation();
+  return (
+    <output data-testid="where">
+      {pathname}
+      {search}
+    </output>
+  );
+}
+
+// What `RequireAuth` does in the app: nothing signed-in renders once the session is gone.
+function WhileSignedIn({ children }: { children: ReactNode }) {
+  return useQuery(meQuery).data ? children : null;
+}
+
+const withWhere = () => (
+  <>
+    <WhileSignedIn>
+      <UserMenu />
+    </WhileSignedIn>
+    <Where />
+  </>
+);
 
 const meta = {
   title: "Components/UserMenu",
   component: UserMenu,
   beforeEach({ msw }) {
+    stopped.calls = 0;
+    signedOut.calls = 0;
     msw.use(recentProgressHandler([aWireResumePoint()]));
   },
 } satisfies Meta<typeof UserMenu>;
@@ -115,6 +168,12 @@ export const AdminRows: Story = {
     await expect(
       canvas.getByRole("link", { name: "Administration" }),
     ).toHaveAttribute("href", "/admin");
+    const switchUser = canvas.getByRole("link", { name: "Switch user" });
+    await expect(switchUser).toHaveAttribute("href", "/admin?section=people");
+    await expect(switchUser).toHaveAttribute(
+      "data-testid",
+      "user-menu-switch-user",
+    );
   },
 };
 
@@ -131,6 +190,135 @@ export const Member: Story = {
     await expect(
       canvas.queryByRole("link", { name: "Administration" }),
     ).not.toBeInTheDocument();
+    await expect(canvas.queryByText("Switch user")).not.toBeInTheDocument();
+  },
+};
+
+const IMPERSONATING = { user: WIRE_BEN, path: "/library" };
+
+export const Impersonating: Story = {
+  parameters: IMPERSONATING,
+  play: async ({ canvas, userEvent }) => {
+    const trigger = canvas.getByRole("button", {
+      name: "Open user menu, viewing as Ben Reader",
+    });
+    await expect(trigger).toHaveClass("um-trigger-impersonating");
+    await userEvent.click(trigger);
+
+    const strip = canvas.getByTestId("user-menu-impersonating");
+    await expect(strip).toHaveTextContent("Viewing as Ben Reader");
+    await expect(strip).toHaveTextContent(
+      "Signed in as Ada Lovelace · ends in 25 min",
+    );
+    const back = canvas.getByRole("button", { name: "Return to Ada Lovelace" });
+    await expect(back).toHaveAttribute("data-testid", "user-menu-return");
+    await expect(
+      canvas.queryByRole("link", { name: "Switch user" }),
+    ).not.toBeInTheDocument();
+  },
+};
+
+export const ImpersonatedAdminStillReturns: Story = {
+  parameters: { user: { ...WIRE_BEN, is_admin: true } },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      canvas.getByRole("button", {
+        name: "Open user menu, viewing as Ben Reader",
+      }),
+    );
+
+    await expect(
+      canvas.getByRole("button", { name: "Return to Ada Lovelace" }),
+    ).toBeInTheDocument();
+    await expect(
+      canvas.queryByRole("link", { name: "Switch user" }),
+    ).not.toBeInTheDocument();
+  },
+};
+
+export const ReturnToAdmin: Story = {
+  parameters: IMPERSONATING,
+  beforeEach({ msw }) {
+    msw.use(
+      getStopImpersonationMockHandler204(() => {
+        stopped.calls += 1;
+      }),
+      sessionHandler(WIRE_ADA),
+    );
+  },
+  render: withWhere,
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      canvas.getByRole("button", {
+        name: "Open user menu, viewing as Ben Reader",
+      }),
+    );
+    await userEvent.click(canvas.getByTestId("user-menu-return"));
+
+    await waitFor(() =>
+      expect(canvas.getByTestId("where")).toHaveTextContent(
+        "/admin?section=people",
+      ),
+    );
+    await expect(stopped.calls).toBe(1);
+    await expect(storyClient().getQueryData(meQuery.queryKey)).toMatchObject({
+      id: WIRE_ADA.id,
+      impersonation: null,
+    });
+  },
+};
+
+export const SignOutLeavesForLogin: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      getLogoutMockHandler204(() => {
+        signedOut.calls += 1;
+      }),
+    );
+  },
+  render: withWhere,
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Open user menu" }),
+    );
+    await userEvent.click(canvas.getByRole("button", { name: "Sign out" }));
+
+    await waitFor(() =>
+      expect(canvas.getByTestId("where")).toHaveTextContent("/login"),
+    );
+    await expect(signedOut.calls).toBe(1);
+    await expect(storyClient().getQueryData(meQuery.queryKey)).toBeNull();
+  },
+};
+
+export const SignOutWhileImpersonating: Story = {
+  parameters: IMPERSONATING,
+  beforeEach({ msw }) {
+    msw.use(
+      getLogoutMockHandler204(() => {
+        signedOut.calls += 1;
+      }),
+      sessionHandler(WIRE_ADA),
+    );
+  },
+  render: withWhere,
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      canvas.getByRole("button", {
+        name: "Open user menu, viewing as Ben Reader",
+      }),
+    );
+    await userEvent.click(canvas.getByRole("button", { name: "Sign out" }));
+
+    await waitFor(() =>
+      expect(canvas.getByTestId("where")).toHaveTextContent(
+        "/admin?section=people",
+      ),
+    );
+    await expect(signedOut.calls).toBe(1);
+    await expect(storyClient().getQueryData(meQuery.queryKey)).toMatchObject({
+      id: WIRE_ADA.id,
+    });
   },
 };
 

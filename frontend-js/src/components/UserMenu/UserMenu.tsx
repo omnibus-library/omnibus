@@ -11,9 +11,11 @@ import {
   thumbUrl,
   type User,
 } from "../../api";
+import { classes } from "../../classes";
 import { usePlayback } from "../../playback/PlaybackProvider";
 import { resumeHref } from "../../resume";
-import { useCurrentUser, useSignOut } from "../../session";
+import { useCurrentUser, useReturnToAdmin, useSignOut } from "../../session";
+import { parseAdminSection, sectionHref } from "../../settingsIndex";
 import { Cover } from "../Cover/Cover";
 import {
   BookGlyph,
@@ -24,6 +26,7 @@ import {
 import { Skeleton } from "../Loading/Loading";
 import { ThemePicker } from "../ThemePicker/ThemePicker";
 import { UserAvatar } from "../UserAvatar/UserAvatar";
+import { minutesLeft } from "./impersonation";
 import "./UserMenu.css";
 
 /** The top bar's account menu: who is signed in, where to go, and the theme. */
@@ -48,9 +51,16 @@ export function UserMenu() {
       <button
         ref={trigger}
         type="button"
-        className="um-trigger"
+        className={classes(
+          "um-trigger",
+          user.impersonation && "um-trigger-impersonating",
+        )}
         data-testid="user-menu-trigger"
-        aria-label="Open user menu"
+        aria-label={
+          user.impersonation
+            ? `Open user menu, viewing as ${user.name}`
+            : "Open user menu"
+        }
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => setOpen(!open)}
@@ -60,6 +70,9 @@ export function UserMenu() {
           className="um-initials"
           photoClassName="um-initials-photo"
         />
+        {user.impersonation && (
+          <span className="um-trigger-dot" aria-hidden="true" />
+        )}
       </button>
       {open && (
         <div
@@ -79,10 +92,11 @@ export function UserMenu() {
           ref={panel}
           onKeyDown={dismiss}
         >
+          <ImpersonationStrip user={user} />
           <Identity user={user} onNavigate={close} />
           <NowReading onNavigate={close} />
           <AccountRows user={user} onNavigate={close} />
-          <SessionRows />
+          <SessionRows user={user} onNavigate={close} />
           <div className="um-theme">
             <div className="um-section-label">THEME</div>
             <ThemePicker />
@@ -98,6 +112,21 @@ export function UserMenu() {
 
 type NavigateProps = { onNavigate: () => void };
 type SectionProps = NavigateProps & { user: User };
+
+// Who is really signed in, and how long the impersonation has left.
+function ImpersonationStrip({ user }: { user: User }) {
+  const { impersonation } = user;
+  if (!impersonation) return null;
+  return (
+    <div className="um-impersonating" data-testid="user-menu-impersonating">
+      <div className="um-impersonating-label">Viewing as {user.name}</div>
+      <div className="um-impersonating-by">
+        Signed in as {impersonation.impersonatorName} · ends in{" "}
+        {minutesLeft(impersonation.expiresAt, Date.now())} min
+      </div>
+    </div>
+  );
+}
 
 // The handle stays the username: the stable login, where a display name can change or collide.
 function Identity({ user, onNavigate }: SectionProps) {
@@ -255,18 +284,59 @@ function AccountRows({ user, onNavigate }: SectionProps) {
   );
 }
 
-// "Switch user" has nowhere to go yet, so it renders inert rather than as a dead link.
-function SessionRows() {
+// Admins switch user from the People page; while impersonating, the row returns to the admin instead.
+function SwitchRow({ user, onNavigate }: SectionProps) {
+  const { flush } = usePlayback();
+  const returnToAdmin = useReturnToAdmin(flush);
+  if (user.impersonation) {
+    return (
+      <>
+        <button
+          type="button"
+          className="um-row um-row-accent"
+          data-testid="user-menu-return"
+          onClick={() =>
+            returnToAdmin.mutate(undefined, { onSuccess: onNavigate })
+          }
+          disabled={returnToAdmin.isPending}
+          aria-busy={returnToAdmin.isPending}
+        >
+          <span className="um-row-icon" aria-hidden="true">
+            ⇄
+          </span>
+          <span className="um-row-label">
+            Return to {user.impersonation.impersonatorName}
+          </span>
+        </button>
+        {returnToAdmin.isError && (
+          <div className="um-now-reading-state error" role="alert">
+            Return failed: {returnToAdmin.error.message}
+          </div>
+        )}
+      </>
+    );
+  }
+  return user.isAdmin ? (
+    <Link
+      to={sectionHref(parseAdminSection("people"))}
+      className="um-row"
+      data-testid="user-menu-switch-user"
+      onClick={onNavigate}
+    >
+      <span className="um-row-icon" aria-hidden="true">
+        ⇄
+      </span>
+      <span className="um-row-label">Switch user</span>
+    </Link>
+  ) : null;
+}
+
+function SessionRows({ user, onNavigate }: SectionProps) {
   const { flush } = usePlayback();
   const signOut = useSignOut(flush);
   return (
     <div className="um-rows">
-      <div className="um-row" aria-disabled="true">
-        <span className="um-row-icon" aria-hidden="true">
-          ⇄
-        </span>
-        <span className="um-row-label">Switch user</span>
-      </div>
+      <SwitchRow user={user} onNavigate={onNavigate} />
       <button
         type="button"
         className="um-row destructive"
