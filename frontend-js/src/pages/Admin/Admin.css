@@ -254,3 +254,8 @@
 .users-impersonate-placeholder {
   visibility: hidden;
 }
+@media (max-width: 720px) {
+  .users-impersonate-placeholder {
+    display: none;
+  }
+}
