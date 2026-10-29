@@ -9,7 +9,7 @@ use omnibus_shared::UserSummary;
 use tower::ServiceExt;
 
 use super::super::test_support::{bearer_token, cookie_value, create_admin, create_user};
-use super::super::{auth_router, IMPERSONATION_TTL_SECS};
+use super::super::{auth_router, COOKIE_TTL_SECS, IMPERSONATION_TTL_SECS};
 use crate::backend::AppState;
 
 async fn app() -> (Router, sqlx::SqlitePool) {
@@ -220,4 +220,80 @@ async fn me_is_unauthenticated_once_the_impersonation_session_expires() {
         .unwrap();
 
     assert_eq!(me(&app, &cookie).await.0, StatusCode::UNAUTHORIZED);
+}
+
+/// Start impersonating `target_id` as `admin_id`; returns the impersonation cookie.
+async fn start_impersonating(
+    app: &Router,
+    pool: &sqlx::SqlitePool,
+    admin_id: i64,
+    target_id: i64,
+) -> String {
+    let res = post(
+        app,
+        &impersonate_uri(target_id),
+        &cookie_value(pool, admin_id).await,
+    )
+    .await;
+    assert_eq!(res.status(), StatusCode::NO_CONTENT);
+    request_cookie(&set_cookie(&res))
+}
+
+#[tokio::test]
+async fn stop_impersonation_returns_to_the_admin() {
+    let (app, pool) = app().await;
+    let admin = create_admin(&pool, "ada").await;
+    let target = create_user(&pool, "bob").await;
+    let impersonating = start_impersonating(&app, &pool, admin.id, target.id).await;
+
+    let res = post(&app, "/api/auth/impersonation/stop", &impersonating).await;
+
+    assert_eq!(res.status(), StatusCode::NO_CONTENT);
+    let header = set_cookie(&res);
+    assert!(
+        header.contains(&format!("Max-Age={COOKIE_TTL_SECS}")),
+        "got {header}"
+    );
+    let (status, summary) = me(&app, &request_cookie(&header)).await;
+    assert_eq!(status, StatusCode::OK);
+    let summary = summary.unwrap();
+    assert_eq!(summary.id, admin.id);
+    assert_eq!(summary.impersonation, None);
+    assert_eq!(me(&app, &impersonating).await.0, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn stop_impersonation_refuses_a_session_that_is_not_impersonating() {
+    let (app, pool) = app().await;
+    let admin = create_admin(&pool, "ada").await;
+
+    let res = post(
+        &app,
+        "/api/auth/impersonation/stop",
+        &cookie_value(&pool, admin.id).await,
+    )
+    .await;
+
+    assert_eq!(res.status(), StatusCode::CONFLICT);
+}
+
+#[tokio::test]
+async fn logout_while_impersonating_returns_to_the_admin() {
+    let (app, pool) = app().await;
+    let admin = create_admin(&pool, "ada").await;
+    let target = create_user(&pool, "bob").await;
+    let impersonating = start_impersonating(&app, &pool, admin.id, target.id).await;
+
+    let res = post(&app, "/api/auth/logout", &impersonating).await;
+
+    assert_eq!(res.status(), StatusCode::NO_CONTENT);
+    let header = set_cookie(&res);
+    assert!(
+        header.contains(&format!("Max-Age={COOKIE_TTL_SECS}")),
+        "got {header}"
+    );
+    let (status, summary) = me(&app, &request_cookie(&header)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(summary.unwrap().id, admin.id);
+    assert_eq!(me(&app, &impersonating).await.0, StatusCode::UNAUTHORIZED);
 }

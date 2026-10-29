@@ -1829,6 +1829,32 @@
         }
       }
     },
+    "/api/auth/impersonation/stop": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Sign back in as the admin behind an impersonation session",
+        "description": "Ends the impersonation and replaces it with a new session cookie for the admin who\nstarted it. `POST /api/auth/logout` does the same while impersonating.",
+        "operationId": "stop_impersonation",
+        "responses": {
+          "204": {
+            "description": "You are signed back in as the admin.",
+            "headers": {
+              "Set-Cookie": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "The admin's new session cookie."
+              }
+            }
+          },
+          "409": {
+            "description": "The session is not an impersonation."
+          }
+        }
+      }
+    },
     "/api/auth/login": {
       "post": {
         "tags": [
@@ -1896,7 +1922,7 @@
           "Auth"
         ],
         "summary": "Sign out",
-        "description": "Ends the session the request carries and clears the session cookie. Signing out of a\nsession that has already ended still succeeds.",
+        "description": "Ends the session the request carries and clears the session cookie. Signing out of a\nsession that has already ended still succeeds. Signing out of an impersonation session\nreturns you to the admin's own account instead, with a new session cookie.",
         "operationId": "logout",
         "responses": {
           "204": {

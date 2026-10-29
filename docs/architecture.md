@@ -143,6 +143,10 @@ too:
 - `/api/ebooks/{uuid}/images/signed` — exempted from the gate and authenticated
   by a per-image HMAC link (`backend::ebooks::images`).
 
+An admin can impersonate another account: a one-hour cookie session of the target
+that carries `impersonator_id` (`auth::impersonation`). Stopping, or signing out of
+it, swaps it for a fresh session of the admin.
+
 ## Database
 
 Schema ships as numbered SQL migrations under [db/migrations/](../db/migrations/),

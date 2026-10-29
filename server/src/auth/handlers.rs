@@ -19,6 +19,7 @@ use omnibus_shared::{
 use utoipa_axum::{router::OpenApiRouter, routes};
 
 use super::extractor::{extract_token, AuthUser};
+use super::impersonation::{return_to_impersonator, signed_in_as_admin};
 use super::session_view::session_views;
 use super::{session_cookie_name, BEARER_TTL_SECS, COOKIE_TTL_SECS};
 use crate::backend::AppState;
@@ -34,6 +35,7 @@ pub fn auth_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(logout_handler))
         .routes(routes!(me_handler))
         .routes(routes!(super::impersonation::impersonate_handler))
+        .routes(routes!(super::impersonation::stop_impersonation_handler))
         .routes(routes!(get_sessions_handler))
         .routes(routes!(delete_session_handler))
         .routes(routes!(change_password_handler))
@@ -384,7 +386,8 @@ async fn persist_session(
 /// Sign out
 ///
 /// Ends the session the request carries and clears the session cookie. Signing out of a
-/// session that has already ended still succeeds.
+/// session that has already ended still succeeds. Signing out of an impersonation session
+/// returns you to the admin's own account instead, with a new session cookie.
 #[utoipa::path(
     post,
     path = "/api/auth/logout",
@@ -402,9 +405,23 @@ async fn logout_handler(
     // clear the cookie. Idempotent: unknown tokens still return 204.
     if let Some((token, _)) = extract_token(&headers) {
         match auth_db::lookup_session(state.pool(), &token).await {
-            Ok((_user, session)) => {
-                if let Err(e) = auth_db::revoke_session(state.pool(), session.id).await {
-                    return internal("revoke session", e);
+            Ok((user, session)) => {
+                match return_to_impersonator(
+                    &state,
+                    user.id,
+                    session.id,
+                    session.impersonator_id,
+                    request_user_agent(&headers),
+                )
+                .await
+                {
+                    Ok(Some(issued)) => return signed_in_as_admin(jar, issued),
+                    Ok(None) => {
+                        if let Err(e) = auth_db::revoke_session(state.pool(), session.id).await {
+                            return internal("revoke session", e);
+                        }
+                    }
+                    Err(e) => return internal("return to impersonator", e),
                 }
             }
             Err(AuthError::SessionNotFound) => {}

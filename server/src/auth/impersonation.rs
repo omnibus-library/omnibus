@@ -15,7 +15,7 @@ use omnibus_shared::Impersonation;
 
 use super::extractor::{AdminUser, AuthUser};
 use super::handlers::{request_user_agent, session_cookie};
-use super::IMPERSONATION_TTL_SECS;
+use super::{COOKIE_TTL_SECS, IMPERSONATION_TTL_SECS};
 use crate::backend::AppState;
 use crate::http_errors::internal;
 
@@ -110,6 +110,90 @@ async fn begin_impersonation(
     .await?;
     tx.commit().await?;
     Ok(issued)
+}
+
+/// Sign back in as the admin behind an impersonation session
+///
+/// Ends the impersonation and replaces it with a new session cookie for the admin who
+/// started it. `POST /api/auth/logout` does the same while impersonating.
+#[utoipa::path(
+    post,
+    path = "/api/auth/impersonation/stop",
+    tag = "Auth",
+    operation_id = "stop_impersonation",
+    responses(
+        (status = 204, description = "You are signed back in as the admin.",
+            headers(("Set-Cookie" = String, description = "The admin's new session cookie."))),
+        (status = 409, description = "The session is not an impersonation."),
+    ),
+)]
+pub(super) async fn stop_impersonation_handler(
+    user: AuthUser,
+    State(state): State<AppState>,
+    jar: CookieJar,
+    headers: HeaderMap,
+) -> Response {
+    match return_to_impersonator(
+        &state,
+        user.id,
+        user.session_id,
+        user.impersonator_id,
+        request_user_agent(&headers),
+    )
+    .await
+    {
+        Ok(Some(issued)) => signed_in_as_admin(jar, issued),
+        Ok(None) => (StatusCode::CONFLICT, "not signed in as another user").into_response(),
+        Err(e) => internal("stop impersonation", e),
+    }
+}
+
+/// The 204 that hands the browser the admin's new session cookie.
+pub(super) fn signed_in_as_admin(jar: CookieJar, issued: NewSession) -> Response {
+    let jar = jar.add(session_cookie(issued.raw_token, COOKIE_TTL_SECS));
+    (StatusCode::NO_CONTENT, jar).into_response()
+}
+
+/// End an impersonation session and open an ordinary one for the admin behind it, in one
+/// transaction. `None` when `impersonator_id` is unset: the session is not an impersonation.
+pub(super) async fn return_to_impersonator(
+    state: &AppState,
+    user_id: i64,
+    session_id: i64,
+    impersonator_id: Option<i64>,
+    user_agent: Option<&str>,
+) -> Result<Option<NewSession>, AuthError> {
+    let Some(admin_id) = impersonator_id else {
+        return Ok(None);
+    };
+    let admin = auth_db::get_user_by_id(state.pool(), admin_id)
+        .await?
+        .ok_or(AuthError::SessionNotFound)?;
+    let user = auth_db::get_user_by_id(state.pool(), user_id)
+        .await?
+        .ok_or(AuthError::SessionNotFound)?;
+
+    let mut tx = state.pool().begin().await?;
+    auth_db::revoke_session(&mut *tx, session_id).await?;
+    let issued = auth_db::create_session(
+        &mut *tx,
+        admin.id,
+        None,
+        SessionKind::Cookie,
+        COOKIE_TTL_SECS,
+        user_agent,
+    )
+    .await?;
+    tx.commit().await?;
+
+    tracing::info!(
+        admin_id = admin.id,
+        admin = %admin.username,
+        user_id = user.id,
+        user = %user.username,
+        "impersonation ended"
+    );
+    Ok(Some(issued))
 }
 
 /// Who is behind `user`'s session, or `None` for an ordinary sign-in.
