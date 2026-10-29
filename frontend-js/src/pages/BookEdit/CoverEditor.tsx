@@ -61,7 +61,7 @@ export function restage(
   return { ...staged, source, preview };
 }
 
-/** What the cover surfaces share: the sidebar's editor and the compare screen's cover row. */
+/** What the cover surfaces share: the Artwork tab's editor and Fetch metadata's cover row. */
 export type CoverProps = {
   book: Pick<
     EditableBook,
@@ -97,7 +97,7 @@ const ACCEPT = "image/jpeg,image/png,image/webp,image/gif";
 function stagedHint({ source, preview }: StagedCover) {
   if (source.kind === "file") return "your image · saved with the book";
   if (source.kind === "url") {
-    return "from the edition picker · saved with the book";
+    return "from Fetch metadata · saved with the book";
   }
   return preview ? "extracted from file" : "no cover available";
 }

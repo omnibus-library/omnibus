@@ -73,7 +73,7 @@ const nonBlank = (values: string[]) =>
 const text = (value: string | null | undefined) => value?.trim() ?? "";
 
 // Tags are left out on purpose: overwriting the EPUB's own subjects with a provider's vocabulary would destroy them.
-/** Every copyable field, in the order the compare screen lists them. */
+/** Every copyable field, in the order Fetch metadata's diff lists them. */
 export const FIELDS: MetadataField[] = [
   field("Title", "title", (e) => text(e.title)),
   field("Author(s)", "authors", (e) => nonBlank(e.authors)),
