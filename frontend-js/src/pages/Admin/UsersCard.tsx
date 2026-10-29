@@ -21,6 +21,9 @@ type OpenModal =
   | { kind: "edit" | "delete" | "sessions"; user: AdminUserRow }
   | null;
 
+// The placeholder on your own row renders the same face, so Delete lines up down the column.
+const IMPERSONATE_BUSY = "Signing in…";
+
 function chipClass(chip: string) {
   if (chip === ADMIN_CHIP) return "users-chip users-chip-admin";
   return chip === NO_PERMISSIONS ? "users-chip-none" : "users-chip";
@@ -123,7 +126,11 @@ function UserRow({
               tabIndex={-1}
               disabled
             >
-              Impersonate
+              <BusyLabel
+                busy={false}
+                label="Impersonate"
+                busyLabel={IMPERSONATE_BUSY}
+              />
             </Button>
           ) : (
             <Button
@@ -138,7 +145,7 @@ function UserRow({
               <BusyLabel
                 busy={impersonating}
                 label="Impersonate"
-                busyLabel="Signing in…"
+                busyLabel={IMPERSONATE_BUSY}
               />
             </Button>
           ))}

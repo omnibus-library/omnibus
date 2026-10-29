@@ -224,6 +224,20 @@ export const ImpersonateOnEveryOtherRow: Story = {
       own.querySelector(".users-impersonate-placeholder"),
     ).toHaveAttribute("aria-hidden", "true");
     await expect(actionNames(own)).toEqual(["Edit", "Sessions", "Delete"]);
+    // The placeholder is as wide as the real button, so Delete lines up down the column.
+    const placeholder = own.querySelector(".users-impersonate-placeholder");
+    const real = canvas.getByTestId("user-impersonate-7");
+    await expect(placeholder?.getBoundingClientRect().width).toBe(
+      real.getBoundingClientRect().width,
+    );
+    await expect(
+      canvas.getByRole("button", { name: "Delete ada" }).getBoundingClientRect()
+        .x,
+    ).toBe(
+      canvas
+        .getByRole("button", { name: "Delete alice" })
+        .getBoundingClientRect().x,
+    );
   },
 };
 
