@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import type { UseFormReturn } from "react-hook-form";
 import {
   type EditionSearchRequest,
+  type EditionSearchResponse,
   type MetaForm,
   PROVIDERS,
   type ProviderEdition,
@@ -11,10 +12,41 @@ import {
 import { Button } from "../../components/Button/Button";
 import { CaretLeftGlyph } from "../../components/Glyphs/Glyphs";
 import { Loading } from "../../components/Loading/Loading";
-import { SourceSummary } from "./EditionPicker";
-import { applyField, coverSrc, EMPTY, labelToId } from "./editionFields";
+import {
+  applyField,
+  coverSrc,
+  EMPTY,
+  labelToId,
+  sourceStatusText,
+} from "./editionFields";
 import { bestPerProvider, type DiffRow, diffRows, fetchRequest } from "./fetch";
 import { useHydrated } from "./useHydrated";
+
+/** One line saying what each source contributed, so an outage never reads as an empty result. */
+function SourceSummary({
+  sources,
+}: {
+  sources: EditionSearchResponse["sources"];
+}) {
+  if (sources.length === 0) return null;
+  return (
+    <p className="mes-sources" data-testid="mes-sources" role="status">
+      {sources.map((source) => {
+        const { text, problem, detail } = sourceStatusText(source);
+        return (
+          <span
+            key={source.provider}
+            className={problem ? "mes-source mes-source-problem" : "mes-source"}
+            data-testid={`mes-source-${PROVIDERS[source.provider].slug}`}
+            title={detail}
+          >
+            {source.display_name} {text}
+          </span>
+        );
+      })}
+    </p>
+  );
+}
 
 /** "Pierce Brown · Del Rey 2014 · 382 pages": the parts an edition has, in that order. */
 function summary(edition: ProviderEdition) {
@@ -32,12 +64,14 @@ function EditionDiff({
   form,
   edition,
   hasCover,
+  coverNote,
   onApply,
 }: {
   form: UseFormReturn<MetaForm>;
   edition: ProviderEdition;
   /** The book already has a cover, or one is held for it, so a fetched one does not start checked. */
   hasCover: boolean;
+  coverNote: string;
   onApply: (rows: DiffRow[], cover: string | null) => void;
 }) {
   const rows = diffRows(form.watch(), edition);
@@ -71,7 +105,7 @@ function EditionDiff({
                 </span>
                 <span aria-hidden="true">→</span>
                 <img className="es-diff-thumb" src={cover} alt="New cover" />
-                <span className="es-diff-note">Saved when you press Done</span>
+                <span className="es-diff-note">{coverNote}</span>
               </span>
             </label>
           </li>
@@ -137,6 +171,8 @@ type FetchViewProps = {
   hasCover: boolean;
   /** A cover the reader checked: held until Done writes it. */
   onHoldCover: (url: string) => void;
+  /** When a checked cover is written, said beside it. */
+  coverNote?: string;
   /** Back to the tabs, nothing applied. */
   onBack: () => void;
   /** Back to the tabs with the checked rows copied in: where to land, and the first edited field's input. */
@@ -151,6 +187,7 @@ export function FetchView({
   form,
   hasCover,
   onHoldCover,
+  coverNote = "Saved when you press Done",
   onBack,
   onApplied,
 }: FetchViewProps) {
@@ -329,6 +366,7 @@ export function FetchView({
                       form={form}
                       edition={picked.edition}
                       hasCover={hasCover}
+                      coverNote={coverNote}
                       onApply={apply}
                     />
                   </div>

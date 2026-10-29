@@ -21,6 +21,7 @@ import {
   overridesHandlers,
   providersHandler,
 } from "../../testing/metadataHandlers";
+import { unloadPrevented } from "../../testing/unloadGuard";
 import { PREVIEW } from "../../testing/uploadHandlers";
 import { BookDetail } from "../BookDetail/BookDetail";
 import { BookEdit } from "./BookEdit";
@@ -483,7 +484,7 @@ export const DontSaveDiscardsAndCloses: Story = {
     const dialog = await sheet(canvas);
     await userEvent.type(await dialog.findByLabelText(/^Title/), "!");
     // The browser's own prompt is armed while edits are unsaved, and disarmed once they are let go.
-    await expect(window.onbeforeunload).not.toBeNull();
+    await expect(unloadPrevented()).toBe(true);
     await userEvent.click(dialog.getByRole("button", { name: "Close" }));
 
     await userEvent.click(dialog.getByRole("button", { name: "Don’t save" }));
@@ -495,7 +496,7 @@ export const DontSaveDiscardsAndCloses: Story = {
     );
     await expect(saved).toEqual([]);
     await expect(router.state.location.pathname).toBe(`/books/${UUID}`);
-    await waitFor(() => expect(window.onbeforeunload).toBeNull());
+    await waitFor(() => expect(unloadPrevented()).toBe(false));
   },
 };
 
@@ -1324,6 +1325,9 @@ export const FetchSaysWhatEachSourceDid: Story = {
     await expect(note).toHaveAttribute("role", "status");
     await expect(note).toHaveTextContent("Open Library 1");
     await expect(note).toHaveTextContent("Google Books unavailable");
+    const failed = view.getByTestId("mes-source-google-books");
+    await expect(failed).toHaveAttribute("title", "quota");
+    await expect(failed).toHaveClass("mes-source-problem");
   },
 };
 
@@ -1538,6 +1542,99 @@ export const HydratesThePickedEdition: Story = {
       await view.findByRole("checkbox", { name: /Description/ }),
     ).toBeInTheDocument();
     await expect(view.queryByTestId("es-diff-skeleton")).toBeNull();
+  },
+};
+
+export const FetchKeepsTheListRowWhenHydratingFails: Story = {
+  beforeEach({ msw }) {
+    hydrated.length = 0;
+    msw.use(
+      http.get("/api/ebooks/:uuid", () => HttpResponse.json(NO_PAGES)),
+      providersHandler(true),
+      editionSearchHandler(
+        { editions: [VOLUME_ONE], sources: [ANSWERED(1)] },
+        { searched: asked },
+      ),
+      hydrateHandler({ [VOLUME_ONE.provider_ref]: "fails" }, { hydrated }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    const dialog = await sheet(canvas);
+    const view = await openFetch(dialog, userEvent);
+
+    await pickFirst(view, userEvent);
+
+    // The row's own fields still make a diff, rather than a skeleton that never ends.
+    const title = await view.findByRole("checkbox", { name: /Title/ });
+    await expect(title.closest("label")).toHaveTextContent(
+      "Aurora Station, Vol. 1→Aurora Station: Volume One",
+    );
+    await expect(hydrated).toEqual([VOLUME_ONE.provider_ref]);
+    await expect(view.queryByTestId("es-diff-skeleton")).toBeNull();
+  },
+};
+
+const hydrateRace = { gate: deferred() };
+
+export const FetchIgnoresASlowRecordForAnEarlierPick: Story = {
+  beforeEach({ msw }) {
+    hydrated.length = 0;
+    hydrateRace.gate = deferred();
+    const first = aProviderEdition({ relevance: 90 });
+    const second = aProviderEdition({
+      source: "google_books",
+      provider_ref: "g1",
+      title: "Aurora Station Volume Two",
+      isbn13: "9781000000002",
+      relevance: 70,
+    });
+    msw.use(
+      http.get("/api/ebooks/:uuid", () => HttpResponse.json(NO_PAGES)),
+      providersHandler(true),
+      editionSearchHandler(
+        {
+          editions: [first, second],
+          sources: [
+            ANSWERED(1),
+            {
+              provider: "google_books",
+              display_name: "Google Books",
+              status: { kind: "answered", count: 1 },
+            },
+          ],
+        },
+        { searched: asked },
+      ),
+      // The first pick's full record is held back, and would retitle the diff if it were let in.
+      hydrateHandler(
+        {
+          OL1M: { ...first, title: "A Late Title" },
+          g1: second,
+        },
+        { hydrated, gates: { OL1M: hydrateRace.gate.promise } },
+      ),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    const dialog = await sheet(canvas);
+    const view = await openFetch(dialog, userEvent);
+
+    await userEvent.click(await view.findByRole("button", { name: /Vol\. 1/ }));
+    const second = await view.findByRole("button", { name: /Volume Two/ });
+    await userEvent.click(second);
+    await view.findByRole("checkbox", { name: /Title/ });
+    await waitFor(() => expect(hydrated).toEqual(["OL1M", "g1"]));
+
+    hydrateRace.gate.release();
+    // The late answer crosses the wire and is handled in a few ms; there is nothing on the page to wait for.
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    await expect(second).toHaveAttribute("aria-pressed", "true");
+    const title = view.getByRole("checkbox", { name: /Title/ });
+    await expect(title.closest("label")).toHaveTextContent(
+      "Aurora Station, Vol. 1→Aurora Station Volume Two",
+    );
+    await expect(view.queryByText(/A Late Title/)).toBeNull();
   },
 };
 

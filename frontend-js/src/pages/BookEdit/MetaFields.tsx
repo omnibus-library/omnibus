@@ -34,6 +34,8 @@ type FieldProps = Pick<LabelProps, "edited" | "hint"> & {
   label: string;
   /** Columns the field spans: 2, or one. */
   w?: 2;
+  /** Sizes the field in a grid of its own, such as the sheet's. */
+  className?: string;
   /** The big serif title look. */
   big?: boolean;
   mono?: boolean;
@@ -48,6 +50,7 @@ type FieldProps = Pick<LabelProps, "edited" | "hint"> & {
 export function MeField({
   label,
   w,
+  className,
   big,
   mono,
   locked,
@@ -59,7 +62,7 @@ export function MeField({
 }: FieldProps) {
   const id = labelToId(label);
   return (
-    <div className={classes("me-field", w === 2 && "me-field-w2")}>
+    <div className={classes("me-field", w === 2 && "me-field-w2", className)}>
       <MeLabel text={label} edited={edited} hint={hint} target={id} />
       <input
         {...input}

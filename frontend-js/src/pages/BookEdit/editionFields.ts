@@ -73,7 +73,7 @@ const nonBlank = (values: string[]) =>
 const text = (value: string | null | undefined) => value?.trim() ?? "";
 
 // Tags are left out on purpose: overwriting the EPUB's own subjects with a provider's vocabulary would destroy them.
-/** Every copyable field, in the order the compare screen lists them. */
+/** Every copyable field, in the order Fetch metadata's diff lists them. */
 export const FIELDS: MetadataField[] = [
   field("Title", "title", (e) => text(e.title)),
   field("Author(s)", "authors", (e) => nonBlank(e.authors)),
@@ -108,13 +108,6 @@ export const differs = (
   const source = sourceValue(f, edition).trim();
   return source !== "" && source !== currentValue(f, values);
 };
-
-/** Whether the field carries a change from `baseline`, however it got there. */
-export const isStaged = (
-  f: MetadataField,
-  values: MetaForm,
-  baseline: MetaForm,
-) => currentValue(f, values) !== currentValue(f, baseline);
 
 /** What copying the field writes into the form, or `undefined` when the source has nothing, so a gap never blanks a value. */
 export function applyField(f: MetadataField, edition: ProviderEdition) {

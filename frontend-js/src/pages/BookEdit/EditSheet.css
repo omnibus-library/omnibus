@@ -130,9 +130,10 @@
 }
 
 /* ---------- Fields ---------- */
+/* Six tracks: Series takes four beside Number in series, the rest of the short fields three to a row, Tags and Genres half each. */
 .es-fields {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 20px;
   align-content: start;
   min-width: 0;
@@ -146,8 +147,17 @@
   align-content: start;
   min-width: 0;
 }
-.es-sheet .me-field-w2,
-.es-sheet .me-field-full {
+.es-fields > .me-field {
+  grid-column: span 2;
+}
+.es-fields > .es-field-wide {
+  grid-column: span 4;
+}
+.es-fields > .es-field-half {
+  grid-column: span 3;
+}
+.es-fields > .me-field-w2,
+.es-fields > .me-field-full {
   grid-column: 1 / -1;
 }
 .es-sheet .me-label {
@@ -603,7 +613,8 @@
   border-radius: 7px;
 }
 /* Fetch metadata in the head: tinted by the book's colour, deeper while its view is open. */
-.es-sheet .btn.es-fetch-open {
+.es-sheet .btn.es-fetch-open,
+.es-sheet .btn.ab-choose {
   background: color-mix(in oklch, var(--accent) 16%, transparent);
   box-shadow: inset 0 0 0 1px
     color-mix(in oklch, var(--bp-accent-text) 22%, transparent);
@@ -692,6 +703,9 @@
   .es-fields {
     grid-template-columns: minmax(0, 1fr);
     gap: 18px;
+  }
+  .es-fields > .me-field {
+    grid-column: 1 / -1;
   }
   .es-sheet .me-sidebar-card {
     grid-template-columns: minmax(0, 1fr);

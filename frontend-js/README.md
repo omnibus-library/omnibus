@@ -31,11 +31,12 @@ load before the screens that override them.
 
 ## Routes
 
-`src/router.tsx` carries all 30 routes from `frontend/src/routes.rs`, with the
+`src/router.tsx` carries the routes from `frontend/src/routes.rs` but
+`/add-books`, which is a sheet the top bar's Add books opens, with the
 same split: the readers and the player fill the screen, everything else sits
 under the top bar, and a guest goes to `/login?next=…` and comes back. Login,
 Register, the library, book detail (with the metadata editor, `/books/:uuid/edit`),
-add books (`/add-books`), check-in (`/check-in`), search results
+check-in (`/check-in`), search results
 (`/search/:query`), the authors, series and shelves indexes with their detail
 pages (`/authors/:id`, `/series/:id`, `/shelves/:id`), the three readers
 (`/read`, `/comic`, `/pdf`), the audiobook player (`/listen/:uuid`, `?file_id`
@@ -138,8 +139,8 @@ literals, so build a class from a template and it won't see it: spell it out,
 as `UserAvatar`'s `photoClassName` does. A rule a screen needs in a file that
 already exists goes in by hand, as does one whose modifier class (`ok`, `error`)
 is on the script's stop list; `--write --force` regenerates every file
-unformatted and drops their hand edits. `.add-books-progress` in `AddBooks.css` is
-hand-written and React-only: the Dioxus page has no such element.
+unformatted and drops their hand edits. `AddBooks.css` is
+hand-written and React-only: `atrium.css` has no `ab-` rules for the script to copy.
 
 A screen driven by a vendored glue (the readers) is ported differently. The
 glue is a byte copy in `src/vendor/reader/`, loaded by `loadScript` from a

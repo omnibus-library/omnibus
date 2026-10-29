@@ -10,7 +10,6 @@ import {
   differs,
   FIELDS,
   humanWait,
-  isStaged,
   type MetadataField,
   sourceStatusText,
   sourceValue,
@@ -116,15 +115,6 @@ describe("differs", () => {
     const edition = aProviderEdition({ title: "Other" });
 
     expect(differs(field("Title"), BOOK, edition)).toBe(true);
-  });
-});
-
-describe("isStaged", () => {
-  it("is true only for a field that left the baseline", () => {
-    const edited = { ...BOOK, title: "New", genres: [...BOOK.genres] };
-
-    expect(isStaged(field("Title"), edited, BOOK)).toBe(true);
-    expect(isStaged(field("Genres"), edited, BOOK)).toBe(false);
   });
 });
 

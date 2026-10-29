@@ -2,7 +2,8 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { createMemoryRouter, Link, RouterProvider } from "react-router";
 import { expect, waitFor } from "storybook/test";
-import { UnsavedDialog, useLeaveGuard } from "./Unsaved";
+import { unloadPrevented } from "../../testing/unloadGuard";
+import { UnsavedDialog, useLeaveGuard, useUnloadGuard } from "./Unsaved";
 
 function Form() {
   const [dirty, setDirty] = useState(false);
@@ -49,7 +50,7 @@ type Story = StoryObj<typeof meta>;
 export const AsksBeforeLeaving: Story = {
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(await canvas.findByLabelText("Edited"));
-    await expect(window.onbeforeunload).not.toBeNull();
+    await expect(unloadPrevented()).toBe(true);
     await userEvent.click(canvas.getByRole("link", { name: "Leave" }));
 
     const dialog = await canvas.findByRole("dialog", {
@@ -116,7 +117,7 @@ export const Discards: Story = {
     );
 
     await expect(await canvas.findByText("Elsewhere")).toBeInTheDocument();
-    await waitFor(() => expect(window.onbeforeunload).toBeNull());
+    await waitFor(() => expect(unloadPrevented()).toBe(false));
   },
 };
 
@@ -125,7 +126,7 @@ export const LeavesCleanWithoutAsking: Story = {
     await userEvent.click(await canvas.findByRole("link", { name: "Leave" }));
 
     await expect(await canvas.findByText("Elsewhere")).toBeInTheDocument();
-    await expect(window.onbeforeunload).toBeNull();
+    await expect(unloadPrevented()).toBe(false);
   },
 };
 
@@ -147,5 +148,43 @@ export const KeepsFocusInside: Story = {
 
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(leave).toHaveFocus());
+  },
+};
+
+function Guard({ label }: { label: string }) {
+  const [dirty, setDirty] = useState(false);
+  useUnloadGuard(dirty);
+  return (
+    <label>
+      <input
+        type="checkbox"
+        checked={dirty}
+        onChange={(e) => setDirty(e.target.checked)}
+      />
+      {label}
+    </label>
+  );
+}
+
+export const GuardsStayIndependent: Story = {
+  render: () => (
+    <>
+      <Guard label="First" />
+      <Guard label="Second" />
+    </>
+  ),
+  play: async ({ canvas, userEvent }) => {
+    const first = await canvas.findByLabelText("First");
+    const second = canvas.getByLabelText("Second");
+    await userEvent.click(first);
+    await userEvent.click(second);
+    await expect(unloadPrevented()).toBe(true);
+
+    // One guard going quiet leaves the other's protection in place.
+    await userEvent.click(first);
+    await expect(unloadPrevented()).toBe(true);
+
+    await userEvent.click(second);
+    await expect(unloadPrevented()).toBe(false);
   },
 };
