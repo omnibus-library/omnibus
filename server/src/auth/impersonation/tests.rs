@@ -327,3 +327,42 @@ async fn stop_impersonation_refuses_a_cookie_that_already_stopped() {
 
     assert_eq!(again.status(), StatusCode::UNAUTHORIZED);
 }
+
+#[tokio::test]
+async fn return_to_impersonator_opens_no_admin_session_when_the_impersonation_was_already_revoked()
+{
+    let (app, pool) = app().await;
+    let admin = create_admin(&pool, "ada").await;
+    let target = create_user(&pool, "bob").await;
+    start_impersonating(&app, &pool, admin.id, target.id).await;
+    let session_id: i64 =
+        sqlx::query_scalar("SELECT id FROM sessions WHERE impersonator_id IS NOT NULL")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    sqlx::query("UPDATE sessions SET revoked_at = 1 WHERE id = ?")
+        .bind(session_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let result = super::return_to_impersonator(
+        &AppState::new(pool.clone()),
+        target.id,
+        &target.username,
+        session_id,
+        Some(admin.id),
+        None,
+    )
+    .await;
+
+    assert!(matches!(result, Err(db::auth::AuthError::SessionNotFound)));
+    let live_admin_sessions: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM sessions WHERE user_id = ? AND revoked_at IS NULL",
+    )
+    .bind(admin.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(live_admin_sessions, 0);
+}

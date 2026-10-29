@@ -162,7 +162,7 @@ fn secure_cookies() -> bool {
 /// Build a session cookie: `__Host-omnibus_session` (always `Secure`, `Path=/`, no
 /// `Domain`, as the prefix requires) when `OMNIBUS_SECURE_COOKIES` is on (the
 /// default), else the plain `omnibus_session` name so loopback/LAN HTTP keeps working.
-pub(super) fn session_cookie(value: String, max_age_secs: i64) -> Cookie<'static> {
+pub fn session_cookie(value: String, max_age_secs: i64) -> Cookie<'static> {
     let secure = secure_cookies();
     // Invariants required by the `__Host-` prefix when `secure` is true:
     // no Domain attribute, Path=/, Secure. We set all three unconditionally
@@ -232,7 +232,7 @@ async fn register_handler(
 /// The request's `User-Agent`, or `None` when absent or not valid UTF-8. The
 /// header is how a web session — which registers no device — is later named in
 /// the sessions listing.
-pub(super) fn request_user_agent(headers: &HeaderMap) -> Option<&str> {
+pub fn request_user_agent(headers: &HeaderMap) -> Option<&str> {
     headers.get(header::USER_AGENT)?.to_str().ok()
 }
 
@@ -409,6 +409,7 @@ async fn logout_handler(
                 match return_to_impersonator(
                     &state,
                     user.id,
+                    &user.username,
                     session.id,
                     session.impersonator_id,
                     request_user_agent(&headers),
@@ -421,6 +422,8 @@ async fn logout_handler(
                             return internal("revoke session", e);
                         }
                     }
+                    // The admin or the session vanished under the request: nothing left to return to.
+                    Err(AuthError::SessionNotFound) => {}
                     Err(e) => return internal("return to impersonator", e),
                 }
             }

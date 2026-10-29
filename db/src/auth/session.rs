@@ -321,15 +321,11 @@ pub async fn resolve_token(pool: &SqlitePool, raw_token: &str) -> AuthResult<(Us
 }
 
 /// Revoke a single session by id, setting its `revoked_at` timestamp so `lookup_session` rejects it.
-/// Accepts any `sqlx::Executor`, same rationale as [`revoke_all_sessions_for_user`].
-pub async fn revoke_session<'e, E>(executor: E, session_id: i64) -> AuthResult<()>
-where
-    E: Executor<'e, Database = Sqlite>,
-{
+pub async fn revoke_session(pool: &SqlitePool, session_id: i64) -> AuthResult<()> {
     sqlx::query("UPDATE sessions SET revoked_at = ? WHERE id = ?")
         .bind(now_unix())
         .bind(session_id)
-        .execute(executor)
+        .execute(pool)
         .await?;
     Ok(())
 }
@@ -460,12 +456,16 @@ pub async fn revoke_session_for_user(
 /// Revoke a session by id with no ownership scoping (admin `DELETE
 /// /api/admin/sessions/{id}`). Unlike [`revoke_session`] it checks
 /// `rows_affected`, so an unknown or already-revoked id is
-/// [`AuthError::SessionNotFound`] rather than a silent no-op.
-pub async fn revoke_session_checked(pool: &SqlitePool, session_id: i64) -> AuthResult<()> {
+/// [`AuthError::SessionNotFound`] rather than a silent no-op. Accepts any `sqlx::Executor`,
+/// so a caller can roll back the rest of its transaction when the session is already gone.
+pub async fn revoke_session_checked<'e, E>(executor: E, session_id: i64) -> AuthResult<()>
+where
+    E: Executor<'e, Database = Sqlite>,
+{
     let r = sqlx::query("UPDATE sessions SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL")
         .bind(now_unix())
         .bind(session_id)
-        .execute(pool)
+        .execute(executor)
         .await?;
     if r.rows_affected() == 0 {
         return Err(AuthError::SessionNotFound);
