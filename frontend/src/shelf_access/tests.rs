@@ -23,6 +23,7 @@ fn viewer(id: i64, is_admin: bool) -> UserSummary {
         book_detail_scroll_stops: false,
         stack_series: false,
         share_stats: true,
+        impersonation: None,
     }
 }
 

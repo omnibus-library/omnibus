@@ -146,5 +146,7 @@ pub fn fake_auth_user(id: i64, session_id: i64) -> AuthUser {
         share_stats: true,
         session_id,
         session_kind: SessionKind::Bearer,
+        impersonator_id: None,
+        session_expires_at: i64::MAX,
     }
 }

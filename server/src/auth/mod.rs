@@ -1,7 +1,8 @@
 //! Server-side axum glue on top of [`omnibus_db::auth`]: cookie/bearer
 //! extractors ([`extractor`]), `/api/auth/*` handlers + router ([`handlers`]),
 //! CSRF origin check ([`csrf`]), pluggable auth backends ([`strategy`]),
-//! the initial-admin recovery hook ([`boot`]), the sessions-listing
+//! the initial-admin recovery hook ([`boot`]), admin impersonation
+//! ([`impersonation`]), the sessions-listing
 //! projection ([`session_view`]), the `/api/*` gate middleware ([`gate`]),
 //! and its page-load counterpart ([`page_gate`]). Mounted by [`crate::main`].
 
@@ -12,6 +13,7 @@ pub mod csrf;
 pub mod extractor;
 pub mod gate;
 pub mod handlers;
+pub mod impersonation;
 pub mod page_gate;
 pub mod session_view;
 pub mod strategy;
@@ -56,3 +58,6 @@ pub const COOKIE_TTL_SECS: i64 = 30 * 24 * 60 * 60;
 
 /// 90 days for mobile bearer tokens.
 pub const BEARER_TTL_SECS: i64 = 90 * 24 * 60 * 60;
+
+/// One hour for an admin impersonating another account; there is no refresh.
+pub const IMPERSONATION_TTL_SECS: i64 = 60 * 60;

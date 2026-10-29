@@ -19,6 +19,7 @@ fn resolved_user(display_name: Option<&str>, has_avatar: bool) -> UserSummary {
         book_detail_scroll_stops: false,
         stack_series: false,
         share_stats: true,
+        impersonation: None,
     }
 }
 

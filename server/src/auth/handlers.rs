@@ -33,6 +33,7 @@ pub fn auth_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(login_handler))
         .routes(routes!(logout_handler))
         .routes(routes!(me_handler))
+        .routes(routes!(super::impersonation::impersonate_handler))
         .routes(routes!(get_sessions_handler))
         .routes(routes!(delete_session_handler))
         .routes(routes!(change_password_handler))
@@ -74,6 +75,7 @@ fn user_summary(u: &auth_db::User) -> UserSummary {
         book_detail_scroll_stops: u.book_detail_scroll_stops,
         stack_series: u.stack_series,
         share_stats: u.share_stats,
+        impersonation: None,
     }
 }
 
@@ -158,7 +160,7 @@ fn secure_cookies() -> bool {
 /// Build a session cookie: `__Host-omnibus_session` (always `Secure`, `Path=/`, no
 /// `Domain`, as the prefix requires) when `OMNIBUS_SECURE_COOKIES` is on (the
 /// default), else the plain `omnibus_session` name so loopback/LAN HTTP keeps working.
-fn session_cookie(value: String, max_age_secs: i64) -> Cookie<'static> {
+pub(super) fn session_cookie(value: String, max_age_secs: i64) -> Cookie<'static> {
     let secure = secure_cookies();
     // Invariants required by the `__Host-` prefix when `secure` is true:
     // no Domain attribute, Path=/, Secure. We set all three unconditionally
@@ -228,7 +230,7 @@ async fn register_handler(
 /// The request's `User-Agent`, or `None` when absent or not valid UTF-8. The
 /// header is how a web session — which registers no device — is later named in
 /// the sessions listing.
-fn request_user_agent(headers: &HeaderMap) -> Option<&str> {
+pub(super) fn request_user_agent(headers: &HeaderMap) -> Option<&str> {
     headers.get(header::USER_AGENT)?.to_str().ok()
 }
 
@@ -415,7 +417,8 @@ async fn logout_handler(
 
 /// Get the signed-in user
 ///
-/// The account the request's session belongs to: its permissions and preferences.
+/// The account the request's session belongs to: its permissions and preferences. While an
+/// admin is signed in as that account, `impersonation` says who and until when.
 #[utoipa::path(
     get,
     path = "/api/auth/me",
@@ -427,8 +430,16 @@ async fn logout_handler(
         (status = 401, description = "The request has no live session."),
     ),
 )]
-async fn me_handler(user: AuthUser) -> Response {
-    Json(user.summary()).into_response()
+async fn me_handler(user: AuthUser, State(state): State<AppState>) -> Response {
+    let impersonation = match super::impersonation::impersonation_of(&state, &user).await {
+        Ok(impersonation) => impersonation,
+        Err(res) => return res,
+    };
+    Json(UserSummary {
+        impersonation,
+        ..user.summary()
+    })
+    .into_response()
 }
 
 /// List your sessions

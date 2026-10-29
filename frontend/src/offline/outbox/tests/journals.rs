@@ -36,6 +36,7 @@ async fn queue_create_journal_synthesizes_temp_record_and_caches_it() {
             book_detail_scroll_stops: false,
             stack_series: false,
             share_stats: true,
+            impersonation: None,
         },
     );
 

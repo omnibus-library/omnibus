@@ -24,6 +24,7 @@ async fn kindle_email_changed_patches_the_cached_account_summary() {
             book_detail_scroll_stops: false,
             stack_series: false,
             share_stats: true,
+            impersonation: None,
         },
     );
 
