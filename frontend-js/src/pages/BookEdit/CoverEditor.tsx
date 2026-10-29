@@ -78,11 +78,6 @@ export type CoverProps = {
   onBusy?: (busy: boolean) => void;
 };
 
-/** The cover surfaces of an upload under review, whose cover is staged for the add. */
-export type StagedCoverProps = Omit<CoverProps, "target"> & {
-  target: Extract<CoverTarget, { kind: "staged" }>;
-};
-
 /** The placeholder plate and the image the cover surfaces show now, for a live or a staged target. */
 export function coverPreview({ book, target }: CoverProps) {
   const plate = {

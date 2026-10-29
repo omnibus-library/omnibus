@@ -109,13 +109,6 @@ export const differs = (
   return source !== "" && source !== currentValue(f, values);
 };
 
-/** Whether the field carries a change from `baseline`, however it got there. */
-export const isStaged = (
-  f: MetadataField,
-  values: MetaForm,
-  baseline: MetaForm,
-) => currentValue(f, values) !== currentValue(f, baseline);
-
 /** What copying the field writes into the form, or `undefined` when the source has nothing, so a gap never blanks a value. */
 export function applyField(f: MetadataField, edition: ProviderEdition) {
   const offered = f.offer(edition);
