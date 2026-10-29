@@ -213,6 +213,8 @@ async fn post_stack_series_returns_500_when_the_db_is_unavailable() {
         share_stats: true,
         session_id: 1,
         session_kind: SessionKind::Bearer,
+        impersonator_id: None,
+        session_expires_at: i64::MAX,
     };
 
     let res = post_stack_series(user, State(state), Json(SetStackSeries { enabled: true })).await;
@@ -306,6 +308,8 @@ async fn post_share_stats_returns_500_when_the_db_is_unavailable() {
         share_stats: true,
         session_id: 1,
         session_kind: SessionKind::Bearer,
+        impersonator_id: None,
+        session_expires_at: i64::MAX,
     };
 
     let res = post_share_stats(user, State(state), Json(SetShareStats { enabled: false })).await;

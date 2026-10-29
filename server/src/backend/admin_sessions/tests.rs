@@ -40,6 +40,8 @@ fn fake_admin(id: i64) -> AuthUser {
         share_stats: true,
         session_id: 1,
         session_kind: SessionKind::Bearer,
+        impersonator_id: None,
+        session_expires_at: i64::MAX,
     }
 }
 

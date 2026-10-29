@@ -2,10 +2,11 @@
 //! idle-timeout enforcement, revocation (single, all, all-except-current),
 //! last-used touch throttling, and cookie/bearer token resolution.
 
-use super::*;
-use crate::auth::test_support::pool;
+use crate::auth::test_support::{pool, second_user};
 use crate::auth::token::SESSION_COOKIE_NAME;
-use crate::auth::users::create_user;
+use crate::auth::users::{create_user, delete_user};
+
+use super::*;
 
 #[tokio::test]
 async fn create_session_and_lookup_session_round_trips_a_cookie_session() {
@@ -18,6 +19,54 @@ async fn create_session_and_lookup_session_round_trips_a_cookie_session() {
     assert_eq!(user2.id, u.id);
     assert_eq!(sess2.id, ns.session.id);
     assert_eq!(sess2.kind, SessionKind::Cookie);
+    assert_eq!(sess2.impersonator_id, None);
+}
+
+#[tokio::test]
+async fn create_impersonation_session_mints_a_cookie_session_lookup_reports_as_impersonated() {
+    let p = pool().await;
+    let admin = create_user(&p, "alice", "hunter2-real-long").await.unwrap();
+    let target = second_user(&p, "bob", false).await;
+    let ns = create_impersonation_session(&p, target.id, admin.id, 3600, Some("Firefox"))
+        .await
+        .unwrap();
+
+    let (user, sess) = lookup_session(&p, &ns.raw_token).await.unwrap();
+    assert_eq!(user.id, target.id);
+    assert_eq!(sess.kind, SessionKind::Cookie);
+    assert_eq!(sess.impersonator_id, Some(admin.id));
+    assert_eq!(sess.expires_at, sess.created_at + 3600);
+    assert_eq!(sess.device_id, None);
+}
+
+#[tokio::test]
+async fn list_sessions_for_user_reports_the_impersonator_of_an_impersonation_session() {
+    let p = pool().await;
+    let admin = create_user(&p, "alice", "hunter2-real-long").await.unwrap();
+    let target = second_user(&p, "bob", false).await;
+    create_impersonation_session(&p, target.id, admin.id, 3600, None)
+        .await
+        .unwrap();
+
+    let listed = list_sessions_for_user(&p, target.id).await.unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].impersonator_id, Some(admin.id));
+}
+
+#[tokio::test]
+async fn delete_user_ends_the_impersonation_sessions_its_admin_opened() {
+    let p = pool().await;
+    create_user(&p, "alice", "hunter2-real-long").await.unwrap();
+    let second_admin = second_user(&p, "carol", true).await;
+    let target = second_user(&p, "bob", false).await;
+    let ns = create_impersonation_session(&p, target.id, second_admin.id, 3600, None)
+        .await
+        .unwrap();
+
+    delete_user(&p, second_admin.id).await.unwrap();
+
+    let err = lookup_session(&p, &ns.raw_token).await.unwrap_err();
+    assert!(matches!(err, AuthError::SessionNotFound));
 }
 
 #[tokio::test]
@@ -256,6 +305,60 @@ async fn revoke_all_sessions_for_user_is_scoped_to_the_target_user() {
     lookup_session(&p, &bobs.raw_token)
         .await
         .expect("bob's session must be untouched by alice's revocation");
+}
+
+#[tokio::test]
+async fn revoke_all_sessions_for_user_also_revokes_the_impersonation_sessions_it_opened() {
+    let p = pool().await;
+    let admin = create_user(&p, "alice", "hunter2-real-long").await.unwrap();
+    let target = second_user(&p, "bob", false).await;
+    let impersonation = create_impersonation_session(&p, target.id, admin.id, 3600, None)
+        .await
+        .unwrap();
+    let targets_own = create_session(&p, target.id, None, SessionKind::Cookie, 3600, None)
+        .await
+        .unwrap();
+
+    let revoked = revoke_all_sessions_for_user(&p, admin.id).await.unwrap();
+
+    assert_eq!(revoked, 1);
+    assert!(matches!(
+        lookup_session(&p, &impersonation.raw_token)
+            .await
+            .unwrap_err(),
+        AuthError::SessionNotFound
+    ));
+    lookup_session(&p, &targets_own.raw_token)
+        .await
+        .expect("the target's own session is not the admin's to end");
+}
+
+#[tokio::test]
+async fn revoke_all_sessions_for_user_except_also_revokes_the_impersonation_sessions_it_opened() {
+    let p = pool().await;
+    let admin = create_user(&p, "alice", "hunter2-real-long").await.unwrap();
+    let target = second_user(&p, "bob", false).await;
+    let keep = create_session(&p, admin.id, None, SessionKind::Cookie, 3600, None)
+        .await
+        .unwrap();
+    let impersonation = create_impersonation_session(&p, target.id, admin.id, 3600, None)
+        .await
+        .unwrap();
+
+    let revoked = revoke_all_sessions_for_user_except(&p, admin.id, keep.session.id)
+        .await
+        .unwrap();
+
+    assert_eq!(revoked, 1);
+    lookup_session(&p, &keep.raw_token)
+        .await
+        .expect("the excluded session must remain live");
+    assert!(matches!(
+        lookup_session(&p, &impersonation.raw_token)
+            .await
+            .unwrap_err(),
+        AuthError::SessionNotFound
+    ));
 }
 
 #[tokio::test]

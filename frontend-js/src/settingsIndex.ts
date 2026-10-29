@@ -193,6 +193,9 @@ export function matchingSettings(
 export const sectionHref = (section: Section) =>
   `/${section.area}?section=${section.slug}`;
 
+/** Where the People section opens. */
+export const PEOPLE_HREF = sectionHref(PEOPLE);
+
 /** Where a setting sits, as copy names it: "Settings › Goals". */
 export const settingsPlace = ({ section }: SettingsEntry) =>
   `${section.area === "settings" ? "Settings" : "Administration"} › ${section.label}`;

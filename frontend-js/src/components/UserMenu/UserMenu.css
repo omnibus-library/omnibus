@@ -27,6 +27,21 @@
     color: var(--ink-0);
   }
 }
+.um-trigger-impersonating {
+  position: relative;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.um-trigger-dot {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 1.5px solid var(--bg-1);
+}
 .um-trigger .um-initials {
   font-family: var(--mono);
   font-size: 10px;
@@ -250,6 +265,29 @@
   cursor: not-allowed;
   pointer-events: none;
 }
+.um-impersonating {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in oklch, var(--accent) 45%, transparent);
+}
+.um-impersonating-label {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  overflow-wrap: anywhere;
+}
+.um-impersonating-by {
+  font-size: 12px;
+  color: var(--ink-1);
+  overflow-wrap: anywhere;
+}
 .um-row-icon {
   display: inline-flex;
   align-items: center;
@@ -260,7 +298,33 @@
 }
 .um-row-label {
   flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-size: 13px;
+}
+.um-row-accent {
+  color: var(--accent);
+}
+.um-row-accent .um-row-icon {
+  color: inherit;
+}
+@media (hover: hover) {
+  .um-row.um-row-accent:hover {
+    color: var(--accent);
+  }
+}
+/* Amber text fails contrast on the light themes' paper; the ring, dot and border keep the accent. */
+[data-theme="light"] .um-row-accent,
+[data-theme="sepia"] .um-row-accent,
+[data-theme="light"] .um-impersonating-label,
+[data-theme="sepia"] .um-impersonating-label {
+  color: var(--ink-0);
+}
+@media (hover: hover) {
+  [data-theme="light"] .um-row.um-row-accent:hover,
+  [data-theme="sepia"] .um-row.um-row-accent:hover {
+    color: var(--ink-0);
+  }
 }
 .um-row.destructive {
   color: color-mix(in oklch, red 70%, var(--ink-1));

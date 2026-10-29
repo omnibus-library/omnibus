@@ -12,6 +12,7 @@ import {
   getRegistration,
   getRenameApiTokenUrl,
   getRevokeApiTokenUrl,
+  getStopImpersonationUrl,
   login as postLogin,
   register as postRegister,
 } from "./generated/omnibus";
@@ -42,6 +43,14 @@ export function toUser(user: UserSummary) {
     bookDetailScrollStops: user.book_detail_scroll_stops ?? false,
     // Matches the wire default: stats are shared until a reader opts out.
     shareStats: user.share_stats ?? true,
+    // Set while an admin is signed in as this user.
+    impersonation: user.impersonation
+      ? {
+          impersonatorId: user.impersonation.impersonator_id as UserId,
+          impersonatorName: user.impersonation.impersonator_name,
+          expiresAt: user.impersonation.expires_at,
+        }
+      : null,
   };
 }
 
@@ -76,6 +85,11 @@ export async function logout(): Promise<void> {
   if (res.status !== 204) {
     throw failure({ status: res.status, data: await res.text() });
   }
+}
+
+/** Ends an impersonation: the server swaps the session for a fresh one of the admin. */
+export async function stopImpersonating(): Promise<void> {
+  await send(getStopImpersonationUrl(), "POST");
 }
 
 /** The reader's live sessions, the one making the request flagged `is_current`. */

@@ -19,6 +19,7 @@ use omnibus_shared::{
 use utoipa_axum::{router::OpenApiRouter, routes};
 
 use super::extractor::{extract_token, AuthUser};
+use super::impersonation::{return_to_impersonator, signed_in_as_admin};
 use super::session_view::session_views;
 use super::{session_cookie_name, BEARER_TTL_SECS, COOKIE_TTL_SECS};
 use crate::backend::AppState;
@@ -33,6 +34,8 @@ pub fn auth_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(login_handler))
         .routes(routes!(logout_handler))
         .routes(routes!(me_handler))
+        .routes(routes!(super::impersonation::impersonate_handler))
+        .routes(routes!(super::impersonation::stop_impersonation_handler))
         .routes(routes!(get_sessions_handler))
         .routes(routes!(delete_session_handler))
         .routes(routes!(change_password_handler))
@@ -74,6 +77,7 @@ fn user_summary(u: &auth_db::User) -> UserSummary {
         book_detail_scroll_stops: u.book_detail_scroll_stops,
         stack_series: u.stack_series,
         share_stats: u.share_stats,
+        impersonation: None,
     }
 }
 
@@ -158,7 +162,7 @@ fn secure_cookies() -> bool {
 /// Build a session cookie: `__Host-omnibus_session` (always `Secure`, `Path=/`, no
 /// `Domain`, as the prefix requires) when `OMNIBUS_SECURE_COOKIES` is on (the
 /// default), else the plain `omnibus_session` name so loopback/LAN HTTP keeps working.
-fn session_cookie(value: String, max_age_secs: i64) -> Cookie<'static> {
+pub fn session_cookie(value: String, max_age_secs: i64) -> Cookie<'static> {
     let secure = secure_cookies();
     // Invariants required by the `__Host-` prefix when `secure` is true:
     // no Domain attribute, Path=/, Secure. We set all three unconditionally
@@ -228,7 +232,7 @@ async fn register_handler(
 /// The request's `User-Agent`, or `None` when absent or not valid UTF-8. The
 /// header is how a web session — which registers no device — is later named in
 /// the sessions listing.
-fn request_user_agent(headers: &HeaderMap) -> Option<&str> {
+pub fn request_user_agent(headers: &HeaderMap) -> Option<&str> {
     headers.get(header::USER_AGENT)?.to_str().ok()
 }
 
@@ -382,7 +386,8 @@ async fn persist_session(
 /// Sign out
 ///
 /// Ends the session the request carries and clears the session cookie. Signing out of a
-/// session that has already ended still succeeds.
+/// session that has already ended still succeeds. Signing out of an impersonation session
+/// returns you to the admin's own account instead, with a new session cookie.
 #[utoipa::path(
     post,
     path = "/api/auth/logout",
@@ -400,9 +405,26 @@ async fn logout_handler(
     // clear the cookie. Idempotent: unknown tokens still return 204.
     if let Some((token, _)) = extract_token(&headers) {
         match auth_db::lookup_session(state.pool(), &token).await {
-            Ok((_user, session)) => {
-                if let Err(e) = auth_db::revoke_session(state.pool(), session.id).await {
-                    return internal("revoke session", e);
+            Ok((user, session)) => {
+                match return_to_impersonator(
+                    &state,
+                    user.id,
+                    &user.username,
+                    session.id,
+                    session.impersonator_id,
+                    request_user_agent(&headers),
+                )
+                .await
+                {
+                    Ok(Some(issued)) => return signed_in_as_admin(jar, issued),
+                    Ok(None) => {
+                        if let Err(e) = auth_db::revoke_session(state.pool(), session.id).await {
+                            return internal("revoke session", e);
+                        }
+                    }
+                    // The admin or the session vanished under the request: nothing left to return to.
+                    Err(AuthError::SessionNotFound) => {}
+                    Err(e) => return internal("return to impersonator", e),
                 }
             }
             Err(AuthError::SessionNotFound) => {}
@@ -415,7 +437,8 @@ async fn logout_handler(
 
 /// Get the signed-in user
 ///
-/// The account the request's session belongs to: its permissions and preferences.
+/// The account the request's session belongs to: its permissions and preferences. While an
+/// admin is signed in as that account, `impersonation` says who and until when.
 #[utoipa::path(
     get,
     path = "/api/auth/me",
@@ -427,8 +450,16 @@ async fn logout_handler(
         (status = 401, description = "The request has no live session."),
     ),
 )]
-async fn me_handler(user: AuthUser) -> Response {
-    Json(user.summary()).into_response()
+async fn me_handler(user: AuthUser, State(state): State<AppState>) -> Response {
+    let impersonation = match super::impersonation::impersonation_of(&state, &user).await {
+        Ok(impersonation) => impersonation,
+        Err(res) => return res,
+    };
+    Json(UserSummary {
+        impersonation,
+        ..user.summary()
+    })
+    .into_response()
 }
 
 /// List your sessions

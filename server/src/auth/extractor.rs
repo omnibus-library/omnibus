@@ -34,6 +34,10 @@ pub struct AuthUser {
     pub share_stats: bool,
     pub session_id: i64,
     pub session_kind: SessionKind,
+    /// The admin signed in as this user, when the session is an impersonation.
+    pub impersonator_id: Option<i64>,
+    /// Unix seconds the session stops authenticating; `i64::MAX` when it has no expiry.
+    pub session_expires_at: i64,
 }
 
 impl AuthUser {
@@ -53,6 +57,7 @@ impl AuthUser {
             book_detail_scroll_stops: self.book_detail_scroll_stops,
             stack_series: self.stack_series,
             share_stats: self.share_stats,
+            impersonation: None,
         }
     }
 }
@@ -145,6 +150,8 @@ fn build_auth_user(user: auth_db::User, session: auth_db::Session) -> AuthUser {
         share_stats: user.share_stats,
         session_id: session.id,
         session_kind: session.kind,
+        impersonator_id: session.impersonator_id,
+        session_expires_at: session.expires_at,
     }
 }
 

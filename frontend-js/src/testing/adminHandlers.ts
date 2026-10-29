@@ -327,6 +327,7 @@ export function registrationHandlers({
 /** What `usersHandlers` records of the writes it answers, for a story to assert on. */
 export type UserWrites = {
   unlocked: number[];
+  impersonated: number[];
   created: CreateUserRequest[];
   permissions: { id: number; permissions: UserPermissions }[];
   passwords: { id: number; password: string }[];
@@ -342,6 +343,7 @@ export function usersHandlers(
   initial: AdminUserRow[],
   {
     unlocked = [],
+    impersonated = [],
     created = [],
     permissions = [],
     passwords = [],
@@ -385,6 +387,10 @@ export function usersHandlers(
       const id = Number(params.id);
       unlocked.push(id);
       edit(id, { locked: false });
+      return noContent();
+    }),
+    http.post("/api/admin/users/:id/impersonate", ({ params }) => {
+      impersonated.push(Number(params.id));
       return noContent();
     }),
     http.delete("/api/admin/users/:id", ({ params }) => {

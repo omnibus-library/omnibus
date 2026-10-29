@@ -2,32 +2,12 @@
 //! `omni_` prefix, at-rest hashing, revocation, listing, name validation,
 //! no-idle-expiry behaviour, and the `resolve_token` prefix routing.
 
-use omnibus_shared::UserPermissions;
-
-use super::*;
 use crate::auth::session::resolve_token;
-use crate::auth::test_support::pool;
-use crate::auth::users::{admin_create_user, create_user};
+use crate::auth::test_support::{pool, second_user};
+use crate::auth::users::create_user;
 use crate::auth::SessionKind;
 
-/// Self-registration closes after the first user, so second accounts are
-/// minted through the admin path.
-async fn second_user(p: &sqlx::SqlitePool, name: &str) -> i64 {
-    admin_create_user(
-        p,
-        name,
-        "hunter2-real-long",
-        UserPermissions {
-            is_admin: false,
-            can_upload: false,
-            can_edit: false,
-            can_download: true,
-        },
-    )
-    .await
-    .unwrap()
-    .id
-}
+use super::*;
 
 #[tokio::test]
 async fn create_api_token_and_lookup_api_token_round_trip() {
@@ -127,7 +107,7 @@ async fn create_api_token_rejects_blank_and_oversized_names() {
 async fn list_api_tokens_for_user_omits_revoked_and_other_users() {
     let p = pool().await;
     let u = create_user(&p, "alice", "hunter2-real-long").await.unwrap();
-    let other_id = second_user(&p, "bob").await;
+    let other_id = second_user(&p, "bob", false).await.id;
     let keep = create_api_token(&p, u.id, "keep").await.unwrap();
     let gone = create_api_token(&p, u.id, "gone").await.unwrap();
     create_api_token(&p, other_id, "bobs").await.unwrap();
@@ -144,7 +124,7 @@ async fn list_api_tokens_for_user_omits_revoked_and_other_users() {
 async fn revoke_api_token_for_user_rejects_unknown_and_foreign_ids() {
     let p = pool().await;
     let u = create_user(&p, "alice", "hunter2-real-long").await.unwrap();
-    let other_id = second_user(&p, "bob").await;
+    let other_id = second_user(&p, "bob", false).await.id;
     let nt = create_api_token(&p, other_id, "bobs").await.unwrap();
 
     // Unknown id.
@@ -274,7 +254,7 @@ async fn rename_api_token_for_user_rejects_invalid_name() {
 async fn rename_api_token_for_user_reports_not_found_for_another_users_token() {
     let p = pool().await;
     let u = create_user(&p, "alice", "hunter2-real-long").await.unwrap();
-    let other = second_user(&p, "bob").await;
+    let other = second_user(&p, "bob", false).await.id;
     let nt = create_api_token(&p, u.id, "mcp").await.unwrap();
     let err = rename_api_token_for_user(&p, other, nt.token.id, "stolen")
         .await

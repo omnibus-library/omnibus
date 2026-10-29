@@ -61,6 +61,50 @@ pub async fn create_session<'e, E>(
 where
     E: Executor<'e, Database = Sqlite>,
 {
+    insert_session(
+        executor, user_id, device_id, None, kind, ttl_secs, user_agent,
+    )
+    .await
+}
+
+/// Create a cookie session that signs `impersonator_id` in as `user_id`. Same
+/// executor contract as [`create_session`]; the session has no device.
+pub async fn create_impersonation_session<'e, E>(
+    executor: E,
+    user_id: i64,
+    impersonator_id: i64,
+    ttl_secs: i64,
+    user_agent: Option<&str>,
+) -> AuthResult<NewSession>
+where
+    E: Executor<'e, Database = Sqlite>,
+{
+    insert_session(
+        executor,
+        user_id,
+        None,
+        Some(impersonator_id),
+        SessionKind::Cookie,
+        ttl_secs,
+        user_agent,
+    )
+    .await
+}
+
+/// The one `sessions` insert behind [`create_session`] and
+/// [`create_impersonation_session`].
+async fn insert_session<'e, E>(
+    executor: E,
+    user_id: i64,
+    device_id: Option<i64>,
+    impersonator_id: Option<i64>,
+    kind: SessionKind,
+    ttl_secs: i64,
+    user_agent: Option<&str>,
+) -> AuthResult<NewSession>
+where
+    E: Executor<'e, Database = Sqlite>,
+{
     let raw = generate_token()?;
     let hash = hash_token(&raw);
     let now = now_unix();
@@ -68,13 +112,14 @@ where
     let user_agent = clamp_user_agent(user_agent);
 
     let row = sqlx::query(
-        "INSERT INTO sessions (token_hash, user_id, device_id, kind, expires_at, user_agent)
-         VALUES (?, ?, ?, ?, ?, ?)
-         RETURNING id, user_id, device_id, kind, created_at, last_used_at, expires_at, user_agent",
+        "INSERT INTO sessions (token_hash, user_id, device_id, impersonator_id, kind, expires_at, user_agent)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         RETURNING id, user_id, device_id, impersonator_id, kind, created_at, last_used_at, expires_at, user_agent",
     )
     .bind(&hash)
     .bind(user_id)
     .bind(device_id)
+    .bind(impersonator_id)
     .bind(kind.as_str())
     .bind(expires)
     .bind(user_agent)
@@ -85,6 +130,7 @@ where
         id: row.get("id"),
         user_id: row.get("user_id"),
         device_id: row.get("device_id"),
+        impersonator_id: row.get("impersonator_id"),
         kind,
         created_at: row.get("created_at"),
         last_used_at: row.get("last_used_at"),
@@ -125,7 +171,7 @@ pub async fn lookup_session(pool: &SqlitePool, raw_token: &str) -> AuthResult<(U
 /// when no row matches — the caller treats any absence as an invalid token.
 async fn fetch_session_row(pool: &SqlitePool, hash: &[u8]) -> AuthResult<sqlx::sqlite::SqliteRow> {
     let row = sqlx::query(
-        "SELECT s.id AS s_id, s.user_id, s.device_id, s.kind, s.created_at,
+        "SELECT s.id AS s_id, s.user_id, s.device_id, s.impersonator_id, s.kind, s.created_at,
                 s.last_used_at, s.expires_at, s.revoked_at, s.user_agent,
                 u.id AS u_id, u.username, u.is_admin, u.can_upload, u.can_edit, u.can_download,
                 u.kindle_email, u.display_name, u.hidden_formats,
@@ -183,6 +229,7 @@ fn build_session_from_row(
         id: session_id,
         user_id: row.get("u_id"),
         device_id: row.get("device_id"),
+        impersonator_id: row.get("impersonator_id"),
         kind,
         created_at: row.get("created_at"),
         last_used_at,
@@ -259,6 +306,7 @@ pub async fn resolve_token(pool: &SqlitePool, raw_token: &str) -> AuthResult<(Us
             id: 0,
             user_id: user.id,
             device_id: None,
+            impersonator_id: None,
             kind: SessionKind::ApiToken,
             created_at: token.created_at,
             last_used_at: token.last_used_at.unwrap_or(token.created_at),
@@ -282,7 +330,8 @@ pub async fn revoke_session(pool: &SqlitePool, session_id: i64) -> AuthResult<()
     Ok(())
 }
 
-/// Revoke all active sessions for a user; returns the number of rows updated.
+/// Revoke all active sessions for a user, including the impersonation sessions they opened
+/// as other users; returns the number of rows updated.
 /// Accepts any `sqlx::Executor` so callers can run it inside an existing
 /// transaction (e.g. alongside a password update, so a failure rolls back
 /// both together) or standalone via `&SqlitePool`.
@@ -290,18 +339,21 @@ pub async fn revoke_all_sessions_for_user<'e, E>(executor: E, user_id: i64) -> A
 where
     E: Executor<'e, Database = Sqlite>,
 {
-    let r =
-        sqlx::query("UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL")
-            .bind(now_unix())
-            .bind(user_id)
-            .execute(executor)
-            .await?;
+    let r = sqlx::query(
+        "UPDATE sessions SET revoked_at = ?
+         WHERE (user_id = ? OR impersonator_id = ?) AND revoked_at IS NULL",
+    )
+    .bind(now_unix())
+    .bind(user_id)
+    .bind(user_id)
+    .execute(executor)
+    .await?;
     Ok(r.rows_affected())
 }
 
-/// Revoke all of a user's active sessions except `except_session_id`. Used by
-/// the self-service password change so the caller's own session survives the
-/// revocation sweep (they'd otherwise be logged out by the change they just
+/// Revoke all of a user's active sessions, and the impersonation sessions they opened, except
+/// `except_session_id`. Used by the self-service password change so the caller's own session
+/// survives the revocation sweep (they'd otherwise be logged out by the change they just
 /// made). Accepts any `sqlx::Executor`, same rationale as
 /// [`revoke_all_sessions_for_user`].
 pub async fn revoke_all_sessions_for_user_except<'e, E>(
@@ -314,9 +366,10 @@ where
 {
     let r = sqlx::query(
         "UPDATE sessions SET revoked_at = ?
-         WHERE user_id = ? AND id != ? AND revoked_at IS NULL",
+         WHERE (user_id = ? OR impersonator_id = ?) AND id != ? AND revoked_at IS NULL",
     )
     .bind(now_unix())
+    .bind(user_id)
     .bind(user_id)
     .bind(except_session_id)
     .execute(executor)
@@ -334,7 +387,8 @@ pub async fn list_sessions_for_user(pool: &SqlitePool, user_id: i64) -> AuthResu
     // a session that would no longer authenticate.
     let idle_cutoff = now - SESSION_IDLE_TIMEOUT_SECS;
     let rows = sqlx::query(
-        "SELECT id, user_id, device_id, kind, created_at, last_used_at, expires_at, user_agent
+        "SELECT id, user_id, device_id, impersonator_id, kind, created_at, last_used_at,
+                expires_at, user_agent
          FROM sessions
          WHERE user_id = ? AND revoked_at IS NULL AND expires_at > ? AND last_used_at >= ?
          ORDER BY last_used_at DESC
@@ -365,6 +419,7 @@ fn row_to_session(row: &sqlx::sqlite::SqliteRow) -> AuthResult<Session> {
         id: row.get("id"),
         user_id: row.get("user_id"),
         device_id: row.get("device_id"),
+        impersonator_id: row.get("impersonator_id"),
         kind,
         created_at: row.get("created_at"),
         last_used_at: row.get("last_used_at"),
@@ -401,12 +456,16 @@ pub async fn revoke_session_for_user(
 /// Revoke a session by id with no ownership scoping (admin `DELETE
 /// /api/admin/sessions/{id}`). Unlike [`revoke_session`] it checks
 /// `rows_affected`, so an unknown or already-revoked id is
-/// [`AuthError::SessionNotFound`] rather than a silent no-op.
-pub async fn revoke_session_checked(pool: &SqlitePool, session_id: i64) -> AuthResult<()> {
+/// [`AuthError::SessionNotFound`] rather than a silent no-op. Accepts any `sqlx::Executor`,
+/// so a caller can roll back the rest of its transaction when the session is already gone.
+pub async fn revoke_session_checked<'e, E>(executor: E, session_id: i64) -> AuthResult<()>
+where
+    E: Executor<'e, Database = Sqlite>,
+{
     let r = sqlx::query("UPDATE sessions SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL")
         .bind(now_unix())
         .bind(session_id)
-        .execute(pool)
+        .execute(executor)
         .await?;
     if r.rows_affected() == 0 {
         return Err(AuthError::SessionNotFound);

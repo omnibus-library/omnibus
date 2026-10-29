@@ -34,6 +34,7 @@ pub fn test_user(is_admin: bool, can_upload: bool) -> omnibus_shared::UserSummar
         book_detail_scroll_stops: false,
         stack_series: false,
         share_stats: true,
+        impersonation: None,
     }
 }
 

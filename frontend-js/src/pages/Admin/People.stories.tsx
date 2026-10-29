@@ -1,18 +1,24 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { useQuery } from "@tanstack/react-query";
 import { HttpResponse, http } from "msw";
+import type { ReactNode } from "react";
+import { useLocation } from "react-router";
 import { expect, waitFor, within } from "storybook/test";
 import { registrationStatusQuery } from "../../api";
+import { meQuery } from "../../session";
 import {
   expectInvalidated,
   seedQueries,
   storyClient,
 } from "../../testing/AppHarness";
 import {
+  aWireAdminUser,
   aWireAdminUsers,
   registrationHandlers,
   usersHandlers,
 } from "../../testing/adminHandlers";
 import { deferred, failing, hanging } from "../../testing/handlers";
+import { WIRE_ADA } from "../../testing/wire";
 import { RegistrationCard } from "./RegistrationCard";
 import { UsersCard } from "./UsersCard";
 
@@ -25,6 +31,7 @@ const CLOSED = "Only an administrator can create accounts.";
 
 const saved: boolean[] = [];
 const unlocked: number[] = [];
+const impersonated: number[] = [];
 
 const meta = {
   title: "Pages/Admin/People",
@@ -32,15 +39,21 @@ const meta = {
   beforeEach({ msw }) {
     saved.length = 0;
     unlocked.length = 0;
+    impersonated.length = 0;
     msw.use(
       ...registrationHandlers({ saved }),
-      ...usersHandlers(aWireAdminUsers(), { unlocked }),
+      ...usersHandlers(aWireAdminUsers(), { unlocked, impersonated }),
     );
   },
 } satisfies Meta<typeof UsersCard>;
 
 export default meta;
 type Story = StoryObj<typeof meta>;
+
+const actionNames = (row: HTMLElement) =>
+  within(within(row).getAllByRole("cell").at(-1) as HTMLElement)
+    .getAllByRole("button")
+    .map((b) => b.textContent);
 
 const cellsOf = (row: HTMLElement) =>
   within(row)
@@ -100,7 +113,7 @@ export const ListsEachAccount: Story = {
       "—",
       "Nov 14, 2023",
       "Active",
-      "EditSessionsDelete",
+      "EditSessionsImpersonateDelete",
     ]);
     await expect(cellsOf(canvas.getByTestId("user-row-7"))).toEqual([
       "alice",
@@ -108,7 +121,7 @@ export const ListsEachAccount: Story = {
       "alice@kindle.example",
       "Nov 14, 2023",
       "LockedUnlock",
-      "EditSessionsDelete",
+      "EditSessionsImpersonateDelete",
     ]);
     await expect(cellsOf(canvas.getByTestId("user-row-9"))).toEqual([
       "bob",
@@ -116,7 +129,7 @@ export const ListsEachAccount: Story = {
       "—",
       "Jan 1, 2024",
       "Active",
-      "EditSessionsDelete",
+      "EditSessionsImpersonateDelete",
     ]);
   },
 };
@@ -128,6 +141,7 @@ export const NamesTheUserInEveryRowAction: Story = {
       "Unlock alice",
       "Edit alice",
       "Sessions for alice",
+      "Impersonate alice",
       "Delete alice",
     ]) {
       await expect(canvas.getByRole("button", { name })).toBeInTheDocument();
@@ -135,6 +149,203 @@ export const NamesTheUserInEveryRowAction: Story = {
     await expect(
       canvas.queryByRole("button", { name: "Unlock ada" }),
     ).not.toBeInTheDocument();
+  },
+};
+
+function Where() {
+  return <output data-testid="where">{useLocation().pathname}</output>;
+}
+
+// What `RequireAuth` does in the app: nothing signed-in renders once the session is gone.
+function WhileSignedIn({ children }: { children: ReactNode }) {
+  return useQuery(meQuery).data ? children : null;
+}
+
+const withWhere = () => (
+  <>
+    <UsersCard />
+    <Where />
+  </>
+);
+
+const CLEO = aWireAdminUser({ id: 12, username: "cleo", is_admin: true });
+
+/** The session `/api/auth/me` reports once an impersonation has started. */
+const signedInAsAlice = () =>
+  http.get("/api/auth/me", () =>
+    HttpResponse.json(
+      impersonated.length
+        ? {
+            ...WIRE_ADA,
+            id: 7,
+            username: "alice",
+            display_name: null,
+            is_admin: false,
+            impersonation: {
+              impersonator_id: 1,
+              impersonator_name: "Ada Lovelace",
+              expires_at: 1_900_000_000,
+            },
+          }
+        : WIRE_ADA,
+    ),
+  );
+
+export const ImpersonateOnEveryOtherRow: Story = {
+  beforeEach({ msw }) {
+    msw.use(...usersHandlers([...aWireAdminUsers(), CLEO], { impersonated }));
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("users-table");
+    for (const [id, name] of [
+      [7, "alice"],
+      [9, "bob"],
+      [12, "cleo"],
+    ] as const) {
+      const button = canvas.getByRole("button", {
+        name: `Impersonate ${name}`,
+      });
+      await expect(button).toHaveAttribute(
+        "data-testid",
+        `user-impersonate-${id}`,
+      );
+      await expect(actionNames(canvas.getByTestId(`user-row-${id}`))).toEqual([
+        "Edit",
+        "Sessions",
+        "Impersonate",
+        "Delete",
+      ]);
+    }
+    const own = canvas.getByTestId("user-row-1");
+    await expect(
+      canvas.queryByRole("button", { name: "Impersonate ada" }),
+    ).not.toBeInTheDocument();
+    await expect(
+      own.querySelector(".users-impersonate-placeholder"),
+    ).toHaveAttribute("aria-hidden", "true");
+    await expect(actionNames(own)).toEqual(["Edit", "Sessions", "Delete"]);
+    // The placeholder is as wide as the real button, so Delete lines up down the column.
+    const placeholder = own.querySelector(".users-impersonate-placeholder");
+    const real = canvas.getByTestId("user-impersonate-7");
+    await expect(placeholder?.getBoundingClientRect().width).toBe(
+      real.getBoundingClientRect().width,
+    );
+    await expect(
+      canvas.getByRole("button", { name: "Delete ada" }).getBoundingClientRect()
+        .x,
+    ).toBe(
+      canvas
+        .getByRole("button", { name: "Delete alice" })
+        .getBoundingClientRect().x,
+    );
+  },
+};
+
+export const ImpersonateLandsOnTheLibrary: Story = {
+  parameters: { path: "/admin?section=people" },
+  beforeEach({ msw }) {
+    msw.use(signedInAsAlice());
+  },
+  render: withWhere,
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Impersonate alice" }),
+    );
+
+    await waitFor(() =>
+      expect(canvas.getByTestId("where")).toHaveTextContent(/^\/$/),
+    );
+    await expect(impersonated).toEqual([7]);
+    await expect(storyClient().getQueryData(meQuery.queryKey)).toMatchObject({
+      id: 7,
+      username: "alice",
+    });
+  },
+};
+
+export const ImpersonateRefused: Story = {
+  parameters: { path: "/admin?section=people" },
+  beforeEach({ msw }) {
+    msw.use(failing("post", "/api/admin/users/:id/impersonate", 409));
+  },
+  render: withWhere,
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Impersonate alice" }),
+    );
+
+    await expect(
+      await canvas.findByTestId("users-action-error"),
+    ).toHaveTextContent("failed with 409");
+    await expect(canvas.getByTestId("where")).toHaveTextContent("/admin");
+  },
+};
+
+export const ImpersonateWhoseSessionCannotBeReadSignsOut: Story = {
+  parameters: { path: "/admin?section=people" },
+  beforeEach({ msw }) {
+    msw.use(failing("get", "/api/auth/me", 500));
+  },
+  render: () => (
+    <>
+      <WhileSignedIn>
+        <UsersCard />
+      </WhileSignedIn>
+      <Where />
+    </>
+  ),
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Impersonate alice" }),
+    );
+
+    await waitFor(() =>
+      expect(canvas.getByTestId("where")).toHaveTextContent("/login"),
+    );
+    await expect(impersonated).toEqual([7]);
+    await expect(storyClient().getQueryData(meQuery.queryKey)).toBeNull();
+  },
+};
+
+export const ImpersonateHoldsEveryButtonWhileSwitching: Story = {
+  beforeEach({ msw }) {
+    msw.use(hanging("/api/admin/users/:id/impersonate", "post"));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Impersonate alice" }),
+    );
+
+    const bob = canvas.getByRole("button", { name: "Impersonate bob" });
+    await waitFor(() => expect(bob).toBeDisabled());
+    await expect(
+      canvas.getByRole("button", { name: "Impersonate alice" }),
+    ).toHaveTextContent("Signing in…");
+    await expect(bob).toHaveTextContent("Impersonate");
+  },
+};
+
+export const NoImpersonateWhileImpersonating: Story = {
+  parameters: {
+    user: {
+      ...WIRE_ADA,
+      impersonation: {
+        impersonator_id: 2,
+        impersonator_name: "Grace Hopper",
+        expires_at: 1_900_000_000,
+      },
+    },
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("users-table");
+    await expect(
+      canvas.queryByRole("button", { name: /Impersonate/ }),
+    ).not.toBeInTheDocument();
+    await expect(
+      canvas
+        .getByTestId("users-table")
+        .querySelector(".users-impersonate-placeholder"),
+    ).toBeNull();
   },
 };
 

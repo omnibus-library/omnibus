@@ -220,6 +220,8 @@ fn basic_auth_user(user: auth_db::User) -> AuthUser {
         share_stats: user.share_stats,
         session_id: 0,
         session_kind: SessionKind::Basic,
+        impersonator_id: None,
+        session_expires_at: i64::MAX,
     }
 }
 

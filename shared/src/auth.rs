@@ -45,6 +45,21 @@ pub struct UserSummary {
     /// default.
     #[serde(default = "share_stats_default")]
     pub share_stats: bool,
+    /// Set while an admin is signed in as this user; null for an ordinary sign-in.
+    #[serde(default)]
+    pub impersonation: Option<Impersonation>,
+}
+
+/// Who is signed in as this user, while an admin impersonates them.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct Impersonation {
+    /// The admin's user id.
+    pub impersonator_id: i64,
+    /// The admin's display name, or their username when they have none.
+    pub impersonator_name: String,
+    /// When the impersonation ends and the request stops authenticating, in Unix seconds.
+    pub expires_at: i64,
 }
 
 /// Serde default for [`UserSummary::share_stats`]; a bare `#[serde(default)]`

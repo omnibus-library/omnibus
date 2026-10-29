@@ -290,6 +290,24 @@ describe("toUser", () => {
       stackSeries: false,
       bookDetailScrollStops: false,
       shareStats: true,
+      impersonation: null,
+    });
+  });
+
+  it("maps the admin behind an impersonation", () => {
+    const wire = {
+      ...WIRE_ADA,
+      impersonation: {
+        impersonator_id: 2,
+        impersonator_name: "Grace Hopper",
+        expires_at: 1_900_000_000,
+      },
+    };
+
+    expect(toUser(wire).impersonation).toEqual({
+      impersonatorId: 2,
+      impersonatorName: "Grace Hopper",
+      expiresAt: 1_900_000_000,
     });
   });
 

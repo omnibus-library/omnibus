@@ -11,15 +11,8 @@ use axum::{
     body::Body,
     http::{header, Request},
 };
-use omnibus_db as db;
 
-use super::*;
-
-async fn app() -> (Router, sqlx::SqlitePool) {
-    let pool = db::init_db("sqlite::memory:").await.unwrap();
-    let router = auth_router(AppState::new(pool.clone()));
-    (router, pool)
-}
+use crate::auth::test_support::app;
 
 fn json_req(uri: &str, method: &str, body: serde_json::Value) -> Request<Body> {
     Request::builder()

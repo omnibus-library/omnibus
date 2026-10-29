@@ -5,7 +5,8 @@ import { type AdminUserRow, adminUsersQuery, unlockUser } from "../../api";
 import { Button } from "../../components/Button/Button";
 import { BusyLabel, RowSkeletons } from "../../components/Loading/Loading";
 import { formatUtcDay } from "../../format";
-import { endSession, useCurrentUser } from "../../session";
+import { useReleasePlayback } from "../../playback/PlaybackProvider";
+import { endSession, useCurrentUser, useImpersonate } from "../../session";
 import {
   DeleteUserModal,
   EditUserModal,
@@ -20,6 +21,9 @@ type OpenModal =
   | { kind: "edit" | "delete" | "sessions"; user: AdminUserRow }
   | null;
 
+// The placeholder on your own row renders the same face, so Delete lines up down the column.
+const IMPERSONATE_BUSY = "Signing in…";
+
 function chipClass(chip: string) {
   if (chip === ADMIN_CHIP) return "users-chip users-chip-admin";
   return chip === NO_PERMISSIONS ? "users-chip-none" : "users-chip";
@@ -28,15 +32,25 @@ function chipClass(chip: string) {
 function UserRow({
   user,
   isSelf,
+  canImpersonate,
+  impersonating,
+  switching,
   onUnlocked,
   onUnlockFailed,
   onOpen,
+  onImpersonate,
 }: {
   user: AdminUserRow;
   isSelf: boolean;
+  canImpersonate: boolean;
+  /** This row's account is being signed in as. */
+  impersonating: boolean;
+  /** Some row's account is being signed in as. */
+  switching: boolean;
   onUnlocked: () => void;
   onUnlockFailed: (message: string) => void;
   onOpen: (kind: "edit" | "delete" | "sessions") => void;
+  onImpersonate: () => void;
 }) {
   const unlock = useMutation({
     mutationFn: () => unlockUser(user.id),
@@ -101,6 +115,40 @@ function UserRow({
         >
           Sessions
         </Button>
+        {canImpersonate &&
+          (isSelf ? (
+            // Keeps Delete in line with the other rows; no one can sign in as themselves.
+            <Button
+              variant="ghost"
+              size="sm"
+              className="users-impersonate-placeholder"
+              aria-hidden="true"
+              tabIndex={-1}
+              disabled
+            >
+              <BusyLabel
+                busy={false}
+                label="Impersonate"
+                busyLabel={IMPERSONATE_BUSY}
+              />
+            </Button>
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              data-testid={`user-impersonate-${user.id}`}
+              aria-label={`Impersonate ${user.username}`}
+              disabled={switching}
+              aria-busy={impersonating}
+              onClick={onImpersonate}
+            >
+              <BusyLabel
+                busy={impersonating}
+                label="Impersonate"
+                busyLabel={IMPERSONATE_BUSY}
+              />
+            </Button>
+          ))}
         <Button
           variant="ghost"
           size="sm"
@@ -122,6 +170,7 @@ export function UsersCard() {
   const navigate = useNavigate();
   const users = useQuery(adminUsersQuery);
   const me = useCurrentUser();
+  const impersonate = useImpersonate(useReleasePlayback());
   const [actionError, setActionError] = useState<string | null>(null);
   const [modal, setModal] = useState<OpenModal>(null);
 
@@ -221,6 +270,18 @@ export function UsersCard() {
                     key={user.id}
                     user={user}
                     isSelf={user.id === me.id}
+                    // No nesting: the server refuses it, so the button isn't offered.
+                    canImpersonate={!me.impersonation}
+                    impersonating={
+                      impersonate.isPending && impersonate.variables === user.id
+                    }
+                    switching={impersonate.isPending}
+                    onImpersonate={() => {
+                      setActionError(null);
+                      impersonate.mutate(user.id, {
+                        onError: (error) => setActionError(error.message),
+                      });
+                    }}
                     onUnlocked={() => {
                       setActionError(null);
                       void users.refetch();

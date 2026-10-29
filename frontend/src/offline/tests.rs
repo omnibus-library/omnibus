@@ -29,6 +29,7 @@ fn user(id: i64, username: &str) -> UserSummary {
         book_detail_scroll_stops: false,
         stack_series: false,
         share_stats: true,
+        impersonation: None,
     }
 }
 

@@ -24,6 +24,7 @@ async fn queue_create_shelf_uses_cached_identity_for_owner_fields() {
             book_detail_scroll_stops: false,
             stack_series: false,
             share_stats: true,
+            impersonation: None,
         },
     );
     let req = omnibus_shared::CreateShelfRequest {

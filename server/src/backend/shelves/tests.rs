@@ -710,6 +710,8 @@ async fn api_smart_shelves_containing_returns_500_when_the_db_is_unavailable() {
         share_stats: true,
         session_id: 1,
         session_kind: SessionKind::Bearer,
+        impersonator_id: None,
+        session_expires_at: i64::MAX,
     };
 
     let res = super::smart_shelves_containing(user, State(state), Path("bk1".to_string())).await;

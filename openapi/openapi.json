@@ -1018,6 +1018,53 @@
         }
       }
     },
+    "/api/admin/users/{id}/impersonate": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Sign in as another account",
+        "description": "Replaces your session with a one-hour session as that user, with every permission they\nhave, sent back as a session cookie. Your own session ends, so once the hour is up you\nsign in again. `GET /api/auth/me` reports who is behind the session. It works only for a\nbrowser session, never inside another impersonation, and never on your own account.\nNeeds an admin account.",
+        "operationId": "admin_impersonate_user",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The user's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "You are signed in as that user.",
+            "headers": {
+              "Set-Cookie": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "The new session cookie."
+              }
+            }
+          },
+          "400": {
+            "description": "The request is not a browser session, or the id is your own."
+          },
+          "403": {
+            "description": "You aren't an admin."
+          },
+          "404": {
+            "description": "No user has that id."
+          },
+          "409": {
+            "description": "You are already signed in as another user."
+          }
+        }
+      }
+    },
     "/api/admin/users/{id}/password": {
       "post": {
         "tags": [
@@ -1782,6 +1829,32 @@
         }
       }
     },
+    "/api/auth/impersonation/stop": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Sign back in as the admin behind an impersonation session",
+        "description": "Ends the impersonation and replaces it with a new session cookie for the admin who\nstarted it. `POST /api/auth/logout` does the same while impersonating.",
+        "operationId": "stop_impersonation",
+        "responses": {
+          "204": {
+            "description": "You are signed back in as the admin.",
+            "headers": {
+              "Set-Cookie": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "The admin's new session cookie."
+              }
+            }
+          },
+          "409": {
+            "description": "The session is not an impersonation."
+          }
+        }
+      }
+    },
     "/api/auth/login": {
       "post": {
         "tags": [
@@ -1849,7 +1922,7 @@
           "Auth"
         ],
         "summary": "Sign out",
-        "description": "Ends the session the request carries and clears the session cookie. Signing out of a\nsession that has already ended still succeeds.",
+        "description": "Ends the session the request carries and clears the session cookie. Signing out of a\nsession that has already ended still succeeds. Signing out of an impersonation session\nreturns you to the admin's own account instead, with a new session cookie.",
         "operationId": "logout",
         "responses": {
           "204": {
@@ -1873,7 +1946,7 @@
           "Auth"
         ],
         "summary": "Get the signed-in user",
-        "description": "The account the request's session belongs to: its permissions and preferences.",
+        "description": "The account the request's session belongs to: its permissions and preferences. While an\nadmin is signed in as that account, `impersonation` says who and until when.",
         "operationId": "get_me",
         "responses": {
           "200": {
@@ -12529,6 +12602,31 @@
           }
         }
       },
+      "Impersonation": {
+        "type": "object",
+        "description": "Who is signed in as this user, while an admin impersonates them.",
+        "required": [
+          "impersonator_id",
+          "impersonator_name",
+          "expires_at"
+        ],
+        "properties": {
+          "expires_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "When the impersonation ends and the request stops authenticating, in Unix seconds."
+          },
+          "impersonator_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The admin's user id."
+          },
+          "impersonator_name": {
+            "type": "string",
+            "description": "The admin's display name, or their username when they have none."
+          }
+        }
+      },
       "IndexStatus": {
         "type": "object",
         "description": "What the library index holds: the configured library folders and how many books,\nauthors and series it lists.",
@@ -17036,6 +17134,17 @@
           "id": {
             "type": "integer",
             "format": "int64"
+          },
+          "impersonation": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Impersonation",
+                "description": "Set while an admin is signed in as this user; null for an ordinary sign-in."
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "is_admin": {
             "type": "boolean"

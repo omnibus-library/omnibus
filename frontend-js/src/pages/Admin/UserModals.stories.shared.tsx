@@ -16,6 +16,7 @@ import type { UsersCard } from "./UsersCard";
 export const ALICE = aWireAdminUser({ locked: true });
 export const writes: UserWrites = {
   unlocked: [],
+  impersonated: [],
   created: [],
   permissions: [],
   passwords: [],

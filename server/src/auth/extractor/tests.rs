@@ -4,14 +4,7 @@ use omnibus_db as db;
 use tower::ServiceExt;
 
 use super::*;
-use crate::auth::handlers::auth_router;
-use crate::backend::AppState;
-
-async fn app() -> (axum::Router, sqlx::SqlitePool) {
-    let pool = db::init_db("sqlite::memory:").await.unwrap();
-    let router = auth_router(AppState::new(pool.clone()));
-    (router, pool)
-}
+use crate::auth::test_support::app;
 
 #[tokio::test]
 async fn me_without_auth_is_401() {
