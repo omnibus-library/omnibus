@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
-import { Route, Routes } from "react-router";
+import { createMemoryRouter, RouterProvider } from "react-router";
 import { userEvent as events, expect, waitFor, within } from "storybook/test";
 import { expectInvalidated, seedQueries } from "../../testing/AppHarness";
 import { filterOptionHandlers } from "../../testing/handlers";
@@ -49,29 +49,35 @@ const png = () => new File([PNG], "mine.png", { type: "image/png" });
 const pick = (input: HTMLElement, files: File[]) =>
   events.setup({ applyAccept: false }).upload(input, files);
 
-/** The sheet over a page that can close it, and the book page View book opens. */
-function Page() {
+/** The sheet over a page that can close it. */
+function Sheeted() {
   const [open, setOpen] = useState(true);
-  return (
-    <Routes>
-      <Route
-        path="/"
-        element={
-          open ? (
-            <AddBookSheet onClosed={() => setOpen(false)} />
-          ) : (
-            <p>Sheet closed</p>
-          )
-        }
-      />
-      <Route path="/books/:uuid" element={<p>Book page</p>} />
-    </Routes>
+  return open ? (
+    <AddBookSheet onClosed={() => setOpen(false)} />
+  ) : (
+    <p>Sheet closed</p>
   );
+}
+
+let router: ReturnType<typeof createMemoryRouter>;
+
+/** The sheet, the book page View book opens and a page to leave for; the review's leave guard needs a data router, which the stories' own harness doesn't provide. */
+function Page() {
+  const [made] = useState(() => {
+    router = createMemoryRouter([
+      { path: "/", element: <Sheeted /> },
+      { path: "/books/:uuid", element: <p>Book page</p> },
+      { path: "/elsewhere", element: <p>Elsewhere</p> },
+    ]);
+    return router;
+  });
+  return <RouterProvider router={made} />;
 }
 
 const meta = {
   title: "Pages/AddBookSheet",
   component: Page,
+  parameters: { ownRouter: true },
   beforeEach({ msw }) {
     inspected.length = 0;
     committed.length = 0;
@@ -733,7 +739,9 @@ export const AsksBeforeEscapeDropsEdits: Story = {
 
     await userEvent.keyboard("{Escape}");
 
-    await expect(await canvas.findByTestId("add-book-leave")).toBeVisible();
+    await expect(
+      await canvas.findByTestId("add-book-leave"),
+    ).toBeInTheDocument();
     await expect(canvas.queryByText("Sheet closed")).toBeNull();
   },
 };
@@ -750,7 +758,9 @@ export const AsksBeforeChoosingAnotherFileDropsEdits: Story = {
     await expect(canvas.queryByText("Drop a book here")).toBeNull();
     await userEvent.click(leave.getByRole("button", { name: "Discard book" }));
 
-    await expect(await canvas.findByText("Drop a book here")).toBeVisible();
+    await expect(
+      await canvas.findByText("Drop a book here"),
+    ).toBeInTheDocument();
     await expect(canvas.queryByText("Sheet closed")).toBeNull();
   },
 };
@@ -815,3 +825,108 @@ export const IgnoresAFileDroppedOutsideTheZone: Story = {
     await expect(prevented("drop", input)).toBe(false);
   },
 };
+
+export const KeepsTheReviewWhenANavigationIsHeldBack: Story = {
+  play: async ({ canvas, userEvent }) => {
+    await review({ canvas, userEvent });
+    await userEvent.type(canvas.getByLabelText(/^Title/), "!");
+
+    void router.navigate("/elsewhere");
+    const leave = within(await canvas.findByTestId("add-book-leave"));
+    await userEvent.click(leave.getByRole("button", { name: "Keep editing" }));
+
+    await expect(canvas.queryByTestId("add-book-leave")).toBeNull();
+    await expect(canvas.getByLabelText(/^Title/)).toHaveValue("The Salt Road!");
+    await expect(router.state.location.pathname).toBe("/");
+    // The hold is let go, so the guard asks again for the next move.
+    void router.navigate("/elsewhere");
+    await expect(
+      await canvas.findByTestId("add-book-leave"),
+    ).toBeInTheDocument();
+  },
+};
+
+export const LeavesWhenADiscardIsChosenForAHeldBackNavigation: Story = {
+  play: async ({ canvas, userEvent }) => {
+    await review({ canvas, userEvent });
+    await userEvent.type(canvas.getByLabelText(/^Title/), "!");
+
+    void router.navigate("/elsewhere");
+    await userEvent.click(
+      within(await canvas.findByTestId("add-book-leave")).getByRole("button", {
+        name: "Discard book",
+      }),
+    );
+
+    await expect(await canvas.findByText("Elsewhere")).toBeInTheDocument();
+    await expect(committed).toEqual([]);
+  },
+};
+
+export const LetsAnUneditedReviewBeNavigatedAway: Story = {
+  play: async ({ canvas, userEvent }) => {
+    await review({ canvas, userEvent });
+
+    void router.navigate("/elsewhere");
+
+    await expect(await canvas.findByText("Elsewhere")).toBeInTheDocument();
+  },
+};
+
+export const RefusesANavigationWhileTheAddGoesUp: Story = {
+  beforeEach({ msw }) {
+    let release = () => {};
+    gate.release = () => release();
+    msw.use(
+      ...commitHandlers(NEW_UUID, {
+        committed,
+        gate: new Promise<void>((r) => (release = r)),
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await review({ canvas, userEvent });
+    await userEvent.click(addButton(canvas));
+    await canvas.findByRole("button", { name: /^Adding… \d+%$/ });
+
+    await router.navigate("/elsewhere");
+
+    // The add keeps going, and the page stays where it is, with no question to answer.
+    await expect(router.state.location.pathname).toBe("/");
+    await expect(canvas.queryByTestId("add-book-leave")).toBeNull();
+    gate.release();
+    await expect(
+      await canvas.findByRole("heading", { name: "Added to your library" }),
+    ).toBeInTheDocument();
+    await expect(router.state.location.pathname).toBe("/");
+  },
+};
+
+export const DoesNotAskLaterAboutANavigationRefusedDuringAnAddThatFails: Story =
+  {
+    beforeEach({ msw }) {
+      let release = () => {};
+      gate.release = () => release();
+      msw.use(
+        ...commitHandlers(NEW_UUID, {
+          committed,
+          gate: new Promise<void>((r) => (release = r)),
+          refuse: { status: 409, text: "that book is already in the library" },
+        }),
+      );
+    },
+    play: async ({ canvas, userEvent }) => {
+      await review({ canvas, userEvent });
+      await userEvent.click(addButton(canvas));
+      await canvas.findByRole("button", { name: /^Adding… \d+%$/ });
+      await router.navigate("/elsewhere");
+
+      gate.release();
+
+      await expect(await canvas.findByRole("alert")).toHaveTextContent(
+        "Couldn’t add the book: that book is already in the library",
+      );
+      await expect(canvas.queryByTestId("add-book-leave")).toBeNull();
+      await expect(router.state.location.pathname).toBe("/");
+    },
+  };

@@ -8,7 +8,7 @@ import {
   type MetaForm,
 } from "../../api";
 import { Button } from "../../components/Button/Button";
-import { useUnloadGuard } from "../../components/Unsaved/Unsaved";
+import { useLeaveGuard } from "../../components/Unsaved/Unsaved";
 import {
   CoverEditor,
   type CoverProps,
@@ -94,7 +94,14 @@ export function ReviewForm({
   const edits = dirty.length + (coverChanged ? 1 : 0);
   const invalid = Object.keys(form.formState.errors).length > 0;
 
-  useUnloadGuard(edits > 0 || saving);
+  // Router moves and tab closes are held while there is anything to lose; a move held back asks through the same bar.
+  const { blocker, allowLeave } = useLeaveGuard(edits > 0 || saving);
+  const held = blocker.state === "blocked";
+  // The add is under way and nothing cancels it, so a move away is refused outright.
+  useEffect(() => {
+    if (held && saving) blocker.reset();
+  }, [held, saving, blocker]);
+  const leaving = !saving && (asking !== null || held);
 
   // Where focus was when the leave bar took over, so Keep editing can hand it back.
   const beforeAsk = useRef<Element | null>(null);
@@ -113,9 +120,19 @@ export function ReviewForm({
   const keepEditing = () => {
     keeping.current = true;
     setAsking(null);
+    if (held) blocker.reset();
+  };
+  const discard = () => {
+    if (held) {
+      allowLeave();
+      blocker.proceed();
+      // The move may land inside the page the sheet sits over.
+      onClose();
+    } else if (asking === "choose") onChooseAnother();
+    else onClose();
   };
   useEffect(() => {
-    if (asking || !keeping.current) return;
+    if (leaving || !keeping.current) return;
     keeping.current = false;
     // Back to what held it, or Add to library once that went with the bar it was in.
     const back = beforeAsk.current;
@@ -123,8 +140,9 @@ export function ReviewForm({
       back instanceof HTMLElement && back.isConnected && back !== document.body
         ? back
         : document.getElementById(ADD_ID);
+    beforeAsk.current = null;
     target?.focus();
-  }, [asking]);
+  }, [leaving]);
 
   const cover = {
     book: {
@@ -215,7 +233,7 @@ export function ReviewForm({
             max={1}
           />
         )}
-        {asking ? (
+        {leaving ? (
           // biome-ignore lint/a11y/useSemanticElements: a fieldset brings a border and min-width the bar never wants
           <div
             className="es-bar es-leave"
@@ -230,20 +248,10 @@ export function ReviewForm({
             >
               Discard this book? Nothing has been added yet.
             </p>
-            <Button
-              autoFocus
-              variant="ghost"
-              disabled={saving}
-              onClick={keepEditing}
-            >
+            <Button autoFocus variant="ghost" onClick={keepEditing}>
               Keep editing
             </Button>
-            <Button
-              disabled={saving}
-              onClick={asking === "choose" ? onChooseAnother : onClose}
-            >
-              Discard book
-            </Button>
+            <Button onClick={discard}>Discard book</Button>
           </div>
         ) : (
           <div className="es-bar">
