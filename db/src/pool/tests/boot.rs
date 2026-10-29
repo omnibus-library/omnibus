@@ -1,6 +1,6 @@
 //! Boot-time behaviour: `init_db` on a bad URL or a tampered applied
-//! checksum, the migrator recording versions and being idempotent, and the
-//! one-time legacy cover purge with its missing-dir and unremovable-entry
+//! checksum, the 0093 checksum repair, the migrator recording versions and
+//! being idempotent, and the one-time legacy cover purge with its missing-dir and unremovable-entry
 //! paths.
 
 use super::super::*;
@@ -49,6 +49,71 @@ async fn init_db_returns_migrate_error_when_applied_checksum_is_tampered() {
         matches!(err, InitDbError::Migrate(_)),
         "expected InitDbError::Migrate, got {err:?}"
     );
+}
+
+/// Lower-case hex of the checksum recorded for migration 0093.
+async fn recorded_0093_checksum(pool: &SqlitePool) -> String {
+    sqlx::query_scalar("SELECT lower(hex(checksum)) FROM _sqlx_migrations WHERE version = 93")
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn init_db_boots_when_migration_0093_carries_the_original_checksum() {
+    let dir = tempfile::tempdir().unwrap();
+    let url = format!(
+        "sqlite://{}?mode=rwc",
+        dir.path().join("omnibus.db").display()
+    );
+
+    let pool = init_db(&url).await.expect("first init_db");
+    assert_eq!(recorded_0093_checksum(&pool).await, MIGRATION_0093_ORIGINAL);
+    drop(pool);
+
+    let pool = init_db(&url)
+        .await
+        .expect("a database on the original checksum must boot");
+    assert_eq!(recorded_0093_checksum(&pool).await, MIGRATION_0093_ORIGINAL);
+}
+
+#[tokio::test]
+async fn init_db_boots_and_repairs_when_migration_0093_carries_the_edited_checksum() {
+    let dir = tempfile::tempdir().unwrap();
+    let url = format!(
+        "sqlite://{}?mode=rwc",
+        dir.path().join("omnibus.db").display()
+    );
+
+    let pool = init_db(&url).await.expect("first init_db");
+    sqlx::query(&format!(
+        "UPDATE _sqlx_migrations SET checksum = X'{MIGRATION_0093_EDITED}' WHERE version = 93"
+    ))
+    .execute(&pool)
+    .await
+    .unwrap();
+    drop(pool);
+
+    let pool = init_db(&url)
+        .await
+        .expect("a database on the edited checksum must boot");
+    assert_eq!(recorded_0093_checksum(&pool).await, MIGRATION_0093_ORIGINAL);
+}
+
+#[tokio::test]
+async fn migration_0093_repair_skips_a_fresh_database_without_a_migrations_table() {
+    let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+
+    repair_migration_0093_checksum(&pool)
+        .await
+        .expect("no ledger yet is not an error");
+
+    let created: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM sqlite_master WHERE name = '_sqlx_migrations'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(created, 0, "the repair must not create the ledger itself");
 }
 
 #[tokio::test]

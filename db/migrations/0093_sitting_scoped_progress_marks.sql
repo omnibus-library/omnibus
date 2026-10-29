@@ -20,9 +20,9 @@
 -- with the last page turn, so a plane ride arrives as a single observation
 -- long after the previous one, and it is reading, not idleness.
 --
--- This reaches session-delta semantics from the other side. The obvious shape
--- — bracket a session on the client and post one `end - start` delta — was
--- rejected for omnibus in #2139 because every reading surface would have to
+-- This is another project's session-delta semantics reached from the other side. They
+-- bracket a session on the client and post one `end - start` delta; that shape
+-- was rejected for omnibus in #2139 because every reading surface would have to
 -- learn to carry a percent first (the iOS reader posts a CFI and no percent at
 -- all), and a session lost on a crashed tab takes its whole delta with it.
 -- Deriving the same bracket from the position writes the clients already make

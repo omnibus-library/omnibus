@@ -23,7 +23,16 @@ works in production.
 2. **Never edit an applied migration.** Once a file has run anywhere
    (your dev DB, a teammate's, CI, production) it is frozen — `sqlx`
    checksums each migration and a changed file fails startup with a
-   checksum mismatch. Always fix forward with a new `NNNN_` file.
+   checksum mismatch. That covers a comment-only edit: the checksum is of the
+   whole file. Always fix forward with a new `NNNN_` file.
+   `db/migrations.lock` pins every checksum and the `migration_lock` test
+   fails on a changed or missing one. After adding a migration run
+   `UPDATE_MIGRATION_LOCK=1 cargo test -p omnibus-db migration_lock` and
+   commit the new line.
+   The one exception is 0093: `repair_migration_0093_checksum` in
+   `db/src/pool.rs` rewrites its stored checksum at boot, because a comment
+   edit shipped in v0.37.3 left installs on two different checksums. It is
+   not a pattern to reuse; delete it once no install can still carry the edit.
 3. **Forward-only.** There are no down-migrations; write each change so a
    fresh DB and an upgraded DB converge on the same schema.
 4. **New `NOT NULL` columns need a default or a backfill.** For values
