@@ -1,6 +1,13 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { type ChangeEvent, type ReactNode, useRef, useState } from "react";
-import { useNavigate } from "react-router";
+import {
+  type ChangeEvent,
+  type DragEvent,
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   classifyPick,
   commitUpload,
@@ -12,16 +19,16 @@ import {
   type UploadKind,
   uploadFailureMessage,
 } from "../../api";
-import { Button } from "../../components/Button/Button";
+import { Button, ButtonLink } from "../../components/Button/Button";
 import { Cover } from "../../components/Cover/Cover";
 import {
   BookGlyph,
   HeadphonesGlyph,
   UploadGlyph,
-  XGlyph,
 } from "../../components/Glyphs/Glyphs";
 import { Sheet } from "../../components/Sheet/Sheet";
 import type { StagedCover } from "../BookEdit/CoverEditor";
+import { CloseButton } from "../BookEdit/EditHeader";
 import { ReviewForm } from "./ReviewForm";
 import "../BookDetail/BookPage.css";
 import "../BookEdit/BookEdit.css";
@@ -39,7 +46,7 @@ type Added = { uuid: string; values: MetaForm; cover: string | null };
 
 type Step =
   | { kind: "choose"; chooser: Chooser }
-  | { kind: "review"; pick: Inspected; key: number }
+  | { kind: "review"; pick: Inspected }
   | { kind: "added"; book: Added };
 
 const CHOOSE: Step = { kind: "choose", chooser: { kind: "empty" } };
@@ -59,15 +66,7 @@ function StepHead({ title, onClose }: { title: string; onClose: () => void }) {
   return (
     <header className="es-head">
       <h2 className="es-title ab-title">{title}</h2>
-      <button
-        type="button"
-        className="es-close"
-        aria-label="Close"
-        data-testid="es-close"
-        onClick={onClose}
-      >
-        <XGlyph size={20} />
-      </button>
+      <CloseButton onClose={onClose} />
     </header>
   );
 }
@@ -76,7 +75,6 @@ function StepHead({ title, onClose }: { title: string; onClose: () => void }) {
 function DropZone({ onPick }: { onPick: (files: File[]) => void }) {
   const [over, setOver] = useState(false);
   const onChange = (e: ChangeEvent<HTMLInputElement>) => {
-    setOver(false);
     onPick([...(e.target.files ?? [])]);
     // So picking the same file again still counts as a change.
     e.target.value = "";
@@ -94,7 +92,7 @@ function DropZone({ onPick }: { onPick: (files: File[]) => void }) {
         type="file"
         accept={UPLOAD_ACCEPT}
         multiple
-        aria-label="Book files"
+        aria-label="Choose files"
         className="ab-drop-input"
         onChange={onChange}
         onDragEnter={() => setOver(true)}
@@ -127,8 +125,10 @@ function FileRow({
         </p>
         {reading ? (
           <>
-            <p className="ab-file-status" role="status">
-              {`Reading the file · ${Math.round(progress * 100)}%`}
+            <p className="ab-file-status">
+              {/* The figure sits outside the live text, so it isn't read out at every percent; the bar below exposes it. */}
+              <span role="status">Reading the file…</span>
+              <span aria-hidden="true">{` · ${Math.round(progress * 100)}%`}</span>
             </p>
             <progress
               className="ab-progress"
@@ -182,13 +182,64 @@ function CompactStep({
   foot: ReactNode;
 }) {
   return (
-    <div className="es-sheet ab-sheet">
+    <div className="es-sheet">
       <StepHead title={title} onClose={onClose} />
       <div className="ab-body">{children}</div>
-      <footer className="ab-foot">{foot}</footer>
+      <footer className="es-foot ab-foot">{foot}</footer>
     </div>
   );
 }
+
+/** The chooser's body for what it holds: the zone, a refusal under it, or the file as it is read. */
+function ChooserBody({
+  chooser,
+  progress,
+  onPick,
+  onChooseAnother,
+}: {
+  chooser: Chooser;
+  progress: number;
+  onPick: (files: File[]) => void;
+  onChooseAnother: () => void;
+}) {
+  switch (chooser.kind) {
+    case "empty":
+      return <DropZone onPick={onPick} />;
+    case "refused":
+      return (
+        <>
+          <DropZone onPick={onPick} />
+          <p className="es-bar-problem" role="alert">
+            {chooser.reason}
+          </p>
+        </>
+      );
+    case "reading":
+    case "unreadable":
+      return (
+        <FileRow
+          chooser={chooser}
+          progress={progress}
+          onChooseAnother={onChooseAnother}
+        />
+      );
+    default: {
+      const _exhaustive: never = chooser;
+      return _exhaustive;
+    }
+  }
+}
+
+/** Lets go of the cover URL the Added step was showing. */
+function release(handedOff: RefObject<string | null>) {
+  if (handedOff.current) URL.revokeObjectURL(handedOff.current);
+  handedOff.current = null;
+}
+
+/** A file dropped beside the zone would open in the tab; the zone's own input is left to take its drop. */
+const ignoreStrayDrop = (e: DragEvent<HTMLDivElement>) => {
+  if (!(e.target instanceof HTMLInputElement)) e.preventDefault();
+};
 
 const readFailed = (kind: UploadKind, error: unknown) =>
   `Couldn’t read that ${kind === "ebook" ? "EPUB" : "audiobook"}: ${uploadFailureMessage(error)}`;
@@ -196,12 +247,12 @@ const readFailed = (kind: UploadKind, error: unknown) =>
 /** Adding a book in one modal: pick a file, review it in the edit sheet, add it, then view it or add another. */
 export function AddBookSheet({ onClosed }: { onClosed: () => void }) {
   const queryClient = useQueryClient();
-  const navigate = useNavigate();
   const [step, setStep] = useState<Step>(CHOOSE);
   const [progress, setProgress] = useState(0);
   const [closing, setClosing] = useState(false);
-  // So a new pick remounts the review rather than carrying the last pick's edits into it.
-  const picks = useRef(0);
+  // The staged cover URL the Added step shows; the review leaves it be and this sheet releases it.
+  const handedOff = useRef<string | null>(null);
+  useEffect(() => () => release(handedOff), []);
   const close = () => setClosing(true);
   // The review routes Escape and the backdrop through its own question when it holds edits.
   const dismiss = useRef(close);
@@ -216,10 +267,7 @@ export function AddBookSheet({ onClosed }: { onClosed: () => void }) {
         chooser: { kind: "reading", label: pickLabel(files) },
       });
     },
-    onSuccess: (pick) => {
-      picks.current += 1;
-      setStep({ kind: "review", pick, key: picks.current });
-    },
+    onSuccess: (pick) => setStep({ kind: "review", pick }),
     onError: (error, { kind, files }) =>
       setStep({
         kind: "choose",
@@ -243,9 +291,18 @@ export function AddBookSheet({ onClosed }: { onClosed: () => void }) {
     onMutate: () => setProgress(0),
     onSuccess: (uuid, { values, cover }) => {
       // The new book belongs on the library's lists the next time they are read.
-      for (const queryKey of [["books"], ["shelves"], ["shelf-page"]]) {
+      // The sheet opens over any page, so the author, series and tag lists count too.
+      for (const queryKey of [
+        ["books"],
+        ["shelves"],
+        ["shelf-page"],
+        ["authors"],
+        ["series"],
+        ["name-counts"],
+      ]) {
         queryClient.invalidateQueries({ queryKey });
       }
+      handedOff.current = cover.preview;
       setStep({ kind: "added", book: { uuid, values, cover: cover.preview } });
     },
   });
@@ -261,8 +318,77 @@ export function AddBookSheet({ onClosed }: { onClosed: () => void }) {
     });
   };
   const startOver = () => {
+    release(handedOff);
     add.reset();
     setStep(CHOOSE);
+  };
+
+  const renderStep = (): ReactNode => {
+    switch (step.kind) {
+      case "choose":
+        return (
+          <CompactStep
+            title="Add a book"
+            onClose={close}
+            foot={
+              <p className="es-note">
+                You’ll review the details before anything is added. Omnibus
+                never writes to your book files.
+              </p>
+            }
+          >
+            <ChooserBody
+              chooser={step.chooser}
+              progress={progress}
+              onPick={onPick}
+              onChooseAnother={startOver}
+            />
+            <Formats />
+          </CompactStep>
+        );
+      case "review": {
+        const { pick } = step;
+        return (
+          <ReviewForm
+            pick={pick}
+            adding={add.isPending ? { progress } : null}
+            error={
+              add.error
+                ? `Couldn’t add the book: ${uploadFailureMessage(add.error)}`
+                : undefined
+            }
+            handedOff={handedOff}
+            dismiss={dismiss}
+            onAdd={(values, cover) => add.mutate({ pick, values, cover })}
+            onChooseAnother={startOver}
+            onClose={close}
+          />
+        );
+      }
+      case "added":
+        return (
+          <CompactStep
+            title="Added to your library"
+            onClose={close}
+            foot={
+              <div className="ab-actions">
+                <ButtonLink to={`/books/${step.book.uuid}`} onClick={close}>
+                  View book
+                </ButtonLink>
+                <Button autoFocus variant="primary" onClick={startOver}>
+                  Add another book
+                </Button>
+              </div>
+            }
+          >
+            <AddedBook book={step.book} />
+          </CompactStep>
+        );
+      default: {
+        const _exhaustive: never = step;
+        return _exhaustive;
+      }
+    }
   };
 
   return (
@@ -276,79 +402,13 @@ export function AddBookSheet({ onClosed }: { onClosed: () => void }) {
       busy={busy}
     >
       {/* The sheet's buttons and fields are drawn in the book page's terms, which `bp-root` sets. */}
-      <div className="bp-root ab-root">
-        {step.kind === "choose" && (
-          <CompactStep
-            title="Add a book"
-            onClose={close}
-            foot={
-              <p className="es-note">
-                You’ll review the details before anything is added. Omnibus
-                never writes to your book files.
-              </p>
-            }
-          >
-            {step.chooser.kind === "reading" ||
-            step.chooser.kind === "unreadable" ? (
-              <FileRow
-                chooser={step.chooser}
-                progress={progress}
-                onChooseAnother={startOver}
-              />
-            ) : (
-              <>
-                <DropZone onPick={onPick} />
-                {step.chooser.kind === "refused" && (
-                  <p className="es-bar-problem" role="alert">
-                    {step.chooser.reason}
-                  </p>
-                )}
-              </>
-            )}
-            <Formats />
-          </CompactStep>
-        )}
-        {step.kind === "review" && (
-          <ReviewForm
-            key={step.key}
-            pick={step.pick}
-            adding={add.isPending ? { progress } : null}
-            error={
-              add.error
-                ? `Couldn’t add the book: ${uploadFailureMessage(add.error)}`
-                : undefined
-            }
-            dismiss={dismiss}
-            onAdd={(values, cover) =>
-              add.mutate({ pick: step.pick, values, cover })
-            }
-            onChooseAnother={startOver}
-            onClose={close}
-          />
-        )}
-        {step.kind === "added" && (
-          <CompactStep
-            title="Added to your library"
-            onClose={close}
-            foot={
-              <div className="ab-actions">
-                <Button
-                  onClick={() => {
-                    close();
-                    navigate(`/books/${step.book.uuid}`);
-                  }}
-                >
-                  View book
-                </Button>
-                <Button variant="primary" onClick={startOver}>
-                  Add another book
-                </Button>
-              </div>
-            }
-          >
-            <AddedBook book={step.book} />
-          </CompactStep>
-        )}
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: the drag handlers only refuse a stray drop; the wrapper is no control */}
+      <div
+        className="bp-root ab-root"
+        onDragOver={ignoreStrayDrop}
+        onDrop={ignoreStrayDrop}
+      >
+        {renderStep()}
       </div>
     </Sheet>
   );

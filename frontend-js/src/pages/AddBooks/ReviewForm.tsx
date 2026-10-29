@@ -8,6 +8,7 @@ import {
   type MetaForm,
 } from "../../api";
 import { Button } from "../../components/Button/Button";
+import { useUnloadGuard } from "../../components/Unsaved/Unsaved";
 import {
   CoverEditor,
   type CoverProps,
@@ -27,12 +28,17 @@ import {
   useSheetView,
 } from "../BookEdit/SheetTabs";
 
+/** The Add to library button's id: where focus lands when the leave bar is dismissed and nothing better holds it. */
+const ADD_ID = "ab-add";
+
 type Props = {
   pick: Inspected;
   /** The add is in flight, and how much of its body has gone up. */
   adding: { progress: number } | null;
   /** Why the last add failed. */
   error: string | undefined;
+  /** The staged cover URL the Added step took over: not ours to release. */
+  handedOff: RefObject<string | null>;
   /** Where the sheet's Escape and backdrop clicks are routed while the review shows. */
   dismiss: RefObject<() => void>;
   onAdd: (values: MetaForm, cover: StagedCover) => void;
@@ -45,6 +51,7 @@ export function ReviewForm({
   pick,
   adding,
   error,
+  handedOff,
   dismiss,
   onAdd,
   onChooseAnother,
@@ -60,19 +67,26 @@ export function ReviewForm({
     preview: pick.coverPreview,
     originalPreview: pick.coverPreview,
   });
-  // A picked image's object URL is ours to release when the review goes away.
+  // A picked image's object URL is ours to release when the review goes away, unless the add kept it.
   const latest = useRef(staged);
   latest.current = staged;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `handedOff` is a ref, read as the review goes away
   useEffect(
     () => () => {
       const { preview, originalPreview } = latest.current;
-      if (preview && preview !== originalPreview) URL.revokeObjectURL(preview);
+      if (
+        preview &&
+        preview !== originalPreview &&
+        preview !== handedOff.current
+      )
+        URL.revokeObjectURL(preview);
     },
     [],
   );
   const view = useSheetView();
   const [missing, setMissing] = useState<string>();
-  const [asking, setAsking] = useState(false);
+  // Which way out the leave bar is asking about, once there are edits to lose.
+  const [asking, setAsking] = useState<"close" | "choose" | null>(null);
   const saving = adding !== null;
   const values = form.watch();
   const dirty = dirtyLabels(pick.form, values);
@@ -80,10 +94,37 @@ export function ReviewForm({
   const edits = dirty.length + (coverChanged ? 1 : 0);
   const invalid = Object.keys(form.formState.errors).length > 0;
 
-  const requestClose = () => (edits === 0 ? onClose() : setAsking(true));
+  useUnloadGuard(edits > 0 || saving);
+
+  // Where focus was when the leave bar took over, so Keep editing can hand it back.
+  const beforeAsk = useRef<Element | null>(null);
+  const keeping = useRef(false);
+  const ask = (way: "close" | "choose", leave: () => void) => {
+    // The add is under way and nothing cancels it: leaving would only hide it.
+    if (saving) return;
+    if (edits === 0) return leave();
+    beforeAsk.current = document.activeElement;
+    setAsking(way);
+  };
+  const requestClose = () => ask("close", onClose);
   useEffect(() => {
     dismiss.current = requestClose;
   });
+  const keepEditing = () => {
+    keeping.current = true;
+    setAsking(null);
+  };
+  useEffect(() => {
+    if (asking || !keeping.current) return;
+    keeping.current = false;
+    // Back to what held it, or Add to library once that went with the bar it was in.
+    const back = beforeAsk.current;
+    const target =
+      back instanceof HTMLElement && back.isConnected && back !== document.body
+        ? back
+        : document.getElementById(ADD_ID);
+    target?.focus();
+  }, [asking]);
 
   const cover = {
     book: {
@@ -122,6 +163,7 @@ export function ReviewForm({
             onToggle={() => view.setFetching(!view.fetching)}
           />
         }
+        closeDisabled={saving}
         onClose={requestClose}
       />
       <SheetTabs
@@ -188,10 +230,20 @@ export function ReviewForm({
             >
               Discard this book? Nothing has been added yet.
             </p>
-            <Button autoFocus variant="ghost" onClick={() => setAsking(false)}>
+            <Button
+              autoFocus
+              variant="ghost"
+              disabled={saving}
+              onClick={keepEditing}
+            >
               Keep editing
             </Button>
-            <Button onClick={onClose}>Discard book</Button>
+            <Button
+              disabled={saving}
+              onClick={asking === "choose" ? onChooseAnother : onClose}
+            >
+              Discard book
+            </Button>
           </div>
         ) : (
           <div className="es-bar">
@@ -209,10 +261,15 @@ export function ReviewForm({
                 </p>
               )
             )}
-            <Button variant="ghost" disabled={saving} onClick={onChooseAnother}>
+            <Button
+              variant="ghost"
+              disabled={saving}
+              onClick={() => ask("choose", onChooseAnother)}
+            >
               Choose another file
             </Button>
             <Button
+              id={ADD_ID}
               variant="primary"
               disabled={invalid || saving}
               aria-busy={saving}

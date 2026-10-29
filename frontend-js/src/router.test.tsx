@@ -632,4 +632,12 @@ describe("routes", () => {
       await screen.findByRole("heading", { name: "Page not found" }),
     ).toBeInTheDocument();
   });
+
+  it("renders not found at /add-books, which is a sheet now and no page", async () => {
+    renderRoute("/add-books");
+
+    expect(
+      await screen.findByRole("heading", { name: "Page not found" }),
+    ).toBeInTheDocument();
+  });
 });

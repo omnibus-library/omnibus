@@ -4,16 +4,8 @@ import { ConfirmBody, ConfirmModal } from "../ConfirmModal/ConfirmModal";
 
 const samePathname = (a: Location, b: Location) => a.pathname === b.pathname;
 
-/** Holds in-app navigation and arms the browser's leave prompt while `dirty`; `samePlace` says which moves stay on the page. */
-export function useLeaveGuard(
-  dirty: boolean,
-  samePlace: (a: Location, b: Location) => boolean = samePathname,
-) {
-  const allowed = useRef(false);
-  const blocker = useBlocker(
-    ({ currentLocation, nextLocation }) =>
-      dirty && !allowed.current && !samePlace(currentLocation, nextLocation),
-  );
+/** Arms the browser's leave prompt while `dirty`, for a sheet that has no data router to block with. */
+export function useUnloadGuard(dirty: boolean) {
   useEffect(() => {
     if (!dirty) return;
     window.onbeforeunload = (e) => {
@@ -24,6 +16,19 @@ export function useLeaveGuard(
       window.onbeforeunload = null;
     };
   }, [dirty]);
+}
+
+/** Holds in-app navigation and arms the browser's leave prompt while `dirty`; `samePlace` says which moves stay on the page. */
+export function useLeaveGuard(
+  dirty: boolean,
+  samePlace: (a: Location, b: Location) => boolean = samePathname,
+) {
+  const allowed = useRef(false);
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      dirty && !allowed.current && !samePlace(currentLocation, nextLocation),
+  );
+  useUnloadGuard(dirty);
   // The page calls this just before it navigates on purpose (a save, a revert).
   const allowLeave = () => {
     allowed.current = true;

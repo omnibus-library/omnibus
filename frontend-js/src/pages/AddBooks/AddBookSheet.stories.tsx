@@ -19,7 +19,14 @@ import {
 import { AddBookSheet } from "./AddBookSheet";
 
 // What adding a book marks stale for the lists.
-const ADD_KEYS = [["books"], ["shelves"], ["shelf-page"]];
+const ADD_KEYS = [
+  ["books"],
+  ["shelves"],
+  ["shelf-page"],
+  ["authors"],
+  ["series"],
+  ["name-counts"],
+];
 const NEW_UUID = "0d3f1c2e-6c1a-4a53-9a43-4d7a1b3f9a10";
 const inspected: string[][] = [];
 const committed: Committed[] = [];
@@ -28,6 +35,14 @@ const gate = { release: () => {} };
 const epub = (name = "salt-road.epub") =>
   new File(["epub"], name, { type: "application/epub+zip" });
 const mp3 = (name: string) => new File(["mp3"], name, { type: "audio/mpeg" });
+// A real 1x1 image, so a cover shown from its object URL stays an image.
+const PNG = Uint8Array.from(
+  atob(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+  ),
+  (c) => c.charCodeAt(0),
+);
+const png = () => new File([PNG], "mine.png", { type: "image/png" });
 // Picks the dialog's own `accept` list would filter out.
 const pick = (input: HTMLElement, files: File[]) =>
   events.setup({ applyAccept: false }).upload(input, files);
@@ -79,7 +94,7 @@ async function review({
   canvas,
   userEvent,
 }: Pick<Ctx, "canvas" | "userEvent">) {
-  await userEvent.upload(await canvas.findByLabelText("Book files"), epub());
+  await userEvent.upload(await canvas.findByLabelText("Choose files"), epub());
   await canvas.findByRole("tab", { name: "Details" });
 }
 
@@ -89,7 +104,7 @@ export const Layout: Story = {
     await expect(
       within(sheet).getByRole("heading", { name: "Add a book" }),
     ).toBeInTheDocument();
-    const input = canvas.getByLabelText("Book files");
+    const input = canvas.getByLabelText("Choose files");
     await expect(input).toHaveAttribute("multiple");
     await expect(input).toHaveAttribute(
       "accept",
@@ -138,7 +153,7 @@ export const ShowsTheFileIdentifiers: Story = {
 export const InspectsPdf: Story = {
   play: async ({ canvas, userEvent }) => {
     await userEvent.upload(
-      await canvas.findByLabelText("Book files"),
+      await canvas.findByLabelText("Choose files"),
       epub("scan.pdf"),
     );
 
@@ -154,7 +169,7 @@ export const InspectsAudiobookParts: Story = {
     );
   },
   play: async ({ canvas, userEvent }) => {
-    await userEvent.upload(await canvas.findByLabelText("Book files"), [
+    await userEvent.upload(await canvas.findByLabelText("Choose files"), [
       mp3("part-1.mp3"),
       mp3("part-2.mp3"),
     ]);
@@ -178,7 +193,10 @@ export const InspectFailsForAnEpub: Story = {
     );
   },
   play: async ({ canvas, userEvent }) => {
-    await userEvent.upload(await canvas.findByLabelText("Book files"), epub());
+    await userEvent.upload(
+      await canvas.findByLabelText("Choose files"),
+      epub(),
+    );
 
     await expect(await canvas.findByRole("alert")).toHaveTextContent(
       "Couldn’t read that EPUB: not a valid epub",
@@ -201,7 +219,7 @@ export const InspectFailsForAnAudiobook: Story = {
   },
   play: async ({ canvas, userEvent }) => {
     await userEvent.upload(
-      await canvas.findByLabelText("Book files"),
+      await canvas.findByLabelText("Choose files"),
       mp3("a.mp3"),
     );
 
@@ -218,7 +236,10 @@ export const InspectTooLarge: Story = {
     );
   },
   play: async ({ canvas, userEvent }) => {
-    await userEvent.upload(await canvas.findByLabelText("Book files"), epub());
+    await userEvent.upload(
+      await canvas.findByLabelText("Choose files"),
+      epub(),
+    );
 
     await expect(await canvas.findByRole("alert")).toHaveTextContent(
       "Couldn’t read that EPUB: That file is larger than this server accepts.",
@@ -236,7 +257,10 @@ export const ChoosesAnotherFileAfterAFailedRead: Story = {
     );
   },
   play: async ({ canvas, userEvent }) => {
-    await userEvent.upload(await canvas.findByLabelText("Book files"), epub());
+    await userEvent.upload(
+      await canvas.findByLabelText("Choose files"),
+      epub(),
+    );
     await canvas.findByRole("alert");
 
     await userEvent.click(
@@ -250,7 +274,7 @@ export const ChoosesAnotherFileAfterAFailedRead: Story = {
 
 export const RefusesPicksBeforeSending: Story = {
   play: async ({ canvas }) => {
-    const input = await canvas.findByLabelText("Book files");
+    const input = await canvas.findByLabelText("Choose files");
     const alert = () => canvas.getByRole("alert");
 
     await pick(input, [new File(["x"], "notes.txt")]);
@@ -281,10 +305,18 @@ export const ShowsTheUploadWhileItGoesUp: Story = {
     );
   },
   play: async ({ canvas, userEvent }) => {
-    await userEvent.upload(await canvas.findByLabelText("Book files"), epub());
+    await userEvent.upload(
+      await canvas.findByLabelText("Choose files"),
+      epub(),
+    );
 
+    // The live text never changes with the percentage; the figure sits outside it.
     await expect(await canvas.findByRole("status")).toHaveTextContent(
-      /Reading the file · \d+%/,
+      /^Reading the file…$/,
+    );
+    await expect(canvas.getByText(/\d+%/)).toHaveAttribute(
+      "aria-hidden",
+      "true",
     );
     await expect(canvas.getByLabelText("Upload progress")).toBeInTheDocument();
     await expect(canvas.getByTestId("add-book-file")).toHaveTextContent(
@@ -314,6 +346,15 @@ export const StagesACoverFromAFile: Story = {
     await expect(canvas.getByRole("tab", { name: "Artwork" })).toHaveAttribute(
       "data-edited",
     );
+
+    await userEvent.click(canvas.getByTestId("cover-remove-override"));
+
+    await expect(canvas.getByTestId("cover-hint")).toHaveTextContent(
+      "extracted from file",
+    );
+    await expect(
+      canvas.getByRole("tab", { name: "Artwork" }),
+    ).not.toHaveAttribute("data-edited");
   },
 };
 
@@ -352,6 +393,10 @@ export const AddsTheBookUntouched: Story = {
     await expect(canvas.getByTestId("add-book-added")).toHaveTextContent(
       "The Salt Road",
     );
+    // Focus follows the new step, so a screen reader hears the add land.
+    await expect(
+      canvas.getByRole("button", { name: "Add another book" }),
+    ).toHaveFocus();
     await expect(committed).toEqual([{ route: "ebooks", fields: EPUB_FIELDS }]);
     await expectInvalidated(ADD_KEYS);
   },
@@ -380,7 +425,7 @@ export const AddsTheEditsAsOverrides: Story = {
 
 export const AddsAnAudiobookFromEveryPart: Story = {
   play: async ({ canvas, userEvent }) => {
-    await userEvent.upload(await canvas.findByLabelText("Book files"), [
+    await userEvent.upload(await canvas.findByLabelText("Choose files"), [
       mp3("part-1.mp3"),
       mp3("part-2.mp3"),
     ]);
@@ -407,10 +452,7 @@ export const AddsTheStagedCoverFile: Story = {
   play: async ({ canvas, userEvent }) => {
     await review({ canvas, userEvent });
     await userEvent.click(canvas.getByRole("tab", { name: "Artwork" }));
-    await userEvent.upload(
-      canvas.getByTestId("cover-upload-input"),
-      new File(["png"], "mine.png", { type: "image/png" }),
-    );
+    await userEvent.upload(canvas.getByTestId("cover-upload-input"), png());
     await canvas.findByText("Cover staged.");
 
     await userEvent.click(addButton(canvas));
@@ -420,6 +462,13 @@ export const AddsTheStagedCoverFile: Story = {
       ["cover", "file:mine.png"],
       ["file", "file:salt-road.epub"],
     ]);
+    // The Added step shows the staged file, so its object URL must outlive the review.
+    const src =
+      within(canvas.getByTestId("add-book-added"))
+        .getByRole("img")
+        .getAttribute("src") ?? "";
+    await expect(src).toMatch(/^blob:/);
+    await expect((await fetch(src)).ok).toBe(true);
   },
 };
 
@@ -495,7 +544,7 @@ export const RefusesWithoutAnAuthor: Story = {
   },
   play: async ({ canvas, userEvent }) => {
     await userEvent.upload(
-      await canvas.findByLabelText("Book files"),
+      await canvas.findByLabelText("Choose files"),
       mp3("a.mp3"),
     );
     await canvas.findByRole("tab", { name: "Details" });
@@ -514,6 +563,9 @@ export const RefusesPrintPagesThatAreNotANumber: Story = {
     await review({ canvas, userEvent });
     await userEvent.type(canvas.getByLabelText(/^Print pages/), "many");
 
+    await expect(
+      await canvas.findByText("Print page count must be a whole number."),
+    ).toBeInTheDocument();
     await expect(addButton(canvas)).toBeDisabled();
     await expect(committed).toEqual([]);
   },
@@ -542,6 +594,13 @@ export const ShowsTheAddWhileItGoesUp: Story = {
     await expect(
       canvas.getByRole("button", { name: "Choose another file" }),
     ).toBeDisabled();
+
+    // Nothing can cancel the upload, so nothing may offer to leave it behind.
+    const close = canvas.getByRole("button", { name: "Close" });
+    await expect(close).toBeDisabled();
+    await userEvent.click(close);
+    await expect(canvas.queryByTestId("add-book-leave")).toBeNull();
+    await expect(canvas.queryByText("Sheet closed")).toBeNull();
 
     gate.release();
     await expect(
@@ -598,9 +657,9 @@ export const ViewBookOpensTheNewBook: Story = {
     await review({ canvas, userEvent });
     await userEvent.click(addButton(canvas));
 
-    await userEvent.click(
-      await canvas.findByRole("button", { name: "View book" }),
-    );
+    const view = await canvas.findByRole("link", { name: "View book" });
+    await expect(view).toHaveAttribute("href", `/books/${NEW_UUID}`);
+    await userEvent.click(view);
 
     await expect(await canvas.findByText("Book page")).toBeInTheDocument();
   },
@@ -616,7 +675,10 @@ export const AddAnotherBookStartsOver: Story = {
     );
 
     await expect(canvas.getByText("Drop a book here")).toBeInTheDocument();
-    await userEvent.upload(canvas.getByLabelText("Book files"), epub("b.epub"));
+    await userEvent.upload(
+      canvas.getByLabelText("Choose files"),
+      epub("b.epub"),
+    );
     await expect(await canvas.findByLabelText(/^Title/)).toHaveValue(
       "The Salt Road",
     );
@@ -645,6 +707,8 @@ export const AsksBeforeDroppingEdits: Story = {
 
     await expect(canvas.queryByTestId("add-book-leave")).toBeNull();
     await expect(canvas.getByLabelText(/^Title/)).toHaveValue("The Salt Road!");
+    // Focus goes back to the Close that asked, not to the dialog's root.
+    await expect(canvas.getByRole("button", { name: "Close" })).toHaveFocus();
 
     await userEvent.click(canvas.getByRole("button", { name: "Close" }));
     await userEvent.click(
@@ -657,5 +721,95 @@ export const AsksBeforeDroppingEdits: Story = {
       expect(canvas.getByText("Sheet closed")).toBeInTheDocument(),
     );
     await expect(committed).toEqual([]);
+  },
+};
+
+export const AsksBeforeEscapeDropsEdits: Story = {
+  play: async ({ canvas, userEvent }) => {
+    await review({ canvas, userEvent });
+    await userEvent.type(canvas.getByLabelText(/^Title/), "!");
+
+    await userEvent.keyboard("{Escape}");
+
+    await expect(await canvas.findByTestId("add-book-leave")).toBeVisible();
+    await expect(canvas.queryByText("Sheet closed")).toBeNull();
+  },
+};
+
+export const AsksBeforeChoosingAnotherFileDropsEdits: Story = {
+  play: async ({ canvas, userEvent }) => {
+    await review({ canvas, userEvent });
+    await userEvent.type(canvas.getByLabelText(/^Title/), "!");
+
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Choose another file" }),
+    );
+    const leave = within(await canvas.findByTestId("add-book-leave"));
+    await expect(canvas.queryByText("Drop a book here")).toBeNull();
+    await userEvent.click(leave.getByRole("button", { name: "Discard book" }));
+
+    await expect(await canvas.findByText("Drop a book here")).toBeVisible();
+    await expect(canvas.queryByText("Sheet closed")).toBeNull();
+  },
+};
+
+export const StartsCleanAfterAFailedAddAndAnotherFile: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...inspectHandlers({ audiobook: anAudiobookInspection() }, { inspected }),
+      ...commitHandlers(NEW_UUID, {
+        committed,
+        refuse: { status: 409, text: "that book is already in the library" },
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await review({ canvas, userEvent });
+    await userEvent.click(addButton(canvas));
+    await canvas.findByText(/Couldn’t add the book/);
+
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Choose another file" }),
+    );
+    await userEvent.upload(
+      await canvas.findByLabelText("Choose files"),
+      mp3("a.mp3"),
+    );
+
+    await expect(await canvas.findByLabelText(/^Title/)).toHaveValue(
+      "Harbour Lights",
+    );
+    await expect(canvas.queryByRole("alert")).toBeNull();
+  },
+};
+
+export const WarnsBeforeTheTabClosesWithEdits: Story = {
+  play: async ({ canvas, userEvent }) => {
+    await review({ canvas, userEvent });
+    await expect(window.onbeforeunload).toBeNull();
+
+    await userEvent.type(canvas.getByLabelText(/^Title/), "!");
+
+    await expect(window.onbeforeunload).not.toBeNull();
+  },
+};
+
+export const IgnoresAFileDroppedOutsideTheZone: Story = {
+  play: async ({ canvas }) => {
+    const sheet = await canvas.findByRole("dialog", { name: "Add a book" });
+    const prevented = (type: string, target: Element) => {
+      const event = new DragEvent(type, { bubbles: true, cancelable: true });
+      target.dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+    const heading = within(sheet).getByRole("heading", { name: "Add a book" });
+    const input = canvas.getByLabelText("Choose files");
+
+    // The browser opens a dropped file in the tab unless something refuses it.
+    await expect(prevented("dragover", heading)).toBe(true);
+    await expect(prevented("drop", heading)).toBe(true);
+    // The zone's own input keeps its default, which is what takes the file.
+    await expect(prevented("dragover", input)).toBe(false);
+    await expect(prevented("drop", input)).toBe(false);
   },
 };
