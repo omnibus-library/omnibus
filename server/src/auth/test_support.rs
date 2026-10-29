@@ -4,17 +4,26 @@
 //! which auto-promotes the first user to admin and flips `registration_enabled`
 //! off — tests want explicit role assignment, not the registration policy.
 
+use axum::Router;
 use omnibus_db::{
     self as db,
     auth::{NewSession, SessionKind, User},
 };
 use sqlx::SqlitePool;
 
-use super::{AuthUser, BEARER_TTL_SECS, COOKIE_TTL_SECS, SESSION_COOKIE};
+use super::{auth_router, AuthUser, BEARER_TTL_SECS, COOKIE_TTL_SECS, SESSION_COOKIE};
+use crate::backend::AppState;
 // `SESSION_COOKIE` (plain name) is intentionally used here even on a
 // production-shaped deploy: the read side `parse_session_token` accepts
 // either form, so integration-test cookies don't need to negotiate the
 // `OMNIBUS_SECURE_COOKIES` env var to hit the same code path.
+
+/// The `/api/auth/*` router over a fresh in-memory database, and that database's pool.
+pub async fn app() -> (Router, SqlitePool) {
+    let pool = db::init_db("sqlite::memory:").await.unwrap();
+    let router = auth_router(AppState::new(pool.clone()));
+    (router, pool)
+}
 
 /// Insert a user with the given `is_admin` flag, bypassing the registration
 /// gate and first-user auto-promote logic. The password hash is a sentinel

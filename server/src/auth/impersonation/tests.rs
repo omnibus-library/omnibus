@@ -1,3 +1,6 @@
+//! Tests for admin impersonation over the `/api/auth/*` router: starting, the refusals,
+//! `/me` reporting it, expiry, stopping, signing out of it, and the sweeps that end it.
+
 use axum::{
     body::Body,
     http::{header, Request, StatusCode},
@@ -8,15 +11,9 @@ use omnibus_db as db;
 use omnibus_shared::UserSummary;
 use tower::ServiceExt;
 
-use super::super::test_support::{bearer_token, cookie_value, create_admin, create_user};
-use super::super::{auth_router, COOKIE_TTL_SECS, IMPERSONATION_TTL_SECS};
+use crate::auth::test_support::{app, bearer_token, cookie_value, create_admin, create_user};
+use crate::auth::{COOKIE_TTL_SECS, IMPERSONATION_TTL_SECS};
 use crate::backend::AppState;
-
-async fn app() -> (Router, sqlx::SqlitePool) {
-    let pool = db::init_db("sqlite::memory:").await.unwrap();
-    let router = auth_router(AppState::new(pool.clone()));
-    (router, pool)
-}
 
 async fn post(app: &Router, uri: &str, cookie: &str) -> Response {
     let req = Request::builder()
@@ -47,7 +44,8 @@ fn request_cookie(set_cookie: &str) -> String {
     set_cookie.split(';').next().unwrap().to_string()
 }
 
-async fn me(app: &Router, cookie: &str) -> (StatusCode, Option<UserSummary>) {
+/// `GET /api/auth/me` as the cookie's session: the status and the body as JSON (null when not JSON).
+async fn me_raw(app: &Router, cookie: &str) -> (StatusCode, serde_json::Value) {
     let req = Request::builder()
         .uri("/api/auth/me")
         .header(header::COOKIE, cookie)
@@ -58,7 +56,12 @@ async fn me(app: &Router, cookie: &str) -> (StatusCode, Option<UserSummary>) {
     let bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
         .await
         .unwrap();
-    (status, serde_json::from_slice(&bytes).ok())
+    (status, serde_json::from_slice(&bytes).unwrap_or_default())
+}
+
+async fn me(app: &Router, cookie: &str) -> (StatusCode, Option<UserSummary>) {
+    let (status, body) = me_raw(app, cookie).await;
+    (status, serde_json::from_value(body).ok())
 }
 
 fn unix_now() -> i64 {
@@ -109,10 +112,11 @@ async fn me_reports_no_impersonation_for_an_ordinary_session() {
     let (app, pool) = app().await;
     let user = create_user(&pool, "bob").await;
 
-    let (status, summary) = me(&app, &cookie_value(&pool, user.id).await).await;
+    let (status, body) = me_raw(&app, &cookie_value(&pool, user.id).await).await;
 
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(summary.unwrap().impersonation, None);
+    assert!(body["impersonation"].is_null());
+    assert!(body.as_object().unwrap().contains_key("impersonation"));
 }
 
 #[tokio::test]

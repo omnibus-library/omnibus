@@ -2,32 +2,11 @@
 //! idle-timeout enforcement, revocation (single, all, all-except-current),
 //! last-used touch throttling, and cookie/bearer token resolution.
 
-use super::*;
-use crate::auth::test_support::pool;
+use crate::auth::test_support::{pool, second_user};
 use crate::auth::token::SESSION_COOKIE_NAME;
-use crate::auth::users::{admin_create_user, create_user, delete_user};
-use omnibus_shared::UserPermissions;
+use crate::auth::users::{create_user, delete_user};
 
-/// A second account: self-registration closes after the first user.
-async fn second_user(p: &SqlitePool, name: &str, is_admin: bool) -> User {
-    let row = admin_create_user(
-        p,
-        name,
-        "bunker9-longer-pass",
-        UserPermissions {
-            is_admin,
-            can_upload: false,
-            can_edit: false,
-            can_download: true,
-        },
-    )
-    .await
-    .unwrap();
-    crate::auth::users::get_user_by_id(p, row.id)
-        .await
-        .unwrap()
-        .unwrap()
-}
+use super::*;
 
 #[tokio::test]
 async fn create_session_and_lookup_session_round_trips_a_cookie_session() {

@@ -14,16 +14,8 @@ use omnibus_shared::{ApiTokenView, CreateApiTokenResponse};
 use serde_json::json;
 use tower::ServiceExt;
 
-use crate::auth::handlers::auth_router;
-use crate::auth::test_support::{bearer_token, create_admin, create_user};
+use crate::auth::test_support::{app, bearer_token, create_admin, create_user};
 use crate::auth::AdminUser;
-use crate::backend::AppState;
-
-async fn app() -> (Router, sqlx::SqlitePool) {
-    let pool = db::init_db("sqlite::memory:").await.unwrap();
-    let router = auth_router(AppState::new(pool.clone()));
-    (router, pool)
-}
 
 fn get_req(uri: &str, bearer: &str) -> Request<Body> {
     Request::builder()

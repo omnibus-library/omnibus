@@ -13,11 +13,12 @@ use axum_extra::extract::cookie::CookieJar;
 use omnibus_db::auth::{self as auth_db, AuthError, NewSession, SessionKind};
 use omnibus_shared::Impersonation;
 
+use crate::backend::AppState;
+use crate::http_errors::internal;
+
 use super::extractor::{AdminUser, AuthUser};
 use super::handlers::{request_user_agent, session_cookie};
 use super::{COOKIE_TTL_SECS, IMPERSONATION_TTL_SECS};
-use crate::backend::AppState;
-use crate::http_errors::internal;
 
 /// A session swap that failed: 401 when the session was revoked under the request, else a 500.
 fn swap_failure(context: &'static str, e: AuthError) -> Response {
