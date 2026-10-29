@@ -1,5 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { useQuery } from "@tanstack/react-query";
 import { HttpResponse, http } from "msw";
+import type { ReactNode } from "react";
 import { useLocation } from "react-router";
 import { expect, waitFor, within } from "storybook/test";
 import { registrationStatusQuery } from "../../api";
@@ -154,6 +156,11 @@ function Where() {
   return <output data-testid="where">{useLocation().pathname}</output>;
 }
 
+// What `RequireAuth` does in the app: nothing signed-in renders once the session is gone.
+function WhileSignedIn({ children }: { children: ReactNode }) {
+  return useQuery(meQuery).data ? children : null;
+}
+
 const withWhere = () => (
   <>
     <UsersCard />
@@ -257,6 +264,50 @@ export const ImpersonateRefused: Story = {
       await canvas.findByTestId("users-action-error"),
     ).toHaveTextContent("failed with 409");
     await expect(canvas.getByTestId("where")).toHaveTextContent("/admin");
+  },
+};
+
+export const ImpersonateWhoseSessionCannotBeReadSignsOut: Story = {
+  parameters: { path: "/admin?section=people" },
+  beforeEach({ msw }) {
+    msw.use(failing("get", "/api/auth/me", 500));
+  },
+  render: () => (
+    <>
+      <WhileSignedIn>
+        <UsersCard />
+      </WhileSignedIn>
+      <Where />
+    </>
+  ),
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Impersonate alice" }),
+    );
+
+    await waitFor(() =>
+      expect(canvas.getByTestId("where")).toHaveTextContent("/login"),
+    );
+    await expect(impersonated).toEqual([7]);
+    await expect(storyClient().getQueryData(meQuery.queryKey)).toBeNull();
+  },
+};
+
+export const ImpersonateHoldsEveryButtonWhileSwitching: Story = {
+  beforeEach({ msw }) {
+    msw.use(hanging("/api/admin/users/:id/impersonate", "post"));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Impersonate alice" }),
+    );
+
+    const bob = canvas.getByRole("button", { name: "Impersonate bob" });
+    await waitFor(() => expect(bob).toBeDisabled());
+    await expect(
+      canvas.getByRole("button", { name: "Impersonate alice" }),
+    ).toHaveTextContent("Signing in…");
+    await expect(bob).toHaveTextContent("Impersonate");
   },
 };
 

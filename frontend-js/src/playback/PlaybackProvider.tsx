@@ -137,6 +137,15 @@ export function usePlayback(): Playback {
   return playback;
 }
 
+/** Reports the listening so far, then stops the player: a switch of account would send what plays on to the other account. */
+export function useReleasePlayback(): () => Promise<void> {
+  const { flush, close } = usePlayback();
+  return useCallback(async () => {
+    await flush();
+    close();
+  }, [flush, close]);
+}
+
 type Engine = ReturnType<typeof createEngine>;
 
 /** One boot of a book: what it loaded and what it has done so far. */

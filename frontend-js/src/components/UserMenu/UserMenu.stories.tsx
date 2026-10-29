@@ -18,7 +18,7 @@ import {
 import { aWireResumePoint, WIRE_ADA } from "../../testing/wire";
 import { UserMenu } from "./UserMenu";
 
-/** A member Ada is signed in as, with 25 minutes left (the story runs well inside the last one). */
+/** A member Ada is signed in as. */
 const WIRE_BEN = {
   ...WIRE_ADA,
   id: 7,
@@ -28,7 +28,7 @@ const WIRE_BEN = {
   impersonation: {
     impersonator_id: WIRE_ADA.id,
     impersonator_name: "Ada Lovelace",
-    expires_at: Math.floor(Date.now() / 1000) + 25 * 60,
+    expires_at: 1_900_000_000,
   },
 };
 
@@ -198,6 +198,16 @@ const IMPERSONATING = { user: WIRE_BEN, path: "/library" };
 
 export const Impersonating: Story = {
   parameters: IMPERSONATING,
+  // 25 minutes left when the story starts, not when its file loads.
+  beforeEach({ parameters }) {
+    parameters.user = {
+      ...WIRE_BEN,
+      impersonation: {
+        ...WIRE_BEN.impersonation,
+        expires_at: Math.floor(Date.now() / 1000) + 25 * 60,
+      },
+    };
+  },
   play: async ({ canvas, userEvent }) => {
     const trigger = canvas.getByRole("button", {
       name: "Open user menu, viewing as Ben Reader",
@@ -274,6 +284,7 @@ export const SignOutLeavesForLogin: Story = {
       getLogoutMockHandler204(() => {
         signedOut.calls += 1;
       }),
+      sessionHandler(null),
     );
   },
   render: withWhere,
@@ -319,6 +330,9 @@ export const SignOutWhileImpersonating: Story = {
     await expect(storyClient().getQueryData(meQuery.queryKey)).toMatchObject({
       id: WIRE_ADA.id,
     });
+    await expect(
+      canvas.queryByTestId("user-menu-panel"),
+    ).not.toBeInTheDocument();
   },
 };
 
@@ -363,6 +377,49 @@ export const SignOutFailing: Story = {
 
     await expect(await canvas.findByRole("alert")).toHaveTextContent(
       "Sign out failed: failed with 500",
+    );
+  },
+};
+
+export const ReturnWhoseSessionCannotBeReadSignsOut: Story = {
+  parameters: IMPERSONATING,
+  beforeEach({ msw }) {
+    msw.use(
+      getStopImpersonationMockHandler204(),
+      failing("get", "/api/auth/me", 500),
+    );
+  },
+  render: withWhere,
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      canvas.getByRole("button", {
+        name: "Open user menu, viewing as Ben Reader",
+      }),
+    );
+    await userEvent.click(canvas.getByTestId("user-menu-return"));
+
+    await waitFor(() =>
+      expect(canvas.getByTestId("where")).toHaveTextContent("/login"),
+    );
+    await expect(storyClient().getQueryData(meQuery.queryKey)).toBeNull();
+  },
+};
+
+export const SwitchesAreExclusive: Story = {
+  parameters: IMPERSONATING,
+  beforeEach({ msw }) {
+    msw.use(hanging("/api/auth/impersonation/stop", "post"));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      canvas.getByRole("button", {
+        name: "Open user menu, viewing as Ben Reader",
+      }),
+    );
+    await userEvent.click(canvas.getByTestId("user-menu-return"));
+
+    await waitFor(() =>
+      expect(canvas.getByRole("button", { name: "Sign out" })).toBeDisabled(),
     );
   },
 };

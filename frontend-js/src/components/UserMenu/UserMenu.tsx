@@ -12,10 +12,13 @@ import {
   type User,
 } from "../../api";
 import { classes } from "../../classes";
-import { usePlayback } from "../../playback/PlaybackProvider";
+import {
+  usePlayback,
+  useReleasePlayback,
+} from "../../playback/PlaybackProvider";
 import { resumeHref } from "../../resume";
 import { useCurrentUser, useReturnToAdmin, useSignOut } from "../../session";
-import { parseAdminSection, sectionHref } from "../../settingsIndex";
+import { PEOPLE_HREF } from "../../settingsIndex";
 import { Cover } from "../Cover/Cover";
 import {
   BookGlyph,
@@ -284,10 +287,19 @@ function AccountRows({ user, onNavigate }: SectionProps) {
   );
 }
 
+type SwitchRowProps = SectionProps & {
+  returnToAdmin: ReturnType<typeof useReturnToAdmin>;
+  /** Another change of session is under way. */
+  disabled: boolean;
+};
+
 // Admins switch user from the People page; while impersonating, the row returns to the admin instead.
-function SwitchRow({ user, onNavigate }: SectionProps) {
-  const { flush } = usePlayback();
-  const returnToAdmin = useReturnToAdmin(flush);
+function SwitchRow({
+  user,
+  onNavigate,
+  returnToAdmin,
+  disabled,
+}: SwitchRowProps) {
   if (user.impersonation) {
     return (
       <>
@@ -298,7 +310,7 @@ function SwitchRow({ user, onNavigate }: SectionProps) {
           onClick={() =>
             returnToAdmin.mutate(undefined, { onSuccess: onNavigate })
           }
-          disabled={returnToAdmin.isPending}
+          disabled={disabled || returnToAdmin.isPending}
           aria-busy={returnToAdmin.isPending}
         >
           <span className="um-row-icon" aria-hidden="true">
@@ -318,7 +330,7 @@ function SwitchRow({ user, onNavigate }: SectionProps) {
   }
   return user.isAdmin ? (
     <Link
-      to={sectionHref(parseAdminSection("people"))}
+      to={PEOPLE_HREF}
       className="um-row"
       data-testid="user-menu-switch-user"
       onClick={onNavigate}
@@ -333,16 +345,24 @@ function SwitchRow({ user, onNavigate }: SectionProps) {
 
 function SessionRows({ user, onNavigate }: SectionProps) {
   const { flush } = usePlayback();
-  const signOut = useSignOut(flush);
+  const release = useReleasePlayback();
+  // A switch of account must not leave the player writing to the other account.
+  const returnToAdmin = useReturnToAdmin(release);
+  const signOut = useSignOut(user.impersonation ? release : flush);
   return (
     <div className="um-rows">
-      <SwitchRow user={user} onNavigate={onNavigate} />
+      <SwitchRow
+        user={user}
+        onNavigate={onNavigate}
+        returnToAdmin={returnToAdmin}
+        disabled={signOut.isPending}
+      />
       <button
         type="button"
         className="um-row destructive"
         data-testid="logout-button"
-        onClick={() => signOut.mutate()}
-        disabled={signOut.isPending}
+        onClick={() => signOut.mutate(undefined, { onSuccess: onNavigate })}
+        disabled={signOut.isPending || returnToAdmin.isPending}
         aria-busy={signOut.isPending}
       >
         <span className="um-row-icon" aria-hidden="true">

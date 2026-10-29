@@ -5,7 +5,7 @@ import { type AdminUserRow, adminUsersQuery, unlockUser } from "../../api";
 import { Button } from "../../components/Button/Button";
 import { BusyLabel, RowSkeletons } from "../../components/Loading/Loading";
 import { formatUtcDay } from "../../format";
-import { usePlayback } from "../../playback/PlaybackProvider";
+import { useReleasePlayback } from "../../playback/PlaybackProvider";
 import { endSession, useCurrentUser, useImpersonate } from "../../session";
 import {
   DeleteUserModal,
@@ -31,6 +31,7 @@ function UserRow({
   isSelf,
   canImpersonate,
   impersonating,
+  switching,
   onUnlocked,
   onUnlockFailed,
   onOpen,
@@ -39,7 +40,10 @@ function UserRow({
   user: AdminUserRow;
   isSelf: boolean;
   canImpersonate: boolean;
+  /** This row's account is being signed in as. */
   impersonating: boolean;
+  /** Some row's account is being signed in as. */
+  switching: boolean;
   onUnlocked: () => void;
   onUnlockFailed: (message: string) => void;
   onOpen: (kind: "edit" | "delete" | "sessions") => void;
@@ -127,7 +131,7 @@ function UserRow({
               size="sm"
               data-testid={`user-impersonate-${user.id}`}
               aria-label={`Impersonate ${user.username}`}
-              disabled={impersonating}
+              disabled={switching}
               aria-busy={impersonating}
               onClick={onImpersonate}
             >
@@ -159,7 +163,7 @@ export function UsersCard() {
   const navigate = useNavigate();
   const users = useQuery(adminUsersQuery);
   const me = useCurrentUser();
-  const impersonate = useImpersonate(usePlayback().flush);
+  const impersonate = useImpersonate(useReleasePlayback());
   const [actionError, setActionError] = useState<string | null>(null);
   const [modal, setModal] = useState<OpenModal>(null);
 
@@ -264,6 +268,7 @@ export function UsersCard() {
                     impersonating={
                       impersonate.isPending && impersonate.variables === user.id
                     }
+                    switching={impersonate.isPending}
                     onImpersonate={() => {
                       setActionError(null);
                       impersonate.mutate(user.id, {

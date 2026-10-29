@@ -28,6 +28,7 @@ import {
   type Playback,
   PlaybackProvider,
   usePlayback,
+  useReleasePlayback,
 } from "./PlaybackProvider";
 
 const { loadHls } = vi.hoisted(() => ({ loadHls: vi.fn() }));
@@ -53,8 +54,10 @@ afterEach(() => {
 });
 
 let player: Playback;
+let release: () => Promise<void>;
 function Probe() {
   player = usePlayback();
+  release = useReleasePlayback();
   return null;
 }
 
@@ -416,6 +419,24 @@ describe("PlaybackProvider", () => {
         },
       ]);
       expect(localStorage.getItem(`omn.listening::${UUID}`)).toBe("600");
+    });
+
+    it("reports the stretch, then stops the player so a switch of account is not written to", async () => {
+      await playing();
+      vi.setSystemTime(1_760_000_006_000);
+      await act(() => release());
+      expect(wrote(writes, "POST /api/progress/sessions")).toHaveLength(1);
+
+      vi.setSystemTime(1_760_000_126_000);
+      act(() => {
+        audio().dispatchEvent(new Event("pause"));
+      });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      expect(player.playing).toBe(false);
+      expect(player.ready).toBe(false);
+      expect(wrote(writes, "POST /api/progress/sessions")).toHaveLength(1);
+      expect(wrote(writes, "POST /api/progress")).toHaveLength(1);
     });
 
     it("keeps reporting the listening that goes on after it, as a failed logout leaves the player playing", async () => {

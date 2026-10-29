@@ -18,7 +18,7 @@ import {
   stopImpersonating,
   type User,
 } from "./api";
-import { parseAdminSection, sectionHref } from "./settingsIndex";
+import { PEOPLE_HREF } from "./settingsIndex";
 
 export const meQuery = queryOptions({ queryKey: ["me"], queryFn: fetchMe });
 
@@ -83,7 +83,8 @@ const settled = (beforeSwitch: () => Promise<void>) =>
     new Promise((resolve) => setTimeout(resolve, BEFORE_SWITCH_MS)),
   ]);
 
-const PEOPLE_HREF = sectionHref(parseAdminSection("people"));
+// A switch the server accepted but whose outcome can't be read leaves no identity to trust, so it ends the session.
+const readSession = () => fetchMe().catch(() => null);
 
 /** Becomes `user` at `landing`, or leaves the session when the server no longer names one. */
 function enterSession(
@@ -106,11 +107,10 @@ export function useSignOut(beforeLogout: () => Promise<void>) {
   const navigate = useNavigate();
   return useMutation({
     mutationFn: async () => {
-      const impersonating =
-        queryClient.getQueryData(meQuery.queryKey)?.impersonation != null;
       await settled(beforeLogout);
       await logout();
-      return impersonating ? fetchMe() : null;
+      // The admin, when the session was an impersonation; otherwise no one.
+      return readSession();
     },
     onSuccess: (admin) =>
       enterSession(queryClient, navigate, admin, PEOPLE_HREF),
@@ -129,7 +129,7 @@ function useSwitchSession<V>(
     mutationFn: async (variables: V) => {
       await settled(beforeSwitch);
       await change(variables);
-      return fetchMe();
+      return readSession();
     },
     onSuccess: (user) => enterSession(queryClient, navigate, user, landing),
   });
