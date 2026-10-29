@@ -50,7 +50,7 @@ This is the process-start timestamp. Any Rust HMR cycle restarts the process, so
 
 ## 4. Open the page and log in
 
-Use Claude Preview (`mcp__Claude_Preview__preview_*`). The session cookie is `HttpOnly` (see `server/src/auth/handlers.rs`) and can't be injected from JS — drive the login form:
+Use Claude Preview (`mcp__Claude_Preview__preview_*`). Always drive the login form, against a remote host too: never read a session cookie or token into a command's output and inject it into the browser, because the value then sits in the transcript as a live credential.
 
 1. `mcp__Claude_Preview__preview_start` → `http://localhost:$OMNIBUS_PORT/login`
 2. `mcp__Claude_Preview__preview_fill` username `admin` / password `omnibus-dev` (matches `.env.example`)
@@ -115,6 +115,8 @@ That is for iterating. The dev DB accumulates state between runs, so a red here 
 ## Common pitfalls
 
 - **Snapshot shows the login form.** Cookie expired or cleared. Repeat step 4. The server redirects a signed-out load of any page to `/login?next=<that page>`, so logging in from there lands back on the page rather than the library.
+- **A URL the server builds shows an unexpected port** (a KOReader plugin's server URL, a Kobo endpoint). Under `dev-up`, `dx serve`'s proxy rewrites `Host` to the backend's internal loopback port, so URLs built from the request carry that port, not `$OMNIBUS_PORT`. Expected on loopback, not a bug.
+- **Checking data from a script.** `POST /api/auth/login` with `{"username","password","client_kind":"bearer"}` answers a `token` to send as `Authorization: Bearer` on `/api/*`.
 - **`build_id` never changes after an edit.** The change was frontend-only and didn't trigger a server restart. Skip the build-id poll, reload directly.
 - **`dev-up` exits 1 with "ports … all held by non-omnibus processes."** Run `lsof -iTCP:$PORT-$((PORT+9)) -sTCP:LISTEN -P` to see what's holding them. Most likely cause: a previous `dx serve` you forgot about — `cat .claude/runtime/server.pid` and `just dev-down` (identity-checked), or pick a different starting `PORT`.
 - **`dev-up` exits 2 with "server unhealthy — run `just dev-bounce`."** `dx serve` is up but its most recent rebuild errored. Read `.claude/runtime/server.log` for the compile error, fix it, then `just dev-bounce`.

@@ -49,6 +49,10 @@ to from the name alone.
 
 Apply exactly one type label (`enhancement` or `bug`), plus any others that fit.
 
+## UX changes carry comps
+
+An issue that changes what a user sees (a new screen, moved controls, a changed layout) gets Figma comps before it's filed: build them on that surface's existing page in the Omnibus Figma files (a `Proposal …` section; never an HTML mock), offer more than one when the right layout is unclear, and link them under **Attachments**. The user signs off on the comps in the issue before any code starts.
+
 ## Body template (required format)
 
 Every issue body uses this structure:
