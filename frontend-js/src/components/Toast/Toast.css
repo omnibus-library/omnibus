@@ -1,6 +1,7 @@
 .toast {
   position: fixed;
-  z-index: 60;
+  /* Over a sheet (95): a save toasts as its sheet leaves. */
+  z-index: 96;
   left: 50%;
   bottom: 28px;
   display: flex;

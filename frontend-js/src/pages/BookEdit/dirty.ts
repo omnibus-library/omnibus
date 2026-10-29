@@ -23,11 +23,6 @@ export function dirtyLabels(baseline: MetaForm, values: MetaForm) {
 /** The names a changed field is listed under in the save bar and the form's edited markers. */
 export type DirtyLabel = ReturnType<typeof dirtyLabels>[number];
 
-const fields = (count: number) => `${count} field${count === 1 ? "" : "s"}`;
-
-/** "N field(s) edited", for the save bar. */
-export const editedSummary = (count: number) => `${fields(count)} edited`;
-
 /** "No changes", "1 unsaved change", "3 unsaved changes": the editor sheet's save bar. */
 export const unsavedSummary = (count: number) =>
   count === 0
@@ -39,7 +34,3 @@ export const leavePrompt = (count: number) =>
   count === 1
     ? "Save your change before closing?"
     : `Save your ${count} changes before closing?`;
-
-/** The primary button's text on the add page: what pressing it does right now. */
-export const saveLabel = (saving: boolean) =>
-  saving ? "Adding…" : "Add to library";

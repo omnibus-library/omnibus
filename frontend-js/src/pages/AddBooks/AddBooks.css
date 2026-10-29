@@ -13,9 +13,6 @@
   padding: 24px;
   overflow-y: auto;
 }
-.ab-foot {
-  border-top: 1px solid var(--line);
-}
 .ab-foot .es-note {
   padding-top: 14px;
   padding-bottom: 16px;
@@ -38,7 +35,7 @@
     border-color 0.15s,
     background 0.15s;
 }
-.ab-drop:focus-within {
+.ab-drop:has(.ab-drop-input:focus-visible) {
   outline: 2px solid var(--ink-0);
   outline-offset: 2px;
 }
@@ -51,14 +48,6 @@
   margin: 0;
   color: var(--ink-0);
   font: 600 17px / 1.4 var(--sans);
-}
-.es-sheet .btn.ab-choose {
-  background: color-mix(in oklch, var(--accent) 16%, transparent);
-  box-shadow: inset 0 0 0 1px
-    color-mix(in oklch, var(--bp-accent-text) 22%, transparent);
-}
-.ab-choose[hidden] {
-  display: none;
 }
 @media (hover: hover) {
   .ab-drop:hover {
@@ -244,19 +233,13 @@
   .ab-drop-text {
     display: none;
   }
-  .ab-formats dt {
-    white-space: nowrap;
+  .ab-formats > div {
+    flex-wrap: wrap;
   }
   .ab-file-row {
     flex-wrap: wrap;
   }
   .ab-actions {
     padding: 14px 16px calc(14px + env(safe-area-inset-bottom));
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .ab-drop {
-    transition: none;
   }
 }

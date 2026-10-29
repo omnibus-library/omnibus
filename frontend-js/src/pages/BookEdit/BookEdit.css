@@ -32,14 +32,6 @@
   color: var(--ink-2);
 }
 
-.me-form {
-  min-width: 0;
-  /* A fieldset, to disable every control at once; its own frame is not wanted. */
-  border: 0;
-  padding: 0;
-  margin: 0;
-}
-
 .me-field {
   min-width: 0;
 }
@@ -128,13 +120,6 @@
   gap: 6px;
   flex-wrap: wrap;
   align-items: center;
-}
-.me-sidebar {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  position: sticky;
-  top: 80px;
 }
 .me-sidebar-card {
   padding: 16px;

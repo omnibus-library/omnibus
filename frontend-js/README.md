@@ -140,7 +140,7 @@ as `UserAvatar`'s `photoClassName` does. A rule a screen needs in a file that
 already exists goes in by hand, as does one whose modifier class (`ok`, `error`)
 is on the script's stop list; `--write --force` regenerates every file
 unformatted and drops their hand edits. `AddBooks.css` is
-hand-written and React-only: the Dioxus client has no add-book sheet.
+hand-written and React-only: `atrium.css` has no `ab-` rules for the script to copy.
 
 A screen driven by a vendored glue (the readers) is ported differently. The
 glue is a byte copy in `src/vendor/reader/`, loaded by `loadScript` from a

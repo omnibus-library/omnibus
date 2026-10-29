@@ -4,7 +4,8 @@ html:has(.sheet-scrim) {
 .sheet-scrim {
   position: fixed;
   inset: 0;
-  z-index: 50;
+  /* Above the library's bulk-edit bar (90), below the confirm dialogs and pickers (100+) a sheet can open. */
+  z-index: 95;
   display: grid;
   place-items: center;
   padding: 24px;
@@ -75,6 +76,7 @@ html:has(.sheet-scrim) {
     animation: sheet-up 320ms var(--ease-out);
   }
   .sheet.is-compact {
+    width: 100%;
     height: auto;
     max-height: calc(100dvh - 12px);
   }
