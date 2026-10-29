@@ -297,3 +297,33 @@ async fn logout_while_impersonating_returns_to_the_admin() {
     assert_eq!(summary.unwrap().id, admin.id);
     assert_eq!(me(&app, &impersonating).await.0, StatusCode::UNAUTHORIZED);
 }
+
+#[tokio::test]
+async fn admin_password_reset_ends_the_impersonation_session_that_admin_opened() {
+    let (app, pool) = app().await;
+    let admin = create_admin(&pool, "ada").await;
+    let target = create_user(&pool, "bob").await;
+    let impersonating = start_impersonating(&app, &pool, admin.id, target.id).await;
+
+    db::auth::admin_set_password(&pool, admin.id, "a-brand-new-password")
+        .await
+        .unwrap();
+
+    let res = post(&app, "/api/auth/impersonation/stop", &impersonating).await;
+    assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+    assert!(res.headers().get(header::SET_COOKIE).is_none());
+}
+
+#[tokio::test]
+async fn stop_impersonation_refuses_a_cookie_that_already_stopped() {
+    let (app, pool) = app().await;
+    let admin = create_admin(&pool, "ada").await;
+    let target = create_user(&pool, "bob").await;
+    let impersonating = start_impersonating(&app, &pool, admin.id, target.id).await;
+    let first = post(&app, "/api/auth/impersonation/stop", &impersonating).await;
+    assert_eq!(first.status(), StatusCode::NO_CONTENT);
+
+    let again = post(&app, "/api/auth/impersonation/stop", &impersonating).await;
+
+    assert_eq!(again.status(), StatusCode::UNAUTHORIZED);
+}

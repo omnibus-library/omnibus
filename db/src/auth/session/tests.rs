@@ -329,6 +329,60 @@ async fn revoke_all_sessions_for_user_is_scoped_to_the_target_user() {
 }
 
 #[tokio::test]
+async fn revoke_all_sessions_for_user_also_revokes_the_impersonation_sessions_it_opened() {
+    let p = pool().await;
+    let admin = create_user(&p, "alice", "hunter2-real-long").await.unwrap();
+    let target = second_user(&p, "bob", false).await;
+    let impersonation = create_impersonation_session(&p, target.id, admin.id, 3600, None)
+        .await
+        .unwrap();
+    let targets_own = create_session(&p, target.id, None, SessionKind::Cookie, 3600, None)
+        .await
+        .unwrap();
+
+    let revoked = revoke_all_sessions_for_user(&p, admin.id).await.unwrap();
+
+    assert_eq!(revoked, 1);
+    assert!(matches!(
+        lookup_session(&p, &impersonation.raw_token)
+            .await
+            .unwrap_err(),
+        AuthError::SessionNotFound
+    ));
+    lookup_session(&p, &targets_own.raw_token)
+        .await
+        .expect("the target's own session is not the admin's to end");
+}
+
+#[tokio::test]
+async fn revoke_all_sessions_for_user_except_also_revokes_the_impersonation_sessions_it_opened() {
+    let p = pool().await;
+    let admin = create_user(&p, "alice", "hunter2-real-long").await.unwrap();
+    let target = second_user(&p, "bob", false).await;
+    let keep = create_session(&p, admin.id, None, SessionKind::Cookie, 3600, None)
+        .await
+        .unwrap();
+    let impersonation = create_impersonation_session(&p, target.id, admin.id, 3600, None)
+        .await
+        .unwrap();
+
+    let revoked = revoke_all_sessions_for_user_except(&p, admin.id, keep.session.id)
+        .await
+        .unwrap();
+
+    assert_eq!(revoked, 1);
+    lookup_session(&p, &keep.raw_token)
+        .await
+        .expect("the excluded session must remain live");
+    assert!(matches!(
+        lookup_session(&p, &impersonation.raw_token)
+            .await
+            .unwrap_err(),
+        AuthError::SessionNotFound
+    ));
+}
+
+#[tokio::test]
 async fn revoke_all_sessions_for_user_except_preserves_only_the_named_session() {
     let p = pool().await;
     let u = create_user(&p, "alice", "hunter2-real-long").await.unwrap();
