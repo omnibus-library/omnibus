@@ -61,8 +61,14 @@ fn every_migration_matches_its_pinned_checksum() {
          and fix forward with a new migration instead of editing it."
     );
 
-    let unlocked: Vec<&i64> = current.keys().filter(|v| !locked.contains_key(*v)).collect();
-    let removed: Vec<&i64> = locked.keys().filter(|v| !current.contains_key(*v)).collect();
+    let unlocked: Vec<&i64> = current
+        .keys()
+        .filter(|v| !locked.contains_key(*v))
+        .collect();
+    let removed: Vec<&i64> = locked
+        .keys()
+        .filter(|v| !current.contains_key(*v))
+        .collect();
     assert!(
         unlocked.is_empty() && removed.is_empty(),
         "db/migrations.lock is out of step (unpinned: {unlocked:?}, missing files: {removed:?}); \
