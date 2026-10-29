@@ -256,7 +256,7 @@ function ShelfActions({ shelf, access, full, onAdd, onEdit }: ActionsProps) {
               onClose={() => setMenuOpen(false)}
               items={[
                 {
-                  label: "Sync to Kobo",
+                  label: "Sync to my devices",
                   testId: "shelf-toggle-kobo",
                   checked: shelf.syncToKobo,
                   disabled: toggle.isPending,
@@ -327,7 +327,7 @@ export function ShelfHero(props: ActionsProps) {
             className="shelf-badge shelf-badge--kobo shd-kobo"
             data-testid="shelf-kobo-badge"
           >
-            Syncs to Kobo
+            Syncs to my devices
           </span>
         )}
       </div>

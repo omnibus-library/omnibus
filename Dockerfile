@@ -50,6 +50,26 @@ ENV OMNIBUS_VERSION=${OMNIBUS_VERSION}
 RUN dx bundle --platform web --package omnibus --fullstack --release --debug-symbols=false
 
 ###############################################################################
+# React — the frontend-js client, built for /react/. Shipped in every image
+# but served only when the operator sets OMNIBUS_REACT=1 (docker/entrypoint.sh).
+###############################################################################
+FROM node:22-trixie-slim AS react
+
+RUN corepack enable
+
+WORKDIR /src
+# orval generates the API client from the spec during `pnpm install`.
+COPY openapi/openapi.json openapi/
+COPY frontend-js/ frontend-js/
+
+ARG OMNIBUS_VERSION
+ENV OMNIBUS_VERSION=${OMNIBUS_VERSION}
+
+# Corepack picks pnpm from the working directory's package.json, not `--dir`.
+WORKDIR /src/frontend-js
+RUN pnpm install --frozen-lockfile && pnpm run build
+
+###############################################################################
 # Runtime — slim image carrying just the bundle, ffmpeg (audiobook HLS
 # transcode), kepubify (EPUB→KEPUB for the "Send to Kobo" download), CA certs
 # (remote cover/author-photo fetches), curl (health probe), and gosu
@@ -86,6 +106,7 @@ WORKDIR /app
 # The server locates its `public/` assets relative to the binary, so keep the
 # whole bundle directory intact.
 COPY --from=builder /src/target/dx/omnibus/release/web/ /app/
+COPY --from=react /src/frontend-js/dist/ /app/react/
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 

@@ -254,7 +254,7 @@ test.describe("shelves on the library page", () => {
         await expect(editor.rulePreviewCount).toContainText("2 of");
       });
 
-      // The modal always states the Kobo toggle's value for a non-system shelf.
+      // The modal always states the device sync toggle's value for a non-system shelf.
       await test.step("save it", async () => {
         await expectMutation(
           shelves.update(
@@ -280,7 +280,7 @@ test.describe("shelves on the library page", () => {
       });
     });
 
-    test("edit a shelf's name, visibility, and Kobo sync from the pencil modal", async ({
+    test("edit a shelf's name, visibility, and device sync from the pencil modal", async ({
       libraryPage,
       ownShelf,
       expectMutation,
@@ -301,20 +301,20 @@ test.describe("shelves on the library page", () => {
       await test.step("open the editor", async () => {
         await libraryPage.openEditShelf();
         await expect(editor.nameField).toHaveValue(shelf.name);
-        // The Kobo opt-in prefills from the shelf: off for a fresh one.
+        // The device sync opt-in prefills from the shelf: off for a fresh one.
         await expect(editor.koboOffButton).toHaveAttribute(
           "aria-pressed",
           "true",
         );
       });
 
-      await test.step("rename it, make it public and turn Kobo sync on", async () => {
+      await test.step("rename it, make it public and turn device sync on", async () => {
         await editor.rename(renamed);
         await editor.makePublic();
         await editor.turnKoboSyncOn();
       });
 
-      // The Kobo badge lives on the shelf page, so the opt-in is asserted on the wire.
+      // The sync badge lives on the shelf page, so the opt-in is asserted on the wire.
       await test.step("save it", async () => {
         await expectMutation(
           shelves.update(

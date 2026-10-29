@@ -15,6 +15,8 @@ use omnibus_db::{
 };
 
 use super::{dto, extractor::KoboAuthUser, reject_oversized_uuid, AppState};
+use crate::backend::conditional::{content_etag, not_modified, MEDIA_CACHE_CONTROL, MEDIA_VARY};
+use crate::backend::ebooks::{device_file, rewritten_or_source, DeviceFile, EPUB_MIME};
 use crate::backend::serve_download;
 use crate::http_errors::internal;
 
@@ -48,12 +50,8 @@ pub async fn download(
     };
     // EPUB presence decides the branch *before* any conversion is attempted,
     // so a CBZ-only book never enqueues a KepubConvert doomed to fail.
-    let epub_source = match db::book_file_path(state.pool(), id, "EPUB").await {
-        Ok(p) => p,
-        Err(e) => return internal("kobo book_file_path", e),
-    };
-    let (path, content_type) = match epub_source {
-        Some(source) => {
+    let (path, content_type) = match device_file(&state, id).await {
+        Ok(Some(DeviceFile::Epub(source))) => {
             let path = if kepub_ready(&state, id).await {
                 db::kepub_path(id)
             } else {
@@ -61,19 +59,13 @@ pub async fn download(
                 // — so a Kobo device without kepubify support (or after a
                 // conversion failure) sees the user's edits rather than the
                 // raw scanned file.
-                crate::backend::ebooks::rewritten_or_source(&state, id, source).await
+                rewritten_or_source(&state, id, source).await
             };
-            (path, "application/epub+zip")
+            (path, EPUB_MIME)
         }
-        None => match db::book_file_path(state.pool(), id, "CBZ").await {
-            Ok(Some(path)) => (path, crate::backend::ebooks::CBZ_MIME),
-            Ok(None) => match db::book_file_path(state.pool(), id, "PDF").await {
-                Ok(Some(path)) => (path, crate::backend::ebooks::PDF_MIME),
-                Ok(None) => return StatusCode::NOT_FOUND.into_response(),
-                Err(e) => return internal("kobo book_file_path", e),
-            },
-            Err(e) => return internal("kobo book_file_path", e),
-        },
+        Ok(Some(DeviceFile::Other(path, mime))) => (path, mime),
+        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+        Err(e) => return internal("kobo device_file", e),
     };
     let response = serve_download(req, &path, content_type).await;
     // Only bookkeep on an answer that means the device actually has (or
@@ -133,7 +125,7 @@ pub async fn image(
     )>,
     headers: HeaderMap,
 ) -> Response {
-    serve_cover(&state, &image_id, &headers).await
+    serve_cover(&state, &image_id, &headers, CoverEtag::Weak).await
 }
 
 /// `GET books/<ImageId>/thumbnail/{w}/{h}/{greyscale}/image.jpg` — the `image_url_template` shape of [`image`].
@@ -143,11 +135,23 @@ pub async fn image_plain(
     Path((_token, image_id, _w, _h, _greyscale)): Path<(String, String, u32, u32, String)>,
     headers: HeaderMap,
 ) -> Response {
-    serve_cover(&state, &image_id, &headers).await
+    serve_cover(&state, &image_id, &headers, CoverEtag::Weak).await
+}
+
+/// Which kind of `ETag` a cover is validated with: Kobo firmware has always been sent a weak one.
+#[derive(Clone, Copy)]
+pub(crate) enum CoverEtag {
+    Weak,
+    Strong,
 }
 
 /// Resolve `image_id` and serve its cover, honouring `If-None-Match`.
-async fn serve_cover(state: &AppState, image_id: &str, headers: &HeaderMap) -> Response {
+pub(crate) async fn serve_cover(
+    state: &AppState,
+    image_id: &str,
+    headers: &HeaderMap,
+    kind: CoverEtag,
+) -> Response {
     if let Some(rejected) = reject_oversized_uuid(image_id) {
         return rejected;
     }
@@ -157,28 +161,56 @@ async fn serve_cover(state: &AppState, image_id: &str, headers: &HeaderMap) -> R
         Ok(None) => return StatusCode::NOT_FOUND.into_response(),
         Err(e) => return internal("kobo image resolve", e),
     };
-    // Cheap freshness probe before the cover bytes are ever loaded: the cover
-    // changes only through paths that bump `books.last_modified` (override
-    // save, reindex), so the pair is an honest validator.
-    let last_modified = match db::book_last_modified_for(state.pool(), id).await {
-        Ok(lm) => lm,
-        Err(e) => return internal("kobo image last_modified", e),
+    // Kobo's weak tag is a cheap probe before the cover bytes are ever loaded: the cover
+    // changes only through paths that bump `books.last_modified` (override save, reindex).
+    // That is second-granular, so the strong tag is the bytes' own.
+    let weak_etag = match kind {
+        CoverEtag::Weak => match db::book_last_modified_for(state.pool(), id).await {
+            Ok(last_modified) => Some(format!("W/\"{id}-{last_modified}\"")),
+            Err(e) => return internal("kobo image last_modified", e),
+        },
+        CoverEtag::Strong => None,
     };
-    let etag = format!("W/\"{id}-{last_modified}\"");
-    if headers
+    if let Some(etag) = weak_etag
+        .as_deref()
+        .filter(|etag| if_none_match(headers, etag))
+    {
+        return not_modified(etag, MEDIA_CACHE_CONTROL, MEDIA_VARY);
+    }
+    let (mime, bytes) = match db::get_cover(state.pool(), id).await {
+        Ok(Some(cover)) => cover,
+        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+        Err(e) => return internal("kobo get_cover", e),
+    };
+    let etag = match weak_etag {
+        Some(etag) => etag,
+        None => {
+            let etag = content_etag(&bytes);
+            if if_none_match(headers, &etag) {
+                return not_modified(&etag, MEDIA_CACHE_CONTROL, MEDIA_VARY);
+            }
+            etag
+        }
+    };
+    (
+        [
+            (header::CONTENT_TYPE, mime),
+            (header::ETAG, etag),
+            (header::CACHE_CONTROL, MEDIA_CACHE_CONTROL.into()),
+            (header::VARY, MEDIA_VARY.into()),
+            (header::X_CONTENT_TYPE_OPTIONS, "nosniff".into()),
+        ],
+        bytes,
+    )
+        .into_response()
+}
+
+/// Whether `If-None-Match` lists `etag` verbatim.
+fn if_none_match(headers: &HeaderMap, etag: &str) -> bool {
+    headers
         .get(header::IF_NONE_MATCH)
         .and_then(|v| v.to_str().ok())
         .is_some_and(|v| v.split(',').any(|c| c.trim() == etag))
-    {
-        return (StatusCode::NOT_MODIFIED, [(header::ETAG, etag)]).into_response();
-    }
-    match db::get_cover(state.pool(), id).await {
-        Ok(Some((mime, bytes))) => {
-            ([(header::CONTENT_TYPE, mime), (header::ETAG, etag)], bytes).into_response()
-        }
-        Ok(None) => StatusCode::NOT_FOUND.into_response(),
-        Err(e) => internal("kobo get_cover", e),
-    }
 }
 
 /// Enqueue the (idempotent, cache-backed) KEPUB conversion and wait up to

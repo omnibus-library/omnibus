@@ -39,7 +39,7 @@ export const fieldLabel = (field: FilterField) => LABELS[field];
 export const fieldPlural = (field: FilterField) => PLURALS[field];
 
 /** The shelves query as a label sees it: no data and no error is still pending. */
-type ShelfLookup = { data?: Shelf[]; isError: boolean };
+export type ShelfLookup = { data?: Shelf[]; isError: boolean };
 
 /** One selectable value: what the filter stores, what the reader sees, and the book count when known. */
 export type FilterOption = {
@@ -96,7 +96,7 @@ export function shelfLabel(shelf: Shelf, viewerId: UserId): string {
 const UNAVAILABLE_SHELF = "unavailable shelf";
 
 /** A value's name, or `null` while a shelf name is still being worked out. */
-function valueLabel(
+export function valueLabel(
   field: FilterField,
   value: string,
   shelves: ShelfLookup,

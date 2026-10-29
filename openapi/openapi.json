@@ -188,8 +188,8 @@
         "tags": [
           "Account"
         ],
-        "summary": "List your Kobo devices",
-        "description": "The Kobo e-readers registered to your account, with the secret each one syncs with.",
+        "summary": "List your sync devices",
+        "description": "The Kobo and KOReader devices registered to your account, each with its kind and the\nsecret it syncs with.",
         "operationId": "list_kobo_devices",
         "responses": {
           "200": {
@@ -211,8 +211,8 @@
         "tags": [
           "Account"
         ],
-        "summary": "Register a Kobo device",
-        "description": "Adds a Kobo under the given label and mints the token its sync address\n`/kobo/{token}/…` carries.",
+        "summary": "Register a sync device",
+        "description": "Adds a Kobo, a KOReader or a no-plugin KOReader (`kosync`) under the given label and\nmints its token. A Kobo is a Kobo when `kind` is omitted, and its sync address is\n`/kobo/{token}/…`. A `kosync` device authenticates nothing itself: it stands for a\nKOReader signed in to Progress sync, which uses one login per account. The first\n`kosync` device on an account with no Progress sync login creates it and returns it in\n`kosync_login`, shown only in that response; later ones reuse the login and return none.",
         "operationId": "create_kobo_device",
         "requestBody": {
           "content": {
@@ -236,7 +236,7 @@
             }
           },
           "422": {
-            "description": "The name is empty or longer than 100 characters once trimmed."
+            "description": "The name is empty or longer than 100 characters once trimmed, or `kind` is not `kobo`, `koreader` or `kosync`."
           }
         }
       }
@@ -246,8 +246,8 @@
         "tags": [
           "Account"
         ],
-        "summary": "Remove a Kobo device",
-        "description": "Deletes the registration, so the Kobo's sync address stops working.",
+        "summary": "Remove a sync device",
+        "description": "Deletes the registration, so the device's token stops working. Removing your last\nno-plugin KOReader (`kosync`) also turns off your Progress sync password, so it stops\nworking too. Removing any other device leaves that password alone.",
         "operationId": "delete_kobo_device",
         "parameters": [
           {
@@ -271,13 +271,61 @@
         }
       }
     },
+    "/api/account/kobo-devices/{id}/koreader-plugin": {
+      "get": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Download a KOReader's plugin",
+        "description": "The Omnibus plugin for one of your KOReaders, as a zip already set to this server and\ncarrying that KOReader's token. Unzip it into KOReader's `plugins` folder. The zip holds\nthe token, so treat the file like a password. Needs the download permission.",
+        "operationId": "download_koreader_plugin",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The KOReader's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The plugin, zipped.",
+            "headers": {
+              "Content-Disposition": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`attachment`, with the file name."
+              }
+            },
+            "content": {
+              "application/zip": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileBytes"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Your account lacks the download permission."
+          },
+          "404": {
+            "description": "No KOReader of yours has that id."
+          }
+        }
+      }
+    },
     "/api/account/kobo-devices/{id}/regenerate": {
       "post": {
         "tags": [
           "Account"
         ],
-        "summary": "Regenerate a Kobo's token",
-        "description": "Replaces the device's token, so its old sync address stops working at once. The\ndevice keeps its name and its sync progress; point the Kobo at the new address.",
+        "summary": "Regenerate a device's token",
+        "description": "Replaces the device's token, so its old token stops working at once. The\ndevice keeps its name and its sync progress; point the Kobo at the new address.",
         "operationId": "regenerate_kobo_device",
         "parameters": [
           {
@@ -304,6 +352,48 @@
           },
           "404": {
             "description": "None of your devices has that id."
+          }
+        }
+      }
+    },
+    "/api/account/kosync": {
+      "get": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Check your KOReader sync password",
+        "description": "Whether you have generated a password for stock KOReader's Progress sync. The password\nitself cannot be read back, only replaced.",
+        "operationId": "get_kosync",
+        "responses": {
+          "200": {
+            "description": "Whether a password exists.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KosyncStatus"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Generate a KOReader sync password",
+        "description": "Creates the password stock KOReader's Progress sync signs in with, together with your\nusername, and shows it once. Generating again replaces it, so the old one stops working\nand every no-plugin KOReader must sign in again with the new one.",
+        "operationId": "post_kosync",
+        "responses": {
+          "200": {
+            "description": "The new password, shown only in this response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KosyncPassword"
+                }
+              }
+            }
           }
         }
       }
@@ -4524,6 +4614,9 @@
           },
           "404": {
             "description": "No book has that `book_uuid`."
+          },
+          "410": {
+            "description": "That `client_id` was deleted; a delete is final, so repeating the create can never succeed."
           }
         }
       }
@@ -5545,7 +5638,7 @@
           "Progress"
         ],
         "summary": "List the books you were last in",
-        "description": "Your most recent positions, newest first, each with its book: a \"pick up where you left\noff\" list. Send `user_id` for another reader's list.",
+        "description": "Your most recent positions, newest first, each with its book: a \"pick up where you left\noff\" list. Each book appears once, for the format you used last. Send `user_id` for another reader's list.",
         "operationId": "get_recent_progress",
         "parameters": [
           {
@@ -5571,7 +5664,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The most recent positions, newest first.",
+            "description": "One position per book, in the format you used last, newest first.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10993,11 +11086,15 @@
       },
       "CreateKoboDevice": {
         "type": "object",
-        "description": "The label for a new Kobo.",
+        "description": "The label and kind for a new device.",
         "required": [
           "name"
         ],
         "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/DeviceKind",
+            "description": "Which kind of device to register. Defaults to a Kobo when omitted."
+          },
           "name": {
             "type": "string",
             "description": "A label of 1 to 100 characters once trimmed, such as \"Clara HD\"."
@@ -11431,6 +11528,15 @@
             }
           }
         }
+      },
+      "DeviceKind": {
+        "type": "string",
+        "description": "Which kind of reader a registered device is. A token only authenticates the routes of\nits own kind.",
+        "enum": [
+          "kobo",
+          "koreader",
+          "kosync"
+        ]
       },
       "DeviceView": {
         "type": "object",
@@ -12674,10 +12780,11 @@
       },
       "KoboDeviceView": {
         "type": "object",
-        "description": "A Kobo e-reader registered to your account. Its `token` is the secret in the sync\naddress the Kobo is pointed at, `/kobo/{token}/…`.",
+        "description": "A Kobo or KOReader registered to your account. Its `token` is the secret that\nauthenticates the device; for a Kobo it is the sync address's path segment,\n`/kobo/{token}/…`.",
         "required": [
           "id",
           "name",
+          "kind",
           "token",
           "created_at",
           "last_seen_at"
@@ -12693,10 +12800,40 @@
             "format": "int64",
             "description": "The device's id, which the regenerate and delete routes take."
           },
+          "kind": {
+            "$ref": "#/components/schemas/DeviceKind",
+            "description": "Which kind of reader this is."
+          },
+          "kosync_login": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/KosyncPassword",
+                "description": "The Progress sync login, shown once: only on the response that adds a no-plugin KOReader\nto an account that had no login yet. Absent everywhere else."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "last_seen_at": {
             "type": "integer",
             "format": "int64",
-            "description": "When the Kobo last synced, in Unix seconds."
+            "description": "When the device last synced, in Unix seconds."
+          },
+          "last_sync_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "When a KOReader last reported finishing a sync, in Unix seconds. `null` for a Kobo\nand for a KOReader that has not synced yet."
+          },
+          "last_sync_error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "What went wrong in a KOReader's last reported sync. `null` when it succeeded."
           },
           "name": {
             "type": "string",
@@ -12704,7 +12841,38 @@
           },
           "token": {
             "type": "string",
-            "description": "The secret path segment of the sync address. Treat it like a password: anyone\nholding it can sync as you."
+            "description": "The device's secret. Treat it like a password: anyone holding it can sync as you."
+          }
+        }
+      },
+      "KosyncPassword": {
+        "type": "object",
+        "description": "A freshly generated progress-sync password, shown once.",
+        "required": [
+          "username",
+          "password"
+        ],
+        "properties": {
+          "password": {
+            "type": "string",
+            "description": "The new password. It replaces any earlier one, which stops working at once."
+          },
+          "username": {
+            "type": "string",
+            "description": "The username to enter in KOReader's Progress sync login."
+          }
+        }
+      },
+      "KosyncStatus": {
+        "type": "object",
+        "description": "Whether you have generated a KOReader progress-sync password.",
+        "required": [
+          "configured"
+        ],
+        "properties": {
+          "configured": {
+            "type": "boolean",
+            "description": "`true` once a password exists; it is not retrievable, only replaceable."
           }
         }
       },
@@ -14461,7 +14629,7 @@
       },
       "ResumePoint": {
         "type": "object",
-        "description": "A book to pick up where you left off, as `GET /api/progress/recent` returns it.",
+        "description": "A book to pick up where you left off, as `GET /api/progress/recent` returns it. Each\nbook appears once, for the format you used last.",
         "required": [
           "record",
           "book"
@@ -14499,7 +14667,7 @@
           },
           "linked": {
             "type": "boolean",
-            "description": "Whether you have linked this book's ebook and audiobook. A linked book appears once,\nfor the format you used last."
+            "description": "Whether you have linked this book's ebook and audiobook."
           },
           "playback_rate": {
             "type": [
@@ -15619,7 +15787,7 @@
           },
           "sync_to_kobo": {
             "type": "boolean",
-            "description": "Whether the owner's Kobo devices sync this shelf's books. Off by default. A Kobo\nsyncs only books on shelves with this on, never the whole library."
+            "description": "Whether the owner's sync devices (Kobos and KOReaders) sync this shelf's books. Off\nby default. A device syncs only books on shelves with this on, never the whole\nlibrary."
           },
           "visibility": {
             "$ref": "#/components/schemas/Visibility"
@@ -16670,7 +16838,7 @@
               "boolean",
               "null"
             ],
-            "description": "Turns Kobo sync for the shelf on or off."
+            "description": "Turns device sync for the shelf on or off."
           },
           "visibility": {
             "oneOf": [

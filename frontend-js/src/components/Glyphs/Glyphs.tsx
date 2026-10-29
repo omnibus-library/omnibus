@@ -181,6 +181,27 @@ export function DownloadGlyph({ size = 15 }: GlyphProps) {
   );
 }
 
+/** An arrow rising from a tray, for picking a file to upload. */
+export function UploadGlyph({ size = 28 }: GlyphProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.7}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12 15V3" />
+      <path d="m7 8 5-5 5 5" />
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+    </svg>
+  );
+}
+
 /** Two stacked sheets, for a copy. */
 export function CopyGlyph({ size = 15 }: GlyphProps) {
   return (

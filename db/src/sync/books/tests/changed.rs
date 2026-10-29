@@ -76,6 +76,43 @@ async fn sync_changed_updates_an_existing_book_row_in_place() {
     assert_eq!(authors, vec!["New Author".to_string()], "links rewritten");
 }
 
+#[tokio::test]
+async fn sync_changed_moves_last_modified_past_an_edit_in_the_same_second() {
+    let _covers = CoversTempDir::new("sync_changed_same_second");
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let library_id = seed_scan_root(&pool).await;
+    let book_id = seed_book_with_file(&pool, library_id, "a.epub").await;
+    let ahead: i64 = sqlx::query_scalar(
+        "UPDATE books SET last_modified = CAST(strftime('%s','now') AS INTEGER) + 1000
+          WHERE id = ? RETURNING last_modified",
+    )
+    .bind(book_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    let changed = vec![indexed("a.epub", Some("Updated"), &["A"], &[], None, None)];
+    let mut tx = pool.begin().await.unwrap();
+    sync_changed(
+        &mut tx,
+        library_id,
+        "/lib",
+        &changed,
+        &EntityAliasMaps::default(),
+        |_| {},
+    )
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+
+    let last_modified: i64 = sqlx::query_scalar("SELECT last_modified FROM books WHERE id = ?")
+        .bind(book_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(last_modified, ahead + 1);
+}
+
 /// `sync_changed` with an empty batch is a no-op and returns no cover
 /// triples (early return before the id pre-fetch).
 #[tokio::test]

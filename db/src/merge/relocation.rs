@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use sqlx::Transaction;
 
-use super::transaction::{COLLISION_TABLES, LEDGER_COUNTER_TABLES, RETARGET_TABLES};
+use super::transaction::{retarget_set, COLLISION_TABLES, LEDGER_COUNTER_TABLES, RETARGET_TABLES};
 use super::MergeError;
 
 /// Tables relocation leaves to someone else. The curation pair is settled by
@@ -390,7 +390,8 @@ async fn move_back(
     target_uuid: &str,
 ) -> Result<(), sqlx::Error> {
     let sql = format!(
-        "UPDATE {table} SET book_uuid = ?1 WHERE book_uuid = ?2 AND {}",
+        "UPDATE {table} SET {} WHERE book_uuid = ?2 AND {}",
+        retarget_set(table),
         id_match(id, "?3")
     );
     sqlx::query(&sql)

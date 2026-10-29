@@ -245,6 +245,9 @@ struct RelocateData: Codable {
     /// clock gate (the same #1972 class the web reader suppresses the same
     /// way — `!data.echo` in `frontend/src/pages/reader/interop.rs`).
     var echo: Bool = false
+    /// The id of the last host seek the glue applied or dropped, so the host
+    /// stops re-sending it (`ReaderController.pendingSeek`). Absent until one is.
+    var settledSeek: Int?
 
     /// `0...1` for the progress bar. Page numbers only exist once epub.js has
     /// finished its whole-book locations pass, so this is the reliable one.
@@ -476,6 +479,13 @@ final class ReaderController: NSObject {
     /// What is currently drawn on the page, so a set arriving after first paint
     /// can be applied as a diff instead of a redraw.
     private var drawnHighlights: [Highlight] = []
+    /// The last seek asked for, until the glue reports it applied or dropped.
+    /// The follow jump's answer arrives before the book has loaded, and the glue
+    /// parks it through the locations pass, so every `ready` sends it again: a
+    /// page rebooted meanwhile would otherwise lose it. Other navigation drops it.
+    private(set) var pendingSeek: Double?
+    /// Names each seek to the glue, which reports back the last one it settled.
+    private var seekID = 0
     /// A reload owed to a web-content process that went away while the app was
     /// in the background, where reloading would only feed another one to the
     /// same reclaim. Settled by `reloadIfNeeded` on the way back.
@@ -515,11 +525,22 @@ final class ReaderController: NSObject {
 
     // MARK: - Commands
 
-    func next() { run("OmnibusReader.next()") }
-    func previous() { run("OmnibusReader.prev()") }
+    // Each navigation drops a held seek: the reader's own move outranks it.
+    func next() {
+        pendingSeek = nil
+        run("OmnibusReader.next()")
+    }
+
+    func previous() {
+        pendingSeek = nil
+        run("OmnibusReader.prev()")
+    }
 
     /// The glue's own animated turn, for when the curl can't draw one.
-    func slide(_ dir: Int) { run("OmnibusReader.turnSlide(\(dir))") }
+    func slide(_ dir: Int) {
+        pendingSeek = nil
+        run("OmnibusReader.turnSlide(\(dir))")
+    }
 
     /// Whether a stored position is an EPUB CFI at all — the mirror of
     /// `omnibus_shared::is_epub_cfi`.
@@ -546,12 +567,34 @@ final class ReaderController: NSObject {
     }
 
     func display(_ target: String) {
+        pendingSeek = nil
         run("OmnibusReader.display(\(target.jsQuoted))")
     }
 
-    /// Jump to a fraction (0–1) of the whole book, for the scrubber.
+    /// Jump to a fraction (0–1) of the whole book, for the scrubber and the
+    /// cross-format jumps. Held until the glue settles it — see `pendingSeek`.
     func seek(toFraction fraction: Double) {
-        run("OmnibusReader.seek(\(min(1, max(0, fraction))))")
+        seekID += 1
+        pendingSeek = min(1, max(0, fraction))
+        if isReady { sendPendingSeek() }
+    }
+
+    private func sendPendingSeek() {
+        guard let pendingSeek else { return }
+        run("OmnibusReader.seek(\(pendingSeek), \(seekID))")
+    }
+
+    /// The position a save would write, or `nil` when there is nothing new: an echo
+    /// of a saved spot (the restore's landing, a rotation) or the spot itself.
+    /// Writing either stamps a fresh clock on an unmoved row, which out-orders a
+    /// newer audiobook position at the cross-format clock gate (#1972). An echo is
+    /// new only with `saved == nil`, `stored == .nowhere` and no seek pending.
+    static func unsavedCFI(
+        location: RelocateData?, saved: String?, stored: PositionSync.Stored, seekPending: Bool
+    ) -> String? {
+        guard let location, let cfi = location.cfi, cfi != saved else { return nil }
+        if location.isMovement { return cfi }
+        return saved == nil && stored == .nowhere && !seekPending ? cfi : nil
     }
 
     /// The contents entry a fraction of the way through the book lands in.
@@ -866,6 +909,7 @@ final class ReaderController: NSObject {
                 // one path the reader already exercises.
                 syncSettings()
                 pageCurl?.pageChanged()
+                sendPendingSeek()
             case "error":
                 failed = true
             default:
@@ -883,6 +927,9 @@ final class ReaderController: NSObject {
                let from = location?.cfi, from != decoded.cfi {
                 holdsStoredPosition = false
             }
+            // Only the glue's word settles a seek: a no-restore open's first
+            // landing is movement that comes before the glue has taken it.
+            if decoded.settledSeek == seekID { pendingSeek = nil }
             location = decoded
             pageCurl?.pageChanged(byRelocate: true)
             // Where a reboot of the page picks up. Relocates are muted until a

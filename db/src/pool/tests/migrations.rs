@@ -1,7 +1,7 @@
 //! Per-migration correctness: 0021's schema cleanup, 0038's timestamp
 //! coercion and orphan-row handling across the recreated tables, 0069's
-//! library-cleanup tables with their unique constraints, and 0099's
-//! share-stats backfill.
+//! library-cleanup tables with their unique constraints, 0099's
+//! share-stats backfill, and 0107's KOReader sync schema.
 
 use super::super::*;
 
@@ -462,23 +462,35 @@ async fn migration_0069_entity_aliases_rejects_duplicate_kind_alias_name() {
     );
 }
 
-#[tokio::test]
-async fn migration_0099_turns_share_stats_on_for_every_existing_reader() {
-    // A pool migrated to just below 0099 — the schema an install predating
-    // the share-stats column sits at. One connection, so the in-memory
-    // database is a single shared one, matching `pool_before_merge_orphan_heal`
-    // in `crate::merge::tests::migration_0079`.
-    const SHARE_STATS_VERSION: i64 = 99;
-    static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
+static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
+
+/// A pool migrated to just below `version` — the schema an install predating it sits at.
+/// One connection, so the in-memory database is a single shared one, matching
+/// `pool_before_merge_orphan_heal` in `crate::merge::tests::migration_0079`.
+async fn pool_before(version: i64) -> SqlitePool {
     let pool = sqlx::sqlite::SqlitePoolOptions::new()
         .max_connections(1)
         .connect("sqlite::memory:")
         .await
         .unwrap();
-    for m in MIGRATOR.iter().filter(|m| m.version < SHARE_STATS_VERSION) {
+    for m in MIGRATOR.iter().filter(|m| m.version < version) {
         sqlx::raw_sql(&m.sql).execute(&pool).await.unwrap();
     }
+    pool
+}
 
+/// Run migration `version` over a pool built by [`pool_before`].
+async fn apply_migration(pool: &SqlitePool, version: i64) {
+    let m = MIGRATOR
+        .iter()
+        .find(|m| m.version == version)
+        .unwrap_or_else(|| panic!("migration {version} must exist"));
+    sqlx::raw_sql(&m.sql).execute(pool).await.unwrap();
+}
+
+#[tokio::test]
+async fn migration_0099_turns_share_stats_on_for_every_existing_reader() {
+    let pool = pool_before(99).await;
     sqlx::query(
         "INSERT INTO users (id, username, password_hash, is_admin) VALUES (1, 'u', 'h', 0)",
     )
@@ -486,11 +498,7 @@ async fn migration_0099_turns_share_stats_on_for_every_existing_reader() {
     .await
     .unwrap();
 
-    let m = MIGRATOR
-        .iter()
-        .find(|m| m.version == SHARE_STATS_VERSION)
-        .expect("0099 must exist");
-    sqlx::raw_sql(&m.sql).execute(&pool).await.unwrap();
+    apply_migration(&pool, 99).await;
 
     let share_stats: i64 = sqlx::query_scalar("SELECT share_stats FROM users WHERE id = 1")
         .fetch_one(&pool)
@@ -500,4 +508,111 @@ async fn migration_0099_turns_share_stats_on_for_every_existing_reader() {
         share_stats, 1,
         "an existing reader's row must turn on sharing"
     );
+}
+
+/// A pool just below `version` holding user 1 and the Kobo `old-token`.
+async fn pool_before_with_old_device(version: i64) -> SqlitePool {
+    let pool = pool_before(version).await;
+    sqlx::query(
+        "INSERT INTO users (id, username, password_hash, is_admin) VALUES (1, 'u', 'h', 0)",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO kobo_devices (user_id, token, name) VALUES (1, 'old-token', 'Clara')")
+        .execute(&pool)
+        .await
+        .unwrap();
+    pool
+}
+
+#[tokio::test]
+async fn migration_0107_keeps_existing_devices_as_unsynced_kobos_that_still_resolve() {
+    use omnibus_shared::DeviceKind;
+
+    let pool = pool_before_with_old_device(107).await;
+
+    apply_migration(&pool, 107).await;
+
+    let device: (String, Option<i64>, Option<String>) = sqlx::query_as(
+        "SELECT kind, last_sync_at, last_sync_error FROM kobo_devices WHERE token = 'old-token'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(device, ("kobo".into(), None, None));
+    let resolved =
+        crate::kobo_devices::resolve_device_by_token(&pool, "old-token", DeviceKind::Kobo)
+            .await
+            .unwrap();
+    assert!(resolved.is_some(), "a pre-0107 device must keep resolving");
+}
+
+#[tokio::test]
+async fn migration_0107_admits_every_device_kind_and_refuses_an_unknown_one() {
+    let pool = pool_before_with_old_device(107).await;
+
+    apply_migration(&pool, 107).await;
+
+    for kind in ["kobo", "koreader", "kosync"] {
+        sqlx::query("INSERT INTO kobo_devices (user_id, token, name, kind) VALUES (1, ?, 'n', ?)")
+            .bind(format!("token-{kind}"))
+            .bind(kind)
+            .execute(&pool)
+            .await
+            .unwrap_or_else(|e| panic!("{kind} is a device kind: {e}"));
+    }
+    sqlx::query(
+        "INSERT INTO kobo_devices (user_id, token, name, kind) VALUES (1, 'x', 'n', 'bogus')",
+    )
+    .execute(&pool)
+    .await
+    .expect_err("an unknown kind is refused");
+}
+
+#[tokio::test]
+async fn migration_0107_leaves_existing_files_unhashed_and_readers_without_a_kosync_key() {
+    let pool = pool_before_with_old_device(107).await;
+    for sql in [
+        "INSERT INTO scan_roots (id, path, display_name) VALUES (1, '/lib', 'lib')",
+        "INSERT INTO books (id, uuid, library_id, path, title) VALUES (1, 'u', 1, '', 'T')",
+        "INSERT INTO book_files (book_id, format, filename, size_bytes) VALUES (1, 'EPUB', 'f', 1)",
+    ] {
+        sqlx::query(sql).execute(&pool).await.unwrap();
+    }
+
+    apply_migration(&pool, 107).await;
+
+    let digest: Option<String> = sqlx::query_scalar("SELECT partial_md5 FROM book_files")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(digest, None, "the post-scan backfill hashes it");
+    let key: Option<Vec<u8>> = sqlx::query_scalar("SELECT kosync_key_hash FROM users WHERE id = 1")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(key, None);
+}
+
+#[tokio::test]
+async fn migration_0107_lets_two_books_share_one_export_digest() {
+    let pool = pool_before(107).await;
+
+    apply_migration(&pool, 107).await;
+
+    for book in ["u1", "u2"] {
+        sqlx::query(
+            "INSERT INTO book_export_digests (partial_md5, book_uuid, created_at) VALUES ('d', ?, 5)",
+        )
+        .bind(book)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+    let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM book_export_digests")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(rows, 2);
 }

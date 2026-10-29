@@ -41,11 +41,10 @@ private func point(
 
 @Suite("Resume card identity")
 struct ResumePointIdentityTests {
-    @Test("reading and listening to one book are two cards, not one")
+    @Test("reading and listening to one book have distinct ids")
     func formatsAreDistinctCards() {
-        // The carousel renders these in a `ForEach` keyed on `id`. Sharing one
-        // gave SwiftUI a duplicate identity: state moved between the two cards
-        // and the page count stopped agreeing with the dots below it.
+        // The carousel renders cards in a `ForEach` keyed on `id`. Keeping the
+        // formats apart means two points of one book can never share an identity.
         let reading = point(record(format: .epub, cfi: "epubcfi(/6/4)"))
         let listening = point(record(format: .audio, at: 900))
         #expect(reading.id != listening.id)
@@ -60,11 +59,11 @@ struct ResumePointIdentityTests {
         #expect(first.id == later.id)
     }
 
-    @Test("a card matches only its own book and format")
-    func matchesPairsOnBookAndFormat() {
+    @Test("a card matches its own book in either format")
+    func matchesOnBookInEitherFormat() {
         let reading = point(record(format: .epub))
         #expect(reading.matches(record(format: .epub)))
-        #expect(!reading.matches(record(format: .audio)))
+        #expect(reading.matches(record(format: .audio)))
         #expect(!reading.matches(record(uuid: "book-2", format: .epub)))
     }
 }
@@ -104,22 +103,57 @@ struct ResumePointFractionTests {
 
 @Suite("Continue rail splice")
 struct ResumeSpliceTests {
-    @Test("a listening position leaves the reading card alone")
-    func listeningDoesNotOverwriteReading() throws {
-        // The bug this pins: one card per book meant starting the audiobook
-        // rewrote the reading card in place — same book, wrong verb, and the
-        // reading position it was holding was gone.
-        let rail = [point(record(format: .epub, cfi: "epubcfi(/6/4)"))]
+    @Test("a listening position replaces the book's reading card")
+    func listeningReplacesTheReadingCard() throws {
+        // The server sends one card per book, so a save in the other format
+        // must replace the cached card, not add a second one beside it.
+        let rail = [
+            point(record(format: .epub, cfi: "epubcfi(/6/4)"), duration: 3_600, part: 2, parts: 12)
+        ]
         let cards = try #require(
             UserDataService.splice(
                 record(format: .audio, at: 900, clock: 1_700_000_100), book: book(), into: rail
             )
         )
 
-        #expect(cards.count == 2)
+        #expect(cards.count == 1)
         #expect(cards.first?.record.format == .audio)
-        #expect(cards.last?.record.format == .epub)
-        #expect(cards.last?.record.epubCFI == "epubcfi(/6/4)")
+        // The replaced card's totals described the other format.
+        #expect(cards.first?.record.totalDurationSeconds == nil)
+        #expect(cards.first?.audioPartCount == nil)
+    }
+
+    @Test("an older position in the other format leaves a newer card alone")
+    func olderOtherFormatPositionIsIgnored() throws {
+        // A drained answer can trail a newer save made in the other format.
+        let rail = [point(record(format: .audio, at: 900, clock: 1_700_000_100))]
+        let cards = try #require(
+            UserDataService.splice(
+                record(format: .epub, cfi: "epubcfi(/6/4)", clock: 1_700_000_000),
+                book: book(), into: rail
+            )
+        )
+
+        #expect(cards.count == 1)
+        #expect(cards.first?.record.format == .audio)
+        #expect(cards.first?.record.audioPositionSeconds == 900)
+    }
+
+    @Test("a cache holding both formats of a book collapses to one card")
+    func bothFormatsInTheCacheCollapseToOne() throws {
+        let rail = [
+            point(record(format: .epub, cfi: "epubcfi(/6/4)")),
+            point(record(format: .audio, at: 900)),
+            point(record(uuid: "book-2"), book: book(id: 2, uuid: "book-2")),
+        ]
+        let cards = try #require(
+            UserDataService.splice(
+                record(format: .audio, at: 1_800), book: nil, into: rail
+            )
+        )
+
+        #expect(cards.map(\.id) == ["book-1:audio", "book-2:epub"])
+        #expect(cards.first?.record.audioPositionSeconds == 1_800)
     }
 
     @Test("saving a position moves its own card to the front")

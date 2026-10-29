@@ -13,7 +13,7 @@ import { PageTitle } from "../../components/PageTitle/PageTitle";
 import { ToastProvider } from "../../components/Toast/Toast";
 import { prefersReducedMotion } from "../../motion";
 import { type BookDialog, BookDialogs } from "./BookDialogs";
-import { BookTabs, panelId, tabId, useBookTabs } from "./BookTabs";
+import { BookTabs, indexOf, panelId, tabId, useBookTabs } from "./BookTabs";
 import { FilesDetails } from "./FilesDetails";
 import { Hero } from "./Hero";
 import { HighlightsJournal } from "./HighlightsJournal";
@@ -105,6 +105,7 @@ function Page({ book }: { book: Detail }) {
           ref={stage}
           className={offscreen ? "bp-stage is-offscreen" : "bp-stage"}
           data-tab={tab}
+          style={{ "--tab": indexOf(tab) }}
         >
           <Backdrop book={book} />
           <div className="bp-stage-body">

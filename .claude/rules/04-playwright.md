@@ -1,5 +1,5 @@
 ---
-paths: "ui_tests/**, test_data/**, db/tests/fixture_epubs.rs, .github/workflows/e2e.yml, scripts/e2e-ci.sh, omnibus-ios/omnibusUITests/**, scripts/explore/driver/package.json, flake.nix"
+paths: "ui_tests/**, test_data/**, db/tests/fixture_epubs.rs, .github/workflows/e2e.yml, scripts/e2e-ci.sh, scripts/lib/scratch-server.sh, omnibus-ios/omnibusUITests/**, scripts/explore/driver/package.json, flake.nix"
 ---
 # 04 — Playwright E2E conventions
 
@@ -60,9 +60,8 @@ Series tab; `author-back` went, since Authors has a tab. `tags-back` went with
 the tag cloud page (#2157).
 
 **A shelf opens two ways on web, and they are different surfaces.** Both start
-in the landing library's shelf section, because **the top nav has no Shelves
-link** — a spec that reaches for one in the `Primary` navigation is asserting a
-control that no longer exists.
+in the landing library's shelf section; the top nav's Shelves link is a third
+way to the index, active on `/shelves` and every `/shelves/:id`.
 
 - The section's `gallery-all-shelves` link **navigates** to the `/shelves`
   index, whose cards (`shelf-card-<id>`) then open `/shelves/:id` — use

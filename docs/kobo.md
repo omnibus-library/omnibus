@@ -12,6 +12,9 @@ both:
 Either way the book is converted to a **KEPUB** — Kobo's own EPUB variant, which
 gets noticeably faster page turns than a plain EPUB.
 
+Reading on KOReader instead? See [KOReader](koreader.md) for its plugin, which
+syncs the same shelves.
+
 No device to hand? Developers can [test wireless sync with a mock
 Kobo](#testing-without-a-device) instead.
 
@@ -95,7 +98,7 @@ You need:
 - **An Omnibus server the Kobo can reach on its own Wi-Fi** — a LAN address or
   a tunnel, not `localhost`. The device does the talking, so whatever URL you
   give it has to resolve from the device.
-- **At least one shelf marked "Sync to Kobo"** — only opted-in shelves sync, so
+- **At least one shelf marked "Sync to my devices"** — only opted-in shelves sync, so
   set this before the first sync or the device pulls an empty library.
 - **A USB cable, once**, to edit a config file on the device.
 
@@ -117,9 +120,11 @@ You need:
 
 Back up the device first — see the warning above.
 
-1. In a shelf's settings, turn on **Sync to Kobo** for whatever you want the
+A KOReader has its own card beside this one; see [KOReader](koreader.md).
+
+1. In a shelf's settings, turn on **Sync to my devices** for whatever you want the
    device to carry.
-2. Go to **Account → Kobo wireless sync**, give your Kobo a name, and click
+2. Go to **Settings → Devices → Kobo**, give your Kobo a name, and click
    **Add a Kobo**. Omnibus prints that device's own sync endpoint —
    `<your_omnibus_server_url>/kobo/<token>`. The token identifies the device,
    so treat the URL as a secret and use a different one per Kobo. If the
@@ -146,7 +151,7 @@ Back up the device first — see the warning above.
 **Hidden items** in Explorer's View tab.)
 
 To stop syncing, point `api_endpoint` back at the Kobo store URL you replaced,
-or remove the device from **Account → Kobo wireless sync**.
+or remove the device from **Settings → Devices → Kobo**.
 
 ### Highlights and notes
 
@@ -243,20 +248,47 @@ address in `OMNIBUS_PUBLIC_ORIGIN`.
 
 ### In a terminal
 
-Start the dev server (`just dev-up`), then run:
+Run the TUI against any Omnibus instance, a deployed one or this worktree's dev server:
 
 ```bash
-just kobo
+just kobo                       # asks for the device's sync URL
+just kobo --sync-url URL        # skips the prompt
+just kobo --local               # this worktree's dev server, wired as "Mock Kobo"
 ```
 
-It follows this worktree's dev server, logs in as `OMNIBUS_DEV_SEED_USER`, and
-reuses or creates the Omnibus device named "Mock Kobo". The screen shows the
-device's hardware id, URL, library, last sync and the requests it made.
+With no flags it asks for a **Sync URL** before anything is sent. Copy it from the
+instance: **Settings → Devices → Kobo**
+(`https://<host>/kobo/<token>`). A URL of any other shape is refused with the
+reason and the prompt stays open; <kbd>Esc</kbd> or <kbd>Ctrl-C</kbd> quits.
+`--sync-url URL` takes the same URL as a flag, and can't be combined with `--url`,
+`--token` or `--local`. The device then syncs against that instance with that
+token. The URL holds the device's token, so as a flag it lands in the process
+list and shell history; the prompt keeps it out of both. A token from
+`OMNIBUS_MOCK_KOBO_TOKEN` (or `--token`) also skips the prompt, and `--url`
+is only accepted together with `--token` or `--local`. Pressing <kbd>w</kbd> to wire a token only works against a local server,
+as below.
 
-The seeded admin starts with a **Kobo library** smart shelf that holds every
-EPUB, CBZ and PDF and has **Sync to Kobo** on, so the first sync downloads all
+`--local` needs the dev server (`just dev-up`) and `OMNIBUS_DEV_SEED_USER`. It
+follows this worktree's dev server, logs in as the seeded admin, and reuses or
+creates the Omnibus device named "Mock Kobo". The screen shows the device's
+hardware id, URL, library, last sync and the requests it made.
+
+**Every launch is a clean slate.** Without `--state`, the TUI keeps its state
+file and downloaded books in a scratch directory under
+`.claude/runtime/mock-kobo/runs/` (gitignored, per worktree) and removes it on
+exit. A launch that was killed leaves its directory behind; the next launch
+removes every directory no running TUI holds. `--state PATH` is the opt-out: that
+file persists, so the token, library and reading state carry over to the next
+launch, and a token saved in it skips the prompt. `tui` no longer uses
+`.claude/runtime/mock-kobo.json` or `mock-kobo.books/` (`serve` still does); delete
+them by hand if they are left over from earlier versions.
+
+The shelf a device syncs must have **Sync to my devices** on. The seeded dev admin
+starts with a **Kobo library** smart shelf that holds every
+EPUB, CBZ and PDF and has it on, so the first sync downloads all
 of them. The server adds that shelf only when it creates the admin. If your dev
-database already had an admin, mark a shelf **Sync to Kobo** yourself.
+database already had an admin, or you point at another instance, mark a shelf
+**Sync to my devices** yourself.
 
 | Key | Does |
 |---|---|
@@ -322,15 +354,17 @@ done; press <kbd>q</kbd> or <kbd>Ctrl-C</kbd> again to quit at once. A running
 sync is always waited for, so the pages Omnibus recorded are saved; one more
 <kbd>Ctrl-C</kbd> kills the process.
 
-For a second device, give it its own state file; inside the gitignored
+A second terminal is a second local device, but under `--local` every launch wires
+the same Omnibus device, "Mock Kobo". For a second, distinctly named one, give it a
+state file of its own, which also persists it; inside the gitignored
 `.claude/runtime/`, because a state file holds the device token:
 
 ```bash
-just kobo --state .claude/runtime/other.json   # the Omnibus device "Mock Kobo (other)"
+just kobo --local --state .claude/runtime/other.json   # the Omnibus device "Mock Kobo (other)"
 ```
 
 A downloaded book's file is kept beside the state file, in `<state>.books/`
-(the default `.claude/runtime/mock-kobo.json` → `.claude/runtime/mock-kobo.books/<id>.kepub.epub`),
+(`.claude/runtime/other.json` → `.claude/runtime/other.books/<id>.kepub.epub`),
 so a second device's downloads never collide with the first's.
 
 #### Reader fixture
@@ -360,7 +394,9 @@ is listening:
 cargo run -p omnibus-mock-kobo -- serve
 ```
 
-Both commands take the same options; each flag wins over its env var:
+`serve` keeps its state in `.claude/runtime/mock-kobo.json` unless `--state` names
+another, and it persists between runs; only `tui` starts clean. Both commands
+take the same options; each flag wins over its env var:
 
 | Flag | Env var | Meaning |
 |---|---|---|
@@ -368,6 +404,8 @@ Both commands take the same options; each flag wins over its env var:
 | `--token <token>` | `OMNIBUS_MOCK_KOBO_TOKEN` | The device's path token; saved in the state file |
 | `--state <path>` | `OMNIBUS_MOCK_KOBO_STATE` | The device's JSON state file |
 | `--port <n>` | | The control API port on `127.0.0.1` (default: any free port) |
+
+`tui` also takes `--sync-url <url>` and `--local` (above), which `serve` refuses.
 
 With no token, the device logs in as the `user:password` in
 `OMNIBUS_DEV_SEED_USER`. `mock-kobo --help` lists the rest.

@@ -82,11 +82,13 @@ pub enum StartError {
 /// (`Device::forget_server`), and when the resolved token or origin differs
 /// from the saved one, its `sync_token` and `download_urls` too — the same
 /// state a retarget drops. The notice is set only when auto-wire reused a
-/// server device for a device with no state file.
+/// server device for a device with no state file. `device_name` names the
+/// server device auto-wire reuses or creates.
 pub async fn start(
     args: &ServeArgs,
     seed_user: Option<&str>,
     runtime_dir: &Path,
+    device_name: &str,
 ) -> Result<Started, StartError> {
     let saved = state::load(&args.state).await?;
     let dev_server = autowire::dev_server_url(runtime_dir).await;
@@ -96,10 +98,9 @@ pub async fn start(
         Some(token) => (token, target.wired_url),
         None => {
             let seed = SeedUser::parse(seed_user)?;
-            let name = autowire::device_name(&args.state);
-            let wired = autowire::wire(&target.url, &seed, &name).await?;
+            let wired = autowire::wire(&target.url, &seed, device_name).await?;
             if wired.reused && saved.is_none() {
-                notice = Some(reuse_notice(&name));
+                notice = Some(reuse_notice(device_name));
             }
             (wired.token, Some(target.url.clone()))
         }

@@ -179,14 +179,6 @@ describe("routes", () => {
       expect(screen.queryByText("Not ported yet")).not.toBeInTheDocument();
     });
 
-    it("renders the upload page at /add-books", async () => {
-      renderRoute("/add-books");
-
-      expect(
-        await screen.findByRole("heading", { level: 1, name: "Upload a book" }),
-      ).toBeInTheDocument();
-    });
-
     it("renders the check-in flow at /check-in", async () => {
       renderRoute("/check-in");
 
@@ -635,6 +627,14 @@ describe("routes", () => {
 
   it("renders not found for a path nothing lives at", async () => {
     renderRoute("/no/such/page");
+
+    expect(
+      await screen.findByRole("heading", { name: "Page not found" }),
+    ).toBeInTheDocument();
+  });
+
+  it("renders not found at /add-books, which is a sheet now and no page", async () => {
+    renderRoute("/add-books");
 
     expect(
       await screen.findByRole("heading", { name: "Page not found" }),

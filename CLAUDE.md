@@ -32,6 +32,8 @@ Numbered rules in [.claude/rules/](.claude/rules/), applied in order. Follow the
 
 **Reviews:** every code review also applies [CODING_STANDARDS.md](CODING_STANDARDS.md), the judgement rules no linter or test can check.
 
+**Design:** [DESIGN.md](DESIGN.md) is the visual system both web clients share — tokens, type, depth, components, do's and don'ts. Read it before any UI change; `.impeccable/design.json` is its machine-readable sidecar. [PRODUCT.md](PRODUCT.md) holds the product truth behind it (users, positioning, principles), and [omnibus-ios/PRODUCT.md](omnibus-ios/PRODUCT.md) adds what is specific to iOS.
+
 **Line-count cap:** every file in `CLAUDE.md`, `AGENTS.md`, and `.claude/` stays under ~200 lines. Split by topic when it grows past that — enforced by rule 99.
 
 **Path-scoped rules:** a topic rule opens with `paths:` frontmatter, so Claude Code loads it only once a matching file is touched; only 01, 02, 03, 05, 98 and 99 load every session. Give a new topic rule the same — Claude Code warns once the always-loaded instruction files pass 120k chars in total.
@@ -97,7 +99,8 @@ just react                                                  # React client (fron
 # Used by the `ui-validate` skill; safe to re-run.
 just dev-up
 source .claude/runtime/env.sh                               # picks up OMNIBUS_PORT + PLAYWRIGHT_BASE_URL
-just kobo                                                   # mock Kobo e-reader in a terminal UI against the dev server (docs/kobo.md)
+just kobo                                                   # mock Kobo e-reader in a terminal UI against any instance (sync URL; `--local` for this worktree's dev server) (docs/kobo.md)
+just koreader                                              # interactive KOReader in a browser tab (Docker) against any instance (plugin zip; `--local` for this worktree's dev server) (docs/koreader.md)
 
 # Fullstack dev (serves SSR + WASM hydration at http://localhost:8080 by default)
 dx serve --platform web -p omnibus
@@ -138,6 +141,11 @@ just e2e-ci                                                 # whole suite; or `j
 cd ui_tests/playwright && pnpm install                      # first time
 cd ui_tests/playwright && pnpm exec playwright test         # run all
 just lint-ts                                                # biome + typecheck (TS project)
+
+# KOReader E2E lane: a real KOReader in Docker over OPDS against a scratch
+# server. Linux + docker only.
+just koreader-e2e                                           # PASS/FAIL per scenario (docs/koreader.md)
+just koreader-plugin-test                                   # the Omnibus plugin's sync logic, under plain luajit
 
 # Native iOS app (omnibus-ios/; system xcodebuild + simctl, no nix shell)
 just ios-build                                              # compile check (generic simulator destination)

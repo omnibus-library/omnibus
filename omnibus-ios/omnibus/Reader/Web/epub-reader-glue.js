@@ -93,6 +93,17 @@
   var bookIsRTLMemo = null;
   var relocateTimer = null;
   var locationsReady = false;
+  // A seek that arrived before the locations pass — the follow jump on a
+  // book's first open, where the pass takes seconds. Applied when the pass
+  // lands; dropped by any navigation first (the reader's own move outranks it).
+  var pendingSeek = null;
+  // The host's id for the parked seek, and for the last one applied or dropped.
+  // Relocates carry the latter, so the host stops re-sending a seek to a
+  // rebooted page once it is no longer parked here.
+  var pendingSeekId = null;
+  var settledSeekId = null;
+  // Whether this book has reported a position yet; see applyPendingSeek.
+  var relocateEmitted = false;
   // False while an initial CFI restore is still settling — mutes emitRelocate
   // so the first-pass landing (a page or two off until fonts/theme reflow) is
   // never persisted as reading progress.
@@ -201,6 +212,10 @@
     endSectionTurn();
     endSettleFade();
     locationsReady = false;
+    pendingSeek = null;
+    pendingSeekId = null;
+    settledSeekId = null;
+    relocateEmitted = false;
     sectionRanges = null;
     tocFlat = [];
     sel = null;
@@ -362,6 +377,7 @@
       totalChapters: ch ? ch.total : tocFlat.length,
       chapterTitle: ch ? ch.title : "",
       chapterPagesLeft: pagesLeft,
+      settledSeek: settledSeekId,
     };
   }
 
@@ -411,6 +427,7 @@
 
     try {
       book = ePub(fileUrl, { openAs: "epub" });
+      alignReplacementsOnOpen(book);
 
       // Font assets become data: in epub.js's replacement table before the
       // first section renders — see inlineFontReplacements. Guarded on
@@ -526,6 +543,7 @@
         if (rendition && rendition.location) {
           emitRelocate(rendition.location, true);
         }
+        applyPendingSeek();
       })
       .catch(function () {
         emitStatus("error");
@@ -717,13 +735,23 @@
     }
     data.echo = echo;
     if (data.cfi && typeof window.__omnibusOnRelocate === "function") {
+      relocateEmitted = true;
       window.__omnibusOnRelocate(JSON.stringify(data));
     }
+  }
+
+  // The reader's own move outranks a parked seek, and an applied one is done.
+  function dropPendingSeek() {
+    if (pendingSeek === null) return;
+    pendingSeek = null;
+    settledSeekId = pendingSeekId;
+    pendingSeekId = null;
   }
 
   function next() {
     if (!rendition) return;
     restoreEchoCfi = null;
+    dropPendingSeek();
     cancelResizeCorrection();
     return rendition.next();
   }
@@ -731,6 +759,7 @@
   function prev() {
     if (!rendition) return;
     restoreEchoCfi = null;
+    dropPendingSeek();
     cancelResizeCorrection();
     return rendition.prev();
   }
@@ -952,6 +981,7 @@
       }
       doc.__omnibusBookCss = true;
       var manifest = book.packaging.manifest || {};
+      var resources = book.resources;
       var paths = [];
       Object.keys(manifest).forEach(function (id) {
         var item = manifest[id];
@@ -964,13 +994,20 @@
         }
       });
       paths.forEach(function (path) {
-        book.archive
-          .getText(path)
+        // Nothing comes back for a sheet the zip lacks; the rest still go in.
+        var read = book.archive.getText(path);
+        if (!read) return;
+        read
           .then(function (css) {
             if (!css || !doc.head) return;
             var style = doc.createElement("style");
             style.setAttribute("data-omnibus-book-css", "");
-            style.textContent = css;
+            // The sheet's url()s are relative to the sheet, and inline they
+            // would resolve against the section: point them at epub.js's
+            // copies of the book's files, as it does for the <link> it rewrites.
+            style.textContent = resources
+              ? resources.substitute(css, path)
+              : css;
             // Prepend so book CSS sits ahead of the reader baseline, which
             // only touches html/body and should win any tie (e.g. hyphens).
             doc.head.insertBefore(style, doc.head.firstChild);
@@ -982,6 +1019,30 @@
     } catch (e) {
       /* never let styling break rendering */
     }
+  }
+
+  // epub.js drops a file it can't read from replacementUrls, which shifts every
+  // later copy one place off its asset: chapters, sheets and fonts then all get
+  // the next file's copy. Rebuild the table by asset as soon as it is filled,
+  // before epub.js rewrites the book's sheets with it. A file the book lacks
+  // keeps no copy, so its link stays as written and the host still hears of it.
+  function alignReplacementsOnOpen(b) {
+    var replacements = b.replacements;
+    b.replacements = function () {
+      var self = this;
+      var res = self.resources;
+      var fill = res.replacements;
+      res.replacements = function () {
+        return fill.apply(res, arguments).then(function (urls) {
+          var cache = (self.archive && self.archive.urlCache) || {};
+          res.replacementUrls = res.urls.map(function (href) {
+            return cache[self.resolve(href)];
+          });
+          return urls;
+        });
+      };
+      return replacements.apply(self, arguments);
+    };
   }
 
   var FONT_EXT_RE = /\.(woff2|woff|ttf|otf|ttc)$/i;
@@ -1025,8 +1086,8 @@
       if (!res || !b.archive || !res.assets || !res.urls || !res.replacementUrls) {
         return Promise.resolve(0);
       }
-      // epub.js drops failed entries from replacementUrls, so the parallel
-      // arrays can fall out of step; a book already in that state is left to it.
+      // alignReplacementsOnOpen keeps the parallel arrays in step; should they
+      // fall out of it anyway, the book is left to epub.js's own copies.
       if (res.replacementUrls.length !== res.urls.length) return Promise.resolve(0);
       var jobs = [];
       res.assets.forEach(function (item, i) {
@@ -2486,6 +2547,7 @@
   // Resolves once the destination has painted.
   function turnInstant(dir) {
     peekInFlight = false;
+    dropPendingSeek();
     var kind = neighbourKind(dir);
     if (kind === "page") {
       var c = pageContainer();
@@ -2533,6 +2595,7 @@
   // Animate one page forward/back when the neighbouring page is rendered
   // in this section; use the atomic section hand-off at a boundary.
   function turnAnimated(dir) {
+    dropPendingSeek();
     var c = pageContainer();
     var d = pageDelta();
     if (!c || !d) {
@@ -2950,6 +3013,7 @@
           animateOffsetTo(c, dragBase, dragPx, 0, 180);
           return;
         }
+        dropPendingSeek();
         var target = dragBase + dir * d;
         if (target < -0.5 || target > maxScroll(c) + 0.5) {
           // Preserve the resisted drag in the outgoing snapshot so it
@@ -3723,6 +3787,7 @@
   function display(target) {
     if (!rendition || !target) return;
     restoreEchoCfi = null;
+    dropPendingSeek();
     var t = String(target);
     var hash = t.indexOf("#");
     // CFIs and bare hrefs pass straight through. Fragment hrefs resolve to
@@ -3758,15 +3823,69 @@
     displaySettled(t);
   }
 
-  // Jump to a fraction (0–1) of the whole book — the scrubber's contract.
-  // Positions come from the locations pass, so this no-ops until page numbers
-  // exist rather than guessing and landing somewhere arbitrary.
-  function seek(fraction) {
-    if (!rendition || !book || !book.locations || !locationsReady) return;
+  // Jump to a fraction (0–1) of the whole book — the scrubber's and the
+  // cross-format jumps' contract. Positions come from the locations pass, so a
+  // seek that arrives first is parked until it lands rather than guessed at.
+  // The host sends one only once the page is ready, so a restore has settled.
+  // `id` comes back as `settledSeek` once the seek is applied or dropped.
+  function seek(fraction, id) {
+    if (!rendition) return;
     var f = Number(fraction);
     if (!isFinite(f)) return;
-    var cfi = book.locations.cfiFromPercentage(Math.max(0, Math.min(1, f)));
-    if (cfi) display(cfi);
+    pendingSeek = Math.max(0, Math.min(1, f));
+    pendingSeekId = id === undefined ? null : id;
+    applyPendingSeek();
+  }
+
+  // A jump target already on screen is a restatement, not movement (#1972) —
+  // the web glue's guard of the same name. `rendition.location` trails a turn
+  // by a frame, so the drawn page is read first.
+  function jumpIsCurrent(cfi) {
+    try {
+      if (!rendition) return false;
+      var loc = rendition.currentLocation();
+      if (!loc || !loc.start) loc = rendition.location;
+      if (!loc || !loc.start) return false;
+      var c = new ePub.CFI();
+      var s = loc.start.cfi;
+      if (c.compare(cfi, s) === 0) return true;
+      var e = loc.end ? loc.end.cfi : null;
+      return !!e && c.compare(cfi, s) >= 0 && c.compare(cfi, e) < 0;
+    } catch (err) {
+      return false;
+    }
+  }
+
+  function applyPendingSeek() {
+    if (pendingSeek === null || !book || !book.locations || !locationsReady) return;
+    var cfi = book.locations.cfiFromPercentage(pendingSeek);
+    var moves = !!cfi && !jumpIsCurrent(cfi);
+    // Before the landing goes out: a rotation's settle would mute it, and its
+    // correction would redisplay the pre-jump page.
+    if (moves) cancelResizeCorrection();
+    // The landing goes out first, as itself: folded into the jump's report it
+    // would be the host's first relocate, which it never saves. Its own report
+    // may be in the debounce, or still a frame from firing at all.
+    if (relocateTimer && rendition.location) {
+      clearTimeout(relocateTimer);
+      relocateTimer = null;
+      emitRelocate(rendition.location);
+    } else if (!relocateEmitted) {
+      var loc = null;
+      try {
+        loc = rendition.currentLocation();
+      } catch (e) {
+        /* not rendered yet */
+      }
+      if (loc && loc.start) emitRelocate(loc);
+    }
+    dropPendingSeek();
+    // No move: leave the restore's echo standing, and the stage still.
+    if (!moves) return;
+    // A jump is movement: its landing must not be spent as the restore's echo,
+    // or the host renders it and never saves it.
+    restoreEchoPending = false;
+    display(cfi);
   }
 
   function copyText(text) {

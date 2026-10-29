@@ -267,13 +267,27 @@ private func plain(_ spans: [JournalSpan]) -> String {
 
 // MARK: - Masking
 
-@Test func maskedCensorsEverySpoilerRegion() {
-    let line = JournalMarkdown.masked("He was ||Ares|| and ||her uncle||")
-    #expect(line == "He was \u{2588}\u{2588}\u{2588} and \u{2588}\u{2588}\u{2588}")
+@Test func maskedSwapsEverySpoilerForFillerOfItsLength() {
+    let masked = JournalMarkdown.masked("He was ||Ares|| and ||her **uncle**||")
+    #expect(masked.line == "He was \u{E000} and \u{E000}")
+    // Sized to the span as it reads, markup resolved — never its text.
+    #expect(masked.fillers == ["lore", "lorem ips"])
 }
 
 @Test func maskedLeavesProseAlone() {
-    #expect(JournalMarkdown.masked("Wrote a C# parser") == "Wrote a C# parser")
+    let masked = JournalMarkdown.masked("Wrote a C# parser")
+    #expect(masked.line == "Wrote a C# parser")
+    #expect(masked.fillers.isEmpty)
+}
+
+@Test func runsSplitAResolvedLineBackAtItsMarks() {
+    let runs = JournalMarkdown.runs("\u{E000} was \u{E000}", fillers: ["lore", "lo"])
+    #expect(runs == [.veiled("lore"), .text(" was "), .veiled("lo")])
+}
+
+@Test func spokenNamesAVeiledRunRatherThanReadingItsFiller() {
+    let runs: [MaskedRun] = [.text("He was "), .veiled("lore"), .text(".")]
+    #expect(JournalMarkdown.spoken(runs) == "He was spoiler, hidden.")
 }
 
 // MARK: - What assistive tech hears

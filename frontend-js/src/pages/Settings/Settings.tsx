@@ -19,6 +19,7 @@ import { ApiTokensCard } from "./ApiTokensCard";
 import { GoalsSection } from "./GoalsSection";
 import { KindleCard } from "./KindleCard";
 import { KoboCard } from "./KoboCard";
+import { KoreaderCard } from "./KoreaderCard";
 import { PasswordCard } from "./PasswordCard";
 import { PreferencesSection } from "./PreferencesSection";
 import { ProfileSection } from "./ProfileSection";
@@ -40,6 +41,7 @@ function Devices() {
     <>
       <KindleCard />
       <KoboCard />
+      <KoreaderCard />
     </>
   );
 }

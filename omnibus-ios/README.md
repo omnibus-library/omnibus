@@ -408,14 +408,15 @@ already reserves its room, so a toggle never moves the page.
 > `Reader/Web/epub-reader-glue.js` has **diverged** from
 > `frontend/assets/vendor/` — it carries iOS-only additions the web build
 > doesn't have: annotation taps (`__omnibusOnAnnotationTap`), note underlines,
-> `seek(fraction)` for the scrubber, `chapterPagesLeft` on the relocate payload,
+> `seek(fraction, id)` for the scrubber and follow jumps, `chapterPagesLeft` and
+> `settledSeek` on the relocate payload,
 > `applyHostGround` (paints the host document the page's ground, so the bands
 > around `#stage` don't stay dark behind a light page), and `clearSelection`
 > (the selection belongs to the section iframe, so the host window's
 > `getSelection` can't drop it). Merge changes from
 > the web copy rather than overwriting. The bridge depends on
 > `buildRelocateData`'s payload shape (`pct`, `chapter` as an index,
-> `chapterTitle`, `chapterPagesLeft`).
+> `chapterTitle`, `chapterPagesLeft`, `settledSeek`).
 
 **One tap on a highlight arrives twice.** The mark's own listener reports an
 annotation tap, and the same touch bubbles to the document as a page tap — and
@@ -462,6 +463,10 @@ of its neighbours, so the one gesture the control exists for can't be aimed. The
 three readouts under it are chapter elapsed, **book** remaining, chapter
 remaining — all at once, which is what pays for the chapter-scoped bar without
 needing a mode. The mini bar's hairline stays whole-book for the same reason.
+The lock screen and Control Center scrubber is chapter-scoped too, as Audible's
+is: Now Playing reports the chapter's elapsed time and length, so the position a
+`changePlaybackPositionCommand` sends back is chapter-relative and goes through
+`seekWithinChapter`.
 
 It's a hand-rolled `PlayerScrubber`, not a `Slider`: `Slider` draws a fixed 27pt
 pill thumb and its own inset chrome, and no amount of tinting gets it to the slim

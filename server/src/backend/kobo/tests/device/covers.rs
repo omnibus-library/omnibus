@@ -8,6 +8,8 @@ use omnibus_mock_kobo::device::Device;
 use omnibus_mock_kobo::downloads::DownloadPolicy;
 use omnibus_mock_kobo::session::sync_now;
 
+use crate::backend::test_support::seed_override_cover;
+
 use super::*;
 
 #[tokio::test]

@@ -5,7 +5,7 @@ import { uniqueSuffix } from "../data/unique";
 import { expect, test } from "../fixtures/pageFixtures";
 import { failing } from "../utils/api";
 import { TEST_PASSWORD } from "../utils/auth";
-import { topEdge } from "../utils/dom";
+import { sharesALine, topEdge } from "../utils/dom";
 
 // The seeded admin covers the plain-user sections: Profile, Preferences, Goals,
 // Devices and Sign-in & security. Other specs read its stack series, hidden
@@ -103,7 +103,7 @@ test.describe("preferences section", () => {
 
 test.describe("devices section", () => {
   test("show the devices section layout", async ({ settingsPage }) => {
-    const { kindle, kobo } = settingsPage;
+    const { kindle, kobo, koreader } = settingsPage;
 
     await test.step("open the devices section", async () => {
       await settingsPage.goto("devices");
@@ -132,6 +132,150 @@ test.describe("devices section", () => {
       await expect(kobo.dataLossWarning).toBeVisible();
       await expect(kobo.setupToggle).toBeVisible();
       await expect(kobo.shelvesLink).toHaveAttribute("href", "/shelves");
+      expect(await sharesALine(kobo.nameField, kobo.addButton)).toBe(true);
+    });
+
+    await test.step("check the koreader card sits below the kobo card without its warning", async () => {
+      await expect(koreader.card).toBeVisible();
+      await expect(koreader.setupToggle).toBeVisible();
+      await expect(koreader.shelvesLink).toHaveAttribute("href", "/shelves");
+      await expect(koreader.dataLossWarning).toHaveCount(0);
+      expect(await sharesALine(koreader.nameField, koreader.addButton)).toBe(
+        true,
+      );
+      expect(await topEdge(koreader.card)).toBeGreaterThan(
+        await topEdge(kobo.devicesCard),
+      );
+    });
+  });
+
+  // Adding a no-plugin KOReader changes the account's one Progress sync login, so the
+  // reader account runs it, not the shared admin.
+  test("connect KOReaders without the plugin", async ({
+    readerSettingsPage,
+    readerExpectMutation,
+  }) => {
+    const { koreader } = readerSettingsPage;
+    const first = `E2E Libra ${uniqueSuffix()}`;
+    const second = `E2E Clara ${uniqueSuffix()}`;
+    const passwordShape = /^[a-hjkmnp-z2-9]{5}(-[a-hjkmnp-z2-9]{5}){3}$/;
+    let firstId = 0;
+    let secondId = 0;
+
+    await test.step("open the devices section of a reader with no KOReader", async () => {
+      await readerSettingsPage.goto("devices");
+      await expect(koreader.deviceRows).toHaveCount(0);
+      await expect(koreader.noPluginCheckbox).not.toBeChecked();
+      await expect(koreader.noPluginHint).toBeVisible();
+    });
+
+    await test.step("add the first no-plugin KOReader", async () => {
+      const { response } = await readerExpectMutation(
+        kobo.create(first, "kosync"),
+        () => koreader.addNoPluginDevice(first),
+      );
+      const created: CreatedKoboDevice = await response.json();
+      expect(created.kosync_login?.password).toMatch(passwordShape);
+      firstId = created.id;
+    });
+
+    await test.step("check its login is shown once", async () => {
+      await expect(koreader.statusMessage).toHaveText(
+        `Added ${first}. Copy its login now: the password is shown once.`,
+      );
+      await expect(koreader.badge(first)).toHaveText("No plugin");
+      await expect(koreader.pluginDownload(first)).toHaveCount(0);
+      await expect(koreader.passwordField(first)).toHaveValue(passwordShape);
+      await expect(koreader.serverUrlField(first)).toHaveValue(/\/kosync$/);
+      await expect(koreader.usernameField(first)).not.toHaveValue("");
+      await expect(koreader.noPluginCheckbox).not.toBeChecked();
+    });
+
+    await test.step("add a second one and check it reuses the login", async () => {
+      const { response } = await readerExpectMutation(
+        kobo.create(second, "kosync"),
+        () => koreader.addNoPluginDevice(second),
+      );
+      const created: CreatedKoboDevice = await response.json();
+      expect(created.kosync_login).toBeUndefined();
+      secondId = created.id;
+      await expect(koreader.statusMessage).toHaveText(`Added ${second}.`);
+      await expect(koreader.loginPanel(second)).toContainText(
+        "Uses your existing Progress sync login",
+      );
+      await expect(koreader.loginPanel(second)).toContainText(
+        "as your other no-plugin KOReaders",
+      );
+      await expect(koreader.passwordField(second)).toHaveCount(0);
+    });
+
+    const before = await koreader.passwordField(first).inputValue();
+    const generates = koreader.recordGenerates();
+
+    await test.step("ask to generate a new password and back out", async () => {
+      await koreader.startGenerate(second);
+      await expect(koreader.replaceDialog).toContainText(first);
+      await expect(koreader.replaceDialog).toContainText(second);
+      await koreader.cancelGenerate();
+      await expect(koreader.replaceDialog).toHaveCount(0);
+      expect(generates).toEqual([]);
+    });
+
+    await test.step("fail a generate and check the shown login stays", async () => {
+      await readerSettingsPage.forceServerError(account.kosyncPassword());
+      await koreader.startGenerate(second);
+      await readerExpectMutation(failing(account.kosyncPassword()), () =>
+        koreader.confirmGenerate(),
+      );
+      await expect(koreader.statusMessage).toHaveClass(/error/);
+      await expect(koreader.passwordField(first)).toHaveValue(before);
+      await expect(koreader.signedOut(first)).toHaveCount(0);
+      await readerSettingsPage.stopForcingServerError(account.kosyncPassword());
+    });
+
+    await test.step("generate a new password", async () => {
+      await koreader.startGenerate(second);
+      await readerExpectMutation(account.kosyncPassword(), () =>
+        koreader.confirmGenerate(),
+      );
+    });
+
+    await test.step("check the new login shows and both KOReaders read signed out", async () => {
+      await expect(koreader.statusMessage).toHaveText(
+        "New password generated. Copy it now: it is shown once.",
+      );
+      await expect(koreader.loginPanel(second)).toContainText(
+        "New Progress sync login (shown once)",
+      );
+      await expect(koreader.passwordField(second)).toHaveValue(passwordShape);
+      await expect(koreader.passwordField(second)).not.toHaveValue(before);
+      await expect(koreader.signedOut(first)).toBeVisible();
+      await expect(koreader.signedOut(second)).toBeVisible();
+    });
+
+    await test.step("remove one and check it asks plainly", async () => {
+      await koreader.startRemove(second);
+      await expect(koreader.removeConfirmation(second)).not.toContainText(
+        "last no-plugin",
+      );
+      await readerExpectMutation(kobo.revoke(secondId), () =>
+        koreader.confirmRemove(),
+      );
+      await expect(koreader.deviceRow(second)).toHaveCount(0);
+    });
+
+    await test.step("remove the last one and check it says the login goes", async () => {
+      await koreader.startRemove(first);
+      await expect(koreader.removeConfirmation(first)).toContainText(
+        "last no-plugin KOReader",
+      );
+      await expect(koreader.removeConfirmation(first)).toContainText(
+        "its password stops working",
+      );
+      await readerExpectMutation(kobo.revoke(firstId), () =>
+        koreader.confirmRemove(),
+      );
+      await expect(koreader.deviceRow(first)).toHaveCount(0);
     });
   });
 
@@ -310,6 +454,86 @@ test.describe("devices section", () => {
     });
   });
 
+  test("add and remove a koreader device", async ({
+    settingsPage,
+    createdKoboDeviceIds,
+    expectMutation,
+  }) => {
+    const { koreader } = settingsPage;
+    const name = `E2E KOReader ${uniqueSuffix()}`;
+
+    await test.step("open the devices section", async () => {
+      await settingsPage.goto("devices");
+    });
+
+    const id = await test.step("add a koreader", async () => {
+      const { response } = await expectMutation(
+        kobo.create(name, "koreader"),
+        () => koreader.addDevice(name),
+      );
+      const created: CreatedKoboDevice = await response.json();
+      createdKoboDeviceIds.add(created.id);
+      return created.id;
+    });
+
+    await test.step("check the row offers the plugin and no token", async () => {
+      await expect(koreader.statusMessage).toHaveText(
+        `Added ${name}. Download its plugin and put it on the device.`,
+      );
+      await expect(koreader.badge(name)).toHaveText("Not synced yet");
+      await expect(koreader.lastSync(name)).toHaveText("Added just now");
+      await expect(koreader.pluginDownload(name)).toHaveText("Download plugin");
+      await expect(koreader.tokenField(name)).toHaveCount(0);
+    });
+
+    await test.step("download the plugin", async () => {
+      expect(await koreader.downloadPlugin(name)).toBe(
+        `omnibus-koreader-${id}.zip`,
+      );
+    });
+
+    await test.step("remove it", async () => {
+      await koreader.startRemove(name);
+      await expect(koreader.removeConfirmation(name)).toBeVisible();
+      await expectMutation(kobo.revoke(id), () => koreader.confirmRemove());
+      createdKoboDeviceIds.delete(id);
+    });
+
+    await test.step("check the row is gone", async () => {
+      await expect(koreader.statusMessage).toHaveText("KOReader removed.");
+      await expect(koreader.deviceRow(name)).toHaveCount(0);
+    });
+  });
+
+  test("ask for a name when adding a device without one", async ({
+    settingsPage,
+  }) => {
+    const { kobo: kobos, koreader } = settingsPage;
+    const writes = kobos.recordCreates();
+
+    await test.step("open the devices section", async () => {
+      await settingsPage.goto("devices");
+    });
+
+    await test.step("add a kobo with no name", async () => {
+      await kobos.addButton.click();
+      await expect(kobos.statusMessage).toHaveText(
+        "Enter a name for your device.",
+      );
+    });
+
+    await test.step("add a koreader with no name", async () => {
+      await koreader.addButton.click();
+      await expect(koreader.statusMessage).toHaveText(
+        "Enter a name for your device.",
+      );
+    });
+
+    await test.step("check nothing was sent", async () => {
+      expect(writes).toEqual([]);
+    });
+  });
+
   test("ask before regenerating a kobo token", async ({
     settingsPage,
     ownKoboDevice,
@@ -409,6 +633,43 @@ test.describe("devices section", () => {
     await test.step("check the steps are already open", async () => {
       await expect(kobo.emptyMessage).toBeVisible();
       await expect(kobo.setupSteps).toBeVisible();
+    });
+  });
+
+  test("open the koreader setup steps from their disclosure", async ({
+    settingsPage,
+  }) => {
+    const { koreader } = settingsPage;
+
+    await test.step("open the devices section with one koreader", async () => {
+      await koreader.stubDevices([{ id: 1, name: "Kobo Libra" }]);
+      await settingsPage.goto("devices");
+      await expect(koreader.deviceRows).toHaveCount(1);
+    });
+
+    await test.step("check the steps start folded away", async () => {
+      await expect(koreader.setupSteps).toBeHidden();
+    });
+
+    await test.step("open the steps", async () => {
+      await koreader.openSetupSteps();
+      await expect(koreader.setupSteps).toBeVisible();
+    });
+  });
+
+  test("show the koreader setup steps to a reader with no koreader yet", async ({
+    settingsPage,
+  }) => {
+    const { koreader } = settingsPage;
+
+    await test.step("open the devices section with no koreader", async () => {
+      await koreader.stubDevices([]);
+      await settingsPage.goto("devices");
+    });
+
+    await test.step("check the steps are already open", async () => {
+      await expect(koreader.emptyMessage).toBeVisible();
+      await expect(koreader.setupSteps).toBeVisible();
     });
   });
 });

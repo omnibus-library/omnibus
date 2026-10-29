@@ -16,6 +16,7 @@ import {
   SetStackSeries,
   type UserSummary,
 } from "../api/generated/schemas";
+import { nowSecs } from "../format";
 import { svg } from "./handlers";
 import {
   aWireApiToken,
@@ -36,8 +37,12 @@ export type SettingsServer = {
   refuseGoals: string[];
   /** The address `GET /api/kindle/delivery` sends from; `null` is no email delivery. */
   sender: string | null;
-  /** The reader's Kobos. */
+  /** The reader's Kobos and KOReaders. */
   kobo: KoboDeviceView[];
+  /** Whether the account has a Progress sync login. */
+  kosyncConfigured: boolean;
+  /** How many passwords the account has been given, so each one differs. */
+  kosyncPasswords: number;
   /** The reader's API tokens, newest first. */
   tokens: ApiTokenView[];
   /** The reader's sessions; the one flagged `is_current` is the page's own. */
@@ -56,11 +61,16 @@ export const aSettingsServer = (
   refuseGoals: [],
   sender: "library@example.com",
   kobo: [],
+  kosyncConfigured: false,
+  kosyncPasswords: 0,
   password: "old-password-123",
   sessions: [],
   tokens: [],
   ...init,
 });
+
+/** The password the server hands out for the `n`th time. */
+export const kosyncPassword = (n: number) => `abcde-fghjk-mnpqr-stu${n}`;
 
 const missing = () =>
   new HttpResponse("kobo device not found", { status: 404 });
@@ -141,15 +151,36 @@ export function settingsHandlers(server: SettingsServer) {
     }),
     http.get("/api/account/kobo-devices", () => HttpResponse.json(server.kobo)),
     http.post("/api/account/kobo-devices", async ({ request }) => {
-      const { name } = CreateKoboDevice.parse(await request.json());
+      const { name, kind } = CreateKoboDevice.parse(await request.json());
       const id = Math.max(0, ...server.kobo.map((d) => d.id)) + 1;
       const device = aWireKoboDevice({
         id,
         name: name.trim(),
+        kind: kind ?? "kobo",
         token: `tok-${id}`,
+        created_at: nowSecs(),
       });
       server.kobo = [...server.kobo, device];
-      return HttpResponse.json(device);
+      // The first no-plugin KOReader on an account with no login makes it, and is told it once.
+      if (device.kind !== "kosync" || server.kosyncConfigured)
+        return HttpResponse.json(device);
+      server.kosyncConfigured = true;
+      server.kosyncPasswords += 1;
+      return HttpResponse.json({
+        ...device,
+        kosync_login: {
+          username: server.user.username,
+          password: kosyncPassword(server.kosyncPasswords),
+        },
+      });
+    }),
+    http.post("/api/account/kosync", () => {
+      server.kosyncConfigured = true;
+      server.kosyncPasswords += 1;
+      return HttpResponse.json({
+        username: server.user.username,
+        password: kosyncPassword(server.kosyncPasswords),
+      });
     }),
     http.post("/api/account/kobo-devices/:id/regenerate", ({ params }) => {
       const found = server.kobo.find((d) => d.id === Number(params.id));
@@ -159,9 +190,15 @@ export function settingsHandlers(server: SettingsServer) {
       return HttpResponse.json(device);
     }),
     http.delete("/api/account/kobo-devices/:id", ({ params }) => {
-      if (!server.kobo.some((d) => d.id === Number(params.id)))
-        return missing();
-      server.kobo = server.kobo.filter((d) => d.id !== Number(params.id));
+      const gone = server.kobo.find((d) => d.id === Number(params.id));
+      if (!gone) return missing();
+      server.kobo = server.kobo.filter((d) => d.id !== gone.id);
+      // The login goes with the last no-plugin KOReader, and with nothing else.
+      if (
+        gone.kind === "kosync" &&
+        !server.kobo.some((d) => d.kind === "kosync")
+      )
+        server.kosyncConfigured = false;
       return empty(204);
     }),
     http.get("/api/auth/api-tokens", () => HttpResponse.json(server.tokens)),

@@ -19,7 +19,7 @@ test.describe("search palette", () => {
     });
   });
 
-  // The word is hidden below 900px, so the button has to carry its own name.
+  // The word is hidden below 960px, so the button has to carry its own name.
   test.describe("phone viewport", () => {
     test.use({ viewport: { width: 390, height: 844 } });
 

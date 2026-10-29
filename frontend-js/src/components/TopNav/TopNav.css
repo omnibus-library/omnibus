@@ -82,6 +82,31 @@
   text-transform: uppercase;
   white-space: nowrap;
 }
+/* The five-link bar needs ~917px with the full search trigger, so it condenses below 960px. */
+@media (max-width: 960px) {
+  .atrium-topbar {
+    padding-inline: 16px;
+    gap: 8px;
+  }
+  .atrium-nav {
+    margin-left: 0;
+  }
+  .atrium-nav a {
+    padding: 6px 4px;
+    letter-spacing: 0.04em;
+  }
+  .atrium-topbar .sp-trigger {
+    padding: 0;
+    width: 36px;
+    gap: 0;
+    justify-content: center;
+    flex: none;
+  }
+  .atrium-topbar .sp-trigger > span,
+  .atrium-topbar .sp-trigger .sp-trigger-kbd {
+    display: none;
+  }
+}
 @media (max-width: 720px) {
   :root {
     --topbar-h: 61px;

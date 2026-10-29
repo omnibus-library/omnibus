@@ -11,8 +11,8 @@ use crate::init_db;
 use super::super::enrich::mark_index_at;
 use super::super::*;
 use super::{
-    seed, seed_audiobook, seed_epub_position, seed_null_client_updated_at,
-    seed_second_audiobook_file, seed_user,
+    audio_update, cfi_update, seed, seed_audiobook, seed_epub_position,
+    seed_null_client_updated_at, seed_second_audiobook_file, seed_user,
 };
 
 #[tokio::test]
@@ -134,6 +134,85 @@ async fn recent_progress_returns_rows_newest_first_within_limit() {
     let capped = recent_progress(&pool, user, 1).await.unwrap();
     assert_eq!(capped.len(), 1);
     assert_eq!(capped[0].book_uuid, uuid_b);
+}
+
+#[tokio::test]
+async fn recent_progress_returns_one_row_per_book_in_its_newest_format() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool, "alice").await;
+    let uuid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+    seed_audiobook(&pool, uuid).await;
+    upsert_progress(
+        &pool,
+        user,
+        &cfi_update(uuid, "epubcfi(/6/4!/4/2/1:0)", 1000),
+    )
+    .await
+    .unwrap();
+    upsert_progress(&pool, user, &audio_update(uuid, 450.0, None, 2000))
+        .await
+        .unwrap();
+
+    let rows = recent_progress(&pool, user, 10).await.unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].format, ProgressFormat::Audio);
+}
+
+#[tokio::test]
+async fn recent_progress_breaks_a_same_time_tie_between_formats_toward_audio() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool, "alice").await;
+    let uuid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+    seed_audiobook(&pool, uuid).await;
+    upsert_progress(
+        &pool,
+        user,
+        &cfi_update(uuid, "epubcfi(/6/4!/4/2/1:0)", 1000),
+    )
+    .await
+    .unwrap();
+    upsert_progress(&pool, user, &audio_update(uuid, 450.0, None, 1000))
+        .await
+        .unwrap();
+    sqlx::query("UPDATE reading_progress SET updated_at = 1000 WHERE book_uuid = ?")
+        .bind(uuid)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let rows = recent_progress(&pool, user, 10).await.unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].format, ProgressFormat::Audio);
+}
+
+#[tokio::test]
+async fn recent_progress_counts_its_limit_in_books_not_formats() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool, "alice").await;
+    let dual = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+    seed_audiobook(&pool, dual).await;
+    let (_, single) = seed(&pool, "/lib", "Single").await;
+    upsert_progress(
+        &pool,
+        user,
+        &cfi_update(dual, "epubcfi(/6/4!/4/2/1:0)", 3000),
+    )
+    .await
+    .unwrap();
+    upsert_progress(&pool, user, &audio_update(dual, 450.0, None, 2000))
+        .await
+        .unwrap();
+    upsert_progress(
+        &pool,
+        user,
+        &cfi_update(&single, "epubcfi(/6/4!/4/2/1:0)", 1000),
+    )
+    .await
+    .unwrap();
+
+    let rows = recent_progress(&pool, user, 2).await.unwrap();
+    let uuids: Vec<&str> = rows.iter().map(|r| r.book_uuid.as_str()).collect();
+    assert_eq!(uuids, [dual, single.as_str()]);
 }
 
 async fn set_status(pool: &SqlitePool, user: i64, uuid: &str, status: omnibus_shared::ReadStatus) {

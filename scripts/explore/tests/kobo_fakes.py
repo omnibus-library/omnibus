@@ -48,9 +48,9 @@ class FakeOmnibus:
         self._server.server_close()
         self._thread.join()
 
-    def add_device(self, user: str, name: str) -> dict[str, Any]:
+    def add_device(self, user: str, name: str, kind: str = "kobo") -> dict[str, Any]:
         """Register a device for `user` as if it were made in the Account page."""
-        device = {"id": self._next(), "name": name, "token": f"tok-{self._next()}", "created_at": 0, "last_seen_at": 0}
+        device = {"id": self._next(), "name": name, "kind": kind, "token": f"tok-{self._next()}", "created_at": 0, "last_seen_at": 0}
         self.devices.setdefault(user, []).append(device)
         return device
 

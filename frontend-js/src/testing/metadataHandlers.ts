@@ -149,18 +149,14 @@ export function providersHandler(configured: boolean) {
 
 /**
  * `POST /api/metadata/editions/search` answering `found`. Each request body
- * lands in `searched`; `gate` holds the answer until it resolves.
+ * lands in `searched`.
  */
 export function editionSearchHandler(
   found: EditionSearchResponse,
-  {
-    searched = [],
-    gate,
-  }: { searched?: EditionSearchRequest[]; gate?: Promise<void> } = {},
+  { searched = [] }: { searched?: EditionSearchRequest[] } = {},
 ) {
   return http.post("/api/metadata/editions/search", async ({ request }) => {
     searched.push(EditionSearchRequest.parse(await request.json()));
-    await gate;
     return HttpResponse.json(found);
   });
 }

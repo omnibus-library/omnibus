@@ -16,23 +16,6 @@ test.describe("always-on scrollbars", () => {
     await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
   });
 
-  test("show the library without scrolling sideways", async ({
-    libraryPage,
-  }) => {
-    const { topNav, scroll } = libraryPage;
-
-    await test.step("open the library with scrollbars drawn", async () => {
-      await libraryPage.goto();
-      await scroll.showClassicScrollbars();
-    });
-
-    await test.step("check a scrollbar takes width but nothing scrolls sideways", async () => {
-      await topNav.assertDisplayed();
-      await expect.poll(() => scroll.scrollbarWidth()).toBeGreaterThan(0);
-      expect(await scroll.scrollsSideways()).toBe(false);
-    });
-  });
-
   test("open the user menu without scrolling sideways", async ({
     libraryPage,
   }) => {
@@ -70,4 +53,31 @@ test.describe("always-on scrollbars", () => {
       expect(await scroll.scrollsSideways()).toBe(false);
     });
   });
+
+  // 721 is the 720px nav breakpoint's first pixel, and 961 the search collapse's.
+  for (const width of [1280, 721, 961]) {
+    test.describe(`${width} wide`, () => {
+      test.use({ viewport: { width, height: 600 } });
+
+      test(`keep the top bar inside a ${width}px window`, async ({
+        libraryPage,
+      }) => {
+        const { topNav, scroll } = libraryPage;
+
+        await test.step("open the library with scrollbars drawn", async () => {
+          await libraryPage.goto();
+          await scroll.showClassicScrollbars();
+          await expect.poll(() => scroll.scrollbarWidth()).toBeGreaterThan(0);
+          await scroll.waitForFonts();
+        });
+
+        await test.step("check every bar control shows and nothing scrolls sideways", async () => {
+          await expect(topNav.navLink("Shelves")).toBeVisible();
+          await expect(topNav.checkInButton).toBeVisible();
+          await expect(topNav.addBooksButton).toBeVisible();
+          expect(await scroll.scrollsSideways()).toBe(false);
+        });
+      });
+    });
+  }
 });

@@ -205,7 +205,7 @@ export const KoboToggle: Story = {
       await canvas.findByRole("button", { name: "More shelf actions" }),
     );
     const toggle = canvas.getByRole("menuitemcheckbox", {
-      name: "Sync to Kobo",
+      name: "Sync to my devices",
     });
     await expect(toggle).toHaveAttribute("aria-checked", "false");
     await expect(canvas.queryByTestId("shelf-kobo-badge")).toBeNull();
@@ -214,7 +214,7 @@ export const KoboToggle: Story = {
 
     await expect(
       await canvas.findByTestId("shelf-kobo-badge"),
-    ).toHaveTextContent("Syncs to Kobo");
+    ).toHaveTextContent("Syncs to my devices");
     await expect(writes).toEqual([
       { op: "patch", body: { sync_to_kobo: true } },
     ]);
@@ -222,7 +222,7 @@ export const KoboToggle: Story = {
 
     await userEvent.click(action(canvas, "More shelf actions"));
     await expect(
-      canvas.getByRole("menuitemcheckbox", { name: "Sync to Kobo" }),
+      canvas.getByRole("menuitemcheckbox", { name: "Sync to my devices" }),
     ).toHaveAttribute("aria-checked", "true");
   },
 };
@@ -237,7 +237,7 @@ export const KoboToggleFailing: Story = {
     );
 
     await userEvent.click(
-      canvas.getByRole("menuitemcheckbox", { name: "Sync to Kobo" }),
+      canvas.getByRole("menuitemcheckbox", { name: "Sync to my devices" }),
     );
 
     await expect(await canvas.findByRole("alert")).toHaveTextContent(
@@ -264,13 +264,13 @@ export const KoboTogglePending: Story = {
     });
     await userEvent.click(more);
     await userEvent.click(
-      canvas.getByRole("menuitemcheckbox", { name: "Sync to Kobo" }),
+      canvas.getByRole("menuitemcheckbox", { name: "Sync to my devices" }),
     );
     await waitFor(() => expect(patches).toHaveLength(1));
 
     await userEvent.click(more);
     const toggle = await canvas.findByRole("menuitemcheckbox", {
-      name: "Sync to Kobo",
+      name: "Sync to my devices",
     });
     await expect(toggle).toBeDisabled();
     await userEvent.click(toggle);

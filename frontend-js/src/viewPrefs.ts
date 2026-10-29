@@ -141,15 +141,22 @@ export function savePlan(
   return { writeTo: pageFailed ? last : null, unsaved: true };
 }
 
-export type Reconcile = "keep" | "adopt" | "save";
+export type Reconcile = "keep" | "adopt" | "save" | "rebase";
 
-/** What page 1 naming the library `path` does to the prefs in memory. */
+/**
+ * What page 1 naming the library `path` does to the prefs in memory.
+ * `seededFrom` is the library they were read from, `null` when none seeded them:
+ * an unsaved edit made on another library's view is filed under `path` with its filter and the fields the user changed.
+ */
 export function reconcile(
   reconciled: string | null,
   path: string,
   unsaved: boolean,
+  seededFrom: string | null,
 ): Reconcile {
-  if (unsaved) return "save";
+  if (unsaved) {
+    return seededFrom === null || seededFrom === path ? "save" : "rebase";
+  }
   return reconciled === path ? "keep" : "adopt";
 }
 
@@ -208,8 +215,10 @@ export function handoffClauses(state: unknown): FilterClause[] | null {
 
 /** The library's prefs in memory (opening on `handoff`'s filter, if any), filed under the library page 1 names; the caller reports each answer to `noteAnswered`. */
 export function useLibraryPrefs(handoff: FilterClause[] | null = null) {
+  const seededFrom = useRef<string | null>(null);
   const [prefs, setPrefs] = useState(() => {
     const last = lastLibrary();
+    seededFrom.current = last;
     const saved = last ? loadPrefs(last) : DEFAULT_PREFS;
     return handoff ? { ...saved, clauses: handoff } : saved;
   });
@@ -218,6 +227,8 @@ export function useLibraryPrefs(handoff: FilterClause[] | null = null) {
   // A handed-off filter is in no library's store yet; page 1's reconcile files it.
   const unsaved = useRef(handoff !== null);
   const pageFailed = useRef(false);
+  // What the user changed before page 1 answered, which the rebase keeps over the new library's own.
+  const edited = useRef<Partial<Prefs>>({});
 
   const change = (next: Prefs) => {
     const plan = savePlan(
@@ -226,7 +237,15 @@ export function useLibraryPrefs(handoff: FilterClause[] | null = null) {
       lastLibrary(),
     );
     if (plan.writeTo) savePrefs(plan.writeTo, next);
-    if (plan.unsaved) unsaved.current = true;
+    if (plan.unsaved) {
+      unsaved.current = true;
+      if (next.view !== prefs.view) edited.current.view = next.view;
+      // One choice: an axis pick sets the direction with it.
+      if (next.sort !== prefs.sort || next.dir !== prefs.dir) {
+        edited.current.sort = next.sort;
+        edited.current.dir = next.dir;
+      }
+    }
     setPrefs(next);
   };
 
@@ -237,13 +256,30 @@ export function useLibraryPrefs(handoff: FilterClause[] | null = null) {
       if (path === undefined) return;
       libraryPath.current = path;
       if (path === null) return;
-      const action = reconcile(reconciled.current, path, unsaved.current);
+      const action = reconcile(
+        reconciled.current,
+        path,
+        unsaved.current,
+        seededFrom.current,
+      );
       if (action === "adopt") setPrefs(loadPrefs(path));
       if (action === "save") {
         savePrefs(path, prefs);
         unsaved.current = false;
       }
+      if (action === "rebase") {
+        const rebased = {
+          ...loadPrefs(path),
+          clauses: prefs.clauses,
+          ...edited.current,
+        };
+        savePrefs(path, rebased);
+        setPrefs(rebased);
+        unsaved.current = false;
+      }
       reconciled.current = path;
+      seededFrom.current = path;
+      edited.current = {};
     },
     [prefs],
   );

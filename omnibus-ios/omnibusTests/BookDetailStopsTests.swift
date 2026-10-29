@@ -312,31 +312,39 @@ private func sitting(
 
 @Test func journalRowPreviewStripsMarkdownFromTheOpeningLine() {
     let preview = JournalRow.preview("**Kvothe** is an *unreliable* narrator\n\nSecond para")
-    #expect(preview == "Kvothe is an unreliable narrator")
+    #expect(preview == [.text("Kvothe is an unreliable narrator")])
 }
 
 @Test func journalRowPreviewKeepsProseCharactersThatLookLikeSyntax() {
     let preview = JournalRow.preview("Wrote a C# parser in snake_case style")
-    #expect(preview == "Wrote a C# parser in snake_case style")
+    #expect(preview == [.text("Wrote a C# parser in snake_case style")])
 }
 
 @Test func journalRowPreviewUnwrapsAListMarker() {
     let preview = JournalRow.preview("- The Cinder scene lands differently in audio")
-    #expect(preview == "The Cinder scene lands differently in audio")
+    #expect(preview == [.text("The Cinder scene lands differently in audio")])
 }
 
 @Test func journalRowPreviewUnwrapsANumberedOrQuotedOpeningLine() {
-    #expect(JournalRow.preview("1. Started it again") == "Started it again")
-    #expect(JournalRow.preview("> The Beauty of the House") == "The Beauty of the House")
+    #expect(JournalRow.preview("1. Started it again") == [.text("Started it again")])
+    #expect(JournalRow.preview("> The Beauty of the House") == [.text("The Beauty of the House")])
     // Prose that merely opens with a year keeps its digits — the marker needs
     // its `.` or `)`.
-    #expect(JournalRow.preview("1984 reads differently now") == "1984 reads differently now")
+    #expect(JournalRow.preview("1984 reads differently now") == [.text("1984 reads differently now")])
 }
 
-@Test func journalRowPreviewCensorsASpoilerSoTheRowCannotLeakIt() {
-    // The row is always visible, so the span never reaches it in the clear.
+@Test func journalRowPreviewVeilsASpoilerSoTheRowCannotLeakIt() {
+    // The row is always visible, so the span reaches it only as filler.
     let preview = JournalRow.preview("Cannot believe ||Fitchner was **ARES**|| honestly")
-    #expect(preview == "Cannot believe \u{2588}\u{2588}\u{2588} honestly")
+    #expect(preview == [
+        .text("Cannot believe "), .veiled("lorem ipsum dolor"), .text(" honestly"),
+    ])
+}
+
+@Test func journalRowPreviewVeilsASpoilerThatOpensTheLine() {
+    #expect(JournalRow.preview("- ||Ares|| was right there") == [
+        .veiled("lore"), .text(" was right there"),
+    ])
 }
 
 // MARK: - Journal kicker

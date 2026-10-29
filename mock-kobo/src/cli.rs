@@ -23,7 +23,8 @@ mock-kobo: a fake Kobo e-reader that syncs against Omnibus
 
 USAGE:
     mock-kobo serve [--url <origin>] [--token <token>] [--port <n>] [--state <path>]
-    mock-kobo tui   [--url <origin>] [--token <token>] [--port <n>] [--state <path>]
+    mock-kobo tui   [--sync-url <url> | --local | --url <origin> --token <token>]
+                    [--port <n>] [--state <path>]
 
 serve runs the device headless; tui runs it in a terminal UI and serves the same API.
 
@@ -33,6 +34,11 @@ OPTIONS (each flag wins over its env var, for both commands):
     --state <path>    the device's JSON state file          [env: OMNIBUS_MOCK_KOBO_STATE]
     --port <n>        control API port on 127.0.0.1         [default: 0, any free port]
     -h, --help        print this text
+
+TUI-ONLY OPTIONS:
+    --sync-url <url>  the device's sync URL, https://<host>/kobo/<token> (Omnibus
+                      Settings > Devices); stands in for --url and --token
+    --local           follow this worktree's dev server and wire a token for it
 
 KEYS IN THE TUI:
     up/down select book    Enter open      d download    p read to a percent
@@ -53,11 +59,19 @@ IN THE HIGHLIGHTS LIST:
     up/down move the selected row          x delete the selected highlight
     Esc back to the page
 
-WITH NO ARGUMENTS:
+TUI WITHOUT --local:
+    Unless a token is given (--token or its env var) or the --state file holds one,
+    it asks for the device's sync URL before anything is sent. --url needs --token.
+
+TUI --local:
     The device follows this worktree's dev server (.claude/runtime/port, else
     http://localhost:3000). With no token it logs in as OMNIBUS_DEV_SEED_USER
     (<user>:<password>) and reuses or creates the device named \"Mock Kobo\".
-    The state file defaults to .claude/runtime/mock-kobo.json.
+
+STATE:
+    serve keeps its state in .claude/runtime/mock-kobo.json unless --state names
+    another. tui starts as a new device in a scratch dir it removes on exit; --state
+    keeps one across launches.
 ";
 
 /// What the command line asks for.
@@ -66,7 +80,7 @@ pub enum Command {
     /// Run one headless device behind its control API.
     Serve(ServeArgs),
     /// Run one device under a terminal UI, serving the same control API.
-    Tui(ServeArgs),
+    Tui(TuiArgs),
     /// Print the usage text.
     Help,
 }
@@ -84,13 +98,31 @@ pub struct ServeArgs {
     pub state: PathBuf,
 }
 
+/// `tui`'s options: `serve`'s, plus whether a state file was named and how the device is first pointed.
+#[derive(Debug, PartialEq, Eq)]
+pub struct TuiArgs {
+    pub serve: ServeArgs,
+    /// `--state` or `OMNIBUS_MOCK_KOBO_STATE` was given; otherwise the run uses a scratch state.
+    pub state_given: bool,
+    /// `--local`: follow this worktree's dev server and auto-wire.
+    pub local: bool,
+}
+
+impl TuiArgs {
+    /// Whether the TUI must ask for a sync URL: no token is given, none is saved
+    /// in the named state file, and `--local` won't wire one.
+    pub fn needs_prompt(&self, saved_token: bool) -> bool {
+        !self.local && self.serve.token.is_none() && !saved_token
+    }
+}
+
 /// Why the command line can't be used.
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]
 pub enum CliError {
     /// The command line doesn't fit the usage text.
     #[error("{0}")]
     Usage(String),
-    /// A value that can't be used; `name` is "server URL", "device token", "state file" or "port".
+    /// A value that can't be used; `name` is "server URL", "sync URL", "device token", "state file" or "port".
     #[error("invalid {name}: {reason}")]
     Invalid { name: &'static str, reason: String },
 }
@@ -109,9 +141,57 @@ where
     };
     match command.as_str() {
         "serve" => parse_serve(flags, env).map(Command::Serve),
-        "tui" => parse_serve(flags, env).map(Command::Tui),
+        "tui" => parse_tui(flags, env).map(Command::Tui),
         other => Err(CliError::Usage(format!("unknown command: {other}"))),
     }
+}
+
+/// `tui`'s flags: `--sync-url` and `--local` on top of the ones `serve` shares.
+fn parse_tui(flags: &[String], env: impl Fn(&str) -> Option<String>) -> Result<TuiArgs, CliError> {
+    let mut shared = Vec::new();
+    let mut sync_url = None;
+    let mut local = false;
+    let mut target_flag_given = false;
+    let mut url_flag_given = false;
+    let mut flags = flags.iter();
+    while let Some(flag) = flags.next() {
+        match flag.as_str() {
+            "--local" => local = true,
+            "--sync-url" => match flags.next() {
+                Some(value) => sync_url = Some(value.clone()),
+                None => return Err(CliError::Usage("--sync-url expects a value".into())),
+            },
+            _ => {
+                target_flag_given |= matches!(flag.as_str(), "--url" | "--token");
+                url_flag_given |= flag == "--url";
+                shared.push(flag.clone());
+                shared.extend(flags.next().cloned());
+            }
+        }
+    }
+    if sync_url.is_some() && (target_flag_given || local) {
+        return Err(CliError::Usage(
+            "--sync-url cannot be combined with --url, --token or --local".into(),
+        ));
+    }
+    let mut serve = parse_serve(&shared, &env)?;
+    if url_flag_given && serve.token.is_none() && !local {
+        return Err(CliError::Usage(
+            "--url needs --token or --local: otherwise the sync URL prompt replaces it".into(),
+        ));
+    }
+    if let Some(sync_url) = sync_url {
+        let SyncUrl { url, token } = valid_sync_url(sync_url)?;
+        serve.url = Some(url);
+        serve.token = Some(token);
+    }
+    let state_given = shared.iter().any(|flag| flag == "--state")
+        || env(STATE_ENV).is_some_and(|value| !value.is_empty());
+    Ok(TuiArgs {
+        serve,
+        state_given,
+        local,
+    })
 }
 
 /// The flags `serve` and `tui` share, each falling back to its env var and then its default.
@@ -170,6 +250,42 @@ pub fn valid_url(url: String) -> Result<String, CliError> {
         return Err(invalid("expected an origin like http://host:port"));
     }
     Ok(parsed.origin().ascii_serialization())
+}
+
+/// A device's sync URL split into the origin to sync against and the path token.
+#[derive(Debug, PartialEq, Eq)]
+pub struct SyncUrl {
+    pub url: String,
+    pub token: String,
+}
+
+/// The origin and token of `url`, if it is exactly `http(s)://<host>/kobo/<token>`.
+pub fn valid_sync_url(url: String) -> Result<SyncUrl, CliError> {
+    let invalid = || CliError::Invalid {
+        name: "sync URL",
+        reason: "expected http(s)://<host>/kobo/<token>".into(),
+    };
+    let parsed = reqwest::Url::parse(&url)
+        .ok()
+        .filter(|parsed| matches!(parsed.scheme(), "http" | "https"))
+        .filter(|parsed| {
+            parsed.query().is_none()
+                && parsed.fragment().is_none()
+                && parsed.username().is_empty()
+                && parsed.password().is_none()
+        })
+        .ok_or_else(invalid)?;
+    let mut segments: Vec<&str> = parsed.path_segments().ok_or_else(invalid)?.collect();
+    if segments.last() == Some(&"") {
+        segments.pop();
+    }
+    match segments[..] {
+        ["kobo", token] if !token.is_empty() => Ok(SyncUrl {
+            url: parsed.origin().ascii_serialization(),
+            token: valid_token(token.to_owned())?,
+        }),
+        _ => Err(invalid()),
+    }
 }
 
 /// `token` if it is made only of the URL-safe base64 characters Omnibus issues.

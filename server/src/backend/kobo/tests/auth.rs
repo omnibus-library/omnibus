@@ -133,3 +133,79 @@ async fn uuid_routes_reject_an_oversized_path_uuid() {
         .unwrap();
     assert_eq!(res.status(), StatusCode::BAD_REQUEST);
 }
+
+const EVERY_KOBO_ROUTE: &[(&str, &str)] = &[
+    ("GET", "v1/initialization"),
+    ("POST", "v1/auth/device"),
+    ("POST", "v1/auth/refresh"),
+    ("POST", "v1/analytics/event"),
+    ("GET", "v1/analytics/gettests"),
+    ("POST", "v1/analytics/gettests"),
+    ("GET", "v1/library/sync"),
+    ("GET", "v1/library/some-uuid/metadata"),
+    ("GET", "v1/library/some-uuid/state"),
+    ("PUT", "v1/library/some-uuid/state"),
+    ("GET", "v1/library/tags"),
+    ("GET", "v1/download/some-uuid"),
+    (
+        "GET",
+        "v1/books/some-uuid/thumbnail/400/600/100/false/image.jpg",
+    ),
+    (
+        "GET",
+        "v1/books/some-uuid/thumbnail/400/600/false/image.jpg",
+    ),
+    ("GET", "v1/user/profile"),
+];
+
+async fn koreader_token(pool: &sqlx::SqlitePool, user_id: i64) -> String {
+    db::kobo_devices::create_device(pool, user_id, "Libra", omnibus_shared::DeviceKind::Koreader)
+        .await
+        .unwrap()
+        .token
+}
+
+#[tokio::test]
+async fn a_koreader_token_is_rejected_by_every_kobo_route() {
+    let (app, pool, _token, uid) = fixture().await;
+    let token = koreader_token(&pool, uid).await;
+
+    for (method, route) in EVERY_KOBO_ROUTE {
+        let res = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/kobo/{token}/{route}"))
+                    .method(*method)
+                    .header("host", "omni.test")
+                    .header("content-type", "application/json")
+                    .body(Body::from("{}"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED, "{method} {route}");
+    }
+}
+
+#[tokio::test]
+async fn a_koreader_token_does_not_bind_a_hardware_id() {
+    let (app, pool, _token, uid) = fixture().await;
+    let token = koreader_token(&pool, uid).await;
+
+    app.oneshot(
+        Request::builder()
+            .uri(format!("/kobo/{token}/v1/library/sync"))
+            .header("host", "omni.test")
+            .header("x-kobo-deviceid", "hw-1")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await
+    .unwrap();
+
+    let bound = db::kobo_devices::resolve_device_by_hardware_id(&pool, "hw-1")
+        .await
+        .unwrap();
+    assert!(bound.is_none());
+}

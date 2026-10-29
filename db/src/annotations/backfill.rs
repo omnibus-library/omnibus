@@ -21,9 +21,9 @@ pub struct BackfillStats {
 }
 
 /// Derive `epub_cfi_range` for every annotation row that has a
-/// `kobo_location` but no CFI yet, one book at a time. Deliberately does
-/// **not** touch `updated_at`: the derivation changes nothing a Kobo device
-/// consumes, so it must not re-report every book through `checkforchanges`.
+/// `kobo_location` but no CFI yet, one book at a time. Bumps `updated_at` so a
+/// KOReader device already past the row lists it; a Kobo's `checkforchanges`
+/// fingerprint leaves the CFI out, so it doesn't re-report the book.
 pub async fn backfill_kobo_annotation_cfis(pool: &SqlitePool) -> anyhow::Result<BackfillStats> {
     let rows = sqlx::query_as::<_, (i64, String, String)>(
         "SELECT id, book_uuid, kobo_location FROM annotations
@@ -97,7 +97,7 @@ async fn backfill_book(
         // ingest already derived a CFI) since the snapshot, this derivation
         // is for the old anchor and must not land.
         let result = sqlx::query(
-            "UPDATE annotations SET epub_cfi_range = ?
+            "UPDATE annotations SET epub_cfi_range = ?, updated_at = strftime('%s','now')
              WHERE id = ? AND epub_cfi_range IS NULL AND kobo_location = ?",
         )
         .bind(&cfi)

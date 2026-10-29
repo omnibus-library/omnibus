@@ -1623,9 +1623,11 @@ html, body { overscroll-behavior: none; }
    `role="button"` span rather than a `<button>`, so a long one wraps as prose
    instead of dropping whole to the next line. The blur sits on the inner text
    so the focus ring around the control stays sharp; `button.spoiler` is the
-   old markup, still in offline caches until they refetch. */
-.spoiler {
-  cursor: pointer;
+   old markup, still in offline caches until they refetch. `.spoiler-mask` is
+   the same plate on an always-visible excerpt, over filler rather than the
+   span's text, and never opens. */
+.spoiler { cursor: pointer; }
+.spoiler, .spoiler-mask {
   border-radius: 3px;
   background: var(--bg-2);
   -webkit-box-decoration-break: clone;
@@ -5590,9 +5592,27 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
+  overflow-wrap: anywhere;
 }
-.kobo-device-head { display: flex; justify-content: space-between; align-items: baseline; }
-.kobo-device-name { font-weight: 600; color: var(--ink-0); }
+.kobo-device-row .subtitle { margin-bottom: 0; }
+/* The Settings › Devices add form: the name field and its Add button share a line. */
+.device-add-row { display: flex; align-items: flex-end; gap: 0.75rem; }
+.device-add-row .settings-field { flex: 1 1 auto; min-width: 0; }
+.device-add-row .btn { flex: none; }
+.device-add-option { display: flex; flex-direction: column; gap: 0.35rem; }
+.device-add-check { display: inline-flex; align-items: center; gap: 0.5rem; cursor: pointer; color: var(--ink-0); }
+.device-add-hint { margin: 0; padding-left: 1.5rem; }
+.kobo-device-title { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.5rem; min-width: 0; }
+.kobo-row-status { font-size: 0.8rem; color: var(--ink-2); }
+.kobo-row-status.error { color: var(--bad); }
+.kosync-login {
+  display: flex; flex-direction: column; gap: 0.6rem;
+  padding: 0.85rem 1rem; border: 1px solid var(--line-2); border-radius: 8px; background: var(--bg-1);
+}
+.kosync-login p { margin: 0; }
+.kosync-login-title { font-weight: 600; color: var(--ink-0); }
+.kobo-device-head { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; flex-wrap: wrap; }
+.kobo-device-name { font-weight: 600; color: var(--ink-0); min-width: 0; overflow-wrap: anywhere; }
 .kobo-endpoint-url { font-family: var(--mono, ui-monospace, monospace); font-size: 0.85rem; }
 .kobo-endpoint-row { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
 .kobo-endpoint-row .kobo-endpoint-url { flex: 1 1 16rem; min-width: 0; }
@@ -9366,14 +9386,13 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
    parity) but never shown — the top bar carries navigation. */
 .app-shell .m-tabbar { display: none; }
 
-/* The search trigger collapses to an icon-only circle to save width. This
-   fires a breakpoint *above* the phone one because the topbar's mono
-   uppercase chrome is wider than the sans it replaced: between 720px (where
-   the nav steps aside for the tab bar) and ~900px the brand + nav + search +
-   actions no longer fit, and the right cluster runs off the edge. Dropping
-   the trigger's label and ⌘K hint buys back ~94px, more than the type
-   change costs. */
-@media (max-width: 900px) {
+/* Above the phone breakpoint the five-link bar needs ~917px with the full
+   search trigger, so below 960px the trigger drops to an icon and the bar
+   condenses. */
+@media (max-width: 960px) {
+  .atrium-topbar { padding-inline: 16px; gap: 8px; }
+  .atrium-nav { margin-left: 0; }
+  .atrium-nav a { padding: 6px 4px; letter-spacing: .04em; }
   .atrium-topbar .sp-trigger {
     padding: 0; width: 36px; gap: 0; justify-content: center; flex: none;
   }
@@ -9389,8 +9408,8 @@ h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
     padding-bottom: calc(62px + env(safe-area-inset-bottom) + 12px);
   }
 
-  /* Slim the top bar to brand + search + actions. The Library/Authors/
-     Series links move into the tab bar, so hide them here. */
+  /* Slim the top bar to brand + search + actions. The section links
+     step aside for the tab bar, so hide them here. */
   .atrium-topbar { padding: 12px 16px; gap: 7px; }
   .atrium-nav { display: none; }
 
@@ -11152,22 +11171,22 @@ html {
   border-color: rgba(214, 158, 46, 0.5);
   background: rgba(214, 158, 46, 0.08);
 }
-/* ── Cross-format resume prompts (player card + reader banner) ──────── */
+/* ── Cross-format resume offers (player card + reader banner) ───────── */
 .lp-sync-prompt {
   position: absolute;
   top: 86px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 45;
+  /* Above the stage (1), under the topbar (5) and its account menu. */
+  z-index: 4;
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 10px 14px;
+  width: max-content;
   max-width: min(560px, 92vw);
   font-size: 12.5px;
 }
-.lp-sync-copy { flex: 1; }
-.lp-sync-alignment { font-size: 10.5px; opacity: 0.65; white-space: nowrap; }
 .rd-sync-banner {
   position: absolute;
   top: calc(64px + env(safe-area-inset-top, 0px));
@@ -11178,10 +11197,12 @@ html {
   align-items: center;
   gap: 10px;
   padding: 8px 14px;
+  width: max-content;
   max-width: min(640px, 94vw);
   font-size: 12.5px;
 }
-.rd-sync-copy { flex: 1; }
+.sync-offer-copy { flex: 1; display: grid; gap: 2px; }
+.sync-offer-copy strong { font-weight: 600; color: var(--ink-0); }
 /* Secondary CTA pill (counterpart-format link + the Immersive button),
    per the Format Sync design's chCtaSecondary treatment. Scoped like
    `.ch-hero .ch-cta` so it outranks the base pill's fill. */
@@ -11286,17 +11307,6 @@ html {
 }
 .al-narr-note { font-size: 10.5px; opacity: 0.6; margin: 10px 0 0; }
 .rd-sync-here { font-size: 10.5px; }
-.lp-sync-kicker {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  font-size: 10px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--accent, #6a8bd7);
-}
-.lp-sync-kicker-spacer { flex: 1; }
 /* Linked-card sync mark, pinned to the card's top-right corner. */
 .ch-sync-corner {
   position: absolute;

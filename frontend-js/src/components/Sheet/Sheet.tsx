@@ -16,6 +16,8 @@ type SheetProps = {
   busy?: boolean;
   fallbackFocus?: RefObject<HTMLElement | null>;
   testId?: string;
+  /** Hugs its content at a narrower width, for a short step before the full sheet. */
+  compact?: boolean;
   children: ReactNode;
 };
 
@@ -28,6 +30,7 @@ export function Sheet({
   busy = false,
   fallbackFocus,
   testId,
+  compact = false,
   children,
 }: SheetProps) {
   // The owner re-renders while the sheet fades; its newest callback must not restart the exit.
@@ -45,7 +48,7 @@ export function Sheet({
     <Modal
       label={label}
       backdropClass={closing ? "sheet-scrim is-closing" : "sheet-scrim"}
-      dialogClass="sheet"
+      dialogClass={compact ? "sheet is-compact" : "sheet"}
       onClose={onDismiss}
       // Leaving is already under way; a second Escape must not ask again.
       busy={busy || closing}

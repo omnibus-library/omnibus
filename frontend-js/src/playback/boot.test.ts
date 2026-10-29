@@ -20,7 +20,12 @@ const candidate = (
 ): ListeningResume => ({
   state: "candidate",
   follow: true,
-  candidate: { fileId: 917, seconds: 21_822 },
+  candidate: {
+    fileId: 917,
+    seconds: 21_822,
+    sourceClock: 1_760_000_000,
+    sourceAhead: true,
+  },
   ...overrides,
 });
 
@@ -82,7 +87,14 @@ describe("resolveFollowBoot", () => {
     expect(
       resolveFollowBoot(
         null,
-        candidate({ candidate: { fileId: null, seconds: 10 } }),
+        candidate({
+          candidate: {
+            fileId: null,
+            seconds: 10,
+            sourceClock: 1_760_000_000,
+            sourceAhead: true,
+          },
+        }),
       ),
     ).toBeNull();
   });

@@ -1,5 +1,5 @@
 //! Resume-card read path: [`recent_progress`] plus the book join and the
-//! cross-format collapse pass into [`resume_points`]. Position enrichment
+//! cross-format marking pass into [`resume_points`]. Position enrichment
 //! itself lives in [`super::enrich`], shared with the per-book read.
 
 use omnibus_shared::{ProgressFormat, ProgressRecord, ResumePoint};
@@ -8,11 +8,11 @@ use sqlx::{Row, SqlitePool};
 use super::enrich::{enrich_record, PositionDetail};
 use super::{parse_format, ProgressError};
 
-/// The user's most recent progress rows across both formats, newest first by
-/// **client event time** (`COALESCE(client_updated_at, updated_at)`), so a late
-/// offline replay doesn't jump a week-old book to the top; feeds [`resume_points`].
-/// Excludes books marked `unread` or `finished` (a status is per book, so both
-/// formats go) but keeps a **missing** status row: absence is not "unread" here.
+/// One progress row per book, in the format used last, newest first by **client
+/// event time** (`COALESCE(client_updated_at, updated_at)`), so a late offline
+/// replay doesn't jump a week-old book to the top; `limit` counts books. Excludes
+/// books marked `unread` or `finished` but keeps a **missing** status row: absence
+/// is not "unread" here. Feeds [`resume_points`].
 pub async fn recent_progress(
     pool: &SqlitePool,
     user_id: i64,
@@ -20,17 +20,30 @@ pub async fn recent_progress(
 ) -> Result<Vec<ProgressRecord>, ProgressError> {
     // Absence keeps its position: a position write creates its book's status, so a
     // missing row is an edge (a merge undo clears one) that shouldn't hide the book.
+    // The tie-breaks keep the surviving format stable between refreshes: receipt
+    // time, then audio first.
     let rows = sqlx::query(
-        "SELECT rp.book_uuid, rp.format, rp.epub_cfi, rp.audio_position_seconds,
-                rp.progress_percent, rp.kobo_location, rp.book_file_id,
-                rp.updated_at,
-                COALESCE(rp.client_updated_at, rp.updated_at) AS client_updated_at
-         FROM reading_progress rp
-         LEFT JOIN book_read_status rs
-                ON rs.user_id = rp.user_id AND rs.book_uuid = rp.book_uuid
-         WHERE rp.user_id = ?
-           AND (rs.status IS NULL OR rs.status = 'reading')
-         ORDER BY COALESCE(rp.client_updated_at, rp.updated_at) DESC, rp.book_uuid
+        "SELECT book_uuid, format, epub_cfi, audio_position_seconds, progress_percent,
+                kobo_location, book_file_id, updated_at, client_updated_at
+         FROM (
+             SELECT rp.book_uuid, rp.format, rp.epub_cfi, rp.audio_position_seconds,
+                    rp.progress_percent, rp.kobo_location, rp.book_file_id,
+                    rp.updated_at,
+                    COALESCE(rp.client_updated_at, rp.updated_at) AS client_updated_at,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY rp.book_uuid
+                        ORDER BY COALESCE(rp.client_updated_at, rp.updated_at) DESC,
+                                 rp.updated_at DESC,
+                                 rp.format = 'audio' DESC
+                    ) AS rn
+             FROM reading_progress rp
+             LEFT JOIN book_read_status rs
+                    ON rs.user_id = rp.user_id AND rs.book_uuid = rp.book_uuid
+             WHERE rp.user_id = ?
+               AND (rs.status IS NULL OR rs.status = 'reading')
+         )
+         WHERE rn = 1
+         ORDER BY client_updated_at DESC, book_uuid
          LIMIT ?",
     )
     .bind(user_id)
@@ -109,57 +122,24 @@ pub async fn resume_points(
             playback_rate,
         });
     }
-    collapse_linked_points(pool, user_id, &mut points).await?;
+    mark_linked_points(pool, user_id, &mut points).await?;
     Ok(points)
 }
 
-/// Cross-format post-pass: a linked dual-format book competes with itself
-/// when both rows are recent — keep the newer card, mark it linked, and
-/// attach the mapped "resume in the other format" candidate. Unlinked
-/// books keep today's two-card behavior; a stale link still collapses but
-/// carries no candidate (mapping is paused until re-confirmed).
-async fn collapse_linked_points(
+/// Cross-format post-pass: mark each linked book's card as linked and attach
+/// the mapped "resume in the other format" candidate. A stale link is still
+/// marked but carries no candidate (mapping is paused until re-confirmed).
+async fn mark_linked_points(
     pool: &SqlitePool,
     user_id: i64,
-    points: &mut Vec<ResumePoint>,
+    points: &mut [ResumePoint],
 ) -> Result<(), ProgressError> {
-    use std::collections::HashSet;
-    let uuids: HashSet<String> = points.iter().map(|p| p.record.book_uuid.clone()).collect();
-    let mut drop_keys: HashSet<(String, ProgressFormat)> = HashSet::new();
-    let mut linked_uuids: HashSet<String> = HashSet::new();
-    for uuid in uuids {
-        if crate::cross_format::get_link(pool, user_id, &uuid)
+    for p in points.iter_mut() {
+        if crate::cross_format::get_link(pool, user_id, &p.record.book_uuid)
             .await
             .map_err(sqlx_of)?
             .is_none()
         {
-            continue;
-        }
-        linked_uuids.insert(uuid.clone());
-        let mut rows: Vec<&ResumePoint> = points
-            .iter()
-            .filter(|p| p.record.book_uuid == uuid)
-            .collect();
-        if rows.len() > 1 {
-            // Deterministic ordering all the way down: same-second writes
-            // tie-break on receipt time, then a fixed format rank (audio
-            // first) — an unstable sort on equal keys would let the
-            // surviving card flip between refreshes.
-            rows.sort_by_key(|p| {
-                std::cmp::Reverse((
-                    p.record.client_updated_at,
-                    p.record.updated_at,
-                    matches!(p.record.format, ProgressFormat::Audio) as i64,
-                ))
-            });
-            for older in &rows[1..] {
-                drop_keys.insert((uuid.clone(), older.record.format));
-            }
-        }
-    }
-    points.retain(|p| !drop_keys.contains(&(p.record.book_uuid.clone(), p.record.format)));
-    for p in points.iter_mut() {
-        if !linked_uuids.contains(&p.record.book_uuid) {
             continue;
         }
         p.linked = true;

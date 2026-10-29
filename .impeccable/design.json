@@ -1,0 +1,625 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-26T07:09:18.523Z",
+  "title": "Design System: Omnibus",
+  "extensions": {
+    "colorMeta": {
+      "accent": {
+        "role": "primary",
+        "displayName": "Lamplight Amber",
+        "canonical": "oklch(0.78 0.13 65)",
+        "tonalRamp": [
+          "oklch(0.150 0.13 65)",
+          "oklch(0.264 0.13 65)",
+          "oklch(0.379 0.13 65)",
+          "oklch(0.493 0.13 65)",
+          "oklch(0.607 0.13 65)",
+          "oklch(0.721 0.13 65)",
+          "oklch(0.836 0.13 65)",
+          "oklch(0.950 0.13 65)"
+        ],
+        "themes": {
+          "black": "oklch(0.94 0 0)",
+          "light": "oklch(0.78 0.13 65)",
+          "sepia": "oklch(0.58 0.11 50)"
+        }
+      },
+      "accent-soft": {
+        "role": "primary",
+        "displayName": "Amber Wash",
+        "canonical": "oklch(0.30 0.07 65)",
+        "tonalRamp": [
+          "oklch(0.150 0.07 65)",
+          "oklch(0.264 0.07 65)",
+          "oklch(0.379 0.07 65)",
+          "oklch(0.493 0.07 65)",
+          "oklch(0.607 0.07 65)",
+          "oklch(0.721 0.07 65)",
+          "oklch(0.836 0.07 65)",
+          "oklch(0.950 0.07 65)"
+        ],
+        "themes": {
+          "black": "oklch(0.30 0 0)",
+          "light": "oklch(0.91 0.05 70)",
+          "sepia": "oklch(0.82 0.05 60)"
+        }
+      },
+      "accent-ink": {
+        "role": "primary",
+        "displayName": "Amber Ink",
+        "canonical": "oklch(0.16 0.02 65)",
+        "tonalRamp": [
+          "oklch(0.150 0.02 65)",
+          "oklch(0.264 0.02 65)",
+          "oklch(0.379 0.02 65)",
+          "oklch(0.493 0.02 65)",
+          "oklch(0.607 0.02 65)",
+          "oklch(0.721 0.02 65)",
+          "oklch(0.836 0.02 65)",
+          "oklch(0.950 0.02 65)"
+        ],
+        "themes": {
+          "black": "oklch(0.14 0 0)",
+          "light": "oklch(0.16 0.02 65)",
+          "sepia": "oklch(0.98 0.012 80)"
+        }
+      },
+      "bg-0": {
+        "role": "neutral",
+        "displayName": "Night Ground",
+        "canonical": "oklch(0.135 0.006 70)",
+        "tonalRamp": [
+          "oklch(0.150 0.006 70)",
+          "oklch(0.264 0.006 70)",
+          "oklch(0.379 0.006 70)",
+          "oklch(0.493 0.006 70)",
+          "oklch(0.607 0.006 70)",
+          "oklch(0.721 0.006 70)",
+          "oklch(0.836 0.006 70)",
+          "oklch(0.950 0.006 70)"
+        ],
+        "themes": {
+          "black": "oklch(0 0 0)",
+          "light": "oklch(0.985 0.003 75)",
+          "sepia": "oklch(0.945 0.022 80)"
+        }
+      },
+      "bg-1": {
+        "role": "neutral",
+        "displayName": "Shelf",
+        "canonical": "oklch(0.175 0.008 70)",
+        "tonalRamp": [
+          "oklch(0.150 0.008 70)",
+          "oklch(0.264 0.008 70)",
+          "oklch(0.379 0.008 70)",
+          "oklch(0.493 0.008 70)",
+          "oklch(0.607 0.008 70)",
+          "oklch(0.721 0.008 70)",
+          "oklch(0.836 0.008 70)",
+          "oklch(0.950 0.008 70)"
+        ],
+        "themes": {
+          "black": "oklch(0.150 0 0)",
+          "light": "oklch(0.965 0.004 75)",
+          "sepia": "oklch(0.915 0.026 80)"
+        }
+      },
+      "bg-2": {
+        "role": "neutral",
+        "displayName": "Raised",
+        "canonical": "oklch(0.215 0.010 70)",
+        "tonalRamp": [
+          "oklch(0.150 0.010 70)",
+          "oklch(0.264 0.010 70)",
+          "oklch(0.379 0.010 70)",
+          "oklch(0.493 0.010 70)",
+          "oklch(0.607 0.010 70)",
+          "oklch(0.721 0.010 70)",
+          "oklch(0.836 0.010 70)",
+          "oklch(0.950 0.010 70)"
+        ],
+        "themes": {
+          "black": "oklch(0.190 0 0)",
+          "light": "oklch(0.940 0.006 75)",
+          "sepia": "oklch(0.880 0.030 78)"
+        }
+      },
+      "bg-3": {
+        "role": "neutral",
+        "displayName": "Lifted",
+        "canonical": "oklch(0.265 0.011 70)",
+        "tonalRamp": [
+          "oklch(0.150 0.011 70)",
+          "oklch(0.264 0.011 70)",
+          "oklch(0.379 0.011 70)",
+          "oklch(0.493 0.011 70)",
+          "oklch(0.607 0.011 70)",
+          "oklch(0.721 0.011 70)",
+          "oklch(0.836 0.011 70)",
+          "oklch(0.950 0.011 70)"
+        ],
+        "themes": {
+          "black": "oklch(0.240 0 0)",
+          "light": "oklch(0.910 0.008 75)",
+          "sepia": "oklch(0.840 0.034 76)"
+        }
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Rule",
+        "canonical": "oklch(0.30 0.010 70 / 0.65)",
+        "tonalRamp": [
+          "oklch(0.150 0.010 70)",
+          "oklch(0.264 0.010 70)",
+          "oklch(0.379 0.010 70)",
+          "oklch(0.493 0.010 70)",
+          "oklch(0.607 0.010 70)",
+          "oklch(0.721 0.010 70)",
+          "oklch(0.836 0.010 70)",
+          "oklch(0.950 0.010 70)"
+        ],
+        "themes": {
+          "black": "oklch(0.34 0 0 / 0.60)",
+          "light": "oklch(0.40 0.010 70 / 0.20)",
+          "sepia": "oklch(0.42 0.030 60 / 0.28)"
+        }
+      },
+      "line-2": {
+        "role": "neutral",
+        "displayName": "Faint Rule",
+        "canonical": "oklch(0.30 0.010 70 / 0.30)",
+        "tonalRamp": [
+          "oklch(0.150 0.010 70)",
+          "oklch(0.264 0.010 70)",
+          "oklch(0.379 0.010 70)",
+          "oklch(0.493 0.010 70)",
+          "oklch(0.607 0.010 70)",
+          "oklch(0.721 0.010 70)",
+          "oklch(0.836 0.010 70)",
+          "oklch(0.950 0.010 70)"
+        ],
+        "themes": {
+          "black": "oklch(0.34 0 0 / 0.26)",
+          "light": "oklch(0.40 0.010 70 / 0.10)",
+          "sepia": "oklch(0.42 0.030 60 / 0.14)"
+        }
+      },
+      "ink-0": {
+        "role": "neutral",
+        "displayName": "Page White",
+        "canonical": "oklch(0.97 0.006 80)",
+        "tonalRamp": [
+          "oklch(0.150 0.006 80)",
+          "oklch(0.264 0.006 80)",
+          "oklch(0.379 0.006 80)",
+          "oklch(0.493 0.006 80)",
+          "oklch(0.607 0.006 80)",
+          "oklch(0.721 0.006 80)",
+          "oklch(0.836 0.006 80)",
+          "oklch(0.950 0.006 80)"
+        ],
+        "themes": {
+          "black": "oklch(0.99 0 0)",
+          "light": "oklch(0.17 0.006 70)",
+          "sepia": "oklch(0.26 0.038 55)"
+        }
+      },
+      "ink-1": {
+        "role": "neutral",
+        "displayName": "Soft Ink",
+        "canonical": "oklch(0.82 0.010 75)",
+        "tonalRamp": [
+          "oklch(0.150 0.010 75)",
+          "oklch(0.264 0.010 75)",
+          "oklch(0.379 0.010 75)",
+          "oklch(0.493 0.010 75)",
+          "oklch(0.607 0.010 75)",
+          "oklch(0.721 0.010 75)",
+          "oklch(0.836 0.010 75)",
+          "oklch(0.950 0.010 75)"
+        ],
+        "themes": {
+          "black": "oklch(0.82 0 0)",
+          "light": "oklch(0.36 0.008 70)",
+          "sepia": "oklch(0.40 0.036 55)"
+        }
+      },
+      "ink-2": {
+        "role": "neutral",
+        "displayName": "Muted Ink",
+        "canonical": "oklch(0.62 0.012 70)",
+        "tonalRamp": [
+          "oklch(0.150 0.012 70)",
+          "oklch(0.264 0.012 70)",
+          "oklch(0.379 0.012 70)",
+          "oklch(0.493 0.012 70)",
+          "oklch(0.607 0.012 70)",
+          "oklch(0.721 0.012 70)",
+          "oklch(0.836 0.012 70)",
+          "oklch(0.950 0.012 70)"
+        ],
+        "themes": {
+          "black": "oklch(0.63 0 0)",
+          "light": "oklch(0.52 0.010 70)",
+          "sepia": "oklch(0.52 0.032 58)"
+        }
+      },
+      "ink-3": {
+        "role": "neutral",
+        "displayName": "Whisper",
+        "canonical": "oklch(0.48 0.012 70)",
+        "tonalRamp": [
+          "oklch(0.150 0.012 70)",
+          "oklch(0.264 0.012 70)",
+          "oklch(0.379 0.012 70)",
+          "oklch(0.493 0.012 70)",
+          "oklch(0.607 0.012 70)",
+          "oklch(0.721 0.012 70)",
+          "oklch(0.836 0.012 70)",
+          "oklch(0.950 0.012 70)"
+        ],
+        "themes": {
+          "black": "oklch(0.48 0 0)",
+          "light": "oklch(0.50 0.010 70)",
+          "sepia": "oklch(0.64 0.028 60)"
+        }
+      },
+      "ok": {
+        "role": "status",
+        "displayName": "Moss",
+        "canonical": "oklch(0.78 0.13 150)",
+        "tonalRamp": [
+          "oklch(0.150 0.13 150)",
+          "oklch(0.264 0.13 150)",
+          "oklch(0.379 0.13 150)",
+          "oklch(0.493 0.13 150)",
+          "oklch(0.607 0.13 150)",
+          "oklch(0.721 0.13 150)",
+          "oklch(0.836 0.13 150)",
+          "oklch(0.950 0.13 150)"
+        ],
+        "themes": {
+          "black": "oklch(0.78 0.13 150)",
+          "light": "oklch(0.48 0.11 150)",
+          "sepia": "oklch(0.45 0.10 150)"
+        }
+      },
+      "warn": {
+        "role": "status",
+        "displayName": "Brass Warning",
+        "canonical": "oklch(0.78 0.13 75)",
+        "tonalRamp": [
+          "oklch(0.150 0.13 75)",
+          "oklch(0.264 0.13 75)",
+          "oklch(0.379 0.13 75)",
+          "oklch(0.493 0.13 75)",
+          "oklch(0.607 0.13 75)",
+          "oklch(0.721 0.13 75)",
+          "oklch(0.836 0.13 75)",
+          "oklch(0.950 0.13 75)"
+        ],
+        "themes": {
+          "black": "oklch(0.78 0.13 75)",
+          "light": "oklch(0.50 0.11 70)",
+          "sepia": "oklch(0.47 0.10 65)"
+        }
+      },
+      "bad": {
+        "role": "status",
+        "displayName": "Ember",
+        "canonical": "oklch(0.72 0.16 25)",
+        "tonalRamp": [
+          "oklch(0.150 0.16 25)",
+          "oklch(0.264 0.16 25)",
+          "oklch(0.379 0.16 25)",
+          "oklch(0.493 0.16 25)",
+          "oklch(0.607 0.16 25)",
+          "oklch(0.721 0.16 25)",
+          "oklch(0.836 0.16 25)",
+          "oklch(0.950 0.16 25)"
+        ],
+        "themes": {
+          "black": "oklch(0.72 0.16 25)",
+          "light": "oklch(0.48 0.16 25)",
+          "sepia": "oklch(0.46 0.15 30)"
+        }
+      },
+      "cover-fallback-bg": {
+        "role": "neutral",
+        "displayName": "Cover Plate",
+        "canonical": "oklch(0.30 0.004 70)",
+        "tonalRamp": [
+          "oklch(0.150 0.004 70)",
+          "oklch(0.264 0.004 70)",
+          "oklch(0.379 0.004 70)",
+          "oklch(0.493 0.004 70)",
+          "oklch(0.607 0.004 70)",
+          "oklch(0.721 0.004 70)",
+          "oklch(0.836 0.004 70)",
+          "oklch(0.950 0.004 70)"
+        ],
+        "themes": {
+          "black": "oklch(0.26 0 0)",
+          "light": "oklch(0.86 0.004 70)",
+          "sepia": "oklch(0.80 0.030 72)"
+        }
+      },
+      "cover-fallback-ink": {
+        "role": "neutral",
+        "displayName": "Cover Plate Ink",
+        "canonical": "oklch(0.92 0.004 70)",
+        "tonalRamp": [
+          "oklch(0.150 0.004 70)",
+          "oklch(0.264 0.004 70)",
+          "oklch(0.379 0.004 70)",
+          "oklch(0.493 0.004 70)",
+          "oklch(0.607 0.004 70)",
+          "oklch(0.721 0.004 70)",
+          "oklch(0.836 0.004 70)",
+          "oklch(0.950 0.004 70)"
+        ],
+        "themes": {
+          "black": "oklch(0.94 0 0)",
+          "light": "oklch(0.28 0.006 70)",
+          "sepia": "oklch(0.30 0.036 55)"
+        }
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Page heroes."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Section heroes such as a book's title."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Card and panel titles."
+      },
+      "subtitle": {
+        "displayName": "Subtitle",
+        "purpose": "Smaller card and panel titles."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "All interface text, lining figures."
+      },
+      "meta": {
+        "displayName": "Meta",
+        "purpose": "Bylines, counts and secondary rows."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Uppercase section labels, table keys and field labels."
+      },
+      "nav": {
+        "displayName": "Nav",
+        "purpose": "Uppercase top-bar links and buttons."
+      }
+    },
+    "shadows": [
+      {
+        "name": "card",
+        "value": "0 1px 0 color-mix(in oklch, black 22%, transparent), 0 10px 24px -14px color-mix(in oklch, black 45%, transparent)",
+        "purpose": "Resting cards and panels (adopted; not yet in the CSS)."
+      },
+      {
+        "name": "cover",
+        "value": "drop-shadow(0 18px 22px color-mix(in oklch, black 50%, transparent)) drop-shadow(0 2px 0 color-mix(in oklch, black 30%, transparent))",
+        "purpose": "Book covers at rest (a filter, not box-shadow)."
+      },
+      {
+        "name": "cover-hover",
+        "value": "drop-shadow(0 28px 30px color-mix(in oklch, black 65%, transparent)) drop-shadow(0 2px 0 color-mix(in oklch, black 30%, transparent))",
+        "purpose": "A cover under the pointer."
+      },
+      {
+        "name": "popover",
+        "value": "0 18px 40px color-mix(in oklch, black 55%, transparent), 0 2px 0 color-mix(in oklch, black 25%, transparent)",
+        "purpose": "User menu, export menus, filter popovers."
+      },
+      {
+        "name": "modal",
+        "value": "0 24px 60px color-mix(in oklch, black 55%, transparent)",
+        "purpose": "Dialogs and the check-in modal."
+      },
+      {
+        "name": "sheet",
+        "value": "0 2px 6px rgba(0,0,0,.35), 0 40px 90px -24px rgba(0,0,0,.8)",
+        "purpose": "The edit sheet over a book."
+      },
+      {
+        "name": "player",
+        "value": "0 30px 70px -16px rgba(0,0,0,.7)",
+        "purpose": "Audiobook player and mini dock."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-out",
+        "value": "cubic-bezier(.16,1,.3,1)",
+        "purpose": "Entrances and openings; sheets open over 240ms."
+      },
+      {
+        "name": "ease-in",
+        "value": "cubic-bezier(.55,0,.8,.4)",
+        "purpose": "Exits; sheets close over 160ms."
+      },
+      {
+        "name": "cover-lift",
+        "value": "transform .35s cubic-bezier(.2,.7,.2,1)",
+        "purpose": "A cover rising under the pointer."
+      },
+      {
+        "name": "hover",
+        "value": ".15s",
+        "purpose": "Standard color and border hover speed."
+      },
+      {
+        "name": "ld-ease",
+        "value": "cubic-bezier(.45,.05,.25,1)",
+        "purpose": "Loader breathing."
+      },
+      {
+        "name": "ld-beat",
+        "value": "1.7s",
+        "purpose": "Loader cycle."
+      },
+      {
+        "name": "ld-hold",
+        "value": "160ms",
+        "purpose": "Waits shorter than this never show a loader."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "phone",
+        "value": "720px"
+      },
+      {
+        "name": "compact",
+        "value": "900px"
+      },
+      {
+        "name": "wide",
+        "value": "1100px"
+      },
+      {
+        "name": "narrow",
+        "value": "560px"
+      },
+      {
+        "name": "tiny",
+        "value": "480px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Button",
+      "kind": "button",
+      "refersTo": "button",
+      "description": "The default action: quiet raised fill, sinks 1px on press.",
+      "html": "<button class=\"ds-btn\">Add to shelf</button>",
+      "css": ".ds-btn{height:36px;padding:0 14px;border-radius:10px;background:var(--bg-2);color:var(--ink-0);border:1px solid var(--line-2);font:500 13px var(--sans);cursor:pointer;transition:background .15s,border-color .15s,transform .12s}.ds-btn:hover{background:var(--bg-3);border-color:var(--line)}.ds-btn:active{transform:translateY(1px)}.ds-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}"
+    },
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one primary action on a screen.",
+      "html": "<button class=\"ds-btn-primary\">Resume reading</button>",
+      "css": ".ds-btn-primary{height:36px;padding:0 14px;border-radius:10px;background:var(--accent);color:var(--accent-ink);border:1px solid transparent;font:600 13px var(--sans);cursor:pointer;transition:background .15s,transform .12s}.ds-btn-primary:hover{background:color-mix(in oklch,var(--accent) 88%,white)}.ds-btn-primary:active{transform:translateY(1px)}.ds-btn-primary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Secondary actions that should recede.",
+      "html": "<button class=\"ds-btn-ghost\">Cancel</button>",
+      "css": ".ds-btn-ghost{height:36px;padding:0 14px;border-radius:10px;background:transparent;color:var(--ink-1);border:1px solid transparent;font:500 13px var(--sans);cursor:pointer;transition:background .15s,color .15s}.ds-btn-ghost:hover{background:var(--bg-1);color:var(--ink-0)}.ds-btn-ghost:focus-visible{outline:2px solid var(--accent);outline-offset:2px}"
+    },
+    {
+      "name": "Chip",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "Filters and tags; selected swaps to an amber border.",
+      "html": "<span class=\"ds-chip\">Fantasy <b>42</b></span> <span class=\"ds-chip on\">Sci-fi <b>17</b></span>",
+      "css": ".ds-chip{display:inline-flex;gap:6px;align-items:center;padding:4px 10px;border-radius:999px;background:var(--bg-2);color:var(--ink-1);border:1px solid var(--line-2);font:12px var(--sans);transition:color .15s,border-color .15s}.ds-chip b{font:10px var(--mono);color:var(--ink-3)}.ds-chip:hover,.ds-chip.on{color:var(--ink-0);border-color:var(--accent)}"
+    },
+    {
+      "name": "Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "In-app text field with an amber focus.",
+      "html": "<label class=\"ds-field\"><span>Shelf name</span><input value=\"Summer reading\"></label>",
+      "css": ".ds-field{display:grid;gap:6px;font:500 .875rem var(--sans);color:var(--ink-2)}.ds-field input{background:var(--bg-1);color:var(--ink-0);border:1px solid var(--line-2);border-radius:8px;padding:.55rem .75rem;font:.95rem var(--sans)}.ds-field input:focus{outline:2px solid color-mix(in oklch,var(--accent) 55%,transparent);outline-offset:1px;border-color:var(--accent)}"
+    },
+    {
+      "name": "Nav Link",
+      "kind": "nav",
+      "refersTo": "nav-link",
+      "description": "Top-bar destinations in mono uppercase pills.",
+      "html": "<nav class=\"ds-nav\"><a class=\"on\">Library</a><a>Authors</a><a>Series</a><a>Stats</a></nav>",
+      "css": ".ds-nav{display:flex;gap:2px;background:color-mix(in oklch,var(--bg-0) 92%,transparent);padding:14px 28px;backdrop-filter:blur(10px)}.ds-nav a{padding:6px 10px;border-radius:999px;font:11px var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--ink-1);cursor:pointer}.ds-nav a:hover{color:var(--ink-0);background:var(--bg-1)}.ds-nav a.on{color:var(--ink-0);background:var(--bg-2)}"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Shelf-toned container with the soft card shadow.",
+      "html": "<div class=\"ds-card\"><div class=\"ds-label\">Reading goal</div><p>12 of 30 books this year</p></div>",
+      "css": ".ds-card{background:var(--bg-1);border:1px solid var(--line-2);border-radius:14px;padding:20px;box-shadow:0 1px 0 color-mix(in oklch,black 22%,transparent),0 10px 24px -14px color-mix(in oklch,black 45%,transparent);color:var(--ink-0);font:14px/1.45 var(--sans)}.ds-card:hover{border-color:var(--line)}.ds-label{font:500 10.5px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2)}"
+    },
+    {
+      "name": "Book Cover",
+      "kind": "custom",
+      "refersTo": "cover",
+      "description": "Missing-cover plate with book corners, spine shade and a hover lift.",
+      "html": "<div class=\"ds-cover\"><span class=\"a\">Ursula K. Le Guin</span><span class=\"t\">The Dispossessed</span></div>",
+      "css": ".ds-cover{width:120px;aspect-ratio:2/3;display:flex;flex-direction:column;justify-content:space-between;padding:9% 8% 8%;box-sizing:border-box;border-radius:2px 4px 4px 2px;background:linear-gradient(90deg,rgba(0,0,0,.3),transparent 8px),var(--cover-fallback-bg);color:var(--cover-fallback-ink);filter:drop-shadow(0 18px 22px color-mix(in oklch,black 50%,transparent)) drop-shadow(0 2px 0 color-mix(in oklch,black 30%,transparent));transition:filter .25s ease,transform .35s cubic-bezier(.2,.7,.2,1)}.ds-cover:hover{transform:translateY(-5px) scale(1.015);filter:drop-shadow(0 28px 30px color-mix(in oklch,black 65%,transparent)) drop-shadow(0 2px 0 color-mix(in oklch,black 30%,transparent))}.ds-cover .a{font:600 8px var(--sans);letter-spacing:.22em;text-transform:uppercase;opacity:.82}.ds-cover .t{font:500 20px/1 var(--serif);letter-spacing:-.018em;text-wrap:balance}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Reading Room",
+    "overview": "Omnibus is a quiet, lamp-lit library. The grounds are warm near-blacks, every surface is a slightly lighter tone of the same warm neutral, and the only strong color in the chrome is a single lamplight amber. The books bring everything else: covers are the most colorful, most lifted objects on any screen, and each book can tint its own surroundings with its `accent_color`.\n\nThe voice is editorial and calm. Titles are set in Cormorant Garamond, the interface in Instrument Sans, and labels and numbers in Space Mono uppercase, like a catalogue card. Calm is not static, though: Omnibus likes motion and interactivity. Covers rise under the pointer, sheets slide in, and loaders breathe. The chrome stays quiet until it is touched, then responds.\n\nThe same tokens drive both web clients: the Dioxus app (`frontend/assets/atrium.css`) and the React client (`frontend-js/src/styles/theme.css`). Four themes swap the token values through `data-theme`: dark (the default, documented in the frontmatter), black, light and sepia.",
+    "keyCharacteristics": [
+      "Warm oklch neutrals (hue 70–80, chroma near zero) in four tonal steps, with no pure greys outside the black theme.",
+      "One chrome accent, Lamplight Amber, used sparingly; covers carry their own color.",
+      "A serif voice for titles, sans for interface, uppercase mono for labels.",
+      "Layered depth: tonal steps first, then soft shadows, from cards up to covers and floating layers.",
+      "Responsive motion that respects `prefers-reduced-motion`."
+    ],
+    "rules": [
+      {
+        "name": "The Covers Bring the Color Rule",
+        "body": "Chrome stays in the warm neutrals plus one amber. Any other hue on a screen should come from a book: a cover, its per-book `--accent`, or a highlight color (amber, green, blue, rose and violet, for the reader's highlights only).",
+        "section": "colors"
+      },
+      {
+        "name": "The Neutral Plate Rule",
+        "body": "A book without a cover gets a neutral plate (`cover-fallback-bg` / `cover-fallback-ink`), never the accent, so a missing cover never looks like a selected one.",
+        "section": "colors"
+      },
+      {
+        "name": "The Lining Figures Rule",
+        "body": "Numbers are data: `font-variant-numeric: lining-nums` is set app-wide, because Cormorant's old-style zero reads as a lowercase \"o\".",
+        "section": "typography"
+      },
+      {
+        "name": "The Upright Emphasis Rule",
+        "body": "`<em>` inside a heading stays upright. Emphasis in a title comes from weight or color, not italics.",
+        "section": "typography"
+      },
+      {
+        "name": "The Distance Rule",
+        "body": "A shadow's size says how far the object sits from the page, from card to cover to popover to modal to sheet. Never give a lower layer a bigger shadow than a layer above it.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Frosted Chrome Rule",
+        "body": "Fixed chrome is translucent: the top bar is `bg-0` at 92% with a 10px blur, and the tab bar is `bg-1` at 92% with a 12px blur.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** let books carry the color: the cover art, the per-book `--accent`, highlight colors.",
+      "**Do** animate in response to people: a cover lifts, a sheet opens over 240ms (`--ease-out`, `cubic-bezier(.16,1,.3,1)`) and closes over 160ms (`--ease-in`), hovers take 0.15s.",
+      "**Do** make surfaces respond to the reader rather than sit still; interactivity is part of the calm, not at odds with it.",
+      "**Do** wrap every animation in `prefers-reduced-motion`; under `reduce`, loaders fade instead of moving and entrance animations don't run.",
+      "**Do** draw keyboard focus as `outline: 2px solid var(--accent)` with a 2px offset on every interactive element, including buttons and chips.",
+      "**Do** put labels and numbers in Space Mono uppercase, and titles in Cormorant.",
+      "**Do** check every new color against all four themes (dark, black, light, sepia)."
+    ],
+    "donts": [
+      "**Don't** look like a generic SaaS dashboard: no blue primaries, no gradient hero cards, no Inter, no grids of identical KPI tiles.",
+      "**Don't** render anything as the contents of an open book (page spreads, page curls, text laid out on a drawn book); it always looks corny.",
+      "**Don't** use the accent as a background for anything that isn't the one primary action or the one active state.",
+      "**Don't** introduce a shadow, radius or blur outside the vocabularies above without adding it here.",
+      "**Don't** leave focus to the browser default or remove an outline without replacing it.",
+      "**Don't** use pure grey or pure black outside the black theme; the neutrals are warm."
+    ]
+  }
+}

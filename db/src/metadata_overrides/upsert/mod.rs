@@ -125,8 +125,11 @@ pub(super) async fn touch_book_last_modified(
     // — a bare id lookup can't produce the `BooksError::OverridesJson` variant,
     // so routing through the typed resolver would only add a misleading map_err.
     // A uuid with no live book row updates zero rows (a no-op).
+    // Never the value it already holds: KOReader and Kobo read an equal value as unchanged,
+    // and a clock in whole seconds would repeat for a second edit in the same second.
     sqlx::query(
-        "UPDATE books SET last_modified = strftime('%s','now')
+        "UPDATE books SET last_modified = MAX(CAST(strftime('%s','now') AS INTEGER),
+                                              COALESCE(last_modified, 0) + 1)
          WHERE id = (
              SELECT id FROM books WHERE uuid = ?1
              UNION ALL

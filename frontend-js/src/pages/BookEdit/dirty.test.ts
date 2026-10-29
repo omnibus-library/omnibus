@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { formFromBook, type MetaForm } from "../../api";
 import { anEditableWireBook } from "../../testing/metadataHandlers";
-import { dirtyLabels, leavePrompt, saveLabel, unsavedSummary } from "./dirty";
+import { dirtyLabels, leavePrompt, unsavedSummary } from "./dirty";
 
 const BASE = formFromBook(anEditableWireBook());
 const edit = (changes: Partial<MetaForm>): MetaForm => ({
@@ -35,15 +35,6 @@ describe("dirtyLabels", () => {
     expect(dirtyLabels(BASE, edit({ printPages: "321" }))).toEqual([
       "Print pages",
     ]);
-  });
-});
-
-describe("saveLabel", () => {
-  it.each([
-    [false, "Add to library"],
-    [true, "Adding…"],
-  ])("reads for a book being added with saving=%s", (saving, label) => {
-    expect(saveLabel(saving)).toBe(label);
   });
 });
 

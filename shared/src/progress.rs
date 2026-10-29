@@ -317,15 +317,15 @@ pub struct BookProgress {
     pub cross_format: Option<crate::cross_format::CrossFormatCandidate>,
 }
 
-/// A book to pick up where you left off, as `GET /api/progress/recent` returns it.
+/// A book to pick up where you left off, as `GET /api/progress/recent` returns it. Each
+/// book appears once, for the format you used last.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ResumePoint {
     pub record: ProgressRecord,
     pub book: EbookMetadata,
-    /// Whether you have linked this book's ebook and audiobook. A linked book appears once,
-    /// for the format you used last.
+    /// Whether you have linked this book's ebook and audiobook.
     #[serde(default)]
     pub linked: bool,
     /// Where to resume in the other format, for a linked book. Absent when the other

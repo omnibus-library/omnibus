@@ -31,11 +31,12 @@ load before the screens that override them.
 
 ## Routes
 
-`src/router.tsx` carries all 30 routes from `frontend/src/routes.rs`, with the
+`src/router.tsx` carries the routes from `frontend/src/routes.rs` but
+`/add-books`, which is a sheet the top bar's Add books opens, with the
 same split: the readers and the player fill the screen, everything else sits
 under the top bar, and a guest goes to `/login?next=…` and comes back. Login,
 Register, the library, book detail (with the metadata editor, `/books/:uuid/edit`),
-add books (`/add-books`), check-in (`/check-in`), search results
+check-in (`/check-in`), search results
 (`/search/:query`), the authors, series and shelves indexes with their detail
 pages (`/authors/:id`, `/series/:id`, `/shelves/:id`), the three readers
 (`/read`, `/comic`, `/pdf`), the audiobook player (`/listen/:uuid`, `?file_id`
@@ -86,7 +87,8 @@ The readers are lazy chunks that mount the vendored epub.js and PDF.js glue from
 React effect; each saves its position as pages turn and records reading
 sessions and read status. The EPUB and PDF readers carry highlights, notes,
 quotes and bookmarks, and the EPUB reader adds contents, search, the Aa panel and
-cross-format follow. The audiobook mini dock on `/read` waits for the player.
+cross-format follow; with follow off, it and the player offer the jump instead.
+The audiobook mini dock on `/read` waits for the player.
 Administration shares `/settings`' frame, `SettingsShell`, which takes its
 navigation as data. Its eight sections are Sources, Maintenance, Metadata and
 Cleanup under Library; People, Integrations, Health and Logs under Server. A
@@ -137,8 +139,8 @@ literals, so build a class from a template and it won't see it: spell it out,
 as `UserAvatar`'s `photoClassName` does. A rule a screen needs in a file that
 already exists goes in by hand, as does one whose modifier class (`ok`, `error`)
 is on the script's stop list; `--write --force` regenerates every file
-unformatted and drops their hand edits. `.add-books-progress` in `AddBooks.css` is
-hand-written and React-only: the Dioxus page has no such element.
+unformatted and drops their hand edits. `AddBooks.css` is
+hand-written and React-only: `atrium.css` has no `ab-` rules for the script to copy.
 
 A screen driven by a vendored glue (the readers) is ported differently. The
 glue is a byte copy in `src/vendor/reader/`, loaded by `loadScript` from a
@@ -232,13 +234,13 @@ shell provides it.
   sign-in page), so a form's rules live in the same schema style as the API's.
 - **Unit tests** (`pnpm run test:unit`, jsdom) cover the API parsers,
   formatting (`fixed` included), `safeNext`, the theme root, the session, and
-  the pure helpers behind the screens (`resume`, `password`, `settingsIndex`,
+  the pure helpers behind the screens (`resume`, `syncOffer`, `password`, `settingsIndex`,
   `hiddenFormats`, `goals`, `apiTokens`, `viewPrefs`, `focusTrap`, book
   detail's `readout`, `stats`, `lean`, `identifiers` (the details list included),
   `shelves`, `highlightAnchors`, `quietReaders`, `journalMarkdown`, `rating`,
   `reviews` (a patch applied to your review and the household's list, what a save sends, the composer's seed, spoiler veiling and Read more) and delete copy, the palette's `selection`, the results page's `results`, Register's
-  `refusal`, the library's `filters`, `libraryView`, `seriesStacks`,
-  `shelfLens`, `sorting` and `bulkMetadata`, the editor's `metadata` (form
+  `refusal`, the library's `filters`, `saveAsShelf`, `libraryView`, `seriesStacks`,
+  `shelfLens`, `sorting`, `bulkMetadata` and `inlineEdit`, the editor's `metadata` (form
   schema, the rules a field is refused by and the override diff), `dirty`,
   `editionFields` and `fetch`, the View Transition helper `viewTransition`, `uploads`,
   check-in's `checkInFlow` and `scan`, the scanner's `scanStatus` and

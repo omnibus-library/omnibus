@@ -28,7 +28,7 @@ async fn make_user(pool: &SqlitePool, username: &str) -> i64 {
 }
 
 async fn make_device(pool: &SqlitePool, user_id: i64, name: &str) -> i64 {
-    crate::kobo_devices::create_device(pool, user_id, name)
+    crate::kobo_devices::create_device(pool, user_id, name, omnibus_shared::DeviceKind::Kobo)
         .await
         .unwrap()
         .id
@@ -441,6 +441,39 @@ async fn sync_delta_emits_a_state_change_when_read_status_moves_elsewhere() {
 
     let delta = sync_delta(&pool, user, device).await.unwrap();
 
+    assert_eq!(delta.len(), 1);
+    assert!(matches!(&delta.changes[0], SyncChange::StateChanged(b) if b.uuid == uuid));
+}
+
+#[tokio::test]
+async fn sync_delta_announces_an_offline_status_dated_before_the_devices_last_sync() {
+    // A KOReader that read offline reports a status at its own, older event time.
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = make_user(&pool, "alice").await;
+    let device = make_device(&pool, user, "Clara").await;
+    let uuid = seed_synced_ebook(&pool, "a.epub", "A", "Author").await;
+    synced_shelf(&pool, user, "Kobo", std::slice::from_ref(&uuid)).await;
+    sync_once(&pool, user, device).await;
+    let synced_at: i64 = sqlx::query_scalar("SELECT synced_at FROM kobo_books_sync")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await.unwrap();
+    crate::read_status::set_read_status_at_tx(
+        &mut tx,
+        user,
+        &omnibus_shared::SetReadStatus {
+            book_uuid: uuid.clone(),
+            status: omnibus_shared::ReadStatus::Finished,
+        },
+        synced_at - 100,
+    )
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+
+    let delta = sync_delta(&pool, user, device).await.unwrap();
     assert_eq!(delta.len(), 1);
     assert!(matches!(&delta.changes[0], SyncChange::StateChanged(b) if b.uuid == uuid));
 }

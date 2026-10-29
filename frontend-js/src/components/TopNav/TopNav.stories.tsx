@@ -17,8 +17,22 @@ export const SignedIn: Story = {
       canvas.getByRole("button", { name: "Open user menu" }),
     ).toHaveTextContent("AL");
     await expect(
-      canvas.getByRole("link", { name: "Add books" }),
+      canvas.getByRole("button", { name: "Add books" }),
     ).toBeInTheDocument();
+  },
+};
+
+export const AddBooksOpensTheAddBookSheet: Story = {
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(canvas.getByRole("button", { name: "Add books" }));
+
+    await expect(
+      await canvas.findByRole("dialog", { name: "Add a book" }),
+    ).toBeInTheDocument();
+    await userEvent.click(canvas.getByRole("button", { name: "Close" }));
+    await waitFor(() =>
+      expect(canvas.queryByRole("dialog", { name: "Add a book" })).toBeNull(),
+    );
   },
 };
 
@@ -26,7 +40,7 @@ export const WithoutUploadAccess: Story = {
   parameters: { user: { ...WIRE_ADA, can_upload: false } },
   play: async ({ canvas }) => {
     await expect(
-      canvas.queryByRole("link", { name: "Add books" }),
+      canvas.queryByRole("button", { name: "Add books" }),
     ).not.toBeInTheDocument();
   },
 };
@@ -37,6 +51,21 @@ export const InASection: Story = {
     await expect(canvas.getByRole("link", { name: "Authors" })).toHaveClass(
       "on",
     );
+    await expect(canvas.getByRole("link", { name: "Library" })).not.toHaveClass(
+      "on",
+    );
+    await expect(canvas.getByRole("link", { name: "Shelves" })).not.toHaveClass(
+      "on",
+    );
+  },
+};
+
+export const OnAShelf: Story = {
+  parameters: { path: "/shelves/9" },
+  play: async ({ canvas }) => {
+    const shelves = canvas.getByRole("link", { name: "Shelves" });
+    await expect(shelves).toHaveClass("on");
+    await expect(shelves).toHaveAttribute("href", "/shelves");
     await expect(canvas.getByRole("link", { name: "Library" })).not.toHaveClass(
       "on",
     );
@@ -60,14 +89,39 @@ export const BarIsAsTallAsTheTopbarToken: Story = {
   play: async ({ canvas }) => heightMatchesToken(canvas),
 };
 
-export const BarIsAsTallAsTheTopbarTokenOnAPhone: Story = {
-  globals: { viewport: { value: "phone", isRotated: false } },
+const windowOf = (width: number) => ({
+  globals: { viewport: { value: "window", isRotated: false } },
   parameters: {
     viewport: {
       options: {
-        phone: { name: "Phone", styles: { width: "390px", height: "844px" } },
+        window: {
+          name: "Window",
+          styles: { width: `${width}px`, height: "844px" },
+        },
       },
     },
   },
+});
+
+export const BarIsAsTallAsTheTopbarTokenOnAPhone: Story = {
+  ...windowOf(390),
   play: async ({ canvas }) => heightMatchesToken(canvas),
 };
+
+// The decorator pads 24px a side, so a 769px window gives the bar 721px and 1009px gives 961px.
+const fitsAWindowOf = (width: number): Story => ({
+  ...windowOf(width),
+  play: async ({ canvas }) => {
+    await document.fonts.ready;
+    await expect(canvas.getByRole("link", { name: "Shelves" })).toBeVisible();
+    await expect(canvas.getByRole("button", { name: "Search" })).toBeVisible();
+    const bar = canvas.getByRole("navigation", { name: "Primary" });
+    await waitFor(() =>
+      expect(bar.scrollWidth).toBeLessThanOrEqual(bar.clientWidth),
+    );
+  },
+});
+
+export const FitsAWindowJustAboveThePhoneBreakpoint = fitsAWindowOf(769);
+
+export const FitsAWindowJustAboveTheSearchCollapse = fitsAWindowOf(1009);

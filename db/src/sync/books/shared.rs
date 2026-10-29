@@ -242,12 +242,14 @@ async fn update_book_row(
     let author_sort = primary_author_sort(m);
     let has_cover = i64::from(b.cover.is_some());
 
+    // `last_modified` moves past its old value even within one second, as override edits do.
     sqlx::query(
         "UPDATE books SET
             scan_key = ?, path = ?, title = ?, sort = ?, author_sort = ?, series_sort = ?,
             series_index = ?, pubdate = ?, has_cover = ?, description = ?, accent_color = ?,
             title_norm = ?, author_norm = ?, word_count = ?, page_count = ?,
-            last_modified = strftime('%s','now')
+            last_modified = MAX(CAST(strftime('%s','now') AS INTEGER),
+                                COALESCE(last_modified, 0) + 1)
          WHERE id = ?",
     )
     .bind(&scan_key)

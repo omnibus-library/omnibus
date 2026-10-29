@@ -524,6 +524,41 @@ async fn upsert_metadata_overrides_bumps_book_last_modified() {
     );
 }
 
+#[tokio::test]
+async fn upsert_metadata_overrides_moves_last_modified_past_an_edit_in_the_same_second() {
+    // The plugin and Kobo compare this value for equality, so a second edit inside one
+    // second must still change it.
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user_id = crate::auth::create_user(&pool, "admin", "securepassword1")
+        .await
+        .unwrap()
+        .id;
+    let uuid = crate::test_support::seed_synced_ebook(&pool, "b.epub", "T", "A").await;
+    let ahead: i64 = sqlx::query_scalar(
+        "UPDATE books SET last_modified = CAST(strftime('%s','now') AS INTEGER) + 1000
+          WHERE uuid = ? RETURNING last_modified",
+    )
+    .bind(&uuid)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    let ov = MetadataOverrides {
+        title: Some("Baked".into()),
+        ..Default::default()
+    };
+    upsert_metadata_overrides(&pool, &uuid, &ov, false, user_id)
+        .await
+        .unwrap();
+
+    let last_modified: i64 = sqlx::query_scalar("SELECT last_modified FROM books WHERE uuid = ?")
+        .bind(&uuid)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(last_modified, ahead + 1);
+}
+
 /// #1395: once every override is gone, a previously-cached rewritten export
 /// EPUB has nothing left to bake — `delete_metadata_overrides` must remove
 /// it eagerly rather than leaving it orphaned on disk until (if ever) the

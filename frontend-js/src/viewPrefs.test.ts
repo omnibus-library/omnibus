@@ -1,4 +1,7 @@
+import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
+import type { FilterClause } from "./api";
+import { headerSort } from "./pages/Library/sorting";
 import {
   DEFAULT_PREFS,
   handoffClauses,
@@ -12,6 +15,7 @@ import {
   savePlan,
   savePrefs,
   saveShelfSelection,
+  useLibraryPrefs,
 } from "./viewPrefs";
 
 const SAVED: Prefs = {
@@ -129,15 +133,55 @@ describe("savePlan", () => {
 
 describe("reconcile", () => {
   it.each([
-    [null, "/a", true, "save"],
-    ["/a", "/a", true, "save"],
-    ["/a", "/a", false, "keep"],
-    [null, "/a", false, "adopt"],
-    ["/a", "/b", false, "adopt"],
+    [null, "/a", true, "/a", "save"],
+    ["/a", "/a", true, "/a", "save"],
+    ["/a", "/a", false, "/a", "keep"],
+    [null, "/a", false, "/a", "adopt"],
+    ["/a", "/b", false, "/a", "adopt"],
+    [null, "/a", true, "/b", "rebase"],
+    [null, "/a", true, null, "save"],
   ] as const)(
-    "from %s to %s (unsaved %s) is %s",
-    (was, path, unsaved, action) => {
-      expect(reconcile(was, path, unsaved)).toBe(action);
+    "from %s to %s (unsaved %s, seeded from %s) is %s",
+    (was, path, unsaved, seededFrom, action) => {
+      expect(reconcile(was, path, unsaved, seededFrom)).toBe(action);
+    },
+  );
+});
+
+describe("useLibraryPrefs", () => {
+  const handoff: FilterClause[] = [
+    { field: "author", mode: "include", values: ["Ada"] },
+  ];
+
+  // The user acts while `/a` seeds the prefs, then page 1 names `/b`, saved as `stored`.
+  it.each([
+    {
+      pick: "a view change",
+      stored: DEFAULT_PREFS,
+      act: (prefs: Prefs): Prefs => ({ ...prefs, view: "table" }),
+      expected: { ...DEFAULT_PREFS, view: "table" },
+    },
+    {
+      pick: "a sort pick that keeps the direction",
+      stored: { ...DEFAULT_PREFS, sort: "newest_added", dir: "desc" },
+      act: (prefs: Prefs): Prefs => ({
+        ...prefs,
+        ...headerSort(prefs, "author"),
+      }),
+      expected: { ...DEFAULT_PREFS, sort: "author", dir: "asc" },
+    },
+  ] as const)(
+    "keeps $pick made while loading when page 1 names another library",
+    ({ stored, act: pick, expected }) => {
+      savePrefs("/b", stored);
+      savePrefs("/a", DEFAULT_PREFS);
+      const { result } = renderHook(() => useLibraryPrefs(handoff));
+
+      act(() => result.current.change(pick(result.current.prefs)));
+      act(() => result.current.noteAnswered("/b", false));
+
+      expect(result.current.prefs).toEqual({ ...expected, clauses: handoff });
+      expect(loadPrefs("/b")).toEqual(result.current.prefs);
     },
   );
 });

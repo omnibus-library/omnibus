@@ -10,6 +10,18 @@
 import Foundation
 
 enum PositionSync {
+    /// Whether an open found a position stored on either side. The server's
+    /// answer can land after the book has opened, so it starts `unsettled`.
+    enum Stored: Equatable {
+        case unsettled, somewhere, nowhere
+
+        /// Settled once the server's read is in: `nowhere` only when neither holds a position.
+        init(local: ProgressRecord?, remote: ProgressRecord?) {
+            let localHolds = local.map(PositionSync.carriesPosition) ?? false
+            self = remote == nil && !localHolds ? .nowhere : .somewhere
+        }
+    }
+
     /// How long an open waits on the server before showing what it already has.
     ///
     /// A bound, not a timeout: the read carries on afterwards and whatever it

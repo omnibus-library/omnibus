@@ -155,18 +155,84 @@ export const FollowFallsBackToThePercentWithNoFraction: Story = {
   },
 };
 
+/** Follow off: the audiobook is at 60%, which the reader is offered rather than moved to. */
+const followOff = () => {
+  r.crossFormat.resume = resume(
+    { ...AUDIO_PLACE, epub_cfi: SERVER_CFI, percent: 60, source_ahead: true },
+    false,
+  );
+};
+
+const offer = (canvas: Args["canvas"]) => canvas.findByTestId("sync-offer");
+
 export const WithFollowOffTheTextStaysPut: Story = {
-  beforeEach() {
-    r.crossFormat.resume = resume(
-      { ...AUDIO_PLACE, epub_cfi: SERVER_CFI },
-      false,
-    );
-  },
+  beforeEach: followOff,
   play: async (args) => {
     await afterTheAnswer(args);
 
+    const card = await offer(args.canvas);
+    await expect(card).toHaveTextContent("Listened further in the audiobook");
+    await expect(card).toHaveTextContent(
+      "Your listening maps to about 60% through.",
+    );
     await expect(r.glue.argsOf("displayCfi")).toEqual([]);
     await expect(r.glue.argsOf("displayPercentage")).toEqual([]);
+  },
+};
+
+export const WithFollowOffGoMovesTheTextToTheServerCfi: Story = {
+  beforeEach: followOff,
+  play: async ({ canvas, userEvent }) => {
+    const card = await offer(canvas);
+    await userEvent.click(within(card).getByRole("button", { name: "Go" }));
+
+    await expect(r.glue.argsOf("displayCfi")).toEqual([[SERVER_CFI]]);
+    await expect(canvas.queryByTestId("sync-offer")).toBeNull();
+    // Focus goes back to the page, so the arrow keys still turn it.
+    await waitFor(() =>
+      expect(document.activeElement).toHaveClass("rd-surface"),
+    );
+  },
+};
+
+export const WithFollowOffADismissedOfferStaysAwayForThatPosition: Story = {
+  beforeEach: followOff,
+  play: async ({ canvas, userEvent }) => {
+    const card = await offer(canvas);
+    await userEvent.click(
+      within(card).getByRole("button", { name: "Dismiss" }),
+    );
+
+    await expect(canvas.queryByTestId("sync-offer")).toBeNull();
+    await expect(r.glue.argsOf("displayCfi")).toEqual([]);
+    // The audiobook's clock is remembered, so this position is not offered again.
+    await expect(localStorage.getItem(`omn.syncprompt::1::${UUID}::epub`)).toBe(
+      String(AUDIO_PLACE.source_client_updated_at),
+    );
+  },
+};
+
+export const WithFollowOffAFailedLoadHidesTheOfferUntilARetryOpens: Story = {
+  beforeEach() {
+    followOff();
+    return relocatingTo({});
+  },
+  play: async ({ canvas, userEvent }) => {
+    // The offer's fetch can answer before the glue opens; failing then would be overridden by the open's "ready".
+    await canvas.findByTestId("reader-header-chapter");
+    await waitFor(() => expect(r.inits()).toHaveLength(1));
+    await offer(canvas);
+
+    // The open fails after the offer landed: it must leave with the page, not sit in the tab order over the overlay.
+    window.__omnibusOnStatus?.("error");
+    await expect(await canvas.findByRole("alert")).toHaveTextContent(
+      "This book couldn’t be loaded.",
+    );
+    await waitFor(() => expect(canvas.queryByTestId("sync-offer")).toBeNull());
+
+    await userEvent.click(canvas.getByRole("button", { name: "Retry" }));
+
+    await expect(await offer(canvas)).toBeVisible();
   },
 };
 

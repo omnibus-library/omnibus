@@ -56,14 +56,27 @@ env-clear:
 dev-bounce:
     scripts/with-dev-env.sh web scripts/dev-server-bounce.sh
 
-# Run a mock Kobo e-reader in a terminal UI against this worktree's dev server
-# (run `just dev-up` first): s syncs, r resets, u/t edit the URL/token, w wires a
-# token, q quits. It auto-wires the "Mock Kobo" device with $OMNIBUS_DEV_SEED_USER
-# and serves the control API on a free loopback port its header shows. Flags pass
-# through: `just kobo --state .claude/runtime/other.json` is a second device.
+# Run a mock Kobo e-reader in a terminal UI against any Omnibus instance: it asks
+# for the device's sync URL (Settings > Devices), or take `--sync-url URL`.
+# `--local` follows this worktree's dev server instead (run `just dev-up` first) and
+# auto-wires the "Mock Kobo" device with $OMNIBUS_DEV_SEED_USER. s syncs, r resets,
+# u/t edit the URL/token, w wires a token, q quits. The control API runs on a free
+# loopback port the header shows. Every launch starts as a new device on a scratch
+# state removed on exit; `--state PATH` keeps one (docs/kobo.md).
 [positional-arguments]
 kobo *args:
     scripts/with-dev-env.sh default cargo run -q -p omnibus-mock-kobo -- tui "$@"
+
+# Interactive KOReader in a browser tab (Docker), syncing with any Omnibus instance:
+# it asks for the plugin zip from the instance's Settings (or `--plugin PATH`), which
+# alone carries the server and device. `--local` follows this worktree's dev server
+# (run `just dev-up` first) and seeds its OPDS catalog and Progress sync. It runs
+# where you ran it, so a relative --plugin path is yours. Ctrl-C stops it; every
+# launch starts from a fresh home removed on exit (docs/koreader.md).
+[no-cd]
+[positional-arguments]
+koreader *args:
+    "{{justfile_directory()}}/scripts/with-dev-env.sh" default "{{justfile_directory()}}/scripts/koreader-dev.sh" "$@"
 
 # Ensure the public-domain test fixtures are present (one-time ~156 MB
 # download from the fixtures-vN release asset, then an instant no-op).
@@ -89,10 +102,40 @@ modules dir:
 module-map-test:
     python3 scripts/tests/module-map.test.py
 
-# Run every unit/integration suite: the Rust matrix first, then the Python
-# script suites. Rust leads so a failing script suite can't stop the recipe
+# Unit tests for scripts/koreader_report.py (the KOReader lane's PASS/FAIL
+# report). Stdlib unittest, like explore-test.
+koreader-report-test:
+    python3 scripts/tests/koreader-report.test.py
+
+# Unit tests for the KOReader plugin's sync logic (koreader/omnibus.koplugin/omnibussync.lua),
+# under plain luajit; main.lua is proven by the KOReader lane.
+koreader-plugin-test:
+    luajit koreader/tests/omnibussync.test.lua
+
+# Regression tests for scripts/lib/scratch-server.sh's scratch-dir ownership.
+# Plain bash with stubbed I/O, like dev-port-choose-port.test.sh.
+scratch-server-test:
+    bash scripts/tests/scratch-server-make-scratch-dir.test.sh
+
+# Tests for the readable failures `just koreader` prints before it builds
+# anything. Plain bash with stubbed I/O, like scratch-server-test.
+koreader-dev-test:
+    bash scripts/tests/koreader-dev-preflight.test.sh
+
+# Unit tests for scripts/koreader_home.py (linking a new KOReader home to the
+# dev server). Stdlib unittest against a fake server, like explore-test.
+koreader-home-test:
+    python3 scripts/tests/koreader-home.test.py
+
+# Tests that dev-down and dev-up's failure path stop the dev server's whole
+# process tree. Plain bash against stand-in trees, like scratch-server-test.
+dev-server-down-test:
+    bash scripts/tests/dev-server-down.test.sh
+
+# Run every unit/integration suite: the Rust matrix first, then the script
+# suites. Rust leads so a failing script suite can't stop the recipe
 # before the cargo results are in.
-test: test-rust explore-test module-map-test
+test: test-rust explore-test module-map-test koreader-report-test koreader-plugin-test scratch-server-test koreader-dev-test koreader-home-test dev-server-down-test
 
 # The Rust half of `just test`: the full matrix via cargo-nextest (the same
 # runner CI uses, so local and CI results match; no doctests in the tree, which
@@ -182,6 +225,13 @@ lint-ts:
 [positional-arguments]
 e2e-ci *specs: fixtures
     scripts/with-dev-env.sh e2e scripts/e2e-ci.sh "$@"
+
+# Run the KOReader E2E lane (scripts/koreader-e2e.sh): a scratch server with
+# the two generated fixture EPUBs, and a real KOReader in Docker browsing,
+# searching, downloading and opening over OPDS. Prints PASS/FAIL per scenario;
+# keeps the scratch dir on failure (docs/koreader.md). Linux + docker only.
+koreader-e2e:
+    scripts/with-dev-env.sh web scripts/koreader-e2e.sh
 
 # Regenerate openapi/openapi.json, the REST API contract, from the handlers'
 # `#[utoipa::path]` annotations. A test fails while the committed file is stale,

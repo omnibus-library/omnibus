@@ -489,6 +489,7 @@
 
     try {
       book = ePub(fileUrl, { openAs: "epub" });
+      alignReplacementsOnOpen(book);
 
       // Font assets become data: in epub.js's replacement table before the
       // first section renders — see inlineFontReplacements. Guarded on
@@ -1219,6 +1220,7 @@
       }
       doc.__omnibusBookCss = true;
       var manifest = book.packaging.manifest || {};
+      var resources = book.resources;
       var paths = [];
       Object.keys(manifest).forEach(function (id) {
         var item = manifest[id];
@@ -1231,13 +1233,20 @@
         }
       });
       paths.forEach(function (path) {
-        book.archive
-          .getText(path)
+        // Nothing comes back for a sheet the zip lacks; the rest still go in.
+        var read = book.archive.getText(path);
+        if (!read) return;
+        read
           .then(function (css) {
             if (!css || !doc.head) return;
             var style = doc.createElement("style");
             style.setAttribute("data-omnibus-book-css", "");
-            style.textContent = css;
+            // The sheet's url()s are relative to the sheet, and inline they
+            // would resolve against the section: point them at epub.js's
+            // copies of the book's files, as it does for the <link> it rewrites.
+            style.textContent = resources
+              ? resources.substitute(css, path)
+              : css;
             // Prepend so book CSS sits ahead of the reader baseline, which
             // only touches html/body and should win any tie (e.g. hyphens).
             doc.head.insertBefore(style, doc.head.firstChild);
@@ -1249,6 +1258,30 @@
     } catch (e) {
       /* never let styling break rendering */
     }
+  }
+
+  // epub.js drops a file it can't read from replacementUrls, which shifts every
+  // later copy one place off its asset: chapters, sheets and fonts then all get
+  // the next file's copy. Rebuild the table by asset as soon as it is filled,
+  // before epub.js rewrites the book's sheets with it. A file the book lacks
+  // keeps no copy, so its link stays as written and the host still hears of it.
+  function alignReplacementsOnOpen(b) {
+    var replacements = b.replacements;
+    b.replacements = function () {
+      var self = this;
+      var res = self.resources;
+      var fill = res.replacements;
+      res.replacements = function () {
+        return fill.apply(res, arguments).then(function (urls) {
+          var cache = (self.archive && self.archive.urlCache) || {};
+          res.replacementUrls = res.urls.map(function (href) {
+            return cache[self.resolve(href)];
+          });
+          return urls;
+        });
+      };
+      return replacements.apply(self, arguments);
+    };
   }
 
   var FONT_EXT_RE = /\.(woff2|woff|ttf|otf|ttc)$/i;
@@ -1292,8 +1325,8 @@
       if (!res || !b.archive || !res.assets || !res.urls || !res.replacementUrls) {
         return Promise.resolve(0);
       }
-      // epub.js drops failed entries from replacementUrls, so the parallel
-      // arrays can fall out of step; a book already in that state is left to it.
+      // alignReplacementsOnOpen keeps the parallel arrays in step; should they
+      // fall out of it anyway, the book is left to epub.js's own copies.
       if (res.replacementUrls.length !== res.urls.length) return Promise.resolve(0);
       var jobs = [];
       res.assets.forEach(function (item, i) {

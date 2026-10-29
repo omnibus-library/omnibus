@@ -22,6 +22,7 @@ import {
 import type { Pane } from "./listenView";
 import { SleepPanelBody, SpeedPanelBody } from "./Panels";
 import { Stage } from "./Stage";
+import { SyncPrompt } from "./SyncPrompt";
 import "./Listen.css";
 
 function FailedOverlay() {
@@ -71,6 +72,7 @@ function Frame({ book }: { book: BookDetail }) {
         pane={pane}
         onPane={(next) => setPane((open) => (open === next ? null : next))}
       />
+      <SyncPrompt />
       {pane === "speed" && (
         <Modal
           label="Playback speed"

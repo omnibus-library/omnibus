@@ -11,6 +11,7 @@ import {
   usersHandlers,
 } from "../../testing/adminHandlers";
 import { deferred } from "../../testing/handlers";
+import { unloadPrevented } from "../../testing/unloadGuard";
 import { WIRE_ADA } from "../../testing/wire";
 import { Admin } from "./Admin";
 
@@ -211,7 +212,7 @@ export const AsksBeforeLeavingEditedSources: Story = {
     const ebook = canvas.getByLabelText("Ebook library path");
     await waitFor(() => expect(ebook).toHaveValue("/library/ebooks"));
     await userEvent.type(ebook, "2");
-    await expect(window.onbeforeunload).not.toBeNull();
+    await expect(unloadPrevented()).toBe(true);
     await userEvent.click(canvas.getByTestId("admin-nav-people"));
 
     const dialog = await canvas.findByRole("dialog", {
@@ -336,7 +337,7 @@ export const LeavesFreelyOnceTheEditIsUndone: Story = {
       await canvas.findByRole("heading", { level: 2, name: "People" }),
     ).toBeInTheDocument();
     await expect(canvas.queryByRole("dialog")).not.toBeInTheDocument();
-    await expect(window.onbeforeunload).toBeNull();
+    await expect(unloadPrevented()).toBe(false);
   },
 };
 
@@ -346,7 +347,7 @@ export const LeavesFreelyOnceTheSettingsAreSaved: Story = {
     const ebook = canvas.getByLabelText("Ebook library path");
     await waitFor(() => expect(ebook).toHaveValue("/library/ebooks"));
     await userEvent.type(ebook, "2");
-    await expect(window.onbeforeunload).not.toBeNull();
+    await expect(unloadPrevented()).toBe(true);
     await userEvent.click(
       canvas.getByRole("button", { name: "Save library settings" }),
     );
@@ -354,7 +355,7 @@ export const LeavesFreelyOnceTheSettingsAreSaved: Story = {
     await expect(
       await canvas.findByText("Library settings saved."),
     ).toBeVisible();
-    await waitFor(() => expect(window.onbeforeunload).toBeNull());
+    await waitFor(() => expect(unloadPrevented()).toBe(false));
     await userEvent.click(canvas.getByTestId("admin-nav-people"));
     await expect(
       await canvas.findByRole("heading", { level: 2, name: "People" }),
@@ -377,7 +378,7 @@ export const LeavesFreelyOnceAPaddedPathIsSaved: Story = {
     await expect(
       await canvas.findByText("Library settings saved."),
     ).toBeVisible();
-    await waitFor(() => expect(window.onbeforeunload).toBeNull());
+    await waitFor(() => expect(unloadPrevented()).toBe(false));
     await expect(ebook).toHaveValue(" /new/ebooks ");
     await userEvent.click(canvas.getByTestId("admin-nav-people"));
     await expect(
@@ -399,7 +400,7 @@ export const LeavesFreelyOnceAPaddedRelayAndItsPasswordAreSaved: Story = {
     );
 
     await expect(await canvas.findByText("SMTP settings saved.")).toBeVisible();
-    await waitFor(() => expect(window.onbeforeunload).toBeNull());
+    await waitFor(() => expect(unloadPrevented()).toBe(false));
     await userEvent.click(canvas.getByTestId("admin-nav-people"));
     await expect(
       await canvas.findByRole("heading", { level: 2, name: "People" }),

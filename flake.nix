@@ -139,6 +139,10 @@
           pkgs.curl
           pkgs.python3
           pkgs.lsof
+          # KOReader's Lua is LuaJIT: the plugin's unit tests (`just koreader-plugin-test`).
+          pkgs.luajit
+          # The stdenv's bash is built without readline; `just koreader`'s prompt (`read -e`) needs it for Tab completion.
+          pkgs.bashInteractive
           pkgs.sqlite
           pkgs.pkg-config
           pkgs.openssl

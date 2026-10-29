@@ -4,7 +4,7 @@ import type { KoboDeviceListing } from "../data/account";
 import { recordRequests } from "../utils/api";
 import { BaseComponent } from "./BaseComponent";
 
-/** Settings › Devices → Kobo: the wireless-sync devices of the signed-in user. */
+/** Settings › Devices → Kobo: the Kobos of the signed-in user. */
 export class KoboSectionComponent extends BaseComponent {
   readonly devicesCard: Locator;
   readonly dataLossWarning: Locator;
@@ -13,6 +13,7 @@ export class KoboSectionComponent extends BaseComponent {
   readonly backupToolLink: Locator;
   readonly shelvesLink: Locator;
   readonly emptyMessage: Locator;
+  readonly statusMessage: Locator;
   readonly deviceRows: Locator;
   readonly nameField: Locator;
   readonly addButton: Locator;
@@ -23,15 +24,16 @@ export class KoboSectionComponent extends BaseComponent {
     super(page);
     this.devicesCard = page.getByTestId("kobo-devices-card");
     this.dataLossWarning = page.getByTestId("kobo-data-loss-warning");
-    this.setupToggle = page.getByText("How to connect a Kobo");
+    this.setupToggle = this.devicesCard.getByText("How to connect a Kobo");
     this.setupSteps = page.getByTestId("kobo-setup-steps");
     this.backupToolLink = this.setupSteps.getByRole("link", {
       name: "omnibus-library/kobo-backup",
     });
-    this.shelvesLink = page.getByRole("link", {
+    this.shelvesLink = this.devicesCard.getByRole("link", {
       name: "Choose shelves to sync",
     });
     this.emptyMessage = page.getByTestId("kobo-devices-empty");
+    this.statusMessage = page.getByTestId("kobo-devices-status");
     this.deviceRows = page.getByTestId("kobo-device-row");
     this.nameField = page.getByTestId("kobo-device-name-input");
     this.addButton = page.getByTestId("kobo-device-add");
@@ -93,6 +95,11 @@ export class KoboSectionComponent extends BaseComponent {
     return recordRequests(this.page, koboUrls.regenerate);
   }
 
+  /** The methods of every device creation sent from now on. */
+  recordCreates(): string[] {
+    return recordRequests(this.page, koboUrls.create);
+  }
+
   async startRemove(name: string): Promise<void> {
     await this.removeButton(name).click();
   }
@@ -107,6 +114,7 @@ export class KoboSectionComponent extends BaseComponent {
       route.fulfill({
         status: 200,
         json: devices.map((device) => ({
+          kind: "kobo",
           ...device,
           token: `tok-${device.id}`,
           created_at: 0,

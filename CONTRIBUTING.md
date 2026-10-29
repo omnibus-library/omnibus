@@ -86,8 +86,9 @@ in CI, so a dependency with an incompatible license will fail the build.
 [Renovate](https://docs.renovatebot.com/) opens update PRs on Monday mornings,
 only for versions at least 14 days old; a security advisory opens its PR at
 once. Flake inputs arrive as one PR a month. Its PRs carry the `no release`
-label, except a security fix to a runtime crate. Dev-only patch and minor
-updates and GitHub Actions merge themselves once CI passes. The config is
+label, except a security fix to a runtime crate. Patch and minor updates
+arrive together as one PR; it merges itself once CI passes only when every
+update in it is a dev dependency or a GitHub Action. The config is
 [`renovate.json`](renovate.json); the Dependency Dashboard issue lists what is
 pending.
 
@@ -125,9 +126,9 @@ package settings along with the pin in `Package.resolved`.
   pick one, or add the `no release` label.
 - **Playwright runs itself when it matters.** The E2E workflow path-filters:
   it runs whenever the diff touches `frontend/`, `shared/`, `server/`, `db/`,
-  `ui_tests/`, or the build inputs, and reports as skipped otherwise. There is
-  no label to add. To force a run on a PR outside those paths, trigger the
-  workflow manually from the Actions tab.
+  `ui_tests/playwright/`, or the build inputs, and reports as skipped
+  otherwise. There is no label to add. To force a run on a PR outside those
+  paths, trigger the workflow manually from the Actions tab.
 - **Open as a draft** if the implementation isn't finished. Ready-for-review
   means the quality gate passes locally.
 

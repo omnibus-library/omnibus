@@ -121,6 +121,68 @@ async fn undo_merge_clears_the_survivors_curation_when_only_the_absorbed_book_ha
     );
 }
 
+/// Each book's `(user, auto_started)` status marks, reader-ordered.
+async fn auto_started_of(pool: &sqlx::SqlitePool, book_uuid: &str) -> Vec<(i64, bool)> {
+    sqlx::query_as(
+        "SELECT user_id, auto_started FROM book_read_status WHERE book_uuid = ? ORDER BY user_id",
+    )
+    .bind(book_uuid)
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+async fn undo_merge_keeps_each_books_automatic_status_mark() {
+    // An automatic `reading` loses to any explicit status; restored as explicit,
+    // it would start rejecting an older offline `finished`.
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool, "reader").await;
+    let target = seed_ebook(&pool, "A/Dracula.epub", "Dracula", "Bram Stoker").await;
+    let source = seed_audiobook(&pool, "B/Drakula.m4b", "Drakula", "Bram Stoker").await;
+    seed_status(&pool, &target, &status(user, "reading", 1_000)).await;
+    seed_status(&pool, &source, &status(user, "reading", 2_000)).await;
+    sqlx::query("UPDATE book_read_status SET auto_started = 1 WHERE book_uuid = ?")
+        .bind(&source)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let out = merge_books(&pool, &source, &target, Some(user))
+        .await
+        .unwrap();
+    undo_merge(&pool, out.merge_log_id).await.unwrap();
+
+    assert_eq!(auto_started_of(&pool, &source).await, vec![(user, true)]);
+    assert_eq!(auto_started_of(&pool, &target).await, vec![(user, false)]);
+}
+
+#[tokio::test]
+async fn undo_merge_restores_a_status_from_a_snapshot_written_before_the_automatic_mark() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool, "reader").await;
+    let target = seed_ebook(&pool, "A/Dracula.epub", "Dracula", "Bram Stoker").await;
+    let source = seed_audiobook(&pool, "B/Drakula.m4b", "Drakula", "Bram Stoker").await;
+    seed_status(&pool, &source, &status(user, "finished", 2_000)).await;
+
+    let out = merge_books(&pool, &source, &target, Some(user))
+        .await
+        .unwrap();
+    rewrite_snapshot(&pool, out.merge_log_id, |obj| {
+        let curation = obj["curation"].as_object_mut().unwrap();
+        for side in ["source_status", "target_status", "merged_status"] {
+            for row in curation[side].as_array_mut().unwrap() {
+                row.as_object_mut().unwrap().remove("auto_started");
+            }
+        }
+    })
+    .await;
+
+    undo_merge(&pool, out.merge_log_id).await.unwrap();
+
+    assert_eq!(auto_started_of(&pool, &source).await, vec![(user, false)]);
+}
+
 #[tokio::test]
 async fn undo_merge_leaves_a_reader_the_merge_never_moved_a_row_for_alone() {
     // A reader who curated only the survivor was untouched by the merge, so its

@@ -27,7 +27,8 @@ set -euo pipefail
 cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 # The port walk, health probes, and runtime-file writer are shared with
 # scripts/dev-serve-fg.sh so the two front doors can't hand one port to two
-# worktrees. MY_REPO_ROOT, RUNTIME_DIR, START_PORT and END_PORT come from here.
+# worktrees. MY_REPO_ROOT, RUNTIME_DIR, START_PORT, END_PORT and
+# stop_process_tree come from here.
 # shellcheck source=scripts/lib/dev-port.sh
 source scripts/lib/dev-port.sh
 
@@ -135,14 +136,9 @@ EOF
         # Kill the orphan rather than leaving it bound to $port — a stale,
         # unhealthy process would block the next dev-up (or get "reused"
         # as if it were healthy if it manages to start serving later).
-        if kill -0 "$server_pid" 2>/dev/null; then
+        if proc_is_live "$server_pid"; then
             echo "dev-up: server did not become healthy within ${BUILD_TIMEOUT_SECS}s; killing pid $server_pid" >&2
-            kill "$server_pid" 2>/dev/null || true
-            # Reap dx-wrap's grandchildren too (dx spawns the actual server
-            # in a subprocess). pkill -P walks one level; that's enough
-            # here because dx is the only child of $server_pid we care
-            # about.
-            pkill -P "$server_pid" 2>/dev/null || true
+            stop_process_tree "$server_pid"
         fi
         rm -f "$RUNTIME_DIR/server.pid"
         echo "dev-up: tail the log for the underlying error:" >&2

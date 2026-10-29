@@ -7,7 +7,7 @@ type Picked = { edition: ProviderEdition; hydrating: boolean };
 /**
  * The edition picked from a list and its full record, fetched once it is picked. The full
  * record fills in what the list row lacked and never takes a field away from it, and a slow
- * answer cannot overwrite a pick the reader has since replaced, or reappear after they cleared it.
+ * answer cannot overwrite a pick the reader has since replaced.
  */
 export function useHydrated() {
   const [picked, setPicked] = useState<Picked | null>(null);
@@ -18,7 +18,7 @@ export function useHydrated() {
     const request = ++latest.current;
     const land = (settled: ProviderEdition) =>
       setPicked((now) =>
-        now && request === latest.current
+        request === latest.current
           ? { edition: settled, hydrating: false }
           : now,
       );
@@ -27,6 +27,5 @@ export function useHydrated() {
       () => land(edition),
     );
   };
-  const clear = () => setPicked(null);
-  return { picked, pick, clear };
+  return { picked, pick };
 }

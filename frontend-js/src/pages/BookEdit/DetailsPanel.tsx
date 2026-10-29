@@ -75,6 +75,7 @@ export function DetailsPanel({
       </div>
       <MeField
         label="Series"
+        className="es-field-wide"
         placeholder="not part of a series"
         edited={edited("Series")}
         error={errors.series?.message}
@@ -142,7 +143,7 @@ export function DetailsPanel({
         error={errors.description?.message}
         input={register("description")}
       />
-      <div className="me-field me-field-w2">
+      <div className="me-field es-field-half">
         <MeLabel text="Tags" edited={edited("Tags")} />
         <div className="me-tag-chips">
           <Controller
@@ -162,7 +163,7 @@ export function DetailsPanel({
           />
         </div>
       </div>
-      <div className="me-field me-field-w2" data-testid="me-genres-section">
+      <div className="me-field es-field-half" data-testid="me-genres-section">
         <MeLabel text="Genres" edited={edited("Genres")} />
         <div className="me-tag-chips">
           <Controller

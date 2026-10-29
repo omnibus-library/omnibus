@@ -733,21 +733,16 @@ struct ResumePoint: Codable, Sendable, Identifiable {
     /// preference is saved (1x), and against older servers.
     var playbackRate: Double?
 
-    /// Scoped by format as well as book, mirroring `CacheKey.progress`.
-    ///
-    /// A dual-format book someone is both reading and listening to produces two
-    /// of these, and keying them on the uuid alone gave them one identity: the
-    /// `ForEach`es that render the Continue rail saw a duplicate id, shuffled
-    /// per-card state between the two, and left the carousel's page count
-    /// disagreeing with its dots.
+    /// Scoped by format as well as book, mirroring `CacheKey.progress`, so
+    /// the two formats of one book can never share an identity in a `ForEach`.
     var id: String { "\(record.bookUUID):\(record.format.rawValue)" }
 
     var isAudio: Bool { record.format == .audio }
 
-    /// Whether this is the card `record` belongs to — the (book, format) pair
-    /// behind [`id`], single-sourced so no caller re-derives it as the uuid.
+    /// Whether this is the card `record` belongs to: a book has one card,
+    /// whichever format it was last used in.
     func matches(_ record: ProgressRecord) -> Bool {
-        self.record.bookUUID == record.bookUUID && self.record.format == record.format
+        self.record.bookUUID == record.bookUUID
     }
 
     enum CodingKeys: String, CodingKey {

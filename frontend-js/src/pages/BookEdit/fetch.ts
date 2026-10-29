@@ -1,6 +1,7 @@
 import {
   type EditionSearchRequest,
   editionRequest,
+  inStableOrder,
   type MetaForm,
   type ProviderEdition,
 } from "../../api";
@@ -14,17 +15,17 @@ import {
 } from "./editionFields";
 
 /**
- * The search a "Title or ISBN" query asks: by ISBN when it reads as ten or thirteen
- * digits (hyphens and spaces allowed), else by title with the book's author. `null` when blank.
+ * The search a "Title or ISBN" query and an author ask: by ISBN when the query reads as ten or
+ * thirteen digits (hyphens and spaces allowed), else by title and author. `null` when both are blank.
  */
 export function fetchRequest(
   query: string,
   author: string,
 ): EditionSearchRequest | null {
-  const text = query.trim();
-  if (!text) return null;
-  const isbn = isbnValue(text);
-  return isbn ? editionRequest("", "", isbn) : editionRequest(text, author, "");
+  const isbn = isbnValue(query);
+  return isbn
+    ? editionRequest("", "", isbn)
+    : editionRequest(query, author, "");
 }
 
 /** The first edition each provider returned, in the order given: the best match from every source. */
@@ -35,6 +36,19 @@ export function onePerProvider(editions: ProviderEdition[]): ProviderEdition[] {
     seen.add(source);
     return true;
   });
+}
+
+/**
+ * Each provider's top edition for the search. A search with no title comes back unscored in
+ * the provider's own order, so it keeps that order rather than sorting by title length.
+ */
+export function bestPerProvider(
+  editions: ProviderEdition[],
+  request: EditionSearchRequest,
+): ProviderEdition[] {
+  return onePerProvider(
+    request.title ? inStableOrder(editions, request.query) : editions,
+  );
 }
 
 /** One field the edition would change: what the form holds, what it offers, and whether applying should start on. */

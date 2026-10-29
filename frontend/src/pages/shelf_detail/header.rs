@@ -45,7 +45,7 @@ pub(super) fn ShelfHero(
                     span {
                         class: "shelf-badge shelf-badge--kobo shd-kobo",
                         "data-testid": "shelf-kobo-badge",
-                        "Syncs to Kobo"
+                        "Syncs to my devices"
                     }
                 }
             }
@@ -292,7 +292,7 @@ fn more_menu(
                 span { class: "shd-menu-check", aria_hidden: "true",
                     if syncs_to_kobo { "\u{2713}" }
                 }
-                "Sync to Kobo"
+                "Sync to my devices"
             }
             button {
                 r#type: "button",

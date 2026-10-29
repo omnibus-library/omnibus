@@ -15,6 +15,7 @@ import { PageError } from "../../components/PageState/PageState";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
 import { EditShelfModal } from "../../components/ShelfForm/EditShelfModal";
 import { ShelfFacets } from "../../components/ShelfForm/ShelfFacets";
+import { ToastProvider } from "../../components/Toast/Toast";
 import { bookCount } from "../../format";
 import { useCurrentUser } from "../../session";
 import { useLoadMore } from "../../useLoadMore";
@@ -154,219 +155,225 @@ export function Library() {
   const loadMore = useLoadMore(pages, hasNextPage);
 
   return (
-    <div
-      className={past ? "landing-col lmq lmq--past" : "landing-col lmq"}
-      id="lmq-root"
-      style={leadAccent(leadPoint)}
-    >
-      <PageTitle />
-      {leadPoint ? (
-        <ResumeStack points={points} lead={lead} onLead={setLeadKey} />
-      ) : (
-        pending && <ResumeStackPending />
-      )}
-      <ShelfGallery
-        selection={selection}
-        pickedCount={
-          shelfId !== null && !filtered && shelfPage.data
-            ? shelfPage.data.length
-            : null
-        }
-        allCount={firstPage?.total ?? null}
-        allCovers={browseBooks
-          .filter((b) => b.hasCover)
-          .slice(0, 4)
-          .map((b) => b.uuid)}
-        onSelect={pick}
-      />
-      <header className="lib-header">
-        <h1 className="sr-only">Your Library</h1>
-        <div className="lib-header-row">
-          <FilterBar
-            clauses={prefs.clauses}
-            onChange={(clauses) => change({ ...prefs, clauses })}
-          />
-          <Receipt
-            count={headerCount(
-              filtered,
-              shelfId === null
-                ? (firstPage?.total ?? null)
-                : (shelfPage.data?.length ?? null),
-              lens.isError,
-            )}
-            hidden={shelfId === null ? (firstPage?.hidden ?? null) : null}
-            editing={
-              shelf && mayEdit
-                ? { name: shelf.name, onEdit: () => setEditing(true) }
-                : null
-            }
-          />
-          <Toolbar
-            prefs={prefs}
-            // Hidden formats narrow All Books only.
-            hiddenFormats={shelfId === null ? query.excludeFormats : []}
-            sortLock={sortLock}
-            stackable={shelfId === null}
-            onChange={change}
-          />
-        </div>
-        {shelf && <ShelfFacets shelf={shelf} />}
-        {addBooks && (
-          <button
-            type="button"
-            className="btn primary shd-action lib-shelf-add"
-            data-testid="shelf-add-books"
-            aria-disabled={!addBooks.ready}
-            title={addBooks.title}
-            onClick={() => addBooks.ready && setAdding(true)}
-          >
-            <PlusGlyph />
-            Add books
-          </button>
+    <ToastProvider>
+      <div
+        className={past ? "landing-col lmq lmq--past" : "landing-col lmq"}
+        id="lmq-root"
+        style={leadAccent(leadPoint)}
+      >
+        <PageTitle />
+        {leadPoint ? (
+          <ResumeStack points={points} lead={lead} onLead={setLeadKey} />
+        ) : (
+          pending && <ResumeStackPending />
         )}
-        {answeredPath === null && (
-          <p className="lib-header-hint">
-            Configure your ebook library path in Administration › Sources.
-          </p>
-        )}
-      </header>
-      <div className="lib-layout lib-layout--collapsed">
-        <div className="lib-main lib-books">
-          {lens.status === "pending" && (
-            <div className="lib-loading" role="status" aria-live="polite">
-              <span className="ld-sr">Taking the books off the shelf</span>
-              {prefs.view === "table" ? (
-                <RowSkeletons count={8} avatar={false} />
-              ) : (
-                <CoverSkeletons />
-              )}
-            </div>
-          )}
-          {lens.status === "error" && !lens.data && (
-            <PageError
-              message={`Couldn't load the library: ${lens.error.message}`}
+        <ShelfGallery
+          selection={selection}
+          pickedCount={
+            shelfId !== null && !filtered && shelfPage.data
+              ? shelfPage.data.length
+              : null
+          }
+          allCount={firstPage?.total ?? null}
+          allCovers={browseBooks
+            .filter((b) => b.hasCover)
+            .slice(0, 4)
+            .map((b) => b.uuid)}
+          onSelect={pick}
+        />
+        <header className="lib-header">
+          <h1 className="sr-only">Your Library</h1>
+          <div className="lib-header-row">
+            <FilterBar
+              saveAsShelf={shelfId === null}
+              clauses={prefs.clauses}
+              onChange={(clauses) => change({ ...prefs, clauses })}
             />
-          )}
-          {lens.isRefetchError && !pages.isFetchNextPageError && (
-            <p className="subtitle" role="alert">
-              Couldn't refresh the library: {lens.error?.message}
-            </p>
-          )}
-          {lens.data && empty === "empty" && (
-            <p className="library-empty">
-              {shelfId === null
-                ? "No ebooks found."
-                : "No books in this shelf."}
-            </p>
-          )}
-          {lens.data && empty === "filtered" && (
-            <div className="library-empty">
-              <p>No books match these filters.</p>
-              <Button onClick={() => change({ ...prefs, clauses: [] })}>
-                Clear filters
-              </Button>
-            </div>
-          )}
-          {books.length > 0 &&
-            (prefs.view === "table" ? (
-              <BookTable
-                books={books}
-                prefs={prefs}
-                sortLock={sortLock}
-                selectAllRef={selectAll}
-                onSort={(key) =>
-                  change({ ...prefs, ...headerSort(prefs, key) })
-                }
-                select={
-                  bulk
-                    ? { selected: picked.selected, onChange: picked.select }
-                    : undefined
-                }
-              />
-            ) : (
-              <BookGrid
-                books={books}
-                stacks={shelfId === null ? stacks : []}
-                onAddTile={addBooks?.ready ? () => setAdding(true) : undefined}
-              />
-            ))}
-          {hasNextPage && (
-            <div className="lib-load-more-row" ref={loadMore}>
-              {pages.isFetchNextPageError && pages.error && (
-                <p className="subtitle" role="alert">
-                  Couldn't load more: {pages.error.message}
-                </p>
+            <Receipt
+              count={headerCount(
+                filtered,
+                shelfId === null
+                  ? (firstPage?.total ?? null)
+                  : (shelfPage.data?.length ?? null),
+                lens.isError,
               )}
-              <Button
-                className="lib-load-more"
-                onClick={() => pages.fetchNextPage()}
-                disabled={pages.isFetchingNextPage}
-                aria-busy={pages.isFetchingNextPage}
-              >
-                <BusyLabel
-                  busy={pages.isFetchingNextPage}
-                  label="Load more"
-                  busyLabel="Loading more…"
-                />
-              </Button>
-            </div>
+              hidden={shelfId === null ? (firstPage?.hidden ?? null) : null}
+              editing={
+                shelf && mayEdit
+                  ? { name: shelf.name, onEdit: () => setEditing(true) }
+                  : null
+              }
+            />
+            <Toolbar
+              prefs={prefs}
+              // Hidden formats narrow All Books only.
+              hiddenFormats={shelfId === null ? query.excludeFormats : []}
+              sortLock={sortLock}
+              stackable={shelfId === null}
+              onChange={change}
+            />
+          </div>
+          {shelf && <ShelfFacets shelf={shelf} />}
+          {addBooks && (
+            <button
+              type="button"
+              className="btn primary shd-action lib-shelf-add"
+              data-testid="shelf-add-books"
+              aria-disabled={!addBooks.ready}
+              title={addBooks.title}
+              onClick={() => addBooks.ready && setAdding(true)}
+            >
+              <PlusGlyph />
+              Add books
+            </button>
           )}
+          {answeredPath === null && (
+            <p className="lib-header-hint">
+              Configure your ebook library path in Administration › Sources.
+            </p>
+          )}
+        </header>
+        <div className="lib-layout lib-layout--collapsed">
+          <div className="lib-main lib-books">
+            {lens.status === "pending" && (
+              <div className="lib-loading" role="status" aria-live="polite">
+                <span className="ld-sr">Taking the books off the shelf</span>
+                {prefs.view === "table" ? (
+                  <RowSkeletons count={8} avatar={false} />
+                ) : (
+                  <CoverSkeletons />
+                )}
+              </div>
+            )}
+            {lens.status === "error" && !lens.data && (
+              <PageError
+                message={`Couldn't load the library: ${lens.error.message}`}
+              />
+            )}
+            {lens.isRefetchError && !pages.isFetchNextPageError && (
+              <p className="subtitle" role="alert">
+                Couldn't refresh the library: {lens.error?.message}
+              </p>
+            )}
+            {lens.data && empty === "empty" && (
+              <p className="library-empty">
+                {shelfId === null
+                  ? "No ebooks found."
+                  : "No books in this shelf."}
+              </p>
+            )}
+            {lens.data && empty === "filtered" && (
+              <div className="library-empty">
+                <p>No books match these filters.</p>
+                <Button onClick={() => change({ ...prefs, clauses: [] })}>
+                  Clear filters
+                </Button>
+              </div>
+            )}
+            {books.length > 0 &&
+              (prefs.view === "table" ? (
+                <BookTable
+                  books={books}
+                  prefs={prefs}
+                  sortLock={sortLock}
+                  selectAllRef={selectAll}
+                  editable={user.isAdmin}
+                  onSort={(key) =>
+                    change({ ...prefs, ...headerSort(prefs, key) })
+                  }
+                  select={
+                    bulk
+                      ? { selected: picked.selected, onChange: picked.select }
+                      : undefined
+                  }
+                />
+              ) : (
+                <BookGrid
+                  books={books}
+                  stacks={shelfId === null ? stacks : []}
+                  onAddTile={
+                    addBooks?.ready ? () => setAdding(true) : undefined
+                  }
+                />
+              ))}
+            {hasNextPage && (
+              <div className="lib-load-more-row" ref={loadMore}>
+                {pages.isFetchNextPageError && pages.error && (
+                  <p className="subtitle" role="alert">
+                    Couldn't load more: {pages.error.message}
+                  </p>
+                )}
+                <Button
+                  className="lib-load-more"
+                  onClick={() => pages.fetchNextPage()}
+                  disabled={pages.isFetchingNextPage}
+                  aria-busy={pages.isFetchingNextPage}
+                >
+                  <BusyLabel
+                    busy={pages.isFetchingNextPage}
+                    label="Load more"
+                    busyLabel="Loading more…"
+                  />
+                </Button>
+              </div>
+            )}
+          </div>
         </div>
+        {bulk && picked.chosen.length > 0 && (
+          <BulkEditBar
+            count={picked.chosen.length}
+            onEdit={() => picked.setEditing(true)}
+            onAddToShelf={() => picked.setFiling(true)}
+            onClear={picked.clear}
+          />
+        )}
+        {picked.editing && picked.chosen.length > 0 && (
+          <BulkEditModal
+            books={picked.chosen}
+            fallbackFocus={selectAll}
+            onClose={() => picked.setEditing(false)}
+            onSaved={() => {
+              picked.setEditing(false);
+              picked.clear();
+            }}
+          />
+        )}
+        {picked.filing && picked.chosen.length > 0 && (
+          <BulkShelfPicker
+            books={picked.chosen}
+            fallbackFocus={selectAll}
+            onClose={() => picked.setFiling(false)}
+            onAdded={() => {
+              picked.setFiling(false);
+              picked.clear();
+            }}
+          />
+        )}
+        {leadPoint && <EdgeResume point={leadPoint} past={past} />}
+        {shelf && editing && (
+          <EditShelfModal
+            shelf={shelf}
+            onClose={() => setEditing(false)}
+            onSaved={() => {
+              setEditing(false);
+              invalidateShelf(client, shelf.id);
+            }}
+          />
+        )}
+        {shelf && adding && (
+          <AddBooksModal
+            shelfId={shelf.id}
+            shelfName={shelf.name}
+            members={full.books.map((b) => b.uuid)}
+            onClose={() => setAdding(false)}
+            onAdded={() => {
+              setAdding(false);
+              invalidateShelf(client, shelf.id);
+            }}
+          />
+        )}
+        <Outlet />
       </div>
-      {bulk && picked.chosen.length > 0 && (
-        <BulkEditBar
-          count={picked.chosen.length}
-          onEdit={() => picked.setEditing(true)}
-          onAddToShelf={() => picked.setFiling(true)}
-          onClear={picked.clear}
-        />
-      )}
-      {picked.editing && picked.chosen.length > 0 && (
-        <BulkEditModal
-          books={picked.chosen}
-          fallbackFocus={selectAll}
-          onClose={() => picked.setEditing(false)}
-          onSaved={() => {
-            picked.setEditing(false);
-            picked.clear();
-          }}
-        />
-      )}
-      {picked.filing && picked.chosen.length > 0 && (
-        <BulkShelfPicker
-          books={picked.chosen}
-          fallbackFocus={selectAll}
-          onClose={() => picked.setFiling(false)}
-          onAdded={() => {
-            picked.setFiling(false);
-            picked.clear();
-          }}
-        />
-      )}
-      {leadPoint && <EdgeResume point={leadPoint} past={past} />}
-      {shelf && editing && (
-        <EditShelfModal
-          shelf={shelf}
-          onClose={() => setEditing(false)}
-          onSaved={() => {
-            setEditing(false);
-            invalidateShelf(client, shelf.id);
-          }}
-        />
-      )}
-      {shelf && adding && (
-        <AddBooksModal
-          shelfId={shelf.id}
-          shelfName={shelf.name}
-          members={full.books.map((b) => b.uuid)}
-          onClose={() => setAdding(false)}
-          onAdded={() => {
-            setAdding(false);
-            invalidateShelf(client, shelf.id);
-          }}
-        />
-      )}
-      <Outlet />
-    </div>
+    </ToastProvider>
   );
 }
