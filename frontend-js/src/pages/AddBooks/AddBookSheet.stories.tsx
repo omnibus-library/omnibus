@@ -25,6 +25,7 @@ const ADD_KEYS = [
   ["shelves"],
   ["shelf-page"],
   ["authors"],
+  ["author"],
   ["series"],
   ["name-counts"],
 ];

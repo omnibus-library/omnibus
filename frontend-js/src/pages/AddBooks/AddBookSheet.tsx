@@ -297,6 +297,7 @@ export function AddBookSheet({ onClosed }: { onClosed: () => void }) {
         ["shelves"],
         ["shelf-page"],
         ["authors"],
+        ["author"],
         ["series"],
         ["name-counts"],
       ]) {
