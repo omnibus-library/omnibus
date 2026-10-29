@@ -10,6 +10,7 @@ import {
   hydrateHandler,
   providersHandler,
 } from "../../testing/metadataHandlers";
+import { unloadPrevented } from "../../testing/unloadGuard";
 import {
   anAudiobookInspection,
   type Committed,
@@ -786,11 +787,11 @@ export const StartsCleanAfterAFailedAddAndAnotherFile: Story = {
 export const WarnsBeforeTheTabClosesWithEdits: Story = {
   play: async ({ canvas, userEvent }) => {
     await review({ canvas, userEvent });
-    await expect(window.onbeforeunload).toBeNull();
+    await expect(unloadPrevented()).toBe(false);
 
     await userEvent.type(canvas.getByLabelText(/^Title/), "!");
 
-    await expect(window.onbeforeunload).not.toBeNull();
+    await expect(unloadPrevented()).toBe(true);
   },
 };
 

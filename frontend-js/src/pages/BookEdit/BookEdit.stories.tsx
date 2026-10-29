@@ -21,6 +21,7 @@ import {
   overridesHandlers,
   providersHandler,
 } from "../../testing/metadataHandlers";
+import { unloadPrevented } from "../../testing/unloadGuard";
 import { PREVIEW } from "../../testing/uploadHandlers";
 import { BookDetail } from "../BookDetail/BookDetail";
 import { BookEdit } from "./BookEdit";
@@ -483,7 +484,7 @@ export const DontSaveDiscardsAndCloses: Story = {
     const dialog = await sheet(canvas);
     await userEvent.type(await dialog.findByLabelText(/^Title/), "!");
     // The browser's own prompt is armed while edits are unsaved, and disarmed once they are let go.
-    await expect(window.onbeforeunload).not.toBeNull();
+    await expect(unloadPrevented()).toBe(true);
     await userEvent.click(dialog.getByRole("button", { name: "Close" }));
 
     await userEvent.click(dialog.getByRole("button", { name: "Don’t save" }));
@@ -495,7 +496,7 @@ export const DontSaveDiscardsAndCloses: Story = {
     );
     await expect(saved).toEqual([]);
     await expect(router.state.location.pathname).toBe(`/books/${UUID}`);
-    await waitFor(() => expect(window.onbeforeunload).toBeNull());
+    await waitFor(() => expect(unloadPrevented()).toBe(false));
   },
 };
 

@@ -8,13 +8,13 @@ const samePathname = (a: Location, b: Location) => a.pathname === b.pathname;
 export function useUnloadGuard(dirty: boolean) {
   useEffect(() => {
     if (!dirty) return;
-    window.onbeforeunload = (e) => {
+    // A listener per guard, so one going quiet leaves another's in place.
+    const warn = (e: BeforeUnloadEvent) => {
       e.preventDefault();
       e.returnValue = "";
     };
-    return () => {
-      window.onbeforeunload = null;
-    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
 }
 
