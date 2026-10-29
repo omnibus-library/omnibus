@@ -154,3 +154,52 @@ async fn session_views_flags_nothing_current_when_no_session_id_is_given() {
     let views = session_views(&pool, alice.id, rows, None).await.unwrap();
     assert!(views.iter().all(|v| !v.is_current));
 }
+
+#[tokio::test]
+async fn session_views_tags_an_impersonation_session_with_the_admins_name() {
+    use omnibus_db::auth::SessionKind;
+
+    let pool = omnibus_db::init_db("sqlite::memory:").await.unwrap();
+    let admin = crate::auth::test_support::create_admin(&pool, "ada").await;
+    sqlx::query("UPDATE users SET display_name = 'Ada Admin' WHERE id = ?")
+        .bind(admin.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let bob = crate::auth::test_support::create_user(&pool, "bob").await;
+    let ordinary = omnibus_db::auth::create_session(
+        &pool,
+        bob.id,
+        None,
+        SessionKind::Cookie,
+        3600,
+        Some(FIREFOX_MAC),
+    )
+    .await
+    .unwrap();
+    let impersonated = omnibus_db::auth::create_impersonation_session(
+        &pool,
+        bob.id,
+        admin.id,
+        3600,
+        Some(FIREFOX_MAC),
+    )
+    .await
+    .unwrap();
+
+    let rows = omnibus_db::auth::list_sessions_for_user(&pool, bob.id)
+        .await
+        .unwrap();
+    let views = session_views(&pool, bob.id, rows, None).await.unwrap();
+
+    let ordinary_view = views.iter().find(|v| v.id == ordinary.session.id).unwrap();
+    assert_eq!(ordinary_view.client, "Firefox on macOS");
+    let tagged_view = views
+        .iter()
+        .find(|v| v.id == impersonated.session.id)
+        .unwrap();
+    assert_eq!(
+        tagged_view.client,
+        "Firefox on macOS · Impersonated by Ada Admin"
+    );
+}

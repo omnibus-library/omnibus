@@ -11,6 +11,8 @@ use omnibus_db::auth::{AuthResult, Session};
 use omnibus_shared::{SessionView, UNKNOWN_CLIENT};
 use sqlx::SqlitePool;
 
+use super::impersonation::shown_name;
+
 /// Project `sessions` onto their wire views, resolving each one's client name.
 /// `current_session_id` marks the row the request authenticated with; the admin
 /// listing passes `None` because it never sets that flag (see
@@ -27,6 +29,8 @@ pub async fn session_views(
         .map(|d| (d.id, d.name))
         .collect();
 
+    let impersonators = impersonator_names(pool, &sessions).await?;
+
     Ok(sessions
         .into_iter()
         .map(|s| {
@@ -34,11 +38,15 @@ pub async fn session_views(
                 .device_id
                 .and_then(|id| devices.get(&id))
                 .map(String::as_str);
+            let mut client = client_label(device_name, s.user_agent.as_deref());
+            if let Some(admin) = s.impersonator_id.and_then(|id| impersonators.get(&id)) {
+                client = format!("{client} · Impersonated by {admin}");
+            }
             SessionView {
                 id: s.id,
                 device_id: s.device_id,
                 kind: s.kind.as_str().to_string(),
-                client: client_label(device_name, s.user_agent.as_deref()),
+                client,
                 created_at: s.created_at,
                 last_used_at: s.last_used_at,
                 expires_at: s.expires_at,
@@ -46,6 +54,23 @@ pub async fn session_views(
             }
         })
         .collect())
+}
+
+/// The display name of each distinct admin behind `sessions`, fetched once per admin.
+async fn impersonator_names(
+    pool: &SqlitePool,
+    sessions: &[Session],
+) -> AuthResult<HashMap<i64, String>> {
+    let mut names = HashMap::new();
+    for id in sessions.iter().filter_map(|s| s.impersonator_id) {
+        if names.contains_key(&id) {
+            continue;
+        }
+        if let Some(admin) = omnibus_db::auth::get_user_by_id(pool, id).await? {
+            names.insert(id, shown_name(&admin).to_string());
+        }
+    }
+    Ok(names)
 }
 
 /// Name the client holding a session.

@@ -20,7 +20,7 @@ use crate::backend::AppState;
 use crate::http_errors::internal;
 
 /// The name another reader sees for `user`: their display name, else their username.
-fn shown_name(user: &auth_db::User) -> &str {
+pub(super) fn shown_name(user: &auth_db::User) -> &str {
     user.display_name.as_deref().unwrap_or(&user.username)
 }
 
