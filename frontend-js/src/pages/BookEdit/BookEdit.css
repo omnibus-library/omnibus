@@ -32,97 +32,12 @@
   color: var(--ink-2);
 }
 
-.me-root {
-  width: 100%;
-  padding-bottom: 80px;
-}
-
-@media (max-width: 720px) {
-  .me-root {
-    padding-bottom: calc(80px + 68px + env(safe-area-inset-bottom));
-  }
-}
-
-.me-page-header {
-  padding: 0 clamp(20px, 4vw, 56px) 24px;
-}
-.me-page-title {
-  font-family: var(--serif);
-  /* Fluid rather than fixed: at 38px a two-word title plus its author breaks
-     across three ragged lines on a phone, with the author landing alone under
-     the title at a size that reads as a second heading. */
-  font-size: clamp(28px, 6.5vw, 42px);
-  font-weight: 600;
-  --lh: 1.05;
-  line-height: var(--lh);
-  margin-top: 4px;
-}
-.me-page-title-author {
-  color: var(--ink-2);
-  font-family: var(--sans);
-  font-style: normal;
-  font-size: 17px;
-  margin-left: 14px;
-  font-weight: 400;
-}
-@media (max-width: 560px) {
-  .me-page-title-author {
-    display: block;
-    margin-left: 0;
-    margin-top: 4px;
-    font-size: 15px;
-  }
-}
-.me-page-hint {
-  margin-top: 8px;
-  font-size: 11px;
-  color: var(--ink-3);
-}
-
-.me-layout {
-  display: grid;
-  grid-template-columns: 1fr 320px;
-  gap: 40px;
-  padding: 0 clamp(20px, 4vw, 56px);
-  align-items: flex-start;
-}
-
-@media (max-width: 900px) {
-  .me-layout {
-    grid-template-columns: 1fr;
-  }
-}
-
 .me-form {
   min-width: 0;
   /* A fieldset, to disable every control at once; its own frame is not wanted. */
   border: 0;
   padding: 0;
   margin: 0;
-}
-
-.me-field-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr 1fr;
-  gap: 18px;
-}
-
-@media (min-width: 769px) and (max-width: 1180px) {
-  .me-field-grid {
-    grid-template-columns: 1fr 1fr;
-  }
-}
-
-@media (min-width: 769px) and (max-width: 900px) {
-  .me-field-grid {
-    grid-template-columns: 1fr 1fr 1fr 1fr;
-  }
-}
-
-@media (max-width: 768px) {
-  .me-field-grid {
-    grid-template-columns: 1fr 1fr;
-  }
 }
 
 .me-field {
@@ -208,28 +123,11 @@
 .me-textarea.me-input-edited {
   border-color: color-mix(in oklch, var(--accent) 60%, transparent);
 }
-.me-tags-header {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  margin-bottom: 10px;
-}
 .me-tag-chips {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
   align-items: center;
-}
-.me-series-grid {
-  display: grid;
-  grid-template-columns: 2fr 1fr;
-  gap: 14px;
-  margin-top: 10px;
-}
-@media (max-width: 480px) {
-  .me-series-grid {
-    grid-template-columns: 1fr;
-  }
 }
 .me-sidebar {
   display: flex;
@@ -288,76 +186,6 @@
 .me-cover-url .me-input {
   flex: 1;
   min-width: 0;
-}
-.me-ident-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.me-ident-row {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  /* Flex items default to `min-width: auto`, which lets a long unbroken
-     value force the row wider than its parent card. Pin to 0 so the value
-     box below can shrink and trigger overflow-wrap. */
-  min-width: 0;
-}
-.me-ident-key {
-  min-width: 78px;
-}
-.me-ident-val {
-  flex: 1;
-  /* Same `min-width: auto` problem as the parent row — without this, a
-     URL-shaped identifier (no whitespace, no hyphens) would push the value
-     box past the card's right edge. `overflow-wrap: anywhere` lets the
-     string break mid-word once the box is shrinkable. */
-  min-width: 0;
-  overflow-wrap: anywhere;
-  padding: 6px 10px;
-  background: var(--bg-2);
-  border: 1px solid var(--line-2);
-  border-radius: 6px;
-  font-size: 11px;
-  color: var(--ink-1);
-}
-.me-save-bar {
-  position: sticky;
-  bottom: 0;
-  background: color-mix(in oklch, var(--bg-0) 88%, transparent);
-  backdrop-filter: blur(10px);
-  border-top: 1px solid var(--line-2);
-  padding: 14px clamp(20px, 4vw, 56px);
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  z-index: 10;
-}
-@media (max-width: 720px) {
-  .me-save-bar {
-    bottom: calc(68px + env(safe-area-inset-bottom));
-  }
-}
-.me-dirty-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 999px;
-  background: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 25%, transparent);
-  flex-shrink: 0;
-}
-.me-dirty-label {
-  font-size: 12px;
-  color: var(--ink-1);
-}
-.me-dirty-names {
-  font-size: 11px;
-  color: var(--ink-3);
-}
-.me-save-actions {
-  margin-left: auto;
-  display: flex;
-  gap: 8px;
 }
 .mes-open-btn {
   gap: 9px;
@@ -850,11 +678,6 @@
   .mes-field-label {
     grid-column: 1 / -1;
     padding-top: 0;
-  }
-}
-@media (max-width: 560px) {
-  .me-field-grid {
-    grid-template-columns: 1fr;
   }
 }
 @media (prefers-reduced-motion: reduce) {

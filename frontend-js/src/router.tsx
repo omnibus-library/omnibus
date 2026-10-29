@@ -10,7 +10,6 @@ import { RouteError } from "./components/RouteError/RouteError";
 import { AppShell } from "./layouts/AppShell";
 import { ReaderDock } from "./layouts/ReaderDock";
 import { RequireAuth } from "./layouts/RequireAuth";
-import { AddBooks } from "./pages/AddBooks/AddBooks";
 import { AuthorDetail } from "./pages/AuthorDetail/AuthorDetail";
 import { Authors, AuthorsIndexPane } from "./pages/Authors/Authors";
 import { BookDetail } from "./pages/BookDetail/BookDetail";
@@ -153,7 +152,6 @@ export const routes: RouteObject[] = [
                     path: "/account",
                     element: <Navigate to="/settings" replace />,
                   },
-                  { path: "/add-books", element: <AddBooks /> },
                   { path: "*", element: <NotFound /> },
                 ],
               },

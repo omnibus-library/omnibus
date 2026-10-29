@@ -1,34 +1,59 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useEffect, useRef, useState } from "react";
+import { type RefObject, useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import {
+  editFormSchema,
   hasIdentity,
   type Inspected,
   type MetaForm,
-  MetaFormSchema,
 } from "../../api";
-import type { CoverProps, StagedCover } from "../BookEdit/CoverEditor";
+import { Button } from "../../components/Button/Button";
+import {
+  CoverEditor,
+  type CoverProps,
+  coverPreview,
+  restage,
+  type StagedCover,
+} from "../BookEdit/CoverEditor";
+import { DetailsPanel } from "../BookEdit/DetailsPanel";
 import { dirtyLabels } from "../BookEdit/dirty";
-import { PageHeader } from "../BookEdit/EditHeader";
-import { MetaFormGrid } from "../BookEdit/MetaFormGrid";
-import { SaveBar } from "../BookEdit/SaveBar";
-import { Sidebar } from "../BookEdit/Sidebar";
+import { SheetHead } from "../BookEdit/EditHeader";
+import { FetchView } from "../BookEdit/FetchView";
+import {
+  FetchToggle,
+  IdentifiersPanel,
+  Panel,
+  SheetTabs,
+  useSheetView,
+} from "../BookEdit/SheetTabs";
 
 type Props = {
   pick: Inspected;
-  /** The add is in flight. */
-  saving: boolean;
+  /** The add is in flight, and how much of its body has gone up. */
+  adding: { progress: number } | null;
   /** Why the last add failed. */
   error: string | undefined;
+  /** Where the sheet's Escape and backdrop clicks are routed while the review shows. */
+  dismiss: RefObject<() => void>;
   onAdd: (values: MetaForm, cover: StagedCover) => void;
-  onStartOver: () => void;
+  onChooseAnother: () => void;
+  onClose: () => void;
 };
 
-/** The metadata edit page's grid, sidebar and save bar over an upload that does not exist yet. */
-export function ReviewForm({ pick, saving, error, onAdd, onStartOver }: Props) {
+/** The edit sheet's tabs, fields and Fetch metadata over an upload that isn't in the library yet. */
+export function ReviewForm({
+  pick,
+  adding,
+  error,
+  dismiss,
+  onAdd,
+  onChooseAnother,
+  onClose,
+}: Props) {
   const form = useForm<MetaForm>({
-    resolver: zodResolver(MetaFormSchema),
+    resolver: zodResolver(editFormSchema(pick.form)),
     defaultValues: pick.form,
+    mode: "onChange",
   });
   const [staged, setStaged] = useState<StagedCover>({
     source: { kind: "keep" },
@@ -45,61 +70,165 @@ export function ReviewForm({ pick, saving, error, onAdd, onStartOver }: Props) {
     },
     [],
   );
+  const view = useSheetView();
   const [missing, setMissing] = useState<string>();
-  const dirty = dirtyLabels(pick.form, form.watch());
+  const [asking, setAsking] = useState(false);
+  const saving = adding !== null;
+  const values = form.watch();
+  const dirty = dirtyLabels(pick.form, values);
+  const coverChanged = staged.source.kind !== "keep";
+  const edits = dirty.length + (coverChanged ? 1 : 0);
+  const invalid = Object.keys(form.formState.errors).length > 0;
+
+  const requestClose = () => (edits === 0 ? onClose() : setAsking(true));
+  useEffect(() => {
+    dismiss.current = requestClose;
+  });
+
   const cover = {
     book: {
-      displayTitle: pick.form.title || pick.label,
-      primaryAuthor: pick.form.authors[0]
-        ? { name: pick.form.authors[0], id: null }
+      displayTitle: values.title || pick.label,
+      primaryAuthor: values.authors[0]
+        ? { name: values.authors[0], id: null }
         : null,
       accent: null,
       coverUrl: null,
       hasCoverOverride: false,
     },
     target: { kind: "staged", staged, onStage: setStaged },
+    disabled: saving,
   } satisfies CoverProps;
 
+  const submit = form.handleSubmit((reviewed) => {
+    // Refused here rather than as a 400 after the upload.
+    const refusal = hasIdentity(reviewed)
+      ? undefined
+      : "A title and at least one author are required.";
+    setMissing(refusal);
+    if (!refusal) onAdd(reviewed, staged);
+  }, view.showDetails);
+  const problem = missing ?? error;
+
   return (
-    <div className="me-root" data-testid="add-books-review">
-      <PageHeader
-        displayTitle={cover.book.displayTitle}
-        author={cover.book.primaryAuthor?.name}
-        kicker="Review before adding"
-        hint="nothing is saved until you add the book"
+    <div className="es-sheet">
+      <SheetHead
+        cover={coverPreview(cover)}
+        title={values.title}
+        author={values.authors[0] ?? ""}
+        fetch={
+          <FetchToggle
+            fetching={view.fetching}
+            disabled={saving}
+            onToggle={() => view.setFetching(!view.fetching)}
+          />
+        }
+        onClose={requestClose}
       />
-      <div className="me-layout">
-        <MetaFormGrid
-          form={form}
-          baseline={pick.form}
-          cover={cover}
-          dirty={dirty}
-          sortBy=""
-          filename={pick.label}
-          disabled={saving}
-        />
-        <Sidebar
-          book={{ identifiers: pick.identifiers, hasOverride: false }}
-          cover={cover}
-          saving={saving}
-          onRevert={() => {}}
-        />
+      <SheetTabs
+        tab={view.tab}
+        edited={{
+          details: dirty.length > 0,
+          artwork: coverChanged,
+          identifiers: false,
+        }}
+        hidden={view.fetching}
+        onSelect={view.setTab}
+      />
+      {/* The add has already read the form, so nothing in the body may change it until it lands. */}
+      <div className="es-body" inert={saving}>
+        {view.fetching && (
+          <FetchView
+            form={form}
+            hasCover={staged.preview !== null}
+            onHoldCover={(url) =>
+              setStaged(restage(staged, { kind: "url", url }, url))
+            }
+            coverNote="Added with the book"
+            onBack={view.leaveFetch}
+            onApplied={view.applied}
+          />
+        )}
+        <Panel tab="details" current={view.tab} fetching={view.fetching}>
+          <DetailsPanel
+            form={form}
+            dirty={dirty}
+            disabled={saving}
+            hasOverride={false}
+            onRevert={() => {}}
+          />
+        </Panel>
+        <Panel tab="artwork" current={view.tab} fetching={view.fetching}>
+          <CoverEditor {...cover} />
+        </Panel>
+        <Panel tab="identifiers" current={view.tab} fetching={view.fetching}>
+          <IdentifiersPanel identifiers={pick.identifiers} />
+        </Panel>
       </div>
-      <SaveBar
-        dirty={dirty}
-        coverReplaced={staged.source.kind !== "keep"}
-        saving={saving}
-        error={form.formState.errors.printPages?.message ?? missing ?? error}
-        onSave={form.handleSubmit((values) => {
-          // Refused here rather than as a 400 after the upload.
-          const refusal = hasIdentity(values)
-            ? undefined
-            : "A title and at least one author are required.";
-          setMissing(refusal);
-          if (!refusal) onAdd(values, staged);
-        })}
-        onStartOver={onStartOver}
-      />
+      <footer className="es-foot ab-review-foot">
+        {adding && (
+          <progress
+            className="ab-add-progress"
+            aria-label="Upload progress"
+            value={adding.progress}
+            max={1}
+          />
+        )}
+        {asking ? (
+          // biome-ignore lint/a11y/useSemanticElements: a fieldset brings a border and min-width the bar never wants
+          <div
+            className="es-bar es-leave"
+            role="group"
+            aria-labelledby="ab-leave-text"
+            data-testid="add-book-leave"
+          >
+            <p
+              className="es-bar-text es-leave-text"
+              id="ab-leave-text"
+              role="alert"
+            >
+              Discard this book? Nothing has been added yet.
+            </p>
+            <Button autoFocus variant="ghost" onClick={() => setAsking(false)}>
+              Keep editing
+            </Button>
+            <Button onClick={onClose}>Discard book</Button>
+          </div>
+        ) : (
+          <div className="es-bar">
+            <p className="es-bar-text ab-file" data-testid="add-book-file">
+              {pick.label}
+            </p>
+            {problem ? (
+              <p className="es-bar-problem" role="alert">
+                {problem}
+              </p>
+            ) : (
+              invalid && (
+                <p className="es-bar-problem">
+                  Fix the highlighted field to add the book
+                </p>
+              )
+            )}
+            <Button variant="ghost" disabled={saving} onClick={onChooseAnother}>
+              Choose another file
+            </Button>
+            <Button
+              variant="primary"
+              disabled={invalid || saving}
+              aria-busy={saving}
+              onClick={submit}
+            >
+              {adding
+                ? `Adding… ${Math.round(adding.progress * 100)}%`
+                : "Add to library"}
+            </Button>
+          </div>
+        )}
+        <p className="es-note">
+          Nothing is added until you choose Add to library. Omnibus never writes
+          to your book files.
+        </p>
+      </footer>
     </div>
   );
 }

@@ -17,8 +17,22 @@ export const SignedIn: Story = {
       canvas.getByRole("button", { name: "Open user menu" }),
     ).toHaveTextContent("AL");
     await expect(
-      canvas.getByRole("link", { name: "Add books" }),
+      canvas.getByRole("button", { name: "Add books" }),
     ).toBeInTheDocument();
+  },
+};
+
+export const AddBooksOpensTheAddBookSheet: Story = {
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(canvas.getByRole("button", { name: "Add books" }));
+
+    await expect(
+      await canvas.findByRole("dialog", { name: "Add a book" }),
+    ).toBeInTheDocument();
+    await userEvent.click(canvas.getByRole("button", { name: "Close" }));
+    await waitFor(() =>
+      expect(canvas.queryByRole("dialog", { name: "Add a book" })).toBeNull(),
+    );
   },
 };
 
@@ -26,7 +40,7 @@ export const WithoutUploadAccess: Story = {
   parameters: { user: { ...WIRE_ADA, can_upload: false } },
   play: async ({ canvas }) => {
     await expect(
-      canvas.queryByRole("link", { name: "Add books" }),
+      canvas.queryByRole("button", { name: "Add books" }),
     ).not.toBeInTheDocument();
   },
 };

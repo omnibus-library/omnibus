@@ -20,8 +20,8 @@ html:has(.sheet-scrim) {
 .sheet {
   display: flex;
   flex-direction: column;
-  width: min(760px, 100%);
-  height: min(800px, calc(100dvh - 64px));
+  width: min(1040px, 100%);
+  height: min(880px, calc(100dvh - 64px));
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 16px;
@@ -34,6 +34,11 @@ html:has(.sheet-scrim) {
 }
 .sheet-scrim.is-closing .sheet {
   animation: sheet-out 160ms var(--ease-in) forwards;
+}
+.sheet.is-compact {
+  width: min(600px, 100%);
+  height: auto;
+  max-height: calc(100dvh - 64px);
 }
 @keyframes sheet-in {
   from {
@@ -68,6 +73,10 @@ html:has(.sheet-scrim) {
     border-width: 1px 0 0;
     border-radius: 16px 16px 0 0;
     animation: sheet-up 320ms var(--ease-out);
+  }
+  .sheet.is-compact {
+    height: auto;
+    max-height: calc(100dvh - 12px);
   }
   .sheet-scrim.is-closing .sheet {
     animation: sheet-up 220ms var(--ease-in) reverse forwards;

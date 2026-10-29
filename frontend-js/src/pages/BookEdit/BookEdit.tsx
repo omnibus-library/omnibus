@@ -1,13 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  type KeyboardEvent,
-  type ReactNode,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
-import { flushSync } from "react-dom";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import {
   useLocation,
@@ -21,7 +14,6 @@ import {
   type EditableBook,
   editableBookQuery,
   editFormSchema,
-  hasProviderQuery,
   type MetaForm,
   overridesFrom,
   parseBookUuid,
@@ -29,15 +21,12 @@ import {
   saveOverrides,
   uploadCover,
 } from "../../api";
-import { Button } from "../../components/Button/Button";
 import { ConfirmDialog } from "../../components/ConfirmModal/ConfirmModal";
-import { SparkleGlyph } from "../../components/Glyphs/Glyphs";
 import { Loading } from "../../components/Loading/Loading";
 import { PageError, PageNotFound } from "../../components/PageState/PageState";
 import { Sheet } from "../../components/Sheet/Sheet";
 import { useToast } from "../../components/Toast/Toast";
 import { useLeaveGuard } from "../../components/Unsaved/Unsaved";
-import { prefersReducedMotion } from "../../motion";
 import { MORE_BUTTON_ID } from "../BookDetail/HeroActions";
 import {
   CoverEditor,
@@ -51,105 +40,15 @@ import { dirtyLabels } from "./dirty";
 import { SheetHead } from "./EditHeader";
 import { FetchView } from "./FetchView";
 import { DONE_ID, SheetFooter } from "./SheetFooter";
+import {
+  FetchToggle,
+  IdentifiersPanel,
+  Panel,
+  SheetTabs,
+  useSheetView,
+} from "./SheetTabs";
 import "./BookEdit.css";
 import "./EditSheet.css";
-
-type TabKey = "details" | "artwork" | "identifiers";
-
-const TABS: { key: TabKey; label: string }[] = [
-  { key: "details", label: "Details" },
-  { key: "artwork", label: "Artwork" },
-  { key: "identifiers", label: "Identifiers" },
-];
-
-/** The Fetch metadata button's id: where focus goes back to when its view is left. */
-const FETCH_ID = "es-fetch-open";
-
-const tabId = (key: TabKey) => `es-tab-${key}`;
-const panelId = (key: TabKey) => `es-panel-${key}`;
-
-/** Details, Artwork and Identifiers: arrow keys move between them, and a dot marks a tab holding edits. */
-function SheetTabs({
-  tab,
-  edited,
-  hidden,
-  onSelect,
-}: {
-  tab: TabKey;
-  edited: Record<TabKey, boolean>;
-  /** The fetch view has taken the tabs' place. */
-  hidden: boolean;
-  onSelect: (tab: TabKey) => void;
-}) {
-  const onKeyDown = (event: KeyboardEvent) => {
-    const at = TABS.findIndex((t) => t.key === tab);
-    const next =
-      event.key === "ArrowRight"
-        ? at + 1
-        : event.key === "ArrowLeft"
-          ? at - 1
-          : event.key === "Home"
-            ? 0
-            : event.key === "End"
-              ? TABS.length - 1
-              : null;
-    if (next === null) return;
-    event.preventDefault();
-    const to = TABS[(next + TABS.length) % TABS.length];
-    if (!to) return;
-    onSelect(to.key);
-    document.getElementById(tabId(to.key))?.focus();
-  };
-  return (
-    <div
-      className="es-tabs"
-      role="tablist"
-      aria-label="Book information"
-      tabIndex={-1}
-      hidden={hidden}
-      onKeyDown={onKeyDown}
-    >
-      {TABS.map(({ key, label }) => (
-        <button
-          key={key}
-          type="button"
-          role="tab"
-          id={tabId(key)}
-          className="es-tab"
-          aria-selected={tab === key}
-          aria-controls={panelId(key)}
-          tabIndex={tab === key ? 0 : -1}
-          data-edited={edited[key] ? "" : undefined}
-          onClick={() => onSelect(key)}
-        >
-          {label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-/** The identifiers the file carries, as they are written; a scheme it didn't name reads "Type unknown". */
-function IdentifiersPanel({
-  identifiers,
-}: {
-  identifiers: EditableBook["identifiers"];
-}) {
-  if (identifiers.length === 0) {
-    return <p className="es-quiet">This book carries no identifiers.</p>;
-  }
-  return (
-    <dl className="es-idents" data-testid="es-identifiers">
-      {identifiers.map((ident, i) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: the same value can be listed under two schemes, and the list is read-only
-        <div key={i}>
-          <dt>{ident.scheme?.trim() || "Type unknown"}</dt>
-          <dd>{ident.value}</dd>
-        </div>
-      ))}
-    </dl>
-  );
-}
 
 /** Where focus lands when the sheet closes and the control that opened it is gone: the hero's More button. */
 const moreButton = {
@@ -172,7 +71,6 @@ function EditSheet({ book }: { book: EditableBook }) {
     // A refused value says so as it is typed, and Done waits on it.
     mode: "onChange",
   });
-  const [tab, setTab] = useState<TabKey>("details");
   // The book as the server last reported it, which putting the scanned cover back moves; `book.form` stays the baseline.
   const [live, setLive] = useState(book);
   // A cover picked or fetched waits here for Done, like the fields.
@@ -181,9 +79,15 @@ function EditSheet({ book }: { book: EditableBook }) {
   const [closing, setClosing] = useState(false);
   const [asking, setAsking] = useState(false);
   const [confirmingRevert, setConfirmingRevert] = useState(false);
-  const [fetching, setFetching] = useState(false);
-  // Shown only once a provider is set up to answer.
-  const providers = useQuery(hasProviderQuery);
+  const {
+    tab,
+    setTab,
+    fetching,
+    setFetching,
+    applied,
+    leaveFetch,
+    showDetails,
+  } = useSheetView();
 
   const dirty = dirtyLabels(baseline, form.watch());
   const count = dirty.length + (held ? 1 : 0);
@@ -302,13 +206,11 @@ function EditSheet({ book }: { book: EditableBook }) {
   const saving = save.isPending || revert.isPending;
   const locked = saving || coverBusy;
 
-  // A refused value is on Details; react-hook-form focuses its input once the panel is showing.
-  const showInvalid = () => flushSync(() => setTab("details"));
   const submit = () => {
     revert.reset();
     void form.handleSubmit(
       (values) => save.mutate({ values, changes: count }),
-      showInvalid,
+      showDetails,
     )();
   };
   const done = () => (count === 0 ? close() : submit());
@@ -341,27 +243,6 @@ function EditSheet({ book }: { book: EditableBook }) {
   } satisfies CoverProps;
   const values = form.watch();
   const shown = coverPreview(cover);
-  // The fetch view hands back: to Details with the edited fields in view, or to Artwork for a cover alone.
-  const applied = (to: TabKey, field: string | null) => {
-    flushSync(() => {
-      setFetching(false);
-      setTab(to);
-    });
-    // The first field it changed holds focus, or Details when that one is a chip list.
-    const target =
-      document.getElementById(field ?? "") ??
-      document.getElementById(tabId(to));
-    target?.focus({ preventScroll: true });
-    target?.scrollIntoView({
-      block: "nearest",
-      behavior: prefersReducedMotion() ? "auto" : "smooth",
-    });
-  };
-  const leaveFetch = () => {
-    flushSync(() => setFetching(false));
-    document.getElementById(FETCH_ID)?.focus();
-  };
-
   return (
     <Sheet
       label={`Edit ${book.displayTitle}`}
@@ -378,19 +259,11 @@ function EditSheet({ book }: { book: EditableBook }) {
           title={values.title}
           author={values.authors[0] ?? ""}
           fetch={
-            providers.data ? (
-              <Button
-                id={FETCH_ID}
-                className="es-fetch-open"
-                data-testid="es-fetch"
-                aria-expanded={fetching}
-                disabled={locked}
-                onClick={() => setFetching(!fetching)}
-              >
-                <SparkleGlyph />
-                Fetch metadata
-              </Button>
-            ) : undefined
+            <FetchToggle
+              fetching={fetching}
+              disabled={locked}
+              onToggle={() => setFetching(!fetching)}
+            />
           }
           onClose={requestClose}
         />
@@ -471,30 +344,6 @@ function EditSheet({ book }: { book: EditableBook }) {
         />
       )}
     </Sheet>
-  );
-}
-
-function Panel({
-  tab,
-  current,
-  fetching,
-  children,
-}: {
-  tab: TabKey;
-  current: TabKey;
-  fetching: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <div
-      className="es-panel"
-      role="tabpanel"
-      id={panelId(tab)}
-      aria-labelledby={tabId(tab)}
-      hidden={fetching || tab !== current}
-    >
-      {children}
-    </div>
   );
 }
 

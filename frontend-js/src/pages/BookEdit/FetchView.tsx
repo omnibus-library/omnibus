@@ -32,12 +32,14 @@ function EditionDiff({
   form,
   edition,
   hasCover,
+  coverNote,
   onApply,
 }: {
   form: UseFormReturn<MetaForm>;
   edition: ProviderEdition;
   /** The book already has a cover, or one is held for it, so a fetched one does not start checked. */
   hasCover: boolean;
+  coverNote: string;
   onApply: (rows: DiffRow[], cover: string | null) => void;
 }) {
   const rows = diffRows(form.watch(), edition);
@@ -71,7 +73,7 @@ function EditionDiff({
                 </span>
                 <span aria-hidden="true">→</span>
                 <img className="es-diff-thumb" src={cover} alt="New cover" />
-                <span className="es-diff-note">Saved when you press Done</span>
+                <span className="es-diff-note">{coverNote}</span>
               </span>
             </label>
           </li>
@@ -137,6 +139,8 @@ type FetchViewProps = {
   hasCover: boolean;
   /** A cover the reader checked: held until Done writes it. */
   onHoldCover: (url: string) => void;
+  /** When a checked cover is written, said beside it. */
+  coverNote?: string;
   /** Back to the tabs, nothing applied. */
   onBack: () => void;
   /** Back to the tabs with the checked rows copied in: where to land, and the first edited field's input. */
@@ -151,6 +155,7 @@ export function FetchView({
   form,
   hasCover,
   onHoldCover,
+  coverNote = "Saved when you press Done",
   onBack,
   onApplied,
 }: FetchViewProps) {
@@ -329,6 +334,7 @@ export function FetchView({
                       form={form}
                       edition={picked.edition}
                       hasCover={hasCover}
+                      coverNote={coverNote}
                       onApply={apply}
                     />
                   </div>
