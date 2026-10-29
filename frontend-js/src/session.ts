@@ -9,13 +9,16 @@ import { useNavigate } from "react-router";
 import {
   fetchMe,
   fetchRegistrationOpen,
+  impersonateUser,
   logout,
   setBookDetailScrollStops,
   setHiddenFormats,
   setShareStats,
   setStackSeries,
+  stopImpersonating,
   type User,
 } from "./api";
+import { parseAdminSection, sectionHref } from "./settingsIndex";
 
 export const meQuery = queryOptions({ queryKey: ["me"], queryFn: fetchMe });
 
@@ -70,24 +73,76 @@ export function endSession(
   client.getMutationCache().clear();
 }
 
-/** How long a sign-out waits on `beforeLogout` before it goes ahead without it. */
-const BEFORE_LOGOUT_MS = 2000;
+/** How long a switch of session waits on `beforeSwitch` before it goes ahead without it. */
+const BEFORE_SWITCH_MS = 2000;
 
-/** Runs `beforeLogout` (for up to 2 s), then ends the session, drops every cached answer, and returns to /login. */
+// What `beforeSwitch` posts needs the cookie the switch revokes; a hung server must not hold the switch.
+const settled = (beforeSwitch: () => Promise<void>) =>
+  Promise.race([
+    beforeSwitch(),
+    new Promise((resolve) => setTimeout(resolve, BEFORE_SWITCH_MS)),
+  ]);
+
+const PEOPLE_HREF = sectionHref(parseAdminSection("people"));
+
+/** Becomes `user` at `landing`, or leaves the session when the server no longer names one. */
+function enterSession(
+  client: QueryClient,
+  navigate: (to: string, options: { replace: true }) => void,
+  user: User | null,
+  landing: string,
+) {
+  if (!user) return endSession(client, navigate);
+  startSession(client, user);
+  navigate(landing, { replace: true });
+}
+
+/**
+ * Runs `beforeLogout` (for up to 2 s), then ends the session, drops every cached answer, and returns to /login.
+ * Signing out of an impersonation returns to the admin on the People page instead.
+ */
 export function useSignOut(beforeLogout: () => Promise<void>) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   return useMutation({
-    // What `beforeLogout` posts needs the cookie that `logout` revokes; a hung server must not hold the sign-out.
     mutationFn: async () => {
-      await Promise.race([
-        beforeLogout(),
-        new Promise((resolve) => setTimeout(resolve, BEFORE_LOGOUT_MS)),
-      ]);
+      const impersonating =
+        queryClient.getQueryData(meQuery.queryKey)?.impersonation != null;
+      await settled(beforeLogout);
       await logout();
+      return impersonating ? fetchMe() : null;
     },
-    onSuccess: () => endSession(queryClient, navigate),
+    onSuccess: (admin) =>
+      enterSession(queryClient, navigate, admin, PEOPLE_HREF),
   });
+}
+
+/** Runs `beforeSwitch`, makes the server's change of session, then becomes whoever `/api/auth/me` now names. */
+function useSwitchSession<V>(
+  beforeSwitch: () => Promise<void>,
+  change: (variables: V) => Promise<void>,
+  landing: string,
+) {
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  return useMutation({
+    mutationFn: async (variables: V) => {
+      await settled(beforeSwitch);
+      await change(variables);
+      return fetchMe();
+    },
+    onSuccess: (user) => enterSession(queryClient, navigate, user, landing),
+  });
+}
+
+/** Signs the admin in as the account with the given id, and lands on the library. */
+export function useImpersonate(beforeSwitch: () => Promise<void>) {
+  return useSwitchSession(beforeSwitch, impersonateUser, "/");
+}
+
+/** Ends an impersonation and lands on the People page as the admin. */
+export function useReturnToAdmin(beforeSwitch: () => Promise<void>) {
+  return useSwitchSession<void>(beforeSwitch, stopImpersonating, PEOPLE_HREF);
 }
 
 /** Saves a preference straight away, showing it on the session first; a refusal puts the session back. */

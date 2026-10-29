@@ -9,6 +9,7 @@ import {
   getAdminDeleteDeviceUrl,
   getAdminDeleteSessionUrl,
   getAdminDeleteUserUrl,
+  getAdminImpersonateUserUrl,
   getAdminSetUserPasswordUrl,
   getAdminSetUserPermissionsUrl,
   getAdminUnlockUserUrl,
@@ -44,6 +45,11 @@ export const adminUsersQuery = queryOptions({
 /** Clears an account's failed-login lockout. */
 export async function unlockUser(id: number) {
   await send(getAdminUnlockUserUrl(id), "POST");
+}
+
+/** Signs the admin in as another account for an hour; the server sets the new session cookie. */
+export async function impersonateUser(id: number) {
+  await send(getAdminImpersonateUserUrl(id), "POST");
 }
 
 /** Makes an account, whether or not registration is open. */

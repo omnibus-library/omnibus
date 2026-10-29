@@ -5,7 +5,8 @@ import { type AdminUserRow, adminUsersQuery, unlockUser } from "../../api";
 import { Button } from "../../components/Button/Button";
 import { BusyLabel, RowSkeletons } from "../../components/Loading/Loading";
 import { formatUtcDay } from "../../format";
-import { endSession, useCurrentUser } from "../../session";
+import { usePlayback } from "../../playback/PlaybackProvider";
+import { endSession, useCurrentUser, useImpersonate } from "../../session";
 import {
   DeleteUserModal,
   EditUserModal,
@@ -28,15 +29,21 @@ function chipClass(chip: string) {
 function UserRow({
   user,
   isSelf,
+  canImpersonate,
+  impersonating,
   onUnlocked,
   onUnlockFailed,
   onOpen,
+  onImpersonate,
 }: {
   user: AdminUserRow;
   isSelf: boolean;
+  canImpersonate: boolean;
+  impersonating: boolean;
   onUnlocked: () => void;
   onUnlockFailed: (message: string) => void;
   onOpen: (kind: "edit" | "delete" | "sessions") => void;
+  onImpersonate: () => void;
 }) {
   const unlock = useMutation({
     mutationFn: () => unlockUser(user.id),
@@ -101,6 +108,36 @@ function UserRow({
         >
           Sessions
         </Button>
+        {canImpersonate &&
+          (isSelf ? (
+            // Keeps Delete in line with the other rows; no one can sign in as themselves.
+            <Button
+              variant="ghost"
+              size="sm"
+              className="users-impersonate-placeholder"
+              aria-hidden="true"
+              tabIndex={-1}
+              disabled
+            >
+              Impersonate
+            </Button>
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              data-testid={`user-impersonate-${user.id}`}
+              aria-label={`Impersonate ${user.username}`}
+              disabled={impersonating}
+              aria-busy={impersonating}
+              onClick={onImpersonate}
+            >
+              <BusyLabel
+                busy={impersonating}
+                label="Impersonate"
+                busyLabel="Signing in…"
+              />
+            </Button>
+          ))}
         <Button
           variant="ghost"
           size="sm"
@@ -122,6 +159,7 @@ export function UsersCard() {
   const navigate = useNavigate();
   const users = useQuery(adminUsersQuery);
   const me = useCurrentUser();
+  const impersonate = useImpersonate(usePlayback().flush);
   const [actionError, setActionError] = useState<string | null>(null);
   const [modal, setModal] = useState<OpenModal>(null);
 
@@ -221,6 +259,17 @@ export function UsersCard() {
                     key={user.id}
                     user={user}
                     isSelf={user.id === me.id}
+                    // No nesting: the server refuses it, so the button isn't offered.
+                    canImpersonate={!me.impersonation}
+                    impersonating={
+                      impersonate.isPending && impersonate.variables === user.id
+                    }
+                    onImpersonate={() => {
+                      setActionError(null);
+                      impersonate.mutate(user.id, {
+                        onError: (error) => setActionError(error.message),
+                      });
+                    }}
                     onUnlocked={() => {
                       setActionError(null);
                       void users.refetch();
