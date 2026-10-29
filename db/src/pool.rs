@@ -52,6 +52,7 @@ pub async fn init_db(database_url: &str) -> Result<SqlitePool, InitDbError> {
     let is_memory = is_memory_url(database_url);
     let pool = connect_pool(database_url, is_memory).await?;
 
+    repair_migration_0093_checksum(&pool).await?;
     MIGRATOR.run(&pool).await?;
     run_boot_backfills(&pool).await?;
 
@@ -61,6 +62,33 @@ pub async fn init_db(database_url: &str) -> Result<SqlitePool, InitDbError> {
     }
 
     Ok(pool)
+}
+
+/// sqlx checksum of migration 0093 as first applied, and as `cdc144cf` edited
+/// it (comment-only, shipped from v0.37.3). Databases hold either one.
+const MIGRATION_0093_ORIGINAL: &str = "338b0e9364c59fccaf7f01afa331c9f04475f617f04ac451dea562f430527d8fa4045fee3dc61e711330b2ef5dbeab77";
+const MIGRATION_0093_EDITED: &str = "e7ca2cda233a50e233376e2f62b3befecd138d3c4cd262b502f0c270531ccf952d93fafa1094a98dda7875d7426f6c19";
+
+/// Point a database that applied the edited 0093 back at the original
+/// checksum, so the restored file validates. Delete once no install still
+/// carries the edited one.
+async fn repair_migration_0093_checksum(pool: &SqlitePool) -> Result<(), sqlx::Error> {
+    // A fresh database has no ledger yet; `UPDATE` on a missing table errors.
+    let has_ledger: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '_sqlx_migrations')",
+    )
+    .fetch_one(pool)
+    .await?;
+    if !has_ledger {
+        return Ok(());
+    }
+    // Both values are the constants above, never caller input.
+    let sql = format!(
+        "UPDATE _sqlx_migrations SET checksum = X'{MIGRATION_0093_ORIGINAL}' \
+         WHERE version = 93 AND checksum = X'{MIGRATION_0093_EDITED}'"
+    );
+    sqlx::query(&sql).execute(pool).await?;
+    Ok(())
 }
 
 /// Build the SQLite pool and register the per-connection PRAGMA setup
