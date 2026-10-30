@@ -57,9 +57,9 @@
   background: var(--bg-0);
   color: var(--ink-0);
 }
-/* An open menu, or a dialog opened from the stage, sits above the tabs. */
+/* An open menu, or a dialog opened from the stage, sits above the tabs; still under the top bar's 5. */
 .bp-stage:has([aria-expanded="true"], .bdmq-overlay) {
-  z-index: 7;
+  z-index: 4;
 }
 .bp-stage-body {
   max-width: var(--bp-page);
@@ -1056,9 +1056,10 @@ button.bp-byline-series {
 }
 
 /* ---------- Tabs, with the ribbon bookmark as the indicator ---------- */
+/* Above what the panels position, so nothing covers the ribbon; under the sticky top bar's 5. */
 .bp-tabs {
   position: relative;
-  z-index: 6;
+  z-index: 3;
   border-bottom: 1px solid var(--line);
 }
 .bp-tablist {
