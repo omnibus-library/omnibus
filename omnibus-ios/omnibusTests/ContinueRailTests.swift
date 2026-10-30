@@ -209,6 +209,24 @@ struct ResumeSpliceTests {
         // The oldest card is the one that falls off the end.
         #expect(spliced?.contains { $0.id == "book-5:epub" } == false)
     }
+
+    @Test("the audiobook list keeps as many as the car's Continue list shows")
+    func audiobookListIsCappedAtItsOwnLimit() {
+        let limit = UserDataService.recentAudioLimit
+        let list = (1...limit).map { index in
+            point(
+                record(uuid: "book-\(index)", format: .audio, at: 60),
+                book: book(id: Int64(index), uuid: "book-\(index)")
+            )
+        }
+        let spliced = UserDataService.splice(
+            record(uuid: "book-99", format: .audio, at: 60),
+            book: book(id: 99, uuid: "book-99"), into: list, limit: limit
+        )
+
+        #expect(spliced?.count == limit)
+        #expect(spliced?.first?.id == "book-99:audio")
+    }
 }
 
 // MARK: - Wire decode

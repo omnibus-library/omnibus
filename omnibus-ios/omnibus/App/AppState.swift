@@ -107,7 +107,7 @@ final class AppState {
         // titles and cover art on a surface outside the app's sandbox.
         defer { Task { await WidgetSnapshotWriter.shared.refresh() } }
 
-        await OfflineStore.shared.open()
+        await Startup.prepare()
 
         #if DEBUG
         // The cached identity half of `--uitest-shell`, which has to wait for
@@ -116,9 +116,6 @@ final class AppState {
         if ProcessInfo.processInfo.arguments.contains(Self.uiTestShellArgument) {
             await Cache.write(CacheKey.me, Self.uiTestShellUser)
         }
-        #endif
-        await DownloadManager.shared.hydrate()
-        #if DEBUG
         // After `Connectivity` exists and before anything is asked of the
         // server: a relaunch in simulated airplane mode has to come up
         // *showing* offline, not discover it on the first failed request.

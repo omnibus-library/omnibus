@@ -538,6 +538,11 @@ pub struct RecentProgressQuery {
     pub limit: i64,
     /// Read another reader's books instead of your own. They must share their stats.
     pub user_id: Option<i64>,
+    /// List only books you have a position in this format, each at its latest position in
+    /// it — even when you've used the other format since. Absent, each book comes back in
+    /// the format you used last.
+    #[serde(default)]
+    pub format: Option<ProgressFormat>,
 }
 
 fn default_recent_limit() -> i64 {

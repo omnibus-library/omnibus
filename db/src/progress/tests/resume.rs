@@ -63,7 +63,7 @@ async fn recent_progress_orders_by_client_event_time_not_server_receipt_time() {
     .await
     .unwrap();
 
-    let rows = recent_progress(&pool, user, 10).await.unwrap();
+    let rows = recent_progress(&pool, user, 10, None).await.unwrap();
     assert_eq!(rows.len(), 2);
     assert_eq!(
         rows[0].book_uuid, recently_read,
@@ -79,7 +79,7 @@ async fn recent_progress_coalesces_a_null_client_updated_at_to_receipt_time() {
     let (_, uuid) = seed(&pool, "/lib", "Book A").await;
     seed_null_client_updated_at(&pool, user, &uuid, 777).await;
 
-    let rows = recent_progress(&pool, user, 10).await.unwrap();
+    let rows = recent_progress(&pool, user, 10, None).await.unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].client_updated_at, 777);
 }
@@ -126,12 +126,12 @@ async fn recent_progress_returns_rows_newest_first_within_limit() {
     .await
     .unwrap();
 
-    let rows = recent_progress(&pool, user, 10).await.unwrap();
+    let rows = recent_progress(&pool, user, 10, None).await.unwrap();
     assert_eq!(rows.len(), 2);
     assert_eq!(rows[0].book_uuid, uuid_b, "newest row first");
     assert_eq!(rows[1].book_uuid, uuid_a);
 
-    let capped = recent_progress(&pool, user, 1).await.unwrap();
+    let capped = recent_progress(&pool, user, 1, None).await.unwrap();
     assert_eq!(capped.len(), 1);
     assert_eq!(capped[0].book_uuid, uuid_b);
 }
@@ -153,7 +153,7 @@ async fn recent_progress_returns_one_row_per_book_in_its_newest_format() {
         .await
         .unwrap();
 
-    let rows = recent_progress(&pool, user, 10).await.unwrap();
+    let rows = recent_progress(&pool, user, 10, None).await.unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].format, ProgressFormat::Audio);
 }
@@ -180,7 +180,7 @@ async fn recent_progress_breaks_a_same_time_tie_between_formats_toward_audio() {
         .await
         .unwrap();
 
-    let rows = recent_progress(&pool, user, 10).await.unwrap();
+    let rows = recent_progress(&pool, user, 10, None).await.unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].format, ProgressFormat::Audio);
 }
@@ -210,9 +210,45 @@ async fn recent_progress_counts_its_limit_in_books_not_formats() {
     .await
     .unwrap();
 
-    let rows = recent_progress(&pool, user, 2).await.unwrap();
+    let rows = recent_progress(&pool, user, 2, None).await.unwrap();
     let uuids: Vec<&str> = rows.iter().map(|r| r.book_uuid.as_str()).collect();
     assert_eq!(uuids, [dual, single.as_str()]);
+}
+
+#[tokio::test]
+async fn recent_progress_with_a_format_keeps_a_book_at_that_formats_position_when_the_other_is_newer(
+) {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool, "alice").await;
+    let dual = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+    seed_audiobook(&pool, dual).await;
+    let (_, ebook_only) = seed(&pool, "/lib", "Ebook Only").await;
+    upsert_progress(&pool, user, &audio_update(dual, 450.0, None, 1000))
+        .await
+        .unwrap();
+    // Read since: unfiltered, this book would come back as its ebook row.
+    upsert_progress(
+        &pool,
+        user,
+        &cfi_update(dual, "epubcfi(/6/4!/4/2/1:0)", 2000),
+    )
+    .await
+    .unwrap();
+    upsert_progress(
+        &pool,
+        user,
+        &cfi_update(&ebook_only, "epubcfi(/6/4!/4/2/1:0)", 3000),
+    )
+    .await
+    .unwrap();
+
+    let rows = recent_progress(&pool, user, 10, Some(ProgressFormat::Audio))
+        .await
+        .unwrap();
+    assert_eq!(rows.len(), 1, "the ebook-only book has no audio position");
+    assert_eq!(rows[0].book_uuid, dual);
+    assert_eq!(rows[0].format, ProgressFormat::Audio);
+    assert_eq!(rows[0].audio_position_seconds, Some(450.0));
 }
 
 async fn set_status(pool: &SqlitePool, user: i64, uuid: &str, status: omnibus_shared::ReadStatus) {
@@ -234,12 +270,18 @@ async fn recent_progress_excludes_books_marked_finished() {
     let user = seed_user(&pool, "alice").await;
     let (_, uuid) = seed(&pool, "/lib", "Book A").await;
     seed_epub_position(&pool, user, &uuid).await;
-    assert_eq!(recent_progress(&pool, user, 10).await.unwrap().len(), 1);
+    assert_eq!(
+        recent_progress(&pool, user, 10, None).await.unwrap().len(),
+        1
+    );
 
     set_status(&pool, user, &uuid, omnibus_shared::ReadStatus::Finished).await;
 
     assert!(
-        recent_progress(&pool, user, 10).await.unwrap().is_empty(),
+        recent_progress(&pool, user, 10, None)
+            .await
+            .unwrap()
+            .is_empty(),
         "a finished book is not something to continue"
     );
 }
@@ -253,7 +295,10 @@ async fn recent_progress_excludes_books_marked_unread() {
     set_status(&pool, user, &uuid, omnibus_shared::ReadStatus::Unread).await;
 
     assert!(
-        recent_progress(&pool, user, 10).await.unwrap().is_empty(),
+        recent_progress(&pool, user, 10, None)
+            .await
+            .unwrap()
+            .is_empty(),
         "clearing a book to unread takes it off the rail"
     );
 }
@@ -268,7 +313,7 @@ async fn recent_progress_keeps_a_book_whose_read_status_row_is_absent() {
     // 0046 reads absence as `unread`; the rail is the deliberate exception.
     // Every status write is best-effort, so a book whose write was lost — or
     // one whose position predates the auto-transition — must still show.
-    let rows = recent_progress(&pool, user, 10).await.unwrap();
+    let rows = recent_progress(&pool, user, 10, None).await.unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].book_uuid, uuid);
 }
@@ -281,7 +326,7 @@ async fn recent_progress_keeps_a_book_marked_reading() {
     seed_epub_position(&pool, user, &uuid).await;
     set_status(&pool, user, &uuid, omnibus_shared::ReadStatus::Reading).await;
 
-    let rows = recent_progress(&pool, user, 10).await.unwrap();
+    let rows = recent_progress(&pool, user, 10, None).await.unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].book_uuid, uuid);
 }
@@ -316,7 +361,7 @@ async fn recent_progress_applies_its_limit_after_the_read_status_filter() {
     .unwrap();
     set_status(&pool, user, &finished, omnibus_shared::ReadStatus::Finished).await;
 
-    let rows = recent_progress(&pool, user, 1).await.unwrap();
+    let rows = recent_progress(&pool, user, 1, None).await.unwrap();
     assert_eq!(rows.len(), 1, "the filter runs in SQL, ahead of the LIMIT");
     assert_eq!(rows[0].book_uuid, active);
 }
@@ -333,8 +378,14 @@ async fn recent_progress_read_status_filter_is_scoped_to_the_reading_user() {
     // whether Alice is still reading it.
     set_status(&pool, bob, &uuid, omnibus_shared::ReadStatus::Finished).await;
 
-    assert_eq!(recent_progress(&pool, alice, 10).await.unwrap().len(), 1);
-    assert!(recent_progress(&pool, bob, 10).await.unwrap().is_empty());
+    assert_eq!(
+        recent_progress(&pool, alice, 10, None).await.unwrap().len(),
+        1
+    );
+    assert!(recent_progress(&pool, bob, 10, None)
+        .await
+        .unwrap()
+        .is_empty());
 }
 
 #[tokio::test]
@@ -361,7 +412,7 @@ async fn resume_points_enrich_audio_rows_with_duration_and_chapter() {
     .await
     .unwrap();
 
-    let points = resume_points(&pool, user, 5).await.unwrap();
+    let points = resume_points(&pool, user, 5, None).await.unwrap();
     assert_eq!(points.len(), 1);
     let p = &points[0];
     assert_eq!(p.book.title.as_deref(), Some("A"));
@@ -403,7 +454,7 @@ async fn resume_points_carry_the_saved_playback_rate_for_audio_rows() {
     .await
     .unwrap();
 
-    let points = resume_points(&pool, user, 5).await.unwrap();
+    let points = resume_points(&pool, user, 5, None).await.unwrap();
     assert_eq!(points.len(), 1);
     assert_eq!(points[0].playback_rate, Some(2.0));
 }
@@ -437,7 +488,7 @@ async fn resume_points_return_the_audio_file_the_position_was_taken_in() {
     .await
     .unwrap();
 
-    let points = resume_points(&pool, user, 5).await.unwrap();
+    let points = resume_points(&pool, user, 5, None).await.unwrap();
     assert_eq!(points[0].record.book_file_id, Some(second));
     assert_eq!(points[0].record.total_duration_seconds, Some(3000.0));
     assert_eq!(points[0].audio_part, Some(2));
@@ -476,7 +527,7 @@ async fn resume_points_fall_back_to_the_first_audio_file_for_an_unresolvable_fil
         .await
         .unwrap();
 
-    let points = resume_points(&pool, user, 5).await.unwrap();
+    let points = resume_points(&pool, user, 5, None).await.unwrap();
     let first = crate::hls::resolve_audiobook(&pool, uuid)
         .await
         .unwrap()
@@ -517,7 +568,7 @@ async fn resume_points_name_the_default_audio_file_when_the_row_stored_none() {
     .await
     .unwrap();
 
-    let points = resume_points(&pool, user, 5).await.unwrap();
+    let points = resume_points(&pool, user, 5, None).await.unwrap();
     let expected = crate::hls::resolve_audiobook(&pool, uuid)
         .await
         .unwrap()
@@ -556,7 +607,7 @@ async fn resume_points_drop_a_file_id_that_resolves_to_nothing() {
         .await
         .unwrap();
 
-    let points = resume_points(&pool, user, 5).await.unwrap();
+    let points = resume_points(&pool, user, 5, None).await.unwrap();
     assert_eq!(points[0].record.book_file_id, None);
     assert_eq!(points[0].record.total_duration_seconds, None);
 }
@@ -591,7 +642,7 @@ async fn resume_points_skip_rows_whose_book_is_gone_and_leave_epub_totals_empty(
         .await
         .unwrap();
 
-    let points = resume_points(&pool, user, 5).await.unwrap();
+    let points = resume_points(&pool, user, 5, None).await.unwrap();
     assert_eq!(points.len(), 1, "ghosted book's row is skipped");
     let p = &points[0];
     assert_eq!(p.record.book_uuid, kept_uuid);

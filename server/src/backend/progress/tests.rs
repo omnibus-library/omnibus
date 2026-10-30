@@ -838,6 +838,74 @@ async fn api_get_recent_progress_with_own_user_id_reads_own_points_even_with_sha
 }
 
 #[tokio::test]
+async fn api_get_recent_progress_with_format_audio_returns_a_books_audio_position_after_reading_it()
+{
+    let (app, _state, pool) = fixture().await;
+    let user = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+    let uuid =
+        omnibus_db::test_support::seed_synced_audiobook(&pool, "/audio/Dual", "Dual", "Author")
+            .await;
+    // Listened first, read since.
+    for (format, client_updated_at) in [(ProgressFormat::Audio, 1000), (ProgressFormat::Epub, 2000)]
+    {
+        omnibus_db::progress::upsert_progress(
+            &pool,
+            user.id,
+            &omnibus_shared::ProgressUpdate {
+                book_uuid: uuid.clone(),
+                format,
+                epub_cfi: (format == ProgressFormat::Epub).then(|| "epubcfi(/6/4!/4/2/1:0)".into()),
+                audio_position_seconds: (format == ProgressFormat::Audio).then_some(450.0),
+                progress_percent: None,
+                kobo_location: None,
+                book_file_id: None,
+                client_updated_at: Some(client_updated_at),
+            },
+        )
+        .await
+        .unwrap();
+    }
+
+    let filtered = app
+        .clone()
+        .oneshot(get_with_bearer(
+            "/api/progress/recent?limit=5&format=audio",
+            &token,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(filtered.status(), StatusCode::OK);
+    let bytes = to_bytes(filtered.into_body(), usize::MAX).await.unwrap();
+    let points: Vec<omnibus_shared::ResumePoint> = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(points.len(), 1);
+    assert_eq!(points[0].record.format, ProgressFormat::Audio);
+    assert_eq!(points[0].record.audio_position_seconds, Some(450.0));
+
+    // Unfiltered, the book still answers in the format used last.
+    let unfiltered = app
+        .oneshot(get_with_bearer("/api/progress/recent?limit=5", &token))
+        .await
+        .unwrap();
+    let bytes = to_bytes(unfiltered.into_body(), usize::MAX).await.unwrap();
+    let points: Vec<omnibus_shared::ResumePoint> = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(points[0].record.format, ProgressFormat::Epub);
+}
+
+#[tokio::test]
+async fn api_get_recent_progress_rejects_an_unknown_format() {
+    let (app, _state, pool) = fixture().await;
+    let user = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+
+    let res = app
+        .oneshot(get_with_bearer("/api/progress/recent?format=mp3", &token))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
 async fn api_get_recent_progress_rejects_a_malformed_user_id() {
     let (app, _state, pool) = fixture().await;
     let user = auth_test_support::create_user(&pool, "viewer").await;

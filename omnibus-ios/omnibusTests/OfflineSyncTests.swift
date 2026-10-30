@@ -103,6 +103,14 @@ struct OutboxScopeTests {
         #expect(!OutboxScope.isBlocked(CacheKey.progress("other", .epub), by: kinds))
     }
 
+    @Test("a queued listening position holds off the audiobook list; a reading one doesn't")
+    func audioPositionBlocksTheAudiobookList() {
+        #expect(OutboxScope.isBlocked(CacheKey.recentAudio, by: [OpKind.progress(uuid, .audio)]))
+        #expect(!OutboxScope.isBlocked(CacheKey.recentAudio, by: [OpKind.progress(uuid, .epub)]))
+        // A finished book leaves the list the way it leaves the rail.
+        #expect(OutboxScope.isBlocked(CacheKey.recentAudio, by: [OpKind.readStatus(uuid)]))
+    }
+
     @Test("a queued session report holds off stats and nothing else")
     func sessionBlocksOnlyStats() {
         let kinds: Set<String> = [OpKind.session]
@@ -1426,6 +1434,7 @@ struct UserScopedPrefixTests {
         [
             CacheKey.me,
             CacheKey.recentProgress,
+            CacheKey.recentAudio,
             CacheKey.shelves,
             CacheKey.shelfPreviews,
             CacheKey.shelf(7),

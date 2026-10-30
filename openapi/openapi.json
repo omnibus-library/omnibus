@@ -5711,7 +5711,7 @@
           "Progress"
         ],
         "summary": "List the books you were last in",
-        "description": "Your most recent positions, newest first, each with its book: a \"pick up where you left\noff\" list. Each book appears once, for the format you used last. Send `user_id` for another reader's list.",
+        "description": "Your most recent positions, newest first, each with its book: a \"pick up where you left\noff\" list. Each book appears once, for the format you used last. Send `format` to list only\nthat format's positions, and `user_id` for another reader's list.",
         "operationId": "get_recent_progress",
         "parameters": [
           {
@@ -5733,11 +5733,20 @@
               "type": "integer",
               "format": "int64"
             }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "description": "List only books you have a position in this format, each at its latest position in\nit — even when you've used the other format since. Absent, each book comes back in\nthe format you used last.",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ProgressFormat"
+            }
           }
         ],
         "responses": {
           "200": {
-            "description": "One position per book, in the format you used last, newest first.",
+            "description": "One position per book, in the format you used last (or in `format`), newest first.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5750,7 +5759,7 @@
             }
           },
           "400": {
-            "description": "`limit` or `user_id` isn't a whole number."
+            "description": "`limit` or `user_id` isn't a whole number, or `format` isn't `epub` or `audio`."
           },
           "404": {
             "description": "`user_id` names no reader, or one who doesn't share their stats."

@@ -5,8 +5,8 @@
 //! about what "shares" means.
 
 use omnibus_shared::{
-    BookHouseholdReader, HouseholdReader, ResumePoint, SessionCursor, SessionLogPage, StatsRange,
-    StatsSummary,
+    BookHouseholdReader, HouseholdReader, ProgressFormat, ResumePoint, SessionCursor,
+    SessionLogPage, StatsRange, StatsSummary,
 };
 use sqlx::{Row, SqlitePool};
 
@@ -192,6 +192,7 @@ pub async fn recent_progress_for_viewer(
     viewer_id: i64,
     target_id: Option<i64>,
     limit: i64,
+    format: Option<ProgressFormat>,
 ) -> Result<Vec<ResumePoint>, ViewerStatsError> {
     let target = match target_id {
         Some(target) if target != viewer_id => {
@@ -202,5 +203,5 @@ pub async fn recent_progress_for_viewer(
         }
         _ => viewer_id,
     };
-    Ok(crate::progress::resume_points(pool, target, limit).await?)
+    Ok(crate::progress::resume_points(pool, target, limit, format).await?)
 }

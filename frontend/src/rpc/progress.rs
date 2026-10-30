@@ -117,7 +117,7 @@ async fn reader_recent_progress(
     limit: i64,
     user_id: Option<i64>,
 ) -> Result<Vec<ResumePoint>, ServerFnError> {
-    db::stats::recent_progress_for_viewer(pool, caller_id, user_id, limit)
+    db::stats::recent_progress_for_viewer(pool, caller_id, user_id, limit, None)
         .await
         .map_err(|e| super::stats::map_viewer_error("recent progress", e))
 }

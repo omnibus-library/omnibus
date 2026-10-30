@@ -547,7 +547,7 @@ async fn the_resume_feed_names_the_chapter_without_opening_the_archive() {
     .await
     .unwrap();
 
-    let points = resume_points(&pool, user, 5).await.unwrap();
+    let points = resume_points(&pool, user, 5, None).await.unwrap();
     let resolved = points[0].record.resolved.as_ref().expect("resolved");
     assert_eq!(resolved.spine_index, Some(2));
     assert_eq!(resolved.chapter_title.as_deref(), Some("Two"));
@@ -711,7 +711,7 @@ async fn the_resume_feed_reports_no_percent_rather_than_a_spine_documents_start(
     .await
     .unwrap();
 
-    let points = resume_points(&pool, user, 5).await.unwrap();
+    let points = resume_points(&pool, user, 5, None).await.unwrap();
     let resolved = points[0].record.resolved.as_ref().expect("resolved");
     assert_eq!(resolved.chapter_title.as_deref(), Some("Two"));
     assert_eq!(resolved.chapter_ordinal, Some(2));

@@ -339,7 +339,7 @@ async fn recent_progress_for_viewer_reads_a_sharing_targets_points_and_none_of_t
     let target = seed_user(&pool, "target").await;
     let target_uuid = seed_progress_book(&pool, target, "target.epub").await;
 
-    let points = recent_progress_for_viewer(&pool, viewer, Some(target), 20)
+    let points = recent_progress_for_viewer(&pool, viewer, Some(target), 20, None)
         .await
         .unwrap();
 
@@ -355,10 +355,10 @@ async fn recent_progress_for_viewer_refuses_a_non_sharing_or_missing_target_with
     let non_sharer = seed_user(&pool, "non-sharer").await;
     set_share_stats(&pool, non_sharer, false).await.unwrap();
 
-    let err_a = recent_progress_for_viewer(&pool, viewer, Some(non_sharer), 20)
+    let err_a = recent_progress_for_viewer(&pool, viewer, Some(non_sharer), 20, None)
         .await
         .unwrap_err();
-    let err_b = recent_progress_for_viewer(&pool, viewer, Some(424_242), 20)
+    let err_b = recent_progress_for_viewer(&pool, viewer, Some(424_242), 20, None)
         .await
         .unwrap_err();
 
@@ -373,10 +373,10 @@ async fn recent_progress_for_viewer_with_no_target_or_the_viewers_own_id_reads_t
     set_share_stats(&pool, viewer, false).await.unwrap();
     seed_progress_book(&pool, viewer, "own.epub").await;
 
-    let none = recent_progress_for_viewer(&pool, viewer, None, 20)
+    let none = recent_progress_for_viewer(&pool, viewer, None, 20, None)
         .await
         .unwrap();
-    let own = recent_progress_for_viewer(&pool, viewer, Some(viewer), 20)
+    let own = recent_progress_for_viewer(&pool, viewer, Some(viewer), 20, None)
         .await
         .unwrap();
 
@@ -390,7 +390,7 @@ async fn recent_progress_for_viewer_surfaces_progress_error_when_the_pool_is_clo
     let pool = init_db("sqlite::memory:").await.unwrap();
     pool.close().await;
 
-    let err = recent_progress_for_viewer(&pool, 1, None, 20)
+    let err = recent_progress_for_viewer(&pool, 1, None, 20, None)
         .await
         .unwrap_err();
     assert!(matches!(err, ViewerStatsError::Progress(_)));
@@ -402,7 +402,7 @@ async fn recent_progress_for_viewer_surfaces_auth_error_when_the_pool_is_closed_
     let pool = init_db("sqlite::memory:").await.unwrap();
     pool.close().await;
 
-    let err = recent_progress_for_viewer(&pool, 1, Some(2), 20)
+    let err = recent_progress_for_viewer(&pool, 1, Some(2), 20, None)
         .await
         .unwrap_err();
     assert!(matches!(err, ViewerStatsError::Auth(_)));

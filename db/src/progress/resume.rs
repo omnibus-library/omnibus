@@ -8,16 +8,19 @@ use sqlx::{Row, SqlitePool};
 use super::enrich::{enrich_record, PositionDetail};
 use super::{parse_format, ProgressError};
 
-/// One progress row per book, in the format used last, newest first by **client
-/// event time** (`COALESCE(client_updated_at, updated_at)`), so a late offline
-/// replay doesn't jump a week-old book to the top; `limit` counts books. Excludes
-/// books marked `unread` or `finished` but keeps a **missing** status row: absence
-/// is not "unread" here. Feeds [`resume_points`].
+/// One progress row per book, in the format used last, newest first by client
+/// event time; `limit` counts books. Excludes books marked `unread` or `finished`
+/// but keeps a **missing** status row: absence is not "unread" here. `format`
+/// keeps only rows in that format, so a book comes back at its latest position in
+/// it even when the other was used since. Feeds [`resume_points`].
 pub async fn recent_progress(
     pool: &SqlitePool,
     user_id: i64,
     limit: i64,
+    format: Option<ProgressFormat>,
 ) -> Result<Vec<ProgressRecord>, ProgressError> {
+    // Ordered on `COALESCE(client_updated_at, updated_at)` so a late offline replay
+    // doesn't jump a week-old book to the top.
     // Absence keeps its position: a position write creates its book's status, so a
     // missing row is an edge (a merge undo clears one) that shouldn't hide the book.
     // The tie-breaks keep the surviving format stable between refreshes: receipt
@@ -41,12 +44,15 @@ pub async fn recent_progress(
                     ON rs.user_id = rp.user_id AND rs.book_uuid = rp.book_uuid
              WHERE rp.user_id = ?
                AND (rs.status IS NULL OR rs.status = 'reading')
+               AND (? IS NULL OR rp.format = ?)
          )
          WHERE rn = 1
          ORDER BY client_updated_at DESC, book_uuid
          LIMIT ?",
     )
     .bind(user_id)
+    .bind(format.map(ProgressFormat::as_str))
+    .bind(format.map(ProgressFormat::as_str))
     .bind(limit)
     .fetch_all(pool)
     .await?;
@@ -80,8 +86,9 @@ pub async fn resume_points(
     pool: &SqlitePool,
     user_id: i64,
     limit: i64,
+    format: Option<ProgressFormat>,
 ) -> Result<Vec<ResumePoint>, ProgressError> {
-    let records = recent_progress(pool, user_id, limit).await?;
+    let records = recent_progress(pool, user_id, limit, format).await?;
     let mut points = Vec::with_capacity(records.len());
     for mut record in records {
         let Some(book) = crate::get_book_by_uuid(pool, &record.book_uuid).await? else {

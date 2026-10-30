@@ -11,6 +11,9 @@ enum CacheKey {
     static let library = "books"
     static let me = "me"
     static let recentProgress = "recent_progress"
+    /// Audiobooks only, each at its latest listening position even when it was
+    /// read since — the rail above shows such a book as its ebook card.
+    static let recentAudio = "recent_audio"
     static let authors = "authors"
     static let series = "series"
     static let tags = "tags"
@@ -141,12 +144,15 @@ enum OutboxScope {
             // finished book back on the rail.
             return key == CacheKey.readStatus(uuid)
                 || key == CacheKey.recentProgress
+                || key == CacheKey.recentAudio
                 || key.hasPrefix("stats:")
         }
         if kind.hasPrefix("progress:") {
             // The kind is the progress key verbatim, and any position write
-            // also changes what the Continue rail shows.
+            // also changes what the Continue rail shows — a listening one, the
+            // audiobook list too.
             return key == kind || key == CacheKey.recentProgress
+                || (key == CacheKey.recentAudio && kind.hasSuffix(":\(ProgressFormat.audio.rawValue)"))
         }
 
         // An unrecognised kind blocks everything. A write path that grows a new
@@ -445,6 +451,23 @@ enum Cache {
         for try await read in live(key, fetch: fetch) { latest = read.value }
         guard let latest else { throw APIError.offline }
         return latest
+    }
+
+    /// A `live` read settled within `deadline`, for a caller that acts once on
+    /// it while someone waits: the settled answer if it lands in time, else the
+    /// replica — on any failure too, not only an offline one, so a server
+    /// mid-deploy can't hide what the device holds. Only with no replica does
+    /// it wait the read out; `nil` when that fails too.
+    static func settled<T: Codable & Sendable>(
+        _ key: String,
+        within deadline: Duration,
+        fetch: @escaping @Sendable () async throws -> T
+    ) async -> T? {
+        // Not cancelled on the deadline: the read goes on to refresh the replica.
+        let answer = Task { try? await settled(key, fetch: fetch) }
+        if let settled = await firstResult(of: answer, within: deadline) { return settled }
+        if let replica: T = await read(key) { return replica }
+        return await answer.value
     }
 
     /// Apply a change to a cached value in place. A no-op when nothing is

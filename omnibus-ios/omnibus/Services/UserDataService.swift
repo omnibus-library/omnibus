@@ -18,6 +18,10 @@ enum UserDataService {
     /// to do — left the carousel with a single card and its page dots dead.
     private static let resumeLimit = 5
 
+    /// How many audiobooks `recentAudio()` holds — the car's Continue list,
+    /// which CarPlay may cut to twelve rows while driving.
+    static let recentAudioLimit = 12
+
     /// The position for one book in one format.
     ///
     /// `?format=` narrows the endpoint's envelope to the one record this
@@ -94,6 +98,35 @@ enum UserDataService {
                 "/api/progress/recent", query: recentProgressQuery(userID: subject.userID)
             )
         }
+    }
+
+    /// The audiobooks you were listening to, newest first, each at its latest
+    /// listening position even when you have read it since — which the rail
+    /// would show as its ebook card.
+    static func recentAudio() -> AsyncThrowingStream<CacheRead<[ResumePoint]>, Error> {
+        Cache.live(CacheKey.recentAudio) { try await fetchRecentAudio() }
+    }
+
+    /// `recentAudio()` settled to one answer for a caller acting once on the
+    /// list — a car waiting to play: the server's if it answers within
+    /// `PositionSync.openDeadline`, else the replica's. With no replica there
+    /// is nothing to fall back on, so it waits the server's read out.
+    static func settledRecentAudio() async -> [ResumePoint] {
+        await Cache.settled(CacheKey.recentAudio, within: PositionSync.openDeadline) {
+            try await fetchRecentAudio()
+        } ?? []
+    }
+
+    private static func fetchRecentAudio() async throws -> [ResumePoint] {
+        try await APIClient.shared.get("/api/progress/recent", query: recentAudioQuery)
+    }
+
+    /// Your own resume query, held to audio and lengthened to the car's list.
+    static var recentAudioQuery: [String: String?] {
+        var query = recentProgressQuery(userID: nil)
+        query["limit"] = String(recentAudioLimit)
+        query["format"] = ProgressFormat.audio.rawValue
+        return query
     }
 
     /// Routing seam: another reader's in-progress list must never enter
@@ -174,8 +207,20 @@ enum UserDataService {
         let book = points.contains { $0.matches(record) }
             ? nil
             : await bookForResume(record.bookUUID)
-        guard let spliced = splice(record, book: book, into: points) else { return }
-        await Cache.write(CacheKey.recentProgress, spliced)
+        if let spliced = splice(record, book: book, into: points) {
+            await Cache.write(CacheKey.recentProgress, spliced)
+        }
+        // A listening position moves the audiobook list too.
+        guard record.format == .audio else { return }
+        let audio: [ResumePoint] = await Cache.cachedOnly(CacheKey.recentAudio) ?? []
+        var audioBook: Book?
+        if !audio.contains(where: { $0.matches(record) }) {
+            audioBook = book
+            if audioBook == nil { audioBook = await bookForResume(record.bookUUID) }
+        }
+        if let spliced = splice(record, book: audioBook, into: audio, limit: recentAudioLimit) {
+            await Cache.write(CacheKey.recentAudio, spliced)
+        }
     }
 
     /// Put `record`'s card at the front of `points`, replacing the book's
@@ -187,7 +232,8 @@ enum UserDataService {
     /// that isn't already on the rail returns `nil`: better to leave the rail
     /// alone than to add a card with no metadata to draw.
     static func splice(
-        _ record: ProgressRecord, book: Book?, into points: [ResumePoint]
+        _ record: ProgressRecord, book: Book?, into points: [ResumePoint],
+        limit: Int = resumeLimit
     ) -> [ResumePoint]? {
         var points = points
         var point: ResumePoint
@@ -221,7 +267,7 @@ enum UserDataService {
             )
         }
         points.insert(point, at: 0)
-        return Array(points.prefix(resumeLimit))
+        return Array(points.prefix(limit))
     }
 
     /// The book behind a resume card. The mirror holds every book in the
@@ -379,8 +425,10 @@ enum UserDataService {
                 finishedAt: status == .finished ? Int64(Date().timeIntervalSince1970) : nil
             )
         )
-        await Cache.mutate(CacheKey.recentProgress) { (points: inout [ResumePoint]) in
-            points = resumePoints(points, marking: uuid, as: status)
+        for key in [CacheKey.recentProgress, CacheKey.recentAudio] {
+            await Cache.mutate(key) { (points: inout [ResumePoint]) in
+                points = resumePoints(points, marking: uuid, as: status)
+            }
         }
         await SyncEngine.shared.write(
             kind: OpKind.readStatus(uuid), path: "/api/read-status",

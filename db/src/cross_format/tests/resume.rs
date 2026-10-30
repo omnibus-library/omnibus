@@ -287,7 +287,7 @@ async fn resume_points_show_an_unlinked_book_once_and_mark_a_linked_book_with_it
     .await
     .unwrap();
 
-    let before = progress::resume_points(&pool, user, 5).await.unwrap();
+    let before = progress::resume_points(&pool, user, 5, None).await.unwrap();
     assert_eq!(before.len(), 1, "an unlinked book shows once too");
     assert_eq!(before[0].record.format, ProgressFormat::Epub);
     assert!(!before[0].linked && before[0].cross_format.is_none());
@@ -295,7 +295,7 @@ async fn resume_points_show_an_unlinked_book_once_and_mark_a_linked_book_with_it
     upsert_link(&pool, user, &uuid, CrossFormatLinkMode::Sequence, None)
         .await
         .unwrap();
-    let after = progress::resume_points(&pool, user, 5).await.unwrap();
+    let after = progress::resume_points(&pool, user, 5, None).await.unwrap();
     assert_eq!(after.len(), 1, "a linked book shows as its newest card");
     let card = &after[0];
     assert_eq!(card.record.format, ProgressFormat::Epub);
@@ -330,7 +330,7 @@ async fn resume_points_mark_a_stale_link_without_a_counterpart() {
         .await
         .unwrap();
 
-    let points = progress::resume_points(&pool, user, 5).await.unwrap();
+    let points = progress::resume_points(&pool, user, 5, None).await.unwrap();
     assert_eq!(points.len(), 1, "a stale link still shows one card");
     assert!(points[0].linked);
     assert!(
