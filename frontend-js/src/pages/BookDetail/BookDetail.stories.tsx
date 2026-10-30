@@ -11,6 +11,8 @@ import {
   getPostEbookOverridesMockHandler200,
 } from "../../api/generated/omnibus.msw";
 import type { ReviewPatch } from "../../api/generated/schemas";
+import { TopNav } from "../../components/TopNav/TopNav";
+import "../../layouts/AppShell.css";
 import {
   bookDetailHandlers,
   deletionHandlers,
@@ -238,6 +240,42 @@ export const RibbonSitsCentredUnderTheOpenTab: Story = {
     const strip = canvas.getByRole("tablist", { name: "Book sections" });
     strip.style.paddingInlineStart = "160px";
     await waitFor(() => expect(ribbonOffset(canvasElement)).toBeLessThan(1));
+  },
+};
+
+export const TheTabsScrollUnderTheTopBar: Story = {
+  // The app's frame, so the sticky top bar is there to scroll under.
+  render: () => (
+    <div className="app-shell">
+      <TopNav />
+      <main>
+        <Routes>
+          <Route path="/books/:uuid" element={<BookDetail />} />
+        </Routes>
+        {/* Room to scroll the tabs that far whatever the viewport. */}
+        <div style={{ height: "100vh" }} />
+      </main>
+    </div>
+  ),
+  beforeEach({ msw }) {
+    msw.use(...bookDetailHandlers(BOOK));
+  },
+  play: async ({ canvas, canvasElement }) => {
+    const tab = await canvas.findByRole("tab", { name: "Overview" });
+    const bar = canvasElement.querySelector(".atrium-topbar");
+    if (!bar) throw new Error("the top bar is not drawn");
+    const middle = (el: Element) => {
+      const box = el.getBoundingClientRect();
+      return box.top + box.height / 2;
+    };
+    // Again on every try, in case the page above the tabs is still settling.
+    await waitFor(() => {
+      window.scrollBy(0, middle(tab) - middle(bar));
+      expect(Math.abs(middle(tab) - middle(bar))).toBeLessThan(1);
+    });
+    const box = tab.getBoundingClientRect();
+    const hit = document.elementFromPoint(box.left + 4, middle(tab));
+    await expect(hit?.closest(".atrium-topbar")).toBe(bar);
   },
 };
 
