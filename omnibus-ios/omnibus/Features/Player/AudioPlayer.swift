@@ -42,7 +42,11 @@ final class AudioPlayer {
     /// resume reopens this file rather than the book's first one.
     private(set) var fileID: Int64?
     private(set) var isPlaying = false
-    private(set) var isLoading = false
+    /// Whether a load is still awaiting its item and opening position.
+    var isLoading: Bool { loadingGeneration != nil }
+    /// The generation of the load in flight. Not a flag: a load superseded by
+    /// another still runs to its end, and must not mark the newer one done.
+    private var loadingGeneration: Int?
     private(set) var duration: Double = 0
     /// Whether the loaded item reads from the network rather than from
     /// downloaded files. Downloads stand down while this and `isPlaying` are
@@ -111,7 +115,8 @@ final class AudioPlayer {
     /// listener may well press pause inside that window — having given up on a
     /// book that just went silent. Without this, the recovery landed and
     /// started playing anyway, overriding a deliberate pause. Any pause of the
-    /// listener's own clears every one; a play clears the interruption's.
+    /// listener's own clears every one; a play clears the interruption's,
+    /// and re-arms the start of a load still in flight.
     private var pendingStarts = PendingStarts()
     private var interruptionObserver: NSObjectProtocol?
     private var routeChangeObserver: NSObjectProtocol?
@@ -248,7 +253,9 @@ final class AudioPlayer {
             Task { await UserDataService.reportSessions([pending]) }
         }
         teardown()
-        pendingStarts.afterLoad = autoplay
+        let generation = loadGeneration
+        loadingGeneration = generation
+        pendingStarts.afterLoad = autoplay ? generation : nil
         self.book = book
         autoStatus = ReadStatusAuto(uuid: book.uuid)
         markedReading = false
@@ -266,7 +273,6 @@ final class AudioPlayer {
             await self?.checkpointSession()
         }
         LifecycleSync.shared.didOpenBook()
-        isLoading = true
         error = nil
         position = 0
         duration = 0
@@ -325,10 +331,11 @@ final class AudioPlayer {
             positionSettled = true
 
             observe(player: player)
-            isLoading = false
-            // A disconnect or a call during the awaits above cancels the start.
-            if autoplay, pendingStarts.afterLoad {
-                pendingStarts.afterLoad = false
+            finishLoad(generation)
+            // Only a start this load still owns: a disconnect or a call during
+            // the awaits above cancels it, and a newer load owns its own.
+            if pendingStarts.afterLoad == generation {
+                pendingStarts.afterLoad = nil
                 play()
             }
             updateNowPlaying()
@@ -340,10 +347,15 @@ final class AudioPlayer {
             offerLatePosition(from: remote, uuid: book.uuid)
             offerCrossFormat()
         } catch {
-            isLoading = false
-            pendingStarts.afterLoad = false
+            finishLoad(generation)
+            if pendingStarts.afterLoad == generation { pendingStarts.afterLoad = nil }
             self.error = (error as? APIError)?.errorDescription ?? error.localizedDescription
         }
+    }
+
+    /// Mark load `generation` done, unless a newer load has taken over.
+    private func finishLoad(_ generation: Int) {
+        if loadingGeneration == generation { loadingGeneration = nil }
     }
 
     /// Apply a rate that came out of storage without writing it back. See
@@ -625,6 +637,11 @@ final class AudioPlayer {
 
     func play() {
         pendingStarts.afterInterruption = false
+        // Nothing to start yet: the load makes the start once it lands.
+        if let loadingGeneration {
+            pendingStarts.afterLoad = loadingGeneration
+            return
+        }
         guard let player else { return }
         // Setting a rate on a failed item does nothing at all — the silent
         // dead end #2408 is named for. A manual tap is also the listener
@@ -914,6 +931,7 @@ final class AudioPlayer {
         timeline = ChapterTimeline()
         // A start owed to the last book must not start the next.
         pendingStarts = PendingStarts()
+        loadingGeneration = nil
         // Closed again so the next book cannot be written to before its own
         // opening position has been settled — this is the one flag whose stale
         // value would be silently destructive rather than merely wrong.
@@ -1088,8 +1106,9 @@ final class AudioPlayer {
         case .rebuild(let attempt):
             isBuffering = false
             // The failure interrupted playback that was under way, so the
-            // rebuild should resume it — unless the listener pauses first.
-            pendingStarts.afterRecovery = isPlaying
+            // rebuild should resume it — unless the listener pauses first. A
+            // rebuild already in flight has stopped playback but still owes it.
+            pendingStarts.afterRecovery = pendingStarts.afterRecovery || isPlaying
             isPlaying = false
             updateNowPlaying()
             recoverFromFailure(attempt: attempt)
@@ -1117,12 +1136,18 @@ final class AudioPlayer {
         recoveryTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(Double(attempt)))
             guard let self, !Task.isCancelled, generation == self.loadGeneration else { return }
+            // Only the current task is uncancelled: a newer recovery or a
+            // teardown cancels this one before replacing it.
+            defer { if !Task.isCancelled { self.recoveryTask = nil } }
             do {
                 let item = try await self.makeItem(for: manifest, uuid: book.uuid)
-                guard generation == self.loadGeneration else { return }
+                guard !Task.isCancelled, generation == self.loadGeneration else { return }
                 self.player?.replaceCurrentItem(with: item)
                 self.observeItem(item)
                 await self.seek(to: resume)
+                // Replaced during the seek: the start belongs to the newer
+                // recovery, and this item is the one it is replacing.
+                guard !Task.isCancelled, generation == self.loadGeneration else { return }
                 self.error = nil
                 // Not `play()`: see `startPlayback`. A rebuild that fails
                 // again must spend the next attempt, not reset the count.
@@ -1131,6 +1156,7 @@ final class AudioPlayer {
                     self.startPlayback(on: player)
                 }
             } catch {
+                guard !Task.isCancelled else { return }
                 self.pendingStarts.afterRecovery = false
                 self.error = (error as? APIError)?.errorDescription
                     ?? error.localizedDescription
@@ -1361,13 +1387,17 @@ final class AudioPlayer {
         }
         let stopping = isPlaying || pendingStarts.startIsPending
         // Settled before the transport moves: `play()` may arm a rebuild.
-        pendingStarts = pendingStarts.settled(by: response, loading: isLoading)
+        pendingStarts = pendingStarts.settled(
+            by: response, loading: loadingGeneration, recovering: recoveryTask != nil
+        )
         switch response {
         case .pauseUntilResumed, .pause:
             if stopping { stopTransport() }
         case .resume:
-            // A load in flight has no item yet; `settled` handed it the start.
-            if !isLoading { play() }
+            // A load or rebuild in flight has no item to play yet, so
+            // `settled` handed it the start. Calling `play()` instead would
+            // refill the rebuild budget only a listener's tap may refill.
+            if !pendingStarts.startIsPending { play() }
         case .ignore:
             break
         }
