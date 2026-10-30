@@ -88,12 +88,13 @@ end — CarPlay can't open a list scrolled to a row), the speed cycle, the butto
 row and the offer sheet's copy are pure functions there, pinned by
 `CarPlayContentTests`. The other files only translate them into templates.
 
-**The entitlement.** `com.apple.developer.carplay-audio` is granted by Apple per
-team. Until then it lives only in `omnibus-Simulator.entitlements`, selected by
-`CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]`: the simulator's CarPlay window
-lists only apps that carry it, and a device build would fail to sign with it.
-Once granted, it moves into `omnibus.entitlements`. To see the scene, run the
-app in a simulator and choose **I/O → External Displays → CarPlay**. Its
+**The entitlement.** `com.apple.developer.carplay-audio` in `omnibus.entitlements`
+is granted by Apple per team, and a device build signs only once the team's
+provisioning profiles carry it: enable *CarPlay Audio App* on the
+`com.omnibus.mobile` App ID, then regenerate the profiles. The simulator signs
+ad hoc and needs no profile, and its CarPlay window lists only apps that carry
+the entitlement. To see the scene, run the app in a simulator and choose
+**I/O → External Displays → CarPlay**. Its
 CarPlay never draws Now Playing artwork (it logs `allows artwork: NO`), and its
 lock screen builds the transport buttons without drawing them; both need a
 device. Its CarPlay also holds an alert to one button, which is why the sync
