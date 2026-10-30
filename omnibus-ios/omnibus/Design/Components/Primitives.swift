@@ -684,6 +684,12 @@ enum Format {
         return seconds / rate
     }
 
+    /// A playback speed as the player's speed controls show it — "1x",
+    /// "1.2x", "1.25x". Rounded to hundredths so float noise never shows.
+    static func rate(_ rate: Double) -> String {
+        String(format: "%gx", (rate * 100).rounded() / 100)
+    }
+
     /// Compact spoken form for stats and metadata rows — "4h 12m".
     static func humanDuration(_ seconds: Int64) -> String {
         guard seconds > 0 else { return "0m" }

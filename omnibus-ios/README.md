@@ -459,7 +459,8 @@ chapters change only from a control that names them. Calls and lost outputs are
 handled too (`AudioSessionEvent`): a call pauses and resumes when it ends, and a
 CarPlay, Bluetooth or headphone disconnect pauses and stays paused — including
 across a call that was already in progress, so a car switched off mid-call never
-starts the book on the phone's speaker.
+starts the book on the phone's speaker. The CarPlay scene (`omnibus/CarPlay/`,
+described in `docs/ios.md`) drives this same player.
 
 **The chapter is the unit of the player, Audible-style.** The layout follows
 Audible's, top to bottom: artwork, then the chapter name left-aligned behind a

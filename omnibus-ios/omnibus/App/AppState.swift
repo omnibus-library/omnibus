@@ -15,7 +15,13 @@ final class AppState {
         case ready
     }
 
-    private(set) var phase: Phase = .launching
+    private(set) var phase: Phase = .launching {
+        didSet {
+            if phase != oldValue {
+                NotificationCenter.default.post(name: .omnibusSessionChanged, object: nil)
+            }
+        }
+    }
     private(set) var user: UserSummary?
     var serverURL: String?
     var theme: ThemeName {
@@ -303,4 +309,10 @@ final class AppState {
         // happens to fire.
         Task { await WidgetSnapshotWriter.shared.refresh() }
     }
+}
+
+extension Notification.Name {
+    /// Posted whenever `AppState.phase` changes — how the CarPlay scene, which
+    /// has no window to observe it from, learns of a sign-in or a sign-out.
+    static let omnibusSessionChanged = Notification.Name("omnibus.sessionChanged")
 }

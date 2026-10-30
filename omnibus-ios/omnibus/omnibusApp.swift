@@ -37,6 +37,10 @@ struct OmnibusApp: App {
             .playback, mode: .spokenAudio, policy: .longFormAudio
         )
         Appearance.apply()
+        // Registers the remote commands. A car can launch the app with no
+        // phone window — the only other place that touches the player — and
+        // its play button has to reach a handler.
+        _ = AudioPlayer.shared
         // Has to happen before launch finishes, so it can't wait for the
         // scene-phase handler below.
         LifecycleSync.shared.registerBackgroundTask()

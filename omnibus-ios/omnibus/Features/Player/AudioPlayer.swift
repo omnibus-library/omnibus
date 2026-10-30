@@ -536,6 +536,17 @@ final class AudioPlayer {
         }
     }
 
+    /// Bookmark where playback is, named after the chapter — the one-tap
+    /// bookmark of the phone's player and the car's. `nil` with no book loaded.
+    @discardableResult
+    func addBookmark() -> Task<Void, Never>? {
+        guard let book else { return nil }
+        let bookmark = CreateBookmark(
+            bookUUID: book.uuid, position: String(position), title: currentChapter?.title
+        )
+        return Task { _ = await UserDataService.createBookmark(bookmark) }
+    }
+
     /// Take the cross-format offer: seek, then force a write so the jump
     /// carries this device's clock (the normal position path).
     func acceptCrossFormatOffer() async {
@@ -920,6 +931,7 @@ final class AudioPlayer {
         position = 0
         duration = 0
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        MPNowPlayingInfoCenter.default().playbackState = .stopped
 
         guard let closing else { return }
         Task {
@@ -981,6 +993,9 @@ final class AudioPlayer {
         // value would be silently destructive rather than merely wrong.
         positionSettled = false
         syncOffer = nil
+        // Answered against the book that's loaded, so one left from the last
+        // book would seek this one to the last one's position.
+        crossFormatOffer = nil
         cancelSleepTimer()
         // Bumped first so a seek belonging to the book being torn down —
         // still holding its own `defer`, due to land whenever AVPlayer gets
@@ -1060,6 +1075,7 @@ final class AudioPlayer {
         ) { [weak self] _ in
             Task { @MainActor in
                 self?.isPlaying = false
+                self?.updateNowPlaying()
                 await self?.persistPosition(force: true)
                 await self?.checkpointSession()
                 // The item spans every part of the book, so this fires once
@@ -1337,28 +1353,87 @@ final class AudioPlayer {
             info[MPMediaItemPropertyArtwork] = artwork
         }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        // Stated rather than left to the system to infer: CarPlay's Now Playing
+        // stayed on its play button through playback no remote command started.
+        MPNowPlayingInfoCenter.default().playbackState = isPlaying ? .playing : .paused
     }
 
-    private var artworkCache: (uuid: String, artwork: MPMediaItemArtwork)?
+    /// The book's artwork; not `isFinal` while it is the plate standing in
+    /// for art that didn't load.
+    private var artworkCache: (uuid: String, artwork: MPMediaItemArtwork, isFinal: Bool)?
+    /// The book whose artwork is loading. Now Playing updates twice a second,
+    /// and each would otherwise start another fetch and render of the cover.
+    private var artworkLoading: String?
+    /// Whether a plate waits on the connection to try its art again.
+    private var artworkAwaitsConnection = false
 
     private var currentArtwork: MPMediaItemArtwork? {
         guard let book else { return nil }
-        if let cached = artworkCache, cached.uuid == book.uuid { return cached.artwork }
-        Task { await loadArtwork(for: book) }
-        return nil
+        let cached = artworkCache?.uuid == book.uuid ? artworkCache : nil
+        if let cached, cached.isFinal { return cached.artwork }
+        // Offline, each tick's attempt would wait out a request timeout.
+        guard artworkLoading != book.uuid, cached == nil || Connectivity.shared.isOnline else {
+            return cached?.artwork
+        }
+        artworkLoading = book.uuid
+        Task {
+            await loadArtwork(for: book)
+            if artworkLoading == book.uuid { artworkLoading = nil }
+        }
+        return cached?.artwork
     }
 
     private func loadArtwork(for book: Book) async {
-        guard book.coverURL != nil, artworkCache?.uuid != book.uuid else { return }
-        var resolved = await ImageCache.shared.image(for: "/api/thumbs/\(book.uuid)/lg")
-        if resolved == nil,
-           let data = try? await APIClient.shared.data(for: "/api/covers/\(book.uuid)") {
-            resolved = UIImage(data: data)
+        if let cached = artworkCache, cached.uuid == book.uuid, cached.isFinal { return }
+        var art: UIImage?
+        if book.coverURL != nil {
+            art = await ImageCache.shared.image(for: "/api/thumbs/\(book.uuid)/lg")
+            if art == nil, Connectivity.shared.isOnline,
+               let data = try? await APIClient.shared.data(for: "/api/covers/\(book.uuid)") {
+                art = UIImage(data: data)
+            }
         }
-        guard let image = resolved else { return }
-        let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
-        artworkCache = (book.uuid, artwork)
-        updateNowPlaying()
+        // Art that didn't load shows the plate meanwhile, and is tried again on
+        // a later update — offline, once the connection is back.
+        let isFinal = art != nil || book.coverURL == nil
+        if isFinal || artworkCache?.uuid != book.uuid,
+           let image = Self.artworkImage(for: book, art: art) {
+            let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+            artworkCache = (book.uuid, artwork, isFinal)
+            updateNowPlaying()
+        }
+        if !isFinal, !Connectivity.shared.isOnline { retryArtworkOnceOnline() }
+    }
+
+    /// Update Now Playing once the connection is back, which tries the art
+    /// again — a paused book sends no updates of its own.
+    private func retryArtworkOnceOnline() {
+        guard !artworkAwaitsConnection else { return }
+        artworkAwaitsConnection = true
+        withObservationTracking {
+            _ = Connectivity.shared.isOnline
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                self.artworkAwaitsConnection = false
+                if Connectivity.shared.isOnline {
+                    self.updateNowPlaying()
+                } else {
+                    self.retryArtworkOnceOnline()
+                }
+            }
+        }
+    }
+
+    /// The cover the lock screen and the car show: the art over the player's
+    /// plate, at the art's own shape, else the plate alone, square.
+    private static func artworkImage(for book: Book, art: UIImage?) -> UIImage? {
+        var size = CGSize(width: 600, height: 600)
+        if let art, art.size.width > 0, art.size.height > 0 {
+            let scale = min(1, 1024 / max(art.size.width, art.size.height))
+            size = CGSize(width: art.size.width * scale, height: art.size.height * scale)
+        }
+        return CoverBitmap.render(CoverIdentity(book), art: art, size: size, scale: 1)
     }
 
     private func configureRemoteCommands() {
