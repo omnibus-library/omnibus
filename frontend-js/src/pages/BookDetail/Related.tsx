@@ -99,6 +99,7 @@ function SeriesFan({ book, seriesId }: { book: BookDetail; seriesId: number }) {
             className="bp-fan"
             aria-label={`${name} series`}
             data-testid="bp-series-fan"
+            style={{ "--n": books.length }}
           >
             {books.map((item, i) => (
               <li key={item.uuid} className="bp-fan-card" style={{ "--i": i }}>

@@ -322,7 +322,8 @@
   transition: transform 400ms var(--ease-out);
 }
 @media (hover: hover) {
-  .bp-tile:hover .cover-wrap {
+  .bp-tile:hover .cover-wrap,
+  .bp-fan-card a:hover .cover-wrap {
     transform: translateY(-4px) rotate(-1.5deg);
   }
 }
@@ -377,10 +378,26 @@
   border-radius: var(--bp-radius);
 }
 
-/* The series, fanned like the Atrium shelf; it spreads when you reach for it. */
+/* The series, fanned like the Atrium shelf; it spreads when you reach for it, and a long one closes up to stay in its column. */
 .bp-fan {
   --stack: 54px;
+  --fan-inset: 28px;
   --spread: calc(var(--bp-cover-w) + var(--bp-cover-gap));
+  /* Each card's share of the column past the first; `cqi` resolves on the cards, against this list. */
+  --room: calc(
+    (100cqi - var(--fan-inset) - var(--bp-cover-w)) /
+    max(var(--n) - 1, 1)
+  );
+  /* At rest the last card leans past its own box, so it gets less. */
+  --room-rest: calc(
+    (100cqi - var(--fan-inset) - 1.8 * var(--bp-cover-w)) /
+    max(var(--n) - 1, 1)
+  );
+  /* 1 once the spread closes up and its titles would overlap, else 0. */
+  --crowded: max(0, sign(var(--spread) - var(--room)));
+  container-type: inline-size;
+  /* The cards' stacking stays in here, under the page's tabs. */
+  isolation: isolate;
   position: relative;
   height: 300px;
   margin: 0;
@@ -389,19 +406,15 @@
 }
 .bp-fan-card {
   position: absolute;
+  /* Book one in front, so a closed-up spread shows every later book's right edge. */
+  z-index: calc(var(--n) - var(--i));
   top: 8px;
-  left: 28px;
+  left: var(--fan-inset);
   width: var(--bp-cover-w);
   transform-origin: 50% 100%;
-  transform: translateX(calc(var(--i) * var(--stack)))
+  transform: translateX(calc(var(--i) * min(var(--stack), var(--room-rest))))
     rotate(clamp(-14deg, calc((var(--i) - 1) * 7deg), 21deg));
   transition: transform 620ms var(--ease-out);
-}
-.bp-fan-card:nth-child(1) {
-  z-index: 3;
-}
-.bp-fan-card:nth-child(2) {
-  z-index: 2;
 }
 .bp-fan-card a {
   display: block;
@@ -415,12 +428,20 @@
 }
 .bp-fan:hover .bp-fan-card,
 .bp-fan:focus-within .bp-fan-card {
-  transform: translateX(calc(var(--i) * var(--spread))) rotate(0);
+  transform: translateX(calc(var(--i) * min(var(--spread), var(--room))))
+    rotate(0);
 }
 .bp-fan:hover .bp-tile-title,
 .bp-fan:hover .bp-tile-meta,
 .bp-fan:focus-within .bp-tile-title,
 .bp-fan:focus-within .bp-tile-meta {
+  opacity: calc(1 - var(--crowded));
+}
+/* A crowded spread names only the book pointed at, or focused. */
+.bp-fan-card:hover .bp-tile-title,
+.bp-fan-card:hover .bp-tile-meta,
+.bp-fan-card:focus-within .bp-tile-title,
+.bp-fan-card:focus-within .bp-tile-meta {
   opacity: 1;
 }
 .bp-fan-caption {
@@ -468,6 +489,7 @@
 /* With nothing to hover, the series is a row to scroll, so every book is reachable whatever the width. */
 @media (hover: none) {
   .bp-fan {
+    --crowded: 0;
     display: grid;
     grid-auto-columns: var(--bp-cover-w);
     grid-auto-flow: column;
