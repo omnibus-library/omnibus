@@ -11,6 +11,9 @@ enum CacheKey {
     static let library = "books"
     static let me = "me"
     static let recentProgress = "recent_progress"
+    /// Audiobooks only, each at its latest listening position even when it was
+    /// read since — the rail above shows such a book as its ebook card.
+    static let recentAudio = "recent_audio"
     static let authors = "authors"
     static let series = "series"
     static let tags = "tags"
@@ -141,12 +144,15 @@ enum OutboxScope {
             // finished book back on the rail.
             return key == CacheKey.readStatus(uuid)
                 || key == CacheKey.recentProgress
+                || key == CacheKey.recentAudio
                 || key.hasPrefix("stats:")
         }
         if kind.hasPrefix("progress:") {
             // The kind is the progress key verbatim, and any position write
-            // also changes what the Continue rail shows.
+            // also changes what the Continue rail shows — a listening one, the
+            // audiobook list too.
             return key == kind || key == CacheKey.recentProgress
+                || (key == CacheKey.recentAudio && kind.hasSuffix(":\(ProgressFormat.audio.rawValue)"))
         }
 
         // An unrecognised kind blocks everything. A write path that grows a new

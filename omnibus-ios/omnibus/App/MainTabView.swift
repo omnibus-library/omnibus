@@ -271,7 +271,7 @@ final class Presentation {
     var unavailable: UnavailableBook?
 
     func openReader(_ book: Book) {
-        guard canOpen(book, kind: .ebook) else {
+        guard Self.canOpen(book, kind: .ebook) else {
             unavailable = UnavailableBook(title: book.displayTitle, kind: .ebook)
             return
         }
@@ -280,7 +280,7 @@ final class Presentation {
     }
 
     func openPlayer(_ book: Book, fileID: Int64? = nil) {
-        guard canOpen(book, kind: .audio) else {
+        guard Self.canOpen(book, kind: .audio) else {
             unavailable = UnavailableBook(title: book.displayTitle, kind: .audio)
             return
         }
@@ -293,7 +293,7 @@ final class Presentation {
     ///
     /// Only the file settles it — a book is streamed, not cached, so having
     /// read it before means nothing once the server is gone.
-    private func canOpen(_ book: Book, kind: DownloadKind) -> Bool {
+    static func canOpen(_ book: Book, kind: DownloadKind) -> Bool {
         DownloadManager.shared.isDownloaded(book.uuid, kind: kind) || Connectivity.shared.isOnline
     }
 }

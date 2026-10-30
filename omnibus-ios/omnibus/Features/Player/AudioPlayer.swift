@@ -117,6 +117,9 @@ final class AudioPlayer {
     private var resumeAfterInterruption = false
     private var interruptionObserver: NSObjectProtocol?
     private var routeChangeObserver: NSObjectProtocol?
+    /// Whether a play command with nothing loaded is already finding its
+    /// book, so a second press can't load it twice.
+    private var isResumingRecent = false
 
     /// Whether the item is alive but starved. Distinct from `isPlaying`,
     /// which stays true across a buffering stall — the listener has not
@@ -1282,7 +1285,7 @@ final class AudioPlayer {
         let center = MPRemoteCommandCenter.shared()
 
         center.playCommand.addTarget { [weak self] _ in
-            Task { @MainActor in self?.play() }
+            Task { @MainActor in self?.remotePlay() }
             return .success
         }
         center.pauseCommand.addTarget { [weak self] _ in
@@ -1290,7 +1293,7 @@ final class AudioPlayer {
             return .success
         }
         center.togglePlayPauseCommand.addTarget { [weak self] _ in
-            Task { @MainActor in self?.isPlaying == true ? self?.pause() : self?.play() }
+            Task { @MainActor in self?.isPlaying == true ? self?.pause() : self?.remotePlay() }
             return .success
         }
         // The intervals are what CarPlay and the lock screen draw on the skip
@@ -1315,6 +1318,40 @@ final class AudioPlayer {
             Task { @MainActor in await self?.seekWithinChapter(to: event.positionTime) }
             return .success
         }
+    }
+
+    /// A play command from outside the app — a car's auto-play on connect, its
+    /// play button, AirPods. With nothing loaded it resumes the most recent
+    /// audiobook, as Audible does in the car, rather than doing nothing.
+    private func remotePlay() {
+        guard !isActive else { return play() }
+        guard !isResumingRecent else { return }
+        isResumingRecent = true
+        Task {
+            defer { isResumingRecent = false }
+            // The command may be what launched the process — a CarPlay
+            // connect with the phone locked — so the replica may not be open.
+            await Startup.prepare()
+            for await points in UserDataService.recentAudio().values() {
+                guard !isActive else { return }
+                if let point = Self.resumeCandidate(
+                    in: points, canPlay: { Presentation.canOpen($0, kind: .audio) }
+                ) {
+                    await load(book: point.book, fileID: point.record.bookFileID)
+                    return
+                }
+            }
+        }
+    }
+
+    /// The book a play command with nothing loaded resumes: the most recent
+    /// audiobook, if it can play right now. Never an older one in its place —
+    /// a car starting a book the listener didn't expect is worse than silence.
+    nonisolated static func resumeCandidate(
+        in points: [ResumePoint], canPlay: (Book) -> Bool
+    ) -> ResumePoint? {
+        guard let latest = points.first(where: \.isAudio), canPlay(latest.book) else { return nil }
+        return latest
     }
 
     // MARK: - Audio session

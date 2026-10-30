@@ -98,15 +98,16 @@ pub(super) async fn get_progress(
 /// List the books you were last in
 ///
 /// Your most recent positions, newest first, each with its book: a "pick up where you left
-/// off" list. Each book appears once, for the format you used last. Send `user_id` for another reader's list.
+/// off" list. Each book appears once, for the format you used last. Send `format` to list only
+/// that format's positions, and `user_id` for another reader's list.
 #[utoipa::path(
     get,
     path = "/api/progress/recent",
     tag = "Progress",
     params(RecentProgressQuery),
     responses(
-        (status = 200, description = "One position per book, in the format you used last, newest first.", body = Vec<ResumePoint>),
-        (status = 400, description = "`limit` or `user_id` isn't a whole number."),
+        (status = 200, description = "One position per book, in the format you used last (or in `format`), newest first.", body = Vec<ResumePoint>),
+        (status = 400, description = "`limit` or `user_id` isn't a whole number, or `format` isn't `epub` or `audio`."),
         (status = 404, description = "`user_id` names no reader, or one who doesn't share their stats."),
     ),
 )]
@@ -117,7 +118,9 @@ pub(super) async fn get_recent_progress(
 ) -> Response {
     // Rows whose book has vanished are skipped in the db layer.
     let limit = q.limit.clamp(1, RECENT_LIMIT_CAP);
-    match db::stats::recent_progress_for_viewer(&state.pool, user.id, q.user_id, limit).await {
+    match db::stats::recent_progress_for_viewer(&state.pool, user.id, q.user_id, limit, q.format)
+        .await
+    {
         Ok(points) => Json(points).into_response(),
         Err(e) => viewer_error("get_recent_progress", e),
     }
