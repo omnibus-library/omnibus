@@ -526,6 +526,17 @@ final class AudioPlayer {
         }
     }
 
+    /// Bookmark where playback is, named after the chapter — the one-tap
+    /// bookmark of the phone's player and the car's. `nil` with no book loaded.
+    @discardableResult
+    func addBookmark() -> Task<Void, Never>? {
+        guard let book else { return nil }
+        let bookmark = CreateBookmark(
+            bookUUID: book.uuid, position: String(position), title: currentChapter?.title
+        )
+        return Task { _ = await UserDataService.createBookmark(bookmark) }
+    }
+
     /// Take the cross-format offer: seek, then force a write so the jump
     /// carries this device's clock (the normal position path).
     func acceptCrossFormatOffer() async {
@@ -964,6 +975,9 @@ final class AudioPlayer {
         // value would be silently destructive rather than merely wrong.
         positionSettled = false
         syncOffer = nil
+        // Answered against the book that's loaded, so one left from the last
+        // book would seek this one to the last one's position.
+        crossFormatOffer = nil
         cancelSleepTimer()
         // Bumped first so a seek belonging to the book being torn down —
         // still holding its own `defer`, due to land whenever AVPlayer gets
@@ -1327,11 +1341,19 @@ final class AudioPlayer {
     }
 
     private var artworkCache: (uuid: String, artwork: MPMediaItemArtwork)?
+    /// The book whose artwork is loading. Now Playing updates twice a second,
+    /// and each would otherwise start another fetch and render of the cover.
+    private var artworkLoading: String?
 
     private var currentArtwork: MPMediaItemArtwork? {
         guard let book else { return nil }
         if let cached = artworkCache, cached.uuid == book.uuid { return cached.artwork }
-        Task { await loadArtwork(for: book) }
+        guard artworkLoading != book.uuid else { return nil }
+        artworkLoading = book.uuid
+        Task {
+            await loadArtwork(for: book)
+            if artworkLoading == book.uuid { artworkLoading = nil }
+        }
         return nil
     }
 

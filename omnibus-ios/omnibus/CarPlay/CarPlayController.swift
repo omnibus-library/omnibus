@@ -30,7 +30,7 @@ final class CarPlayController: NSObject, CPInterfaceControllerDelegate {
     private var continueCovers: Task<Void, Never>?
     private var libraryCovers: Task<Void, Never>?
     /// The book a row tap is opening, until it plays.
-    private var opening: Task<Void, Never>?
+    private var opening: Opening?
     private var sessionObservers: [NSObjectProtocol] = []
 
     init(interface: CPInterfaceController) {
@@ -62,6 +62,11 @@ final class CarPlayController: NSObject, CPInterfaceControllerDelegate {
         nowPlaying.stop()
         sessionObservers.forEach(NotificationCenter.default.removeObserver)
         sessionObservers = []
+        cancelReads()
+        abandonOpening()
+    }
+
+    private func cancelReads() {
         for task in [continueRead, libraryRead, continueCovers, libraryCovers] { task?.cancel() }
     }
 
@@ -84,19 +89,39 @@ final class CarPlayController: NSObject, CPInterfaceControllerDelegate {
             guard !isStopped else { return }
             guard signedIn else {
                 showsTabs = false
+                forgetAccount()
                 let message = CPListTemplate(title: "Omnibus", sections: [])
                 apply(CarPlayContent.signedOut, to: message)
-                interface.setRootTemplate(message, animated: false, completion: nil)
+                await setRoot(message)
                 return
             }
             if !showsTabs {
                 showsTabs = true
-                let tabs = CPTabBarTemplate(templates: [continueList, libraryList])
-                interface.setRootTemplate(tabs, animated: false, completion: nil)
+                await setRoot(CPTabBarTemplate(templates: [continueList, libraryList]))
             }
+            guard !isStopped, showsTabs else { return }
             reloadContinue()
             reloadLibrary()
         }
+    }
+
+    /// Replace the root, then let Now Playing raise again what it took down.
+    private func setRoot(_ root: CPTemplate) async {
+        _ = try? await interface.setRootTemplate(root, animated: false)
+        guard !isStopped else { return }
+        nowPlaying.rootDidChange()
+    }
+
+    /// Drop everything the signed-out account's lists held, so the next
+    /// sign-in — another account, or another server — never shows its titles.
+    private func forgetAccount() {
+        cancelReads()
+        abandonOpening()
+        continuePoints = []
+        libraryBooks = []
+        covers = [:]
+        continueList.updateSections([])
+        libraryList.updateSections([])
     }
 
     private func apply(_ message: CarPlayContent.Message, to list: CPListTemplate) {
@@ -119,7 +144,12 @@ final class CarPlayController: NSObject, CPInterfaceControllerDelegate {
 
     private func renderContinue() {
         let items = continuePoints.map { point in
-            row(for: point.book, detail: CarPlayContent.continueDetail(point), progress: point.fraction)
+            // The record names the file the listen was in, which may not be
+            // the book's default narration.
+            row(
+                for: point.book, detail: CarPlayContent.continueDetail(point),
+                progress: point.fraction, known: point.record
+            )
         }
         apply(CarPlayContent.nothingInProgress, to: continueList)
         continueList.updateSections(items.isEmpty ? [] : [CPListSection(items: items)])
@@ -153,7 +183,10 @@ final class CarPlayController: NSObject, CPInterfaceControllerDelegate {
                 }
                 guard let page else { break }
                 if cursor != nil {
-                    books += page.books
+                    let before = books.count
+                    books = CarPlayContent.appending(page.books, to: books)
+                    // Nothing new: the mirror's fallback repeating its start.
+                    guard books.count > before else { break }
                     libraryBooks = Array(books.prefix(cap))
                     renderLibrary()
                 } else {
@@ -165,7 +198,9 @@ final class CarPlayController: NSObject, CPInterfaceControllerDelegate {
     }
 
     private func renderLibrary() {
-        let items = libraryBooks.map { row(for: $0, detail: $0.authorDisplay, progress: nil) }
+        let items = libraryBooks.map {
+            row(for: $0, detail: $0.authorDisplay, progress: nil, known: nil)
+        }
         apply(CarPlayContent.noAudiobooks, to: libraryList)
         libraryList.updateSections(items.isEmpty ? [] : [CPListSection(items: items)])
         libraryCovers?.cancel()
@@ -176,8 +211,10 @@ final class CarPlayController: NSObject, CPInterfaceControllerDelegate {
 
     /// One book's row. Greyed out when it can't play here — offline and not
     /// downloaded — by the same rule the phone applies before opening it.
-    private func row(for book: Book, detail: String?, progress: Double?) -> CPListItem {
-        let canPlay = Presentation.canOpen(book, kind: .audio)
+    private func row(
+        for book: Book, detail: String?, progress: Double?, known: ProgressRecord?
+    ) -> CPListItem {
+        let canPlay = DownloadManager.shared.canOpen(book, kind: .audio)
         let item = CPListItem(
             text: book.displayTitle,
             detailText: canPlay ? detail : CarPlayContent.notDownloaded,
@@ -190,34 +227,66 @@ final class CarPlayController: NSObject, CPInterfaceControllerDelegate {
         item.handler = { [weak self] _, completion in
             MainActor.assumeIsolated {
                 guard let self else { return completion() }
-                self.play(book, then: completion)
+                self.play(book, known: known, then: completion)
             }
         }
         return item
     }
 
-    /// Start `book`, then show Now Playing. The row spins until the book is
-    /// playing, so Now Playing opens on it rather than on the book before.
-    private func play(_ book: Book, then done: @escaping () -> Void) {
-        // CarPlay keeps a spinning row tappable, and each tap started another load.
-        guard opening == nil else { return done() }
-        opening = Task {
-            // No file named: `load` resumes the file the saved position was
-            // taken in, else the book's default.
-            await player.load(book: await Self.withFiles(book))
-            nowPlaying.show()
-            opening = nil
-            done()
+    /// A row tap in flight: its book, its task, and the row's spinner.
+    private struct Opening {
+        var uuid: String
+        var task: Task<Void, Never>
+        var spinner: RowSpinner
+    }
+
+    /// A row's completion handler, run at most once — by the tap's own task,
+    /// or sooner when another tap or a disconnect abandons it.
+    private final class RowSpinner {
+        private var done: (() -> Void)?
+        init(_ done: @escaping () -> Void) { self.done = done }
+        func stop() {
+            done?()
+            done = nil
         }
     }
 
-    /// `book` with its files. A library page lists books without them, and
-    /// the player reads them to pick the file to open and to match an offer
-    /// from the ebook to it — opened bare, that offer never came.
-    private static func withFiles(_ book: Book) async -> Book {
-        guard book.bookFiles.isEmpty else { return book }
-        for await full in LibraryService.book(uuid: book.uuid).values() { return full }
-        return book
+    /// Start `book`, then show Now Playing. The row spins until the book is
+    /// playing, so Now Playing opens on it rather than on the book before.
+    private func play(_ book: Book, known: ProgressRecord?, then done: @escaping () -> Void) {
+        // CarPlay keeps a spinning row tappable, and each tap started another
+        // load. Another book's row takes over: a load that hangs mustn't
+        // hold every row, and `load` lets a newer load supersede it.
+        if opening?.uuid == book.uuid { return done() }
+        abandonOpening()
+        let spinner = RowSpinner(done)
+        let task = Task {
+            defer { spinner.stop() }
+            guard !Task.isCancelled, !isStopped else { return }
+            // No file named: `load` resumes the file `known` or the saved
+            // position was taken in, else the book's default.
+            await player.load(book: book, known: known)
+            guard !Task.isCancelled, !isStopped, player.book?.uuid == book.uuid else { return }
+            // A failed load keeps the list, and says why rather than opening
+            // Now Playing on nothing — or on the book before.
+            if let error = player.error {
+                nowPlaying.showLoadFailure(error)
+            } else {
+                nowPlaying.show()
+            }
+        }
+        opening = Opening(uuid: book.uuid, task: task, spinner: spinner)
+        Task {
+            await task.value
+            if opening?.task == task { opening = nil }
+        }
+    }
+
+    /// Give up on the tap in flight: it shows nothing when its load lands.
+    private func abandonOpening() {
+        opening?.task.cancel()
+        opening?.spinner.stop()
+        opening = nil
     }
 
     /// Covers for `items`, one at a time off the disk cache, fetched when
@@ -247,6 +316,9 @@ final class CarPlayController: NSObject, CPInterfaceControllerDelegate {
     private static func art(for book: Book) async -> UIImage? {
         let key = "/api/thumbs/\(book.uuid)/\(ThumbSize.sm.rawValue)"
         if let image = await ImageCache.shared.image(for: key) { return image }
+        // `prefetch` has no reachability guard: offline, each missing cover
+        // would wait out a request timeout, one by one, on every render.
+        guard Connectivity.shared.isOnline else { return nil }
         await ImageCache.shared.prefetch(key)
         return await ImageCache.shared.image(for: key)
     }
@@ -275,12 +347,12 @@ final class CarPlayController: NSObject, CPInterfaceControllerDelegate {
 
     func templateWillAppear(_ aTemplate: CPTemplate, animated: Bool) {
         guard showsTabs else { return }
-        // Continue re-reads: listening elsewhere reorders it. Library only
-        // re-renders, so a row's greying follows the connection.
+        // Both re-read: listening elsewhere reorders Continue, and audiobooks
+        // the replica didn't hold at connect reach Library once online.
         if aTemplate === continueList {
             reloadContinue()
         } else if aTemplate === libraryList {
-            renderLibrary()
+            reloadLibrary()
         }
     }
 }

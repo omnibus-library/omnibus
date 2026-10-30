@@ -506,7 +506,7 @@ struct PlayerView: View {
             utilityCell("Speed") { showSpeed = true } glyph: {
                 // The rate reads as the icon, so the current speed is legible
                 // without opening anything.
-                Text(Self.rateLabel(player.rate)).font(.ui(19, weight: .semibold))
+                Text(Format.rate(player.rate)).font(.ui(19, weight: .semibold))
             }
             utilityCell("Car Mode") { showCarMode = true } glyph: {
                 Image(systemName: "car").font(.system(size: 22))
@@ -553,22 +553,11 @@ struct PlayerView: View {
     }
 
     private func addBookmark() {
+        guard let bookmark = player.addBookmark() else { return }
         Task {
-            await UserDataService.createBookmark(
-                CreateBookmark(
-                    bookUUID: book.uuid,
-                    position: String(player.position),
-                    title: player.currentChapter?.title
-                )
-            )
+            await bookmark.value
             Haptics.success()
         }
-    }
-
-    private static func rateLabel(_ value: Double) -> String {
-        value == value.rounded()
-            ? String(format: "%.0fx", value)
-            : String(format: "%gx", value)
     }
 }
 

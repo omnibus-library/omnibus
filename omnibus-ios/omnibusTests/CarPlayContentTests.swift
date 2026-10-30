@@ -3,8 +3,8 @@
 //
 //  CarPlay's templates can't be read back from a test, so these pin the
 //  decisions they are built from: the speed the button steps to, which
-//  chapters the list opens on, a Continue row's text, Now Playing's buttons,
-//  and the copy of the "further elsewhere" sheet.
+//  chapters the list opens on, a Continue row's text, the Library list's
+//  paging, Now Playing's buttons, and the copy of the sheets and alerts.
 
 import Testing
 
@@ -31,6 +31,10 @@ private func point(
     return point
 }
 
+private func book(_ uuid: String) -> Book {
+    Book(id: 1, filename: "\(uuid).m4b", title: uuid, uniqueIdentifier: uuid, formats: ["m4b"])
+}
+
 struct CarPlayContentTests {
     @Test func speedStepsUpThroughTheCarsPresetsAndWrapsToOne() {
         #expect(CarPlayContent.nextRate(after: 1.0) == 1.2)
@@ -46,10 +50,13 @@ struct CarPlayContentTests {
         #expect(CarPlayContent.nextRate(after: 2.5) == 1.0)
     }
 
-    @Test func speedLabelUsesThePlayersNotation() {
-        #expect(CarPlayContent.rateLabel(1.0) == "1x")
-        #expect(CarPlayContent.rateLabel(1.2) == "1.2x")
-        #expect(CarPlayContent.rateLabel(1.25) == "1.25x")
+    @Test func speedLabelIsThePlayersNotationWithoutFloatNoise() {
+        #expect(Format.rate(1.0) == "1x")
+        #expect(Format.rate(2.0) == "2x")
+        #expect(Format.rate(1.2) == "1.2x")
+        #expect(Format.rate(1.25) == "1.25x")
+        // A rate stepped up in float arithmetic.
+        #expect(Format.rate(1.0 + 0.1 + 0.1) == "1.2x")
     }
 
     @Test func chaptersListStartsOneBeforeTheCurrentChapter() {
@@ -74,6 +81,31 @@ struct CarPlayContentTests {
 
     @Test func continueRowWithNothingKnownHasNoDetail() {
         #expect(CarPlayContent.continueDetail(point(total: nil)) == nil)
+    }
+
+    @Test func continueRowLeavesOutTimeLeftForAnEbookPosition() {
+        var reading = point(chapter: 3)
+        reading.record.format = .epub
+        #expect(CarPlayContent.continueDetail(reading) == "Chapter 3")
+    }
+
+    @Test func libraryPageAppendsOnlyBooksNotAlreadyListed() {
+        let listed = [book("a"), book("b")]
+        // The mirror's fallback starts over from the top.
+        let next = CarPlayContent.appending([book("a"), book("b"), book("c")], to: listed)
+        #expect(next.map(\.uuid) == ["a", "b", "c"])
+    }
+
+    @Test func libraryPageDropsRepeatsWithinItself() {
+        let next = CarPlayContent.appending([book("c"), book("c")], to: [book("a")])
+        #expect(next.map(\.uuid) == ["a", "c"])
+    }
+
+    @Test func loadFailureAlertSaysWhyThenFallsBackToAShortTitle() {
+        #expect(
+            CarPlayContent.loadFailed("Server unreachable.")
+                == ["Couldn't play this book. Server unreachable.", "Couldn't play this book"]
+        )
     }
 
     @Test func nowPlayingOffersChapterButtonsOnlyForABookWithChapters() {

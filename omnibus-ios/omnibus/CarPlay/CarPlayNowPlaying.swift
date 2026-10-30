@@ -9,6 +9,9 @@
 //  the car there is no banner, and a silent jump would lose the listener. It
 //  is an action sheet rather than an alert because a car may hold an alert to
 //  one button (`CPAlertTemplate.maximumActionCount`), and the offer needs two.
+//  The car holds one presented template at a time, so the sheets and the
+//  controller's alerts share one queue here: each waits for the last
+//  dismissal to finish, and none is raised before the car has a root.
 
 #if canImport(CarPlay)
 import CarPlay
@@ -25,10 +28,18 @@ final class CarPlayNowPlaying: NSObject, CPNowPlayingTemplateObserver {
     /// toast, so the filled icon is the confirmation.
     private var bookmarkConfirmed = false
     private var bookmarkReset: Task<Void, Never>?
-    private var presentedOffer: CPActionSheetTemplate?
+    /// The sheet for the offer on the table, from raising it until it's closed.
+    private var offerSheet: CPActionSheetTemplate?
     /// The offer the driver last saw, so an answer that doesn't clear it
     /// straight away can't raise the same sheet twice.
     private var shownOffer: CarPlayContent.Offer?
+    /// Whether the car has a root template; presenting before it does is refused.
+    private var hasRoot = false
+    /// The template that should be presented, and the one that is.
+    private var wantedModal: CPTemplate?
+    private var presentedModal: CPTemplate?
+    /// Presents and dismissals in order, each after the last has finished.
+    private var modalQueue: Task<Void, Never>?
 
     init(interface: CPInterfaceController) {
         self.interface = interface
@@ -47,12 +58,47 @@ final class CarPlayNowPlaying: NSObject, CPNowPlayingTemplateObserver {
         isStopped = true
         template.remove(self)
         bookmarkReset?.cancel()
+        modalQueue?.cancel()
     }
 
-    /// Bring Now Playing to the front, unless it already is.
+    /// Bring Now Playing to the front: back to it when it's already in the
+    /// stack — CarPlay refuses a template pushed twice — else pushed.
     func show() {
-        guard interface.topTemplate !== template else { return }
-        interface.pushTemplate(template, animated: true, completion: nil)
+        guard !isStopped, interface.topTemplate !== template else { return }
+        if interface.templates.contains(where: { $0 === template }) {
+            interface.pop(to: template, animated: true, completion: nil)
+        } else {
+            interface.pushTemplate(template, animated: true, completion: nil)
+        }
+    }
+
+    /// The car's root was set or replaced. Whatever was presented is taken
+    /// down, and an offer still on the table is raised again over the new root.
+    func rootDidChange() {
+        hasRoot = true
+        wantedModal = nil
+        offerSheet = nil
+        shownOffer = nil
+        enqueueModal { [weak self] in
+            guard let self, self.presentedModal != nil else { return }
+            self.presentedModal = nil
+            _ = try? await self.interface.dismissTemplate(animated: false)
+        }
+        presentOffer()
+    }
+
+    /// Tell the driver a book couldn't be opened, with the one button a car's
+    /// alert is sure to hold.
+    func showLoadFailure(_ reason: String) {
+        let handle = WeakTemplate()
+        let ok = CPAlertAction(title: CarPlayContent.ok, style: .cancel) { [weak self] _ in
+            MainActor.assumeIsolated {
+                if let self, let alert = handle.template { self.closeModal(alert) }
+            }
+        }
+        let alert = CPAlertTemplate(titleVariants: CarPlayContent.loadFailed(reason), actions: [ok])
+        handle.template = alert
+        presentModal(alert)
     }
 
     // MARK: - State
@@ -87,7 +133,7 @@ final class CarPlayNowPlaying: NSObject, CPNowPlayingTemplateObserver {
         CarPlayContent.nowPlayingButtons(hasChapters: player.hasChapters).map { kind in
             switch kind {
             case .rate:
-                button(CarPlayGlyph.text(CarPlayContent.rateLabel(player.rate))) { $0.cycleRate() }
+                button(CarPlayGlyph.text(Format.rate(player.rate))) { $0.cycleRate() }
             case .bookmark:
                 button(CarPlayGlyph.symbol(bookmarkConfirmed ? "bookmark.fill" : "bookmark")) {
                     $0.addBookmark()
@@ -116,14 +162,9 @@ final class CarPlayNowPlaying: NSObject, CPNowPlayingTemplateObserver {
         player.rate = CarPlayContent.nextRate(after: player.rate)
     }
 
-    /// Bookmark the current position the way the phone's player does: named
-    /// after the chapter, no prompt.
+    /// Bookmark the current position the way the phone's player does.
     private func addBookmark() {
-        guard let book = player.book else { return }
-        let bookmark = CreateBookmark(
-            bookUUID: book.uuid, position: String(player.position), title: player.currentChapter?.title
-        )
-        Task { await UserDataService.createBookmark(bookmark) }
+        guard player.addBookmark() != nil else { return }
         bookmarkConfirmed = true
         refresh()
         bookmarkReset?.cancel()
@@ -206,6 +247,7 @@ final class CarPlayNowPlaying: NSObject, CPNowPlayingTemplateObserver {
     /// Raise the sheet for a new offer; take it down when the offer goes,
     /// whichever screen answered it.
     private func presentOffer() {
+        guard hasRoot, !isStopped else { return }
         guard let pending = currentOffer() else {
             shownOffer = nil
             closeOffer()
@@ -213,29 +255,89 @@ final class CarPlayNowPlaying: NSObject, CPNowPlayingTemplateObserver {
         }
         let offer = pending.offer
         guard offer != shownOffer else { return }
-        closeOffer()
         shownOffer = offer
+        let handle = WeakTemplate()
+        let answer = { [weak self] (choice: @escaping @MainActor () async -> Void) in
+            MainActor.assumeIsolated {
+                if let self, let sheet = handle.template { self.closeModal(sheet) }
+            }
+            Task { @MainActor in await choice() }
+        }
         let sheet = CPActionSheetTemplate(
             title: offer.title, message: nil,
             actions: [
-                CPAlertAction(title: offer.jump, style: .default) { [weak self] _ in
-                    MainActor.assumeIsolated { self?.closeOffer() }
-                    Task { @MainActor in await pending.accept() }
-                },
-                CPAlertAction(title: CarPlayContent.Offer.stay, style: .cancel) { [weak self] _ in
-                    MainActor.assumeIsolated { self?.closeOffer() }
-                    Task { @MainActor in await pending.dismiss() }
+                CPAlertAction(title: offer.jump, style: .default) { _ in answer(pending.accept) },
+                CPAlertAction(title: CarPlayContent.Offer.stay, style: .cancel) { _ in
+                    answer(pending.dismiss)
                 },
             ]
         )
-        presentedOffer = sheet
-        interface.presentTemplate(sheet, animated: true, completion: nil)
+        handle.template = sheet
+        offerSheet = sheet
+        presentModal(sheet)
     }
 
     private func closeOffer() {
-        guard presentedOffer != nil else { return }
-        presentedOffer = nil
-        interface.dismissTemplate(animated: true, completion: nil)
+        guard let sheet = offerSheet else { return }
+        offerSheet = nil
+        closeModal(sheet)
+    }
+
+    // MARK: - Presented templates
+
+    /// A presented template its own buttons can name without keeping it alive.
+    private final class WeakTemplate {
+        weak var template: CPTemplate?
+    }
+
+    /// Run `step` once every present and dismissal queued before it is done.
+    private func enqueueModal(_ step: @escaping @MainActor () async -> Void) {
+        let previous = modalQueue
+        modalQueue = Task { @MainActor in
+            await previous?.value
+            guard !Task.isCancelled else { return }
+            await step()
+        }
+    }
+
+    /// Present `modal`, in place of whatever is presented. Raised from the
+    /// dismissal's completion: CarPlay refuses a present that races one.
+    private func presentModal(_ modal: CPTemplate) {
+        wantedModal = modal
+        enqueueModal { [weak self] in
+            guard let self, !self.isStopped, self.wantedModal === modal else { return }
+            if self.presentedModal != nil {
+                self.presentedModal = nil
+                _ = try? await self.interface.dismissTemplate(animated: true)
+                guard self.wantedModal === modal else { return }
+            }
+            let shown = (try? await self.interface.presentTemplate(modal, animated: true)) ?? false
+            if shown {
+                self.presentedModal = modal
+            } else {
+                self.refused(modal)
+            }
+        }
+    }
+
+    /// Take `modal` down, if it's still up or still on its way.
+    private func closeModal(_ modal: CPTemplate) {
+        if wantedModal === modal { wantedModal = nil }
+        if offerSheet === modal { offerSheet = nil }
+        enqueueModal { [weak self] in
+            guard let self, self.presentedModal === modal else { return }
+            self.presentedModal = nil
+            _ = try? await self.interface.dismissTemplate(animated: true)
+        }
+    }
+
+    /// A present the car refused: forget it, so the offer can be raised again.
+    private func refused(_ modal: CPTemplate) {
+        if wantedModal === modal { wantedModal = nil }
+        if offerSheet === modal {
+            offerSheet = nil
+            shownOffer = nil
+        }
     }
 }
 #endif

@@ -19,11 +19,6 @@ enum CarPlayContent {
         rates.first { $0 > rate + 0.001 } ?? rates[0]
     }
 
-    /// The speed button's face — "1x", "1.2x", the player's own notation.
-    static func rateLabel(_ rate: Double) -> String {
-        String(format: "%gx", (rate * 100).rounded() / 100)
-    }
-
     /// The chapters the Chapters list holds: the one before `current`, then
     /// through the end, as Audible's does. CarPlay can't open a list scrolled
     /// to a row, so this is what keeps the current chapter on screen.
@@ -42,12 +37,18 @@ enum CarPlayContent {
         case let .part(ordinal, _): parts.append("Part \(ordinal)")
         case nil: break
         }
-        if let total = point.record.totalDurationSeconds,
-           let position = point.record.audioPositionSeconds {
-            let left = Format.atRate(max(0, total - position), rate: point.playbackRate ?? 1.0)
+        if let left = WidgetSnapshotWriter.secondsRemaining(for: point, format: .audio) {
             parts.append(Format.humanDuration(Int64(left)) + " left")
         }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    /// The Library list after a later page lands. A page the server fails
+    /// falls back to the mirror from its start, so it can repeat books already
+    /// listed — and every repeat spends a row of the car's item cap.
+    static func appending(_ page: [Book], to books: [Book]) -> [Book] {
+        var listed = Set(books.map(\.uuid))
+        return books + page.filter { listed.insert($0.uuid).inserted }
     }
 
     /// The second line of a row that can't play — offline, not downloaded.
@@ -85,6 +86,15 @@ enum CarPlayContent {
             jump: "Jump to \(Format.duration(seconds))"
         )
     }
+
+    /// The alert for a book that couldn't be opened, longest wording first:
+    /// a CarPlay alert has a title and nothing else, and the car picks the
+    /// variant that fits.
+    static func loadFailed(_ reason: String) -> [String] {
+        ["Couldn't play this book. \(reason)", "Couldn't play this book"]
+    }
+
+    static let ok = "OK"
 
     struct Message: Equatable {
         var title: String
