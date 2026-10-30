@@ -104,15 +104,25 @@ enum UserDataService {
     /// listening position even when you have read it since — which the rail
     /// would show as its ebook card.
     static func recentAudio() -> AsyncThrowingStream<CacheRead<[ResumePoint]>, Error> {
-        Cache.live(CacheKey.recentAudio) {
-            try await APIClient.shared.get(
-                "/api/progress/recent",
-                query: [
-                    "limit": String(recentAudioLimit),
-                    "format": ProgressFormat.audio.rawValue,
-                ]
-            )
-        }
+        Cache.live(CacheKey.recentAudio) { try await fetchRecentAudio() }
+    }
+
+    /// `recentAudio()` settled to one answer: the server's when it can be
+    /// reached, else the replica's. For a caller acting once on the list.
+    static func settledRecentAudio() async throws -> [ResumePoint] {
+        try await Cache.settled(CacheKey.recentAudio) { try await fetchRecentAudio() }
+    }
+
+    private static func fetchRecentAudio() async throws -> [ResumePoint] {
+        try await APIClient.shared.get("/api/progress/recent", query: recentAudioQuery)
+    }
+
+    /// Your own resume query, held to audio and lengthened to the car's list.
+    static var recentAudioQuery: [String: String?] {
+        var query = recentProgressQuery(userID: nil)
+        query["limit"] = String(recentAudioLimit)
+        query["format"] = ProgressFormat.audio.rawValue
+        return query
     }
 
     /// Routing seam: another reader's in-progress list must never enter

@@ -8,19 +8,19 @@ use sqlx::{Row, SqlitePool};
 use super::enrich::{enrich_record, PositionDetail};
 use super::{parse_format, ProgressError};
 
-/// One progress row per book, in the format used last, newest first by **client
-/// event time** (`COALESCE(client_updated_at, updated_at)`), so a late offline
-/// replay doesn't jump a week-old book to the top; `limit` counts books. Excludes
-/// books marked `unread` or `finished` but keeps a **missing** status row: absence
-/// is not "unread" here. `format` keeps only rows in that format, so a book comes
-/// back at its latest position in it even when the other was used since. Feeds
-/// [`resume_points`].
+/// One progress row per book, in the format used last, newest first by client
+/// event time; `limit` counts books. Excludes books marked `unread` or `finished`
+/// but keeps a **missing** status row: absence is not "unread" here. `format`
+/// keeps only rows in that format, so a book comes back at its latest position in
+/// it even when the other was used since. Feeds [`resume_points`].
 pub async fn recent_progress(
     pool: &SqlitePool,
     user_id: i64,
     limit: i64,
     format: Option<ProgressFormat>,
 ) -> Result<Vec<ProgressRecord>, ProgressError> {
+    // Ordered on `COALESCE(client_updated_at, updated_at)` so a late offline replay
+    // doesn't jump a week-old book to the top.
     // Absence keeps its position: a position write creates its book's status, so a
     // missing row is an edge (a merge undo clears one) that shouldn't hide the book.
     // The tie-breaks keep the surviving format stable between refreshes: receipt

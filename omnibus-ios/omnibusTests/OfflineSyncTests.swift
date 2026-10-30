@@ -1434,6 +1434,7 @@ struct UserScopedPrefixTests {
         [
             CacheKey.me,
             CacheKey.recentProgress,
+            CacheKey.recentAudio,
             CacheKey.shelves,
             CacheKey.shelfPreviews,
             CacheKey.shelf(7),

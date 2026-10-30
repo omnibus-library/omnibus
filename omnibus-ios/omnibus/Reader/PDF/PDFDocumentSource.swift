@@ -27,7 +27,7 @@ enum PDFDocumentSource {
     /// manager's answer for the ebook kind; only a `.pdf` counts, because a
     /// mixed book's download is its EPUB, which is not what this reader
     /// opens. The cache is a refetch saver, not an offline surface: the
-    /// download is the offline contract, and `Presentation.canOpen` stops an
+    /// download is the offline contract, and `DownloadManager.canOpen` stops an
     /// undownloaded book before this runs when the server is gone.
     static func backing(uuid: String, localURL: URL?, cachedURL: URL?, isOnline: Bool) -> PDFBacking {
         if let localURL, localURL.pathExtension.lowercased() == "pdf" {

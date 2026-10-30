@@ -89,9 +89,12 @@ struct AudioSessionEventTests {
     }
 
     @Test func losingTheOutputCancelsAPendingStart() {
-        // The car switched off during a rebuild's back-off or a load: the
-        // book must not start on the phone's speaker when it lands.
-        for pending in [PendingStarts(afterRecovery: true), PendingStarts(afterLoad: true)] {
+        // The car switched off during a rebuild's back-off, a load or a
+        // resume: the book must not start on the phone's speaker when it lands.
+        for pending in [
+            PendingStarts(afterRecovery: true), PendingStarts(afterLoad: true),
+            PendingStarts(afterResume: true),
+        ] {
             let response = pending.response(to: .outputLost, isPlaying: false)
             #expect(response == .pause)
             #expect(pending.settled(by: response, loading: true) == PendingStarts())
@@ -128,6 +131,16 @@ struct AudioSessionEventTests {
         let response = pending.response(to: .interruptionEnded(shouldResume: false), isPlaying: false)
         #expect(response == .pause)
         #expect(pending.settled(by: response, loading: true) == PendingStarts())
+    }
+
+    @Test func aCallCancelsAResumeStillFindingItsBook() {
+        // Nothing is loaded to pause and come back to, so the call ends it.
+        let pending = PendingStarts(afterResume: true)
+        #expect(pending.startIsPending)
+        let response = pending.response(to: .interruptionBegan, isPlaying: false)
+        #expect(response == .pauseUntilResumed)
+        let settled = pending.settled(by: response, loading: false)
+        #expect(!settled.afterResume)
     }
 
     @Test func anIgnoredEventLeavesPendingStartsAlone() {

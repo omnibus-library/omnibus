@@ -103,9 +103,9 @@ final class AudioPlayer {
     private var health = PlaybackHealth()
     private var recoveryTask: Task<Void, Never>?
 
-    /// Starts owed but not yet made: a recovery or load that will start
-    /// playing when it lands, or an interruption's pause that resumes when it
-    /// ends.
+    /// Starts owed but not yet made: a recovery, load or remote resume that
+    /// will start playing when it lands, or an interruption's pause that
+    /// resumes when it ends.
     ///
     /// A rebuild backs off for a second or more before it resumes, and the
     /// listener may well press pause inside that window — having given up on a
@@ -226,7 +226,13 @@ final class AudioPlayer {
 
     // MARK: - Loading
 
-    func load(book: Book, fileID requestedFileID: Int64? = nil, autoplay: Bool = true) async {
+    /// `known` is a position the caller already holds — a resume point — and
+    /// competes on its clock with the replica's and the server's, so a cold
+    /// replica can't open the book at the start.
+    func load(
+        book: Book, fileID requestedFileID: Int64? = nil, autoplay: Bool = true,
+        known: ProgressRecord? = nil
+    ) async {
         // Re-opening the book that's already loaded should not restart it —
         // unless a different file of it was explicitly asked for. A `nil`
         // request means "whatever is right", and what's already playing is.
@@ -252,6 +258,7 @@ final class AudioPlayer {
         }
         teardown()
         pendingStarts.afterLoad = autoplay
+        let generation = loadGeneration
         self.book = book
         autoStatus = ReadStatusAuto(uuid: book.uuid)
         markedReading = false
@@ -274,11 +281,19 @@ final class AudioPlayer {
         position = 0
         duration = 0
 
+        // The default file, the offer's file match and `isDefaultFileSelected`
+        // all read the book's files, which a resume point's mirror book lacks.
+        let book = await Self.withFiles(book)
+        guard generation == loadGeneration else { return }
+        self.book = book
+
         // The saved position is read before the manifest because it also
         // names the file to open: an explicit pick wins, else the file the
         // position was taken in, else the server's default (first by
         // ordinal). Resolved up front — the manifest is built per file.
-        let local = await UserDataService.localProgress(uuid: book.uuid, format: .audio)
+        let local = PositionSync.newest(
+            await UserDataService.localProgress(uuid: book.uuid, format: .audio), known
+        )
         fileID = requestedFileID ?? local?.bookFileID ?? book.audioFiles.first?.id
 
         do {
@@ -347,6 +362,14 @@ final class AudioPlayer {
             pendingStarts.afterLoad = false
             self.error = (error as? APIError)?.errorDescription ?? error.localizedDescription
         }
+    }
+
+    /// `book` with its files, from the replica or the server; bare when
+    /// neither has it.
+    private static func withFiles(_ book: Book) async -> Book {
+        guard book.bookFiles.isEmpty else { return book }
+        for await full in LibraryService.book(uuid: book.uuid).values() { return full }
+        return book
     }
 
     /// Apply a rate that came out of storage without writing it back. See
@@ -1306,7 +1329,16 @@ final class AudioPlayer {
             return .success
         }
         center.togglePlayPauseCommand.addTarget { [weak self] _ in
-            Task { @MainActor in self?.isPlaying == true ? self?.pause() : self?.remotePlay() }
+            Task { @MainActor in
+                guard let self else { return }
+                // A toggle while a resume is still finding or loading its book
+                // takes it back, as it would pause playback.
+                if self.isPlaying || (self.isResumingRecent && self.pendingStarts.startIsPending) {
+                    self.pause()
+                } else {
+                    self.remotePlay()
+                }
+            }
             return .success
         }
         // The intervals are what CarPlay and the lock screen draw on the skip
@@ -1336,8 +1368,13 @@ final class AudioPlayer {
     /// A play command from outside the app — a car's auto-play on connect, its
     /// play button, AirPods. With nothing loaded it resumes the most recent
     /// audiobook, as Audible does in the car, rather than doing nothing.
+    ///
+    /// The resume is a pending start: a pause, a call or a lost output while
+    /// it is still finding its book takes it back.
     private func remotePlay() {
         guard !isActive else { return play() }
+        // A second press re-arms a resume a pause took back, without a second load.
+        pendingStarts.afterResume = true
         guard !isResumingRecent else { return }
         isResumingRecent = true
         Task {
@@ -1345,15 +1382,24 @@ final class AudioPlayer {
             // The command may be what launched the process — a CarPlay
             // connect with the phone locked — so the replica may not be open.
             await Startup.prepare()
-            for await points in UserDataService.recentAudio().values() {
-                guard !isActive else { return }
-                if let point = Self.resumeCandidate(
-                    in: points, canPlay: { Presentation.canOpen($0, kind: .audio) }
-                ) {
-                    await load(book: point.book, fileID: point.record.bookFileID)
-                    return
-                }
+            // Signed out keeps downloads but not the session they belong to.
+            guard ServerURLStore.load() != nil, await APIClient.shared.hasToken() else {
+                pendingStarts.afterResume = false
+                return
             }
+            // Settled, not the replica's first answer: a book listened to on
+            // another device since, or finished there, must win.
+            let points = (try? await UserDataService.settledRecentAudio()) ?? []
+            let point = Self.resumeCandidate(
+                in: points, canPlay: { DownloadManager.shared.canOpen($0, kind: .audio) }
+            )
+            guard pendingStarts.afterResume, !isActive, let point else {
+                pendingStarts.afterResume = false
+                return
+            }
+            // No await between the check and `load`'s teardown, which hands the
+            // start to `afterLoad` — still revocable by a pause.
+            await load(book: point.book, known: point.record)
         }
     }
 

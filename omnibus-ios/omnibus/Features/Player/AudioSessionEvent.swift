@@ -9,7 +9,8 @@
 //  `AudioPlayer` parses the notification and applies the response.
 //
 //  A start that hasn't fired yet — a rebuild's back-off, a load awaiting its
-//  item — counts as playing, so a disconnect or a call cancels it too.
+//  item, a play command still finding the book to resume — counts as playing,
+//  so a disconnect or a call cancels it too.
 
 import AVFoundation
 
@@ -82,12 +83,15 @@ struct PendingStarts: Equatable {
     var afterRecovery = false
     /// A `load(autoplay: true)` is still awaiting its item and opening position.
     var afterLoad = false
+    /// A play command with nothing loaded is still finding the book to resume,
+    /// and plays it once loaded.
+    var afterResume = false
     /// An interruption paused playback, or cancelled a start above, and
     /// playback comes back when it ends.
     var afterInterruption = false
 
     /// Whether audio is about to start without the listener pressing anything.
-    var startIsPending: Bool { afterRecovery || afterLoad }
+    var startIsPending: Bool { afterRecovery || afterLoad || afterResume }
 
     /// The response to `event`; a pending start counts as playing.
     func response(to event: AudioSessionEvent, isPlaying: Bool) -> AudioSessionResponse {

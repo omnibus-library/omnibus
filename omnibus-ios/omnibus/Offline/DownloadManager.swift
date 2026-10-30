@@ -324,6 +324,15 @@ final class DownloadManager: NSObject {
         !localFiles(for: uuid, kind: kind).isEmpty
     }
 
+    /// Whether this format can actually be opened: the file is on the device,
+    /// or the server is there to stream it from.
+    ///
+    /// Only the file settles it — a book is streamed, not cached, so having
+    /// read it before means nothing once the server is gone.
+    func canOpen(_ book: Book, kind: DownloadKind) -> Bool {
+        isDownloaded(book.uuid, kind: kind) || Connectivity.shared.isOnline
+    }
+
     /// Whether any format of this book is on the device — what a shelf badge
     /// means, as opposed to what the player needs to know.
     ///
