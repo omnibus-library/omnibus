@@ -1358,40 +1358,71 @@ final class AudioPlayer {
         MPNowPlayingInfoCenter.default().playbackState = isPlaying ? .playing : .paused
     }
 
-    private var artworkCache: (uuid: String, artwork: MPMediaItemArtwork)?
+    /// The book's artwork; not `isFinal` while it is the plate standing in
+    /// for art that didn't load.
+    private var artworkCache: (uuid: String, artwork: MPMediaItemArtwork, isFinal: Bool)?
     /// The book whose artwork is loading. Now Playing updates twice a second,
     /// and each would otherwise start another fetch and render of the cover.
     private var artworkLoading: String?
+    /// Whether a plate waits on the connection to try its art again.
+    private var artworkAwaitsConnection = false
 
     private var currentArtwork: MPMediaItemArtwork? {
         guard let book else { return nil }
-        if let cached = artworkCache, cached.uuid == book.uuid { return cached.artwork }
-        guard artworkLoading != book.uuid else { return nil }
+        let cached = artworkCache?.uuid == book.uuid ? artworkCache : nil
+        if let cached, cached.isFinal { return cached.artwork }
+        // Offline, each tick's attempt would wait out a request timeout.
+        guard artworkLoading != book.uuid, cached == nil || Connectivity.shared.isOnline else {
+            return cached?.artwork
+        }
         artworkLoading = book.uuid
         Task {
             await loadArtwork(for: book)
             if artworkLoading == book.uuid { artworkLoading = nil }
         }
-        return nil
+        return cached?.artwork
     }
 
     private func loadArtwork(for book: Book) async {
-        guard artworkCache?.uuid != book.uuid else { return }
+        if let cached = artworkCache, cached.uuid == book.uuid, cached.isFinal { return }
         var art: UIImage?
         if book.coverURL != nil {
             art = await ImageCache.shared.image(for: "/api/thumbs/\(book.uuid)/lg")
-            // Offline, each tick's attempt would wait out a request timeout.
             if art == nil, Connectivity.shared.isOnline,
                let data = try? await APIClient.shared.data(for: "/api/covers/\(book.uuid)") {
                 art = UIImage(data: data)
             }
-            // Left for the next update to try again rather than settled on the plate.
-            guard art != nil else { return }
         }
-        guard let image = Self.artworkImage(for: book, art: art) else { return }
-        let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
-        artworkCache = (book.uuid, artwork)
-        updateNowPlaying()
+        // Art that didn't load shows the plate meanwhile, and is tried again on
+        // a later update — offline, once the connection is back.
+        let isFinal = art != nil || book.coverURL == nil
+        if isFinal || artworkCache?.uuid != book.uuid,
+           let image = Self.artworkImage(for: book, art: art) {
+            let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+            artworkCache = (book.uuid, artwork, isFinal)
+            updateNowPlaying()
+        }
+        if !isFinal, !Connectivity.shared.isOnline { retryArtworkOnceOnline() }
+    }
+
+    /// Update Now Playing once the connection is back, which tries the art
+    /// again — a paused book sends no updates of its own.
+    private func retryArtworkOnceOnline() {
+        guard !artworkAwaitsConnection else { return }
+        artworkAwaitsConnection = true
+        withObservationTracking {
+            _ = Connectivity.shared.isOnline
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                self.artworkAwaitsConnection = false
+                if Connectivity.shared.isOnline {
+                    self.updateNowPlaying()
+                } else {
+                    self.retryArtworkOnceOnline()
+                }
+            }
+        }
     }
 
     /// The cover the lock screen and the car show: the art over the player's

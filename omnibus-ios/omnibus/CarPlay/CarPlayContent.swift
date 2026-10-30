@@ -51,24 +51,24 @@ enum CarPlayContent {
         return books + page.filter { listed.insert($0.uuid).inserted }
     }
 
-    /// The Library rows to show while a reload builds `fresh`, or `nil` to
-    /// leave `shown` alone. An empty or unanswered list takes any answer; a
-    /// listed one only a pass that has as many rows or is `isWhole`, so a
-    /// reload never cuts it short mid-scroll. Rows that read the same aren't
-    /// redrawn: a redraw restarts their covers and stops a row's spinner.
-    static func libraryUpdate(shown: [Book]?, fresh: [Book], isWhole: Bool) -> [Book]? {
-        guard let shown else { return fresh }
-        guard isWhole || fresh.count >= shown.count else { return nil }
-        return readsTheSame(shown, fresh) ? nil : fresh
+    /// Whether a first-page answer goes on screen as it lands. An empty one
+    /// from the replica waits for the server: on a fresh sign-in the replica
+    /// has nothing yet, and "No audiobooks" mustn't stand in for a page loading.
+    static func showsAtOnce(_ books: [Book], isFresh: Bool) -> Bool {
+        isFresh || !books.isEmpty
     }
 
-    /// Whether two Library lists show the same rows: the same books, titled
-    /// and credited the same, in the same order.
-    private static func readsTheSame(_ a: [Book], _ b: [Book]) -> Bool {
-        a.count == b.count && zip(a, b).allSatisfy {
-            $0.uuid == $1.uuid && $0.displayTitle == $1.displayTitle
-                && $0.authorDisplay == $1.authorDisplay
-        }
+    /// Whether the Library tab re-reads as it appears, rather than repainting
+    /// the rows it holds: only a list with nothing on it, and nothing loading.
+    static func rereadsLibrary(shown: [Book]?, isReading: Bool) -> Bool {
+        !isReading && (shown?.isEmpty ?? true)
+    }
+
+    /// Who the car's lists belong to. Another account, or the same id on
+    /// another server, never sees the rows read for this one.
+    struct Account: Equatable {
+        var server: String
+        var userID: Int64?
     }
 
     /// The second line of a row that can't play — offline, not downloaded.

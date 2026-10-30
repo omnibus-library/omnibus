@@ -2,11 +2,13 @@
 //  The car's two tabs — Continue and Library — and the sign-in gate in front of them.
 //
 //  Reads go through the same local-first services the phone uses, so a car
-//  with no signal still lists what this device holds. Lists are rebuilt when a
-//  tab appears, the loaded book changes or the connection flips, never per
-//  position tick: the rail is rewritten twice a second while playing, and an
-//  updated CarPlay list jumps back to its top. Now Playing and the Chapters
-//  list live in `CarPlayNowPlaying`.
+//  with no signal still lists what this device holds. Continue re-reads each
+//  time it appears; Library only when it can have changed — a sign-in, an
+//  empty list, the connection back — since a re-read redraws it from its top.
+//  Rows are repainted when a tab appears, the loaded book changes or the
+//  connection flips, never per position tick: the rail is rewritten twice a
+//  second while playing, and an updated CarPlay list jumps back to its top.
+//  Now Playing and the Chapters list live in `CarPlayNowPlaying`.
 
 #if canImport(CarPlay)
 import CarPlay
@@ -22,6 +24,14 @@ final class CarPlayController: NSObject, CPInterfaceControllerDelegate {
 
     private var showsTabs = false
     private var isStopped = false
+    /// Bumped by each `showRoot`; only the latest acts on what it found.
+    private var rootRequest = 0
+    /// The root last asked for; only its `setRoot` tells Now Playing.
+    private var wantedRoot: CPTemplate?
+    /// The account the lists were read for.
+    private var account: CarPlayContent.Account?
+    /// The connection as the rows last saw it, to tell a return online.
+    private var wasOnline = true
     private var continuePoints: [ResumePoint] = []
     /// The Library rows on screen; `nil` until the first answer, so the empty
     /// message never stands in for a list still loading.
@@ -56,6 +66,7 @@ final class CarPlayController: NSObject, CPInterfaceControllerDelegate {
                 }
             )
         }
+        wasOnline = Connectivity.shared.isOnline
         observeRowState()
         showRoot()
     }
@@ -85,12 +96,15 @@ final class CarPlayController: NSObject, CPInterfaceControllerDelegate {
     /// The tabs when signed in, otherwise a message sending the driver to the
     /// phone — there is no sign-in in the car.
     private func showRoot() {
+        rootRequest += 1
+        let request = rootRequest
         Task {
             // The car may be what launched the process.
             await Startup.prepare()
-            let signedIn = ServerURLStore.load() != nil ? await APIClient.shared.hasToken() : false
-            guard !isStopped else { return }
-            guard signedIn else {
+            let signedIn = await Self.signedInAccount()
+            // A sign-out and a sign-in in quick succession: the later look decides.
+            guard !isStopped, request == rootRequest else { return }
+            guard let signedIn else {
                 showsTabs = false
                 forgetAccount()
                 let message = CPListTemplate(title: "Omnibus", sections: [])
@@ -101,19 +115,37 @@ final class CarPlayController: NSObject, CPInterfaceControllerDelegate {
             let connecting = !showsTabs
             showsTabs = true
             // Read before the root goes up: setting it makes a tab appear, and
-            // `templateWillAppear` leaves a read already running alone.
-            reloadContinue()
-            reloadLibrary()
+            // Library leaves a read already running alone.
+            if signedIn != account {
+                forgetAccount()
+                account = signedIn
+                reloadContinue()
+                reloadLibrary()
+            } else {
+                // The launch shows the root twice; a restart would only throw away the first pass.
+                if continueRead == nil { reloadContinue() }
+                if libraryRead == nil { reloadLibrary() }
+            }
             if connecting {
                 await setRoot(CPTabBarTemplate(templates: [continueList, libraryList]), signedIn: true)
             }
         }
     }
 
+    /// The account signed in on the phone, or `nil` when no one is.
+    private static func signedInAccount() async -> CarPlayContent.Account? {
+        guard let server = ServerURLStore.load(), await APIClient.shared.hasToken() else {
+            return nil
+        }
+        return CarPlayContent.Account(server: server, userID: await AuthService.localMe()?.id)
+    }
+
     /// Replace the root, then let Now Playing raise again what it took down.
     private func setRoot(_ root: CPTemplate, signedIn: Bool) async {
+        wantedRoot = root
         _ = try? await interface.setRootTemplate(root, animated: false)
-        guard !isStopped else { return }
+        // Roots set in quick succession can finish in any order; the last one asked for is the car's.
+        guard !isStopped, wantedRoot === root else { return }
         nowPlaying.rootDidChange(signedIn: signedIn)
     }
 
@@ -135,6 +167,7 @@ final class CarPlayController: NSObject, CPInterfaceControllerDelegate {
     /// Drop everything the signed-out account's lists held, so the next
     /// sign-in — another account, or another server — never shows its titles.
     private func forgetAccount() {
+        account = nil
         cancelReads()
         abandonOpening()
         continuePoints = []
@@ -185,47 +218,52 @@ final class CarPlayController: NSObject, CPInterfaceControllerDelegate {
     }
 
     /// Every audiobook, newest added first, page by page up to what CarPlay
-    /// lets a list hold. A list already on screen stays until this pass has
-    /// as many rows or reaches the end: a reload never shrinks it mid-scroll.
+    /// lets a list hold. Each page replaces the list with what this pass has.
     private func readLibrary() async {
         let cap = CPListTemplate.maximumItemCount
         var books: [Book] = []
         var cursor: String?
-        var isWhole = false
         repeat {
-            var page: LibraryPageResult?
-            for await answer in LibraryService.page(
-                sort: .newestAdded, direction: .desc,
-                filter: LibraryCategory.audiobooks.filter, cursor: cursor
-            ).values() {
-                guard !Task.isCancelled else { return }
-                page = answer
-                // The first page paints from the replica before the server answers.
-                if cursor == nil { showLibrary(Array(answer.books.prefix(cap)), isWhole: false) }
-            }
-            guard let page else { break }
+            guard let page = await readLibraryPage(at: cursor, cap: cap) else { break }
             if cursor != nil {
                 let before = books.count
                 books = CarPlayContent.appending(page.books, to: books)
                 // Nothing new: the mirror's fallback repeating its start.
                 guard books.count > before else { break }
-                showLibrary(Array(books.prefix(cap)), isWhole: false)
+                showLibrary(Array(books.prefix(cap)))
             } else {
-                books = page.books
+                books = CarPlayContent.appending(page.books, to: [])
             }
             cursor = page.nextCursor
-            isWhole = cursor == nil || books.count >= cap
-        } while !isWhole && !Task.isCancelled
-        guard isWhole, !Task.isCancelled else { return }
-        showLibrary(Array(books.prefix(cap)), isWhole: true)
+        } while cursor != nil && books.count < cap && !Task.isCancelled
     }
 
-    /// Put this pass's `books` on screen when `CarPlayContent.libraryUpdate` says so.
-    private func showLibrary(_ books: [Book], isWhole: Bool) {
-        guard let next = CarPlayContent.libraryUpdate(
-            shown: libraryBooks, fresh: books, isWhole: isWhole
-        ) else { return }
-        libraryBooks = next
+    /// The page at `cursor`, by its last answer. The first page shows each
+    /// answer as it lands — the replica's before the server's — save the one
+    /// `CarPlayContent.showsAtOnce` holds back, shown only if nothing follows it.
+    private func readLibraryPage(at cursor: String?, cap: Int) async -> LibraryPageResult? {
+        var last: CacheRead<LibraryPageResult>?
+        var lastShown = false
+        do {
+            for try await answer in LibraryService.page(
+                sort: .newestAdded, direction: .desc,
+                filter: LibraryCategory.audiobooks.filter, cursor: cursor
+            ) {
+                guard !Task.isCancelled else { return nil }
+                last = answer
+                lastShown = cursor == nil
+                    && CarPlayContent.showsAtOnce(answer.value.books, isFresh: answer.isFresh)
+                if lastShown { showLibrary(Array(answer.value.books.prefix(cap))) }
+            }
+        } catch {}
+        // A failed read leaves whatever the list already shows.
+        guard !Task.isCancelled, let last else { return nil }
+        if cursor == nil, !lastShown { showLibrary(Array(last.value.books.prefix(cap))) }
+        return last.value
+    }
+
+    private func showLibrary(_ books: [Book]) {
+        libraryBooks = CarPlayContent.appending(books, to: [])
         renderLibrary()
     }
 
@@ -370,9 +408,13 @@ final class CarPlayController: NSObject, CPInterfaceControllerDelegate {
             guard let self else { return }
             Task { @MainActor in
                 guard !self.isStopped else { return }
+                let online = Connectivity.shared.isOnline
+                let cameOnline = online && !self.wasOnline
+                self.wasOnline = online
                 if self.showsTabs {
                     self.renderContinue()
-                    self.renderLibrary()
+                    // Audiobooks the replica didn't hold reach the list once the server answers.
+                    if cameOnline { self.reloadLibrary() } else { self.renderLibrary() }
                 }
                 self.observeRowState()
             }
@@ -381,13 +423,17 @@ final class CarPlayController: NSObject, CPInterfaceControllerDelegate {
 
     func templateWillAppear(_ aTemplate: CPTemplate, animated: Bool) {
         guard showsTabs else { return }
-        // Both re-read: listening elsewhere reorders Continue, and audiobooks
-        // the replica didn't hold at connect reach Library once online. A read
-        // still running is left to finish — it is already this fresh.
-        if aTemplate === continueList, continueRead == nil {
+        if aTemplate === continueList {
+            // Always afresh: a read begun before the listening just done
+            // answers with the progress from before it.
             reloadContinue()
-        } else if aTemplate === libraryList, libraryRead == nil {
-            reloadLibrary()
+        } else if aTemplate === libraryList {
+            if CarPlayContent.rereadsLibrary(shown: libraryBooks, isReading: libraryRead != nil) {
+                reloadLibrary()
+            } else {
+                // Greying and covers can change while away; the rows only on a re-read.
+                renderLibrary()
+            }
         }
     }
 }

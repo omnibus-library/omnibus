@@ -4,7 +4,7 @@
 //  CarPlay's templates can't be read back from a test, so these pin the
 //  decisions they are built from: the speed the button steps to, which
 //  chapters the list opens on, a Continue row's text, the Library list's
-//  paging and reloads, Now Playing's buttons, and the copy of the sheets and alerts.
+//  paging and re-reads, Now Playing's buttons, and the copy of the sheets and alerts.
 
 import Testing
 
@@ -101,39 +101,28 @@ struct CarPlayContentTests {
         #expect(next.map(\.uuid) == ["a", "c"])
     }
 
-    @Test func libraryReloadPaintsTheFirstAnswerIntoAListNothingHasAnswered() {
-        let fresh = [book("a")]
-        #expect(CarPlayContent.libraryUpdate(shown: nil, fresh: fresh, isWhole: false) == fresh)
-        // An empty answer still draws, so the empty message can show.
-        #expect(CarPlayContent.libraryUpdate(shown: nil, fresh: [], isWhole: false) == [])
-        #expect(CarPlayContent.libraryUpdate(shown: [], fresh: fresh, isWhole: false) == fresh)
+    @Test func libraryFirstPageHoldsBackOnlyAnEmptyAnswerFromTheReplica() {
+        // A fresh sign-in: the replica has nothing yet, and the server page is loading.
+        #expect(!CarPlayContent.showsAtOnce([], isFresh: false))
+        #expect(CarPlayContent.showsAtOnce([], isFresh: true))
+        #expect(CarPlayContent.showsAtOnce([book("a")], isFresh: false))
+        #expect(CarPlayContent.showsAtOnce([book("a")], isFresh: true))
     }
 
-    @Test func libraryReloadKeepsALongerListUntilThePassCatchesUp() {
-        // Back from Now Playing, scrolled to row 120: page one alone must not cut it short.
-        let shown = (0..<120).map { book("b\($0)") }
-        let pageOne = (0..<60).map { book("n\($0)") }
-        #expect(CarPlayContent.libraryUpdate(shown: shown, fresh: pageOne, isWhole: false) == nil)
-        let pageTwo = (0..<120).map { book("n\($0)") }
-        #expect(CarPlayContent.libraryUpdate(shown: shown, fresh: pageTwo, isWhole: false) == pageTwo)
+    @Test func libraryTabRereadsOnAppearOnlyWhenItHoldsNothingAndNothingIsLoading() {
+        #expect(CarPlayContent.rereadsLibrary(shown: nil, isReading: false))
+        #expect(CarPlayContent.rereadsLibrary(shown: [], isReading: false))
+        // A list on screen is only repainted: a re-read redraws it from its top.
+        #expect(!CarPlayContent.rereadsLibrary(shown: [book("a")], isReading: false))
+        #expect(!CarPlayContent.rereadsLibrary(shown: nil, isReading: true))
+        #expect(!CarPlayContent.rereadsLibrary(shown: [], isReading: true))
     }
 
-    @Test func libraryReloadShrinksTheListOnlyOnceThePassReachedTheEnd() {
-        let shown = (0..<120).map { book("b\($0)") }
-        let whole = Array(shown.prefix(100))
-        #expect(CarPlayContent.libraryUpdate(shown: shown, fresh: whole, isWhole: true) == whole)
-    }
-
-    @Test func libraryReloadLeavesRowsThatReadTheSameUndrawn() {
-        let shown = [book("a"), book("b")]
-        var touched = shown
-        // Moves library-wide without anything on the row changing.
-        touched[0].lastInteractedAt = "2026-10-30T00:00:00Z"
-        #expect(CarPlayContent.libraryUpdate(shown: shown, fresh: touched, isWhole: true) == nil)
-        #expect(CarPlayContent.libraryUpdate(shown: [], fresh: [], isWhole: true) == nil)
-        var retitled = shown
-        retitled[1].title = "Renamed"
-        #expect(CarPlayContent.libraryUpdate(shown: shown, fresh: retitled, isWhole: true) == retitled)
+    @Test func carAccountIsAnotherOneForAnotherUserOrAnotherServer() {
+        let account = CarPlayContent.Account(server: "https://a.example", userID: 1)
+        #expect(account == CarPlayContent.Account(server: "https://a.example", userID: 1))
+        #expect(account != CarPlayContent.Account(server: "https://a.example", userID: 2))
+        #expect(account != CarPlayContent.Account(server: "https://b.example", userID: 1))
     }
 
     @Test func loadFailureAlertSaysWhyThenFallsBackToAShortTitle() {
