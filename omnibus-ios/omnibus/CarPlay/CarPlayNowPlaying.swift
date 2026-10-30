@@ -1,12 +1,14 @@
 //  CarPlayNowPlaying.swift
-//  CarPlay's Now Playing: the speed, bookmark and chapter buttons, the Chapters list, and the "further elsewhere" alert.
+//  CarPlay's Now Playing: the speed, bookmark and chapter buttons, the Chapters list, and the "further elsewhere" sheet.
 //
 //  The template is the system's shared one, filled from the same Now Playing
 //  info the lock screen reads — `AudioPlayer` already reports the chapter as
 //  the title and a chapter-scoped scrubber. What it adds is the button row
 //  (`CarPlayContent.nowPlayingButtons`), the top-right list button retitled
-//  Chapters, and an alert for the sync offers the phone shows as banners: in
-//  the car there is no banner, and a silent jump would lose the listener.
+//  Chapters, and a sheet for the sync offers the phone shows as banners: in
+//  the car there is no banner, and a silent jump would lose the listener. It
+//  is an action sheet rather than an alert because a car may hold an alert to
+//  one button (`CPAlertTemplate.maximumActionCount`), and the offer needs two.
 
 #if canImport(CarPlay)
 import CarPlay
@@ -23,9 +25,9 @@ final class CarPlayNowPlaying: NSObject, CPNowPlayingTemplateObserver {
     /// toast, so the filled icon is the confirmation.
     private var bookmarkConfirmed = false
     private var bookmarkReset: Task<Void, Never>?
-    private var presentedOffer: CPAlertTemplate?
+    private var presentedOffer: CPActionSheetTemplate?
     /// The offer the driver last saw, so an answer that doesn't clear it
-    /// straight away can't raise the same alert twice.
+    /// straight away can't raise the same sheet twice.
     private var shownOffer: CarPlayContent.Offer?
 
     init(interface: CPInterfaceController) {
@@ -141,8 +143,8 @@ final class CarPlayNowPlaying: NSObject, CPNowPlayingTemplateObserver {
 
     func nowPlayingTemplateAlbumArtistButtonTapped(_ nowPlayingTemplate: CPNowPlayingTemplate) {}
 
-    /// The previous chapter, the current one, and on to the end; a tap jumps
-    /// there and goes back to Now Playing.
+    /// The previous chapter, the current one, and on to the end; a tap plays
+    /// from there and goes back to Now Playing.
     private func showChapters() {
         guard let book = player.book else { return }
         let chapters = player.chapters
@@ -157,8 +159,11 @@ final class CarPlayNowPlaying: NSObject, CPNowPlayingTemplateObserver {
             item.playingIndicatorLocation = .trailing
             item.handler = { [weak self] _, completion in
                 MainActor.assumeIsolated {
-                    self?.player.seekToChapter(chapter)
-                    self?.interface.popTemplate(animated: true, completion: nil)
+                    guard let self else { return }
+                    self.player.seekToChapter(chapter)
+                    // Picking a chapter is asking to hear it, so a paused book starts.
+                    if !self.player.isPlaying { self.player.play() }
+                    self.interface.popTemplate(animated: true, completion: nil)
                 }
                 completion()
             }
@@ -198,7 +203,7 @@ final class CarPlayNowPlaying: NSObject, CPNowPlayingTemplateObserver {
         return nil
     }
 
-    /// Raise the alert for a new offer; take it down when the offer goes,
+    /// Raise the sheet for a new offer; take it down when the offer goes,
     /// whichever screen answered it.
     private func presentOffer() {
         guard let pending = currentOffer() else {
@@ -210,8 +215,8 @@ final class CarPlayNowPlaying: NSObject, CPNowPlayingTemplateObserver {
         guard offer != shownOffer else { return }
         closeOffer()
         shownOffer = offer
-        let alert = CPAlertTemplate(
-            titleVariants: [offer.title],
+        let sheet = CPActionSheetTemplate(
+            title: offer.title, message: nil,
             actions: [
                 CPAlertAction(title: offer.jump, style: .default) { [weak self] _ in
                     MainActor.assumeIsolated { self?.closeOffer() }
@@ -223,8 +228,8 @@ final class CarPlayNowPlaying: NSObject, CPNowPlayingTemplateObserver {
                 },
             ]
         )
-        presentedOffer = alert
-        interface.presentTemplate(alert, animated: true, completion: nil)
+        presentedOffer = sheet
+        interface.presentTemplate(sheet, animated: true, completion: nil)
     }
 
     private func closeOffer() {

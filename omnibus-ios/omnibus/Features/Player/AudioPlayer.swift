@@ -853,6 +853,7 @@ final class AudioPlayer {
         position = 0
         duration = 0
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        MPNowPlayingInfoCenter.default().playbackState = .stopped
 
         guard let closing else { return }
         Task {
@@ -992,6 +993,7 @@ final class AudioPlayer {
         ) { [weak self] _ in
             Task { @MainActor in
                 self?.isPlaying = false
+                self?.updateNowPlaying()
                 await self?.persistPosition(force: true)
                 await self?.checkpointSession()
                 // The item spans every part of the book, so this fires once
@@ -1257,6 +1259,9 @@ final class AudioPlayer {
             info[MPMediaItemPropertyArtwork] = artwork
         }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        // Stated rather than left to the system to infer: CarPlay's Now Playing
+        // stayed on its play button through playback no remote command started.
+        MPNowPlayingInfoCenter.default().playbackState = isPlaying ? .playing : .paused
     }
 
     private var artworkCache: (uuid: String, artwork: MPMediaItemArtwork)?
@@ -1269,16 +1274,32 @@ final class AudioPlayer {
     }
 
     private func loadArtwork(for book: Book) async {
-        guard book.coverURL != nil, artworkCache?.uuid != book.uuid else { return }
-        var resolved = await ImageCache.shared.image(for: "/api/thumbs/\(book.uuid)/lg")
-        if resolved == nil,
-           let data = try? await APIClient.shared.data(for: "/api/covers/\(book.uuid)") {
-            resolved = UIImage(data: data)
+        guard artworkCache?.uuid != book.uuid else { return }
+        var art: UIImage?
+        if book.coverURL != nil {
+            art = await ImageCache.shared.image(for: "/api/thumbs/\(book.uuid)/lg")
+            if art == nil,
+               let data = try? await APIClient.shared.data(for: "/api/covers/\(book.uuid)") {
+                art = UIImage(data: data)
+            }
+            // Left for the next update to try again rather than settled on the plate.
+            guard art != nil else { return }
         }
-        guard let image = resolved else { return }
+        guard let image = Self.artworkImage(for: book, art: art) else { return }
         let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
         artworkCache = (book.uuid, artwork)
         updateNowPlaying()
+    }
+
+    /// The cover the lock screen and the car show: the art over the player's
+    /// plate, at the art's own shape, else the plate alone, square.
+    private static func artworkImage(for book: Book, art: UIImage?) -> UIImage? {
+        var size = CGSize(width: 600, height: 600)
+        if let art, art.size.width > 0, art.size.height > 0 {
+            let scale = min(1, 1024 / max(art.size.width, art.size.height))
+            size = CGSize(width: art.size.width * scale, height: art.size.height * scale)
+        }
+        return CoverBitmap.render(CoverIdentity(book), art: art, size: size, scale: 1)
     }
 
     private func configureRemoteCommands() {

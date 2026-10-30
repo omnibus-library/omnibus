@@ -3,7 +3,7 @@
 //
 //  A CarPlay template can't be inspected from a test, so every decision about
 //  what the car shows — a row's text, which chapters the list holds, the speed
-//  the button steps to, which buttons Now Playing gets, the copy of an alert —
+//  the button steps to, which buttons Now Playing gets, the copy of an offer —
 //  lives here as a pure function. The files that import CarPlay only translate
 //  these into templates.
 

@@ -4,7 +4,7 @@
 //  CarPlay's templates can't be read back from a test, so these pin the
 //  decisions they are built from: the speed the button steps to, which
 //  chapters the list opens on, a Continue row's text, Now Playing's buttons,
-//  and the copy of the "further elsewhere" alert.
+//  and the copy of the "further elsewhere" sheet.
 
 import Testing
 

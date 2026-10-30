@@ -85,7 +85,7 @@ from the on-screen ⏮ / ⏭ buttons and the Chapters list.
 **Decisions live in `CarPlayContent`.** A CarPlay template can't be read back
 from a test, so row text, the chapter window (from the previous chapter to the
 end — CarPlay can't open a list scrolled to a row), the speed cycle, the button
-row and the alert copy are pure functions there, pinned by
+row and the offer sheet's copy are pure functions there, pinned by
 `CarPlayContentTests`. The other files only translate them into templates.
 
 **The entitlement.** `com.apple.developer.carplay-audio` is granted by Apple per

@@ -3,10 +3,10 @@
 //
 //  Reads go through the same local-first services the phone uses, so a car
 //  with no signal still lists what this device holds. Lists are rebuilt when a
-//  tab appears and when the loaded book changes, never per position tick: the
-//  rail is rewritten twice a second while playing, and an updated CarPlay list
-//  jumps back to its top. Now Playing and the Chapters list live in
-//  `CarPlayNowPlaying`.
+//  tab appears, the loaded book changes or the connection flips, never per
+//  position tick: the rail is rewritten twice a second while playing, and an
+//  updated CarPlay list jumps back to its top. Now Playing and the Chapters
+//  list live in `CarPlayNowPlaying`.
 
 #if canImport(CarPlay)
 import CarPlay
@@ -51,7 +51,7 @@ final class CarPlayController: NSObject, CPInterfaceControllerDelegate {
                 }
             )
         }
-        observeLoadedBook()
+        observeRowState()
         showRoot()
     }
 
@@ -186,17 +186,24 @@ final class CarPlayController: NSObject, CPInterfaceControllerDelegate {
         item.isPlaying = player.book?.uuid == book.uuid
         item.playingIndicatorLocation = .trailing
         item.handler = { [weak self] _, completion in
-            MainActor.assumeIsolated { self?.play(book) }
-            completion()
+            MainActor.assumeIsolated {
+                guard let self else { return completion() }
+                self.play(book, then: completion)
+            }
         }
         return item
     }
 
-    private func play(_ book: Book) {
-        nowPlaying.show()
-        // No file named: `load` resumes the file the saved position was
-        // taken in, else the book's default.
-        Task { await player.load(book: book) }
+    /// Start `book`, then show Now Playing. The row spins until the book is
+    /// playing, so Now Playing opens on it rather than on the book before.
+    private func play(_ book: Book, then done: @escaping () -> Void) {
+        Task {
+            // No file named: `load` resumes the file the saved position was
+            // taken in, else the book's default.
+            await player.load(book: book)
+            nowPlaying.show()
+            done()
+        }
     }
 
     /// Covers for `items`, one at a time off the disk cache, fetched when
@@ -204,39 +211,41 @@ final class CarPlayController: NSObject, CPInterfaceControllerDelegate {
     /// the rows rather than holding them back.
     private func loadCovers(_ books: [Book], into items: [CPListItem]) -> Task<Void, Never> {
         Task {
+            let scale = interface.carTraitCollection.displayScale
             for (book, item) in zip(books, items) where covers[book.uuid] == nil {
                 guard !Task.isCancelled else { return }
-                guard book.coverURL != nil else { continue }
-                let key = "/api/thumbs/\(book.uuid)/\(ThumbSize.sm.rawValue)"
-                var image = await ImageCache.shared.image(for: key)
-                if image == nil {
-                    await ImageCache.shared.prefetch(key)
-                    image = await ImageCache.shared.image(for: key)
-                }
-                guard let image, !Task.isCancelled else { continue }
-                let sized = Self.fitted(image, to: CPListItem.maximumImageSize)
-                covers[book.uuid] = sized
-                item.setImage(sized)
+                let art = book.coverURL == nil ? nil : await Self.art(for: book)
+                // Square: the shape of the row's image slot, and of most audiobook art.
+                guard !Task.isCancelled,
+                      let tile = CoverBitmap.render(
+                          CoverIdentity(book), art: art, size: CPListItem.maximumImageSize,
+                          cornerRadius: 4, scale: scale
+                      )
+                else { continue }
+                item.setImage(tile)
+                // A cover that didn't load shows its plate for now and is tried
+                // again on the next render.
+                if art != nil || book.coverURL == nil { covers[book.uuid] = tile }
             }
         }
     }
 
-    private static func fitted(_ image: UIImage, to bounds: CGSize) -> UIImage {
-        let scale = min(bounds.width / image.size.width, bounds.height / image.size.height, 1)
-        guard scale < 1 else { return image }
-        let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
-        return UIGraphicsImageRenderer(size: size).image { _ in
-            image.draw(in: CGRect(origin: .zero, size: size))
-        }
+    private static func art(for book: Book) async -> UIImage? {
+        let key = "/api/thumbs/\(book.uuid)/\(ThumbSize.sm.rawValue)"
+        if let image = await ImageCache.shared.image(for: key) { return image }
+        await ImageCache.shared.prefetch(key)
+        return await ImageCache.shared.image(for: key)
     }
 
     // MARK: - Updates
 
-    /// Re-mark the playing row whenever a different book loads — from the car,
-    /// the phone, or a play command.
-    private func observeLoadedBook() {
+    /// Redraw the rows when what they show changes underneath them: a
+    /// different book loads — from the car, the phone, or a play command —
+    /// or the connection comes or goes, which decides their greying.
+    private func observeRowState() {
         withObservationTracking {
             _ = player.book?.uuid
+            _ = Connectivity.shared.isOnline
         } onChange: { [weak self] in
             guard let self else { return }
             Task { @MainActor in
@@ -245,7 +254,7 @@ final class CarPlayController: NSObject, CPInterfaceControllerDelegate {
                     self.renderContinue()
                     self.renderLibrary()
                 }
-                self.observeLoadedBook()
+                self.observeRowState()
             }
         }
     }
