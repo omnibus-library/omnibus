@@ -93,7 +93,11 @@ team. Until then it lives only in `omnibus-Simulator.entitlements`, selected by
 `CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]`: the simulator's CarPlay window
 lists only apps that carry it, and a device build would fail to sign with it.
 Once granted, it moves into `omnibus.entitlements`. To see the scene, run the
-app in a simulator and choose **I/O → External Displays → CarPlay**.
+app in a simulator and choose **I/O → External Displays → CarPlay**. Its
+CarPlay never draws Now Playing artwork (it logs `allows artwork: NO`), and its
+lock screen builds the transport buttons without drawing them; both need a
+device. Its CarPlay also holds an alert to one button, which is why the sync
+offer is an action sheet.
 
 ## Release
 
