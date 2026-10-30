@@ -451,6 +451,16 @@ stitched into one `AVMutableComposition` so the timeline and seeking stay
 continuous. `MPNowPlayingInfoCenter` + `MPRemoteCommandCenter` give lock-screen,
 Control Center, AirPlay, and CarPlay transport.
 
+**Every remote seek button seeks; none changes chapter.** Steering-wheel buttons,
+AirPods presses and most head units send next/previous-track, which used to jump
+whole chapters — in a car, with no screen to show where the listener landed. Now
+all four commands seek −15 / +30 (`RemoteTransport`), as Audible's do, and
+chapters change only from a control that names them. Calls and lost outputs are
+handled too (`AudioSessionEvent`): a call pauses and resumes when it ends, and a
+CarPlay, Bluetooth or headphone disconnect pauses and stays paused — including
+across a call that was already in progress, so a car switched off mid-call never
+starts the book on the phone's speaker.
+
 **The chapter is the unit of the player, Audible-style.** The layout follows
 Audible's, top to bottom: artwork, then the chapter name left-aligned behind a
 `☰` and tappable straight into the chapter list, then the scrubber, then a
@@ -510,7 +520,7 @@ next chapter's start, or to the end of the book if it's the last; and a position
 *before* the first chapter's mark resolves to that chapter rather than to `nil`,
 since containers routinely start chapter one a second or two in and "no chapter"
 is not a place you can be listening. A book with no marks at all degrades to a
-whole-book span, and the chapter row and lock-screen chapter commands drop out.
+whole-book span, and the chapter row drops out.
 
 **The artwork gets a share of the screen, not the remainder.** Sizing the cover
 as whatever the transport left over made it resize between books — a title that

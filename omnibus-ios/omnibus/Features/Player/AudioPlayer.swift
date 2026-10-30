@@ -42,7 +42,11 @@ final class AudioPlayer {
     /// resume reopens this file rather than the book's first one.
     private(set) var fileID: Int64?
     private(set) var isPlaying = false
-    private(set) var isLoading = false
+    /// Whether a load is still awaiting its item and opening position.
+    var isLoading: Bool { loadingGeneration != nil }
+    /// The generation of the load in flight. Not a flag: a load superseded by
+    /// another still runs to its end, and must not mark the newer one done.
+    private var loadingGeneration: Int?
     private(set) var duration: Double = 0
     /// Whether the loaded item reads from the network rather than from
     /// downloaded files. Downloads stand down while this and `isPlaying` are
@@ -103,13 +107,19 @@ final class AudioPlayer {
     private var health = PlaybackHealth()
     private var recoveryTask: Task<Void, Never>?
 
-    /// Whether a recovery in flight should start playing when it lands.
+    /// Starts owed but not yet made: a recovery or load that will start
+    /// playing when it lands, or an interruption's pause that resumes when it
+    /// ends.
     ///
     /// A rebuild backs off for a second or more before it resumes, and the
     /// listener may well press pause inside that window — having given up on a
     /// book that just went silent. Without this, the recovery landed and
-    /// started playing anyway, overriding a deliberate pause.
-    private var resumeAfterRecovery = false
+    /// started playing anyway, overriding a deliberate pause. Any pause of the
+    /// listener's own clears every one; a play clears the interruption's,
+    /// and re-arms the start of a load still in flight.
+    private var pendingStarts = PendingStarts()
+    private var interruptionObserver: NSObjectProtocol?
+    private var routeChangeObserver: NSObjectProtocol?
 
     /// Whether the item is alive but starved. Distinct from `isPlaying`,
     /// which stays true across a buffering stall — the listener has not
@@ -180,19 +190,7 @@ final class AudioPlayer {
 
     private init() {
         configureRemoteCommands()
-        syncChapterCommands()
-    }
-
-    /// Point the lock screen's chapter-skip buttons at whether there are chapters
-    /// to skip. A book with no marks would otherwise offer two controls that
-    /// return without doing anything.
-    ///
-    /// Called from every place `timeline` is assigned — that pairing is the whole
-    /// invariant, since the commands are process-wide and outlive any one book.
-    private func syncChapterCommands() {
-        let center = MPRemoteCommandCenter.shared()
-        center.nextTrackCommand.isEnabled = hasChapters
-        center.previousTrackCommand.isEnabled = hasChapters
+        observeAudioSession()
     }
 
     var isActive: Bool { book != nil }
@@ -255,6 +253,9 @@ final class AudioPlayer {
             Task { await UserDataService.reportSessions([pending]) }
         }
         teardown()
+        let generation = loadGeneration
+        loadingGeneration = generation
+        pendingStarts.afterLoad = autoplay ? generation : nil
         self.book = book
         autoStatus = ReadStatusAuto(uuid: book.uuid)
         markedReading = false
@@ -272,7 +273,6 @@ final class AudioPlayer {
             await self?.checkpointSession()
         }
         LifecycleSync.shared.didOpenBook()
-        isLoading = true
         error = nil
         position = 0
         duration = 0
@@ -306,7 +306,6 @@ final class AudioPlayer {
             // no length of its own measures to the next chapter's start, and the
             // last one has only the end of the book to measure to.
             timeline = ChapterTimeline(chapters: manifest.chapters, bookDuration: duration)
-            syncChapterCommands()
 
             adoptRate(await loadRate(uuid: book.uuid))
 
@@ -332,8 +331,13 @@ final class AudioPlayer {
             positionSettled = true
 
             observe(player: player)
-            isLoading = false
-            if autoplay { play() }
+            finishLoad(generation)
+            // Only a start this load still owns: a disconnect or a call during
+            // the awaits above cancels it, and a newer load owns its own.
+            if pendingStarts.afterLoad == generation {
+                pendingStarts.afterLoad = nil
+                play()
+            }
             updateNowPlaying()
 
             // Anything that lands after the deadline is not applied — yanking
@@ -343,9 +347,15 @@ final class AudioPlayer {
             offerLatePosition(from: remote, uuid: book.uuid)
             offerCrossFormat()
         } catch {
-            isLoading = false
+            finishLoad(generation)
+            if pendingStarts.afterLoad == generation { pendingStarts.afterLoad = nil }
             self.error = (error as? APIError)?.errorDescription ?? error.localizedDescription
         }
+    }
+
+    /// Mark load `generation` done, unless a newer load has taken over.
+    private func finishLoad(_ generation: Int) {
+        if loadingGeneration == generation { loadingGeneration = nil }
     }
 
     /// Apply a rate that came out of storage without writing it back. See
@@ -626,6 +636,12 @@ final class AudioPlayer {
     // MARK: - Transport
 
     func play() {
+        pendingStarts.afterInterruption = false
+        // Nothing to start yet: the load makes the start once it lands.
+        if let loadingGeneration {
+            pendingStarts.afterLoad = loadingGeneration
+            return
+        }
         guard let player else { return }
         // Setting a rate on a failed item does nothing at all — the silent
         // dead end #2408 is named for. A manual tap is also the listener
@@ -634,7 +650,7 @@ final class AudioPlayer {
         if player.currentItem?.status == .failed {
             health.reset()
             error = nil
-            resumeAfterRecovery = true
+            pendingStarts.afterRecovery = true
             recoverFromFailure(attempt: 1)
             return
         }
@@ -671,13 +687,19 @@ final class AudioPlayer {
     }
 
     func pause() {
+        // A pause during a rebuild's back-off or a load is the listener
+        // overruling it.
+        pendingStarts = PendingStarts()
+        stopTransport()
+    }
+
+    /// Stop the transport and checkpoint, leaving `pendingStarts` to the caller.
+    private func stopTransport() {
         player?.pause()
         isPlaying = false
         // Cleared here as well as from `timeControlStatus`: the observer is
         // asynchronous, and the overlay should go the moment the tap does.
         isBuffering = false
-        // A pause during a rebuild's back-off is the listener overruling it.
-        resumeAfterRecovery = false
         updateNowPlaying()
         publishStreamingState()
         Task {
@@ -693,7 +715,8 @@ final class AudioPlayer {
 
     func toggle() {
         Haptics.tap()
-        isPlaying ? pause() : play()
+        // `play()` mid-load would re-arm the start the listener means to cancel.
+        pendingStarts.togglePauses(isPlaying: isPlaying) ? pause() : play()
     }
 
     func seek(to seconds: Double) async {
@@ -907,12 +930,9 @@ final class AudioPlayer {
         // manifest, and leaving this up means the chapter bar spends that window
         // offering to seek inside the book that was just closed.
         timeline = ChapterTimeline()
-        // Paired with the line above so the lock screen's chapter buttons can
-        // never outlive the chapter data they act on. `load` tears down and then
-        // *awaits* the next manifest, so leaving the previous book's enablement
-        // standing offered chapter skip across that whole window — and with an
-        // empty timeline both commands return without doing anything.
-        syncChapterCommands()
+        // A start owed to the last book must not start the next.
+        pendingStarts = PendingStarts()
+        loadingGeneration = nil
         // Closed again so the next book cannot be written to before its own
         // opening position has been settled — this is the one flag whose stale
         // value would be silently destructive rather than merely wrong.
@@ -1087,14 +1107,17 @@ final class AudioPlayer {
         case .rebuild(let attempt):
             isBuffering = false
             // The failure interrupted playback that was under way, so the
-            // rebuild should resume it — unless the listener pauses first.
-            resumeAfterRecovery = isPlaying
+            // rebuild should resume it — unless the listener pauses first. A
+            // rebuild already in flight has stopped playback but still owes it.
+            pendingStarts.afterRecovery = pendingStarts.afterRecovery || isPlaying
             isPlaying = false
             updateNowPlaying()
             recoverFromFailure(attempt: attempt)
         case .surrender:
             isBuffering = false
             isPlaying = false
+            // Nothing is left to land, so nothing may start.
+            pendingStarts.afterRecovery = false
             error = "Playback stopped and could not be resumed. Tap play to try again."
             updateNowPlaying()
         }
@@ -1114,19 +1137,28 @@ final class AudioPlayer {
         recoveryTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(Double(attempt)))
             guard let self, !Task.isCancelled, generation == self.loadGeneration else { return }
+            // Only the current task is uncancelled: a newer recovery or a
+            // teardown cancels this one before replacing it.
+            defer { if !Task.isCancelled { self.recoveryTask = nil } }
             do {
                 let item = try await self.makeItem(for: manifest, uuid: book.uuid)
-                guard generation == self.loadGeneration else { return }
+                guard !Task.isCancelled, generation == self.loadGeneration else { return }
                 self.player?.replaceCurrentItem(with: item)
                 self.observeItem(item)
                 await self.seek(to: resume)
+                // Replaced during the seek: the start belongs to the newer
+                // recovery, and this item is the one it is replacing.
+                guard !Task.isCancelled, generation == self.loadGeneration else { return }
                 self.error = nil
                 // Not `play()`: see `startPlayback`. A rebuild that fails
                 // again must spend the next attempt, not reset the count.
-                if self.resumeAfterRecovery, let player = self.player {
+                if self.pendingStarts.afterRecovery, let player = self.player {
+                    self.pendingStarts.afterRecovery = false
                     self.startPlayback(on: player)
                 }
             } catch {
+                guard !Task.isCancelled else { return }
+                self.pendingStarts.afterRecovery = false
                 self.error = (error as? APIError)?.errorDescription
                     ?? error.localizedDescription
                 self.updateNowPlaying()
@@ -1298,32 +1330,80 @@ final class AudioPlayer {
             return .success
         }
         center.togglePlayPauseCommand.addTarget { [weak self] _ in
-            Task { @MainActor in self?.isPlaying == true ? self?.pause() : self?.play() }
+            Task { @MainActor in
+                guard let self else { return }
+                self.pendingStarts.togglePauses(isPlaying: self.isPlaying) ? self.pause() : self.play()
+            }
             return .success
         }
-        center.skipForwardCommand.preferredIntervals = [30]
-        center.skipForwardCommand.addTarget { [weak self] _ in
-            Task { @MainActor in self?.skip(30) }
-            return .success
-        }
-        center.skipBackwardCommand.preferredIntervals = [15]
-        center.skipBackwardCommand.addTarget { [weak self] _ in
-            Task { @MainActor in self?.skip(-15) }
-            return .success
-        }
-        center.nextTrackCommand.addTarget { [weak self] _ in
-            Task { @MainActor in self?.nextChapter() }
-            return .success
-        }
-        center.previousTrackCommand.addTarget { [weak self] _ in
-            Task { @MainActor in self?.previousChapter() }
-            return .success
+        // The intervals are what CarPlay and the lock screen draw on the skip
+        // buttons; the track commands carry hardware presses (see `RemoteTransport`).
+        center.skipForwardCommand.preferredIntervals = [NSNumber(value: RemoteTransport.forwardSeconds)]
+        center.skipBackwardCommand.preferredIntervals = [NSNumber(value: RemoteTransport.backSeconds)]
+        let seekers: [(MPRemoteCommand, RemoteTransport)] = [
+            (center.skipForwardCommand, .skipForward),
+            (center.skipBackwardCommand, .skipBackward),
+            (center.nextTrackCommand, .nextTrack),
+            (center.previousTrackCommand, .previousTrack),
+        ]
+        for (command, transport) in seekers {
+            command.addTarget { [weak self] _ in
+                Task { @MainActor in self?.skip(transport.seekDelta) }
+                return .success
+            }
         }
         center.changePlaybackPositionCommand.addTarget { [weak self] event in
             guard let event = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
             // Chapter-relative: `updateNowPlaying` reports the chapter's span.
             Task { @MainActor in await self?.seekWithinChapter(to: event.positionTime) }
             return .success
+        }
+    }
+
+    // MARK: - Audio session
+
+    /// Follow interruptions and route changes for the life of the process —
+    /// both stop AVPlayer underneath the transport state. Delivered on the
+    /// main queue, so the handlers run on the main actor without a hop.
+    private func observeAudioSession() {
+        let session = AVAudioSession.sharedInstance()
+        interruptionObserver = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.interruptionNotification, object: session, queue: .main
+        ) { [weak self] note in
+            guard let event = AudioSessionEvent(interruption: note.userInfo) else { return }
+            MainActor.assumeIsolated { self?.respond(to: event) }
+        }
+        routeChangeObserver = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.routeChangeNotification, object: session, queue: .main
+        ) { [weak self] note in
+            guard let event = AudioSessionEvent(routeChange: note.userInfo) else { return }
+            MainActor.assumeIsolated { self?.respond(to: event) }
+        }
+    }
+
+    private func respond(to event: AudioSessionEvent) {
+        var response = pendingStarts.response(to: event, isPlaying: isPlaying)
+        // The interruption deactivated the session, and AVPlayer won't sound
+        // until it is active again; one that refuses (a second call ringing as
+        // the first ends) would leave Now Playing claiming a silent session.
+        if response == .resume, (try? AVAudioSession.sharedInstance().setActive(true)) == nil {
+            response = .pause
+        }
+        let stopping = isPlaying || pendingStarts.startIsPending
+        // Settled before the transport moves: `play()` may arm a rebuild.
+        pendingStarts = pendingStarts.settled(
+            by: response, loading: loadingGeneration, recovering: recoveryTask != nil
+        )
+        switch response {
+        case .pauseUntilResumed, .pause:
+            if stopping { stopTransport() }
+        case .resume:
+            // A load or rebuild in flight has no item to play yet, so
+            // `settled` handed it the start. Calling `play()` instead would
+            // refill the rebuild budget only a listener's tap may refill.
+            if !pendingStarts.startIsPending { play() }
+        case .ignore:
+            break
         }
     }
 }
