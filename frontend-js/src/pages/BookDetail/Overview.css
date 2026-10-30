@@ -381,12 +381,16 @@
 /* The series, fanned like the Atrium shelf; it spreads when you reach for it, and a long one closes up to stay in its column. */
 .bp-fan {
   --stack: 54px;
+  --fan-inset: 28px;
   --spread: calc(var(--bp-cover-w) + var(--bp-cover-gap));
   /* Each card's share of the column past the first; `cqi` resolves on the cards, against this list. */
-  --room: calc((100cqi - 28px - var(--bp-cover-w)) / max(var(--n) - 1, 1));
+  --room: calc(
+    (100cqi - var(--fan-inset) - var(--bp-cover-w)) /
+    max(var(--n) - 1, 1)
+  );
   /* At rest the last card leans past its own box, so it gets less. */
   --room-rest: calc(
-    (100cqi - 28px - 1.8 * var(--bp-cover-w)) /
+    (100cqi - var(--fan-inset) - 1.8 * var(--bp-cover-w)) /
     max(var(--n) - 1, 1)
   );
   /* 1 once the spread closes up and its titles would overlap, else 0. */
@@ -405,7 +409,7 @@
   /* Book one in front, so a closed-up spread shows every later book's right edge. */
   z-index: calc(var(--n) - var(--i));
   top: 8px;
-  left: 28px;
+  left: var(--fan-inset);
   width: var(--bp-cover-w);
   transform-origin: 50% 100%;
   transform: translateX(calc(var(--i) * min(var(--stack), var(--room-rest))))
