@@ -715,7 +715,8 @@ final class AudioPlayer {
 
     func toggle() {
         Haptics.tap()
-        isPlaying ? pause() : play()
+        // `play()` mid-load would re-arm the start the listener means to cancel.
+        pendingStarts.togglePauses(isPlaying: isPlaying) ? pause() : play()
     }
 
     func seek(to seconds: Double) async {
@@ -1329,7 +1330,10 @@ final class AudioPlayer {
             return .success
         }
         center.togglePlayPauseCommand.addTarget { [weak self] _ in
-            Task { @MainActor in self?.isPlaying == true ? self?.pause() : self?.play() }
+            Task { @MainActor in
+                guard let self else { return }
+                self.pendingStarts.togglePauses(isPlaying: self.isPlaying) ? self.pause() : self.play()
+            }
             return .success
         }
         // The intervals are what CarPlay and the lock screen draw on the skip

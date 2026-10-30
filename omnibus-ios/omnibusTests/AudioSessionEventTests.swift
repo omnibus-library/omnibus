@@ -165,4 +165,14 @@ struct AudioSessionEventTests {
         #expect(response == .ignore)
         #expect(pending.settled(by: response, loading: 1, recovering: false) == pending)
     }
+
+    @Test func aToggleDuringAPendingStartPausesRatherThanReArmingIt() {
+        // Play/pause pressed while an autoplay load is in flight cancels it.
+        #expect(PendingStarts(afterLoad: 1).togglePauses(isPlaying: false))
+        #expect(PendingStarts(afterRecovery: true).togglePauses(isPlaying: false))
+        #expect(PendingStarts().togglePauses(isPlaying: true))
+        // A call's held resume is not a start in flight: the toggle plays.
+        #expect(!PendingStarts(afterInterruption: true).togglePauses(isPlaying: false))
+        #expect(!PendingStarts().togglePauses(isPlaying: false))
+    }
 }

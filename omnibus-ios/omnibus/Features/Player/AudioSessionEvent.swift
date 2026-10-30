@@ -92,6 +92,9 @@ struct PendingStarts: Equatable {
     /// Whether audio is about to start without the listener pressing anything.
     var startIsPending: Bool { afterRecovery || afterLoad != nil }
 
+    /// Whether a play/pause toggle pauses; a pending start counts as playing.
+    func togglePauses(isPlaying: Bool) -> Bool { isPlaying || startIsPending }
+
     /// The response to `event`; a pending start counts as playing.
     func response(to event: AudioSessionEvent, isPlaying: Bool) -> AudioSessionResponse {
         event.response(isPlaying: isPlaying || startIsPending, pendingResume: afterInterruption)
