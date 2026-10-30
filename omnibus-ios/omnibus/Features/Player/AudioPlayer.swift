@@ -121,10 +121,16 @@ final class AudioPlayer {
     private var pendingStarts = PendingStarts()
     private var interruptionObserver: NSObjectProtocol?
     private var routeChangeObserver: NSObjectProtocol?
-    /// Whether a play command with nothing playable is still finding the book
-    /// to load, so a second press can't load it twice. Cleared as the load
-    /// takes the start over.
-    private var isResumingRecent = false
+    /// Whether a play with no player to start is still finding the book to
+    /// load, so a second press can't load it twice. Cleared as the load takes
+    /// the start over.
+    private var isFindingLoad = false
+    /// Set by a resume a call is holding, right before the `load` it asks for,
+    /// which consumes it: that load's autoplay waits for the call to end.
+    private var callHoldsNextLoad = false
+    /// What the loaded book was asked to open with, so a play after its load
+    /// failed loads the same again — the resume point and file included.
+    private var loadRequest: LoadRequest?
 
     /// Whether the item is alive but starved. Distinct from `isPlaying`,
     /// which stays true across a buffering stall — the listener has not
@@ -235,12 +241,13 @@ final class AudioPlayer {
 
     /// `known` is a position the caller already holds — a resume point — and
     /// competes on its clock with the replica's and the server's, so a cold
-    /// replica can't open the book at the start. `heldByCall` is a remote
-    /// resume a call is holding: the autoplay waits for the call to end.
+    /// replica can't open the book at the start.
     func load(
         book: Book, fileID requestedFileID: Int64? = nil, autoplay: Bool = true,
-        known: ProgressRecord? = nil, heldByCall: Bool = false
+        known: ProgressRecord? = nil
     ) async {
+        let heldByCall = callHoldsNextLoad
+        callHoldsNextLoad = false
         // Re-opening the book that's already loaded should not restart it —
         // unless a different file of it was explicitly asked for. A `nil`
         // request means "whatever is right", and what's already playing is.
@@ -268,6 +275,7 @@ final class AudioPlayer {
         let generation = loadGeneration
         loadingGeneration = generation
         pendingStarts = PendingStarts.opening(load: generation, autoplay: autoplay, heldByCall: heldByCall)
+        loadRequest = LoadRequest(book: book, fileID: requestedFileID, known: known)
         self.book = book
         autoStatus = ReadStatusAuto(uuid: book.uuid)
         markedReading = false
@@ -662,14 +670,21 @@ final class AudioPlayer {
 
     // MARK: - Transport
 
+    /// Start playback — or, with a load in flight, owe it the start, and with
+    /// a book whose load failed, load it again.
     func play() {
-        pendingStarts.afterInterruption = false
+        pendingStarts.overruleCall()
         // Nothing to start yet: the load makes the start once it lands.
         if let loadingGeneration {
             pendingStarts.afterLoad = loadingGeneration
             return
         }
-        guard let player else { return }
+        guard let player else {
+            // A failed load leaves its book with no player and nothing in
+            // flight, where a play would otherwise be a dead end.
+            if let loadRequest { loadOwed(retrying: loadRequest) }
+            return
+        }
         // Setting a rate on a failed item does nothing at all — the silent
         // dead end #2408 is named for. A manual tap is also the listener
         // telling us to try again, so it refills the budget an automatic run
@@ -899,6 +914,7 @@ final class AudioPlayer {
 
         teardown()
         book = nil
+        loadRequest = nil
         manifest = nil
         fileID = nil
         position = 0
@@ -1360,7 +1376,8 @@ final class AudioPlayer {
             Task { @MainActor in
                 guard let self else { return }
                 // A start still owed — a load, a rebuild, a resume finding its
-                // book — counts as playing, so the toggle takes it back.
+                // book, or one a call holds — counts as playing, so the toggle
+                // takes it back.
                 self.pendingStarts.togglePauses(isPlaying: self.isPlaying)
                     ? self.pause() : self.remotePlay()
             }
@@ -1392,43 +1409,49 @@ final class AudioPlayer {
 
     /// A play command from outside the app — a car's auto-play on connect, its
     /// play button, AirPods. With nothing loaded it resumes the most recent
-    /// audiobook, as Audible does in the car, rather than doing nothing; with a
-    /// book whose load failed it loads that book again.
-    ///
-    /// The resume is a pending start: a pause or a lost output while it is
-    /// still finding its book takes it back, and a call holds it until it ends.
+    /// audiobook, as Audible does in the car, rather than doing nothing.
     private func remotePlay() {
-        // A player, or a load bringing one: `play()` starts it.
-        guard player == nil, loadingGeneration == nil else { return play() }
+        // A book, or a load bringing one: `play()` starts it, or loads it
+        // again if its load failed.
+        guard book == nil else { return play() }
+        loadOwed(retrying: nil)
+    }
+
+    /// Load what a play with no player to start owes: `failed` again, else
+    /// the most recent audiobook.
+    ///
+    /// A pending start: a pause or a lost output while it is still finding its
+    /// book takes it back, and a call holds it until it ends.
+    private func loadOwed(retrying failed: LoadRequest?) {
         // A second press re-arms a resume a pause took back, without a second load.
         pendingStarts.armResume()
-        guard !isResumingRecent else { return }
-        isResumingRecent = true
-        // A failed load leaves its book with no player and nothing in flight,
-        // where `play()` does nothing and the car could never retry.
-        let failed = book
+        guard !isFindingLoad else { return }
+        isFindingLoad = true
         Task {
             let target = await resumeTarget(failed: failed)
-            isResumingRecent = false
-            guard pendingStarts.resumeIsOwed, player == nil, loadingGeneration == nil,
-                book?.uuid == failed?.uuid, let target
-            else {
+            isFindingLoad = false
+            // Something else loaded, or the book was closed: the starts are its.
+            guard player == nil, loadingGeneration == nil, book?.uuid == failed?.book.uuid else {
                 pendingStarts.afterResume = false
                 return
             }
-            // No await between the check and `load`'s teardown, which hands the
+            guard pendingStarts.resumeIsOwed, let target else {
+                // A call's hold goes too, or its end would take the session for nothing.
+                pendingStarts = PendingStarts()
+                return
+            }
+            // No await between here and `load`'s teardown, which hands the
             // start to `afterLoad`, or to the call holding it — either still
             // revocable by a pause.
-            await load(
-                book: target.book, known: target.known, heldByCall: !pendingStarts.afterResume
-            )
+            callHoldsNextLoad = !pendingStarts.afterResume
+            await load(book: target.book, fileID: target.fileID, known: target.known)
         }
     }
 
-    /// What a remote play loads: the book whose load failed, else the most
-    /// recent audiobook if it can play right now.
-    private func resumeTarget(failed: Book?) async -> (book: Book, known: ProgressRecord?)? {
-        if let failed { return (failed, nil) }
+    /// What a play with no player loads: the book whose load failed, as it was
+    /// first asked for, else the most recent audiobook if it can play right now.
+    private func resumeTarget(failed: LoadRequest?) async -> LoadRequest? {
+        if let failed { return failed }
         // The command may be what launched the process — a CarPlay
         // connect with the phone locked — so the replica may not be open.
         await Startup.prepare()
@@ -1440,7 +1463,7 @@ final class AudioPlayer {
         let point = Self.resumeCandidate(
             in: points, canPlay: { DownloadManager.shared.canOpen($0, kind: .audio) }
         )
-        return point.map { ($0.book, $0.record) }
+        return point.map { LoadRequest(book: $0.book, fileID: nil, known: $0.record) }
     }
 
     /// The book a play command with nothing loaded resumes: the most recent
@@ -1486,7 +1509,7 @@ final class AudioPlayer {
         // Settled before the transport moves: `play()` may arm a rebuild.
         pendingStarts = pendingStarts.settled(
             by: response, loading: loadingGeneration, recovering: recoveryTask != nil,
-            resuming: isResumingRecent
+            resuming: isFindingLoad
         )
         switch response {
         case .pauseUntilResumed, .pause:
@@ -1500,4 +1523,12 @@ final class AudioPlayer {
             break
         }
     }
+}
+
+/// What `AudioPlayer.load` was asked to open: the book, the file explicitly
+/// picked, and a resume point the caller already held.
+private struct LoadRequest {
+    let book: Book
+    let fileID: Int64?
+    let known: ProgressRecord?
 }

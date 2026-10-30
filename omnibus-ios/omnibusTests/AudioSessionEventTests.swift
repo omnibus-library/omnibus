@@ -105,13 +105,14 @@ struct AudioSessionEventTests {
     @Test func aCallHoldsAPendingStartUntilItEnds() {
         // A call arriving during a rebuild's back-off or a load: the start
         // waits for the call instead of sounding over it.
-        for pending in [PendingStarts(afterRecovery: true), PendingStarts(afterLoad: 1)] {
+        let held: [(PendingStarts, PendingStarts)] = [
+            (PendingStarts(afterRecovery: true), PendingStarts(afterInterruption: true)),
+            (PendingStarts(afterLoad: 1), PendingStarts(afterInterruption: true, callHoldsLoad: true)),
+        ]
+        for (pending, expected) in held {
             let response = pending.response(to: .interruptionBegan, isPlaying: false)
             #expect(response == .pauseUntilResumed)
-            #expect(
-                pending.settled(by: response, loading: nil, recovering: false, resuming: false)
-                    == PendingStarts(afterInterruption: true)
-            )
+            #expect(pending.settled(by: response, loading: nil, recovering: false, resuming: false) == expected)
         }
     }
 
@@ -168,7 +169,7 @@ struct AudioSessionEventTests {
         let response = pending.response(to: .interruptionBegan, isPlaying: false)
         #expect(response == .pauseUntilResumed)
         let settled = pending.settled(by: response, loading: nil, recovering: false, resuming: true)
-        #expect(settled == PendingStarts(afterInterruption: true))
+        #expect(settled == PendingStarts(afterInterruption: true, callHoldsLoad: true))
         #expect(settled.resumeIsOwed)
         #expect(!settled.startIsPending)
     }
@@ -184,7 +185,7 @@ struct AudioSessionEventTests {
 
     @Test func aResumeACallHoldsLoadsWithoutPlayingUntilTheCallEnds() {
         let opened = PendingStarts.opening(load: 3, autoplay: true, heldByCall: true)
-        #expect(opened == PendingStarts(afterInterruption: true))
+        #expect(opened == PendingStarts(afterInterruption: true, callHoldsLoad: true))
         #expect(!opened.startIsPending)
         let response = opened.response(to: .interruptionEnded(shouldResume: true), isPlaying: false)
         #expect(
@@ -211,7 +212,7 @@ struct AudioSessionEventTests {
     @Test func aPlayPressedDuringACallIsNotLostWhenItEnds() {
         // The press overrules the call's hold, so its end has nothing to
         // settle and leaves the resume owed.
-        var pending = PendingStarts(afterInterruption: true)
+        var pending = PendingStarts(afterInterruption: true, callHoldsLoad: true)
         pending.armResume()
         #expect(pending == PendingStarts(afterResume: true))
         let response = pending.response(to: .interruptionEnded(shouldResume: true), isPlaying: false)
@@ -237,5 +238,31 @@ struct AudioSessionEventTests {
         // A call's held resume is not a start in flight: the toggle plays.
         #expect(!PendingStarts(afterInterruption: true).togglePauses(isPlaying: false))
         #expect(!PendingStarts().togglePauses(isPlaying: false))
+    }
+
+    @Test func aToggleDuringACallHoldingALoadCancelsItRatherThanStartingIt() {
+        // A steering-wheel press mid-call, while the call holds a load or a
+        // resume finding its book: the press takes the held start back.
+        for pending in [PendingStarts(afterLoad: 1), PendingStarts(afterResume: true)] {
+            let held = pending.settled(
+                by: pending.response(to: .interruptionBegan, isPlaying: false),
+                loading: nil, recovering: false, resuming: false
+            )
+            #expect(held.togglePauses(isPlaying: false))
+        }
+        // A held rebuild is playback the call paused: the toggle plays it.
+        let rebuild = PendingStarts(afterRecovery: true)
+        let heldRebuild = rebuild.settled(
+            by: rebuild.response(to: .interruptionBegan, isPlaying: false),
+            loading: nil, recovering: false, resuming: false
+        )
+        #expect(!heldRebuild.togglePauses(isPlaying: false))
+    }
+
+    @Test func aPlayPressOverrulesTheCallsHoldOnALoad() {
+        var pending = PendingStarts(afterInterruption: true, callHoldsLoad: true)
+        pending.overruleCall()
+        #expect(pending == PendingStarts())
+        #expect(!pending.togglePauses(isPlaying: false))
     }
 }

@@ -109,7 +109,8 @@ enum UserDataService {
 
     /// `recentAudio()` settled to one answer for a caller acting once on the
     /// list — a car waiting to play: the server's if it answers within
-    /// `PositionSync.openDeadline`, else the replica's.
+    /// `PositionSync.openDeadline`, else the replica's. With no replica there
+    /// is nothing to fall back on, so it waits the server's read out.
     static func settledRecentAudio() async -> [ResumePoint] {
         await Cache.settled(CacheKey.recentAudio, within: PositionSync.openDeadline) {
             try await fetchRecentAudio()

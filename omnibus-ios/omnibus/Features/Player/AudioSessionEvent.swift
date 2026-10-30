@@ -92,6 +92,9 @@ struct PendingStarts: Equatable {
     /// An interruption paused playback, or cancelled a start above, and
     /// playback comes back when it ends.
     var afterInterruption = false
+    /// What `afterInterruption` holds is a load or a resume not yet made,
+    /// rather than playback the call paused: a toggle cancels it.
+    var callHoldsLoad = false
 
     /// Whether audio is about to start without the listener pressing anything.
     var startIsPending: Bool { afterRecovery || afterLoad != nil || afterResume }
@@ -100,10 +103,16 @@ struct PendingStarts: Equatable {
     /// or a call holds it — the same as a call holds a load in flight.
     var resumeIsOwed: Bool { afterResume || afterInterruption }
 
-    /// A remote play with nothing playable: owe the resume, overruling a
-    /// call's hold the way a play press does.
-    mutating func armResume() {
+    /// A play press: the listener's own start overrules a call's hold.
+    mutating func overruleCall() {
         afterInterruption = false
+        callHoldsLoad = false
+    }
+
+    /// A play with no player to start: owe the resume, overruling a call's
+    /// hold the way a play press does.
+    mutating func armResume() {
+        overruleCall()
         afterResume = true
     }
 
@@ -112,11 +121,15 @@ struct PendingStarts: Equatable {
     /// call's, which `settled` hands back to the load when the call ends.
     static func opening(load generation: Int, autoplay: Bool, heldByCall: Bool) -> PendingStarts {
         guard autoplay else { return PendingStarts() }
-        return heldByCall ? PendingStarts(afterInterruption: true) : PendingStarts(afterLoad: generation)
+        return heldByCall
+            ? PendingStarts(afterInterruption: true, callHoldsLoad: true)
+            : PendingStarts(afterLoad: generation)
     }
 
-    /// Whether a play/pause toggle pauses; a pending start counts as playing.
-    func togglePauses(isPlaying: Bool) -> Bool { isPlaying || startIsPending }
+    /// Whether a play/pause toggle pauses; a pending start counts as playing,
+    /// and so does a load or resume a call is holding — a press then cancels
+    /// it rather than starting it under the call.
+    func togglePauses(isPlaying: Bool) -> Bool { isPlaying || startIsPending || callHoldsLoad }
 
     /// The response to `event`; a pending start counts as playing.
     func response(to event: AudioSessionEvent, isPlaying: Bool) -> AudioSessionResponse {
@@ -132,7 +145,8 @@ struct PendingStarts: Equatable {
         by response: AudioSessionResponse, loading: Int?, recovering: Bool, resuming: Bool
     ) -> PendingStarts {
         switch response {
-        case .pauseUntilResumed: return PendingStarts(afterInterruption: true)
+        case .pauseUntilResumed:
+            return PendingStarts(afterInterruption: true, callHoldsLoad: afterLoad != nil || afterResume)
         case .pause: return PendingStarts()
         case .resume:
             return PendingStarts(afterRecovery: recovering, afterLoad: loading, afterResume: resuming)
