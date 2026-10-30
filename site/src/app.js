@@ -1,201 +1,93 @@
-/* Omnibus site — panel deck.
+/* Omnibus site: the two things the markup can't do on its own.
  *
- * Thirteen full-viewport panels on one translated track. Wheel, keys and touch
- * all funnel through one gate so a trackpad's inertia can't skip three panels
- * at once. Nothing here is required to read the page: the document ships with
- * `body.flow` set, so with JS off every panel stays in the DOM as an ordinary
- * stacked section. This script only ever opts *into* the deck.
+ * The live release line in "What only Omnibus does". The page ships with a static sentence, so it reads the same with JS off or
+ * when GitHub's unauthenticated rate limit (60 requests an hour) says no. On
+ * success it swaps in the latest release tag and the commit count for the last
+ * 30 days, and reveals the line that says where the numbers came from.
+ *
+ * The desktop shelf's orbit. Each book starts where the comp put it and walks
+ * round the same ellipse, so with JS off or reduced motion the shelf is the
+ * comp's still frame.
  */
 (function () {
   'use strict';
 
-  var site = document.getElementById('site');
-  var track = document.getElementById('track');
-  var rail = document.querySelector('.rail');
-  var cue = document.getElementById('cue');
-  var panes = Array.prototype.slice.call(track.querySelectorAll('.pane'));
-  var n = panes.length;
-  var i = 0;
-  var lockUntil = 0;
-  var acc = 0;
-  var touchY = 0;
+  var REPO = 'https://api.github.com/repos/omnibus-library/omnibus';
+  var live = document.getElementById('live');
+  var src = document.getElementById('live-src');
+  if (!live || !window.fetch) return;
 
-  var STEP_MS = 980;
-  var WHEEL_THRESHOLD = 34;
-  var SWIPE_PX = 42;
-
-  /* The deck only engages where it fits. The page ships with body.flow set, so
-     a no-JS visit and a phone both get an ordinary scrolling document; this
-     removes that class to opt in, and re-checks on resize. */
-  var deckOK = window.matchMedia('(min-width: 861px) and (min-height: 560px)');
-  var deck = false;
-
-  function setMode() {
-    var want = deckOK.matches;
-    if (want === deck) return;
-    deck = want;
-    document.body.classList.toggle('flow', !deck);
-    if (deck) { render(); }
-    else { track.style.transform = ''; panes.forEach(function (p) { p.classList.add('on'); }); }
+  function ok(r) {
+    if (!r.ok) throw new Error('GitHub answered ' + r.status);
+    return r;
   }
 
-  /* ── direction (dark / sepia) ─────────────────────────────────── */
-  var DIRS = { dark: 1, sepia: 1 };
-  /* own-property check: localStorage and DOM attrs are user-controlled, and
-     bare indexing would accept prototype keys like "__proto__" */
-  function has(obj, key) { return Object.prototype.hasOwnProperty.call(obj, key); }
-  var stored = null;
-  try { stored = localStorage.getItem('omn.site.dir'); } catch (e) { /* private mode */ }
-  var dir = stored !== null && has(DIRS, stored) ? stored : 'dark';
-
-  /* Shots with a shots/sepia/ counterpart. Anything absent here keeps its
-     dark render in both directions rather than 404ing mid-toggle. */
-  var SEPIA_SHOTS = {
-    'omnibus-android-library': 1, 'omnibus-book-detail': 1,
-    'omnibus-checkin-scan': 1,
-    'omnibus-checkin-success': 1, 'omnibus-ios-book-detail': 1,
-    'omnibus-library-home': 1, 'omnibus-metadata-edit': 1,
-    'omnibus-player': 1, 'omnibus-reader-quote-card': 1,
-    'omnibus-settings-library': 1, 'omnibus-shelf-kobo': 1,
-    'omnibus-sync-alignment': 1, 'omnibus-sync-continue-hero': 1,
-    'omnibus-themes-strip': 1, 'omnibus-wishlist-ios': 1
-  };
-
-  function retint(d) {
-    Array.prototype.forEach.call(document.querySelectorAll('img.shot'), function (img) {
-      var m = (img.getAttribute('src') || '').match(/^shots\/[^/]+\/(.+)\.webp$/);
-      if (!m) return;
-      var want = d === 'sepia' && has(SEPIA_SHOTS, m[1]) ? 'sepia' : 'dark';
-      var src = 'shots/' + want + '/' + m[1] + '.webp';
-      if (img.getAttribute('src') !== src) img.setAttribute('src', src);
-    });
+  // per_page=1 makes the rel="last" page number in the Link header the count
+  function commitCount(r) {
+    var m = /[?&]page=(\d+)>; rel="last"/.exec(r.headers.get('Link') || '');
+    if (m) return Number(m[1]);
+    return r.json().then(function (list) { return list.length; });
   }
 
-  function setDir(next) {
-    if (!has(DIRS, next)) return;
-    dir = next;
-    site.className = 'site dir-' + dir;
-    retint(dir);
-    Array.prototype.forEach.call(document.querySelectorAll('.dirtog button'), function (b) {
-      var on = b.getAttribute('data-dir') === dir;
-      b.classList.toggle('on', on);
-      b.setAttribute('aria-pressed', on ? 'true' : 'false');
-    });
-    try { localStorage.setItem('omn.site.dir', dir); } catch (e) { /* private mode */ }
-  }
+  var since = new Date(Date.now() - 30 * 864e5).toISOString();
+  Promise.all([
+    fetch(REPO + '/releases/latest').then(ok).then(function (r) { return r.json(); }),
+    fetch(REPO + '/commits?per_page=1&since=' + since).then(ok).then(commitCount)
+  ]).then(function (got) {
+    var tag = got[0] && got[0].tag_name;
+    var commits = got[1];
+    if (!tag || typeof commits !== 'number') return;
+    live.textContent = 'Latest release ' + tag + ', with ' + commits +
+      (commits === 1 ? ' commit' : ' commits') + ' in the last 30 days.';
+    src.hidden = false;
+  }).catch(function () { /* keep the static sentence */ });
+})();
 
-  Array.prototype.forEach.call(document.querySelectorAll('.dirtog button'), function (b) {
-    b.addEventListener('click', function () { setDir(b.getAttribute('data-dir')); });
-  });
-  setDir(dir);
+(function () {
+  'use strict';
 
-  /* ── rail ─────────────────────────────────────────────────────── */
-  panes.forEach(function (p, k) {
-    var label = p.getAttribute('data-label') || p.id;
-    var b = document.createElement('button');
-    b.type = 'button';
-    b.title = label;
-    b.setAttribute('aria-label', label);
-    b.innerHTML = '<em></em><i></i>';
-    b.querySelector('em').textContent = label;
-    b.addEventListener('click', function () {
-      if (deck) { go(k); return; }
-      // the CSS drops every transition under reduced motion; a smooth scroll
-      // here would reintroduce exactly the motion that opts out
-      var still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-      panes[k].scrollIntoView({ behavior: still ? 'auto' : 'smooth' });
-    });
-    rail.appendChild(b);
-  });
-  var railBtns = Array.prototype.slice.call(rail.children);
+  // the ellipse the comp's books sit on, in comp px, and one lap's length
+  var CX = 723, CY = 463, RX = 615, RY = 348, LAP_MS = 360000;
+  var shelf = document.querySelector('.shelf-d');
+  var still = window.matchMedia('(prefers-reduced-motion: reduce)');
+  var wide = window.matchMedia('(min-width: 1200px)');
+  if (!shelf || !window.IntersectionObserver) return;
 
-  /* ── movement ─────────────────────────────────────────────────── */
-  function go(k) {
-    k = Math.max(0, Math.min(n - 1, k));
-    if (k === i) return;
-    i = k;
-    render();
-  }
-
-  /* The address bar names the panel you are on, so any panel can be linked
-     to. replaceState, not a hash assignment: assigning location.hash pushes a
-     history entry per panel, which turns Back into a walk through the deck. */
-  var stamped = '';
-  function stamp(id) {
-    if (id === stamped) return;
-    stamped = id;
-    if (history.replaceState) history.replaceState(null, '', '#' + id);
-  }
-
-  function render() {
-    track.style.transform = 'translate3d(0,' + (-i * 100) + 'vh,0)';
-    panes.forEach(function (p, k) { p.classList.toggle('on', k === i); });
-    railBtns.forEach(function (b, k) { b.classList.toggle('on', k === i); });
-    cue.classList.toggle('hide', i !== 0);
-    stamp(panes[i].id);
-  }
-
-  function gate(d) {
-    var now = Date.now();
-    if (now < lockUntil) return;
-    lockUntil = now + STEP_MS;
-    go(i + d);
-  }
-
-  window.addEventListener('wheel', function (e) {
-    if (!deck) return;
-    e.preventDefault();
-    if (Date.now() < lockUntil) { acc = 0; return; }
-    acc += e.deltaY;
-    if (Math.abs(acc) > WHEEL_THRESHOLD) { var d = acc > 0 ? 1 : -1; acc = 0; gate(d); }
-  }, { passive: false });
-
-  window.addEventListener('keydown', function (e) {
-    if (!deck) { if (e.key === '1') setDir('dark'); if (e.key === '2') setDir('sepia'); return; }
-    // never swallow a key the user aimed at the toggle or a link
-    var t = e.target;
-    if (t && (t.tagName === 'BUTTON' || t.tagName === 'A') && (e.key === ' ' || e.key === 'Enter')) return;
-    switch (e.key) {
-      case 'ArrowDown': case 'PageDown': case ' ': e.preventDefault(); gate(1); break;
-      case 'ArrowUp': case 'PageUp': e.preventDefault(); gate(-1); break;
-      case 'Home': e.preventDefault(); go(0); break;
-      case 'End': e.preventDefault(); go(n - 1); break;
-      case '1': setDir('dark'); break;
-      case '2': setDir('sepia'); break;
-    }
+  var books = Array.prototype.map.call(shelf.querySelectorAll('.book'), function (el) {
+    var nx = (parseFloat(el.style.getPropertyValue('--bx')) - CX) / RX;
+    var ny = (parseFloat(el.style.getPropertyValue('--by')) - CY) / RY;
+    // each book keeps its own distance from the centre, so the comp's
+    // irregular spacing survives the lap
+    return { el: el, r: Math.sqrt(nx * nx + ny * ny), a: Math.atan2(ny, nx) };
   });
 
-  window.addEventListener('touchstart', function (e) { touchY = e.touches[0].clientY; }, { passive: true });
-  window.addEventListener('touchmove', function (e) { if (deck) e.preventDefault(); }, { passive: false });
-  window.addEventListener('touchend', function (e) {
-    if (!deck) return;
-    var last = e.changedTouches[0];
-    if (!last) return;
-    var dy = touchY - last.clientY;
-    if (Math.abs(dy) > SWIPE_PX) gate(dy > 0 ? 1 : -1);
-  }, { passive: true });
+  var seen = false, frame = 0, last = 0, elapsed = 0;
 
-  /* deep link — /#listen opens on that panel rather than the hero */
-  var hash = (location.hash || '').replace('#', '');
-  if (hash) {
-    var found = panes.findIndex(function (p) { return p.id === hash; });
-    if (found > 0) i = found;
+  function tick(now) {
+    if (last) elapsed += now - last;
+    last = now;
+    var turn = (elapsed / LAP_MS) * 2 * Math.PI;
+    books.forEach(function (b) {
+      var x = CX + b.r * RX * Math.cos(b.a + turn);
+      var y = CY + b.r * RY * Math.sin(b.a + turn);
+      b.el.style.setProperty('--bx', x.toFixed(1));
+      b.el.style.setProperty('--by', y.toFixed(1));
+      b.el.style.zIndex = Math.round(y);
+    });
+    frame = requestAnimationFrame(tick);
   }
 
-  /* ── flow mode: keep the hash on the section being read ─────────
-     The deck stamps the hash from render(); flow mode never calls it, so on a
-     phone the URL froze at whatever was loaded and no section could be linked
-     to. One observer, watching a band across the middle of the viewport, so
-     the section that owns the screen is the one that gets named. */
-  if (window.IntersectionObserver) {
-    var seen = new IntersectionObserver(function (entries) {
-      if (deck) return;
-      entries.forEach(function (e) { if (e.isIntersecting) stamp(e.target.id); });
-    }, { rootMargin: '-45% 0px -45% 0px' });
-    panes.forEach(function (p) { seen.observe(p); });
+  function update() {
+    var run = seen && wide.matches && !still.matches;
+    if (run && !frame) { last = 0; frame = requestAnimationFrame(tick); }
+    if (!run && frame) { cancelAnimationFrame(frame); frame = 0; }
   }
 
-  if (deckOK.addEventListener) deckOK.addEventListener('change', setMode);
-  else if (deckOK.addListener) deckOK.addListener(setMode);
-  setMode();
+  new IntersectionObserver(function (entries) {
+    seen = entries[0].isIntersecting;
+    update();
+  }).observe(shelf);
+  [still, wide].forEach(function (q) {
+    if (q.addEventListener) q.addEventListener('change', update);
+  });
 })();

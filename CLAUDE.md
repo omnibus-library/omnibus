@@ -63,7 +63,7 @@ Seven-crate Cargo workspace: `shared/` (serde types), `db/` (data layer + indexe
 
 Alongside it, `omnibus-ios/` is a native SwiftUI client — an Xcode project, not a Cargo crate; `just ios-build` / `ios-test` / `ios-test-ui` / `ios-sim` wrap xcodebuild + simctl for it (no cargo target touches it). It is the iOS surface; `mobile/` is the Android shell (nothing builds the `mobile/` crate for iOS anymore). It speaks the same `/api/*` REST surface.
 
-`site/` is the marketing site served at <https://omnibus-library.github.io/omnibus/> — static HTML with no build step, published to the `gh-pages` branch by `.github/workflows/pages.yml`. Its framed app screens are stills exported from the Claude Design "Omnibus" project, not live markup; see the `site/` section of [docs/architecture.md](docs/architecture.md).
+`site/` is the marketing site served at <https://omnibus-library.github.io/omnibus/> — static HTML with no build step, published to the `gh-pages` branch by `.github/workflows/pages.yml`. Its app screens are stills exported from the Omnibus Marketing Figma comps, not live markup; see the `site/` section of [docs/architecture.md](docs/architecture.md).
 
 The `/api/*` REST surface is described by [openapi/openapi.json](openapi/openapi.json), the contract every client builds against, generated from the handlers (see [the REST contract](docs/architecture.md#the-rest-contract)).
 

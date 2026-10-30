@@ -253,23 +253,21 @@ on every push to `main` that touches it.
 
 | Path | Role |
 |---|---|
-| `src/index.html` | Thirteen panels. All copy is real markup, never baked into an image. |
-| `src/site.css` | `--pg-*` chrome tokens, dark + sepia directions, and the `body.flow` fallback used below 861x560 and whenever JS is off. |
-| `src/app.js` | The panel deck — wheel/key/touch behind one gate, direction toggle, section rail. Progressive: the deck is opt-in, the page reads without it. |
-| `src/shots/{dark,sepia}/` | App screenshots, WebP, one directory per colour direction. Stills exported at 2x from the Claude Design "Omnibus" project and re-encoded by [`scripts/site-shots.sh`](../scripts/site-shots.sh) (`… <dir> sepia` writes the sibling set); the PNGs are not committed. `omnibus-reader-quote-card` is the exception: both directions are captures of the live reader, not design stills. |
+| `src/index.html` | One book's life through the product: hero, eight stops, why switch, the rest of the shelf, close. All copy is real markup, never baked into an image. |
+| `src/site.css` | From 1200px up, each section is a scaled copy of the 1440 desktop comp: positions are comp pixels times `--u`, one comp pixel at the current width. Below 1200px the page is the 390 phone comp's single column. |
+| `src/app.js` | Swaps the static release line in "What only Omnibus does" for the latest release tag and the last 30 days' commit count from the GitHub API, and walks the desktop shelf's books round their ellipse. The page reads the same without it, and the orbit stays still under `prefers-reduced-motion`. |
+| `src/shots/` | One transparent WebP per section and layout, `d-<section>` for desktop and `m-<section>` for phone, with the app screens and device frames already placed. The hero is the exception: `hero-cover.webp` is the bare cover, and its four pins are markup so they can float and light up in turn, top to bottom (still under `prefers-reduced-motion`). The shelf is the other: `shots/shelf/` holds one image per book, `d-*` for the desktop orbit and `m-*` for the phone stack, so each can move and wiggle on its own. |
 
-The design stills are a picture of the *design*, not of what the server
-currently renders — they need re-exporting as redesigned surfaces ship under
-[#2132](https://github.com/omnibus-library/omnibus/issues/2132). The markup
-references the dark set; the direction toggle swaps each `img.shot`'s `src` to
-`shots/sepia/` for the names listed in `SEPIA_SHOTS` in `app.js` — a shot absent
-from that set keeps its dark render in both directions.
-The phone renders carry their device bezel with alpha corners in the image
-itself, so `.phone .shot` strips the CSS frame chrome the desktop shots get.
+The comps live in the Omnibus Marketing Figma file (`eQi5qV6AvHAuhccDT7HXrS`), page
+"Proposal 5 · One Book's Life": desktop frame `34:1939`, phone frame `34:2313`.
+Each stage image is that section's non-text layers exported at 2x over the Figma
+REST API and composited in place, shadows included. The `style` attribute on each
+section and stage carries its comp coordinates (`--fh`, `--cy`, `--x`, `--y`,
+`--w`, and `--mx`/`--mw` for phone), so re-exporting a stage means updating those
+numbers too.
 
-Serve it locally with `python3 -m http.server 8000 --directory site/src`. The
-deck engages only above 861x560 — below that, and with JS off, `body.flow`
-leaves the panels as ordinary stacked sections, so test both.
+Serve it locally with `python3 -m http.server 8000 --directory site/src`, and
+check both layouts: 1200px and up, and the phone column below it.
 
 ## Keeping this current
 
