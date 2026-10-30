@@ -176,12 +176,27 @@ h1,h2{font-family:var(--serif);font-weight:500;color:var(--ink);text-wrap:balanc
 }
 
 /* ── the rest of the shelf ────────────────────────────────────── */
-.rest .canvas{position:relative;max-width:390px;padding:0}
-.orbit img{width:100%;height:auto}
-.rest h2{position:absolute;top:80px;left:20px;right:20px;font-size:36px;line-height:1.02}
+/* One image per book, placed by its centre in comp pixels (--bx, --by) and
+   scaled by --k. app.js walks the desktop books round their ellipse by
+   rewriting --bx/--by; the wiggle is CSS, pivoting on the book's centre. */
+.rest{--k:calc(min(100cqw,390px) / 390)}
+.rest .canvas{position:relative;max-width:390px;height:calc(1160 * var(--k));padding:0}
+.shelf-d{display:none}
+.book{position:absolute;left:calc((var(--bx) + var(--ox)) * var(--k));top:calc((var(--by) + var(--oy)) * var(--k));width:calc(var(--w) * var(--k));height:auto;transform-origin:calc(var(--ox) * -1 * var(--k)) calc(var(--oy) * -1 * var(--k));--amp:.8deg}
+.rest h2{position:absolute;z-index:1000;top:80px;left:20px;right:20px;font-size:36px;line-height:1.02}
+@media (prefers-reduced-motion:no-preference){
+  .book{animation:book-wiggle var(--wd) ease-in-out var(--wl) infinite alternate}
+}
+@keyframes book-wiggle{
+  from{rotate:calc(var(--amp) * -1)}
+  to{rotate:var(--amp)}
+}
 @media (min-width:1200px){
-  .rest .canvas{--fh:920;max-width:none}
-  .orbit{position:absolute;inset:0 0 auto}
+  .rest{--k:var(--u)}
+  .rest .canvas{--fh:920;max-width:none;height:calc(var(--fh) * var(--u))}
+  .shelf-d{display:block}
+  .shelf-m{display:none}
+  .shelf-d .book{--amp:1.6deg}
   .rest h2{top:calc(428 * var(--u));left:0;right:0;text-align:center;font-size:calc(60 * var(--u))}
 }
 
