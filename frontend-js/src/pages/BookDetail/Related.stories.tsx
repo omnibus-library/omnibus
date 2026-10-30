@@ -87,6 +87,76 @@ export const SeriesFanInReadingOrder: Story = {
   },
 };
 
+const LONG_SERIES = aWireSeries({
+  books: [1, 2, 3, 4, 5, 6, 7, 8, 9].map(volume),
+});
+
+/** Focuses a card, which spreads the fan as a pointer does, and waits out its 620 ms. */
+const spreadTo = async (canvas: ReturnType<typeof within>, card: number) => {
+  const link = fan(canvas).getAllByRole("link")[card];
+  link?.focus();
+  await expect(link).toHaveFocus();
+  await new Promise((resolve) => setTimeout(resolve, 800));
+};
+
+/** How far the fan's furthest card, as drawn with its tilt, passes the list's right edge. */
+const overrun = (list: HTMLElement) =>
+  Math.max(
+    ...[...list.querySelectorAll(".bp-fan-card")].map(
+      (card) =>
+        card.getBoundingClientRect().right - list.getBoundingClientRect().right,
+    ),
+  );
+
+const titleOpacities = (canvas: ReturnType<typeof within>) =>
+  fan(canvas)
+    .getAllByRole("link")
+    .map(
+      (a) =>
+        getComputedStyle(a.querySelector(".bp-tile-title") as Element).opacity,
+    );
+
+export const ALongSeriesStaysInItsColumn: Story = {
+  beforeEach({ msw }) {
+    msw.use(getGetSeriesByIdMockHandler200(LONG_SERIES));
+  },
+  play: async ({ canvas }) => {
+    const list = await canvas.findByTestId("bp-series-fan");
+    await expect(overrun(list)).toBeLessThanOrEqual(0);
+    await spreadTo(canvas, 0);
+    await expect(overrun(list)).toBeLessThanOrEqual(0);
+  },
+};
+
+export const ACrowdedSpreadNamesOnlyTheFocusedBook: Story = {
+  beforeEach({ msw }) {
+    msw.use(getGetSeriesByIdMockHandler200(LONG_SERIES));
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("bp-series-fan");
+    await spreadTo(canvas, 2);
+    await expect(titleOpacities(canvas)).toEqual([
+      "0",
+      "0",
+      "1",
+      "0",
+      "0",
+      "0",
+      "0",
+      "0",
+      "0",
+    ]);
+  },
+};
+
+export const AShortSeriesSpreadNamesEveryBook: Story = {
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("bp-series-fan");
+    await spreadTo(canvas, 0);
+    await expect(titleOpacities(canvas)).toEqual(["1", "1", "1"]);
+  },
+};
+
 export const SeriesLoading: Story = {
   beforeEach({ msw }) {
     msw.use(hanging("/api/series/:id"));
