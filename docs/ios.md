@@ -7,8 +7,8 @@ surface as `mobile/`, never the `/api/rpc/*` server functions.
 
 Each Swift file opens with a header comment saying what it is for; print the
 file map from those headers with `just modules omnibus-ios/omnibus`. This page
-covers what no single file can: the second target, the release pipeline, and
-the reader's design.
+covers what no single file can: the second target, CarPlay, the release
+pipeline, and the reader's design.
 
 ## Widgets
 
@@ -54,6 +54,46 @@ background-refresh and book-close hooks), plus on every `bootstrap` exit path �
 including the ones that end at the connect or login screen, since a widget
 outlives a sign-out and would otherwise keep showing the previous account's
 books.
+
+## CarPlay
+
+An audiobook-only CarPlay scene, modelled on Audible's: a Continue tab and a
+Library tab, the system Now Playing screen, and a Chapters list. It lives in
+`omnibus/CarPlay/`.
+
+**It is a second scene, not a second app.** `Info.plist` declares a
+`CPTemplateApplicationSceneSessionRoleApplication` configuration naming
+`CarPlaySceneDelegate`, so the manifest is written out by hand
+(`UIApplicationSceneManifest_Generation` is off); the phone's `WindowGroup`
+needs no entry. The car can launch the process with *only* this scene — no
+phone window, so no `RootView`, no `AppState`. Everything it reads therefore
+goes through singletons, and the once-per-process setup that used to run from
+`AppState.bootstrap()` (opening the store, hydrating downloads) is `Startup`,
+which both scenes and the player await. `OmnibusApp.init` touches
+`AudioPlayer.shared` so the remote commands exist before any scene does — a
+car's play button can be what launched the app, and with nothing loaded it
+resumes the most recent audiobook. The scene learns of sign-in and sign-out
+from `.omnibusSessionChanged`, posted on every `AppState.phase` change.
+
+**One player, three surfaces.** The phone, the lock screen and the car all
+drive `AudioPlayer.shared`; CarPlay's Now Playing is the system's shared
+template filled from the same `MPNowPlayingInfoCenter` info (chapter as title,
+chapter-scoped scrubber). Every remote seek command — the car's hardware
+buttons arrive as next/previous-track — seeks −15 / +30; chapters change only
+from the on-screen ⏮ / ⏭ buttons and the Chapters list.
+
+**Decisions live in `CarPlayContent`.** A CarPlay template can't be read back
+from a test, so row text, the chapter window (from the previous chapter to the
+end — CarPlay can't open a list scrolled to a row), the speed cycle, the button
+row and the alert copy are pure functions there, pinned by
+`CarPlayContentTests`. The other files only translate them into templates.
+
+**The entitlement.** `com.apple.developer.carplay-audio` is granted by Apple per
+team. Until then it lives only in `omnibus-Simulator.entitlements`, selected by
+`CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]`: the simulator's CarPlay window
+lists only apps that carry it, and a device build would fail to sign with it.
+Once granted, it moves into `omnibus.entitlements`. To see the scene, run the
+app in a simulator and choose **I/O → External Displays → CarPlay**.
 
 ## Release
 

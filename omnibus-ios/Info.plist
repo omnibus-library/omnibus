@@ -86,5 +86,29 @@
 		<string>InstrumentSerif-Regular.ttf</string>
 		<string>InstrumentSerif-Italic.ttf</string>
 	</array>
+	<!-- Written out rather than generated (UIApplicationSceneManifest_Generation
+	     is off) because the CarPlay scene has to be declared here. The phone's
+	     window scene needs no entry: SwiftUI's WindowGroup configures it. The
+	     CarPlay delegate is compiled only where CarPlay exists, so on visionOS
+	     this entry names a class no scene ever asks for. -->
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<true/>
+		<key>UISceneConfigurations</key>
+		<dict>
+			<key>CPTemplateApplicationSceneSessionRoleApplication</key>
+			<array>
+				<dict>
+					<key>UISceneClassName</key>
+					<string>CPTemplateApplicationScene</string>
+					<key>UISceneConfigurationName</key>
+					<string>CarPlay</string>
+					<key>UISceneDelegateClassName</key>
+					<string>$(PRODUCT_MODULE_NAME).CarPlaySceneDelegate</string>
+				</dict>
+			</array>
+		</dict>
+	</dict>
 </dict>
 </plist>
