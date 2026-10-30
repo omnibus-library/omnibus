@@ -29,6 +29,8 @@ final class CarPlayController: NSObject, CPInterfaceControllerDelegate {
     private var libraryRead: Task<Void, Never>?
     private var continueCovers: Task<Void, Never>?
     private var libraryCovers: Task<Void, Never>?
+    /// The book a row tap is opening, until it plays.
+    private var opening: Task<Void, Never>?
     private var sessionObservers: [NSObjectProtocol] = []
 
     init(interface: CPInterfaceController) {
@@ -197,13 +199,25 @@ final class CarPlayController: NSObject, CPInterfaceControllerDelegate {
     /// Start `book`, then show Now Playing. The row spins until the book is
     /// playing, so Now Playing opens on it rather than on the book before.
     private func play(_ book: Book, then done: @escaping () -> Void) {
-        Task {
+        // CarPlay keeps a spinning row tappable, and each tap started another load.
+        guard opening == nil else { return done() }
+        opening = Task {
             // No file named: `load` resumes the file the saved position was
             // taken in, else the book's default.
-            await player.load(book: book)
+            await player.load(book: await Self.withFiles(book))
             nowPlaying.show()
+            opening = nil
             done()
         }
+    }
+
+    /// `book` with its files. A library page lists books without them, and
+    /// the player reads them to pick the file to open and to match an offer
+    /// from the ebook to it — opened bare, that offer never came.
+    private static func withFiles(_ book: Book) async -> Book {
+        guard book.bookFiles.isEmpty else { return book }
+        for await full in LibraryService.book(uuid: book.uuid).values() { return full }
+        return book
     }
 
     /// Covers for `items`, one at a time off the disk cache, fetched when
