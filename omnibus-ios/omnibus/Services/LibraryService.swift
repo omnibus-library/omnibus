@@ -317,6 +317,13 @@ enum LibraryService {
         }
     }
 
+    /// `book(uuid:)`'s first answer, for a caller acting once on it; `nil`
+    /// when neither the replica, the server nor the mirror has the book.
+    static func firstBook(uuid: String) async -> Book? {
+        for await found in book(uuid: uuid).values() { return found }
+        return nil
+    }
+
     /// Back a live read with the local mirror, used only when the read failed
     /// having produced nothing.
     private static func withMirrorFallback<T: Codable & Sendable>(

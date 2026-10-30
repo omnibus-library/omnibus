@@ -81,7 +81,6 @@ final class DeepLinkRouter {
     /// launch, or an interrupted sync.
     private func resolve(uuid: String) async -> Book? {
         if let local = await LibraryIndex.shared.book(uuid: uuid) { return local }
-        for await book in LibraryService.book(uuid: uuid).values() { return book }
-        return nil
+        return await LibraryService.firstBook(uuid: uuid)
     }
 }
