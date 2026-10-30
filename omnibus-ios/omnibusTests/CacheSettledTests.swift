@@ -30,10 +30,13 @@ private func withScratchKey(
 
 struct CacheSettledTests {
     private let deadline: Duration = .milliseconds(20)
+    /// A deadline only a hung read misses: a loaded CI simulator has stalled
+    /// this suite past 20 s, and the read still returns as soon as it answers.
+    private let roomy: Duration = .seconds(120)
 
     @Test func settledWithinPrefersAPromptServerAnswer() async throws {
         try await withScratchKey(seed: [1]) { key in
-            let value: [Int]? = await Cache.settled(key, within: .seconds(5)) { [2] }
+            let value: [Int]? = await Cache.settled(key, within: roomy) { [2] }
             #expect(value == [2])
         }
     }
@@ -42,7 +45,7 @@ struct CacheSettledTests {
         // A 502 mid-deploy is not an offline failure, and still must not hide
         // what the device holds.
         try await withScratchKey(seed: [1]) { key in
-            let value: [Int]? = await Cache.settled(key, within: .seconds(5)) {
+            let value: [Int]? = await Cache.settled(key, within: roomy) {
                 throw APIError.http(status: 502, message: "Bad Gateway")
             }
             #expect(value == [1])
