@@ -4,7 +4,8 @@
 //  Both stop AVPlayer underneath `AudioPlayer`, which went on claiming it was
 //  playing until the next toggle paused a player that was already silent.
 //  These pin the parsing of the session's notifications and the response to
-//  each: a call pauses and comes back, a disconnect pauses and stays paused.
+//  each: a call pauses and comes back, a disconnect pauses and stays paused —
+//  and a start not yet made (a rebuild's back-off, a load) counts as playing.
 
 import AVFoundation
 import Testing
@@ -85,5 +86,55 @@ struct AudioSessionEventTests {
         // The car switched off during a call: the book must not start on the
         // phone's speaker when the call ends.
         #expect(AudioSessionEvent.outputLost.response(isPlaying: false, pendingResume: true) == .pause)
+    }
+
+    @Test func losingTheOutputCancelsAPendingStart() {
+        // The car switched off during a rebuild's back-off or a load: the
+        // book must not start on the phone's speaker when it lands.
+        for pending in [PendingStarts(afterRecovery: true), PendingStarts(afterLoad: true)] {
+            let response = pending.response(to: .outputLost, isPlaying: false)
+            #expect(response == .pause)
+            #expect(pending.settled(by: response, loading: true) == PendingStarts())
+        }
+    }
+
+    @Test func aCallHoldsAPendingStartUntilItEnds() {
+        // A call arriving during a rebuild's back-off or a load: the start
+        // waits for the call instead of sounding over it.
+        for pending in [PendingStarts(afterRecovery: true), PendingStarts(afterLoad: true)] {
+            let response = pending.response(to: .interruptionBegan, isPlaying: false)
+            #expect(response == .pauseUntilResumed)
+            #expect(pending.settled(by: response, loading: false) == PendingStarts(afterInterruption: true))
+        }
+    }
+
+    @Test func aCallPausingPlaybackLeavesOnlyTheResumePending() {
+        let pending = PendingStarts()
+        let response = pending.response(to: .interruptionBegan, isPlaying: true)
+        #expect(pending.settled(by: response, loading: false) == PendingStarts(afterInterruption: true))
+    }
+
+    @Test func aCallEndingMidLoadHandsTheStartBackToTheLoad() {
+        // No item to play yet, so the load's own autoplay makes the start.
+        let pending = PendingStarts(afterInterruption: true)
+        let response = pending.response(to: .interruptionEnded(shouldResume: true), isPlaying: false)
+        #expect(response == .resume)
+        #expect(pending.settled(by: response, loading: true) == PendingStarts(afterLoad: true))
+        #expect(pending.settled(by: response, loading: false) == PendingStarts())
+    }
+
+    @Test func aCallEndingWithoutShouldResumeDropsEveryPendingStart() {
+        let pending = PendingStarts(afterInterruption: true)
+        let response = pending.response(to: .interruptionEnded(shouldResume: false), isPlaying: false)
+        #expect(response == .pause)
+        #expect(pending.settled(by: response, loading: true) == PendingStarts())
+    }
+
+    @Test func anIgnoredEventLeavesPendingStartsAlone() {
+        // A call ending when nothing was paused for it must not cancel a load.
+        let pending = PendingStarts(afterLoad: true)
+        let response = pending.response(to: .interruptionEnded(shouldResume: true), isPlaying: false)
+        #expect(response == .ignore)
+        #expect(pending.settled(by: response, loading: true) == pending)
     }
 }
