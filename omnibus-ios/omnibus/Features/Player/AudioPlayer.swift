@@ -1362,7 +1362,8 @@ final class AudioPlayer {
         var art: UIImage?
         if book.coverURL != nil {
             art = await ImageCache.shared.image(for: "/api/thumbs/\(book.uuid)/lg")
-            if art == nil,
+            // Offline, each tick's attempt would wait out a request timeout.
+            if art == nil, Connectivity.shared.isOnline,
                let data = try? await APIClient.shared.data(for: "/api/covers/\(book.uuid)") {
                 art = UIImage(data: data)
             }

@@ -11,7 +11,7 @@
 //  one button (`CPAlertTemplate.maximumActionCount`), and the offer needs two.
 //  The car holds one presented template at a time, so the sheets and the
 //  controller's alerts share one queue here: each waits for the last
-//  dismissal to finish, and none is raised before the car has a root.
+//  dismissal to finish, and no offer is raised before the car shows the tabs.
 
 #if canImport(CarPlay)
 import CarPlay
@@ -33,8 +33,10 @@ final class CarPlayNowPlaying: NSObject, CPNowPlayingTemplateObserver {
     /// The offer the driver last saw, so an answer that doesn't clear it
     /// straight away can't raise the same sheet twice.
     private var shownOffer: CarPlayContent.Offer?
-    /// Whether the car has a root template; presenting before it does is refused.
-    private var hasRoot = false
+    /// Whether the car's root is the signed-in tabs. Presenting before there is
+    /// a root is refused, and an offer over the sign-in message would act on
+    /// a signed-out session.
+    private var offersAllowed = false
     /// The template that should be presented, and the one that is.
     private var wantedModal: CPTemplate?
     private var presentedModal: CPTemplate?
@@ -73,9 +75,9 @@ final class CarPlayNowPlaying: NSObject, CPNowPlayingTemplateObserver {
     }
 
     /// The car's root was set or replaced. Whatever was presented is taken
-    /// down, and an offer still on the table is raised again over the new root.
-    func rootDidChange() {
-        hasRoot = true
+    /// down, and an offer still on the table is raised again over the tabs.
+    func rootDidChange(signedIn: Bool) {
+        offersAllowed = signedIn
         wantedModal = nil
         offerSheet = nil
         shownOffer = nil
@@ -247,7 +249,7 @@ final class CarPlayNowPlaying: NSObject, CPNowPlayingTemplateObserver {
     /// Raise the sheet for a new offer; take it down when the offer goes,
     /// whichever screen answered it.
     private func presentOffer() {
-        guard hasRoot, !isStopped else { return }
+        guard offersAllowed, !isStopped else { return }
         guard let pending = currentOffer() else {
             shownOffer = nil
             closeOffer()

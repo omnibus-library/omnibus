@@ -51,6 +51,26 @@ enum CarPlayContent {
         return books + page.filter { listed.insert($0.uuid).inserted }
     }
 
+    /// The Library rows to show while a reload builds `fresh`, or `nil` to
+    /// leave `shown` alone. An empty or unanswered list takes any answer; a
+    /// listed one only a pass that has as many rows or is `isWhole`, so a
+    /// reload never cuts it short mid-scroll. Rows that read the same aren't
+    /// redrawn: a redraw restarts their covers and stops a row's spinner.
+    static func libraryUpdate(shown: [Book]?, fresh: [Book], isWhole: Bool) -> [Book]? {
+        guard let shown else { return fresh }
+        guard isWhole || fresh.count >= shown.count else { return nil }
+        return readsTheSame(shown, fresh) ? nil : fresh
+    }
+
+    /// Whether two Library lists show the same rows: the same books, titled
+    /// and credited the same, in the same order.
+    private static func readsTheSame(_ a: [Book], _ b: [Book]) -> Bool {
+        a.count == b.count && zip(a, b).allSatisfy {
+            $0.uuid == $1.uuid && $0.displayTitle == $1.displayTitle
+                && $0.authorDisplay == $1.authorDisplay
+        }
+    }
+
     /// The second line of a row that can't play — offline, not downloaded.
     static let notDownloaded = "Not downloaded"
 
