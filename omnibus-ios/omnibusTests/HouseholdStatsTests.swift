@@ -109,6 +109,13 @@ struct RecentProgressRequestTests {
         #expect(q["user_id"] == .some("7"))
         #expect(q["limit"] == .some("5"))
     }
+
+    @Test func recentAudioQueryIsYourOwnLengthenedAndHeldToAudio() {
+        let q = UserDataService.recentAudioQuery
+        #expect(Set(q.keys) == ["limit", "format"])
+        #expect(q["limit"] == .some(String(UserDataService.recentAudioLimit)))
+        #expect(q["format"] == .some("audio"))
+    }
 }
 
 /// `.serialized`: every test shares one on-disk replica key

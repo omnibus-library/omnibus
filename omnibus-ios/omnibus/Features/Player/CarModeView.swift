@@ -81,8 +81,12 @@ struct CarModeView: View {
     private var transport: some View {
         VStack(spacing: Spacing.md) {
             HStack(spacing: Spacing.md) {
-                tile("gobackward.15", label: "Back 15 seconds") { player.skip(-15) }
-                tile("goforward.30", label: "Forward 30 seconds") { player.skip(30) }
+                tile("gobackward.15", label: "Back 15 seconds") {
+                    player.skip(-RemoteTransport.backSeconds)
+                }
+                tile("goforward.30", label: "Forward 30 seconds") {
+                    player.skip(RemoteTransport.forwardSeconds)
+                }
             }
 
             Button { player.toggle() } label: {

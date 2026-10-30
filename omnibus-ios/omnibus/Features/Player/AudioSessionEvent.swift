@@ -7,6 +7,11 @@
 //  toggle paused a player that was already silent. This is the decision half,
 //  kept to plain values so it is testable without a live session;
 //  `AudioPlayer` parses the notification and applies the response.
+//
+//  A start that hasn't fired yet — a rebuild in flight, a load awaiting its
+//  item, a play command still finding the book to resume — counts as playing,
+//  so a disconnect or a call cancels it too, and a call ending hands it back
+//  to whichever load or rebuild owes it.
 
 import AVFoundation
 
@@ -70,4 +75,45 @@ enum AudioSessionResponse: Equatable {
     case pause
     case resume
     case ignore
+}
+
+/// The starts `AudioPlayer` owes the listener but has not made yet, and how a
+/// session event leaves them.
+struct PendingStarts: Equatable {
+    /// A rebuild in flight resumes playback when it lands.
+    var afterRecovery = false
+    /// The generation of the load that starts playback once it has its item
+    /// and opening position. Owned by one load, so a load superseded by
+    /// another can't take the newer one's start.
+    var afterLoad: Int?
+    /// A play command with nothing loaded is still finding the book to resume,
+    /// and plays it once loaded.
+    var afterResume = false
+    /// An interruption paused playback, or cancelled a start above, and
+    /// playback comes back when it ends.
+    var afterInterruption = false
+
+    /// Whether audio is about to start without the listener pressing anything.
+    var startIsPending: Bool { afterRecovery || afterLoad != nil || afterResume }
+
+    /// Whether a play/pause toggle pauses; a pending start counts as playing.
+    func togglePauses(isPlaying: Bool) -> Bool { isPlaying || startIsPending }
+
+    /// The response to `event`; a pending start counts as playing.
+    func response(to event: AudioSessionEvent, isPlaying: Bool) -> AudioSessionResponse {
+        event.response(isPlaying: isPlaying || startIsPending, pendingResume: afterInterruption)
+    }
+
+    /// The starts still owed once `response` is carried out. `loading` is the
+    /// generation of the load in flight and `recovering` whether a rebuild is:
+    /// with no item to play yet, a resume hands the start back to whichever
+    /// owes it, and only a resume left owing nothing calls for a play.
+    func settled(by response: AudioSessionResponse, loading: Int?, recovering: Bool) -> PendingStarts {
+        switch response {
+        case .pauseUntilResumed: return PendingStarts(afterInterruption: true)
+        case .pause: return PendingStarts()
+        case .resume: return PendingStarts(afterRecovery: recovering, afterLoad: loading)
+        case .ignore: return self
+        }
+    }
 }

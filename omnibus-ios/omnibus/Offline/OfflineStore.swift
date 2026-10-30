@@ -1457,15 +1457,16 @@ actor OfflineStore {
     ///
     /// A near-copy of `USER_SCOPED_PREFIXES` in `frontend/src/offline.rs` but
     /// deliberately not identical — the two clients mint different keys.
-    /// `read_status:`, `shelves_with:`, and `shelf_previews` exist only here;
-    /// `reader_cfi:` and `audio_pos:` only there. The overlap is kept in the
-    /// same order so the two can still be read side by side. `reviews:` holds
-    /// the reader's private notes beside what every reader can see.
+    /// `read_status:`, `shelves_with:`, `shelf_previews`, and `recent_audio`
+    /// exist only here; `reader_cfi:` and `audio_pos:` only there. The overlap
+    /// is kept in the same order so the two can still be read side by side.
+    /// `reviews:` holds the reader's private notes beside what every reader
+    /// can see.
     static let userScopedPrefixes = [
-        "me", "progress:", "recent_progress", "rate:", "highlights:", "bookmarks:",
-        "journals:", "rating:", "ratings_others:", "shelves", "shelf:", "shelf_page:",
-        "shelf_previews", "stats:", "reader_cfi:", "audio_pos:", "audio_rate:",
-        "read_status:", "shelves_with:", "syncprompt:", "reviews:",
+        "me", "progress:", "recent_progress", "recent_audio", "rate:", "highlights:",
+        "bookmarks:", "journals:", "rating:", "ratings_others:", "shelves", "shelf:",
+        "shelf_page:", "shelf_previews", "stats:", "reader_cfi:", "audio_pos:",
+        "audio_rate:", "read_status:", "shelves_with:", "syncprompt:", "reviews:",
     ]
 
     /// Whether the account-switch wipe removes `key`: a user-scoped prefix, or
