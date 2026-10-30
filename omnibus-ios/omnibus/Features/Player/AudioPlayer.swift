@@ -111,6 +111,13 @@ final class AudioPlayer {
     /// started playing anyway, overriding a deliberate pause.
     private var resumeAfterRecovery = false
 
+    /// Whether the current pause was an interruption's — a call, another
+    /// app's audio — and playback should come back when it ends. Any pause or
+    /// play of the listener's own clears it.
+    private var resumeAfterInterruption = false
+    private var interruptionObserver: NSObjectProtocol?
+    private var routeChangeObserver: NSObjectProtocol?
+
     /// Whether the item is alive but starved. Distinct from `isPlaying`,
     /// which stays true across a buffering stall — the listener has not
     /// paused anything, the data just hasn't arrived.
@@ -180,19 +187,7 @@ final class AudioPlayer {
 
     private init() {
         configureRemoteCommands()
-        syncChapterCommands()
-    }
-
-    /// Point the lock screen's chapter-skip buttons at whether there are chapters
-    /// to skip. A book with no marks would otherwise offer two controls that
-    /// return without doing anything.
-    ///
-    /// Called from every place `timeline` is assigned — that pairing is the whole
-    /// invariant, since the commands are process-wide and outlive any one book.
-    private func syncChapterCommands() {
-        let center = MPRemoteCommandCenter.shared()
-        center.nextTrackCommand.isEnabled = hasChapters
-        center.previousTrackCommand.isEnabled = hasChapters
+        observeAudioSession()
     }
 
     var isActive: Bool { book != nil }
@@ -306,7 +301,6 @@ final class AudioPlayer {
             // no length of its own measures to the next chapter's start, and the
             // last one has only the end of the book to measure to.
             timeline = ChapterTimeline(chapters: manifest.chapters, bookDuration: duration)
-            syncChapterCommands()
 
             adoptRate(await loadRate(uuid: book.uuid))
 
@@ -626,6 +620,7 @@ final class AudioPlayer {
     // MARK: - Transport
 
     func play() {
+        resumeAfterInterruption = false
         guard let player else { return }
         // Setting a rate on a failed item does nothing at all — the silent
         // dead end #2408 is named for. A manual tap is also the listener
@@ -678,6 +673,7 @@ final class AudioPlayer {
         isBuffering = false
         // A pause during a rebuild's back-off is the listener overruling it.
         resumeAfterRecovery = false
+        resumeAfterInterruption = false
         updateNowPlaying()
         publishStreamingState()
         Task {
@@ -907,12 +903,8 @@ final class AudioPlayer {
         // manifest, and leaving this up means the chapter bar spends that window
         // offering to seek inside the book that was just closed.
         timeline = ChapterTimeline()
-        // Paired with the line above so the lock screen's chapter buttons can
-        // never outlive the chapter data they act on. `load` tears down and then
-        // *awaits* the next manifest, so leaving the previous book's enablement
-        // standing offered chapter skip across that whole window — and with an
-        // empty timeline both commands return without doing anything.
-        syncChapterCommands()
+        // An interruption that paused the last book must not start the next.
+        resumeAfterInterruption = false
         // Closed again so the next book cannot be written to before its own
         // opening position has been settled — this is the one flag whose stale
         // value would be silently destructive rather than merely wrong.
@@ -1301,29 +1293,67 @@ final class AudioPlayer {
             Task { @MainActor in self?.isPlaying == true ? self?.pause() : self?.play() }
             return .success
         }
-        center.skipForwardCommand.preferredIntervals = [30]
-        center.skipForwardCommand.addTarget { [weak self] _ in
-            Task { @MainActor in self?.skip(30) }
-            return .success
-        }
-        center.skipBackwardCommand.preferredIntervals = [15]
-        center.skipBackwardCommand.addTarget { [weak self] _ in
-            Task { @MainActor in self?.skip(-15) }
-            return .success
-        }
-        center.nextTrackCommand.addTarget { [weak self] _ in
-            Task { @MainActor in self?.nextChapter() }
-            return .success
-        }
-        center.previousTrackCommand.addTarget { [weak self] _ in
-            Task { @MainActor in self?.previousChapter() }
-            return .success
+        // The intervals are what CarPlay and the lock screen draw on the skip
+        // buttons; the track commands carry hardware presses (see `RemoteTransport`).
+        center.skipForwardCommand.preferredIntervals = [NSNumber(value: RemoteTransport.forwardSeconds)]
+        center.skipBackwardCommand.preferredIntervals = [NSNumber(value: RemoteTransport.backSeconds)]
+        let seekers: [(MPRemoteCommand, RemoteTransport)] = [
+            (center.skipForwardCommand, .skipForward),
+            (center.skipBackwardCommand, .skipBackward),
+            (center.nextTrackCommand, .nextTrack),
+            (center.previousTrackCommand, .previousTrack),
+        ]
+        for (command, transport) in seekers {
+            command.addTarget { [weak self] _ in
+                Task { @MainActor in self?.skip(transport.seekDelta) }
+                return .success
+            }
         }
         center.changePlaybackPositionCommand.addTarget { [weak self] event in
             guard let event = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
             // Chapter-relative: `updateNowPlaying` reports the chapter's span.
             Task { @MainActor in await self?.seekWithinChapter(to: event.positionTime) }
             return .success
+        }
+    }
+
+    // MARK: - Audio session
+
+    /// Follow interruptions and route changes for the life of the process —
+    /// both stop AVPlayer underneath the transport state. Delivered on the
+    /// main queue, so the handlers run on the main actor without a hop.
+    private func observeAudioSession() {
+        let session = AVAudioSession.sharedInstance()
+        interruptionObserver = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.interruptionNotification, object: session, queue: .main
+        ) { [weak self] note in
+            guard let event = AudioSessionEvent(interruption: note.userInfo) else { return }
+            MainActor.assumeIsolated { self?.respond(to: event) }
+        }
+        routeChangeObserver = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.routeChangeNotification, object: session, queue: .main
+        ) { [weak self] note in
+            guard let event = AudioSessionEvent(routeChange: note.userInfo) else { return }
+            MainActor.assumeIsolated { self?.respond(to: event) }
+        }
+    }
+
+    private func respond(to event: AudioSessionEvent) {
+        switch event.response(isPlaying: isPlaying, pendingResume: resumeAfterInterruption) {
+        case .pauseUntilResumed:
+            // `pause()` clears the flag, so it is set after.
+            pause()
+            resumeAfterInterruption = true
+        case .pause:
+            if isPlaying { pause() }
+            resumeAfterInterruption = false
+        case .resume:
+            // The interruption deactivated the session; AVPlayer won't sound
+            // until it is active again.
+            try? AVAudioSession.sharedInstance().setActive(true)
+            play()
+        case .ignore:
+            break
         }
     }
 }
