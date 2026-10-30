@@ -7,6 +7,9 @@
 //  toggle paused a player that was already silent. This is the decision half,
 //  kept to plain values so it is testable without a live session;
 //  `AudioPlayer` parses the notification and applies the response.
+//
+//  A start that hasn't fired yet — a rebuild's back-off, a load awaiting its
+//  item — counts as playing, so a disconnect or a call cancels it too.
 
 import AVFoundation
 
@@ -70,4 +73,36 @@ enum AudioSessionResponse: Equatable {
     case pause
     case resume
     case ignore
+}
+
+/// The starts `AudioPlayer` owes the listener but has not made yet, and how a
+/// session event leaves them.
+struct PendingStarts: Equatable {
+    /// A rebuild in its back-off resumes playback when it lands.
+    var afterRecovery = false
+    /// A `load(autoplay: true)` is still awaiting its item and opening position.
+    var afterLoad = false
+    /// An interruption paused playback, or cancelled a start above, and
+    /// playback comes back when it ends.
+    var afterInterruption = false
+
+    /// Whether audio is about to start without the listener pressing anything.
+    var startIsPending: Bool { afterRecovery || afterLoad }
+
+    /// The response to `event`; a pending start counts as playing.
+    func response(to event: AudioSessionEvent, isPlaying: Bool) -> AudioSessionResponse {
+        event.response(isPlaying: isPlaying || startIsPending, pendingResume: afterInterruption)
+    }
+
+    /// The starts still owed once `response` is carried out. `loading` is
+    /// whether a load is in flight: with no item to play yet, a resume hands
+    /// the start back to it.
+    func settled(by response: AudioSessionResponse, loading: Bool) -> PendingStarts {
+        switch response {
+        case .pauseUntilResumed: return PendingStarts(afterInterruption: true)
+        case .pause: return PendingStarts()
+        case .resume: return PendingStarts(afterLoad: loading)
+        case .ignore: return self
+        }
+    }
 }

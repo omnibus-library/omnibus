@@ -11,7 +11,7 @@
 import Foundation
 
 /// A remote command that moves the position.
-enum RemoteTransport: CaseIterable {
+enum RemoteTransport {
     case skipForward
     case skipBackward
     case nextTrack

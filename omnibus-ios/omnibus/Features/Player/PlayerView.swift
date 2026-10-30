@@ -462,7 +462,7 @@ struct PlayerView: View {
             transportButton("backward.end.fill", size: 26, enabled: player.canGoPreviousChapter) {
                 player.previousChapter()
             }
-            transportButton("gobackward.15", size: 32) { player.skip(-15) }
+            transportButton("gobackward.15", size: 32) { player.skip(-RemoteTransport.backSeconds) }
 
             Button { player.toggle() } label: {
                 // Solid rather than hierarchical: hierarchical renders the disc
@@ -476,7 +476,7 @@ struct PlayerView: View {
             }
             .buttonStyle(.plain)
 
-            transportButton("goforward.30", size: 32) { player.skip(30) }
+            transportButton("goforward.30", size: 32) { player.skip(RemoteTransport.forwardSeconds) }
             transportButton("forward.end.fill", size: 26, enabled: player.canGoNextChapter) {
                 player.nextChapter()
             }
@@ -747,7 +747,7 @@ struct MiniPlayerBar: View {
 
                         Spacer(minLength: 0)
 
-                        control("gobackward.15") { player.skip(-15) }
+                        control("gobackward.15") { player.skip(-RemoteTransport.backSeconds) }
                         control(player.isPlaying ? "pause.fill" : "play.fill") { player.toggle() }
                         // The bar had no way out, so `close()` — which is what
                         // flushes the position and reports the listening

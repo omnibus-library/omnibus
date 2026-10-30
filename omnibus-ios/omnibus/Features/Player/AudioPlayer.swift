@@ -103,18 +103,16 @@ final class AudioPlayer {
     private var health = PlaybackHealth()
     private var recoveryTask: Task<Void, Never>?
 
-    /// Whether a recovery in flight should start playing when it lands.
+    /// Starts owed but not yet made: a recovery or load that will start
+    /// playing when it lands, or an interruption's pause that resumes when it
+    /// ends.
     ///
     /// A rebuild backs off for a second or more before it resumes, and the
     /// listener may well press pause inside that window — having given up on a
     /// book that just went silent. Without this, the recovery landed and
-    /// started playing anyway, overriding a deliberate pause.
-    private var resumeAfterRecovery = false
-
-    /// Whether the current pause was an interruption's — a call, another
-    /// app's audio — and playback should come back when it ends. Any pause or
-    /// play of the listener's own clears it.
-    private var resumeAfterInterruption = false
+    /// started playing anyway, overriding a deliberate pause. Any pause of the
+    /// listener's own clears every one; a play clears the interruption's.
+    private var pendingStarts = PendingStarts()
     private var interruptionObserver: NSObjectProtocol?
     private var routeChangeObserver: NSObjectProtocol?
     /// Whether a play command with nothing loaded is already finding its
@@ -253,6 +251,7 @@ final class AudioPlayer {
             Task { await UserDataService.reportSessions([pending]) }
         }
         teardown()
+        pendingStarts.afterLoad = autoplay
         self.book = book
         autoStatus = ReadStatusAuto(uuid: book.uuid)
         markedReading = false
@@ -330,7 +329,11 @@ final class AudioPlayer {
 
             observe(player: player)
             isLoading = false
-            if autoplay { play() }
+            // A disconnect or a call during the awaits above cancels the start.
+            if autoplay, pendingStarts.afterLoad {
+                pendingStarts.afterLoad = false
+                play()
+            }
             updateNowPlaying()
 
             // Anything that lands after the deadline is not applied — yanking
@@ -341,6 +344,7 @@ final class AudioPlayer {
             offerCrossFormat()
         } catch {
             isLoading = false
+            pendingStarts.afterLoad = false
             self.error = (error as? APIError)?.errorDescription ?? error.localizedDescription
         }
     }
@@ -623,7 +627,7 @@ final class AudioPlayer {
     // MARK: - Transport
 
     func play() {
-        resumeAfterInterruption = false
+        pendingStarts.afterInterruption = false
         guard let player else { return }
         // Setting a rate on a failed item does nothing at all — the silent
         // dead end #2408 is named for. A manual tap is also the listener
@@ -632,7 +636,7 @@ final class AudioPlayer {
         if player.currentItem?.status == .failed {
             health.reset()
             error = nil
-            resumeAfterRecovery = true
+            pendingStarts.afterRecovery = true
             recoverFromFailure(attempt: 1)
             return
         }
@@ -669,14 +673,19 @@ final class AudioPlayer {
     }
 
     func pause() {
+        // A pause during a rebuild's back-off or a load is the listener
+        // overruling it.
+        pendingStarts = PendingStarts()
+        stopTransport()
+    }
+
+    /// Stop the transport and checkpoint, leaving `pendingStarts` to the caller.
+    private func stopTransport() {
         player?.pause()
         isPlaying = false
         // Cleared here as well as from `timeControlStatus`: the observer is
         // asynchronous, and the overlay should go the moment the tap does.
         isBuffering = false
-        // A pause during a rebuild's back-off is the listener overruling it.
-        resumeAfterRecovery = false
-        resumeAfterInterruption = false
         updateNowPlaying()
         publishStreamingState()
         Task {
@@ -906,8 +915,8 @@ final class AudioPlayer {
         // manifest, and leaving this up means the chapter bar spends that window
         // offering to seek inside the book that was just closed.
         timeline = ChapterTimeline()
-        // An interruption that paused the last book must not start the next.
-        resumeAfterInterruption = false
+        // A start owed to the last book must not start the next.
+        pendingStarts = PendingStarts()
         // Closed again so the next book cannot be written to before its own
         // opening position has been settled — this is the one flag whose stale
         // value would be silently destructive rather than merely wrong.
@@ -1083,13 +1092,15 @@ final class AudioPlayer {
             isBuffering = false
             // The failure interrupted playback that was under way, so the
             // rebuild should resume it — unless the listener pauses first.
-            resumeAfterRecovery = isPlaying
+            pendingStarts.afterRecovery = isPlaying
             isPlaying = false
             updateNowPlaying()
             recoverFromFailure(attempt: attempt)
         case .surrender:
             isBuffering = false
             isPlaying = false
+            // Nothing is left to land, so nothing may start.
+            pendingStarts.afterRecovery = false
             error = "Playback stopped and could not be resumed. Tap play to try again."
             updateNowPlaying()
         }
@@ -1118,10 +1129,12 @@ final class AudioPlayer {
                 self.error = nil
                 // Not `play()`: see `startPlayback`. A rebuild that fails
                 // again must spend the next attempt, not reset the count.
-                if self.resumeAfterRecovery, let player = self.player {
+                if self.pendingStarts.afterRecovery, let player = self.player {
+                    self.pendingStarts.afterRecovery = false
                     self.startPlayback(on: player)
                 }
             } catch {
+                self.pendingStarts.afterRecovery = false
                 self.error = (error as? APIError)?.errorDescription
                     ?? error.localizedDescription
                 self.updateNowPlaying()
@@ -1376,19 +1389,22 @@ final class AudioPlayer {
     }
 
     private func respond(to event: AudioSessionEvent) {
-        switch event.response(isPlaying: isPlaying, pendingResume: resumeAfterInterruption) {
-        case .pauseUntilResumed:
-            // `pause()` clears the flag, so it is set after.
-            pause()
-            resumeAfterInterruption = true
-        case .pause:
-            if isPlaying { pause() }
-            resumeAfterInterruption = false
+        var response = pendingStarts.response(to: event, isPlaying: isPlaying)
+        // The interruption deactivated the session, and AVPlayer won't sound
+        // until it is active again; one that refuses (a second call ringing as
+        // the first ends) would leave Now Playing claiming a silent session.
+        if response == .resume, (try? AVAudioSession.sharedInstance().setActive(true)) == nil {
+            response = .pause
+        }
+        let stopping = isPlaying || pendingStarts.startIsPending
+        // Settled before the transport moves: `play()` may arm a rebuild.
+        pendingStarts = pendingStarts.settled(by: response, loading: isLoading)
+        switch response {
+        case .pauseUntilResumed, .pause:
+            if stopping { stopTransport() }
         case .resume:
-            // The interruption deactivated the session; AVPlayer won't sound
-            // until it is active again.
-            try? AVAudioSession.sharedInstance().setActive(true)
-            play()
+            // A load in flight has no item yet; `settled` handed it the start.
+            if !isLoading { play() }
         case .ignore:
             break
         }
