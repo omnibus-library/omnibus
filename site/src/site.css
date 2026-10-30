@@ -89,7 +89,34 @@ h1,h2{font-family:var(--serif);font-weight:500;color:var(--ink);text-wrap:balanc
 
 .hero{padding-top:var(--top-h)}
 .hero .canvas{display:flex;flex-direction:column;padding-bottom:56px}
-.hero .stage{order:-1;margin-top:2px}
+/* The cover and its four pins, in the 578x706 "Hero Pins" comp. --p is one
+   comp pixel at the box's width, so the pins keep their places at any size. */
+.pins{position:relative;order:-1;margin:2px 0 0 calc(5 / 350 * 100%);width:calc(340 / 350 * 100%);aspect-ratio:578/706;container-type:inline-size;--p:calc(100cqw / 578)}
+.pins-cover{position:absolute;left:calc(119 * var(--p));top:calc(85 * var(--p));width:calc(340 * var(--p));height:auto;box-shadow:0 calc(23.8 * var(--p)) calc(30.6 * var(--p)) rgb(0 0 0/.45)}
+.pin{position:absolute;left:calc(var(--px) * var(--p));top:calc(var(--py) * var(--p));display:flex;align-items:center;gap:calc(14 * var(--p));height:calc(57.8 * var(--p));padding:0 calc(24 * var(--p)) 0 calc(20 * var(--p));border-radius:999px;background:#2a231d;color:var(--ink);font-size:calc(22.1 * var(--p));font-weight:500;line-height:1;white-space:nowrap}
+.pin i{width:calc(12 * var(--p));height:calc(12 * var(--p));border-radius:50%;background:var(--amber)}
+.pin b{margin-left:.3em;font-weight:600}
+/* lit: the pin the book is open at. Without motion the first one stays lit. */
+.pin:first-of-type{background:var(--amber);color:#1b0f04;box-shadow:0 calc(10 * var(--p)) calc(30.6 * var(--p)) rgb(245 171 92/.35)}
+.pin:first-of-type i{background:#1b0f04}
+@media (prefers-reduced-motion:no-preference){
+  /* each pin drifts on its own period; the light walks top to bottom, one pin
+     every 2s of an 8s loop, by giving every pin the same loop at an offset */
+  .pin{animation:pin-float var(--fd) ease-in-out var(--lit) infinite alternate,pin-lit 8s linear var(--lit) infinite}
+  .pin i{animation:pin-dot 8s linear var(--lit) infinite}
+}
+@keyframes pin-float{
+  from{translate:0 0}
+  to{translate:calc(4 * var(--p)) calc(-10 * var(--p))}
+}
+@keyframes pin-lit{
+  0%,22%,100%{background:var(--amber);color:#1b0f04;box-shadow:0 calc(10 * var(--p)) calc(30.6 * var(--p)) rgb(245 171 92/.35)}
+  27%,95%{background:#2a231d;color:var(--ink);box-shadow:0 calc(10 * var(--p)) calc(30.6 * var(--p)) rgb(245 171 92/0)}
+}
+@keyframes pin-dot{
+  0%,22%,100%{background:#1b0f04}
+  27%,95%{background:var(--amber)}
+}
 .hero h1{margin-top:10px;font-size:44px;line-height:1;letter-spacing:-0.02em}
 .hero h1 br{display:none}
 .hero .sub{margin-top:16px}
@@ -110,7 +137,7 @@ h1,h2{font-family:var(--serif);font-weight:500;color:var(--ink);text-wrap:balanc
 
   .hero{padding-top:0}
   .hero .canvas{--fh:900;display:block}
-  .hero .stage{order:0}
+  .pins{position:absolute;margin:0;left:calc(760 * var(--u));top:calc(110 * var(--u));width:calc(578 * var(--u))}
   .hero-copy{position:absolute;left:calc(80 * var(--u));top:calc(190 * var(--u));width:calc(500 * var(--u))}
   .hero h1{margin:0;font-size:calc(104 * var(--u));line-height:.95;letter-spacing:-0.025em}
   .hero h1 br{display:inline}

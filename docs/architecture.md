@@ -256,7 +256,7 @@ on every push to `main` that touches it.
 | `src/index.html` | One book's life through the product: hero, eight stops, why switch, the rest of the shelf, close. All copy is real markup, never baked into an image. |
 | `src/site.css` | From 1200px up, each section is a scaled copy of the 1440 desktop comp: positions are comp pixels times `--u`, one comp pixel at the current width. Below 1200px the page is the 390 phone comp's single column. |
 | `src/app.js` | The only script: swaps the static release line in "What only Omnibus does" for the latest release tag and the last 30 days' commit count from the GitHub API. The page reads the same without it. |
-| `src/shots/` | One transparent WebP per section and layout, `d-<section>` for desktop and `m-<section>` for phone, with the app screens and device frames already placed. |
+| `src/shots/` | One transparent WebP per section and layout, `d-<section>` for desktop and `m-<section>` for phone, with the app screens and device frames already placed. The hero is the exception: `hero-cover.webp` is the bare cover, and its four pins are markup so they can float and light up in turn, top to bottom (still under `prefers-reduced-motion`). |
 
 The comps live in the Omnibus Marketing Figma file (`eQi5qV6AvHAuhccDT7HXrS`), page
 "Proposal 5 · One Book's Life": desktop frame `34:1939`, phone frame `34:2313`.
