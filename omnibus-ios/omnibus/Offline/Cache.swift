@@ -453,6 +453,31 @@ enum Cache {
         return latest
     }
 
+    /// A `live` read settled within `deadline`, for a caller that acts once on
+    /// it while someone waits: the settled answer if it lands in time, else the
+    /// replica — on any failure too, not only an offline one, so a server
+    /// mid-deploy can't hide what the device holds. Only with no replica does
+    /// it wait the read out; `nil` when that fails too.
+    static func settled<T: Codable & Sendable>(
+        _ key: String,
+        within deadline: Duration,
+        fetch: @escaping @Sendable () async throws -> T
+    ) async -> T? {
+        // Not cancelled on the deadline: the read goes on to refresh the replica.
+        let answer = Task { () -> T? in
+            var latest: T?
+            do {
+                for try await read in live(key, fetch: fetch) { latest = read.value }
+            } catch {
+                return nil
+            }
+            return latest
+        }
+        if let settled = await firstResult(of: answer, within: deadline) { return settled }
+        if let replica: T = await read(key) { return replica }
+        return await answer.value
+    }
+
     /// Apply a change to a cached value in place. A no-op when nothing is
     /// cached — the next read fetches the real thing anyway.
     static func mutate<T: Codable & Sendable>(_ key: String, _ change: (inout T) -> Void) async {

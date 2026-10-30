@@ -9,9 +9,9 @@
 //  `AudioPlayer` parses the notification and applies the response.
 //
 //  A start that hasn't fired yet — a rebuild in flight, a load awaiting its
-//  item, a play command still finding the book to resume — counts as playing,
-//  so a disconnect or a call cancels it too, and a call ending hands it back
-//  to whichever load or rebuild owes it.
+//  item, a play command still finding the book to resume — counts as playing:
+//  a disconnect cancels it, and a call holds it, handing it back when it ends
+//  to whichever rebuild, load or resume owes it by then.
 
 import AVFoundation
 
@@ -86,8 +86,8 @@ struct PendingStarts: Equatable {
     /// and opening position. Owned by one load, so a load superseded by
     /// another can't take the newer one's start.
     var afterLoad: Int?
-    /// A play command with nothing loaded is still finding the book to resume,
-    /// and plays it once loaded.
+    /// A play command with nothing playable is still finding the book to
+    /// load, and plays it once loaded.
     var afterResume = false
     /// An interruption paused playback, or cancelled a start above, and
     /// playback comes back when it ends.
@@ -95,6 +95,25 @@ struct PendingStarts: Equatable {
 
     /// Whether audio is about to start without the listener pressing anything.
     var startIsPending: Bool { afterRecovery || afterLoad != nil || afterResume }
+
+    /// Whether a resume still finding its book goes on to load it: it is owed,
+    /// or a call holds it — the same as a call holds a load in flight.
+    var resumeIsOwed: Bool { afterResume || afterInterruption }
+
+    /// A remote play with nothing playable: owe the resume, overruling a
+    /// call's hold the way a play press does.
+    mutating func armResume() {
+        afterInterruption = false
+        afterResume = true
+    }
+
+    /// The starts once a load of `generation` has torn down the last book's:
+    /// its autoplay, or — when a call holds the resume that asked for it — the
+    /// call's, which `settled` hands back to the load when the call ends.
+    static func opening(load generation: Int, autoplay: Bool, heldByCall: Bool) -> PendingStarts {
+        guard autoplay else { return PendingStarts() }
+        return heldByCall ? PendingStarts(afterInterruption: true) : PendingStarts(afterLoad: generation)
+    }
 
     /// Whether a play/pause toggle pauses; a pending start counts as playing.
     func togglePauses(isPlaying: Bool) -> Bool { isPlaying || startIsPending }
@@ -105,14 +124,18 @@ struct PendingStarts: Equatable {
     }
 
     /// The starts still owed once `response` is carried out. `loading` is the
-    /// generation of the load in flight and `recovering` whether a rebuild is:
-    /// with no item to play yet, a resume hands the start back to whichever
-    /// owes it, and only a resume left owing nothing calls for a play.
-    func settled(by response: AudioSessionResponse, loading: Int?, recovering: Bool) -> PendingStarts {
+    /// generation of the load in flight, `recovering` whether a rebuild is and
+    /// `resuming` whether a play command is still finding its book: with no
+    /// item to play yet, a resume hands the start back to whichever owes it,
+    /// and only a resume left owing nothing calls for a play.
+    func settled(
+        by response: AudioSessionResponse, loading: Int?, recovering: Bool, resuming: Bool
+    ) -> PendingStarts {
         switch response {
         case .pauseUntilResumed: return PendingStarts(afterInterruption: true)
         case .pause: return PendingStarts()
-        case .resume: return PendingStarts(afterRecovery: recovering, afterLoad: loading)
+        case .resume:
+            return PendingStarts(afterRecovery: recovering, afterLoad: loading, afterResume: resuming)
         case .ignore: return self
         }
     }
