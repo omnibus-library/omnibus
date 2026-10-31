@@ -460,3 +460,44 @@ async fn api_get_series_in_progress_returns_500_when_reading_state_cannot_be_rea
 
     assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
 }
+
+#[tokio::test]
+async fn api_starting_a_new_book_of_a_hidden_series_lists_it_in_progress_again() {
+    let (app, _state, pool) = fixture().await;
+    let user = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+    let (series_id, two) = seed_saga_started(&pool, user.id).await;
+    app.clone()
+        .oneshot(request(
+            "PUT",
+            &format!("/api/series/{series_id}/hide"),
+            Some(&token),
+            None,
+        ))
+        .await
+        .unwrap();
+    assert!(in_progress_rows(app.clone(), &token).await.is_empty());
+
+    let position = serde_json::json!({
+        "book_uuid": two,
+        "format": "epub",
+        "epub_cfi": "epubcfi(/6/4!/4/2/1:0)",
+        "progress_percent": 5,
+    });
+    let saved = app
+        .clone()
+        .oneshot(request(
+            "POST",
+            "/api/progress",
+            Some(&token),
+            Some(position),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(saved.status(), StatusCode::OK);
+
+    let rows = in_progress_rows(app, &token).await;
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].series.id, series_id);
+    assert_eq!(rows[0].next_book_uuid, two);
+}

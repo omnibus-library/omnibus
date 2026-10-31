@@ -160,13 +160,14 @@ pub async fn upsert_koreader_progress_tx(
 /// an explicit status dated earlier still beats it), dated by
 /// the surviving position's clock rather than receipt: Kobo sync-out stamps its
 /// state with the newer clock, and a replayed offline write must not read as today.
+/// A book started this way brings back its series if the reader hid it from home.
 async fn mark_started(
     tx: &mut Transaction<'_, Sqlite>,
     user_id: i64,
     surviving: &ProgressRecord,
 ) -> Result<(), ProgressError> {
     // `DO NOTHING`: a status the reader chose, `unread` included, outranks a position.
-    sqlx::query(
+    let started = sqlx::query(
         "INSERT INTO book_read_status (user_id, book_uuid, status, updated_at, auto_started)
          VALUES (?, ?, 'reading', ?, 1)
          ON CONFLICT(user_id, book_uuid) DO NOTHING",
@@ -175,7 +176,11 @@ async fn mark_started(
     .bind(&surviving.book_uuid)
     .bind(surviving.client_updated_at)
     .execute(&mut **tx)
-    .await?;
+    .await?
+    .rows_affected();
+    if started == 1 {
+        crate::series_progress::unhide_series_of_book_tx(tx, user_id, &surviving.book_uuid).await?;
+    }
     Ok(())
 }
 

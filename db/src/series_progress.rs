@@ -7,8 +7,11 @@
 use std::collections::{HashMap, HashSet};
 
 use omnibus_shared::{BookReading, EbookMetadata, ReadStatus, SeriesInProgress};
-use sqlx::SqlitePool;
+use sqlx::{Sqlite, SqlitePool, Transaction};
 
+use crate::metadata_overrides::sql::{
+    effective_series_sql, override_present_sql, overrides_win_sql,
+};
 use crate::{book_reading, book_uuids, get_series, list_series, series_reading};
 use crate::{BrowseError, DiscoveryError};
 
@@ -166,6 +169,30 @@ pub fn next_book<'a>(
             .iter()
             .find(|b| state_of(b).is_none_or(|r| r.status == ReadStatus::Unread))
     })
+}
+
+/// Lift the reader's hide on every series `book_uuid` is in, by effective membership. Runs in
+/// the caller's transaction, so a failed start takes it back with the rest.
+pub(crate) async fn unhide_series_of_book_tx(
+    tx: &mut Transaction<'_, Sqlite>,
+    user_id: i64,
+    book_uuid: &str,
+) -> Result<(), sqlx::Error> {
+    let sql = format!(
+        "DELETE FROM series_hides
+          WHERE user_id = ?1
+            AND series_id IN (SELECT e.series_id
+                                FROM ({}) e
+                                JOIN books b ON b.id = e.book_id
+                               WHERE b.uuid = ?2)",
+        effective_series_sql!()
+    );
+    sqlx::query(&sql)
+        .bind(user_id)
+        .bind(book_uuid)
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
 }
 
 async fn hidden_series_ids(
