@@ -1,9 +1,12 @@
-import { type ExpectMutationOptions, post } from "../utils/api";
+import {
+  type ExpectMutationOptions,
+  type ForcedRequest,
+  post,
+} from "../utils/api";
 
-/** The search endpoints; both are server functions, so reads arrive as POSTs. */
+/** The library search, which the palette and the results page both read. */
 export const searchUrls = {
-  palette: /\/api\/rpc\/search-palette(?:\?|$)/,
-  results: /\/api\/rpc\/search-results(?:\?|$)/,
+  palette: /\/api\/search\/palette(?:\?|$)/,
 };
 
 /** The searches the palette and the results page run. */
@@ -12,7 +15,6 @@ export const search = {
   palette: (query?: string): ExpectMutationOptions =>
     post(searchUrls.palette, query === undefined ? undefined : { q: query }),
 
-  /** The fetch behind a section's Show all; no body leaves it unchecked. */
-  results: (body?: { q: string; limit: number }): ExpectMutationOptions =>
-    post(searchUrls.results, body),
+  /** The library search as a read a test can force to fail. */
+  read: (): ForcedRequest => ({ method: "GET", url: searchUrls.palette }),
 };

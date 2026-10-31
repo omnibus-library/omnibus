@@ -184,9 +184,9 @@ export class LibraryPage extends BasePage {
       .waitFor();
   }
 
-  /** Returns once the server-rendered HTML arrives, before the client runs. */
-  async gotoBeforeHydration(): Promise<void> {
-    await this.page.goto("/", { waitUntil: "domcontentloaded" });
+  /** Returns once `index.html` arrives; a held bundle also holds `domcontentloaded`. */
+  async gotoBeforeClientRuns(): Promise<void> {
+    await this.page.goto("/", { waitUntil: "commit" });
   }
 
   async switchToGrid(): Promise<void> {

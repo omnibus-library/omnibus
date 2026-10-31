@@ -11,7 +11,6 @@ export class LoginPage extends AuthFormPage {
 
   readonly welcomeHeading: Locator;
   readonly passwordField: Locator;
-  readonly keepSignedInCheckbox: Locator;
   readonly logInButton: Locator;
   readonly registerLink: Locator;
   readonly errorBanner: Locator;
@@ -23,11 +22,8 @@ export class LoginPage extends AuthFormPage {
       name: /Welcome back/i,
     });
     this.passwordField = page.getByLabel("Password");
-    this.keepSignedInCheckbox = page.getByLabel(
-      "Keep me signed in for 30 days",
-    );
     this.logInButton = page.getByRole("button", { name: "Log in" });
-    this.registerLink = page.getByRole("link", { name: "Register" });
+    this.registerLink = page.getByRole("link", { name: "Create an account" });
     this.errorBanner = page.getByRole("alert");
   }
 

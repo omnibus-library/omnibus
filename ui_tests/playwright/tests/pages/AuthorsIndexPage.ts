@@ -73,11 +73,6 @@ export class AuthorsIndexPage extends BasePage {
     await this.openAndSettle("/authors");
   }
 
-  /** Returns once the server-rendered HTML arrives, before the client runs. */
-  async gotoBeforeHydration(): Promise<void> {
-    await this.page.goto("/authors", { waitUntil: "domcontentloaded" });
-  }
-
   /** Fails the reader's progress request, which no server state can force. */
   async failReadingProgress(): Promise<void> {
     await this.page.route("**/api/rpc/authors/reading", (route) =>

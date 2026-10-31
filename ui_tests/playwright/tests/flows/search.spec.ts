@@ -1,7 +1,6 @@
 import { search } from "../contracts/search";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/pageFixtures";
-import { failing } from "../utils/api";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
 test.beforeAll("seed the library", async ({ request }) => {
@@ -148,7 +147,6 @@ test.describe("search results page", () => {
 
   test("reach every hit of a section through Show all", async ({
     searchResultsPage,
-    expectMutation,
   }) => {
     let total = 0;
 
@@ -174,10 +172,7 @@ test.describe("search results page", () => {
     });
 
     await test.step("expand the books section", async () => {
-      // A read, but a POST, so it is asserted like one.
-      await expectMutation(search.results({ q: "the", limit: total }), () =>
-        searchResultsPage.toggleShowAllBooks(),
-      );
+      await searchResultsPage.showAllBooks();
       await expect(searchResultsPage.bookRows).toHaveCount(total);
       await expect(searchResultsPage.showAllBooksButton).toHaveText(
         "Show fewer",
@@ -189,24 +184,21 @@ test.describe("search results page", () => {
     });
 
     await test.step("collapse it without a second fetch", async () => {
-      await searchResultsPage.toggleShowAllBooks();
+      await searchResultsPage.showFewerBooks();
       await expect(searchResultsPage.bookRows).toHaveCount(5);
     });
   });
 
   test("leave the section collapsed and say so when Show all fails", async ({
     searchResultsPage,
-    expectMutation,
   }) => {
     await test.step("open the results", async () => {
       await searchResultsPage.goto("the");
-      await searchResultsPage.forceServerError(search.results());
+      await searchResultsPage.forceServerError(search.read());
     });
 
     await test.step("expand the books section", async () => {
-      await expectMutation(failing(search.results()), () =>
-        searchResultsPage.toggleShowAllBooks(),
-      );
+      await searchResultsPage.showAllBooks();
     });
 
     await test.step("check the failure shows and the section stays collapsed", async () => {
