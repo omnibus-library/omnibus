@@ -248,7 +248,8 @@
   cursor: pointer;
 }
 .bp-facts-list .me-tag-input {
-  width: 11ch;
+  /* border-box: the 14px padding and 1px border each side sit on top of the text's 11ch */
+  width: calc(11ch + 30px);
   padding-left: 14px;
   cursor: text;
 }
