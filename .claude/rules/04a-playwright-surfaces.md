@@ -135,18 +135,16 @@ the `.lmq-veil` verb. Three consequences for a spec:
 spec: it needs two books on the stack at once, and `recent_progress` drops
 `unread` and `finished`, so a book another spec marks could leave the fan mid-run.
 
-**The add-books review is the metadata edit form, not a confirm form.** A
-successful inspect mounts `add-books-review`, which is the edit page's own
-`FormGrid`/`Sidebar`/`SaveBar` over a book that does not exist yet — so the
-selectors are the edit page's: `getByLabel("Title")`, author *chips*
-(`.me-chip-item`, not an Author input), `getByLabel("Series", { exact: true })`
-and `getByLabel("Book #")` (there is no "Series index"), and the commit button
-is `me-save` reading "Add to library", never `add-books-submit`. The file's
-cover is an inline `data:` image under `cover-staged-preview`; the sidebar's
-`cover-upload-input` and the compare view's cover row **stage** a cover (hint
-"… saved with the book") and write nothing, so a spec asserting them must
-record that no `/api/ebooks/*/cover` request fires. `me-discard` is a button
-("Start over") here rather than the edit page's link. No spec commits a real
+**The add-books review is the edit sheet's form, not a confirm form.** The top
+nav's Add books opens the `Add a book` sheet over the library (there is no
+`/add-books` route). A successful inspect swaps the picker for the edit sheet's
+tabs (`Book information`), fields and cover card over a book that does not
+exist yet, so the selectors are `MetadataFormComponent`'s: fields by label in
+the Details panel (`Number in series`, not "Book #"), author *chips*, and the
+cover card only after `openArtwork()`. The commit is "Add to library", never
+`es-done`, and "Choose another file" goes back to the picker. A staged cover
+writes nothing, so a spec asserting one records that no
+`/api/ebooks/*/cover` request fires. No spec commits a real
 upload: the library is shared and a filed book is visible to every other spec.
 
 **The stats page** (period pills, the standing band, goals and household
