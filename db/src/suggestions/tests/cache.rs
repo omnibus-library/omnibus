@@ -1,5 +1,5 @@
 //! The cache CRUD: `mark_pending`, `replace_suggestions` persisting rows
-//! and the resolved or sticky-empty marker and overwriting prior rows,
+//! and the resolved or empty marker and overwriting prior rows,
 //! `delete_suggestions`, and the DB-failure path.
 
 use crate::pool::init_db;
@@ -178,4 +178,49 @@ async fn migration_0106_keeps_every_marker_and_admits_the_failed_state() {
         .execute(&pool)
         .await
         .expect("the rebuilt table admits 'failed'");
+}
+
+/// Version of `0109_reset_empty_suggestion_markers.sql`.
+const EMPTY_RESET_VERSION: i64 = 109;
+
+#[tokio::test]
+async fn migration_0109_deletes_only_the_empty_suggestion_markers() {
+    static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .unwrap();
+    for m in MIGRATOR.iter().filter(|m| m.version < EMPTY_RESET_VERSION) {
+        sqlx::raw_sql(&m.sql).execute(&pool).await.unwrap();
+    }
+    sqlx::raw_sql(
+        "INSERT INTO book_suggestion_state (book_uuid, state, fetched_at)
+              VALUES ('a', 'pending', 10), ('b', 'resolved', 20), ('c', 'empty', 30),
+                     ('d', 'failed', 40);",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let m = MIGRATOR
+        .iter()
+        .find(|m| m.version == EMPTY_RESET_VERSION)
+        .expect("0109 must exist");
+    sqlx::raw_sql(&m.sql).execute(&pool).await.unwrap();
+
+    let kept: Vec<(String, String, i64)> = sqlx::query_as(
+        "SELECT book_uuid, state, fetched_at FROM book_suggestion_state ORDER BY book_uuid",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        kept,
+        [
+            ("a".to_string(), "pending".to_string(), 10),
+            ("b".to_string(), "resolved".to_string(), 20),
+            ("d".to_string(), "failed".to_string(), 40),
+        ]
+    );
 }

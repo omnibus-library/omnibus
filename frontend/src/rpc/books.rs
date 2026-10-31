@@ -374,7 +374,7 @@ async fn search_ebooks(pool: &sqlx::SqlitePool, q: &str) -> Result<EbookLibrary,
 
 /// "Readers also enjoyed" for one book. Drives the cache de-duplication
 /// state machine: returns `NotConfigured` when no Hardcover key is set, serves
-/// the fresh/sticky cache when present, and enqueues a single background
+/// the fresh cache when present, and enqueues a single background
 /// resolution (marking `pending` *before* posting) so a refresh or a burst of
 /// concurrent viewers never re-hits Hardcover. POST because it carries `uuid`.
 #[post("/api/rpc/ebook-suggestions", pool: PoolExt, worker: WorkerExt, _user: AuthUser)]
