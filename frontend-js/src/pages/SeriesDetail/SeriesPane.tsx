@@ -1,10 +1,18 @@
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import {
   type FilterClause,
   type SeriesId,
   type SeriesPage,
+  seriesInProgressQuery,
   seriesQuery,
+  unhideSeries,
   utcOffsetMinutes,
 } from "../../api";
 import {
@@ -18,12 +26,15 @@ import {
   tally,
 } from "../../components/Browse/bookStates";
 import { CoverImage } from "../../components/Cover/CoverImage";
-import { Loading, Stale } from "../../components/Loading/Loading";
+import { BusyLabel, Loading, Stale } from "../../components/Loading/Loading";
 import { PageError, PageNotFound } from "../../components/PageState/PageState";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
+import { ToastProvider, useToast } from "../../components/Toast/Toast";
 import { bookCount, initialOf, nowSecs } from "../../format";
 import { saveShelfSelection } from "../../viewPrefs";
+import { HideSeriesDialog } from "../Library/SeriesInProgressList";
 import {
+  inProgress,
   missingLabel,
   missingNumbers,
   nextAction,
@@ -63,6 +74,51 @@ function CoverFan({
         </div>
       ))}
     </div>
+  );
+}
+
+/** Keeps the series off the home page, or brings it back: offered while it is in progress or already hidden. */
+function HomeToggle({ series }: { series: SeriesPage }) {
+  const client = useQueryClient();
+  const toast = useToast();
+  const [asking, setAsking] = useState(false);
+  const show = useMutation({
+    mutationFn: () => unhideSeries(series.id),
+    // Returned, so the button stays busy until the page has re-read its flag.
+    onSuccess: () =>
+      Promise.all([
+        client.invalidateQueries({ queryKey: ["series", series.id] }),
+        client.invalidateQueries({ queryKey: seriesInProgressQuery.queryKey }),
+      ]),
+    onError: (error) =>
+      toast(`Couldn't show ${series.name} on home: ${error.message}`),
+  });
+  const hidden = series.hiddenFromHome;
+  if (!hidden && !inProgress(series.books, series.reading)) return null;
+  // One button throughout, so the keyboard stays on it as it changes sides.
+  return (
+    <>
+      <button
+        type="button"
+        className="au-btn"
+        data-testid={hidden ? "series-show-home" : "series-hide-home"}
+        aria-busy={show.isPending}
+        onClick={() => {
+          if (show.isPending) return;
+          if (hidden) show.mutate();
+          else setAsking(true);
+        }}
+      >
+        <BusyLabel
+          busy={show.isPending}
+          label={hidden ? "Show on home" : "Hide from home"}
+          busyLabel="Showing…"
+        />
+      </button>
+      {asking && (
+        <HideSeriesDialog series={series} onClose={() => setAsking(false)} />
+      )}
+    </>
   );
 }
 
@@ -113,6 +169,7 @@ function SeriesHero({ series }: { series: SeriesPage }) {
         >
           Show in library
         </button>
+        <HomeToggle series={series} />
       </div>
     </header>
   );
@@ -221,29 +278,31 @@ export function SeriesPane({
     // Past the book cap the list arrives cut short, and a tally drawn from it would describe only part.
     const whole = page.books.length >= page.bookCount;
     return (
-      // Another series kept on screen while this one loads stays, dimmed.
-      <Stale stale={series.isPlaceholderData}>
-        {!preview && <PageTitle page={page.name} />}
-        <article
-          key={page.id}
-          className="au-pane"
-          style={{ "--au-accent": accent }}
-          data-testid="series-pane"
-        >
-          {!preview && (
-            <Link to="/series" className="se-back" data-testid="series-back">
-              ← All series
-            </Link>
-          )}
-          <SeriesHero series={page} />
-          {whole && <ReadingStrip books={page.books} states={page.reading} />}
-          <ReadingOrder
-            books={page.books}
-            states={page.reading}
-            total={page.bookCount}
-          />
-        </article>
-      </Stale>
+      <ToastProvider>
+        {/* Another series kept on screen while this one loads stays, dimmed. */}
+        <Stale stale={series.isPlaceholderData}>
+          {!preview && <PageTitle page={page.name} />}
+          <article
+            key={page.id}
+            className="au-pane"
+            style={{ "--au-accent": accent }}
+            data-testid="series-pane"
+          >
+            {!preview && (
+              <Link to="/series" className="se-back" data-testid="series-back">
+                ← All series
+              </Link>
+            )}
+            <SeriesHero series={page} />
+            {whole && <ReadingStrip books={page.books} states={page.reading} />}
+            <ReadingOrder
+              books={page.books}
+              states={page.reading}
+              total={page.bookCount}
+            />
+          </article>
+        </Stale>
+      </ToastProvider>
     );
   }
   if (series.isError) {

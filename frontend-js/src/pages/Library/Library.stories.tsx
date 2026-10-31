@@ -2,7 +2,10 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { delay, HttpResponse, http } from "msw";
 import { Navigate, Route, Routes, useLocation } from "react-router";
 import { expect, fireEvent, waitFor, within } from "storybook/test";
-import { getGetShelfMockHandler404 } from "../../api/generated/omnibus.msw";
+import {
+  getGetSeriesInProgressMockHandler200,
+  getGetShelfMockHandler404,
+} from "../../api/generated/omnibus.msw";
 import type {
   BulkOverridesRequest,
   CreateShelfRequest,
@@ -52,6 +55,7 @@ const meta = {
     msw.use(
       shelvesHandler([]),
       recentProgressHandler([]),
+      getGetSeriesInProgressMockHandler200([]),
       getGetShelfMockHandler404(),
     );
     for (const key of [

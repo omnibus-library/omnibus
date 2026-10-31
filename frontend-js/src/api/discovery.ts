@@ -8,9 +8,12 @@ import {
   getAuthorReading,
   getAuthors,
   getDeleteAuthorUrl,
+  getDeleteSeriesHideUrl,
   getPutAuthorPhotoUrl,
   getPutAuthorPhotoUrlUrl,
+  getPutSeriesHideUrl,
   getSeriesById,
+  getSeriesInProgress,
   getSeriesReading,
   listSeries,
   postAuthorPhotoScan,
@@ -20,6 +23,8 @@ import type {
   AuthorSummary as AuthorSummaryWire,
   BookReading as BookReadingWire,
   ProgressFormat,
+  SeriesDetail as SeriesDetailWire,
+  SeriesInProgress as SeriesInProgressWire,
   SeriesReading as SeriesReadingWire,
   SeriesSummary as SeriesSummaryWire,
 } from "./generated/schemas";
@@ -224,18 +229,17 @@ export type SeriesPage = {
   books: SeriesBook[];
   /** The reader's state on each book they have opened or marked, by book uuid. */
   reading: Map<string, BookState>;
+  /** Whether the reader hid the series from the home page's series in progress. */
+  hiddenFromHome: boolean;
 };
 
-/** A series, how many of its books the library holds, those books in reading order and the reader's state on each; `null` when no series has that id. */
-export async function fetchSeries(id: SeriesId): Promise<SeriesPage | null> {
-  const res = await getSeriesById(id);
-  if (res.status === 404) return null;
-  const data = ok(res);
+/** The screen's shape of a `GET /api/series/{id}` answer. */
+export function toSeriesPage(wire: SeriesDetailWire): SeriesPage {
   return {
-    id,
-    name: data.name,
-    bookCount: data.book_count,
-    books: data.books.map((b) => ({
+    id: wire.id as SeriesId,
+    name: wire.name,
+    bookCount: wire.book_count,
+    books: wire.books.map((b) => ({
       ...toBook(b),
       creators: b.creators.map((c) => ({
         name: c.name,
@@ -244,9 +248,17 @@ export async function fetchSeries(id: SeriesId): Promise<SeriesPage | null> {
       })),
     })),
     reading: new Map(
-      (data.reading ?? []).map((r) => [r.book_uuid, toBookState(r)]),
+      (wire.reading ?? []).map((r) => [r.book_uuid, toBookState(r)]),
     ),
+    hiddenFromHome: wire.hidden_from_home ?? false,
   };
+}
+
+/** A series, how many of its books the library holds, those books in reading order and the reader's state on each; `null` when no series has that id. */
+export async function fetchSeries(id: SeriesId): Promise<SeriesPage | null> {
+  const res = await getSeriesById(id);
+  if (res.status === 404) return null;
+  return toSeriesPage(ok(res));
 }
 
 export const seriesQuery = (id: SeriesId | null) =>
@@ -254,3 +266,39 @@ export const seriesQuery = (id: SeriesId | null) =>
     queryKey: ["series", id],
     queryFn: id === null ? skipToken : () => fetchSeries(id),
   });
+
+/** A series the reader is partway through, with the book to open next. */
+export type SeriesInProgress = SeriesPage & {
+  nextUuid: string;
+  lastReadAt: number | null;
+};
+
+export function toSeriesInProgress(
+  wire: SeriesInProgressWire,
+): SeriesInProgress {
+  return {
+    ...toSeriesPage(wire),
+    nextUuid: wire.next_book_uuid,
+    lastReadAt: wire.last_read_at ?? null,
+  };
+}
+
+/** The series the reader is partway through, the server's order, hidden ones left out. */
+export async function fetchSeriesInProgress(): Promise<SeriesInProgress[]> {
+  return ok(await getSeriesInProgress()).map(toSeriesInProgress);
+}
+
+export const seriesInProgressQuery = queryOptions({
+  queryKey: ["series", "in-progress"],
+  queryFn: fetchSeriesInProgress,
+});
+
+/** Keeps the series off the reader's home page until they start another of its books. */
+export async function hideSeries(id: SeriesId): Promise<void> {
+  await send(getPutSeriesHideUrl(id), "PUT");
+}
+
+/** Lifts the hide, so the series can show on the home page again. */
+export async function unhideSeries(id: SeriesId): Promise<void> {
+  await send(getDeleteSeriesHideUrl(id), "DELETE");
+}

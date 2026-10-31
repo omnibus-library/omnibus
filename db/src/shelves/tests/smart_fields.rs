@@ -6,9 +6,11 @@
 use omnibus_shared::{MatchMode, RuleField, RuleOp, ShelfRule, SortDir, SortKey, ViewFilters};
 
 use super::super::*;
-use super::{make_user, smart_req, tag_rule, uuid_by_title};
+use super::{make_user, smart_req, tag_rule};
 use crate::pool::init_db;
-use crate::test_support::{indexed, seed_discovery_fixture, seed_minimal_books, CoversTempDir};
+use crate::test_support::{
+    indexed, seed_discovery_fixture, seed_minimal_books, uuid_by_title, CoversTempDir,
+};
 
 #[tokio::test]
 async fn smart_shelf_date_added_rules_match_epoch_column() {
