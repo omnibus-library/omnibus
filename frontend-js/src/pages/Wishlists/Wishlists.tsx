@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { useSearchParams } from "react-router";
 import {
   ApiError,
@@ -19,6 +20,7 @@ import { PageTitle } from "../../components/PageTitle/PageTitle";
 import { ToastProvider } from "../../components/Toast/Toast";
 import { nowSecs } from "../../format";
 import { useCurrentUser } from "../../session";
+import { AddToWishlist } from "./AddToWishlist";
 import { ReaderPanel, ReaderPicker } from "./ReaderPanel";
 import { WishlistRow } from "./WishlistRow";
 import {
@@ -59,7 +61,15 @@ function emptyCopy(scope: Scope, readerName: string): EmptyCopy {
   }
 }
 
-function Empty({ scope, readerName }: { scope: Scope; readerName: string }) {
+function Empty({
+  scope,
+  readerName,
+  onAdd,
+}: {
+  scope: Scope;
+  readerName: string;
+  onAdd: () => void;
+}) {
   const { title, body, offer } = emptyCopy(scope, readerName);
   return (
     <div className="wl-empty" data-testid="wishlists-empty">
@@ -68,7 +78,11 @@ function Empty({ scope, readerName }: { scope: Scope; readerName: string }) {
       </span>
       <h2 className="wl-empty-title">{title}</h2>
       <p className="wl-empty-body">{body}</p>
-      {offer && <Button variant="primary">Add to your wishlist</Button>}
+      {offer && (
+        <Button variant="primary" onClick={onAdd}>
+          Add to your wishlist
+        </Button>
+      )}
     </div>
   );
 }
@@ -123,6 +137,7 @@ function Failure({ error }: { error: Error }) {
 export function Wishlists() {
   const viewer = useCurrentUser();
   const scope = scopeFrom(useSearchParams()[0].get("user"), viewer.id);
+  const [adding, setAdding] = useState(false);
   const readers = useQuery(wishlistReadersQuery);
   const books = useQuery(wishlistBooksQuery(wishlistUser(scope)));
   // The title of a reader's list needs their name; the others need nothing.
@@ -165,7 +180,8 @@ export function Wishlists() {
                   )}
                   {answered && !refreshing ? (
                     <p className="wl-subline">
-                      {subline(scope, books.data.length, wishlists)}
+                      {books.data.length > 0 &&
+                        subline(scope, books.data.length, wishlists)}
                     </p>
                   ) : (
                     <p className="wl-subline">
@@ -173,11 +189,18 @@ export function Wishlists() {
                     </p>
                   )}
                 </div>
+                {answered && (
+                  <AddToWishlist open={adding} onOpenChange={setAdding} />
+                )}
               </header>
               {answered ? (
                 <Stale stale={refreshing}>
                   {books.data.length === 0 && !refreshing ? (
-                    <Empty scope={scope} readerName={readerName} />
+                    <Empty
+                      scope={scope}
+                      readerName={readerName}
+                      onAdd={() => setAdding(true)}
+                    />
                   ) : (
                     <List books={books.data} scope={scope} viewer={viewer.id} />
                   )}

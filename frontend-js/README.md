@@ -22,7 +22,7 @@ The screens it has ported are listed under [Routes](#routes).
 | `src/vendor/barcode/` | the camera scanner's zxing decoder, its wasm and the glue: byte copies of `frontend/assets/vendor/`, loaded by `<script>` from Vite `?url` imports (the zxing IIFE declares a global that bundling would scope away) |
 | `src/vendor/reader/` | the EPUB and PDF reader runtimes (epub.js, PDF.js and the two glue files): byte copies of `frontend/assets/vendor/`, loaded from Vite `?url` imports; `parity.test.ts` fails when a copy drifts |
 | `public/` | `vendor/pdfjs-wasm/` and `reader-fonts/`, copied verbatim and kept by name because PDF.js and `reader-fonts.css` build URLs onto their directories |
-| `src/testing/` | `AppHarness`, parsed and wire-format fixtures, the MSW handlers orval can't generate (`handlers.ts`, and `adminHandlers.ts` for the admin screens), the Vitest setup |
+| `src/testing/` | `AppHarness`, parsed and wire-format fixtures, the MSW handlers orval can't generate (`handlers.ts`, and `adminHandlers.ts` for the admin screens, `wishlistHandlers.ts` for the wishlists page), the Vitest setup |
 | `.storybook/` | Storybook's config, the preview every story renders inside, and MSW's worker |
 | `tools/extract-atrium.cjs` | copies Atrium rules into component CSS when a screen is ported |
 
@@ -42,7 +42,7 @@ pages (`/authors/:id`, `/series/:id`, `/shelves/:id`), the three readers
 (`/read`, `/comic`, `/pdf`), the audiobook player (`/listen/:uuid`, `?file_id`
 picks one of a book's files), personal settings (`/settings`), Administration
 (`/admin`, `/admin/cleanup/:kind`), stats (`/stats`), the chart builder
-(`/stats/chart`) and Not Found are ported, and the top bar carries the user
+(`/stats/chart`), the household's wishlists (`/wishlists`) and Not Found are ported, and the top bar carries the user
 menu and the ⌘K search palette. The phone layouts (the bottom tab bar and the
 native shell's shelves screens) are left out. As on Dioxus web, a bare
 `/search` and the native shell's `/connect` redirect to the library.
@@ -109,6 +109,18 @@ list and draws it in SVG, with a hover card, a drag-to-zoom brush and a value
 tween. Nothing links to it, as on Dioxus. Dioxus reads the chart through a
 server function with no REST route, so the React chart builder calls
 `POST /api/stats/chart`, which was added for it.
+Wishlists (`/wishlists`) shows one reader's wishlist or everyone's merged into one row per
+book, picked by `?user=` (`all`, or a reader's id; anything else is your own). A panel on
+the left, or a menu under the title on a phone, lists everyone and each reader with their
+count. Every signed-in reader sees every list, whether or not that reader shares their
+stats. A row shows the library's holdings of the book (`EPUB ×3`, `PRINT`) and, on a wide
+screen, Find a Copy and Request on hover, with Remove and its Undo on your own list only
+(a book that existed only to be wanted leaves with its last entry, so that removal has no
+Undo); a phone gets one Get sheet instead. Request stays disabled until Shelfarr is
+connected. Add to wishlist searches the library and the providers by title, author or
+ISBN and always adds to your own list; a provider's record that matches a library book is
+added to that book rather than minted as a second one. The page's stories run against the
+stateful fake in `src/testing/wishlistHandlers.ts`.
 A page that throws renders `RouteError` inside the top bar; anything else that
 throws (the session gate, the shell, a reader) renders it full-screen.
 
@@ -243,8 +255,9 @@ shell provides it.
   `shelfLens`, `sorting`, `bulkMetadata` and `inlineEdit`, the editor's `metadata` (form
   schema, the rules a field is refused by and the override diff), `dirty`,
   `editionFields` and `fetch`, the View Transition helper `viewTransition`, `uploads`,
-  check-in's `checkInFlow` and `scan`, the scanner's `scanStatus` and
-  `loadScanner`, the discovery pages' `browseOrder`, `bookStates`, `authorsOrder`,
+  check-in's `checkInFlow` and `scan`, `findCopy`, the wishlists' `wishlists` (scope, headings,
+  holdings badges, what each row can request and the add panel's lookup results), the
+  scanner's `scanStatus` and `loadScanner`, the discovery pages' `browseOrder`, `bookStates`, `authorsOrder`,
   `authorProgress`, `seriesOrder`, `seriesProgress`, `shelvesIndex`, the shelf rules' `rules`, the picker's
   `picker`, the shelf page's `shelfAccess` and `narrow`, the readers' `pager`,
   `pdfAnchors`, `start`, `relocate`, `typography`, `epubGlue`, `pdfGlue`,

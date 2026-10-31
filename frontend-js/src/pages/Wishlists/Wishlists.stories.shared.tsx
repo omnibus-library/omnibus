@@ -1,4 +1,5 @@
 import { Route, Routes, useLocation } from "react-router";
+import { anExternalBook } from "../../testing/scanHandlers";
 import {
   type WishlistFake,
   wishlistFake,
@@ -33,9 +34,29 @@ export function Page() {
 /** The fake in use by the story that is running; `api` replaces it with a fresh one. */
 export let fake: WishlistFake = wishlistFake();
 
+/** What the providers know: another edition of a book the library has, and a book it lacks. */
+export const PROVIDER_BOOKS = [
+  anExternalBook({
+    isbn13: "9781635575637",
+    title: "Piranesi",
+    authors: ["Susanna Clarke"],
+    year: "2020",
+    publisher: "Bloomsbury",
+    series: null,
+  }),
+  anExternalBook({
+    isbn13: "9780306406157",
+    title: "Piranesi and the Vanishing House",
+    authors: ["Lena Holt"],
+    year: "2018",
+    publisher: null,
+    series: null,
+  }),
+];
+
 /** A fresh fake for the story that is starting, and its handlers. */
 export function api(seed?: Parameters<typeof wishlistFake>[0]) {
-  fake = wishlistFake(seed);
+  fake = wishlistFake({ providers: PROVIDER_BOOKS, ...seed });
   return fake.handlers;
 }
 
