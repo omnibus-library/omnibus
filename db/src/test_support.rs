@@ -11,7 +11,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use omnibus_shared::{
-    Contributor, EbookMetadata, MetadataOverrides, ProgressFormat, ProgressUpdate,
+    Contributor, EbookMetadata, MetadataOverrides, ProgressFormat, ProgressUpdate, ReadStatus,
+    SetReadStatus,
 };
 use sqlx::SqlitePool;
 
@@ -1164,4 +1165,47 @@ pub async fn forget_read_status(pool: &SqlitePool, user: i64, uuid: &str) {
         .execute(pool)
         .await
         .expect("forget read status");
+}
+
+/// The uuid of the book titled `title`. Panics on miss.
+pub async fn uuid_by_title(pool: &SqlitePool, title: &str) -> String {
+    sqlx::query_scalar("SELECT uuid FROM books WHERE title = ?")
+        .bind(title)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// Set `(user, uuid)`'s read status through the public write path.
+pub async fn mark_status(pool: &SqlitePool, user: i64, uuid: &str, status: ReadStatus) {
+    crate::read_status::set_read_status(
+        pool,
+        user,
+        &SetReadStatus {
+            book_uuid: uuid.to_string(),
+            status,
+        },
+    )
+    .await
+    .unwrap();
+}
+
+/// Save an epub position at `percent`, stamped client time `at`, through the public write path.
+pub async fn place_position(pool: &SqlitePool, user: i64, uuid: &str, percent: i64, at: i64) {
+    crate::progress::upsert_progress(
+        pool,
+        user,
+        &ProgressUpdate {
+            book_uuid: uuid.to_string(),
+            format: ProgressFormat::Epub,
+            epub_cfi: Some("epubcfi(/6/4!/4/2/1:0)".into()),
+            audio_position_seconds: None,
+            progress_percent: Some(percent),
+            kobo_location: None,
+            book_file_id: None,
+            client_updated_at: Some(at),
+        },
+    )
+    .await
+    .unwrap();
 }

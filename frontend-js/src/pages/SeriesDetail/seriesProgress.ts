@@ -3,6 +3,7 @@ import {
   type BookStates,
   currentBook,
   readAgo,
+  tally,
 } from "../../components/Browse/bookStates";
 import { formatYear } from "../../format";
 import { readerHref } from "../../resume";
@@ -35,8 +36,18 @@ export type NextAction = {
 // A kept position makes Start say Resume and "Start here" say "Up next".
 const kept = (state: BookState | null) => state?.format != null;
 
-const bookNumber = (book: Book) =>
+/** "Book 3", or `null` for a book with no series number. */
+export const bookNumber = (book: Book) =>
   book.series?.index == null ? null : `Book ${book.series.index}`;
+
+/** Whether the reader is partway through the series: two or more books, one started, not all finished. */
+export function inProgress(
+  books: readonly Book[],
+  states: BookStates,
+): boolean {
+  const { finished, reading } = tally(books, states);
+  return books.length >= 2 && finished + reading > 0 && finished < books.length;
+}
 
 /** The book in progress, else the first unread in reading order; `null` once every book is finished. */
 export function nextUp(

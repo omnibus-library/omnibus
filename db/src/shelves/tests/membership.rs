@@ -9,9 +9,9 @@ use omnibus_shared::{
 };
 
 use super::super::*;
-use super::{make_user, manual_req, smart_req, tag_rule, uuid_by_title};
+use super::{make_user, manual_req, smart_req, tag_rule};
 use crate::pool::init_db;
-use crate::test_support::{seed_discovery_fixture, seed_minimal_books};
+use crate::test_support::{seed_discovery_fixture, seed_minimal_books, uuid_by_title};
 
 async fn finish_book(pool: &sqlx::SqlitePool, user: i64, uuid: &str) {
     sqlx::query(

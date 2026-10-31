@@ -32,7 +32,8 @@ const RECENT_LIMIT_CAP: i64 = 20;
 /// For an EPUB `epub_cfi` the server stores its own `progress_percent` for that position, where
 /// it has measured the book, in place of the one you sent. The response is the position the
 /// server kept, yours or the stored one. A book you
-/// haven't given a read status becomes `reading`; one you have keeps its status.
+/// haven't given a read status becomes `reading`; one you have keeps its status. Starting a book
+/// you hadn't started this way brings back a series you hid from your home page.
 #[utoipa::path(
     post,
     path = "/api/progress",

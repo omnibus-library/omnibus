@@ -5673,7 +5673,7 @@
           "Progress"
         ],
         "summary": "Save a position",
-        "description": "Records where you are in a book in one format: `epub` with an `epub_cfi`, a\n`progress_percent` or both, or `audio` with `audio_position_seconds`. The latest\nposition wins, judged by `client_updated_at` (the server's clock when absent), so a\nwrite older than the stored position changes nothing. An `audio` position without\n`book_file_id` also loses to a stored one that names a file of a multi-file audiobook.\nFor an EPUB `epub_cfi` the server stores its own `progress_percent` for that position, where\nit has measured the book, in place of the one you sent. The response is the position the\nserver kept, yours or the stored one. A book you\nhaven't given a read status becomes `reading`; one you have keeps its status.",
+        "description": "Records where you are in a book in one format: `epub` with an `epub_cfi`, a\n`progress_percent` or both, or `audio` with `audio_position_seconds`. The latest\nposition wins, judged by `client_updated_at` (the server's clock when absent), so a\nwrite older than the stored position changes nothing. An `audio` position without\n`book_file_id` also loses to a stored one that names a file of a multi-file audiobook.\nFor an EPUB `epub_cfi` the server stores its own `progress_percent` for that position, where\nit has measured the book, in place of the one you sent. The response is the position the\nserver kept, yours or the stored one. A book you\nhaven't given a read status becomes `reading`; one you have keeps its status. Starting a book\nyou hadn't started this way brings back a series you hid from your home page.",
         "operationId": "post_progress",
         "requestBody": {
           "content": {
@@ -6008,7 +6008,7 @@
           "Read status"
         ],
         "summary": "Set a book's read status",
-        "description": "Marks a book as unread, reading or finished for you, replacing its previous status.",
+        "description": "Marks a book as unread, reading or finished for you, replacing its previous status.\nMoving a book you hadn't started to `reading` brings back a series you hid from your home\npage.",
         "operationId": "put_read_status",
         "requestBody": {
           "content": {
@@ -6677,6 +6677,31 @@
         }
       }
     },
+    "/api/series/in-progress": {
+      "get": {
+        "tags": [
+          "Discovery"
+        ],
+        "summary": "List the series you are partway through",
+        "description": "The series you have started and not finished, for a home page: at least two books in the\nlibrary, at least one you are reading or have finished, and at least one not finished.\nSeries you hid are left out; starting a book of one you hadn't started brings it back.\nMost recently read first, then by name. Each carries its books and your state on them as\n`GET /api/series/{id}` does, plus the book to open next.",
+        "operationId": "get_series_in_progress",
+        "responses": {
+          "200": {
+            "description": "Your series in progress.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SeriesInProgress"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/series/reading": {
       "get": {
         "tags": [
@@ -6708,7 +6733,7 @@
           "Discovery"
         ],
         "summary": "Get a series",
-        "description": "One series and its books, in series order. `reading` holds your own status and\nposition on each of those books you have opened or marked.",
+        "description": "One series and its books, in series order. `reading` holds your own status and\nposition on each of those books you have opened or marked, and `hidden_from_home`\nwhether you hid the series from the home page.",
         "operationId": "get_series_by_id",
         "parameters": [
           {
@@ -6732,6 +6757,64 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "No series has that id."
+          }
+        }
+      }
+    },
+    "/api/series/{id}/hide": {
+      "put": {
+        "tags": [
+          "Discovery"
+        ],
+        "summary": "Hide a series from home",
+        "description": "Keeps the series off your home page's series in progress. It stays in your library and\ncomes back there when you start a book of it that you hadn't started. Hiding a hidden\nseries changes nothing.",
+        "operationId": "put_series_hide",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The series' id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The series is hidden from your home page."
+          },
+          "404": {
+            "description": "No series has that id."
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Discovery"
+        ],
+        "summary": "Show a series on home again",
+        "description": "Lifts your hide, so the series can appear in your home page's series in progress again.\nShowing a series that isn't hidden changes nothing.",
+        "operationId": "delete_series_hide",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The series' id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The series is no longer hidden from your home page."
           },
           "404": {
             "description": "No series has that id."
@@ -15306,6 +15389,10 @@
               "$ref": "#/components/schemas/EbookMetadata"
             }
           },
+          "hidden_from_home": {
+            "type": "boolean",
+            "description": "Whether you hid the series from the home page's series in progress. It comes back\nthere when you start a book of it that you hadn't started."
+          },
           "id": {
             "type": "integer",
             "format": "int64"
@@ -15327,6 +15414,34 @@
             ]
           }
         }
+      },
+      "SeriesInProgress": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/SeriesDetail"
+          },
+          {
+            "type": "object",
+            "required": [
+              "next_book_uuid"
+            ],
+            "properties": {
+              "last_read_at": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int64",
+                "description": "When you last read a book of the series, in Unix seconds."
+              },
+              "next_book_uuid": {
+                "type": "string",
+                "description": "The uuid of the book to open next: the one you are reading that you read last,\nelse the first unread one in reading order."
+              }
+            }
+          }
+        ],
+        "description": "A series you are partway through, from `GET /api/series/in-progress`: its books in\nreading order and your state on each, as `GET /api/series/{id}` sends them, plus the\nbook to open next."
       },
       "SeriesReading": {
         "type": "object",

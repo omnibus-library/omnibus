@@ -17,6 +17,8 @@ use crate::auth::AuthUser;
 /// Set a book's read status
 ///
 /// Marks a book as unread, reading or finished for you, replacing its previous status.
+/// Moving a book you hadn't started to `reading` brings back a series you hid from your home
+/// page.
 #[utoipa::path(
     put,
     path = "/api/read-status",
