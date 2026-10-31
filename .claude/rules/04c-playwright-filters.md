@@ -1,10 +1,10 @@
 ---
-paths: "ui_tests/**, frontend/src/components/filter_bar/**, frontend/src/components/filter_bar.rs"
+paths: "ui_tests/**, frontend-js/src/components/FilterBar/**"
 ---
 # 04c — Playwright: the library filter
 
 Companion to [04a-playwright-surfaces.md](04a-playwright-surfaces.md): the filter
-bar (`components/filter_bar`) and the surfaces that read its saved filter.
+bar (`frontend-js/src/components/FilterBar/`) and the surfaces that read its saved filter.
 `ui_tests/playwright/tests/flows/library_filters.spec.ts` is the worked spec; the
 shelf cases live in `library_filters_shelves.spec.ts`.
 
@@ -70,6 +70,4 @@ with the hand-picked `filterShelf` only that reader owns.
   asserted afterwards, never polled for.
 - The shelf a spec edits comes from `ownShelf`, whose `created*ShelfIds` set
   deletes it after the test, so the specs that count members never see it.
-- The Dioxus mobile build's filter sheet has no Playwright lane: it is
-  mobile-only, so its logic is pure functions tested under `--features mobile`.
-  The web's phone bottom sheet is a viewport, not a build, and is covered.
+- The phone bottom sheet is a viewport, not a build, and is covered.

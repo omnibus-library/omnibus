@@ -7,7 +7,7 @@ These rules exist so every flow is tested the same way. Don't diverge without up
 
 ## Running specs — `just e2e-ci`
 
-`just e2e-ci [spec…]` ([`scripts/e2e-ci.sh`](../../scripts/e2e-ci.sh)) runs the suite the way [`e2e.yml`](../../.github/workflows/e2e.yml) does: it `dx bundle`s the app, starts the bundle's standalone `server` on a scratch DB and data dirs at a free port in the worktree's window, runs `playwright test` with `CI=1` and artifacts outside the tree, then tears the server down. Args pass through, so spec paths are relative to `ui_tests/playwright`. Judge a red there, not against the dev server: its DB carries state between runs that CI's fresh one never has, and `dx serve`'s hot-reload client reloads pages mid-test. The bundle is a debug build sharing `dx serve`'s artifacts; `OMNIBUS_E2E_RELEASE=1` builds `--release`, as CI does. For live preview validation (not specs), see the [ui-validate](../skills/ui-validate/SKILL.md) skill.
+`just e2e-ci [spec…]` ([`scripts/e2e-ci.sh`](../../scripts/e2e-ci.sh)) runs the suite the way [`e2e.yml`](../../.github/workflows/e2e.yml) does: it builds the `omnibus` server and the React client, starts the server on a scratch DB and data dirs at a free port in the worktree's window serving the client at `/`, runs `playwright test` against it with `CI=1` and artifacts outside the tree, then tears the server down. Args pass through, so spec paths are relative to `ui_tests/playwright`. Judge a red there, not against the dev server: its DB carries state between runs that CI's fresh one never has. The server is a debug build sharing the dev server's artifacts; `OMNIBUS_E2E_RELEASE=1` builds `--release`, as CI does. For live preview validation (not specs), see the [ui-validate](../skills/ui-validate/SKILL.md) skill.
 
 ## Toolchain — pnpm, TypeScript 7, Biome
 
@@ -20,7 +20,7 @@ The Playwright project (`ui_tests/playwright`) uses **pnpm** as its package mana
 
 The `playwright-driver.browsers` package in [flake.nix](../../flake.nix) provides the browser bundle, and the shellHook exports `PLAYWRIGHT_BROWSERS_PATH` into the Nix store. Do **not** run `pnpm exec playwright install` — it would re-download Chromium into `~/Library/Caches/ms-playwright/` and diverge from the flake.
 
-`@playwright/test` is pinned with a tilde range (`~1.61.0`) so pnpm stays on the same minor as the Chromium bundle. The bundle comes from a **dedicated** flake input, `nixpkgs-playwright`, pinned to a rev where `playwright-driver` is 1.61.1 — separate from `nixpkgs-unstable` so moving the browser does not also move the Rust toolchain, `dioxus-cli` and node. Each Playwright minor expects a specific Chromium build number, so **three things move together or not at all**: that flake input's rev, this tilde range, and the `overrides` in [`scripts/explore/driver/package.json`](../../scripts/explore/driver/package.json), which pins the agentic-exploration driver's transitive `playwright` to the same version so it shares the one bundle rather than downloading a second Chromium.
+`@playwright/test` is pinned with a tilde range (`~1.61.0`) so pnpm stays on the same minor as the Chromium bundle. The bundle comes from a **dedicated** flake input, `nixpkgs-playwright`, pinned to a rev where `playwright-driver` is 1.61.1 — separate from `nixpkgs-unstable` so moving the browser does not also move the Rust toolchain and node. Each Playwright minor expects a specific Chromium build number, so **three things move together or not at all**: that flake input's rev, this tilde range, and the `overrides` in [`scripts/explore/driver/package.json`](../../scripts/explore/driver/package.json), which pins the agentic-exploration driver's transitive `playwright` to the same version so it shares the one bundle rather than downloading a second Chromium.
 
 ## Reporters — `list` + `junit`
 
@@ -36,11 +36,11 @@ Preference order:
 
 1. `page.getByRole(...)` — buttons, headings, links, form landmarks, live regions (`status`, `alert`). Also form buttons: `getByRole("button", { name: "Save" })`.
 2. `page.getByText(...)` — visible text not tied to a role.
-3. `page.getByLabel(...)` — form inputs with a `<label for=...>`. Add a proper label in SSR markup rather than reaching for a test id.
-4. `page.getByTestId(...)` — only when no role/text/label fits. Add `"data-testid": "..."` (alongside the existing `id`) to the Dioxus rsx markup. Keep names stable and meaningful — they're part of the UI contract.
+3. `page.getByLabel(...)` — form inputs with a `<label for=...>`. Add a proper label in the markup rather than reaching for a test id.
+4. `page.getByTestId(...)` — only when no role/text/label fits. Add `data-testid="..."` to the React markup (a component's `testId` prop where it has one). Keep names stable and meaningful — they're part of the UI contract.
 5. `page.locator(...)` — last resort.
 
-Never use XPath. If you want XPath, the SSR markup probably needs a role, label, or testid added instead.
+Never use XPath. If you want XPath, the markup probably needs a role, label, or testid added instead.
 
 Per-surface gotchas live in [04a](04a-playwright-surfaces.md): the selector each
 screen answers to, and the ones that look right and match nothing. The filter's

@@ -19,20 +19,19 @@ Numbered rules in [.claude/rules/](.claude/rules/), applied in order. Follow the
 - [04e-playwright-stats.md](.claude/rules/04e-playwright-stats.md) — the stats page's test lane: windowed vs standing figures, the goals link into Settings, household sharing and the reader picker.
 - [05-rust-style.md](.claude/rules/05-rust-style.md) — Rust style guide: comments, function/file shape, errors, tests, mechanics. Long-form rationale in [docs/style-guide.md](docs/style-guide.md).
 - [06-migrations.md](.claude/rules/06-migrations.md) — authoring SQL migrations: `NNNN_` naming, never-edit-applied, the `_norm` backfill pattern, testing against `sqlite::memory:`, and the dev-bounce step.
-- [07-hydration.md](.claude/rules/07-hydration.md) — SSR/WASM hydration parity: never feature-gate a component body on `web`; how to confirm and fix a hydration mismatch; why keyed siblings must each be unique.
 - [08-offline-writes.md](.claude/rules/08-offline-writes.md) — what the mutation outbox may queue: content state only, never configuration or commands; the four tests, and what each excludes.
 - [09-content-validators.md](.claude/rules/09-content-validators.md) — the two content validators (response `ETag` vs wire etag), why they're derived rather than stored, and the three-valued comparison both offline clients sweep for.
 - [09a-serving-validated-bytes.md](.claude/rules/09a-serving-validated-bytes.md) — the server half: strong entity-tags, the `serve_file`/`conditional` path every byte-serving endpoint takes, and why `ETag` and `Vary` travel together.
 - [10-reader-calendar.md](.claude/rules/10-reader-calendar.md) — which calendar a figure is cut on: day boundaries take the asking client's offset (one per request), time-of-day takes the offset each session recorded; why the ledger stores a quarter-hour and never a day.
 - [11-spoiler-boundary.md](.claude/rules/11-spoiler-boundary.md) — what a reader may be shown: the three-valued spoiler filter, why every figure rounds conservatively, and why the boundary reads stored columns rather than resolving a position.
-- [12-loading-states.md](.claude/rules/12-loading-states.md) — every wait draws from `components/loading.rs`: pick the `Loading` kind by the shape it fills, unknown is never shown as empty or forbidden, no boot screen (SSR draws the loaders) + the `data-hydrated` marker, reduced motion for every animation.
+- [12-loading-states.md](.claude/rules/12-loading-states.md) — every wait in the React client draws from `components/Loading/`: pick the `Loading` kind by the shape it fills, unknown is never shown as empty or forbidden, what runs before the app mounts, reduced motion for every animation.
 - [13-openapi.md](.claude/rules/13-openapi.md) — the REST contract: wire types in `shared/`, `#[utoipa::path]` on every `/api/*` handler registered with `routes!`, docs written for API callers, and `just openapi-gen` after any route or wire-type change.
 - [98-keep-skills-fresh.md](.claude/rules/98-keep-skills-fresh.md) — update skills when the code they reference changes.
 - [99-end-of-session.md](.claude/rules/99-end-of-session.md) — end-of-session checklist (docs sync, fmt/clippy, coverage, line-count cap).
 
 **Reviews:** every code review also applies [CODING_STANDARDS.md](CODING_STANDARDS.md), the judgement rules no linter or test can check.
 
-**Design:** [DESIGN.md](DESIGN.md) is the visual system both web clients share — tokens, type, depth, components, do's and don'ts. Read it before any UI change; `.impeccable/design.json` is its machine-readable sidecar. [PRODUCT.md](PRODUCT.md) holds the product truth behind it (users, positioning, principles), and [omnibus-ios/PRODUCT.md](omnibus-ios/PRODUCT.md) adds what is specific to iOS.
+**Design:** [DESIGN.md](DESIGN.md) is the web client's visual system — tokens, type, depth, components, do's and don'ts. Read it before any UI change; `.impeccable/design.json` is its machine-readable sidecar. [PRODUCT.md](PRODUCT.md) holds the product truth behind it (users, positioning, principles), and [omnibus-ios/PRODUCT.md](omnibus-ios/PRODUCT.md) adds what is specific to iOS.
 
 **Line-count cap:** every file in `CLAUDE.md`, `AGENTS.md`, and `.claude/` stays under ~200 lines. Split by topic when it grows past that — enforced by rule 99.
 
@@ -59,15 +58,17 @@ Do not use Chrome DevTools MCP or Claude in Chrome for routine agent verificatio
 
 ## Architecture
 
-Seven-crate Cargo workspace: `shared/` (serde types), `db/` (data layer + indexer), `frontend/` (Dioxus UI + server functions), `server/` (fullstack binary + REST router), `mobile/` (thin native shell, Android-only), `mcp/` (MCP tool layer speaking the `/api/*` REST surface — a stdio binary plus the library `server/` mounts at the hosted `/mcp` endpoint behind an admin toggle; out of default-members like `mobile/`), `mock-kobo/` (a fake Kobo e-reader that syncs against the Kobo routes to reproduce firmware-side bugs; dev tooling, also out of default-members).
+Five-crate Cargo workspace: `shared/` (serde wire types), `db/` (data layer + indexer), `server/` (the `omnibus` axum binary: the REST router, the device-sync routes, and the React build served at `/` from `OMNIBUS_REACT_DIR`), `mcp/` (MCP tool layer speaking the `/api/*` REST surface — a stdio binary plus the library `server/` mounts at the hosted `/mcp` endpoint behind an admin toggle; out of default-members), `mock-kobo/` (a fake Kobo e-reader that syncs against the Kobo routes to reproduce firmware-side bugs; dev tooling, also out of default-members).
 
-Alongside it, `omnibus-ios/` is a native SwiftUI client — an Xcode project, not a Cargo crate; `just ios-build` / `ios-test` / `ios-test-ui` / `ios-sim` wrap xcodebuild + simctl for it (no cargo target touches it). It is the iOS surface; `mobile/` is the Android shell (nothing builds the `mobile/` crate for iOS anymore). It speaks the same `/api/*` REST surface.
+The web client is `frontend-js/`, a React SPA (Vite + pnpm) whose API client is generated from the OpenAPI document; its own checks are biome, tsc and vitest (unit + Storybook), run by `frontend-js.yml`.
+
+Alongside it, `omnibus-ios/` is a native SwiftUI client — an Xcode project, not a Cargo crate; `just ios-build` / `ios-test` / `ios-test-ui` / `ios-sim` wrap xcodebuild + simctl for it (no cargo target touches it). It speaks the same `/api/*` REST surface. The Android app lives in its own repo.
 
 `site/` is the marketing site served at <https://omnibus-library.github.io/omnibus/> — static HTML with no build step, published to the `gh-pages` branch by `.github/workflows/pages.yml`. Its app screens are stills exported from the Omnibus Marketing Figma comps, not live markup; see the `site/` section of [docs/architecture.md](docs/architecture.md).
 
 The `/api/*` REST surface is described by [openapi/openapi.json](openapi/openapi.json), the contract every client builds against, generated from the handlers (see [the REST contract](docs/architecture.md#the-rest-contract)).
 
-Crate descriptions, request flows, and mobile-auth details live in [docs/architecture.md](docs/architecture.md); the iOS app's design lives in [docs/ios.md](docs/ios.md). Per-module detail lives only in each file's own `//!` doc (a Swift file's header comment) — `just modules <dir>` prints a directory's map from them.
+Crate descriptions, request flows, and bearer-auth details live in [docs/architecture.md](docs/architecture.md); the iOS app's design lives in [docs/ios.md](docs/ios.md). Per-module detail lives only in each file's own `//!` doc (a Swift file's header comment) — `just modules <dir>` prints a directory's map from them.
 
 ## Version control
 
@@ -85,55 +86,51 @@ Operator-specific conventions (ticket prefixes, branch naming) live in personal 
 ## Quick commands
 
 ```bash
-# Multiplexed dev stack (server + react + native ios + android + playwright panes)
+# Multiplexed dev stack (server + react + native ios + playwright panes)
 # The server pane port-walks this worktree's window, so two worktrees can
 # run the stack at once without colliding.
 just serve                                                  # Zellij
 just serve-pc                                               # process-compose
-just react                                                  # React client (frontend-js/) dev server, proxying to this worktree's server
+just react                                                  # hot-reloading React client (frontend-js/) dev server, proxying to this worktree's server
 
 # Idempotent dev-server bring-up — port-walks from $PORT (this worktree's
 # window base: 3000 for the main checkout, hash-derived in 3010..3900
-# otherwise) up to PORT+9, reuses an existing omnibus server if found, seeds the
-# admin user from $OMNIBUS_DEV_SEED_USER, writes .claude/runtime/{port,env.sh}.
-# Used by the `ui-validate` skill; safe to re-run.
+# otherwise) up to PORT+9, reuses an existing omnibus server if found, else
+# builds the React client when stale and starts `cargo run -p omnibus` serving
+# it at `/`; seeds the admin user from $OMNIBUS_DEV_SEED_USER, writes
+# .claude/runtime/{port,env.sh}. Used by the `ui-validate` skill; safe to re-run.
 just dev-up
+just dev-bounce                                             # restart it — after any Rust change or a new migration
 source .claude/runtime/env.sh                               # picks up OMNIBUS_PORT + PLAYWRIGHT_BASE_URL
 just kobo                                                   # mock Kobo e-reader in a terminal UI against any instance (sync URL; `--local` for this worktree's dev server) (docs/kobo.md)
 just koreader                                              # interactive KOReader in a browser tab (Docker) against any instance (plugin zip; `--local` for this worktree's dev server) (docs/koreader.md)
 
-# Fullstack dev (serves SSR + WASM hydration at http://localhost:8080 by default)
-dx serve --platform web -p omnibus
-
-# Server only (native backend, no WASM bundle)
-cargo run -p omnibus                                        # start at http://0.0.0.0:3000
+# Server by hand: binds $IP:$PORT (127.0.0.1:8080 unset); serves the React
+# build at `/` only when OMNIBUS_REACT_DIR names one (`/` answers 503 otherwise)
+pnpm --dir frontend-js install && pnpm --dir frontend-js run build
+OMNIBUS_REACT_DIR=frontend-js/dist cargo run -p omnibus
 
 # Tests & lint — aggregate targets cover the full crate matrix in one go
-just test                                                   # Rust matrix (db + server + frontend(server + mobile features) + shared + mcp + mock-kobo), then the Python script suites
-just test-rust                                              # the Rust matrix alone
-just lint                                                   # cargo fmt --check + clippy -D warnings (incl. mobile + mcp + mock-kobo + frontend-server + frontend-web wasm32) + stylelint
-just lint-css                                               # structural CSS lint only (stylelint; catches unclosed rules and duplicate selectors in frontend/assets)
+just test                                                   # Rust suites (db + server + shared + mcp + mock-kobo), then the script suites
+just test-rust                                              # the Rust suites alone
+just lint                                                   # cargo fmt --check + clippy -D warnings (default members + mcp + mock-kobo)
 just lint-ts                                                # Playwright TS: biome check + tsc --noEmit (TypeScript 7), in .#e2e
 just check                                                  # lint then test
 just modules db/src                                         # module map for any directory, from each file's //! doc
 just openapi-gen                                            # regenerate openapi/openapi.json, the REST contract (a test fails while it is stale)
 just openapi                                                # regenerate, then browse the API reference on a local port
-# …or per-crate (note: `cargo test --workspace` SKIPS frontend rpc/page tests,
-#  mobile, mcp, and mock-kobo — the rpc/page tests need --features server to
-#  compile the server-function bodies; mobile, mcp, and mock-kobo are out of
-#  default-members, and of those three only mcp and mock-kobo have tests, so
-#  name them explicitly):
+# …or per-crate (a bare `cargo test` covers only default-members, server and
+#  shared, so name the others):
 cargo test -p omnibus                                       # /api/* REST integration tests
 cargo test -p omnibus-db                                    # db + scanner + sync tests
-cargo test -p omnibus-frontend --features server            # rpc + page tests (server feature required)
 cargo test -p omnibus-shared                                # shared serde / ebook / progress tests
 cargo test -p omnibus-mcp                                   # MCP tool-layer tests (crate is out of default-members)
 cargo test -p omnibus-mock-kobo                             # fake Kobo firmware tests (crate is out of default-members)
-cargo clippy                                                # lint default-members (server, shared, frontend)
+cargo clippy                                                # lint default-members (server, shared)
 cargo fmt                                                   # format all crates
 
-# Playwright E2E. `just e2e-ci` runs specs the way CI does: its own bundle,
-# standalone server and scratch DB, torn down afterwards (no server needed).
+# Playwright E2E. `just e2e-ci` runs specs the way CI does: its own server
+# build serving React at `/`, on a scratch DB, torn down afterwards.
 just e2e-ci                                                 # whole suite; or `just e2e-ci tests/flows/<flow>.spec.ts`
 # Against a running dev server instead (baseURL = $PLAYWRIGHT_BASE_URL or :3000).
 # The Playwright project uses pnpm (not npm) and TypeScript 7; Biome is its
@@ -158,11 +155,6 @@ just ios-sim                                                # boot newest iPhone
 # `just test` / `just lint` / CI name it explicitly, so its suite gates a merge.
 cargo build -p omnibus-mcp
 cargo test -p omnibus-mcp
-
-# Hybrid mobile shell (mobile/ crate — Android surface)
-cargo build -p omnibus-mobile
-dx serve --platform android --package omnibus-mobile
-adb reverse tcp:3000 tcp:3000                               # after Android emulator boots
 ```
 
 ## Project direction
