@@ -94,7 +94,7 @@ async fn resolve_and_cache(
 
     // Resolve the library book to a Hardcover book.
     let Some(resolved) = resolve_book(config, &isbns, &title, author.as_deref()).await? else {
-        // Hardcover has no matching book — recorded until the empty marker goes stale.
+        // Hardcover has no matching book — looked up again once the empty marker goes stale.
         replace_suggestions(pool, book_uuid, &[], SuggestionState::Empty).await?;
         return Ok(());
     };
@@ -137,12 +137,8 @@ async fn resolve_and_cache(
         });
     }
 
-    let state = if rows.is_empty() {
-        SuggestionState::Empty
-    } else {
-        SuggestionState::Resolved
-    };
-    replace_suggestions(pool, book_uuid, &rows, state).await?;
+    // `Resolved` even with no rows: the book matched, so only a miss is retried daily.
+    replace_suggestions(pool, book_uuid, &rows, SuggestionState::Resolved).await?;
     Ok(())
 }
 

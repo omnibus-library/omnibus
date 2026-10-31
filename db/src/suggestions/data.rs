@@ -32,9 +32,9 @@ pub enum SuggestionsDataError {
 pub enum SuggestionState {
     /// A resolution is enqueued / in flight.
     Pending,
-    /// Results are cached (`book_suggestions` holds 0..N rows).
+    /// The book matched on Hardcover and its results are cached (`book_suggestions` holds 0..N rows).
     Resolved,
-    /// Hardcover matched nothing usable; looked up again after [`EMPTY_RETRY_SECS`].
+    /// No Hardcover book matched the library book; looked up again after [`EMPTY_RETRY_SECS`].
     Empty,
     /// The lookup errored; it is tried again once the pending debounce lapses.
     Failed,

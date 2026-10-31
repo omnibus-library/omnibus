@@ -124,6 +124,42 @@ async fn age_marker(pool: &sqlx::SqlitePool, uuid: &str, state: SuggestionState,
     .unwrap();
 }
 
+/// Answers the list lookups with one co-listed book, "Alpha", by `author`.
+async fn mount_one_co_listed_book(server: &MockServer, author: &str) {
+    let hit = |body: serde_json::Value| ResponseTemplate::new(200).set_body_json(body);
+    Mock::given(method("POST"))
+        .and(body_string_contains("list_books(where: {book_id:"))
+        .respond_with(hit(json!({ "data": { "list_books": [{ "list_id": 1 }] } })))
+        .mount(server)
+        .await;
+    Mock::given(method("POST"))
+        .and(body_string_contains("list_books(where: {list_id:"))
+        .respond_with(hit(
+            json!({ "data": { "list_books": [{ "book_id": 200 }] } }),
+        ))
+        .mount(server)
+        .await;
+    Mock::given(method("POST"))
+        .and(body_string_contains("books(where: {id: {_in:"))
+        .respond_with(hit(json!({ "data": { "books": [{
+            "id": 200, "title": "Alpha",
+            "contributions": [{ "author": { "name": author } }], "book_series": []
+        }] } })))
+        .mount(server)
+        .await;
+}
+
+async fn resolve_seeded_book(pool: &sqlx::SqlitePool, uuid: &str, server: &MockServer) {
+    resolve_with(
+        pool,
+        uuid,
+        &config_for(server),
+        &RemoteImageConfig::default(),
+    )
+    .await
+    .unwrap();
+}
+
 #[tokio::test]
 async fn resolve_with_re_resolves_an_empty_marker_older_than_a_day() {
     let pool = init_db("sqlite::memory:").await.unwrap();
@@ -131,49 +167,102 @@ async fn resolve_with_re_resolves_an_empty_marker_older_than_a_day() {
     age_marker(&pool, &uuid, SuggestionState::Empty, 2 * EMPTY_RETRY_SECS).await;
 
     let server = MockServer::start().await;
-    let hit = |body: serde_json::Value| ResponseTemplate::new(200).set_body_json(body);
     Mock::given(method("POST"))
         .and(body_string_contains("title: {_eq:"))
-        .respond_with(hit(json!({ "data": { "books": [{
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({ "data": { "books": [{
             "id": 100, "contributions": [{ "author": { "name": "Source Author" } }],
             "book_series": []
-        }] } })))
+        }] } })),
+        )
         .expect(1)
         .mount(&server)
         .await;
-    Mock::given(method("POST"))
-        .and(body_string_contains("list_books(where: {book_id:"))
-        .respond_with(hit(json!({ "data": { "list_books": [{ "list_id": 1 }] } })))
-        .mount(&server)
-        .await;
-    Mock::given(method("POST"))
-        .and(body_string_contains("list_books(where: {list_id:"))
-        .respond_with(hit(
-            json!({ "data": { "list_books": [{ "book_id": 200 }] } }),
-        ))
-        .mount(&server)
-        .await;
-    Mock::given(method("POST"))
-        .and(body_string_contains("books(where: {id: {_in:"))
-        .respond_with(hit(json!({ "data": { "books": [{
-            "id": 200, "title": "Alpha",
-            "contributions": [{ "author": { "name": "Author A" } }], "book_series": []
-        }] } })))
-        .mount(&server)
-        .await;
+    mount_one_co_listed_book(&server, "Author A").await;
 
-    resolve_with(
-        &pool,
-        &uuid,
-        &config_for(&server),
-        &RemoteImageConfig::default(),
-    )
-    .await
-    .unwrap();
+    resolve_seeded_book(&pool, &uuid, &server).await;
 
     let (state, _) = suggestion_state(&pool, &uuid).await.unwrap().unwrap();
     assert_eq!(state, SuggestionState::Resolved);
     assert_eq!(get_suggestions(&pool, &uuid).await.unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn resolve_with_marks_a_resolved_book_resolved_when_every_candidate_is_filtered_out() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let uuid = seed_synced_ebook(&pool, "src.epub", "Test Source", "Source Author").await;
+
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(body_string_contains("title: {_eq:"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({ "data": { "books": [{
+            "id": 100, "contributions": [{ "author": { "name": "Source Author" } }],
+            "book_series": []
+        }] } })),
+        )
+        .mount(&server)
+        .await;
+    mount_one_co_listed_book(&server, "Source Author").await;
+
+    resolve_seeded_book(&pool, &uuid, &server).await;
+
+    let (state, _) = suggestion_state(&pool, &uuid).await.unwrap().unwrap();
+    assert_eq!(state, SuggestionState::Resolved);
+    assert!(get_suggestions(&pool, &uuid).await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn resolve_with_caches_suggestions_for_a_book_matched_only_by_fuzzy_search() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user_id = crate::auth::create_user(&pool, "admin", "securepassword1")
+        .await
+        .unwrap()
+        .id;
+    let uuid = seed_synced_ebook(&pool, "src.epub", "Test Source (Vol. 1)", "Source Author").await;
+    let isbn = omnibus_shared::MetadataOverrides {
+        isbn13: Some("9781649374042".into()),
+        ..Default::default()
+    };
+    crate::metadata_overrides::upsert_metadata_overrides(&pool, &uuid, &isbn, false, user_id)
+        .await
+        .unwrap();
+
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(body_string_contains("editions(where:"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data": { "editions": [] }
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(body_string_contains("title: {_eq:"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data": { "books": [] }
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(body_string_contains("search(query:"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data": { "search": { "results": { "hits": [
+                { "document": { "id": "100", "author_names": ["Source Author"], "users_count": 40 } }
+            ] } } }
+        })))
+        .mount(&server)
+        .await;
+    mount_one_co_listed_book(&server, "Author A").await;
+
+    resolve_seeded_book(&pool, &uuid, &server).await;
+
+    let (state, _) = suggestion_state(&pool, &uuid).await.unwrap().unwrap();
+    assert_eq!(state, SuggestionState::Resolved);
+    let rows = get_suggestions(&pool, &uuid).await.unwrap();
+    assert_eq!(
+        rows.iter().map(|r| r.title.as_str()).collect::<Vec<_>>(),
+        vec!["Alpha"]
+    );
 }
 
 #[tokio::test]

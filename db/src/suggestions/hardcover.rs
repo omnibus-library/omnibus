@@ -377,20 +377,13 @@ async fn resolve_by_search(
 /// The most-read hit by `author` (any hit when the book has none), earliest in
 /// Hardcover's order on a tie. A hit by another author is never returned.
 pub fn pick_search_hit(hits: &[SearchBook], author: Option<&str>) -> Option<ResolvedBook> {
-    let mut best: Option<(i64, i64, &SearchBook)> = None;
-    for hit in hits {
-        let Some(id) = hit.id.as_deref().and_then(|id| id.trim().parse().ok()) else {
-            continue;
-        };
-        if author.is_some_and(|a| !is_same_author(a, &hit.author_names)) {
-            continue;
-        }
-        let reads = hit.users_count.unwrap_or(0);
-        if best.is_none_or(|(_, best_reads, _)| reads > best_reads) {
-            best = Some((id, reads, hit));
-        }
-    }
-    best.map(|(id, _, hit)| ResolvedBook {
+    let (id, hit) = hits
+        .iter()
+        .filter_map(|hit| Some((hit.id.as_deref()?.trim().parse::<i64>().ok()?, hit)))
+        .filter(|(_, hit)| author.is_none_or(|a| is_same_author(a, &hit.author_names)))
+        // `min_by_key` keeps the first of equal keys, which is the tie rule.
+        .min_by_key(|(_, hit)| std::cmp::Reverse(hit.users_count.unwrap_or(0)))?;
+    Some(ResolvedBook {
         id,
         author_names: hit.author_names.clone(),
         series: hit
