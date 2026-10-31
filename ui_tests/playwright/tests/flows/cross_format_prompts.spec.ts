@@ -594,15 +594,16 @@ test.describe("cross-format resume prompts", () => {
     });
   });
 
-  // The boot restores the stored position at `loadedmetadata`, so a Go any
-  // earlier would be rewound to it.
-  test("hold the player's offer until the stored position has loaded", async ({
+  // The boot restores the stored position at `loadedmetadata`; a Go taken
+  // before it must replace that restore, not be rewound by it.
+  test("keep a Go taken before the audio loads", async ({
     listenPage,
     crossFormatRequests,
     progressRequests,
     resumePromptUuid: uuid,
     eventClock,
     newestStoredClock,
+    expectMutation,
   }) => {
     const { syncOffer } = listenPage;
 
@@ -635,13 +636,15 @@ test.describe("cross-format resume prompts", () => {
       await listenPage.waitUntilPlayerReady();
     });
 
-    await test.step("check the offer waits for the audio", async () => {
-      await expect(syncOffer.root).toHaveCount(0);
+    await test.step("take the offer before the audio loads", async () => {
+      await expectMutation(progress.save(), () => syncOffer.go());
     });
 
-    await test.step("let the audio load", async () => {
+    await test.step("check the audio lands on the offered spot", async () => {
       release();
-      await expect(syncOffer.root).toBeVisible();
+      await expect
+        .poll(() => listenPage.audioPosition(), { timeout: 15_000 })
+        .toBeGreaterThan(0);
     });
   });
 });
