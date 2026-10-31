@@ -158,6 +158,60 @@ pub(crate) async fn post_graphql<T: DeserializeOwned>(
         .ok_or_else(|| HardcoverError::Graphql("response had no data".to_string()))
 }
 
+// ── Search ───────────────────────────────────────────────────────
+
+/// Hardcover's text `search`, one query for every caller. The text rides in
+/// `$q`, never interpolated.
+pub(crate) const SEARCH_QUERY: &str = "query ($q: String!, $limit: Int!) { \
+     search(query: $q, query_type: \"Book\", per_page: $limit, page: 1) { results } }";
+
+/// The `search` response over the hit document `D`. `results` is an untyped
+/// Typesense payload on the wire, so only the parts callers read are described.
+/// The explicit `bound` keeps `#[serde(default)]` from demanding `D: Default`.
+#[derive(Debug, Deserialize)]
+#[serde(bound(deserialize = "D: Deserialize<'de>"))]
+pub(crate) struct SearchData<D> {
+    // `default` covers an absent key, not a `null`; `search` is nullable (Hasura
+    // sends `{"data":{"search":null}}` beside `errors`), so `Option` at every
+    // level reads that as "no hits" instead of a decode error.
+    #[serde(default)]
+    search: Option<SearchEnvelope<D>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(bound(deserialize = "D: Deserialize<'de>"))]
+struct SearchEnvelope<D> {
+    #[serde(default)]
+    results: Option<SearchResults<D>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(bound(deserialize = "D: Deserialize<'de>"))]
+struct SearchResults<D> {
+    #[serde(default)]
+    hits: Option<Vec<SearchHit<D>>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(bound(deserialize = "D: Deserialize<'de>"))]
+struct SearchHit<D> {
+    #[serde(default)]
+    document: Option<D>,
+}
+
+impl<D> SearchData<D> {
+    /// Every hit's document in Hardcover's order; an absent or null level is no hits.
+    pub(crate) fn documents(self) -> Vec<D> {
+        self.search
+            .and_then(|s| s.results)
+            .and_then(|r| r.hits)
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|hit| hit.document)
+            .collect()
+    }
+}
+
 // ── Book resolution ──────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
