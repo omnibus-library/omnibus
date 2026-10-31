@@ -29,7 +29,7 @@ export function authorRule(author: string): ShelfRule {
   return { field: "author", op: "is", value: author };
 }
 
-/** The `req` body `POST /api/rpc/shelves/create` takes. */
+/** The body `POST /api/shelves` takes. */
 export type NewShelf = {
   name: string;
   kind: "manual" | "smart";

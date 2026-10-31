@@ -157,12 +157,12 @@ export const AUDIOBOOK_BOOKS: readonly ExpectedAudiobook[] = [
 
 /**
  * The audiobooks reserved for specs that MUTATE books via
- * `/api/rpc/merge-books` (`merge.spec.ts`, and `book_detail.spec.ts`'s
+ * `/api/books/merge` (`merge.spec.ts`, and `book_detail.spec.ts`'s
  * file-picker tests).
  *
  * The suite runs `fullyParallel` against one shared server, so a merge is
  * globally visible: while it is in flight the source book vanishes from
- * `/api/rpc/ebooks` and the target grows a second format and a second
+ * `/api/ebooks` and the target grows a second format and a second
  * `book_files` row. Pointing the merge specs at books that `listen.spec.ts`
  * / `mini-dock.spec.ts` also read is what made those specs fail in CI — the
  * `audiobook-merge` lock only serializes the *writers*, and readers never

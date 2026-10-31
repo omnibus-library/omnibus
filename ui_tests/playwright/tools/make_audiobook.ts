@@ -99,7 +99,7 @@ const FIXTURES: AudiobookInput[] = [
     frames: 80,
   },
 
-  // Merge-only pair. Specs that MUTATE a book via /api/rpc/merge-books own
+  // Merge-only pair. Specs that MUTATE a book via /api/books/merge own
   // these two and nothing else reads them, so a merge in flight can never
   // change a book another spec is asserting against. Both authors are absent
   // from `make_epub.ts` so no auto-attach fires and no author-scoped count

@@ -10,10 +10,10 @@ export class ShelvesRequests extends BaseRequests {
 
   /** Returns `{ id }` for the shelf the context's user now owns. */
   postShelf(req: NewShelf): Promise<APIResponse> {
-    return this.post("/api/rpc/shelves/create", { req });
+    return this.post("/api/shelves", req);
   }
 
   deleteShelf(id: number): Promise<APIResponse> {
-    return this.post("/api/rpc/shelves/delete", { id });
+    return this.delete(`/api/shelves/${id}`);
   }
 }

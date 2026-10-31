@@ -1,4 +1,4 @@
-/** One book in `GET /api/rpc/ebooks`, trimmed to what the specs read. */
+/** One book in `GET /api/ebooks`, trimmed to what the specs read. */
 export type LibraryBook = {
   title: string | null;
   unique_identifier: string | null;
@@ -20,7 +20,7 @@ export type UploadedEbook = { uuid: string; folder: string };
 
 // Dates as the landing table and the detail page print them.
 
-/** One book in `GET /api/rpc/ebooks`, with the instant it entered the library. */
+/** One book in `GET /api/ebooks`, with the instant it entered the library. */
 export type AddedBook = LibraryBook & { added_at: string | null };
 
 const MONTH_NAMES = [

@@ -31,18 +31,18 @@ export class AccountRequests extends BaseRequests {
   }
 
   postKoboDevice(name: string): Promise<APIResponse> {
-    return this.post("/api/rpc/kobo/devices/create", { name });
+    return this.post("/api/account/kobo-devices", { name });
   }
 
   postKoboDeviceRevoke(id: number): Promise<APIResponse> {
-    return this.post("/api/rpc/kobo/devices/revoke", { id });
+    return this.delete(`/api/account/kobo-devices/${id}`);
   }
 
   postApiToken(name: string): Promise<APIResponse> {
-    return this.post("/api/rpc/api-tokens/create", { name });
+    return this.post("/api/auth/api-tokens", { name });
   }
 
   postApiTokenRevoke(id: number): Promise<APIResponse> {
-    return this.post("/api/rpc/api-tokens/revoke", { id });
+    return this.delete(`/api/auth/api-tokens/${id}`);
   }
 }

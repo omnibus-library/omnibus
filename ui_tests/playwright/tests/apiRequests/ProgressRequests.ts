@@ -4,9 +4,12 @@ import { BaseRequests } from "./BaseRequests";
 
 /** The reader's stored positions, read and written as whoever owns the context. */
 export class ProgressRequests extends BaseRequests {
-  /** The envelope over every format; `?format=` narrows only its records. */
-  getProgress(bookUuid: string): Promise<APIResponse> {
-    return this.get(`/api/progress/${bookUuid}?format=epub`);
+  /** The book's progress envelope, its `records` narrowed to `format`. */
+  getProgress(
+    bookUuid: string,
+    format: "epub" | "audio" = "epub",
+  ): Promise<APIResponse> {
+    return this.get(`/api/progress/${bookUuid}?format=${format}`);
   }
 
   /** Writes a position the way a Kobo does, a percent with no CFI. */
@@ -16,8 +19,10 @@ export class ProgressRequests extends BaseRequests {
 
   /** Saves an epub position the way the web reader does. */
   postEpubPosition(bookUuid: string, epubCfi: string): Promise<APIResponse> {
-    return this.post("/api/rpc/progress", {
-      update: { book_uuid: bookUuid, format: "epub", epub_cfi: epubCfi },
+    return this.post("/api/progress", {
+      book_uuid: bookUuid,
+      format: "epub",
+      epub_cfi: epubCfi,
     });
   }
 
@@ -36,13 +41,11 @@ export class ProgressRequests extends BaseRequests {
     percent: number,
     clientUpdatedAt: number,
   ): Promise<APIResponse> {
-    return this.post("/api/rpc/progress", {
-      update: {
-        book_uuid: bookUuid,
-        format: "epub",
-        progress_percent: percent,
-        client_updated_at: clientUpdatedAt,
-      },
+    return this.post("/api/progress", {
+      book_uuid: bookUuid,
+      format: "epub",
+      progress_percent: percent,
+      client_updated_at: clientUpdatedAt,
     });
   }
 
@@ -52,21 +55,11 @@ export class ProgressRequests extends BaseRequests {
     seconds: number,
     clientUpdatedAt: number,
   ): Promise<APIResponse> {
-    return this.post("/api/rpc/progress", {
-      update: {
-        book_uuid: bookUuid,
-        format: "audio",
-        audio_position_seconds: seconds,
-        client_updated_at: clientUpdatedAt,
-      },
+    return this.post("/api/progress", {
+      book_uuid: bookUuid,
+      format: "audio",
+      audio_position_seconds: seconds,
+      client_updated_at: clientUpdatedAt,
     });
-  }
-
-  /** The stored record for one format, or `null` when the reader has none. */
-  postProgressGet(
-    bookUuid: string,
-    format: "epub" | "audio",
-  ): Promise<APIResponse> {
-    return this.post("/api/rpc/progress/get", { uuid: bookUuid, format });
   }
 }

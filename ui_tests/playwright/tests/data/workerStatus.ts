@@ -8,7 +8,7 @@ export type ScanTallies = {
   unchanged: number;
 };
 
-/** One background task as `POST /api/rpc/worker_status` lists it. */
+/** One background task as `GET /api/worker/status` lists it. */
 export type WorkerTask = {
   task_id: number;
   kind: "scan" | "generate_thumbs" | "resolve_author_photo";

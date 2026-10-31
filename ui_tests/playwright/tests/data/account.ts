@@ -3,7 +3,7 @@ import type { BrowserContext } from "@playwright/test";
 /** A Progress sync login, shown once. */
 export type KosyncLogin = { username: string; password: string };
 
-/** The part of `POST /api/rpc/kobo/devices/create`'s answer a test keeps. */
+/** The part of `POST /api/account/kobo-devices`'s answer a test keeps. */
 export type CreatedKoboDevice = { id: number; kosync_login?: KosyncLogin };
 
 /** Which kind of reader a registered device is; `kosync` is a KOReader without the plugin. */
