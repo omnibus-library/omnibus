@@ -49,9 +49,10 @@ test.describe("user menu", () => {
     });
 
     await test.step("check the version line", async () => {
-      // A compile-time constant (#1055), so it is there whatever OMNIBUS_VERSION is.
+      // A compile-time constant (#1055), so it is there whatever OMNIBUS_VERSION
+      // is: the release tag, or `dev` for a build with none set.
       await expect(topNav.versionText).toBeVisible();
-      await expect(topNav.versionText).toHaveText(/^v\d+\.\d+\.\d+$/);
+      await expect(topNav.versionText).toHaveText(/^(v\d+\.\d+\.\d+|dev)$/);
     });
   });
 

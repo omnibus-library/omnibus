@@ -39,8 +39,8 @@ test.describe("immersive read", () => {
       await expect(bookDetailPage.listenButton).toBeVisible();
     });
 
-    // The marquee row uses the design's terser label.
     await test.step("check the immersive read action shows", async () => {
+      await bookDetailPage.openMoreActions();
       await expect(bookDetailPage.immersiveReadButton).toBeVisible();
       await expect(bookDetailPage.immersiveReadButton).toHaveText(/Immersive/);
     });

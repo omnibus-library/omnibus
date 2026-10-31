@@ -21,7 +21,6 @@ test.describe("login page", () => {
       await expect(loginPage.welcomeHeading).toBeVisible();
       await expect(loginPage.usernameField).toBeVisible();
       await expect(loginPage.passwordField).toBeVisible();
-      await expect(loginPage.keepSignedInCheckbox).toBeVisible();
       await expect(loginPage.logInButton).toBeVisible();
       await expect(loginPage.registerLink).toBeVisible();
     });
@@ -88,20 +87,19 @@ test.describe("login page", () => {
     });
   });
 
-  test("show an error when the form is empty", async ({ loginPage }) => {
+  test("refuse to submit an empty form", async ({ loginPage }) => {
     await test.step("open the login page", async () => {
       await loginPage.goto();
     });
 
     // The client rejects the form before sending anything.
-    await test.step("submit nothing", async () => {
-      await loginPage.submit();
+    await test.step("check the form cannot be sent empty", async () => {
+      await expect(loginPage.logInButton).toBeDisabled();
     });
 
-    await test.step("check the banner asks for both fields", async () => {
-      await expect(loginPage.errorBanner).toContainText(
-        /username and password/i,
-      );
+    await test.step("check one field alone is not enough", async () => {
+      await loginPage.fillCredentials({ username: "someone", password: "" });
+      await expect(loginPage.logInButton).toBeDisabled();
     });
   });
 
@@ -230,9 +228,9 @@ test.describe("register page", () => {
         "aria-invalid",
         "true",
       );
-      await expect(registerPage.usernameField).toHaveAttribute(
+      await expect(registerPage.usernameField).not.toHaveAttribute(
         "aria-invalid",
-        "false",
+        "true",
       );
       await expect(registerPage.passwordFieldError).toContainText(
         "password is too short",

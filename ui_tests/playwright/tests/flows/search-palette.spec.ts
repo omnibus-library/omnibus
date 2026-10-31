@@ -298,7 +298,7 @@ test.describe("search palette", () => {
       });
 
       await test.step("run a search that fails", async () => {
-        await libraryPage.forceServerError(search.palette());
+        await libraryPage.forceServerError(search.read());
         await palette.replaceQuery("stoker");
       });
 

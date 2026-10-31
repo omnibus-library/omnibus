@@ -1,4 +1,4 @@
-/** One entry of `POST /api/rpc/progress/recent`, which the user menu lists. */
+/** One entry of `GET /api/progress/recent`, which the user menu lists. */
 export type RecentPoint = {
   record: {
     book_uuid: string;
