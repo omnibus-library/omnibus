@@ -81,9 +81,9 @@ pub use process_meta::{
 };
 pub use react_ui::{react_dir, react_ui_router, REACT_DIR_ENV};
 
-/// Per-IP rate-limit budget for `/api/search/*` and the `/api/rpc/search-*` server
-/// functions, separate from the auth limiter. Each request runs four FTS5 queries plus
-/// joins; the budget still covers a user typing into the command palette.
+/// Per-IP rate-limit budget for `/api/search/*`, separate from the auth limiter. Each
+/// request runs four FTS5 queries plus joins; the budget still covers a user typing into
+/// the command palette.
 pub const SEARCH_RATE_LIMIT_WINDOW: std::time::Duration = std::time::Duration::from_secs(10);
 /// Max search requests per [`SEARCH_RATE_LIMIT_WINDOW`] per IP.
 pub const SEARCH_RATE_LIMIT_MAX: u32 = 30;
@@ -333,8 +333,7 @@ pub fn rest_router(state: AppState) -> Router {
     rest_router_with_search_limiter(state, std::sync::Arc::new(search_limiter))
 }
 
-/// Build the `/api/*` REST router, sharing `search_limiter` with the caller so
-/// REST `/api/search/*` and RPC `/api/rpc/search-*` draw from one budget.
+/// Build the `/api/*` REST router around the caller's `search_limiter`.
 pub fn rest_router_with_search_limiter(
     state: AppState,
     search_limiter: std::sync::Arc<RateLimiter>,

@@ -310,7 +310,7 @@ async fn client_ip_falls_back_to_the_peer_when_no_forwarded_header_is_present() 
     );
 }
 
-/// No peer at all (a `oneshot`, or a dioxus bump that stops handing us a
+/// No peer at all (a `oneshot`, or a serve change that stops handing us a
 /// make-service with connect info) falls back to the process-wide sentinel.
 #[tokio::test]
 async fn client_ip_falls_back_to_the_sentinel_when_no_peer_is_available() {

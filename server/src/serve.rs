@@ -6,8 +6,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use axum::Router;
 
 /// The address `IP` and `PORT` name, each falling back on its own (to `127.0.0.1` and `8080`)
-/// when unset or unparseable. The same defaults as the Dioxus server before it, so an
-/// existing deployment binds where it always did.
+/// when unset or unparseable — defaults an existing deployment already relies on.
 pub fn listen_address(ip: Option<&str>, port: Option<&str>) -> SocketAddr {
     let ip = ip
         .and_then(|ip| ip.parse().ok())

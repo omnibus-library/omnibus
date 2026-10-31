@@ -1,6 +1,5 @@
 //! The library-cleanup review routes under `/api/admin/cleanup`, behind the
-//! Administration Cleanup section and its review page. REST twins of the
-//! `rpc_cleanup_*` server functions, all `AdminUser`-gated.
+//! Administration Cleanup section and its review page, all `AdminUser`-gated.
 //!
 //! A refusal the reviewer can act on becomes a 409 carrying its sentence. For a
 //! fault in the database or in a stored row, the handler logs it and answers with a

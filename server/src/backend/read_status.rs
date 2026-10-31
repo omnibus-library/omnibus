@@ -1,7 +1,6 @@
-//! Read/unread-state REST handlers for the mobile client (`/api/read-status*`).
+//! Read/unread-state REST handlers (`/api/read-status*`).
 //! Set/get the per-`(user, book)` read state; writes are last-write-wins and the
-//! uuid is validated at the boundary (400 blank, 404 unindexed book). Web clients
-//! use the `/api/rpc/read-status/*` server functions in `omnibus_frontend::rpc`.
+//! uuid is validated at the boundary (400 blank, 404 unindexed book).
 
 use axum::{
     extract::{Path, State},
