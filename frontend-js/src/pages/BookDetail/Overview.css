@@ -378,6 +378,22 @@
   border: 1px dashed var(--line);
   border-radius: var(--bp-radius);
 }
+/* The no-key card is an offer, not a wait: solid, with the ask on the left and its action on the right. */
+.bp-suggest-connect {
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px 20px;
+  border-style: solid;
+}
+.bp-suggest-connect-title {
+  margin: 0;
+  font-size: inherit;
+  font-weight: 600;
+}
+.bp-suggest-connect-title + .bp-quiet {
+  margin: 6px 0 0;
+  padding: 0;
+}
 
 /* The series, fanned like the Atrium shelf; it spreads when you reach for it, and a long one closes up to stay in its column. */
 .bp-fan {

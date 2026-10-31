@@ -64,7 +64,10 @@ copies and the wishlist, the details with an Add link on each one that is unset,
 and the curator's edit, merge and delete. Finishing a book plays a ribbon burst
 and shows what is next. The alignment modal is left to the screen that owns it.
 `/check-in` is a child route of `/`: the check-in flow is a dialog over the
-blurred library, which stays mounted beneath it.
+blurred library, which stays mounted beneath it. The library's hero sets the
+Continue Reading fan beside your series in progress (`GET /api/series/in-progress`):
+a row each with the next book to open and a ✕ that hides the series from home
+until you start another book in it; the series page has the same toggle.
 `/books/:uuid/edit` is a child route of `/books/:uuid`: the book page stays
 mounted and the metadata editor rises over it as a sheet, so a deep link, a
 refresh and Back all draw both. The sheet's tabs are Details, Artwork and
@@ -252,7 +255,7 @@ shell provides it.
   `shelves`, `highlightAnchors`, `quietReaders`, `journalMarkdown`, `rating`,
   `reviews` (a patch applied to your review and the household's list, what a save sends, the composer's seed, spoiler veiling and Read more) and delete copy, the palette's `selection`, the results page's `results`, Register's
   `refusal`, the library's `filters`, `saveAsShelf`, `libraryView`, `seriesStacks`,
-  `shelfLens`, `sorting`, `bulkMetadata` and `inlineEdit`, the editor's `metadata` (form
+  `seriesInProgress`, `shelfLens`, `sorting`, `bulkMetadata` and `inlineEdit`, the editor's `metadata` (form
   schema, the rules a field is refused by and the override diff), `dirty`,
   `editionFields` and `fetch`, the View Transition helper `viewTransition`, `uploads`,
   check-in's `checkInFlow` and `scan`, `findCopy`, the wishlists' `wishlistView` (scope, headings,

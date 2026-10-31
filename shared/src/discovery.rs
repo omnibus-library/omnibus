@@ -232,6 +232,10 @@ pub struct SeriesDetail {
     /// here is unread, with no position.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub reading: Vec<BookReading>,
+    /// Whether you hid the series from the home page's series in progress. It comes back
+    /// there when you start a book of it that you hadn't started.
+    #[serde(default)]
+    pub hidden_from_home: bool,
 }
 
 // Per-reader, so it rides its own request beside `SeriesSummary`, which every
@@ -248,6 +252,22 @@ pub struct SeriesReading {
     pub reading: usize,
     /// The latest `last_read_at` of your `BookReading` across the series' books, in
     /// Unix seconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_read_at: Option<i64>,
+}
+
+/// A series you are partway through, from `GET /api/series/in-progress`: its books in
+/// reading order and your state on each, as `GET /api/series/{id}` sends them, plus the
+/// book to open next.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SeriesInProgress {
+    #[serde(flatten)]
+    pub series: SeriesDetail,
+    /// The uuid of the book to open next: the one you are reading that you read last,
+    /// else the first unread one in reading order.
+    pub next_book_uuid: String,
+    /// When you last read a book of the series, in Unix seconds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_read_at: Option<i64>,
 }

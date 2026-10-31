@@ -309,7 +309,9 @@ fn discovery_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(authors::get_author_by_id, authors::delete_author))
         .routes(routes!(series::get_series))
         .routes(routes!(series::get_series_reading))
+        .routes(routes!(series::get_series_in_progress))
         .routes(routes!(series::get_series_by_id))
+        .routes(routes!(series::put_series_hide, series::delete_series_hide))
         .routes(routes!(tags::get_tags))
         .routes(routes!(genres::get_genres))
 }

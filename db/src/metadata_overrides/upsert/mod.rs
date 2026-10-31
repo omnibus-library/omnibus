@@ -6,11 +6,12 @@
 
 use std::collections::HashMap;
 
-use omnibus_shared::MetadataOverrides;
+use omnibus_shared::{Contributor, MetadataOverrides};
 use sqlx::{Executor, SqliteConnection, SqlitePool};
 
 use crate::books::resolve_book_id_by_uuid_exec;
 use crate::normalize::{normalize_author, normalize_title};
+use crate::suggestions::data::{delete_suggestions_in_tx, SuggestionsDataError};
 use crate::sync::upsert_fts;
 
 use super::fts::rebuild_fts_for_book;
@@ -49,6 +50,13 @@ pub enum MetadataOverridesError {
         field: &'static str,
         max: usize,
     },
+}
+
+impl From<SuggestionsDataError> for MetadataOverridesError {
+    fn from(e: SuggestionsDataError) -> Self {
+        let SuggestionsDataError::Db(inner) = e;
+        MetadataOverridesError::Db(inner)
+    }
 }
 
 impl From<crate::books::BooksError> for MetadataOverridesError {
@@ -140,6 +148,46 @@ pub(super) async fn touch_book_last_modified(
     .bind(book_uuid)
     .execute(&mut *conn)
     .await?;
+    Ok(())
+}
+
+/// The override fields Hardcover is matched on, as `(title, creators, isbn13, isbn10)`.
+type MatchFields<'a> = (
+    Option<&'a str>,
+    Option<&'a [Contributor]>,
+    Option<&'a str>,
+    Option<&'a str>,
+);
+
+fn match_fields(ov: Option<&MetadataOverrides>) -> MatchFields<'_> {
+    let Some(ov) = ov else {
+        return (None, None, None, None);
+    };
+    (
+        ov.title.as_deref(),
+        ov.creators.as_deref(),
+        ov.isbn13.as_deref(),
+        ov.isbn10.as_deref(),
+    )
+}
+
+/// Drop the book's suggestions cache when `next` (`None` for a revert) changes a field
+/// Hardcover is matched on, so the next view looks again. Runs on the edit's transaction.
+pub(super) async fn clear_suggestions_on_match_change(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    book_uuid: &str,
+    next: Option<&MetadataOverrides>,
+) -> Result<(), MetadataOverridesError> {
+    let stored: Option<String> =
+        sqlx::query_scalar("SELECT overrides FROM metadata_overrides WHERE book_uuid = ?")
+            .bind(book_uuid)
+            .fetch_optional(&mut **tx)
+            .await?;
+    // A corrupt row reads as "no overrides": the write replaces it, so it must not fail here.
+    let prior = stored.and_then(|json| serde_json::from_str::<MetadataOverrides>(&json).ok());
+    if match_fields(prior.as_ref()) != match_fields(next) {
+        delete_suggestions_in_tx(tx, book_uuid).await?;
+    }
     Ok(())
 }
 
@@ -282,6 +330,7 @@ pub(crate) async fn upsert_one_in_tx(
 ) -> Result<(), MetadataOverridesError> {
     let json = serde_json::to_string(overrides)?;
     let replaced = current_override_series(tx, book_uuid).await?;
+    clear_suggestions_on_match_change(tx, book_uuid, Some(overrides)).await?;
     upsert_overrides_row(
         &mut **tx,
         book_uuid,
@@ -372,6 +421,7 @@ pub(crate) async fn delete_one_in_tx(
     book_uuid: &str,
 ) -> Result<Option<i64>, MetadataOverridesError> {
     let replaced = current_override_series(tx, book_uuid).await?;
+    clear_suggestions_on_match_change(tx, book_uuid, None).await?;
     sqlx::query("DELETE FROM metadata_overrides WHERE book_uuid = ?")
         .bind(book_uuid)
         .execute(&mut **tx)

@@ -16,8 +16,8 @@ use super::super::links::{
     materialize_series_link, materialize_tag_rows,
 };
 use super::{
-    invalidate_composition_cache, touch_book_last_modified, upsert_overrides_row,
-    MetadataOverridesError,
+    clear_suggestions_on_match_change, invalidate_composition_cache, touch_book_last_modified,
+    upsert_overrides_row, MetadataOverridesError,
 };
 
 /// Merge `incoming` field overrides on top of any existing overrides for
@@ -81,6 +81,7 @@ async fn merge_one_in_tx(
 
     let json = serde_json::to_string(&merged)?;
     let replaced = current_override_series(tx, book_uuid).await?;
+    clear_suggestions_on_match_change(tx, book_uuid, Some(&merged)).await?;
     upsert_overrides_row(
         &mut **tx,
         book_uuid,

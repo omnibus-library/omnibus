@@ -1,7 +1,12 @@
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router";
-import { fetchBookPage, invalidateShelf, type LibraryQuery } from "../../api";
+import {
+  fetchBookPage,
+  invalidateShelf,
+  type LibraryQuery,
+  type SeriesInProgress,
+} from "../../api";
 import { AddBooksModal } from "../../components/AddBooksModal/AddBooksModal";
 import { Button } from "../../components/Button/Button";
 import { FilterBar } from "../../components/FilterBar/FilterBar";
@@ -38,6 +43,12 @@ import {
   ResumeStackPending,
   useResumeLead,
 } from "./ResumeStack";
+import {
+  HideSeriesDialog,
+  SeriesInProgressList,
+  SeriesInProgressPending,
+  useSeriesInProgress,
+} from "./SeriesInProgressList";
 import { ShelfGallery } from "./ShelfGallery";
 import { useShelfLens } from "./shelfLens";
 import { headerSort } from "./sorting";
@@ -127,6 +138,26 @@ export function Library() {
 
   const { points, lead, leadPoint, pending, setLeadKey, past } =
     useResumeLead();
+  const home = useSeriesInProgress();
+  const [hiding, setHiding] = useState<SeriesInProgress | null>(null);
+  // Where the keyboard goes once the hidden row is gone: its slot's ✕, else the heading.
+  const listCell = useRef<HTMLDivElement>(null);
+  const hidingSlot = useRef(0);
+  const refocusAt = useRef<number | null>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: it runs when the rows change, to find the slot the hidden row left
+  useEffect(() => {
+    const slot = refocusAt.current;
+    if (slot === null) return;
+    refocusAt.current = null;
+    const buttons =
+      listCell.current?.querySelectorAll<HTMLElement>(".sip-hide");
+    const next = buttons?.item(Math.min(slot, (buttons?.length ?? 1) - 1));
+    (
+      next ?? listCell.current?.querySelector<HTMLElement>(".sip-heading")
+    )?.focus();
+  }, [home.rows]);
+  const hasFan = leadPoint !== undefined || pending;
+  const hasList = home.rows.length > 0 || home.pending;
   const { selection, pick, shelfId, shelfPage, members, detail, sortLock } =
     useShelfLens(prefs);
   const client = useQueryClient();
@@ -162,10 +193,34 @@ export function Library() {
         style={leadAccent(leadPoint)}
       >
         <PageTitle />
-        {leadPoint ? (
-          <ResumeStack points={points} lead={lead} onLead={setLeadKey} />
-        ) : (
-          pending && <ResumeStackPending />
+        {(hasFan || hasList) && (
+          <div
+            className={`sip-hero sip-hero--${hasFan ? (hasList ? "pair" : "fan") : "solo"}`}
+            data-testid="sip-hero"
+          >
+            {leadPoint ? (
+              <ResumeStack points={points} lead={lead} onLead={setLeadKey} />
+            ) : (
+              pending && <ResumeStackPending />
+            )}
+            {hasList && (
+              <div className="sip-cell" ref={listCell}>
+                {home.rows.length > 0 ? (
+                  <SeriesInProgressList
+                    rows={home.rows}
+                    onHide={(series) => {
+                      hidingSlot.current = home.rows.findIndex(
+                        (row) => row.series.id === series.id,
+                      );
+                      setHiding(series);
+                    }}
+                  />
+                ) : (
+                  <SeriesInProgressPending />
+                )}
+              </div>
+            )}
+          </div>
         )}
         <ShelfGallery
           selection={selection}
@@ -350,6 +405,15 @@ export function Library() {
           />
         )}
         {leadPoint && <EdgeResume point={leadPoint} past={past} />}
+        {hiding && (
+          <HideSeriesDialog
+            series={hiding}
+            onHidden={() => {
+              refocusAt.current = hidingSlot.current;
+            }}
+            onClose={() => setHiding(null)}
+          />
+        )}
         {shelf && editing && (
           <EditShelfModal
             shelf={shelf}

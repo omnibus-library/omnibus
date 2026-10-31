@@ -3,55 +3,14 @@
 //! percent and time.
 
 use omnibus_shared::{
-    EbookMetadata, MetadataOverrides, ProgressFormat, ProgressUpdate, ReadStatus, SetReadStatus,
+    EbookMetadata, MetadataOverrides, ProgressFormat, ProgressUpdate, ReadStatus,
 };
 use sqlx::SqlitePool;
 
 use super::*;
 use crate::metadata_overrides::upsert_metadata_overrides;
 use crate::progress::upsert_progress;
-use crate::read_status::set_read_status;
 use crate::test_support::*;
-
-async fn uuid_by_title(pool: &SqlitePool, title: &str) -> String {
-    sqlx::query_scalar("SELECT uuid FROM books WHERE title = ?")
-        .bind(title)
-        .fetch_one(pool)
-        .await
-        .unwrap()
-}
-
-async fn mark(pool: &SqlitePool, user: i64, uuid: &str, status: ReadStatus) {
-    set_read_status(
-        pool,
-        user,
-        &SetReadStatus {
-            book_uuid: uuid.to_string(),
-            status,
-        },
-    )
-    .await
-    .unwrap();
-}
-
-async fn place(pool: &SqlitePool, user: i64, uuid: &str, percent: i64, at: i64) {
-    upsert_progress(
-        pool,
-        user,
-        &ProgressUpdate {
-            book_uuid: uuid.to_string(),
-            format: ProgressFormat::Epub,
-            epub_cfi: Some("epubcfi(/6/4!/4/2/1:0)".into()),
-            audio_position_seconds: None,
-            progress_percent: Some(percent),
-            kobo_location: None,
-            book_file_id: None,
-            client_updated_at: Some(at),
-        },
-    )
-    .await
-    .unwrap();
-}
 
 #[tokio::test]
 async fn author_reading_counts_finished_and_reading_per_author() {
@@ -59,8 +18,8 @@ async fn author_reading_counts_finished_and_reading_per_author() {
     let user = seed_user(&pool, "reader").await;
     let one = uuid_by_title(&pool, "Saga: Book One").await;
     let two = uuid_by_title(&pool, "Saga: Book Two").await;
-    mark(&pool, user, &one, ReadStatus::Finished).await;
-    place(&pool, user, &two, 40, 1_000).await;
+    mark_status(&pool, user, &one, ReadStatus::Finished).await;
+    place_position(&pool, user, &two, 40, 1_000).await;
 
     let rows = author_reading(&pool, user, &["/lib"]).await.unwrap();
 
@@ -85,8 +44,8 @@ async fn author_reading_is_scoped_to_the_asking_reader() {
     let other = seed_user(&pool, "other").await;
     let one = uuid_by_title(&pool, "Saga: Book One").await;
     let two = uuid_by_title(&pool, "Saga: Book Two").await;
-    mark(&pool, other, &one, ReadStatus::Finished).await;
-    place(&pool, other, &two, 40, 1_000).await;
+    mark_status(&pool, other, &one, ReadStatus::Finished).await;
+    place_position(&pool, other, &two, 40, 1_000).await;
 
     assert!(author_reading(&pool, reader, &["/lib"])
         .await
@@ -99,7 +58,7 @@ async fn author_reading_leaves_unread_marks_out_of_the_latest_time() {
     let (pool, _guard) = seed_discovery_fixture().await;
     let user = seed_user(&pool, "reader").await;
     let other = uuid_by_title(&pool, "Other Story").await;
-    mark(&pool, user, &other, ReadStatus::Unread).await;
+    mark_status(&pool, user, &other, ReadStatus::Unread).await;
 
     let rows = author_reading(&pool, user, &["/lib"]).await.unwrap();
 
@@ -125,8 +84,8 @@ async fn book_reading_reports_status_percent_and_time_for_touched_books() {
     let one = uuid_by_title(&pool, "Saga: Book One").await;
     let two = uuid_by_title(&pool, "Saga: Book Two").await;
     let solo = uuid_by_title(&pool, "Standalone").await;
-    mark(&pool, user, &one, ReadStatus::Finished).await;
-    place(&pool, user, &two, 42, 1_000).await;
+    mark_status(&pool, user, &one, ReadStatus::Finished).await;
+    place_position(&pool, user, &two, 42, 1_000).await;
 
     let rows = book_reading(&pool, user, &[one.clone(), two.clone(), solo])
         .await
@@ -231,8 +190,8 @@ async fn book_reading_is_scoped_to_the_asking_reader() {
     let other = seed_user(&pool, "other").await;
     let one = uuid_by_title(&pool, "Saga: Book One").await;
     let two = uuid_by_title(&pool, "Saga: Book Two").await;
-    mark(&pool, other, &one, ReadStatus::Finished).await;
-    place(&pool, other, &two, 40, 1_000).await;
+    mark_status(&pool, other, &one, ReadStatus::Finished).await;
+    place_position(&pool, other, &two, 40, 1_000).await;
 
     let rows = book_reading(&pool, reader, &[one, two]).await.unwrap();
 
@@ -244,7 +203,7 @@ async fn author_reading_counts_only_books_in_the_configured_libraries() {
     let (pool, _guard) = seed_discovery_fixture().await;
     let user = seed_user(&pool, "reader").await;
     let one = uuid_by_title(&pool, "Saga: Book One").await;
-    mark(&pool, user, &one, ReadStatus::Finished).await;
+    mark_status(&pool, user, &one, ReadStatus::Finished).await;
 
     assert!(author_reading(&pool, user, &["/elsewhere"])
         .await
@@ -258,9 +217,9 @@ async fn author_reading_takes_a_books_position_time_over_its_status_time() {
     let (pool, _guard) = seed_discovery_fixture().await;
     let user = seed_user(&pool, "reader").await;
     let two = uuid_by_title(&pool, "Saga: Book Two").await;
-    place(&pool, user, &two, 40, 1_000).await;
+    place_position(&pool, user, &two, 40, 1_000).await;
     // Stamped with server time now: newer, but not when the reading happened.
-    mark(&pool, user, &two, ReadStatus::Reading).await;
+    mark_status(&pool, user, &two, ReadStatus::Reading).await;
 
     let rows = author_reading(&pool, user, &["/lib"]).await.unwrap();
 
@@ -274,7 +233,7 @@ async fn author_reading_falls_back_to_the_status_time_without_a_position() {
     let (pool, _guard) = seed_discovery_fixture().await;
     let user = seed_user(&pool, "reader").await;
     let one = uuid_by_title(&pool, "Saga: Book One").await;
-    mark(&pool, user, &one, ReadStatus::Finished).await;
+    mark_status(&pool, user, &one, ReadStatus::Finished).await;
     let marked: i64 = sqlx::query_scalar("SELECT updated_at FROM book_read_status")
         .fetch_one(&pool)
         .await
@@ -292,8 +251,8 @@ async fn book_reading_drops_the_read_time_of_a_book_marked_unread() {
     let (pool, _guard) = seed_discovery_fixture().await;
     let user = seed_user(&pool, "reader").await;
     let two = uuid_by_title(&pool, "Saga: Book Two").await;
-    place(&pool, user, &two, 40, 1_000).await;
-    mark(&pool, user, &two, ReadStatus::Unread).await;
+    place_position(&pool, user, &two, 40, 1_000).await;
+    mark_status(&pool, user, &two, ReadStatus::Unread).await;
 
     let rows = book_reading(&pool, user, &[two]).await.unwrap();
 
@@ -307,7 +266,7 @@ async fn book_reading_takes_the_newest_position_across_formats() {
     let user = seed_user(&pool, "reader").await;
     // Audio at client time 1000; an older EPUB position must not shadow it.
     let uuid = listened_audiobook(&pool, user).await;
-    place(&pool, user, &uuid, 70, 500).await;
+    place_position(&pool, user, &uuid, 70, 500).await;
 
     let rows = book_reading(&pool, user, std::slice::from_ref(&uuid))
         .await
@@ -315,7 +274,7 @@ async fn book_reading_takes_the_newest_position_across_formats() {
     assert_eq!(rows[0].format, Some(ProgressFormat::Audio));
     assert_eq!(rows[0].percent, Some(25));
 
-    place(&pool, user, &uuid, 70, 2_000).await;
+    place_position(&pool, user, &uuid, 70, 2_000).await;
     let rows = book_reading(&pool, user, &[uuid]).await.unwrap();
     assert_eq!(rows[0].format, Some(ProgressFormat::Epub));
     assert_eq!(rows[0].percent, Some(70));
@@ -328,8 +287,8 @@ async fn series_reading_counts_finished_and_reading_per_series() {
     let user = seed_user(&pool, "reader").await;
     let one = uuid_by_title(&pool, "Saga: Book One").await;
     let two = uuid_by_title(&pool, "Saga: Book Two").await;
-    mark(&pool, user, &one, ReadStatus::Finished).await;
-    place(&pool, user, &two, 40, 1_000).await;
+    mark_status(&pool, user, &one, ReadStatus::Finished).await;
+    place_position(&pool, user, &two, 40, 1_000).await;
 
     let rows = series_reading(&pool, user, &["/lib"]).await.unwrap();
 
@@ -350,7 +309,7 @@ async fn series_reading_is_scoped_to_the_asking_reader() {
     let reader = seed_user(&pool, "reader").await;
     let other = seed_user(&pool, "other").await;
     let one = uuid_by_title(&pool, "Saga: Book One").await;
-    mark(&pool, other, &one, ReadStatus::Finished).await;
+    mark_status(&pool, other, &one, ReadStatus::Finished).await;
 
     assert!(series_reading(&pool, reader, &["/lib"])
         .await
@@ -371,7 +330,7 @@ async fn series_reading_counts_a_book_under_the_series_its_override_names() {
     upsert_metadata_overrides(&pool, &solo, &ov, false, user)
         .await
         .unwrap();
-    mark(&pool, user, &solo, ReadStatus::Finished).await;
+    mark_status(&pool, user, &solo, ReadStatus::Finished).await;
 
     let rows = series_reading(&pool, user, &["/lib"]).await.unwrap();
 

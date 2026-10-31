@@ -10,7 +10,7 @@ use omnibus_shared::{SeriesDetail, SeriesReading, SeriesSummary};
 use super::{internal_rpc_error, AuthUser, PoolExt};
 
 /// Fetch a single series and all its books (ordered by series index);
-/// `reading` carries the caller's own state on them.
+/// `reading` carries the caller's own state on them, `hidden_from_home` their hide.
 #[post("/api/rpc/series", pool: PoolExt, user: AuthUser)]
 pub async fn rpc_get_series(id: i64) -> Result<Option<SeriesDetail>> {
     let mut series = db::get_series(&pool.0, id)
@@ -20,6 +20,9 @@ pub async fn rpc_get_series(id: i64) -> Result<Option<SeriesDetail>> {
         s.reading = db::book_reading(&pool.0, user.id, &db::book_uuids(&s.books))
             .await
             .map_err(|e| internal_rpc_error("series book reading", e))?;
+        s.hidden_from_home = db::series_progress::is_hidden(&pool.0, user.id, id)
+            .await
+            .map_err(|e| internal_rpc_error("series hide", e))?;
     }
     Ok(series)
 }

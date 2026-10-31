@@ -10,9 +10,9 @@ use omnibus_shared::{
 };
 
 use super::super::*;
-use super::{make_user, smart_req, tag_rule, uuid_by_title};
+use super::{make_user, smart_req, tag_rule};
 use crate::pool::init_db;
-use crate::test_support::seed_discovery_fixture;
+use crate::test_support::{seed_discovery_fixture, uuid_by_title};
 
 #[tokio::test]
 async fn create_smart_shelf_membership_matches_tag_rule() {

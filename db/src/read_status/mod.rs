@@ -5,6 +5,7 @@
 //! aggregations can window completions like the journal path windows `created_at`.
 //! The other writer is a position: `progress::upsert_progress_tx` creates a
 //! `reading` row for a book that has none, and a KOReader one starts an `unread` book.
+//! Either start brings back a series the reader hid from their home page.
 
 use omnibus_shared::{ReadStatus, ReadStatusRecord, SetReadStatus};
 use sqlx::{Row, Sqlite, SqlitePool, Transaction};
@@ -68,6 +69,43 @@ async fn read_back(
     Ok(record_from_row(book_uuid, &row)?)
 }
 
+/// The status `(user, book)` holds before a write; `None` for a book with no row.
+async fn prior_status(
+    tx: &mut Transaction<'_, Sqlite>,
+    user_id: i64,
+    book_uuid: &str,
+) -> Result<Option<ReadStatus>, sqlx::Error> {
+    let status: Option<String> = sqlx::query_scalar(
+        "SELECT status FROM book_read_status WHERE user_id = ? AND book_uuid = ?",
+    )
+    .bind(user_id)
+    .bind(book_uuid)
+    .fetch_optional(&mut **tx)
+    .await?;
+    Ok(status.map(|s| ReadStatus::from_db(&s)))
+}
+
+/// A book that goes from no status or `unread` to `reading` is a new start: bring back the series
+/// the reader hid from home. A write that lost leaves the status unread and does nothing.
+async fn unhide_if_started(
+    tx: &mut Transaction<'_, Sqlite>,
+    user_id: i64,
+    prior: Option<ReadStatus>,
+    now: &ReadStatusRecord,
+) -> Result<(), sqlx::Error> {
+    let was_unstarted = matches!(prior, None | Some(ReadStatus::Unread));
+    if was_unstarted && now.status == ReadStatus::Reading {
+        crate::series_progress::unhide_series_of_book_tx(
+            tx,
+            user_id,
+            &now.book_uuid,
+            now.updated_at,
+        )
+        .await?;
+    }
+    Ok(())
+}
+
 /// Upsert the read state for `(user, book)` and return the new server-authoritative
 /// record, keyed on the **canonical** `books.uuid` (`BookNotFound` if never indexed).
 /// `finished_at` is set to now when transitioning into `finished`, preserved when
@@ -99,6 +137,7 @@ pub async fn set_read_status_tx(
         .await?
         .ok_or(ReadStatusError::BookNotFound)?;
     let status = update.status.as_str();
+    let prior = prior_status(tx, user_id, &book_uuid).await?;
     // `finished_at` binds `status` a second time so the CASE picks now-or-null
     // on insert; the ON CONFLICT arm COALESCEs against the existing value so a
     // re-affirmed `finished` keeps its original completion moment.
@@ -123,7 +162,9 @@ pub async fn set_read_status_tx(
     .execute(&mut **tx)
     .await?;
 
-    read_back(tx, user_id, book_uuid).await
+    let record = read_back(tx, user_id, book_uuid).await?;
+    unhide_if_started(tx, user_id, prior, &record).await?;
+    Ok(record)
 }
 
 /// [`set_read_status_tx`], but newest-wins on `event_at` (unix seconds, clamped to now): the
@@ -139,6 +180,7 @@ pub async fn set_read_status_at_tx(
     let book_uuid = resolve_canonical_book_uuid_exec(&mut **tx, &update.book_uuid)
         .await?
         .ok_or(ReadStatusError::BookNotFound)?;
+    let prior = prior_status(tx, user_id, &book_uuid).await?;
     // The cast matters: `strftime` is TEXT, which SQLite ranks above every INTEGER, so a bare
     // `MIN(?, strftime(..))` would never clamp (see `progress::upsert`).
     sqlx::query(
@@ -165,6 +207,7 @@ pub async fn set_read_status_at_tx(
     .execute(&mut **tx)
     .await?;
     let record = read_back(tx, user_id, book_uuid).await?;
+    unhide_if_started(tx, user_id, prior, &record).await?;
     // A landed write keeps its event time (never later than `event_at`), which a Kobo
     // that synced since would read as already seen.
     if record.updated_at <= event_at {
@@ -187,14 +230,7 @@ pub async fn start_unread_at_tx(
     book_uuid: &str,
     at: i64,
 ) -> Result<(), ReadStatusError> {
-    let status: Option<String> = sqlx::query_scalar(
-        "SELECT status FROM book_read_status WHERE user_id = ? AND book_uuid = ?",
-    )
-    .bind(user_id)
-    .bind(book_uuid)
-    .fetch_optional(&mut **tx)
-    .await?;
-    if status.as_deref() == Some(ReadStatus::Unread.as_str()) {
+    if prior_status(tx, user_id, book_uuid).await? == Some(ReadStatus::Unread) {
         let update = SetReadStatus {
             book_uuid: book_uuid.to_owned(),
             status: ReadStatus::Reading,
