@@ -138,8 +138,8 @@ h1,h2{font-family:var(--serif);font-weight:500;color:var(--ink);text-wrap:balanc
   .hero{padding-top:0}
   .hero .canvas{--fh:900;display:block}
   .pins{position:absolute;margin:0;left:calc(760 * var(--u));top:calc(110 * var(--u));width:calc(578 * var(--u))}
-  .hero-copy{position:absolute;left:calc(80 * var(--u));top:calc(190 * var(--u));width:calc(500 * var(--u))}
-  .hero h1{margin:0;font-size:calc(104 * var(--u));line-height:.95;letter-spacing:-0.025em}
+  .hero-copy{position:absolute;left:calc(80 * var(--u));top:calc(240 * var(--u));width:calc(500 * var(--u))}
+  .hero h1{margin:0;width:calc(660 * var(--u));font-size:calc(96 * var(--u));line-height:.95;letter-spacing:-0.025em}
   .hero h1 br{display:inline}
   .hero .sub{margin-top:calc(28 * var(--u));font-size:max(17px,calc(20 * var(--u)))}
   .hero .ctas{margin-top:calc(66 * var(--u))}
