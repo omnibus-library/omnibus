@@ -1,15 +1,16 @@
-import { type ExpectMutationOptions, post } from "../utils/api";
+import type { ExpectMutationOptions } from "../utils/api";
 
 /** The endpoint behind the suggestions strip. */
 export const suggestionsUrls = {
-  fetch: /\/api\/rpc\/ebook-suggestions(?:\?|$)/,
+  fetch: /\/api\/ebooks\/[^/?]+\/suggestions(?:\?|$)/,
 };
 
 /** The strip's own fetch. */
 export const suggestions = {
-  /** A POST from the page's mount effect, so it waits out hydration. */
+  /** A GET the book page makes once its book has loaded. */
   fetch: (): ExpectMutationOptions => ({
-    ...post(suggestionsUrls.fetch),
+    method: "GET",
+    url: suggestionsUrls.fetch,
     timeout: 30_000,
   }),
 };

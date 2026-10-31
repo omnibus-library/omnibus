@@ -1,4 +1,4 @@
-import type { Request } from "@playwright/test";
+import type { Request, Response } from "@playwright/test";
 import type { ExpectMutationOptions } from "../utils/api";
 
 /** The library listing endpoint the landing page reads. */
@@ -10,6 +10,15 @@ export const ebooksUrls = {
 export function filterClauses(request: Request): unknown[] {
   const filter = new URL(request.url()).searchParams.get("filter");
   return filter ? JSON.parse(filter) : [];
+}
+
+/** A `waitForResponse` predicate: a page read whose filter names `value`. */
+export function isPageReadFiltering(
+  value: string,
+): (response: Response) => boolean {
+  return (response) =>
+    ebooksUrls.page.test(response.url()) &&
+    JSON.stringify(filterClauses(response.request())).includes(value);
 }
 
 /** The landing page's keyset page read. */

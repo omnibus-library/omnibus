@@ -180,8 +180,10 @@ export class BookDetailPage extends BasePage {
     this.savedPassagesEmptyMessage = page.getByTestId("highlights-empty");
     this.showMorePassagesButton = page.getByTestId("highlights-show-more");
     this.moreStop = page.getByTestId("bdmq-more");
-    this.seriesShelf = page.getByTestId("bdmq-series-shelf");
-    this.seriesPageLink = page.getByRole("link", { name: /series page/ });
+    this.seriesShelf = page.getByRole("region", { name: / series$/ });
+    this.seriesPageLink = this.seriesShelf.getByRole("link", {
+      name: /series page/i,
+    });
     this.fromSameHandHeading = page.getByRole("heading", {
       name: "From the same hand",
     });
