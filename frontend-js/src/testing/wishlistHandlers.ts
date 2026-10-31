@@ -42,7 +42,10 @@ const book = (title: string, rest: Partial<FakeBook> = {}): FakeBook => ({
 
 /** The books the household has between them. */
 export const BOOKS = {
-  piranesi: book("Piranesi", { authors: ["Susanna Clarke"] }),
+  piranesi: book("Piranesi", {
+    authors: ["Susanna Clarke"],
+    isbn13: "9781635575637",
+  }),
   babel: book("Babel", { authors: ["R. F. Kuang"] }),
   hailMary: book("Project Hail Mary", {
     authors: ["Andy Weir"],
@@ -221,6 +224,11 @@ export function wishlistFake({
     return { everyone: everyone.size, readers: rows };
   };
 
+  /** The writes the page made, in order, as `remove` or `add` and the uuid. */
+  const writes: { kind: "remove" | "add"; uuid: string }[] = [];
+  /** Which routes refuse with a 500, by kind. */
+  const refuse: Partial<Record<"remove" | "add", boolean>> = {};
+
   const handlers = [
     http.get("/api/wishlists/readers", () => HttpResponse.json(readerRows())),
     http.get("/api/wishlists", async ({ request }) => {
@@ -240,7 +248,65 @@ export function wishlistFake({
     }),
   ];
 
-  return { handlers, state, requests, viewer };
+  /** Whether a removal leaves the book standing: the library holds it, or a reader still wants it. */
+  const stands = (uuid: string) => {
+    const b = state.books.get(uuid);
+    const wanted = [...state.entries.values()].some((own) =>
+      own.some((e) => e.uuid === uuid),
+    );
+    return wanted || (b !== undefined && holdingsOf(b).length > 0);
+  };
+
+  const writeHandlers = [
+    http.delete("/api/physical/:uuid/wishlist", ({ params }) => {
+      const uuid = String(params.uuid);
+      writes.push({ kind: "remove", uuid });
+      if (refuse.remove) {
+        return new HttpResponse("failed with 500", { status: 500 });
+      }
+      const own = state.entries.get(viewer) ?? [];
+      state.entries.set(
+        viewer,
+        own.filter((e) => e.uuid !== uuid),
+      );
+      const bookDeleted = !stands(uuid);
+      if (bookDeleted) state.books.delete(uuid);
+      return HttpResponse.json({ book_deleted: bookDeleted });
+    }),
+    http.post("/api/physical/:uuid/wishlist", ({ params }) => {
+      const uuid = String(params.uuid);
+      writes.push({ kind: "add", uuid });
+      if (refuse.add) {
+        return new HttpResponse("failed with 500", { status: 500 });
+      }
+      if (!state.books.has(uuid)) {
+        return new HttpResponse("book not found", { status: 404 });
+      }
+      const own = state.entries.get(viewer) ?? [];
+      const existing = own.find((e) => e.uuid === uuid);
+      const entry = existing ?? {
+        uuid,
+        addedAt: Math.floor(Date.now() / 1000),
+      };
+      if (!existing) state.entries.set(viewer, [...own, entry]);
+      return HttpResponse.json({
+        id: 1,
+        user_id: viewer,
+        book_uuid: uuid,
+        added_at: entry.addedAt,
+        source: "detail",
+      });
+    }),
+  ];
+
+  return {
+    handlers: [...handlers, ...writeHandlers],
+    state,
+    requests,
+    writes,
+    refuse,
+    viewer,
+  };
 }
 
 export type WishlistFake = ReturnType<typeof wishlistFake>;

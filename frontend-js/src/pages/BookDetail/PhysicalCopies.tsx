@@ -22,6 +22,7 @@ import {
   ConfirmModal,
 } from "../../components/ConfirmModal/ConfirmModal";
 import { BookGlyph } from "../../components/Glyphs/Glyphs";
+import { findCopyUrl } from "../../findCopy";
 import { ago, nowSecs, wishlistSource } from "../../format";
 import { useCurrentUser } from "../../session";
 import {
@@ -31,12 +32,6 @@ import {
   useLeaveBook,
   wishlistQuery,
 } from "./queries";
-
-/** An Amazon search on the ISBN, or on title and author when the book has none. */
-function findCopyUrl(book: BookDetail) {
-  const query = book.isbn13?.trim() || `${book.title} ${book.authors[0] ?? ""}`;
-  return `https://www.amazon.com/s?k=${encodeURIComponent(query.trim())}`;
-}
 
 // A wishlist or copy write changes the record (`hasPhysical`, visibility), the copies, the wish
 // and the shelf facts, but nothing else on the page.

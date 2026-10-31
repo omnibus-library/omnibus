@@ -27,7 +27,8 @@ type Canvas = ReturnType<typeof within>;
 /** The rows on screen, by title. */
 const titles = async (canvas: Canvas) =>
   (await canvas.findAllByTestId("wishlists-row")).map(
-    (row: HTMLElement) => within(row).getByRole("link").textContent,
+    (row: HTMLElement) =>
+      within(row).getByTestId("wishlists-title").textContent,
   );
 
 const rowOf = async (canvas: Canvas, title: string) => {

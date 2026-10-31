@@ -5,6 +5,7 @@ import {
   byline,
   heading,
   holdingLabel,
+  requestable,
   type Scope,
   scopeFrom,
   subline,
@@ -165,5 +166,38 @@ describe("addedLabel", () => {
     expect(addedLabel(Date.UTC(2025, 7, 14, 8) / 1000, NOV_2026)).toBe(
       "Aug 14, 2025",
     );
+  });
+});
+
+describe("requestable", () => {
+  const held = (...formats: string[]) =>
+    formats.map((format) => ({ format, count: 1 }));
+
+  it("omits audiobook when an m4b is held", () => {
+    expect(requestable(held("M4B"))).toEqual(["ebook"]);
+  });
+
+  it("omits ebook when an epub is held", () => {
+    expect(requestable(held("EPUB"))).toEqual(["audiobook"]);
+  });
+
+  it("returns both when only print is held", () => {
+    expect(requestable(held("PRINT"))).toEqual(["ebook", "audiobook"]);
+  });
+
+  it("returns both for a book the library only wants", () => {
+    expect(requestable([])).toEqual(["ebook", "audiobook"]);
+  });
+
+  it("returns none when both an ebook and an audiobook are held", () => {
+    expect(requestable(held("EPUB", "M4B"))).toEqual([]);
+  });
+
+  it.each([["M4A"], ["MP3"]])("counts %s as an audiobook", (format) => {
+    expect(requestable(held(format))).toEqual(["ebook"]);
+  });
+
+  it.each([["PDF"], ["CBZ"]])("counts %s as an ebook", (format) => {
+    expect(requestable(held(format))).toEqual(["audiobook"]);
   });
 });
