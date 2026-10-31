@@ -137,7 +137,8 @@ export function ReviewCard({
   // Opened in place, so the field takes focus, as a dialog's would.
   const composer = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (composing) composer.current?.querySelector("textarea")?.focus();
+    if (composing)
+      composer.current?.querySelector<HTMLElement>('[role="textbox"]')?.focus();
   }, [composing]);
   useEffect(() => {
     if (composing || !refocusPencil.current) return;
@@ -145,6 +146,10 @@ export function ReviewCard({
     pencil.current?.focus();
   }, [composing]);
   const [confirming, setConfirming] = useState(false);
+  // A refused rating takes the review back away, and the confirm with it.
+  useEffect(() => {
+    if (!mine) setConfirming(false);
+  }, [mine]);
   const hasWriting = mine?.bodyMd != null || mine?.notesMd != null;
   const writeLabel = hasWriting ? "Edit review" : "Write review";
   return (

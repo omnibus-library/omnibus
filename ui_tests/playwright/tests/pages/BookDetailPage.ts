@@ -188,13 +188,13 @@ export class BookDetailPage extends BasePage {
     this.showMorePassagesButton = page.getByTestId("highlights-show-more");
     this.seriesShelf = page.getByTestId("bp-series-fan");
     this.seriesPageLink = page.getByRole("link", { name: /series page/ });
+    // The Overview's "More by <author>" row.
     this.fromSameHandHeading = page.getByRole("heading", {
-      name: "From the same hand",
+      name: /^More by /,
     });
-    this.fromSameHandRow = page.getByTestId("from-same-hand");
-    this.fromSameHandTiles = this.fromSameHandRow.getByTestId(
-      "from-same-hand-tile",
-    );
+    this.fromSameHandRow = page.getByTestId("bp-more-by");
+    this.fromSameHandTiles =
+      this.fromSameHandRow.getByTestId("bp-more-by-tile");
     this.fromSameHandLoadingMessage = page.getByTestId(
       "from-same-hand-loading",
     );
@@ -251,12 +251,12 @@ export class BookDetailPage extends BasePage {
     return this.page.getByRole("link", { name: series, exact: true });
   }
 
-  /** The tile for the book called `title` in the "From the same hand" row. */
+  /** The tile for the book called `title` in the "More by" row. */
   fromSameHandTile(title: string): Locator {
     return this.fromSameHandTiles.filter({ hasText: title });
   }
 
-  /** The cover image the "From the same hand" row draws for `title`. */
+  /** The cover image the "More by" row draws for `title`. */
   fromSameHandCover(title: string): Locator {
     return this.fromSameHandRow.getByRole("img", {
       name: `Cover of ${title}`,
@@ -379,12 +379,7 @@ export class BookDetailPage extends BasePage {
     await this.seriesPageLink.click();
   }
 
-  /**
-   * Hovers the row first: until then the stack overlaps its tiles behind the
-   * author card, which would take the click.
-   */
   async openSameHandBook(title: string): Promise<void> {
-    await this.fromSameHandRow.hover();
     await this.fromSameHandTile(title).click();
   }
 
@@ -412,19 +407,11 @@ export class BookDetailPage extends BasePage {
     });
   }
 
-  /**
-   * Records every panic the app reports from now on: a Rust panic in the
-   * wasm client logs "panicked at" to the console, and the page stops
-   * answering.
-   */
-  recordPanics(): string[] {
-    const panics: string[] = [];
-    const note = (text: string) => {
-      if (/panicked/i.test(text)) panics.push(text);
-    };
-    this.page.on("console", (message) => note(message.text()));
-    this.page.on("pageerror", (error) => note(error.message));
-    return panics;
+  /** Records the message of every uncaught error the page throws from now on. */
+  recordPageErrors(): string[] {
+    const errors: string[] = [];
+    this.page.on("pageerror", (error) => errors.push(error.message));
+    return errors;
   }
 
   /** Records the file name of every download the page starts from now on. */
