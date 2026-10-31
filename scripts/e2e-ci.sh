@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Run the Playwright suite locally the way CI's e2e.yml does: against the
-# standalone `server` from a `dx bundle`, on a scratch database, rather than
-# against `dx serve` and the long-lived dev DB.
+# React client under `vite preview`, proxying to the standalone `server` from a
+# `dx bundle` on a scratch database, rather than against `dx serve` and the
+# long-lived dev DB.
 #
 # Usage: scripts/e2e-ci.sh [playwright args...]   (normally `just e2e-ci`)
 #          e.g. scripts/e2e-ci.sh tests/flows/browse_indices.spec.ts
@@ -18,12 +19,14 @@
 #      covers and thumbs, on a free port in this worktree's window, with no
 #      library paths and no seed admin: the specs seed their own library, and
 #      Playwright registers the first (admin) account, as on CI.
-#   3. Waits for /api/_health, then runs `pnpm exec playwright test` with CI=1
+#   3. Builds the React client and serves it with `vite preview` on the next
+#      free port, proxying /api to that server.
+#   4. Waits for /api/_health through the proxy, then runs `pnpm exec playwright test` with CI=1
 #      (CI's retries and forbid-only) and artifacts outside the source tree.
-#   4. Always stops the server; keeps the scratch dir (server log, traces)
+#   5. Always stops both; keeps the scratch dir (server log, traces)
 #      only when Playwright failed. Exits with Playwright's status.
 #
-# Steps 1-2 (and the teardown in 4) live in scripts/lib/scratch-server.sh,
+# Steps 1-3 (and the teardown in 5) live in scripts/lib/scratch-server.sh,
 # shared with scripts/koreader-e2e.sh.
 set -euo pipefail
 
@@ -34,11 +37,12 @@ source scripts/lib/dev-port.sh
 source scripts/lib/scratch-server.sh
 
 label=e2e-ci
-kept_hint="server.log, test-results/"
+kept_hint="server.log, react.log, test-results/"
 bundle_web_app
 make_scratch_dir
 # shellcheck disable=SC2119
 start_scratch_server
+start_react_preview
 
 cd ui_tests/playwright
 pnpm install --frozen-lockfile

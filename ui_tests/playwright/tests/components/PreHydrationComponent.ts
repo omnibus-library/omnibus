@@ -1,6 +1,6 @@
 import type { Locator, Page } from "@playwright/test";
 import { holdRequests } from "../utils/api";
-import { waitForHydration } from "../utils/nav";
+import { waitForApp } from "../utils/nav";
 import { BaseComponent } from "./BaseComponent";
 
 // The app's wasm binary: `/wasm/omnibus_bg.wasm` under `dx serve`, a hashed
@@ -29,7 +29,7 @@ export class PreHydrationComponent extends BaseComponent {
     const release = await holdRequests(this.page, CLIENT_WASM);
     return async () => {
       release();
-      await waitForHydration(this.page);
+      await waitForApp(this.page);
     };
   }
 }

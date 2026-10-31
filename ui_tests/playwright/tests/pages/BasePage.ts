@@ -3,7 +3,7 @@ import type { PreferenceTheme } from "../components/TopNavComponent";
 import { authUrls } from "../contracts/auth";
 import { expect } from "../fixtures/test";
 import type { ForcedRequest } from "../utils/api";
-import { waitForHydration } from "../utils/nav";
+import { waitForApp } from "../utils/nav";
 
 const DOCUMENT_MARK = "__omnibusE2eDocument";
 
@@ -134,7 +134,7 @@ export abstract class BasePage {
   }
 
   private async waitUntilReady(): Promise<void> {
-    await waitForHydration(this.page);
+    await waitForApp(this.page);
     await this.readyLocator.waitFor({ timeout: this.readyTimeout });
   }
 
