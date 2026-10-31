@@ -32,6 +32,7 @@ import type {
   ReviewSummary,
   RulePreview,
   SeriesDetail,
+  SeriesInProgress,
   SeriesReading,
   SeriesStack,
   SeriesSummary,
@@ -138,6 +139,18 @@ export function aWireSeries(
     name: "Aurora Station",
     book_count: 3,
     books: [],
+    ...overrides,
+  };
+}
+
+/** A row of `GET /api/series/in-progress`: a series, as its page sends it, plus the book to open next. */
+export function aWireSeriesInProgress(
+  overrides: Partial<SeriesInProgress> = {},
+): SeriesInProgress {
+  return {
+    ...aWireSeries(),
+    next_book_uuid: "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0",
+    last_read_at: 1_760_000_000,
     ...overrides,
   };
 }

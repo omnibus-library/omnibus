@@ -9,13 +9,18 @@ import {
   toBookPage,
   toPalette,
   toResumePoint,
+  toSeriesInProgress,
+  toSeriesPage,
   toShelf,
   toUser,
 } from "./api";
 import {
   aWireBook,
+  aWireBookReading,
   aWirePalette,
   aWireResumePoint,
+  aWireSeries,
+  aWireSeriesInProgress,
   aWireShelf,
   aWireStack,
   WIRE_ADA,
@@ -240,6 +245,51 @@ describe("toResumePoint", () => {
       chaptersTotal: null,
       partCount: null,
     });
+  });
+});
+
+describe("toSeriesPage", () => {
+  it("reads whether the reader hid the series from home", () => {
+    expect(toSeriesPage(aWireSeries({ hidden_from_home: true }))).toMatchObject(
+      {
+        hiddenFromHome: true,
+      },
+    );
+  });
+
+  it("reads a series with no hide flag as shown on home", () => {
+    expect(toSeriesPage(aWireSeries()).hiddenFromHome).toBe(false);
+  });
+});
+
+describe("toSeriesInProgress", () => {
+  it("carries the next book and the last read time beside the series page", () => {
+    const wire = aWireSeriesInProgress({
+      books: [auroraWire],
+      reading: [aWireBookReading({ percent: 42 })],
+      next_book_uuid: "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0",
+      last_read_at: 1_760_000_123,
+    });
+
+    const row = toSeriesInProgress(wire);
+
+    expect(row).toMatchObject({
+      id: 4,
+      name: "Aurora Station",
+      nextUuid: "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0",
+      lastReadAt: 1_760_000_123,
+      hiddenFromHome: false,
+    });
+    expect(row.books).toHaveLength(1);
+    expect(
+      row.reading.get("ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0"),
+    ).toMatchObject({ status: "reading", percent: 42 });
+  });
+
+  it("reads a missing last read time as none", () => {
+    const wire = aWireSeriesInProgress({ last_read_at: undefined });
+
+    expect(toSeriesInProgress(wire).lastReadAt).toBeNull();
   });
 });
 

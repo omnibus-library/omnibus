@@ -17,6 +17,7 @@ import {
   getGetReadStatusMockHandler200,
   getGetRegistrationMockHandler200,
   getGetSeriesByIdMockHandler200,
+  getGetSeriesInProgressMockHandler200,
   getGetSeriesReadingMockHandler200,
   getGetSessionLogMockHandler200,
   getGetSuggestionsMockHandler200,
@@ -61,6 +62,7 @@ import {
   type RulePreview,
   RulePreviewRequest,
   type SeriesDetail,
+  type SeriesInProgress,
   type SeriesReading,
   type SeriesStack,
   type SeriesSummary,
@@ -400,6 +402,53 @@ export function seriesHandlers({
     getGetSeriesReadingMockHandler200(reading),
     ...(detail ? [getGetSeriesByIdMockHandler200(detail)] : []),
   ];
+}
+
+/** One hide or show a series page or the home list made, in the order it made them. */
+export type SeriesHomeWrite = { op: "hide" | "unhide"; id: number };
+
+/**
+ * `GET /api/series/in-progress` answering `rows`, `GET /api/series/{id}` answering `detail`
+ * (when given) and the hide routes, kept between reads: a hide drops the row and flags the
+ * detail, a show clears the flag. Each write lands in `writes`; `failHide` answers a hide 500.
+ */
+export function seriesHomeHandlers({
+  rows,
+  detail,
+  failHide = false,
+}: {
+  rows: SeriesInProgress[];
+  detail?: SeriesDetail;
+  failHide?: boolean;
+}) {
+  let listed = rows;
+  let hidden = detail?.hidden_from_home ?? false;
+  const writes: SeriesHomeWrite[] = [];
+  const handlers = [
+    getGetSeriesInProgressMockHandler200(() => listed),
+    ...(detail
+      ? [
+          getGetSeriesByIdMockHandler200(() => ({
+            ...detail,
+            hidden_from_home: hidden,
+          })),
+        ]
+      : []),
+    http.put("/api/series/:id/hide", ({ params }) => {
+      const id = Number(params.id);
+      writes.push({ op: "hide", id });
+      if (failHide) return new HttpResponse("hide refused", { status: 500 });
+      listed = listed.filter((row) => row.id !== id);
+      hidden = true;
+      return new HttpResponse(null, { status: 204 });
+    }),
+    http.delete("/api/series/:id/hide", ({ params }) => {
+      writes.push({ op: "unhide", id: Number(params.id) });
+      hidden = false;
+      return new HttpResponse(null, { status: 204 });
+    }),
+  ];
+  return { handlers, writes };
 }
 
 /** One write a shelf page made, in the order it made them. */
