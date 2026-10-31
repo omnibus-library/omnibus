@@ -512,11 +512,18 @@ async fn fetch_summary_with_hardcover_returns_none_when_book_unresolved() {
     let uuid = seed_synced_ebook(&pool, "src.epub", "Test Source", "Source Author").await;
 
     let server = MockServer::start().await;
-    // Title fallback finds nothing → the book doesn't resolve → clean miss.
+    // Exact title and fuzzy search both find nothing → the book doesn't resolve → clean miss.
     Mock::given(method("POST"))
         .and(body_string_contains("title: {_eq:"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "data": { "books": [] }
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(body_string_contains("search(query:"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data": { "search": { "results": { "hits": [] } } }
         })))
         .mount(&server)
         .await;

@@ -12,7 +12,7 @@ use futures::future::join_all;
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 
-use crate::suggestions::filter::Candidate;
+use crate::suggestions::filter::{is_same_author, Candidate};
 
 /// Process-wide `reqwest::Client` for Hardcover GraphQL calls, built once and
 /// cloned so resolutions share one connection pool + TLS session cache.
@@ -276,9 +276,9 @@ const BOOK_FIELDS: &str = "id slug title contributions { author { name } } \
 const ISBN_RESOLVE_CONCURRENCY: usize = 4;
 
 /// Resolve a library book to a Hardcover book. ISBNs are tried first (most
-/// reliable); on a miss we fall back to an **exact** title match ordered by
-/// `users_count` so the canonical edition wins over summary/knockoff entries
-/// (which carry near-zero reads). Returns `None` when nothing resolves.
+/// reliable), then an **exact** title match ordered by `users_count` so the
+/// canonical edition wins over knockoffs, then Hardcover's fuzzy `search` for
+/// titles the library spells differently. Returns `None` when nothing resolves.
 pub async fn resolve_book(
     config: &HardcoverConfig,
     isbns: &[String],
@@ -331,7 +331,74 @@ pub async fn resolve_book(
             None => true,
         })
         .or_else(|| data.books.first());
-    Ok(pick.map(resolved_from_row))
+    if let Some(row) = pick {
+        return Ok(Some(resolved_from_row(row)));
+    }
+    resolve_by_search(config, title, author).await
+}
+
+/// Max fuzzy `search` hits weighed for one book.
+const FUZZY_HITS: i64 = 10;
+
+/// The suggestions-side `search` document: only what picking and
+/// [`ResolvedBook`] read. Its `id` is a string, unlike the `books` query's.
+#[derive(Debug, Deserialize)]
+pub struct SearchBook {
+    #[serde(default)]
+    id: Option<String>,
+    #[serde(default)]
+    author_names: Vec<String>,
+    #[serde(default)]
+    users_count: Option<i64>,
+    #[serde(default)]
+    featured_series: Option<BookSeries>,
+}
+
+/// The fuzzy step: `search` by the library title and pick one hit. A blank
+/// title sends nothing, since an empty query returns arbitrary popular books.
+async fn resolve_by_search(
+    config: &HardcoverConfig,
+    title: &str,
+    author: Option<&str>,
+) -> Result<Option<ResolvedBook>, HardcoverError> {
+    let title = title.trim();
+    if title.is_empty() {
+        return Ok(None);
+    }
+    let data: SearchData<SearchBook> = post_graphql(
+        config,
+        SEARCH_QUERY,
+        serde_json::json!({ "q": title, "limit": FUZZY_HITS }),
+    )
+    .await?;
+    Ok(pick_search_hit(&data.documents(), author))
+}
+
+/// The most-read hit by `author` (any hit when the book has none), earliest in
+/// Hardcover's order on a tie. A hit by another author is never returned.
+pub fn pick_search_hit(hits: &[SearchBook], author: Option<&str>) -> Option<ResolvedBook> {
+    let mut best: Option<(i64, i64, &SearchBook)> = None;
+    for hit in hits {
+        let Some(id) = hit.id.as_deref().and_then(|id| id.trim().parse().ok()) else {
+            continue;
+        };
+        if author.is_some_and(|a| !is_same_author(a, &hit.author_names)) {
+            continue;
+        }
+        let reads = hit.users_count.unwrap_or(0);
+        if best.is_none_or(|(_, best_reads, _)| reads > best_reads) {
+            best = Some((id, reads, hit));
+        }
+    }
+    best.map(|(id, _, hit)| ResolvedBook {
+        id,
+        author_names: hit.author_names.clone(),
+        series: hit
+            .featured_series
+            .as_ref()
+            .and_then(|fs| fs.series.as_ref())
+            .and_then(|s| s.name.clone()),
+    })
 }
 
 /// One ISBN lookup: resolve its edition to a `book_id`, then hydrate the full

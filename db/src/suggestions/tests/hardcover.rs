@@ -4,14 +4,22 @@
 //! rank order, `book_description`, and the HTTP-failure paths.
 
 use serde_json::json;
-use wiremock::matchers::{body_string_contains, method};
+use wiremock::matchers::{body_partial_json, body_string_contains, method};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use super::config_for;
 use crate::suggestions::hardcover::{
     book_description, co_listed_counts, curated_list_ids, fetch_candidates, rejected_key_message,
-    rejected_key_status, resolve_book, HardcoverError,
+    pick_search_hit, rejected_key_status, resolve_book, HardcoverError, SearchBook,
 };
+
+fn search_book(id: &str, authors: &[&str], users_count: Option<i64>) -> SearchBook {
+    serde_json::from_value(json!({
+        "id": id, "author_names": authors, "users_count": users_count,
+        "featured_series": { "position": 1, "series": { "name": "The Empyrean" } }
+    }))
+    .unwrap()
+}
 
 #[tokio::test]
 async fn resolve_book_prefers_isbn_match() {
@@ -425,4 +433,170 @@ async fn rejected_key_message_names_the_provider_and_the_status_of_a_refusal() {
         rejected_key_message(status),
         "Hardcover rejected the API key (HTTP 401); suggestions are paused until it is replaced"
     );
+}
+
+#[test]
+fn pick_search_hit_keeps_only_hits_by_the_books_author_and_takes_the_most_read() {
+    let hits = [
+        search_book("10", &["Someone Else"], Some(9_000)),
+        search_book("20", &["Rebecca Yarros"], Some(50)),
+        search_book("30", &[" rebecca yarros "], Some(700)),
+    ];
+    let picked = pick_search_hit(&hits, Some("Rebecca Yarros")).unwrap();
+    assert_eq!(picked.id, 30);
+    assert_eq!(picked.author_names, vec![" rebecca yarros ".to_string()]);
+    assert_eq!(picked.series.as_deref(), Some("The Empyrean"));
+}
+
+#[test]
+fn pick_search_hit_never_returns_a_hit_by_another_author() {
+    let hits = [search_book("10", &["Someone Else"], Some(9_000))];
+    assert_eq!(pick_search_hit(&hits, Some("Rebecca Yarros")), None);
+}
+
+#[test]
+fn pick_search_hit_takes_the_most_read_hit_when_the_book_has_no_author() {
+    let hits = [
+        search_book("10", &["A"], Some(5)),
+        search_book("20", &["B"], Some(500)),
+        search_book("30", &["C"], None),
+    ];
+    assert_eq!(pick_search_hit(&hits, None).unwrap().id, 20);
+}
+
+#[test]
+fn pick_search_hit_keeps_hardcovers_order_on_a_users_count_tie() {
+    let hits = [
+        search_book("10", &["A"], Some(5)),
+        search_book("20", &["A"], Some(5)),
+        search_book("30", &["A"], None),
+        search_book("40", &["A"], None),
+    ];
+    assert_eq!(pick_search_hit(&hits, Some("A")).unwrap().id, 10);
+    assert_eq!(pick_search_hit(&hits[2..], Some("A")).unwrap().id, 30);
+}
+
+#[test]
+fn pick_search_hit_skips_a_hit_whose_id_is_missing_or_not_a_number() {
+    let missing: SearchBook = serde_json::from_value(json!({ "users_count": 99 })).unwrap();
+    let hits = [
+        missing,
+        search_book("not-a-number", &["A"], Some(90)),
+        search_book("7", &["A"], Some(1)),
+    ];
+    assert_eq!(pick_search_hit(&hits, None).unwrap().id, 7);
+}
+
+async fn mount_misses_before_search(server: &MockServer) {
+    Mock::given(method("POST"))
+        .and(body_string_contains("editions(where:"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data": { "editions": [] }
+        })))
+        .mount(server)
+        .await;
+    Mock::given(method("POST"))
+        .and(body_string_contains("title: {_eq:"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data": { "books": [] }
+        })))
+        .mount(server)
+        .await;
+}
+
+#[tokio::test]
+async fn resolve_book_falls_back_to_fuzzy_search_when_isbn_and_exact_title_miss() {
+    let server = MockServer::start().await;
+    mount_misses_before_search(&server).await;
+    Mock::given(method("POST"))
+        .and(body_string_contains("search(query:"))
+        .and(body_partial_json(json!({
+            "variables": { "q": "Fourth Wing (Empyrean)", "limit": 10 }
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data": { "search": { "results": { "hits": [
+                { "document": { "id": "1", "author_names": ["Someone Else"], "users_count": 9000 } },
+                { "document": {
+                    "id": "714600", "author_names": ["Rebecca Yarros"], "users_count": 400,
+                    "featured_series": { "position": 1, "series": { "name": "The Empyrean" } }
+                } }
+            ] } } }
+        })))
+        .mount(&server)
+        .await;
+
+    let cfg = config_for(&server);
+    let resolved = resolve_book(
+        &cfg,
+        &["9781649374042".to_string()],
+        "Fourth Wing (Empyrean)",
+        Some("Rebecca Yarros"),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(resolved.id, 714600);
+    assert_eq!(resolved.author_names, vec!["Rebecca Yarros".to_string()]);
+    assert_eq!(resolved.series.as_deref(), Some("The Empyrean"));
+}
+
+#[tokio::test]
+async fn resolve_book_does_not_search_when_the_exact_title_matches() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(body_string_contains("title: {_eq:"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data": { "books": [{ "id": 99, "contributions": [], "book_series": [] }] }
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(body_string_contains("search(query:"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data": { "search": null }
+        })))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let cfg = config_for(&server);
+    let resolved = resolve_book(&cfg, &[], "Some Title", None)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(resolved.id, 99);
+}
+
+#[tokio::test]
+async fn resolve_book_returns_none_without_searching_when_the_title_is_blank() {
+    let server = MockServer::start().await;
+    mount_misses_before_search(&server).await;
+    Mock::given(method("POST"))
+        .and(body_string_contains("search(query:"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data": { "search": null }
+        })))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let cfg = config_for(&server);
+    assert_eq!(resolve_book(&cfg, &[], "  ", None).await.unwrap(), None);
+}
+
+#[tokio::test]
+async fn resolve_book_surfaces_a_failed_fuzzy_search_as_an_error() {
+    let server = MockServer::start().await;
+    mount_misses_before_search(&server).await;
+    Mock::given(method("POST"))
+        .and(body_string_contains("search(query:"))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&server)
+        .await;
+
+    let cfg = config_for(&server);
+    let err = resolve_book(&cfg, &[], "Some Title", None)
+        .await
+        .expect_err("a search failure must not read as no match");
+    assert!(matches!(err, HardcoverError::Http(_)), "got {err:?}");
 }
