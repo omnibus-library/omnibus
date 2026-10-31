@@ -1,9 +1,9 @@
 import type { Locator, Page, Response } from "@playwright/test";
 import { BookmarksDrawerComponent } from "../components/BookmarksDrawerComponent";
 import { HighlightsDrawerComponent } from "../components/HighlightsDrawerComponent";
-import { highlightsUrls } from "../contracts/highlights";
+import { highlights } from "../contracts/highlights";
 import type { HighlightColor } from "../data/highlights";
-import { isPostTo } from "../utils/api";
+import { isResponseTo } from "../utils/api";
 import { PagedReaderPage } from "./PagedReaderPage";
 
 /**
@@ -101,7 +101,7 @@ export class PdfReaderPage extends PagedReaderPage {
 
   /** Saves the selection in `color`, then waits for the server's answer. */
   async highlightSelection(color: HighlightColor): Promise<void> {
-    const created = this.page.waitForResponse(isPostTo(highlightsUrls.create));
+    const created = this.page.waitForResponse(isResponseTo(highlights.create()));
     await this.highlightSwatch(color).click();
     await created;
   }
