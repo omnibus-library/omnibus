@@ -14,6 +14,7 @@ import { ChevronDownGlyph } from "../../components/Glyphs/Glyphs";
 import { Sheet } from "../../components/Sheet/Sheet";
 import { useToast } from "../../components/Toast/Toast";
 import { findCopyUrl } from "../../findCopy";
+import { refreshAfterWrite } from "./refresh";
 import {
   addedLabel,
   byline,
@@ -22,7 +23,7 @@ import {
   requestable,
   type Scope,
   wantedByNames,
-} from "./wishlists";
+} from "./wishlistView";
 
 const REQUEST_REASON = "Requests aren't available yet";
 
@@ -38,7 +39,7 @@ function Holdings({ holdings }: Pick<WishlistBook, "holdings">) {
         <span aria-hidden="true" className="wl-none-dash">
           —
         </span>
-        <span className="wl-none-text">Not in the library</span>
+        <span className="sr-only wl-none-text">Not in the library</span>
       </span>
     );
   }
@@ -61,11 +62,10 @@ function Holdings({ holdings }: Pick<WishlistBook, "holdings">) {
 function useRemove(book: WishlistBook) {
   const client = useQueryClient();
   const toast = useToast();
-  const refresh = () => client.invalidateQueries({ queryKey: ["wishlists"] });
   const undo = async () => {
     try {
       await addToWishlist(book.uuid);
-      await refresh();
+      await refreshAfterWrite(client, book.uuid);
     } catch (error) {
       toast(`Couldn’t put ${book.title} back: ${messageOf(error)}`);
     }
@@ -78,7 +78,7 @@ function useRemove(book: WishlistBook) {
         message,
         bookDeleted ? undefined : { label: "Undo", onClick: undo },
       );
-      return refresh();
+      return refreshAfterWrite(client, book.uuid, bookDeleted);
     },
     onError: (error) =>
       toast(`Couldn’t remove ${book.title}: ${messageOf(error)}`),
@@ -91,6 +91,8 @@ const messageOf = (error: unknown) =>
 /** Request ▾ is on show but not on offer: it stays focusable, says why, and does nothing. */
 function RequestButton() {
   const reason = useId();
+  // Without a pointer to hover with, a tap is what shows why it can't be used.
+  const [tapped, setTapped] = useState(false);
   return (
     <span className="wl-request-wrap">
       <button
@@ -99,11 +101,17 @@ function RequestButton() {
         data-testid="wishlists-request"
         aria-disabled="true"
         aria-describedby={reason}
+        onClick={() => setTapped(!tapped)}
+        onBlur={() => setTapped(false)}
       >
         Request
         <ChevronDownGlyph size={10} />
       </button>
-      <span role="tooltip" id={reason} className="wl-tip">
+      <span
+        role="tooltip"
+        id={reason}
+        className={tapped ? "wl-tip is-shown" : "wl-tip"}
+      >
         {REQUEST_REASON}
       </span>
     </span>
@@ -278,7 +286,9 @@ export function WishlistRow({
         <Holdings holdings={book.holdings} />
       </div>
       <p className={wanted ? "wl-meta wl-wanted" : "wl-meta wl-added"}>
-        <span className="wl-prefix">{wanted ? "Wanted by " : "Added "}</span>
+        <span className="sr-only wl-prefix">
+          {wanted ? "Wanted by " : "Added "}
+        </span>
         {wanted ? names : added}
       </p>
       <RowActions book={book} kinds={kinds} remove={remove} />

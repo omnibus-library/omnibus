@@ -6,7 +6,7 @@
   --wl-panel-w: 272px;
   --wl-gutter: 48px;
   --wl-cover-w: 44px;
-  --wl-actions-w: 236px;
+  --wl-actions-w: 264px;
 
   display: grid;
   grid-template-columns: var(--wl-panel-w) minmax(0, 1fr);
@@ -77,6 +77,11 @@
 }
 .wl-avatar-everyone {
   background: var(--bg-2);
+}
+.wl-page .wl-panel-error {
+  padding: 7px 10px;
+  font-size: 13px;
+  color: var(--ink-2);
 }
 .wl-panel-skeleton {
   display: flex;
@@ -226,10 +231,7 @@
   color: var(--ink-3);
 }
 .wl-none {
-  color: var(--ink-3);
-}
-.wl-none-text {
-  display: none;
+  color: var(--ink-2);
 }
 .wl-meta {
   margin: 0;
@@ -241,15 +243,6 @@
   font-size: 11.5px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-}
-.wl-prefix {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
 }
 
 /* ---- row actions: a slot that is always laid out, shown on hover or focus ---- */
@@ -281,7 +274,7 @@
   display: inline-flex;
 }
 .wl-request[aria-disabled="true"] {
-  color: var(--ink-3);
+  color: var(--ink-2);
   cursor: not-allowed;
 }
 .wl-tip {
@@ -299,8 +292,15 @@
   opacity: 0;
   transition: opacity 0.12s;
 }
-.wl-request:focus-visible + .wl-tip {
+.wl-request:focus-visible + .wl-tip,
+.wl-tip.is-shown {
   opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .wl-actions,
+  .wl-tip {
+    transition: none;
+  }
 }
 
 /* ---- empty ---- */
@@ -333,12 +333,10 @@
 
 .wl-reader:focus-visible,
 .wl-title:focus-visible,
-.wl-add-button:focus-visible,
-.wl-add-go:focus-visible,
 .wl-add-close:focus-visible,
 .wl-add-field:focus-within,
 .wl-picker-trigger:focus-visible,
-.wl-act:focus-visible,
+.wl-page .btn:focus-visible,
 .wl-get:focus-visible,
 .wl-sheet-item:focus-visible {
   outline: 2px solid var(--accent);
@@ -362,13 +360,24 @@
   }
 }
 
-/* ---- the Add to wishlist panel: a popover under its button, a bottom sheet on a phone ---- */
+/* ---- the Add to wishlist panel: a popover under its button, or a bottom sheet on a phone ---- */
 
 .wl-add {
   flex: none;
 }
 .wl-add-scrim {
-  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 8;
+  background: transparent;
+}
+.wl-add-sheet {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 16px 24px;
+  overflow-y: auto;
 }
 .wl-add-panel {
   position: absolute;
@@ -385,10 +394,12 @@
   border: 1px solid var(--line-2);
   border-radius: 14px;
   background: var(--bg-1);
-  box-shadow: 0 18px 40px color-mix(in oklch, black 55%, transparent);
+  box-shadow:
+    0 18px 40px color-mix(in oklch, black 55%, transparent),
+    0 2px 0 color-mix(in oklch, black 25%, transparent);
 }
 .wl-add-head {
-  display: none;
+  display: flex;
   align-items: center;
   justify-content: space-between;
 }
@@ -460,7 +471,7 @@
   margin: 0;
   padding: 6px 0;
   font-size: 13px;
-  color: var(--ink-3);
+  color: var(--ink-2);
 }
 .wl-add-results {
   list-style: none;
@@ -496,14 +507,18 @@
   }
 }
 
-/* ---- a narrow desktop: the columns give way to a stacked row, actions still at the end ---- */
+/* ---- a narrow desktop: a stacked row, its actions sized to what they hold ---- */
 
 @media (max-width: 1100px) {
+  .wl-page {
+    --wl-panel-w: 220px;
+    --wl-gutter: 32px;
+  }
   .wl-cols {
     display: none;
   }
   .wl-row {
-    grid-template-columns: var(--wl-cover-w) minmax(0, 1fr) var(--wl-actions-w);
+    grid-template-columns: var(--wl-cover-w) minmax(0, 1fr) max-content;
     grid-template-areas:
       "cover book actions"
       "cover library actions"
@@ -527,16 +542,15 @@
   }
 }
 
-/* ---- phone: the panel becomes a menu under the title ---- */
+/* ---- two-pane browse layouts collapse at 900px: the panel becomes a menu under the title ---- */
 
-@media (max-width: 720px) {
+@media (max-width: 900px) {
   .wl-page {
     display: block;
     min-height: 0;
     margin-inline: 0;
   }
-  .wl-panel,
-  .wl-cols {
+  .wl-panel {
     display: none;
   }
   .wl-body {
@@ -570,7 +584,8 @@
     position: fixed;
     inset: 0;
     z-index: 6;
-    background: color-mix(in oklch, black 55%, transparent);
+    background: color-mix(in oklch, black 62%, transparent);
+    backdrop-filter: blur(3px);
   }
   .wl-picker-menu {
     display: block;
@@ -585,11 +600,18 @@
     border: 1px solid var(--line-2);
     border-radius: 14px;
     background: var(--bg-1);
-    box-shadow: 0 18px 40px color-mix(in oklch, black 55%, transparent);
+    box-shadow:
+      0 18px 40px color-mix(in oklch, black 55%, transparent),
+      0 2px 0 color-mix(in oklch, black 25%, transparent);
   }
   .wl-picker-menu .wl-reader {
     padding: 8px 10px;
   }
+}
+
+/* ---- phone: each row is a card with one Get button ---- */
+
+@media (max-width: 720px) {
   .wl-row {
     --wl-cover-w: 56px;
     grid-template-columns: var(--wl-cover-w) minmax(0, 1fr) auto;
@@ -601,17 +623,7 @@
     row-gap: 6px;
     padding-inline: 0;
   }
-  .wl-cover {
-    grid-area: cover;
-  }
-  .wl-book {
-    grid-area: book;
-  }
-  .wl-library {
-    grid-area: library;
-  }
   .wl-meta {
-    grid-area: meta;
     align-self: center;
     font-family: var(--sans);
     font-size: 13px;
@@ -619,7 +631,8 @@
     text-transform: none;
     color: var(--ink-2);
   }
-  .wl-prefix {
+  .wl-page .wl-prefix,
+  .wl-page .wl-none-text {
     position: static;
     width: auto;
     height: auto;
@@ -640,26 +653,6 @@
   .wl-add-button-text {
     display: none;
   }
-  .wl-add-scrim {
-    display: block;
-    position: fixed;
-    inset: 0;
-    z-index: 8;
-    background: color-mix(in oklch, black 62%, transparent);
-  }
-  .wl-add-panel {
-    position: fixed;
-    inset: auto 0 0;
-    z-index: 9;
-    width: auto;
-    max-height: 88dvh;
-    padding: 12px 16px 24px;
-    border-width: 1px 0 0;
-    border-radius: 16px 16px 0 0;
-  }
-  .wl-add-head {
-    display: flex;
-  }
   .wl-actions {
     display: none;
   }
@@ -671,8 +664,7 @@
   .wl-none-dash {
     display: none;
   }
-  .wl-none-text {
-    display: inline;
+  .wl-page .wl-none-text {
     font-size: 13px;
   }
 }
@@ -730,12 +722,12 @@
   cursor: pointer;
 }
 .wl-sheet-item:disabled {
-  color: var(--ink-3);
+  color: var(--ink-2);
   cursor: default;
 }
 .wl-sheet-sub {
   font-size: 12px;
-  color: var(--ink-3);
+  color: var(--ink-2);
 }
 .wl-sheet-remove {
   color: var(--bad);

@@ -8,12 +8,13 @@ import {
   heading,
   holdingLabel,
   isbnResults,
+  readerOf,
   requestable,
   type Scope,
   scopeFrom,
   subline,
   wantedByNames,
-} from "./wishlists";
+} from "./wishlistView";
 
 const ME = 1 as UserId;
 const JORDAN = 2 as UserId;
@@ -52,6 +53,28 @@ describe("scopeFrom", () => {
     ["nothing", ""],
   ])("falls back to your own list for %s", (_case, param) => {
     expect(scopeFrom(param, ME)).toEqual({ kind: "you" });
+  });
+});
+
+describe("readerOf", () => {
+  const readers = [
+    reader({ id: 1, name: "Ada", is_you: true }),
+    reader({ id: 2, name: "Jordan" }),
+  ];
+
+  it("finds you for your own list", () => {
+    expect(readerOf({ kind: "you" }, readers)?.name).toBe("Ada");
+  });
+
+  it("finds the reader a list belongs to", () => {
+    expect(readerOf({ kind: "reader", id: JORDAN }, readers)?.name).toBe(
+      "Jordan",
+    );
+  });
+
+  it("finds none for everyone's lists or a reader nobody lists", () => {
+    expect(readerOf({ kind: "everyone" }, readers)).toBeNull();
+    expect(readerOf({ kind: "reader", id: 9 as UserId }, readers)).toBeNull();
   });
 });
 
@@ -255,6 +278,10 @@ describe("existingBook", () => {
     ["already_owned", { kind: "already_owned", book }],
     ["on_wishlist", { kind: "on_wishlist", book }],
     ["in_library_unowned", { kind: "in_library_unowned", book }],
+    [
+      "close_match, a different edition of the same work",
+      { kind: "close_match", book, scanned: online },
+    ],
   ] satisfies [string, ScanOutcome][])(
     "finds the book for %s",
     (_kind, outcome) => {
@@ -263,11 +290,10 @@ describe("existingBook", () => {
   );
 
   it.each([
-    ["close_match", { kind: "close_match", book, scanned: online }],
     ["not_in_library", { kind: "not_in_library", online }],
     ["unresolved", { kind: "unresolved" }],
   ] satisfies [string, ScanOutcome][])(
-    "finds none for %s, which no ISBN ties to a library book",
+    "finds none for %s, which matched no library book",
     (_kind, outcome) => {
       expect(existingBook(outcome)).toBeNull();
     },

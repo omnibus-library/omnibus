@@ -1,10 +1,10 @@
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useRef, useState } from "react";
 import { Link } from "react-router";
 import type { UserId, WishlistReader, WishlistReaders } from "../../api";
 import { PeopleGlyph } from "../../components/Glyphs/Glyphs";
 import { Skeleton } from "../../components/Loading/Loading";
 import { UserAvatar } from "../../components/UserAvatar/UserAvatar";
-import type { Scope } from "./wishlists";
+import { readerOf, type Scope } from "./wishlistView";
 
 const avatarOf = (reader: WishlistReader) => (
   <UserAvatar
@@ -24,17 +24,6 @@ const EVERYONE_ICON = (
   </span>
 );
 
-const isHere = (scope: Scope, reader: WishlistReader) =>
-  scope.kind === "you"
-    ? reader.is_you
-    : scope.kind === "reader" && scope.id === reader.id;
-
-/** The reader whose list `scope` shows, or `null` for everyone's. */
-const readerOf = (scope: Scope, readers: readonly WishlistReader[]) =>
-  scope.kind === "everyone"
-    ? null
-    : (readers.find((r) => isHere(scope, r)) ?? null);
-
 type ChoiceProps = { onChoose?: () => void };
 
 function ReaderLinks({
@@ -43,6 +32,7 @@ function ReaderLinks({
   onChoose,
 }: ChoiceProps & { data: WishlistReaders; scope: Scope }) {
   const everyone = scope.kind === "everyone";
+  const here = readerOf(scope, data.readers);
   return (
     <>
       <Link
@@ -68,7 +58,7 @@ function ReaderLinks({
                   : `wishlists-reader-${reader.id}`
               }
               to={reader.is_you ? "/wishlists" : `/wishlists?user=${reader.id}`}
-              aria-current={isHere(scope, reader) ? "page" : undefined}
+              aria-current={here?.id === reader.id ? "page" : undefined}
               onClick={onChoose}
             >
               {avatarOf(reader)}
@@ -97,12 +87,14 @@ function PanelSkeleton() {
   );
 }
 
-/** The desktop list of whose wishlist to read: everyone's, then each reader's with their count. */
+/** The wide screen's list of whose wishlist to read: everyone's, then each reader's with their count. A failed read says so rather than waiting. */
 export function ReaderPanel({
   data,
+  failed,
   scope,
 }: {
   data: WishlistReaders | undefined;
+  failed: boolean;
   scope: Scope;
 }) {
   return (
@@ -111,7 +103,13 @@ export function ReaderPanel({
       aria-label="Wishlists"
       data-testid="wishlists-panel"
     >
-      {data ? <ReaderLinks data={data} scope={scope} /> : <PanelSkeleton />}
+      {data ? (
+        <ReaderLinks data={data} scope={scope} />
+      ) : failed ? (
+        <p className="wl-panel-error">Couldn’t load the readers.</p>
+      ) : (
+        <PanelSkeleton />
+      )}
     </nav>
   );
 }
@@ -130,13 +128,16 @@ export function ReaderPicker({
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
   const shown = data ? readerOf(scope, data.readers) : null;
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: Escape bubbles up from the trigger or a link, which hold the focus
     <div
       className="wl-titlebar"
       onKeyDown={(e) => {
-        if (e.key === "Escape") setOpen(false);
+        if (e.key !== "Escape" || !open) return;
+        setOpen(false);
+        trigger.current?.focus();
       }}
     >
       <span className="wl-titlebar-icon" aria-hidden="true">
@@ -147,6 +148,7 @@ export function ReaderPicker({
         ▾
       </span>
       <button
+        ref={trigger}
         type="button"
         className="wl-picker-trigger"
         data-testid="wishlists-picker-trigger"

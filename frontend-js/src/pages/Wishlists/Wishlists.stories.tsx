@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { HttpResponse, http } from "msw";
 import { expect, waitFor, within } from "storybook/test";
 import { deferred, failing, hanging } from "../../testing/handlers";
 import { BOOKS } from "../../testing/wishlistHandlers";
@@ -8,6 +9,8 @@ import {
   fake,
   Page,
   PHONE,
+  rowOf,
+  titles,
 } from "./Wishlists.stories.shared";
 
 const meta = {
@@ -21,24 +24,6 @@ const meta = {
 
 export default meta;
 type Story = StoryObj<typeof meta>;
-
-type Canvas = ReturnType<typeof within>;
-
-/** The rows on screen, by title. */
-const titles = async (canvas: Canvas) =>
-  (await canvas.findAllByTestId("wishlists-row")).map(
-    (row: HTMLElement) =>
-      within(row).getByTestId("wishlists-title").textContent,
-  );
-
-const rowOf = async (canvas: Canvas, title: string) => {
-  const rows = await canvas.findAllByTestId("wishlists-row");
-  const row = rows.find((r: HTMLElement) =>
-    within(r).queryByRole("link", { name: title }),
-  );
-  if (!row) throw new Error(`no row for ${title}`);
-  return row;
-};
 
 export const ShowsYourListNewestFirst: Story = {
   play: async ({ canvas }) => {
@@ -366,6 +351,9 @@ export const EmptyOwnListOffersToAdd: Story = {
   play: async ({ canvas }) => {
     const empty = await canvas.findByTestId("wishlists-empty");
     await expect(empty).toHaveTextContent("Nothing on your wishlist yet");
+    await expect(empty).toHaveTextContent(
+      "Search by title, author or ISBN, or add it from any book’s page. Everyone in the household can see your wishlist.",
+    );
     await expect(
       within(empty).getByRole("button", { name: "Add to your wishlist" }),
     ).toBeInTheDocument();
@@ -386,6 +374,9 @@ export const EmptyEveryoneOffersToAdd: Story = {
     await expect(empty).toHaveTextContent(
       "No one has anything on their wishlist yet",
     );
+    await expect(empty).toHaveTextContent(
+      "When someone in the household adds a book to their wishlist, it shows up here, so you can find or request it for them. Start with yours.",
+    );
     await expect(
       within(empty).getByRole("button", { name: "Add to your wishlist" }),
     ).toBeInTheDocument();
@@ -400,6 +391,9 @@ export const EmptyReaderListHasNoAddOffer: Story = {
   play: async ({ canvas }) => {
     const empty = await canvas.findByTestId("wishlists-empty");
     await expect(empty).toHaveTextContent("Nothing on Sam’s wishlist yet");
+    await expect(empty).toHaveTextContent(
+      "When Sam adds a book to their wishlist, it shows up here.",
+    );
     await expect(within(empty).queryByRole("button")).not.toBeInTheDocument();
   },
 };
@@ -429,6 +423,62 @@ export const OtherFailureShowsItsMessage: Story = {
     await expect(await canvas.findByRole("alert")).toHaveTextContent(
       "failed with 500",
     );
+    await expect(
+      canvas.getByRole("button", { name: "Try again" }),
+    ).toBeInTheDocument();
+  },
+};
+
+export const RetryReadsTheListAgainAfterAFailure: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      http.get(
+        "/api/wishlists",
+        () => new HttpResponse("failed with 500", { status: 500 }),
+        {
+          once: true,
+        },
+      ),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await canvas.findByRole("alert");
+
+    await userEvent.click(canvas.getByRole("button", { name: "Try again" }));
+
+    await expect(await titles(canvas)).toContain("Hyperion");
+  },
+};
+
+export const FailedReadersStopAReadersListWithRetry: Story = {
+  parameters: { path: "/wishlists?user=2" },
+  beforeEach({ msw }) {
+    msw.use(failing("get", "/api/wishlists/readers", 500));
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByRole("alert")).toHaveTextContent(
+      "failed with 500",
+    );
+    await expect(
+      canvas.getByRole("button", { name: "Try again" }),
+    ).toBeInTheDocument();
+    await expect(canvas.queryByTestId("wishlists-row")).not.toBeInTheDocument();
+  },
+};
+
+export const FailedReadersLeaveYourOwnListWithANoteInThePanel: Story = {
+  beforeEach({ msw }) {
+    msw.use(failing("get", "/api/wishlists/readers", 500));
+  },
+  play: async ({ canvas }) => {
+    await expect(await titles(canvas)).toContain("Hyperion");
+
+    await expect(
+      within(canvas.getByTestId("wishlists-panel")).getByText(
+        "Couldn’t load the readers.",
+      ),
+    ).toBeInTheDocument();
+    await expect(canvas.queryByRole("alert")).not.toBeInTheDocument();
   },
 };
 
@@ -438,5 +488,172 @@ export const UsesNoWishOrCheckInCopy: Story = {
     await expect(canvas.getByTestId("wishlists-page").textContent).not.toMatch(
       BANNED_COPY,
     );
+  },
+};
+
+let heldYou = deferred();
+
+export const StaleRowsOfAnotherReaderOfferNoRemove: Story = {
+  parameters: { path: "/wishlists?user=2" },
+  beforeEach({ msw }) {
+    heldYou = deferred();
+    msw.use(...api({ gate: { user: "you", until: heldYou.promise } }));
+  },
+  play: async ({ canvas, userEvent }) => {
+    const panel = within(await canvas.findByTestId("wishlists-panel"));
+    await canvas.findAllByTestId("wishlists-row");
+
+    await userEvent.click(await panel.findByTestId("wishlists-reader-you"));
+
+    await waitFor(() =>
+      expect(
+        canvas
+          .getByTestId("wishlists-page")
+          .querySelector("[aria-busy='true']"),
+      ).not.toBeNull(),
+    );
+    // Still Jordan's rows, so nothing on them is yours to remove.
+    await expect(await titles(canvas)).toContain("Piranesi");
+    await expect(canvas.queryByTestId("wishlists-remove")).toBeNull();
+    heldYou.release();
+    await waitFor(async () =>
+      expect(await titles(canvas)).toContain("Hyperion"),
+    );
+    await expect(
+      canvas.getAllByTestId("wishlists-remove").length,
+    ).toBeGreaterThan(0);
+  },
+};
+
+const WINDOW_768 = {
+  globals: { viewport: { value: "window", isRotated: false } },
+  parameters: {
+    viewport: {
+      options: {
+        window: {
+          name: "Window",
+          styles: { width: "768px", height: "1024px" },
+        },
+      },
+    },
+  },
+};
+
+export const NarrowDesktopCollapsesThePanelAndKeepsRoomForTheBook: Story = {
+  ...WINDOW_768,
+  play: async ({ canvas }) => {
+    const row = await rowOf(canvas, "All Systems Red");
+    await expect(canvas.getByTestId("wishlists-panel")).not.toBeVisible();
+    await expect(canvas.getByTestId("wishlists-picker-trigger")).toBeVisible();
+
+    const book = row.querySelector(".wl-book") as HTMLElement;
+    const actions = row.querySelector(".wl-actions") as HTMLElement;
+
+    await expect(book.getBoundingClientRect().width).toBeGreaterThanOrEqual(
+      200,
+    );
+    // Find a Copy, Request and Remove all fit inside the slot that holds them.
+    await expect(actions.scrollWidth).toBeLessThanOrEqual(actions.clientWidth);
+  },
+};
+
+export const RowActionsFitTheirSlotOnAWideScreen: Story = {
+  play: async ({ canvas }) => {
+    const row = await rowOf(canvas, "All Systems Red");
+    const actions = row.querySelector(".wl-actions") as HTMLElement;
+
+    await expect(actions.scrollWidth).toBeLessThanOrEqual(actions.clientWidth);
+  },
+};
+
+export const PhoneRowsSayWhenABookIsNotInTheLibrary: Story = {
+  ...PHONE,
+  play: async ({ canvas }) => {
+    const row = within(await rowOf(canvas, "Hyperion"));
+
+    await expect(row.getByText("Not in the library")).toBeVisible();
+    await expect(row.getByText("Added")).toBeVisible();
+  },
+};
+
+export const WideRowsHideThePhoneWordsFromTheEye: Story = {
+  play: async ({ canvas }) => {
+    const row = within(await rowOf(canvas, "Hyperion"));
+
+    // Kept for a screen reader, drawn as a pixel.
+    await expect(
+      row.getByText("Not in the library").getBoundingClientRect().width,
+    ).toBeLessThanOrEqual(1);
+    await expect(row.getByText("—")).toBeVisible();
+  },
+};
+
+/** The page's amber, as the browser computes a colour from it. */
+const accentOf = (from: HTMLElement) => {
+  const probe = document.createElement("span");
+  probe.style.color = "var(--accent)";
+  from.append(probe);
+  const { color } = getComputedStyle(probe);
+  probe.remove();
+  return color;
+};
+
+export const PanelLinksAndTheAddButtonRingInAmber: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const panel = within(await canvas.findByTestId("wishlists-panel"));
+    await canvas.findAllByTestId("wishlists-row");
+    await userEvent.tab();
+    const controls = [
+      panel.getByTestId("wishlists-reader-everyone"),
+      panel.getByTestId("wishlists-reader-you"),
+      canvas.getByTestId("wishlists-add"),
+    ];
+    for (const control of controls) {
+      control.focus();
+      await userEvent.keyboard("{Shift>}{Shift}");
+      await waitFor(() =>
+        expect(getComputedStyle(control).outlineStyle).toBe("solid"),
+      );
+      await expect(getComputedStyle(control).outlineWidth).toBe("2px");
+      await expect(getComputedStyle(control).outlineColor).toBe(
+        accentOf(control),
+      );
+    }
+  },
+};
+
+export const PickerTriggerRingsInAmber: Story = {
+  ...PHONE,
+  play: async ({ canvas, userEvent }) => {
+    const trigger = await canvas.findByTestId("wishlists-picker-trigger");
+    await waitFor(() => expect(trigger).toBeEnabled());
+    await userEvent.tab();
+    trigger.focus();
+    await userEvent.keyboard("{Shift>}{Shift}");
+
+    await waitFor(() =>
+      expect(getComputedStyle(trigger).outlineStyle).toBe("solid"),
+    );
+    await expect(getComputedStyle(trigger).outlineColor).toBe(
+      accentOf(trigger),
+    );
+  },
+};
+
+export const PhonePickerEscapeFromTheMenuReturnsFocusToTheTrigger: Story = {
+  ...PHONE,
+  play: async ({ canvas, userEvent }) => {
+    const trigger = await canvas.findByTestId("wishlists-picker-trigger");
+    await waitFor(() => expect(trigger).toBeEnabled());
+    await userEvent.click(trigger);
+    const menu = within(await canvas.findByTestId("wishlists-picker-menu"));
+    menu.getByTestId("wishlists-reader-2").focus();
+
+    await userEvent.keyboard("{Escape}");
+
+    await expect(
+      canvas.queryByTestId("wishlists-picker-menu"),
+    ).not.toBeInTheDocument();
+    await expect(trigger).toHaveFocus();
   },
 };

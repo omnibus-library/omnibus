@@ -1,9 +1,23 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { HttpResponse, http } from "msw";
 import { expect, waitFor, within } from "storybook/test";
+import { parseBookUuid } from "../../api";
+import {
+  expectInvalidated,
+  seedQueries,
+  storyClient,
+} from "../../testing/AppHarness";
 import { deferred } from "../../testing/handlers";
 import { BOOKS } from "../../testing/wishlistHandlers";
-import { api, fake, Page, PHONE } from "./Wishlists.stories.shared";
+import { bookQuery } from "../BookDetail/queries";
+import {
+  api,
+  fake,
+  Page,
+  PHONE,
+  rowOf,
+  titles,
+} from "./Wishlists.stories.shared";
 
 const meta = {
   title: "Pages/Wishlists/Actions",
@@ -17,26 +31,9 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-type Canvas = ReturnType<typeof within>;
-
-const rowOf = async (canvas: Canvas, title: string) => {
-  const rows = await canvas.findAllByTestId("wishlists-row");
-  const row = rows.find((r: HTMLElement) =>
-    within(r).queryByRole("link", { name: title }),
-  );
-  if (!row) throw new Error(`no row for ${title}`);
-  return within(row);
-};
-
-const titles = async (canvas: Canvas) =>
-  (await canvas.findAllByTestId("wishlists-row")).map(
-    (row: HTMLElement) =>
-      within(row).getByTestId("wishlists-title").textContent,
-  );
-
 export const FindACopyOpensAnAmazonSearchInANewTab: Story = {
   play: async ({ canvas }) => {
-    const link = (await rowOf(canvas, "Hyperion")).getByRole("link", {
+    const link = within(await rowOf(canvas, "Hyperion")).getByRole("link", {
       name: "Find a Copy",
     });
 
@@ -53,7 +50,7 @@ export const FindACopyOpensAnAmazonSearchInANewTab: Story = {
 export const FindACopySearchesTheIsbnWhenTheBookHasOne: Story = {
   parameters: { path: "/wishlists?user=all" },
   play: async ({ canvas }) => {
-    const link = (await rowOf(canvas, "Piranesi")).getByRole("link", {
+    const link = within(await rowOf(canvas, "Piranesi")).getByRole("link", {
       name: "Find a Copy",
     });
 
@@ -66,7 +63,7 @@ export const FindACopySearchesTheIsbnWhenTheBookHasOne: Story = {
 
 export const RequestIsDisabledWithItsReason: Story = {
   play: async ({ canvas, userEvent }) => {
-    const row = await rowOf(canvas, "Hyperion");
+    const row = within(await rowOf(canvas, "Hyperion"));
     const request = row.getByTestId("wishlists-request");
 
     await expect(request).toHaveAttribute("aria-disabled", "true");
@@ -87,7 +84,7 @@ const realPointer = async () => (await import("vitest/browser")).userEvent;
 
 export const RequestShowsItsTooltipOnHover: Story = {
   play: async ({ canvas }) => {
-    const row = await rowOf(canvas, "Hyperion");
+    const row = within(await rowOf(canvas, "Hyperion"));
     const tip = row.getByRole("tooltip");
     await expect(getComputedStyle(tip).opacity).toBe("0");
 
@@ -100,11 +97,11 @@ export const RequestShowsItsTooltipOnHover: Story = {
 
 export const RequestIsHiddenWhenBothKindsAreHeld: Story = {
   play: async ({ canvas }) => {
-    const redRising = await rowOf(canvas, "Red Rising");
+    const redRising = within(await rowOf(canvas, "Red Rising"));
     await expect(redRising.queryByTestId("wishlists-request")).toBeNull();
 
     // One ebook alone still leaves the audiobook to ask for.
-    const systemsRed = await rowOf(canvas, "All Systems Red");
+    const systemsRed = within(await rowOf(canvas, "All Systems Red"));
     await expect(
       systemsRed.getByTestId("wishlists-request"),
     ).toBeInTheDocument();
@@ -113,8 +110,8 @@ export const RequestIsHiddenWhenBothKindsAreHeld: Story = {
 
 export const ActionsStayLaidOutAndShowOnHoverOrFocus: Story = {
   play: async ({ canvas }) => {
-    const hyperion = await rowOf(canvas, "Hyperion");
-    const redRising = await rowOf(canvas, "Red Rising");
+    const hyperion = within(await rowOf(canvas, "Hyperion"));
+    const redRising = within(await rowOf(canvas, "Red Rising"));
     const slot = (row: typeof hyperion) =>
       row.getByTestId("wishlists-find-copy").parentElement as HTMLElement;
     await expect(getComputedStyle(slot(hyperion)).opacity).toBe("0");
@@ -139,7 +136,7 @@ export const ActionsStayLaidOutAndShowOnHoverOrFocus: Story = {
 
 export const ActionsHaveAmberFocusOutlines: Story = {
   play: async ({ canvas, userEvent }) => {
-    const row = await rowOf(canvas, "All Systems Red");
+    const row = within(await rowOf(canvas, "All Systems Red"));
     await userEvent.tab();
     const focusable = [
       row.getByTestId("wishlists-find-copy"),
@@ -159,7 +156,7 @@ export const ActionsHaveAmberFocusOutlines: Story = {
 
 export const RemoveThenUndoRestoresTheRow: Story = {
   play: async ({ canvas, userEvent }) => {
-    const row = await rowOf(canvas, "All Systems Red");
+    const row = within(await rowOf(canvas, "All Systems Red"));
 
     await userEvent.click(row.getByTestId("wishlists-remove"));
 
@@ -196,7 +193,7 @@ export const RemoveThenUndoRestoresTheRow: Story = {
 
 export const RemovingABookOnlyYouWantedOffersNoUndo: Story = {
   play: async ({ canvas, userEvent }) => {
-    const row = await rowOf(canvas, "Hyperion");
+    const row = within(await rowOf(canvas, "Hyperion"));
 
     await userEvent.click(row.getByTestId("wishlists-remove"));
 
@@ -225,7 +222,7 @@ export const RemoveIsDisabledWhileItsRequestIsPending: Story = {
     );
   },
   play: async ({ canvas, userEvent }) => {
-    const remove = (await rowOf(canvas, "All Systems Red")).getByTestId(
+    const remove = within(await rowOf(canvas, "All Systems Red")).getByTestId(
       "wishlists-remove",
     );
 
@@ -240,7 +237,7 @@ export const RemoveIsDisabledWhileItsRequestIsPending: Story = {
 export const FailedRemoveShowsTheErrorAndKeepsTheRow: Story = {
   play: async ({ canvas, userEvent }) => {
     fake.refuse.remove = true;
-    const row = await rowOf(canvas, "All Systems Red");
+    const row = within(await rowOf(canvas, "All Systems Red"));
 
     await userEvent.click(row.getByTestId("wishlists-remove"));
 
@@ -278,7 +275,7 @@ export const NoRemoveOnEveryone: Story = {
 export const GetSheetOnYourListOffersFindRequestOpenAndRemove: Story = {
   ...PHONE,
   play: async ({ canvas, userEvent }) => {
-    const row = await rowOf(canvas, "Hyperion");
+    const row = within(await rowOf(canvas, "Hyperion"));
     await expect(row.getByTestId("wishlists-find-copy")).not.toBeVisible();
 
     await userEvent.click(row.getByTestId("wishlists-get"));
@@ -314,7 +311,7 @@ export const GetSheetOnAnotherReadersListHasNoRemove: Story = {
   ...PHONE,
   parameters: { ...PHONE.parameters, path: "/wishlists?user=2" },
   play: async ({ canvas, userEvent }) => {
-    const row = await rowOf(canvas, "Project Hail Mary");
+    const row = within(await rowOf(canvas, "Project Hail Mary"));
 
     await userEvent.click(row.getByTestId("wishlists-get"));
 
@@ -342,7 +339,7 @@ export const GetSheetOnEveryoneNamesWhoWantsTheBook: Story = {
   ...PHONE,
   parameters: { ...PHONE.parameters, path: "/wishlists?user=all" },
   play: async ({ canvas, userEvent }) => {
-    const row = await rowOf(canvas, "Piranesi");
+    const row = within(await rowOf(canvas, "Piranesi"));
 
     await userEvent.click(row.getByTestId("wishlists-get"));
 
@@ -359,7 +356,7 @@ export const GetSheetOnEveryoneNamesWhoWantsTheBook: Story = {
 export const RemovingFromTheGetSheetClosesItAndConfirms: Story = {
   ...PHONE,
   play: async ({ canvas, userEvent }) => {
-    const row = await rowOf(canvas, "All Systems Red");
+    const row = within(await rowOf(canvas, "All Systems Red"));
     await userEvent.click(row.getByTestId("wishlists-get"));
     const sheet = within(await canvas.findByTestId("wishlists-get-sheet"));
 
@@ -383,8 +380,55 @@ export const RemovingFromTheGetSheetClosesItAndConfirms: Story = {
 
 export const GetButtonIsHiddenOnAWideScreen: Story = {
   play: async ({ canvas }) => {
-    const row = await rowOf(canvas, "Hyperion");
+    const row = within(await rowOf(canvas, "Hyperion"));
 
     await expect(row.getByTestId("wishlists-get")).not.toBeVisible();
+  },
+};
+
+/** The cache key of a book's own page. */
+function bookKey(uuid: string) {
+  const parsed = parseBookUuid(uuid);
+  if (!parsed) throw new Error("a fixture book has no uuid");
+  return bookQuery(parsed).queryKey;
+}
+
+export const TappingRequestShowsWhyItCannotBeUsed: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const row = within(await rowOf(canvas, "Hyperion"));
+    const tip = row.getByRole("tooltip");
+    await expect(getComputedStyle(tip).opacity).toBe("0");
+
+    await userEvent.click(row.getByTestId("wishlists-request"));
+
+    await waitFor(() => expect(getComputedStyle(tip).opacity).toBe("1"));
+    await userEvent.tab();
+    await waitFor(() => expect(getComputedStyle(tip).opacity).toBe("0"));
+  },
+};
+
+export const RemovingARowRefreshesTheBooksOwnPage: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const key = bookKey(BOOKS.allSystemsRed.uuid);
+    seedQueries([[...key]]);
+    const row = within(await rowOf(canvas, "All Systems Red"));
+
+    await userEvent.click(row.getByTestId("wishlists-remove"));
+
+    await waitFor(() => expectInvalidated([[...key]]));
+  },
+};
+
+export const RemovingABookThatLeftTheLibraryForgetsItsPage: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const key = bookKey(BOOKS.hyperion.uuid);
+    seedQueries([[...key]]);
+    const row = within(await rowOf(canvas, "Hyperion"));
+
+    await userEvent.click(row.getByTestId("wishlists-remove"));
+
+    await waitFor(() =>
+      expect(storyClient().getQueryState([...key])).toBeUndefined(),
+    );
   },
 };

@@ -255,7 +255,7 @@ shell provides it.
   `shelfLens`, `sorting`, `bulkMetadata` and `inlineEdit`, the editor's `metadata` (form
   schema, the rules a field is refused by and the override diff), `dirty`,
   `editionFields` and `fetch`, the View Transition helper `viewTransition`, `uploads`,
-  check-in's `checkInFlow` and `scan`, `findCopy`, the wishlists' `wishlists` (scope, headings,
+  check-in's `checkInFlow` and `scan`, `findCopy`, the wishlists' `wishlistView` (scope, headings,
   holdings badges, what each row can request and the add panel's lookup results), the
   scanner's `scanStatus` and `loadScanner`, the discovery pages' `browseOrder`, `bookStates`, `authorsOrder`,
   `authorProgress`, `seriesOrder`, `seriesProgress`, `shelvesIndex`, the shelf rules' `rules`, the picker's

@@ -3,7 +3,14 @@ import { HttpResponse, http } from "msw";
 import { expect, waitFor, within } from "storybook/test";
 import { deferred, hanging } from "../../testing/handlers";
 import { BOOKS } from "../../testing/wishlistHandlers";
-import { api, fake, Page, PHONE } from "./Wishlists.stories.shared";
+import {
+  api,
+  type Canvas,
+  fake,
+  Page,
+  PHONE,
+  titles,
+} from "./Wishlists.stories.shared";
 
 const meta = {
   title: "Pages/Wishlists/Add",
@@ -16,14 +23,6 @@ const meta = {
 
 export default meta;
 type Story = StoryObj<typeof meta>;
-
-type Canvas = ReturnType<typeof within>;
-
-const titles = async (canvas: Canvas) =>
-  (await canvas.findAllByTestId("wishlists-row")).map(
-    (row: HTMLElement) =>
-      within(row).getByTestId("wishlists-title").textContent,
-  );
 
 /** Opens the panel from the header and types `text` into its search. */
 const search = async (
@@ -290,6 +289,10 @@ export const AddIsDisabledWhileItsRequestIsPending: Story = {
     await userEvent.click(add);
 
     await waitFor(() => expect(add).toBeDisabled());
+    // Nothing closes the panel while the add is in flight.
+    await userEvent.keyboard("{Escape}");
+    await userEvent.click(canvas.getByTestId("wishlists-add-scrim"));
+    await expect(canvas.getByTestId("wishlists-add-panel")).toBeInTheDocument();
     held.release();
     await waitFor(() =>
       expect(
@@ -362,7 +365,7 @@ export const EmptyStateOffersTheSamePanel: Story = {
   },
 };
 
-export const PhoneShowsAPlusAndAGetSheetStylePanel: Story = {
+export const PhoneShowsAPlusAndAModalSheet: Story = {
   ...PHONE,
   play: async ({ canvas, userEvent }) => {
     const button = await canvas.findByTestId("wishlists-add");
@@ -371,15 +374,126 @@ export const PhoneShowsAPlusAndAGetSheetStylePanel: Story = {
 
     await userEvent.click(button);
 
-    const panel = await canvas.findByTestId("wishlists-add-panel");
-    await expect(getComputedStyle(panel).position).toBe("fixed");
+    const dialog = await canvas.findByRole("dialog", {
+      name: "Add to your wishlist",
+    });
+    await expect(dialog).toHaveAttribute("aria-modal", "true");
+    const panel = within(await canvas.findByTestId("wishlists-add-panel"));
+    // The keyboard would cover the sheet the moment it opened.
+    await expect(panel.getByTestId("wishlists-add-search")).not.toHaveFocus();
+    // The sheet fades in, and a fading element is not yet visible.
+    await waitFor(() =>
+      expect(
+        panel.getByRole("heading", { name: "Add to your wishlist" }),
+      ).toBeVisible(),
+    );
+    await userEvent.click(panel.getByRole("button", { name: "Close" }));
+    await waitFor(() =>
+      expect(
+        canvas.queryByTestId("wishlists-add-panel"),
+      ).not.toBeInTheDocument(),
+    );
+    await expect(button).toHaveFocus();
+  },
+};
+
+export const PhoneSheetClosesOnEscape: Story = {
+  ...PHONE,
+  play: async ({ canvas, userEvent }) => {
+    const button = await canvas.findByTestId("wishlists-add");
+    await userEvent.click(button);
+    await canvas.findByTestId("wishlists-add-panel");
+
+    await userEvent.keyboard("{Escape}");
+
+    await waitFor(() =>
+      expect(
+        canvas.queryByTestId("wishlists-add-panel"),
+      ).not.toBeInTheDocument(),
+    );
+    await expect(button).toHaveFocus();
+  },
+};
+
+/** The browser's own pointer: a story's `userEvent` dispatches straight to its target, past any overlay. */
+const realPointer = async () => (await import("vitest/browser")).userEvent;
+
+export const AnOutsideClickClosesTheDesktopPopover: Story = {
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByTestId("wishlists-add"));
+    await canvas.findByTestId("wishlists-add-panel");
+
+    // `force` skips the check that nothing covers the heading: the covering scrim is what is under test.
+    await (await realPointer()).click(
+      await canvas.findByTestId("wishlists-heading"),
+      { force: true },
+    );
+
+    await waitFor(() =>
+      expect(
+        canvas.queryByTestId("wishlists-add-panel"),
+      ).not.toBeInTheDocument(),
+    );
+  },
+};
+
+export const AnIsbnSearchAddsTheCloseMatchWithoutAskingAgain: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const panel = await search(canvas, userEvent, "9780441172719");
+    const online = within(await panel.findByTestId("wishlists-add-online"));
+    await waitFor(() => expect(resultTitles(online)).toEqual(["Dune"]));
+    const booksBefore = fake.state.books.size;
+
+    await userEvent.click(online.getByRole("button", { name: "Add Dune" }));
+
     await expect(
-      within(panel).getByRole("heading", { name: "Add to your wishlist" }),
-    ).toBeVisible();
-    await userEvent.click(within(panel).getByRole("button", { name: "Close" }));
+      await canvas.findByText("Added Dune to your wishlist"),
+    ).toBeInTheDocument();
+    await expect(fake.scanWrites).toEqual([
+      { book_uuid: BOOKS.dune.uuid, source: "manual" },
+    ]);
+    await expect(fake.state.books.size).toBe(booksBefore);
+    // The lookup had already answered, so the record was not matched a second time.
+    await expect(fake.metaLookups).toEqual([]);
+  },
+};
+
+export const AddingAProvidersRecordThatCloseMatchesAddsTheMatchedBook: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const panel = await search(canvas, userEvent, "dune");
+    const online = within(await panel.findByTestId("wishlists-add-online"));
+    await waitFor(() => expect(resultTitles(online)).toEqual(["Dune"]));
+    const booksBefore = fake.state.books.size;
+
+    // Another edition of the same work is the same book.
+    await userEvent.click(online.getByRole("button", { name: "Add Dune" }));
+
     await expect(
-      canvas.queryByTestId("wishlists-add-panel"),
-    ).not.toBeInTheDocument();
+      await canvas.findByText("Added Dune to your wishlist"),
+    ).toBeInTheDocument();
+    await expect(fake.scanWrites).toEqual([
+      { book_uuid: BOOKS.dune.uuid, source: "search" },
+    ]);
+    await expect(fake.state.books.size).toBe(booksBefore);
+    await expect(fake.metaLookups).toHaveLength(1);
+  },
+};
+
+export const AddingAnEntryAlreadyOnYourListIsDecidedByTheBooksOwnRead: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const panel = await search(canvas, userEvent, "hail mary");
+    const library = within(await panel.findByTestId("wishlists-add-library"));
+    await waitFor(() => expect(resultTitles(library)).toHaveLength(1));
+    const listReads = fake.requests.length;
+
+    await userEvent.click(
+      library.getByRole("button", { name: "Add Project Hail Mary" }),
+    );
+
+    await canvas.findByText("Project Hail Mary is already on your wishlist");
+    await expect(fake.entryReads).toEqual([BOOKS.hailMary.uuid]);
+    // The only list read after the add is the page refreshing itself, never a pre-fetch.
+    await expect(fake.requests.length - listReads).toBeLessThanOrEqual(1);
   },
 };
 

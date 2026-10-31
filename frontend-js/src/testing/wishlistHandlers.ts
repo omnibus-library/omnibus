@@ -19,7 +19,7 @@ import { aWireBook, WIRE_ADA } from "./wire";
 // Each reader's entries live in `state`, so a write a story makes shows in the next read.
 
 /** A book the fake knows: what the library holds of it is `files` (per format) and `copies`. */
-export type FakeBook = {
+type FakeBook = {
   uuid: string;
   title: string;
   authors: string[];
@@ -32,13 +32,13 @@ export type FakeBook = {
 };
 
 /** One entry on a reader's list, when it was added in Unix seconds. */
-export type FakeEntry = { uuid: string; addedAt: number };
+type FakeEntry = { uuid: string; addedAt: number };
 
 const THIS_YEAR = new Date().getUTCFullYear();
 
-/** A moment this year, so the page shows it as a month and day. */
-export const thisYear = (month: number, day: number) =>
-  Date.UTC(THIS_YEAR, month - 1, day, 9) / 1000;
+/** Noon on a day this year, on the viewer's calendar, so the page shows it as that month and day. */
+const thisYear = (month: number, day: number) =>
+  new Date(THIS_YEAR, month - 1, day, 12).getTime() / 1000;
 
 const book = (title: string, rest: Partial<FakeBook> = {}): FakeBook => ({
   uuid: `uuid-${title.toLowerCase().replaceAll(" ", "-")}`,
@@ -100,7 +100,7 @@ export const BOOKS = {
 } satisfies Record<string, FakeBook>;
 
 /** Who is on the server, the signed-in reader first. */
-export const READERS = [
+const READERS = [
   { id: WIRE_ADA.id, name: "Ada Lovelace", hasAvatar: false },
   { id: 2, name: "Jordan", hasAvatar: false },
   { id: 3, name: "Riley", hasAvatar: false },
@@ -108,7 +108,7 @@ export const READERS = [
 ];
 
 /** Each reader's entries, as the comps draw them; Sam has none. */
-export function startingEntries(): Map<number, FakeEntry[]> {
+function startingEntries(): Map<number, FakeEntry[]> {
   const entry = (b: FakeBook, month: number, day: number): FakeEntry => ({
     uuid: b.uuid,
     addedAt: thisYear(month, day),
@@ -139,10 +139,8 @@ export function startingEntries(): Map<number, FakeEntry[]> {
 }
 
 type Seed = {
-  readers?: typeof READERS;
-  books?: FakeBook[];
   entries?: Map<number, FakeEntry[]>;
-  /** Holds `GET /api/wishlists?user=<user>` until `until` resolves. */
+  /** Holds `GET /api/wishlists?user=<user>` (`you` for none) until `until` resolves. */
   gate?: { user: string; until: Promise<void> };
   /** What the providers' title search and ISBN lookup know, for the add panel. */
   providers?: ExternalBookMeta[];
@@ -159,13 +157,17 @@ function holdingsOf(b: FakeBook): WishlistHolding[] {
 
 /** The fake: its `handlers`, and the `state` and `requests` a story reads back. */
 export function wishlistFake({
-  readers = READERS,
-  books = Object.values(BOOKS),
   entries = startingEntries(),
   gate,
   providers = [],
 }: Seed = {}) {
-  const state = { entries, books: new Map(books.map((b) => [b.uuid, b])) };
+  const readers = READERS;
+  const state = {
+    entries,
+    books: new Map<string, FakeBook>(
+      Object.values(BOOKS).map((b) => [b.uuid, b]),
+    ),
+  };
   const requests: (string | null)[] = [];
   const nameOf = (id: number) => readers.find((r) => r.id === id)?.name ?? "";
   const viewer = WIRE_ADA.id;
@@ -244,17 +246,21 @@ export function wishlistFake({
 
   /** The writes the page made, in order, as `remove` or `add` and the uuid. */
   const writes: { kind: "remove" | "add"; uuid: string }[] = [];
+  /** The records `POST /api/scan/resolve-meta` was asked about, in order. */
+  const metaLookups: ExternalBookMeta[] = [];
+  /** The books whose own entry `GET /api/physical/{uuid}/wishlist` was asked for. */
+  const entryReads: string[] = [];
   /** The bodies `POST /api/scan/wishlist` received, in order. */
   const scanWrites: WishlistAddRequest[] = [];
   /** Which routes refuse with a 500, by kind. */
-  const refuse: Partial<Record<"remove" | "add" | "scan", boolean>> = {};
+  const refuse: Partial<Record<"remove" | "scan", boolean>> = {};
 
   const handlers = [
     http.get("/api/wishlists/readers", () => HttpResponse.json(readerRows())),
     http.get("/api/wishlists", async ({ request }) => {
       const user = new URL(request.url).searchParams.get("user");
       requests.push(user);
-      if (gate && gate.user === user) await gate.until;
+      if (gate && gate.user === (user ?? "you")) await gate.until;
       if (user === "all") return HttpResponse.json(merged());
       const id = user === null ? viewer : Number(user);
       if (user !== null && !/^[1-9]\d*$/.test(user)) {
@@ -278,6 +284,24 @@ export function wishlistFake({
   };
 
   const writeHandlers = [
+    http.get("/api/physical/:uuid/wishlist", ({ params }) => {
+      const uuid = String(params.uuid);
+      entryReads.push(uuid);
+      const entry = (state.entries.get(viewer) ?? []).find(
+        (e) => e.uuid === uuid,
+      );
+      return HttpResponse.json(
+        entry
+          ? {
+              id: 1,
+              user_id: viewer,
+              book_uuid: uuid,
+              added_at: entry.addedAt,
+              source: "detail",
+            }
+          : null,
+      );
+    }),
     http.delete("/api/physical/:uuid/wishlist", ({ params }) => {
       const uuid = String(params.uuid);
       writes.push({ kind: "remove", uuid });
@@ -296,9 +320,6 @@ export function wishlistFake({
     http.post("/api/physical/:uuid/wishlist", ({ params }) => {
       const uuid = String(params.uuid);
       writes.push({ kind: "add", uuid });
-      if (refuse.add) {
-        return new HttpResponse("failed with 500", { status: 500 });
-      }
       if (!state.books.has(uuid)) {
         return new HttpResponse("book not found", { status: 404 });
       }
@@ -342,7 +363,16 @@ export function wishlistFake({
       };
     }
     const online = record ?? providers.find((p) => p.isbn13 === isbn);
-    return online ? { kind: "not_in_library", online } : { kind: "unresolved" };
+    if (!online) return { kind: "unresolved" };
+    // A different edition of a book the library holds matches on title and author alone.
+    const sameWork = [...state.books.values()].find(
+      (b) =>
+        b.title.toLowerCase() === online.title.toLowerCase() &&
+        b.authors[0] === online.authors[0],
+    );
+    return sameWork
+      ? { kind: "close_match", book: scanBook(sameWork), scanned: online }
+      : { kind: "not_in_library", online };
   };
 
   let minted = 0;
@@ -392,6 +422,7 @@ export function wishlistFake({
     }),
     http.post("/api/scan/resolve-meta", async ({ request }) => {
       const { meta } = ResolveMetaRequest.parse(await request.json());
+      metaLookups.push(meta);
       return HttpResponse.json(outcomeFor(meta.isbn13, meta));
     }),
     http.post("/api/scan/wishlist", async ({ request }) => {
@@ -431,8 +462,9 @@ export function wishlistFake({
     requests,
     writes,
     scanWrites,
+    metaLookups,
+    entryReads,
     refuse,
-    viewer,
   };
 }
 

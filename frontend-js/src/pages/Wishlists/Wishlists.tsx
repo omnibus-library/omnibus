@@ -25,11 +25,12 @@ import { ReaderPanel, ReaderPicker } from "./ReaderPanel";
 import { WishlistRow } from "./WishlistRow";
 import {
   heading,
+  readerOf,
   type Scope,
   scopeFrom,
   subline,
   wishlistUser,
-} from "./wishlists";
+} from "./wishlistView";
 import "./Wishlists.css";
 
 type EmptyCopy = { title: string; body: string; offer: boolean };
@@ -39,19 +40,19 @@ function emptyCopy(scope: Scope, readerName: string): EmptyCopy {
     case "you":
       return {
         title: "Nothing on your wishlist yet",
-        body: "Search for a book by title, author or ISBN, or tap the heart on any book’s page. Everyone in the household can see what you’re hoping for.",
+        body: "Search by title, author or ISBN, or add it from any book’s page. Everyone in the household can see your wishlist.",
         offer: true,
       };
     case "everyone":
       return {
         title: "No one has anything on their wishlist yet",
-        body: "When someone in the household hopes for a book, it lands here, so you can see what to find or request for them. Start with yours.",
+        body: "When someone in the household adds a book to their wishlist, it shows up here, so you can find or request it for them. Start with yours.",
         offer: true,
       };
     case "reader":
       return {
         title: `Nothing on ${readerName}’s wishlist yet`,
-        body: `When ${readerName} hopes for a book, it lands here.`,
+        body: `When ${readerName} adds a book to their wishlist, it shows up here.`,
         offer: false,
       };
     default: {
@@ -119,19 +120,36 @@ function List({
   );
 }
 
-/** A list that could not be read; either way the way back is your own list. */
-function Failure({ error }: { error: Error }) {
-  const unknownReader = error instanceof ApiError && error.status === 404;
+/** A list that could not be read. A reader who isn't on the server returns to your own list; any other failure can be tried again. */
+function Failure({ error, onRetry }: { error: Error; onRetry: () => void }) {
+  if (error instanceof ApiError && error.status === 404) {
+    return (
+      <PageError
+        message="That reader isn't on this server"
+        backTo="/wishlists"
+        backLabel="Back to your wishlist"
+      />
+    );
+  }
   return (
-    <PageError
-      message={
-        unknownReader ? "That reader isn't on this server" : error.message
-      }
-      backTo="/wishlists"
-      backLabel="Back to your wishlist"
-    />
+    <>
+      <p role="alert" className="subtitle">
+        {error.message}
+      </p>
+      <Button onClick={onRetry}>Try again</Button>
+    </>
   );
 }
+
+/** The scope the rows on screen were read for: it moves on only once the next list has landed, so a row never offers what another reader's list may not. */
+function useSettledScope(scope: Scope, settled: boolean) {
+  const [shown, setShown] = useState(scope);
+  const same = shown.kind === scope.kind && readerId(shown) === readerId(scope);
+  if (settled && !same) setShown(scope);
+  return shown;
+}
+
+const readerId = (scope: Scope) => (scope.kind === "reader" ? scope.id : null);
 
 /** `/wishlists`: the household's wishlists, one reader's or everyone's, picked by `?user=`. */
 export function Wishlists() {
@@ -143,22 +161,30 @@ export function Wishlists() {
   // The title of a reader's list needs their name; the others need nothing.
   const titled = scope.kind !== "reader" || readers.data !== undefined;
   const title = heading(scope, readers.data?.readers ?? []);
-  const readerName =
-    readers.data?.readers.find(
-      (r) => scope.kind === "reader" && r.id === scope.id,
-    )?.name ?? "";
-  const answered = books.data !== undefined && titled;
+  const readerName = readerOf(scope, readers.data?.readers ?? [])?.name ?? "";
   const refreshing = books.isPlaceholderData;
+  const rowsScope = useSettledScope(scope, !refreshing);
+  const answered = books.data !== undefined && titled;
+  // A reader's list can't be titled without the readers, so their failure stops the page too.
+  const failure = books.isError
+    ? { error: books.error, retry: () => books.refetch() }
+    : scope.kind === "reader" && readers.isError
+      ? { error: readers.error, retry: () => readers.refetch() }
+      : null;
   const wishlists =
     readers.data?.readers.filter((r) => r.count > 0).length ?? null;
   return (
     <ToastProvider>
       <PageTitle page="Wishlists" />
       <div className="wl-page" data-testid="wishlists-page">
-        <ReaderPanel data={readers.data} scope={scope} />
+        <ReaderPanel
+          data={readers.data}
+          failed={readers.isError}
+          scope={scope}
+        />
         <section className="wl-body">
-          {books.isError ? (
-            <Failure error={books.error} />
+          {failure ? (
+            <Failure error={failure.error} onRetry={failure.retry} />
           ) : (
             <>
               <header className="wl-head">
@@ -202,7 +228,11 @@ export function Wishlists() {
                       onAdd={() => setAdding(true)}
                     />
                   ) : (
-                    <List books={books.data} scope={scope} viewer={viewer.id} />
+                    <List
+                      books={books.data}
+                      scope={rowsScope}
+                      viewer={viewer.id}
+                    />
                   )}
                 </Stale>
               ) : (

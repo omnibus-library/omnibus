@@ -1,5 +1,5 @@
 import {
-  type QueryClient,
+  type UseMutationResult,
   useMutation,
   useQuery,
   useQueryClient,
@@ -8,6 +8,7 @@ import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import {
   type BookUuid,
   type ExternalBookMeta,
+  fetchWishlist,
   parseBookUuid,
   removeFromWishlist,
   resolveBook,
@@ -16,27 +17,32 @@ import {
   searchLibraryBooks,
   searchProviders,
   thumbUrl,
-  wishlistBooksQuery,
   wishlistScanned,
 } from "../../api";
 import { Button } from "../../components/Button/Button";
 import { Cover } from "../../components/Cover/Cover";
 import { PlusGlyph, SearchGlyph, XGlyph } from "../../components/Glyphs/Glyphs";
 import { Loading } from "../../components/Loading/Loading";
+import { Sheet } from "../../components/Sheet/Sheet";
 import { useToast } from "../../components/Toast/Toast";
 import { useDebounced } from "../../useDebounced";
+import { useMediaQuery } from "../../useMediaQuery";
 import {
   cleanIsbn,
   type FoundVia,
   isbnRejection,
   wishlistSource,
 } from "../CheckIn/checkInFlow";
-import { existingBook, isbnResults, onlineHeading } from "./wishlists";
+import { refreshAfterWrite } from "./refresh";
+import { existingBook, isbnResults, onlineHeading } from "./wishlistView";
 
-/** A search hit the reader may add: a library book, or a provider's record of one. */
+/** The widths where the panel is a bottom sheet; `Sheet.css` turns its own dialog into one at the same line. */
+const PHONE = "(max-width: 720px)";
+
+/** A search hit the reader may add: a library book, or a provider's record of one. A lookup by ISBN has already said which library book a record matches, so that record carries the answer (`null` for none). */
 type Hit =
   | { kind: "library"; book: ScanBook }
-  | { kind: "online"; meta: ExternalBookMeta };
+  | { kind: "online"; meta: ExternalBookMeta; matched?: ScanBook | null };
 
 const titleOf = (hit: Hit) =>
   hit.kind === "library" ? hit.book.title : hit.meta.title;
@@ -45,22 +51,22 @@ const titleOf = (hit: Hit) =>
 async function requestFor(hit: Hit, via: FoundVia) {
   const source = wishlistSource[via];
   if (hit.kind === "library") return { book_uuid: hit.book.uuid, source };
-  const found = existingBook(await resolveMeta(hit.meta));
+  const found =
+    hit.matched === undefined
+      ? existingBook(await resolveMeta(hit.meta))
+      : hit.matched;
   return found ? { book_uuid: found.uuid, source } : { meta: hit.meta, source };
 }
 
-/** Adds to your own list, and says whether the book was already on it before. */
-async function addHit(client: QueryClient, hit: Hit, via: FoundVia) {
-  // Fresh, not cached: Undo must never remove an entry that was there before.
-  const before = await client.fetchQuery({
-    ...wishlistBooksQuery("you"),
-    staleTime: 0,
-  });
-  const uuid = await wishlistScanned(await requestFor(hit, via));
-  return {
-    uuid: parseBookUuid(uuid),
-    alreadyListed: before.some((b) => b.uuid === uuid),
-  };
+/** Adds to your own list, and says whether the book was already on it: Undo must never remove an entry that was there before. */
+async function addHit(hit: Hit, via: FoundVia) {
+  const request = await requestFor(hit, via);
+  const target =
+    "book_uuid" in request ? parseBookUuid(request.book_uuid) : null;
+  // A record made into a new book cannot have been listed, and a read that fails stops the add.
+  const alreadyListed = target ? (await fetchWishlist(target)) !== null : false;
+  const uuid = await wishlistScanned(request);
+  return { uuid: parseBookUuid(uuid), alreadyListed };
 }
 
 const libraryNote = (book: ScanBook) =>
@@ -144,12 +150,14 @@ function Section({
       )}
       {state === "done" && hits.length > 0 && (
         <ul className="wl-add-results">
-          {hits.map((hit) => (
+          {hits.map((hit, i) => (
             <Result
+              // Providers can return one ISBN twice, and the list is only ever replaced whole.
+              // biome-ignore lint/suspicious/noArrayIndexKey: see above
               key={
                 hit.kind === "library"
                   ? hit.book.uuid
-                  : `${hit.meta.source}-${hit.meta.isbn13}`
+                  : `${hit.meta.source}-${hit.meta.isbn13}-${i}`
               }
               hit={hit}
               disabled={disabled}
@@ -197,9 +205,12 @@ function useAddSearch(text: string) {
     kind: "library",
     book,
   }));
+  // The lookup's own answer for a record it found, so an ISBN search needs no second one.
+  const matched = isIsbn && lookup.data ? existingBook(lookup.data) : undefined;
   const onlineHits: Hit[] = (onlineBooks ?? []).map((meta) => ({
     kind: "online",
     meta,
+    matched,
   }));
   const via: FoundVia = isIsbn ? "isbn" : "search";
   return {
@@ -213,68 +224,48 @@ function useAddSearch(text: string) {
   };
 }
 
-type PanelProps = {
-  onClose: () => void;
-};
+type Add = UseMutationResult<
+  { uuid: BookUuid | null; alreadyListed: boolean },
+  Error,
+  { hit: Hit; via: FoundVia }
+>;
 
-/** The search box and what it finds. Closes itself once a book is added. */
-function AddPanel({ onClose }: PanelProps) {
-  const client = useQueryClient();
-  const toast = useToast();
+/** The search box and what it finds. */
+function AddPanel({
+  add,
+  error,
+  sheet,
+  onClose,
+}: {
+  add: Add;
+  error: string | null;
+  /** In a bottom sheet, which brings its own title and Close. */
+  sheet: boolean;
+  onClose: () => void;
+}) {
   const input = useRef<HTMLInputElement>(null);
   const [text, setText] = useState("");
-  const [error, setError] = useState<string | null>(null);
   const found = useAddSearch(useDebounced(text));
-  useEffect(() => input.current?.focus(), []);
-
-  const refresh = () => client.invalidateQueries({ queryKey: ["wishlists"] });
-  const undo = (uuid: BookUuid, title: string) => async () => {
-    try {
-      await removeFromWishlist(uuid);
-      await refresh();
-    } catch (e) {
-      toast(
-        `Couldn’t take ${title} off: ${e instanceof Error ? e.message : "try again."}`,
-      );
-    }
-  };
-  const add = useMutation({
-    mutationFn: ({ hit, via }: { hit: Hit; via: FoundVia }) =>
-      addHit(client, hit, via),
-    onMutate: () => setError(null),
-    onSuccess: ({ uuid, alreadyListed }, { hit }) => {
-      const title = titleOf(hit);
-      // Undo would delete an entry that was there before this add.
-      if (alreadyListed) {
-        toast(`${title} is already on your wishlist`);
-      } else {
-        toast(
-          `Added ${title} to your wishlist`,
-          uuid ? { label: "Undo", onClick: undo(uuid, title) } : undefined,
-        );
-      }
-      onClose();
-      return refresh();
-    },
-    onError: (e, { hit }) =>
-      setError(`Couldn’t add ${titleOf(hit)}: ${e.message}`),
-  });
+  // A phone's keyboard would cover the sheet the moment it opened.
+  useEffect(() => (sheet ? undefined : input.current?.focus()), [sheet]);
   const onAdd = (hit: Hit) => {
     if (found) add.mutate({ hit, via: found.via });
   };
   return (
     <>
-      <header className="wl-add-head">
-        <h2 className="wl-add-head-title">Add to your wishlist</h2>
-        <button
-          type="button"
-          className="wl-add-close"
-          aria-label="Close"
-          onClick={onClose}
-        >
-          <XGlyph size={16} />
-        </button>
-      </header>
+      {sheet && (
+        <header className="wl-add-head">
+          <h2 className="wl-add-head-title">Add to your wishlist</h2>
+          <button
+            type="button"
+            className="wl-add-close"
+            aria-label="Close"
+            onClick={onClose}
+          >
+            <XGlyph size={16} />
+          </button>
+        </header>
+      )}
       <label className="wl-add-field">
         <SearchGlyph size={16} />
         <input
@@ -333,16 +324,64 @@ export function AddToWishlist({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const client = useQueryClient();
+  const toast = useToast();
   const button = useRef<HTMLButtonElement>(null);
-  const close = () => {
+  const phone = useMediaQuery(PHONE);
+  // The sheet leaves with an exit animation before the owner is told.
+  const [closing, setClosing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const undo = (uuid: BookUuid, title: string) => async () => {
+    try {
+      await removeFromWishlist(uuid);
+      await refreshAfterWrite(client, uuid);
+    } catch (e) {
+      toast(
+        `Couldn’t take ${title} off: ${e instanceof Error ? e.message : "try again."}`,
+      );
+    }
+  };
+  const leave = () => {
+    setClosing(false);
+    setError(null);
     onOpenChange(false);
     button.current?.focus();
+  };
+  const add = useMutation({
+    mutationFn: ({ hit, via }: { hit: Hit; via: FoundVia }) => addHit(hit, via),
+    onMutate: () => setError(null),
+    onSuccess: ({ uuid, alreadyListed }, { hit }) => {
+      const title = titleOf(hit);
+      // Undo would delete an entry that was there before this add.
+      if (alreadyListed) {
+        toast(`${title} is already on your wishlist`);
+      } else {
+        toast(
+          `Added ${title} to your wishlist`,
+          uuid ? { label: "Undo", onClick: undo(uuid, title) } : undefined,
+        );
+      }
+      leave();
+      return uuid ? refreshAfterWrite(client, uuid) : undefined;
+    },
+    onError: (e, { hit }) =>
+      setError(`Couldn’t add ${titleOf(hit)}: ${e.message}`),
+  });
+  // Nothing closes the panel while an add is in flight, so its answer lands on the panel that asked.
+  const close = () => {
+    if (add.isPending) return;
+    if (phone) setClosing(true);
+    else leave();
   };
   const dismiss = (event: KeyboardEvent) => {
     if (event.key !== "Escape") return;
     event.preventDefault();
     close();
   };
+  const panel = (
+    <AddPanel add={add} error={error} sheet={phone} onClose={close} />
+  );
   return (
     <div className="wl-add">
       <button
@@ -358,9 +397,22 @@ export function AddToWishlist({
         <PlusGlyph size={14} />
         <span className="wl-add-button-text">Add to wishlist</span>
       </button>
-      {open && (
+      {open && phone && (
+        <Sheet
+          label="Add to your wishlist"
+          testId="wishlists-add-panel"
+          compact
+          busy={add.isPending}
+          closing={closing}
+          onDismiss={close}
+          onClosed={leave}
+        >
+          <div className="wl-add-sheet">{panel}</div>
+        </Sheet>
+      )}
+      {open && !phone && (
         <>
-          {/* biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: a pointer-only backdrop; Escape already closes the panel */}
+          {/* biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: a pointer-only backdrop that catches an outside click; Escape already closes the panel */}
           <div
             className="wl-add-scrim"
             data-testid="wishlists-add-scrim"
@@ -374,7 +426,7 @@ export function AddToWishlist({
             aria-label="Add to your wishlist"
             onKeyDown={dismiss}
           >
-            <AddPanel onClose={close} />
+            {panel}
           </div>
         </>
       )}

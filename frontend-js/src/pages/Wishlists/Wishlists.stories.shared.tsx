@@ -1,4 +1,5 @@
 import { Route, Routes, useLocation } from "react-router";
+import { within } from "storybook/test";
 import { anExternalBook } from "../../testing/scanHandlers";
 import {
   type WishlistFake,
@@ -52,6 +53,15 @@ export const PROVIDER_BOOKS = [
     publisher: null,
     series: null,
   }),
+  // Another edition of Dune, which the library holds.
+  anExternalBook({
+    isbn13: "9780441172719",
+    title: "Dune",
+    authors: ["Frank Herbert"],
+    year: "1990",
+    publisher: "Ace",
+    series: null,
+  }),
 ];
 
 /** A fresh fake for the story that is starting, and its handlers. */
@@ -74,3 +84,23 @@ export const PHONE = {
 
 /** The copy the page must not use: a bare "wish" word, or "check in". */
 export const BANNED_COPY = /\bwish(es|ed)?\b|check in/i;
+
+export type Canvas = ReturnType<typeof within>;
+
+/** The row on screen for `title`. */
+export async function rowOf(canvas: Canvas, title: string) {
+  const rows = await canvas.findAllByTestId("wishlists-row");
+  const row = rows.find((r: HTMLElement) =>
+    within(r).queryByRole("link", { name: title }),
+  );
+  if (!row) throw new Error(`no row for ${title}`);
+  return row;
+}
+
+/** The rows on screen, by title. */
+export async function titles(canvas: Canvas) {
+  return (await canvas.findAllByTestId("wishlists-row")).map(
+    (row: HTMLElement) =>
+      within(row).getByTestId("wishlists-title").textContent,
+  );
+}

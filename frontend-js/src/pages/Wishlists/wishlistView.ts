@@ -9,7 +9,7 @@ import {
   type WishlistReader,
   type WishlistUser,
 } from "../../api";
-import { bookCount, MONTHS, plural } from "../../format";
+import { bookCount, plural } from "../../format";
 
 /** Whose wishlist the page shows. */
 export type Scope =
@@ -26,6 +26,22 @@ export function scopeFrom(param: string | null, viewer: UserId): Scope {
     : { kind: "reader", id };
 }
 
+/** The reader whose list `scope` shows, or `null` for everyone's or a reader who isn't listed. */
+export function readerOf(scope: Scope, readers: readonly WishlistReader[]) {
+  switch (scope.kind) {
+    case "you":
+      return readers.find((r) => r.is_you) ?? null;
+    case "reader":
+      return readers.find((r) => r.id === scope.id) ?? null;
+    case "everyone":
+      return null;
+    default: {
+      const _exhaustive: never = scope;
+      return _exhaustive;
+    }
+  }
+}
+
 /** The page title for `scope`. */
 export function heading(scope: Scope, readers: readonly WishlistReader[]) {
   switch (scope.kind) {
@@ -34,7 +50,7 @@ export function heading(scope: Scope, readers: readonly WishlistReader[]) {
     case "everyone":
       return "Everyone’s Wishlists";
     case "reader": {
-      const name = readers.find((r) => r.id === scope.id)?.name;
+      const name = readerOf(scope, readers)?.name;
       return name ? `${name}’s Wishlist` : "Wishlist";
     }
     default: {
@@ -85,14 +101,15 @@ export function byline({
     .join(" · ");
 }
 
-/** The day an entry was added, `Oct 30`, with the year once it is not this one; on the UTC calendar every client names the same day. */
+/** The day an entry was added on the viewer's calendar, `Oct 30`, with the year once it is not this one. */
 export function addedLabel(addedAt: number, now: number) {
   const added = new Date(addedAt * 1000);
-  const day = `${MONTHS[added.getUTCMonth()]} ${added.getUTCDate()}`;
-  const year = added.getUTCFullYear();
-  return year === new Date(now * 1000).getUTCFullYear()
-    ? day
-    : `${day}, ${year}`;
+  const otherYear = added.getFullYear() !== new Date(now * 1000).getFullYear();
+  return added.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    ...(otherYear && { year: "numeric" }),
+  });
 }
 
 /** The list to ask the API for. */
@@ -155,14 +172,14 @@ export function isbnResults(outcome: ScanOutcome): {
   }
 }
 
-/** The library book whose ISBN an outcome matched, so a provider's record is added to its list and never minted as a second book. A close match is only a guess at the same book and is not acted on. */
+/** The library book an outcome matched, so a provider's record goes onto its list and is never minted as a second book. A different edition of the same work is the same book, so a close match counts. */
 export function existingBook(outcome: ScanOutcome): ScanBook | null {
   switch (outcome.kind) {
     case "already_owned":
     case "on_wishlist":
     case "in_library_unowned":
-      return outcome.book;
     case "close_match":
+      return outcome.book;
     case "not_in_library":
     case "unresolved":
       return null;
