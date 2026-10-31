@@ -17,7 +17,7 @@ export function statusPill(
     : { tone: "idle", label: `Idle ${Math.floor(age / DAY)}d` };
 }
 
-// shortcut: UTC days, matching Dioxus; switch to the reader's offset (rule 10) when both clients move.
+// shortcut: UTC days, not the reader's offset (rule 10); switch once a reader far from UTC sees the wrong day.
 /** A day count: "today", "yesterday", "N days ago" inside a month, then "14 Jul", with the year once it differs from now's. */
 export function relDate(now: number, ts: number): string {
   const days = Math.floor(now / DAY) - Math.floor(ts / DAY);

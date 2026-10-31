@@ -1,8 +1,7 @@
 //  Cache.swift
 //  Local-first replica cache over `OfflineStore`.
 //
-//  Port of `frontend/src/offline/cache.rs`. Reads go through `live`: the
-//  replica answers immediately and the server's answer follows if it differs,
+//  Reads go through `live`: the replica answers immediately and the server's answer follows if it differs,
 //  so no screen ever waits on the network to paint.
 
 import Foundation

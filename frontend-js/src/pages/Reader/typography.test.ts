@@ -42,7 +42,7 @@ describe("loadReaderPrefs", () => {
     expect(loadReaderPrefs()).toEqual(CHANGED);
   });
 
-  it("saves under the keys the Dioxus reader reads", () => {
+  it("saves under the omn.* keys", () => {
     saveReaderPref("lineSpacing", CHANGED);
     saveReaderPref("justify", CHANGED);
 

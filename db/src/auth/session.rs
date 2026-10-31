@@ -1,7 +1,7 @@
 //! Sessions.
 //!
-//! `validate_session` is the one place every HTTP auth extractor (REST and
-//! Dioxus) resolves a request to a session, so expiry and revocation checks
+//! `validate_session` is the one place every HTTP auth extractor resolves a
+//! request to a session, so expiry and revocation checks
 //! cannot drift. It takes raw header strings to keep this crate free of
 //! axum/http types.
 

@@ -21,8 +21,6 @@ pub struct EbookLibrary {
     pub path: Option<String>,
     pub books: Vec<EbookMetadata>,
     pub error: Option<String>,
-    // Only the web search server function sets this; the REST routes carry the
-    // count in headers.
     /// How many books matched before the list was cut to 50,000. Always null from the
     /// `/api/*` routes, which send that count in the `X-Total-Count` header.
     #[serde(default)]
@@ -100,7 +98,6 @@ pub struct FacetCounts {
     pub genres: Vec<FacetCount>,
 }
 
-// The web landing page's server function returns this.
 /// One page of the library and the cursor to the next. `GET /api/ebooks` sends a page as
 /// an `EbookPage` instead, with the cursor and counts in headers.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]

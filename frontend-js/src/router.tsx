@@ -66,7 +66,7 @@ function LegacyCleanupReview() {
   return <Navigate to={`/admin/cleanup/${encodeURIComponent(kind)}`} replace />;
 }
 
-// Mirrors frontend/src/routes.rs: the readers (with the audiobook dock beneath) and the player fill the screen,
+// The readers (with the audiobook dock beneath) and the player fill the screen,
 // everything else sits under the top bar. Two error boundaries: one inside the
 // shell, so a page that throws keeps the top bar, and one at the root for
 // everything else (the session gate, the shell itself, the readers).

@@ -12,9 +12,7 @@ import SwiftUI
 /// Copy and numbers the stops derive from the record — pure, so the suite can
 /// assert them without a screen.
 /// Journal-stop copy. Kept as a free function rather than inline in the view
-/// so the wording is unit-testable, and deliberately a mirror of
-/// `marquee_journal_kicker` in `frontend/src/pages/book_detail/journal.rs` —
-/// the two clients render the same stop and must not word it differently.
+/// so the wording is unit-testable.
 enum DetailJournal {
     /// `N entries from M readers · d drafts`, or the empty note. Drafts are
     /// counted apart from the published total, the way the web stop does it:

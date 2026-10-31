@@ -52,9 +52,8 @@ struct Cooldown {
 
 /// A shared record of which providers are cooling down. Cloning shares the
 /// state (it is a handle, not a copy), which lets it ride on
-/// [`super::MetadataLookupConfig`] and reach both the REST handler and the web
-/// server function; a tracker hung off the router would silently exempt half
-/// the requests.
+/// [`super::MetadataLookupConfig`] and reach every handler that builds one; a
+/// tracker hung off one router would silently exempt the others' requests.
 #[derive(Debug, Clone)]
 pub struct ThrottleTracker(Arc<Mutex<HashMap<MetadataProvider, Cooldown>>>);
 

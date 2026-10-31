@@ -1,7 +1,6 @@
 //  WishlistSection.swift
 //  The book-detail wishlist card: what is being tracked, where to buy it, and
-//  the way back off the wishlist. Mirrors the web page's rail tracking card
-//  (`BdWishlistTrackingCard` in frontend/src/pages/book_detail/physical.rs) —
+//  the way back off the wishlist. Mirrors the web page's tracking card —
 //  same three facts, same two actions — behind a confirmation the web button
 //  doesn't ask for, since a mis-tap here has nothing to undo it with.
 

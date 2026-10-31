@@ -1,8 +1,7 @@
 //! Every type that crosses the `/api/*` wire: request bodies, query parameters and
 //! responses. The server, its Rust clients and the OpenAPI document all read them from
-//! here, so the contract lives in one place. Kept free of Dioxus and transport-layer
-//! dependencies so both `#[server]` functions (web) and `reqwest` calls (mobile) can
-//! depend on it. Types are organized by domain into submodules and re-exported flat
+//! here, so the contract lives in one place. Kept free of transport-layer dependencies so
+//! any Rust client can depend on it. Types are organized by domain into submodules and re-exported flat
 //! from the crate root as `omnibus_shared::Foo`.
 
 pub mod account;
@@ -76,8 +75,7 @@ pub const EMAIL_MAX_LEN: usize = 320;
 pub const BOOK_UUID_MAX_LEN: usize = 64;
 
 /// Handler-level cap on a decoded search query's length, in bytes. Shared by
-/// the REST search/palette handlers and their RPC counterparts so both
-/// boundaries reject oversized input before any FTS5 call; the db layer still
+/// the REST search/palette handlers so each boundary rejects oversized input before any FTS5 call; the db layer still
 /// applies its own char-count trim (`cap_query_len`) as a fallback.
 pub const SEARCH_QUERY_MAX_LEN: usize = 1024;
 

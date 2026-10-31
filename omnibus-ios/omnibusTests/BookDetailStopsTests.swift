@@ -359,9 +359,7 @@ private func journalEntry(
     )
 }
 
-/// The wording here is a mirror of `marquee_journal_kicker` in
-/// `frontend/src/pages/book_detail/journal.rs`; these cases are the web
-/// suite's, so a change to one client that isn't made to the other fails here.
+/// Pins the journal kicker's wording: entries, readers and drafts.
 @Test func journalKickerCountsEntriesAndReaders() {
     #expect(DetailJournal.kicker([journalEntry(author: 1)]) == "1 entry from 1 reader")
     #expect(

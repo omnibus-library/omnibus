@@ -2,7 +2,7 @@
 //! with progress measured the way the rest of `db::stats` measures it. An
 //! annual goal counts books finished in a calendar year; a daily goal counts
 //! pages or minutes today. Read by `compute`, written by the `/api/stats/goal`
-//! handlers and the web RPC through [`set_goal`] and [`set_daily_goal`].
+//! handlers through [`set_goal`] and [`set_daily_goal`].
 
 use omnibus_shared::{
     DailyGoal, DailyGoalUpdate, DailyGoals, ReadingGoal, ReadingGoalUpdate, GOAL_KIND_BOOKS,

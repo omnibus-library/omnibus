@@ -74,7 +74,7 @@ export function RenderedMarkdown({
       onKeyDown={revealOnKey}
       className={classes("bd-journal-entry-body", className)}
       data-testid={testId}
-      // biome-ignore lint/security/noDangerouslySetInnerHtml: the server renders and sanitises journal markdown, as the Dioxus page relies on
+      // biome-ignore lint/security/noDangerouslySetInnerHtml: the server renders and sanitises journal markdown
       dangerouslySetInnerHTML={{ __html: html }}
     />
   );

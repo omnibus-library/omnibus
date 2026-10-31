@@ -1,7 +1,7 @@
 //  LibraryService.swift
 //  Reads over the library, discovery, and search surfaces.
 //
-//  Port of `frontend/src/data/{books,authors,series,tags}.rs`. Every read is a
+//  Every read is a
 //  `Cache.live` stream: the replica paints immediately and the server's answer
 //  follows if it differs, so a cold launch offline is indistinguishable from a
 //  warm one until something actually needs the network.

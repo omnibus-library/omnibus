@@ -1,5 +1,5 @@
 //  Theme.swift
-//  The Atrium palette, ported token-for-token from `frontend/assets/atrium.css`.
+//  The Atrium palette, ported token-for-token from `frontend-js/src/styles/theme.css`.
 //  Values stay in OKLCH so a change on either side is a direct comparison.
 
 import CoreText

@@ -1,10 +1,10 @@
 //  AudioPlayer.swift
 //  AVPlayer-backed audiobook playback.
 //
-//  Replaces the WebView's hls.js path entirely: AVPlayer speaks HLS natively,
+//  AVPlayer rather than a WebView's hls.js: AVPlayer speaks HLS natively,
 //  and routing through `MPNowPlayingInfoCenter` / `MPRemoteCommandCenter` gets
 //  lock-screen, Control Center, AirPlay, and CarPlay transport for free —
-//  none of which the hybrid build could offer.
+//  none of which a WebView player could offer.
 
 import AVFoundation
 import Combine

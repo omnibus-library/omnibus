@@ -1,7 +1,7 @@
 //  AuthService.swift
 //  Bearer login / register / logout, and the `me` lookup.
 //
-//  Port of `frontend/src/data/auth.rs`. `client_kind: "ios"` is the signal the
+//  `client_kind: "ios"` is the signal the
 //  server uses to issue a bearer token in the JSON body instead of a cookie.
 
 import Foundation

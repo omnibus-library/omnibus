@@ -1,9 +1,8 @@
 //! Library-view preferences (sort, view mode, filters) persisted per library.
 //! The filter shape itself is [`crate::view_filters`].
 //!
-//! Lives here — and not in `frontend/` — so a future server-backed per-user
-//! prefs endpoint can reuse the shape verbatim. For now persistence is
-//! localStorage on web and in-memory on mobile (see `frontend/src/view_prefs.rs`).
+//! Lives here so a future server-backed per-user prefs endpoint can reuse the
+//! shape verbatim. For now each client persists it locally.
 
 use serde::{Deserialize, Serialize};
 

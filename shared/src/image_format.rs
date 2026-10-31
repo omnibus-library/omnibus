@@ -1,8 +1,6 @@
-//! Magic-byte image format detection shared by the REST upload handler
-//! (`server::backend`) and the server-function bodies (`frontend::rpc`). It
-//! lives in `omnibus-shared`, which both already depend on, so the sniff has a
-//! single source of truth. Pure byte inspection with no `image`-crate
-//! dependency, so it stays free of transport deps and compiles on every target.
+//! Magic-byte image format detection for the REST upload handlers
+//! (`server::backend`), kept in `omnibus-shared` so the sniff has a single
+//! source of truth. Pure byte inspection with no `image`-crate dependency.
 
 /// Detect image format from magic bytes. Returns the canonical MIME type for
 /// accepted raster formats (JPEG, PNG, GIF, WebP). Returns `None` for

@@ -10,7 +10,7 @@ import { router } from "./router";
 
 watchImageLoads();
 
-// No retries, as on Dioxus: a failed fetch shows its error at once.
+// No retries: a failed fetch shows its error at once.
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: false } },
 });

@@ -3,7 +3,7 @@
 //  book detail: merging a book into this one, and deleting its files.
 //
 //  Ports `shared/src/{merge,deletion}.rs` and the copy logic of the web
-//  dialogs (`frontend/src/components/{merge_dialog,delete_book_dialog}.rs`),
+//  dialogs (`frontend-js/src/components/{MergeDialog,DeleteBookDialog}/`),
 //  so the two clients describe the same action in the same words.
 
 import Foundation

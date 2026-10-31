@@ -11,9 +11,8 @@ use crate::progress::ProgressFormat;
 #[cfg(test)]
 mod tests;
 
-/// A refusal a client can act on, carried as the RPC error's status code so
-/// no client has to read the display text. Not in `details`: Dioxus decodes
-/// that *as* the `CapturedError`, dropping the status and message with it.
+/// A refusal a client can act on, carried as the error's status code so no
+/// client has to read the display text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CrossFormatErrorCode {
     /// 428: the user must confirm an alignment before syncing these formats.

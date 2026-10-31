@@ -24,7 +24,7 @@ function Description({ book }: { book: Detail }) {
         id={id}
         className={open ? "bp-description is-open" : "bp-description"}
         data-testid="book-description"
-        // biome-ignore lint/security/noDangerouslySetInnerHtml: the API runs descriptions through ammonia, which the Dioxus page relies on too
+        // biome-ignore lint/security/noDangerouslySetInnerHtml: the API runs descriptions through ammonia
         dangerouslySetInnerHTML={{ __html: book.description }}
       />
       {overflows && (

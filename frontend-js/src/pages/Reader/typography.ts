@@ -1,4 +1,4 @@
-/** The reader's typography choices, kept under the Dioxus client's `omn.*` keys so both share them per origin. */
+/** The reader's typography choices, saved per origin under `omn.*` localStorage keys. */
 
 export const FONT_SIZE_MIN = 12;
 export const FONT_SIZE_MAX = 32;

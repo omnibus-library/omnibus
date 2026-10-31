@@ -2,7 +2,7 @@
 //  The Omnibus logo, shared with the web build.
 //
 //  `BrandMark` in the asset catalogue is a copy of the web's
-//  `frontend/assets/omnibus-stoat.png` — the same file it serves as its top-nav
+//  `frontend-js/src/assets/omnibus-stoat.png` — the same file it serves as its top-nav
 //  mark, its auth-shell mark, and its favicon. Keep the two in sync when either
 //  moves.
 

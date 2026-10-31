@@ -252,10 +252,7 @@ async fn get_book_returns_effective_isbn10_and_print_pages_from_the_override_lay
 /// `apply_overrides` special-cases to read back as `None` — series and
 /// publisher have no such special-casing, so the field reads back as a
 /// literal empty string (`Some("")`), not `None`; that's still what the
-/// UI (and the full metadata-edit page's `build_overrides`) treats as
-/// "cleared". This is what
-/// `frontend::pages::landing::table::cells::field_override` now sends
-/// for the grid's quick-edit cells.
+/// UI treats as "cleared", and what a quick-edit cell sends.
 #[tokio::test]
 async fn merge_metadata_overrides_treats_none_as_untouched_but_empty_string_as_clear() {
     let _covers = CoversTempDir::new("clear_field_1085");
@@ -334,7 +331,7 @@ async fn merge_metadata_overrides_treats_none_as_untouched_but_empty_string_as_c
 
 /// Two concurrent saves to the same book (e.g. the edit form open in two
 /// tabs, or a network retry firing twice) each touch a different field.
-/// Because the rpc/REST save paths route through `merge_metadata_overrides`
+/// Because the REST save paths route through `merge_metadata_overrides`
 /// — whose read-merge-write runs under a single `BEGIN IMMEDIATE` — neither
 /// write may be silently dropped: both fields must survive regardless of
 /// interleaving. A barrier releases both tasks into the merge at the same

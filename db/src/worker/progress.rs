@@ -14,13 +14,13 @@ impl Worker {
     /// Snapshot of every live worker task: non-terminal entries in `active`,
     /// terminal ones (`Done` / `Failed`) younger than [`TERMINAL_RETENTION`] in
     /// `recent_complete` (older ones are evicted under the same lock), both
-    /// sorted by `task_id`. Unfiltered, so an RPC handler serving a polling
+    /// sorted by `task_id`. Unfiltered, so a handler serving a polling
     /// client must use [`Worker::owner_scoped_snapshot`] instead.
     pub fn progress_snapshot(&self) -> WorkerStatus {
         self.progress_snapshot_with_retention(TERMINAL_RETENTION)
     }
 
-    /// Owner-scoped variant of [`Worker::progress_snapshot`] for a polling RPC
+    /// Owner-scoped variant of [`Worker::progress_snapshot`] for a polling
     /// handler: keeps tasks with no recorded owner (shared library-wide work)
     /// plus entries owned by `user_id`, and drops every other user's. Without
     /// it, any user could read another's Send-to-Kindle failure text from the
