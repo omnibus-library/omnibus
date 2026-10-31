@@ -179,7 +179,13 @@ async fn mark_started(
     .await?
     .rows_affected();
     if started == 1 {
-        crate::series_progress::unhide_series_of_book_tx(tx, user_id, &surviving.book_uuid).await?;
+        crate::series_progress::unhide_series_of_book_tx(
+            tx,
+            user_id,
+            &surviving.book_uuid,
+            surviving.client_updated_at,
+        )
+        .await?;
     }
     Ok(())
 }

@@ -95,7 +95,13 @@ async fn unhide_if_started(
 ) -> Result<(), sqlx::Error> {
     let was_unstarted = matches!(prior, None | Some(ReadStatus::Unread));
     if was_unstarted && now.status == ReadStatus::Reading {
-        crate::series_progress::unhide_series_of_book_tx(tx, user_id, &now.book_uuid).await?;
+        crate::series_progress::unhide_series_of_book_tx(
+            tx,
+            user_id,
+            &now.book_uuid,
+            now.updated_at,
+        )
+        .await?;
     }
     Ok(())
 }
@@ -224,14 +230,7 @@ pub async fn start_unread_at_tx(
     book_uuid: &str,
     at: i64,
 ) -> Result<(), ReadStatusError> {
-    let status: Option<String> = sqlx::query_scalar(
-        "SELECT status FROM book_read_status WHERE user_id = ? AND book_uuid = ?",
-    )
-    .bind(user_id)
-    .bind(book_uuid)
-    .fetch_optional(&mut **tx)
-    .await?;
-    if status.as_deref() == Some(ReadStatus::Unread.as_str()) {
+    if prior_status(tx, user_id, book_uuid).await? == Some(ReadStatus::Unread) {
         let update = SetReadStatus {
             book_uuid: book_uuid.to_owned(),
             status: ReadStatus::Reading,

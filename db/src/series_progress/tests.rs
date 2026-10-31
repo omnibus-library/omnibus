@@ -340,6 +340,10 @@ async fn hide_saga_for(pool: &SqlitePool, users: &[i64]) -> i64 {
     saga
 }
 
+fn now() -> i64 {
+    crate::auth::now_unix()
+}
+
 async fn saga_book(pool: &SqlitePool) -> String {
     uuid_by_title(pool, "Saga: Book One").await
 }
@@ -351,7 +355,7 @@ async fn first_position_on_a_book_brings_its_series_back_for_that_reader_only() 
     let other = seed_user(&pool, "other").await;
     let saga = hide_saga_for(&pool, &[reader, other]).await;
 
-    place_position(&pool, reader, &saga_book(&pool).await, 10, 1_000).await;
+    place_position(&pool, reader, &saga_book(&pool).await, 10, now()).await;
 
     assert!(!is_hidden(&pool, reader, saga).await.unwrap());
     assert!(is_hidden(&pool, other, saga).await.unwrap());
@@ -373,7 +377,7 @@ async fn first_position_brings_back_the_series_a_book_is_moved_into_by_an_overri
     let pioneers = series_id_by_name(&pool, "Pioneers").await;
     hide(&pool, reader, pioneers).await.unwrap();
 
-    place_position(&pool, reader, &solo, 10, 1_000).await;
+    place_position(&pool, reader, &solo, 10, now()).await;
 
     assert!(!is_hidden(&pool, reader, pioneers).await.unwrap());
 }
@@ -499,4 +503,85 @@ async fn a_rolled_back_start_leaves_the_series_hidden() {
     tx.rollback().await.unwrap();
 
     assert!(is_hidden(&pool, reader, saga).await.unwrap());
+}
+
+#[tokio::test]
+async fn a_start_dated_before_the_hide_leaves_the_series_hidden() {
+    let (pool, _guard) = seed_discovery_fixture().await;
+    let reader = seed_user(&pool, "reader").await;
+    let one = saga_book(&pool).await;
+    let two = uuid_by_title(&pool, "Saga: Book Two").await;
+    let saga = hide_saga_for(&pool, &[reader]).await;
+
+    // An offline device syncing late: both starts happened before the hide.
+    place_position(&pool, reader, &one, 10, 1_000).await;
+    let mut tx = pool.begin().await.unwrap();
+    let reading = SetReadStatus {
+        book_uuid: two,
+        status: ReadStatus::Reading,
+    };
+    set_read_status_at_tx(&mut tx, reader, &reading, 1_000)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+
+    assert!(is_hidden(&pool, reader, saga).await.unwrap());
+}
+
+#[tokio::test]
+async fn a_start_dated_after_the_hide_brings_the_series_back() {
+    let (pool, _guard) = seed_discovery_fixture().await;
+    let reader = seed_user(&pool, "reader").await;
+    let saga = hide_saga_for(&pool, &[reader]).await;
+
+    place_position(&pool, reader, &saga_book(&pool).await, 10, now()).await;
+
+    assert!(!is_hidden(&pool, reader, saga).await.unwrap());
+}
+
+#[tokio::test]
+async fn is_hidden_unhide_and_in_progress_propagate_db_errors() {
+    let (pool, _guard) = seed_discovery_fixture().await;
+    sqlx::query("DROP TABLE series_hides")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    assert!(matches!(
+        is_hidden(&pool, 1, 1).await,
+        Err(SeriesProgressError::Db(_))
+    ));
+    assert!(matches!(
+        unhide(&pool, 1, 1).await,
+        Err(SeriesProgressError::Db(_))
+    ));
+    assert!(matches!(
+        in_progress(&pool, 1, &["/lib"]).await,
+        Err(SeriesProgressError::Db(_))
+    ));
+}
+
+#[tokio::test]
+async fn in_progress_reports_a_discovery_error_when_the_series_page_cannot_be_read() {
+    let pool = crate::pool::init_db("sqlite::memory:").await.unwrap();
+    seed_series_library(&pool).await;
+    let reader = seed_user(&pool, "reader").await;
+    place_position(
+        &pool,
+        reader,
+        &uuid_by_title(&pool, "Alpha One").await,
+        10,
+        1_000,
+    )
+    .await;
+    // `get_series` projects each book's primary file; the list, the counts and the hides do not.
+    sqlx::query("DROP TABLE book_files")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    assert!(matches!(
+        in_progress(&pool, reader, &["/lib"]).await,
+        Err(SeriesProgressError::Discovery(_))
+    ));
 }

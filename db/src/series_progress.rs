@@ -126,12 +126,13 @@ fn row_if_in_progress(
     mut series: omnibus_shared::SeriesDetail,
     reading: Vec<BookReading>,
 ) -> Option<SeriesInProgress> {
-    let count = |status| reading.iter().filter(|r| r.status == status).count();
-    let started = count(ReadStatus::Reading) + count(ReadStatus::Finished) > 0;
-    let all_finished = count(ReadStatus::Finished) >= series.books.len();
-    if series.books.len() < 2 || !started || all_finished {
+    let started = reading
+        .iter()
+        .any(|r| matches!(r.status, ReadStatus::Reading | ReadStatus::Finished));
+    if series.books.len() < 2 || !started {
         return None;
     }
+    // `next_book` is `None` once every book is finished.
     let next_book_uuid = next_book(&series.books, &reading)?
         .unique_identifier
         .clone()?;
@@ -171,16 +172,19 @@ pub fn next_book<'a>(
     })
 }
 
-/// Lift the reader's hide on every series `book_uuid` is in, by effective membership. Runs in
-/// the caller's transaction, so a failed start takes it back with the rest.
+/// Lift the reader's hide on every series `book_uuid` is in, by effective membership, when the
+/// start (Unix seconds) is no earlier than the hide: a device syncing late doesn't undo it. Runs
+/// in the caller's transaction, so a failed start takes it back with the rest.
 pub(crate) async fn unhide_series_of_book_tx(
     tx: &mut Transaction<'_, Sqlite>,
     user_id: i64,
     book_uuid: &str,
+    started_at: i64,
 ) -> Result<(), sqlx::Error> {
     let sql = format!(
         "DELETE FROM series_hides
           WHERE user_id = ?1
+            AND hidden_at <= ?3
             AND series_id IN (SELECT e.series_id
                                 FROM ({}) e
                                 JOIN books b ON b.id = e.book_id
@@ -190,6 +194,7 @@ pub(crate) async fn unhide_series_of_book_tx(
     sqlx::query(&sql)
         .bind(user_id)
         .bind(book_uuid)
+        .bind(started_at)
         .execute(&mut **tx)
         .await?;
     Ok(())
