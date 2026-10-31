@@ -7,6 +7,17 @@ export const MAX_SHOWN_OPTIONS = 200;
 export const CLOUD_LIMIT = 500;
 const MAX_VALUE_LENGTH = 512;
 
+/** Room a full menu needs under its facet: mode, search, list, footer and gaps. */
+const MENU_ROOM = 460;
+
+/** Scrolls `facet` up under the top bar when its menu would not fit below it; phones get a bottom sheet instead. */
+export function revealBelow(facet: HTMLElement): void {
+  if (matchMedia("(max-width: 720px)").matches) return;
+  if (innerHeight - facet.getBoundingClientRect().bottom < MENU_ROOM) {
+    facet.scrollIntoView({ block: "start", behavior: "instant" });
+  }
+}
+
 /** The bar's facets, in order. */
 export const FILTER_FIELDS: FilterField[] = [
   "shelf",
