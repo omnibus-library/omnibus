@@ -232,6 +232,10 @@ pub struct SeriesDetail {
     /// here is unread, with no position.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub reading: Vec<BookReading>,
+    /// Whether you hid the series from the home page's series in progress. It comes back
+    /// there when you start a book of it that you hadn't started.
+    #[serde(default)]
+    pub hidden_from_home: bool,
 }
 
 // Per-reader, so it rides its own request beside `SeriesSummary`, which every

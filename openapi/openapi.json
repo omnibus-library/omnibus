@@ -6708,7 +6708,7 @@
           "Discovery"
         ],
         "summary": "Get a series",
-        "description": "One series and its books, in series order. `reading` holds your own status and\nposition on each of those books you have opened or marked.",
+        "description": "One series and its books, in series order. `reading` holds your own status and\nposition on each of those books you have opened or marked, and `hidden_from_home`\nwhether you hid the series from the home page.",
         "operationId": "get_series_by_id",
         "parameters": [
           {
@@ -6732,6 +6732,64 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "No series has that id."
+          }
+        }
+      }
+    },
+    "/api/series/{id}/hide": {
+      "put": {
+        "tags": [
+          "Discovery"
+        ],
+        "summary": "Hide a series from home",
+        "description": "Keeps the series off your home page's series in progress. It stays in your library and\ncomes back there when you start a book of it that you hadn't started. Hiding a hidden\nseries changes nothing.",
+        "operationId": "put_series_hide",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The series' id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The series is hidden from your home page."
+          },
+          "404": {
+            "description": "No series has that id."
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Discovery"
+        ],
+        "summary": "Show a series on home again",
+        "description": "Lifts your hide, so the series can appear in your home page's series in progress again.\nShowing a series that isn't hidden changes nothing.",
+        "operationId": "delete_series_hide",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The series' id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The series is no longer hidden from your home page."
           },
           "404": {
             "description": "No series has that id."
@@ -15305,6 +15363,10 @@
             "items": {
               "$ref": "#/components/schemas/EbookMetadata"
             }
+          },
+          "hidden_from_home": {
+            "type": "boolean",
+            "description": "Whether you hid the series from the home page's series in progress. It comes back\nthere when you start a book of it that you hadn't started."
           },
           "id": {
             "type": "integer",

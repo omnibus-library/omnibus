@@ -64,6 +64,7 @@ pub mod reviews;
 pub mod scan;
 pub mod scanner;
 pub mod series_normalize;
+pub mod series_progress;
 pub mod settings;
 pub mod shelves;
 pub mod sort_keys;
