@@ -429,3 +429,37 @@ fn extract_isbns_matches_bare_digit_values_via_heuristic_when_scheme_is_unrecogn
         "10-digit bare value should be picked up by the length heuristic alone"
     );
 }
+
+#[test]
+fn extract_isbns_reads_the_isbn_fields_an_edit_sets_ahead_of_the_identifiers() {
+    let book = omnibus_shared::EbookMetadata {
+        isbn13: Some("9781649374042".into()),
+        isbn10: Some("164937404X".into()),
+        identifiers: vec![omnibus_shared::Identifier {
+            value: "9780134685991".into(),
+            scheme: Some("ISBN".into()),
+        }],
+        ..Default::default()
+    };
+    assert_eq!(
+        extract_isbns(&book),
+        vec![
+            "9781649374042".to_string(),
+            "164937404X".to_string(),
+            "9780134685991".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn extract_isbns_lists_an_isbn_once_when_a_field_and_an_identifier_agree() {
+    let book = omnibus_shared::EbookMetadata {
+        isbn13: Some("9780134685991".into()),
+        identifiers: vec![omnibus_shared::Identifier {
+            value: "978-0-13-468599-1".into(),
+            scheme: Some("ISBN".into()),
+        }],
+        ..Default::default()
+    };
+    assert_eq!(extract_isbns(&book), vec!["9780134685991".to_string()]);
+}

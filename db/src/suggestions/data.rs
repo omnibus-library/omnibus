@@ -333,14 +333,24 @@ pub async fn delete_suggestions(
     book_uuid: &str,
 ) -> Result<(), SuggestionsDataError> {
     let mut tx = pool.begin().await?;
+    delete_suggestions_in_tx(&mut tx, book_uuid).await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+/// [`delete_suggestions`] on the caller's transaction, so an edit that
+/// invalidates the cache rolls the deletion back with itself.
+pub async fn delete_suggestions_in_tx(
+    conn: &mut sqlx::SqliteConnection,
+    book_uuid: &str,
+) -> Result<(), SuggestionsDataError> {
     sqlx::query("DELETE FROM book_suggestions WHERE book_uuid = ?")
         .bind(book_uuid)
-        .execute(&mut *tx)
+        .execute(&mut *conn)
         .await?;
     sqlx::query("DELETE FROM book_suggestion_state WHERE book_uuid = ?")
         .bind(book_uuid)
-        .execute(&mut *tx)
+        .execute(&mut *conn)
         .await?;
-    tx.commit().await?;
     Ok(())
 }

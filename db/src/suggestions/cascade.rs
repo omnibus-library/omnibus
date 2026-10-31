@@ -172,26 +172,46 @@ async fn fetch_cover(
     fetch_remote_image_with(url, image_config).await.ok()
 }
 
-/// Pull candidate ISBNs from a book's identifiers. Accepts identifiers whose
-/// scheme names ISBN, plus any value that *looks* like a 10/13-digit ISBN
-/// (covers the common `scheme = "unknown"` case). Hyphens/spaces stripped.
+/// Pull candidate ISBNs from a book: its `isbn13` / `isbn10` fields first (an
+/// edit's value wins), then its identifiers. Identifiers count when their scheme
+/// names ISBN or the value *looks* like a 10/13-digit ISBN (covers the common
+/// `scheme = "unknown"` case). Hyphens/spaces stripped.
 pub(crate) fn extract_isbns(book: &omnibus_shared::EbookMetadata) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
+    for isbn in [book.isbn13.as_deref(), book.isbn10.as_deref()]
+        .into_iter()
+        .flatten()
+    {
+        push_isbn(&mut out, isbn);
+    }
     for ident in &book.identifiers {
         let scheme_is_isbn = ident
             .scheme
             .as_deref()
             .map(|s| s.to_lowercase().contains("isbn"))
             .unwrap_or(false);
-        let cleaned: String = ident
-            .value
-            .chars()
-            .filter(|c| c.is_ascii_digit() || *c == 'X' || *c == 'x')
-            .collect();
-        let looks_like_isbn = matches!(cleaned.len(), 10 | 13);
-        if (scheme_is_isbn || looks_like_isbn) && !cleaned.is_empty() && !out.contains(&cleaned) {
-            out.push(cleaned);
+        if scheme_is_isbn || looks_like_isbn(&ident.value) {
+            push_isbn(&mut out, &ident.value);
         }
     }
     out
+}
+
+/// Digits and `X`/`x` only, so `978-0-13-468599-1` reads as `9780134685991`.
+fn clean_isbn(raw: &str) -> String {
+    raw.chars()
+        .filter(|c| c.is_ascii_digit() || *c == 'X' || *c == 'x')
+        .collect()
+}
+
+fn looks_like_isbn(raw: &str) -> bool {
+    matches!(clean_isbn(raw).len(), 10 | 13)
+}
+
+/// Append `raw`, cleaned, unless it cleans to nothing or is already listed.
+fn push_isbn(out: &mut Vec<String>, raw: &str) {
+    let cleaned = clean_isbn(raw);
+    if !cleaned.is_empty() && !out.contains(&cleaned) {
+        out.push(cleaned);
+    }
 }
