@@ -75,7 +75,7 @@ export class AuthorsIndexPage extends BasePage {
 
   /** Fails the reader's progress request, which no server state can force. */
   async failReadingProgress(): Promise<void> {
-    await this.page.route("**/api/rpc/authors/reading", (route) =>
+    await this.page.route("**/api/authors/reading", (route) =>
       route.fulfill({ status: 500, contentType: "text/plain", body: "boom" }),
     );
   }

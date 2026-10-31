@@ -1,5 +1,5 @@
 import { shelves } from "../contracts/shelves";
-import { authorRule, buildShelfUpdate, smartShelfBy } from "../data/shelves";
+import { authorRule, smartShelfBy } from "../data/shelves";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/pageFixtures";
 import { failing } from "../utils/api";
@@ -132,35 +132,6 @@ test.describe("shelf gallery", () => {
           .toBeGreaterThanOrEqual(FIXTURE_BOOKS.length);
       });
     });
-
-    // The wording must not claim a format the shelf isn't restricted to (#2253).
-    test("say an empty shelf is empty, not that a search found nothing", async ({
-      libraryPage,
-      ownShelf,
-      expectMutation,
-    }) => {
-      const shelf = await ownShelf("E2E Gallery Empty");
-
-      await test.step("select the empty shelf", async () => {
-        await libraryPage.goto();
-        await expectMutation(shelves.page(), () =>
-          libraryPage.selectShelf(shelf),
-        );
-      });
-
-      await test.step("check the library says the shelf is empty", async () => {
-        await expect(libraryPage.shelfGallery.selectedTab).toContainText(
-          shelf.name,
-        );
-        await expect(libraryPage.shelfGallery.selectedTab).toHaveAccessibleName(
-          /\b0 books\b/,
-        );
-        await expect(libraryPage.emptyMessage).toHaveText(
-          "No books in this shelf.",
-        );
-        await expect(libraryPage.pageError).toHaveCount(0);
-      });
-    });
   });
 
   test.describe("adding books", () => {
@@ -171,15 +142,17 @@ test.describe("shelf gallery", () => {
       request,
     }) => {
       const alpha = await fetchBookUuidByTitle(request, "Alpha");
-      const shelf = await ownShelf("E2E Gallery Add");
+      const beta = await fetchBookUuidByTitle(request, "Beta in the Series");
+      // The row leaves an empty shelf out, so it starts with one book.
+      const shelf = await ownShelf("E2E Gallery Add", { book_uuids: [beta] });
       const picker = libraryPage.addBooksModal;
 
-      await test.step("select the empty shelf", async () => {
+      await test.step("select the shelf", async () => {
         await libraryPage.goto();
         await expectMutation(shelves.page(), () =>
           libraryPage.selectShelf(shelf),
         );
-        await expect(libraryPage.emptyMessage).toBeVisible();
+        await expect(libraryPage.bookTile("Beta in the Series")).toBeVisible();
       });
 
       // The button is aria-disabled until the members are known, which the click waits out.
@@ -200,7 +173,7 @@ test.describe("shelf gallery", () => {
         await expect(picker.root).toHaveCount(0);
         await expect(libraryPage.bookTile("Alpha")).toBeVisible();
         await expect(libraryPage.shelfGallery.selectedTab).toHaveAccessibleName(
-          /\b1 book\b/,
+          /\b2 books\b/,
         );
       });
     });
@@ -212,7 +185,10 @@ test.describe("shelf gallery", () => {
       request,
     }) => {
       const alpha = await fetchBookUuidByTitle(request, "Alpha");
-      const shelf = await ownShelf("E2E Gallery Add Fail");
+      const beta = await fetchBookUuidByTitle(request, "Beta in the Series");
+      const shelf = await ownShelf("E2E Gallery Add Fail", {
+        book_uuids: [beta],
+      });
       const picker = libraryPage.addBooksModal;
 
       await test.step("pick a book in the picker", async () => {
@@ -220,7 +196,7 @@ test.describe("shelf gallery", () => {
         await expectMutation(shelves.page(), () =>
           libraryPage.selectShelf(shelf),
         );
-        await expect(libraryPage.emptyMessage).toBeVisible();
+        await expect(libraryPage.bookTile("Beta in the Series")).toBeVisible();
         await libraryPage.openAddBooks();
         await picker.search("Alpha");
         await picker.pick(alpha);
@@ -233,7 +209,7 @@ test.describe("shelf gallery", () => {
         );
       });
 
-      // The modal keeps the pick and says why; the shelf behind it is still empty.
+      // The modal keeps the pick and says why; the shelf behind it is unchanged.
       await test.step("check the picker says it failed", async () => {
         await expect(picker.errorMessage).toBeVisible();
         await expect(picker.root).toBeVisible();
@@ -243,11 +219,12 @@ test.describe("shelf gallery", () => {
         await picker.close();
       });
 
-      await test.step("check the shelf is still empty", async () => {
+      await test.step("check the shelf is unchanged", async () => {
         await expect(picker.root).toHaveCount(0);
-        await expect(libraryPage.emptyMessage).toBeVisible();
+        await expect(libraryPage.bookTile("Beta in the Series")).toBeVisible();
+        await expect(libraryPage.bookTile("Alpha")).toHaveCount(0);
         await expect(libraryPage.shelfGallery.selectedTab).toHaveAccessibleName(
-          /\b0 books\b/,
+          /\b1 book\b/,
         );
       });
     });
@@ -365,15 +342,13 @@ test.describe("shelf gallery", () => {
 
       await test.step("save it", async () => {
         await expectMutation(
-          shelves.update(
-            shelf.id,
-            buildShelfUpdate({
-              name: renamed,
-              visibility: "public",
-              match_mode: "any",
-              rules: [authorRule("Ada Lovelace")],
-            }),
-          ),
+          shelves.update(shelf.id, {
+            name: renamed,
+            visibility: "public",
+            sync_to_kobo: false,
+            match_mode: "any",
+            rules: [authorRule("Ada Lovelace")],
+          }),
           () => editor.save(),
         );
       });
@@ -394,13 +369,15 @@ test.describe("shelf gallery", () => {
     test("page the shelves row and arm only the end with more", async ({
       libraryPage,
       ownShelf,
+      request,
     }) => {
       const gallery = libraryPage.shelfGallery;
+      const alpha = await fetchBookUuidByTitle(request, "Alpha");
 
-      // Enough shelves to overflow the row at any sane viewport.
+      // Enough stocked shelves to overflow the row at any sane viewport.
       await test.step("make shelves enough to overflow the row", async () => {
         for (let shelf = 0; shelf < 8; shelf++) {
-          await ownShelf(`E2E Paging ${shelf}`);
+          await ownShelf(`E2E Paging ${shelf}`, { book_uuids: [alpha] });
         }
         await libraryPage.goto();
       });
@@ -448,10 +425,11 @@ test.describe("shelf gallery", () => {
         await libraryPage.assertResumeCardOnStack(uuid, seedResumePoint);
       });
 
-      // A real href on every card keeps middle-click and open-in-new-tab working.
+      // Other books may lead the fan; only the front card is a link, the rest bring forward.
       await test.step("check the stack shows the book's resume card", async () => {
         await expect(stack.root).toBeVisible();
         await expect(stack.card(uuid)).toBeVisible();
+        await stack.bringForward(uuid);
         await expect(stack.card(uuid)).toHaveAttribute("href", `/read/${uuid}`);
       });
     });
