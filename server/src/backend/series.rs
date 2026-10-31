@@ -12,7 +12,7 @@ use axum::{
     Json,
 };
 use omnibus_db::{self as db, series_progress::SeriesProgressError};
-use omnibus_shared::{SeriesDetail, SeriesReading, SeriesSummary};
+use omnibus_shared::{SeriesDetail, SeriesInProgress, SeriesReading, SeriesSummary};
 
 use super::{internal, AppState};
 use crate::auth::AuthUser;
@@ -66,6 +66,37 @@ pub(super) async fn get_series_reading(user: AuthUser, State(state): State<AppSt
     match db::series_reading(&state.pool, user.id, &paths).await {
         Ok(rows) => Json(rows).into_response(),
         Err(e) => internal("series reading", e),
+    }
+}
+
+/// List the series you are partway through
+///
+/// The series you have started and not finished, for a home page: at least two books in the
+/// library, at least one you are reading or have finished, and at least one not finished.
+/// Series you hid are left out; starting a book of one you hadn't started brings it back.
+/// Most recently read first, then by name. Each carries its books and your state on them as
+/// `GET /api/series/{id}` does, plus the book to open next.
+#[utoipa::path(
+    get,
+    path = "/api/series/in-progress",
+    tag = "Discovery",
+    responses((status = 200, description = "Your series in progress.", body = Vec<SeriesInProgress>)),
+)]
+pub(super) async fn get_series_in_progress(
+    user: AuthUser,
+    State(state): State<AppState>,
+) -> Response {
+    let settings = match db::get_settings(&state.pool).await {
+        Ok(s) => s,
+        Err(e) => return internal("read settings", e),
+    };
+    let paths = db::collect_paths(
+        settings.ebook_library_path.as_deref(),
+        settings.audiobook_library_path.as_deref(),
+    );
+    match db::series_progress::in_progress(&state.pool, user.id, &paths).await {
+        Ok(rows) => Json(rows).into_response(),
+        Err(e) => internal("series in progress", e),
     }
 }
 

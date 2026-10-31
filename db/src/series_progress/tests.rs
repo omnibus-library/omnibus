@@ -1,7 +1,68 @@
-//! Tests for hiding a series from a reader's home page.
+//! Tests for hiding a series from a reader's home page and for listing the
+//! series a reader is partway through.
+
+use omnibus_shared::{BookReading, EbookMetadata, ReadStatus};
 
 use super::*;
 use crate::test_support::*;
+
+fn book(uuid: &str) -> EbookMetadata {
+    EbookMetadata {
+        unique_identifier: Some(uuid.into()),
+        ..Default::default()
+    }
+}
+
+fn state(uuid: &str, status: ReadStatus, last_read_at: Option<i64>) -> BookReading {
+    BookReading {
+        book_uuid: uuid.into(),
+        status,
+        last_read_at,
+        ..Default::default()
+    }
+}
+
+fn next_uuid(books: &[EbookMetadata], reading: &[BookReading]) -> Option<String> {
+    next_book(books, reading).and_then(|b| b.unique_identifier.clone())
+}
+
+/// Alpha, Beta (two books each), Gamma (1, 1.5 and 3: no 2), Solo (one book).
+async fn seed_series_library(pool: &SqlitePool) {
+    let book = |file: &str, title: &str, series: &str, index: &str| {
+        indexed(
+            file,
+            Some(title),
+            &["Ann"],
+            &[],
+            Some((series, index)),
+            None,
+        )
+    };
+    crate::sync::replace_books(
+        pool,
+        "/lib",
+        vec![
+            book("a1.epub", "Alpha One", "Alpha", "1"),
+            book("a2.epub", "Alpha Two", "Alpha", "2"),
+            book("b1.epub", "Beta One", "Beta", "1"),
+            book("b2.epub", "Beta Two", "Beta", "2"),
+            book("g1.epub", "Gamma One", "Gamma", "1"),
+            book("g15.epub", "Gamma Novella", "Gamma", "1.5"),
+            book("g3.epub", "Gamma Three", "Gamma", "3"),
+            book("s1.epub", "Solo One", "Solo", "1"),
+        ],
+    )
+    .await
+    .unwrap();
+}
+
+async fn listed(pool: &SqlitePool, user: i64) -> Vec<SeriesInProgress> {
+    in_progress(pool, user, &["/lib"]).await.unwrap()
+}
+
+fn names(rows: &[SeriesInProgress]) -> Vec<&str> {
+    rows.iter().map(|r| r.series.name.as_str()).collect()
+}
 
 async fn hide_rows(pool: &SqlitePool) -> i64 {
     count_rows(pool, "SELECT COUNT(*) FROM series_hides").await
@@ -93,5 +154,171 @@ async fn hide_propagates_db_error_when_pool_is_closed() {
     assert!(matches!(
         hide(&pool, 1, 1).await,
         Err(SeriesProgressError::Db(_))
+    ));
+}
+
+#[test]
+fn next_book_picks_the_reading_book_read_last() {
+    let books = [book("a"), book("b"), book("c")];
+    let reading = [
+        state("a", ReadStatus::Reading, Some(20)),
+        state("b", ReadStatus::Reading, Some(10)),
+    ];
+
+    assert_eq!(next_uuid(&books, &reading).as_deref(), Some("a"));
+}
+
+#[test]
+fn next_book_prefers_the_later_book_when_reading_times_tie() {
+    let books = [book("a"), book("b")];
+    let reading = [
+        state("a", ReadStatus::Reading, Some(10)),
+        state("b", ReadStatus::Reading, Some(10)),
+    ];
+
+    assert_eq!(next_uuid(&books, &reading).as_deref(), Some("b"));
+}
+
+#[test]
+fn next_book_starts_the_first_unread_book_when_nothing_is_being_read() {
+    let books = [book("a"), book("b"), book("c")];
+    let reading = [state("a", ReadStatus::Finished, Some(10))];
+
+    assert_eq!(next_uuid(&books, &reading).as_deref(), Some("b"));
+}
+
+#[test]
+fn next_book_counts_a_book_marked_unread_as_unread() {
+    let books = [book("a"), book("b")];
+    let reading = [
+        state("a", ReadStatus::Finished, Some(10)),
+        state("b", ReadStatus::Unread, None),
+    ];
+
+    assert_eq!(next_uuid(&books, &reading).as_deref(), Some("b"));
+}
+
+#[test]
+fn next_book_returns_nothing_once_every_book_is_finished() {
+    let books = [book("a")];
+    let reading = [state("a", ReadStatus::Finished, Some(10))];
+
+    assert_eq!(next_uuid(&books, &reading), None);
+}
+
+#[tokio::test]
+async fn in_progress_lists_a_series_with_a_book_being_read_and_the_book_to_open_next() {
+    let (pool, _guard) = seed_discovery_fixture().await;
+    let reader = seed_user(&pool, "reader").await;
+    let one = uuid_by_title(&pool, "Saga: Book One").await;
+    let two = uuid_by_title(&pool, "Saga: Book Two").await;
+    mark_status(&pool, reader, &one, ReadStatus::Finished).await;
+    place_position(&pool, reader, &two, 40, 1_000).await;
+
+    let rows = listed(&pool, reader).await;
+
+    assert_eq!(names(&rows), ["Saga"]);
+    assert_eq!(rows[0].next_book_uuid, two);
+    assert_eq!(rows[0].last_read_at, Some(1_000));
+    assert_eq!(rows[0].series.books.len(), 2);
+    assert_eq!(rows[0].series.reading.len(), 2);
+    assert!(!rows[0].series.hidden_from_home);
+}
+
+#[tokio::test]
+async fn in_progress_offers_the_next_unread_book_in_reading_order_past_a_fraction_and_a_gap() {
+    let pool = crate::pool::init_db("sqlite::memory:").await.unwrap();
+    seed_series_library(&pool).await;
+    let reader = seed_user(&pool, "reader").await;
+    let one = uuid_by_title(&pool, "Gamma One").await;
+    let novella = uuid_by_title(&pool, "Gamma Novella").await;
+    let three = uuid_by_title(&pool, "Gamma Three").await;
+    mark_status(&pool, reader, &one, ReadStatus::Finished).await;
+    assert_eq!(listed(&pool, reader).await[0].next_book_uuid, novella);
+
+    mark_status(&pool, reader, &novella, ReadStatus::Finished).await;
+    assert_eq!(listed(&pool, reader).await[0].next_book_uuid, three);
+}
+
+#[tokio::test]
+async fn in_progress_leaves_out_a_series_of_one_book_or_with_every_book_finished() {
+    let pool = crate::pool::init_db("sqlite::memory:").await.unwrap();
+    seed_series_library(&pool).await;
+    let reader = seed_user(&pool, "reader").await;
+    mark_status(
+        &pool,
+        reader,
+        &uuid_by_title(&pool, "Solo One").await,
+        ReadStatus::Reading,
+    )
+    .await;
+    for title in ["Alpha One", "Alpha Two"] {
+        mark_status(
+            &pool,
+            reader,
+            &uuid_by_title(&pool, title).await,
+            ReadStatus::Finished,
+        )
+        .await;
+    }
+
+    assert!(listed(&pool, reader).await.is_empty());
+}
+
+#[tokio::test]
+async fn in_progress_leaves_out_a_series_whose_only_marks_are_unread() {
+    let pool = crate::pool::init_db("sqlite::memory:").await.unwrap();
+    seed_series_library(&pool).await;
+    let reader = seed_user(&pool, "reader").await;
+    let beta = uuid_by_title(&pool, "Beta One").await;
+    place_position(&pool, reader, &beta, 30, 1_000).await;
+    mark_status(&pool, reader, &beta, ReadStatus::Unread).await;
+
+    assert!(listed(&pool, reader).await.is_empty());
+}
+
+#[tokio::test]
+async fn in_progress_leaves_out_a_hidden_series_for_the_reader_who_hid_it_only() {
+    let (pool, _guard) = seed_discovery_fixture().await;
+    let reader = seed_user(&pool, "reader").await;
+    let other = seed_user(&pool, "other").await;
+    let one = uuid_by_title(&pool, "Saga: Book One").await;
+    for user in [reader, other] {
+        mark_status(&pool, user, &one, ReadStatus::Finished).await;
+    }
+    hide(&pool, reader, series_id_by_name(&pool, "Saga").await)
+        .await
+        .unwrap();
+
+    assert!(listed(&pool, reader).await.is_empty());
+    assert_eq!(names(&listed(&pool, other).await), ["Saga"]);
+}
+
+#[tokio::test]
+async fn in_progress_orders_by_latest_read_then_series_name() {
+    let pool = crate::pool::init_db("sqlite::memory:").await.unwrap();
+    seed_series_library(&pool).await;
+    let reader = seed_user(&pool, "reader").await;
+    for (title, at) in [
+        ("Gamma One", 3_000),
+        ("Beta One", 1_000),
+        ("Alpha One", 1_000),
+    ] {
+        place_position(&pool, reader, &uuid_by_title(&pool, title).await, 10, at).await;
+    }
+
+    let rows = listed(&pool, reader).await;
+
+    assert_eq!(names(&rows), ["Gamma", "Alpha", "Beta"]);
+}
+
+#[tokio::test]
+async fn in_progress_propagates_db_error_when_pool_is_closed() {
+    let (pool, _guard) = seed_discovery_fixture().await;
+    pool.close().await;
+
+    assert!(matches!(
+        in_progress(&pool, 1, &["/lib"]).await,
+        Err(SeriesProgressError::Browse(_))
     ));
 }

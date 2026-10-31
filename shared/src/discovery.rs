@@ -256,6 +256,22 @@ pub struct SeriesReading {
     pub last_read_at: Option<i64>,
 }
 
+/// A series you are partway through, from `GET /api/series/in-progress`: its books in
+/// reading order and your state on each, as `GET /api/series/{id}` sends them, plus the
+/// book to open next.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SeriesInProgress {
+    #[serde(flatten)]
+    pub series: SeriesDetail,
+    /// The uuid of the book to open next: the one you are reading that you read last,
+    /// else the first unread one in reading order.
+    pub next_book_uuid: String,
+    /// When you last read a book of the series, in Unix seconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_read_at: Option<i64>,
+}
+
 /// Most rows the tag cloud returns; a longer vocabulary is cut to its most-used tags.
 pub const TAG_CLOUD_LIMIT: usize = 500;
 

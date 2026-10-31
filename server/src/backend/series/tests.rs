@@ -357,3 +357,106 @@ async fn api_get_series_returns_500_when_the_hide_cannot_be_read() {
 
     assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
 }
+
+/// Seeds the two Saga books under `/lib` and has `user` finish the first.
+async fn seed_saga_started(pool: &sqlx::SqlitePool, user: i64) -> (i64, String) {
+    set_library_paths(pool, Some("/lib"), None).await;
+    let saga = |file: &str, title: &str, index: &str| db::ebook::IndexedBook {
+        metadata: omnibus_shared::EbookMetadata {
+            filename: file.into(),
+            title: Some(title.into()),
+            series: Some("Saga".into()),
+            series_index: Some(index.into()),
+            ..Default::default()
+        },
+        cover: None,
+        mtime_epoch: 0,
+        size_bytes: 0,
+        word_count: None,
+    };
+    db::replace_books(
+        pool,
+        "/lib",
+        vec![saga("one.epub", "One", "1"), saga("two.epub", "Two", "2")],
+    )
+    .await
+    .unwrap();
+    let uuid_of = |title: &'static str| async move {
+        sqlx::query_scalar::<_, String>("SELECT uuid FROM books WHERE title = ?")
+            .bind(title)
+            .fetch_one(pool)
+            .await
+            .unwrap()
+    };
+    let (one, two) = (uuid_of("One").await, uuid_of("Two").await);
+    db::read_status::set_read_status(
+        pool,
+        user,
+        &omnibus_shared::SetReadStatus {
+            book_uuid: one,
+            status: omnibus_shared::ReadStatus::Finished,
+        },
+    )
+    .await
+    .unwrap();
+    let series_id = sqlx::query_scalar("SELECT id FROM series WHERE name = 'Saga'")
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    (series_id, two)
+}
+
+async fn in_progress_rows(app: axum::Router, token: &str) -> Vec<omnibus_shared::SeriesInProgress> {
+    let res = app
+        .oneshot(get_with_bearer("/api/series/in-progress", token))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    body_json(res).await
+}
+
+#[tokio::test]
+async fn api_get_series_in_progress_returns_the_callers_rows_with_the_next_book() {
+    let (app, _state, pool) = fixture().await;
+    let alice = auth_test_support::create_user(&pool, "alice").await;
+    let bob = auth_test_support::create_user(&pool, "bob").await;
+    let alice_token = auth_test_support::bearer_token(&pool, alice.id).await;
+    let bob_token = auth_test_support::bearer_token(&pool, bob.id).await;
+    let (series_id, two) = seed_saga_started(&pool, alice.id).await;
+
+    let rows = in_progress_rows(app.clone(), &alice_token).await;
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].series.id, series_id);
+    assert_eq!(rows[0].next_book_uuid, two);
+    assert!(in_progress_rows(app, &bob_token).await.is_empty());
+}
+
+#[tokio::test]
+async fn api_get_series_in_progress_returns_401_when_anonymous() {
+    let (app, _, _) = fixture().await;
+    let res = app
+        .oneshot(get_anon("/api/series/in-progress"))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn api_get_series_in_progress_returns_500_when_reading_state_cannot_be_read() {
+    let (app, _state, pool) = fixture().await;
+    let user = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+    seed_saga_started(&pool, user.id).await;
+    sqlx::query("DROP TABLE book_read_status")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let res = app
+        .oneshot(get_with_bearer("/api/series/in-progress", &token))
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+}

@@ -6677,6 +6677,31 @@
         }
       }
     },
+    "/api/series/in-progress": {
+      "get": {
+        "tags": [
+          "Discovery"
+        ],
+        "summary": "List the series you are partway through",
+        "description": "The series you have started and not finished, for a home page: at least two books in the\nlibrary, at least one you are reading or have finished, and at least one not finished.\nSeries you hid are left out; starting a book of one you hadn't started brings it back.\nMost recently read first, then by name. Each carries its books and your state on them as\n`GET /api/series/{id}` does, plus the book to open next.",
+        "operationId": "get_series_in_progress",
+        "responses": {
+          "200": {
+            "description": "Your series in progress.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SeriesInProgress"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/series/reading": {
       "get": {
         "tags": [
@@ -15389,6 +15414,34 @@
             ]
           }
         }
+      },
+      "SeriesInProgress": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/SeriesDetail"
+          },
+          {
+            "type": "object",
+            "required": [
+              "next_book_uuid"
+            ],
+            "properties": {
+              "last_read_at": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int64",
+                "description": "When you last read a book of the series, in Unix seconds."
+              },
+              "next_book_uuid": {
+                "type": "string",
+                "description": "The uuid of the book to open next: the one you are reading that you read last,\nelse the first unread one in reading order."
+              }
+            }
+          }
+        ],
+        "description": "A series you are partway through, from `GET /api/series/in-progress`: its books in\nreading order and your state on each, as `GET /api/series/{id}` sends them, plus the\nbook to open next."
       },
       "SeriesReading": {
         "type": "object",
