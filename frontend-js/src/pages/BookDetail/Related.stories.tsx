@@ -542,6 +542,42 @@ export const SuggestionsTellAReaderToAskTheirAdmin: Story = {
   },
 };
 
+export const SuggestionsAnnounceTheEmptyNoteAfterLooking: Story = {
+  beforeEach({ msw }) {
+    let asked = 0;
+    msw.use(
+      http.get("/api/ebooks/:uuid/suggestions", () =>
+        HttpResponse.json(
+          ++asked < 2 ? { status: "pending" } : { status: "ready", items: [] },
+        ),
+      ),
+    );
+  },
+  play: async ({ canvas }) => {
+    const region = (await canvas.findByTestId("suggestions-pending")).closest(
+      '[role="status"]',
+    );
+    if (!region) throw new Error("the pending note is not in a status region");
+    // The same region, still mounted, now holds the empty note: that swap is what is announced.
+    const empty = await canvas.findByTestId(
+      "suggestions-empty",
+      {},
+      { timeout: 6000 },
+    );
+    await expect(empty.closest('[role="status"]')).toBe(region);
+  },
+};
+
+export const SuggestionsKeepTheKeyOfferInAStatusRegion: Story = {
+  beforeEach({ msw }) {
+    msw.use(getGetSuggestionsMockHandler200({ status: "not_configured" }));
+  },
+  play: async ({ canvas }) => {
+    const card = await canvas.findByTestId("suggestions-not-configured");
+    await expect(card.closest('[role="status"]')).not.toBeNull();
+  },
+};
+
 export const SuggestionsSayUnavailableWhenTheFetchFails: Story = {
   beforeEach({ msw }) {
     msw.use(failing("get", "/api/ebooks/:uuid/suggestions", 500));

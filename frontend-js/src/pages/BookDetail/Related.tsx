@@ -176,41 +176,35 @@ function MoreBy({ book }: { book: BookDetail }) {
   );
 }
 
-/** What the strip says when there is no row of read-alikes to show. */
-function SuggestionsNote({ notConfigured }: { notConfigured: boolean }) {
+/** The no-key offer: the admin gets the link to Integrations, anyone else is told whom to ask. */
+function SuggestionsConnectCard() {
   const { isAdmin } = useCurrentUser();
-  if (notConfigured)
-    return (
-      <div
-        className="bp-suggest-connect"
-        data-testid="suggestions-not-configured"
-      >
-        <div>
-          <h3 className="bp-suggest-connect-title">
-            Suggestions are powered by Hardcover
-          </h3>
-          <p className="bp-quiet">
-            Add a Hardcover API key to pull read-alikes for this book.
-          </p>
-        </div>
-        {isAdmin ? (
-          <Link
-            className="btn primary sm"
-            data-testid="suggestions-connect-link"
-            to={INTEGRATIONS_HREF}
-          >
-            Add Hardcover API key →
-          </Link>
-        ) : (
-          <span className="bp-quiet">
-            Ask your server admin to connect Hardcover.
-          </span>
-        )}
-      </div>
-    );
   return (
-    <div className="bp-suggest-pending" data-testid="suggestions-empty">
-      <p className="bp-quiet">No read-alikes found for this book yet.</p>
+    <div
+      className="bp-suggest-pending bp-suggest-connect"
+      data-testid="suggestions-not-configured"
+    >
+      <div>
+        <h3 className="bp-suggest-connect-title">
+          Suggestions are powered by Hardcover
+        </h3>
+        <p className="bp-quiet">
+          Add a Hardcover API key to pull read-alikes for this book.
+        </p>
+      </div>
+      {isAdmin ? (
+        <Link
+          className="btn primary sm"
+          data-testid="suggestions-connect-link"
+          to={INTEGRATIONS_HREF}
+        >
+          Add Hardcover API key <span aria-hidden="true">→</span>
+        </Link>
+      ) : (
+        <span className="bp-quiet">
+          Ask your server admin to connect Hardcover.
+        </span>
+      )}
     </div>
   );
 }
@@ -252,12 +246,18 @@ function Suggestions({ book }: { book: BookDetail }) {
             </li>
           ))}
         </ul>
-      ) : answer?.status === "ready" || answer?.status === "not_configured" ? (
-        <SuggestionsNote notConfigured={answer.status === "not_configured"} />
       ) : (
-        // A status region, so a lookup that gives up is announced, not swapped in silently.
+        // A status region, so each change of note is announced, not swapped in silently.
         <div role="status">
-          {unavailable ? (
+          {answer?.status === "not_configured" ? (
+            <SuggestionsConnectCard />
+          ) : answer?.status === "ready" ? (
+            <div className="bp-suggest-pending" data-testid="suggestions-empty">
+              <p className="bp-quiet">
+                No read-alikes found for this book yet.
+              </p>
+            </div>
+          ) : unavailable ? (
             <div
               className="bp-suggest-pending"
               data-testid="suggestions-unavailable"

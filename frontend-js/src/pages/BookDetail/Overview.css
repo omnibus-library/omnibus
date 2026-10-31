@@ -377,23 +377,20 @@
   border: 1px dashed var(--line);
   border-radius: var(--bp-radius);
 }
-/* The no-key card is an offer, not a wait: a solid border, the ask on the left and its action on the right. */
+/* The no-key card is an offer, not a wait: solid, with the ask on the left and its action on the right. */
 .bp-suggest-connect {
-  display: flex;
   flex-wrap: wrap;
-  align-items: center;
   justify-content: space-between;
   gap: 12px 20px;
-  padding: 18px 20px;
-  border: 1px solid var(--line);
-  border-radius: var(--bp-radius);
+  border-style: solid;
 }
 .bp-suggest-connect-title {
   margin: 0;
   font-size: inherit;
   font-weight: 600;
 }
-.bp-suggest-connect .bp-quiet {
+.bp-suggest-connect-title + .bp-quiet {
+  margin: 6px 0 0;
   padding: 0;
 }
 
