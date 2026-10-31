@@ -2,8 +2,8 @@ import { type ExpectMutationOptions, post } from "../utils/api";
 
 /** The merge endpoints; `books` excludes the `/undo` suffix. */
 export const mergeUrls = {
-  books: /\/api\/rpc\/merge-books(?:\?|$)/,
-  undo: /\/api\/rpc\/merge-books\/undo(?:\?|$)/,
+  books: /\/api\/books\/merge(?:\?|$)/,
+  undo: /\/api\/books\/merge\/undo(?:\?|$)/,
 };
 
 /** What a merge answers with: the log id that `merge.undo` takes back. */

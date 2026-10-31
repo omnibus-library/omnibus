@@ -14,7 +14,8 @@ export class ShelfPickerComponent extends BaseComponent {
   constructor(page: Page) {
     super(page);
     this.root = page.getByTestId("shelf-picker");
-    this.dialog = this.root.getByRole("dialog");
+    // The backdrop is the dialog, and takes focus once it paints.
+    this.dialog = this.root;
     this.closeButton = page.getByTestId("shelf-picker-close");
     this.errorMessage = page.getByTestId("shelf-picker-error");
     this.hint = page.getByTestId("shelf-picker-hint");

@@ -36,27 +36,30 @@ test.describe("book detail chip editors", () => {
       await bookDetailPage.goto(uuid);
     });
 
-    // Both pills render with no genres or tags: they are the way in to the
+    // Both inputs render with no genres or tags: they are the way in to the
     // editors, not decoration on existing chips.
-    await test.step("check the nav and both pills show", async () => {
+    await test.step("check the nav and both inputs show", async () => {
       await bookDetailPage.topNav.assertDisplayed();
-      await expect(genreChips.addButton).toHaveText("+ genres");
-      await expect(tagChips.addButton).toHaveText("+ tags");
+      await expect(genreChips.input).toHaveAttribute(
+        "placeholder",
+        "Add genre",
+      );
+      await expect(tagChips.input).toHaveAttribute("placeholder", "Add tag");
     });
 
-    // #2257: genres and tags are separate labelled rows, and each pill sits
+    // #2257: genres and tags are separate labelled rows, and each input sits
     // in the row it adds to.
-    await test.step("check each pill sits in its own row", async () => {
-      await expect(genreChips.root).toContainText("Genres");
-      await expect(tagChips.root).toContainText("Tags");
-      await expect(genreChips.addButton).toBeVisible();
-      await expect(tagChips.addButton).toBeVisible();
-      await expect(genreChips.otherAddButton).toHaveCount(0);
-      await expect(tagChips.otherAddButton).toHaveCount(0);
+    await test.step("check each input sits in its own row", async () => {
+      await expect(genreChips.title).toBeVisible();
+      await expect(tagChips.title).toBeVisible();
+      await expect(genreChips.input).toBeVisible();
+      await expect(tagChips.input).toBeVisible();
+      await expect(genreChips.otherInput).toHaveCount(0);
+      await expect(tagChips.otherInput).toHaveCount(0);
     });
   });
 
-  test("add a tag from the hero pill", async ({
+  test("add a tag from its input", async ({
     bookDetailPage,
     request,
     expectMutation,
@@ -68,25 +71,18 @@ test.describe("book detail chip editors", () => {
       await bookDetailPage.goto(uuid);
     });
 
-    await test.step("open the tag editor", async () => {
+    await test.step("focus the tag input", async () => {
       await tagChips.openEditor();
-      await expect(tagChips.input).toBeVisible();
-      await expect(tagChips.input).toHaveAttribute("placeholder", "+ add tag…");
+      await expect(tagChips.input).toBeFocused();
     });
 
     await test.step("add a tag", async () => {
       await expectMutation(
-        overrides.save({ uuid, overrides: { subjects: ["Alpine Computing"] } }),
+        overrides.save({ subjects: ["Alpine Computing"] }),
         () => tagChips.addChip("Alpine Computing"),
       );
-      await expect(tagChips.editorPanel).toContainText("Alpine Computing");
-    });
-
-    await test.step("close the editor", async () => {
-      await tagChips.closeEditor();
-      await expect(tagChips.input).toHaveCount(0);
       await expect(tagChips.list).toContainText("Alpine Computing");
-      await expect(tagChips.list).toContainText("+ tags");
+      await expect(tagChips.input).toHaveValue("");
     });
 
     // The override is server state, so a fresh load proves the save stuck.
@@ -124,7 +120,7 @@ test.describe("book detail chip editors", () => {
     });
   });
 
-  test("suggest tags when the tag editor opens", async ({
+  test("suggest the library's other tags in the tag input", async ({
     bookDetailPage,
     request,
     overridesRequests,
@@ -143,15 +139,18 @@ test.describe("book detail chip editors", () => {
       await bookDetailPage.goto(uuid);
     });
 
-    // Tags already on the book leave the pool, so the dropdown's header is
-    // what shows the editor opened with suggestions wired up.
-    await test.step("open the tag editor", async () => {
+    // Tags already on the book leave the pool, so the rest of the library's
+    // tags are what show the input has suggestions wired up.
+    await test.step("check the tag input offers the library's other tags", async () => {
       await tagChips.openEditor();
-      await expect(tagChips.suggestionsList).toContainText("ADD TAG");
+      await expect(tagChips.suggestions).not.toHaveCount(0);
+      await expect(
+        tagChips.suggestions.filter({ hasText: "Alpine Computing" }),
+      ).toHaveCount(0);
     });
   });
 
-  test("add a genre from the hero pill", async ({
+  test("add a genre from its input", async ({
     bookDetailPage,
     request,
     ebooksRequests,
@@ -164,22 +163,16 @@ test.describe("book detail chip editors", () => {
       await bookDetailPage.goto(uuid);
     });
 
-    await test.step("open the genre editor", async () => {
+    await test.step("focus the genre input", async () => {
       await genreChips.openEditor();
-      await expect(genreChips.input).toHaveAttribute(
-        "placeholder",
-        "+ add genre…",
-      );
+      await expect(genreChips.input).toBeFocused();
     });
 
     await test.step("add a genre", async () => {
-      await expectMutation(
-        overrides.save({ uuid, overrides: { genres: ["Field Notes"] } }),
-        () => genreChips.addChip("Field Notes"),
+      await expectMutation(overrides.save({ genres: ["Field Notes"] }), () =>
+        genreChips.addChip("Field Notes"),
       );
-      await genreChips.closeEditor();
       await expect(genreChips.list).toContainText("Field Notes");
-      await expect(genreChips.list).toContainText("+ genres");
     });
 
     await test.step("check the server stored the genre alone", async () => {
@@ -198,10 +191,7 @@ test.describe("book detail chip editors", () => {
   }) => {
     const { tagChips } = bookDetailPage;
     const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-    const unsaved = overrides.save({
-      uuid,
-      overrides: { subjects: ["Never Saved"] },
-    });
+    const unsaved = overrides.save({ subjects: ["Never Saved"] });
 
     await test.step("open the book while saves fail", async () => {
       await bookDetailPage.goto(uuid);
@@ -215,10 +205,9 @@ test.describe("book detail chip editors", () => {
       );
     });
 
-    // A rejected save resyncs the editor from the book, so the chip clears
-    // without a reload.
-    await test.step("check the editor dropped the tag", async () => {
-      await expect(tagChips.editorPanel).not.toContainText("Never Saved");
+    // A rejected save puts the book back, so the chip clears without a reload.
+    await test.step("check the row dropped the tag", async () => {
+      await expect(tagChips.list).not.toContainText("Never Saved");
     });
 
     await test.step("stop failing saves", async () => {

@@ -34,9 +34,8 @@ test.describe("fetch summary", () => {
 
     await test.step("fetch the summary", async () => {
       await summary.stubSummaryFound(SUMMARY);
-      await expectMutation(
-        overrides.save({ uuid, overrides: { description: SUMMARY } }),
-        () => summary.fetchSummary(),
+      await expectMutation(overrides.save({ description: SUMMARY }), () =>
+        summary.fetchSummary(),
       );
     });
 
@@ -46,7 +45,7 @@ test.describe("fetch summary", () => {
     });
   });
 
-  // `.bdmq-desc` clamps to five lines, and before #2290 the rest could not be
+  // The description clamps to three lines, and before #2290 the rest could not be
   // read.
   test("expand a clamped description and collapse it again", async ({
     bookDetailPage,

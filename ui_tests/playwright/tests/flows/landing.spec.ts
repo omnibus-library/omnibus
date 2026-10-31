@@ -162,7 +162,7 @@ test.describe("library page", () => {
 
         await test.step("check the detail page", async () => {
           await bookDetailPage.goto(added.unique_identifier!);
-          await bookDetailPage.openFilesTab();
+          await bookDetailPage.openTab("Files & Details");
           await expect(bookDetailPage.metaValue("Added")).toHaveText(expected);
         });
       });
