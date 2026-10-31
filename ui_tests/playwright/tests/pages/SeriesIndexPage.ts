@@ -63,7 +63,7 @@ export class SeriesIndexPage extends BasePage {
 
   /** Fails the reader's progress request, which no server state can force. */
   async failReadingProgress(): Promise<void> {
-    await this.page.route("**/api/rpc/series/reading", (route) =>
+    await this.page.route("**/api/series/reading", (route) =>
       route.fulfill({ status: 500, contentType: "text/plain", body: "boom" }),
     );
   }
