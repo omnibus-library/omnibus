@@ -12,7 +12,7 @@ export type DeviceKind = "kobo" | "koreader" | "kosync";
 /** What a stubbed device list needs of each device; the kind defaults to a Kobo. */
 export type KoboDeviceListing = { id: number; name: string; kind?: DeviceKind };
 
-/** The part of `POST /api/rpc/api-tokens/create`'s answer a test keeps. */
+/** The part of `POST /api/auth/api-tokens`'s answer a test keeps. */
 export type CreatedApiToken = { token: { id: number } };
 
 type SessionCookie = Parameters<BrowserContext["addCookies"]>[0][number];

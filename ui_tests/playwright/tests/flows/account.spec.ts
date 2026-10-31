@@ -771,7 +771,7 @@ test.describe("password", () => {
 
     await test.step("change the password with the wrong current one", async () => {
       await expectMutation(
-        account.changePassword(wrong, "Brand-New-Valid-9x", 500),
+        account.changePassword(wrong, "Brand-New-Valid-9x", 403),
         () => section.changePassword(wrong, "Brand-New-Valid-9x"),
       );
     });
@@ -800,7 +800,7 @@ test.describe("password", () => {
 
     await test.step("change the password to a short one", async () => {
       await expectMutation(
-        account.changePassword(TEST_PASSWORD, "short", 500),
+        account.changePassword(TEST_PASSWORD, "short", 400),
         () => section.changePassword(TEST_PASSWORD, "short"),
       );
     });

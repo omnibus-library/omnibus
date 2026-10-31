@@ -10,7 +10,8 @@ export interface ForcedRequest {
 }
 
 export interface ExpectMutationOptions {
-  method: MutationMethod;
+  /** GET for a read whose request or answer a test depends on. */
+  method: ForcedRequest["method"];
   url: string | RegExp;
   expectedBody?: unknown;
   expectedStatus?: number;
@@ -69,6 +70,17 @@ export async function expectMutation<T>(
   return { result, request, response };
 }
 
+/** A `waitForResponse` predicate matching the response to a GET of `url`. */
+export function isGetOf(url: RegExp): (response: Response) => boolean {
+  return (response) =>
+    response.request().method() === "GET" && url.test(response.url());
+}
+
+/** A GET of `url`, for a read the test waits on. */
+export function get(url: RegExp, expectedStatus = 200): ExpectMutationOptions {
+  return { method: "GET", url, expectedStatus };
+}
+
 /** A `waitForResponse` predicate matching the response to a POST to `url`. */
 export function isPostTo(url: RegExp): (response: Response) => boolean {
   return (response) =>
@@ -112,13 +124,18 @@ export async function holdRequests(
 }
 
 /**
- * Methods of every request to `url` from now on, so a test can show a
- * cancelled confirm sent nothing.
+ * Methods of every request to `url` from now on (only `method`'s, when
+ * given), so a test can show a cancelled confirm sent nothing.
  */
-export function recordRequests(page: Page, url: RegExp): string[] {
+export function recordRequests(
+  page: Page,
+  url: RegExp,
+  method?: ForcedRequest["method"],
+): string[] {
   const seen: string[] = [];
   page.on("request", (request) => {
-    if (url.test(request.url())) seen.push(request.method());
+    if (url.test(request.url()) && (!method || request.method() === method))
+      seen.push(request.method());
   });
   return seen;
 }
