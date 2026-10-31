@@ -44,6 +44,13 @@ export type MarqueeSection = (typeof MARQUEE_SECTIONS)[number];
 
 export type FormatLabel = "EPUB" | "PDF" | "MP3" | "M4B";
 
+/** The page's four tabs, by the name each tab carries. */
+export type BookTab =
+  | "Overview"
+  | "Reviews"
+  | "Highlights & Journal"
+  | "Files & Details";
+
 export class BookDetailPage extends BasePage {
   protected readonly urlPattern = /\/books\/[^/?#]+$/;
 
@@ -215,6 +222,16 @@ export class BookDetailPage extends BasePage {
 
   protected get readyLocator(): Locator {
     return this.titleHeading;
+  }
+
+  /** The tab strip's tab called `name`. */
+  tab(name: BookTab): Locator {
+    return this.page.getByRole("tab", { name, exact: true });
+  }
+
+  /** Selects the tab called `name`; selecting the open one does nothing. */
+  async openTab(name: BookTab): Promise<void> {
+    await this.tab(name).click();
   }
 
   /** The authors line's link to the author called `name`. */

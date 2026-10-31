@@ -2,7 +2,7 @@ import { type ExpectMutationOptions, post } from "../utils/api";
 
 /** The metadata override endpoints; each URL excludes the others' suffixes. */
 export const overridesUrls = {
-  save: /\/api\/rpc\/ebook\/overrides(?:\?|$)/,
+  save: /\/api\/ebooks\/[^/]+\/overrides(?:\?|$)/,
   bulkSave: /\/api\/rpc\/ebook\/overrides\/bulk(?:\?|$)/,
   revert: /\/api\/rpc\/ebook\/overrides\/delete(?:\?|$)/,
 };
