@@ -22,6 +22,7 @@ import { PEOPLE_HREF } from "../../settingsIndex";
 import { Cover } from "../Cover/Cover";
 import {
   BookGlyph,
+  HeartGlyph,
   PlayGlyph,
   ServerGlyph,
   SlidersGlyph,
@@ -264,6 +265,17 @@ function ResumeRow({ point, onNavigate }: ResumeRowProps) {
 function AccountRows({ user, onNavigate }: SectionProps) {
   return (
     <div className="um-rows">
+      <Link
+        to="/wishlists"
+        className="um-row"
+        data-testid="user-menu-wishlists"
+        onClick={onNavigate}
+      >
+        <span className="um-row-icon">
+          <HeartGlyph size={16} />
+        </span>
+        <span className="um-row-label">Wishlists</span>
+      </Link>
       <Link to="/settings" className="um-row" onClick={onNavigate}>
         <span className="um-row-icon">
           <SlidersGlyph />

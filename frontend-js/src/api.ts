@@ -28,3 +28,4 @@ export * from "./api/shelves";
 export * from "./api/stats";
 export * from "./api/uploads";
 export * from "./api/users";
+export * from "./api/wishlists";

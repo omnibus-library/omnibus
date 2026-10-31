@@ -1,0 +1,401 @@
+.wl-page {
+  /* Full-bleed under the top bar: the reader panel meets the viewport edge, so the page
+     cancels the shell's own horizontal padding. */
+  --wl-bleed: clamp(1.25rem, 4vw, 3.5rem);
+  --wl-nav-h: 65px;
+  --wl-panel-w: 272px;
+  --wl-gutter: 48px;
+  --wl-cover-w: 44px;
+
+  display: grid;
+  grid-template-columns: var(--wl-panel-w) minmax(0, 1fr);
+  min-height: calc(100dvh - var(--wl-nav-h));
+  margin-inline: calc(-1 * var(--wl-bleed));
+}
+
+/* ---- the reader panel and the phone's menu share their rows ---- */
+
+.wl-panel {
+  padding: 36px 20px 48px;
+  border-right: 1px solid var(--line-2);
+}
+.wl-readers {
+  list-style: none;
+}
+.wl-reader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 10px;
+  border-radius: var(--r-md);
+  color: var(--ink-1);
+  text-decoration: none;
+  font-size: 14px;
+}
+.wl-reader[aria-current="page"] {
+  background: var(--bg-1);
+  color: var(--ink-0);
+  font-weight: 600;
+}
+.wl-reader-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wl-reader-count {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.wl-rule {
+  height: 1px;
+  margin: 10px 0;
+  border: 0;
+  background: var(--line-2);
+}
+.wl-avatar {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  overflow: hidden;
+  border-radius: 50%;
+  background: var(--bg-3);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--ink-1);
+}
+.wl-avatar-photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.wl-avatar-everyone {
+  background: var(--bg-2);
+}
+.wl-panel-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 7px 10px;
+}
+.wl-panel-skeleton-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* ---- the page ---- */
+
+.wl-body {
+  min-width: 0;
+  padding: 36px var(--wl-gutter) 64px;
+}
+.wl-head {
+  margin-bottom: 18px;
+}
+.wl-head-text {
+  min-width: 0;
+}
+.wl-title-text {
+  margin: 0;
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: clamp(34px, 4vw, 46px);
+  line-height: 1.05;
+  letter-spacing: -0.005em;
+  color: var(--ink-0);
+}
+.wl-subline {
+  min-height: 1.4em;
+  margin: 8px 0 0;
+  color: var(--ink-2);
+  font-size: 14px;
+}
+.wl-titlebar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.wl-titlebar-icon,
+.wl-titlebar-caret,
+.wl-picker-trigger,
+.wl-picker-menu,
+.wl-picker-scrim {
+  display: none;
+}
+
+/* ---- the list ---- */
+
+.wl-cols,
+.wl-row {
+  display: grid;
+  grid-template-columns:
+    var(--wl-cover-w) minmax(0, 1.3fr) minmax(0, 1fr)
+    minmax(0, 0.8fr);
+  align-items: center;
+  column-gap: 16px;
+  padding-inline: 12px;
+}
+.wl-cols {
+  padding-block: 10px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.wl-cols > :first-child {
+  grid-column: 1 / 3;
+}
+.wl-list {
+  list-style: none;
+}
+.wl-row {
+  padding-block: 12px;
+  border-top: 1px solid var(--line-2);
+  border-radius: var(--r-sm);
+}
+.wl-cover {
+  display: block;
+  width: var(--wl-cover-w);
+}
+/* The plate's type is sized for a grid cover; a thumbnail this small needs a smaller one. */
+.wl-cover .cover .ct {
+  font-size: 8px;
+}
+.wl-cover .cover .ca {
+  font-size: 5px;
+  letter-spacing: 0.1em;
+}
+.wl-book {
+  min-width: 0;
+}
+.wl-title {
+  display: block;
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 22px;
+  line-height: 1.15;
+  color: var(--ink-0);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.wl-byline {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.wl-holdings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  list-style: none;
+}
+.wl-holding {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.wl-badge {
+  padding: 3px 7px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-sm);
+  background: var(--bg-1);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  color: var(--ink-1);
+}
+.wl-times {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.wl-none {
+  color: var(--ink-3);
+}
+.wl-none-text {
+  display: none;
+}
+.wl-meta {
+  margin: 0;
+  font-size: 14px;
+  color: var(--ink-1);
+}
+.wl-added {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.wl-prefix {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ---- empty ---- */
+
+.wl-empty {
+  max-width: 440px;
+  padding-top: 72px;
+  color: var(--ink-2);
+}
+.wl-empty-heart {
+  display: block;
+  margin-bottom: 14px;
+  color: var(--ink-3);
+}
+.wl-empty-title {
+  margin: 0 0 10px;
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 28px;
+  line-height: 1.15;
+  color: var(--ink-0);
+}
+.wl-empty-body {
+  margin: 0 0 18px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* ---- focus and hover ---- */
+
+.wl-reader:focus-visible,
+.wl-title:focus-visible,
+.wl-picker-trigger:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+@media (hover: hover) {
+  .wl-reader:hover {
+    background: var(--bg-1);
+  }
+  .wl-row:hover {
+    background: var(--bg-1);
+  }
+  .wl-title:hover {
+    color: var(--accent);
+  }
+}
+
+/* ---- phone: the panel becomes a menu under the title ---- */
+
+@media (max-width: 720px) {
+  .wl-page {
+    display: block;
+    min-height: 0;
+    margin-inline: 0;
+  }
+  .wl-panel,
+  .wl-cols {
+    display: none;
+  }
+  .wl-body {
+    padding: 20px 0 32px;
+  }
+  .wl-title-text {
+    font-size: 27px;
+  }
+  .wl-titlebar-icon,
+  .wl-titlebar-caret {
+    display: inline-flex;
+  }
+  .wl-titlebar-caret {
+    color: var(--ink-2);
+  }
+  .wl-titlebar-icon .wl-avatar {
+    width: 28px;
+    height: 28px;
+  }
+  .wl-picker-trigger {
+    display: block;
+    position: absolute;
+    inset: -4px -6px;
+    border: 0;
+    border-radius: var(--r-md);
+    background: transparent;
+    cursor: pointer;
+  }
+  .wl-picker-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 6;
+    background: color-mix(in oklch, black 55%, transparent);
+  }
+  .wl-picker-menu {
+    display: block;
+    position: absolute;
+    z-index: 7;
+    top: calc(100% + 10px);
+    left: 0;
+    width: min(360px, calc(100vw - 2 * var(--wl-bleed)));
+    max-height: 70dvh;
+    overflow-y: auto;
+    padding: 8px;
+    border: 1px solid var(--line-2);
+    border-radius: 14px;
+    background: var(--bg-1);
+    box-shadow: 0 18px 40px color-mix(in oklch, black 55%, transparent);
+  }
+  .wl-picker-menu .wl-reader {
+    padding: 8px 10px;
+  }
+  .wl-row {
+    --wl-cover-w: 56px;
+    grid-template-columns: var(--wl-cover-w) minmax(0, 1fr) auto;
+    grid-template-areas:
+      "cover book book"
+      "cover library library"
+      "cover meta get";
+    align-items: start;
+    row-gap: 6px;
+    padding-inline: 0;
+  }
+  .wl-cover {
+    grid-area: cover;
+  }
+  .wl-book {
+    grid-area: book;
+  }
+  .wl-library {
+    grid-area: library;
+  }
+  .wl-meta {
+    grid-area: meta;
+    align-self: center;
+    font-family: var(--sans);
+    font-size: 13px;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--ink-2);
+  }
+  .wl-prefix {
+    position: static;
+    width: auto;
+    height: auto;
+    margin: 0;
+    overflow: visible;
+    clip: auto;
+  }
+  .wl-none-dash {
+    display: none;
+  }
+  .wl-none-text {
+    display: inline;
+    font-size: 13px;
+  }
+}
