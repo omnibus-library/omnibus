@@ -134,6 +134,11 @@ async fn deleting_a_series_or_a_user_drops_their_hides() {
     hide(&pool, reader, saga).await.unwrap();
     hide(&pool, leaver, pioneers).await.unwrap();
 
+    sqlx::query("DELETE FROM books_series_link WHERE series = ?")
+        .bind(saga)
+        .execute(&pool)
+        .await
+        .unwrap();
     sqlx::query("DELETE FROM series WHERE id = ?")
         .bind(saga)
         .execute(&pool)
@@ -214,6 +219,7 @@ async fn in_progress_lists_a_series_with_a_book_being_read_and_the_book_to_open_
     let reader = seed_user(&pool, "reader").await;
     let one = uuid_by_title(&pool, "Saga: Book One").await;
     let two = uuid_by_title(&pool, "Saga: Book Two").await;
+    place_position(&pool, reader, &one, 100, 500).await;
     mark_status(&pool, reader, &one, ReadStatus::Finished).await;
     place_position(&pool, reader, &two, 40, 1_000).await;
 
