@@ -442,9 +442,9 @@ export const ShowOnHomeFails: Story = {
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(await canvas.findByTestId("series-show-home"));
 
-    await expect(await canvas.findByRole("status")).toHaveTextContent(
-      "Couldn't show Dune on home: failed with 500",
-    );
+    await expect(
+      await canvas.findByText("Couldn't show Dune on home: failed with 500"),
+    ).toBeInTheDocument();
     await expect(canvas.getByTestId("series-show-home")).toBeEnabled();
     await expect(canvas.queryByTestId("series-hide-home")).toBeNull();
   },

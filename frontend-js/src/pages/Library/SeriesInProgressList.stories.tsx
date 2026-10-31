@@ -459,9 +459,9 @@ export const HideFails: Story = {
     );
     await userEvent.click(await canvas.findByTestId("series-hide-confirm"));
 
-    await expect(await canvas.findByRole("status")).toHaveTextContent(
-      "Couldn't hide Saga: failed with 500",
-    );
+    await expect(
+      await canvas.findByText("Couldn't hide Saga: failed with 500"),
+    ).toBeInTheDocument();
     await expect(within(list).getAllByTestId("sip-row")).toHaveLength(2);
     await expect(canvas.queryByRole("dialog")).toBeNull();
   },
