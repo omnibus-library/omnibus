@@ -17,6 +17,7 @@ use crate::books::{
     Projection,
 };
 use crate::helpers::ids_json;
+use crate::stats::AUDIO_FORMATS;
 
 /// Hard cap on how many entries `list_wishlist` returns for a single user.
 /// Practical usage stays well under this; the cap exists so a pathological
@@ -314,15 +315,24 @@ async fn wanters_by_book(
     Ok(by_book)
 }
 
-/// What the library holds of each book in `ids_json`: a count per digital format,
-/// alphabetically, then the physical copies as `PRINT`. A kind with none is absent.
+/// What the library holds of each book in `ids_json`: a count per digital format, alphabetically,
+/// then the physical copies as `PRINT`. A kind with none is absent, and a multi-part audiobook
+/// counts once.
 async fn holdings_by_book(
     pool: &SqlitePool,
     ids_json: &str,
 ) -> Result<HashMap<i64, Vec<WishlistHolding>>, PhysicalError> {
-    let rows: Vec<(i64, String, i64)> = sqlx::query_as(
+    // The parts of one audiobook are many rows in one folder, so an audio format counts folders;
+    // anything else counts files.
+    let editions = format!(
+        "CASE WHEN UPPER(format) IN {AUDIO_FORMATS}
+              THEN COUNT(DISTINCT rtrim(COALESCE(path, ''), replace(COALESCE(path, ''), '/', '')))
+              ELSE COUNT(*) END"
+    );
+    let rows: Vec<(i64, String, i64)> = sqlx::query_as(&format!(
         "SELECT book_id, format, n FROM (
-             SELECT book_id, UPPER(format) AS format, COUNT(*) AS n, 0 AS kind
+             SELECT book_id, UPPER(format) AS format,
+                    {editions} AS n, 0 AS kind
                FROM book_files
               WHERE book_id IN (SELECT value FROM json_each(?1))
               GROUP BY book_id, UPPER(format)
@@ -332,8 +342,8 @@ async fn holdings_by_book(
                JOIN books b ON b.uuid = pc.book_uuid
               WHERE b.id IN (SELECT value FROM json_each(?1))
               GROUP BY b.id
-         ) ORDER BY book_id, kind, format",
-    )
+         ) ORDER BY book_id, kind, format"
+    ))
     .bind(ids_json)
     .fetch_all(pool)
     .await?;

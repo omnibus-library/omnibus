@@ -46,6 +46,7 @@ pub use household::{
     book_household, household_readers, recent_progress_for_viewer, session_log_for_viewer,
     stats_for_viewer, ViewerStatsError,
 };
+pub(crate) use library::AUDIO_FORMATS;
 pub use library::{invalidate as invalidate_library_size, library_size};
 /// Per-user aggregate cache TTL. A reload after a just-finished session
 /// reflects new data within this window; repeated calls inside it hit the

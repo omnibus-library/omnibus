@@ -306,14 +306,15 @@ async fn want_at(pool: &SqlitePool, user: i64, uuid: &str, added_at: i64) {
 }
 
 /// Add one more digital file of `format` to the seeded book `uuid`.
-async fn add_file(pool: &SqlitePool, uuid: &str, format: &str, ordinal: i64) {
+async fn add_file(pool: &SqlitePool, uuid: &str, format: &str, ordinal: i64, path: &str) {
     sqlx::query(
-        "INSERT INTO book_files (book_id, format, filename, size_bytes, mtime_epoch, ordinal)
-         SELECT id, ?2, 'f', 1, 1, ?3 FROM books WHERE uuid = ?1",
+        "INSERT INTO book_files (book_id, format, filename, size_bytes, mtime_epoch, ordinal, path)
+         SELECT id, ?2, 'f', 1, 1, ?3, ?4 FROM books WHERE uuid = ?1",
     )
     .bind(uuid)
     .bind(format)
     .bind(ordinal)
+    .bind(path)
     .execute(pool)
     .await
     .unwrap();
@@ -386,8 +387,9 @@ async fn wishlist_books_returns_a_readers_books_newest_first_with_holdings() {
     want_at(&pool, alice, "uuid-3", 200).await;
     want_at(&pool, alice, "uuid-2", 300).await;
     want_at(&pool, bob, "uuid-1", 400).await;
-    add_file(&pool, "uuid-1", "M4B", 0).await;
-    add_file(&pool, "uuid-1", "m4b", 1).await;
+    // Two editions of the audiobook, each in a folder of its own.
+    add_file(&pool, "uuid-1", "M4B", 0, "a/one/book.m4b").await;
+    add_file(&pool, "uuid-1", "m4b", 1, "b/one/book.m4b").await;
     add_copy_row(&pool, "uuid-1").await;
     let wanted = seed_wished(&pool, alice, "Wanted").await;
 
@@ -475,6 +477,73 @@ async fn wishlist_books_propagates_db_error_when_pool_is_closed() {
     let err = wishlist_books(&pool, WishlistScope::Reader(user))
         .await
         .unwrap_err();
+
+    assert!(matches!(err, PhysicalError::Sqlx(_)));
+}
+
+#[tokio::test]
+async fn wishlist_books_counts_a_multi_part_audiobook_once() {
+    let pool = pool().await;
+    seed_minimal_books(&pool, 1).await;
+    let alice = seed_user(&pool, "alice").await;
+    want_at(&pool, alice, "uuid-1", 1).await;
+    for (ordinal, part) in ["part-1.m4b", "part-2.m4b", "part-3.m4b"]
+        .iter()
+        .enumerate()
+    {
+        add_file(
+            &pool,
+            "uuid-1",
+            "M4B",
+            ordinal as i64,
+            &format!("wt/{part}"),
+        )
+        .await;
+    }
+
+    let books = wishlist_books(&pool, WishlistScope::Reader(alice))
+        .await
+        .unwrap();
+
+    let m4b = books[0]
+        .holdings
+        .iter()
+        .find(|h| h.format == "M4B")
+        .unwrap();
+    assert_eq!(m4b.count, 1);
+}
+
+#[tokio::test]
+async fn wishlist_books_leaves_out_descriptions_and_applies_overrides() {
+    let pool = pool().await;
+    seed_minimal_books(&pool, 1).await;
+    let alice = seed_user(&pool, "alice").await;
+    want_at(&pool, alice, "uuid-1", 1).await;
+    sqlx::query("UPDATE books SET description = '<p>scanned</p>' WHERE uuid = 'uuid-1'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO metadata_overrides (book_uuid, overrides) VALUES ('uuid-1', ?)")
+        .bind(r#"{"title":"Renamed","description":"<p>edited</p>"}"#)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let books = wishlist_books(&pool, WishlistScope::Reader(alice))
+        .await
+        .unwrap();
+
+    assert_eq!(books[0].book.title.as_deref(), Some("Renamed"));
+    assert_eq!(books[0].book.description, None);
+}
+
+#[tokio::test]
+async fn wishlist_readers_propagates_db_error_when_pool_is_closed() {
+    let pool = pool().await;
+    let user = seed_user(&pool, "alice").await;
+    pool.close().await;
+
+    let err = wishlist_readers(&pool, user).await.unwrap_err();
 
     assert!(matches!(err, PhysicalError::Sqlx(_)));
 }
