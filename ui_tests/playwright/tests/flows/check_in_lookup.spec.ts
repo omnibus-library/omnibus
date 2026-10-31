@@ -150,15 +150,12 @@ test.describe("check-in lookup", () => {
 
   test("show the open library note without a google books key", async ({
     checkInPage,
-    expectMutation,
   }) => {
     const flow = checkInPage.flow;
 
     await test.step("open check-in with no key configured", async () => {
       await flow.stubGoogleBooksKey(false);
-      await expectMutation(scan.googleBooksConfigured(), () =>
-        checkInPage.goto(),
-      );
+      await checkInPage.gotoAwaitingKeyStatus();
     });
 
     await test.step("check the note explains the fallback", async () => {
@@ -173,15 +170,12 @@ test.describe("check-in lookup", () => {
 
   test("hide the open library note with a google books key", async ({
     checkInPage,
-    expectMutation,
   }) => {
     const flow = checkInPage.flow;
 
     await test.step("open check-in with a key configured", async () => {
       await flow.stubGoogleBooksKey(true);
-      await expectMutation(scan.googleBooksConfigured(), () =>
-        checkInPage.goto(),
-      );
+      await checkInPage.gotoAwaitingKeyStatus();
     });
 
     await test.step("check no note shows", async () => {

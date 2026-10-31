@@ -49,9 +49,6 @@ test.describe("wishlist check-in", () => {
 
     await test.step("open the wished-for book", async () => {
       await bookDetailPage.goto(wish.uuid);
-      await expect(bookDetailPage.fromSameHandEmptyMessage).toContainText(
-        "0 books in your library",
-      );
     });
 
     await test.step("open check-in with the isbn prefilled", async () => {
@@ -96,12 +93,10 @@ test.describe("wishlist check-in", () => {
 
     await test.step("check the book page follows the check-in", async () => {
       await overlay.close();
+      await expect(bookDetailPage.checkInWhenAcquiredButton).toHaveCount(0);
+      await bookDetailPage.openTab("Files & Details");
       await expect(bookDetailPage.physicalCopy.cards).toHaveCount(1);
       await expect(bookDetailPage.physicalCopy.cards).toContainText("by you");
-      await expect(bookDetailPage.checkInWhenAcquiredButton).toHaveCount(0);
-      await expect(bookDetailPage.fromSameHandEmptyMessage).toContainText(
-        "1 book in your library",
-      );
     });
   });
 
@@ -120,6 +115,7 @@ test.describe("wishlist check-in", () => {
 
     await test.step("open the book with one copy filed", async () => {
       await bookDetailPage.goto(wish.uuid);
+      await bookDetailPage.openTab("Files & Details");
       await expect(bookDetailPage.physicalCopy.cards).toHaveCount(1);
     });
 
@@ -135,6 +131,7 @@ test.describe("wishlist check-in", () => {
     });
 
     await test.step("check the second copy lands on the page", async () => {
+      await bookDetailPage.openTab("Files & Details");
       await expect(bookDetailPage.physicalCopy.cards).toHaveCount(2);
     });
   });

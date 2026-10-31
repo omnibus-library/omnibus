@@ -23,9 +23,9 @@ const AUDIOBOOK_PARTS = ["chapter01.mp3", "chapter02.mp3"].map((chapter) =>
   ),
 );
 
-test.describe("add books page", () => {
+test.describe("add books sheet", () => {
   test("show the add-books layout", async ({ addBooksPage }) => {
-    await test.step("open the add-books page", async () => {
+    await test.step("open the add-books sheet", async () => {
       await addBooksPage.goto();
     });
 
@@ -40,8 +40,6 @@ test.describe("add books page", () => {
       await expect(addBooksPage.fileInput).toHaveAttribute("accept", /\.m4b/);
       await expect(addBooksPage.fileInput).toHaveAttribute("multiple");
       await expect(addBooksPage.formatsHint).toBeVisible();
-      await expect(addBooksPage.ebookTypeToggle).toHaveCount(0);
-      await expect(addBooksPage.audiobookTypeToggle).toHaveCount(0);
     });
 
     await test.step("check nothing is up for review", async () => {
@@ -55,7 +53,7 @@ test.describe("add books page", () => {
   }) => {
     const form = addBooksPage.form;
 
-    await test.step("open the add-books page", async () => {
+    await test.step("open the add-books sheet", async () => {
       await addBooksPage.goto();
     });
     const commits = addBooksPage.recordCommitRequests();
@@ -77,7 +75,11 @@ test.describe("add books page", () => {
       await expect(form.publishedField).toHaveValue("1969-07-20");
       await expect(form.seriesField).toHaveValue("Pioneers");
       await expect(form.bookNumberField).toHaveValue("1");
-      // The cover is shown inline, because there is no cover route yet.
+    });
+
+    // The cover is shown inline, because there is no cover route yet.
+    await test.step("check the artwork tab carries the file's cover", async () => {
+      await form.openArtwork();
       await expect(form.coverPreviewImage).toHaveAttribute(
         "src",
         /^data:image\/webp;base64,/,
@@ -86,8 +88,7 @@ test.describe("add books page", () => {
     });
 
     await test.step("check the commit is offered and nothing was sent", async () => {
-      await expect(form.saveButton).toHaveText("Add to library");
-      await expect(form.saveButton).toBeEnabled();
+      await expect(addBooksPage.addButton).toBeEnabled();
       expect(commits).toEqual([]);
     });
   });
@@ -98,7 +99,7 @@ test.describe("add books page", () => {
   }) => {
     const form = addBooksPage.form;
 
-    await test.step("open the add-books page", async () => {
+    await test.step("open the add-books sheet", async () => {
       await addBooksPage.goto();
     });
 
@@ -125,7 +126,7 @@ test.describe("add books page", () => {
   }) => {
     const form = addBooksPage.form;
 
-    await test.step("open the add-books page", async () => {
+    await test.step("open the add-books sheet", async () => {
       await addBooksPage.goto();
     });
     const commits = addBooksPage.recordCommitRequests();
@@ -141,13 +142,11 @@ test.describe("add books page", () => {
       await addBooksPage.stageCover(TINY_PNG);
     });
 
-    await test.step("check the sidebar says the pick goes with the book", async () => {
+    await test.step("check the cover card says the pick goes with the book", async () => {
       await expect(form.coverHintText).toHaveText(
         "your image · saved with the book",
       );
-      await expect(form.coverReplacedNote).toHaveText(
-        "Cover replaced · saved with the book",
-      );
+      await expect(form.coverUploadStatus).toHaveText("Cover staged.");
     });
 
     await test.step("take the staged cover back", async () => {
@@ -166,7 +165,7 @@ test.describe("add books page", () => {
     addBooksPage,
     expectMutation,
   }) => {
-    await test.step("open the add-books page", async () => {
+    await test.step("open the add-books sheet", async () => {
       await addBooksPage.goto();
     });
     const commits = addBooksPage.recordCommitRequests();
@@ -179,7 +178,7 @@ test.describe("add books page", () => {
     });
 
     await test.step("start over", async () => {
-      await addBooksPage.form.discard();
+      await addBooksPage.chooseAnotherFile();
     });
 
     await test.step("check the picker is back and nothing was sent", async () => {
@@ -193,7 +192,7 @@ test.describe("add books page", () => {
     addBooksPage,
     expectMutation,
   }) => {
-    await test.step("open the add-books page", async () => {
+    await test.step("open the add-books sheet", async () => {
       await addBooksPage.goto();
     });
 
@@ -206,7 +205,9 @@ test.describe("add books page", () => {
 
     await test.step("check the status reports it and no form opens", async () => {
       await expect(addBooksPage.statusMessage).toBeVisible();
-      await expect(addBooksPage.statusMessage).toHaveClass(/error/);
+      await expect(addBooksPage.statusMessage).toContainText(
+        "Couldn’t read that EPUB",
+      );
       await expect(addBooksPage.review).toHaveCount(0);
     });
   });
@@ -217,7 +218,7 @@ test.describe("add books page", () => {
   }) => {
     const form = addBooksPage.form;
 
-    await test.step("open the add-books page", async () => {
+    await test.step("open the add-books sheet", async () => {
       await addBooksPage.goto();
     });
 
@@ -236,14 +237,14 @@ test.describe("add books page", () => {
       await expect(form.titleField).not.toHaveValue("");
       await expect(form.seriesField).toHaveValue("");
       await expect(form.bookNumberField).toBeVisible();
-      await expect(form.saveButton).toHaveText("Add to library");
+      await expect(addBooksPage.addButton).toBeEnabled();
     });
   });
 
   test("refuse a pick that mixes an epub with audiobook parts", async ({
     addBooksPage,
   }) => {
-    await test.step("open the add-books page", async () => {
+    await test.step("open the add-books sheet", async () => {
       await addBooksPage.goto();
     });
     // Neither inspect endpoint may be asked about a pick that fits neither, so
@@ -256,7 +257,6 @@ test.describe("add books page", () => {
 
     await test.step("check the status refuses it and nothing was sent", async () => {
       await expect(addBooksPage.statusMessage).toBeVisible();
-      await expect(addBooksPage.statusMessage).toHaveClass(/error/);
       await expect(addBooksPage.statusMessage).toContainText("not both");
       await expect(addBooksPage.review).toHaveCount(0);
       expect(uploadRequests).toEqual([]);
@@ -266,7 +266,7 @@ test.describe("add books page", () => {
   test("name a file neither ingest takes instead of sending it", async ({
     addBooksPage,
   }) => {
-    await test.step("open the add-books page", async () => {
+    await test.step("open the add-books sheet", async () => {
       await addBooksPage.goto();
     });
     const uploadRequests = addBooksPage.recordUploadRequests();
@@ -283,10 +283,26 @@ test.describe("add books page", () => {
 
     await test.step("check the status names the file and nothing was sent", async () => {
       await expect(addBooksPage.statusMessage).toBeVisible();
-      await expect(addBooksPage.statusMessage).toHaveClass(/error/);
       await expect(addBooksPage.statusMessage).toContainText("notes.txt");
       await expect(addBooksPage.review).toHaveCount(0);
       expect(uploadRequests).toEqual([]);
+    });
+  });
+
+  // The worker's reader may not upload (see `buildReader`), but checking in a
+  // physical copy needs no permission, so Check in stays.
+  test("hide add books from a reader who may not upload", async ({
+    readerLibraryPage,
+  }) => {
+    const { topNav } = readerLibraryPage;
+
+    await test.step("open the library as the reader", async () => {
+      await readerLibraryPage.goto();
+    });
+
+    await test.step("check the nav offers check-in but not add books", async () => {
+      await expect(topNav.checkInButton).toBeVisible();
+      await expect(topNav.addBooksButton).toHaveCount(0);
     });
   });
 });

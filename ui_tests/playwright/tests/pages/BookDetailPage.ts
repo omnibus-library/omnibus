@@ -209,7 +209,7 @@ export class BookDetailPage extends BasePage {
       name: "Immersive",
     });
     this.noFilesMessage = page.getByTestId("no-files-disclaimer");
-    this.checkInWhenAcquiredButton = page.getByRole("button", {
+    this.checkInWhenAcquiredButton = page.getByRole("link", {
       name: "Check in when acquired",
     });
     this.physicalPill = page.getByTestId("physical-pill");
