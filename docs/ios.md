@@ -78,9 +78,11 @@ from `.omnibusSessionChanged`, posted on every `AppState.phase` change.
 **One player, three surfaces.** The phone, the lock screen and the car all
 drive `AudioPlayer.shared`; CarPlay's Now Playing is the system's shared
 template filled from the same `MPNowPlayingInfoCenter` info (chapter as title,
-chapter-scoped scrubber). Every remote seek command — the car's hardware
-buttons arrive as next/previous-track — seeks −15 / +30; chapters change only
-from the on-screen ⏮ / ⏭ buttons and the Chapters list.
+chapter-scoped scrubber). Every remote seek command — track, skip or seek, since
+Apple doesn't document which a car's hardware buttons send — seeks −15 / +30;
+chapters change only from the on-screen ⏮ / ⏭ buttons and the Chapters list.
+To see what a car sends, filter Console.app to the attached phone's
+`RemoteCommands` category: no line for a press means no seek handler saw it.
 
 **Decisions live in `CarPlayContent`.** A CarPlay template can't be read back
 from a test, so row text, the chapter window (from the previous chapter to the
