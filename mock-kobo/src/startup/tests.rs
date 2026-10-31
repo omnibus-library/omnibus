@@ -374,7 +374,7 @@ async fn start_auto_wires_seed_admin_device_when_no_token_known() {
             .control,
     );
 
-    let created = stub.requests_to("/api/rpc/kobo/devices/create");
+    let created = stub.requests_with("POST", "/api/account/kobo-devices");
     assert_eq!(created.len(), 1);
     let body: serde_json::Value = serde_json::from_str(&created[0].body).unwrap();
     assert_eq!(body, json!({ "name": "Mock Kobo (kobo)" }));
@@ -401,7 +401,7 @@ async fn start_names_the_wired_device_after_the_given_name_not_the_state_file() 
     .await
     .unwrap();
 
-    let created = stub.requests_to("/api/rpc/kobo/devices/create");
+    let created = stub.requests_with("POST", "/api/account/kobo-devices");
     let body: serde_json::Value = serde_json::from_str(&created[0].body).unwrap();
     assert_eq!(body, json!({ "name": "Mock Kobo" }));
 }
