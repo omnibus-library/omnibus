@@ -110,6 +110,16 @@ function reading(series: SeriesInProgress): SeriesInProgress {
   };
 }
 
+/** The computed `font-family` of `value` (a `var()` of a token) where `host` is drawn. */
+function fontFamilyOf(value: string, host: HTMLElement) {
+  const probe = document.createElement("span");
+  probe.style.fontFamily = value;
+  host.append(probe);
+  const family = getComputedStyle(probe).fontFamily;
+  probe.remove();
+  return family;
+}
+
 const panel = (canvas: ReturnType<typeof within>) =>
   canvas.findByRole("region", { name: "Series in progress" });
 
@@ -133,6 +143,22 @@ export const FanAndList: Story = {
     await expect(canvasElement.querySelector(".sip-hero--pair")).not.toBeNull();
     const rows = within(list).getAllByTestId("sip-row");
     await expect(rows).toHaveLength(2);
+    const heading = within(list).getByRole("heading", {
+      name: "Series in progress",
+    });
+    await expect(within(list).getByText("2 series")).toBeInTheDocument();
+    await expect(getComputedStyle(heading).fontFamily).toBe(
+      fontFamilyOf("var(--sans)", list),
+    );
+    await expect(getComputedStyle(heading).textTransform).toBe("none");
+    await expect(getComputedStyle(heading).fontWeight).toBe("600");
+    await expect(getComputedStyle(heading).fontSize).toBe("15px");
+    await expect(getComputedStyle(heading).letterSpacing).toBe("normal");
+    const total = within(list).getByText("2 series");
+    await expect(getComputedStyle(total).fontFamily).toBe(
+      fontFamilyOf("var(--mono)", list),
+    );
+    await expect(getComputedStyle(total).textTransform).toBe("uppercase");
     const [saga, pioneers] = rows;
     if (!saga || !pioneers) throw new Error("the rows are missing");
 

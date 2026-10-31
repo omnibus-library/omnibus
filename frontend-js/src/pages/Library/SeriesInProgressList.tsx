@@ -123,9 +123,12 @@ export function SeriesInProgressList({
       data-testid="series-in-progress"
       aria-labelledby="sip-heading"
     >
-      <h2 className="sip-heading" id="sip-heading" tabIndex={-1}>
-        Series in progress
-      </h2>
+      <div className="sip-head">
+        <h2 className="sip-heading" id="sip-heading" tabIndex={-1}>
+          Series in progress
+        </h2>
+        <span className="sip-total">{rows.length} series</span>
+      </div>
       <ul className="sip-list">
         {rows.map((row) => (
           <Row key={row.series.id} row={row} onHide={onHide} />
