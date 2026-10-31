@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AuthorId, BookState, SeriesBook } from "../../api";
 import { aBook, bookUuid } from "../../testing/books";
 import {
+  inProgress,
   missingLabel,
   missingNumbers,
   nextAction,
@@ -104,6 +105,40 @@ describe("nextUp", () => {
       state: kept,
       fresh: true,
     });
+  });
+});
+
+describe("inProgress", () => {
+  const books = [aSeriesBook(UUID_A), aSeriesBook(UUID_B), aSeriesBook(UUID_C)];
+
+  it.each([
+    ["finished", "finished"],
+    ["being read", "reading"],
+  ] as const)(
+    "is true for a series with a book %s and one left",
+    (_condition, status) => {
+      const states = new Map([[UUID_A, state(status)]]);
+
+      expect(inProgress(books, states)).toBe(true);
+    },
+  );
+
+  it("is false for a series of one book", () => {
+    const states = new Map([[UUID_A, state("reading")]]);
+
+    expect(inProgress([books[0] as SeriesBook], states)).toBe(false);
+  });
+
+  it("is false once every book is finished", () => {
+    const states = new Map(books.map((b) => [b.uuid, state("finished")]));
+
+    expect(inProgress(books, states)).toBe(false);
+  });
+
+  it("is false for a series none of whose books are started", () => {
+    const kept = new Map([[UUID_A, state("unread", { format: "epub" })]]);
+
+    expect(inProgress(books, kept)).toBe(false);
   });
 });
 
