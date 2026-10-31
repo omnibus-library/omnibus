@@ -6,20 +6,20 @@ import { failing } from "../utils/api";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
-// The More stop tiles every shelf holding the book, and "Add to shelf" files it
-// on a hand-picked shelf or takes it off. `standalone-forest` is reserved here,
+// The Overview's Shelves row links every shelf holding the book, and "Add to
+// shelf" files it on a hand-picked shelf or takes it off. `standalone-forest` is reserved here,
 // so each test makes a shelf of its own and asserts about that shelf alone.
 
 const TARGET = FIXTURE_BOOKS.find((b) => b.slug === "standalone-forest")!;
 
-// Only read: the series test opens its More stop and writes nothing.
+// Only read: the series test opens its Overview and writes nothing.
 const SERIES_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "beta")!;
 
 // One unbroken run far wider than a picker tile: it fits only by breaking
 // mid-word.
 const LONG_SHELF_LABEL = "W".repeat(90);
 
-const NO_SHELF_TEXT = "Not on a shelf yet.";
+const NO_SHELF_TEXT = "On no shelves yet";
 
 test.describe("book detail shelves", () => {
   test.beforeAll("seed the library", async ({ request }) => {
@@ -41,13 +41,13 @@ test.describe("book detail shelves", () => {
       await bookDetailPage.topNav.assertDisplayed();
     });
 
-    await test.step("check the More stop and its button", async () => {
-      await expect(bookDetailPage.moreStop).toBeAttached();
+    await test.step("check the Shelves row and its button", async () => {
+      await expect(bookDetailPage.shelvesRow).toBeVisible();
       await expect(bookDetailPage.addToShelfButton).toBeVisible();
     });
   });
 
-  test("show Add to shelf beneath a series book's own shelf", async ({
+  test("show Add to shelf on a series book beside its series", async ({
     request,
     bookDetailPage,
   }) => {
@@ -57,13 +57,11 @@ test.describe("book detail shelves", () => {
       await bookDetailPage.goto(uuid);
     });
 
-    // The series shelf already fills the stop, so a book on no shelf gets the
-    // button alone rather than a big "Not on a shelf yet." under the covers.
-    await test.step("check the button sits beneath the series shelf", async () => {
+    // The series fan is the book's own shelf; filing it elsewhere is still
+    // on offer beside it.
+    await test.step("check the series and the button both show", async () => {
       await expect(bookDetailPage.seriesShelf).toBeVisible();
       await expect(bookDetailPage.addToShelfButton).toBeVisible();
-      await expect(bookDetailPage.moreStop).toContainText("On your shelves");
-      await expect(bookDetailPage.moreStop).not.toContainText(NO_SHELF_TEXT);
     });
   });
 
@@ -99,12 +97,15 @@ test.describe("book detail shelves", () => {
       );
     });
 
+    // A hand-picked shelf's chip carries the × that takes the book off.
     await test.step("check the shelf holds the book", async () => {
       await expect(tile).toBeChecked();
       await expect(tile).toContainText("1 book");
       await expect(onPage).toHaveCount(1);
-      await expect(onPage).toContainText("1 book");
-      await expect(onPage).toContainText("Hand-picked");
+      await expect(onPage).toHaveText(shelf.name);
+      await expect(
+        bookDetailPage.shelfTakeOffButton(shelf.name),
+      ).toBeAttached();
       await shelfPicker.assertShelfNameFits(shelf.name);
     });
   });
@@ -146,7 +147,7 @@ test.describe("book detail shelves", () => {
     });
   });
 
-  test("show a smart shelf holding the book as a tile", async ({
+  test("show a smart shelf holding the book on its Shelves row", async ({
     request,
     bookDetailPage,
     ownShelf,
@@ -165,12 +166,13 @@ test.describe("book detail shelves", () => {
       await bookDetailPage.goto(uuid);
     });
 
-    await test.step("check the shelf shows as a smart tile", async () => {
-      await expect(bookDetailPage.shelfTile(shelf.id)).toContainText(
-        shelf.name,
+    // Its rules hold the book, so its chip has no × to take it off.
+    await test.step("check the shelf shows as a smart one", async () => {
+      await expect(bookDetailPage.shelfTile(shelf.id)).toHaveText(shelf.name);
+      await expect(bookDetailPage.shelfTakeOffButton(shelf.name)).toHaveCount(
+        0,
       );
-      await expect(bookDetailPage.shelfTileKind(shelf.id)).toHaveText("Smart");
-      await expect(bookDetailPage.moreStop).not.toContainText(NO_SHELF_TEXT);
+      await expect(bookDetailPage.shelvesRow).not.toContainText(NO_SHELF_TEXT);
     });
   });
 
@@ -243,8 +245,7 @@ test.describe("book detail shelves", () => {
     // No reload: the page re-reads which shelves hold the book.
     await test.step("check the shelf is listed", async () => {
       await expect(onPage).toBeVisible();
-      await expect(onPage).not.toContainText("0 books");
-      await expect(bookDetailPage.moreStop).not.toContainText(NO_SHELF_TEXT);
+      await expect(bookDetailPage.shelvesRow).not.toContainText(NO_SHELF_TEXT);
     });
   });
 
@@ -324,7 +325,7 @@ test.describe("book detail shelves", () => {
 
   test.describe("the picker overlay", () => {
     // The overlay is `position: fixed`; an ancestor with a transform would pin
-    // it inside the More stop instead of over the page.
+    // it inside the tab panel instead of over the page.
     test("open the picker over the whole window", async ({
       request,
       bookDetailPage,
@@ -406,83 +407,6 @@ test.describe("book detail shelves", () => {
       await test.step("check the picker closed", async () => {
         await expect(shelfPicker.root).toHaveCount(0);
       });
-    });
-  });
-
-  test("open the picker over the whole window when the page snaps between stops", async ({
-    request,
-    readerBookDetailPage,
-    presetScrollStops,
-  }) => {
-    const { shelfPicker } = readerBookDetailPage;
-    const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-
-    // The switches that write the preference belong to the settings and book
-    // page specs; this one opens its book with a full load, so it reads the value.
-    await test.step("turn scroll stops on", async () => {
-      await presetScrollStops(true, "reader");
-    });
-
-    await test.step("open the book and jump to the last stop", async () => {
-      await readerBookDetailPage.goto(uuid);
-      // The mode is only known once the viewer resolves, so wait for the swap.
-      await expect(readerBookDetailPage.snapScroller).toBeAttached();
-      await readerBookDetailPage.jumpToSection("More");
-      await expect(readerBookDetailPage.sectionDot("More")).toHaveClass(
-        /\bon\b/,
-      );
-    });
-
-    await test.step("open the picker", async () => {
-      await readerBookDetailPage.openShelfPicker();
-    });
-
-    // A filter on the panel would make it the overlay's containing block and
-    // pin the scrim to the panel's 57% rather than the window.
-    await test.step("check the picker covers the window", async () => {
-      await expect.poll(() => shelfPicker.spansWindow()).toBe(true);
-    });
-
-    // The section label and next cue sit above the panel's stacking layer, so
-    // they would paint over the scrim and take clicks meant for the backdrop.
-    await test.step("check the stop's chrome sits under the scrim", async () => {
-      const label = readerBookDetailPage.sectionLabel("More");
-      await expect(label).toHaveCSS("pointer-events", "none");
-      await expect(label).toHaveCSS("opacity", "0");
-      await expect(readerBookDetailPage.nextStopCue("The files")).toHaveCSS(
-        "opacity",
-        "0",
-      );
-    });
-  });
-
-  test("hide the back-to-the-book pill while the picker is open", async ({
-    request,
-    readerBookDetailPage,
-    presetScrollStops,
-  }) => {
-    const { backToBookButton } = readerBookDetailPage;
-    const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-
-    await test.step("turn scroll stops off", async () => {
-      await presetScrollStops(false, "reader");
-    });
-
-    await test.step("open the book and jump to the last stop", async () => {
-      await readerBookDetailPage.goto(uuid);
-      await expect(readerBookDetailPage.flowScroller).toBeAttached();
-      await readerBookDetailPage.jumpToSection("More");
-      await expect(backToBookButton).toHaveClass(/\bon\b/);
-    });
-
-    await test.step("open the picker", async () => {
-      await readerBookDetailPage.openShelfPicker();
-    });
-
-    // The pill sits above the scrim, so it must not stay clickable through it.
-    await test.step("check the pill is out of reach", async () => {
-      await expect(backToBookButton).toHaveCSS("pointer-events", "none");
-      await expect(backToBookButton).toHaveCSS("opacity", "0");
     });
   });
 });

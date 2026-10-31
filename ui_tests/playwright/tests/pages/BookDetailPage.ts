@@ -102,7 +102,7 @@ export class BookDetailPage extends BasePage {
   readonly savedPassageCards: Locator;
   readonly savedPassagesEmptyMessage: Locator;
   readonly showMorePassagesButton: Locator;
-  readonly moreStop: Locator;
+  readonly shelvesRow: Locator;
   readonly seriesShelf: Locator;
   readonly seriesPageLink: Locator;
   readonly fromSameHandHeading: Locator;
@@ -186,8 +186,7 @@ export class BookDetailPage extends BasePage {
     this.savedPassageCards = page.getByTestId("highlight-card");
     this.savedPassagesEmptyMessage = page.getByTestId("highlights-empty");
     this.showMorePassagesButton = page.getByTestId("highlights-show-more");
-    this.moreStop = page.getByTestId("bdmq-more");
-    this.seriesShelf = page.getByTestId("bdmq-series-shelf");
+    this.seriesShelf = page.getByTestId("bp-series-fan");
     this.seriesPageLink = page.getByRole("link", { name: /series page/ });
     this.fromSameHandHeading = page.getByRole("heading", {
       name: "From the same hand",
@@ -218,8 +217,14 @@ export class BookDetailPage extends BasePage {
     this.progressRuler = page.getByRole("progressbar", {
       name: /^(Reading|Listening) progress$/,
     });
-    this.addToShelfButton = page.getByTestId("bdmq-add-to-shelf");
-    this.shelvesLoading = page.getByTestId("bdmq-shelves-loading");
+    this.addToShelfButton = page.getByTestId("bp-add-to-shelf");
+    // The Overview's Shelves row, under the description beside Genres and Tags.
+    this.shelvesRow = page
+      .getByRole("definition")
+      .filter({ has: this.addToShelfButton });
+    this.shelvesLoading = page
+      .getByRole("status")
+      .filter({ hasText: "Checking your shelves" });
   }
 
   protected get readyLocator(): Locator {
@@ -298,14 +303,17 @@ export class BookDetailPage extends BasePage {
     );
   }
 
-  /** The More stop's tile for a shelf that holds the book. */
+  /** The Shelves row's link to a shelf that holds the book. */
   shelfTile(shelfId: number): Locator {
-    return this.page.getByTestId(`bdmq-shelf-${shelfId}`);
+    return this.page.getByTestId(`bp-shelf-${shelfId}`);
   }
 
-  /** The Hand-picked or Smart facet on a shelf's tile. */
-  shelfTileKind(shelfId: number): Locator {
-    return this.shelfTile(shelfId).locator(".shv-facet--kind");
+  /** The × on a hand-picked shelf's chip; a smart shelf's rules hold the book, so it has none. */
+  shelfTakeOffButton(shelfName: string): Locator {
+    return this.shelvesRow.getByRole("button", {
+      name: `Take off ${shelfName}`,
+      exact: true,
+    });
   }
 
   /** The book's details table: label and value rows such as `Added`. */
@@ -384,7 +392,7 @@ export class BookDetailPage extends BasePage {
     await this.editMetadataLink.click();
   }
 
-  /** Opens the picker from the More stop and waits for it to list shelves. */
+  /** Opens the picker from the Shelves row and waits for it to list shelves. */
   async openShelfPicker(): Promise<void> {
     await this.addToShelfButton.click();
     await this.shelfPicker.root.waitFor();

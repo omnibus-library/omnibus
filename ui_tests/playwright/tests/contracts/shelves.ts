@@ -11,8 +11,8 @@ export const shelvesUrls = {
   create: /\/api\/rpc\/shelves\/create(?:\?|$)/,
   update: /\/api\/rpc\/shelves\/update(?:\?|$)/,
   delete: /\/api\/rpc\/shelves\/delete(?:\?|$)/,
-  addBooks: /\/api\/rpc\/shelves\/add-books(?:\?|$)/,
-  removeBook: /\/api\/rpc\/shelves\/remove-book(?:\?|$)/,
+  addBooks: /\/api\/shelves\/\d+\/books(?:\?|$)/,
+  removeBook: /\/api\/shelves\/\d+\/books\/[^/?]+(?:\?|$)/,
   page: /\/api\/rpc\/shelves\/page(?:\?|$)/,
 };
 
@@ -41,10 +41,22 @@ export const shelves = {
     post(shelvesUrls.delete, id === undefined ? undefined : { id }),
 
   addBooks: (id?: number, bookUuids?: string[]): ExpectMutationOptions =>
-    post(shelvesUrls.addBooks, bookUuids && { id, book_uuids: bookUuids }),
+    post(
+      id === undefined
+        ? shelvesUrls.addBooks
+        : new RegExp(`/api/shelves/${id}/books(?:\\?|$)`),
+      bookUuids && { book_uuids: bookUuids },
+      204,
+    ),
 
-  removeBook: (id?: number, bookUuid?: string): ExpectMutationOptions =>
-    post(shelvesUrls.removeBook, bookUuid && { id, book_uuid: bookUuid }),
+  removeBook: (id?: number, bookUuid?: string): ExpectMutationOptions => ({
+    method: "DELETE",
+    url:
+      id === undefined || bookUuid === undefined
+        ? shelvesUrls.removeBook
+        : new RegExp(`/api/shelves/${id}/books/${bookUuid}(?:\\?|$)`),
+    expectedStatus: 204,
+  }),
 
   /** The shelf list read behind the `/shelves` index. */
   list: (): ForcedRequest => ({ method: "GET", url: shelvesUrls.list }),
