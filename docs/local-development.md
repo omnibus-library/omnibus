@@ -4,14 +4,13 @@ Everything you need to build, run, and test Omnibus from source. If you only
 want to *run* a server, use [Docker](docker.md) instead — this page is for
 working on the code.
 
-Omnibus is a Rust workspace ([Axum](https://github.com/tokio-rs/axum) +
-[Dioxus](https://dioxuslabs.com/)) over SQLite, plus a native SwiftUI iOS app
-and an Android WebView shell.
+Omnibus is a Rust server ([Axum](https://github.com/tokio-rs/axum)) over SQLite,
+a React web client in `frontend-js/`, and a native SwiftUI iOS app.
 
 ## Prerequisites
 
 [Nix](https://wiki.nixos.org/wiki/NixOS_Wiki) pins every dependency — the Rust
-toolchain, SQLite, Node, mobile SDKs. **Always work inside the dev shell.**
+toolchain, SQLite, Node, pnpm. **Always work inside the dev shell.**
 
 ```bash
 nix develop                 # slim default shell (spawns bash)
@@ -28,20 +27,26 @@ Simulator installed, and `jq` on `PATH`.
 shell, so they run straight from the slim `default` shell:
 
 ```bash
-just serve       # full stack in Zellij — server + web + iOS + Android + Playwright panes
+just serve       # full stack in Zellij — server + React + iOS + Playwright panes
 just serve-pc    # …the same stack via process-compose
-just dev-up      # just the web server: port-walks, seeds the admin user
+just dev-up      # just the server, serving the React build: port-walks, seeds the admin user
 just dev-status  # what's running, on which port
-just dev-bounce  # cleanly restart a wedged dev server (e.g. after a migration)
+just dev-bounce  # restart the dev server — after a Rust change or a migration
 just dev-down    # stop it
+just react       # the React client under Vite, hot-reloading, proxying /api to the dev server
 ```
 
-Prefer to drive the pieces yourself?
+Prefer to drive the pieces yourself? From `nix develop .#web`:
 
 ```bash
-dx serve --platform web -p omnibus   # fullstack SSR + WASM at http://localhost:8080
-cargo run -p omnibus                 # server only (native backend) at http://0.0.0.0:3000
+pnpm --dir frontend-js install
+pnpm --dir frontend-js run build                              # the web client, into frontend-js/dist
+OMNIBUS_REACT_DIR=$PWD/frontend-js/dist cargo run -p omnibus  # the server on $PORT, serving it at /
 ```
+
+The server doesn't rebuild itself: a Rust change needs a restart
+(`just dev-bounce`). Without `OMNIBUS_REACT_DIR` the API still answers and `/`
+is a 503.
 
 Every worktree gets its own 10-port window, so two checkouts can serve at once
 without colliding. Both launchers publish the port they picked to
@@ -50,16 +55,17 @@ without colliding. Both launchers publish the port they picked to
 ## Nix shells
 
 The flake exposes purpose-built shells so daily cargo work doesn't pull in
-Playwright + mobile + audit tooling. Opt into a heavier shell only when you need
+Node, Playwright and audit tooling. Opt into a heavier shell only when you need
 it (the `just` recipes above pick the right one for you):
 
 | Shell | When to use |
 |---|---|
 | `default` | Daily `cargo` / `clippy` / `test` / editor — what direnv auto-loads |
-| `.#web` | `dx serve --platform web`, `just dev-up`, anything that bundles WASM |
+| `.#web` | `just dev-up`, `just react`, anything that builds `frontend-js/` (node, pnpm) |
 | `.#e2e` | `pnpm exec playwright test` (the Chromium bundle lives here) |
-| `.#mobile` | Android builds (Rust cross-targets + JDK + Android NDK detect) — the native iOS app needs no Nix shell |
 | `.#audit` | `cargo audit` / `cargo deny` |
+
+The native iOS app needs no Nix shell.
 
 ## Configuration
 
@@ -91,8 +97,8 @@ tests fail with a pointer to it when they're missing.
 ## Tests & lint
 
 ```bash
-just test    # full matrix: db + server + frontend(--features server) + shared, then the script suites
-just lint    # cargo fmt --check + clippy across the crate/feature matrix + stylelint
+just test    # full matrix: db + server + shared + mcp + mock-kobo, then the script suites
+just lint    # cargo fmt --check + clippy, mcp and mock-kobo included
 just check   # lint then test
 
 just coverage       # lcov + per-file summary via cargo-llvm-cov over nextest
@@ -110,15 +116,12 @@ just openapi-gen  # rewrite openapi/openapi.json
 just openapi      # regenerate, then browse it as an API reference on a local port
 ```
 
-Per-crate, when you want a tighter loop. Note that `cargo test --workspace`
-**skips** the frontend rpc/page tests (they need `--features server` to compile
-the server-function bodies) and `mobile` (out of default-members, no tests), so
-run each crate explicitly:
+Per-crate, when you want a tighter loop. `cargo test` alone skips `mcp` and
+`mock-kobo` (out of default-members), so name them explicitly:
 
 ```bash
 cargo test -p omnibus                              # /api/* REST integration tests
 cargo test -p omnibus-db                           # db + scanner + sync tests
-cargo test -p omnibus-frontend --features server   # rpc + page tests
 cargo test -p omnibus-shared                       # shared serde / ebook / progress tests
 cargo test -p omnibus-mcp                          # MCP tool layer (out of default-members)
 cargo test -p omnibus-mock-kobo                    # fake Kobo firmware tests (out of default-members)
@@ -126,8 +129,8 @@ cargo test -p omnibus-mock-kobo                    # fake Kobo firmware tests (o
 
 ### Web E2E (Playwright)
 
-`just e2e-ci` runs the suite the way CI does: it bundles the app, starts its
-standalone server on a scratch database, runs the specs and stops the server.
+`just e2e-ci` runs the suite the way CI does: it builds the server and the React
+client, starts the server on a scratch database, runs the specs and stops the server.
 Pass spec paths (relative to `ui_tests/playwright`) to run a subset:
 
 ```bash
@@ -146,18 +149,15 @@ pnpm exec playwright test
 just lint-ts                # biome check + tsc --noEmit
 ```
 
-## Mobile apps
+## iOS app
 
-The two mobile surfaces are separate apps built in different ways: Android is
-the Dioxus shell in the `mobile/` crate, iOS is a native SwiftUI project under
-`omnibus-ios/`. Both talk to a running Omnibus server, so **start the server
-first** (`just serve` handles this).
+The native SwiftUI app under `omnibus-ios/` talks to a running Omnibus server,
+so **start the server first** (`just serve` handles this). The Android
+app lives in its own repo, `omnibus-android`.
 
-In both multiplexers only the server starts on its own — the `android`, `ios`,
+In both multiplexers only the server starts on its own — the `react`, `ios`,
 and `playwright` panes are preloaded but idle (press Enter in the Zellij pane,
 or select it and press F7 in process-compose).
-
-### iOS — native SwiftUI app (`omnibus-ios/`)
 
 An Xcode project (`omnibus-ios/omnibus.xcodeproj`, scheme `omnibus`) rather than
 a Cargo crate — it speaks the same `/api/*` REST surface, and `cargo` never
@@ -182,56 +182,27 @@ on whatever device it runs against. That pin overrides the dedicated device
 and so takes the reset itself — point it at a disposable simulator, never at
 the one above.
 
-### Android — Dioxus shell (`mobile/` crate)
-
-A thin native shell hosting the system WebView over the shared Dioxus frontend,
-pointed at `http://127.0.0.1:3000`. The `android` pane runs
-`dx serve --platform android --package omnibus-mobile` inside the `.#mobile`
-shell; start it yourself with the same command once the emulator is up. One-time
-setup:
-
-1. **Install Android Studio** — [developer.android.com/studio](https://developer.android.com/studio)
-2. **Install the NDK** — **Tools → SDK Manager → SDK Tools → check "NDK (Side by side)" → Apply**
-3. **Create an emulator** — **Tools → Device Manager → Create Virtual Device** (API 33+ recommended), then start it.
-4. **Enter the mobile dev shell** — it auto-detects `ANDROID_HOME` / `ANDROID_NDK_HOME`:
-
-   ```bash
-   nix develop .#mobile --command zsh
-   echo $ANDROID_HOME       # e.g. /Users/<you>/Library/Android/sdk
-   echo $ANDROID_NDK_HOME   # e.g. …/sdk/ndk/28.x.x
-   ```
-
-   If they're empty, set them manually:
-
-   ```bash
-   export ANDROID_HOME=$HOME/Library/Android/sdk
-   export ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$(ls $ANDROID_HOME/ndk | tail -1)
-   ```
-
-5. If the app can't reach the server after boot, run `adb reverse tcp:3000 tcp:3000`.
-
 ## Project layout
 
-Seven-crate Cargo workspace:
+Five-crate Cargo workspace:
 
 | Crate | Responsibility |
 |---|---|
 | `shared/` | serde types shared across crates |
 | `db/` | data layer, indexer, migrations |
-| `frontend/` | Dioxus UI + server functions |
-| `server/` | fullstack binary + REST router |
-| `mobile/` | thin native Android shell over the system WebView |
+| `server/` | the `omnibus` binary: REST router, Kobo, KOReader, OPDS, the web client at `/` |
 | `mcp/` | MCP tool layer over the `/api/*` surface (out of default-members) |
 | `mock-kobo/` | fake Kobo e-reader that syncs against the Kobo routes (out of default-members) |
 
-Alongside it, `omnibus-ios/` holds the native SwiftUI iOS client — an Xcode
+Alongside it, `frontend-js/` holds the React web client (Vite + pnpm, with its
+own checks: biome, tsc, vitest) and `omnibus-ios/` the native SwiftUI iOS client — an Xcode
 project, not a Cargo crate, so `cargo` / `just lint` / `just test` never touch
 it. `site/` is the marketing site published to GitHub Pages (static HTML, no
 build step).
 
 ## Conventions
 
-Deeper architecture — crates, request flows, mobile auth — is in
+Deeper architecture — crates, request flows, the REST contract — is in
 [architecture.md](architecture.md), and the iOS app's design in [ios.md](ios.md).
 Per-module detail lives in each file's own `//!` doc; `just modules <dir>`
 prints a directory's map from them. The rules contributors follow live under
@@ -246,7 +217,6 @@ prints a directory's map from them. The rules contributors follow live under
 | Playwright E2E conventions | [04-playwright.md](../.claude/rules/04-playwright.md) |
 | Rust style | [05-rust-style.md](../.claude/rules/05-rust-style.md) (rationale in [style-guide.md](style-guide.md)) |
 | SQL migrations | [06-migrations.md](../.claude/rules/06-migrations.md) |
-| SSR/WASM hydration parity | [07-hydration.md](../.claude/rules/07-hydration.md) |
 | Offline write queueing | [08-offline-writes.md](../.claude/rules/08-offline-writes.md) |
 | Content validators / ETags | [09-content-validators.md](../.claude/rules/09-content-validators.md) |
 | Serving bytes: `serve_file`, preconditions, `Vary` | [09a-serving-validated-bytes.md](../.claude/rules/09a-serving-validated-bytes.md) |

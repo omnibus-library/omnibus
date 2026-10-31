@@ -20,9 +20,7 @@ license = "MIT"
 # when they need extra features beyond the workspace baseline). Only deps
 # that appear in 2+ crates at the same version are centralized here — single-
 # crate deps stay in their own Cargo.toml, and framework-specific deps with
-# divergent features (sqlx, axum) are intentionally left per-crate. Dioxus is
-# the exception: its version must move in lockstep with the `dx` CLI, so it
-# lives here and each crate adds its own features on top.
+# divergent features (sqlx, axum) are intentionally left per-crate.
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

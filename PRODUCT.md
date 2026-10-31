@@ -6,7 +6,7 @@
 
 web
 
-The web app has two clients on one design system: the Dioxus app (`frontend/`, the default) and the opt-in React client (`frontend-js/`). The native iOS app keeps its own product record in [omnibus-ios/PRODUCT.md](omnibus-ios/PRODUCT.md). The Android app is a WebView shell (`mobile/`) around this web app.
+The web app is the React client in `frontend-js/`. The native iOS app keeps its own product record in [omnibus-ios/PRODUCT.md](omnibus-ios/PRODUCT.md). The Android app lives in its own repo, `omnibus-android`.
 
 ## Users
 
@@ -20,7 +20,7 @@ Omnibus indexes the ebooks and audiobooks already on the owner's disk and gives 
 
 - **One book, every format.** An ebook and its audiobook are one record. Read forty pages, listen for an hour, and the position carries across: through the reader's own sync points first, then matching chapters, and by percentage when neither exists. Linking formats is opt-in.
 - **Your files, untouched.** The scanner only reads the library folders. Metadata edits are saved in the database and applied when a book is exported or sent out.
-- **Reach to every device.** A native iOS app, Kobo sync that serves KEPUB, KOReader progress sync, Send to Kindle over the owner's SMTP, and an Android shell.
+- **Reach to every device.** A native iOS app, Kobo sync that serves KEPUB, KOReader progress sync, Send to Kindle over the owner's SMTP, and an Android app.
 - **Talk to your library.** A built-in MCP server lets the owner's own AI agent search, curate, merge and repair the library. It is off until an admin enables it.
 
 ## Operating Context
@@ -29,7 +29,7 @@ Omnibus indexes the ebooks and audiobooks already on the owner's disk and gives 
 - Libraries are existing folders, often Calibre-organized, mounted into the container. The Author/Title layout scans as-is, metadata is read from inside each file rather than Calibre's `metadata.opf`, and nothing on disk is moved or renamed.
 - Used daily for reading (EPUB, PDF, CBZ) and listening (M4B, MP3, streamed through an HLS transcode), plus browsing by author, series, tag and shelf.
 - Physical books are tracked too: scan an ISBN to check in a copy you own, or add it to a wishlist.
-- The React client, the iOS app and the MCP server speak the REST API under `/api/`, whose OpenAPI document is the contract. The default Dioxus client calls its own server functions (`/api/rpc/*`), which sit outside that contract.
+- The web client, the iOS app and the MCP server speak the REST API under `/api/`, whose OpenAPI document is the contract.
 
 ## Capabilities and Constraints
 
@@ -42,7 +42,7 @@ Omnibus indexes the ebooks and audiobooks already on the owner's disk and gives 
 
 ## Brand Commitments
 
-- The name is **Omnibus**. The brand mark is the stoat (`frontend/assets/omnibus-stoat.png`), shown in the top bar and on the sign-in pages.
+- The name is **Omnibus**. The brand mark is the stoat (`frontend-js/src/assets/omnibus-stoat.png`), shown in the top bar and on the sign-in pages.
 - Tagline: "A library that belongs entirely to you."
 - The voice is plain and warm, writing to a reader rather than an operator, and it never oversells.
 
