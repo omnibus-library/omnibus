@@ -10,7 +10,12 @@ import AVFoundation
 import Combine
 import MediaPlayer
 import Observation
+import OSLog
 import SwiftUI
+
+/// Each remote seek command as it arrives. A car's buttons can't be watched any
+/// other way, and this says whether a press reached a seek handler at all.
+private let remoteCommandLog = Logger(subsystem: "com.omnibus.mobile", category: "RemoteCommands")
 
 /// Sleep-timer state, mirroring the web mobile player's `SleepState` so the
 /// two clients' sleep sheets offer the same contract.
@@ -1458,19 +1463,34 @@ final class AudioPlayer {
             }
             return .success
         }
-        // The intervals are what CarPlay and the lock screen draw on the skip
-        // buttons; the track commands carry hardware presses (see `RemoteTransport`).
+        // The intervals are what CarPlay and the lock screen draw; a hardware
+        // press can arrive on any of these commands (see `RemoteTransport`).
         center.skipForwardCommand.preferredIntervals = [NSNumber(value: RemoteTransport.forwardSeconds)]
         center.skipBackwardCommand.preferredIntervals = [NSNumber(value: RemoteTransport.backSeconds)]
-        let seekers: [(MPRemoteCommand, RemoteTransport)] = [
+        let transports: [(MPRemoteCommand, RemoteTransport)] = [
             (center.skipForwardCommand, .skipForward),
             (center.skipBackwardCommand, .skipBackward),
             (center.nextTrackCommand, .nextTrack),
             (center.previousTrackCommand, .previousTrack),
+            (center.seekForwardCommand, .seekForward),
+            (center.seekBackwardCommand, .seekBackward),
         ]
-        for (command, transport) in seekers {
-            command.addTarget { [weak self] _ in
-                Task { @MainActor in self?.skip(transport.seekDelta) }
+        for (command, transport) in transports {
+            command.addTarget { [weak self] event in
+                // Read before the hop, so a main-thread stall can't change the decision.
+                let now = ContinuousClock.now
+                let seekType = (event as? MPSeekCommandEvent)?.type
+                let began = seekType == .beginSeeking
+                let phase = seekType == nil ? "" : began ? " begin" : " end"
+                remoteCommandLog.notice("\(transport.rawValue + phase, privacy: .public)")
+                // A seek command is a begin and an end: it moves once, on release.
+                Task { @MainActor in
+                    if began {
+                        self?.remotePresses.began(transport, at: now)
+                    } else {
+                        self?.remoteSeek(transport, at: now)
+                    }
+                }
                 return .success
             }
         }
@@ -1480,6 +1500,18 @@ final class AudioPlayer {
             Task { @MainActor in await self?.seekWithinChapter(to: event.positionTime) }
             return .success
         }
+    }
+
+    /// Which remote commands are one press.
+    private var remotePresses = RemotePressFilter()
+
+    /// Move for a remote seek command, unless it's the second command of one press.
+    private func remoteSeek(_ transport: RemoteTransport, at now: ContinuousClock.Instant) {
+        guard remotePresses.shouldMove(transport, at: now) else {
+            remoteCommandLog.notice("\(transport.rawValue, privacy: .public) suppressed, same press")
+            return
+        }
+        skip(transport.seekDelta)
     }
 
     /// A play command from outside the app — a car's auto-play on connect, its

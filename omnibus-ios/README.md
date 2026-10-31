@@ -451,16 +451,16 @@ stitched into one `AVMutableComposition` so the timeline and seeking stay
 continuous. `MPNowPlayingInfoCenter` + `MPRemoteCommandCenter` give lock-screen,
 Control Center, AirPlay, and CarPlay transport.
 
-**Every remote seek button seeks; none changes chapter.** Steering-wheel buttons,
-AirPods presses and most head units send next/previous-track, which used to jump
-whole chapters — in a car, with no screen to show where the listener landed. Now
-all four commands seek −15 / +30 (`RemoteTransport`), as Audible's do, and
-chapters change only from a control that names them. Calls and lost outputs are
-handled too (`AudioSessionEvent`): a call pauses and resumes when it ends, and a
-CarPlay, Bluetooth or headphone disconnect pauses and stays paused — including
-across a call that was already in progress, so a car switched off mid-call never
-starts the book on the phone's speaker. The CarPlay scene (`omnibus/CarPlay/`,
-described in `docs/ios.md`) drives this same player.
+**Every remote seek button seeks; none changes chapter.** AirPods presses and many
+head units send next/previous-track, which used to jump whole chapters — in a car,
+with no screen to show where the listener landed. Now all six track, skip and seek
+commands seek −15 / +30 (`RemoteTransport`), as Audible's do, a seek command moving
+once on release, and chapters change only from a control that names them. Calls
+and lost outputs are handled too (`AudioSessionEvent`): a call pauses and resumes
+when it ends, and a CarPlay, Bluetooth or headphone disconnect pauses and stays
+paused — including across a call that was already in progress, so a car switched
+off mid-call never starts the book on the phone's speaker. The CarPlay scene
+(`omnibus/CarPlay/`, described in `docs/ios.md`) drives this same player.
 
 **The chapter is the unit of the player, Audible-style.** The layout follows
 Audible's, top to bottom: artwork, then the chapter name left-aligned behind a
