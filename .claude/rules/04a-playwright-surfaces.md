@@ -167,7 +167,7 @@ then the epub reader's `.rd-selection-popover` and its `Highlight <color>`
 swatches appear. The drawers, note composer and quote panel are the epub
 reader's (`reader-highlights-drawer`, `reader-bookmarks-drawer`,
 `reader-*-row`, `reader-bookmark-add`, `reader-note-composer`); `Escape` on
-the reader root closes them. Every turn POSTs `/api/rpc/progress` with
+the reader root closes them. Every turn POSTs `/api/progress` with
 `epub_cfi: "pdf-page:N"`; opening the reader POSTs nothing for position (the
 ready report is treated as already saved) but does write read status `reading`
 on an unread book. Pre-set `flatland` to `reading` in `beforeAll` (the comic

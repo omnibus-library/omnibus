@@ -83,9 +83,7 @@ const EDITORIAL_APPLIED = {
   ),
   // The section itself got the sheet: the Aa panel's chip preview loads the
   // same file in the parent document, so the request log alone proves nothing.
-  fontsHref: expect.stringMatching(
-    /\/assets\/reader-fonts\/reader-fonts\.css$/,
-  ),
+  fontsHref: expect.stringMatching(/\/reader-fonts\/reader-fonts\.css$/),
 };
 
 test.describe("epub reader", () => {
@@ -100,7 +98,7 @@ test.describe("epub reader", () => {
       await epubReaderPage.goto(uuid);
     });
 
-    // Only the chrome: epub.js may not paint headlessly, the chrome is SSR.
+    // Only the chrome: epub.js may not paint headlessly, the chrome is React's.
     await test.step("check the chrome shows", async () => {
       await epubReaderPage.assertDisplayed();
       // #2249: the counter never opens on a `Ch 0` that cannot reach its total.
@@ -318,6 +316,7 @@ test.describe("epub reader", () => {
       await test.step("open the book page with JSZip held back", async () => {
         await epubReaderPage.holdBackJsZip();
         await bookDetailPage.goto(uuid);
+        await bookDetailPage.openTab("Files & Details");
       });
 
       // A client-side navigation with no mutation, so follow the route change.
@@ -1164,7 +1163,7 @@ test.describe("epub reader", () => {
       await test.step("check the face comes from this origin, not Google", async () => {
         expect(
           fontRequests.some((u) =>
-            u.includes("/assets/reader-fonts/InstrumentSerif-Regular.woff2"),
+            u.includes("/reader-fonts/InstrumentSerif-Regular.woff2"),
           ),
           `reader face must be served from this origin:\n${fontRequests.join("\n")}`,
         ).toBe(true);

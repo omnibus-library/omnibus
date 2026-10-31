@@ -1,6 +1,6 @@
 import type { Locator, Page } from "@playwright/test";
-import { bookmarksUrls } from "../contracts/bookmarks";
-import { isPostTo } from "../utils/api";
+import { bookmarks } from "../contracts/bookmarks";
+import { isResponseTo } from "../utils/api";
 import { BaseComponent } from "./BaseComponent";
 
 /** The bookmarks drawer, shared by the EPUB reader and the PDF reader. */
@@ -27,7 +27,7 @@ export class BookmarksDrawerComponent extends BaseComponent {
 
   /** Bookmarks the current page, then waits for the server's answer. */
   async add(): Promise<void> {
-    const created = this.page.waitForResponse(isPostTo(bookmarksUrls.create));
+    const created = this.page.waitForResponse(isResponseTo(bookmarks.create()));
     await this.addButton.click();
     await created;
   }

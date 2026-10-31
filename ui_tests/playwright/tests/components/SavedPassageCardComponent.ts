@@ -1,6 +1,6 @@
 import type { Locator, Page } from "@playwright/test";
-import { highlightsUrls } from "../contracts/highlights";
-import { isPostTo } from "../utils/api";
+import { highlights } from "../contracts/highlights";
+import { isResponseTo } from "../utils/api";
 import { BaseComponent } from "./BaseComponent";
 
 /** One saved passage on the book detail page: its note, link and actions. */
@@ -36,7 +36,9 @@ export class SavedPassageCardComponent extends BaseComponent {
 
   /** Clicks delete and waits for the request to answer, whatever it says. */
   async delete(): Promise<void> {
-    const deleted = this.page.waitForResponse(isPostTo(highlightsUrls.delete));
+    const deleted = this.page.waitForResponse(
+      isResponseTo(highlights.delete()),
+    );
     await this.deleteButton.click();
     await deleted;
   }

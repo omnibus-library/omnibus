@@ -94,7 +94,8 @@ export class ListenPage extends BasePage {
     this.sleepScrim = page.locator(".lp-scrim");
     this.syncHereButton = page.getByTestId("listen-sync-here");
     this.scrubTimes = page.getByTestId("listen-scrub-times");
-    this.openPanel = page.locator(".lp-panel:focus-within");
+    // The panel's dialog is its scrim, which takes focus when it opens.
+    this.openPanel = page.locator('[role="dialog"]:focus-within');
   }
 
   /** The player once a book resolves, or the notice that none does. */
@@ -135,19 +136,25 @@ export class ListenPage extends BasePage {
     await this.open(`/listen/${bookUuid}`);
   }
 
-  /** Waits until the player has been wired to its book, when its controls can be driven. */
+  /** Waits until the player has handed its book's audio to the element, when its controls can be driven. */
   async waitUntilPlayerReady(): Promise<void> {
     await this.preparingOverlay.waitFor({ state: "detached" });
     await this.page.waitForFunction(
-      () => Reflect.get(window, "OmnibusAudio")?._mode === "direct",
+      () => document.querySelector("audio")?.hasAttribute("src") === true,
       undefined,
       { timeout: 10_000 },
     );
   }
 
-  /** Opens the book and leaves for the library, so the dock takes over. */
-  async openThenBrowseAway(bookUuid: string): Promise<void> {
-    await this.goto(bookUuid);
+  /**
+   * Opens the book and leaves for the library, so the dock takes over. Pass
+   * `settle: false` while a request is held, since the page never idles then.
+   */
+  async openThenBrowseAway(
+    bookUuid: string,
+    { settle = true } = {},
+  ): Promise<void> {
+    await (settle ? this.goto(bookUuid) : this.gotoUnsettled(bookUuid));
     await this.waitUntilPlayerReady();
     await this.browseToLibrary();
   }
@@ -161,20 +168,16 @@ export class ListenPage extends BasePage {
     await this.page.waitForURL(/\/$/);
   }
 
-  /** Opens another audiobook by a client-side link click, which keeps the player mounted. */
+  /**
+   * Opens another audiobook by a client-side route change, which keeps the
+   * player mounted. The router follows `popstate`, so pushing the entry and
+   * announcing it is the hop an in-app link makes.
+   */
   async switchToAudiobook(bookUuid: string): Promise<void> {
-    // The anchor needs visible content and a fixed spot, or the click's
-    // actionability check fails on its collapsed 0x0 box.
-    await this.page.evaluate((href) => {
-      const link = document.createElement("a");
-      link.href = href;
-      link.id = "__test-spa-nav";
-      link.textContent = "spa-nav";
-      link.style.cssText =
-        "position:fixed;top:0;left:0;padding:8px;background:#000;color:#fff;z-index:99999;";
-      document.body.appendChild(link);
+    await this.page.evaluate((path) => {
+      window.history.pushState({}, "", path);
+      window.dispatchEvent(new PopStateEvent("popstate"));
     }, `/listen/${bookUuid}`);
-    await this.page.locator("#__test-spa-nav").click();
   }
 
   async openBookDetail(title: string): Promise<void> {
@@ -228,11 +231,9 @@ export class ListenPage extends BasePage {
     await setRange(this.seekSlider, seconds, { commit: true });
   }
 
-  /** Seeks through the shim call a user's seek takes. */
+  /** Seeks the way a user does, by releasing the scrubber; it moves in whole seconds. */
   async seekTo(seconds: number): Promise<void> {
-    await this.page.evaluate((target) => {
-      Reflect.get(window, "OmnibusAudio").seek(target);
-    }, seconds);
+    await this.releaseSeek(seconds);
   }
 
   /**
@@ -247,6 +248,11 @@ export class ListenPage extends BasePage {
     });
   }
 
+  /** Waits out two of the stall watchdog's half-second polls, so a badge it wrongly raised would show. */
+  async waitOutWatchdogPolls(): Promise<void> {
+    await this.page.waitForTimeout(1_200);
+  }
+
   /** Waits out the window in which a sleep timer that wrongly re-armed would restart playback. */
   async waitOutSleepRearm(): Promise<void> {
     await this.page.waitForTimeout(2_500);
@@ -258,13 +264,24 @@ export class ListenPage extends BasePage {
 
   /** The audio element's state, or null while there is none. */
   async audioState(): Promise<AudioState | null> {
-    return this.page.evaluate(() => {
+    return this.page.evaluate(async () => {
       const audio = document.querySelector("audio");
       if (!audio) return null;
       // A multi-part book swaps `src` at a part boundary and `currentTime`
-      // restarts there, so the book position adds the shim's offset for the part.
-      const shim = Reflect.get(window, "OmnibusAudio");
-      const offset = shim?._cumOffsets?.[shim?._index ?? 0] ?? 0;
+      // restarts there, so the book position adds the parts before this one,
+      // read off the manifest the part's own URL belongs to.
+      const src = audio.getAttribute("src") ?? "";
+      const part = /^(\/api\/audiobooks\/[^/]+)\/parts\/\d+(\?.*)?$/.exec(src);
+      let offset = 0;
+      if (part) {
+        const manifest: {
+          parts?: { url: string; duration_seconds: number }[];
+        } = await (await fetch(`${part[1]}/manifest${part[2] ?? ""}`)).json();
+        for (const each of manifest.parts ?? []) {
+          if (each.url === src) break;
+          offset += each.duration_seconds;
+        }
+      }
       return {
         paused: audio.paused,
         position: offset + audio.currentTime,
@@ -277,13 +294,6 @@ export class ListenPage extends BasePage {
   /** The book position in seconds, or NaN while there is no audio element, which no comparison satisfies. */
   async audioPosition(): Promise<number> {
     return (await this.audioState())?.position ?? Number.NaN;
-  }
-
-  /** Whether the shim the dock's toggle drives exposes `toggle`. */
-  async audioShimCanToggle(): Promise<boolean> {
-    return this.page.evaluate(
-      () => typeof Reflect.get(window, "OmnibusAudio")?.toggle === "function",
-    );
   }
 
   /** The scrubber's position in seconds. */
@@ -334,27 +344,28 @@ export class ListenPage extends BasePage {
     );
   }
 
-  /** The element reports playback starting, as its listener does. */
-  async reportPlaying(): Promise<void> {
-    await this.fireAudioCallback("__omnibusOnAudioPlay", 0);
-  }
-
-  /** The element pauses at `seconds` after a user's own action (#1972). */
+  /**
+   * The element reports a play and then a pause at `seconds`, after a user's
+   * own action (#1972). No real audio needs to play: the element's clock is
+   * moved first, then its `play` and `pause` events fire as playback would.
+   */
   async reportPause(seconds: number): Promise<void> {
-    await this.fireAudioCallback("__omnibusOnAudioPause", seconds, true);
-  }
-
-  /** The watchdog reports the element starting or ending a wait for data. */
-  async reportBuffering(buffering: boolean): Promise<void> {
-    await this.fireAudioCallback(
-      "__omnibusOnAudioBuffering",
-      buffering ? 1 : 0,
-    );
-  }
-
-  /** The watchdog reports no progress, which it does after 15 s without a `timeupdate`. */
-  async reportStall(): Promise<void> {
-    await this.fireAudioCallback("__omnibusOnAudioStalled", 0);
+    await this.page.evaluate(async (at) => {
+      const audio = document.querySelector("audio");
+      if (!audio) throw new Error("no audio element");
+      if (audio.readyState < HTMLMediaElement.HAVE_METADATA) {
+        await new Promise((done) =>
+          audio.addEventListener("loadedmetadata", done, { once: true }),
+        );
+      }
+      const seeked = new Promise((done) =>
+        audio.addEventListener("seeked", done, { once: true }),
+      );
+      audio.currentTime = at;
+      await seeked;
+      audio.dispatchEvent(new Event("play"));
+      audio.dispatchEvent(new Event("pause"));
+    }, seconds);
   }
 
   /** Seeds the speed this browser remembers for a book, before the page loads. */
@@ -385,28 +396,32 @@ export class ListenPage extends BasePage {
 
   /** Answers the saved-speed read with none, a state the server can only produce once per book and account. */
   async stubNoSavedSpeed(): Promise<void> {
-    await this.page.route(playbackUrls.savedRate, (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: "null",
-      }),
+    await this.page.route(playbackUrls.rate, (route) =>
+      route.request().method() === "GET"
+        ? route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: "null",
+          })
+        : route.fallback(),
     );
   }
 
   /** Lets the saved-speed read reach the server again after `stubNoSavedSpeed`. */
   async restoreSavedSpeedReads(): Promise<void> {
-    await this.page.unroute(playbackUrls.savedRate);
+    await this.page.unroute(playbackUrls.rate);
   }
 
   /** Answers the speed write with success without storing it, for tests that only read the display. */
   async stubPlaybackRateSaved(): Promise<void> {
     await this.page.route(playbackUrls.rate, (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: "{}",
-      }),
+      route.request().method() === "PUT"
+        ? route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: "{}",
+          })
+        : route.fallback(),
     );
   }
 
@@ -432,21 +447,5 @@ export class ListenPage extends BasePage {
       new RegExp(`/listen/${bookUuid}${query}$`),
     );
     await expect(this.chapterMap).toBeVisible();
-  }
-
-  private async fireAudioCallback(
-    callback: string,
-    ...values: (number | boolean)[]
-  ): Promise<void> {
-    await this.page.evaluate(
-      (call) => {
-        const fire = Reflect.get(window, call.callback);
-        if (typeof fire !== "function") {
-          throw new Error(`${call.callback} not installed`);
-        }
-        fire(...call.values);
-      },
-      { callback, values },
-    );
   }
 }

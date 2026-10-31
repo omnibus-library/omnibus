@@ -87,6 +87,20 @@ export function isPostTo(url: RegExp): (response: Response) => boolean {
     response.request().method() === "POST" && url.test(response.url());
 }
 
+/** A `waitForResponse` predicate matching the response to the request `contract` describes. */
+export function isResponseTo(
+  contract: ForcedRequest,
+): (response: Response) => boolean {
+  const { method, url } = contract;
+  return (response) =>
+    response.request().method() === method &&
+    (typeof url === "string"
+      ? response.url().includes(url)
+      : new RegExp(url.source, url.flags.replace(/[gy]/g, "")).test(
+          response.url(),
+        ));
+}
+
 /** A POST to `url`; `expectedBody`, when given, is checked exactly. */
 export function post(
   url: RegExp,

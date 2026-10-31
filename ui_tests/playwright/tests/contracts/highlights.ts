@@ -1,20 +1,27 @@
-import { type ExpectMutationOptions, post } from "../utils/api";
+import type { ExpectMutationOptions, MutationMethod } from "../utils/api";
 
-/** The highlight endpoints the reader posts to. */
+/** The highlight endpoints the reader writes to. */
 export const highlightsUrls = {
-  create: /\/api\/rpc\/highlights\/create(?:\?|$)/,
-  delete: /\/api\/rpc\/highlights\/delete(?:\?|$)/,
-  updateNote: /\/api\/rpc\/highlights\/update-note(?:\?|$)/,
-  updateColor: /\/api\/rpc\/highlights\/update-color(?:\?|$)/,
+  create: /\/api\/highlights(?:\?|$)/,
+  delete: /\/api\/highlights\/\d+(?:\?|$)/,
+  updateNote: /\/api\/highlights\/\d+\/note(?:\?|$)/,
+  updateColor: /\/api\/highlights\/\d+\/color(?:\?|$)/,
 };
+
+const write = (method: MutationMethod, url: RegExp): ExpectMutationOptions => ({
+  method,
+  url,
+});
 
 /** The writes the reader makes on highlights. */
 export const highlights = {
-  create: (): ExpectMutationOptions => post(highlightsUrls.create),
+  create: (): ExpectMutationOptions => write("POST", highlightsUrls.create),
 
-  delete: (): ExpectMutationOptions => post(highlightsUrls.delete),
+  delete: (): ExpectMutationOptions => write("DELETE", highlightsUrls.delete),
 
-  updateNote: (): ExpectMutationOptions => post(highlightsUrls.updateNote),
+  updateNote: (): ExpectMutationOptions =>
+    write("PATCH", highlightsUrls.updateNote),
 
-  updateColor: (): ExpectMutationOptions => post(highlightsUrls.updateColor),
+  updateColor: (): ExpectMutationOptions =>
+    write("PATCH", highlightsUrls.updateColor),
 };

@@ -450,6 +450,11 @@ export class BookDetailPage extends BasePage {
     return holdRequests(this.page, authorBlockUrls.author);
   }
 
+  /** Opens the book page's tab named `name`, such as "Files & Details". */
+  async openTab(name: string): Promise<void> {
+    await this.page.getByRole("tab", { name, exact: true }).click();
+  }
+
   /** Scrolls to `section` through its dot on the rail. */
   async jumpToSection(section: MarqueeSection): Promise<void> {
     await this.sectionDot(section).click();
