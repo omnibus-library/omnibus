@@ -19,14 +19,6 @@ from typing import Any, Iterable
 
 from .client import Account, ApiError, Client
 
-# Reads split across two surfaces for the same reason the app does: the REST
-# router carries what mobile needs, and the rest are Dioxus server functions.
-RPC_RATING = "/api/rpc/ratings/get"
-RPC_RATE = "/api/rpc/audiobooks/playback-rate/get"
-RPC_JOURNALS = "/api/rpc/journals/list"
-RPC_HIGHLIGHTS = "/api/rpc/highlights/list"
-RPC_BOOKMARKS = "/api/rpc/bookmarks/list"
-
 # The formats the Kobo download route can serve, as DOWNLOADABLE_PREDICATE in
 # db/src/kobo.rs spells them: an audiobook-only book is never synced.
 KOBO_FORMATS = frozenset({"EPUB", "CBZ", "PDF"})
@@ -48,7 +40,7 @@ class ActorState:
 
     # --- scalars ----------------------------------------------------------
     def rating(self, uuid: str) -> float | None:
-        rec = self._memo("rating", uuid, lambda: self.client.rpc(RPC_RATING, {"uuid": uuid}))
+        rec = self._memo("rating", uuid, lambda: self.client.get_json(f"/api/ratings/{uuid}"))
         return None if not rec else rec.get("stars")
 
     def read_status(self, uuid: str) -> str | None:
@@ -70,7 +62,7 @@ class ActorState:
         )
 
     def playback_rate(self, uuid: str) -> float | None:
-        rec = self._memo("rate", uuid, lambda: self.client.rpc(RPC_RATE, {"uuid": uuid}))
+        rec = self._memo("rate", uuid, lambda: self.client.get_json(f"/api/audiobooks/{uuid}/playback-rate"))
         return None if not rec else rec.get("playback_rate")
 
     # --- lists ------------------------------------------------------------
@@ -81,14 +73,14 @@ class ActorState:
         author filter is what keeps one agent's audit from passing on another
         agent's writing.
         """
-        rows = self._memo("journals", uuid, lambda: self.client.rpc(RPC_JOURNALS, {"book_uuid": uuid}) or [])
+        rows = self._memo("journals", uuid, lambda: self.client.get_json(f"/api/journals/book/{uuid}", []) or [])
         return [r for r in rows if self.client.user_id is None or r.get("author_id") == self.client.user_id]
 
     def highlights(self, uuid: str) -> list[dict[str, Any]]:
-        return self._memo("highlights", uuid, lambda: self.client.rpc(RPC_HIGHLIGHTS, {"book_uuid": uuid}) or [])
+        return self._memo("highlights", uuid, lambda: self.client.get_json(f"/api/highlights/book/{uuid}", []) or [])
 
     def bookmarks(self, uuid: str) -> list[dict[str, Any]]:
-        return self._memo("bookmarks", uuid, lambda: self.client.rpc(RPC_BOOKMARKS, {"book_uuid": uuid}) or [])
+        return self._memo("bookmarks", uuid, lambda: self.client.get_json(f"/api/bookmarks/book/{uuid}", []) or [])
 
     def shelves(self) -> list[dict[str, Any]]:
         """Shelves owned by this actor, wishlist included."""

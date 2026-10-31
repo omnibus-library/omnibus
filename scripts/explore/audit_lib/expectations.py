@@ -51,7 +51,7 @@ SCALAR_FAMILIES = frozenset({"rating", "read_status", "progress", "playback_rate
 SHELF_FAMILIES = frozenset({"shelf", "shelf_member"})
 
 # Nouns whose surfaces auto-write read status client-side (unread → reading on
-# open, → finished at the end): frontend/src/read_status_auto.rs, mounted by
+# open, → finished at the end): frontend-js/src/autoReadStatus.ts, used by
 # the reader, comic reader, and listen pages. Any entry about these nouns
 # claims the book's read-status slot, or every book an agent merely opened
 # comes back as an `unexpected read status 'reading'`.

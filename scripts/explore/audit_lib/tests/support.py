@@ -100,6 +100,9 @@ class FakeClient:
     def patch(self, path: str, payload: Any) -> tuple[int, str]:
         return self._answer("PATCH", path, payload)
 
+    def delete(self, path: str) -> tuple[int, str]:
+        return self._answer("DELETE", path, None)
+
 
 BOOK = "18c784fc-e768-47c5-9d6c-ceb3e0cbb3db"
 OTHER = "0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b"

@@ -255,7 +255,7 @@ class ContainmentTests(unittest.TestCase):
         class OneBadUuid(FakeState):
             def rating(self, uuid: str) -> Any:
                 if uuid == bad:
-                    raise ApiError(f"POST /api/rpc/ratings/get -> HTTP 500 for {uuid}")
+                    raise ApiError(f"GET /api/ratings/{uuid} -> HTTP 500")
                 return super().rating(uuid)
 
         good = expectations.Expectation("agent-1", 1, "rating", "rating", BOOK, "x", 4.5)
