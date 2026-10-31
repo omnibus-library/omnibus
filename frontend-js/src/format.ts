@@ -280,3 +280,9 @@ export function formatStarted(unixSecs: number, timeZone?: string): string {
 /** A Unix-seconds timestamp as `YYYY-MM-DD`, UTC. */
 export const utcDay = (unixSecs: number) =>
   new Date(unixSecs * 1000).toISOString().slice(0, 10);
+
+/** A build's version as the sign-in footer shows it: one leading `v` on a release, `dev` as is. */
+export function versionLabel(raw: string): string {
+  const bare = raw.trim().replace(/^v+/, "");
+  return /^\d/.test(bare) ? `v${bare}` : bare;
+}
