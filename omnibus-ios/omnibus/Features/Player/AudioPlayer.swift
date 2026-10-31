@@ -1463,36 +1463,34 @@ final class AudioPlayer {
             }
             return .success
         }
-        // The intervals are what CarPlay and the lock screen draw on the skip
-        // buttons; hardware presses arrive on the other commands (see `RemoteTransport`).
+        // The intervals are what CarPlay and the lock screen draw; a hardware
+        // press can arrive on any of these commands (see `RemoteTransport`).
         center.skipForwardCommand.preferredIntervals = [NSNumber(value: RemoteTransport.forwardSeconds)]
         center.skipBackwardCommand.preferredIntervals = [NSNumber(value: RemoteTransport.backSeconds)]
-        let seekers: [(MPRemoteCommand, RemoteTransport)] = [
+        let transports: [(MPRemoteCommand, RemoteTransport)] = [
             (center.skipForwardCommand, .skipForward),
             (center.skipBackwardCommand, .skipBackward),
             (center.nextTrackCommand, .nextTrack),
             (center.previousTrackCommand, .previousTrack),
-        ]
-        for (command, transport) in seekers {
-            command.addTarget { [weak self] _ in
-                remoteCommandLog.notice("\(transport.rawValue, privacy: .public)")
-                Task { @MainActor in self?.remoteSeek(transport) }
-                return .success
-            }
-        }
-        // A seek command is a begin and an end: it moves once, on release.
-        let holds: [(MPRemoteCommand, RemoteTransport)] = [
             (center.seekForwardCommand, .seekForward),
             (center.seekBackwardCommand, .seekBackward),
         ]
-        for (command, transport) in holds {
+        for (command, transport) in transports {
             command.addTarget { [weak self] event in
-                guard let event = event as? MPSeekCommandEvent else { return .commandFailed }
-                let released = event.type == .endSeeking
-                remoteCommandLog.notice(
-                    "\(transport.rawValue, privacy: .public) \(released ? "end" : "begin", privacy: .public)"
-                )
-                if released { Task { @MainActor in self?.remoteSeek(transport) } }
+                // Read before the hop, so a main-thread stall can't change the decision.
+                let now = ContinuousClock.now
+                let seekType = (event as? MPSeekCommandEvent)?.type
+                let began = seekType == .beginSeeking
+                let phase = seekType == nil ? "" : began ? " begin" : " end"
+                remoteCommandLog.notice("\(transport.rawValue + phase, privacy: .public)")
+                // A seek command is a begin and an end: it moves once, on release.
+                Task { @MainActor in
+                    if began {
+                        self?.remotePresses.began(transport, at: now)
+                    } else {
+                        self?.remoteSeek(transport, at: now)
+                    }
+                }
                 return .success
             }
         }
@@ -1504,17 +1502,15 @@ final class AudioPlayer {
         }
     }
 
-    /// The last remote command that moved the position.
-    private var lastRemoteSeek: (transport: RemoteTransport, at: Date)?
+    /// Which remote commands are one press.
+    private var remotePresses = RemotePressFilter()
 
     /// Move for a remote seek command, unless it's the second command of one press.
-    private func remoteSeek(_ transport: RemoteTransport) {
-        let now = Date()
-        if let last = lastRemoteSeek,
-           transport.isSamePress(as: last.transport, after: now.timeIntervalSince(last.at)) {
+    private func remoteSeek(_ transport: RemoteTransport, at now: ContinuousClock.Instant) {
+        guard remotePresses.shouldMove(transport, at: now) else {
+            remoteCommandLog.notice("\(transport.rawValue, privacy: .public) suppressed, same press")
             return
         }
-        lastRemoteSeek = (transport, now)
         skip(transport.seekDelta)
     }
 
