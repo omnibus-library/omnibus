@@ -253,7 +253,7 @@ on every push to `main` that touches it.
 
 | Path | Role |
 |---|---|
-| `src/index.html` | One book's life through the product: hero, eight stops, why switch, the rest of the shelf, close. All copy is real markup, never baked into an image. |
+| `src/index.html` | The feature tour: hero, nine feature sections, why switch, the rest of the shelf, close. All copy is real markup, never baked into an image. |
 | `src/site.css` | From 1200px up, each section is a scaled copy of the 1440 desktop comp: positions are comp pixels times `--u`, one comp pixel at the current width. Below 1200px the page is the 390 phone comp's single column. |
 | `src/app.js` | Swaps the static release line in "What only Omnibus does" for the latest release tag and the last 30 days' commit count from the GitHub API, and walks the desktop shelf's books round their ellipse. The page reads the same without it, and the orbit stays still under `prefers-reduced-motion`. |
 | `src/shots/` | One transparent WebP per section and layout, `d-<section>` for desktop and `m-<section>` for phone, with the app screens and device frames already placed. The hero is the exception: `hero-cover.webp` is the bare cover, and its four pins are markup so they can float and light up in turn, top to bottom (still under `prefers-reduced-motion`). The shelf is the other: `shots/shelf/` holds one image per book, `d-*` for the desktop orbit and `m-*` for the phone stack, so each can move and wiggle on its own. |
@@ -265,6 +265,12 @@ REST API and composited in place, shadows included. The `style` attribute on eac
 section and stage carries its comp coordinates (`--fh`, `--cy`, `--x`, `--y`,
 `--w`, and `--mx`/`--mw` for phone), so re-exporting a stage means updating those
 numbers too.
+
+The app screens in the comps are real UI. The web ones are screenshots of the React
+client, some from a dev server and some (shelves, stats, a book's household) from
+its Storybook components fed fixture data. The iOS widgets and CarPlay are drawn in
+Figma from the SwiftUI and CarPlay template code, with the widget colors from the
+app's own OKLCH tone formula.
 
 Serve it locally with `python3 -m http.server 8000 --directory site/src`, and
 check both layouts: 1200px and up, and the phone column below it.
