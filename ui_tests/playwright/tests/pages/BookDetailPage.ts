@@ -6,7 +6,6 @@ import { ChipListEditorComponent } from "../components/ChipListEditorComponent";
 import { DeleteFilesDialogComponent } from "../components/DeleteFilesDialogComponent";
 import { ExportMenuComponent } from "../components/ExportMenuComponent";
 import { FormatRowComponent } from "../components/FormatRowComponent";
-import { JournalEntryOverlayComponent } from "../components/JournalEntryOverlayComponent";
 import { JournalSectionComponent } from "../components/JournalSectionComponent";
 import { ListenFilePickerComponent } from "../components/ListenFilePickerComponent";
 import { MergeDialogComponent } from "../components/MergeDialogComponent";
@@ -67,7 +66,6 @@ export class BookDetailPage extends BasePage {
   readonly summary: BookSummaryComponent;
   readonly suggestions: SuggestionsStripComponent;
   readonly journal: JournalSectionComponent;
-  readonly journalEntry: JournalEntryOverlayComponent;
   readonly deleteFilesDialog: DeleteFilesDialogComponent;
   readonly mergeDialog: MergeDialogComponent;
   readonly wishlist: WishlistCardComponent;
@@ -141,7 +139,6 @@ export class BookDetailPage extends BasePage {
     this.summary = new BookSummaryComponent(page);
     this.suggestions = new SuggestionsStripComponent(page);
     this.journal = new JournalSectionComponent(page);
-    this.journalEntry = new JournalEntryOverlayComponent(page);
     this.deleteFilesDialog = new DeleteFilesDialogComponent(page);
     this.mergeDialog = new MergeDialogComponent(page);
     this.wishlist = new WishlistCardComponent(page);

@@ -1134,6 +1134,9 @@ button.bp-byline-series {
 }
 .bp-panels {
   view-transition-name: bp-tab-page;
+  /* The view-transition name makes this a stacking context, so a dialog a tab opens paints only as high as it does: above the tab strip, clear of the ribbon below it. */
+  position: relative;
+  z-index: 4;
 }
 .bp-page-enter {
   animation: bp-page-in 440ms var(--ease-out) both;

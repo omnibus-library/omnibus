@@ -1,16 +1,9 @@
 import type { Locator, Page } from "@playwright/test";
 import { journalsUrls } from "../contracts/journals";
-import { isPostTo } from "../utils/api";
 import { BaseComponent } from "./BaseComponent";
 
-/** A box in CSS pixels, as `boundingBox` reports it. */
-type Box = { x: number; y: number; width: number; height: number };
-
-/** The overlay that opens one journal entry whole, over the journal stop. */
-export class JournalEntryOverlayComponent extends BaseComponent {
-  readonly root: Locator;
-  readonly closeButton: Locator;
-  private readonly card: Locator;
+/** One entry's card in the journal feed: its body, and for its author Publish, Edit and Delete. */
+export class JournalEntryCardComponent extends BaseComponent {
   readonly youChip: Locator;
   readonly errorAlert: Locator;
 
@@ -19,13 +12,16 @@ export class JournalEntryOverlayComponent extends BaseComponent {
   private readonly saveEditButton: Locator;
 
   private readonly deleteButton: Locator;
+  readonly deleteDialog: Locator;
   private readonly confirmDeleteButton: Locator;
 
   readonly draftChip: Locator;
   readonly publishDraftButton: Locator;
 
-  readonly showMoreButton: Locator;
-  readonly collapsedBody: Locator;
+  /** "Read more" under a clamped body; it reads "Show less" once expanded. */
+  readonly readMoreButton: Locator;
+  readonly clampedBody: Locator;
+  readonly body: Locator;
 
   readonly orderedListItems: Locator;
   readonly nestedListItem: Locator;
@@ -38,49 +34,48 @@ export class JournalEntryOverlayComponent extends BaseComponent {
   readonly revealSpoilerButton: Locator;
   readonly spoilerText: Locator;
 
-  constructor(page: Page) {
+  constructor(
+    page: Page,
+    readonly root: Locator,
+  ) {
     super(page);
-    this.root = page.getByTestId("journal-overlay");
-    this.closeButton = page.getByTestId("journal-overlay-close");
-    this.card = this.root.getByTestId("journal-entry");
-    this.youChip = this.card.getByText("you");
-    this.errorAlert = this.card.getByRole("alert");
+    this.youChip = root.getByText("you", { exact: true });
+    this.errorAlert = root.getByRole("alert");
 
-    this.editButton = this.card.getByTestId("journal-edit");
+    this.editButton = root.getByTestId("journal-edit");
     this.editField = page.getByTestId("journal-edit-editor");
     this.saveEditButton = page.getByTestId("journal-edit-save");
 
-    this.deleteButton = this.card.getByTestId("journal-delete");
-    this.confirmDeleteButton = page.getByTestId("journal-delete-confirm");
+    this.deleteButton = root.getByTestId("journal-delete");
+    this.deleteDialog = page.getByTestId("journal-delete-modal");
+    this.confirmDeleteButton = page.getByTestId("journal-delete-modal-confirm");
 
-    this.draftChip = this.card.getByTestId("journal-draft-chip");
-    this.publishDraftButton = this.card.getByTestId("journal-publish-draft");
+    this.draftChip = root.getByTestId("journal-draft-chip");
+    this.publishDraftButton = root.getByTestId("journal-publish-draft");
 
-    this.showMoreButton = page.getByTestId("journal-show-more");
-    this.collapsedBody = this.card.locator(".bd-journal-entry-body-collapsed");
+    this.readMoreButton = root.getByRole("button", {
+      name: /^(Read more|Show less)$/,
+    });
+    this.clampedBody = root.locator(".bp-entry-text.is-clamped");
+    this.body = root.locator(".bp-entry-text");
 
-    this.orderedListItems = this.card.locator("ol > li");
-    this.nestedListItem = this.card.locator("li > ul > li");
-    this.blockquote = this.card.locator("blockquote");
-    this.blockquoteBreaks = this.card.locator("blockquote br");
-    this.figureImage = this.card.locator(".journal-figure img");
-    this.figureCaption = this.card.locator(".journal-figure figcaption");
+    this.orderedListItems = root.locator("ol > li");
+    this.nestedListItem = root.locator("li > ul > li");
+    this.blockquote = root.locator("blockquote");
+    this.blockquoteBreaks = root.locator("blockquote br");
+    this.figureImage = root.locator(".journal-figure img");
+    this.figureCaption = root.locator(".journal-figure figcaption");
 
-    this.spoiler = this.card.locator(".spoiler");
-    this.revealSpoilerButton = this.card.getByRole("button", {
+    this.spoiler = root.locator(".spoiler");
+    this.revealSpoilerButton = root.getByRole("button", {
       name: "Reveal spoiler",
     });
     this.spoilerText = this.revealSpoilerButton.locator(".spoiler-text");
   }
 
-  /** The open entry whose rendered body contains `text`. */
-  entryWithText(text: string): Locator {
-    return this.page.getByTestId("journal-entry").filter({ hasText: text });
-  }
-
   /** The spoiler once revealed, which its own text names. */
   revealedSpoiler(text: string): Locator {
-    return this.card.getByRole("button", { name: text });
+    return this.root.getByRole("button", { name: text });
   }
 
   async startEdit(): Promise<void> {
@@ -92,7 +87,7 @@ export class JournalEntryOverlayComponent extends BaseComponent {
   }
 
   async saveEdit(): Promise<void> {
-    await this.clickAndAwait(this.saveEditButton, journalsUrls.update);
+    await this.clickAndAwait(this.saveEditButton, "PATCH");
   }
 
   /** Opens the "This can't be undone" confirm; nothing is deleted yet. */
@@ -101,11 +96,15 @@ export class JournalEntryOverlayComponent extends BaseComponent {
   }
 
   async confirmDelete(): Promise<void> {
-    await this.clickAndAwait(this.confirmDeleteButton, journalsUrls.delete);
+    await this.clickAndAwait(this.confirmDeleteButton, "DELETE");
   }
 
   async publishDraft(): Promise<void> {
-    await this.clickAndAwait(this.publishDraftButton, journalsUrls.update);
+    await this.clickAndAwait(this.publishDraftButton, "PATCH");
+  }
+
+  async readMore(): Promise<void> {
+    await this.readMoreButton.click();
   }
 
   async revealSpoilerWithClick(): Promise<void> {
@@ -137,23 +136,9 @@ export class JournalEntryOverlayComponent extends BaseComponent {
     return this.page.evaluate(() => Reflect.get(window, "spacePrevented"));
   }
 
-  overlayBox(): Promise<Box | null> {
-    return this.root.boundingBox();
-  }
-
-  cardBox(): Promise<Box | null> {
-    return this.page.locator(".bdmq-ocard").boundingBox();
-  }
-
-  /** How many pixels the card's content overruns its own height. */
-  cardOverflow(): Promise<number> {
-    return this.page
-      .locator(".bdmq-ocard")
-      .evaluate((el) => el.scrollHeight - el.clientHeight);
-  }
-
-  viewportSize(): { width: number; height: number } | null {
-    return this.page.viewportSize();
+  /** Whether the body is laid out whole, not cut at its clamp. */
+  showsWholeBody(): Promise<boolean> {
+    return this.body.evaluate((el) => el.scrollHeight - el.clientHeight <= 1);
   }
 
   /** How the card's one spoiler sits in its list item, and how it wraps. */
@@ -183,7 +168,7 @@ export class JournalEntryOverlayComponent extends BaseComponent {
   }> {
     return this.spoiler.evaluate((el) => {
       // Narrow the paragraph so the spoiler cannot fit on any one line,
-      // whatever width the overlay card happens to have.
+      // whatever width the card happens to have.
       const p = el.closest("p")!;
       p.style.width = "360px";
       const rects = Array.from(el.getClientRects());
@@ -202,8 +187,14 @@ export class JournalEntryOverlayComponent extends BaseComponent {
     });
   }
 
-  private async clickAndAwait(button: Locator, url: RegExp): Promise<void> {
-    const responded = this.page.waitForResponse(isPostTo(url));
+  private async clickAndAwait(
+    button: Locator,
+    method: "PATCH" | "DELETE",
+  ): Promise<void> {
+    const responded = this.page.waitForResponse(
+      (r) =>
+        r.request().method() === method && journalsUrls.entry.test(r.url()),
+    );
     await button.click();
     await responded;
   }
