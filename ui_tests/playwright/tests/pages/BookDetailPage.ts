@@ -20,26 +20,12 @@ import { SuggestionsStripComponent } from "../components/SuggestionsStripCompone
 import { SyncLinkComponent } from "../components/SyncLinkComponent";
 import { TopNavComponent } from "../components/TopNavComponent";
 import { WishlistCardComponent } from "../components/WishlistCardComponent";
-import { accountUrls } from "../contracts/account";
 import { authorBlockUrls } from "../contracts/authorBlock";
 import { kindleUrls } from "../contracts/kindle";
 import type { KindleSendStatus } from "../data/kindle";
 import type { CopyRow, WishlistRow } from "../data/physical";
-import { holdRequests, isPostTo } from "../utils/api";
+import { holdRequests } from "../utils/api";
 import { BasePage } from "./BasePage";
-
-/** The seven stops of the page in running order, as the dot rail names them. */
-const MARQUEE_SECTIONS = [
-  "Home",
-  "Stats",
-  "Reviews",
-  "Highlights",
-  "Journals",
-  "The files",
-  "More",
-] as const;
-
-export type MarqueeSection = (typeof MARQUEE_SECTIONS)[number];
 
 export type FormatLabel = "EPUB" | "PDF" | "MP3" | "M4B";
 
@@ -76,26 +62,12 @@ export class BookDetailPage extends BasePage {
 
   readonly titleHeading: Locator;
   readonly authorsLine: Locator;
-  readonly heroCoverFrame: Locator;
   readonly heroCover: Locator;
-  readonly sectionsNav: Locator;
-  readonly sectionDots: Locator;
-  readonly scrollStopsToggleButton: Locator;
-  readonly railScrollStopsToggleButton: Locator;
-  readonly scrollStopsErrorMessage: Locator;
-  readonly flowScroller: Locator;
-  readonly snapScroller: Locator;
-  readonly flowSections: Locator;
-  readonly leadFlowSection: Locator;
-  readonly leadFlowSectionLabels: Locator;
-  readonly flowSectionLabels: Locator;
-  readonly nextStopCues: Locator;
-  readonly snapSections: Locator;
-  readonly backToBookButton: Locator;
+  readonly tabList: Locator;
+  readonly tabs: Locator;
   readonly formatSwitcher: Locator;
   readonly formatBadges: Locator;
   readonly formatListenLinks: Locator;
-  readonly savedPassagesHeading: Locator;
   readonly savedPassagesSection: Locator;
   readonly savedPassageCards: Locator;
   readonly savedPassagesEmptyMessage: Locator;
@@ -108,7 +80,6 @@ export class BookDetailPage extends BasePage {
   readonly fromSameHandTiles: Locator;
   readonly fromSameHandLoadingMessage: Locator;
   readonly fromSameHandEmptyMessage: Locator;
-  readonly onlyBookByNote: Locator;
   readonly bookNotFoundMessage: Locator;
   readonly startReadingButton: Locator;
   readonly startListeningButton: Locator;
@@ -148,43 +119,25 @@ export class BookDetailPage extends BasePage {
     this.alignmentModal = new AlignmentModalComponent(page);
     this.titleHeading = page.getByRole("heading", { level: 1 });
     this.authorsLine = page.getByTestId("book-authors");
-    // The More stop's tiles draw covers too, so the hero's is found by its
-    // wrapper, which is hidden from the accessibility tree.
-    this.heroCoverFrame = page.locator("#bdmq-coverpx");
-    this.heroCover = this.heroCoverFrame.getByTestId("cover");
-    this.sectionsNav = page.getByRole("navigation", { name: "Page sections" });
-    this.sectionDots = this.sectionsNav.getByRole("button");
-    // A test asserts the toggle absent from the rail, so it keeps its test id.
-    this.scrollStopsToggleButton = page.getByTestId("bdmq-mode-toggle");
-    this.railScrollStopsToggleButton =
-      this.sectionsNav.getByTestId("bdmq-mode-toggle");
-    // Other alerts share the page, so the toggle's is found by test id.
-    this.scrollStopsErrorMessage = page.getByTestId("bdmq-mode-error");
-    // The scrollers and their sections carry no role, and the `bdmq-sec-{i}`
-    // ids render in both modes, so the modes are told apart by class.
-    this.flowScroller = page.locator("#bdmq-flow");
-    this.snapScroller = page.locator("#bdmq-snap");
-    this.flowSections = page.locator(".bdmq-flowsec");
-    this.leadFlowSection = page.locator(".bdmq-flowsec.lead");
-    this.leadFlowSectionLabels = this.leadFlowSection.locator(".bdmq-flowlab");
-    this.flowSectionLabels = page.locator(".bdmq-flowlab");
-    this.nextStopCues = page.locator(".bdmq-next");
-    this.snapSections = page.locator(".bdmq-sec");
-    this.backToBookButton = page.getByTestId("bdmq-flowtop");
+    // The Overview's tiles draw covers too, and the hero has no role of its
+    // own, so its cover is found inside the book on the stage.
+    this.heroCover = page.locator(".bp-book").getByRole("img");
+    this.tabList = page.getByRole("tablist", { name: "Book sections" });
+    this.tabs = this.tabList.getByRole("tab");
     this.formatSwitcher = page.getByRole("group", {
       name: "Available formats",
     });
     this.formatBadges = this.formatSwitcher.getByTestId("format-badge");
     this.formatListenLinks = this.formatSwitcher.getByTestId("action-listen");
-    this.savedPassagesHeading = page.getByRole("heading", {
-      name: "Passages you saved",
-    });
     this.savedPassagesSection = page.getByTestId("highlights-section");
     this.savedPassageCards = page.getByTestId("highlight-card");
-    this.savedPassagesEmptyMessage = page.getByTestId("highlights-empty");
+    // With no journal entries either, the tab shows one note for both.
+    this.savedPassagesEmptyMessage = page
+      .getByTestId("highlights-empty")
+      .or(page.getByTestId("highlights-journal-empty"));
     this.showMorePassagesButton = page.getByTestId("highlights-show-more");
     this.seriesShelf = page.getByTestId("bp-series-fan");
-    this.seriesPageLink = page.getByRole("link", { name: /series page/ });
+    this.seriesPageLink = page.getByRole("link", { name: /series page/i });
     // The Overview's "More by <author>" row.
     this.fromSameHandHeading = page.getByRole("heading", {
       name: /^More by /,
@@ -196,7 +149,6 @@ export class BookDetailPage extends BasePage {
       "from-same-hand-loading",
     );
     this.fromSameHandEmptyMessage = page.getByTestId("from-same-hand-empty");
-    this.onlyBookByNote = page.getByText(/only book by/);
     this.bookNotFoundMessage = page.getByText("Book not found.");
     // The labels change with reading progress, so the row is found by test id.
     this.startReadingButton = page.getByTestId("start-reading");
@@ -243,9 +195,11 @@ export class BookDetailPage extends BasePage {
     return this.authorsLine.getByRole("link", { name, exact: true });
   }
 
-  /** The kicker's link to `series`; exact, so the More stop's covers miss. */
+  /** The byline's series, "Pioneers, book 1", which shows its fan on the Overview. */
   seriesLink(series: string): Locator {
-    return this.page.getByRole("link", { name: series, exact: true });
+    return this.authorsLine.getByRole("button", {
+      name: new RegExp(`^${series}(, book .+)?$`),
+    });
   }
 
   /** The tile for the book called `title` in the "More by" row. */
@@ -266,30 +220,6 @@ export class BookDetailPage extends BasePage {
       this.page,
       this.formatSwitcher.getByTestId(`format-row-${format.toLowerCase()}`),
     );
-  }
-
-  /** The dot rail's button for `section`; its label reads "NN · Name". */
-  sectionDot(section: MarqueeSection): Locator {
-    return this.sectionsNav.getByRole("button", {
-      name: new RegExp(`${section}$`, "i"),
-    });
-  }
-
-  /** The panel holding `section`, in whichever reading the page is in. */
-  sectionPanel(section: MarqueeSection): Locator {
-    return this.page.getByTestId(
-      `bdmq-sec-${MARQUEE_SECTIONS.indexOf(section)}`,
-    );
-  }
-
-  /** The snapped screen's label for `section`, which fades as the screen leaves. */
-  sectionLabel(section: MarqueeSection): Locator {
-    return this.sectionPanel(section).locator(".bdmq-seclab");
-  }
-
-  /** The "scroll, next" cue under the snapped screen for `section`. */
-  nextStopCue(section: MarqueeSection): Locator {
-    return this.sectionPanel(section).locator(".bdmq-next");
   }
 
   /** The saved-passage card whose quote contains `quote`. */
@@ -427,11 +357,11 @@ export class BookDetailPage extends BasePage {
   async stubKindleSend(outcome: KindleSendStatus): Promise<void> {
     await this.page.route(kindleUrls.send, (route) =>
       route.request().method() === "POST"
-        ? route.fulfill({ json: 1 })
+        ? route.fulfill({ json: { task_id: 1 } })
         : route.continue(),
     );
     await this.page.route(kindleUrls.sendStatus, (route) =>
-      route.request().method() === "POST"
+      route.request().method() === "GET"
         ? route.fulfill({ json: outcome })
         : route.continue(),
     );
@@ -449,85 +379,6 @@ export class BookDetailPage extends BasePage {
   /** Holds the author fetch open until the returned release lets it through. */
   async holdAuthorFetch(): Promise<() => void> {
     return holdRequests(this.page, authorBlockUrls.author);
-  }
-
-  /** Scrolls to `section` through its dot on the rail. */
-  async jumpToSection(section: MarqueeSection): Promise<void> {
-    await this.sectionDot(section).click();
-  }
-
-  /** Scrolls the continuous flow to `top` pixels from its start. */
-  async scrollFlowTo(top: number): Promise<void> {
-    await this.flowScroller.evaluate((el, top) => {
-      el.scrollTop = top;
-    }, top);
-  }
-
-  /** Scrolls the continuous flow until `section` starts at its top. */
-  async scrollFlowToSection(section: MarqueeSection): Promise<void> {
-    const top = await this.sectionPanel(section).evaluate(
-      (el: HTMLElement) => el.offsetTop,
-    );
-    await this.scrollFlowTo(top);
-  }
-
-  /** Scrolls the snap marquee to the screen holding `section`. */
-  async scrollMarqueeToStop(section: MarqueeSection): Promise<void> {
-    await this.snapScroller.evaluate((el, index) => {
-      el.scrollTop = index * el.clientHeight;
-    }, MARQUEE_SECTIONS.indexOf(section));
-  }
-
-  /** Flips the stage's scroll stops toggle and waits for the save. */
-  async toggleScrollStops(): Promise<void> {
-    const saved = this.page.waitForResponse(isPostTo(accountUrls.scrollStops));
-    await this.scrollStopsToggleButton.click();
-    await saved;
-  }
-
-  /** Scrolls the flow until the journal's new entry sits level with the rail. */
-  async alignNewJournalEntryWithRail(): Promise<void> {
-    const [entry, rail] = await Promise.all([
-      this.journal.newEntryButton.boundingBox(),
-      this.sectionsNav.boundingBox(),
-    ]);
-    if (!entry || !rail) {
-      throw new Error("the new journal entry and the dot rail must both show");
-    }
-    const offset = entry.y + entry.height / 2 - (rail.y + rail.height / 2);
-    await this.flowScroller.evaluate((el, by) => {
-      el.scrollTop += by;
-    }, offset);
-  }
-
-  async backToBook(): Promise<void> {
-    await this.backToBookButton.click();
-  }
-
-  async flowScrollTop(): Promise<number> {
-    return this.flowScroller.evaluate((el) => el.scrollTop);
-  }
-
-  /** The cover's inline transform, which the scroll glue rewrites as it runs. */
-  async coverTransform(): Promise<string> {
-    return this.heroCoverFrame.evaluate((el) => el.style.transform);
-  }
-
-  /** The scroll stops toggle's bottom edge and the dot rail's top edge, in px. */
-  async toggleAndRailEdges(): Promise<{
-    toggleBottom: number;
-    railTop: number;
-  }> {
-    const [toggle, rail] = await Promise.all([
-      this.scrollStopsToggleButton.boundingBox(),
-      this.sectionsNav.boundingBox(),
-    ]);
-    if (!toggle || !rail) {
-      throw new Error(
-        "the scroll stops toggle and the dot rail must both show",
-      );
-    }
-    return { toggleBottom: toggle.y + toggle.height, railTop: rail.y };
   }
 
   /** Checks the page is showing the book `bookUuid`, not just any book. */

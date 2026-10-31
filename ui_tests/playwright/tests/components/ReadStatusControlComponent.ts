@@ -20,6 +20,8 @@ export class ReadStatusControlComponent extends BaseComponent {
   readonly pill: Locator;
   readonly menu: Locator;
   readonly errorText: Locator;
+  /** The toast a refused save raises once the pill has put the old status back. */
+  readonly failureToast: Locator;
 
   constructor(page: Page) {
     super(page);
@@ -27,6 +29,9 @@ export class ReadStatusControlComponent extends BaseComponent {
     this.pill = this.root.getByRole("button", { name: /^Read status:/ });
     this.menu = page.getByRole("menu", { name: "Read status" });
     this.errorText = page.getByTestId("read-status-meta");
+    this.failureToast = page
+      .getByRole("status")
+      .filter({ hasText: "Couldn’t save your reading status" });
   }
 
   /** The menu's item for `status`; its name carries a finished date, so it is found by test id. */

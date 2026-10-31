@@ -25,7 +25,7 @@ export class SuggestionsStripComponent extends BaseComponent {
   constructor(page: Page) {
     super(page);
     this.root = page.getByTestId("suggestions-strip");
-    this.heading = page.getByRole("heading", { name: "Suggested for you" });
+    this.heading = this.root.getByRole("heading", { name: /also read$/ });
     this.notConfigured = page.getByTestId("suggestions-not-configured");
     this.notConfiguredText = page.getByText(
       "Add a Hardcover API key to pull read-alikes for this book.",

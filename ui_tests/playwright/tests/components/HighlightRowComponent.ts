@@ -1,7 +1,6 @@
 import type { Locator, Page } from "@playwright/test";
-import { highlightsUrls } from "../contracts/highlights";
+import { answers, highlightsUrls } from "../contracts/highlights";
 import type { HighlightColor } from "../data/highlights";
-import { isPostTo } from "../utils/api";
 import { BaseComponent } from "./BaseComponent";
 
 /** One highlight in the highlights drawer: its note, colors and delete. */
@@ -31,14 +30,16 @@ export class HighlightRowComponent extends BaseComponent {
   }
 
   async delete(): Promise<void> {
-    const deleted = this.page.waitForResponse(isPostTo(highlightsUrls.delete));
+    const deleted = this.page.waitForResponse(
+      answers("DELETE", highlightsUrls.delete),
+    );
     await this.deleteButton.click();
     await deleted;
   }
 
   async recolor(color: HighlightColor): Promise<void> {
     const recolored = this.page.waitForResponse(
-      isPostTo(highlightsUrls.updateColor),
+      answers("PATCH", highlightsUrls.updateColor),
     );
     await this.recolorButton(color).click();
     await recolored;
