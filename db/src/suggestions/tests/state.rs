@@ -1,10 +1,11 @@
 //! The pure layer: `decide`'s state machine over pending and resolved
-//! markers (debounce, TTL, sticky empty), `is_entry_point`, the
+//! markers (debounce, per-state TTL), `is_entry_point`, the
 //! case-insensitive author and series comparisons, and
 //! `filter_candidates`.
 
 use crate::suggestions::data::{
-    decide, is_unavailable, SuggestionState, PENDING_DEBOUNCE_SECS, SUGGESTIONS_TTL_SECS,
+    decide, is_fresh, is_unavailable, SuggestionState, EMPTY_RETRY_SECS, PENDING_DEBOUNCE_SECS,
+    SUGGESTIONS_TTL_SECS,
 };
 use crate::suggestions::filter::{
     filter_candidates, is_entry_point, is_same_author, is_same_series, Candidate,
@@ -50,14 +51,44 @@ fn decide_serves_and_refreshes_stale_resolved() {
 }
 
 #[test]
-fn decide_keeps_sticky_empty_quiet_until_ttl() {
-    let fresh = decide(Some((SuggestionState::Empty, 1_000)), 1_000 + 10);
-    assert!(fresh.serve && !fresh.enqueue);
-    let stale = decide(
+fn decide_serves_a_fresh_empty_marker_without_reposting() {
+    let at_limit = decide(
         Some((SuggestionState::Empty, 1_000)),
-        1_000 + SUGGESTIONS_TTL_SECS + 1,
+        1_000 + EMPTY_RETRY_SECS,
     );
-    assert!(stale.serve && stale.enqueue);
+    assert!(at_limit.serve && !at_limit.enqueue);
+}
+
+#[test]
+fn decide_reposts_an_empty_marker_older_than_a_day_without_serving() {
+    let d = decide(
+        Some((SuggestionState::Empty, 1_000)),
+        1_000 + EMPTY_RETRY_SECS + 1,
+    );
+    assert!(d.enqueue && !d.serve);
+}
+
+#[test]
+fn decide_keeps_a_resolved_marker_quiet_for_thirty_days() {
+    let two_days = decide(
+        Some((SuggestionState::Resolved, 1_000)),
+        1_000 + 2 * EMPTY_RETRY_SECS,
+    );
+    assert!(two_days.serve && !two_days.enqueue);
+}
+
+#[test]
+fn is_fresh_gives_each_settled_state_its_own_ttl_and_never_a_debounced_one() {
+    let now = 1_000 + 2 * EMPTY_RETRY_SECS;
+    assert!(!is_fresh(SuggestionState::Empty, 1_000, now));
+    assert!(is_fresh(SuggestionState::Resolved, 1_000, now));
+    assert!(!is_fresh(
+        SuggestionState::Resolved,
+        1_000,
+        1_000 + SUGGESTIONS_TTL_SECS + 1
+    ));
+    assert!(!is_fresh(SuggestionState::Pending, 1_000, 1_000));
+    assert!(!is_fresh(SuggestionState::Failed, 1_000, 1_000));
 }
 
 #[test]

@@ -9,8 +9,8 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use super::config_for;
 use crate::suggestions::hardcover::{
-    book_description, co_listed_counts, curated_list_ids, fetch_candidates, rejected_key_message,
-    pick_search_hit, rejected_key_status, resolve_book, HardcoverError, SearchBook,
+    book_description, co_listed_counts, curated_list_ids, fetch_candidates, pick_search_hit,
+    rejected_key_message, rejected_key_status, resolve_book, HardcoverError, SearchBook,
 };
 
 fn search_book(id: &str, authors: &[&str], users_count: Option<i64>) -> SearchBook {
