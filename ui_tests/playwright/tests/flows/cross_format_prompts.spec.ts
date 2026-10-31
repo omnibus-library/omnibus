@@ -148,8 +148,23 @@ test.describe("cross-format resume prompts", () => {
 
   test("show the newest-format progress row above the sync chip", async ({
     bookDetailPage,
+    progressRequests,
+    presetReadStatus,
     resumePromptUuid: uuid,
+    eventClock,
   }) => {
+    // The hero draws the bar only for a book being read with a position; a
+    // finished one gets the finished card instead.
+    await test.step("park the book mid-read", async () => {
+      await presetReadStatus(uuid, "reading");
+      const epub = await progressRequests.postEpubPercent(
+        uuid,
+        40,
+        eventClock.next(),
+      );
+      await expect(epub, "epub progress write").toBeOK();
+    });
+
     await test.step("open the book", async () => {
       await bookDetailPage.goto(uuid);
     });
