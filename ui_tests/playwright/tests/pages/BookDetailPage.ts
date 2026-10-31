@@ -181,8 +181,10 @@ export class BookDetailPage extends BasePage {
     this.savedPassagesEmptyMessage = page.getByTestId("highlights-empty");
     this.showMorePassagesButton = page.getByTestId("highlights-show-more");
     this.moreStop = page.getByTestId("bdmq-more");
-    this.seriesShelf = page.getByTestId("bdmq-series-shelf");
-    this.seriesPageLink = page.getByRole("link", { name: /series page/ });
+    this.seriesShelf = page.getByRole("region", { name: / series$/ });
+    this.seriesPageLink = this.seriesShelf.getByRole("link", {
+      name: /series page/i,
+    });
     this.fromSameHandHeading = page.getByRole("heading", {
       name: "From the same hand",
     });
@@ -293,15 +295,21 @@ export class BookDetailPage extends BasePage {
     return this.shelfTile(shelfId).locator(".shv-facet--kind");
   }
 
-  /** The book's details table: label and value rows such as `Added`. */
+  /** A value in the Files & Details tab's list, such as `Added`; open the tab first. */
   metaValue(label: string): Locator {
-    const labelCell = this.page.locator(".bd-meta-k", {
-      hasText: new RegExp(`^${label}$`),
-    });
+    const term = this.page
+      .getByRole("term")
+      .filter({ hasText: new RegExp(`^${label}$`) });
     return this.page
-      .locator("tr.bd-meta-row")
-      .filter({ has: labelCell })
-      .locator(".bd-meta-v");
+      .getByRole("tabpanel", { name: "Files & Details" })
+      .locator("dl > div")
+      .filter({ has: term })
+      .getByRole("definition");
+  }
+
+  /** Opens the Files & Details tab, where the book's metadata list sits. */
+  async openFilesTab(): Promise<void> {
+    await this.page.getByRole("tab", { name: "Files & Details" }).click();
   }
 
   /**

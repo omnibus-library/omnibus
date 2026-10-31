@@ -1,5 +1,6 @@
 import type { Locator, Page } from "@playwright/test";
 import { TopNavComponent } from "../components/TopNavComponent";
+import { isPageReadFiltering } from "../contracts/ebooks";
 import { BasePage } from "./BasePage";
 
 /** One author at `/authors/:id`: their pane beside the authors list. */
@@ -72,13 +73,7 @@ export class AuthorPage extends BasePage {
 
   /** Opens the library on `name`'s books, once its first page answers for them. */
   async showInLibrary(name: string): Promise<void> {
-    const answered = this.page.waitForResponse((res) => {
-      const url = new URL(res.url());
-      return (
-        url.pathname === "/api/ebooks" &&
-        (url.searchParams.get("filter") ?? "").includes(name)
-      );
-    });
+    const answered = this.page.waitForResponse(isPageReadFiltering(name));
     await this.showInLibraryButton.click();
     await answered;
   }

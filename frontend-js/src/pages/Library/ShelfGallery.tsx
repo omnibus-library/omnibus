@@ -79,9 +79,9 @@ function ShelfEntry({
     <button
       type="button"
       className="lmq-shent"
+      data-testid={`gallery-shelf-${shelf.id}`}
       aria-pressed={active}
       aria-label={shelfAriaLabel(shelf, count, owner)}
-      data-testid={`gallery-shelf-${shelf.id}`}
       onClick={onSelect}
     >
       <Peek covers={shelf.covers} glyph={badge} />

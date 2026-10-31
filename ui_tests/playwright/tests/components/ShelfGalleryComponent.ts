@@ -50,11 +50,6 @@ export class ShelfGalleryComponent extends BaseComponent {
     await this.previousArrow.click();
   }
 
-  /** The All Books tab's count, read once the list has answered. */
-  async allBooksTotal(): Promise<number> {
-    return Number((await this.allBooksCount.textContent()) ?? Number.NaN);
-  }
-
   /** How far the row has scrolled from its left end. */
   scrollLeft(): Promise<number> {
     return this.row.evaluate((row) => row.scrollLeft);

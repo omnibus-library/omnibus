@@ -5,6 +5,7 @@ import type {
   ForcedRequest,
   MutationMethod,
 } from "../utils/api";
+import { filterClauses } from "./ebooks";
 
 const ID = String.raw`\d+`;
 const END = String.raw`(?:\?|$)`;
@@ -24,8 +25,12 @@ export const shelvesUrls = {
 
 /** How many filter clauses a shelf member read carries, from its `filter` query. */
 export function clauseCount(request: Request): number {
-  const filter = new URL(request.url()).searchParams.get("filter");
-  return filter ? (JSON.parse(filter) as unknown[]).length : 0;
+  return filterClauses(request).length;
+}
+
+/** The shelf a member read is for, from its path. */
+export function shelfReadId(request: Request): number {
+  return Number(new URL(request.url()).pathname.split("/")[3]);
 }
 
 /** A member read that carries a filter. */
@@ -74,4 +79,8 @@ export const shelves = {
 
   /** A shelf's member read, which a sort or filter change refetches. */
   page: (): ExpectMutationOptions => call("GET", shelvesUrls.page, 200),
+
+  /** A shelf's member read under a filter, never the full list read beside it. */
+  filteredPage: (): ExpectMutationOptions =>
+    call("GET", /\/api\/shelves\/\d+\/page\?(?:.*&)?filter=/, 200),
 };

@@ -31,15 +31,17 @@ export class LibraryTableComponent extends BaseComponent {
     this.viewToggleButton = page
       .getByRole("group", { name: "View mode" })
       .getByRole("button", { name: "Table" });
-    this.rows = this.root.locator("tbody > tr");
-    this.selectAllBox = page.getByTestId("ebook-select-all");
-    this.selectBoxes = page.getByTestId("ebook-select");
+    this.rows = page.getByTestId(/^ebook-row-/);
+    this.selectAllBox = page.getByRole("checkbox", {
+      name: "Select all books",
+    });
+    this.selectBoxes = this.rows.getByRole("checkbox");
     this.titleSortButton = page.getByRole("button", {
       name: /^Title( ↑| ↓)?$/,
     });
     this.titleColumnHeader = page.getByRole("columnheader", { name: /Title/ });
     this.descendingHeader = page.locator(".sort-th[aria-sort='descending']");
-    this.firstRowTitleCell = this.rows.first().getByTestId("ebook-cell-title");
+    this.firstRowTitleCell = this.rows.first().locator("td.ebook-col-title");
     this.firstCoverImage = this.rows
       .filter({ has: page.getByRole("img", { name: /^Cover of/ }) })
       .first()
@@ -53,24 +55,22 @@ export class LibraryTableComponent extends BaseComponent {
 
   /** One cell of a book's row; `column` is `title`, `author`, `genres`, … */
   cell(slug: string, column: string): Locator {
-    return this.row(slug).getByTestId(`ebook-cell-${column}`);
+    return this.row(slug).locator(`td.ebook-col-${column}`);
   }
 
   /** The editor an editable cell opens when clicked. */
   cellInput(slug: string, column: string): Locator {
-    return this.cell(slug, column).getByTestId(`ebook-cell-${column}-input`);
+    return this.cell(slug, column).locator("input");
   }
 
-  /** The suggestion dropdown under a chip cell's editor. */
+  /** The suggestions a chip cell's editor offers, a native `datalist`. */
   cellSuggestions(slug: string, column: string): Locator {
-    return this.cell(slug, column).getByTestId(
-      `ebook-cell-${column}-suggestions`,
-    );
+    return this.cell(slug, column).locator("datalist");
   }
 
   /** The selection checkbox in a book's row. */
   selectBox(slug: string): Locator {
-    return this.row(slug).getByTestId("ebook-select");
+    return this.row(slug).getByRole("checkbox");
   }
 
   /** The cover shown in a book's row, whatever its title. */
@@ -114,14 +114,11 @@ export class LibraryTableComponent extends BaseComponent {
     });
   }
 
-  /** A suggestion in a chip cell's dropdown, found by its name. */
-  suggestion(slug: string, column: string, name: RegExp): Locator {
-    return this.cellSuggestions(slug, column).getByRole("option", { name });
-  }
-
-  /** The heading over a chip cell's suggestions, such as `ADD AUTHOR`. */
-  suggestionHeading(slug: string, column: string, text: string): Locator {
-    return this.cellSuggestions(slug, column).getByText(text);
+  /** A suggestion in a chip cell's `datalist`, found by its value. */
+  suggestion(slug: string, column: string, name: string): Locator {
+    return this.cellSuggestions(slug, column).locator(
+      `option[value="${name}"]`,
+    );
   }
 
   async switchTo(): Promise<void> {
@@ -193,12 +190,30 @@ export class LibraryTableComponent extends BaseComponent {
     await this.removeTagButton(slug, tag).click();
   }
 
+  /**
+   * Picks a suggestion as the browser's datalist does: the pick replaces the
+   * input's text in one `insertReplacementText` input, with no blur.
+   */
   async chooseSuggestion(
     slug: string,
     column: string,
-    name: RegExp,
+    name: string,
   ): Promise<void> {
-    await this.suggestion(slug, column, name).click();
+    await this.suggestion(slug, column, name).waitFor({ state: "attached" });
+    await this.cellInput(slug, column).evaluate((input, value) => {
+      const setValue = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )?.set;
+      setValue?.call(input, value);
+      input.dispatchEvent(
+        new InputEvent("input", {
+          bubbles: true,
+          inputType: "insertReplacementText",
+          data: value,
+        }),
+      );
+    }, name);
   }
 
   /** Checks every cell of a book's row against the metadata it was built from. */

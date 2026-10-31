@@ -20,7 +20,6 @@ export class SuggestionsStripComponent extends BaseComponent {
   readonly cards: Locator;
   readonly firstCard: Locator;
   readonly lastCard: Locator;
-  readonly showMoreButton: Locator;
 
   constructor(page: Page) {
     super(page);
@@ -33,7 +32,7 @@ export class SuggestionsStripComponent extends BaseComponent {
     this.connectLink = page.getByTestId("suggestions-connect-link");
     this.pending = page.getByTestId("suggestions-pending");
     this.pendingText = page.getByText("Looking for read-alikes via Hardcover…");
-    this.spinner = page.getByTestId("suggestions-spinner");
+    this.spinner = this.pending.locator(".ld-ring");
     this.unavailable = page.getByTestId("suggestions-unavailable");
     this.unavailableText = page.getByText(
       "Suggestions are unavailable right now.",
@@ -43,11 +42,6 @@ export class SuggestionsStripComponent extends BaseComponent {
     this.cards = this.root.getByTestId("suggestion-card");
     this.firstCard = this.cards.first();
     this.lastCard = this.cards.last();
-    this.showMoreButton = page.getByTestId("suggestions-show-more");
-  }
-
-  async showMore(): Promise<void> {
-    await this.showMoreButton.click();
   }
 
   /** Answers as a server with no Hardcover key. */

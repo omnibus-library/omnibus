@@ -178,6 +178,7 @@ export class ShelfPage extends BasePage {
   async removeMember(bookUuid: string): Promise<void> {
     const reread = this.page.waitForResponse(
       (response) =>
+        response.request().method() === "GET" &&
         shelvesUrls.page.test(response.url()) &&
         unfilteredShelfRead(response.request()),
     );
