@@ -41,7 +41,8 @@ export class TopNavComponent extends BaseComponent {
     super(page);
     this.root = page.getByRole("navigation", { name: "Primary" });
     this.libraryLink = this.root.getByRole("link", { name: "Library" });
-    this.checkInButton = this.root.getByRole("button", {
+    // A link to `/check-in`, whose dialog opens over the page it came from.
+    this.checkInButton = this.root.getByRole("link", {
       name: "Check in",
       exact: true,
     });
