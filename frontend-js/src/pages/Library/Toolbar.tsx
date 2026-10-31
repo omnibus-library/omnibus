@@ -29,7 +29,7 @@ export function Toolbar({
   const stack = useUserSwitch("stackSeries");
   const hidden = hiddenFormatsLabel(hiddenFormats);
   return (
-    <div className="lib-toolbar" role="toolbar">
+    <div className="lib-toolbar" role="toolbar" data-testid="lib-toolbar">
       {prefs.view === "grid" && stackable && (
         <>
           <button
