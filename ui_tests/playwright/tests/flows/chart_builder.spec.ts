@@ -273,8 +273,7 @@ test.describe("chart builder", () => {
         await chartBuilderPage.plotCountAgainstAverage();
       });
 
-      // Hover is client-only state, so the server-rendered first paint has to
-      // match it (rule 07).
+      // The tooltip follows the pointer, so a plot nobody has hovered has none.
       await test.step("check no tooltip shows before a hover", async () => {
         await expect(chartBuilderPage.tooltip).toHaveCount(0);
       });

@@ -51,11 +51,13 @@ export class SeriesPage extends BasePage {
 
   /** Opens the library on `name`'s books, once its first page answers for them. */
   async showInLibrary(name: string): Promise<void> {
-    const answered = this.page.waitForResponse(
-      (res) =>
-        res.url().includes("/api/rpc/ebooks/page") &&
-        (res.request().postData() ?? "").includes(name),
-    );
+    const answered = this.page.waitForResponse((res) => {
+      const url = new URL(res.url());
+      return (
+        url.pathname === "/api/ebooks" &&
+        (url.searchParams.get("filter") ?? "").includes(name)
+      );
+    });
     await this.showInLibraryButton.click();
     await answered;
   }

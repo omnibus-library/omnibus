@@ -97,7 +97,7 @@ export class KoboSectionComponent extends BaseComponent {
 
   /** The methods of every device creation sent from now on. */
   recordCreates(): string[] {
-    return recordRequests(this.page, koboUrls.create);
+    return recordRequests(this.page, koboUrls.create, "POST");
   }
 
   async startRemove(name: string): Promise<void> {
@@ -110,17 +110,20 @@ export class KoboSectionComponent extends BaseComponent {
 
   /** Answers the device list with `devices`, whatever the shared admin really holds. */
   async stubDevices(devices: KoboDeviceListing[]): Promise<void> {
+    // The list and a create share the address, so only the read is answered.
     await this.page.route(koboUrls.list, (route) =>
-      route.fulfill({
-        status: 200,
-        json: devices.map((device) => ({
-          kind: "kobo",
-          ...device,
-          token: `tok-${device.id}`,
-          created_at: 0,
-          last_seen_at: 0,
-        })),
-      }),
+      route.request().method() !== "GET"
+        ? route.continue()
+        : route.fulfill({
+            status: 200,
+            json: devices.map((device) => ({
+              kind: "kobo",
+              ...device,
+              token: `tok-${device.id}`,
+              created_at: 0,
+              last_seen_at: 0,
+            })),
+          }),
     );
   }
 }

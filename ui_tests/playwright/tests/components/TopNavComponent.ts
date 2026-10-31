@@ -41,14 +41,12 @@ export class TopNavComponent extends BaseComponent {
     super(page);
     this.root = page.getByRole("navigation", { name: "Primary" });
     this.libraryLink = this.root.getByRole("link", { name: "Library" });
+    // A link to `/check-in`, whose dialog opens over the page it came from.
     this.checkInButton = this.root.getByRole("link", {
       name: "Check in",
       exact: true,
     });
-    this.addBooksButton = this.root.getByRole("button", {
-      name: "Add books",
-      exact: true,
-    });
+    this.addBooksButton = this.root.getByRole("button", { name: "Add books" });
     this.userMenuButton = this.root.getByTestId("user-menu-trigger");
     this.userMenuPanel = page.getByTestId("user-menu-panel");
     this.searchButton = page.getByTestId("search-trigger");
@@ -58,7 +56,7 @@ export class TopNavComponent extends BaseComponent {
     });
     this.searchPalette = new SearchPaletteComponent(page, this.searchButton);
     // Absent on top-level pages.
-    this.breadcrumbNav = page.locator("nav.breadcrumb");
+    this.breadcrumbNav = page.getByRole("navigation", { name: "breadcrumb" });
 
     this.signOutButton = page.getByTestId("logout-button");
     this.settingsLink = page.getByRole("link", { name: "Settings" });
@@ -138,10 +136,20 @@ export class TopNavComponent extends BaseComponent {
     );
   }
 
-  /** Answers sign-out without ending the session, which every parallel test shares. */
+  /**
+   * Answers sign-out without ending the session, which every parallel test
+   * shares; from then on `/api/auth/me` answers as for a signed-out visitor.
+   */
   async stubSignOut(): Promise<void> {
-    await this.page.route(authUrls.logout, (route) =>
-      route.fulfill({ status: 200, contentType: "text/plain", body: "" }),
+    let signedOut = false;
+    await this.page.route(authUrls.logout, (route) => {
+      signedOut = true;
+      return route.fulfill({ status: 204 });
+    });
+    await this.page.route(authUrls.me, (route) =>
+      signedOut
+        ? route.fulfill({ status: 401, contentType: "text/plain", body: "" })
+        : route.continue(),
     );
   }
 

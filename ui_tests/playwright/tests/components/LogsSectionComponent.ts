@@ -70,8 +70,10 @@ export class LogsSectionComponent extends BaseComponent {
     pages: LogPage | ((requestedPage: number) => LogPage),
   ): Promise<void> {
     await this.page.route(logsUrls.read, (route) => {
-      if (route.request().method() !== "POST") return route.continue();
-      const requestedPage = route.request().postDataJSON()?.query?.page ?? 0;
+      if (route.request().method() !== "GET") return route.continue();
+      const requestedPage = Number(
+        new URL(route.request().url()).searchParams.get("page") ?? 0,
+      );
       return route.fulfill({
         status: 200,
         contentType: "application/json",

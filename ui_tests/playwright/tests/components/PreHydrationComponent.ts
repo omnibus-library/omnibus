@@ -3,30 +3,25 @@ import { holdRequests } from "../utils/api";
 import { waitForApp } from "../utils/nav";
 import { BaseComponent } from "./BaseComponent";
 
-// The app's wasm binary: `/wasm/omnibus_bg.wasm` under `dx serve`, a hashed
-// `/assets/omnibus_bg-dxh….wasm` in the release bundle CI runs.
-const CLIENT_WASM = /\/omnibus_bg[^/]*\.wasm(\?|$)/;
+// The client's entry chunk, a hashed `/assets/index-….js` in the vite build.
+const CLIENT_BUNDLE = /\/assets\/index-[^/]*\.js(\?|$)/;
 
-/** What a page shows while the client's wasm download is held back. */
+/** What a page shows while the client's bundle download is held back. */
 export class PreHydrationComponent extends BaseComponent {
-  readonly hydratedMarker: Locator;
-  readonly pageLoaderMark: Locator;
+  readonly pageLoader: Locator;
   readonly zeroBooksText: Locator;
-  readonly authorsLoader: Locator;
 
   constructor(page: Page) {
     super(page);
-    this.hydratedMarker = page.locator("html[data-hydrated]");
-    this.pageLoaderMark = page.locator(".ld-riffle");
-    this.zeroBooksText = page.getByText(/\b0 books\b/);
-    this.authorsLoader = page
+    this.pageLoader = page
       .getByRole("status")
-      .filter({ hasText: "Gathering every author" });
+      .filter({ hasText: "Opening your library" });
+    this.zeroBooksText = page.getByText(/\b0 books\b/);
   }
 
-  /** Holds the client's wasm download; the release lets it go and waits for the page to hydrate. */
+  /** Holds the client's bundle download; the release lets it go and waits for the app to mount. */
   async hold(): Promise<() => Promise<void>> {
-    const release = await holdRequests(this.page, CLIENT_WASM);
+    const release = await holdRequests(this.page, CLIENT_BUNDLE);
     return async () => {
       release();
       await waitForApp(this.page);
