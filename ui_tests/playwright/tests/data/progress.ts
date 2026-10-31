@@ -88,9 +88,7 @@ export function savedAudioPosition(request: Request): {
   format: string;
   seconds: number;
 } {
-  const {
-    update,
-  }: { update: { format: string; audio_position_seconds: number } } =
+  const body: { format: string; audio_position_seconds: number } =
     request.postDataJSON();
-  return { format: update.format, seconds: update.audio_position_seconds };
+  return { format: body.format, seconds: body.audio_position_seconds };
 }

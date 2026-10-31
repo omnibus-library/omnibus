@@ -101,7 +101,9 @@ export class PdfReaderPage extends PagedReaderPage {
 
   /** Saves the selection in `color`, then waits for the server's answer. */
   async highlightSelection(color: HighlightColor): Promise<void> {
-    const created = this.page.waitForResponse(isResponseTo(highlights.create()));
+    const created = this.page.waitForResponse(
+      isResponseTo(highlights.create()),
+    );
     await this.highlightSwatch(color).click();
     await created;
   }

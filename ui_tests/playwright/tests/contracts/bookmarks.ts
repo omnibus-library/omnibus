@@ -10,8 +10,5 @@ export const bookmarksUrls = {
 export const bookmarks = {
   /** The save "+ Bookmark" makes. Pass no bookmark for one taken at the playhead, whose position a test cannot pin. */
   create: (bookmark?: NewBookmark): ExpectMutationOptions =>
-    post(
-      bookmarksUrls.create,
-      bookmark,
-    ),
+    post(bookmarksUrls.create, bookmark),
 };

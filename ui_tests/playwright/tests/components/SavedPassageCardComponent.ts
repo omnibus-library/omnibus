@@ -36,7 +36,9 @@ export class SavedPassageCardComponent extends BaseComponent {
 
   /** Clicks delete and waits for the request to answer, whatever it says. */
   async delete(): Promise<void> {
-    const deleted = this.page.waitForResponse(isResponseTo(highlights.delete()));
+    const deleted = this.page.waitForResponse(
+      isResponseTo(highlights.delete()),
+    );
     await this.deleteButton.click();
     await deleted;
   }

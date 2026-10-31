@@ -31,7 +31,9 @@ export class HighlightRowComponent extends BaseComponent {
   }
 
   async delete(): Promise<void> {
-    const deleted = this.page.waitForResponse(isResponseTo(highlights.delete()));
+    const deleted = this.page.waitForResponse(
+      isResponseTo(highlights.delete()),
+    );
     await this.deleteButton.click();
     await deleted;
   }

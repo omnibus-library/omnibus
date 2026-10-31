@@ -9,7 +9,12 @@ export async function setRange(
   await slider.evaluate(
     (el, args) => {
       const input = el as HTMLInputElement;
-      input.value = String(args.value);
+      // The prototype's setter, past the instance's: React tracks the last value
+      // through the latter and would drop an `input` it already saw as unchanged.
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )?.set?.call(input, String(args.value));
       input.dispatchEvent(new Event("input", { bubbles: true }));
       if (args.commit) {
         input.dispatchEvent(new Event("change", { bubbles: true }));
