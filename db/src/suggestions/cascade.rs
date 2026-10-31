@@ -10,8 +10,7 @@ use sqlx::SqlitePool;
 
 use crate::author_photos::{fetch_remote_image_with, RemoteImageConfig};
 use crate::suggestions::data::{
-    mark_failed, replace_suggestions, suggestion_state, NewSuggestion, SuggestionState,
-    SUGGESTIONS_TTL_SECS,
+    is_fresh, mark_failed, replace_suggestions, suggestion_state, NewSuggestion, SuggestionState,
 };
 use crate::suggestions::filter::{filter_candidates, Candidate};
 use crate::suggestions::hardcover::{
@@ -52,7 +51,7 @@ pub async fn resolve(pool: &SqlitePool, book_uuid: &str) -> anyhow::Result<()> {
 /// [`resolve`] with injectable Hardcover + remote-image configs (for a local
 /// `wiremock` in tests). Resolves the library book to a Hardcover book
 /// (ISBN-first, title fallback), ranks books co-listed with it, and caches the
-/// top 10 with cover bytes. A clean miss writes the sticky `empty` marker; an
+/// top 10 with cover bytes. A clean miss writes the `empty` marker; an
 /// error marks the book `failed` and is still returned, so the worker logs it.
 pub async fn resolve_with(
     pool: &SqlitePool,
@@ -80,8 +79,7 @@ async fn resolve_and_cache(
     // already produced a fresh result — skip the network work if so. We do NOT
     // skip on `pending`: that's our own in-flight marker, set by the RPC.
     if let Some((state, at)) = suggestion_state(pool, book_uuid).await? {
-        let fresh = now_secs().saturating_sub(at) <= SUGGESTIONS_TTL_SECS;
-        if matches!(state, SuggestionState::Resolved | SuggestionState::Empty) && fresh {
+        if is_fresh(state, at, now_secs()) {
             return Ok(());
         }
     }
@@ -96,7 +94,7 @@ async fn resolve_and_cache(
 
     // Resolve the library book to a Hardcover book.
     let Some(resolved) = resolve_book(config, &isbns, &title, author.as_deref()).await? else {
-        // Hardcover has no matching book — sticky negative until the TTL lapses.
+        // Hardcover has no matching book — looked up again once the empty marker goes stale.
         replace_suggestions(pool, book_uuid, &[], SuggestionState::Empty).await?;
         return Ok(());
     };
@@ -139,12 +137,8 @@ async fn resolve_and_cache(
         });
     }
 
-    let state = if rows.is_empty() {
-        SuggestionState::Empty
-    } else {
-        SuggestionState::Resolved
-    };
-    replace_suggestions(pool, book_uuid, &rows, state).await?;
+    // `Resolved` even with no rows: the book matched, so only a miss is retried daily.
+    replace_suggestions(pool, book_uuid, &rows, SuggestionState::Resolved).await?;
     Ok(())
 }
 
@@ -174,26 +168,46 @@ async fn fetch_cover(
     fetch_remote_image_with(url, image_config).await.ok()
 }
 
-/// Pull candidate ISBNs from a book's identifiers. Accepts identifiers whose
-/// scheme names ISBN, plus any value that *looks* like a 10/13-digit ISBN
-/// (covers the common `scheme = "unknown"` case). Hyphens/spaces stripped.
+/// Pull candidate ISBNs from a book: its `isbn13` / `isbn10` fields first (an
+/// edit's value wins), then its identifiers. Identifiers count when their scheme
+/// names ISBN or the value *looks* like a 10/13-digit ISBN (covers the common
+/// `scheme = "unknown"` case). Hyphens/spaces stripped.
 pub(crate) fn extract_isbns(book: &omnibus_shared::EbookMetadata) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
+    for isbn in [book.isbn13.as_deref(), book.isbn10.as_deref()]
+        .into_iter()
+        .flatten()
+    {
+        push_isbn(&mut out, isbn);
+    }
     for ident in &book.identifiers {
         let scheme_is_isbn = ident
             .scheme
             .as_deref()
             .map(|s| s.to_lowercase().contains("isbn"))
             .unwrap_or(false);
-        let cleaned: String = ident
-            .value
-            .chars()
-            .filter(|c| c.is_ascii_digit() || *c == 'X' || *c == 'x')
-            .collect();
-        let looks_like_isbn = matches!(cleaned.len(), 10 | 13);
-        if (scheme_is_isbn || looks_like_isbn) && !cleaned.is_empty() && !out.contains(&cleaned) {
-            out.push(cleaned);
+        if scheme_is_isbn || looks_like_isbn(&ident.value) {
+            push_isbn(&mut out, &ident.value);
         }
     }
     out
+}
+
+/// Digits and `X`/`x` only, so `978-0-13-468599-1` reads as `9780134685991`.
+fn clean_isbn(raw: &str) -> String {
+    raw.chars()
+        .filter(|c| c.is_ascii_digit() || *c == 'X' || *c == 'x')
+        .collect()
+}
+
+fn looks_like_isbn(raw: &str) -> bool {
+    matches!(clean_isbn(raw).len(), 10 | 13)
+}
+
+/// Append `raw`, cleaned, unless it cleans to nothing or is already listed.
+fn push_isbn(out: &mut Vec<String>, raw: &str) {
+    let cleaned = clean_isbn(raw);
+    if !cleaned.is_empty() && !out.contains(&cleaned) {
+        out.push(cleaned);
+    }
 }

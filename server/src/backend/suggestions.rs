@@ -35,7 +35,8 @@ fn now_secs() -> i64 {
 /// strip. `status` is `not_configured` when the server has no Hardcover key, `pending`
 /// while the server fetches them in the background (ask again shortly), `unavailable` when
 /// the last lookup failed (it is retried after 15 minutes), or `ready` with the items,
-/// which may be empty. Results are kept for 30 days, then refreshed.
+/// which may be empty. An empty result, where no Hardcover book matched, is looked up
+/// again after a day; any other result is kept for 30 days, then refreshed.
 #[utoipa::path(
     get,
     path = "/api/ebooks/{uuid}/suggestions",

@@ -10,7 +10,9 @@ use omnibus_shared::metadata_lookup::{ExternalBookMeta, MetadataProvider, Provid
 use serde::Deserialize;
 
 use crate::helpers::format_series_index;
-use crate::suggestions::hardcover::{post_graphql, HardcoverConfig, HardcoverError};
+use crate::suggestions::hardcover::{
+    post_graphql, HardcoverConfig, HardcoverError, SearchData, SEARCH_QUERY,
+};
 
 use super::super::{MetadataLookupConfig, SEARCH_LIMIT};
 use super::http::{paired_isbn10, sanitize_genres};
@@ -95,36 +97,6 @@ struct Edition {
     /// work, so this is the only place a page count exists here.
     #[serde(default)]
     pages: Option<i64>,
-}
-
-/// The `search` response. `results` is an untyped Typesense payload on the
-/// wire, so only the parts we read are described; everything else (facets,
-/// timings, request echo) is ignored by serde.
-#[derive(Debug, Default, Deserialize)]
-struct SearchData {
-    // `default` covers an absent key, not a `null`; `search` is nullable (Hasura
-    // sends `{"data":{"search":null}}` beside `errors`), so `Option` at every
-    // level reads that as "no hits" instead of a decode error.
-    #[serde(default)]
-    search: Option<SearchEnvelope>,
-}
-
-#[derive(Debug, Default, Deserialize)]
-struct SearchEnvelope {
-    #[serde(default)]
-    results: Option<SearchResults>,
-}
-
-#[derive(Debug, Default, Deserialize)]
-struct SearchResults {
-    #[serde(default)]
-    hits: Option<Vec<SearchHit>>,
-}
-
-#[derive(Debug, Deserialize)]
-struct SearchHit {
-    #[serde(default)]
-    document: Option<SearchDocument>,
 }
 
 /// One hit's document. Note the shape differs from [`BookRow`]: a search
@@ -286,22 +258,17 @@ pub async fn by_text(
         return Ok(Vec::new());
     };
     // Untrusted text rides in `variables`, never interpolated into the query.
-    let gql = "query ($q: String!, $limit: Int!) { \
-         search(query: $q, query_type: \"Book\", per_page: $limit, page: 1) { results } }";
-    let data: SearchData = post(
+    let data: SearchData<SearchDocument> = post(
         config,
         &hc,
-        gql,
+        SEARCH_QUERY,
         serde_json::json!({ "q": query, "limit": SEARCH_LIMIT }),
     )
     .await?;
     Ok(data
-        .search
-        .and_then(|s| s.results)
-        .and_then(|r| r.hits)
-        .unwrap_or_default()
+        .documents()
         .into_iter()
-        .filter_map(|hit| map_search_document(hit.document?))
+        .filter_map(map_search_document)
         .collect())
 }
 

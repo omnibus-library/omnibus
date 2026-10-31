@@ -10,7 +10,9 @@ use super::config_for;
 use crate::author_photos::RemoteImageConfig;
 use crate::pool::init_db;
 use crate::suggestions::cascade::{extract_isbns, resolve_with};
-use crate::suggestions::data::{get_suggestions, suggestion_state, SuggestionState};
+use crate::suggestions::data::{
+    get_suggestions, suggestion_state, SuggestionState, EMPTY_RETRY_SECS,
+};
 use crate::test_support::seed_synced_ebook;
 
 #[tokio::test]
@@ -104,6 +106,192 @@ async fn resolve_with_caches_filtered_survivors_end_to_end() {
     assert!(got[0].has_cover);
     assert_eq!(got[1].list_count, 2);
     assert!(!got[1].has_cover);
+
+    let (state, _) = suggestion_state(&pool, &uuid).await.unwrap().unwrap();
+    assert_eq!(state, SuggestionState::Resolved);
+}
+
+async fn age_marker(pool: &sqlx::SqlitePool, uuid: &str, state: SuggestionState, age: i64) {
+    sqlx::query(
+        "INSERT INTO book_suggestion_state (book_uuid, state, fetched_at)
+         VALUES (?, ?, strftime('%s','now') - ?)",
+    )
+    .bind(uuid)
+    .bind(state.as_str())
+    .bind(age)
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+/// Answers the list lookups with one co-listed book, "Alpha", by `author`.
+async fn mount_one_co_listed_book(server: &MockServer, author: &str) {
+    let hit = |body: serde_json::Value| ResponseTemplate::new(200).set_body_json(body);
+    Mock::given(method("POST"))
+        .and(body_string_contains("list_books(where: {book_id:"))
+        .respond_with(hit(json!({ "data": { "list_books": [{ "list_id": 1 }] } })))
+        .mount(server)
+        .await;
+    Mock::given(method("POST"))
+        .and(body_string_contains("list_books(where: {list_id:"))
+        .respond_with(hit(
+            json!({ "data": { "list_books": [{ "book_id": 200 }] } }),
+        ))
+        .mount(server)
+        .await;
+    Mock::given(method("POST"))
+        .and(body_string_contains("books(where: {id: {_in:"))
+        .respond_with(hit(json!({ "data": { "books": [{
+            "id": 200, "title": "Alpha",
+            "contributions": [{ "author": { "name": author } }], "book_series": []
+        }] } })))
+        .mount(server)
+        .await;
+}
+
+async fn resolve_seeded_book(pool: &sqlx::SqlitePool, uuid: &str, server: &MockServer) {
+    resolve_with(
+        pool,
+        uuid,
+        &config_for(server),
+        &RemoteImageConfig::default(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn resolve_with_re_resolves_an_empty_marker_older_than_a_day() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let uuid = seed_synced_ebook(&pool, "src.epub", "Test Source", "Source Author").await;
+    age_marker(&pool, &uuid, SuggestionState::Empty, 2 * EMPTY_RETRY_SECS).await;
+
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(body_string_contains("title: {_eq:"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({ "data": { "books": [{
+            "id": 100, "contributions": [{ "author": { "name": "Source Author" } }],
+            "book_series": []
+        }] } })),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+    mount_one_co_listed_book(&server, "Author A").await;
+
+    resolve_seeded_book(&pool, &uuid, &server).await;
+
+    let (state, _) = suggestion_state(&pool, &uuid).await.unwrap().unwrap();
+    assert_eq!(state, SuggestionState::Resolved);
+    assert_eq!(get_suggestions(&pool, &uuid).await.unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn resolve_with_marks_a_resolved_book_resolved_when_every_candidate_is_filtered_out() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let uuid = seed_synced_ebook(&pool, "src.epub", "Test Source", "Source Author").await;
+
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(body_string_contains("title: {_eq:"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({ "data": { "books": [{
+            "id": 100, "contributions": [{ "author": { "name": "Source Author" } }],
+            "book_series": []
+        }] } })),
+        )
+        .mount(&server)
+        .await;
+    mount_one_co_listed_book(&server, "Source Author").await;
+
+    resolve_seeded_book(&pool, &uuid, &server).await;
+
+    let (state, _) = suggestion_state(&pool, &uuid).await.unwrap().unwrap();
+    assert_eq!(state, SuggestionState::Resolved);
+    assert!(get_suggestions(&pool, &uuid).await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn resolve_with_caches_suggestions_for_a_book_matched_only_by_fuzzy_search() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user_id = crate::auth::create_user(&pool, "admin", "securepassword1")
+        .await
+        .unwrap()
+        .id;
+    let uuid = seed_synced_ebook(&pool, "src.epub", "Test Source (Vol. 1)", "Source Author").await;
+    let isbn = omnibus_shared::MetadataOverrides {
+        isbn13: Some("9781649374042".into()),
+        ..Default::default()
+    };
+    crate::metadata_overrides::upsert_metadata_overrides(&pool, &uuid, &isbn, false, user_id)
+        .await
+        .unwrap();
+
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(body_string_contains("editions(where:"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data": { "editions": [] }
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(body_string_contains("title: {_eq:"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data": { "books": [] }
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(body_string_contains("search(query:"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data": { "search": { "results": { "hits": [
+                { "document": { "id": "100", "author_names": ["Source Author"], "users_count": 40 } }
+            ] } } }
+        })))
+        .mount(&server)
+        .await;
+    mount_one_co_listed_book(&server, "Author A").await;
+
+    resolve_seeded_book(&pool, &uuid, &server).await;
+
+    let (state, _) = suggestion_state(&pool, &uuid).await.unwrap().unwrap();
+    assert_eq!(state, SuggestionState::Resolved);
+    let rows = get_suggestions(&pool, &uuid).await.unwrap();
+    assert_eq!(
+        rows.iter().map(|r| r.title.as_str()).collect::<Vec<_>>(),
+        vec!["Alpha"]
+    );
+}
+
+#[tokio::test]
+async fn resolve_with_skips_a_resolved_marker_younger_than_thirty_days() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let uuid = seed_synced_ebook(&pool, "src.epub", "Test Source", "Source Author").await;
+    age_marker(
+        &pool,
+        &uuid,
+        SuggestionState::Resolved,
+        2 * EMPTY_RETRY_SECS,
+    )
+    .await;
+
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(500))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    resolve_with(
+        &pool,
+        &uuid,
+        &config_for(&server),
+        &RemoteImageConfig::default(),
+    )
+    .await
+    .unwrap();
 
     let (state, _) = suggestion_state(&pool, &uuid).await.unwrap().unwrap();
     assert_eq!(state, SuggestionState::Resolved);
@@ -329,4 +517,38 @@ fn extract_isbns_matches_bare_digit_values_via_heuristic_when_scheme_is_unrecogn
         vec!["0141439513".to_string()],
         "10-digit bare value should be picked up by the length heuristic alone"
     );
+}
+
+#[test]
+fn extract_isbns_reads_the_isbn_fields_an_edit_sets_ahead_of_the_identifiers() {
+    let book = omnibus_shared::EbookMetadata {
+        isbn13: Some("9781649374042".into()),
+        isbn10: Some("164937404X".into()),
+        identifiers: vec![omnibus_shared::Identifier {
+            value: "9780134685991".into(),
+            scheme: Some("ISBN".into()),
+        }],
+        ..Default::default()
+    };
+    assert_eq!(
+        extract_isbns(&book),
+        vec![
+            "9781649374042".to_string(),
+            "164937404X".to_string(),
+            "9780134685991".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn extract_isbns_lists_an_isbn_once_when_a_field_and_an_identifier_agree() {
+    let book = omnibus_shared::EbookMetadata {
+        isbn13: Some("9780134685991".into()),
+        identifiers: vec![omnibus_shared::Identifier {
+            value: "978-0-13-468599-1".into(),
+            scheme: Some("ISBN".into()),
+        }],
+        ..Default::default()
+    };
+    assert_eq!(extract_isbns(&book), vec!["9780134685991".to_string()]);
 }

@@ -9,6 +9,9 @@ use sqlx::SqlitePool;
 /// Result cache TTL: a book is re-resolved only after 30 days.
 pub const SUGGESTIONS_TTL_SECS: i64 = 30 * 24 * 60 * 60;
 
+/// An empty result is looked up again after a day.
+pub const EMPTY_RETRY_SECS: i64 = 24 * 60 * 60;
+
 /// Debounce window for an in-flight `pending` marker. A second viewer landing
 /// within this window reads `pending` and does **not** post another task; a
 /// `pending` marker older than this is treated as a dead resolution and
@@ -29,9 +32,9 @@ pub enum SuggestionsDataError {
 pub enum SuggestionState {
     /// A resolution is enqueued / in flight.
     Pending,
-    /// Results are cached (`book_suggestions` holds 0..N rows).
+    /// The book matched on Hardcover and its results are cached (`book_suggestions` holds 0..N rows).
     Resolved,
-    /// Sticky negative — Hardcover matched nothing usable.
+    /// No Hardcover book matched the library book; looked up again after [`EMPTY_RETRY_SECS`].
     Empty,
     /// The lookup errored; it is tried again once the pending debounce lapses.
     Failed,
@@ -73,8 +76,8 @@ pub struct CacheDecision {
 /// Pure cache state machine. `marker` is the `(state, fetched_at)` pair from
 /// [`suggestion_state`] (`None` = no row yet); `now` is unix-seconds. The
 /// single place that keeps a refresh or burst of concurrent viewers from
-/// re-hitting Hardcover while a result is fresh: a 30-day TTL result cache plus
-/// a `pending` debounce that collapses concurrent first-viewers to one task.
+/// re-hitting Hardcover while a result is fresh: a per-state TTL ([`is_fresh`])
+/// plus a `pending` debounce that collapses concurrent first-viewers to one task.
 pub fn decide(marker: Option<(SuggestionState, i64)>, now: i64) -> CacheDecision {
     match marker {
         // No marker: first viewer. Nothing to serve; kick off a resolution.
@@ -88,12 +91,26 @@ pub fn decide(marker: Option<(SuggestionState, i64)>, now: i64) -> CacheDecision
             serve: false,
             enqueue: now.saturating_sub(at) > PENDING_DEBOUNCE_SECS,
         },
-        // Resolved/empty: serve the cached rows; refresh only past the TTL.
-        Some((SuggestionState::Resolved | SuggestionState::Empty, at)) => CacheDecision {
-            serve: true,
-            enqueue: now.saturating_sub(at) > SUGGESTIONS_TTL_SECS,
-        },
+        // Settled: refresh once past the state's TTL. A stale `Empty` has no
+        // rows to serve, so the reader waits on the new answer instead.
+        Some((state @ (SuggestionState::Resolved | SuggestionState::Empty), at)) => {
+            let fresh = is_fresh(state, at, now);
+            CacheDecision {
+                serve: fresh || state == SuggestionState::Resolved,
+                enqueue: !fresh,
+            }
+        }
     }
+}
+
+/// Whether a settled marker is still inside its state's TTL; `Pending`/`Failed` never are.
+pub fn is_fresh(state: SuggestionState, fetched_at: i64, now: i64) -> bool {
+    let ttl = match state {
+        SuggestionState::Resolved => SUGGESTIONS_TTL_SECS,
+        SuggestionState::Empty => EMPTY_RETRY_SECS,
+        SuggestionState::Pending | SuggestionState::Failed => return false,
+    };
+    now.saturating_sub(fetched_at) <= ttl
 }
 
 /// Whether an unserved read should answer `unavailable` rather than `pending`:
@@ -240,7 +257,7 @@ async fn mark_state(
 
 /// Replace a book's cached suggestions and stamp its terminal marker, in one
 /// transaction. `rows` are written at ranks `0..rows.len()`; an empty `rows`
-/// slice with `state = Empty` records the sticky-negative marker.
+/// slice with `state = Empty` records the no-match marker.
 pub async fn replace_suggestions(
     pool: &SqlitePool,
     book_uuid: &str,
@@ -316,14 +333,24 @@ pub async fn delete_suggestions(
     book_uuid: &str,
 ) -> Result<(), SuggestionsDataError> {
     let mut tx = pool.begin().await?;
+    delete_suggestions_in_tx(&mut tx, book_uuid).await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+/// [`delete_suggestions`] on the caller's transaction, so an edit that
+/// invalidates the cache rolls the deletion back with itself.
+pub async fn delete_suggestions_in_tx(
+    conn: &mut sqlx::SqliteConnection,
+    book_uuid: &str,
+) -> Result<(), SuggestionsDataError> {
     sqlx::query("DELETE FROM book_suggestions WHERE book_uuid = ?")
         .bind(book_uuid)
-        .execute(&mut *tx)
+        .execute(&mut *conn)
         .await?;
     sqlx::query("DELETE FROM book_suggestion_state WHERE book_uuid = ?")
         .bind(book_uuid)
-        .execute(&mut *tx)
+        .execute(&mut *conn)
         .await?;
-    tx.commit().await?;
     Ok(())
 }
