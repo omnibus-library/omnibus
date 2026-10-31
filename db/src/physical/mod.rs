@@ -24,8 +24,8 @@ pub(crate) use promote::{promote_filed_physical_book, promote_filed_physical_boo
 pub use remove::delete_fileless_book;
 pub(crate) use wishlist::add_wishlist_entry_in_tx;
 pub use wishlist::{
-    add_wishlist_entry, get_wishlist_entry, list_wishlist, remove_wishlist_entry,
-    LIST_WISHLIST_LIMIT,
+    add_wishlist_entry, get_wishlist_entry, list_wishlist, remove_wishlist_entry, wishlist_books,
+    wishlist_readers, WishlistScope, LIST_WISHLIST_LIMIT,
 };
 
 /// Sentinel scan-root path that owns every fileless (physical-only) book. It is
@@ -50,6 +50,9 @@ pub enum PhysicalError {
     /// Refused: the book still has digital files, so the reindex diff owns it.
     #[error("book still has files")]
     BookHasFiles,
+    /// No user has the given id.
+    #[error("reader not found")]
+    UserNotFound,
     /// A cover file could not be written for a fileless book.
     #[error("cover write failed: {0}")]
     Cover(#[from] std::io::Error),

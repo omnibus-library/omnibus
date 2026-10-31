@@ -10,7 +10,7 @@ use sqlx::{Row, Sqlite, SqlitePool, Transaction};
 use crate::metadata_overrides::{apply_overrides, get_metadata_overrides};
 
 use super::projection::{
-    backfill_creator_ids, merge_overrides_into_books, row_to_ebook, BOOK_COLUMNS,
+    backfill_creator_ids, merge_overrides_projected, row_to_ebook, Projection, BOOK_COLUMNS,
 };
 
 /// Fetch a single book by its stable `books.id`. Returns `None` if not found.
@@ -243,13 +243,24 @@ pub(crate) async fn get_books_by_ids(
     pool: &SqlitePool,
     ids: &[i64],
 ) -> Result<Vec<EbookMetadata>, super::BooksError> {
+    get_books_by_ids_projected(pool, ids, Projection::Full).await
+}
+
+/// [`get_books_by_ids`] reading the columns `projection` names; `List` leaves
+/// `description` off every book, overrides included.
+pub(crate) async fn get_books_by_ids_projected(
+    pool: &SqlitePool,
+    ids: &[i64],
+    projection: Projection,
+) -> Result<Vec<EbookMetadata>, super::BooksError> {
     if ids.is_empty() {
         return Ok(Vec::new());
     }
+    let columns = projection.columns();
     let mut out = Vec::with_capacity(ids.len());
     for chunk in ids.chunks(499) {
         let placeholders = chunk.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-        let sql = format!("SELECT {BOOK_COLUMNS} FROM books b WHERE b.id IN ({placeholders})");
+        let sql = format!("SELECT {columns} FROM books b WHERE b.id IN ({placeholders})");
         let mut q = sqlx::query(&sql);
         for id in chunk {
             q = q.bind(id);
@@ -258,7 +269,7 @@ pub(crate) async fn get_books_by_ids(
             out.push(row_to_ebook(&r)?);
         }
     }
-    merge_overrides_into_books(pool, &mut out).await?;
+    merge_overrides_projected(pool, &mut out, projection).await?;
     backfill_creator_ids(pool, &mut out).await?;
     Ok(out)
 }
