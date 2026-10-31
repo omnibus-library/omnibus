@@ -181,9 +181,12 @@ test.describe("bulk edit", () => {
     });
 
     await test.step("pick the shelf", async () => {
-      await expectMutation(shelves.addBooks(shelf.id, bookUuids), () =>
-        bulkEditBar.chooseShelf(shelf.name),
+      // The request carries the selection in the order it was made; a shelf is a set.
+      const { request: sent } = await expectMutation(
+        shelves.addBooks(shelf.id),
+        () => bulkEditBar.chooseShelf(shelf.name),
       );
+      expect(sent.postDataJSON().book_uuids.toSorted()).toEqual(bookUuids);
     });
 
     // The gallery's count follows without a reload.
@@ -223,9 +226,11 @@ test.describe("bulk edit", () => {
 
     await test.step("pick the shelf while the server fails", async () => {
       await libraryPage.forceServerError(shelves.addBooks());
-      await expectMutation(failing(shelves.addBooks(shelf.id, bookUuids)), () =>
-        bulkEditBar.chooseShelf(shelf.name),
+      const { request: sent } = await expectMutation(
+        failing(shelves.addBooks(shelf.id)),
+        () => bulkEditBar.chooseShelf(shelf.name),
       );
+      expect(sent.postDataJSON().book_uuids.toSorted()).toEqual(bookUuids);
     });
 
     await test.step("check the picker reports the failure and the selection stays", async () => {

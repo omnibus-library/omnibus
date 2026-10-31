@@ -45,8 +45,9 @@ export class MetadataEditPage extends BasePage {
     this.cancelRevertButton = page.getByTestId("revert-overrides-modal-cancel");
     // The leave bar's answer: "Don’t save", with a typographic apostrophe.
     this.dontSaveButton = page.getByRole("button", { name: /^Don.t save$/ });
-    this.genresLabel = page.getByText("Genres", { exact: true });
     this.genresSection = page.getByTestId("me-genres-section");
+    // The editor opens over the book page, whose Overview has its own "Genres" term.
+    this.genresLabel = this.genresSection.getByText("Genres", { exact: true });
     this.genresInput = this.genresSection.getByTestId("me-genres-input");
   }
 
