@@ -22,7 +22,8 @@ enum RemoteTransport: String {
     static let forwardSeconds: Double = 30
     /// The interval the backward commands seek, and the skip button draws.
     static let backSeconds: Double = 15
-    /// How long after one command another in its direction can be the same press.
+    /// How long after one command another in its direction can be the same press,
+    /// measured to the press going down, so a hold's own length doesn't count.
     static let samePressWindow: Duration = .seconds(1)
 
     /// Signed seconds to move the position by.
