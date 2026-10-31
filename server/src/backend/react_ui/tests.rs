@@ -179,7 +179,13 @@ async fn react_ui_router_falls_back_to_gzip_when_brotli_is_refused() {
     std::fs::write(dir.path().join("assets/app.js.br"), "brotli bytes").unwrap();
     std::fs::write(dir.path().join("assets/app.js.gz"), "gzip bytes").unwrap();
 
-    let res = get_with(&dir, "/assets/app.js", header::ACCEPT_ENCODING, "br;q=0, gzip").await;
+    let res = get_with(
+        &dir,
+        "/assets/app.js",
+        header::ACCEPT_ENCODING,
+        "br;q=0, gzip",
+    )
+    .await;
 
     assert_eq!(res.headers()[header::CONTENT_ENCODING], "gzip");
     assert_eq!(body_text(res).await, "gzip bytes");

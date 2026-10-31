@@ -77,7 +77,9 @@ pub async fn resolve(dir: &Path, rel: &str) -> Resolved {
 /// The router's fallback: unknown `/api/*` paths as JSON 404s, `/react/*` redirected to
 /// the root, and everything else served from `dir` — or a 503 naming the missing build.
 pub fn react_ui_router(dir: Option<PathBuf>) -> Router {
-    Router::new().fallback(fallback).with_state(dir.map(Arc::new))
+    Router::new()
+        .fallback(fallback)
+        .with_state(dir.map(Arc::new))
 }
 
 async fn fallback(State(dir): State<Option<Arc<PathBuf>>>, req: Request) -> Response {
@@ -98,7 +100,9 @@ async fn fallback(State(dir): State<Option<Arc<PathBuf>>>, req: Request) -> Resp
     let Some(dir) = dir else {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
-            format!("The web client is not installed: set {REACT_DIR_ENV} to a `vite build` output."),
+            format!(
+                "The web client is not installed: set {REACT_DIR_ENV} to a `vite build` output."
+            ),
         )
             .into_response();
     };
