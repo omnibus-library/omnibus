@@ -66,7 +66,7 @@ outputs:
     description: "Path to the throwaway keychain — delete it in an always() cleanup step"
     value: ${{ steps.cert.outputs.keychain }}
   profile-path:
-    description: "Path to the decoded .mobileprovision file (the dx path embeds this directly)"
+    description: "Path to the decoded .mobileprovision file"
     value: ${{ steps.profile.outputs.path }}
   profile-uuid:
     description: "UUID of the provisioning profile"
@@ -130,8 +130,8 @@ runs:
         echo "identity=$IDENTITY_HASH" >> "$GITHUB_OUTPUT"
         echo "keychain=$KEYCHAIN" >> "$GITHUB_OUTPUT"
 
-    # Decode the profile and install it where xcodebuild looks. The dx path reads
-    # the file directly by `profile-path`; the native path resolves it by name/UUID.
+    # Decode the profile and install it where xcodebuild looks; xcodebuild
+    # resolves it by name/UUID.
     - name: Install provisioning profile
       id: profile
       shell: bash

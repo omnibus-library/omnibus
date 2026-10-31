@@ -140,8 +140,8 @@ test: test-rust explore-test module-map-test koreader-report-test koreader-plugi
 
 # The Rust half of `just test`: every crate via cargo-nextest (the same runner
 # CI uses, so local and CI results match; no doctests in the tree, which is all
-# nextest can't run). Each crate is named because mcp and mock-kobo sit outside
-# default-members, which a bare `--workspace` run skips.
+# nextest can't run). Each crate is named, so a failure says which one, and
+# because a bare run covers only default-members (server, shared).
 # Self-wraps in the slim nix shell so it works from a bare checkout too.
 test-rust: fixtures
     scripts/with-dev-env.sh default bash -ec '\
