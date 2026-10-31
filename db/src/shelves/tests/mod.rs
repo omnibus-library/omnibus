@@ -28,14 +28,6 @@ async fn make_user(pool: &sqlx::SqlitePool, username: &str, is_admin: bool) -> i
     .unwrap()
 }
 
-async fn uuid_by_title(pool: &sqlx::SqlitePool, title: &str) -> String {
-    sqlx::query_scalar::<_, String>("SELECT uuid FROM books WHERE title = ?")
-        .bind(title)
-        .fetch_one(pool)
-        .await
-        .unwrap()
-}
-
 fn tag_rule(value: &str) -> ShelfRule {
     ShelfRule {
         field: RuleField::Tag,

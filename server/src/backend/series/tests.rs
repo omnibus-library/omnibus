@@ -360,20 +360,11 @@ async fn api_get_series_returns_500_when_the_hide_cannot_be_read() {
 
 /// Seeds the two Saga books under `/lib` and has `user` finish the first.
 async fn seed_saga_started(pool: &sqlx::SqlitePool, user: i64) -> (i64, String) {
+    use db::test_support::{indexed, mark_status, series_id_by_name, uuid_by_title};
+
     set_library_paths(pool, Some("/lib"), None).await;
-    let saga = |file: &str, title: &str, index: &str| db::ebook::IndexedBook {
-        metadata: omnibus_shared::EbookMetadata {
-            filename: file.into(),
-            title: Some(title.into()),
-            series: Some("Saga".into()),
-            series_index: Some(index.into()),
-            ..Default::default()
-        },
-        cover: None,
-        mtime_epoch: 0,
-        size_bytes: 0,
-        word_count: None,
-    };
+    let saga =
+        |file, title, index| indexed(file, Some(title), &[], &[], Some(("Saga", index)), None);
     db::replace_books(
         pool,
         "/lib",
@@ -381,29 +372,12 @@ async fn seed_saga_started(pool: &sqlx::SqlitePool, user: i64) -> (i64, String) 
     )
     .await
     .unwrap();
-    let uuid_of = |title: &'static str| async move {
-        sqlx::query_scalar::<_, String>("SELECT uuid FROM books WHERE title = ?")
-            .bind(title)
-            .fetch_one(pool)
-            .await
-            .unwrap()
-    };
-    let (one, two) = (uuid_of("One").await, uuid_of("Two").await);
-    db::read_status::set_read_status(
-        pool,
-        user,
-        &omnibus_shared::SetReadStatus {
-            book_uuid: one,
-            status: omnibus_shared::ReadStatus::Finished,
-        },
+    let one = uuid_by_title(pool, "One").await;
+    mark_status(pool, user, &one, omnibus_shared::ReadStatus::Finished).await;
+    (
+        series_id_by_name(pool, "Saga").await,
+        uuid_by_title(pool, "Two").await,
     )
-    .await
-    .unwrap();
-    let series_id = sqlx::query_scalar("SELECT id FROM series WHERE name = 'Saga'")
-        .fetch_one(pool)
-        .await
-        .unwrap();
-    (series_id, two)
 }
 
 async fn in_progress_rows(app: axum::Router, token: &str) -> Vec<omnibus_shared::SeriesInProgress> {
@@ -500,4 +474,30 @@ async fn api_starting_a_new_book_of_a_hidden_series_lists_it_in_progress_again()
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].series.id, series_id);
     assert_eq!(rows[0].next_book_uuid, two);
+}
+
+#[tokio::test]
+async fn api_series_hide_returns_500_when_the_hide_cannot_be_written() {
+    let (app, _state, pool) = fixture().await;
+    let user = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+    let series_id = seed_finished_dune(&pool, user.id).await;
+    sqlx::query("DROP TABLE series_hides")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    for method in ["PUT", "DELETE"] {
+        let res = app
+            .clone()
+            .oneshot(request(
+                method,
+                &format!("/api/series/{series_id}/hide"),
+                Some(&token),
+                None,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR, "{method}");
+    }
 }
