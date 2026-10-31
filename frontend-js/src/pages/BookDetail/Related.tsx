@@ -15,11 +15,9 @@ import { Cover } from "../../components/Cover/Cover";
 import { ChevronRightGlyph } from "../../components/Glyphs/Glyphs";
 import { Loading, Ring } from "../../components/Loading/Loading";
 import { bookCount, formatYear } from "../../format";
-import {
-  suggestionPollMs,
-  suggestionsQuery,
-  suggestionsUnavailable,
-} from "./queries";
+import { useCurrentUser } from "../../session";
+import { INTEGRATIONS_HREF } from "../../settingsIndex";
+import { suggestionsQuery, suggestionsUnavailable } from "./queries";
 import "./Overview.css";
 
 /** The series fan's id, where the byline's series scrolls to. */
@@ -178,20 +176,54 @@ function MoreBy({ book }: { book: BookDetail }) {
   );
 }
 
-/** Hardcover's read-alikes, in one row that scrolls sideways. Nothing unless the server has some, is still looking, or gave up. */
+/** What the strip says when there is no row of read-alikes to show. */
+function SuggestionsNote({ notConfigured }: { notConfigured: boolean }) {
+  const { isAdmin } = useCurrentUser();
+  if (notConfigured)
+    return (
+      <div
+        className="bp-suggest-connect"
+        data-testid="suggestions-not-configured"
+      >
+        <div>
+          <h3 className="bp-suggest-connect-title">
+            Suggestions are powered by Hardcover
+          </h3>
+          <p className="bp-quiet">
+            Add a Hardcover API key to pull read-alikes for this book.
+          </p>
+        </div>
+        {isAdmin ? (
+          <Link
+            className="btn primary sm"
+            data-testid="suggestions-connect-link"
+            to={INTEGRATIONS_HREF}
+          >
+            Add Hardcover API key →
+          </Link>
+        ) : (
+          <span className="bp-quiet">
+            Ask your server admin to connect Hardcover.
+          </span>
+        )}
+      </div>
+    );
+  return (
+    <div className="bp-suggest-pending" data-testid="suggestions-empty">
+      <p className="bp-quiet">No read-alikes found for this book yet.</p>
+    </div>
+  );
+}
+
+/** Hardcover's read-alikes in one row that scrolls sideways, or the reason there are none: still looking, nothing found, no key, or a lookup that failed. Nothing before the first answer. */
 function Suggestions({ book }: { book: BookDetail }) {
   const client = useQueryClient();
   const { queryKey } = suggestionsQuery(book.uuid);
-  const answer = useQuery(suggestionsQuery(book.uuid)).data;
+  const query = useQuery(suggestionsQuery(book.uuid));
+  const answer = query.data;
   const answers = client.getQueryState(queryKey)?.dataUpdateCount ?? 0;
-  const searching = suggestionPollMs(answer, answers) !== false;
-  const unavailable = suggestionsUnavailable(answer, answers);
-  if (
-    !searching &&
-    !unavailable &&
-    !(answer?.status === "ready" && answer.items.length > 0)
-  )
-    return null;
+  const unavailable = query.isError || suggestionsUnavailable(answer, answers);
+  if (!answer && !query.isError) return null;
   return (
     <section data-testid="suggestions-strip" aria-labelledby="bp-suggest-title">
       <div className="bp-section-head">
@@ -200,7 +232,7 @@ function Suggestions({ book }: { book: BookDetail }) {
         </h2>
         <span className="bp-head-note">From Hardcover</span>
       </div>
-      {answer?.status === "ready" ? (
+      {answer?.status === "ready" && answer.items.length > 0 ? (
         <ul className="bp-shelf bp-suggest-row">
           {answer.items.map((s: Suggestion) => (
             <li key={s.id}>
@@ -220,13 +252,18 @@ function Suggestions({ book }: { book: BookDetail }) {
             </li>
           ))}
         </ul>
+      ) : answer?.status === "ready" || answer?.status === "not_configured" ? (
+        <SuggestionsNote notConfigured={answer.status === "not_configured"} />
       ) : (
         // A status region, so a lookup that gives up is announced, not swapped in silently.
         <div role="status">
           {unavailable ? (
-            <p className="bp-quiet" data-testid="suggestions-unavailable">
-              Suggestions are unavailable right now.
-            </p>
+            <div
+              className="bp-suggest-pending"
+              data-testid="suggestions-unavailable"
+            >
+              <p className="bp-quiet">Suggestions are unavailable right now.</p>
+            </div>
           ) : (
             <div
               className="bp-suggest-pending"

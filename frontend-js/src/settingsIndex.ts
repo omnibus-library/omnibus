@@ -196,6 +196,9 @@ export const sectionHref = (section: Section) =>
 /** Where the People section opens. */
 export const PEOPLE_HREF = sectionHref(PEOPLE);
 
+/** Where the Integrations section opens, home of the Hardcover key. */
+export const INTEGRATIONS_HREF = sectionHref(INTEGRATIONS);
+
 /** Where a setting sits, as copy names it: "Settings › Goals". */
 export const settingsPlace = ({ section }: SettingsEntry) =>
   `${section.area === "settings" ? "Settings" : "Administration"} › ${section.label}`;
