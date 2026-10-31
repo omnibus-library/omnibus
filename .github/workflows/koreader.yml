@@ -107,7 +107,7 @@ jobs:
           gc-max-store-size-linux: 5G
 
       # Same `shared-key` as rust.yml/e2e.yml so a warm `cargo` target dir
-      # primes this lane's debug `dx bundle`.
+      # primes this lane's debug `cargo build`.
       - name: Cache cargo registry and target
         uses: Swatinem/rust-cache@v2
         with:

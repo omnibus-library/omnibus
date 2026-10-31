@@ -1,6 +1,0 @@
-{
-  "rules": {
-    "no-invalid-position-at-import-rule": true,
-    "no-duplicate-selectors": true
-  }
-}

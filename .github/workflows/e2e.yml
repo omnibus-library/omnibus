@@ -7,7 +7,7 @@ on:
   # its `e2e-required` gate always reports a status (a required check keyed on
   # a path-filtered workflow never resolves on a PR that doesn't match, which
   # blocks the merge forever). Path gating moved into the `changes` job below;
-  # `bundle`/`playwright` skip when nothing E2E-relevant changed, and the gate
+  # `server`/`playwright` skip when nothing E2E-relevant changed, and the gate
   # treats skipped as pass. `workflow_dispatch` stays the force-run escape
   # hatch for a PR that touches none of the E2E paths.
   pull_request:
@@ -19,10 +19,10 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # Detect whether this PR touches anything that can change the web bundle or
-  # the test suite. On push / workflow_dispatch the real jobs run
-  # unconditionally, so this output is only consulted for pull_request events.
-  # Keep the filter list in sync with the bundle cache key below.
+  # Detect whether this PR touches anything that can change the server, the
+  # React client or the test suite. On push / workflow_dispatch the real jobs
+  # run unconditionally, so this output is only consulted for pull_request
+  # events. Keep the filter list in sync with the server cache key below.
   changes:
     name: detect changes
     runs-on: ubuntu-latest
@@ -41,7 +41,6 @@ jobs:
         with:
           filters: |
             e2e:
-              - "frontend/**"
               # The React client the suite drives, and the spec its API client is generated from.
               - "frontend-js/**"
               - "openapi/**"
@@ -52,25 +51,20 @@ jobs:
               - "koreader/**"
               - "ui_tests/playwright/**"
               # The iOS reader's glue; `tests/ios_glue/` is its only test lane.
-              # Not in the bundle key below: nothing in the web bundle reads it.
+              # Not in the server key below: the server doesn't read it.
               - "omnibus-ios/omnibus/Reader/Web/**"
               - "**/Cargo.toml"
               - "Cargo.lock"
-              - "**/Dioxus.toml"
               - "flake.lock"
               - "flake.nix"
               - "scripts/fetch-fixtures.sh"
               - ".github/workflows/e2e.yml"
-  # Compile the fullstack web bundle (native server binary + WASM client)
-  # in release mode once and stash it in the GHA cache. Release mode strips
-  # the Dioxus hot-reload client from the WASM bundle, which otherwise
-  # injects a "Your app is being rebuilt" overlay that corrupts the DOM.
-  # Cache key covers every input that can change compiled output: the
-  # lockfile, per-crate manifests, the workspace crates that feed the web
-  # build, the Dioxus bundle config, the flake (toolchain pin), and this
-  # workflow file. Keep the `paths:` trigger above in sync.
-  bundle:
-    name: bundle
+  # Compile the release `omnibus` binary once and stash it in the GHA cache.
+  # Cache key covers every input that can change it: the lockfile, per-crate
+  # manifests, the crates it builds from, the KOReader plugin it embeds, the
+  # flake (toolchain pin), and this workflow file. Keep the filter above in sync.
+  server:
+    name: build server
     needs: changes
     if: ${{ needs.changes.outputs.e2e == 'true' || github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
@@ -80,35 +74,35 @@ jobs:
     env:
       CARGO_TARGET_DIR: ./target
     outputs:
-      cache-key: ${{ steps.bundle-key.outputs.key }}
+      cache-key: ${{ steps.server-key.outputs.key }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Compute bundle cache key
-        id: bundle-key
+      - name: Compute server cache key
+        id: server-key
         run: |
-          key="dx-bundle-${{ runner.os }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '**/Dioxus.toml', 'flake.lock', 'flake.nix', 'frontend/**', 'shared/**', 'server/**', 'db/**', 'koreader/**', '.github/workflows/e2e.yml') }}"
+          key="server-bin-${{ runner.os }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'flake.lock', 'flake.nix', 'shared/**', 'server/**', 'db/**', 'koreader/**', '.github/workflows/e2e.yml') }}"
           echo "key=$key" >> "$GITHUB_OUTPUT"
 
       # Split restore + save so the save happens as a normal step right after
-      # the bundle, BEFORE `Swatinem/rust-cache`'s post-step cleans `target/`.
+      # the build, BEFORE `Swatinem/rust-cache`'s post-step cleans `target/`.
       # If we used `actions/cache@v4` (combined), its post-step would run
       # AFTER rust-cache's cleanup — GHA runs post-steps in reverse
       # declaration order — and find an empty path. (We learned that the
       # hard way; see https://github.com/omnibus-library/omnibus/pull/319.)
-      - name: Restore dx bundle cache
-        id: bundle-cache
+      - name: Restore server cache
+        id: server-cache
         uses: actions/cache/restore@v4
         with:
-          path: target/dx/omnibus/release/web
-          key: ${{ steps.bundle-key.outputs.key }}
+          path: target/release/omnibus
+          key: ${{ steps.server-key.outputs.key }}
 
       - name: Install Nix
-        if: steps.bundle-cache.outputs.cache-hit != 'true'
+        if: steps.server-cache.outputs.cache-hit != 'true'
         uses: DeterminateSystems/nix-installer-action@v22
 
       - name: Cache Nix store
-        if: steps.bundle-cache.outputs.cache-hit != 'true'
+        if: steps.server-cache.outputs.cache-hit != 'true'
         uses: nix-community/cache-nix-action@v7
         with:
           primary-key: nix-e2e-${{ runner.os }}-${{ hashFiles('flake.lock', 'flake.nix') }}
@@ -120,32 +114,32 @@ jobs:
           gc-max-store-size-linux: 5G
 
       # Same `shared-key` as rust.yml so a warm `cargo` target dir from the
-      # Rust workflow primes the native half of `dx bundle` here (and vice
-      # versa). Without this they live in separate cache buckets.
+      # Rust workflow primes the build here (and vice versa). Without this
+      # they live in separate cache buckets.
       - name: Cache cargo registry and target
-        if: steps.bundle-cache.outputs.cache-hit != 'true'
+        if: steps.server-cache.outputs.cache-hit != 'true'
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: ". -> target"
           shared-key: omnibus
 
-      - name: Bundle web app
-        if: steps.bundle-cache.outputs.cache-hit != 'true'
-        run: nix develop .#e2e --command bash -c 'set -euo pipefail; dx bundle --platform web --package omnibus --fullstack --release --debug-symbols=false'
+      - name: Build server
+        if: steps.server-cache.outputs.cache-hit != 'true'
+        run: nix develop --command cargo build --release --locked -p omnibus
 
       # Explicit save (not the combined cache action's post-step) so it runs
-      # while `target/dx/omnibus/release/web` still exists. See the restore step
+      # while `target/release/omnibus` still exists. See the restore step
       # above for the rust-cache cleanup race we're dodging.
-      - name: Save dx bundle cache
-        if: steps.bundle-cache.outputs.cache-hit != 'true'
+      - name: Save server cache
+        if: steps.server-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
-          path: target/dx/omnibus/release/web
-          key: ${{ steps.bundle-key.outputs.key }}
+          path: target/release/omnibus
+          key: ${{ steps.server-key.outputs.key }}
 
   playwright:
     name: playwright (shard ${{ matrix.shard }}/${{ strategy.job-total }})
-    needs: bundle
+    needs: server
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -205,44 +199,43 @@ jobs:
           restore-keys: |
             playwright-node-modules-${{ runner.os }}-
 
-      # Re-use the bundle produced by the `bundle` job — a hit on the run that
+      # Re-use the binary produced by the `server` job — a hit on the run that
       # built it. NOT guaranteed forever: GHA evicts cache entries (LRU once
       # the repo passes its 10 GB budget), so re-running a failed shard hours
-      # later can find the entry gone. `fail-on-cache-miss` used to turn that
-      # into a red shard before a single test ran, making "Re-run failed jobs"
-      # useless on any flake. Fall back to building the bundle here instead.
-      - name: Restore dx bundle cache
-        id: bundle-cache
+      # later can find the entry gone. Fall back to building it here instead,
+      # so "Re-run failed jobs" still works on a flake.
+      - name: Restore server cache
+        id: server-cache
         uses: actions/cache/restore@v4
         with:
-          path: target/dx/omnibus/release/web
-          key: ${{ needs.bundle.outputs.cache-key }}
+          path: target/release/omnibus
+          key: ${{ needs.server.outputs.cache-key }}
 
       # Restore-only (`save-if: false`): the fallback wants a warm cargo cache,
       # but this job must not save one — and its post-step cleanup would race
-      # the explicit bundle save below.
+      # the explicit save below.
       - name: Cache cargo registry and target
-        if: steps.bundle-cache.outputs.cache-hit != 'true'
+        if: steps.server-cache.outputs.cache-hit != 'true'
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: ". -> target"
           shared-key: omnibus
           save-if: false
 
-      - name: Rebuild web bundle (cache entry evicted)
-        if: steps.bundle-cache.outputs.cache-hit != 'true'
-        run: nix develop .#e2e --command bash -c 'set -euo pipefail; dx bundle --platform web --package omnibus --fullstack --release --debug-symbols=false'
+      - name: Rebuild server (cache entry evicted)
+        if: steps.server-cache.outputs.cache-hit != 'true'
+        run: nix develop --command cargo build --release --locked -p omnibus
 
       # Re-seed the evicted entry so the sibling shard (and any later re-run)
       # hits it. Both shards can race to save the same key; the loser's
       # "already exists" must not fail the shard.
-      - name: Save dx bundle cache
-        if: steps.bundle-cache.outputs.cache-hit != 'true'
+      - name: Save server cache
+        if: steps.server-cache.outputs.cache-hit != 'true'
         continue-on-error: true
         uses: actions/cache/save@v4
         with:
-          path: target/dx/omnibus/release/web
-          key: ${{ needs.bundle.outputs.cache-key }}
+          path: target/release/omnibus
+          key: ${{ needs.server.outputs.cache-key }}
 
       - name: Install Playwright npm deps
         run: nix develop .#e2e --command bash -c 'set -euo pipefail; cd ui_tests/playwright && pnpm install --frozen-lockfile'
@@ -255,23 +248,20 @@ jobs:
           restore-keys: |
             frontend-js-node-modules-${{ runner.os }}-
 
-      # Built at base `/`: the suite drives the React client at the origin's root.
       - name: Build React client
-        run: nix develop .#e2e --command bash -c 'set -euo pipefail; cd frontend-js && pnpm install --frozen-lockfile && pnpm exec vite build --base=/'
+        run: nix develop .#e2e --command bash -c 'set -euo pipefail; cd frontend-js && pnpm install --frozen-lockfile && pnpm run build'
 
       # Backgrounded with `nohup ... &` + `disown` so the server survives the
-      # step's shell exit and the next step can poll it. `vite preview` serves
-      # the React client on :3001 and proxies /api to the server on :3000, so
-      # the browser and the specs' API calls share one origin.
+      # step's shell exit and the next step can poll it. It serves the React
+      # client at `/`, so the browser and the specs' API calls share one origin.
       - name: Start server
         run: |
           nix develop .#e2e --command bash -c '
             set -euo pipefail
-            chmod +x ./target/dx/omnibus/release/web/server
-            nohup env PORT=3000 ./target/dx/omnibus/release/web/server >server.log 2>&1 &
+            chmod +x ./target/release/omnibus
+            nohup env PORT=3000 OMNIBUS_REACT_DIR="$PWD/frontend-js/dist" ./target/release/omnibus >server.log 2>&1 &
             disown
-            (cd frontend-js && OMNIBUS_PORT=3000 nohup pnpm exec vite preview --port 3001 --strictPort --host 127.0.0.1 >../react.log 2>&1 &)
-            pnpm dlx wait-on -t 60000 http://127.0.0.1:3001/api/_health
+            pnpm dlx wait-on -t 60000 http://127.0.0.1:3000/api/_health
           '
 
       - name: Run Playwright tests
@@ -284,7 +274,7 @@ jobs:
           nix develop .#e2e --command bash -c '
             set -euo pipefail
             cd ui_tests/playwright
-            PLAYWRIGHT_BASE_URL=http://127.0.0.1:3001 pnpm exec playwright test --shard=${{ matrix.shard }}/${{ env.TOTAL_SHARDS }} --reporter=list,blob,junit
+            PLAYWRIGHT_BASE_URL=http://127.0.0.1:3000 pnpm exec playwright test --shard=${{ matrix.shard }}/${{ env.TOTAL_SHARDS }} --reporter=list,blob,junit
           '
 
       # Test results → Codecov Test Analytics. `!cancelled()` so a shard's
@@ -316,20 +306,18 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: server-log-shard-${{ matrix.shard }}
-          path: |
-            server.log
-            react.log
+          path: server.log
           retention-days: 7
 
   # The required status check for this workflow. Always runs (no paths filter +
   # `if: always()`), so branch protection gets a resolved status on every PR —
-  # green when bundle + playwright passed or were skipped, red when either
+  # green when server + playwright passed or were skipped, red when either
   # failed. Mark ONLY `🔒 Playwright Required` as
-  # required in branch protection; do not require `bundle` / the `playwright`
+  # required in branch protection; do not require `build server` / the `playwright`
   # shards (they skip on non-E2E PRs and would hang the merge).
   playwright-required:
     name: 🔒 Playwright Required
-    needs: [changes, bundle, playwright]
+    needs: [changes, server, playwright]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     permissions:

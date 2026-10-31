@@ -127,6 +127,24 @@ export PLAYWRIGHT_BASE_URL=http://127.0.0.1:$port
 EOF
 }
 
+# The React build the server serves at `/`, through OMNIBUS_REACT_DIR.
+REACT_DIST="$MY_REPO_ROOT/frontend-js/dist"
+
+# Build the React client into REACT_DIST unless it is newer than every input
+# (the generated API client comes from openapi.json). Output goes to stderr:
+# dev-up's stdout is its one parseable line.
+ensure_react_build() {
+    if [ -f "$REACT_DIST/index.html" ] && [ -z "$(find frontend-js/src frontend-js/public \
+        frontend-js/index.html frontend-js/package.json frontend-js/pnpm-lock.yaml \
+        frontend-js/vite.config.ts openapi/openapi.json \
+        -newer "$REACT_DIST/index.html" -print -quit 2>/dev/null)" ]; then
+        return 0
+    fi
+    echo "dev: building the React client into frontend-js/dist" >&2
+    pnpm --dir frontend-js install --frozen-lockfile --prefer-offline >&2
+    pnpm --dir frontend-js run build >&2
+}
+
 # Basename of a process's command, or empty once it is gone or ps fails.
 proc_name() {
     { ps -o comm= -p "$1" 2>/dev/null || true; } | awk '{
@@ -134,11 +152,10 @@ proc_name() {
     }'
 }
 
-# Whether a proc_name names dx. nix's makeWrapper execs `.dx-wrapped`,
-# which is the comm Linux reports; macOS reports the wrapper's argv[0], `dx`.
-is_dx_name() {
+# Whether a proc_name names a dev server: `cargo run`, or the binary it runs.
+is_server_name() {
     case "$1" in
-    dx | .dx-wrapped) return 0 ;;
+    cargo | omnibus) return 0 ;;
     *) return 1 ;;
     esac
 }
@@ -153,7 +170,7 @@ proc_is_live() {
 
 # A pid's descendants, one per line, from a single process-table
 # snapshot. sccache's server is shared by every worktree and is only under
-# dx by chance (whichever build woke it), so it and its subtree stay out.
+# cargo by chance (whichever build woke it), so it and its subtree stay out.
 proc_tree() {
     { ps -Ao pid=,ppid=,comm= 2>/dev/null || true; } | awk -v root="$1" '
         {
@@ -174,7 +191,7 @@ proc_tree() {
         }'
 }
 
-# Stop a dev server and everything under it: once dx exits, its server
+# Stop a dev server and everything under it: once cargo exits, its server
 # child belongs to init, so the tree is named before anything is signalled.
 # SIGKILLs whatever outlives ~5 s of SIGTERM.
 stop_process_tree() {

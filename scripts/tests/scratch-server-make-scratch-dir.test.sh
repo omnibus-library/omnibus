@@ -6,7 +6,7 @@
 # `scratch` (a caller's pre-made dir would otherwise get another owner's
 # teardown), and it installs the EXIT/INT/TERM traps before anything can fail.
 #
-# No network, no dx: the real library is sourced and only its I/O helpers are
+# No network, no server: the real library is sourced and only its I/O helpers are
 # stubbed, as in dev-port-choose-port.test.sh.
 #
 # Usage: scripts/tests/scratch-server-make-scratch-dir.test.sh

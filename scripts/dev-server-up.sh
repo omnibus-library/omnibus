@@ -10,9 +10,11 @@
 #   2. Verifies OMNIBUS_DEV_SEED_USER is set (otherwise the server boots
 #      without a known admin login and `ui-validate` will fail at the
 #      `/login` step). Tells the user to copy .env.example -> .env.
-#   3. Starts `dx serve --platform web --fullstack --port <chosen> -p omnibus`
-#      in the background. Output -> .claude/runtime/server.log, PID ->
-#      .claude/runtime/server.pid. Polls /api/_health until 200 (90s cap).
+#   3. Builds the React client into frontend-js/dist when it is missing or
+#      older than its sources, then starts `cargo run -p omnibus` in the
+#      background with OMNIBUS_REACT_DIR pointing at it. Output ->
+#      .claude/runtime/server.log, PID -> .claude/runtime/server.pid. Polls
+#      /api/_health until 200 (OMNIBUS_DEV_BUILD_TIMEOUT_SECS, default 900s).
 #   4. Writes:
 #        .claude/runtime/port      -> "<chosen>"
 #        .claude/runtime/env.sh    -> exports OMNIBUS_PORT + PLAYWRIGHT_BASE_URL
@@ -44,33 +46,9 @@ if ! [[ "$BUILD_TIMEOUT_SECS" =~ ^[1-9][0-9]*$ ]]; then
     BUILD_TIMEOUT_SECS=900
 fi
 
-# HMR-tolerant probe. `dx serve` briefly stops serving while it rebuilds
-# the backend binary after a Rust change; /api/_health then returns
-# connection-refused or 5xx for a few seconds before the new build is
-# back up. This helper retries up to ~5s before declaring the server
-# down so callers don't false-positive during a hot reload.
-probe_health_with_retry() {
-    local port="$1"
-    local deadline=$(($(date +%s) + 5))
-    local body
-    while [ "$(date +%s)" -le "$deadline" ]; do
-        body="$(probe_health "$port")"
-        if is_omnibus_response "$body"; then
-            echo "$body"
-            return 0
-        fi
-        sleep 1
-    done
-    echo "$body"
-    return 1
-}
-
-# The old flat 90s covered a warm rebuild but not a freshly-created
-# worktree, which compiles the whole workspace into an empty
-# CARGO_TARGET_DIR — and per-worktree ports make fresh worktrees routine,
-# so the cold build can't be the case that fails. The budget is generous
-# instead, and the common failure (a compile error, which makes dx exit)
-# is caught by watching the child rather than by waiting the clock out.
+# A freshly-created worktree compiles the whole workspace into an empty
+# CARGO_TARGET_DIR, so the budget is generous; the common failure (a compile
+# error, which makes cargo exit) is caught by watching the child instead.
 wait_for_health() {
     local port="$1" server_pid="$2"
     local deadline=$(($(date +%s) + BUILD_TIMEOUT_SECS))
@@ -81,7 +59,7 @@ wait_for_health() {
             echo "$body"
             return 0
         fi
-        # dx is gone — a compile error or a crash. Fail now; the caller's
+        # cargo is gone — a compile error or a crash. Fail now; the caller's
         # remediation line points at the log that says why.
         if ! kill -0 "$server_pid" 2>/dev/null; then
             return 1
@@ -106,28 +84,23 @@ EOF
         exit 1
     fi
 
-    # Export overrides for the child server. PORT and OMNIBUS_PUBLIC_ORIGIN
-    # need to match the chosen port so origin_check accepts cookie POSTs
-    # from the browser. Allow both `localhost` (humans typing into a
-    # browser) and `127.0.0.1` (Playwright's PLAYWRIGHT_BASE_URL, which
-    # this same script writes a few lines below) — without the IP form,
-    # the dx serve --fullstack proxy rewrites Host: away from the
-    # Origin: localhost the spec sent, and every cookie-authed POST 403s.
-    # OMNIBUS_DEV_SEED_USER is inherited from the dev shell (.env via
-    # flake.nix shellHook).
+    # The shellHook's OMNIBUS_PUBLIC_ORIGIN names the window's base port, so
+    # it is replaced with the port we landed on, in both spellings a browser
+    # or Playwright's PLAYWRIGHT_BASE_URL uses. OMNIBUS_DEV_SEED_USER is
+    # inherited from the dev shell (.env via flake.nix shellHook).
     export PORT="$port"
     export OMNIBUS_PUBLIC_ORIGIN="http://localhost:$port,http://127.0.0.1:$port"
+    export OMNIBUS_REACT_DIR="$REACT_DIST"
 
-    echo "dev-up: starting dx serve on port $port (log: $RUNTIME_DIR/server.log)" >&2
-    # Three things together detach `dx serve` from this script's lifetime
+    echo "dev-up: starting cargo run -p omnibus on port $port (log: $RUNTIME_DIR/server.log)" >&2
+    # Three things together detach the server from this script's lifetime
     # so the server survives the agent / shell that invoked `just dev-up`:
     #   * nohup     — traps SIGHUP so terminal disconnect can't kill it.
     #   * `&`       — backgrounds; the script exits without waiting.
     #   * disown    — removes the job from this shell's job table so the
     #                 shell can't SIGHUP it on exit (bash builtin, portable).
     # setsid would be cleaner but isn't on macOS by default.
-    nohup dx serve --platform web --fullstack --port "$port" --package omnibus \
-        >"$RUNTIME_DIR/server.log" 2>&1 &
+    nohup cargo run -p omnibus >"$RUNTIME_DIR/server.log" 2>&1 &
     local server_pid=$!
     disown "$server_pid" 2>/dev/null || disown 2>/dev/null || true
     echo "$server_pid" >"$RUNTIME_DIR/server.pid"
@@ -156,6 +129,9 @@ main() {
     fi
     port="${choice%%:*}"
     mode="${choice##*:}"
+
+    # A running server reads the build from disk, so a rebuild reaches it too.
+    ensure_react_build
 
     local action
     if [ "$mode" = "reuse" ]; then

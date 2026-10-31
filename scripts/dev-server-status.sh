@@ -5,8 +5,7 @@
 #   0 — server up and healthy. Emits OMNIBUS_DEV_READY marker on stdout.
 #   1 — no server running for this workspace.
 #   2 — server is up on this workspace's port range but unhealthy / wedged
-#       (probably a `dx serve` rebuild failure). Run `just dev-bounce` to
-#       restart cleanly.
+#       (still compiling, or hung). Run `just dev-bounce` to restart cleanly.
 #
 # Output contract:
 #   stdout: at most one line —
@@ -38,8 +37,7 @@ extract_field() {
 }
 
 # Walk the workspace's port window looking for a healthy server whose
-# repo_root matches. HMR-tolerant: retries each port for up to ~5s on
-# transient probe failures.
+# repo_root matches, retrying each port for up to ~5s on transient failures.
 probe_with_retry() {
     local port="$1"
     local deadline=$(($(date +%s) + 5))
@@ -91,7 +89,7 @@ if [ -n "$recorded_port" ]; then
     # wedged (process running but not responding to /api/_health) — that's
     # a different signal than "nothing there".
     if [ -n "$recorded_pid" ] && kill -0 "$recorded_pid" 2>/dev/null; then
-        echo "dev-status: PID $recorded_pid alive on port $recorded_port but /api/_health is failing — likely a wedged dx serve build. Run \`just dev-bounce\` to restart cleanly." >&2
+        echo "dev-status: PID $recorded_pid alive on port $recorded_port but /api/_health is failing — likely still compiling or hung. Run \`just dev-bounce\` to restart cleanly." >&2
         exit 2
     fi
 fi

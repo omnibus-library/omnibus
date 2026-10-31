@@ -1,8 +1,8 @@
 # Codecov configuration — report-only.
 #
-# Coverage here measures the unit/integration suite over the native crates
-# (server + mobile-feature Rust); the wasm32 `web` frontend and the E2E suites
-# are not instrumented, so treat the absolute number as a floor, not a target.
+# Coverage here measures the unit/integration suites (Rust, iOS, React); the
+# E2E suites are not instrumented, so treat the absolute number as a floor,
+# not a target.
 # Both status checks are `informational: true` — Codecov posts the PR comment
 # and per-line annotations but NEVER sets a failing commit status, matching the
 # non-blocking `coverage` job in .github/workflows/rust.yml.
@@ -35,7 +35,6 @@ flags:
       - db/
       - server/
       - shared/
-      - frontend/
       - mcp/
       - mock-kobo/
   ios:
