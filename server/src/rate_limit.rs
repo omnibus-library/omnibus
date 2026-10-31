@@ -104,7 +104,7 @@ impl RateLimiter {
 
     /// Construct a limiter with an explicit `(window, max requests)` policy, as the search
     /// family does. Otherwise identical to [`RateLimiter::new`]; the same `Arc` can
-    /// be shared across REST and RPC routers ([`rate_limit_by_ip`], [`rate_limit_paths`]) so
+    /// be shared across routers ([`rate_limit_by_ip`], [`rate_limit_paths`]) so
     /// both consume from one per-IP budget.
     pub fn with_policy(window: Duration, max: u32) -> Self {
         Self {
@@ -201,8 +201,8 @@ fn trusted_forwarded_hop(headers: &http::HeaderMap) -> Option<IpAddr> {
 
 /// One WARN, ever, when no peer address reached the limiter: every request
 /// then shares one bucket, which is how the per-IP throttle silently became
-/// process-wide. A dioxus bump that stops handing the server a make-service
-/// with connect info has to be loud rather than invisible.
+/// process-wide. A serve path that stops handing the router connect info
+/// has to be loud rather than invisible.
 fn warn_missing_connect_info() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
@@ -231,9 +231,7 @@ pub async fn rate_limit_by_ip(
 
 /// Path-prefix wrapper around [`rate_limit_by_ip`]: a request matching none of the given
 /// prefixes passes through, for routers mixing limited and unlimited routes (e.g. the
-/// dioxus RPC router, where only `/api/rpc/search-*` is throttled). The bucket map is the
-/// passed-in limiter's, so `main.rs` shares one `Arc` with the REST `/api/search/*` layer for
-/// one per-IP budget.
+/// auth router, where only the credential-handling endpoints are throttled).
 pub async fn rate_limit_paths(
     State((limiter, prefixes)): State<(Arc<RateLimiter>, Arc<Vec<&'static str>>)>,
     req: Request,

@@ -138,7 +138,7 @@ jobs:
         run: nix develop .#e2e --command pnpm --dir frontend-js exec storybook build --quiet
 
       - name: Build the app
-        run: nix develop .#e2e --command pnpm --dir frontend-js exec vite build --base=/react/
+        run: nix develop .#e2e --command pnpm --dir frontend-js exec vite build
 
   # Green when `frontend-js` passed or was skipped, red when it failed. Require
   # only this job in branch protection, never `frontend-js` itself.

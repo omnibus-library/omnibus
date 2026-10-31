@@ -1,7 +1,5 @@
-//! Hand-written `/api/*` REST routes for the mobile client. Web uses Dioxus
-//! server functions (see `omnibus_frontend::rpc`), mounted automatically by
-//! `dioxus::server::router(App)`; these REST routes are merged alongside them
-//! in `main.rs` so mobile's existing `reqwest` paths keep working unchanged.
+//! The `/api/*` REST routes every client (web, iOS, the MCP tools) speaks, and the
+//! device protocols, merged into the top-level router in `main.rs`.
 
 use std::sync::Arc;
 
@@ -372,8 +370,8 @@ fn rest_router_with_timeouts(
         // tests; in the live server `main.rs` adds the same Extension at
         // the top, which is harmless overlap.
         .layer(Extension(pool))
-        // `main.rs` layers the same cap at the top so the auth router and
-        // Dioxus server functions are covered too; duplicating it here
+        // `main.rs` layers the same cap at the top so the auth router is
+        // covered too; duplicating it here
         // means integration tests (which use `rest_router` directly) also
         // exercise it.
         .layer(axum::extract::DefaultBodyLimit::max(1024 * 1024))

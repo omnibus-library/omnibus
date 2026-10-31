@@ -1,68 +1,47 @@
-//! Unified Dioxus fullstack entrypoint. Built for WASM, `main` calls
-//! `dioxus::launch` to hydrate the client; built natively (`server`
-//! feature), it binds and serves its own Axum backend serving SSR'd HTML,
-//! the WASM bundle, [`omnibus_frontend::rpc`] server functions, and
-//! [`omnibus::backend`]'s mobile-facing REST routes.
-
-use omnibus_frontend::App;
+//! The `omnibus` server binary: boots the database and background work, then
+//! binds and serves the axum router — the `/api/*` REST surface, the device
+//! protocols, and the React client's build at `/` ([`omnibus::backend`]).
 
 fn main() {
-    #[cfg(not(feature = "server"))]
-    {
-        dioxus::launch(App);
-    }
-
-    #[cfg(feature = "server")]
-    {
-        // Bind the appender guard for the whole process: dropping it flushes
-        // the non-blocking file writer's buffer. `server::serve` blocks until
-        // shutdown, so the guard lives exactly as long as the server does.
-        let log_guard = omnibus::logging::init_tracing();
-        if let Err(error) = server::serve() {
-            tracing::error!(%error, "omnibus server exited");
-            // Flush the buffered log writer before exiting — `process::exit`
-            // skips destructors, so an un-dropped guard would lose this
-            // error line.
-            drop(log_guard);
-            std::process::exit(1);
-        }
+    // Bind the appender guard for the whole process: dropping it flushes
+    // the non-blocking file writer's buffer. `server::serve` blocks until
+    // shutdown, so the guard lives exactly as long as the server does.
+    let log_guard = omnibus::logging::init_tracing();
+    if let Err(error) = server::serve() {
+        tracing::error!(%error, "omnibus server exited");
+        // Flush the buffered log writer before exiting — `process::exit`
+        // skips destructors, so an un-dropped guard would lose this
+        // error line.
+        drop(log_guard);
+        std::process::exit(1);
     }
 }
 
-/// Native fullstack startup. Gated behind the `server` feature so the WASM
-/// build never pulls these helpers (and their tokio + sqlx deps) into the
-/// browser bundle.
-#[cfg(feature = "server")]
 mod server {
     use std::sync::Arc;
 
     use anyhow::Context;
-    use axum::Router;
-    use dioxus::server::axum::Extension;
-    use omnibus::{
-        auth, backend, encoding_vary, metrics, rate_limit, request_log, security_headers,
-    };
+    use axum::{Extension, Router};
+    use omnibus::{auth, backend, metrics, rate_limit, request_log, security_headers, serve};
     use omnibus_db::{
         indexer,
         worker::{Task, Worker},
     };
     use sqlx::SqlitePool;
 
-    use crate::App;
-
-    /// Bind the configured address and serve, owning the serve call rather than handing the
-    /// router to `dioxus::serve`. The address comes from `dioxus::cli_config`, so
-    /// `dx serve --addr` and the Docker image's `IP`/`PORT` set it; the debug-only
-    /// subsecond hot-patch loop is given up. See [`omnibus::serve::serve_with_peer_addresses`]
-    /// for why the serve step is hand-rolled.
+    /// Bind the address `IP`/`PORT` name (the Docker image sets both) and serve. See
+    /// [`omnibus::serve::serve_with_peer_addresses`] for why the serve step is hand-rolled.
     pub(crate) fn serve() -> anyhow::Result<()> {
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
             .context("build the tokio runtime")?;
         runtime.block_on(async {
-            let addr = dioxus::cli_config::fullstack_address_or_localhost();
-            let router = launch().await?;
+            let addr = serve::listen_address(
+                std::env::var("IP").ok().as_deref(),
+                std::env::var("PORT").ok().as_deref(),
+            );
+            let router = launch(addr.port()).await?;
             let listener = tokio::net::TcpListener::bind(addr)
                 .await
                 .with_context(|| format!("bind {addr}"))?;
@@ -74,7 +53,8 @@ mod server {
     }
 
     /// Entry point handed to [`serve`]: boots the stack and returns the wired Axum `Router`.
-    pub(crate) async fn launch() -> anyhow::Result<Router> {
+    /// `port` is the one being bound, for the MCP endpoint's loopback into the REST surface.
+    pub(crate) async fn launch(port: u16) -> anyhow::Result<Router> {
         init_boot_metadata();
         log_startup_warnings();
         // Docker instances predating OMNIBUS_JOURNAL_IMAGES_DIR's image default
@@ -104,7 +84,7 @@ mod server {
         spawn_annotation_cfi_backfill(pool.clone());
         spawn_annotation_downsync(pool.clone(), worker.clone());
 
-        let router = build_router(state, pool, worker);
+        let router = build_router(state, pool, worker, port);
         Ok(apply_security_headers(router))
     }
 
@@ -294,13 +274,8 @@ mod server {
         /// rendering (and parallel Playwright workers on one loopback IP). Logout stays
         /// limited, as a stolen token could otherwise be used to DoS revoke endpoints.
         auth_prefixes: Arc<Vec<&'static str>>,
-        /// One per-IP budget shared by the REST `/api/search/*` and RPC
-        /// `/api/rpc/search-*` layers (same `Arc`), so neither reaches 2×
-        /// the intended budget.
+        /// The per-IP budget the REST `/api/search/*` routes share.
         search: Arc<rate_limit::RateLimiter>,
-        /// `starts_with` prefix covers both `/api/rpc/search` and
-        /// `/api/rpc/search-palette` so neither bypasses the budget.
-        search_prefixes: Arc<Vec<&'static str>>,
     }
 
     fn build_router_limiters(limits: rate_limit::RateLimits) -> RouterLimiters {
@@ -319,12 +294,10 @@ mod server {
                 )
                 .with_limits(limits),
             ),
-            search_prefixes: Arc::new(vec!["/api/rpc/search"]),
         }
     }
 
-    /// Merge every remaining route surface onto `router` (the Dioxus/RPC +
-    /// metrics base, already carrying the search rate-limit layer): Kobo
+    /// Merge every remaining route surface onto `router` (the metrics base): Kobo
     /// wireless sync + Reading Services, OPDS, MCP, and auth (with its own
     /// credential-handling rate limit layered on just that surface), all
     /// under the request timeout — then REST `/api/*`, which carries its own.
@@ -332,6 +305,7 @@ mod server {
         router: Router,
         state: backend::AppState,
         limiters: &RouterLimiters,
+        port: u16,
     ) -> Router {
         router
             // Native Kobo wireless sync. Sits outside the `/api/*` auth gate
@@ -360,10 +334,7 @@ mod server {
             // bound port, so every permission gate stays enforced there.
             .merge(omnibus::mcp_http::mcp_router(
                 state.clone(),
-                format!(
-                    "http://127.0.0.1:{}",
-                    dioxus::cli_config::server_port().unwrap_or(8080)
-                ),
+                format!("http://127.0.0.1:{port}"),
             ))
             .merge(
                 auth::auth_router(state.clone()).layer(axum::middleware::from_fn_with_state(
@@ -382,49 +353,41 @@ mod server {
             ))
     }
 
-    /// Assemble the full Axum router: RPC search rate-limit, the route
-    /// surfaces (each under the request timeout, see
-    /// `merge_route_surfaces`), then the auth / origin-check / extensions /
-    /// body-limit middleware stack. Returns the router; security headers and
-    /// the trace layer are added by `apply_security_headers`.
-    fn build_router(state: backend::AppState, pool: SqlitePool, worker: Arc<Worker>) -> Router {
+    /// Assemble the full Axum router: the route surfaces (each under the request timeout, see
+    /// `merge_route_surfaces`), the React client as the fallback for every other path, then
+    /// the auth / origin-check / extensions / body-limit middleware stack. Returns the router;
+    /// security headers and the trace layer are added by `apply_security_headers`.
+    fn build_router(
+        state: backend::AppState,
+        pool: SqlitePool,
+        worker: Arc<Worker>,
+        port: u16,
+    ) -> Router {
         let limiters = build_router_limiters(state.rate_limits());
         // Prometheus HTTP metrics: middleware + `/metrics` scrape route. The
         // layer goes on outermost (see below); the route merges in here.
         let (prometheus_layer, metrics_route) = metrics::layer_and_route();
 
-        let base = dioxus::server::router(App).merge(metrics_route).layer(
-            axum::middleware::from_fn_with_state(
-                (limiters.search.clone(), limiters.search_prefixes.clone()),
-                rate_limit::rate_limit_paths,
+        let react_dir = backend::react_dir(std::env::var_os(backend::REACT_DIR_ENV));
+        match &react_dir {
+            Some(dir) => tracing::info!(dir = %dir.display(), "serving the React client at /"),
+            None => tracing::warn!(
+                target: "omnibus::startup",
+                "{} is unset; only the API is served", backend::REACT_DIR_ENV
             ),
-        );
-
-        let surfaces = merge_route_surfaces(base, state.clone(), &limiters);
-        // Opt-in: the React client beside the Dioxus UI (backend::react_ui).
-        let surfaces = match backend::react_dir(std::env::var_os(backend::REACT_DIR_ENV)) {
-            Some(dir) => {
-                tracing::info!(dir = %dir.display(), "serving the React client at /react/");
-                surfaces.merge(backend::react_ui_router(dir))
-            }
-            None => surfaces,
-        };
+        }
+        let surfaces = merge_route_surfaces(metrics_route, state.clone(), &limiters, port)
+            .merge(backend::react_ui_router(react_dir));
 
         surfaces
             // Apply require_auth and origin_check at the top level so
             // every cookie-authed /api/* request — not just /api/auth/* —
             // is origin-checked. Bearer requests and safe methods are
             // exempt inside origin_check; non-cookie requests short-circuit
-            // there too, so SSR and static assets pass through unchanged.
-            .layer(axum::middleware::from_fn_with_state(
-                state.clone(),
-                auth::require_auth,
-            ))
-            // Its page-load twin: a signed-out load of a page that needs a
-            // session is sent to /login before SSR renders an inert shell.
+            // there too, so the client's files pass through unchanged.
             .layer(axum::middleware::from_fn_with_state(
                 state,
-                auth::require_page_session,
+                auth::require_auth,
             ))
             .layer(axum::middleware::from_fn(auth::origin_check))
             .layer(Extension(pool))
@@ -436,10 +399,6 @@ mod server {
             // here but route-level, in `merge_route_surfaces`, because the
             // book uploads must stay outside it.
             .layer(axum::extract::DefaultBodyLimit::max(1024 * 1024))
-            // Router-wide because dioxus owns the precompressed asset service.
-            .layer(axum::middleware::from_fn(
-                encoding_vary::vary_on_content_encoding,
-            ))
             // Outermost app layer so the histograms observe every request
             // (including the 408/413 short-circuits from the guards above).
             .layer(prometheus_layer)

@@ -9,7 +9,7 @@
     "generate": "orval",
     "prepare": "orval",
     "dev": "vite",
-    "build": "vite build --base=/react/",
+    "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
