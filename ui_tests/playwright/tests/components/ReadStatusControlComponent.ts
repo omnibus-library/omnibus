@@ -1,7 +1,6 @@
 import type { Locator, Page } from "@playwright/test";
 import { readStatusUrls } from "../contracts/readStatus";
 import type { ReadStatus } from "../data/readStatus";
-import { isPostTo } from "../utils/api";
 import { BaseComponent } from "./BaseComponent";
 
 const LABELS: Record<ReadStatus, string> = {
@@ -30,7 +29,11 @@ export class ReadStatusControlComponent extends BaseComponent {
 
   /** Clicks the segment and waits for the save; the active one sends nothing. */
   async mark(status: ReadStatus): Promise<void> {
-    const saved = this.page.waitForResponse(isPostTo(readStatusUrls.set));
+    const saved = this.page.waitForResponse(
+      (response) =>
+        response.request().method() === "PUT" &&
+        readStatusUrls.set.test(response.url()),
+    );
     await this.segmentButton(status).click();
     await saved;
   }

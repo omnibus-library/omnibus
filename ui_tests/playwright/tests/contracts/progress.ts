@@ -1,9 +1,10 @@
+import { expect } from "../fixtures/test";
 import { type ExpectMutationOptions, post } from "../utils/api";
 
 /** The progress endpoints the reader posts to. */
 export const progressUrls = {
-  save: /\/api\/rpc\/progress(?:\?|$)/,
-  get: /\/api\/rpc\/progress\/get(?:\?|$)/,
+  save: /\/api\/progress(?:\?|$)/,
+  get: /\/api\/progress\/[0-9a-f-]{36}(?:\?|$)/,
   recent: /\/api\/rpc\/progress\/recent(?:\?|$)/,
 };
 
@@ -20,12 +21,11 @@ export const progress = {
   ): ExpectMutationOptions => ({
     ...progress.save(),
     expectedBody: {
-      update: {
-        book_uuid: bookUuid,
-        format: "epub",
-        epub_cfi: epubCfi,
-        progress_percent: percent,
-      },
+      book_uuid: bookUuid,
+      format: "epub",
+      epub_cfi: epubCfi,
+      progress_percent: percent,
+      client_updated_at: expect.any(Number),
     },
   }),
 
@@ -46,12 +46,10 @@ export const progress = {
   ): ExpectMutationOptions => ({
     ...progress.save(),
     expectedBody: {
-      update: {
-        book_uuid: bookUuid,
-        format: "audio",
-        audio_position_seconds: seconds,
-        book_file_id: bookFileId,
-      },
+      book_uuid: bookUuid,
+      format: "audio",
+      audio_position_seconds: seconds,
+      book_file_id: bookFileId,
     },
   }),
 };
