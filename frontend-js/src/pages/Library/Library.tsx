@@ -291,7 +291,12 @@ export function Library() {
         <div className="lib-layout lib-layout--collapsed">
           <div className="lib-main lib-books">
             {lens.status === "pending" && (
-              <div className="lib-loading" role="status" aria-live="polite">
+              <div
+                className="lib-loading"
+                role="status"
+                aria-live="polite"
+                data-testid="lib-loading"
+              >
                 <span className="ld-sr">Taking the books off the shelf</span>
                 {prefs.view === "table" ? (
                   <RowSkeletons count={8} avatar={false} />
@@ -301,9 +306,11 @@ export function Library() {
               </div>
             )}
             {lens.status === "error" && !lens.data && (
-              <PageError
-                message={`Couldn't load the library: ${lens.error.message}`}
-              />
+              <div data-testid="lib-page-error">
+                <PageError
+                  message={`Couldn't load the library: ${lens.error.message}`}
+                />
+              </div>
             )}
             {lens.isRefetchError && !pages.isFetchNextPageError && (
               <p className="subtitle" role="alert">
@@ -311,7 +318,7 @@ export function Library() {
               </p>
             )}
             {lens.data && empty === "empty" && (
-              <p className="library-empty">
+              <p className="library-empty" data-testid="lib-empty">
                 {shelfId === null
                   ? "No ebooks found."
                   : "No books in this shelf."}

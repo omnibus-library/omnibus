@@ -10,7 +10,8 @@ export interface ForcedRequest {
 }
 
 export interface ExpectMutationOptions {
-  method: MutationMethod;
+  /** A GET only for a read the test's assertion depends on, such as a REST refetch. */
+  method: "GET" | MutationMethod;
   url: string | RegExp;
   expectedBody?: unknown;
   expectedStatus?: number;

@@ -27,9 +27,11 @@ export class LibraryTableComponent extends BaseComponent {
 
   constructor(page: Page) {
     super(page);
-    this.root = page.getByTestId("ebook-table");
-    this.viewToggleButton = page.getByTestId("view-toggle-table");
-    this.rows = page.getByTestId(/^ebook-row-/);
+    this.root = page.getByRole("table");
+    this.viewToggleButton = page
+      .getByRole("group", { name: "View mode" })
+      .getByRole("button", { name: "Table" });
+    this.rows = this.root.locator("tbody > tr");
     this.selectAllBox = page.getByTestId("ebook-select-all");
     this.selectBoxes = page.getByTestId("ebook-select");
     this.titleSortButton = page.getByRole("button", {

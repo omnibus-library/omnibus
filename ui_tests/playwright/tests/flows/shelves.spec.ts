@@ -1,25 +1,42 @@
 import { shelves } from "../contracts/shelves";
-import {
-  authorRule,
-  buildShelf,
-  buildShelfUpdate,
-  smartShelfBy,
-} from "../data/shelves";
+import { authorRule, buildShelf, smartShelfBy } from "../data/shelves";
+import { AUDIOBOOK_BOOK_COUNT } from "../fixtures/audiobooks";
+import { AUTO_ATTACHED_PAIRS } from "../fixtures/dual_format";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/pageFixtures";
 import { failing } from "../utils/api";
 import { topEdge } from "../utils/dom";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
-import { fixturesDir, seedLibrary } from "../utils/seed";
+import {
+  audiobookFixturesDir,
+  fixturesDir,
+  seedAudiobookLibrary,
+  seedLibrary,
+} from "../utils/seed";
 
 // A shelf opens by its gallery tile, which filters the list in place; nothing deep-links it.
+// The row carries only shelves that hold a book, so every shelf here starts with one.
 test.describe("shelves on the library page", () => {
   // The create modal's picker and the gallery need real books to work with.
-  test.beforeAll("seed the library", async ({ request }) => {
+  // Audiobooks too: each author the smart shelves match wrote an EPUB and an audiobook.
+  test.beforeAll("seed both libraries", async ({ request }) => {
+    test.setTimeout(120_000);
     await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
+    await seedAudiobookLibrary(
+      request,
+      audiobookFixturesDir(),
+      FIXTURE_BOOKS.length + AUDIOBOOK_BOOK_COUNT - AUTO_ATTACHED_PAIRS,
+    );
   });
 
-  test("show the shelf gallery layout", async ({ libraryPage }) => {
+  test("show the shelf gallery layout", async ({
+    libraryPage,
+    ownShelf,
+    request,
+  }) => {
+    const alpha = await fetchBookUuidByTitle(request, "Alpha");
+    const shelf = await ownShelf("E2E Gallery Layout", { book_uuids: [alpha] });
+
     await test.step("open the library", async () => {
       await libraryPage.goto();
     });
@@ -30,14 +47,40 @@ test.describe("shelves on the library page", () => {
       await expect(libraryPage.shelfGallery.root).toBeVisible();
       await expect(libraryPage.shelfGallery.allBooksTile).toBeVisible();
       await expect(libraryPage.shelfGallery.newShelfButton).toBeVisible();
+      await expect(libraryPage.galleryShelfTile(shelf.id)).toBeVisible();
+    });
+  });
+
+  test("keep an empty shelf off the shelves row", async ({
+    libraryPage,
+    ownShelf,
+    request,
+  }) => {
+    const alpha = await fetchBookUuidByTitle(request, "Alpha");
+    const stocked = await ownShelf("E2E Gallery Stocked", {
+      book_uuids: [alpha],
+    });
+    const empty = await ownShelf("E2E Gallery Bare");
+
+    await test.step("open the library", async () => {
+      await libraryPage.goto();
+    });
+
+    await test.step("check only the stocked shelf is on the row", async () => {
+      await expect(libraryPage.galleryShelfTile(stocked.id)).toBeVisible();
+      await expect(libraryPage.galleryShelfTile(empty.id)).toHaveCount(0);
     });
   });
 
   test.describe("creating", () => {
     test("float the create-shelf modal above the page, not in the book column", async ({
       libraryPage,
+      ownShelf,
+      request,
     }) => {
       const modal = libraryPage.createShelfModal;
+      const alpha = await fetchBookUuidByTitle(request, "Alpha");
+      await ownShelf("E2E Float", { book_uuids: [alpha] });
 
       await test.step("open the create-shelf modal", async () => {
         await libraryPage.goto();
@@ -59,22 +102,36 @@ test.describe("shelves on the library page", () => {
 
     test("create a hand-picked shelf", async ({
       libraryPage,
+      ownShelf,
       createdShelfIds,
       expectMutation,
+      request,
     }) => {
       const { name } = buildShelf("E2E Picks");
       const modal = libraryPage.createShelfModal;
+      const alpha = await fetchBookUuidByTitle(request, "Alpha");
+      await ownShelf("E2E Picks Row", { book_uuids: [alpha] });
 
+      // A book on it, since the row leaves an empty shelf out.
       await test.step("fill in the New shelf modal", async () => {
         await libraryPage.goto();
         await libraryPage.shelfGallery.openNewShelf();
         await expect(modal.root).toBeVisible();
         await modal.fillHandPickedShelf(name);
+        await modal.pickBook("Alpha", alpha);
       });
 
       const id = await test.step("create the shelf", async () => {
-        const { response } = await expectMutation(shelves.create(), () =>
-          modal.create(),
+        const { response } = await expectMutation(
+          shelves.create({
+            kind: "manual",
+            name,
+            visibility: "private",
+            match_mode: null,
+            rules: [],
+            book_uuids: [alpha],
+          }),
+          () => modal.create(),
         );
         const { id }: { id: number } = await response.json();
         createdShelfIds.add(id);
@@ -89,9 +146,13 @@ test.describe("shelves on the library page", () => {
 
     test("surface an error when shelf creation fails", async ({
       libraryPage,
+      ownShelf,
       expectMutation,
+      request,
     }) => {
       const modal = libraryPage.createShelfModal;
+      const alpha = await fetchBookUuidByTitle(request, "Alpha");
+      await ownShelf("E2E Doomed Row", { book_uuids: [alpha] });
 
       await test.step("fill in the New shelf modal", async () => {
         await libraryPage.goto();
@@ -115,10 +176,12 @@ test.describe("shelves on the library page", () => {
       libraryPage,
       ownShelf,
       expectMutation,
+      request,
     }) => {
-      const shelf = await ownShelf("E2E Refetch Fail");
+      const alpha = await fetchBookUuidByTitle(request, "Alpha");
+      const shelf = await ownShelf("E2E Refetch Fail", { book_uuids: [alpha] });
 
-      // An empty shelf shows no error text, so only a forced 500 draws the banner.
+      // Only a forced 500 draws the banner.
       await test.step("fail the member fetch and open the library", async () => {
         await libraryPage.forceServerError(shelves.page());
         await libraryPage.goto();
@@ -257,15 +320,13 @@ test.describe("shelves on the library page", () => {
       // The modal always states the device sync toggle's value for a non-system shelf.
       await test.step("save it", async () => {
         await expectMutation(
-          shelves.update(
-            shelf.id,
-            buildShelfUpdate({
-              name: shelf.name,
-              visibility: "private",
-              match_mode: "any",
-              rules: [authorRule("Grace Hopper")],
-            }),
-          ),
+          shelves.update(shelf.id, {
+            name: shelf.name,
+            visibility: "private",
+            sync_to_kobo: false,
+            match_mode: "any",
+            rules: [authorRule("Grace Hopper")],
+          }),
           () => editor.save(),
         );
       });
@@ -284,8 +345,10 @@ test.describe("shelves on the library page", () => {
       libraryPage,
       ownShelf,
       expectMutation,
+      request,
     }) => {
-      const shelf = await ownShelf("E2E Edit Fields");
+      const alpha = await fetchBookUuidByTitle(request, "Alpha");
+      const shelf = await ownShelf("E2E Edit Fields", { book_uuids: [alpha] });
       const renamed = `${shelf.name} (renamed)`;
       const editor = libraryPage.editShelfModal;
 
@@ -317,14 +380,11 @@ test.describe("shelves on the library page", () => {
       // The sync badge lives on the shelf page, so the opt-in is asserted on the wire.
       await test.step("save it", async () => {
         await expectMutation(
-          shelves.update(
-            shelf.id,
-            buildShelfUpdate({
-              name: renamed,
-              visibility: "public",
-              sync_to_kobo: true,
-            }),
-          ),
+          shelves.update(shelf.id, {
+            name: renamed,
+            visibility: "public",
+            sync_to_kobo: true,
+          }),
           () => editor.save(),
         );
       });
@@ -342,8 +402,10 @@ test.describe("shelves on the library page", () => {
       libraryPage,
       ownShelf,
       expectMutation,
+      request,
     }) => {
-      const shelf = await ownShelf("E2E Edit Fail");
+      const alpha = await fetchBookUuidByTitle(request, "Alpha");
+      const shelf = await ownShelf("E2E Edit Fail", { book_uuids: [alpha] });
       const editor = libraryPage.editShelfModal;
 
       await test.step("rename the selected shelf in the editor", async () => {

@@ -273,6 +273,7 @@ export function BookGrid({ books, stacks, onAddTile }: BookGridProps) {
       ref={grid}
       className="lib-grid"
       role="list"
+      data-testid="lib-grid"
       onKeyDown={(e) => {
         if (e.key === "Escape" && openLead !== null) {
           e.preventDefault();

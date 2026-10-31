@@ -98,7 +98,9 @@ export class LibraryPage extends BasePage {
     });
     this.grid = page.getByTestId("lib-grid");
     this.toolbar = page.getByTestId("lib-toolbar");
-    this.gridViewButton = page.getByTestId("view-toggle-grid");
+    this.gridViewButton = page
+      .getByRole("group", { name: "View mode" })
+      .getByRole("button", { name: "Grid" });
     this.bookTiles = page.getByTestId(/^ebook-tile-/);
     this.firstBookTile = this.bookTiles.first();
     this.firstCover = this.grid
@@ -138,11 +140,9 @@ export class LibraryPage extends BasePage {
     return this.page.getByTestId(`gallery-shelf-${shelfId}`);
   }
 
-  /** A book's grid tile: a `listitem`, not a link (see `landing/grid.rs`). */
+  /** A book's grid tile: the link inside its `listitem` cell. */
   bookTile(title: string): Locator {
-    return this.page.getByRole("listitem", {
-      name: `Open details for ${title}`,
-    });
+    return this.grid.getByRole("link", { name: `Open details for ${title}` });
   }
 
   /** A folded series, named as its button reads: `Pioneers, 5 books`. */

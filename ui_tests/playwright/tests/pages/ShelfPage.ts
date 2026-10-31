@@ -6,7 +6,6 @@ import { FilterBarComponent } from "../components/FilterBarComponent";
 import { TopNavComponent } from "../components/TopNavComponent";
 import { shelvesUrls, unfilteredShelfRead } from "../contracts/shelves";
 import { expect } from "../fixtures/test";
-import { isPostTo } from "../utils/api";
 import { BasePage } from "./BasePage";
 import { ShelvesIndexPage } from "./ShelvesIndexPage";
 
@@ -177,10 +176,10 @@ export class ShelfPage extends BasePage {
 
   /** Takes the book off and waits for the unfiltered member list it re-reads. */
   async removeMember(bookUuid: string): Promise<void> {
-    const isShelfRead = isPostTo(shelvesUrls.page);
     const reread = this.page.waitForResponse(
       (response) =>
-        isShelfRead(response) && unfilteredShelfRead(response.request()),
+        shelvesUrls.page.test(response.url()) &&
+        unfilteredShelfRead(response.request()),
     );
     await this.removeButton(bookUuid).click();
     await reread;

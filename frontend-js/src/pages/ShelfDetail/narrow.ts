@@ -5,6 +5,8 @@ export type FullList = {
   books: Book[];
   /** A fetch has succeeded for the shelf on screen. */
   ready: boolean;
+  /** A refetch is out, so the books may predate the latest add. */
+  refetching: boolean;
   errored: boolean;
 };
 
@@ -12,10 +14,12 @@ export type FullList = {
 export const fullList = (query: {
   data?: Book[];
   isSuccess: boolean;
+  isFetching: boolean;
   isError: boolean;
 }): FullList => ({
   books: query.data ?? [],
   ready: query.isSuccess,
+  refetching: query.isFetching,
   errored: query.isError,
 });
 
