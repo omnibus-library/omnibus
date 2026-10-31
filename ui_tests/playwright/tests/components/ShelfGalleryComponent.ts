@@ -17,14 +17,16 @@ export class ShelfGalleryComponent extends BaseComponent {
 
   constructor(page: Page) {
     super(page);
-    this.root = page.getByTestId("shelf-gallery");
-    this.allBooksTile = page.getByTestId("gallery-all-books");
-    this.allBooksCount = page.getByTestId("gallery-all-books-count");
-    this.allShelvesLink = page.getByTestId("gallery-all-shelves");
+    this.root = page.getByRole("region", { name: "Shelves" });
+    this.allBooksTile = this.root.getByRole("button", { name: /^All Books, / });
+    this.allBooksCount = this.allBooksTile.locator(".lmq-shent-meta");
+    this.allShelvesLink = this.root.getByRole("link", { name: "All shelves" });
     this.newShelfButton = page.getByTestId("new-shelf");
     this.row = this.root.locator("#lmq-shelf-row");
-    this.previousArrow = page.getByTestId("shelf-row-prev");
-    this.nextArrow = page.getByTestId("shelf-row-next");
+    this.previousArrow = this.root.getByRole("button", {
+      name: "Earlier shelves",
+    });
+    this.nextArrow = this.root.getByRole("button", { name: "More shelves" });
     this.selectedTab = this.row.getByRole("button", { pressed: true });
   }
 

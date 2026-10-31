@@ -25,6 +25,7 @@ export function toBook(wire: EbookMetadata) {
   return {
     uuid: requireUuid(wire.unique_identifier, wire.id),
     title: wire.title?.trim() ? wire.title : wire.filename,
+    filename: wire.filename,
     authors: wire.creators.map((c) => c.name),
     series,
     accent: wire.accent ?? null,

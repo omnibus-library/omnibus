@@ -11,11 +11,11 @@ export class BulkEditModalComponent extends BaseComponent {
 
   constructor(page: Page) {
     super(page);
-    this.root = page.getByTestId("bulk-edit-modal");
+    this.root = page.getByRole("dialog", { name: /^Bulk edit / });
     this.publisherField = this.root.getByLabel("Publisher");
-    this.tagsField = this.root.getByTestId("bulk-add-tags-input");
-    this.submitButton = page.getByTestId("bulk-edit-submit");
-    this.errorMessage = page.getByTestId("bulk-edit-error");
+    this.tagsField = this.root.getByLabel("Add tags", { exact: true });
+    this.submitButton = this.root.getByRole("button", { name: /^Apply to / });
+    this.errorMessage = this.root.getByRole("alert");
   }
 
   async setPublisher(publisher: string): Promise<void> {

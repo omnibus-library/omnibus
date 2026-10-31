@@ -10,7 +10,8 @@ export interface ForcedRequest {
 }
 
 export interface ExpectMutationOptions {
-  method: MutationMethod;
+  /** `GET` for a read the test pins the query of, such as a filtered page. */
+  method: "GET" | MutationMethod;
   url: string | RegExp;
   expectedBody?: unknown;
   expectedStatus?: number;

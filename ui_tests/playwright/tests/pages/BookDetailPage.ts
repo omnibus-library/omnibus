@@ -289,15 +289,21 @@ export class BookDetailPage extends BasePage {
     return this.shelfTile(shelfId).locator(".shv-facet--kind");
   }
 
-  /** The book's details table: label and value rows such as `Added`. */
+  /** A value in the Files & Details tab's list, such as `Added`; open the tab first. */
   metaValue(label: string): Locator {
-    const labelCell = this.page.locator(".bd-meta-k", {
-      hasText: new RegExp(`^${label}$`),
-    });
+    const term = this.page
+      .getByRole("term")
+      .filter({ hasText: new RegExp(`^${label}$`) });
     return this.page
-      .locator("tr.bd-meta-row")
-      .filter({ has: labelCell })
-      .locator(".bd-meta-v");
+      .getByRole("tabpanel", { name: "Files & Details" })
+      .locator("dl > div")
+      .filter({ has: term })
+      .getByRole("definition");
+  }
+
+  /** Opens the Files & Details tab, where the book's metadata list sits. */
+  async openFilesTab(): Promise<void> {
+    await this.page.getByRole("tab", { name: "Files & Details" }).click();
   }
 
   /**

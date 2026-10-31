@@ -1,20 +1,32 @@
-import { type ExpectMutationOptions, post } from "../utils/api";
+import type { ExpectMutationOptions } from "../utils/api";
 
 /** The metadata override endpoints; each URL excludes the others' suffixes. */
 export const overridesUrls = {
-  save: /\/api\/rpc\/ebook\/overrides(?:\?|$)/,
-  bulkSave: /\/api\/rpc\/ebook\/overrides\/bulk(?:\?|$)/,
-  revert: /\/api\/rpc\/ebook\/overrides\/delete(?:\?|$)/,
+  save: /\/api\/ebooks\/[^/?]+\/overrides(?:\?|$)/,
+  bulkSave: /\/api\/ebooks\/overrides\/bulk(?:\?|$)/,
+  revert: /\/api\/ebooks\/[^/?]+\/overrides(?:\?|$)/,
 };
 
 /** The writes that change a book's metadata overrides; no body leaves it unchecked. */
 export const overrides = {
-  save: (body?: unknown): ExpectMutationOptions =>
-    post(overridesUrls.save, body),
+  save: (body?: unknown): ExpectMutationOptions => ({
+    method: "POST",
+    url: overridesUrls.save,
+    expectedBody: body,
+    expectedStatus: 200,
+  }),
 
-  bulkSave: (body?: unknown): ExpectMutationOptions =>
-    post(overridesUrls.bulkSave, body),
+  bulkSave: (body?: unknown): ExpectMutationOptions => ({
+    method: "POST",
+    url: overridesUrls.bulkSave,
+    expectedBody: body,
+    expectedStatus: 204,
+  }),
 
-  revert: (body?: unknown): ExpectMutationOptions =>
-    post(overridesUrls.revert, body),
+  /** A DELETE that drops every override the book holds. */
+  revert: (): ExpectMutationOptions => ({
+    method: "DELETE",
+    url: overridesUrls.revert,
+    expectedStatus: 200,
+  }),
 };

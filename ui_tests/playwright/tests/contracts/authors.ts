@@ -6,7 +6,7 @@ import {
 
 /** The author endpoints: the index a filter menu reads, and an admin's delete. */
 export const authorsUrls = {
-  list: /\/api\/rpc\/authors(?:\?|$)/,
+  list: /\/api\/authors(?:\?|$)/,
   delete: /\/api\/rpc\/author\/delete(?:\?|$)/,
 };
 

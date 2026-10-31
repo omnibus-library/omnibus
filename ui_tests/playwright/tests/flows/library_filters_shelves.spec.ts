@@ -1,6 +1,7 @@
-import { ebooks } from "../contracts/ebooks";
+import { ebooks, filterClauses } from "../contracts/ebooks";
 import {
   filteredShelfRead,
+  shelfReadId,
   shelves,
   unfilteredShelfRead,
 } from "../contracts/shelves";
@@ -56,14 +57,10 @@ test.describe("library filters", () => {
         ));
 
       await test.step("check the shelf's members narrowed", async () => {
-        expect(request.postDataJSON()).toMatchObject({
-          id: filterShelf.id,
-          filters: {
-            clauses: [
-              { field: "author", mode: "include", values: ["Monica Lam"] },
-            ],
-          },
-        });
+        expect(shelfReadId(request)).toBe(filterShelf.id);
+        expect(filterClauses(request)).toEqual([
+          { field: "author", mode: "include", values: ["Monica Lam"] },
+        ]);
         await readerLibraryPage.assertShowsBooks(["compiler-compendium-2"]);
       });
 
@@ -114,15 +111,11 @@ test.describe("library filters", () => {
           ));
 
       await test.step("check the members narrowed again", async () => {
-        expect(request.postDataJSON()).toMatchObject({
-          id: filterShelf.id,
-          filters: {
-            clauses: [
-              { field: "format", mode: "include", values: ["epub"] },
-              { field: "author", mode: "exclude", values: ["Ravi Sethi"] },
-            ],
-          },
-        });
+        expect(shelfReadId(request)).toBe(filterShelf.id);
+        expect(filterClauses(request)).toEqual([
+          { field: "format", mode: "include", values: ["epub"] },
+          { field: "author", mode: "exclude", values: ["Ravi Sethi"] },
+        ]);
         await readerShelfPage.assertShowsMembers(
           titlesOf(["compiler-compendium-1", "compiler-compendium-2"]),
         );
@@ -216,7 +209,7 @@ test.describe("library filters", () => {
           shelves.page(),
           filteredShelfRead,
         );
-        await readerExpectMutation(failing(shelves.page()), () =>
+        await readerExpectMutation(failing(shelves.filteredPage()), () =>
           filterBar.addClause(clauses.includeLam),
         );
       });
@@ -257,7 +250,7 @@ test.describe("library filters", () => {
           shelves.page(),
           filteredShelfRead,
         );
-        await readerExpectMutation(failing(shelves.page()), () =>
+        await readerExpectMutation(failing(shelves.filteredPage()), () =>
           filterBar.addClause(clauses.includeLam),
         );
       });
@@ -413,10 +406,11 @@ test.describe("library filters", () => {
           return release;
         });
 
+      // The count waits too, rather than keeping the old answer's zero.
       await test.step("check the old empty answer is gone", async () => {
         await expect(readerLibraryPage.clearFiltersButton).toHaveCount(0);
         await expect(readerLibraryPage.loading).toBeVisible();
-        await expect(readerLibraryPage.filteredCount).toHaveCount(0);
+        await expect(readerLibraryPage.filteredCount).toHaveText("counting");
       });
 
       await test.step("release the read and check the new answer", async () => {
@@ -566,7 +560,7 @@ test.describe("library filters", () => {
         ));
 
       await test.step("check the shelf's books are gone", async () => {
-        expect(request.postDataJSON().filters.clauses[1]).toEqual({
+        expect(filterClauses(request)[1]).toEqual({
           field: "shelf",
           mode: "exclude",
           values: [String(filterShelf.id)],
