@@ -1,0 +1,225 @@
+/* Omnibus marketing site: one book's life through the product.
+ *
+ * Built from the "Proposal 5 · One Book's Life" comps in the Omnibus Marketing
+ * Figma file: a 1440 desktop frame and a 390 phone frame. From 1200px up, each
+ * section is a scaled copy of the desktop frame, with every position given in
+ * comp pixels (--x, --y, --w ...) and multiplied by --u, the size of one comp
+ * pixel. Below 1200px the page is the phone frame's single column.
+ *
+ * The app screens and device frames are stills exported from the comp, one
+ * transparent image per section (shots/d-*.webp desktop, shots/m-*.webp
+ * phone). All copy is real markup.
+ */
+
+@font-face{font-family:'Cormorant Garamond';font-style:normal;font-weight:500;font-display:swap;src:url('assets/fonts/CormorantGaramond-Medium.woff2') format('woff2')}
+@font-face{font-family:'Cormorant Garamond';font-style:normal;font-weight:600;font-display:swap;src:url('assets/fonts/CormorantGaramond-SemiBold.woff2') format('woff2')}
+@font-face{font-family:'Instrument Sans';font-style:normal;font-weight:400;font-display:swap;src:url('assets/fonts/InstrumentSans-Regular.woff2') format('woff2')}
+@font-face{font-family:'Instrument Sans';font-style:normal;font-weight:500;font-display:swap;src:url('assets/fonts/InstrumentSans-Medium.woff2') format('woff2')}
+@font-face{font-family:'Instrument Sans';font-style:normal;font-weight:600;font-display:swap;src:url('assets/fonts/InstrumentSans-SemiBold.woff2') format('woff2')}
+
+:root{
+  --serif:'Cormorant Garamond','EB Garamond',Georgia,serif;
+  --sans:'Instrument Sans',ui-sans-serif,-apple-system,system-ui,sans-serif;
+  --bg:#0d0a08;
+  --bg-alt:#16120e;
+  --ink:#f7f5f1;
+  --muted:#b0aaa3;
+  --amber:#f6ac5c;
+  --btn:#f0a556;
+  --btn-ink:#130b05;
+  --top-h:64px;
+}
+@media (min-width:1200px){:root{--top-h:76px}}
+
+*,*::before,*::after{box-sizing:border-box}
+html{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.55;-webkit-font-smoothing:antialiased;text-size-adjust:100%}
+@media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
+body{margin:0}
+h1,h2,p,dl,dd,ul{margin:0}
+img{display:block;max-width:none}
+a{color:inherit;text-decoration:none}
+a:hover{color:var(--amber)}
+:focus-visible{outline:2px solid var(--amber);outline-offset:3px;border-radius:4px}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+[id]{scroll-margin-top:var(--top-h)}
+
+/* ── header ───────────────────────────────────────────────────── */
+.top{position:fixed;inset:0 0 auto;z-index:10;height:var(--top-h);display:flex;align-items:center;justify-content:space-between;padding:0 20px;background:rgb(13 10 8/.88);backdrop-filter:blur(12px)}
+.brand{display:flex;align-items:center;gap:10px;font-family:var(--serif);font-weight:600;font-size:25px;line-height:1;letter-spacing:-0.01em;color:var(--ink)}
+.brand img{width:26px;height:26px}
+.nav{display:flex;align-items:center;gap:18px;font-size:14px;font-weight:600}
+.nav .wide{display:none}
+@media (min-width:1200px){
+  .top{padding:0 80px}
+  .nav{gap:28px;font-size:15px;font-weight:500}
+  .nav .wide{display:inline}
+  .nav .narrow{display:none}
+}
+
+/* ── buttons ──────────────────────────────────────────────────── */
+.btn{display:inline-flex;align-items:center;justify-content:center;height:44px;padding:0 21px;border-radius:12px;background:var(--btn);color:var(--btn-ink);font-size:14px;font-weight:600;white-space:nowrap}
+.btn:hover{color:var(--btn-ink);filter:brightness(1.07)}
+.btn-ghost{background:#1c1915;color:var(--ink);font-weight:500;border:1px solid rgb(255 255 255/.12)}
+.btn-ghost:hover{color:var(--ink);border-color:rgb(255 255 255/.28);filter:none}
+.btn-sm{height:28px;padding:0 11px;border-radius:8px;font-size:12px;font-weight:600}
+.ctas{display:flex;flex-direction:column;gap:12px}
+@media (min-width:1200px){.ctas{flex-direction:row}}
+@media (prefers-reduced-motion:no-preference){.btn{transition:filter .15s,border-color .15s}}
+
+.fine{font-size:13px;line-height:1.25;color:var(--muted)}
+.sub{font-size:17px;line-height:1.5}
+
+/* ── sections ─────────────────────────────────────────────────── */
+section{overflow:clip;container-type:inline-size;background:var(--bg)}
+.stop.alt,.close{background:var(--bg-alt)}
+.stop.light{background:#f2e6d6;color:#211710}
+.stop.light h2{color:#211710}
+.stop.light :focus-visible{outline-color:#211710}
+
+h1,h2{font-family:var(--serif);font-weight:500;color:var(--ink);text-wrap:balance}
+
+/* phone frame: one column, copy then picture */
+.canvas{max-width:560px;margin:0 auto;padding:0 20px}
+.stop{padding:72px 0 40px}
+.stop h2{font-size:36px;line-height:1.02}
+.copy p{margin-top:14px;font-size:16px;line-height:1.55;text-wrap:pretty}
+.copy p+p{margin-top:1.55em}
+.stage{display:block;margin-top:24px;width:calc(var(--mw) / 350 * 100%);margin-left:calc((var(--mx) - 20) / 350 * 100%)}
+.stage img{width:100%;height:auto}
+
+.hero{padding-top:var(--top-h)}
+.hero .canvas{display:flex;flex-direction:column;padding-bottom:56px}
+/* The cover and its four pins, in the 578x706 "Hero Pins" comp. --p is one
+   comp pixel at the box's width, so the pins keep their places at any size. */
+.pins{position:relative;order:-1;margin:2px 0 0 calc(5 / 350 * 100%);width:calc(340 / 350 * 100%);aspect-ratio:578/706;container-type:inline-size;--p:calc(100cqw / 578)}
+.pins-cover{position:absolute;left:calc(119 * var(--p));top:calc(85 * var(--p));width:calc(340 * var(--p));height:auto;box-shadow:0 calc(23.8 * var(--p)) calc(30.6 * var(--p)) rgb(0 0 0/.45)}
+.pin{position:absolute;left:calc(var(--px) * var(--p));top:calc(var(--py) * var(--p));display:flex;align-items:center;gap:calc(14 * var(--p));height:calc(57.8 * var(--p));padding:0 calc(24 * var(--p)) 0 calc(20 * var(--p));border-radius:999px;background:#2a231d;color:var(--ink);font-size:calc(22.1 * var(--p));font-weight:500;line-height:1;white-space:nowrap}
+.pin i{width:calc(12 * var(--p));height:calc(12 * var(--p));border-radius:50%;background:var(--amber)}
+.pin b{margin-left:.3em;font-weight:600}
+/* lit: the pin the book is open at. Without motion the first one stays lit. */
+.pin:first-of-type{background:var(--amber);color:#1b0f04;box-shadow:0 calc(10 * var(--p)) calc(30.6 * var(--p)) rgb(245 171 92/.35)}
+.pin:first-of-type i{background:#1b0f04}
+@media (prefers-reduced-motion:no-preference){
+  /* each pin drifts on its own period; the light walks top to bottom, one pin
+     every 2s of an 8s loop, by giving every pin the same loop at an offset */
+  .pin{animation:pin-float var(--fd) ease-in-out var(--lit) infinite alternate,pin-lit 8s linear var(--lit) infinite}
+  .pin i{animation:pin-dot 8s linear var(--lit) infinite}
+}
+@keyframes pin-float{
+  from{translate:0 0}
+  to{translate:calc(4 * var(--p)) calc(-10 * var(--p))}
+}
+@keyframes pin-lit{
+  0%,22%,100%{background:var(--amber);color:#1b0f04;box-shadow:0 calc(10 * var(--p)) calc(30.6 * var(--p)) rgb(245 171 92/.35)}
+  27%,95%{background:#2a231d;color:var(--ink);box-shadow:0 calc(10 * var(--p)) calc(30.6 * var(--p)) rgb(245 171 92/0)}
+}
+@keyframes pin-dot{
+  0%,22%,100%{background:#1b0f04}
+  27%,95%{background:var(--amber)}
+}
+.hero h1{margin-top:10px;font-size:44px;line-height:1;letter-spacing:-0.02em}
+.hero h1 br{display:none}
+.hero .sub{margin-top:16px}
+.hero .ctas{margin-top:24px}
+.hero .ctas .btn{width:100%}
+.hero .fine{margin-top:26px}
+
+/* desktop frame: every section is a scaled 1440 comp */
+@media (min-width:1200px){
+  section{--u:calc(min(100cqw,1440px) / 1440)}
+  .canvas{position:relative;max-width:none;width:calc(1440 * var(--u));height:calc(var(--fh) * var(--u));padding:0}
+  .stop{padding:0}
+  .stage{position:absolute;margin:0;left:calc(var(--x) * var(--u));top:calc(var(--y) * var(--u));width:calc(var(--w) * var(--u))}
+  .copy{position:absolute;left:calc(var(--tx) * var(--u));top:calc(var(--cy) * var(--u));transform:translateY(-50%)}
+  .copy h2{width:calc(var(--hw) * var(--u));font-size:max(46px,calc(58 * var(--u)));line-height:1;letter-spacing:-0.015em}
+  .copy p{max-width:max(340px,calc(var(--bw) * var(--u)));font-size:max(16px,calc(18 * var(--u)))}
+  .copy h2+p{margin-top:20px}
+
+  .hero{padding-top:0}
+  .hero .canvas{--fh:900;display:block}
+  .pins{position:absolute;margin:0;left:calc(760 * var(--u));top:calc(110 * var(--u));width:calc(578 * var(--u))}
+  .hero-copy{position:absolute;left:calc(80 * var(--u));top:calc(240 * var(--u));width:calc(500 * var(--u))}
+  .hero h1{margin:0;width:calc(660 * var(--u));font-size:calc(96 * var(--u));line-height:.95;letter-spacing:-0.025em}
+  .hero h1 br{display:inline}
+  .hero .sub{margin-top:calc(28 * var(--u));font-size:max(17px,calc(20 * var(--u)))}
+  .hero .ctas{margin-top:calc(66 * var(--u))}
+  .hero .ctas .btn{width:auto}
+  .hero .fine{margin-top:20px;font-size:14px}
+}
+
+/* ── why switch ───────────────────────────────────────────────── */
+.why{background:var(--amber);color:#1b0f04}
+.why h2,.why a{color:#1b0f04}
+.why :focus-visible{outline-color:#1b0f04}
+.why-in{max-width:1440px;margin:0 auto;padding:80px 20px}
+.why h2{font-weight:600;font-size:40px;line-height:1}
+.points{margin-top:36px;display:grid;gap:30px}
+.points dt{font-family:var(--serif);font-weight:600;font-size:28px;line-height:1.05}
+.points dd{margin-top:8px;font-size:15px;line-height:1.5}
+.live{margin-top:44px;font-family:var(--serif);font-weight:600;font-size:30px;line-height:1.1;max-width:760px}
+.live-src{margin-top:10px;font-size:13px}
+.notes{display:inline-block;margin-top:40px;font-size:15px;font-weight:600}
+.why a:hover{text-decoration:underline}
+@media (min-width:1000px){
+  .points>div{display:grid;grid-template-columns:minmax(0,760fr) minmax(0,420fr);column-gap:60px}
+  .points dd{margin-top:10px}
+}
+@media (min-width:1200px){
+  .why-in{padding:140px 100px}
+  .why h2{font-size:76px;letter-spacing:-0.02em}
+  .points{margin-top:64px;gap:58px}
+  .points dt{font-size:48px}
+  .points dd{font-size:18px}
+  .live{margin-top:72px;font-size:57px}
+  .live-src{margin-top:18px;font-size:22px}
+  .notes{margin-top:72px;font-size:17px}
+}
+
+/* ── the rest of the shelf ────────────────────────────────────── */
+/* One image per book, placed by its centre in comp pixels (--bx, --by) and
+   scaled by --k. app.js walks the desktop books round their ellipse by
+   rewriting --bx/--by; the wiggle is CSS, pivoting on the book's centre. */
+.rest{--k:calc(min(100cqw,390px) / 390)}
+.rest .canvas{position:relative;max-width:390px;height:calc(1160 * var(--k));padding:0}
+.shelf-d{display:none}
+.book{position:absolute;left:calc((var(--bx) + var(--ox)) * var(--k));top:calc((var(--by) + var(--oy)) * var(--k));width:calc(var(--w) * var(--k));height:auto;transform-origin:calc(var(--ox) * -1 * var(--k)) calc(var(--oy) * -1 * var(--k));--amp:.8deg}
+.rest h2{position:absolute;z-index:1000;top:80px;left:20px;right:20px;font-size:36px;line-height:1.02}
+@media (prefers-reduced-motion:no-preference){
+  .book{animation:book-wiggle var(--wd) ease-in-out var(--wl) infinite alternate}
+}
+@keyframes book-wiggle{
+  from{rotate:calc(var(--amp) * -1)}
+  to{rotate:var(--amp)}
+}
+@media (min-width:1200px){
+  .rest{--k:var(--u)}
+  .rest .canvas{--fh:920;max-width:none;height:calc(var(--fh) * var(--u))}
+  .shelf-d{display:block}
+  .shelf-m{display:none}
+  .shelf-d .book{--amp:1.6deg}
+  .rest h2{top:calc(428 * var(--u));left:0;right:0;text-align:center;font-size:calc(60 * var(--u))}
+}
+
+/* ── close ────────────────────────────────────────────────────── */
+.close-in{max-width:1440px;margin:0 auto;padding:88px 20px 40px}
+.close h2{font-size:40px;line-height:1}
+.close .sub{margin-top:16px;font-size:16px}
+.close .ctas{margin-top:28px}
+.foot{margin-top:68px}
+.foot-row{display:flex;flex-direction:column;gap:20px}
+.brand-lg img{width:32px;height:32px}
+.brand-lg{font-size:22px}
+.foot-links{display:flex;flex-wrap:wrap;gap:8px 24px;font-size:14px;font-weight:500}
+.foot .fine{margin-top:20px;font-size:12px;line-height:1.4}
+@media (min-width:1200px){
+  .close-in{padding:140px 100px 64px}
+  .close h2{font-size:84px;letter-spacing:-0.02em;max-width:900px}
+  .close .sub{margin-top:24px;font-size:20px;line-height:1.5;max-width:620px}
+  .close .ctas{margin-top:36px}
+  .foot{margin-top:120px}
+  .foot-row{flex-direction:row;align-items:center;justify-content:space-between}
+  .brand-lg{font-size:26px}
+  .brand-lg img{width:36px;height:36px}
+  .foot-links{gap:30px;font-size:15px}
+  .foot .fine{margin-top:34px;font-size:13px}
+}
