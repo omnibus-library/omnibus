@@ -115,6 +115,7 @@ describe("routes", () => {
       ["/shelves", "Gathering your shelves"],
       ["/shelves/9", "Opening the shelf"],
       ["/stats?user=2", "Tallying your reading"],
+      ["/wishlists?user=all", "Gathering the wishlists"],
     ])("renders %s as its loading page, not a stub", async (path, label) => {
       renderRoute(path);
 

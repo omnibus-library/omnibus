@@ -132,7 +132,8 @@ pub use palette::*;
 pub use physical::{
     add_physical_copy, add_wishlist_entry, create_fileless_book, delete_fileless_book,
     delete_physical_copy, get_wishlist_entry, list_physical_copies, list_wishlist,
-    remove_wishlist_entry, update_physical_copy_note, FilelessBook, FilelessCover, PhysicalError,
+    remove_wishlist_entry, update_physical_copy_note, wishlist_books, wishlist_readers,
+    FilelessBook, FilelessCover, PhysicalError, WishlistScope,
 };
 pub use pool::*;
 pub use scan::{

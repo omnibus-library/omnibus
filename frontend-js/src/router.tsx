@@ -27,6 +27,7 @@ import { ShelfDetail } from "./pages/ShelfDetail/ShelfDetail";
 import { Shelves } from "./pages/Shelves/Shelves";
 import { Stats } from "./pages/Stats/Stats";
 import { StatsChart } from "./pages/StatsChart/StatsChart";
+import { Wishlists } from "./pages/Wishlists/Wishlists";
 
 // Each reader, the settings page, Administration and the cleanup review is its own chunk, so the library never downloads one.
 const Reader = lazy(() =>
@@ -129,6 +130,7 @@ export const routes: RouteObject[] = [
                   },
                   { path: "/stats", element: <Stats /> },
                   { path: "/stats/chart", element: <StatsChart /> },
+                  { path: "/wishlists", element: <Wishlists /> },
                   { path: "/shelves", element: <Shelves /> },
                   { path: "/shelves/:id", element: <ShelfDetail /> },
                   // Web search is the palette; only /search/:query is a page.

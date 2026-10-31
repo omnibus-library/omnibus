@@ -136,5 +136,77 @@ pub struct WishlistRemoval {
     pub book_deleted: bool,
 }
 
+/// Which wishlist `GET /api/wishlists` returns.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
+pub struct WishlistQuery {
+    /// A reader's id for that reader's list, or `all` for every reader's lists merged into
+    /// one row per book. Leave it out for your own list.
+    #[serde(default)]
+    pub user: Option<String>,
+}
+
+/// A reader on `GET /api/wishlists/readers`, with how many books they want.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct WishlistReader {
+    /// The user's id. Pass it as `user` to `GET /api/wishlists`.
+    pub id: i64,
+    /// The reader's display name, or their username when they have none.
+    pub name: String,
+    /// Whether `GET /api/users/{id}/avatar` has an image to serve.
+    pub has_avatar: bool,
+    /// True for the signed-in user, who always comes first.
+    pub is_you: bool,
+    /// How many books are on this reader's wishlist.
+    pub count: i64,
+}
+
+/// Every reader on the server and the size of their wishlists.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct WishlistReaders {
+    /// How many distinct books are on at least one wishlist.
+    pub everyone: i64,
+    /// You first, then every other reader by name, whether or not they share their stats.
+    pub readers: Vec<WishlistReader>,
+}
+
+/// A reader who wants a book.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct WishlistWanter {
+    /// The user's id.
+    pub id: i64,
+    /// The reader's display name, or their username when they have none.
+    pub name: String,
+}
+
+/// How many copies of a book the library holds in one kind.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct WishlistHolding {
+    /// An upper-case digital format such as `EPUB` or `M4B`, or `PRINT` for physical copies.
+    pub format: String,
+    /// How many files or physical copies of that kind the library holds.
+    pub count: i64,
+}
+
+/// A book on a wishlist, as `GET /api/wishlists` lists it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct WishlistBook {
+    /// The book, without its description.
+    pub book: crate::EbookMetadata,
+    /// When it was added, in Unix seconds. On the merged list, the newest add of any reader.
+    pub added_at: i64,
+    /// The readers who want it. On one reader's list, only that reader.
+    pub wanted_by: Vec<WishlistWanter>,
+    /// What the library already holds of it: one entry per digital format, then `PRINT`.
+    /// Empty for a book the library only wants.
+    pub holdings: Vec<WishlistHolding>,
+}
+
 #[cfg(test)]
 mod tests;

@@ -1,17 +1,18 @@
 //! Physical-collection REST handlers for the mobile client (`/api/physical/*`):
-//! a book's library-wide copies, the caller's wishlist entry, and fileless-book
-//! removal. Check-in lives in [`super::scan`]; web uses the `/api/rpc/physical*`
+//! a book's library-wide copies, the caller's wishlist entry, every reader's
+//! wishlist, and fileless-book removal. Check-in lives in [`super::scan`]; web uses the `/api/rpc/physical*`
 //! server functions.
 
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::{IntoResponse, Response},
     Json,
 };
-use omnibus_db::{self as db, PhysicalError};
+use omnibus_db::{self as db, PhysicalError, WishlistScope};
 use omnibus_shared::physical::{
-    PhysicalCopy, UpdateCopyNoteRequest, WishlistEntry, WishlistRemoval, WishlistSource,
+    PhysicalCopy, UpdateCopyNoteRequest, WishlistBook, WishlistEntry, WishlistQuery,
+    WishlistReaders, WishlistRemoval, WishlistSource,
 };
 
 use super::{internal, AppState};
@@ -25,6 +26,7 @@ fn physical_error(context: &'static str, e: PhysicalError) -> Response {
         PhysicalError::CopyNotFound => {
             (StatusCode::NOT_FOUND, "physical copy not found").into_response()
         }
+        PhysicalError::UserNotFound => (StatusCode::NOT_FOUND, "reader not found").into_response(),
         PhysicalError::NotCopyOwner => (StatusCode::FORBIDDEN, "not your copy").into_response(),
         PhysicalError::BookHasFiles => (
             StatusCode::CONFLICT,
@@ -124,6 +126,73 @@ pub(super) async fn delete_copy(
     match db::delete_physical_copy(&state.pool, copy_id, user.id, user.is_admin).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => physical_error("delete_physical_copy", e),
+    }
+}
+
+/// Which wishlist `?user=` names, or `None` when it is neither `all` nor a positive id.
+fn wishlist_scope(caller_id: i64, query: &WishlistQuery) -> Option<WishlistScope> {
+    match query.user.as_deref() {
+        None => Some(WishlistScope::Reader(caller_id)),
+        Some("all") => Some(WishlistScope::Everyone),
+        Some(id) => id
+            .parse::<i64>()
+            .ok()
+            .filter(|id| *id > 0)
+            .map(WishlistScope::Reader),
+    }
+}
+
+/// List wishlists
+///
+/// The books on a wishlist, newest add first, up to 1000. Every signed-in user can read
+/// every reader's wishlist, whether or not that reader shares their stats. `user` picks
+/// whose: leave it out for yours, pass a reader's id for theirs, or `all` for every
+/// reader's lists merged into one row per book.
+#[utoipa::path(
+    get,
+    path = "/api/wishlists",
+    tag = "Physical books",
+    operation_id = "list_wishlists",
+    params(WishlistQuery),
+    responses(
+        (status = 200, description = "The wishlisted books, newest first.", body = Vec<WishlistBook>),
+        (status = 400, description = "`user` is neither `all` nor a reader's id."),
+        (status = 404, description = "No reader has that id."),
+    ),
+)]
+pub(super) async fn get_wishlists(
+    user: AuthUser,
+    State(state): State<AppState>,
+    Query(query): Query<WishlistQuery>,
+) -> Response {
+    let Some(scope) = wishlist_scope(user.id, &query) else {
+        return (StatusCode::BAD_REQUEST, "user must be `all` or a reader id").into_response();
+    };
+    match db::wishlist_books(&state.pool, scope).await {
+        Ok(books) => Json(books).into_response(),
+        Err(e) => physical_error("wishlist_books", e),
+    }
+}
+
+/// List wishlist readers
+///
+/// Every reader on the server, you first and then the rest by name, whether or not they
+/// share their stats, with how many books are on each reader's wishlist. `everyone` is
+/// how many distinct books are on at least one wishlist.
+#[utoipa::path(
+    get,
+    path = "/api/wishlists/readers",
+    tag = "Physical books",
+    operation_id = "list_wishlist_readers",
+    responses((status = 200, description = "Every reader with their wishlist size.", body = WishlistReaders)),
+)]
+pub(super) async fn get_wishlist_readers(
+    user: AuthUser,
+    State(state): State<AppState>,
+) -> Response {
+    match db::wishlist_readers(&state.pool, user.id).await {
+        Ok(readers) => Json(readers).into_response(),
+        Err(e) => physical_error("wishlist_readers", e),
     }
 }
 

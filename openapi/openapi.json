@@ -8529,6 +8529,70 @@
         ]
       }
     },
+    "/api/wishlists": {
+      "get": {
+        "tags": [
+          "Physical books"
+        ],
+        "summary": "List wishlists",
+        "description": "The books on a wishlist, newest add first, up to 1000. Every signed-in user can read\nevery reader's wishlist, whether or not that reader shares their stats. `user` picks\nwhose: leave it out for yours, pass a reader's id for theirs, or `all` for every\nreader's lists merged into one row per book.",
+        "operationId": "list_wishlists",
+        "parameters": [
+          {
+            "name": "user",
+            "in": "query",
+            "description": "A reader's id for that reader's list, or `all` for every reader's lists merged into\none row per book. Leave it out for your own list.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The wishlisted books, newest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WishlistBook"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`user` is neither `all` nor a reader's id."
+          },
+          "404": {
+            "description": "No reader has that id."
+          }
+        }
+      }
+    },
+    "/api/wishlists/readers": {
+      "get": {
+        "tags": [
+          "Physical books"
+        ],
+        "summary": "List wishlist readers",
+        "description": "Every reader on the server, you first and then the rest by name, whether or not they\nshare their stats, with how many books are on each reader's wishlist. `everyone` is\nhow many distinct books are on at least one wishlist.",
+        "operationId": "list_wishlist_readers",
+        "responses": {
+          "200": {
+            "description": "Every reader with their wishlist size.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WishlistReaders"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/worker/status": {
       "get": {
         "tags": [
@@ -17353,6 +17417,41 @@
           }
         }
       },
+      "WishlistBook": {
+        "type": "object",
+        "description": "A book on a wishlist, as `GET /api/wishlists` lists it.",
+        "required": [
+          "book",
+          "added_at",
+          "wanted_by",
+          "holdings"
+        ],
+        "properties": {
+          "added_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "When it was added, in Unix seconds. On the merged list, the newest add of any reader."
+          },
+          "book": {
+            "$ref": "#/components/schemas/EbookMetadata",
+            "description": "The book, without its description."
+          },
+          "holdings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WishlistHolding"
+            },
+            "description": "What the library already holds of it: one entry per digital format, then `PRINT`.\nEmpty for a book the library only wants."
+          },
+          "wanted_by": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WishlistWanter"
+            },
+            "description": "The readers who want it. On one reader's list, only that reader."
+          }
+        }
+      },
       "WishlistEntry": {
         "type": "object",
         "description": "A book on one user's physical wishlist. Each book is on a user's wishlist at most\nonce.",
@@ -17384,6 +17483,82 @@
           }
         }
       },
+      "WishlistHolding": {
+        "type": "object",
+        "description": "How many copies of a book the library holds in one kind.",
+        "required": [
+          "format",
+          "count"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "How many files or physical copies of that kind the library holds."
+          },
+          "format": {
+            "type": "string",
+            "description": "An upper-case digital format such as `EPUB` or `M4B`, or `PRINT` for physical copies."
+          }
+        }
+      },
+      "WishlistReader": {
+        "type": "object",
+        "description": "A reader on `GET /api/wishlists/readers`, with how many books they want.",
+        "required": [
+          "id",
+          "name",
+          "has_avatar",
+          "is_you",
+          "count"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "How many books are on this reader's wishlist."
+          },
+          "has_avatar": {
+            "type": "boolean",
+            "description": "Whether `GET /api/users/{id}/avatar` has an image to serve."
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The user's id. Pass it as `user` to `GET /api/wishlists`."
+          },
+          "is_you": {
+            "type": "boolean",
+            "description": "True for the signed-in user, who always comes first."
+          },
+          "name": {
+            "type": "string",
+            "description": "The reader's display name, or their username when they have none."
+          }
+        }
+      },
+      "WishlistReaders": {
+        "type": "object",
+        "description": "Every reader on the server and the size of their wishlists.",
+        "required": [
+          "everyone",
+          "readers"
+        ],
+        "properties": {
+          "everyone": {
+            "type": "integer",
+            "format": "int64",
+            "description": "How many distinct books are on at least one wishlist."
+          },
+          "readers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WishlistReader"
+            },
+            "description": "You first, then every other reader by name, whether or not they share their stats."
+          }
+        }
+      },
       "WishlistRemoval": {
         "type": "object",
         "description": "What removing a wishlist entry did. A book with no file, no physical copy and no\nother reader's wish goes with its last wishlist entry. `book_deleted` is then true,\nand the book no longer exists.",
@@ -17405,6 +17580,25 @@
           "manual",
           "search"
         ]
+      },
+      "WishlistWanter": {
+        "type": "object",
+        "description": "A reader who wants a book.",
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The user's id."
+          },
+          "name": {
+            "type": "string",
+            "description": "The reader's display name, or their username when they have none."
+          }
+        }
       },
       "WorkerQueueEntry": {
         "type": "object",

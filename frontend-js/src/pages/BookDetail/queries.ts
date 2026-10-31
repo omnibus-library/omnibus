@@ -166,3 +166,17 @@ export const householdQuery = (uuid: BookUuid) =>
     queryKey: ["book", uuid, "household"],
     queryFn: () => fetchBookHousehold(uuid),
   });
+
+// A wishlist or copy write changes the record (`hasPhysical`, visibility), the copies, the wish
+// and the shelf facts, but nothing else on the page.
+export function refreshAround(client: QueryClient, uuid: BookUuid) {
+  return Promise.all([
+    client.invalidateQueries({
+      queryKey: bookQuery(uuid).queryKey,
+      exact: true,
+    }),
+    ...[copiesQuery, wishlistQuery, shelvesQuery].map((query) =>
+      client.invalidateQueries({ queryKey: query(uuid).queryKey }),
+    ),
+  ]);
+}

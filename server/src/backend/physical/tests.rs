@@ -13,6 +13,7 @@ use tower::ServiceExt;
 
 use crate::auth::test_support as auth_test_support;
 use crate::backend::test_support::*;
+use crate::backend::AppState;
 
 fn req(method: &str, uri: &str, token: &str, body: Option<serde_json::Value>) -> Request<Body> {
     let b = Request::builder()
@@ -535,4 +536,259 @@ async fn api_delete_book_returns_404_for_unknown_uuid() {
         .unwrap();
 
     assert_eq!(res.status(), StatusCode::NOT_FOUND);
+}
+
+// --- GET /api/wishlists, GET /api/wishlists/readers --------------------------
+
+/// `user` wants the book `uuid`.
+async fn want(pool: &sqlx::SqlitePool, user: i64, uuid: &str) {
+    db::add_wishlist_entry(pool, user, uuid, WishlistSource::Detail)
+        .await
+        .expect("add_wishlist_entry");
+}
+
+fn sorted_keys(value: &serde_json::Value) -> Vec<&str> {
+    let mut keys: Vec<&str> = value
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    keys.sort();
+    keys
+}
+
+#[tokio::test]
+async fn api_get_wishlists_requires_auth() {
+    let (app, _state, _pool) = fixture().await;
+    let res = app.oneshot(get_anon("/api/wishlists")).await.unwrap();
+    assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn api_get_wishlists_returns_the_callers_list_without_user() {
+    let _covers = CoversDirGuard::new("wishlists_own");
+    let (app, _state, pool) = fixture().await;
+    let alice = auth_test_support::create_user(&pool, "alice").await;
+    let bob = auth_test_support::create_user(&pool, "bob").await;
+    let (mine, _) = seed_physical_only(&pool, "Mine").await;
+    let (theirs, _) = seed_physical_only(&pool, "Theirs").await;
+    want(&pool, alice.id, &mine).await;
+    want(&pool, bob.id, &theirs).await;
+    let token = auth_test_support::bearer_token(&pool, alice.id).await;
+
+    let res = app
+        .oneshot(get_with_bearer("/api/wishlists", &token))
+        .await
+        .unwrap();
+    let status = res.status();
+    let body: serde_json::Value = body_json(res).await;
+
+    assert_eq!(status, StatusCode::OK);
+    let rows = body.as_array().unwrap();
+    assert_eq!(rows.len(), 1);
+    // Raw keys, decoded independently of the typed structs, pin the wire shape.
+    assert_eq!(
+        sorted_keys(&rows[0]),
+        vec!["added_at", "book", "holdings", "wanted_by"]
+    );
+    assert_eq!(sorted_keys(&rows[0]["wanted_by"][0]), vec!["id", "name"]);
+    assert_eq!(
+        sorted_keys(&rows[0]["holdings"][0]),
+        vec!["count", "format"]
+    );
+    assert_eq!(rows[0]["book"]["unique_identifier"], mine);
+    assert_eq!(rows[0]["holdings"][0]["format"], "PRINT");
+    assert_eq!(rows[0]["wanted_by"][0]["name"], "alice");
+}
+
+#[tokio::test]
+async fn api_get_wishlists_returns_everyone_for_user_all() {
+    let _covers = CoversDirGuard::new("wishlists_all");
+    let (app, _state, pool) = fixture().await;
+    let alice = auth_test_support::create_user(&pool, "alice").await;
+    let bob = auth_test_support::create_user(&pool, "bob").await;
+    let (shared, _) = seed_physical_only(&pool, "Shared").await;
+    let (bobs, _) = seed_physical_only(&pool, "Bobs").await;
+    want(&pool, alice.id, &shared).await;
+    want(&pool, bob.id, &shared).await;
+    want(&pool, bob.id, &bobs).await;
+    let token = auth_test_support::bearer_token(&pool, alice.id).await;
+
+    let res = app
+        .oneshot(get_with_bearer("/api/wishlists?user=all", &token))
+        .await
+        .unwrap();
+    let status = res.status();
+    let body: serde_json::Value = body_json(res).await;
+
+    assert_eq!(status, StatusCode::OK);
+    let rows = body.as_array().unwrap();
+    assert_eq!(rows.len(), 2);
+    let shared_row = rows
+        .iter()
+        .find(|r| r["book"]["unique_identifier"] == shared)
+        .expect("the shared book has one row");
+    let wanters: Vec<&str> = shared_row["wanted_by"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|w| w["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(wanters, vec!["alice", "bob"]);
+}
+
+#[tokio::test]
+async fn api_get_wishlists_returns_another_readers_list_for_their_id() {
+    let _covers = CoversDirGuard::new("wishlists_reader");
+    let (app, _state, pool) = fixture().await;
+    let alice = auth_test_support::create_user(&pool, "alice").await;
+    let bob = auth_test_support::create_user(&pool, "bob").await;
+    let (mine, _) = seed_physical_only(&pool, "Mine").await;
+    let (bobs, _) = seed_physical_only(&pool, "Bobs").await;
+    want(&pool, alice.id, &mine).await;
+    want(&pool, bob.id, &bobs).await;
+    let token = auth_test_support::bearer_token(&pool, alice.id).await;
+
+    let res = app
+        .oneshot(get_with_bearer(
+            &format!("/api/wishlists?user={}", bob.id),
+            &token,
+        ))
+        .await
+        .unwrap();
+    let status = res.status();
+    let body: serde_json::Value = body_json(res).await;
+
+    assert_eq!(status, StatusCode::OK);
+    let rows = body.as_array().unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["book"]["unique_identifier"], bobs);
+}
+
+#[tokio::test]
+async fn api_get_wishlists_returns_404_for_an_unknown_reader() {
+    let (app, _state, pool) = fixture().await;
+    let alice = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, alice.id).await;
+
+    let status = app
+        .oneshot(get_with_bearer("/api/wishlists?user=99999", &token))
+        .await
+        .unwrap()
+        .status();
+
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn api_get_wishlists_returns_400_for_a_malformed_user() {
+    let (_app, _state, pool) = fixture().await;
+    let alice = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, alice.id).await;
+
+    for user in ["abc", "0", "-3", "1.5", ""] {
+        let app = crate::backend::rest_router(AppState::new(pool.clone()));
+        let status = app
+            .oneshot(get_with_bearer(
+                &format!("/api/wishlists?user={user}"),
+                &token,
+            ))
+            .await
+            .unwrap()
+            .status();
+        assert_eq!(status, StatusCode::BAD_REQUEST, "user={user:?}");
+    }
+}
+
+#[tokio::test]
+async fn api_get_wishlists_returns_500_when_the_table_is_gone() {
+    let (_app, _state, pool) = fixture().await;
+    let alice = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, alice.id).await;
+    sqlx::query("DROP TABLE wishlist_entries")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let app = crate::backend::rest_router(AppState::new(pool));
+    let status = app
+        .oneshot(get_with_bearer("/api/wishlists", &token))
+        .await
+        .unwrap()
+        .status();
+
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+}
+
+#[tokio::test]
+async fn api_get_wishlist_readers_lists_every_user_with_counts() {
+    let _covers = CoversDirGuard::new("wishlist_readers");
+    let (app, _state, pool) = fixture().await;
+    let alice = auth_test_support::create_user(&pool, "alice").await;
+    let bob = auth_test_support::create_user(&pool, "bob").await;
+    omnibus_db::auth::set_share_stats(&pool, bob.id, false)
+        .await
+        .unwrap();
+    let (book, _) = seed_physical_only(&pool, "Wanted").await;
+    want(&pool, bob.id, &book).await;
+    let token = auth_test_support::bearer_token(&pool, alice.id).await;
+
+    let res = app
+        .oneshot(get_with_bearer("/api/wishlists/readers", &token))
+        .await
+        .unwrap();
+    let status = res.status();
+    let body: serde_json::Value = body_json(res).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(sorted_keys(&body), vec!["everyone", "readers"]);
+    assert_eq!(
+        sorted_keys(&body["readers"][0]),
+        vec!["count", "has_avatar", "id", "is_you", "name"]
+    );
+    assert_eq!(body["everyone"], 1);
+    let readers: Vec<(&str, i64, bool)> = body["readers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| {
+            (
+                r["name"].as_str().unwrap(),
+                r["count"].as_i64().unwrap(),
+                r["is_you"].as_bool().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(readers, vec![("alice", 0, true), ("bob", 1, false)]);
+}
+
+#[tokio::test]
+async fn api_get_wishlist_readers_requires_auth() {
+    let (app, _state, _pool) = fixture().await;
+    let res = app
+        .oneshot(get_anon("/api/wishlists/readers"))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn api_get_wishlist_readers_returns_500_when_the_table_is_gone() {
+    let (_app, _state, pool) = fixture().await;
+    let alice = auth_test_support::create_user(&pool, "alice").await;
+    let token = auth_test_support::bearer_token(&pool, alice.id).await;
+    sqlx::query("DROP TABLE wishlist_entries")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let app = crate::backend::rest_router(AppState::new(pool));
+    let status = app
+        .oneshot(get_with_bearer("/api/wishlists/readers", &token))
+        .await
+        .unwrap()
+        .status();
+
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
 }

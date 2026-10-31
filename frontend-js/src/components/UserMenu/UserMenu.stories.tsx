@@ -177,6 +177,26 @@ export const AdminRows: Story = {
   },
 };
 
+export const WishlistsLeadsTheAccountRows: Story = {
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Open user menu" }),
+    );
+
+    const wishlists = canvas.getByRole("link", { name: "Wishlists" });
+    await expect(wishlists).toHaveAttribute("href", "/wishlists");
+    await expect(wishlists).toHaveAttribute(
+      "data-testid",
+      "user-menu-wishlists",
+    );
+    const settings = canvas.getByRole("link", { name: "Settings" });
+    await expect(
+      wishlists.compareDocumentPosition(settings) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  },
+};
+
 export const Member: Story = {
   parameters: { user: { ...WIRE_ADA, is_admin: false } },
   play: async ({ canvas, userEvent }) => {

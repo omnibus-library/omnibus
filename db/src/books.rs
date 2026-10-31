@@ -80,7 +80,7 @@ impl From<crate::metadata_overrides::MetadataOverridesError> for BooksError {
 // `pub(crate)` re-exports for sibling `db/` modules (`discovery`, `palette`,
 // `metadata_overrides`) that referenced these items at `crate::books::…`
 // before the split.
-pub(crate) use get::{get_books_by_ids, resolve_book_ids_bulk};
+pub(crate) use get::{get_books_by_ids, get_books_by_ids_projected, resolve_book_ids_bulk};
 pub(crate) use page::axis_sort_columns;
 pub(crate) use projection::{
     backfill_creator_ids, merge_overrides_into_books, parse_json_array, row_to_ebook,

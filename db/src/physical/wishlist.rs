@@ -1,12 +1,23 @@
-//! CRUD for the per-user physical wishlist. Orthogonal to digital ownership:
-//! a user can wishlist a book whose EPUB they already have. Unique per
-//! `(user_id, book_uuid)`, so re-wishlisting is idempotent.
+//! CRUD for the per-user physical wishlist, plus the household reads over every reader's.
+//! Orthogonal to digital ownership: a user can wishlist a book whose EPUB they already
+//! have. Unique per `(user_id, book_uuid)`, so re-wishlisting is idempotent.
 
-use omnibus_shared::physical::{WishlistEntry, WishlistRemoval, WishlistSource};
-use sqlx::{SqlitePool, Transaction};
+use std::collections::HashMap;
+
+use omnibus_shared::physical::{
+    WishlistBook, WishlistEntry, WishlistHolding, WishlistReader, WishlistReaders, WishlistRemoval,
+    WishlistSource, WishlistWanter,
+};
+use omnibus_shared::EbookMetadata;
+use sqlx::{Row, SqlitePool, Transaction};
 
 use super::{PhysicalError, PHYSICAL_LIBRARY_PATH};
-use crate::books::{resolve_canonical_book_uuid, resolve_canonical_book_uuid_exec};
+use crate::books::{
+    get_books_by_ids_projected, resolve_canonical_book_uuid, resolve_canonical_book_uuid_exec,
+    Projection,
+};
+use crate::helpers::ids_json;
+use crate::stats::AUDIO_FORMATS;
 
 /// Hard cap on how many entries `list_wishlist` returns for a single user.
 /// Practical usage stays well under this; the cap exists so a pathological
@@ -167,4 +178,181 @@ pub async fn list_wishlist(
     .fetch_all(pool)
     .await?;
     Ok(rows.into_iter().map(map_entry).collect())
+}
+
+/// Whose wishlist [`wishlist_books`] reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WishlistScope {
+    /// One reader's own entries.
+    Reader(i64),
+    /// Every reader's entries, merged into one row per book.
+    Everyone,
+}
+
+/// Every reader, the caller first then the rest by name, with how many books each wants,
+/// and how many distinct books anyone wants. Entries whose book is gone count nowhere,
+/// so a count always equals the length of the list it opens.
+pub async fn wishlist_readers(
+    pool: &SqlitePool,
+    caller_id: i64,
+) -> Result<WishlistReaders, PhysicalError> {
+    let rows = sqlx::query(
+        "SELECT u.id AS id, COALESCE(u.display_name, u.username) AS name,
+                EXISTS(SELECT 1 FROM user_avatars a WHERE a.user_id = u.id) AS has_avatar,
+                (u.id = ?1) AS is_you,
+                (SELECT COUNT(*) FROM wishlist_entries we
+                   JOIN books b ON b.uuid = we.book_uuid
+                  WHERE we.user_id = u.id) AS count
+         FROM users u
+         ORDER BY is_you DESC, name COLLATE dictionary, u.id",
+    )
+    .bind(caller_id)
+    .fetch_all(pool)
+    .await?;
+    let everyone: i64 = sqlx::query_scalar(
+        "SELECT COUNT(DISTINCT b.id) FROM wishlist_entries we
+           JOIN books b ON b.uuid = we.book_uuid",
+    )
+    .fetch_one(pool)
+    .await?;
+
+    let readers = rows
+        .iter()
+        .map(|row| WishlistReader {
+            id: row.get("id"),
+            name: row.get("name"),
+            has_avatar: row.get::<i64, _>("has_avatar") != 0,
+            is_you: row.get::<i64, _>("is_you") != 0,
+            count: row.get("count"),
+        })
+        .collect();
+    Ok(WishlistReaders { everyone, readers })
+}
+
+/// The wishlisted books of `scope`, newest add first, capped at [`LIST_WISHLIST_LIMIT`].
+/// `Reader` for an id no user has is [`PhysicalError::UserNotFound`].
+pub async fn wishlist_books(
+    pool: &SqlitePool,
+    scope: WishlistScope,
+) -> Result<Vec<WishlistBook>, PhysicalError> {
+    let reader = match scope {
+        WishlistScope::Reader(id) => {
+            let known: Option<i64> = sqlx::query_scalar("SELECT id FROM users WHERE id = ?1")
+                .bind(id)
+                .fetch_optional(pool)
+                .await?;
+            known.ok_or(PhysicalError::UserNotFound)?;
+            Some(id)
+        }
+        WishlistScope::Everyone => None,
+    };
+
+    // NULL reader matches every entry, so both scopes share each query below.
+    let ranked: Vec<(i64, i64)> = sqlx::query_as(
+        "SELECT b.id, MAX(we.added_at) AS added_at
+           FROM wishlist_entries we
+           JOIN books b ON b.uuid = we.book_uuid
+          WHERE (?1 IS NULL OR we.user_id = ?1)
+          GROUP BY b.id
+          ORDER BY added_at DESC, MAX(we.id) DESC
+          LIMIT ?2",
+    )
+    .bind(reader)
+    .bind(LIST_WISHLIST_LIMIT)
+    .fetch_all(pool)
+    .await?;
+    let ids: Vec<i64> = ranked.iter().map(|(id, _)| *id).collect();
+    let ids_param = ids_json(&ids);
+
+    let mut books: HashMap<i64, EbookMetadata> =
+        get_books_by_ids_projected(pool, &ids, Projection::List)
+            .await?
+            .into_iter()
+            .map(|book| (book.id, book))
+            .collect();
+    let mut wanters = wanters_by_book(pool, &ids_param, reader).await?;
+    let mut holdings = holdings_by_book(pool, &ids_param).await?;
+
+    Ok(ranked
+        .into_iter()
+        .filter_map(|(id, added_at)| {
+            Some(WishlistBook {
+                book: books.remove(&id)?,
+                added_at,
+                wanted_by: wanters.remove(&id).unwrap_or_default(),
+                holdings: holdings.remove(&id).unwrap_or_default(),
+            })
+        })
+        .collect())
+}
+
+/// Who wants each book in `ids_json`, by name. `reader` narrows it to one reader.
+async fn wanters_by_book(
+    pool: &SqlitePool,
+    ids_json: &str,
+    reader: Option<i64>,
+) -> Result<HashMap<i64, Vec<WishlistWanter>>, PhysicalError> {
+    let rows: Vec<(i64, i64, String)> = sqlx::query_as(
+        "SELECT b.id, u.id, COALESCE(u.display_name, u.username) AS name
+           FROM wishlist_entries we
+           JOIN books b ON b.uuid = we.book_uuid
+           JOIN users u ON u.id = we.user_id
+          WHERE b.id IN (SELECT value FROM json_each(?1))
+            AND (?2 IS NULL OR we.user_id = ?2)
+          ORDER BY name COLLATE dictionary, u.id",
+    )
+    .bind(ids_json)
+    .bind(reader)
+    .fetch_all(pool)
+    .await?;
+    let mut by_book: HashMap<i64, Vec<WishlistWanter>> = HashMap::new();
+    for (book_id, id, name) in rows {
+        by_book
+            .entry(book_id)
+            .or_default()
+            .push(WishlistWanter { id, name });
+    }
+    Ok(by_book)
+}
+
+/// What the library holds of each book in `ids_json`: a count per digital format, alphabetically,
+/// then the physical copies as `PRINT`. A kind with none is absent, and a multi-part audiobook
+/// counts once.
+async fn holdings_by_book(
+    pool: &SqlitePool,
+    ids_json: &str,
+) -> Result<HashMap<i64, Vec<WishlistHolding>>, PhysicalError> {
+    // The parts of one audiobook are many rows in one folder, so an audio format counts folders;
+    // anything else counts files.
+    let editions = format!(
+        "CASE WHEN UPPER(format) IN {AUDIO_FORMATS}
+              THEN COUNT(DISTINCT rtrim(COALESCE(path, ''), replace(COALESCE(path, ''), '/', '')))
+              ELSE COUNT(*) END"
+    );
+    let rows: Vec<(i64, String, i64)> = sqlx::query_as(&format!(
+        "SELECT book_id, format, n FROM (
+             SELECT book_id, UPPER(format) AS format,
+                    {editions} AS n, 0 AS kind
+               FROM book_files
+              WHERE book_id IN (SELECT value FROM json_each(?1))
+              GROUP BY book_id, UPPER(format)
+             UNION ALL
+             SELECT b.id, 'PRINT', COUNT(*), 1
+               FROM physical_copies pc
+               JOIN books b ON b.uuid = pc.book_uuid
+              WHERE b.id IN (SELECT value FROM json_each(?1))
+              GROUP BY b.id
+         ) ORDER BY book_id, kind, format"
+    ))
+    .bind(ids_json)
+    .fetch_all(pool)
+    .await?;
+    let mut by_book: HashMap<i64, Vec<WishlistHolding>> = HashMap::new();
+    for (book_id, format, count) in rows {
+        by_book
+            .entry(book_id)
+            .or_default()
+            .push(WishlistHolding { format, count });
+    }
+    Ok(by_book)
 }

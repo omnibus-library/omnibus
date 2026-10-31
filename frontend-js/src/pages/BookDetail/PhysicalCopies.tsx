@@ -1,9 +1,4 @@
-import {
-  type QueryClient,
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import {
   addToWishlist,
@@ -22,35 +17,15 @@ import {
   ConfirmModal,
 } from "../../components/ConfirmModal/ConfirmModal";
 import { BookGlyph } from "../../components/Glyphs/Glyphs";
+import { findCopyUrl } from "../../findCopy";
 import { ago, nowSecs, wishlistSource } from "../../format";
 import { useCurrentUser } from "../../session";
 import {
-  bookQuery,
   copiesQuery,
-  shelvesQuery,
+  refreshAround,
   useLeaveBook,
   wishlistQuery,
 } from "./queries";
-
-/** An Amazon search on the ISBN, or on title and author when the book has none. */
-function findCopyUrl(book: BookDetail) {
-  const query = book.isbn13?.trim() || `${book.title} ${book.authors[0] ?? ""}`;
-  return `https://www.amazon.com/s?k=${encodeURIComponent(query.trim())}`;
-}
-
-// A wishlist or copy write changes the record (`hasPhysical`, visibility), the copies, the wish
-// and the shelf facts, but nothing else on the page.
-function refreshAround(client: QueryClient, uuid: BookUuid) {
-  return Promise.all([
-    client.invalidateQueries({
-      queryKey: bookQuery(uuid).queryKey,
-      exact: true,
-    }),
-    ...[copiesQuery, wishlistQuery, shelvesQuery].map((query) =>
-      client.invalidateQueries({ queryKey: query(uuid).queryKey }),
-    ),
-  ]);
-}
 
 function useWishlistWrites(uuid: BookUuid) {
   const client = useQueryClient();

@@ -254,6 +254,8 @@ fn physical_collection_routes() -> OpenApiRouter<AppState> {
             physical::delete_wishlist_entry
         ))
         .routes(routes!(physical::delete_book))
+        .routes(routes!(physical::get_wishlists))
+        .routes(routes!(physical::get_wishlist_readers))
 }
 
 /// Shelves — mobile-facing REST. Web hits the analogous

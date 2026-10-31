@@ -29,7 +29,7 @@ pub(super) const LIVE_BOOK: &str = "EXISTS (SELECT 1 FROM book_files bf WHERE bf
 /// The audio formats an audiobook can be served from, mirroring
 /// `hls::query::resolve_audiobook_file`. A duration total that admitted
 /// formats the player can't resolve would describe hours nobody can listen to.
-const AUDIO_FORMATS: &str = "('M4B', 'M4A', 'MP3')";
+pub(crate) const AUDIO_FORMATS: &str = "('M4B', 'M4A', 'MP3')";
 
 /// One cache entry plus the generation it was computed against, which makes
 /// [`invalidate`] stick. A compute runs outside the lock, so an `invalidate` can
