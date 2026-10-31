@@ -3,7 +3,7 @@ import { type ExpectMutationOptions, post } from "../utils/api";
 /** The account endpoints the personal Settings sections post to. */
 export const accountUrls = {
   scrollStops: /\/api\/rpc\/account\/book-detail-scroll-stops(?:\?|$)/,
-  shareStats: /\/api\/rpc\/account\/share-stats(?:\?|$)/,
+  shareStats: /\/api\/account\/share-stats(?:\?|$)/,
   stackSeries: /\/api\/rpc\/account\/stack-series(?:\?|$)/,
   kindleEmail: /\/api\/rpc\/account\/kindle-email(?:\?|$)/,
   kindleDelivery: /\/api\/rpc\/kindle\/delivery(?:\?|$)/,

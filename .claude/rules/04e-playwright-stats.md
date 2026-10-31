@@ -39,5 +39,5 @@ one is asserting a control that no longer exists. Three consequences:
   is closed** — only `hidden` keeps them offscreen — so a spec asserting one
   is gone (sharing turned off) needs `toHaveCount(0)`, not a visibility check.
   Options are `stats-reader-option-you` / `stats-reader-option-<id>`, and
-  `/api/rpc/stats` bodies carry `user_id` (`null` on the caller's own page).
+  `GET /api/stats` queries carry `user_id` (absent on the caller's own page).
   Only the caller's own page draws `stats-share-toggle` (household sharing).

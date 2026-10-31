@@ -83,7 +83,6 @@ test.describe("household stats", () => {
   test("query the target's stats for the selected period", async ({
     statsPage,
     householdTarget,
-    expectMutation,
   }) => {
     await test.step("open the target's stats", async () => {
       await statsPage.goto(householdTarget.id);
@@ -91,13 +90,13 @@ test.describe("household stats", () => {
 
     // user_id follows the route's ?user=, not the caller.
     await test.step("select the year pill", async () => {
-      await expectMutation(stats.summary("year", householdTarget.id), () =>
-        statsPage.selectPeriod("year"),
-      );
+      const fetched = statsPage.waitForSummary("year", householdTarget.id);
+      await statsPage.selectPeriod("year");
+      await fetched;
     });
   });
 
-  // The SSR half of ?user= has to agree with the hydrated one.
+  // A cold load reads ?user= itself, without the picker's navigation.
   test("load the target's stats from a direct link", async ({
     statsPage,
     householdTarget,
@@ -154,13 +153,22 @@ test.describe("household stats", () => {
     statsPage,
     householdTarget,
   }) => {
-    // The page's own in-progress fetch (user_id null, with its own limit; the
-    // user menu makes a separate limit-1 call) resolves after the switch below.
-    const release = await test.step("hold your own in-progress fetch", () =>
+    // The page waits for its own in-progress read before it draws, so the race
+    // is a revisit: back on your page the cached card shows while its refetch
+    // (no user_id, and a limit above the user menu's 1) is held past a switch.
+    await test.step("open the stats page and visit the target", async () => {
+      await statsPage.goto();
+      await statsPage.readerPicker.pick(householdTarget.id);
+      await expect(statsPage.heroWho).toHaveText(
+        `${householdTarget.username}'s stats`,
+      );
+    });
+
+    const release = await test.step("hold your own in-progress refetch", () =>
       statsPage.holdOwnInProgress());
 
-    await test.step("open the stats page", async () => {
-      await statsPage.gotoUnsettled();
+    await test.step("return to your own stats on the cached card", async () => {
+      await statsPage.readerPicker.pick("you");
       await expect(statsPage.readerPicker.trigger).toHaveAttribute(
         "aria-label",
         "Stats for You",

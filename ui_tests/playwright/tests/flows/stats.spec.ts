@@ -2,7 +2,6 @@
 // everything under "In this window" and nothing in the hero or "Outside the
 // window", and several tests exist only to hold that line.
 
-import { stats } from "../contracts/stats";
 import { buildSession, buildSummary, LIBRARY_COMPOSITION } from "../data/stats";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/pageFixtures";
@@ -82,10 +81,15 @@ test.describe("stats page", () => {
     },
   );
 
-  test("show the stats page layout", async ({ libraryPage, statsPage }) => {
+  // Starts from the chart builder, whose nav is the same top nav, so the test
+  // reaches /stats by its link without depending on the landing page's object.
+  test("show the stats page layout", async ({
+    chartBuilderPage,
+    statsPage,
+  }) => {
     await test.step("open the stats page from the nav", async () => {
-      await libraryPage.goto();
-      await libraryPage.topNav.openStats();
+      await chartBuilderPage.goto();
+      await chartBuilderPage.topNav.openStats();
       await statsPage.assertDisplayed();
       await statsPage.waitForSettled();
     });
@@ -119,7 +123,7 @@ test.describe("stats page", () => {
       await expect(statsPage.periodSection).toBeVisible();
       await expect(statsPage.readingClock).toBeVisible();
       // The dial is the live end of the local-time path; every other test
-      // stubs /api/rpc/stats, so a serde rename or dropped bind would leave
+      // stubs /api/stats, so a serde rename or dropped bind would leave
       // the suite green with this card stuck in its empty state.
       await expect(statsPage.clockEmpty).toHaveCount(0);
       await expect(statsPage.clockDial).toBeVisible();
@@ -478,18 +482,15 @@ test.describe("stats page", () => {
   });
 
   test.describe("window", () => {
-    test("switch the window to a week", async ({
-      statsPage,
-      expectMutation,
-    }) => {
+    test("switch the window to a week", async ({ statsPage }) => {
       await test.step("open the stats page", async () => {
         await statsPage.goto();
       });
 
       await test.step("select the week pill", async () => {
-        await expectMutation(stats.summary("week"), () =>
-          statsPage.selectPeriod("week"),
-        );
+        const fetched = statsPage.waitForSummary("week");
+        await statsPage.selectPeriod("week");
+        await fetched;
         await statsPage.assertPeriodSelected("week");
       });
 
@@ -507,18 +508,15 @@ test.describe("stats page", () => {
 
     // Lifetime has no previous window, so every tile drops its comparison
     // rather than measuring against a zero nobody recorded.
-    test("switch the window to lifetime", async ({
-      statsPage,
-      expectMutation,
-    }) => {
+    test("switch the window to lifetime", async ({ statsPage }) => {
       await test.step("open the stats page", async () => {
         await statsPage.goto();
       });
 
       await test.step("select the lifetime pill", async () => {
-        await expectMutation(stats.summary("all_time"), () =>
-          statsPage.selectPeriod("all_time"),
-        );
+        const fetched = statsPage.waitForSummary("all_time");
+        await statsPage.selectPeriod("all_time");
+        await fetched;
         await statsPage.assertPeriodSelected("all_time");
       });
 
@@ -534,7 +532,6 @@ test.describe("stats page", () => {
     // is the whole redesign undone.
     test("keep the hero and the standing band when the window changes", async ({
       statsPage,
-      expectMutation,
     }) => {
       const before =
         await test.step("note the hero and the standing band", async () => {
@@ -547,9 +544,9 @@ test.describe("stats page", () => {
         });
 
       await test.step("select the year pill", async () => {
-        await expectMutation(stats.summary("year"), () =>
-          statsPage.selectPeriod("year"),
-        );
+        const fetched = statsPage.waitForSummary("year");
+        await statsPage.selectPeriod("year");
+        await fetched;
         await statsPage.assertPeriodSelected("year");
         await expect(statsPage.windowLabel).toContainText("year to date");
       });
