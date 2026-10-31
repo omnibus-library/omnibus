@@ -13,6 +13,7 @@ import {
   aWireBook,
   aWireSeries,
   aWireSuggestion,
+  WIRE_ADA,
 } from "../../testing/wire";
 import { Related } from "./Related";
 import "./BookDetail.css";
@@ -486,44 +487,107 @@ export const SuggestionsSayUnavailableWhenTheLookupFailed: Story = {
   },
 };
 
-const settled = async (canvas: ReturnType<typeof within>) => {
-  await canvas.findByTestId("bp-series-fan");
-  await new Promise((resolve) => setTimeout(resolve, 200));
-};
+const READER = { ...WIRE_ADA, is_admin: false };
 
-export const SuggestionsRenderNothingWhenThereAreNone: Story = {
+export const SuggestionsSayNoneFoundWhenThereAreNone: Story = {
   beforeEach({ msw }) {
     msw.use(getGetSuggestionsMockHandler200({ status: "ready", items: [] }));
   },
   play: async ({ canvas }) => {
-    await settled(canvas);
     await expect(
-      canvas.queryByTestId("suggestions-strip"),
+      await canvas.findByRole("heading", {
+        name: "Readers who finished Aurora Station, Vol. 1 also read",
+      }),
+    ).toBeInTheDocument();
+    await expect(canvas.getByTestId("suggestions-empty")).toHaveTextContent(
+      "No read-alikes found for this book yet.",
+    );
+    await expect(
+      canvas.queryByTestId("suggestion-card"),
     ).not.toBeInTheDocument();
   },
 };
 
-export const SuggestionsRenderNothingWithoutAKey: Story = {
+export const SuggestionsOfferTheKeyToAnAdmin: Story = {
   beforeEach({ msw }) {
     msw.use(getGetSuggestionsMockHandler200({ status: "not_configured" }));
   },
   play: async ({ canvas }) => {
-    await settled(canvas);
+    const card = await canvas.findByTestId("suggestions-not-configured");
+    await expect(card).toHaveTextContent(
+      "Suggestions are powered by Hardcover",
+    );
+    await expect(card).toHaveTextContent(
+      "Add a Hardcover API key to pull read-alikes for this book.",
+    );
+    const link = canvas.getByTestId("suggestions-connect-link");
+    await expect(link).toHaveTextContent("Add Hardcover API key →");
+    await expect(link).toHaveAttribute("href", "/admin?section=integrations");
+  },
+};
+
+export const SuggestionsTellAReaderToAskTheirAdmin: Story = {
+  parameters: { user: READER },
+  beforeEach({ msw }) {
+    msw.use(getGetSuggestionsMockHandler200({ status: "not_configured" }));
+  },
+  play: async ({ canvas }) => {
+    const card = await canvas.findByTestId("suggestions-not-configured");
+    await expect(card).toHaveTextContent(
+      "Ask your server admin to connect Hardcover.",
+    );
     await expect(
-      canvas.queryByTestId("suggestions-strip"),
+      canvas.queryByTestId("suggestions-connect-link"),
     ).not.toBeInTheDocument();
   },
 };
 
-export const SuggestionsRenderNothingWhenTheFetchFails: Story = {
+export const SuggestionsAnnounceTheEmptyNoteAfterLooking: Story = {
+  beforeEach({ msw }) {
+    let asked = 0;
+    msw.use(
+      http.get("/api/ebooks/:uuid/suggestions", () =>
+        HttpResponse.json(
+          ++asked < 2 ? { status: "pending" } : { status: "ready", items: [] },
+        ),
+      ),
+    );
+  },
+  play: async ({ canvas }) => {
+    const region = (await canvas.findByTestId("suggestions-pending")).closest(
+      '[role="status"]',
+    );
+    if (!region) throw new Error("the pending note is not in a status region");
+    // The same region, still mounted, now holds the empty note: that swap is what is announced.
+    const empty = await canvas.findByTestId(
+      "suggestions-empty",
+      {},
+      { timeout: 6000 },
+    );
+    await expect(empty.closest('[role="status"]')).toBe(region);
+  },
+};
+
+export const SuggestionsKeepTheKeyOfferInAStatusRegion: Story = {
+  beforeEach({ msw }) {
+    msw.use(getGetSuggestionsMockHandler200({ status: "not_configured" }));
+  },
+  play: async ({ canvas }) => {
+    const card = await canvas.findByTestId("suggestions-not-configured");
+    await expect(card.closest('[role="status"]')).not.toBeNull();
+  },
+};
+
+export const SuggestionsSayUnavailableWhenTheFetchFails: Story = {
   beforeEach({ msw }) {
     msw.use(failing("get", "/api/ebooks/:uuid/suggestions", 500));
   },
   play: async ({ canvas }) => {
-    await settled(canvas);
-    await expect(
-      canvas.queryByTestId("suggestions-strip"),
-    ).not.toBeInTheDocument();
+    const note = await canvas.findByTestId("suggestions-unavailable");
+    await expect(note).toHaveTextContent(
+      "Suggestions are unavailable right now.",
+    );
+    await expect(note.closest('[role="status"]')).not.toBeNull();
   },
 };
 
