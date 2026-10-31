@@ -2,7 +2,7 @@ import { type ExpectMutationOptions, post } from "../utils/api";
 
 /** The progress endpoints the reader posts to. */
 export const progressUrls = {
-  save: /\/api\/rpc\/progress(?:\?|$)/,
+  save: /\/api\/progress(?:\?|$)/,
   get: /\/api\/rpc\/progress\/get(?:\?|$)/,
   recent: /\/api\/rpc\/progress\/recent(?:\?|$)/,
 };

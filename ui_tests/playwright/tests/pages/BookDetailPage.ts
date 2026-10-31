@@ -215,7 +215,9 @@ export class BookDetailPage extends BasePage {
     });
     this.physicalPill = page.getByTestId("physical-pill");
     this.editMetadataLink = page.getByTestId("edit-metadata");
-    this.progressRuler = page.getByTestId("bdmq-ruler");
+    this.progressRuler = page.getByRole("progressbar", {
+      name: /^(Reading|Listening) progress$/,
+    });
     this.addToShelfButton = page.getByTestId("bdmq-add-to-shelf");
     this.shelvesLoading = page.getByTestId("bdmq-shelves-loading");
   }
