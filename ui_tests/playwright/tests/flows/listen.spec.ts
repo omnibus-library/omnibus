@@ -33,7 +33,7 @@ const LOCAL_SEED_BOOK = AUDIOBOOK_BOOKS.find(
   (b) => b.format === "MP3" && b.source === "public_domain",
 )!;
 // The one-clock test needs chapters of minutes, not a generated book's ~2.09s,
-// which `format_hms` renders too coarsely to tell 1x from rate-adjusted. The
+// which the H:MM:SS readout renders too coarsely to tell 1x from rate-adjusted. The
 // public-domain M4B is the only long book no other spec saves a rate on.
 const CHAPTERED_BOOK = M4B_BOOK;
 
@@ -171,9 +171,9 @@ test.describe("listen page", () => {
       await listenPage.waitUntilPlayerReady();
     });
 
-    // Direct-play books flip hls_ready in <10 ms, so without the hold the
-    // overlay is never observable. The hold also proves hls_ready was reset: if
-    // it leaked as true from the first book, the overlay would never appear.
+    // Direct-play books turn ready in <10 ms, so without the hold the overlay
+    // is never observable. The hold also proves ready was reset: if it leaked
+    // as true from the first book, the overlay would never appear.
     const release =
       await test.step("hold the second audiobook's manifest", () =>
         listenPage.holdManifest(uuid2));
@@ -185,7 +185,7 @@ test.describe("listen page", () => {
       });
     });
 
-    // Positive proof that hls_ready was reset: a stale true from the first
+    // Positive proof that ready was reset: a stale true from the first
     // book would fail this.
     await test.step("check the player is preparing the second audiobook", async () => {
       await expect(listenPage.preparingOverlay).toBeVisible();
@@ -233,7 +233,7 @@ test.describe("listen page", () => {
 
       // The label alone is no proof: the regression showed 1.50× while the
       // audio played at 1.0, because a media load() resets playbackRate. The
-      // element only keeps the rate if the shim re-applies it on loadedmetadata.
+      // element only keeps the rate if the engine re-applies it on loadedmetadata.
       await test.step("check the audio element plays at the restored speed", async () => {
         await expect
           .poll(async () => (await listenPage.audioState())?.rate, {
@@ -349,7 +349,7 @@ test.describe("listen page", () => {
       await test.step("check only the time left follows the speed", async () => {
         const at2x = await listenPage.scrubStamps();
         // The total is book time, the same at 2x as at 1x (a second of slack
-        // absorbs `format_hms` truncation).
+        // absorbs the readout's truncation).
         expect(Math.abs(at2x.total - at1x.total)).toBeLessThanOrEqual(1);
         // The time left is the one rate-adjusted figure, so 2x halves it.
         expect(at2x.remaining).toBeLessThan(at1x.remaining);

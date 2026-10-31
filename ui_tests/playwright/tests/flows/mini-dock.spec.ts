@@ -90,7 +90,7 @@ test.describe("mini-dock", () => {
       await listenPage.waitUntilPlayerReady();
     });
 
-    // The full player route renders without ScreenLayout, so no dock there.
+    // The full player route renders outside the app shell, so no dock there.
     await test.step("check the full player shows no dock", async () => {
       await expect(miniDock.root).toHaveCount(0);
     });
@@ -184,7 +184,7 @@ test.describe("mini-dock", () => {
       await expect(miniDock.volumePopover).toHaveClass(/open/);
     });
 
-    // The popover writes through the shared apply_volume seam, so the change
+    // The popover writes through the shared player's volume, so the change
     // reaches the shared `<audio>` element in real time.
     await test.step("set the volume", async () => {
       await miniDock.setVolume(0.3);
@@ -230,7 +230,7 @@ test.describe("mini-dock", () => {
       await expect(miniDock.speedChip).toContainText(`${next.toFixed(1)}×`);
     });
 
-    // The panel writes through the shared apply_rate seam, so the change
+    // The panel writes through the shared player's speed, so the change
     // reaches the shared `<audio>` element's playbackRate in real time.
     await test.step("check the audio plays at the new speed", async () => {
       await expect
@@ -238,7 +238,7 @@ test.describe("mini-dock", () => {
         .toBeCloseTo(next, 2);
     });
 
-    // Both controls share one signal, so the full player shows the same rate.
+    // Both controls share one player, so the full player shows the same rate.
     await test.step("close the popover and expand to the full player", async () => {
       await miniDock.closePopoverFromScrim();
       await expect(miniDock.speedPopover).not.toHaveClass(/open/);
@@ -440,7 +440,7 @@ test.describe("mini-dock", () => {
 
     // The dock sits flush at the bottom edge and the reader's bottom bar
     // becomes a slim footer pinned directly above it, so the two stack rather
-    // than collide (#988). The footer renders unconditionally in `BookReadPage`.
+    // than collide (#988). The footer renders unconditionally in the reader.
     await test.step("check the footer stacks directly above the dock", async () => {
       const dock = await miniDock.bounds();
       expect(dock.bottom).toBeCloseTo(dock.viewport.height, 0);
