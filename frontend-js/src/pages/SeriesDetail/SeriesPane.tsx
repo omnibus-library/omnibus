@@ -26,7 +26,7 @@ import {
   tally,
 } from "../../components/Browse/bookStates";
 import { CoverImage } from "../../components/Cover/CoverImage";
-import { Loading, Stale } from "../../components/Loading/Loading";
+import { BusyLabel, Loading, Stale } from "../../components/Loading/Loading";
 import { PageError, PageNotFound } from "../../components/PageState/PageState";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
 import { ToastProvider, useToast } from "../../components/Toast/Toast";
@@ -93,29 +93,27 @@ function HomeToggle({ series }: { series: SeriesPage }) {
     onError: (error) =>
       toast(`Couldn't show ${series.name} on home: ${error.message}`),
   });
-  if (series.hiddenFromHome) {
-    return (
-      <button
-        type="button"
-        className="au-btn"
-        data-testid="series-show-home"
-        disabled={show.isPending}
-        onClick={() => show.mutate()}
-      >
-        Show on home
-      </button>
-    );
-  }
-  if (!inProgress(series.books, series.reading)) return null;
+  const hidden = series.hiddenFromHome;
+  if (!hidden && !inProgress(series.books, series.reading)) return null;
+  // One button throughout, so the keyboard stays on it as it changes sides.
   return (
     <>
       <button
         type="button"
         className="au-btn"
-        data-testid="series-hide-home"
-        onClick={() => setAsking(true)}
+        data-testid={hidden ? "series-show-home" : "series-hide-home"}
+        aria-busy={show.isPending}
+        onClick={() => {
+          if (show.isPending) return;
+          if (hidden) show.mutate();
+          else setAsking(true);
+        }}
       >
-        Hide from home
+        <BusyLabel
+          busy={show.isPending}
+          label={hidden ? "Show on home" : "Hide from home"}
+          busyLabel="Showing…"
+        />
       </button>
       {asking && (
         <HideSeriesDialog series={series} onClose={() => setAsking(false)} />

@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { delay, HttpResponse, http } from "msw";
 import { Route, Routes, useLocation } from "react-router";
 import { expect, waitFor, within } from "storybook/test";
 import { getGetSeriesByIdMockHandler404 } from "../../api/generated/omnibus.msw";
@@ -384,7 +385,16 @@ export const HideFromHome: Story = {
   beforeEach({ msw }) {
     const home = seriesHomeHandlers({ rows: [], detail: homeDetail(false) });
     writes = home.writes;
-    msw.use(...home.handlers);
+    // The page's re-read after the hide never answers, so only the dialog's own write can flip the button.
+    let reads = 0;
+    msw.use(
+      http.get("/api/series/:id", async () => {
+        reads++;
+        if (reads > 1) await delay("infinite");
+        return HttpResponse.json(homeDetail(false));
+      }),
+      ...home.handlers,
+    );
   },
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(await canvas.findByTestId("series-hide-home"));
@@ -398,6 +408,7 @@ export const HideFromHome: Story = {
     await expect(
       await canvas.findByTestId("series-show-home"),
     ).toHaveTextContent("Show on home");
+    await expect(document.activeElement).not.toBe(document.body);
     await expect(writes).toEqual([{ op: "hide", id: 4 }]);
     await expect(canvas.queryByTestId("series-hide-home")).toBeNull();
     await expect(canvas.queryByRole("dialog")).toBeNull();
@@ -416,6 +427,7 @@ export const ShowOnHome: Story = {
     await expect(
       await canvas.findByTestId("series-hide-home"),
     ).toHaveTextContent("Hide from home");
+    await expect(document.activeElement).not.toBe(document.body);
     await expect(writes).toEqual([{ op: "unhide", id: 4 }]);
     await expect(canvas.queryByRole("dialog")).toBeNull();
     await expect(canvas.queryByTestId("series-show-home")).toBeNull();

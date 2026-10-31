@@ -410,16 +410,14 @@ export type SeriesHomeWrite = { op: "hide" | "unhide"; id: number };
 /**
  * `GET /api/series/in-progress` answering `rows`, `GET /api/series/{id}` answering `detail`
  * (when given) and the hide routes, kept between reads: a hide drops the row and flags the
- * detail, a show clears the flag. Each write lands in `writes`; `failHide` answers a hide 500.
+ * detail, a show clears the flag. Each write lands in `writes`.
  */
 export function seriesHomeHandlers({
   rows,
   detail,
-  failHide = false,
 }: {
   rows: SeriesInProgress[];
   detail?: SeriesDetail;
-  failHide?: boolean;
 }) {
   let listed = rows;
   let hidden = detail?.hidden_from_home ?? false;
@@ -437,7 +435,6 @@ export function seriesHomeHandlers({
     http.put("/api/series/:id/hide", ({ params }) => {
       const id = Number(params.id);
       writes.push({ op: "hide", id });
-      if (failHide) return new HttpResponse("hide refused", { status: 500 });
       listed = listed.filter((row) => row.id !== id);
       hidden = true;
       return new HttpResponse(null, { status: 204 });

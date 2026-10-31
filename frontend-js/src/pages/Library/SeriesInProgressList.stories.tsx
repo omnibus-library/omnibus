@@ -265,6 +265,48 @@ export const Phone: Story = {
   },
 };
 
+const NARROW_DESKTOP = {
+  options: {
+    narrowDesktop: {
+      name: "Narrow desktop",
+      styles: { width: "900px", height: "800px" },
+    },
+  },
+};
+
+export const StacksBelowTheFanOnANarrowDesktop: Story = {
+  globals: { viewport: { value: "narrowDesktop", isRotated: false } },
+  parameters: { viewport: NARROW_DESKTOP },
+  beforeEach({ msw }) {
+    msw.use(
+      recentProgressHandler([RESUME]),
+      getGetSeriesInProgressMockHandler200([SAGA, PIONEERS]),
+    );
+  },
+  play: async ({ canvas }) => {
+    const list = await panel(canvas);
+    const stack = await fan(canvas);
+
+    await expect(list.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      stack.getBoundingClientRect().bottom - 1,
+    );
+  },
+};
+
+export const FanAloneKeepsItsFullWidth: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      recentProgressHandler([RESUME]),
+      getGetSeriesInProgressMockHandler200([]),
+    );
+  },
+  play: async ({ canvas }) => {
+    const stack = await fan(canvas);
+
+    await expect(stack.getBoundingClientRect().width).toBeGreaterThan(520);
+  },
+};
+
 export const WhileLoading: Story = {
   beforeEach({ msw }) {
     msw.use(
@@ -361,7 +403,9 @@ export const HideFromRow: Story = {
     await expect(hide).not.toBeVisible();
     await tabTo(hide, () => userEvent.tab());
     await expect(hide).toHaveFocus();
-    await expect(declaredOpacity(".sip-row:hover .sip-hide")).toBe("1");
+    await expect(
+      declaredOpacity(".sip-row:hover .sip-hide", "(hover: hover)"),
+    ).toBe("1");
     await expect(declaredOpacity(".sip-hide:focus-visible")).toBe("1");
     await expect(declaredOpacity(".sip-hide", "(hover: none)")).toBe("1");
 
@@ -389,17 +433,23 @@ export const HideFromRow: Story = {
       storyClient().getQueryData(["series", "in-progress"]),
     ).toHaveLength(1);
     await expectInvalidated([["series", 7]]);
+    // The hidden row's ✕ is gone; focus moves on rather than falling to the page.
+    await waitFor(() =>
+      expect(
+        within(list).getByRole("button", { name: "Hide Pioneers from home" }),
+      ).toHaveFocus(),
+    );
   },
 };
 
 export const HideFails: Story = {
   beforeEach({ msw }) {
-    const home = seriesHomeHandlers({
-      rows: [SAGA, PIONEERS],
-      failHide: true,
-    });
-    writes = home.writes;
-    msw.use(recentProgressHandler([RESUME]), ...home.handlers);
+    const home = seriesHomeHandlers({ rows: [SAGA, PIONEERS] });
+    msw.use(
+      recentProgressHandler([RESUME]),
+      failing("put", "/api/series/:id/hide", 500),
+      ...home.handlers,
+    );
   },
   play: async ({ canvas, userEvent }) => {
     const list = await panel(canvas);
@@ -410,7 +460,7 @@ export const HideFails: Story = {
     await userEvent.click(await canvas.findByTestId("series-hide-confirm"));
 
     await expect(await canvas.findByRole("status")).toHaveTextContent(
-      "Couldn't hide Saga: hide refused",
+      "Couldn't hide Saga: failed with 500",
     );
     await expect(within(list).getAllByTestId("sip-row")).toHaveLength(2);
     await expect(canvas.queryByRole("dialog")).toBeNull();

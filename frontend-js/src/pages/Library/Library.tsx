@@ -140,6 +140,22 @@ export function Library() {
     useResumeLead();
   const home = useSeriesInProgress();
   const [hiding, setHiding] = useState<SeriesInProgress | null>(null);
+  // Where the keyboard goes once the hidden row is gone: its slot's ✕, else the heading.
+  const listCell = useRef<HTMLDivElement>(null);
+  const hidingSlot = useRef(0);
+  const refocusAt = useRef<number | null>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: it runs when the rows change, to find the slot the hidden row left
+  useEffect(() => {
+    const slot = refocusAt.current;
+    if (slot === null) return;
+    refocusAt.current = null;
+    const buttons =
+      listCell.current?.querySelectorAll<HTMLElement>(".sip-hide");
+    const next = buttons?.item(Math.min(slot, (buttons?.length ?? 1) - 1));
+    (
+      next ?? listCell.current?.querySelector<HTMLElement>(".sip-heading")
+    )?.focus();
+  }, [home.rows]);
   const hasFan = leadPoint !== undefined || pending;
   const hasList = home.rows.length > 0 || home.pending;
   const { selection, pick, shelfId, shelfPage, members, detail, sortLock } =
@@ -179,7 +195,7 @@ export function Library() {
         <PageTitle />
         {(hasFan || hasList) && (
           <div
-            className={`sip-hero sip-hero--${hasFan && hasList ? "pair" : "solo"}`}
+            className={`sip-hero sip-hero--${hasFan ? (hasList ? "pair" : "fan") : "solo"}`}
             data-testid="sip-hero"
           >
             {leadPoint ? (
@@ -188,9 +204,17 @@ export function Library() {
               pending && <ResumeStackPending />
             )}
             {hasList && (
-              <div className="sip-cell">
+              <div className="sip-cell" ref={listCell}>
                 {home.rows.length > 0 ? (
-                  <SeriesInProgressList rows={home.rows} onHide={setHiding} />
+                  <SeriesInProgressList
+                    rows={home.rows}
+                    onHide={(series) => {
+                      hidingSlot.current = home.rows.findIndex(
+                        (row) => row.series.id === series.id,
+                      );
+                      setHiding(series);
+                    }}
+                  />
                 ) : (
                   <SeriesInProgressPending />
                 )}
@@ -382,7 +406,13 @@ export function Library() {
         )}
         {leadPoint && <EdgeResume point={leadPoint} past={past} />}
         {hiding && (
-          <HideSeriesDialog series={hiding} onClose={() => setHiding(null)} />
+          <HideSeriesDialog
+            series={hiding}
+            onHidden={() => {
+              refocusAt.current = hidingSlot.current;
+            }}
+            onClose={() => setHiding(null)}
+          />
         )}
         {shelf && editing && (
           <EditShelfModal

@@ -5,7 +5,9 @@ import {
   hideSeries,
   type SeriesId,
   type SeriesInProgress,
+  type SeriesPage,
   seriesInProgressQuery,
+  seriesQuery,
 } from "../../api";
 import { ButtonLink } from "../../components/Button/Button";
 import { ConfirmDialog } from "../../components/ConfirmModal/ConfirmModal";
@@ -121,7 +123,7 @@ export function SeriesInProgressList({
       data-testid="series-in-progress"
       aria-labelledby="sip-heading"
     >
-      <h2 className="sip-heading" id="sip-heading">
+      <h2 className="sip-heading" id="sip-heading" tabIndex={-1}>
         Series in progress
       </h2>
       <ul className="sip-list">
@@ -147,21 +149,33 @@ export function SeriesInProgressPending() {
 /** Asks before keeping `series` off the home page, then does it and drops its row. */
 export function HideSeriesDialog({
   series,
+  onHidden,
   onClose,
 }: {
   series: { id: SeriesId; name: string };
+  /** Called once the hide has landed, before `onClose`. */
+  onHidden?: () => void;
   onClose: () => void;
 }) {
   const client = useQueryClient();
   const toast = useToast();
   const hide = useMutation({
     mutationFn: () => hideSeries(series.id),
-    onSuccess: () => {
+    onSuccess: async () => {
+      // An older read still in flight would otherwise put the row back.
+      const page = seriesQuery(series.id).queryKey;
+      await client.cancelQueries({ queryKey: seriesInProgressQuery.queryKey });
+      await client.cancelQueries({ queryKey: page });
       client.setQueryData<SeriesInProgress[]>(
         seriesInProgressQuery.queryKey,
         (rows) => rows?.filter((row) => row.id !== series.id),
       );
-      void client.invalidateQueries({ queryKey: ["series", series.id] });
+      client.setQueryData<SeriesPage | null>(
+        page,
+        (current) => current && { ...current, hiddenFromHome: true },
+      );
+      void client.invalidateQueries({ queryKey: page });
+      onHidden?.();
       onClose();
     },
     onError: (error) => {
