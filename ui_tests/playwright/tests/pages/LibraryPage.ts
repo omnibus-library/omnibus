@@ -138,9 +138,9 @@ export class LibraryPage extends BasePage {
     return this.page.getByTestId(`gallery-shelf-${shelfId}`);
   }
 
-  /** A book's grid tile: a `listitem`, not a link (see `landing/grid.rs`). */
+  /** A book's grid tile: the link its list item holds. */
   bookTile(title: string): Locator {
-    return this.page.getByRole("listitem", {
+    return this.page.getByRole("link", {
       name: `Open details for ${title}`,
     });
   }

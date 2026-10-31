@@ -75,6 +75,15 @@ export function isPostTo(url: RegExp): (response: Response) => boolean {
     response.request().method() === "POST" && url.test(response.url());
 }
 
+/** A `waitForResponse` predicate matching the response to a `method` request to `url`. */
+export function isResponseTo(
+  method: ForcedRequest["method"],
+  url: RegExp,
+): (response: Response) => boolean {
+  return (response) =>
+    response.request().method() === method && url.test(response.url());
+}
+
 /** A POST to `url`; `expectedBody`, when given, is checked exactly. */
 export function post(
   url: RegExp,

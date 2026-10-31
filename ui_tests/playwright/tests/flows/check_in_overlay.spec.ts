@@ -21,7 +21,7 @@ test.describe("check-in overlay", () => {
     await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
   });
 
-  test("open check-in over the library without navigating", async ({
+  test("open check-in over the library without leaving it", async ({
     libraryPage,
   }) => {
     const overlay = libraryPage.checkInOverlay;
@@ -42,13 +42,12 @@ test.describe("check-in overlay", () => {
       await expect(overlay.flowCard).toBeVisible();
       await expect(overlay.screenHeading).toHaveText("Check in a book");
       await expect(overlay.scannerPanel).toHaveCount(0);
-      await libraryPage.assertDisplayed();
+      await expect(libraryPage.toolbar).toBeVisible();
     });
 
-    // The flow's own × links to the library, so the overlay hides it.
     await test.step("check the overlay has one way to close", async () => {
       await expect(overlay.closeButton).toBeVisible();
-      await expect(overlay.cancelLink).toBeHidden();
+      await expect(overlay.closeControls).toHaveCount(1);
     });
   });
 
@@ -133,8 +132,8 @@ test.describe("check-in overlay", () => {
     });
   });
 
-  // Every route builds its own layout, so the paths that navigate out of the
-  // flow must dismiss the overlay themselves.
+  // The dialog belongs to the library route, so the paths that navigate out of
+  // the flow must leave it behind.
   test("view the checked-in book from the success screen", async ({
     request,
     libraryPage,
@@ -166,9 +165,9 @@ test.describe("check-in overlay", () => {
     });
 
     await test.step("check its page shows without the overlay", async () => {
+      await overlay.assertDismissed();
       await bookDetailPage.assertDisplayedFor(uuid);
       await expect(bookDetailPage.titleHeading).toHaveText(TARGET.title);
-      await overlay.assertDismissed();
     });
   });
 
@@ -192,9 +191,9 @@ test.describe("check-in overlay", () => {
     });
 
     await test.step("check its page shows without the overlay", async () => {
+      await overlay.assertDismissed();
       await bookDetailPage.assertDisplayedFor(uuid);
       await expect(bookDetailPage.titleHeading).toHaveText(TARGET.title);
-      await overlay.assertDismissed();
     });
   });
 
@@ -233,8 +232,8 @@ test.describe("check-in overlay", () => {
     });
 
     await test.step("check its page shows without the overlay", async () => {
-      await bookDetailPage.assertDisplayedFor(uuid);
       await overlay.assertDismissed();
+      await bookDetailPage.assertDisplayedFor(uuid);
     });
   });
 });

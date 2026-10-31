@@ -2,7 +2,7 @@ import { type ExpectMutationOptions, post } from "../utils/api";
 
 /** The search endpoints; both are server functions, so reads arrive as POSTs. */
 export const searchUrls = {
-  palette: /\/api\/rpc\/search-palette(?:\?|$)/,
+  palette: /\/api\/search\/palette(?:\?|$)/,
   results: /\/api\/rpc\/search-results(?:\?|$)/,
 };
 

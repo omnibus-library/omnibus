@@ -203,7 +203,7 @@ export class BookDetailPage extends BasePage {
     this.listenButton = page.getByTestId("listen-secondary");
     this.immersiveReadButton = page.getByTestId("immersive-read");
     this.noFilesMessage = page.getByTestId("no-files-disclaimer");
-    this.checkInWhenAcquiredButton = page.getByRole("button", {
+    this.checkInWhenAcquiredButton = page.getByRole("link", {
       name: "Check in when acquired",
     });
     this.physicalPill = page.getByTestId("physical-pill");
@@ -363,6 +363,11 @@ export class BookDetailPage extends BasePage {
 
   async openEditMetadata(): Promise<void> {
     await this.editMetadataLink.click();
+  }
+
+  /** Selects one of the book's tabs, such as `"Files & Details"`, which holds the copies. */
+  async openTab(name: string): Promise<void> {
+    await this.page.getByRole("tab", { name }).click();
   }
 
   /** Opens the picker from the More stop and waits for it to list shelves. */

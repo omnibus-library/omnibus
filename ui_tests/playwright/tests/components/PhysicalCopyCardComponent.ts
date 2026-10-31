@@ -1,7 +1,7 @@
 import type { Locator, Page } from "@playwright/test";
 import { physicalUrls } from "../contracts/physical";
 import type { CopyRow } from "../data/physical";
-import { isPostTo } from "../utils/api";
+import { isResponseTo } from "../utils/api";
 import { BaseComponent } from "./BaseComponent";
 
 /** The physical copies panel under the hero: a copy's note and delete controls. */
@@ -28,7 +28,7 @@ export class PhysicalCopyCardComponent extends BaseComponent {
     this.saveNoteButton = page.getByTestId("copy-note-save");
     this.deleteButton = page.getByTestId("copy-delete");
     this.deleteDialog = page.getByTestId("copy-delete-modal");
-    this.confirmDeleteButton = page.getByTestId("copy-delete-confirm");
+    this.confirmDeleteButton = page.getByTestId("copy-delete-modal-confirm");
     this.lastCopyDialog = page.getByTestId("last-copy-modal");
     this.removeFromLibraryButton = this.lastCopyDialog.getByRole("button", {
       name: "Remove from library",
@@ -46,7 +46,9 @@ export class PhysicalCopyCardComponent extends BaseComponent {
   }
 
   async saveNote(): Promise<void> {
-    const saved = this.page.waitForResponse(isPostTo(physicalUrls.copyNote));
+    const saved = this.page.waitForResponse(
+      isResponseTo("PATCH", physicalUrls.copy),
+    );
     await this.saveNoteButton.click();
     await saved;
   }
@@ -58,7 +60,7 @@ export class PhysicalCopyCardComponent extends BaseComponent {
 
   async confirmDelete(): Promise<void> {
     const deleted = this.page.waitForResponse(
-      isPostTo(physicalUrls.deleteCopy),
+      isResponseTo("DELETE", physicalUrls.copy),
     );
     await this.confirmDeleteButton.click();
     await deleted;
@@ -67,7 +69,7 @@ export class PhysicalCopyCardComponent extends BaseComponent {
   /** Deletes the last copy and its book, then waits for the book delete. */
   async removeFromLibrary(): Promise<void> {
     const removed = this.page.waitForResponse(
-      isPostTo(physicalUrls.deleteBook),
+      isResponseTo("DELETE", physicalUrls.book),
     );
     await this.removeFromLibraryButton.click();
     await removed;
@@ -80,17 +82,30 @@ export class PhysicalCopyCardComponent extends BaseComponent {
     );
   }
 
-  /** Accepts a note save, answering with the copy as it now reads. */
+  /** Accepts a note save, answering with the copy as it now reads, as the refetch does. */
   async stubNoteSave(saved: CopyRow): Promise<void> {
-    await this.page.route(physicalUrls.copyNote, (route) =>
-      route.fulfill({ json: saved }),
-    );
+    await this.stubWrite("PATCH", { json: saved }, [saved]);
   }
 
-  /** Accepts a copy delete without writing it. */
+  /** Accepts a copy delete without writing it; the refetch finds no copies. */
   async stubDelete(): Promise<void> {
-    await this.page.route(physicalUrls.deleteCopy, (route) =>
-      route.fulfill({ json: null }),
+    await this.stubWrite("DELETE", { status: 204 }, []);
+  }
+
+  /** Answers a `method` write to a copy with `answer`, then the copies refetch with `after`. */
+  private async stubWrite(
+    method: "PATCH" | "DELETE",
+    answer: { json?: unknown; status?: number },
+    after: CopyRow[],
+  ): Promise<void> {
+    let written = false;
+    await this.page.route(physicalUrls.copy, (route) => {
+      if (route.request().method() !== method) return route.fallback();
+      written = true;
+      return route.fulfill(answer);
+    });
+    await this.page.route(physicalUrls.copies, (route) =>
+      written ? route.fulfill({ json: after }) : route.fallback(),
     );
   }
 }

@@ -8,8 +8,11 @@ import { fixturesDir, seedLibrary } from "../utils/seed";
 
 // Every physical and wishlist read and write is stubbed, so nothing here
 // changes library-wide copies or the admin's wishlist. The target is immaterial,
-// but a real uuid exercises the SSR and hydration path the panel loads under.
+// but a real uuid loads the book page the panel sits in.
 const TARGET = FIXTURE_BOOKS.find((b) => b.slug === "standalone-island")!;
+
+// The tab the copies and the wishlist row live on.
+const FILES_TAB = "Files & Details";
 
 test.describe("physical collection", () => {
   test.beforeAll("seed the library", async ({ request }) => {
@@ -27,9 +30,10 @@ test.describe("physical collection", () => {
     await test.step("open a book with no copies and no wish", async () => {
       await bookDetailPage.stubPhysicalLoad([], null);
       await bookDetailPage.goto(uuid);
+      await bookDetailPage.openTab(FILES_TAB);
     });
 
-    await test.step("check the hero rail offers the wishlist", async () => {
+    await test.step("check the copies panel offers the wishlist", async () => {
       await bookDetailPage.assertDisplayed();
       await bookDetailPage.topNav.assertDisplayed();
       await expect(wishlist.addButton).toBeVisible();
@@ -54,6 +58,7 @@ test.describe("physical collection", () => {
       await test.step("open a book that is not wished for", async () => {
         await bookDetailPage.stubPhysicalLoad([], null);
         await bookDetailPage.goto(uuid);
+        await bookDetailPage.openTab(FILES_TAB);
         await expect(wishlist.addButton).toBeVisible();
       });
 
@@ -62,13 +67,13 @@ test.describe("physical collection", () => {
         await expectMutation(physical.wishlistAdd(), () => wishlist.add());
       });
 
-      // The cover badge row gains the "Physical Wishlist" facet and the rail
-      // slot shows the tracking card, and the More stop's shelf list holds the
-      // viewer's Wishlist off the same signal, with no refetch.
+      // The row turns into the tracking card, and the Overview's shelf chips
+      // hold the viewer's Wishlist off the same wishlist read.
       await test.step("check the book shows as wished for", async () => {
         await expect(wishlist.coverBadge).toBeVisible();
         await expect(wishlist.card).toBeVisible();
         await expect(wishlist.findCopyLink).toBeVisible();
+        await bookDetailPage.openTab("Overview");
         await expect(wishlist.shelfTile).toBeVisible();
       });
     });
@@ -84,8 +89,11 @@ test.describe("physical collection", () => {
       await test.step("open a book that is wished for", async () => {
         await bookDetailPage.stubPhysicalLoad([], SAMPLE_WISHLIST_ENTRY);
         await bookDetailPage.goto(uuid);
+        await bookDetailPage.openTab(FILES_TAB);
         await expect(wishlist.card).toBeVisible();
+        await bookDetailPage.openTab("Overview");
         await expect(wishlist.shelfTile).toBeVisible();
+        await bookDetailPage.openTab(FILES_TAB);
       });
 
       await test.step("remove it from the wishlist", async () => {
@@ -97,6 +105,7 @@ test.describe("physical collection", () => {
 
       await test.step("check the book offers the wishlist again", async () => {
         await expect(wishlist.addButton).toBeVisible();
+        await bookDetailPage.openTab("Overview");
         // Other shelves (a smart shelf matching the book) may stay.
         await expect(wishlist.shelfTile).toHaveCount(0);
       });
@@ -113,6 +122,7 @@ test.describe("physical collection", () => {
       await test.step("open a book that is not wished for", async () => {
         await bookDetailPage.stubPhysicalLoad([], null);
         await bookDetailPage.goto(uuid);
+        await bookDetailPage.openTab(FILES_TAB);
       });
 
       await test.step("add it while adds fail", async () => {
@@ -142,6 +152,7 @@ test.describe("physical collection", () => {
         await bookDetailPage.forceServerError(physical.copies());
         await wishlist.stubLoad(null);
         await bookDetailPage.goto(uuid);
+        await bookDetailPage.openTab(FILES_TAB);
       });
 
       // A failed read must not masquerade as the empty state.
@@ -160,6 +171,7 @@ test.describe("physical collection", () => {
       await test.step("open a book with one copy", async () => {
         await bookDetailPage.stubPhysicalLoad([SAMPLE_COPY], null);
         await bookDetailPage.goto(uuid);
+        await bookDetailPage.openTab(FILES_TAB);
       });
 
       // The copies list marks a physical copy with a status dot rather than a
@@ -190,6 +202,7 @@ test.describe("physical collection", () => {
       await test.step("open a book with one copy", async () => {
         await bookDetailPage.stubPhysicalLoad([SAMPLE_COPY], null);
         await bookDetailPage.goto(uuid);
+        await bookDetailPage.openTab(FILES_TAB);
       });
 
       await test.step("write a new note", async () => {
@@ -219,6 +232,7 @@ test.describe("physical collection", () => {
       await test.step("open a book with one copy", async () => {
         await bookDetailPage.stubPhysicalLoad([SAMPLE_COPY], null);
         await bookDetailPage.goto(uuid);
+        await bookDetailPage.openTab(FILES_TAB);
       });
 
       // A file-backed book, so this is the plain confirm, not the last-copy
@@ -255,6 +269,7 @@ test.describe("physical collection", () => {
           null,
         );
         await readerBookDetailPage.goto(uuid);
+        await readerBookDetailPage.openTab(FILES_TAB);
       });
 
       await test.step("check the copy names its filer and offers no controls", async () => {

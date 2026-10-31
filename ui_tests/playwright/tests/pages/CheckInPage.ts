@@ -1,6 +1,8 @@
 import type { Locator, Page } from "@playwright/test";
 import { CheckInFlowComponent } from "../components/CheckInFlowComponent";
 import { TopNavComponent } from "../components/TopNavComponent";
+import { scanUrls } from "../contracts/scan";
+import { isResponseTo } from "../utils/api";
 import { BasePage } from "./BasePage";
 
 /** The check-in flow as a full page, the deep-link fallback to the overlay. */
@@ -22,5 +24,14 @@ export class CheckInPage extends BasePage {
 
   async goto(): Promise<void> {
     await this.open("/check-in");
+  }
+
+  /** Opens the flow and waits for the Google Books key status it reads on mount. */
+  async gotoAwaitingKeyStatus(): Promise<void> {
+    const status = this.page.waitForResponse(
+      isResponseTo("GET", scanUrls.googleBooksConfigured),
+    );
+    await this.goto();
+    await status;
   }
 }

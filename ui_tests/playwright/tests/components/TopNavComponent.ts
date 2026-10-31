@@ -41,11 +41,14 @@ export class TopNavComponent extends BaseComponent {
     super(page);
     this.root = page.getByRole("navigation", { name: "Primary" });
     this.libraryLink = this.root.getByRole("link", { name: "Library" });
-    this.checkInButton = this.root.getByRole("button", {
+    this.checkInButton = this.root.getByRole("link", {
       name: "Check in",
       exact: true,
     });
-    this.addBooksButton = page.getByTestId("add-books-button");
+    this.addBooksButton = this.root.getByRole("button", {
+      name: "Add books",
+      exact: true,
+    });
     this.userMenuButton = this.root.getByTestId("user-menu-trigger");
     this.userMenuPanel = page.getByTestId("user-menu-panel");
     this.searchButton = page.getByTestId("search-trigger");

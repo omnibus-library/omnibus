@@ -2,7 +2,7 @@ import type { Locator, Page } from "@playwright/test";
 import { scanUrls } from "../contracts/scan";
 import { searchUrls } from "../contracts/search";
 import type { ExternalBookMeta, ScanOutcome } from "../data/scan";
-import { isPostTo } from "../utils/api";
+import { isPostTo, isResponseTo } from "../utils/api";
 import { BaseComponent } from "./BaseComponent";
 
 /**
@@ -201,7 +201,9 @@ export class CheckInFlowComponent extends BaseComponent {
 
   /** Pins the Google Books key status, which any settings save can flip. */
   async stubGoogleBooksKey(configured: boolean): Promise<void> {
-    await this.stubPost(scanUrls.googleBooksConfigured, configured);
+    await this.page.route(scanUrls.googleBooksConfigured, (route) =>
+      route.fulfill({ json: configured }),
+    );
   }
 
   /** Accepts a check-in without writing it, for books other specs read. */
@@ -307,9 +309,14 @@ export class CheckInFlowComponent extends BaseComponent {
     await this.linkExistingButton.click();
   }
 
+  /** Searches the library, waiting for the GET that carries `query`. */
   async searchLibrary(query: string): Promise<void> {
     await this.libraryQueryField.fill(query);
-    const searched = this.page.waitForResponse(isPostTo(searchUrls.palette));
+    const searched = this.page.waitForResponse(
+      (response) =>
+        isResponseTo("GET", searchUrls.palette)(response) &&
+        new URL(response.url()).searchParams.get("q") === query,
+    );
     await this.searchLibraryButton.click();
     await searched;
   }
