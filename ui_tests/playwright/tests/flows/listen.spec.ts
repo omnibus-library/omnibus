@@ -753,9 +753,10 @@ test.describe("listen page", () => {
         await listenPage.waitUntilPlayerReady();
       });
 
-      // The fractional offset is the point: `ceil` gives a 3s countdown while
-      // the playhead needs 2.1s, so the seam is crossed with the countdown above
-      // zero. That is the race the timer lost by re-arming to the next chapter.
+      // The fractional gap is the point: `ceil` gives a 3s countdown while the
+      // playhead needs ~2s (the scrubber lands on the whole second, 10), so the
+      // seam is crossed with the countdown above zero. That is the race the
+      // timer lost by re-arming to the next chapter.
       await test.step("park 2.1 seconds before the seam", async () => {
         const armAt = SLEEP_SEAM_SECONDS - 2.1;
         await listenPage.seekTo(armAt);
