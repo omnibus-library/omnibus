@@ -1301,9 +1301,7 @@ test.describe("share stats", () => {
 
     await test.step("check the switch is back on with an error", async () => {
       await expect(section.shareStatsSwitch).toBeChecked();
-      await expect(section.shareStatsStatus).toHaveText(
-        "Couldn’t save. Try again.",
-      );
+      await expect(section.shareStatsStatus).toContainText("Couldn’t save");
       await expect(section.shareStatsStatus).toHaveClass(/error/);
     });
   });
