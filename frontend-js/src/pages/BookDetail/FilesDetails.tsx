@@ -4,6 +4,7 @@ import type { BookDetail } from "../../api";
 import { Button, ButtonLink } from "../../components/Button/Button";
 import { FormatSwitcher } from "../../components/FormatSwitcher/FormatSwitcher";
 import { ImmersiveGlyph, PencilGlyph } from "../../components/Glyphs/Glyphs";
+import { usePlayback } from "../../playback/PlaybackProvider";
 import { useCurrentUser } from "../../session";
 import type { BookDialog } from "./BookDialogs";
 import { ExportMenu } from "./ExportMenu";
@@ -89,6 +90,7 @@ function Detail({ book, row }: { book: BookDetail; row: DetailRow }) {
 function SyncRow({ book }: { book: BookDetail }) {
   const { link } = useQuery(alignmentQuery(book.uuid)).data ?? {};
   const linked = Boolean(link && !link.stale);
+  const playback = usePlayback();
   return (
     <div className="bp-sync-row">
       {!linked && <p>Each format keeps its own place.</p>}
@@ -98,6 +100,8 @@ function SyncRow({ book }: { book: BookDetail }) {
         size="sm"
         to={`/read/${book.uuid}`}
         data-testid="sync-immersive"
+        // Loads the audiobook, so the reader opens with it docked.
+        onClick={() => playback.open(book.uuid, null)}
       >
         <ImmersiveGlyph size={18} />
         Immersive

@@ -110,6 +110,7 @@ export class BookDetailPage extends BasePage {
   readonly startReadingComicButton: Locator;
   readonly startReadingPdfButton: Locator;
   readonly listenButton: Locator;
+  readonly moreActionsButton: Locator;
   readonly immersiveReadButton: Locator;
   readonly noFilesMessage: Locator;
   readonly checkInWhenAcquiredButton: Locator;
@@ -201,7 +202,10 @@ export class BookDetailPage extends BasePage {
     this.startReadingComicButton = page.getByTestId("start-reading-comic");
     this.startReadingPdfButton = page.getByTestId("start-reading-pdf");
     this.listenButton = page.getByTestId("listen-secondary");
-    this.immersiveReadButton = page.getByTestId("immersive-read");
+    this.moreActionsButton = page.getByRole("button", { name: "More actions" });
+    this.immersiveReadButton = page.getByRole("menuitem", {
+      name: "Immersive",
+    });
     this.noFilesMessage = page.getByTestId("no-files-disclaimer");
     this.checkInWhenAcquiredButton = page.getByRole("button", {
       name: "Check in when acquired",
@@ -322,7 +326,13 @@ export class BookDetailPage extends BasePage {
   }
 
   /** Opens the reader with the book's audiobook docked beside it. */
+  async openMoreActions(): Promise<void> {
+    await this.moreActionsButton.click();
+  }
+
+  /** Opens the reader with the audiobook docked, from the More actions menu. */
   async readImmersively(): Promise<void> {
+    await this.openMoreActions();
     await this.immersiveReadButton.click();
   }
 
