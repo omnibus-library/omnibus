@@ -2,28 +2,26 @@ import { type ExpectMutationOptions, post } from "../utils/api";
 
 /** The account endpoints the personal Settings sections post to. */
 export const accountUrls = {
-  scrollStops: /\/api\/rpc\/account\/book-detail-scroll-stops(?:\?|$)/,
+  scrollStops: /\/api\/account\/book-detail-scroll-stops(?:\?|$)/,
   shareStats: /\/api\/account\/share-stats(?:\?|$)/,
-  stackSeries: /\/api\/rpc\/account\/stack-series(?:\?|$)/,
-  kindleEmail: /\/api\/rpc\/account\/kindle-email(?:\?|$)/,
-  kindleDelivery: /\/api\/rpc\/kindle\/delivery(?:\?|$)/,
-  changePassword: /\/api\/rpc\/account\/change-password(?:\?|$)/,
-  profile: /\/api\/rpc\/account\/profile(?:\?|$)/,
+  stackSeries: /\/api\/account\/stack-series(?:\?|$)/,
+  kindleEmail: /\/api\/account\/kindle-email(?:\?|$)/,
+  kindleDelivery: /\/api\/kindle\/delivery(?:\?|$)/,
+  changePassword: /\/api\/auth\/password(?:\?|$)/,
+  profile: /\/api\/account\/profile(?:\?|$)/,
   avatar: /\/api\/account\/avatar(?:\?|$)/,
-  hiddenFormats: /\/api\/rpc\/account\/hidden-formats(?:\?|$)/,
-  kosyncGenerate: /\/api\/rpc\/kosync\/generate(?:\?|$)/,
+  hiddenFormats: /\/api\/account\/hidden-formats(?:\?|$)/,
+  kosyncGenerate: /\/api\/account\/kosync(?:\?|$)/,
   sessions: /\/api\/auth\/sessions(?:\?|$)/,
   sessionRevoke: /\/api\/auth\/sessions\/\d+(?:\?|$)/,
-  annualGoal: /\/api\/rpc\/stats-goal(?:\?|$)/,
-  dailyGoal: /\/api\/rpc\/stats-goal-daily(?:\?|$)/,
+  // Days are cut on the asking client's clock, so the offset rides the query (rule 10).
+  annualGoal: /\/api\/stats\/goal\?utc_offset_minutes=0$/,
+  dailyGoal: /\/api\/stats\/goal\/daily\?utc_offset_minutes=0$/,
 };
 
 function switchWrite(url: RegExp, enabled?: boolean): ExpectMutationOptions {
   return post(url, enabled === undefined ? undefined : { enabled });
 }
-
-// The config pins the browser to UTC, so every stats write declares offset 0 (rule 10).
-const UTC = { utc_offset_minutes: 0 };
 
 /** An omitted argument leaves the body unchecked. */
 export const account = {
@@ -43,7 +41,7 @@ export const account = {
   changePassword: (
     current: string,
     replacement: string,
-    status = 200,
+    status = 204,
   ): ExpectMutationOptions =>
     post(
       accountUrls.changePassword,
@@ -69,16 +67,17 @@ export const account = {
 
   kosyncPassword: (): ExpectMutationOptions => post(accountUrls.kosyncGenerate),
 
-  annualGoal: (target: number): ExpectMutationOptions =>
-    post(accountUrls.annualGoal, { update: { target }, ...UTC }),
+  annualGoal: (target: number): ExpectMutationOptions => ({
+    ...post(accountUrls.annualGoal, { target }),
+    method: "PUT",
+  }),
 
-  /** Without a target the write clears the goal: `target` is omitted on the wire. */
+  /** Without a target the write clears the goal: `target` is null on the wire. */
   dailyGoal: (
     kind: "pages" | "minutes",
     target?: number,
-  ): ExpectMutationOptions =>
-    post(accountUrls.dailyGoal, {
-      update: target === undefined ? { kind } : { kind, target },
-      ...UTC,
-    }),
+  ): ExpectMutationOptions => ({
+    ...post(accountUrls.dailyGoal, { kind, target: target ?? null }),
+    method: "PUT",
+  }),
 };

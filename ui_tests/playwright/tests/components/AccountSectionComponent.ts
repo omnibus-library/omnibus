@@ -217,11 +217,7 @@ export class AccountSectionComponent extends BaseComponent {
   async stubPasswordChanged(): Promise<void> {
     await this.page.route(accountUrls.changePassword, (route) =>
       route.request().method() === "POST"
-        ? route.fulfill({
-            status: 200,
-            contentType: "application/json",
-            body: "null",
-          })
+        ? route.fulfill({ status: 204, body: "" })
         : route.continue(),
     );
   }
