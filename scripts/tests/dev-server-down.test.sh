@@ -55,8 +55,11 @@ RACE
 chmod +x "$tmp/raceps/ps"
 
 # dev-up runs `cargo run …`, so its stand-in is a script that records its
-# tree; the React build it runs first is a no-op pnpm.
-printf '#!/bin/sh\n' >"$tmp/upbin/pnpm"
+# tree; the React build it runs first is a pnpm that only makes the --outDir it is given.
+cat >"$tmp/upbin/pnpm" <<'PNPM'
+#!/bin/sh
+while [ $# -gt 0 ]; do [ "$1" = --outDir ] && mkdir -p "$2"; shift; done
+PNPM
 chmod +x "$tmp/upbin/pnpm"
 cat >"$tmp/upbin/cargo" <<UP
 #!/usr/bin/env bash
