@@ -30,7 +30,6 @@ enum Destination: Hashable {
     /// The palette's own `total` matches for `query`, fetched whole.
     case taxonomyMatching(SearchFacet, query: String, total: UInt32)
     case searchResults(query: String)
-    case metadataEdit(uuid: String)
 
     /// Whether this screen draws its own bottom-edge chrome, so the tab bar
     /// and mini player must step aside for it.
@@ -182,6 +181,11 @@ struct MainTabView: View {
                 dismissButton: .default(Text("OK"))
             )
         }
+        .onChange(of: Presentation.shared.requestedTab) { _, tab in
+            guard let tab else { return }
+            Presentation.shared.requestedTab = nil
+            selection = tab
+        }
         #if DEBUG
         // `initial`: a link that arrived during launch is waiting when this mounts.
         .onChange(of: DebugScreenLink.shared.pending, initial: true) { _, route in
@@ -265,6 +269,10 @@ final class Presentation {
         progressToken &+= 1
     }
 
+    /// A tab something behind a sheet needs the reader on. Taken and cleared by
+    /// the tab view, the only thing that knows which tab is up.
+    var requestedTab: AppTab?
+
     /// A book the reader or player was asked for and can't have. Presented as
     /// an alert rather than opened, so the answer arrives on the tap instead of
     /// as a spinner that never resolves.
@@ -273,6 +281,8 @@ final class Presentation {
     func openReader(_ book: Book) {
         guard DownloadManager.shared.canOpen(book, kind: .ebook) else {
             unavailable = UnavailableBook(title: book.displayTitle, kind: .ebook)
+            // A place asked for in this book must not wait for the next one opened.
+            ReaderBridge.shared.pendingCFI = nil
             return
         }
         player = nil
@@ -316,7 +326,10 @@ struct DestinationRouter: ViewModifier {
         content.navigationDestination(for: Destination.self) { destination in
             switch destination {
             case let .book(uuid):
+                // A link can replace the book at this place in the stack; the
+                // page's state belongs to the book it was opened on.
                 BookDetailView(uuid: uuid)
+                    .id(uuid)
             case let .author(id):
                 AuthorDetailView(id: id)
             case let .series(id):
@@ -351,8 +364,6 @@ struct DestinationRouter: ViewModifier {
                 TaxonomyMatchesView(facet: facet, query: query, total: total)
             case let .searchResults(query):
                 SearchResultsView(query: query, title: "“\(query)”")
-            case let .metadataEdit(uuid):
-                MetadataEditView(uuid: uuid)
             }
         }
     }

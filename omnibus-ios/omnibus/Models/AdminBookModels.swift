@@ -213,7 +213,7 @@ struct DeleteSelectionCopy: Equatable {
 
         let body: String
         if empty {
-            body = "This book has no files on disk. Deleting removes the library record only \u{2014} nothing is deleted from your filesystem."
+            body = "This book has no files on disk. Deleting removes the library record only, and nothing is deleted from your filesystem."
         } else if total {
             if manifest.files.isEmpty {
                 // Paper-only: nothing on disk, so nothing to delete there.
@@ -250,6 +250,21 @@ struct DeleteSelectionCopy: Equatable {
             action: action,
             losses: total ? manifest.impact.losses : []
         )
+    }
+
+    /// The choose step's count, over the rows it lists.
+    static func chooseHeading(_ manifest: BookDeletionManifest) -> String {
+        let noun = noun(count: manifest.itemCount, hasCopies: !manifest.copies.isEmpty)
+        return manifest.copies.isEmpty
+            ? "\(manifest.itemCount) \(noun) on disk" : "\(manifest.itemCount) \(noun)"
+    }
+
+    /// What the toast says once a partial delete has landed.
+    static func doneToast(files: Int, copies: Int) -> String {
+        let total = files + copies
+        let noun = noun(count: total, hasCopies: copies > 0)
+        let word = copies > 0 && files == 0 ? "removed" : "deleted"
+        return total == 1 ? "\(noun.capitalized) \(word)" : "\(total) \(noun) \(word)"
     }
 
     /// The choose step's continue button: names the action rather than a
@@ -294,8 +309,30 @@ enum MergeCopy {
         hits.filter { $0.uuid != target }
     }
 
-    /// The confirm step's body — the same sentence the web dialog shows.
+    /// The confirm step's body.
     static func confirmBody(source: String, target: String) -> String {
-        "\u{201c}\(source)\u{201d} will be merged into \u{201c}\(target)\u{201d}. Its files, tags, and reading progress move here; the other entry disappears. You can undo it until you leave this page."
+        "\u{201c}\(source)\u{201d} will be merged into \u{201c}\(target)\u{201d}. Its files, tags and reading progress move here, and the other entry disappears. You can undo it until you leave this page."
+    }
+
+    /// The line over the results.
+    static func resultNote(count: Int, query: String) -> String {
+        guard !query.isEmpty else { return "Results appear as you type." }
+        guard count > 0 else { return "No other book matches \u{201c}\(query)\u{201d}." }
+        return "\(count) \(count == 1 ? "result" : "results") matching title, author or series"
+    }
+
+    /// `A. Conan Doyle · 1890`.
+    static func meta(_ book: Book) -> String {
+        [book.authorDisplay, book.year].compactMap { $0 }.joined(separator: " · ")
+    }
+
+    /// `Same series · EPUB, M4B`: what tells two copies of a book apart.
+    static func tags(_ book: Book, target: Book) -> String {
+        var parts: [String] = []
+        if let series = target.seriesId, book.seriesId == series { parts.append("Same series") }
+        if !book.formats.isEmpty {
+            parts.append(book.formats.map { $0.uppercased() }.joined(separator: ", "))
+        }
+        return parts.joined(separator: " · ")
     }
 }

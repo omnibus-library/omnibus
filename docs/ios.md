@@ -8,7 +8,7 @@ surface as the web client.
 Each Swift file opens with a header comment saying what it is for; print the
 file map from those headers with `just modules omnibus-ios/omnibus`. This page
 covers what no single file can: the second target, CarPlay, the release
-pipeline, and the reader's design.
+pipeline, the book page, and the reader's design.
 
 ## Widgets
 
@@ -167,6 +167,43 @@ every run 403'd and — because the check then *proceeded* — refiled the same
 submissions daily. A listing that fails aborts the run instead. Its suite
 (`scripts/tests/testflight-feedback.test.py`) is gated by the same
 `script-tests.yml`.
+
+## The book page
+
+`Features/BookDetail/` draws one layout: the stage (the book standing on a blurred
+wash of its own cover, with your place in it), then Overview, Reviews, Highlights
+and Files under a tab strip that pins below the top bar, and a primary action that
+never scrolls away. The web page's `book_detail_scroll_stops` marquee has no iOS
+counterpart, so the setting has no row in iOS settings; the field stays on the wire
+for the web.
+
+Colors come from the book, at fixed lightness steps (`Palette.bookRibbon`,
+`bookText`, `bookDeep`, `bookFill`) with hue and chroma from
+`Palette.accented(byCoverOf:)`, and fall back to the theme's own ground, so the page
+reads on all four themes. Every section is its own `Cache.live` read in
+`BookDetailModel`, so nothing on the page waits on anything else.
+
+What the page can't state is left out rather than filled in. The household's activity
+says how long and how lately a reader has been in a book, never how far, because
+`GET /api/books/{uuid}/household` carries no position or status. The stage's rating
+takes the server's summary when it sends one, and below `SUMMARY_MIN_RATINGS` the
+mean of the ratings the tab already lists.
+
+A finished book's card points at one thing next, decided in `FinishCopy.target`: a
+review until you have rated, then the next unfinished book in the series, then a look
+back at a series read to the end. It says nothing while your review or the series'
+read states are still unknown, rather than point somewhere and move. The burst goes
+off only when the book becomes finished with the page up, and stays until you leave.
+
+The metadata editor is one sheet, opened from the More menu or a book cell's long
+press. Nothing writes until Save: the fields wait in `MetadataDraft` and a replacement
+cover in `StagedCover` beside it, so "N unsaved changes" and Discard mean the same for
+both, where the web editor writes a cover the moment it is picked. A save posts the
+fields, then the cover, so a cover the server can't fetch leaves only itself unsaved.
+Fetch metadata turns the same sheet rather than opening another on top of it. In an
+edition's comparison the blanks it would fill start ticked and the values it would
+replace don't. Applying moves the ticked rows into the draft and stays put, so the
+next edition compares against what the last one filled in.
 
 ## Reader
 

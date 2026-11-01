@@ -529,9 +529,28 @@ enum LibraryService {
     /// Hardcover call behind the server — slow enough that re-fetching it on
     /// every visit to a book is felt, and stable enough that a remembered
     /// answer is a good one.
-    static func suggestions(uuid: String) -> AsyncThrowingStream<CacheRead<[SuggestedBook]>, Error> {
+    static func suggestions(uuid: String) -> AsyncThrowingStream<CacheRead<BookSuggestions>, Error> {
         Cache.live(CacheKey.suggestions(uuid)) {
             try await APIClient.shared.get("/api/ebooks/\(uuid)/suggestions")
+        }
+    }
+
+    /// The other readers who have spent time in this book and share their stats.
+    static func household(uuid: String) -> AsyncThrowingStream<CacheRead<[BookHouseholdReader]>, Error> {
+        Cache.live(CacheKey.bookHousehold(uuid)) {
+            try await APIClient.shared.get("/api/books/\(uuid)/household")
+        }
+    }
+
+    /// The ebook's chapters with where each starts in the book. Cached on its
+    /// own rather than with the alignment it comes from: the chapters are all
+    /// that is safe to remember, the positions beside them go stale at once.
+    static func chapters(uuid: String) -> AsyncThrowingStream<CacheRead<[AlignmentEbookChapter]>, Error> {
+        Cache.live(CacheKey.bookChapters(uuid)) {
+            let alignment: AlignmentView = try await APIClient.shared.get(
+                "/api/books/\(uuid)/alignment"
+            )
+            return alignment.ebook?.chapters ?? []
         }
     }
 
@@ -585,12 +604,11 @@ enum LibraryService {
         return updated
     }
 
-    /// The trimmed, applicable form of a pasted-cover text box, or `nil` when
-    /// it isn't applicable right now. Direct write, never queued (rule 08) —
-    /// disabled offline rather than risking a stale URL replaying later.
-    static func coverURLToApply(_ text: String, isBusy: Bool, isOnline: Bool) -> String? {
-        guard !isBusy, isOnline else { return nil }
-        return text.nilIfBlank
+    /// Drop every edit to a book, its cover included: the server deletes the
+    /// override cover along with the row, so the images go stale too.
+    static func revertOverrides(uuid: String) async throws {
+        let _: Empty = try await APIClient.shared.delete("/api/ebooks/\(uuid)/overrides")
+        await invalidateCoverCaches(uuid: uuid)
     }
 
     /// Drop every cached image a cover write invalidates. The paths don't
@@ -614,11 +632,59 @@ enum ThumbSize: String, Sendable {
     case sm, md, lg
 }
 
-struct SuggestedBook: Codable, Hashable, Sendable, Identifiable {
-    var rank: Int
+/// One suggestion from Hardcover's curated lists. Mirrors
+/// `omnibus_shared::BookSuggestion`.
+struct BookSuggestion: Codable, Hashable, Sendable, Identifiable {
+    var hardcoverId: Int64
     var title: String
-    var author: String?
-    var reason: String?
+    var author: String
+    /// `/api/suggestions/{uuid}/{rank}/cover`, when the book has a cover.
+    var coverURL: String?
+    var hardcoverURL: String
 
-    var id: Int { rank }
+    var id: Int64 { hardcoverId }
+
+    enum CodingKeys: String, CodingKey {
+        case title, author
+        case hardcoverId = "hardcover_id"
+        case coverURL = "cover_url"
+        case hardcoverURL = "hardcover_url"
+    }
+}
+
+/// A book's suggestions, or why there are none yet. Mirrors
+/// `omnibus_shared::SuggestionsResponse`, tagged on `status`.
+enum BookSuggestions: Codable, Equatable, Sendable {
+    /// The server has no Hardcover key, so this will never have an answer.
+    case notConfigured
+    /// The server is fetching them in the background: ask again shortly.
+    case pending
+    /// The last lookup failed. The server retries it later.
+    case unavailable
+    case ready([BookSuggestion])
+
+    private enum CodingKeys: String, CodingKey { case status, items }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        switch try container.decode(String.self, forKey: .status) {
+        case "ready": self = .ready(try container.decode([BookSuggestion].self, forKey: .items))
+        case "pending": self = .pending
+        case "not_configured": self = .notConfigured
+        // A status added later reads as nothing to show, not a failed page.
+        default: self = .unavailable
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .notConfigured: try container.encode("not_configured", forKey: .status)
+        case .pending: try container.encode("pending", forKey: .status)
+        case .unavailable: try container.encode("unavailable", forKey: .status)
+        case .ready(let items):
+            try container.encode("ready", forKey: .status)
+            try container.encode(items, forKey: .items)
+        }
+    }
 }

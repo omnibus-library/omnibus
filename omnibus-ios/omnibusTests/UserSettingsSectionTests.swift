@@ -19,16 +19,6 @@ struct UserSettingsSectionTests {
                 == "Every book in a series keeps its own cover.")
     }
 
-    @Test("says how book details behave for each scroll-stops state")
-    func scrollStopsCaptionDescribesEachState() {
-        #expect(
-            UserSettingsSection.caption(.scrollStops, isOn: true, error: nil)
-                == "Book details snap through one panel at a time.")
-        #expect(
-            UserSettingsSection.caption(.scrollStops, isOn: false, error: nil)
-                == "Book details scroll continuously, top to bottom.")
-    }
-
     @Test("says who can see the stats page for each share-stats state")
     func shareStatsCaptionDescribesEachState() {
         #expect(
@@ -41,7 +31,7 @@ struct UserSettingsSectionTests {
 
     @Test("shows the error instead of the caption, for any row and state")
     func anErrorReplacesAnyRowsCaption() {
-        for row in [UserSettingsSection.Row.stackSeries, .scrollStops, .shareStats] {
+        for row in [UserSettingsSection.Row.stackSeries, .shareStats] {
             for isOn in [true, false] {
                 #expect(
                     UserSettingsSection.caption(row, isOn: isOn, error: "Couldn't reach the server.")

@@ -134,15 +134,6 @@ enum AuthService {
         await OfflineStore.shared.cacheDelete(CacheKey.me)
     }
 
-    /// Set whether the reader's book detail page uses the snap-stop marquee.
-    /// Account configuration like the two above: never queued (rule 08), so a
-    /// failure throws and the caller surfaces it.
-    static func setBookDetailScrollStops(_ enabled: Bool) async throws {
-        struct Body: Encodable { let enabled: Bool }
-        let _: Empty = try await APIClient.shared.post("/api/account/book-detail-scroll-stops", body: Body(enabled: enabled))
-        await OfflineStore.shared.cacheDelete(CacheKey.me)
-    }
-
     /// Set whether book grids stack series. Account configuration: never queued (rule 08).
     static func setStackSeries(_ enabled: Bool) async throws {
         struct Body: Encodable { let enabled: Bool }

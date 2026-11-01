@@ -184,6 +184,48 @@ struct AdminBookActionsTests {
 
     // MARK: - Merge
 
+    @Test("the choose step counts files on disk, or items once a copy is listed")
+    func chooseHeading() {
+        let files = BookDeletionManifest(files: [file(1, "epub"), file(2, "m4b")])
+        #expect(DeleteSelectionCopy.chooseHeading(files) == "2 files on disk")
+        let mixed = BookDeletionManifest(
+            files: [file(1, "epub")],
+            copies: [PhysicalCopy(id: 1, bookUuid: "b", checkedInAt: 0)]
+        )
+        #expect(DeleteSelectionCopy.chooseHeading(mixed) == "2 items")
+    }
+
+    @Test("a partial delete's toast says how much went, and a copy is only removed")
+    func doneToast() {
+        #expect(DeleteSelectionCopy.doneToast(files: 1, copies: 0) == "File deleted")
+        #expect(DeleteSelectionCopy.doneToast(files: 2, copies: 0) == "2 files deleted")
+        #expect(DeleteSelectionCopy.doneToast(files: 0, copies: 1) == "Item removed")
+        #expect(DeleteSelectionCopy.doneToast(files: 1, copies: 1) == "2 items deleted")
+    }
+
+    @Test("the merge results say what the list is, and what an empty one means")
+    func mergeResultNote() {
+        #expect(MergeCopy.resultNote(count: 0, query: "") == "Results appear as you type.")
+        #expect(MergeCopy.resultNote(count: 0, query: "sign") == "No other book matches \u{201c}sign\u{201d}.")
+        #expect(MergeCopy.resultNote(count: 1, query: "sign") == "1 result matching title, author or series")
+        #expect(MergeCopy.resultNote(count: 3, query: "sign") == "3 results matching title, author or series")
+    }
+
+    @Test("a candidate's tags say what tells it apart from this copy")
+    func mergeTags() {
+        var target = Book(id: 1, filename: "a.epub")
+        target.seriesId = 7
+        var same = Book(id: 2, filename: "b.m4b")
+        same.seriesId = 7
+        same.formats = ["epub", "m4b"]
+        #expect(MergeCopy.tags(same, target: target) == "Same series · EPUB, M4B")
+        var other = Book(id: 3, filename: "c.epub")
+        other.formats = ["epub"]
+        #expect(MergeCopy.tags(other, target: target) == "EPUB")
+        // No series on either side is not "the same series".
+        #expect(MergeCopy.tags(other, target: Book(id: 4, filename: "d.epub")) == "EPUB")
+    }
+
     @Test("the candidate list never offers the target itself")
     func candidatesExcludeTarget() {
         var target = Book(id: 1, filename: "a.epub")

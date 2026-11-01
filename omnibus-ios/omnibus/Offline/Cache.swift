@@ -42,6 +42,7 @@ enum CacheKey {
     static func highlights(_ uuid: String) -> String { "highlights:\(uuid)" }
     static func bookmarks(_ uuid: String) -> String { "bookmarks:\(uuid)" }
     static func journals(_ uuid: String) -> String { "journals:\(uuid)" }
+    static func bookSessions(_ uuid: String) -> String { "book-sessions:\(uuid)" }
     /// The stars-only reads the book page used before reviews; nothing reads
     /// them now. `rating` is still what a replayed legacy `rating:` op moves,
     /// and the wipe-coverage test names both so an upgraded device's leftover
@@ -72,7 +73,10 @@ enum CacheKey {
     }
     static func playbackRate(_ uuid: String) -> String { "audio_rate:\(uuid)" }
     static func suggestions(_ uuid: String) -> String { "suggestions:\(uuid)" }
+    static func bookHousehold(_ uuid: String) -> String { "book_household:\(uuid)" }
+    static func bookChapters(_ uuid: String) -> String { "book_chapters:\(uuid)" }
     static func shelvesContaining(_ uuid: String) -> String { "shelves_with:\(uuid)" }
+    static func smartShelvesContaining(_ uuid: String) -> String { "smart_shelves_with:\(uuid)" }
     static func wishlistEntry(_ uuid: String) -> String { "wishlist:\(uuid)" }
 }
 

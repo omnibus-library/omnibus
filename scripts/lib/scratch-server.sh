@@ -62,6 +62,9 @@ build_react_client() {
 # Invoked via `trap`, which shellcheck can't see.
 # shellcheck disable=SC2329
 cleanup() {
+    if [ -n "${react_pid:-}" ]; then
+        stop_process_tree "$react_pid" 2>/dev/null || true
+    fi
     if [ -n "$server_pid" ] && kill -0 "$server_pid" 2>/dev/null; then
         kill "$server_pid" 2>/dev/null || true
         for _ in $(seq 1 50); do
@@ -139,6 +142,48 @@ start_scratch_server() {
         if ! kill -0 "$server_pid" 2>/dev/null || [ "$(date +%s)" -ge "$deadline" ]; then
             echo "$label: the server never became healthy — end of its log:" >&2
             tail -n 30 "$scratch/server.log" >&2
+            exit 1
+        fi
+        sleep 0.5
+    done
+}
+
+# The React client, built at base `/` and run under `vite preview` on the next
+# free port, proxying /api and the device routes to the scratch server (the
+# proxy list lives in frontend-js/vite.config.ts). Sets react_pid, and points
+# base_url at the client: the specs drive it, and their API calls reach the
+# server through the same proxy, as the browser's do.
+start_react_preview() {
+    local react_port
+    if ! react_port="$(choose_react_port "$port")"; then
+        echo "$label: no free port above $port for the React client" >&2
+        exit 1
+    fi
+    echo "$label: building the React client" >&2
+    (
+        cd frontend-js &&
+            pnpm install --frozen-lockfile --prefer-offline >/dev/null &&
+            # A cached node_modules lets install skip `prepare`, which generates the API client.
+            pnpm run generate &&
+            OMNIBUS_VERSION=v0.0.0 pnpm exec vite build --base=/ --outDir "$scratch/react" --emptyOutDir
+    ) >"$scratch/react.log" 2>&1 || {
+        echo "$label: the React build failed — end of its log:" >&2
+        tail -n 30 "$scratch/react.log" >&2
+        exit 1
+    }
+    (
+        cd frontend-js || exit 1
+        OMNIBUS_PORT="$port" exec pnpm exec vite preview --outDir "$scratch/react" \
+            --port "$react_port" --strictPort --host 127.0.0.1
+    ) >>"$scratch/react.log" 2>&1 &
+    react_pid=$!
+    base_url="http://127.0.0.1:$react_port"
+    local deadline
+    deadline=$(($(date +%s) + HEALTH_TIMEOUT_SECS))
+    until is_my_omnibus_response "$(curl --silent --max-time 2 "$base_url/api/_health" || true)"; do
+        if ! kill -0 "$react_pid" 2>/dev/null || [ "$(date +%s)" -ge "$deadline" ]; then
+            echo "$label: the React client never answered — end of its log:" >&2
+            tail -n 30 "$scratch/react.log" >&2
             exit 1
         fi
         sleep 0.5

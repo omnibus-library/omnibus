@@ -23,114 +23,156 @@ struct MergeBookSheet: View {
     @State private var source: Book?
     @State private var busy = false
     @State private var error: String?
+    @State private var detent: PresentationDetent = .large
+
+    private static let confirmDetent = PresentationDetent.fraction(0.72)
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if let source {
-                    confirm(source)
-                } else {
-                    search
-                }
+        VStack(alignment: .leading, spacing: 0) {
+            // No dismissal mid-merge — closing would hide the outcome while
+            // the request keeps running.
+            BookSheetHeader(title: "Merge with\u{2026}", closes: !busy) { dismiss() }
+
+            if let source {
+                confirm(source)
+            } else {
+                search
             }
-            .background(ScreenBackground())
-            .navigationTitle("Merge with\u{2026}")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                        // No dismissal mid-merge — closing would hide the
-                        // outcome while the request keeps running.
-                        .disabled(busy)
-                }
-            }
-            .interactiveDismissDisabled(busy)
         }
-        .presentationDetents([.large])
+        .presentationDetents([.large, Self.confirmDetent], selection: $detent)
+        .presentationDragIndicator(.visible)
+        .presentationCornerRadius(Radius.xl)
         .presentationBackground(palette.bg1Color)
+        .interactiveDismissDisabled(busy)
         .onChange(of: query) { _, q in schedule(q) }
+        .onChange(of: source) { _, picked in
+            withAnimation(Motion.settle) { detent = picked == nil ? .large : Self.confirmDetent }
+        }
         .onDisappear { searchTask?.cancel() }
     }
 
     // MARK: - Step 1: find the other entry
 
     private var search: some View {
-        VStack(alignment: .leading, spacing: Spacing.md) {
-            Text("The other entry merges into \u{201c}\(target.displayTitle)\u{201d}. Nothing is deleted \u{2014} undo is offered once, right after the merge.")
-                .font(.ui(13))
-                .foregroundStyle(palette.ink2Color)
-                .fixedSize(horizontal: false, vertical: true)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Find the other copy of this book. Its files, tags, highlights and reading progress move onto this entry, and the duplicate disappears.")
+                    .font(.ui(15))
+                    .foregroundStyle(palette.ink1Color)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 2)
 
-            SearchField(text: $query, prompt: "Search by title or author", identifier: "merge-search")
+                targetPanel
+                    .padding(.top, 12)
 
-            if let error {
-                Text(error)
-                    .font(.ui(12.5))
-                    .foregroundStyle(palette.badColor)
-            }
+                Text("Search your library")
+                    .font(.ui(15, weight: .semibold))
+                    .foregroundStyle(palette.ink0Color)
+                    .padding(.top, 16)
 
-            ScrollView {
+                SearchField(text: $query, prompt: "Title, author or series", identifier: "merge-search")
+                    .padding(.top, 6)
+
+                if let error {
+                    Text(error)
+                        .font(.ui(14))
+                        .foregroundStyle(palette.dangerText)
+                        .padding(.top, 12)
+                } else {
+                    resultNote
+                        .padding(.top, 14)
+                        .padding(.bottom, 2)
+                }
+
                 LazyVStack(spacing: 0) {
-                    ForEach(Array(candidates.enumerated()), id: \.element.uuid) { index, book in
-                        candidateRow(book, isFirst: index == 0)
+                    ForEach(candidates, id: \.uuid) { book in
+                        candidateRow(book)
                     }
-                    if !candidates.isEmpty { RecordRule() }
                 }
             }
-            .scrollIndicators(.hidden)
-            .overlay {
-                if candidates.isEmpty { searchPlaceholder }
-            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 28)
         }
-        .screenPadding()
-        .padding(.top, Spacing.md)
+        .scrollIndicators(.hidden)
+        .scrollDismissesKeyboard(.interactively)
+    }
+
+    /// Says up front which entry survives, since that is the part easy to get
+    /// backwards.
+    private var targetPanel: some View {
+        HStack(spacing: 12) {
+            BookCover(identity: CoverIdentity(target), size: .sm, cornerRadius: 2)
+                .frame(width: 34, height: 51)
+                .shadow(color: .black.opacity(0.5), radius: 5, x: 3, y: 4)
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Everything folds into")
+                    .font(.ui(13))
+                    .foregroundStyle(palette.ink1Color)
+                Text(target.displayTitle)
+                    .font(.ui(15, weight: .semibold))
+                    .foregroundStyle(palette.ink0Color)
+            }
+            Spacer(minLength: 0)
+            Text("This entry stays")
+                .font(.ui(13))
+                .foregroundStyle(palette.ink1Color)
+                .fixedSize()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(palette.bg2Color))
     }
 
     @ViewBuilder
-    private var searchPlaceholder: some View {
+    private var resultNote: some View {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         if searching {
-            ProgressView()
-        } else if !trimmed.isEmpty {
-            Text("No other book matches \u{201c}\(trimmed)\u{201d}.")
-                .font(.ui(13))
-                .foregroundStyle(palette.ink3Color)
-                .accessibilityIdentifier("merge-empty")
+            ProgressView().controlSize(.small).tint(palette.ink1Color)
+        } else {
+            Text(MergeCopy.resultNote(count: candidates.count, query: trimmed))
+                .font(.ui(14))
+                .foregroundStyle(palette.ink1Color)
+                .accessibilityIdentifier(
+                    candidates.isEmpty && !trimmed.isEmpty ? "merge-empty" : "merge-note"
+                )
         }
     }
 
-    private func candidateRow(_ book: Book, isFirst: Bool) -> some View {
+    private func candidateRow(_ book: Book) -> some View {
         Button {
             Haptics.tap()
             source = book
         } label: {
-            VStack(spacing: 0) {
-                if !isFirst { Hairline() }
-                HStack(spacing: Spacing.md) {
-                    BookCover(identity: CoverIdentity(book), size: .sm)
-                        .frame(width: 38)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(book.displayTitle)
-                            .font(.ui(14.5, weight: .medium))
-                            .foregroundStyle(palette.ink0Color)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.leading)
-                        HStack(spacing: 5) {
-                            Text(book.authorDisplay).lineLimit(1)
-                            if !book.formats.isEmpty {
-                                Text("· \(book.formats.map { $0.uppercased() }.joined(separator: ", "))")
-                            }
-                        }
-                        .font(.ui(11.5))
-                        .foregroundStyle(palette.ink3Color)
+            HStack(spacing: 12) {
+                BookCover(identity: CoverIdentity(book), size: .sm, cornerRadius: 2)
+                    .frame(width: 40, height: 60)
+                    .shadow(color: .black.opacity(0.45), radius: 5, x: 3, y: 4)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(book.displayTitle)
+                        .font(.display(19, weight: .semibold))
+                        .foregroundStyle(palette.ink0Color)
+                    Text(MergeCopy.meta(book))
+                        .font(.ui(14))
+                        .foregroundStyle(palette.ink1Color)
+                    let tags = MergeCopy.tags(book, target: target)
+                    if !tags.isEmpty {
+                        Text(tags)
+                            .font(.ui(13))
+                            .foregroundStyle(palette.ink1Color)
                     }
-                    Spacer(minLength: 0)
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(palette.ink3Color)
                 }
-                .padding(.vertical, Spacing.sm)
+                .multilineTextAlignment(.leading)
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(palette.ink1Color)
             }
+            .padding(.vertical, 8)
+            .frame(minHeight: 76)
+            .overlay(alignment: .top) {
+                Rectangle().fill(palette.ink0Color.opacity(0.1)).frame(height: 1)
+            }
+            .contentShape(Rectangle())
         }
         .buttonStyle(PressableStyle())
         .accessibilityIdentifier("merge-candidate-\(book.uuid)")
@@ -167,44 +209,66 @@ struct MergeBookSheet: View {
     // MARK: - Step 2: confirm
 
     private func confirm(_ source: Book) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.lg) {
-            SectionLabel("Merge \u{201c}\(source.displayTitle)\u{201d}?")
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 20) {
+                    BookCover(identity: CoverIdentity(source), size: .md, cornerRadius: 3)
+                        .frame(width: 92, height: 138)
+                        .shadow(color: .black.opacity(0.5), radius: 12, x: 8, y: 12)
+                        .rotationEffect(.degrees(5))
+                        .offset(y: 4)
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(palette.ink1Color)
+                    BookCover(identity: CoverIdentity(target), size: .md, cornerRadius: 3)
+                        .frame(width: 104, height: 156)
+                        .shadow(color: .black.opacity(0.5), radius: 12, x: 8, y: 12)
+                        .rotationEffect(.degrees(-2.5))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.top, 18)
+                .padding(.bottom, 20)
+                .accessibilityHidden(true)
 
-            Text(MergeCopy.confirmBody(source: source.displayTitle, target: target.displayTitle))
-                .font(.ui(14))
-                .foregroundStyle(palette.ink1Color)
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityIdentifier("merge-confirm-copy")
+                Text(MergeCopy.confirmBody(source: source.displayTitle, target: target.displayTitle))
+                    .font(.ui(17))
+                    .foregroundStyle(palette.ink0Color)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("merge-confirm-copy")
 
-            if let error {
-                Text(error)
-                    .font(.ui(12.5))
-                    .foregroundStyle(palette.badColor)
-                    .accessibilityIdentifier("merge-error")
+                if let error {
+                    Text(error)
+                        .font(.ui(14))
+                        .foregroundStyle(palette.dangerText)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 12)
+                        .accessibilityIdentifier("merge-error")
+                }
+
+                HStack(spacing: 10) {
+                    Button("Back") {
+                        error = nil
+                        self.source = nil
+                    }
+                    .buttonStyle(QuietPillStyle(fills: true))
+                    .disabled(busy)
+
+                    Button {
+                        Haptics.tap()
+                        merge(source)
+                    } label: {
+                        Text(busy ? "Merging\u{2026}" : "Merge")
+                    }
+                    .buttonStyle(BarCTAStyle())
+                    .disabled(busy)
+                    .accessibilityIdentifier("merge-confirm")
+                }
+                .padding(.top, 22)
             }
-
-            Spacer(minLength: 0)
-
-            Button {
-                Haptics.tap()
-                merge(source)
-            } label: {
-                Text(busy ? "Merging\u{2026}" : "Merge books")
-            }
-            .buttonStyle(FilledButtonStyle())
-            .disabled(busy)
-            .accessibilityIdentifier("merge-confirm")
-
-            Button("Back") {
-                error = nil
-                self.source = nil
-            }
-            .buttonStyle(QuietButtonStyle())
-            .frame(maxWidth: .infinity)
-            .disabled(busy)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 28)
         }
-        .screenPadding()
-        .padding(.vertical, Spacing.lg)
+        .scrollIndicators(.hidden)
     }
 
     private func merge(_ source: Book) {
@@ -237,50 +301,16 @@ struct MergeUndoToast: View {
     var onUndone: () -> Void
     var onDismiss: () -> Void
 
-    @Environment(\.palette) private var palette
     @State private var busy = false
     @State private var error: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: Spacing.md) {
-                Text("Books merged.")
-                    .font(.ui(14, weight: .medium))
-                    .foregroundStyle(palette.ink0Color)
-                Spacer(minLength: 0)
-                Button(busy ? "Undoing\u{2026}" : "Undo") { undo() }
-                    .font(.ui(14, weight: .semibold))
-                    .foregroundStyle(palette.accentColor)
-                    .disabled(busy)
-                    .accessibilityIdentifier("merge-undo")
-                Button {
-                    onDismiss()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(palette.ink3Color)
-                }
-                .disabled(busy)
-                .accessibilityLabel("Dismiss")
-            }
-            if let error {
-                Text(error)
-                    .font(.ui(12.5))
-                    .foregroundStyle(palette.badColor)
-            }
-        }
-        .padding(.horizontal, Spacing.lg)
-        .padding(.vertical, Spacing.md)
-        .background(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .fill(palette.bg1Color)
-                .shadow(color: .black.opacity(0.25), radius: 14, y: 6)
+        StageToast(
+            text: error ?? "Books merged",
+            actionLabel: busy ? "Undoing\u{2026}" : "Undo",
+            action: undo,
+            onDismiss: busy ? nil : onDismiss
         )
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(palette.line2.color, lineWidth: 0.5)
-        )
-        .accessibilityIdentifier("merge-toast")
     }
 
     private func undo() {

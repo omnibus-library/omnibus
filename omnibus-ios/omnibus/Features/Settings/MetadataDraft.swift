@@ -108,25 +108,24 @@ struct MetadataDraft: Equatable {
         )
     }
 
-    /// The form labels of the fields this draft changes against `loaded`, in
-    /// form order — what the web save bar lists beside "2 fields edited".
-    func editedFields(since loaded: MetadataDraft) -> [String] {
-        let checks: [(String, Bool)] = [
-            ("Title", title != loaded.title),
-            ("Authors", authors != loaded.authors),
-            ("Series", series != loaded.series),
-            ("Index", seriesIndex != loaded.seriesIndex),
-            ("Publisher", publisher != loaded.publisher),
-            ("Published", published != loaded.published),
-            ("Language", language != loaded.language),
-            ("ISBN-13", isbn13 != loaded.isbn13),
-            ("ISBN-10", isbn10 != loaded.isbn10),
-            ("Print Pages", printPages != loaded.printPages),
-            ("Tags", tags != loaded.tags),
-            ("Genres", genres != loaded.genres),
-            ("Summary", description != loaded.description),
-        ]
-        return checks.filter(\.1).map(\.0)
+    /// How many fields this draft changes against `loaded`: what the footer
+    /// counts and the page's toast reports.
+    func editedCount(since loaded: MetadataDraft) -> Int {
+        [
+            title != loaded.title,
+            authors != loaded.authors,
+            series != loaded.series,
+            seriesIndex != loaded.seriesIndex,
+            publisher != loaded.publisher,
+            published != loaded.published,
+            language != loaded.language,
+            isbn13 != loaded.isbn13,
+            isbn10 != loaded.isbn10,
+            printPages != loaded.printPages,
+            tags != loaded.tags,
+            genres != loaded.genres,
+            description != loaded.description,
+        ].filter { $0 }.count
     }
 
     /// This draft with whatever still sits in a chip entry field committed, as
@@ -143,16 +142,6 @@ struct MetadataDraft: Equatable {
             draft.genres.append(chip)
         }
         return draft
-    }
-
-    /// "2 fields edited", the web save bar's count.
-    static func editedLabel(count: Int) -> String {
-        "\(count) \(count == 1 ? "field" : "fields") edited"
-    }
-
-    /// What a landed save reports before the editor closes.
-    static func savedLabel(count: Int) -> String {
-        "Saved · \(count) \(count == 1 ? "field" : "fields")"
     }
 
     /// ISBN-10 diffed on its *trimmed* form. The field is `.asciiCapable`
@@ -241,7 +230,7 @@ enum MetadataDraftError: LocalizedError, Equatable {
         case .printPagesNotClearable:
             """
             Print page count can't be cleared once set. Enter a number, or use \
-            Revert to scanned metadata to remove every override on this book.
+            Revert to scanned values to remove every override on this book.
             """
         case .invalidIsbn10:
             "ISBN-10 must be 10 characters: 9 digits plus a digit or X check digit."
@@ -319,5 +308,72 @@ enum ChipEntry {
             guard !existing.contains(where: { $0.lowercased() == lowered }) else { return nil }
         }
         return trimmed
+    }
+}
+
+/// A replacement cover waiting for Save: the draft's counterpart for the one
+/// thing on the sheet that isn't text.
+enum StagedCover: Equatable {
+    /// Fetched by the server from this address when the save lands.
+    case url(String)
+    /// Already re-encoded for upload.
+    case photo(Data)
+    /// The override dropped, so the file's own cover comes back.
+    case scanned
+
+    /// A pasted address as a staged cover, or `nil` when it can't be one.
+    static func pasted(_ text: String) -> StagedCover? {
+        guard let url = text.nilIfBlank, CheckInFlow.isExternalURL(url) else { return nil }
+        return .url(url)
+    }
+}
+
+/// What the sheet says about its own state.
+enum MetadataEditCopy {
+    static func summary(count: Int) -> String {
+        count == 0 ? "No changes" : "\(count) unsaved \(changes(count))"
+    }
+
+    static func leaveTitle(count: Int) -> String {
+        count == 1 ? "Save your change before closing?" : "Save your \(count) changes before closing?"
+    }
+
+    static func savedToast(count: Int, title: String) -> String {
+        "Saved \(count) \(changes(count)) to \(title)"
+    }
+
+    /// Where the cover on the Artwork tab comes from.
+    static func coverHint(staged: StagedCover?, book: Book) -> String {
+        switch staged {
+        case .url: "From the web. Fetched when you press Save."
+        case .photo: "From your photos. Uploaded when you press Save."
+        case .scanned: "The file\u{2019}s own cover comes back when you press Save."
+        case nil:
+            if book.hasCoverOverride {
+                "Replaced in Omnibus"
+            } else {
+                book.coverURL != nil ? "Extracted from the file" : "No cover available"
+            }
+        }
+    }
+
+    /// The configured sources by name, for the line under Fetch metadata.
+    static func providersLine(_ providers: [ProviderInfo]) -> String {
+        let names = providers.filter(\.configured).map(\.displayName)
+        guard let last = names.last else { return "" }
+        return names.count == 1 ? last : "\(names.dropLast().joined(separator: ", ")) and \(last)"
+    }
+
+    /// An identifier's heading. The scanner records "unknown" when a file
+    /// doesn't say, which is no more a scheme than a blank is.
+    static func scheme(_ identifier: Identifier) -> String {
+        guard let scheme = identifier.scheme?.nilIfBlank, scheme.lowercased() != "unknown" else {
+            return "Type unknown"
+        }
+        return scheme
+    }
+
+    private static func changes(_ count: Int) -> String {
+        count == 1 ? "change" : "changes"
     }
 }

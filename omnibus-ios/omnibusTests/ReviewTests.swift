@@ -5,6 +5,7 @@
 //  readers, and the household summary's bars.
 
 import Foundation
+import SwiftUI
 import Testing
 
 @testable import omnibus
@@ -257,9 +258,9 @@ struct ReviewOptimisticTests {
     }
 }
 
-// MARK: - The block's decisions
+// MARK: - The tab's decisions
 
-@Suite("Reviews block")
+@Suite("Reviews tab")
 struct DetailReviewsTests {
     @Test("a spoiler review stays collapsed until the viewer has finished the book")
     func spoilerCollapsesUntilFinished() {
@@ -267,42 +268,6 @@ struct DetailReviewsTests {
         #expect(DetailReviews.hidesText(spoiler: true, viewerStatus: .reading))
         #expect(!DetailReviews.hidesText(spoiler: true, viewerStatus: .finished))
         #expect(!DetailReviews.hidesText(spoiler: false, viewerStatus: .reading))
-    }
-
-    @Test("written reviews and bare ratings are split, each in the server's order")
-    func groupsOtherReaders() {
-        let others = [
-            other(1, stars: 4, body: "newest"), other(2, body: "older, no stars"),
-            other(3, stars: 5), other(4, stars: 2), other(5, body: "  "),
-        ]
-        #expect(DetailReviews.written(others).map(\.userId) == [1, 2])
-        // Blank text is no text; with no stars either there is nothing to show.
-        #expect(DetailReviews.starsOnly(others).map(\.userId) == [3, 4])
-    }
-
-    @Test("the title line reads the average to one decimal and counts readers")
-    func titleLine() {
-        let summary = ReviewSummary(averageStars: 4.333, ratings: 3, buckets: [])
-        #expect(DetailReviews.titleLine(summary) == "4.3 · 3 readers")
-    }
-
-    @Test("the kicker counts other readers, and is bare with none")
-    func kicker() {
-        #expect(DetailReviews.kicker(othersCount: 0) == "Reviews")
-        #expect(DetailReviews.kicker(othersCount: 1) == "Reviews · 1 other reader")
-        #expect(DetailReviews.kicker(othersCount: 4) == "Reviews · 4 other readers")
-    }
-
-    @Test("the summary draws all ten buckets, empty ones as slots")
-    func summaryBars() {
-        let buckets = (1...10).map { ReviewBucket(halfStars: Int64($0), readers: $0 == 8 ? 3 : 0) }
-        let bars = DetailReviews.summaryBars(buckets)
-        #expect(bars.count == 10)
-        #expect(bars[7].fraction == 1)
-        #expect(bars[7].value == "3")
-        #expect(bars[7].title == "4 \u{2605} · 3 readers")
-        #expect(bars[0].isEmpty)
-        #expect(bars[0].value == nil)
     }
 
     @Test("an excerpt veils spoilers and resolves Markdown")
@@ -328,11 +293,42 @@ struct DetailReviewsTests {
         #expect(DetailReviews.excerpt("![](/x.png)\nwords") == [.text("words")])
     }
 
-    @Test("the marquee's hand-off names the other readers, or your own review")
-    func allLabel() {
-        #expect(DetailReviews.allLabel(othersCount: 0) == "Your whole review")
-        #expect(DetailReviews.allLabel(othersCount: 1) == "All reviews · 1 other reader")
-        #expect(DetailReviews.allLabel(othersCount: 3) == "All reviews · 3 other readers")
+    @Test("the stage takes the server's summary when there is one")
+    func headlineFromSummary() {
+        let summary = ReviewSummary(averageStars: 4.333, ratings: 3, buckets: [])
+        let page = BookReviews(mine: nil, others: [], summary: summary)
+        let headline = DetailReviews.headline(page)
+        #expect(headline?.count == 3)
+        #expect(headline?.rounded == 4.5)
+        #expect(DetailReviews.headlineSpoken(headline, state: .ready(nil)) == "Average rating 4.3 of 5, from 3 reviews")
+    }
+
+    @Test("below the server's threshold the stage means what the page already lists")
+    func headlineFromTheList() {
+        let page = BookReviews(
+            mine: review(stars: 4), others: [other(1, stars: 5), other(2, body: "no stars")],
+            summary: nil
+        )
+        let headline = DetailReviews.headline(page)
+        #expect(headline == ReviewHeadline(average: 4.5, count: 2))
+        #expect(DetailReviews.headlineSpoken(headline, state: .ready(nil)) == "Average rating 4.5 of 5, from 2 reviews")
+        // One rating is a review, not reviews.
+        let lone = DetailReviews.headline(BookReviews(mine: review(stars: 4.5), others: [], summary: nil))
+        #expect(DetailReviews.headlineSpoken(lone, state: .ready(nil)) == "Average rating 4.5 of 5, from 1 review")
+    }
+
+    @Test("the stage says when nobody has rated, and when it doesn't know yet")
+    func headlineStates() {
+        #expect(DetailReviews.headline(nil) == nil)
+        #expect(DetailReviews.headline(.empty) == nil)
+        #expect(DetailReviews.headlineSpoken(nil, state: .ready(nil)) == "No reviews yet")
+        #expect(DetailReviews.headlineSpoken(nil, state: .loading) == "Checking reviews…")
+        #expect(DetailReviews.headlineSpoken(nil, state: .unavailable(.offline)) == "Reviews need a connection")
+        #expect(DetailReviews.headlineSpoken(nil, state: .unavailable(.failed)) == "Couldn't load reviews")
+    }
+
+    @Test("writing is text or notes; stars alone are not")
+    func hasWriting() {
         #expect(DetailReviews.hasWriting(review(notes: "n")))
         #expect(!DetailReviews.hasWriting(review(stars: 4, body: " ")))
     }
@@ -348,16 +344,16 @@ struct DetailReviewsTests {
 
     @Test("the stars note says why an unknown review can't be written yet")
     func unknownNote() {
-        #expect(DetailReviews.unknownNote(.loading) == "loading your review")
-        #expect(DetailReviews.unknownNote(.unavailable(.offline)) == "loads when you're back online")
+        #expect(DetailReviews.unknownNote(.loading) == "Loading your review…")
+        #expect(DetailReviews.unknownNote(.unavailable(.offline)) == "Loads when you're back online.")
         // A refusal or a fault is not an outage, and waiting won't fix it.
-        #expect(DetailReviews.unknownNote(.unavailable(.failed)) == "couldn't load · pull down to retry")
+        #expect(DetailReviews.unknownNote(.unavailable(.failed)) == "Couldn't load. Pull down to retry.")
     }
 
-    @Test("the note beside your stars says whether you have rated")
+    @Test("the note under your stars says whether you have rated")
     func starsNote() {
-        #expect(DetailReviews.starsNote(nil) == "tap a star to rate")
-        #expect(DetailReviews.starsNote(4.5) == "rated 4.5 of 5")
+        #expect(DetailReviews.starsNote(nil) == "Not rated yet. Tap or drag the stars, half stars count.")
+        #expect(DetailReviews.starsNote(4.5) == "You rated it 4.5")
     }
 }
 
@@ -442,10 +438,43 @@ struct UnknownReviewTests {
     }
 }
 
-// MARK: - The composer's draft
+// MARK: - The sheet's draft
 
 @Suite("Review draft")
 struct ReviewDraftTests {
+    @Test("stars set in the sheet go with the text, in one patch")
+    func starsJoinThePatch() {
+        var draft = ReviewDraft(review(body: "old"))
+        draft.stars = 4.5
+        draft.body = "new"
+        #expect(draft.patch == ReviewPatch(stars: .set(4.5), bodyMd: .set("new")))
+        #expect(draft.touched == [.stars, .body])
+    }
+
+    @Test("clearing the stars clears them, and stars left alone send nothing")
+    func starsClearOrStay() {
+        var draft = ReviewDraft(review(stars: 4))
+        #expect(draft.patch.isEmpty)
+        draft.stars = 0
+        #expect(draft.patch == ReviewPatch(stars: .cleared))
+        // A first review with no stars has nothing to clear.
+        #expect(ReviewDraft(nil).patch.isEmpty)
+    }
+
+    @Test("stars you didn't touch follow a fresher review; stars you did are kept and named")
+    func starsRebase() {
+        var untouched = ReviewDraft(review(stars: 3))
+        #expect(untouched.rebase(onto: review(stars: 5)).isEmpty)
+        #expect(untouched.stars == 5)
+        #expect(untouched.patch.isEmpty)
+
+        var touched = ReviewDraft(review(stars: 3))
+        touched.stars = 4
+        #expect(touched.rebase(onto: review(stars: 5)) == [.stars])
+        #expect(touched.stars == 4)
+        #expect(touched.patch == ReviewPatch(stars: .set(4)))
+    }
+
     @Test("a field you haven't touched follows a fresher review, and Save sends nothing for it")
     func untouchedFieldsFollow() {
         var draft = ReviewDraft(review(body: "replica", notes: "n"))
@@ -537,11 +566,11 @@ struct ReviewDraftTests {
         #expect(DetailReviews.conflictNote([]) == nil)
         #expect(
             DetailReviews.conflictNote([.body])
-                == "Your review text changed elsewhere while this was open — Save keeps yours."
+                == "Your review text changed elsewhere while this was open. Save keeps yours."
         )
         #expect(
             DetailReviews.conflictNote([.spoiler, .body, .notes])
-                == "Your review text, private notes and spoiler flag changed elsewhere while this was open — Save keeps yours."
+                == "Your review text, private notes and spoiler flag changed elsewhere while this was open. Save keeps yours."
         )
     }
 }
@@ -640,5 +669,100 @@ struct ReviewPageReadTests {
         await OfflineStore.shared.cacheDelete(key)
         #expect(shown == [2, 4])
         #expect(stored?.mine?.stars == 4)
+    }
+}
+
+// MARK: - The sheet's wording and marks
+
+@Suite("Review sheet")
+struct ReviewSheetTests {
+    @Test("every half star has its word, and nothing else does")
+    func words() {
+        #expect(ReviewWords.word(for: 0.5) == "Not for me")
+        #expect(ReviewWords.word(for: 4.5) == "Loved it")
+        #expect(ReviewWords.word(for: 5) == "A favorite")
+        #expect(ReviewWords.word(for: 0) == nil)
+        #expect(ReviewWords.compactNote(0) == "Not rated yet")
+        #expect(ReviewWords.compactNote(3.5) == "3.5 · Liked it a lot")
+        #expect(ReviewWords.spoken(0) == "Not rated")
+        #expect(ReviewWords.spoken(4) == "4 of 5, Really good")
+    }
+
+    @Test("a touch maps to the half star under it, never less than half a star")
+    func starsFromATouch() {
+        #expect(ReviewWords.stars(at: 0, width: 270) == 0.5)
+        #expect(ReviewWords.stars(at: 27, width: 270) == 0.5)
+        #expect(ReviewWords.stars(at: 28, width: 270) == 1)
+        #expect(ReviewWords.stars(at: 135, width: 270) == 2.5)
+        #expect(ReviewWords.stars(at: 400, width: 270) == 5)
+        #expect(ReviewWords.stars(at: 10, width: 0) == 0.5)
+    }
+
+    @Test("the bubble stands over the star, or over its filled half")
+    func bubble() {
+        #expect(ReviewWords.bubblePosition(1) == 0.1)
+        #expect(ReviewWords.bubblePosition(5) == 0.9)
+        #expect(abs(ReviewWords.bubblePosition(3.5) - 0.65) < 0.001)
+    }
+
+    @Test("a mark wraps the selection and keeps it selected")
+    func markWrapsTheSelection() {
+        let text = "a fine book"
+        let start = text.index(text.startIndex, offsetBy: 2)
+        let end = text.index(start, offsetBy: 4)
+        let result = ReviewMarkup.wrap(text, selection: start..<end, marker: "**")
+        #expect(result.text == "a **fine** book")
+        #expect(result.text[result.selection] == "fine")
+    }
+
+    @Test("a mark with nothing selected sets a pair with the caret inside")
+    func markWithACaret() {
+        let text = "ab"
+        let caret = text.index(after: text.startIndex)
+        let result = ReviewMarkup.wrap(text, selection: caret..<caret, marker: "||")
+        #expect(result.text == "a||||b")
+        #expect(result.selection.isEmpty)
+        #expect(result.text.distance(from: result.text.startIndex, to: result.selection.lowerBound) == 3)
+    }
+
+    @Test("a mark with no selection known goes on the end")
+    func markWithNoSelection() {
+        let result = ReviewMarkup.wrap("ab", selection: nil, marker: "*")
+        #expect(result.text == "ab**")
+        #expect(result.text.distance(from: result.text.startIndex, to: result.selection.lowerBound) == 3)
+    }
+
+    @Test("a quote goes above what is written, line by line")
+    func quoting() {
+        #expect(ReviewMarkup.quoted("A line", above: "Mine") == "> A line\n\nMine")
+        #expect(ReviewMarkup.quoted("One\nTwo", above: "") == "> One\n> Two\n\n")
+    }
+}
+
+@Suite("Star pop")
+struct StarPopTests {
+    /// Where a fast drag catches a pop when it starts the next one.
+    private let midFlight = StarPop(scale: 1.2, turn: -5.5, lift: -7)
+
+    private func expectStaysAStar(isPopping: Bool, wave: Bool, delay: Double) {
+        let timeline = KeyframeTimeline(initialValue: midFlight) {
+            StarPop.keyframes(isPopping: isPopping, wave: wave, delay: delay)
+        }
+        for step in 0...400 {
+            let pop = timeline.value(progress: Double(step) / 400)
+            #expect(pop.scale >= 0.99 && pop.scale <= 1.23)
+            #expect(pop.turn >= -6.5 && pop.turn <= 0.5)
+            #expect(pop.lift >= -9.5 && pop.lift <= 0.5)
+        }
+    }
+
+    @Test("a pop restarted mid-flight stays the size of a star")
+    func restartedPopStaysBounded() {
+        expectStaysAStar(isPopping: true, wave: false, delay: 0)
+    }
+
+    @Test("the row's wave restarted mid-flight stays the size of a star")
+    func restartedWaveStaysBounded() {
+        expectStaysAStar(isPopping: true, wave: true, delay: 0.22)
     }
 }
