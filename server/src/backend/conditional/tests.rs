@@ -485,10 +485,7 @@ async fn serve_publishes_the_vary_it_was_given_on_a_200_and_a_416() {
             },
         )
         .await;
-        assert_eq!(
-            resp.headers().get(header::VARY).unwrap(),
-            "Accept-Encoding"
-        );
+        assert_eq!(resp.headers().get(header::VARY).unwrap(), "Accept-Encoding");
     }
 }
 

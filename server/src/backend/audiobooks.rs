@@ -537,7 +537,12 @@ pub(super) async fn get_audiobook_segment(
         }
     }
 
-    super::serve_file(req, &seg_path, FileResponse::media(MPEGTS_CONTENT_TYPE, None)).await
+    super::serve_file(
+        req,
+        &seg_path,
+        FileResponse::media(MPEGTS_CONTENT_TYPE, None),
+    )
+    .await
 }
 
 /// `true` if `name` matches `seg-NNNN.ts` exactly (4 decimal digits).
