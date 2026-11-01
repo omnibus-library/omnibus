@@ -46,7 +46,9 @@ final class AudioPlayer {
     /// the server's default — and carried on every position write so a
     /// resume reopens this file rather than the book's first one.
     private(set) var fileID: Int64?
-    private(set) var isPlaying = false
+    private(set) var isPlaying = false {
+        didSet { publishPlaybackState() }
+    }
     /// What a play/pause control draws and does: playing, or a start still owed
     /// that a press takes back. `isPlaying` alone says whether there is audio.
     var isPlayingOrStarting: Bool { pendingStarts.togglePauses(isPlaying: isPlaying) }
@@ -126,7 +128,9 @@ final class AudioPlayer {
     /// listener's own clears every one; a play, in the app or from outside it,
     /// clears a call's hold and re-arms the start of a load or resume still in
     /// flight.
-    private var pendingStarts = PendingStarts()
+    private var pendingStarts = PendingStarts() {
+        didSet { publishPlaybackState() }
+    }
     private var interruptionObserver: NSObjectProtocol?
     private var routeChangeObserver: NSObjectProtocol?
     /// Whether a play with no player to start is still finding the book to
@@ -304,7 +308,8 @@ final class AudioPlayer {
         error = nil
         position = 0
         duration = 0
-        // The car and the lock screen hear of the start now, not when it lands.
+        // `book` fires no observer: the car and the lock screen hear of it, and
+        // of its start, now rather than when it lands.
         updateNowPlaying()
 
         // The default file, the offer's file match and `isDefaultFileSelected`
@@ -388,7 +393,6 @@ final class AudioPlayer {
             finishLoad(generation)
             if pendingStarts.afterLoad == generation { pendingStarts.afterLoad = nil }
             self.error = (error as? APIError)?.errorDescription ?? error.localizedDescription
-            updateNowPlaying()
         }
     }
 
@@ -701,7 +705,6 @@ final class AudioPlayer {
         // Nothing to start yet: the load makes the start once it lands.
         if let loadingGeneration {
             pendingStarts.afterLoad = loadingGeneration
-            updateNowPlaying()
             return
         }
         guard let player else {
@@ -719,7 +722,6 @@ final class AudioPlayer {
             health.reset()
             error = nil
             pendingStarts.afterRecovery = true
-            updateNowPlaying()
             recoverFromFailure(attempt: 1)
             return
         }
@@ -953,6 +955,7 @@ final class AudioPlayer {
         position = 0
         duration = 0
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        // Explicit: `book = nil` fires no observer, and `teardown` ran with it set.
         MPNowPlayingInfoCenter.default().playbackState = .stopped
 
         guard let closing else { return }
@@ -1355,12 +1358,7 @@ final class AudioPlayer {
     /// scrubber is chapter-scoped like the in-app one; a book without chapter
     /// marks falls back to the whole-book span.
     private func updateNowPlaying() {
-        guard let book else {
-            // A start still finding its book reads as playing, or a second press
-            // re-arms it rather than cancelling; never `.paused`, over `close()`'s `.stopped`.
-            MPNowPlayingInfoCenter.default().playbackState = isPlayingOrStarting ? .playing : .stopped
-            return
-        }
+        guard let book else { return }
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: currentChapter?.title ?? book.displayTitle,
             MPMediaItemPropertyAlbumTitle: book.displayTitle,
@@ -1384,7 +1382,24 @@ final class AudioPlayer {
         // stayed on its play button through playback no remote command started.
         // A start still owed reads as playing, as on the app's own controls; the
         // rate above stays real, or the system runs the scrubber on with no audio.
-        MPNowPlayingInfoCenter.default().playbackState = isPlayingOrStarting ? .playing : .paused
+        publishPlaybackState()
+    }
+
+    /// State the system's play/pause control from what it follows, so no write to
+    /// `isPlaying` or `pendingStarts` can leave the car on a stale button.
+    private func publishPlaybackState() {
+        MPNowPlayingInfoCenter.default().playbackState = Self.nowPlayingState(
+            isPlayingOrStarting: isPlayingOrStarting, hasBook: book != nil
+        )
+    }
+
+    /// A start still finding its book reads as playing, or a second press re-arms
+    /// it rather than cancelling; never `.paused` with no book, over `close()`'s `.stopped`.
+    nonisolated static func nowPlayingState(
+        isPlayingOrStarting: Bool, hasBook: Bool
+    ) -> MPNowPlayingPlaybackState {
+        if isPlayingOrStarting { return .playing }
+        return hasBook ? .paused : .stopped
     }
 
     /// The book's artwork; not `isFinal` while it is the plate standing in
@@ -1552,7 +1567,6 @@ final class AudioPlayer {
     private func loadOwed(retrying failed: LoadRequest?) {
         // A second press re-arms a resume a pause took back, without a second load.
         pendingStarts.armResume()
-        updateNowPlaying()
         guard !isFindingLoad else { return }
         isFindingLoad = true
         Task {
@@ -1561,14 +1575,11 @@ final class AudioPlayer {
             // Something else loaded, or the book was closed: the starts are its.
             guard player == nil, loadingGeneration == nil, book?.uuid == failed?.book.uuid else {
                 pendingStarts.afterResume = false
-                updateNowPlaying()
                 return
             }
             guard pendingStarts.resumeIsOwed, let target else {
                 // A call's hold goes too, or its end would take the session for nothing.
                 pendingStarts = PendingStarts()
-                // No start is coming, so the system must stop reading this as playing.
-                updateNowPlaying()
                 return
             }
             // No await between here and `load`'s teardown, which hands the
@@ -1651,7 +1662,7 @@ final class AudioPlayer {
             // rebuild's budget. With nothing in flight the start is `play()`'s,
             // and its retry of a load or item that failed under the call is
             // meant: the listener asked for this book before the call.
-            if pendingStarts.startIsPending { updateNowPlaying() } else { play() }
+            if !pendingStarts.startIsPending { play() }
         case .ignore:
             break
         }

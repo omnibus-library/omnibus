@@ -9,6 +9,7 @@
 //  and is handed back to whichever owes it when a call ends.
 
 import AVFoundation
+import MediaPlayer
 import Testing
 
 @testable import omnibus
@@ -366,5 +367,26 @@ struct AudioSessionEventTests {
         // With no book loaded this only writes `pendingStarts`, with the value it holds.
         player.play()
         #expect(changed.raised)
+    }
+
+    @Test func theSystemControlReadsAStartOwedAsPlayingWithOrWithoutABook() {
+        // No book yet: the cold-start car press, whose second press must cancel.
+        let owed = PendingStarts(afterResume: true).togglePauses(isPlaying: false)
+        #expect(AudioPlayer.nowPlayingState(isPlayingOrStarting: owed, hasBook: false) == .playing)
+        #expect(AudioPlayer.nowPlayingState(isPlayingOrStarting: owed, hasBook: true) == .playing)
+    }
+
+    @Test func theSystemControlWithNoStartOwedPausesOnABookAndStopsWithoutOne() {
+        let idle = PendingStarts().togglePauses(isPlaying: false)
+        #expect(AudioPlayer.nowPlayingState(isPlayingOrStarting: idle, hasBook: true) == .paused)
+        #expect(AudioPlayer.nowPlayingState(isPlayingOrStarting: idle, hasBook: false) == .stopped)
+    }
+
+    @MainActor @Test func aWriteToPendingStartsReachesTheSystemControlWithNoBook() {
+        let center = MPNowPlayingInfoCenter.default()
+        center.playbackState = .playing
+        // With no book loaded this only writes `pendingStarts`, and states nothing itself.
+        AudioPlayer.shared.play()
+        #expect(center.playbackState == .stopped)
     }
 }
