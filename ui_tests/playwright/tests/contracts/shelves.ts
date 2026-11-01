@@ -17,9 +17,6 @@ const shelfUrl = (id: number | undefined, rest = ""): RegExp =>
 /** The shelf endpoints the library and shelf pages call. */
 export const shelvesUrls = {
   list: new RegExp(String.raw`\/api\/shelves${END}`),
-  shelf: shelfUrl(undefined),
-  books: shelfUrl(undefined, String.raw`\/books`),
-  book: shelfUrl(undefined, String.raw`\/books\/[^/?]+`),
   page: shelfUrl(undefined, String.raw`\/page`),
 };
 

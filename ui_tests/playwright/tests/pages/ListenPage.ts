@@ -231,17 +231,12 @@ export class ListenPage extends BasePage {
     await setRange(this.seekSlider, seconds, { commit: true });
   }
 
-  /** Seeks the way a user does, by releasing the scrubber; it moves in whole seconds. */
-  async seekTo(seconds: number): Promise<void> {
-    await this.releaseSeek(seconds);
-  }
-
   /**
    * Parks the playhead at the start, so a position another test left behind
    * cannot change which chapter is current or what the transport paints (#2458).
    */
   async parkAtStart(): Promise<void> {
-    await this.seekTo(0);
+    await this.releaseSeek(0);
     await this.page.waitForFunction(() => {
       const audio = document.querySelector("audio");
       return audio !== null && audio.currentTime < 0.5;

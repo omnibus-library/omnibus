@@ -4,19 +4,12 @@ import type { ReadStatus } from "../data/readStatus";
 import { isResponseTo } from "../utils/api";
 import { BaseComponent } from "./BaseComponent";
 
-export const READ_STATUS_LABELS: Record<ReadStatus, string> = {
-  unread: "Unread",
-  reading: "Reading",
-  finished: "Finished",
-};
-
-/** The hero's read status pill, the menu of three statuses it opens, and its error line. */
+/** The hero's read status pill and the menu of three statuses it opens. */
 export class ReadStatusControlComponent extends BaseComponent {
   readonly root: Locator;
   /** Named "Read status: <status>", so its name is the saved status. */
   readonly pill: Locator;
   readonly menu: Locator;
-  readonly errorText: Locator;
   /** The toast a refused save raises once the pill has put the old status back. */
   readonly failureToast: Locator;
 
@@ -25,7 +18,6 @@ export class ReadStatusControlComponent extends BaseComponent {
     this.root = page.getByTestId("read-status-control");
     this.pill = this.root.getByRole("button", { name: /^Read status:/ });
     this.menu = page.getByRole("menu", { name: "Read status" });
-    this.errorText = page.getByTestId("read-status-meta");
     this.failureToast = page
       .getByRole("status")
       .filter({ hasText: "Couldn’t save your reading status" });
