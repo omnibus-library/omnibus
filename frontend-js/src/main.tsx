@@ -10,7 +10,10 @@ import { router } from "./router";
 import { reloadOnStaleChunk } from "./staleChunk";
 
 watchImageLoads();
-reloadOnStaleChunk(window, sessionStorage, () => window.location.reload());
+reloadOnStaleChunk(window, {
+  storage: sessionStorage,
+  reload: () => window.location.reload(),
+});
 
 // No retries: a failed fetch shows its error at once.
 const queryClient = new QueryClient({
