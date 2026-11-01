@@ -35,7 +35,7 @@ function Tile({
     // biome-ignore lint/a11y/useSemanticElements: the Atrium grid styles divs; list elements would bring the browser's list margins and padding
     <div
       role="listitem"
-      data-testid={`ebook-tile-${bookSlug(book.filename)}`}
+      data-testid={`ebook-tile-${bookSlug(book)}`}
       data-flip-key={book.uuid}
       data-flip-from={volume && `stack-${volume.lead}`}
       data-flip-deck={volume?.deck}
