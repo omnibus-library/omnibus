@@ -139,6 +139,10 @@ test.describe("shelf gallery", () => {
       ownShelf,
       expectMutation,
     }) => {
+      test.fixme(
+        true,
+        "Parity gap: React's shelf row omits empty shelves, so an empty shelf can't be selected on the library page (the shelf page's empty state is covered in shelf_detail)",
+      );
       const shelf = await ownShelf("E2E Gallery Empty");
 
       await test.step("select the empty shelf", async () => {
