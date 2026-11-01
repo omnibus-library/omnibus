@@ -8,7 +8,8 @@
 //
 //  Nothing here saves. Applying writes into the editor's draft and its staged
 //  cover, so the editor's Save stays the single writer and its dirty tracking,
-//  validation and changed-fields-only payload keep working untouched.
+//  validation and changed-fields-only payload keep working untouched. It also
+//  leaves the view open, so another edition can fill what this one left.
 
 import SwiftUI
 
@@ -17,6 +18,8 @@ struct MetadataFetchView: View {
     /// Written into as an edition is applied. The editor owns it.
     @Binding var draft: MetadataDraft
     @Binding var staged: StagedCover?
+    /// Everything the editor would save right now, for the count up top.
+    var pendingChanges: Int
     /// Runs with the rows just taken, once they are in the draft.
     var onApplied: ([MetadataDiffRow]) -> Void
     var onBack: () -> Void
@@ -52,12 +55,14 @@ struct MetadataFetchView: View {
         book: Book,
         draft: Binding<MetadataDraft>,
         staged: Binding<StagedCover?>,
+        pendingChanges: Int,
         onApplied: @escaping ([MetadataDiffRow]) -> Void,
         onBack: @escaping () -> Void
     ) {
         self.book = book
         _draft = draft
         _staged = staged
+        self.pendingChanges = pendingChanges
         self.onApplied = onApplied
         self.onBack = onBack
         let current = draft.wrappedValue
@@ -113,29 +118,42 @@ struct MetadataFetchView: View {
     }
 
     private var backRow: some View {
-        Button {
-            Haptics.tap()
-            if comparing != nil {
-                dealing = false
-                withAnimation(Motion.settle) { stage = .results }
-            } else {
-                searchGeneration += 1
-                onBack()
+        HStack(spacing: 8) {
+            Button {
+                Haptics.tap()
+                if comparing != nil {
+                    dealing = false
+                    withAnimation(Motion.settle) { stage = .results }
+                } else {
+                    searchGeneration += 1
+                    onBack()
+                }
+            } label: {
+                HStack(spacing: 2) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 16, weight: .semibold))
+                    Text(comparing != nil ? "All editions" : "Back to editing")
+                        .font(.ui(16, weight: .medium))
+                }
+                .foregroundStyle(palette.ink0Color)
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
             }
-        } label: {
-            HStack(spacing: 2) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 16, weight: .semibold))
-                Text(comparing != nil ? "All editions" : "Back to editing")
-                    .font(.ui(16, weight: .medium))
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("fetch-back")
+
+            Spacer(minLength: 0)
+
+            if pendingChanges > 0 {
+                Text(MetadataEditCopy.summary(count: pendingChanges))
+                    .font(.ui(14, weight: .semibold))
+                    .foregroundStyle(palette.ink0Color)
+                    .contentTransition(.numericText())
+                    .accessibilityIdentifier("fetch-status")
             }
-            .foregroundStyle(palette.ink0Color)
-            .frame(minHeight: 44)
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .padding(.horizontal, 8)
-        .accessibilityIdentifier("fetch-back")
+        .padding(.leading, 8)
+        .padding(.trailing, 16)
     }
 
     // MARK: - The query
@@ -353,9 +371,12 @@ struct MetadataFetchView: View {
 
         return Button {
             Haptics.success()
-            MetadataFetchFlow.apply(
-                rows, marks: marks, edition: edition, draft: &draft, staged: &staged
-            )
+            // What was taken leaves the comparison; the rest keep their ticks.
+            withAnimation(Motion.settle) {
+                MetadataFetchFlow.apply(
+                    rows, marks: marks, edition: edition, draft: &draft, staged: &staged
+                )
+            }
             onApplied(chosen)
         } label: {
             Text(MetadataFetchFlow.applyLabel(chosen: chosen.count))

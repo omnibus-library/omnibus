@@ -198,42 +198,39 @@ struct EditionDiffRow: View {
     @Environment(\.palette) private var palette
 
     var body: some View {
-        Button(action: onToggle) {
-            HStack(alignment: .top, spacing: 12) {
-                tick.padding(.top, 1)
+        HStack(alignment: .top, spacing: 12) {
+            tick.padding(.top, 1)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(row.label)
-                        .font(.ui(14, weight: .semibold))
-                        .foregroundStyle(palette.ink0Color)
-                    if case let .cover(url) = row.kind {
-                        cover(url).padding(.top, 4)
-                    } else {
-                        if !row.fills {
-                            Text(row.before)
-                                .font(.ui(14))
-                                .foregroundStyle(palette.ink1Color)
-                                .strikethrough(true, color: palette.ink1Color.opacity(0.6))
-                                .lineLimit(3)
-                        }
-                        Text(row.after)
-                            .font(.ui(16))
-                            .foregroundStyle(palette.ink0Color)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(row.label)
+                    .font(.ui(14, weight: .semibold))
+                    .foregroundStyle(palette.ink0Color)
+                if case let .cover(url) = row.kind {
+                    cover(url).padding(.top, 4)
+                } else {
+                    if !row.fills {
+                        Text(row.before)
+                            .font(.ui(14))
+                            .foregroundStyle(palette.ink1Color)
+                            .strikethrough(true, color: palette.ink1Color.opacity(0.6))
                             .lineLimit(3)
                     }
+                    Text(row.after)
+                        .font(.ui(16))
+                        .foregroundStyle(palette.ink0Color)
+                        .lineLimit(3)
                 }
-                .multilineTextAlignment(.leading)
-                .fixedSize(horizontal: false, vertical: true)
+            }
+            .multilineTextAlignment(.leading)
+            .fixedSize(horizontal: false, vertical: true)
 
-                Spacer(minLength: 0)
-            }
-            .padding(.vertical, 11)
-            .overlay(alignment: .top) {
-                Rectangle().fill(palette.ink0Color.opacity(0.1)).frame(height: 1)
-            }
-            .contentShape(Rectangle())
+            Spacer(minLength: 0)
         }
-        .buttonStyle(.plain)
+        .padding(.vertical, 11)
+        .overlay(alignment: .top) {
+            Rectangle().fill(palette.ink0Color.opacity(0.1)).frame(height: 1)
+        }
+        .tapRow(perform: onToggle)
         .accessibilityAddTraits(isOn ? .isSelected : [])
         .accessibilityIdentifier("fetch-row-\(row.id)")
     }

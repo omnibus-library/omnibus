@@ -56,6 +56,8 @@ struct MetadataEditView: View {
     @State private var coverURLText = ""
     /// Turns the header cover over when an applied edition brought new art.
     @State private var coverFlips = 0
+    /// What this visit to the search has taken, across every edition.
+    @State private var fetchApplied: [MetadataDiffRow] = []
 
     /// Empty leaves the fetch button out: offering a search that could only
     /// fail is worse than not offering one.
@@ -94,8 +96,9 @@ struct MetadataEditView: View {
                         book: book,
                         draft: $draft,
                         staged: $stagedCover,
-                        onApplied: applied,
-                        onBack: { withAnimation(Motion.settle) { showFetch = false } }
+                        pendingChanges: changeCount,
+                        onApplied: { fetchApplied += $0 },
+                        onBack: leaveFetch
                     )
                     .transition(.move(edge: .trailing).combined(with: .opacity))
                 } else {
@@ -647,16 +650,18 @@ struct MetadataEditView: View {
         error = nil
     }
 
-    /// An applied edition lands on the tab that shows what it changed, and new
-    /// art turns the header's cover over.
-    private func applied(_ rows: [MetadataDiffRow]) {
-        let brought = rows.contains { row in
+    /// Back from the search: the tab that shows what came with it, if anything
+    /// did, and new art turns the header's cover over.
+    private func leaveFetch() {
+        let applied = fetchApplied
+        fetchApplied = []
+        let brought = applied.filter { row in
             if case .cover = row.kind { return true }
             return false
         }
-        if brought, rows.count == 1 { tab = .artwork } else { tab = .details }
+        if !applied.isEmpty { tab = brought.count == applied.count ? .artwork : .details }
         withAnimation(Motion.settle) { showFetch = false }
-        guard brought else { return }
+        guard !brought.isEmpty else { return }
         // After the editor is back, or the turn plays on a view not yet drawn.
         Task {
             try? await Task.sleep(for: .milliseconds(40))

@@ -202,7 +202,8 @@ both, where the web editor writes a cover the moment it is picked. A save posts 
 fields, then the cover, so a cover the server can't fetch leaves only itself unsaved.
 Fetch metadata turns the same sheet rather than opening another on top of it. In an
 edition's comparison the blanks it would fill start ticked and the values it would
-replace don't, and applying moves the ticked rows into the draft.
+replace don't. Applying moves the ticked rows into the draft and stays put, so the
+next edition compares against what the last one filled in.
 
 ## Reader
 

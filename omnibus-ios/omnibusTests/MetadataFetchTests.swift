@@ -438,6 +438,45 @@ struct MetadataFetchDiffTests {
         #expect(staged == nil)
     }
 
+    @Test func aSecondEditionComparesAgainstWhatTheFirstFilledIn() throws {
+        var first = bare()
+        first.publisher = "Chilton Books"
+        var second = bare()
+        second.publisher = "Ace"
+        second.series = "Dune Chronicles"
+
+        var current = draft(publisher: "")
+        var staged: StagedCover?
+        MetadataFetchFlow.apply(
+            rows(first, in: current), marks: [:], edition: first, draft: &current, staged: &staged
+        )
+        #expect(current.publisher == "Chilton Books")
+
+        let next = rows(second, in: current)
+        let publisher = try #require(next.first { $0.id == "publisher" })
+        #expect(!publisher.fills)
+        #expect(publisher.before == "Chilton Books")
+        #expect(next.first { $0.id == "series" }?.fills == true)
+    }
+
+    @Test func applyingLeavesARowLeftUntickedInTheComparison() throws {
+        var candidate = bare()
+        candidate.publisher = "Chilton Books"
+        candidate.series = "Dune Chronicles"
+        let marks = ["series": false]
+
+        var current = draft(publisher: "")
+        var staged: StagedCover?
+        MetadataFetchFlow.apply(
+            rows(candidate, in: current), marks: marks, edition: candidate, draft: &current, staged: &staged
+        )
+
+        let left = rows(candidate, in: current)
+        #expect(left.map(\.id) == ["series"])
+        // The same marks carry on, so it doesn't tick itself back on.
+        #expect(!MetadataFetchFlow.isOn(try #require(left.first), marks: marks))
+    }
+
     @Test func groupsLeaveOutTheEmptyHeadingAndCountTheirRows() {
         var candidate = bare()
         candidate.series = "Dune Chronicles"
