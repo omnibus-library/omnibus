@@ -49,7 +49,7 @@ export function ShelfDetail() {
   const client = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [adding, setAdding] = useState(false);
-  const [settling, settle] = useSettling();
+  const [settling, settle] = useSettling(id);
   const [sort, setSort] = useState<SortKey>("recently_interacted");
   const shelf = useQuery(shelfQuery(id));
   // The whole member list, which the filter narrows and Add books marks as already on the shelf.
@@ -118,7 +118,7 @@ export function ShelfDetail() {
           onClose={() => setAdding(false)}
           onAdded={() => {
             setAdding(false);
-            settle(invalidateShelf(client, current.id));
+            settle(current.id, invalidateShelf(client, current.id));
           }}
         />
       )}

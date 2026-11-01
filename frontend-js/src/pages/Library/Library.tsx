@@ -164,9 +164,9 @@ export function Library() {
   const client = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [adding, setAdding] = useState(false);
-  const [settling, settle] = useSettling();
   const shelf = detail.data ?? null;
   const mayEdit = shelf !== null && canEdit(resolveAccess(user, shelf));
+  const [settling, settle] = useSettling(shelfId);
   const full = fullList(members, settling);
   const addBooks = addBooksState(mayEdit && shelf?.kind === "manual", full);
   // The lens is the shelf's page or, on All Books, the browse list.
@@ -327,7 +327,7 @@ export function Library() {
               </p>
             )}
             {lens.data && empty === "filtered" && (
-              <div className="library-empty">
+              <div className="library-empty" data-testid="lib-no-matches">
                 <p>No books match these filters.</p>
                 <Button onClick={() => change({ ...prefs, clauses: [] })}>
                   Clear filters
@@ -359,6 +359,7 @@ export function Library() {
                     addBooks
                       ? {
                           disabled: !addBooks.ready,
+                          title: addBooks.title,
                           onClick: () => setAdding(true),
                         }
                       : undefined
@@ -446,7 +447,7 @@ export function Library() {
             onClose={() => setAdding(false)}
             onAdded={() => {
               setAdding(false);
-              settle(invalidateShelf(client, shelf.id));
+              settle(shelf.id, invalidateShelf(client, shelf.id));
             }}
           />
         )}

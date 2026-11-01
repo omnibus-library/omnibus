@@ -17,6 +17,7 @@ import { AddBooksTile } from "../../components/ShelfTile/ShelfTile";
 import { lastLibrary, loadPrefs, savePrefs } from "../../viewPrefs";
 import { defaultDirFor } from "../Library/sorting";
 import { type FullList, rows } from "./narrow";
+import { addBooksState } from "./shelfAccess";
 import "../Library/Library.css";
 import "./ShelfDetail.css";
 
@@ -118,6 +119,7 @@ export function ShelfBooks({
     failed: narrowed.isError,
   });
   const removable = canEdit && kind === "manual";
+  const add = addBooksState(removable, full);
 
   const setFilter = (next: FilterClause[]) => {
     const library = lastLibrary();
@@ -265,8 +267,12 @@ export function ShelfBooks({
               onRemove={() => take(book)}
             />
           ))}
-          {removable && full.ready && (
-            <AddBooksTile onClick={onAdd} disabled={full.settling} />
+          {add && (
+            <AddBooksTile
+              onClick={onAdd}
+              disabled={!add.ready}
+              title={add.title}
+            />
           )}
         </div>
       )}

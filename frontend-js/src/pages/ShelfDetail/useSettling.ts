@@ -1,12 +1,15 @@
 import { useCallback, useState } from "react";
 
-/** Whether any work handed to `settle` is still running, so a page can hold a control until an add's refetch lands. */
-export function useSettling(): [boolean, (work: Promise<unknown>) => void] {
-  const [running, setRunning] = useState(0);
-  const settle = useCallback((work: Promise<unknown>) => {
-    setRunning((n) => n + 1);
-    const done = () => setRunning((n) => n - 1);
+/** Whether the refetch an add on `shelfId` set off is still out; another shelf's add holds nothing here. */
+export function useSettling(
+  shelfId: number | null,
+): [boolean, (id: number, work: Promise<unknown>) => void] {
+  const [settlingId, setSettlingId] = useState<number | null>(null);
+  // Both openers refuse while settling, so a second add can't overlap the first.
+  const settle = useCallback((id: number, work: Promise<unknown>) => {
+    setSettlingId(id);
+    const done = () => setSettlingId((now) => (now === id ? null : now));
     work.then(done, done);
   }, []);
-  return [running > 0, settle];
+  return [shelfId !== null && settlingId === shelfId, settle];
 }

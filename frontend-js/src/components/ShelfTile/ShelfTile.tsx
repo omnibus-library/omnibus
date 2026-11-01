@@ -161,11 +161,13 @@ export function ShelfTileFace({
 export function AddBooksTile({
   onClick,
   disabled = false,
+  title,
   style,
 }: {
   onClick: () => void;
-  /** Held, still mounted, while the shelf's books are out of date. */
+  /** Held, still mounted, while the shelf's books are out of date; `title` says why. */
   disabled?: boolean;
+  title?: string;
   style?: CSSProperties;
 }) {
   return (
@@ -175,6 +177,7 @@ export function AddBooksTile({
       data-testid="shelf-add-tile"
       style={style}
       aria-disabled={disabled}
+      title={title}
       onClick={() => !disabled && onClick()}
     >
       <span className="shelf-add-tile-plus">

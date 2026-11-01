@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { UserId } from "../../api";
+import { fullList } from "./narrow";
 import {
   addBooksState,
   canEdit,
@@ -102,5 +103,18 @@ describe("addBooksState", () => {
     ],
   ])("is %s", (_condition, editable, list, expected) => {
     expect(addBooksState(editable, list)).toEqual(expected);
+  });
+
+  it("stays ready through a refetch no add set off", () => {
+    const refetching = {
+      data: [],
+      isSuccess: true,
+      isError: false,
+      isFetching: true,
+    };
+
+    expect(addBooksState(true, fullList(refetching, false))).toEqual({
+      ready: true,
+    });
   });
 });

@@ -11,38 +11,35 @@ const held = () => {
 };
 
 describe("useSettling", () => {
-  it("holds until the work handed to settle has finished", async () => {
-    const { result } = renderHook(() => useSettling());
-    const first = held();
+  it("holds the shelf until the work handed to settle has finished", async () => {
+    const { result } = renderHook(() => useSettling(7));
+    const add = held();
 
     expect(result.current[0]).toBe(false);
-    act(() => result.current[1](first.work));
+    act(() => result.current[1](7, add.work));
     expect(result.current[0]).toBe(true);
 
-    await act(async () => first.release());
+    await act(async () => add.release());
     await waitFor(() => expect(result.current[0]).toBe(false));
   });
 
-  it("holds until every overlapping piece of work has finished", async () => {
-    const { result } = renderHook(() => useSettling());
-    const first = held();
-    const second = held();
+  it("holds nothing on another shelf than the one the add was for", () => {
+    const { result, rerender } = renderHook(({ id }) => useSettling(id), {
+      initialProps: { id: 7 },
+    });
 
-    act(() => result.current[1](first.work));
-    act(() => result.current[1](second.work));
-    await act(async () => first.release());
-    expect(result.current[0]).toBe(true);
+    act(() => result.current[1](7, held().work));
+    rerender({ id: 8 });
 
-    await act(async () => second.release());
-    await waitFor(() => expect(result.current[0]).toBe(false));
+    expect(result.current[0]).toBe(false);
   });
 
   it("releases when the work fails", async () => {
-    const { result } = renderHook(() => useSettling());
+    const { result } = renderHook(() => useSettling(7));
     const failing = Promise.reject(new Error("offline"));
     failing.catch(() => {});
 
-    act(() => result.current[1](failing));
+    act(() => result.current[1](7, failing));
 
     await waitFor(() => expect(result.current[0]).toBe(false));
   });
