@@ -53,3 +53,11 @@ fn listen_address_falls_back_to_loopback_8080_when_unset_or_unparseable() {
         "127.0.0.1:8080".parse().unwrap()
     );
 }
+
+#[test]
+fn listen_address_falls_back_to_loopback_when_the_ip_is_a_hostname() {
+    assert_eq!(
+        listen_address(Some("localhost"), Some("3000")),
+        "127.0.0.1:3000".parse().unwrap()
+    );
+}
