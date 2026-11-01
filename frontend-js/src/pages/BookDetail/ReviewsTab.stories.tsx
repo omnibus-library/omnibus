@@ -443,6 +443,34 @@ export const ARefusedTapPutsTheStarsBack: Story = {
   },
 };
 
+export const ARefusedFirstTapClosesTheDeleteConfirm: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      http.patch("/api/reviews/:uuid", async () => {
+        await delay(400);
+        return new HttpResponse("failed with 500", { status: 500 });
+      }),
+      ...reviewHandlers({ mine: null }, writes),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Rate 3 stars" }),
+    );
+    // The drawn rating brings the trash before the server has answered.
+    await userEvent.click(canvas.getByTestId("review-delete"));
+    await canvas.findByRole("dialog", { name: "Delete your review?" });
+
+    // The refusal takes the review away, and the confirm for it goes too.
+    await waitFor(() =>
+      expect(canvas.queryByTestId("review-delete")).not.toBeInTheDocument(),
+    );
+    await expect(
+      canvas.queryByRole("dialog", { name: "Delete your review?" }),
+    ).not.toBeInTheDocument();
+  },
+};
+
 export const TheNewestTapWinsWhenAnOlderOneLandsLate: Story = {
   beforeEach({ msw }) {
     let calls = 0;
@@ -831,6 +859,19 @@ export const TheCardsToolsAreAPencilAndATrashCan: Story = {
     await canvas.findByTestId("review-composer");
     // An open editor already is what the pencil would open.
     await expect(canvas.queryByTestId("review-write")).not.toBeInTheDocument();
+  },
+};
+
+export const OpeningTheEditorFocusesTheReviewText: Story = {
+  beforeEach: withReviews(MINE),
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByTestId("review-write"));
+    const composer = await canvas.findByTestId("review-composer");
+    await waitFor(() =>
+      expect(
+        within(composer).getByRole("textbox", { name: "Review text" }),
+      ).toHaveFocus(),
+    );
   },
 };
 

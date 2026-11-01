@@ -43,8 +43,18 @@ export class BookSummaryComponent extends BaseComponent {
     await this.page.route(summaryUrls.fetch, (route) =>
       route.fulfill({ json: summary }),
     );
-    await this.page.route(overridesUrls.save, (route) =>
-      route.fulfill({ json: null }),
-    );
+    // The save answers with the book as it now reads, so the stub reads the
+    // book and lays the saved description over it.
+    await this.page.route(overridesUrls.save, async (route) => {
+      const bookUrl = route
+        .request()
+        .url()
+        .replace(/\/overrides$/, "");
+      const book = await (
+        await route.fetch({ url: bookUrl, method: "GET" })
+      ).json();
+      const { description } = route.request().postDataJSON();
+      await route.fulfill({ json: { ...book, description } });
+    });
   }
 }

@@ -6,6 +6,7 @@ export class CreateShelfModalComponent extends BaseComponent {
   readonly root: Locator;
   readonly handPickedButton: Locator;
   readonly nameField: Locator;
+  readonly searchField: Locator;
   readonly createButton: Locator;
   readonly errorMessage: Locator;
 
@@ -16,6 +17,7 @@ export class CreateShelfModalComponent extends BaseComponent {
       name: /hand-picked/i,
     });
     this.nameField = this.root.getByTestId("shelf-name-input");
+    this.searchField = this.root.getByLabel("Search your library");
     this.createButton = this.root.getByTestId("shelf-create-submit");
     this.errorMessage = page.getByTestId("shelf-create-error");
   }
@@ -24,6 +26,12 @@ export class CreateShelfModalComponent extends BaseComponent {
   async fillHandPickedShelf(name: string): Promise<void> {
     await this.handPickedButton.click();
     await this.nameField.fill(name);
+  }
+
+  /** Finds a book in the hand-picked body's picker and picks it. */
+  async pickBook(query: string, bookUuid: string): Promise<void> {
+    await this.searchField.fill(query);
+    await this.root.getByTestId(`picker-tile-${bookUuid}`).click();
   }
 
   async create(): Promise<void> {

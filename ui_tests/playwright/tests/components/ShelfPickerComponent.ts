@@ -14,7 +14,8 @@ export class ShelfPickerComponent extends BaseComponent {
   constructor(page: Page) {
     super(page);
     this.root = page.getByTestId("shelf-picker");
-    this.dialog = this.root.getByRole("dialog");
+    // The backdrop is the dialog, and takes focus once it paints.
+    this.dialog = this.root;
     this.closeButton = page.getByTestId("shelf-picker-close");
     this.errorMessage = page.getByTestId("shelf-picker-error");
     this.hint = page.getByTestId("shelf-picker-hint");
@@ -30,9 +31,11 @@ export class ShelfPickerComponent extends BaseComponent {
     return this.root.getByRole("checkbox", { name, exact: true });
   }
 
-  /** A hand-picked shelf's tile in the bulk bar's picker, a plain button. */
+  /** A hand-picked shelf's tile in the bulk bar's picker, a plain button that also reads its count. */
   shelfButton(name: string): Locator {
-    return this.root.getByRole("button", { name, exact: true });
+    return this.root
+      .getByRole("button")
+      .filter({ has: this.page.getByText(name, { exact: true }) });
   }
 
   /** The inert tile of a smart shelf, which its rules fill. */

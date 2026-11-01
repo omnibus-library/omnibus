@@ -110,7 +110,7 @@ export abstract class BasePage {
     );
   }
 
-  /** Reloads and waits until the hydrated page is ready again. */
+  /** Reloads and waits until the app has mounted and the page is ready again. */
   async reload(): Promise<void> {
     await this.page.reload();
     await this.waitUntilReady();
@@ -121,7 +121,7 @@ export abstract class BasePage {
     await this.openAndSettle(path);
   }
 
-  /** Navigates to `path` and waits until the hydrated page is ready. */
+  /** Navigates to `path` and waits until the app has mounted and the page is ready. */
   protected async open(path: string): Promise<void> {
     await this.page.goto(path);
     await this.waitUntilReady();

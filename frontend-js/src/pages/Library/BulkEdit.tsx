@@ -278,6 +278,7 @@ export function BulkShelfPicker({
     <Modal
       label={`Add ${count} to a shelf`}
       busy={add.isPending}
+      backdropTestId="shelf-picker"
       backdropClass="shelf-modal-overlay"
       dialogClass="shelf-modal-card shelf-picker-card"
       fallbackFocus={fallbackFocus}
@@ -292,6 +293,7 @@ export function BulkShelfPicker({
           type="button"
           className="pick-close"
           aria-label="Close"
+          data-testid="shelf-picker-close"
           // aria-disabled, not disabled: a control that disables itself drops the keyboard's focus.
           aria-disabled={add.isPending}
           onClick={add.isPending ? undefined : onClose}
@@ -299,7 +301,7 @@ export function BulkShelfPicker({
           ✕
         </button>
       </div>
-      <p className="shelf-picker-hint">
+      <p className="shelf-picker-hint" data-testid="shelf-picker-hint">
         Only shelves you fill by hand are listed; smart shelves add books by
         their rules.
       </p>
@@ -360,7 +362,11 @@ export function BulkShelfPicker({
         </div>
       )}
       {add.isError && (
-        <p className="shelf-modal-error" role="alert">
+        <p
+          className="shelf-modal-error"
+          role="alert"
+          data-testid="shelf-picker-error"
+        >
           {add.error.message}
         </p>
       )}

@@ -1,23 +1,33 @@
 import type { StatsRange } from "../data/stats";
-import { post } from "../utils/api";
+import type { ForcedRequest } from "../utils/api";
 
-/** The server functions the stats page reads through; each URL excludes its siblings. */
+/** The REST reads the stats page makes; each URL excludes its siblings. */
 export const statsUrls = {
-  summary: /\/api\/rpc\/stats(?:\?|$)/,
-  librarySize: /\/api\/rpc\/library-size(?:\?|$)/,
-  libraryComposition: /\/api\/rpc\/library-composition(?:\?|$)/,
-  householdReaders: /\/api\/rpc\/household-readers(?:\?|$)/,
+  summary: /\/api\/stats(?:\?|$)/,
+  librarySize: /\/api\/library-size(?:\?|$)/,
+  libraryComposition: /\/api\/library-composition(?:\?|$)/,
+  householdReaders: /\/api\/users(?:\?|$)/,
+  /** The in-progress card's read, which the user menu also makes with `limit=1`. */
+  recentProgress: /\/api\/progress\/recent(?:\?|$)/,
 };
 
-/** The reads the stats page makes, which are POSTs because they are server functions. */
+/** The reads the stats page makes, all GETs. */
 export const stats = {
   /**
-   * The summary a period pill fetches. The suite pins `timezoneId` to UTC, so
-   * the offset is 0 (rule 10); `reader` is null on your own page, and Dioxus
-   * sends that omitted argument as `user_id: null`.
+   * The summary query a period pill fetches. The suite pins `timezoneId` to
+   * UTC, so the offset is 0 (rule 10); `user_id` is left off on your own page.
    */
-  summary: (range: StatsRange, reader: number | null = null) =>
-    post(statsUrls.summary, { range, utc_offset_minutes: 0, user_id: reader }),
+  summary: (
+    range: StatsRange,
+    reader: number | null = null,
+  ): Record<string, string> => ({
+    range,
+    utc_offset_minutes: "0",
+    ...(reader === null ? {} : { user_id: String(reader) }),
+  }),
 
-  householdReaders: () => post(statsUrls.householdReaders),
+  householdReaders: (): ForcedRequest => ({
+    method: "GET",
+    url: statsUrls.householdReaders,
+  }),
 };

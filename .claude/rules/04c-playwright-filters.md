@@ -8,19 +8,21 @@ bar (`frontend-js/src/components/FilterBar/`) and the surfaces that read its sav
 `ui_tests/playwright/tests/flows/library_filters.spec.ts` is the worked spec; the
 shelf cases live in `library_filters_shelves.spec.ts`.
 
-**The bar is one facet per field, each with its own menu.** `lib-filter-bar`
-(the group named `Library filters`) holds Shelf, Tag, Genre, Author, Series and
-Format, in that order, as `filter-facet-<field>` buttons (`aria-haspopup`,
-`aria-expanded`). A facet's accessible name is its label plus, while active,
-what it keeps ("Author Alfred Aho +1", "Format not PDF"): assert it with
+**The bar is one facet per field, each with its own menu.** The group named
+`Library filters` holds Shelf, Tag, Genre, Author, Series and Format, in that
+order, as `.fb-facet` buttons (`aria-haspopup`, `aria-expanded`) with no test
+id: `FilterBarComponent.facet(field)` finds one by the name it starts with. A
+facet's accessible name is its label plus, while active, what it keeps
+("Author Alfred Aho +1", "Format not PDF"): assert it with
 `toHaveAccessibleName`, since its `textContent` runs the parts together. An
-active facet has its own `Clear the <Field> filter` button
-(`filter-facet-clear-<field>`), and `Clear all` shows once any clause exists.
+active facet has its own `Clear the <Field> filter` button, and `Clear all`
+shows once any clause exists.
 A facet opens its modal menu, named `Filter by <field>` (Tab wraps inside it;
 every close refocuses the facet), pre-filled with that field's clause: mode
 buttons, a searchbox, checkboxes labelled by display label (formats uppercase,
 shelves by name, `· owner` on another reader's) and Apply. Values load per
-field, and a failed load draws `filter-picker-error` with a retry. Escape needs
+field (a `status` while they do), and a failed load draws an `alert` with a
+`Try again` button. Escape needs
 focus: its handler is the menu's own keydown.
 
 **One clause per field.** Applying a menu replaces every clause on its field,
@@ -36,16 +38,17 @@ one scrolling row and a menu is a fixed bottom sheet.
 window; `library_filter_menus.spec.ts` checks every menu at 390, 768 and 1440, and on
 the shelf page at 768.
 
-**Apply refetches what the surface shows.** `POST /api/rpc/ebooks/page` on All
-Books; `/api/rpc/shelves/page` — `{ id, filters, … }` — on a selected shelf and
-on `/shelves/:id`, which share the filter the landing saved (per browser
-context, in localStorage). The three states a filtered shelf can be in:
+**Apply refetches what the surface shows.** `GET /api/ebooks` on All Books and
+`GET /api/shelves/{id}/page` on a selected shelf and on `/shelves/:id`, each
+carrying the clauses as a JSON `filter` query param (`filterClauses(request)`
+in `contracts/ebooks.ts` reads them back). The shelf surfaces share the filter
+the landing saved (per browser context, in localStorage). The three states a filtered shelf can be in:
 
-- **Landing lens:** `lib-filtered-count` carries the narrowed count (and is
-  absent while no filter is on),
+- **Landing lens:** `LibraryPage.filteredCount` (`.lib-header-count`) carries
+  the narrowed count (and is absent while no filter is on),
   `LibraryPage.noMatchesMessage` (with `clearFiltersButton`) is "nothing
-  matches", `lib-page-error` a failed narrowed fetch, and `lib-loading` the
-  wait. A failed *full* list under a filter is no page error: the rows answer
+  matches", `pageError` (the "Couldn't load the library" alert) a failed
+  narrowed fetch, and `loading` (a `status`) the wait. A failed *full* list under a filter is no page error: the rows answer
   the filter, and only `shelf-add-books` goes inert (`aria-disabled`, titled for
   the failure).
 - **`/shelves/:id`:** `shelf-count` is absent after a failed fetch (never `0`),

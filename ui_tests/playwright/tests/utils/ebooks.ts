@@ -10,7 +10,7 @@ export async function fetchBookUuidByTitle(
   title: string,
 ): Promise<string> {
   // Poll rather than read once. `seedLibrary`/`seedAudiobookLibrary` gate on a
-  // *total* book count from `/api/rpc/ebooks`, which a parallel spec's ebooks
+  // *total* book count from `/api/ebooks`, which a parallel spec's ebooks
   // can satisfy before this spec's own reindex has surfaced `title` — so a
   // single GET here races the indexer and throws "no seeded book". Retrying
   // until the specific title appears absorbs that lag; a genuinely-absent book
@@ -22,7 +22,7 @@ export async function fetchBookUuidByTitle(
   await expect
     .poll(
       async () => {
-        const resp = await request.get("/api/rpc/ebooks");
+        const resp = await request.get("/api/ebooks");
         if (resp.status() !== 200) return false;
         const body = (await resp.json()) as {
           books: { unique_identifier: string | null; title: string | null }[];
@@ -32,7 +32,7 @@ export async function fetchBookUuidByTitle(
         return match !== undefined;
       },
       {
-        message: `no seeded book with title ${JSON.stringify(title)} surfaced by /api/rpc/ebooks`,
+        message: `no seeded book with title ${JSON.stringify(title)} surfaced by /api/ebooks`,
         timeout: 15_000,
         intervals: [100, 200, 500, 1_000],
       },

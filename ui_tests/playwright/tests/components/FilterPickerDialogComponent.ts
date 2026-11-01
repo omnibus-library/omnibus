@@ -44,11 +44,11 @@ export class FilterPickerDialogComponent extends BaseComponent {
   constructor(page: Page) {
     super(page);
     this.root = page.getByRole("dialog", { name: /^Filter by / });
-    this.scrim = page.getByTestId("filter-picker-scrim");
+    this.scrim = page.locator(".fb-scrim");
     this.searchField = this.root.getByRole("searchbox");
     this.applyButton = this.root.getByRole("button", { name: /^Apply/ });
     this.cancelButton = this.root.getByRole("button", { name: "Cancel" });
-    this.loadingIndicator = this.root.getByTestId("filter-picker-loading");
+    this.loadingIndicator = this.root.getByRole("status");
     this.errorAlert = this.root.getByRole("alert");
     this.retryButton = this.root.getByRole("button", { name: "Try again" });
   }

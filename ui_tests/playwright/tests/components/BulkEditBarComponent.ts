@@ -14,10 +14,17 @@ export class BulkEditBarComponent extends BaseComponent {
   constructor(page: Page) {
     super(page);
     this.shelfPicker = new ShelfPickerComponent(page);
-    this.root = page.getByTestId("bulk-edit-bar");
-    this.clearButton = page.getByTestId("bulk-edit-clear");
-    this.editButton = page.getByTestId("bulk-edit-open");
-    this.addToShelfButton = page.getByTestId("bulk-add-to-shelf");
+    this.root = page.locator(".bulk-edit-bar");
+    this.clearButton = this.root.getByRole("button", {
+      name: "Clear selection",
+    });
+    this.editButton = this.root.getByRole("button", {
+      name: "Edit",
+      exact: true,
+    });
+    this.addToShelfButton = this.root.getByRole("button", {
+      name: "Add to shelf",
+    });
   }
 
   /** The bar's CSS `position`, which stays `fixed` only if its rule wins. */

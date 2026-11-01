@@ -38,7 +38,7 @@ export class RegisterPage extends AuthFormPage {
     this.logInLink = page.getByRole("link", { name: "Log in" });
     this.form = page.getByTestId("register-form");
     this.passwordFieldError = page
-      .getByTestId("register-password-field")
+      .locator(".auth-field", { has: this.passwordField })
       .getByRole("alert");
     this.closedNotice = page.getByTestId("register-closed");
     this.closedMessage = page.getByText("Registration is closed");

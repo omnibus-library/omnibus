@@ -195,8 +195,10 @@ export class AccountSectionComponent extends BaseComponent {
     await this.saveGoalsButton.click();
   }
 
+  /** A click, not `setChecked`: the box shows the saved set, so it flips only once the save lands. */
   async setFormatHidden(format: string, hidden: boolean): Promise<void> {
-    await this.hiddenFormatToggle(format).setChecked(hidden);
+    const toggle = this.hiddenFormatToggle(format);
+    if ((await toggle.isChecked()) !== hidden) await toggle.click();
   }
 
   /** A plain click, for a box that leaves the list once unhidden. */
@@ -217,11 +219,7 @@ export class AccountSectionComponent extends BaseComponent {
   async stubPasswordChanged(): Promise<void> {
     await this.page.route(accountUrls.changePassword, (route) =>
       route.request().method() === "POST"
-        ? route.fulfill({
-            status: 200,
-            contentType: "application/json",
-            body: "null",
-          })
+        ? route.fulfill({ status: 204, body: "" })
         : route.continue(),
     );
   }

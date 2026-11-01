@@ -7,6 +7,7 @@ import { BaseComponent } from "./BaseComponent";
 /** An admin's "Merge with…" dialog on a book page, and the toast after it. */
 export class MergeDialogComponent extends BaseComponent {
   readonly openButton: Locator;
+  private readonly filesTab: Locator;
   readonly dialog: Locator;
   readonly searchField: Locator;
   readonly resultsHeading: Locator;
@@ -20,6 +21,7 @@ export class MergeDialogComponent extends BaseComponent {
   constructor(page: Page) {
     super(page);
     this.openButton = page.getByTestId("merge-with");
+    this.filesTab = page.getByRole("tab", { name: "Files & Details" });
     this.dialog = page.getByRole("dialog", { name: "Merge with another book" });
     this.searchField = page.getByTestId("merge-search");
     this.resultsHeading = page.getByText("matching title, author or series");
@@ -29,11 +31,13 @@ export class MergeDialogComponent extends BaseComponent {
     this.errorAlert = page.getByRole("alert");
     this.mergedToast = page
       .getByRole("status")
-      .filter({ hasText: "Books merged." });
-    this.undoButton = page.getByTestId("merge-undo");
+      .filter({ hasText: "Books merged" });
+    this.undoButton = this.mergedToast.getByRole("button", { name: "Undo" });
   }
 
+  /** Opens the dialog from the Files & Details tab, which holds its button. */
   async open(): Promise<void> {
+    await this.filesTab.click();
     await this.openButton.click();
   }
 

@@ -105,11 +105,12 @@ export class UsersSectionComponent extends BaseComponent {
     await this.deleteDialog.click({ position: { x: 5, y: 5 } });
   }
 
+  // `check()` and `uncheck()` re-read the state straight after the click, which
+  // the switch only flips once the save is under way.
   async allowRegistration(): Promise<void> {
-    await this.registrationSwitch.check();
+    await this.registrationSwitch.click();
   }
 
-  // `uncheck()` re-reads the state after its click, racing the forced 500's revert.
   async blockRegistration(): Promise<void> {
     await this.registrationSwitch.click();
   }

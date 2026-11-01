@@ -490,11 +490,9 @@ test.describe("metadata section", () => {
     });
 
     await test.step("save the order", async () => {
-      const { request } = await expectMutation(
-        settings.saveMetadataPrecedence(),
-        () => metadata.save(),
+      await expectMutation(settings.saveMetadataPrecedence("ebook"), () =>
+        metadata.save(),
       );
-      expect(request.postDataJSON().library).toBe("ebook");
     });
 
     await test.step("check the order reads as saved once", async () => {

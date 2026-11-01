@@ -148,7 +148,7 @@ export class KoreaderCardComponent extends BaseComponent {
 
   /** The methods of every password generation sent from now on. */
   recordGenerates(): string[] {
-    return recordRequests(this.page, accountUrls.kosyncGenerate);
+    return recordRequests(this.page, accountUrls.kosyncGenerate, "POST");
   }
 
   async openSetupSteps(): Promise<void> {
@@ -165,17 +165,20 @@ export class KoreaderCardComponent extends BaseComponent {
 
   /** Answers the device list with `devices`, whatever the shared admin really holds. */
   async stubDevices(devices: KoboDeviceListing[]): Promise<void> {
+    // The list and a create share the address, so only the read is answered.
     await this.page.route(koboUrls.list, (route) =>
-      route.fulfill({
-        status: 200,
-        json: devices.map((device) => ({
-          kind: "koreader",
-          ...device,
-          token: `tok-${device.id}`,
-          created_at: 0,
-          last_seen_at: 0,
-        })),
-      }),
+      route.request().method() !== "GET"
+        ? route.continue()
+        : route.fulfill({
+            status: 200,
+            json: devices.map((device) => ({
+              kind: "koreader",
+              ...device,
+              token: `tok-${device.id}`,
+              created_at: 0,
+              last_seen_at: 0,
+            })),
+          }),
     );
   }
 }

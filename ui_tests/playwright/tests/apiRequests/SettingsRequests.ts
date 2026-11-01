@@ -5,10 +5,10 @@ import { BaseRequests } from "./BaseRequests";
 /** The library settings, which are server-wide; needs an admin's context. */
 export class SettingsRequests extends BaseRequests {
   getSettings(): Promise<APIResponse> {
-    return this.get("/api/rpc/settings");
+    return this.get("/api/settings");
   }
 
   postSettings(settings: ServerLibrary): Promise<APIResponse> {
-    return this.post("/api/rpc/settings", { settings });
+    return this.post("/api/settings", settings);
   }
 }

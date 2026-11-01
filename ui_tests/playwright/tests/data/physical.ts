@@ -9,14 +9,14 @@ export type PhysicalCopy = {
 /** A copy a test filed, told apart from every other copy by its note. */
 export type FiledCopy = { bookUuid: string; note: string };
 
-/** A copy as `POST /api/rpc/physical/copies` lists it. */
+/** A copy as `GET /api/physical/:uuid/copies` lists it. */
 export type CopyRow = PhysicalCopy & {
   isbn: string | null;
   added_by_user_id: number | null;
   checked_in_at: number;
 };
 
-/** A wishlist entry as `POST /api/rpc/physical/wishlist/get` answers. */
+/** A wishlist entry as `GET /api/physical/:uuid/wishlist` answers. */
 export type WishlistRow = {
   id: number;
   user_id: number;

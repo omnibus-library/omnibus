@@ -4,6 +4,7 @@ import type { Book, SeriesStack } from "../../api";
 import { CoverImage } from "../../components/Cover/CoverImage";
 import { StackGlyph } from "../../components/Glyphs/Glyphs";
 import { AddBooksTile } from "../../components/ShelfTile/ShelfTile";
+import { bookSlug } from "./libraryView";
 import { play, type Rects, snapshot } from "./seriesFlip";
 import {
   bandStyle,
@@ -34,6 +35,7 @@ function Tile({
     // biome-ignore lint/a11y/useSemanticElements: the Atrium grid styles divs; list elements would bring the browser's list margins and padding
     <div
       role="listitem"
+      data-testid={`ebook-tile-${bookSlug(book.filename)}`}
       data-flip-key={book.uuid}
       data-flip-from={volume && `stack-${volume.lead}`}
       data-flip-deck={volume?.deck}
@@ -273,6 +275,7 @@ export function BookGrid({ books, stacks, onAddTile }: BookGridProps) {
       ref={grid}
       className="lib-grid"
       role="list"
+      data-testid="lib-grid"
       onKeyDown={(e) => {
         if (e.key === "Escape" && openLead !== null) {
           e.preventDefault();

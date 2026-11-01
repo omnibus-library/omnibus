@@ -8,7 +8,7 @@ export const CLEANUP_KINDS: CleanupKind[] = [
   "book_title",
 ];
 
-/** A pending suggestion as `POST /api/rpc/cleanup/queue` lists it. */
+/** A pending suggestion as `GET /api/admin/cleanup/{kind}/queue` lists it. */
 export type SuggestionCard = {
   id: number;
   kind: string;

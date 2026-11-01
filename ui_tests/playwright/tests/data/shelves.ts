@@ -29,7 +29,7 @@ export function authorRule(author: string): ShelfRule {
   return { field: "author", op: "is", value: author };
 }
 
-/** The `req` body `POST /api/rpc/shelves/create` takes. */
+/** The body `POST /api/shelves` takes. */
 export type NewShelf = {
   name: string;
   kind: "manual" | "smart";
@@ -62,27 +62,12 @@ export function buildShelf(
   };
 }
 
-/** The `req` body `POST /api/rpc/shelves/update` takes; `null` leaves a field be. */
-export type ShelfUpdate = {
-  name: string | null;
-  description: string | null;
-  visibility: "private" | "public" | null;
-  match_mode: "all" | "any" | null;
-  rules: ShelfRule[] | null;
+/** The body of `PATCH /api/shelves/{id}`; an absent field stays as it is. */
+export type ShelfUpdate = Partial<{
+  name: string;
+  description: string;
+  visibility: "private" | "public";
+  match_mode: "all" | "any";
+  rules: ShelfRule[];
   sync_to_kobo: boolean;
-};
-
-/** An update that changes nothing until `overrides` say otherwise. */
-export function buildShelfUpdate(
-  overrides: Partial<ShelfUpdate> = {},
-): ShelfUpdate {
-  return {
-    name: null,
-    description: null,
-    visibility: null,
-    match_mode: null,
-    rules: null,
-    sync_to_kobo: false,
-    ...overrides,
-  };
-}
+}>;

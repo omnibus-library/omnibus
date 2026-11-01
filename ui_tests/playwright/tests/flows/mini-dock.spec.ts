@@ -90,7 +90,7 @@ test.describe("mini-dock", () => {
       await listenPage.waitUntilPlayerReady();
     });
 
-    // The full player route renders without ScreenLayout, so no dock there.
+    // The full player route renders outside the app shell, so no dock there.
     await test.step("check the full player shows no dock", async () => {
       await expect(miniDock.root).toHaveCount(0);
     });
@@ -113,8 +113,10 @@ test.describe("mini-dock", () => {
     const uuid = await fetchBookUuidByTitle(request, MP3_BOOK.title);
     const { miniDock } = libraryPage;
 
-    await test.step("open the audiobook, then browse to the library", async () => {
-      await listenPage.openThenBrowseAway(uuid);
+    // Held, so the two-second book cannot play out while the label is read.
+    await test.step("open the audiobook with its media bytes held, then browse to the library", async () => {
+      await listenPage.holdAudioParts();
+      await listenPage.openThenBrowseAway(uuid, { settle: false });
     });
 
     await test.step("check the dock offers play", async () => {
@@ -122,21 +124,20 @@ test.describe("mini-dock", () => {
       await expect(miniDock.toggleButton).toHaveAttribute("aria-label", "Play");
     });
 
-    // The dock reads the shared `playing` signal, so its label flips without
+    // The dock reads the shared `playing` state, so its label flips without
     // any route change.
-    await test.step("report playback starting", async () => {
-      await listenPage.reportPlaying();
+    await test.step("press the dock's button to play", async () => {
+      await miniDock.toggle();
       await expect(miniDock.toggleButton).toHaveAttribute(
         "aria-label",
         "Pause",
       );
     });
 
-    // The click drives the same OmnibusAudio surface as the full player: it
-    // must exist, and the click must not throw.
-    await test.step("press the dock's button", async () => {
-      expect(await listenPage.audioShimCanToggle()).toBe(true);
+    // The click drives the same engine as the full player's transport.
+    await test.step("press it again to pause", async () => {
       await miniDock.toggle();
+      await expect(miniDock.toggleButton).toHaveAttribute("aria-label", "Play");
     });
   });
 
@@ -183,7 +184,7 @@ test.describe("mini-dock", () => {
       await expect(miniDock.volumePopover).toHaveClass(/open/);
     });
 
-    // The popover writes through the shared apply_volume seam, so the change
+    // The popover writes through the shared player's volume, so the change
     // reaches the shared `<audio>` element in real time.
     await test.step("set the volume", async () => {
       await miniDock.setVolume(0.3);
@@ -229,7 +230,7 @@ test.describe("mini-dock", () => {
       await expect(miniDock.speedChip).toContainText(`${next.toFixed(1)}×`);
     });
 
-    // The panel writes through the shared apply_rate seam, so the change
+    // The panel writes through the shared player's speed, so the change
     // reaches the shared `<audio>` element's playbackRate in real time.
     await test.step("check the audio plays at the new speed", async () => {
       await expect
@@ -237,7 +238,7 @@ test.describe("mini-dock", () => {
         .toBeCloseTo(next, 2);
     });
 
-    // Both controls share one signal, so the full player shows the same rate.
+    // Both controls share one player, so the full player shows the same rate.
     await test.step("close the popover and expand to the full player", async () => {
       await miniDock.closePopoverFromScrim();
       await expect(miniDock.speedPopover).not.toHaveClass(/open/);
@@ -404,8 +405,10 @@ test.describe("mini-dock", () => {
     const readerUuid = await fetchBookUuidByTitle(request, READER_BOOK.title);
     const { miniDock } = epubReaderPage;
 
-    await test.step("open the audiobook, then browse to the library", async () => {
-      await listenPage.openThenBrowseAway(audiobookUuid);
+    // Held, so the two-second book cannot play out while the label is read.
+    await test.step("open the audiobook with its media bytes held, then browse to the library", async () => {
+      await listenPage.holdAudioParts();
+      await listenPage.openThenBrowseAway(audiobookUuid, { settle: false });
     });
 
     // Every hop is client-side: a native page load would remount `App` and
@@ -426,17 +429,18 @@ test.describe("mini-dock", () => {
     // A dock control works identically here as elsewhere (AC3).
     await test.step("drive the dock's play button", async () => {
       await expect(miniDock.toggleButton).toHaveAttribute("aria-label", "Play");
-      await listenPage.reportPlaying();
+      await miniDock.toggle();
       await expect(miniDock.toggleButton).toHaveAttribute(
         "aria-label",
         "Pause",
       );
       await miniDock.toggle();
+      await expect(miniDock.toggleButton).toHaveAttribute("aria-label", "Play");
     });
 
     // The dock sits flush at the bottom edge and the reader's bottom bar
     // becomes a slim footer pinned directly above it, so the two stack rather
-    // than collide (#988). The footer renders unconditionally in `BookReadPage`.
+    // than collide (#988). The footer renders unconditionally in the reader.
     await test.step("check the footer stacks directly above the dock", async () => {
       const dock = await miniDock.bounds();
       expect(dock.bottom).toBeCloseTo(dock.viewport.height, 0);

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { emptyState, headerCount, hiddenFormatsLabel } from "./libraryView";
+import {
+  bookSlug,
+  emptyState,
+  headerCount,
+  hiddenFormatsLabel,
+} from "./libraryView";
 
 describe("emptyState", () => {
   it.each([
@@ -39,5 +44,13 @@ describe("hiddenFormatsLabel", () => {
 
   it("is null when nothing is hidden", () => {
     expect(hiddenFormatsLabel([])).toBeNull();
+  });
+});
+
+describe("bookSlug", () => {
+  it("drops the folder and extension and dashes each run of other characters", () => {
+    expect(bookSlug("public_domain/Room with a View.epub")).toBe(
+      "room-with-a-view",
+    );
   });
 });

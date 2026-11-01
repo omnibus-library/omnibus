@@ -3,7 +3,7 @@ import { type ExpectMutationOptions, post } from "../utils/api";
 /** The cover endpoints the edit page and the edition picker write to. */
 export const coversUrls = {
   fromUrl: /\/api\/ebooks\/[^/]+\/cover\/from-url(?:\?|$)/,
-  revert: /\/api\/rpc\/ebook\/cover\/delete(?:\?|$)/,
+  revert: /\/api\/ebooks\/[^/]+\/cover(?:\?|$)/,
 };
 
 function fromUrlOf(bookUuid: string): RegExp {
@@ -21,5 +21,9 @@ export const covers = {
     post(fromUrlOf(bookUuid), undefined, 400),
 
   /** Drops the cover override and keeps the field overrides. */
-  revert: (): ExpectMutationOptions => post(coversUrls.revert),
+  revert: (): ExpectMutationOptions => ({
+    method: "DELETE",
+    url: coversUrls.revert,
+    expectedStatus: 200,
+  }),
 };

@@ -38,7 +38,8 @@ export function addBooksState(
   full: FullList,
 ): { ready: boolean; title?: string } | null {
   if (!editable) return null;
-  if (full.ready) return { ready: true };
+  // A stale list would offer a book the add just filed as not yet on the shelf.
+  if (full.ready && !full.refetching) return { ready: true };
   return {
     ready: false,
     title: full.errored

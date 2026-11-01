@@ -2,7 +2,6 @@ import { overrides } from "../contracts/overrides";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/pageFixtures";
 import { failing } from "../utils/api";
-import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
 // Reserved: the saving tests write overrides on this book and revert them
@@ -10,6 +9,8 @@ import { fixturesDir, seedLibrary } from "../utils/seed";
 // (alpha is metadata_edit's).
 const TARGET = FIXTURE_BOOKS.find((b) => b.slug === "standalone-ocean")!;
 const NEW_TAG = "Speculative Fiction";
+// A subject several public-domain fixtures carry, so it is always in the tag cloud.
+const POOL_TAG = "Gothic fiction";
 
 test.describe("inline edit", () => {
   test.describe.configure({ mode: "default" });
@@ -133,12 +134,17 @@ test.describe("inline edit", () => {
       }
     });
 
-    // The dropdown opens on focus with the library-wide author pool.
-    await test.step("check the suggestions show", async () => {
-      await expect(table.cellSuggestions(TARGET.slug, "author")).toBeVisible();
+    // The input offers the library-wide author pool as its native datalist,
+    // leaving out the authors already on the book.
+    await test.step("check the suggestions are offered", async () => {
       await expect(
-        table.suggestionHeading(TARGET.slug, "author", "ADD AUTHOR"),
-      ).toBeVisible();
+        table.suggestion(TARGET.slug, "author", "Grace Hopper"),
+      ).toBeAttached();
+      for (const name of TARGET.authors) {
+        await expect(table.suggestion(TARGET.slug, "author", name)).toHaveCount(
+          0,
+        );
+      }
     });
 
     await test.step("close it with escape", async () => {
@@ -209,7 +215,7 @@ test.describe("inline edit", () => {
     revertOverridesOf,
   }) => {
     const table = libraryPage.table;
-    const grace = /Grace Hopper/;
+    const grace = "Grace Hopper";
     await revertOverridesOf(TARGET.title);
 
     await test.step("search the authors editor for a suggestion", async () => {
@@ -219,11 +225,11 @@ test.describe("inline edit", () => {
       await table.fillCell(TARGET.slug, "author", "Grace");
       await expect(
         table.suggestion(TARGET.slug, "author", grace),
-      ).toBeVisible();
+      ).toBeAttached();
     });
 
-    // Picking commits on `mousedown` with the default prevented, so the input
-    // never blurs and the editor must stay open for more authors.
+    // A datalist pick replaces the input's text without a blur, so the editor
+    // must stay open for more authors.
     await test.step("pick the suggestion", async () => {
       await expectMutation(overrides.save(), () =>
         table.chooseSuggestion(TARGET.slug, "author", grace),
@@ -304,25 +310,15 @@ test.describe("inline edit", () => {
       });
     });
 
-    // The override save materializes a `tags` row, so a page loaded after it
-    // finds the tag in the autocomplete pool.
+    // The pool is the library's tag cloud, so a tag another book carries is
+    // offered while the editor's text matches it.
     test("autocomplete a tag from the pool", async ({
       libraryPage,
-      overridesRequests,
       expectMutation,
       revertOverridesOf,
-      request,
     }) => {
       const table = libraryPage.table;
       await revertOverridesOf(TARGET.title);
-
-      await test.step("give the book the tag through the api", async () => {
-        const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-        const saved = await overridesRequests.postOverrides(uuid, {
-          subjects: [NEW_TAG],
-        });
-        await expect(saved).toBeOK();
-      });
 
       await test.step("open the tags editor", async () => {
         await libraryPage.goto();
@@ -331,29 +327,18 @@ test.describe("inline edit", () => {
         await expect(table.cellInput(TARGET.slug, "tags")).toBeVisible();
       });
 
-      // The dropdown leaves out tags already on the book, so the chip goes first.
-      await test.step("remove the tag from the book", async () => {
-        await expectMutation(overrides.save(), () =>
-          table.removeTag(TARGET.slug, NEW_TAG),
-        );
-      });
-
       await test.step("type a prefix of the tag", async () => {
-        await table.fillCell(TARGET.slug, "tags", "Specul");
-        await expect(table.cellSuggestions(TARGET.slug, "tags")).toBeVisible();
+        await table.fillCell(TARGET.slug, "tags", "Gothic");
         await expect(
-          table.suggestionHeading(TARGET.slug, "tags", "ADD TAG"),
-        ).toBeVisible();
-        await expect(
-          table.suggestion(TARGET.slug, "tags", /Speculative Fiction/),
-        ).toBeVisible();
+          table.suggestion(TARGET.slug, "tags", POOL_TAG),
+        ).toBeAttached();
       });
 
       await test.step("pick the suggestion", async () => {
         await expectMutation(overrides.save(), () =>
-          table.chooseSuggestion(TARGET.slug, "tags", /Speculative Fiction/),
+          table.chooseSuggestion(TARGET.slug, "tags", POOL_TAG),
         );
-        await expect(table.chip(TARGET.slug, "tags", NEW_TAG)).toBeVisible();
+        await expect(table.chip(TARGET.slug, "tags", POOL_TAG)).toBeVisible();
       });
     });
   });

@@ -9,6 +9,6 @@ export class MetadataKeysRequests extends BaseRequests {
     provider: MetadataProvider,
     key: string | null,
   ): Promise<APIResponse> {
-    return this.post(`/api/rpc/${provider}-key`, { key });
+    return this.post(`/api/${provider}-key`, { key });
   }
 }
