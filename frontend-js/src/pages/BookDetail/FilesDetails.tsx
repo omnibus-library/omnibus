@@ -4,6 +4,7 @@ import type { BookDetail } from "../../api";
 import { Button, ButtonLink } from "../../components/Button/Button";
 import { FormatSwitcher } from "../../components/FormatSwitcher/FormatSwitcher";
 import { ImmersiveGlyph, PencilGlyph } from "../../components/Glyphs/Glyphs";
+import { isPlainClick } from "../../plainClick";
 import { usePlayback } from "../../playback/PlaybackProvider";
 import { useCurrentUser } from "../../session";
 import type { BookDialog } from "./BookDialogs";
@@ -101,7 +102,7 @@ function SyncRow({ book }: { book: BookDetail }) {
         to={`/read/${book.uuid}`}
         data-testid="sync-immersive"
         // Loads the audiobook, so the reader opens with it docked.
-        onClick={() => playback.open(book.uuid, null)}
+        onClick={(e) => isPlainClick(e) && playback.open(book.uuid, null)}
       >
         <ImmersiveGlyph size={18} />
         Immersive
