@@ -138,7 +138,7 @@ struct AudioSessionEventTests {
 
     @Test func aCallEndingMidRebuildHandsTheStartBackToTheRebuild() {
         // A call that began during a rebuild's back-off: playing here would
-        // refill the rebuild budget only a listener's tap may refill.
+        // refill the budget of the rebuild still running.
         let pending = PendingStarts(afterInterruption: true)
         let response = pending.response(to: .interruptionEnded(shouldResume: true), isPlaying: false)
         #expect(response == .resume)
@@ -264,5 +264,107 @@ struct AudioSessionEventTests {
         pending.overruleCall()
         #expect(pending == PendingStarts())
         #expect(!pending.togglePauses(isPlaying: false))
+    }
+
+    /// A load a call holds, by each route there: the call arriving mid-load,
+    /// and a resume the call was already holding when it found its book.
+    private var heldLoads: [PendingStarts] {
+        let midLoad = PendingStarts(afterLoad: 1)
+        return [
+            midLoad.settled(
+                by: midLoad.response(to: .interruptionBegan, isPlaying: false),
+                loading: 1, recovering: false, resuming: false
+            ),
+            PendingStarts.opening(load: 1, autoplay: true, heldByCall: true),
+        ]
+    }
+
+    @Test func aHeldLoadThatLandsStartsOnTheNextPress() {
+        for var pending in heldLoads {
+            #expect(pending.togglePauses(isPlaying: false))
+            pending.loadEnded()
+            #expect(pending == PendingStarts(afterInterruption: true))
+            // The press reaches `play()`, which starts the item the load built.
+            #expect(!pending.togglePauses(isPlaying: false))
+            #expect(!pending.startIsPending)
+        }
+    }
+
+    @Test func aHeldLoadThatFailsRetriesOnTheNextPress() {
+        for var pending in heldLoads {
+            pending.loadEnded()
+            // The press reaches `play()`, whose load is the retry; it overrules
+            // the call, so the retry's start is the listener's own.
+            #expect(!pending.togglePauses(isPlaying: false))
+            pending.armResume()
+            #expect(pending == PendingStarts(afterResume: true))
+            #expect(pending.togglePauses(isPlaying: false))
+        }
+    }
+
+    @Test func aCallEndingAfterAHeldLoadEndedStillResumesOnce() {
+        // Nothing is in flight, so `respond` calls `play()`: it starts a load
+        // that landed and retries one that failed. Nothing is left to do it twice.
+        for var pending in heldLoads {
+            pending.loadEnded()
+            let ended = AudioSessionEvent.interruptionEnded(shouldResume: true)
+            let response = pending.response(to: ended, isPlaying: false)
+            #expect(response == .resume)
+            let settled = pending.settled(by: response, loading: nil, recovering: false, resuming: false)
+            #expect(settled == PendingStarts())
+            #expect(settled.response(to: ended, isPlaying: false) == .ignore)
+        }
+    }
+
+    @Test func aCallEndingWithoutResumeOrALostOutputAfterAHeldLoadEndedDropsIt() {
+        for var pending in heldLoads {
+            pending.loadEnded()
+            for event in [AudioSessionEvent.outputLost, .interruptionEnded(shouldResume: false)] {
+                let response = pending.response(to: event, isPlaying: false)
+                #expect(response == .pause)
+                #expect(
+                    pending.settled(by: response, loading: nil, recovering: false, resuming: false)
+                        == PendingStarts()
+                )
+            }
+        }
+    }
+
+    @Test func everyOutcomeThatEndsAStartLeavesTheControlsOnPlay() {
+        let owed = [
+            PendingStarts(afterRecovery: true), PendingStarts(afterLoad: 1),
+            PendingStarts(afterResume: true), PendingStarts(afterInterruption: true, callHoldsLoad: true),
+        ]
+        for pending in owed {
+            #expect(pending.togglePauses(isPlaying: false))
+            // A lost output, whatever is still in flight.
+            let response = pending.response(to: .outputLost, isPlaying: false)
+            #expect(
+                !pending.settled(by: response, loading: 1, recovering: true, resuming: true)
+                    .togglePauses(isPlaying: false)
+            )
+        }
+        // A call's end without a resume takes back what it was holding.
+        for held in heldLoads {
+            let response = held.response(to: .interruptionEnded(shouldResume: false), isPlaying: false)
+            #expect(
+                !held.settled(by: response, loading: 1, recovering: false, resuming: false)
+                    .togglePauses(isPlaying: false)
+            )
+        }
+    }
+
+    @MainActor @Test func aControlRedrawsWhenOnlyAPendingStartChanges() {
+        final class Flag: @unchecked Sendable { var raised = false }
+        let changed = Flag()
+        let player = AudioPlayer.shared
+        withObservationTracking {
+            _ = player.isPlayingOrStarting
+        } onChange: {
+            changed.raised = true
+        }
+        // With no book loaded this moves `pendingStarts` and nothing else.
+        player.play()
+        #expect(changed.raised)
     }
 }

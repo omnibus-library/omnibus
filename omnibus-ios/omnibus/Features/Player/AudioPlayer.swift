@@ -47,6 +47,9 @@ final class AudioPlayer {
     /// resume reopens this file rather than the book's first one.
     private(set) var fileID: Int64?
     private(set) var isPlaying = false
+    /// What a play/pause control draws and does: playing, or a start still owed
+    /// that a press takes back. `isPlaying` alone says whether there is audio.
+    var isPlayingOrStarting: Bool { pendingStarts.togglePauses(isPlaying: isPlaying) }
     /// Whether a load is still awaiting its item and opening position.
     var isLoading: Bool { loadingGeneration != nil }
     /// The generation of the load in flight. Not a flag: a load superseded by
@@ -301,6 +304,8 @@ final class AudioPlayer {
         error = nil
         position = 0
         duration = 0
+        // The car and the lock screen hear of the start now, not when it lands.
+        updateNowPlaying()
 
         // The default file, the offer's file match and `isDefaultFileSelected`
         // all read the book's files, which a resume point's mirror book lacks.
@@ -383,12 +388,15 @@ final class AudioPlayer {
             finishLoad(generation)
             if pendingStarts.afterLoad == generation { pendingStarts.afterLoad = nil }
             self.error = (error as? APIError)?.errorDescription ?? error.localizedDescription
+            updateNowPlaying()
         }
     }
 
     /// Mark load `generation` done, unless a newer load has taken over.
     private func finishLoad(_ generation: Int) {
-        if loadingGeneration == generation { loadingGeneration = nil }
+        guard loadingGeneration == generation else { return }
+        loadingGeneration = nil
+        pendingStarts.loadEnded()
     }
 
     /// `book` with its files, from the replica or the server; bare when
@@ -693,6 +701,7 @@ final class AudioPlayer {
         // Nothing to start yet: the load makes the start once it lands.
         if let loadingGeneration {
             pendingStarts.afterLoad = loadingGeneration
+            updateNowPlaying()
             return
         }
         guard let player else {
@@ -703,12 +712,14 @@ final class AudioPlayer {
         }
         // Setting a rate on a failed item does nothing at all — the silent
         // dead end #2408 is named for. A manual tap is also the listener
-        // telling us to try again, so it refills the budget an automatic run
-        // may have spent before giving up.
+        // telling us to try again, and so is a call ending on a start it held,
+        // so both refill the budget an automatic run may have spent before
+        // giving up.
         if player.currentItem?.status == .failed {
             health.reset()
             error = nil
             pendingStarts.afterRecovery = true
+            updateNowPlaying()
             recoverFromFailure(attempt: 1)
             return
         }
@@ -723,7 +734,7 @@ final class AudioPlayer {
     /// which the rebuilt item can itself reach `.failed`, and `play()` would
     /// then reset the budget and start recovery over at attempt 1 forever.
     /// Automatic retries must stay inside `PlaybackHealth`'s budget; only a
-    /// listener's own tap refills it.
+    /// play the listener asked for refills it.
     private func startPlayback(on player: AVPlayer) {
         player.rate = Float(rate)
         isPlaying = true
@@ -773,8 +784,14 @@ final class AudioPlayer {
 
     func toggle() {
         Haptics.tap()
-        // `play()` mid-load would re-arm the start the listener means to cancel.
-        pendingStarts.togglePauses(isPlaying: isPlaying) ? pause() : play()
+        togglePlayback(start: play)
+    }
+
+    /// A press of play/pause, in the app or from outside it, which starts the
+    /// way its caller does. Mid-load it pauses: `play()` would re-arm the start
+    /// the listener means to cancel.
+    private func togglePlayback(start: @MainActor () -> Void) {
+        isPlayingOrStarting ? pause() : start()
     }
 
     func seek(to seconds: Double) async {
@@ -1360,7 +1377,9 @@ final class AudioPlayer {
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
         // Stated rather than left to the system to infer: CarPlay's Now Playing
         // stayed on its play button through playback no remote command started.
-        MPNowPlayingInfoCenter.default().playbackState = isPlaying ? .playing : .paused
+        // A start still owed reads as playing, as on the app's own controls; the
+        // rate above stays real, or the system runs the scrubber on with no audio.
+        MPNowPlayingInfoCenter.default().playbackState = isPlayingOrStarting ? .playing : .paused
     }
 
     /// The book's artwork; not `isFinal` while it is the plate standing in
@@ -1455,11 +1474,7 @@ final class AudioPlayer {
         center.togglePlayPauseCommand.addTarget { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
-                // A start still owed — a load, a rebuild, a resume finding its
-                // book, or one a call holds — counts as playing, so the toggle
-                // takes it back.
-                self.pendingStarts.togglePauses(isPlaying: self.isPlaying)
-                    ? self.pause() : self.remotePlay()
+                self.togglePlayback(start: self.remotePlay)
             }
             return .success
         }
@@ -1532,6 +1547,7 @@ final class AudioPlayer {
     private func loadOwed(retrying failed: LoadRequest?) {
         // A second press re-arms a resume a pause took back, without a second load.
         pendingStarts.armResume()
+        updateNowPlaying()
         guard !isFindingLoad else { return }
         isFindingLoad = true
         Task {
@@ -1540,6 +1556,7 @@ final class AudioPlayer {
             // Something else loaded, or the book was closed: the starts are its.
             guard player == nil, loadingGeneration == nil, book?.uuid == failed?.book.uuid else {
                 pendingStarts.afterResume = false
+                updateNowPlaying()
                 return
             }
             guard pendingStarts.resumeIsOwed, let target else {
@@ -1612,7 +1629,7 @@ final class AudioPlayer {
         if response == .resume, (try? AVAudioSession.sharedInstance().setActive(true)) == nil {
             response = .pause
         }
-        let stopping = isPlaying || pendingStarts.startIsPending
+        let stopping = isPlayingOrStarting
         // Settled before the transport moves: `play()` may arm a rebuild.
         pendingStarts = pendingStarts.settled(
             by: response, loading: loadingGeneration, recovering: recoveryTask != nil,
@@ -1623,9 +1640,11 @@ final class AudioPlayer {
             if stopping { stopTransport() }
         case .resume:
             // A load, rebuild or resume in flight has no item to play yet, so
-            // `settled` handed it the start. Calling `play()` instead would
-            // refill the rebuild budget only a listener's tap may refill.
-            if !pendingStarts.startIsPending { play() }
+            // `settled` handed it the start, and `play()` would refill that
+            // rebuild's budget. With nothing in flight the start is `play()`'s,
+            // and its retry of a load or item that failed under the call is
+            // meant: the listener asked for this book before the call.
+            if pendingStarts.startIsPending { updateNowPlaying() } else { play() }
         case .ignore:
             break
         }
