@@ -35,17 +35,6 @@ struct WishlistSectionTests {
         #expect(WishlistCopy.sourceLabel(.search) == "a title search")
     }
 
-    @Test("states how long it has been tracked, and what to do about it")
-    func trackingLineReadsAsOneSentence() {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "UTC")!
-        let line = WishlistCopy.trackingLine(
-            since: 1_791_000_000, now: Date(timeIntervalSince1970: 1_791_000_000)
-        )
-        #expect(line.hasPrefix("Tracking since "))
-        #expect(line.hasSuffix(". Check it in when you find a copy."))
-    }
-
     @Test("a book with files is told it keeps them")
     func confirmMessageReassuresWhenFilesRemain() {
         let message = WishlistCopy.confirmMessage(hasFiles: true)
