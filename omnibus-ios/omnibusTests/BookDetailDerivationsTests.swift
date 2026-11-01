@@ -983,3 +983,43 @@ private func bookmark(position: String, title: String? = nil) -> Bookmark {
     let files = [BookFileInfo(id: 1, format: "m4b", filename: "a.m4b", ordinal: 0)]
     #expect(BookExportCopy.audioMeta(files: files) == "M4B · opens the share sheet")
 }
+
+// MARK: - Bookmarks and the audiobook export
+
+@Test func aBookmarkPositionThatCantBeSecondsIsNeverTreatedAsThem() {
+    func bookmark(_ position: String) -> Bookmark {
+        Bookmark(id: 1, bookUUID: "b", position: position, title: title, clientID: nil, createdAt: 100_000)
+    }
+    #expect(BookmarkCopy.listeningSeconds(bookmark("4320")) == 4320)
+    // Each of these parses as a Double, and three of them trap in `Int64()`.
+    for position in ["nan", "inf", "-inf", "1e30", "-5"] {
+        #expect(BookmarkCopy.listeningSeconds(bookmark(position)) == nil)
+        #expect(BookmarkCopy.name(bookmark(position)) == "Saved position")
+    }
+    #expect(BookmarkCopy.listeningSeconds(bookmark("epubcfi(/6/8!/4/2)")) == nil)
+    #expect(BookmarkCopy.name(bookmark("4320")).hasPrefix("Listening"))
+}
+
+@Test func aMultiPartAudiobookExportsEveryPart() throws {
+    func manifest(_ json: String) throws -> AudiobookManifest {
+        try JSONDecoder().decode(AudiobookManifest.self, from: Data(json.utf8))
+    }
+    let part = { (ordinal: Int) in
+        #"{"ordinal":\#(ordinal),"url":"/p\#(ordinal)","duration_seconds":60,"mime":"audio/mpeg"}"#
+    }
+    let two = try manifest(
+        #"{"mode":"direct","total_duration_seconds":120,"parts":[\#(part(0)),\#(part(1))]}"#
+    )
+    #expect(
+        BookExportCopy.audioPaths(uuid: "u", manifest: two)
+            == ["/api/audiobooks/u/download?part=0", "/api/audiobooks/u/download?part=1"]
+    )
+    let one = try manifest(#"{"mode":"direct","total_duration_seconds":60,"parts":[\#(part(0))]}"#)
+    #expect(BookExportCopy.audioPaths(uuid: "u", manifest: one) == ["/api/audiobooks/u/download"])
+    let streamed = try manifest(#"{"mode":"hls","playlist_url":"/m.m3u8"}"#)
+    #expect(BookExportCopy.audioPaths(uuid: "u", manifest: streamed) == ["/api/audiobooks/u/download"])
+    #expect(
+        BookExportCopy.fileName(title: "Dracula", suggested: "a.mp3", fallbackExtension: "m4b", part: 2)
+            == "Dracula - part 02.mp3"
+    )
+}

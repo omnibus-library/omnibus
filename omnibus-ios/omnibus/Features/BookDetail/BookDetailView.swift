@@ -321,12 +321,18 @@ struct BookDetailView: View {
     private func openPickedBookmark() {
         guard let bookmark = pickedBookmark, let book = model.book else { return }
         pickedBookmark = nil
-        if let seconds = Double(bookmark.position) {
+        if let seconds = BookmarkCopy.listeningSeconds(bookmark) {
+            guard DownloadManager.shared.canOpen(book, kind: .audio) else {
+                Presentation.shared.openPlayer(book)
+                return
+            }
+            // Opened after: the player loads on appearing, and two loads at once
+            // tear each other down and lose the seek. This way it reuses this one.
             Task {
                 await player.load(book: book)
                 await player.seek(to: seconds)
+                Presentation.shared.openPlayer(book)
             }
-            Presentation.shared.openPlayer(book)
         } else {
             ReaderBridge.shared.pendingCFI = bookmark.position
             read(book)

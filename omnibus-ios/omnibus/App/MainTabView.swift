@@ -182,13 +182,13 @@ struct MainTabView: View {
                 dismissButton: .default(Text("OK"))
             )
         }
-        #if DEBUG
-        // `initial`: a link that arrived during launch is waiting when this mounts.
         .onChange(of: Presentation.shared.requestedTab) { _, tab in
             guard let tab else { return }
             Presentation.shared.requestedTab = nil
             selection = tab
         }
+        #if DEBUG
+        // `initial`: a link that arrived during launch is waiting when this mounts.
         .onChange(of: DebugScreenLink.shared.pending, initial: true) { _, route in
             guard let route else { return }
             DebugScreenLink.shared.pending = nil
