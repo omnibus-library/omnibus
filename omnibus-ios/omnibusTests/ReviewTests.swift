@@ -5,6 +5,7 @@
 //  readers, and the household summary's bars.
 
 import Foundation
+import SwiftUI
 import Testing
 
 @testable import omnibus
@@ -735,5 +736,33 @@ struct ReviewSheetTests {
     func quoting() {
         #expect(ReviewMarkup.quoted("A line", above: "Mine") == "> A line\n\nMine")
         #expect(ReviewMarkup.quoted("One\nTwo", above: "") == "> One\n> Two\n\n")
+    }
+}
+
+@Suite("Star pop")
+struct StarPopTests {
+    /// Where a fast drag catches a pop when it starts the next one.
+    private let midFlight = StarPop(scale: 1.2, turn: -5.5, lift: -7)
+
+    private func expectStaysAStar(isPopping: Bool, wave: Bool, delay: Double) {
+        let timeline = KeyframeTimeline(initialValue: midFlight) {
+            StarPop.keyframes(isPopping: isPopping, wave: wave, delay: delay)
+        }
+        for step in 0...400 {
+            let pop = timeline.value(progress: Double(step) / 400)
+            #expect(pop.scale >= 0.99 && pop.scale <= 1.23)
+            #expect(pop.turn >= -6.5 && pop.turn <= 0.5)
+            #expect(pop.lift >= -9.5 && pop.lift <= 0.5)
+        }
+    }
+
+    @Test("a pop restarted mid-flight stays the size of a star")
+    func restartedPopStaysBounded() {
+        expectStaysAStar(isPopping: true, wave: false, delay: 0)
+    }
+
+    @Test("the row's wave restarted mid-flight stays the size of a star")
+    func restartedWaveStaysBounded() {
+        expectStaysAStar(isPopping: true, wave: true, delay: 0.22)
     }
 }
