@@ -535,25 +535,9 @@ struct BookStage: View {
 
     @ViewBuilder
     private var place: some View {
-        if model.isWishlistOnly {
-            if let entry = model.wishlistEntry {
-                line(WishlistCopy.trackingLine(since: entry.addedAt))
-                    .padding(.top, 14)
-            }
-        } else if model.hasFile {
-            switch model.readStatus {
-            case .reading:
-                reading
-            case .unread:
-                line(DetailRead.runtimeLine(
-                    hasEbook: book.hasEbook, printPages: book.printPages,
-                    hasAudiobook: book.hasAudiobook, audioDuration: model.audioDuration
-                ))
-                .padding(.top, 14)
-            case .finished:
-                EmptyView()
-            }
-            if !isOnline { offlineNote }
+        if model.hasFile {
+            if model.readStatus == .reading { reading }
+            if !isOnline, !holdsCopy { offlineNote }
         }
     }
 
@@ -614,7 +598,7 @@ struct BookStage: View {
         HStack(spacing: 7) {
             Image(systemName: "wifi.slash")
                 .font(.system(size: 13, weight: .medium))
-            Text(holdsCopy ? "Offline. Reading your downloaded copy." : "Offline. This book isn't downloaded.")
+            Text("Offline. This book isn't downloaded.")
                 .font(.ui(14))
         }
         .foregroundStyle(palette.ink1Color)

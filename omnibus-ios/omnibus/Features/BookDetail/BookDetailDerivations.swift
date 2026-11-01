@@ -221,25 +221,6 @@ enum DetailRead {
         }
     }
 
-    /// `Ebook · 180 pages · Audiobook · 4 h 49 m`, for a book not yet begun.
-    /// A format's length is left out when the record doesn't know it.
-    static func runtimeLine(
-        hasEbook: Bool, printPages: Int64?, hasAudiobook: Bool, audioDuration: Double?
-    ) -> String {
-        var parts: [String] = []
-        if hasEbook {
-            parts.append("Ebook")
-            if let printPages, printPages > 0 { parts.append("\(printPages) pages") }
-        }
-        if hasAudiobook {
-            parts.append("Audiobook")
-            if let audioDuration, audioDuration > 0 {
-                parts.append(DetailFormat.duration(Int64(audioDuration)))
-            }
-        }
-        return parts.joined(separator: " · ")
-    }
-
     /// The bar's flag: the chapter once it is known, the listening position or
     /// the percent otherwise.
     static func flagLabel(chapter: Int64?, audioSeconds: Double?, percent: Int) -> String {
