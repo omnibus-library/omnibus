@@ -152,7 +152,9 @@ start_react_preview() {
     (
         cd frontend-js &&
             pnpm install --frozen-lockfile --prefer-offline >/dev/null &&
-            pnpm exec vite build --base=/ --outDir "$scratch/react" --emptyOutDir
+            # A cached node_modules lets install skip `prepare`, which generates the API client.
+            pnpm run generate &&
+            OMNIBUS_VERSION=v0.0.0 pnpm exec vite build --base=/ --outDir "$scratch/react" --emptyOutDir
     ) >"$scratch/react.log" 2>&1 || {
         echo "$label: the React build failed — end of its log:" >&2
         tail -n 30 "$scratch/react.log" >&2

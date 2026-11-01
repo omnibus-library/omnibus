@@ -256,8 +256,11 @@ jobs:
             frontend-js-node-modules-${{ runner.os }}-
 
       # Built at base `/`: the suite drives the React client at the origin's root.
+      # The API client is generated explicitly: a cached node_modules lets
+      # `install` skip the `prepare` script that would otherwise do it.
+      # OMNIBUS_VERSION is the build's version line, which the user menu spec reads.
       - name: Build React client
-        run: nix develop .#e2e --command bash -c 'set -euo pipefail; cd frontend-js && pnpm install --frozen-lockfile && pnpm exec vite build --base=/'
+        run: nix develop .#e2e --command bash -c 'set -euo pipefail; cd frontend-js && pnpm install --frozen-lockfile && pnpm run generate && OMNIBUS_VERSION=v0.0.0 pnpm exec vite build --base=/'
 
       # Backgrounded with `nohup ... &` + `disown` so the server survives the
       # step's shell exit and the next step can poll it. `vite preview` serves
