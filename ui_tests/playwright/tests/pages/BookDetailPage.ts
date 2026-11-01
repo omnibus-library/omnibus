@@ -88,6 +88,7 @@ export class BookDetailPage extends BasePage {
   readonly listenButton: Locator;
   readonly moreActionsButton: Locator;
   readonly immersiveReadButton: Locator;
+  readonly syncImmersiveLink: Locator;
   readonly noFilesMessage: Locator;
   readonly checkInWhenAcquiredButton: Locator;
   readonly physicalPill: Locator;
@@ -163,6 +164,7 @@ export class BookDetailPage extends BasePage {
     this.immersiveReadButton = page.getByRole("menuitem", {
       name: "Immersive",
     });
+    this.syncImmersiveLink = page.getByTestId("sync-immersive");
     this.noFilesMessage = page.getByTestId("no-files-disclaimer");
     this.checkInWhenAcquiredButton = page.getByRole("link", {
       name: "Check in when acquired",
@@ -290,6 +292,12 @@ export class BookDetailPage extends BasePage {
   async readImmersively(): Promise<void> {
     await this.openMoreActions();
     await this.immersiveReadButton.click();
+  }
+
+  /** Opens the reader with the audiobook docked, from the Files & Details tab's sync row. */
+  async readImmersivelyFromFiles(): Promise<void> {
+    await this.openTab("Files & Details");
+    await this.syncImmersiveLink.click();
   }
 
   /** Opens the comic pager through the CBZ's Start reading action. */
