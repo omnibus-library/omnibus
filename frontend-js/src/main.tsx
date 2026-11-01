@@ -7,8 +7,10 @@ import { RouterProvider } from "react-router";
 import { AtriumRoot } from "./components/Theme/AtriumRoot";
 import { watchImageLoads } from "./imageWatch";
 import { router } from "./router";
+import { reloadOnStaleChunk } from "./staleChunk";
 
 watchImageLoads();
+reloadOnStaleChunk(window, sessionStorage, () => window.location.reload());
 
 // No retries: a failed fetch shows its error at once.
 const queryClient = new QueryClient({
