@@ -4,7 +4,8 @@
 //  CarPlay's templates can't be read back from a test, so these pin the
 //  decisions they are built from: the speed the button steps to, which
 //  chapters the list opens on, a Continue row's text, the Library list's
-//  paging and re-reads, Now Playing's buttons, and the copy of the sheets and alerts.
+//  paging and re-reads, when a list redraws, whose rows the lists hold, Now
+//  Playing's buttons, and the copy of the sheets and alerts.
 
 import Testing
 
@@ -109,20 +110,102 @@ struct CarPlayContentTests {
         #expect(CarPlayContent.showsAtOnce([book("a")], isFresh: true))
     }
 
-    @Test func libraryTabRereadsOnAppearOnlyWhenItHoldsNothingAndNothingIsLoading() {
-        #expect(CarPlayContent.rereadsLibrary(shown: nil, isReading: false))
-        #expect(CarPlayContent.rereadsLibrary(shown: [], isReading: false))
-        // A list on screen is only repainted: a re-read redraws it from its top.
-        #expect(!CarPlayContent.rereadsLibrary(shown: [book("a")], isReading: false))
-        #expect(!CarPlayContent.rereadsLibrary(shown: nil, isReading: true))
-        #expect(!CarPlayContent.rereadsLibrary(shown: [], isReading: true))
+    @Test func listRereadsOnlyWhenItHoldsNothingAndNothingIsLoading() {
+        #expect(CarPlayContent.rereads(shown: nil as [Book]?, isReading: false))
+        #expect(CarPlayContent.rereads(shown: [] as [Book], isReading: false))
+        // A list on screen keeps its rows: a Library re-read pages through all of it.
+        #expect(!CarPlayContent.rereads(shown: [book("a")], isReading: false))
+        #expect(!CarPlayContent.rereads(shown: nil as [Book]?, isReading: true))
+        #expect(!CarPlayContent.rereads(shown: [] as [Book], isReading: true))
     }
 
-    @Test func carAccountIsAnotherOneForAnotherUserOrAnotherServer() {
+    @Test func libraryPassKeepsTheRowsItHasNotReachedSoAnUnchangedListNeverChanges() {
+        let shown = ["a", "b", "c", "d", "e", "f"].map(book)
+        let uuids = shown.map(\.uuid)
+        // Three pages of two, each answer as the pass has it so far.
+        for read in 1...3 {
+            let rows = CarPlayContent.libraryRows(read: Array(shown.prefix(read * 2)), shown: shown)
+            #expect(rows.map(\.uuid) == uuids)
+            #expect(!CarPlayContent.updatesSections(shown: uuids, next: rows.map(\.uuid), isNewMessage: false))
+        }
+    }
+
+    @Test func libraryPassPutsANewBookAheadOfTheRowsItHasNotReached() {
+        let rows = CarPlayContent.libraryRows(read: [book("new"), book("a")], shown: ["a", "b", "c"].map(book))
+        #expect(rows.map(\.uuid) == ["new", "a", "b", "c"])
+    }
+
+    @Test func libraryPassWithNothingOnScreenIsJustWhatItRead() {
+        #expect(CarPlayContent.libraryRows(read: [book("a")], shown: nil).map(\.uuid) == ["a"])
+    }
+
+    @Test func listUpdatesWhenItsRowsOrTheirOrderChange() {
+        let shown = ["a", "b"]
+        #expect(CarPlayContent.updatesSections(shown: shown, next: ["b", "a"], isNewMessage: false))
+        #expect(CarPlayContent.updatesSections(shown: shown, next: ["a", "b", "c"], isNewMessage: false))
+        #expect(CarPlayContent.updatesSections(shown: shown, next: ["a"], isNewMessage: false))
+        #expect(CarPlayContent.updatesSections(shown: shown, next: [], isNewMessage: false))
+        #expect(CarPlayContent.updatesSections(shown: [], next: shown, isNewMessage: false))
+    }
+
+    @Test func listKeepsItsPlaceWhenItsRowsAreTheSame() {
+        #expect(!CarPlayContent.updatesSections(shown: ["a", "b"], next: ["a", "b"], isNewMessage: false))
+        // A message behind rows isn't on screen.
+        #expect(!CarPlayContent.updatesSections(shown: ["a", "b"], next: ["a", "b"], isNewMessage: true))
+        #expect(!CarPlayContent.updatesSections(shown: [], next: [], isNewMessage: false))
+    }
+
+    @Test func emptyListUpdatesToDrawANewMessage() {
+        #expect(CarPlayContent.updatesSections(shown: [], next: [], isNewMessage: true))
+    }
+
+    @Test func accountForgetsNothingWhenTheSameSessionLearnsItsUserID() {
+        let unknown = CarPlayContent.Account(server: "https://a.example", userID: nil)
+        let known = CarPlayContent.Account(server: "https://a.example", userID: 1)
+        #expect(CarPlayContent.sameAccount(held: unknown, signedIn: known) == known)
+        #expect(CarPlayContent.sameAccount(held: known, signedIn: known) == known)
+        #expect(CarPlayContent.sameAccount(held: unknown, signedIn: unknown) == unknown)
+    }
+
+    @Test func accountKeepsTheIDItKnowsWhenTheCachedUserGoesAway() {
+        // Saving a Kindle email deletes the cached `me`.
+        let unknown = CarPlayContent.Account(server: "https://a.example", userID: nil)
+        let known = CarPlayContent.Account(server: "https://a.example", userID: 1)
+        let held = CarPlayContent.sameAccount(held: known, signedIn: unknown)
+        #expect(held == known)
+        // So another user after that still reads as another user.
+        let other = CarPlayContent.Account(server: "https://a.example", userID: 2)
+        #expect(CarPlayContent.sameAccount(held: held, signedIn: other) == nil)
+    }
+
+    @Test func accountIsForgottenForAnotherKnownUserOrAnotherServer() {
         let account = CarPlayContent.Account(server: "https://a.example", userID: 1)
-        #expect(account == CarPlayContent.Account(server: "https://a.example", userID: 1))
-        #expect(account != CarPlayContent.Account(server: "https://a.example", userID: 2))
-        #expect(account != CarPlayContent.Account(server: "https://b.example", userID: 1))
+        #expect(
+            CarPlayContent.sameAccount(
+                held: account, signedIn: .init(server: "https://a.example", userID: 2)
+            ) == nil
+        )
+        #expect(
+            CarPlayContent.sameAccount(
+                held: account, signedIn: .init(server: "https://b.example", userID: 1)
+            ) == nil
+        )
+        #expect(
+            CarPlayContent.sameAccount(
+                held: .init(server: "https://a.example", userID: nil),
+                signedIn: .init(server: "https://b.example", userID: nil)
+            ) == nil
+        )
+    }
+
+    @Test func accountHeldByNoOneIsNeverTheSame() {
+        let account = CarPlayContent.Account(server: "https://a.example", userID: 1)
+        #expect(CarPlayContent.sameAccount(held: nil, signedIn: account) == nil)
+    }
+
+    @Test func failedReadDoesNotClaimAListIsEmpty() {
+        #expect(CarPlayContent.readFailed != CarPlayContent.nothingInProgress)
+        #expect(CarPlayContent.readFailed != CarPlayContent.noAudiobooks)
     }
 
     @Test func loadFailureAlertSaysWhyThenFallsBackToAShortTitle() {

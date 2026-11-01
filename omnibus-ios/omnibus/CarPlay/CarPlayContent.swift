@@ -2,9 +2,9 @@
 //  What the CarPlay screens say and offer, as plain values the templates are built from.
 //
 //  A CarPlay template can't be inspected from a test, so every decision about
-//  what the car shows — a row's text, which chapters the list holds, the speed
-//  the button steps to, which buttons Now Playing gets, the copy of an offer —
-//  lives here as a pure function. The files that import CarPlay only translate
+//  what the car shows — a row's text, whether a list redraws, which chapters
+//  the list holds, the speed the button steps to, which buttons Now Playing
+//  gets, the copy of an offer — lives here as a pure function. The files that import CarPlay only translate
 //  these into templates.
 
 import Foundation
@@ -58,17 +58,42 @@ enum CarPlayContent {
         isFresh || !books.isEmpty
     }
 
-    /// Whether the Library tab re-reads as it appears, rather than repainting
-    /// the rows it holds: only a list with nothing on it, and nothing loading.
-    static func rereadsLibrary(shown: [Book]?, isReading: Bool) -> Bool {
+    /// The Library list while a pass reads: what it has so far, then the rows
+    /// it hasn't reached. Without them a re-read would shrink a long list to
+    /// one page and grow it back, an update each way, for nothing that changed.
+    static func libraryRows(read: [Book], shown: [Book]?) -> [Book] {
+        appending(shown ?? [], to: read)
+    }
+
+    /// Whether a list reads again with nothing new to prompt it, rather than
+    /// keeping the rows it holds: only one with nothing on it, and nothing loading.
+    static func rereads<Row>(shown: [Row]?, isReading: Bool) -> Bool {
         !isReading && (shown?.isEmpty ?? true)
+    }
+
+    /// Whether a list takes an `updateSections`, which sends it back to its top
+    /// and can cost a tapped row its spinner: when which rows it holds, or
+    /// their order, changed, or when an empty list has a new message to draw.
+    static func updatesSections(shown: [String], next: [String], isNewMessage: Bool) -> Bool {
+        shown != next || (next.isEmpty && isNewMessage)
     }
 
     /// Who the car's lists belong to. Another account, or the same id on
     /// another server, never sees the rows read for this one.
     struct Account: Equatable {
         var server: String
+        /// `nil` while no `me` is cached: a token can outlive it.
         var userID: Int64?
+    }
+
+    /// `held` with what `signedIn` adds to it, or `nil` when `signedIn` is
+    /// someone else and the lists have to be forgotten. An id not known yet
+    /// isn't a different one: forgetting then would blank the lists and kill a
+    /// tapped load, for a session that only just learned who it is.
+    static func sameAccount(held: Account?, signedIn: Account) -> Account? {
+        guard let held, held.server == signedIn.server else { return nil }
+        if let known = held.userID, let id = signedIn.userID, known != id { return nil }
+        return Account(server: held.server, userID: signedIn.userID ?? held.userID)
     }
 
     /// The second line of a row that can't play — offline, not downloaded.
@@ -129,5 +154,10 @@ enum CarPlayContent {
     )
     static let noAudiobooks = Message(
         title: "No audiobooks", detail: "Audiobooks in your library appear here."
+    )
+    /// A read that failed with no rows to keep. Not an empty list's message:
+    /// nothing has said the list is empty.
+    static let readFailed = Message(
+        title: "Couldn't load your books", detail: "They'll be here once your server can be reached."
     )
 }
