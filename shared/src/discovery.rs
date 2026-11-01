@@ -1,6 +1,6 @@
 //! Discovery, browse, and search-palette wire types: the author / series / tag
-//! detail pages, the author and series browse indexes, the library landing
-//! payload, and the command-palette grouped result shape. Each card-level type
+//! detail pages, the author and series browse indexes, the library list's query
+//! and book list, and the command-palette grouped result shape. Each card-level type
 //! stays slim so list endpoints avoid the N+1 cost of returning a full
 //! `EbookMetadata`.
 
@@ -72,56 +72,6 @@ pub struct EbooksQuery {
     pub stack_series: Option<bool>,
     /// Leave each book's description out, for a lighter page. Applies to a paged request only.
     pub omit_description: Option<bool>,
-}
-
-/// A facet value and how many books in the whole library carry it, with no filter
-/// applied. `value` is an author, series or tag name, or a lowercase format such as
-/// `epub`.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct FacetCount {
-    pub value: String,
-    pub count: i64,
-}
-
-/// Book counts for each facet value. The server never sends one. Each list runs from
-/// the highest count down, then by value. Formats are lowercase extensions, such as
-/// `epub` or `m4b`.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct FacetCounts {
-    pub authors: Vec<FacetCount>,
-    pub series: Vec<FacetCount>,
-    pub formats: Vec<FacetCount>,
-    pub tags: Vec<FacetCount>,
-    #[serde(default)]
-    pub genres: Vec<FacetCount>,
-}
-
-/// One page of the library and the cursor to the next. `GET /api/ebooks` sends a page as
-/// an `EbookPage` instead, with the cursor and counts in headers.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct LibraryPage {
-    pub path: Option<String>,
-    pub books: Vec<EbookMetadata>,
-    /// The cursor for the next page, to send back as it is. Null on the last page.
-    #[serde(default)]
-    pub next_cursor: Option<String>,
-    /// How many books pass the request's filter and format exclusion. Set on the first
-    /// page only.
-    #[serde(default)]
-    pub total: Option<i64>,
-    /// Always null.
-    #[serde(default)]
-    pub facets: Option<FacetCounts>,
-    /// How many books the request's `exclude_formats` hid. Set only on the first page of
-    /// a request that excludes a format.
-    #[serde(default)]
-    pub hidden_count: Option<i64>,
-    /// The series folded into one row of `books` each. Absent unless the page is stacked.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub stacks: Vec<SeriesStack>,
 }
 
 /// An author and every book by them, from `GET /api/authors/{id}`.
@@ -473,17 +423,4 @@ pub struct PaletteGenreHit {
     pub name: String,
     /// How many books carry the genre.
     pub book_count: u32,
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // A pre-0068 server's page body lacks `hidden_count`; the serde default
-    // must keep it decoding.
-    #[test]
-    fn library_page_deserializes_payload_missing_hidden_count() {
-        let v: LibraryPage = serde_json::from_str(r#"{"path":null,"books":[]}"#).unwrap();
-        assert_eq!(v.hidden_count, None);
-    }
 }

@@ -85,12 +85,6 @@ pub fn search_query_too_long(q: &str) -> bool {
     q.len() > SEARCH_QUERY_MAX_LEN
 }
 
-/// The scanner-indexed formats, lowercase — the hidden-formats pickers' option list.
-// A UI list only, not a validation gate: `set_hidden_formats` accepts any
-// plausible token, and the pickers additionally render a saved token this
-// list doesn't know so it can always be un-hidden.
-pub const KNOWN_LIBRARY_FORMATS: &[&str] = &["epub", "pdf", "cbz", "m4b", "m4a", "mp3"];
-
 /// Drop implausible `exclude_formats` tokens and cap the list, so a hostile
 /// query string can't inflate SQL bind counts. Mirrors `set_hidden_formats`'
 /// write-side validation (`[a-z0-9]{1,16}`, ≤ 32 tokens) on the read side.

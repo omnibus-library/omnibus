@@ -2,7 +2,6 @@
 //! `ViewFilters` predicates, and the legacy-facet fallback into clauses.
 
 use crate::ebook::Contributor;
-use crate::{SortDir, SortKey, ViewMode, ViewPrefs};
 
 use super::*;
 
@@ -160,31 +159,6 @@ fn view_filters_serializes_only_clauses() {
         .map(String::as_str)
         .collect();
     assert_eq!(keys, vec!["clauses"]);
-}
-
-#[test]
-fn view_prefs_deserializes_a_legacy_record_keeping_sort_and_view_mode() {
-    let legacy = format!(
-        r#"{{
-            "view_mode": "table",
-            "sort_key": "newest_added",
-            "sort_dir": "desc",
-            "filters": {LEGACY_BLOB},
-            "filters_open": true
-        }}"#
-    );
-
-    let prefs: ViewPrefs = serde_json::from_str(&legacy).expect("legacy record parses");
-
-    assert_eq!(prefs.view_mode, ViewMode::Table);
-    assert_eq!(prefs.sort_key, SortKey::NewestAdded);
-    assert_eq!(prefs.sort_dir, SortDir::Desc);
-    assert!(prefs.filters_open);
-    assert_eq!(
-        prefs.filters,
-        serde_json::from_str::<ViewFilters>(LEGACY_BLOB).expect("legacy blob parses")
-    );
-    assert_eq!(prefs.filters.clauses.len(), 4);
 }
 
 fn clause_with_values(count: usize) -> FilterClause {
