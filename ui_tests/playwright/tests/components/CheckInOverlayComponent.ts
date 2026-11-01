@@ -2,19 +2,24 @@ import type { Locator, Page } from "@playwright/test";
 import { expect } from "../fixtures/test";
 import { CheckInFlowComponent } from "./CheckInFlowComponent";
 
-/** The check-in flow in a dialog over whichever page the reader is on. */
+/** The check-in flow in a dialog over the library, which stays mounted beneath it. */
 export class CheckInOverlayComponent extends CheckInFlowComponent {
+  /** The dialog is its own backdrop: a click on it outside the card closes it. */
   readonly scrim: Locator;
   readonly flowCard: Locator;
   readonly closeButton: Locator;
+  /** Every control that would close the dialog, so a spec can show there is one. */
+  readonly closeControls: Locator;
 
   constructor(page: Page) {
     super(page, page.getByRole("dialog", { name: "Check in a book" }));
-    this.scrim = page.getByTestId("check-in-overlay-scrim");
+    this.scrim = this.root;
     this.flowCard = page.getByTestId("check-in");
     this.closeButton = this.root.getByRole("button", {
-      name: "Close",
-      exact: true,
+      name: "Cancel check-in",
+    });
+    this.closeControls = this.root.getByRole("button", {
+      name: /close|cancel/i,
     });
   }
 
@@ -23,7 +28,7 @@ export class CheckInOverlayComponent extends CheckInFlowComponent {
   }
 
   async closeByClickingOutside(): Promise<void> {
-    // The top-left corner is scrim, well outside the centered card.
+    // The top-left corner is backdrop, well outside the centered card.
     await this.scrim.click({ position: { x: 8, y: 8 } });
   }
 
@@ -31,9 +36,8 @@ export class CheckInOverlayComponent extends CheckInFlowComponent {
     await this.page.keyboard.press("Escape");
   }
 
-  /** Checks the scrim, the dialog and the flow card are all gone. */
+  /** Checks the dialog and the flow card are both gone. */
   async assertDismissed(): Promise<void> {
-    await expect(this.scrim).toHaveCount(0);
     await expect(this.root).toHaveCount(0);
     await expect(this.flowCard).toHaveCount(0);
   }

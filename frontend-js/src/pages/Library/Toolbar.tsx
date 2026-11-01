@@ -29,7 +29,7 @@ export function Toolbar({
   const stack = useUserSwitch("stackSeries");
   const hidden = hiddenFormatsLabel(hiddenFormats);
   return (
-    <div className="lib-toolbar" role="toolbar">
+    <div className="lib-toolbar" role="toolbar" data-testid="lib-toolbar">
       {prefs.view === "grid" && stackable && (
         <>
           <button
@@ -103,7 +103,9 @@ export function Toolbar({
       )}
       {sortLock && (
         // Outside the grid block: in table view the headers are the inert control.
-        <span className="label lib-sort-locked">{sortLock}</span>
+        <span className="label lib-sort-locked" data-testid="lib-sort-locked">
+          {sortLock}
+        </span>
       )}
       {hidden && (
         // The note links to the preference, so a missing book never reads as a missing file.

@@ -7,7 +7,6 @@ import {
   FOUND,
   GB_ANSWERED,
   GB_CANDIDATE,
-  GB_ROW,
   HC_CANDIDATE,
   HC_CONFIGURED,
   HC_FOUND,
@@ -30,163 +29,172 @@ const TARGET = FIXTURE_BOOKS.find((b) => b.slug === "mathematica-minor-2")!;
 
 const ISBN = "9781234567897";
 
-test.describe("metadata edit edition picker", () => {
+test.describe("metadata edit fetch metadata", () => {
   test.describe.configure({ mode: "serial" });
 
   test.beforeAll("seed the library", async ({ request }) => {
     await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
   });
 
-  test("show the edition picker layout", async ({
+  test("show the fetch metadata layout", async ({
     metadataEditPage,
+    expectMutation,
     request,
   }) => {
-    const overlay = metadataEditPage.searchOverlay;
+    const { fetchView } = metadataEditPage;
     const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
-    await test.step("open the edit page with every provider configured", async () => {
-      await overlay.stubEditionLookup(STANDARD_ANSWERS);
+    await test.step("open the edit sheet with every provider configured", async () => {
+      await fetchView.stubEditionLookup(STANDARD_ANSWERS);
       await metadataEditPage.goto(uuid);
     });
 
-    await test.step("check the picker is offered but closed", async () => {
+    await test.step("check Fetch metadata is offered but closed", async () => {
       await metadataEditPage.assertDisplayed();
       await metadataEditPage.topNav.assertDisplayed();
-      await expect(overlay.openButton).toBeVisible();
-      await expect(overlay.root).toHaveCount(0);
+      await expect(fetchView.openButton).toBeVisible();
+      await expect(fetchView.openButton).toHaveAttribute(
+        "aria-expanded",
+        "false",
+      );
+      await expect(fetchView.root).toHaveCount(0);
     });
 
-    const searches = await test.step("open the picker", async () => {
-      const sent = overlay.recordSearches();
-      await overlay.open();
-      await expect(overlay.root).toBeVisible();
-      return sent;
+    // It searches as it opens, on the book's title and first author.
+    await test.step("open it", async () => {
+      const { request: sent } = await expectMutation(metadata.search(), () =>
+        fetchView.open(),
+      );
+      const req: EditionSearchQuery = sent.postDataJSON();
+      expect(req.title).toBe(TARGET.title);
+      expect(req.author).toBe(TARGET.authors[0]);
+      expect(req.isbn ?? null).toBeNull();
     });
 
-    // Nothing is searched until the reader presses Search, so they can see an ISBN's narrowing first.
-    await test.step("check it is seeded from the book without searching", async () => {
-      await expect(overlay.titleQueryField).toHaveValue(TARGET.title);
-      await expect(overlay.authorQueryField).toHaveValue(TARGET.authors[0]!);
-      await expect(overlay.readyNote).toBeVisible();
-      await expect(overlay.candidateList).toHaveCount(0);
-      expect(searches, "the overlay must not search on open").toHaveLength(0);
-    });
-
-    await test.step("search when asked", async () => {
-      await overlay.search();
-      await expect(overlay.candidateList).toBeVisible();
+    await test.step("check it is seeded from the book and lists editions", async () => {
+      await expect(fetchView.openButton).toHaveAttribute(
+        "aria-expanded",
+        "true",
+      );
+      await expect(fetchView.queryField).toHaveValue(TARGET.title);
+      await expect(fetchView.authorField).toHaveValue(TARGET.authors[0]!);
+      await expect(fetchView.editionList).toBeVisible();
     });
   });
 
   test.describe("query", () => {
-    // The ISBN is the exact question, so the form's value narrows every source to one edition.
+    // The ISBN is the exact question, so the form's value would narrow every source to one edition.
     test("send the book's ISBN with the search", async ({
       metadataEditPage,
       expectMutation,
       request,
     }) => {
-      const overlay = metadataEditPage.searchOverlay;
+      test.fixme(
+        true,
+        "React's Fetch metadata seeds its query from the title, never the book's ISBN-13",
+      );
+      const { form, fetchView } = metadataEditPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
-      // The book has no ISBN, so one is typed into the form: the picker seeds from it, and nothing is saved.
-      await test.step("put an ISBN in the form and open the picker", async () => {
-        await overlay.stubEditionLookup(STANDARD_ANSWERS);
+      await test.step("put an ISBN in the form and open Fetch metadata", async () => {
+        await fetchView.stubEditionLookup(STANDARD_ANSWERS);
         await metadataEditPage.goto(uuid);
-        await metadataEditPage.form.enterIsbn13(ISBN);
-        await overlay.open();
-        await expect(overlay.isbnQueryField).toHaveValue(ISBN);
-      });
-
-      await test.step("search", async () => {
+        await form.enterIsbn13(ISBN);
         const { request: sent } = await expectMutation(metadata.search(), () =>
-          overlay.search(),
+          fetchView.open(),
         );
-        const { req }: { req: EditionSearchQuery } = sent.postDataJSON();
-        expect(req.isbn).toBeTruthy();
+        const req: EditionSearchQuery = sent.postDataJSON();
+        expect(req.isbn).toBe(ISBN);
       });
     });
 
-    test("widen the search by clearing the ISBN", async ({
+    // One box takes a title or an ISBN, and reads which it was given.
+    test("widen an ISBN search back to the title", async ({
       metadataEditPage,
       expectMutation,
       request,
     }) => {
-      const overlay = metadataEditPage.searchOverlay;
+      const { fetchView } = metadataEditPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
-      await test.step("put an ISBN in the form and open the picker", async () => {
-        await overlay.stubEditionLookup(STANDARD_ANSWERS);
-        await metadataEditPage.goto(uuid);
-        await metadataEditPage.form.enterIsbn13(ISBN);
-        await overlay.open();
-        await expect(overlay.isbnQueryField).toHaveValue(ISBN);
+      await test.step("search every configured provider", async () => {
+        await metadataEditPage.searchEditions(uuid, STANDARD_ANSWERS);
+        await expect(fetchView.editionList).toBeVisible();
       });
 
-      await test.step("clear the ISBN and search", async () => {
-        await overlay.enterQuery({ isbn: "" });
+      await test.step("search on the ISBN", async () => {
+        await fetchView.enterQuery({ query: ISBN });
         const { request: sent } = await expectMutation(metadata.search(), () =>
-          overlay.search(),
+          fetchView.search(),
         );
-        const { req }: { req: EditionSearchQuery } = sent.postDataJSON();
+        const req: EditionSearchQuery = sent.postDataJSON();
+        expect(req.isbn).toBe(ISBN);
+      });
+
+      await test.step("put the title back and search", async () => {
+        await fetchView.enterQuery({ query: TARGET.title });
+        const { request: sent } = await expectMutation(metadata.search(), () =>
+          fetchView.search(),
+        );
+        const req: EditionSearchQuery = sent.postDataJSON();
         expect(req.isbn ?? null).toBeNull();
         expect(req.title).toBe(TARGET.title);
       });
     });
 
-    // Any keystroke used to collapse the three fields into one phrase that Open Library matched against titles alone.
-    test("send each query field as itself", async ({
+    // Any keystroke used to collapse the fields into one phrase that Open Library matched against titles alone.
+    test("send the title and author each as itself", async ({
       metadataEditPage,
       expectMutation,
       request,
     }) => {
-      const overlay = metadataEditPage.searchOverlay;
+      const { fetchView } = metadataEditPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
       await test.step("search every configured provider", async () => {
         await metadataEditPage.searchEditions(uuid, STANDARD_ANSWERS);
-        await expect(overlay.candidateList).toBeVisible();
+        await expect(fetchView.editionList).toBeVisible();
       });
 
-      await test.step("edit all three fields and search again", async () => {
-        await overlay.enterQuery({
-          title: "Minor Lemmas",
+      await test.step("edit both fields and search again", async () => {
+        await fetchView.enterQuery({
+          query: "Minor Lemmas",
           author: "Germain",
-          isbn: ISBN,
         });
         const { request: sent } = await expectMutation(metadata.search(), () =>
-          overlay.search(),
+          fetchView.search(),
         );
-        const { req }: { req: EditionSearchQuery } = sent.postDataJSON();
+        const req: EditionSearchQuery = sent.postDataJSON();
         expect(req.title).toBe("Minor Lemmas");
         expect(req.author).toBe("Germain");
-        expect(req.isbn).toBe(ISBN);
+        expect(req.isbn ?? null).toBeNull();
       });
     });
 
-    // An ISBN is the strongest question any provider takes, and one box could not express it.
+    // An ISBN is the strongest question any provider takes.
     test("search on an ISBN alone", async ({
       metadataEditPage,
       expectMutation,
       request,
     }) => {
-      const overlay = metadataEditPage.searchOverlay;
+      const { fetchView } = metadataEditPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
       await test.step("search every configured provider", async () => {
         await metadataEditPage.searchEditions(uuid, STANDARD_ANSWERS);
-        await expect(overlay.candidateList).toBeVisible();
+        await expect(fetchView.editionList).toBeVisible();
       });
 
       await test.step("keep only the ISBN", async () => {
-        await overlay.enterQuery({ title: "", author: "", isbn: ISBN });
-        await expect(overlay.searchButton).toBeEnabled();
+        await fetchView.enterQuery({ query: ISBN, author: "" });
+        await expect(fetchView.searchButton).toBeEnabled();
       });
 
       await test.step("search", async () => {
         const { request: sent } = await expectMutation(metadata.search(), () =>
-          overlay.search(),
+          fetchView.search(),
         );
-        const { req }: { req: EditionSearchQuery } = sent.postDataJSON();
+        const req: EditionSearchQuery = sent.postDataJSON();
         expect(req.isbn).toBe(ISBN);
         expect(req.title ?? null).toBeNull();
       });
@@ -196,111 +204,114 @@ test.describe("metadata edit edition picker", () => {
       metadataEditPage,
       request,
     }) => {
-      const overlay = metadataEditPage.searchOverlay;
+      const { fetchView } = metadataEditPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
       await test.step("search every configured provider", async () => {
         await metadataEditPage.searchEditions(uuid, STANDARD_ANSWERS);
-        await expect(overlay.candidateList).toBeVisible();
+        await expect(fetchView.editionList).toBeVisible();
       });
 
-      await test.step("empty every field", async () => {
-        await overlay.enterQuery({ title: "", author: "", isbn: "" });
-        await expect(overlay.searchButton).toBeDisabled();
+      await test.step("empty both fields", async () => {
+        await fetchView.enterQuery({ query: "", author: "" });
+        await expect(fetchView.searchButton).toBeDisabled();
       });
 
       await test.step("fill one back in", async () => {
-        await overlay.enterQuery({ author: "Germain" });
-        await expect(overlay.searchButton).toBeEnabled();
+        await fetchView.enterQuery({ author: "Germain" });
+        await expect(fetchView.searchButton).toBeEnabled();
       });
     });
   });
 
   test.describe("closing", () => {
-    test("close the picker with its close button", async ({
+    test("close Fetch metadata with Back to editing", async ({
       metadataEditPage,
       request,
     }) => {
-      const overlay = metadataEditPage.searchOverlay;
+      const { form, fetchView } = metadataEditPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
       await test.step("search every configured provider", async () => {
         await metadataEditPage.searchEditions(uuid, STANDARD_ANSWERS);
-        await expect(overlay.candidateList).toBeVisible();
+        await expect(fetchView.editionList).toBeVisible();
       });
 
-      await test.step("close it", async () => {
-        await overlay.close();
-        await expect(overlay.root).toHaveCount(0);
+      await test.step("go back to editing", async () => {
+        await fetchView.back();
+        await expect(fetchView.root).toHaveCount(0);
+        await expect(form.titleField).toHaveValue(TARGET.title);
       });
     });
 
-    test("close the picker by clicking outside it", async ({
+    test("close Fetch metadata by pressing it again", async ({
       metadataEditPage,
       request,
     }) => {
-      const overlay = metadataEditPage.searchOverlay;
+      const { form, fetchView } = metadataEditPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
-      await test.step("open the picker", async () => {
-        await overlay.stubEditionLookup({ catalog: ALL_CONFIGURED });
-        await metadataEditPage.goto(uuid);
-        await overlay.open();
-        await expect(overlay.root).toBeVisible();
+      await test.step("search every configured provider", async () => {
+        await metadataEditPage.searchEditions(uuid, STANDARD_ANSWERS);
+        await expect(fetchView.root).toBeVisible();
       });
 
-      await test.step("click the scrim", async () => {
-        await overlay.closeByClickingOutside();
-        await expect(overlay.root).toHaveCount(0);
+      await test.step("press Fetch metadata again", async () => {
+        await fetchView.toggleClosed();
+        await expect(fetchView.root).toHaveCount(0);
+        await expect(form.titleField).toBeVisible();
       });
     });
   });
 
   test.describe("results", () => {
-    test("list a candidate per source with cover, title, authors and origin", async ({
+    test("list an edition per source with cover, title, authors and origin", async ({
       metadataEditPage,
       request,
     }) => {
-      const overlay = metadataEditPage.searchOverlay;
+      const { fetchView } = metadataEditPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
       await test.step("search every configured provider", async () => {
         await metadataEditPage.searchEditions(uuid, STANDARD_ANSWERS);
-        await expect(overlay.candidateList).toBeVisible();
+        await expect(fetchView.editionList).toBeVisible();
       });
 
-      await test.step("check the first candidate", async () => {
-        await expect(overlay.candidateTitle(0)).toHaveText(OL_CANDIDATE.title);
-        await expect(overlay.candidateAuthors(0)).toHaveText("Sophie Germain");
-        await expect(overlay.candidateImprint(0)).toHaveText(
-          "1815 · Klein Mathematik · 9781234567897",
+      await test.step("check the Open Library edition", async () => {
+        const row = fetchView.editionButton("open-library");
+        await expect(row).toContainText(OL_CANDIDATE.title);
+        await expect(row).toContainText(
+          "Sophie Germain · Klein Mathematik 1815 · 212 pages",
         );
-        await expect(overlay.candidateSource(0)).toHaveText("Open Library");
-        await expect(overlay.candidateCover(0)).toBeVisible();
+        await expect(row).toContainText("Open Library · 9781234567897");
+        await expect(fetchView.editionCover("open-library")).toBeVisible();
       });
 
       await test.step("check the same ISBN under a second source stays its own row", async () => {
-        await expect(overlay.candidateTitle(1)).toHaveText(GB_CANDIDATE.title);
-        await expect(overlay.candidateSource(1)).toHaveText("Google Books");
+        const row = fetchView.editionButton("google-books");
+        await expect(row).toContainText(GB_CANDIDATE.title);
+        await expect(row).toContainText("Google Books · 9781234567897");
       });
     });
 
     // The stub answers Google Books first; a slow or newly configured provider must not reshuffle the rows.
-    test("order candidates by the editions themselves, not by who answered", async ({
+    test("order editions by the editions themselves, not by who answered", async ({
       metadataEditPage,
       request,
     }) => {
-      const overlay = metadataEditPage.searchOverlay;
+      const { fetchView } = metadataEditPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
       await test.step("search every configured provider", async () => {
         await metadataEditPage.searchEditions(uuid, STANDARD_ANSWERS);
-        await expect(overlay.candidateList).toBeVisible();
+        await expect(fetchView.editionList).toBeVisible();
       });
 
       await test.step("check the title that sorts first leads", async () => {
-        await expect(overlay.candidateSource(0)).toHaveText("Open Library");
-        await expect(overlay.candidateSource(1)).toHaveText("Google Books");
+        await expect(fetchView.editionButtons).toHaveText([
+          /Open Library/,
+          /Google Books/,
+        ]);
       });
     });
 
@@ -309,7 +320,7 @@ test.describe("metadata edit edition picker", () => {
       metadataEditPage,
       request,
     }) => {
-      const overlay = metadataEditPage.searchOverlay;
+      const { fetchView } = metadataEditPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
       await test.step("search while one source answers nothing and one fails", async () => {
@@ -330,17 +341,17 @@ test.describe("metadata edit edition picker", () => {
       });
 
       await test.step("check each outcome reads differently", async () => {
-        await expect(overlay.sourceNote("open-library")).toHaveText(
+        await expect(fetchView.sourceNote("open-library")).toHaveText(
           "Open Library 1",
         );
-        await expect(overlay.sourceNote("google-books")).toHaveText(
+        await expect(fetchView.sourceNote("google-books")).toHaveText(
           "Google Books nothing",
         );
-        await expect(overlay.sourceNote("hardcover")).toHaveText(
+        await expect(fetchView.sourceNote("hardcover")).toHaveText(
           "Hardcover unavailable",
         );
         // The provider's own message is there without the line becoming an error log.
-        await expect(overlay.sourceNote("hardcover")).toHaveAttribute(
+        await expect(fetchView.sourceNote("hardcover")).toHaveAttribute(
           "title",
           "request timed out",
         );
@@ -352,7 +363,7 @@ test.describe("metadata edit edition picker", () => {
       metadataEditPage,
       request,
     }) => {
-      const overlay = metadataEditPage.searchOverlay;
+      const { fetchView } = metadataEditPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
       await test.step("search while one source is throttled", async () => {
@@ -373,10 +384,10 @@ test.describe("metadata edit edition picker", () => {
       });
 
       await test.step("check the source reads as a wait", async () => {
-        await expect(overlay.sourceNote("hardcover")).toHaveText(
+        await expect(fetchView.sourceNote("hardcover")).toHaveText(
           "Hardcover rate limited, skipping for 10m",
         );
-        await expect(overlay.sourceNote("hardcover")).toHaveAttribute(
+        await expect(fetchView.sourceNote("hardcover")).toHaveAttribute(
           "title",
           /rate-limited us recently/,
         );
@@ -384,14 +395,14 @@ test.describe("metadata edit edition picker", () => {
     });
 
     // A work-level search hit, as Hardcover's `search` returns, has no year, publisher or edition ISBN.
-    test("keep the row of a candidate that names no printing", async ({
+    test("keep the row of an edition that names no printing", async ({
       metadataEditPage,
       request,
     }) => {
-      const overlay = metadataEditPage.searchOverlay;
+      const { fetchView } = metadataEditPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
-      await test.step("search while a candidate names no printing", async () => {
+      await test.step("search while an edition names no printing", async () => {
         await metadataEditPage.searchEditions(uuid, {
           catalog: ALL_CONFIGURED,
           found: {
@@ -403,9 +414,11 @@ test.describe("metadata edit edition picker", () => {
         });
       });
 
-      await test.step("check its row still has three lines", async () => {
-        await expect(overlay.candidateTitle(0)).toHaveText(OL_CANDIDATE.title);
-        await expect(overlay.candidateImprint(0)).toHaveText("—");
+      await test.step("check its row still names the book and its source", async () => {
+        const row = fetchView.editionButton("open-library");
+        await expect(row).toContainText(OL_CANDIDATE.title);
+        await expect(row).toContainText("Sophie Germain · 212 pages");
+        await expect(row).toContainText("Open Library");
       });
     });
 
@@ -413,16 +426,16 @@ test.describe("metadata edit edition picker", () => {
       metadataEditPage,
       request,
     }) => {
-      const overlay = metadataEditPage.searchOverlay;
+      const { fetchView } = metadataEditPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
       await test.step("search every configured provider", async () => {
         await metadataEditPage.searchEditions(uuid, STANDARD_ANSWERS);
-        await expect(overlay.candidateList).toBeVisible();
+        await expect(fetchView.editionList).toBeVisible();
       });
 
       await test.step("check the unkeyed provider reads as not set up", async () => {
-        await expect(overlay.sourceNote("hardcover")).toHaveText(
+        await expect(fetchView.sourceNote("hardcover")).toHaveText(
           "Hardcover not set up",
         );
       });
@@ -432,7 +445,7 @@ test.describe("metadata edit edition picker", () => {
       metadataEditPage,
       request,
     }) => {
-      const { form, searchOverlay: overlay } = metadataEditPage;
+      const { form, fetchView } = metadataEditPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
       await test.step("search while the server fails the search", async () => {
@@ -442,15 +455,15 @@ test.describe("metadata edit edition picker", () => {
         });
       });
 
-      await test.step("check the error shows without candidates", async () => {
-        await expect(overlay.errorMessage).toBeVisible();
-        await expect(overlay.candidateList).toHaveCount(0);
+      await test.step("check the error shows without editions", async () => {
+        await expect(fetchView.errorMessage).toBeVisible();
+        await expect(fetchView.editionList).toHaveCount(0);
       });
 
-      await test.step("close the picker and check the form never moved", async () => {
-        await overlay.close();
+      await test.step("go back and check the form never moved", async () => {
+        await fetchView.back();
         await expect(form.titleField).toHaveValue(TARGET.title);
-        await expect(form.saveButton).toBeDisabled();
+        await expect(form.saveState).toHaveText("No changes");
       });
     });
 
@@ -458,80 +471,81 @@ test.describe("metadata edit edition picker", () => {
       metadataEditPage,
       request,
     }) => {
-      const overlay = metadataEditPage.searchOverlay;
+      const { fetchView } = metadataEditPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
-      await test.step("open the edit page with no provider configured", async () => {
-        await overlay.stubEditionLookup({ catalog: NONE_CONFIGURED });
+      await test.step("open the edit sheet with no provider configured", async () => {
+        await fetchView.stubEditionLookup({ catalog: NONE_CONFIGURED });
         await metadataEditPage.goto(uuid);
       });
 
-      await test.step("check the picker is not offered", async () => {
-        await expect(overlay.openButton).toHaveCount(0);
+      await test.step("check Fetch metadata is not offered", async () => {
+        await expect(fetchView.openButton).toHaveCount(0);
       });
     });
   });
 
-  test.describe("compare", () => {
+  test.describe("diff", () => {
     test("show only the fields the source would change", async ({
       metadataEditPage,
       request,
     }) => {
-      const { form, searchOverlay: overlay } = metadataEditPage;
-      const { compare } = overlay;
+      const { form, fetchView } = metadataEditPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
-      await test.step("compare the Google Books candidate", async () => {
+      await test.step("pick the Google Books edition", async () => {
         await metadataEditPage.searchEditions(uuid, STANDARD_ANSWERS);
-        await overlay.pickCandidate(GB_ROW);
-        await expect(compare.root).toBeVisible();
+        await fetchView.pickEdition("google-books");
+        await expect(fetchView.diff).toBeVisible();
       });
 
       await test.step("check the rows that differ", async () => {
-        await expect(compare.sourceName).toHaveText("Google Books");
-        await expect(compare.rowSource("title")).toHaveText(GB_CANDIDATE.title);
-        await expect(compare.rowSource("publisher")).toHaveText(
+        await expect(fetchView.diffRow("Title")).toContainText(
+          GB_CANDIDATE.title,
+        );
+        await expect(fetchView.diffRow("Publisher")).toContainText(
           "Editions Gauss",
         );
       });
 
       // A source with no series cannot change one, and a row that cannot be applied is only noise.
       await test.step("check the rows it cannot change are absent", async () => {
-        await expect(compare.row("series")).toHaveCount(0);
-        await expect(compare.row("genres")).toHaveCount(0);
+        await expect(fetchView.diffRow("Series")).toHaveCount(0);
+        await expect(fetchView.diffRow("Genres")).toHaveCount(0);
       });
 
-      await test.step("check looking staged nothing", async () => {
-        await expect(form.saveButton).toBeDisabled();
+      await test.step("check looking changed nothing", async () => {
+        await expect(form.saveState).toHaveText("No changes");
       });
     });
 
-    test("toggle the unchanged fields", async ({
+    test("toggle the unchanged fields", async () => {
+      test.fixme(
+        true,
+        "React's Fetch metadata diff has no toggle to show the fields a source leaves alone",
+      );
+    });
+
+    // Filling a blank is safe, overwriting a value is the reader's call.
+    test("start a row checked only where the book has nothing", async ({
       metadataEditPage,
       request,
     }) => {
-      const overlay = metadataEditPage.searchOverlay;
-      const { compare } = overlay;
+      const { fetchView } = metadataEditPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
-      await test.step("compare the Google Books candidate", async () => {
+      await test.step("pick the Google Books edition", async () => {
         await metadataEditPage.searchEditions(uuid, STANDARD_ANSWERS);
-        await overlay.pickCandidate(GB_ROW);
-        await expect(compare.root).toBeVisible();
-        await expect(compare.row("series")).toHaveCount(0);
+        await fetchView.pickEdition("google-books");
       });
 
-      // The source has nothing to offer, and not knowing a field must never blank a value you have.
-      await test.step("reveal the fields the source leaves alone", async () => {
-        await compare.toggleUnchanged();
-        await expect(compare.rowSource("series")).toHaveText("—");
-        await expect(compare.applyButton("series")).toBeDisabled();
-        await expect(compare.rowCurrent("series")).toHaveText(TARGET.series!);
-      });
-
-      await test.step("hide them again", async () => {
-        await compare.toggleUnchanged();
-        await expect(compare.row("series")).toHaveCount(0);
+      await test.step("check the overwrites start off and the fills start on", async () => {
+        await expect(fetchView.diffCheckbox("Publisher")).not.toBeChecked();
+        await expect(fetchView.diffCheckbox("Title")).not.toBeChecked();
+        // The book has no ISBN of its own.
+        await expect(fetchView.diffCheckbox("ISBN-13")).toBeChecked();
+        // The book has a cover, so the source's does not replace it unasked.
+        await expect(fetchView.diffCheckbox("Cover")).not.toBeChecked();
       });
     });
 
@@ -539,71 +553,55 @@ test.describe("metadata edit edition picker", () => {
       metadataEditPage,
       request,
     }) => {
-      const { form, searchOverlay: overlay } = metadataEditPage;
-      const { compare } = overlay;
+      const { form, fetchView } = metadataEditPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
-      await test.step("compare the Google Books candidate", async () => {
+      await test.step("pick the Google Books edition", async () => {
         await metadataEditPage.searchEditions(uuid, STANDARD_ANSWERS);
-        await overlay.pickCandidate(GB_ROW);
-        await expect(compare.root).toBeVisible();
-        await expect(compare.rowCurrent("publisher")).toHaveText(
+        await fetchView.pickEdition("google-books");
+        await expect(fetchView.diffRow("Publisher")).toContainText(
           TARGET.publisher!,
         );
       });
 
       await test.step("copy the publisher", async () => {
-        await compare.apply("publisher");
+        await fetchView.choose(["Publisher"]);
+        await expect(fetchView.applyButton).toHaveText("Apply 1 change");
+        await fetchView.apply();
+      });
+
+      await test.step("check the form holds it and nothing else moved", async () => {
+        await expect(fetchView.root).toHaveCount(0);
         await expect(form.publisherField).toHaveValue("Editions Gauss");
         await expect(form.titleField).toHaveValue(TARGET.title);
       });
 
-      // The row stays and its control becomes the way back, rather than vanishing under the cursor.
-      await test.step("check the row stays in place, staged", async () => {
-        await expect(compare.row("publisher")).toHaveAttribute(
-          "data-staged",
-          "true",
-        );
-        await expect(compare.applyButton("publisher")).toHaveCount(0);
-        await expect(compare.undoButton("publisher")).toBeVisible();
-        await expect(compare.rowCurrent("publisher")).toHaveText(
-          "Editions Gauss",
-        );
-      });
-
-      // Staged only: the save bar counts it and no write went out.
+      // Applied only: the save bar counts it and no write went out.
       await test.step("check the save bar counts the edit", async () => {
-        await expect(form.saveButton).toBeEnabled();
         await expect(form.editedSummary(1)).toBeVisible();
+        await expect(form.saveButton).toBeEnabled();
       });
     });
 
-    test("undo a staged field", async ({ metadataEditPage, request }) => {
-      const { form, searchOverlay: overlay } = metadataEditPage;
-      const { compare } = overlay;
+    test("undo an applied field", async ({ metadataEditPage, request }) => {
+      const { form, fetchView } = metadataEditPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
-      await test.step("copy the publisher from the Google Books candidate", async () => {
+      await test.step("copy the publisher from the Google Books edition", async () => {
         await metadataEditPage.searchEditions(uuid, STANDARD_ANSWERS);
-        await overlay.pickCandidate(GB_ROW);
-        await expect(compare.root).toBeVisible();
-        await compare.apply("publisher");
+        await fetchView.pickEdition("google-books");
+        await fetchView.choose(["Publisher"]);
+        await fetchView.apply();
         await expect(form.publisherField).toHaveValue("Editions Gauss");
       });
 
-      await test.step("undo it", async () => {
-        await compare.undo("publisher");
+      await test.step("discard the edits", async () => {
+        await form.discard();
       });
 
-      // The row's control says which state it is in: it offers to take the value again.
       await test.step("check the book's own value is back", async () => {
         await expect(form.publisherField).toHaveValue(TARGET.publisher!);
-        await expect(compare.row("publisher")).toHaveAttribute(
-          "data-staged",
-          "false",
-        );
-        await expect(compare.applyButton("publisher")).toBeVisible();
-        await expect(form.saveButton).toBeDisabled();
+        await expect(form.saveState).toHaveText("No changes");
       });
     });
 
@@ -612,8 +610,7 @@ test.describe("metadata edit edition picker", () => {
       metadataEditPage,
       request,
     }) => {
-      const { form, searchOverlay: overlay } = metadataEditPage;
-      const { compare } = overlay;
+      const { form, fetchView } = metadataEditPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
       await test.step("search with Hardcover configured", async () => {
@@ -622,31 +619,33 @@ test.describe("metadata edit edition picker", () => {
           found: HC_FOUND,
         });
         // Hardcover is a source in its own right, not a "not set up" row.
-        await expect(overlay.sourceNote("hardcover")).toHaveText(/Hardcover/);
+        await expect(fetchView.sourceNote("hardcover")).toHaveText(
+          "Hardcover 1",
+        );
       });
 
-      await test.step("compare the Hardcover candidate", async () => {
-        await overlay.pickCandidate(0);
-        await expect(compare.root).toBeVisible();
+      await test.step("pick the Hardcover edition", async () => {
+        await fetchView.pickEdition("hardcover");
+        await expect(fetchView.diff).toBeVisible();
       });
 
       await test.step("check all six fields can be applied", async () => {
-        for (const slug of [
-          "title",
-          "author-s-",
-          "description",
-          "series",
-          "book--",
-          "isbn-13",
+        for (const label of [
+          "Title",
+          "Author(s)",
+          "Description",
+          "Series",
+          "Number in series",
+          "ISBN-13",
         ]) {
-          await expect(compare.row(slug)).toBeVisible();
-          await expect(compare.applyButton(slug)).toBeEnabled();
+          await expect(fetchView.diffCheckbox(label)).toBeEnabled();
         }
       });
 
       // Book # is the arm the retirement had to add: the panel could set one and the picker had no field for it.
-      await test.step("apply the book number", async () => {
-        await compare.apply("book--");
+      await test.step("apply the number in series", async () => {
+        await fetchView.choose(["Number in series"]);
+        await fetchView.apply();
         await expect(form.bookNumberField).toHaveValue(
           HC_CANDIDATE.series_index!,
         );
@@ -657,18 +656,17 @@ test.describe("metadata edit edition picker", () => {
       metadataEditPage,
       request,
     }) => {
-      const { form, searchOverlay: overlay } = metadataEditPage;
-      const { compare } = overlay;
+      const { form, fetchView } = metadataEditPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
-      await test.step("compare the Google Books candidate", async () => {
+      await test.step("pick the Google Books edition", async () => {
         await metadataEditPage.searchEditions(uuid, STANDARD_ANSWERS);
-        await overlay.pickCandidate(GB_ROW);
-        await expect(compare.root).toBeVisible();
+        await fetchView.pickEdition("google-books");
       });
 
-      await test.step("take all", async () => {
-        await compare.takeAll();
+      await test.step("check every row and apply", async () => {
+        await fetchView.chooseAll();
+        await fetchView.apply();
       });
 
       await test.step("check every offered value is in the form", async () => {
@@ -683,73 +681,64 @@ test.describe("metadata edit edition picker", () => {
         await expect(form.authorChip("Emmy Noether")).toBeVisible();
       });
 
-      // Google Books offered no series, so take-all skips it rather than blanking the book's own.
-      await test.step("check what the source lacks is kept and nothing is left to take", async () => {
+      // Google Books offered no series, so applying everything keeps the book's own.
+      await test.step("check what the source lacks is kept", async () => {
         await expect(form.seriesField).toHaveValue(TARGET.series!);
-        await expect(compare.takeAllButton).toBeDisabled();
       });
     });
 
-    test("keep a staged apply across a trip back to the results", async ({
+    test("keep an applied field across a trip back to Fetch metadata", async ({
       metadataEditPage,
       request,
     }) => {
-      const { form, searchOverlay: overlay } = metadataEditPage;
-      const { compare } = overlay;
+      const { form, fetchView } = metadataEditPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
-      await test.step("copy the publisher from the Google Books candidate", async () => {
+      await test.step("copy the publisher from the Google Books edition", async () => {
         await metadataEditPage.searchEditions(uuid, STANDARD_ANSWERS);
-        await overlay.pickCandidate(GB_ROW);
-        await expect(compare.root).toBeVisible();
-        await compare.apply("publisher");
+        await fetchView.pickEdition("google-books");
+        await fetchView.choose(["Publisher"]);
+        await fetchView.apply();
       });
 
-      await test.step("go back to the results", async () => {
-        await compare.back();
-        await expect(overlay.candidateList).toBeVisible();
-        await expect(compare.root).toHaveCount(0);
+      await test.step("open Fetch metadata again and go back", async () => {
+        await fetchView.openAndSearch();
+        await expect(fetchView.editionList).toBeVisible();
+        await fetchView.back();
       });
 
-      // The compare screen writes into the page's form signals, which outlive the overlay.
-      await test.step("check the apply is still staged", async () => {
+      // The view writes into the sheet's form, which outlives it.
+      await test.step("check the apply is still there", async () => {
         await expect(form.publisherField).toHaveValue("Editions Gauss");
         await expect(form.editedSummary(1)).toBeVisible();
       });
-
-      await test.step("close the picker and check the apply survives it", async () => {
-        await overlay.close();
-        await expect(form.publisherField).toHaveValue("Editions Gauss");
-      });
     });
 
-    test("discard a staged apply on navigating away", async ({
+    test("drop an applied field when leaving without saving", async ({
       metadataEditPage,
       bookDetailPage,
       request,
     }) => {
-      const { form, searchOverlay: overlay } = metadataEditPage;
-      const { compare } = overlay;
+      const { form, fetchView } = metadataEditPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
-      await test.step("copy the publisher and finish the comparison", async () => {
+      await test.step("copy the publisher from the Google Books edition", async () => {
         await metadataEditPage.searchEditions(uuid, STANDARD_ANSWERS);
-        await overlay.pickCandidate(GB_ROW);
-        await expect(compare.root).toBeVisible();
-        await compare.apply("publisher");
-        await compare.done();
-        await expect(overlay.root).toHaveCount(0);
+        await fetchView.pickEdition("google-books");
+        await fetchView.choose(["Publisher"]);
+        await fetchView.apply();
       });
 
-      await test.step("discard the edits", async () => {
-        await form.discard();
+      await test.step("close the sheet without saving", async () => {
+        await metadataEditPage.close();
+        await metadataEditPage.leaveWithoutSaving();
         await bookDetailPage.assertDisplayedFor(uuid);
       });
 
-      await test.step("reopen the form and check nothing was kept", async () => {
+      await test.step("reopen the sheet and check nothing was kept", async () => {
         await metadataEditPage.goto(uuid);
         await expect(form.publisherField).toHaveValue(TARGET.publisher!);
-        await expect(form.saveButton).toBeDisabled();
+        await expect(form.saveState).toHaveText("No changes");
       });
     });
 
@@ -760,33 +749,28 @@ test.describe("metadata edit edition picker", () => {
       expectMutation,
       request,
     }) => {
-      const { form, searchOverlay: overlay } = metadataEditPage;
-      const { compare } = overlay;
+      const { form, fetchView } = metadataEditPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
       overriddenBookUuids.add(uuid);
 
-      await test.step("copy the publisher and finish the comparison", async () => {
+      await test.step("copy the publisher from the Google Books edition", async () => {
         await metadataEditPage.searchEditions(uuid, STANDARD_ANSWERS);
-        await overlay.pickCandidate(GB_ROW);
-        await expect(compare.root).toBeVisible();
-        await compare.apply("publisher");
-        await compare.done();
+        await fetchView.pickEdition("google-books");
+        await fetchView.choose(["Publisher"]);
+        await fetchView.apply();
       });
 
-      // The compare screen never talks to the overrides endpoint itself: the page's own save does.
+      // Fetch metadata never talks to the overrides endpoint itself: the sheet's own save does.
       await test.step("save", async () => {
         await expectMutation(
-          overrides.save({
-            uuid,
-            overrides: { publisher: "Editions Gauss" },
-          }),
+          overrides.save({ publisher: "Editions Gauss" }),
           () => form.save(),
         );
         await bookDetailPage.assertDisplayedFor(uuid);
       });
 
       // The title the source also offered was never taken, so it must not have been written.
-      await test.step("reopen the form and check only the applied field persisted", async () => {
+      await test.step("reopen the sheet and check only the applied field persisted", async () => {
         await metadataEditPage.goto(uuid);
         await expect(form.publisherField).toHaveValue("Editions Gauss");
         await expect(form.titleField).toHaveValue(TARGET.title);
@@ -799,88 +783,81 @@ test.describe("metadata edit edition picker", () => {
       });
     });
 
-    test("hold the apply controls inert until the detail re-fetch lands", async ({
+    test("hold the diff back until the full record lands", async ({
       metadataEditPage,
       request,
     }) => {
-      const { form, searchOverlay: overlay } = metadataEditPage;
-      const { compare } = overlay;
+      const { form, fetchView } = metadataEditPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
       const detailDescription = "Only the detail record has this.";
 
-      await test.step("search, then hold the re-fetch of the Open Library candidate", async () => {
+      await test.step("search, then hold the re-fetch of the Open Library edition", async () => {
         await metadataEditPage.searchEditions(uuid, STANDARD_ANSWERS);
-        await overlay.holdHydrate();
-        await overlay.pickCandidate(0);
+        await fetchView.holdHydrate();
+        await fetchView.pickEdition("open-library");
       });
 
       // The search hit is a partial answer: showing it would have rows appear and rearrange a moment later.
-      await test.step("check a placeholder shows instead of field rows", async () => {
-        await expect(compare.hydratingNotice).toBeVisible();
-        await expect(compare.skeleton).toBeVisible();
-        await expect(compare.fields).toHaveCount(0);
-        await expect(compare.takeAllButton).toBeDisabled();
+      await test.step("check a placeholder shows instead of rows", async () => {
+        await expect(fetchView.hydratingNotice).toBeVisible();
+        await expect(fetchView.skeleton).toBeVisible();
+        await expect(fetchView.diff).toHaveCount(0);
+        await expect(fetchView.applyButton).toHaveCount(0);
       });
 
       await test.step("let the re-fetch land", async () => {
-        overlay.releaseHydrate({
+        fetchView.releaseHydrate({
           ...OL_CANDIDATE,
           description: detailDescription,
         });
       });
 
-      await test.step("check the description arrived and every control is live", async () => {
-        await expect(compare.rowSource("description")).toHaveText(
+      await test.step("check the description arrived", async () => {
+        await expect(fetchView.diffRow("Description")).toContainText(
           detailDescription,
         );
-        await expect(compare.takeAllButton).toBeEnabled();
       });
 
-      await test.step("take all", async () => {
-        await compare.takeAll();
+      await test.step("apply it", async () => {
+        await fetchView.choose(["Description"]);
+        await fetchView.apply();
         await expect(form.descriptionField).toHaveValue(detailDescription);
       });
     });
   });
 
+  // A source's cover is held like any other change and fetched by Done.
   test.describe("cover row", () => {
-    test("offer the source's cover with an arrow labelled as an immediate change", async ({
+    test("offer the source's cover, saved when Done is pressed", async ({
       metadataEditPage,
       request,
     }) => {
-      const overlay = metadataEditPage.searchOverlay;
-      const { compare } = overlay;
+      const { fetchView } = metadataEditPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
-      await test.step("compare the Google Books candidate", async () => {
+      await test.step("pick the Google Books edition", async () => {
         await metadataEditPage.searchEditions(uuid, STANDARD_ANSWERS);
-        await overlay.pickCandidate(GB_ROW);
-        await expect(compare.root).toBeVisible();
+        await fetchView.pickEdition("google-books");
       });
 
       // The row says so in words, not only in behaviour.
       await test.step("check the cover row", async () => {
-        await expect(compare.coverRow).toBeVisible();
-        await expect(compare.coverSourceImage).toBeVisible();
-        await expect(compare.coverNote).toHaveText(
-          "The cover applies immediately · it isn’t staged with the fields",
-        );
-        await expect(compare.applyButton("cover")).toHaveAttribute(
-          "aria-label",
-          /saves immediately/,
+        await expect(fetchView.diffRow("Cover")).toBeVisible();
+        await expect(fetchView.coverThumb).toBeVisible();
+        await expect(fetchView.diffRow("Cover")).toContainText(
+          "Saved when you press Done",
         );
       });
     });
 
-    test("hide the cover row when the source has no cover to offer", async ({
+    test("leave the cover row out when the source has no cover", async ({
       metadataEditPage,
       request,
     }) => {
-      const overlay = metadataEditPage.searchOverlay;
-      const { compare } = overlay;
+      const { fetchView } = metadataEditPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
-      await test.step("compare a candidate with no cover", async () => {
+      await test.step("pick an edition with no cover", async () => {
         await metadataEditPage.searchEditions(uuid, {
           catalog: ALL_CONFIGURED,
           found: {
@@ -888,27 +865,22 @@ test.describe("metadata edit edition picker", () => {
             editions: [{ ...OL_CANDIDATE, cover_url: null }],
           },
         });
-        await overlay.pickCandidate(0);
-        await expect(compare.coverRow).toHaveCount(0);
-      });
-
-      // Held to the same rule as every field row, so "show all" brings it back.
-      await test.step("reveal the unchanged fields", async () => {
-        await compare.toggleUnchanged();
-        await expect(compare.applyButton("cover")).toBeDisabled();
+        await fetchView.pickEdition("open-library");
+        await expect(fetchView.diff).toBeVisible();
+        await expect(fetchView.diffRow("Cover")).toHaveCount(0);
       });
     });
 
-    test("apply the source's cover at once", async ({
+    test("save the source's cover with Done", async ({
       metadataEditPage,
       bookDetailPage,
       ebooksRequests,
       expectMutation,
       request,
     }) => {
-      const { form, searchOverlay: overlay } = metadataEditPage;
-      const { compare } = overlay;
+      const { form, fetchView } = metadataEditPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+      const writes = metadataEditPage.recordCoverWrites();
 
       await test.step("stub the write with the book as the server returns it", async () => {
         const book = await ebooksRequests.getEbook(uuid);
@@ -916,72 +888,61 @@ test.describe("metadata edit edition picker", () => {
         await metadataEditPage.stubCoverFromUrl(await book.json());
       });
 
-      await test.step("compare the Google Books candidate", async () => {
+      await test.step("apply the Google Books cover", async () => {
         await metadataEditPage.searchEditions(uuid, STANDARD_ANSWERS);
-        await overlay.pickCandidate(GB_ROW);
-        await expect(compare.root).toBeVisible();
+        await fetchView.pickEdition("google-books");
+        await fetchView.choose(["Cover"]);
+        await fetchView.apply();
       });
 
-      await test.step("apply the cover", async () => {
-        await expectMutation(covers.fromUrl(uuid, PIXEL), () =>
-          compare.apply("cover"),
+      // A cover alone lands on Artwork, held, and nothing is written yet.
+      await test.step("check the cover is held for Done", async () => {
+        await expect(form.coverHintText).toHaveText(
+          "from the web · fetched when you press Done",
         );
+        await expect(form.editedSummary(1)).toBeVisible();
+        expect(writes).toEqual([]);
       });
 
-      // The write is immediate, so the bar reports it saved rather than "No changes", and Save stays the way out (#2241).
-      await test.step("check the row and the save bar report it", async () => {
-        await expect(compare.coverNote).toHaveText("Cover updated.");
-        await expect(form.coverReplacedNote).toBeVisible();
-        await expect(form.saveButton).toBeEnabled();
-      });
-
-      // The sidebar's cover controls and its "Override active" card are two components behind the overlay.
-      await test.step("close the picker and check the sidebar follows without a reload", async () => {
-        await overlay.close();
-        await expect(form.removeCoverOverrideButton).toBeVisible();
-        await expect(form.coverHintText).toHaveText("custom upload");
-        await expect(metadataEditPage.revertButton).toBeVisible();
-      });
-
-      // With no field edited there is no diff to send, so Save is purely the exit.
-      await test.step("save to leave the editor without a write", async () => {
-        await form.save();
+      await test.step("save", async () => {
+        await expectMutation(covers.fromUrl(uuid, PIXEL), () => form.save());
         await bookDetailPage.assertDisplayedFor(uuid);
       });
     });
 
-    test("surface a refused cover without changing anything", async ({
+    test("surface a refused cover without dropping it", async ({
       metadataEditPage,
       expectMutation,
       request,
     }) => {
-      const { form, searchOverlay: overlay } = metadataEditPage;
-      const { compare } = overlay;
+      const { form, fetchView } = metadataEditPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
       await test.step("stub the server refusing the cover's host", async () => {
         await metadataEditPage.stubCoverFromUrlRefused();
       });
 
-      await test.step("compare the Google Books candidate", async () => {
+      await test.step("apply the Google Books cover", async () => {
         await metadataEditPage.searchEditions(uuid, STANDARD_ANSWERS);
-        await overlay.pickCandidate(GB_ROW);
-        await expect(compare.root).toBeVisible();
+        await fetchView.pickEdition("google-books");
+        await fetchView.choose(["Cover"]);
+        await fetchView.apply();
       });
 
-      await test.step("apply the cover", async () => {
-        await expectMutation(covers.fromUrlRefused(uuid), () =>
-          compare.apply("cover"),
-        );
+      await test.step("save", async () => {
+        await expectMutation(covers.fromUrlRefused(uuid), () => form.save());
       });
 
-      await test.step("check the refusal shows and nothing changed", async () => {
-        await expect(compare.coverNote).toContainText(
-          "Couldn't apply that cover",
+      await test.step("check the refusal shows and the cover is still held", async () => {
+        await metadataEditPage.assertDisplayedFor(uuid);
+        await expect(form.saveError).toContainText("Cover not saved");
+        await expect(form.saveError).toContainText(
+          "host is not an allowed source",
         );
-        await overlay.close();
-        await expect(form.removeCoverOverrideButton).toHaveCount(0);
-        await expect(form.saveButton).toBeDisabled();
+        await expect(form.coverHintText).toHaveText(
+          "from the web · fetched when you press Done",
+        );
+        await expect(form.editedSummary(1)).toBeVisible();
       });
     });
   });

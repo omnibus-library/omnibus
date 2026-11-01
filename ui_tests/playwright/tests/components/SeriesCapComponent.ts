@@ -9,8 +9,8 @@ export class SeriesCapComponent extends BaseComponent {
 
   constructor(page: Page) {
     super(page);
-    this.root = page.getByTestId("series-cap");
     this.foldButton = page.getByRole("button", { name: /Fold up/ });
+    this.root = page.getByRole("listitem").filter({ has: this.foldButton });
     this.seriesPageLink = page.getByRole("link", { name: "Series page →" });
   }
 

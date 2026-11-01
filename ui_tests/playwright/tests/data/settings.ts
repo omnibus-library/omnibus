@@ -1,4 +1,4 @@
-/** The library fields `POST /api/rpc/settings` takes; no interval turns rescans off. */
+/** The library fields `POST /api/settings` takes; no interval turns rescans off. */
 export type LibrarySettings = {
   ebook_library_path: string;
   audiobook_library_path: string;

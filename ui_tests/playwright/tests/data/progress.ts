@@ -45,8 +45,8 @@ export function koboPosition(
 
 /** The CFI the reader saved, read off one of its progress-save requests. */
 export function savedCfi(request: Request): string {
-  const { update }: { update: { epub_cfi: string } } = request.postDataJSON();
-  return update.epub_cfi;
+  const { epub_cfi }: { epub_cfi: string } = request.postDataJSON();
+  return epub_cfi;
 }
 
 /** The anchor the comic pager saves for the 0-based page `index`. */
@@ -88,9 +88,7 @@ export function savedAudioPosition(request: Request): {
   format: string;
   seconds: number;
 } {
-  const {
-    update,
-  }: { update: { format: string; audio_position_seconds: number } } =
+  const body: { format: string; audio_position_seconds: number } =
     request.postDataJSON();
-  return { format: update.format, seconds: update.audio_position_seconds };
+  return { format: body.format, seconds: body.audio_position_seconds };
 }

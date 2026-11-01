@@ -32,3 +32,14 @@ export function hiddenFormatsLabel(formats: string[]): string | null {
     .sort()
     .join(", ")}`;
 }
+
+/** A book's `data-testid` suffix: its filename's stem (a fileless book's uuid), lowercased, each run of other characters one `-`. */
+export function bookSlug(book: { filename: string; uuid: string }): string {
+  const name = book.filename || book.uuid;
+  const base = name.split("/").pop() ?? name;
+  return base
+    .replace(/\.[^.]*$/, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}

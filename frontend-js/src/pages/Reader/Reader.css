@@ -69,6 +69,18 @@
   font-size: 10px;
   color: var(--ink-3);
 }
+/* QuoteCard.css's phone/desktop swap loads before `.rd-tool`'s display and would lose to it. */
+.rd-tool.rd-phone-only {
+  display: none;
+}
+@media (max-width: 480px) {
+  .rd-tool.rd-phone-only {
+    display: inline-flex;
+  }
+  .rd-tool.rd-desktop-only {
+    display: none;
+  }
+}
 .rd-aa {
   font-family: var(--serif);
   font-weight: 500;

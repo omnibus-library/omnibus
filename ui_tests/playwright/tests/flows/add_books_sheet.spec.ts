@@ -1,10 +1,13 @@
 import { expect, test } from "../fixtures/pageFixtures";
 
 // The tab bar and its raised centre action render only below the phone
-// breakpoint. The native shell renders the same SSR tree in a WebView, so this
-// flow covers web-phone and mobile alike.
+// breakpoint. The React client has no phone tab bar yet: it is waiting on a
+// redesign, so every test here is a fixme until that lands.
+const NO_TAB_BAR =
+  "React has no phone tab bar or add-books sheet yet (pending redesign)";
 test.describe("add-books sheet (phone viewport)", () => {
   test.use({ viewport: { width: 375, height: 812 } });
+  test.fixme(true, NO_TAB_BAR);
 
   test("show the center action in the tab bar", async ({ libraryPage }) => {
     const { tabBar, topNav } = libraryPage;

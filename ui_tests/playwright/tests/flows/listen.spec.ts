@@ -33,7 +33,7 @@ const LOCAL_SEED_BOOK = AUDIOBOOK_BOOKS.find(
   (b) => b.format === "MP3" && b.source === "public_domain",
 )!;
 // The one-clock test needs chapters of minutes, not a generated book's ~2.09s,
-// which `format_hms` renders too coarsely to tell 1x from rate-adjusted. The
+// which the H:MM:SS readout renders too coarsely to tell 1x from rate-adjusted. The
 // public-domain M4B is the only long book no other spec saves a rate on.
 const CHAPTERED_BOOK = M4B_BOOK;
 
@@ -131,12 +131,13 @@ test.describe("listen page", () => {
   }) => {
     const uuid = await fetchBookUuidByTitle(request, MP3_BOOK.title);
 
-    await test.step("open the book", async () => {
+    await test.step("open the book's files", async () => {
       await bookDetailPage.goto(uuid);
+      await bookDetailPage.openTab("Files & Details");
     });
 
-    // `routes::link_target` trims the bare trailing `?` dioxus-router writes
-    // for an unset `?file_id` (#2256), so the URL is exactly `/listen/:uuid`.
+    // An unset `?file_id` leaves no bare trailing `?` (#2256), so the URL is
+    // exactly `/listen/:uuid`.
     await test.step("press listen", async () => {
       await bookDetailPage.formatRow(MP3_BOOK.format).listen();
       await listenPage.assertDisplayedFor(uuid);
@@ -170,9 +171,9 @@ test.describe("listen page", () => {
       await listenPage.waitUntilPlayerReady();
     });
 
-    // Direct-play books flip hls_ready in <10 ms, so without the hold the
-    // overlay is never observable. The hold also proves hls_ready was reset: if
-    // it leaked as true from the first book, the overlay would never appear.
+    // Direct-play books turn ready in <10 ms, so without the hold the overlay
+    // is never observable. The hold also proves ready was reset: if it leaked
+    // as true from the first book, the overlay would never appear.
     const release =
       await test.step("hold the second audiobook's manifest", () =>
         listenPage.holdManifest(uuid2));
@@ -184,7 +185,7 @@ test.describe("listen page", () => {
       });
     });
 
-    // Positive proof that hls_ready was reset: a stale true from the first
+    // Positive proof that ready was reset: a stale true from the first
     // book would fail this.
     await test.step("check the player is preparing the second audiobook", async () => {
       await expect(listenPage.preparingOverlay).toBeVisible();
@@ -232,7 +233,7 @@ test.describe("listen page", () => {
 
       // The label alone is no proof: the regression showed 1.50× while the
       // audio played at 1.0, because a media load() resets playbackRate. The
-      // element only keeps the rate if the shim re-applies it on loadedmetadata.
+      // element only keeps the rate if the engine re-applies it on loadedmetadata.
       await test.step("check the audio element plays at the restored speed", async () => {
         await expect
           .poll(async () => (await listenPage.audioState())?.rate, {
@@ -348,7 +349,7 @@ test.describe("listen page", () => {
       await test.step("check only the time left follows the speed", async () => {
         const at2x = await listenPage.scrubStamps();
         // The total is book time, the same at 2x as at 1x (a second of slack
-        // absorbs `format_hms` truncation).
+        // absorbs the readout's truncation).
         expect(Math.abs(at2x.total - at1x.total)).toBeLessThanOrEqual(1);
         // The time left is the one rate-adjusted figure, so 2x halves it.
         expect(at2x.remaining).toBeLessThan(at1x.remaining);
@@ -374,11 +375,10 @@ test.describe("listen page", () => {
         await listenPage.waitUntilPlayerReady();
       });
 
-      // No real audio plays in headless Chromium, so the pause callback is
-      // driven directly.
-      await test.step("pause at 7.5 seconds", async () => {
-        await expectMutation(progress.saveAudio(uuid, 7.5, bookFileId), () =>
-          listenPage.reportPause(7.5),
+      // The book is about two seconds long, so the pause lands inside it.
+      await test.step("pause at 1.5 seconds", async () => {
+        await expectMutation(progress.saveAudio(uuid, 1.5, bookFileId), () =>
+          listenPage.reportPause(1.5),
         );
       });
 
@@ -396,19 +396,19 @@ test.describe("listen page", () => {
     }) => {
       const uuid = await fetchBookUuidByTitle(request, MP3_BOOK.title);
       const bookFileId = await audioFileId(uuid);
-      const failedSave = progress.saveAudio(uuid, 12.25, bookFileId);
+      const failedSave = progress.saveAudio(uuid, 1.25, bookFileId);
 
-      // Only the save fails: the sibling `progress/get` that reconciles on
-      // mount keeps hitting the real server.
+      // Only the save fails: the position read the player boots from keeps
+      // hitting the real server.
       await test.step("open the player while progress saves fail", async () => {
         await listenPage.goto(uuid);
         await listenPage.waitUntilPlayerReady();
         await listenPage.forceServerError(failedSave);
       });
 
-      await test.step("pause at 12.25 seconds", async () => {
+      await test.step("pause at 1.25 seconds", async () => {
         await expectMutation(failing(failedSave), () =>
-          listenPage.reportPause(12.25),
+          listenPage.reportPause(1.25),
         );
       });
 
@@ -753,12 +753,13 @@ test.describe("listen page", () => {
         await listenPage.waitUntilPlayerReady();
       });
 
-      // The fractional offset is the point: `ceil` gives a 3s countdown while
-      // the playhead needs 2.1s, so the seam is crossed with the countdown above
-      // zero. That is the race the timer lost by re-arming to the next chapter.
+      // The fractional gap is the point: `ceil` gives a 3s countdown while the
+      // playhead needs ~2s (the scrubber lands on the whole second, 10), so the
+      // seam is crossed with the countdown above zero. That is the race the
+      // timer lost by re-arming to the next chapter.
       await test.step("park 2.1 seconds before the seam", async () => {
         const armAt = SLEEP_SEAM_SECONDS - 2.1;
-        await listenPage.seekTo(armAt);
+        await listenPage.releaseSeek(armAt);
         await expect
           .poll(() => listenPage.audioPosition())
           .toBeGreaterThan(armAt - 1);
@@ -911,31 +912,30 @@ test.describe("listen page", () => {
   });
 
   test.describe("buffering and stalls", () => {
+    // The media bytes are held, so the element has no data to play: the state
+    // the stall watchdog reads as buffering once playback is asked for.
     test("show a buffering badge while playing", async ({
       listenPage,
       request,
     }) => {
       const uuid = await fetchBookUuidByTitle(request, MP3_BOOK.title);
 
-      await test.step("open the player", async () => {
-        await listenPage.goto(uuid);
+      await test.step("open the player with the media bytes held", async () => {
+        await listenPage.holdAudioParts();
+        await listenPage.gotoUnsettled(uuid);
         await listenPage.waitUntilPlayerReady();
       });
 
       // The badge is gated on `playing && buffering`, so a paused book never
-      // shows it however loudly the watchdog reports. Asserting that first
-      // keeps the positive case below from passing on the wrong condition.
-      await test.step("report buffering while paused", async () => {
-        await listenPage.reportBuffering(true);
+      // shows it however starved it is. Asserting that first keeps the positive
+      // case below from passing on the wrong condition.
+      await test.step("check a paused, starved book shows no badge", async () => {
+        await listenPage.waitOutWatchdogPolls();
         await expect(listenPage.bufferingBadge).toHaveCount(0);
       });
 
-      // The watchdog's callbacks are driven directly: the point is the Rust
-      // wiring and the markup contract, and a real network stall is not
-      // reproducible without timing flake.
-      await test.step("report playing and buffering", async () => {
-        await listenPage.reportPlaying();
-        await listenPage.reportBuffering(true);
+      await test.step("play", async () => {
+        await listenPage.play();
       });
 
       // A live region, so a screen reader announces the wait rather than a
@@ -953,16 +953,18 @@ test.describe("listen page", () => {
     }) => {
       const uuid = await fetchBookUuidByTitle(request, MP3_BOOK.title);
 
-      await test.step("open the player while it buffers", async () => {
-        await listenPage.goto(uuid);
-        await listenPage.waitUntilPlayerReady();
-        await listenPage.reportPlaying();
-        await listenPage.reportBuffering(true);
-        await expect(listenPage.bufferingBadge).toBeVisible();
-      });
+      const release =
+        await test.step("play while the media bytes are held", async () => {
+          const release = await listenPage.holdAudioParts();
+          await listenPage.gotoUnsettled(uuid);
+          await listenPage.waitUntilPlayerReady();
+          await listenPage.play();
+          await expect(listenPage.bufferingBadge).toBeVisible();
+          return release;
+        });
 
-      await test.step("report data arriving", async () => {
-        await listenPage.reportBuffering(false);
+      await test.step("let the data arrive", async () => {
+        release();
       });
 
       await test.step("check the badge clears without claiming a failure", async () => {
@@ -977,24 +979,23 @@ test.describe("listen page", () => {
     }) => {
       const uuid = await fetchBookUuidByTitle(request, MP3_BOOK.title);
 
-      await test.step("open the player", async () => {
-        await listenPage.goto(uuid);
+      await test.step("open the player with the media bytes held", async () => {
+        await listenPage.holdAudioParts();
+        await listenPage.gotoUnsettled(uuid);
         await listenPage.waitUntilPlayerReady();
         await expect(listenPage.failedOverlay).toHaveCount(0);
       });
 
-      // The watchdog reports a stall after 15s without a `timeupdate`; waiting
-      // that out would be a sleep and a flake source, so the callback it would
-      // have fired is fired instead.
-      await test.step("report a stall", async () => {
-        await listenPage.reportPlaying();
-        await listenPage.reportStall();
+      // The held bytes never arrive, so no `timeupdate` or `progress` fires and
+      // the watchdog gives up after its 15 s.
+      await test.step("play into the stall", async () => {
+        await listenPage.play();
       });
 
-      // A stall reuses `playback_failed`: the same terminal overlay as an init
-      // timeout, because neither recovers without a reload.
+      // A stall reuses the failed state: the same terminal overlay as a failed
+      // boot, because neither recovers without a reload.
       await test.step("check the failure overlay shows", async () => {
-        await expect(listenPage.failedOverlay).toBeVisible();
+        await expect(listenPage.failedOverlay).toBeVisible({ timeout: 20_000 });
         await expect(listenPage.failedOverlay).toHaveRole("alert");
         await expect(listenPage.failedOverlay).toContainText(
           "Playback failed.",

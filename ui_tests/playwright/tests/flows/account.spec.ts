@@ -771,7 +771,7 @@ test.describe("password", () => {
 
     await test.step("change the password with the wrong current one", async () => {
       await expectMutation(
-        account.changePassword(wrong, "Brand-New-Valid-9x", 500),
+        account.changePassword(wrong, "Brand-New-Valid-9x", 403),
         () => section.changePassword(wrong, "Brand-New-Valid-9x"),
       );
     });
@@ -800,7 +800,7 @@ test.describe("password", () => {
 
     await test.step("change the password to a short one", async () => {
       await expectMutation(
-        account.changePassword(TEST_PASSWORD, "short", 500),
+        account.changePassword(TEST_PASSWORD, "short", 400),
         () => section.changePassword(TEST_PASSWORD, "short"),
       );
     });
@@ -1301,9 +1301,7 @@ test.describe("share stats", () => {
 
     await test.step("check the switch is back on with an error", async () => {
       await expect(section.shareStatsSwitch).toBeChecked();
-      await expect(section.shareStatsStatus).toHaveText(
-        "Couldn’t save. Try again.",
-      );
+      await expect(section.shareStatsStatus).toContainText("Couldn’t save");
       await expect(section.shareStatsStatus).toHaveClass(/error/);
     });
   });

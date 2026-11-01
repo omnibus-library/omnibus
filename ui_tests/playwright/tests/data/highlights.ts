@@ -47,6 +47,5 @@ export type SentHighlight = Omit<NewHighlight, "text"> & {
 
 /** The highlight the reader sent, read off its highlights/create request. */
 export function sentHighlight(request: Request): SentHighlight {
-  const { input }: { input: SentHighlight } = request.postDataJSON();
-  return input;
+  return request.postDataJSON();
 }

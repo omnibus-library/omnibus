@@ -25,7 +25,7 @@ export class FilterBarComponent extends BaseComponent {
     super(page);
     this.picker = new FilterPickerDialogComponent(page);
     this.root = page.getByRole("group", { name: "Library filters" });
-    this.facets = this.root.getByTestId(/^filter-facet-[a-z]+$/);
+    this.facets = this.root.locator(".fb-facet");
     this.facetClearButtons = this.root.getByRole("button", {
       name: /^Clear the .+ filter$/,
     });
@@ -34,7 +34,9 @@ export class FilterBarComponent extends BaseComponent {
 
   /** The facet for `field`, named for the field and, while active, what it keeps. */
   facet(field: FilterField): Locator {
-    return this.root.getByTestId(`filter-facet-${field}`);
+    return this.root.getByRole("button", {
+      name: new RegExp(`^${FILTER_FIELD_NAMES[field]}(?: |$)`),
+    });
   }
 
   facetClearButton(field: FilterField): Locator {

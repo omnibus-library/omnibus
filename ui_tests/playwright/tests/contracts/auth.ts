@@ -6,6 +6,7 @@ export const authUrls = {
   logout: /\/api\/auth\/logout(?:\?|$)/,
   register: /\/api\/auth\/register(?:\?|$)/,
   registration: /\/api\/auth\/registration(?:\?|$)/,
+  me: /\/api\/auth\/me(?:\?|$)/,
 };
 
 /** The writes a reader makes to start and end a session, or to sign up. */
@@ -13,7 +14,7 @@ export const auth = {
   login: (status = 200): ExpectMutationOptions =>
     post(authUrls.login, undefined, status),
 
-  logout: (): ExpectMutationOptions => post(authUrls.logout),
+  logout: (): ExpectMutationOptions => post(authUrls.logout, undefined, 204),
 
   register: (status = 200): ExpectMutationOptions =>
     post(authUrls.register, undefined, status),

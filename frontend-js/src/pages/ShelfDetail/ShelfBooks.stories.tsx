@@ -237,7 +237,10 @@ export const RefetchFailing: Story = {
     await expect(canvas.queryByTestId("shelf-count")).toBeNull();
     await expect(canvas.queryByTestId("shelf-empty")).toBeNull();
     // Without the member list the tile would open a picker that marks nothing as already added.
-    await expect(canvas.queryByTestId("shelf-add-tile")).toBeNull();
+    await expect(canvas.getByTestId("shelf-add-tile")).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
     await expect(canvas.getByTestId("shelf-add-books")).toHaveAttribute(
       "title",
       "This shelf’s books couldn’t be loaded.",

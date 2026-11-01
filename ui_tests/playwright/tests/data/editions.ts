@@ -58,7 +58,7 @@ export type EditionAnswers = {
   found?: EditionSearchResult;
 };
 
-/** The fields a search request carries, inside its `req` envelope. */
+/** The fields a search request carries. */
 export type EditionSearchQuery = {
   query: string;
   title?: string;

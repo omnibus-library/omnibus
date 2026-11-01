@@ -573,6 +573,12 @@
 .ld-cover-glint > img {
   position: relative;
   z-index: 1;
+  /* A browser draws an image as its bytes arrive, so the cover fades in whole once decoded. */
+  opacity: 0;
+  transition: opacity 0.25s var(--ld-ease-out);
+}
+.ld-cover-glint > img[data-loaded] {
+  opacity: 1;
 }
 .ld-cover-glint:has(img[data-loaded])::before {
   animation: none;
@@ -615,6 +621,9 @@
   .ld-stale.is-stale::before {
     animation: none;
     display: none;
+  }
+  .ld-cover-glint > img {
+    transition: none;
   }
   .ld-ring::before {
     animation: none;

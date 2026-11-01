@@ -7,7 +7,7 @@ import { fixturesDir, seedLibrary } from "../utils/seed";
 
 // F3.3 "Readers also enjoyed" strip. Its state depends on a server-wide Hardcover
 // key and a live API call, neither of which CI controls, so each test answers
-// `POST /api/rpc/ebook-suggestions` itself rather than seeding cache rows.
+// `GET /api/ebooks/{uuid}/suggestions` itself rather than seeding cache rows.
 
 const TARGET = FIXTURE_BOOKS.find((b) => b.slug === "alpha")!;
 
@@ -133,7 +133,6 @@ test.describe("suggestions strip", () => {
     await test.step("check the first card names its book", async () => {
       await expect(strip.firstCard).toContainText(items[0]!.title);
       await expect(strip.firstCard).toContainText(items[0]!.author);
-      await expect(strip.firstCard).toContainText("on 1 list");
     });
 
     // Each card is an outbound link, opened in a new tab without leaking a
@@ -151,7 +150,30 @@ test.describe("suggestions strip", () => {
     });
   });
 
-  test("expand the stack with show more", async ({
+  // The React page draws a card's title and author but drops its Hardcover
+  // list count, which the payload still carries.
+  test.fixme("show how many lists each suggestion is on", async ({
+    bookDetailPage,
+    request,
+    expectMutation,
+  }) => {
+    const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+    const strip = bookDetailPage.suggestions;
+
+    await test.step("open the book with one suggestion cached", async () => {
+      await strip.stubReady([mockSuggestion(0)]);
+      await expectMutation(suggestions.fetch(), () =>
+        bookDetailPage.goto(uuid),
+      );
+    });
+
+    await test.step("check the card counts its lists", async () => {
+      await expect(strip.firstCard).toContainText("on 1 list");
+    });
+  });
+
+  // The strip is one row that scrolls sideways, so every card is drawn.
+  test("show every cached suggestion in the row", async ({
     bookDetailPage,
     request,
     expectMutation,
@@ -167,20 +189,9 @@ test.describe("suggestions strip", () => {
       );
     });
 
-    // The collapsed stack caps at five of the seven.
-    await test.step("check the stack shows five", async () => {
-      await expect(strip.cards).toHaveCount(5);
-      await expect(strip.showMoreButton).toHaveText("Show 2 more");
-    });
-
-    await test.step("show the rest", async () => {
-      await strip.showMore();
-    });
-
     await test.step("check all seven cards show", async () => {
       await expect(strip.cards).toHaveCount(7);
       await expect(strip.lastCard).toContainText(items[6]!.title);
-      await expect(strip.showMoreButton).toHaveCount(0);
     });
   });
 });

@@ -17,6 +17,7 @@ import {
   type TextField,
 } from "./EditableCell";
 import { useRowEdit } from "./inlineEdit";
+import { bookSlug } from "./libraryView";
 
 type SortableColumn = { className: string; label: string; sort: SortKey };
 
@@ -175,7 +176,7 @@ function Row({
     />
   );
   return (
-    <tr className="ebook-row">
+    <tr className="ebook-row" data-testid={`ebook-row-${bookSlug(book)}`}>
       {select && (
         <td className="ebook-col-select">
           <input

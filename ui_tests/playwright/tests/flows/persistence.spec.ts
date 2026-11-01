@@ -84,7 +84,7 @@ test.describe("sort persistence", () => {
   }) => {
     let titleOrder: string[] = [];
     let sortedTitles: string[] = [];
-    let fetchBodies: string[] = [];
+    let fetchQueries: string[] = [];
 
     await test.step("open the library on its default sort", async () => {
       await libraryPage.goto();
@@ -95,26 +95,32 @@ test.describe("sort persistence", () => {
     await test.step("sort by author", async () => {
       await libraryPage.sortBy("author");
       await expect(libraryPage.sortSelect).toHaveValue("author");
-      // The refetch repaints after network idle can resolve, so wait for the grid to move off the title order.
+      // The refetch repaints after network idle can resolve, and the grid
+      // may be empty while it loads, so wait for tiles in some other order.
       await expect
-        .poll(() => libraryPage.tileTitles(), {
-          message: "the grid never left the title order",
-        })
-        .not.toEqual(titleOrder);
-      sortedTitles = await libraryPage.tileTitles();
+        .poll(
+          async () => {
+            sortedTitles = await libraryPage.tileTitles();
+            return (
+              sortedTitles.length > 0 &&
+              sortedTitles.join("\n") !== titleOrder.join("\n")
+            );
+          },
+          { message: "the grid never left the title order" },
+        )
+        .toBe(true);
     });
 
     await test.step("reload", async () => {
-      fetchBodies = libraryPage.recordPageFetches();
+      fetchQueries = libraryPage.recordPageFetches();
       await libraryPage.reloadAndSettle();
       await expect(libraryPage.firstBookTile).toBeVisible();
     });
 
     await test.step("check the first fetch already carries the saved sort", async () => {
-      // Before #1818 the first body always said "title". Quoted, because `"author"` must not match the `"authors"` filter key.
-      expect(fetchBodies.length).toBeGreaterThan(0);
-      expect(fetchBodies[0]).toContain('"author"');
-      expect(fetchBodies[0]).not.toContain('"title"');
+      // Before #1818 the first fetch always sorted by title.
+      expect(fetchQueries.length).toBeGreaterThan(0);
+      expect(fetchQueries[0]).toMatch(/[?&]sort=author(&|$)/);
     });
 
     await test.step("check the grid never paints the default order", async () => {
@@ -135,7 +141,7 @@ test.describe("sort persistence", () => {
   }) => {
     // A first visit has no stored library pointer, so the fetch must still go
     // out on defaults instead of waiting for prefs that never land.
-    const fetchBodies = libraryPage.recordPageFetches();
+    const fetchQueries = libraryPage.recordPageFetches();
 
     await test.step("open the library for the first time", async () => {
       await libraryPage.goto();
@@ -143,8 +149,8 @@ test.describe("sort persistence", () => {
     });
 
     await test.step("check the fetch and the sort use the defaults", async () => {
-      expect(fetchBodies.length).toBeGreaterThan(0);
-      expect(fetchBodies[0]).toContain('"title"');
+      expect(fetchQueries.length).toBeGreaterThan(0);
+      expect(fetchQueries[0]).toMatch(/[?&]sort=title(&|$)/);
       await expect(libraryPage.sortSelect).toHaveValue("title");
     });
   });

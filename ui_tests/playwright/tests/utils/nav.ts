@@ -1,8 +1,14 @@
 import type { Page } from "@playwright/test";
 
-// Wait until the Dioxus WASM client has hydrated: the app stamps
-// `data-hydrated` on <html> from its first post-mount effect. Until then the
-// server-rendered markup is inert: a click lands on it and no rsx handler runs.
-export async function waitForHydration(page: Page): Promise<void> {
-  await page.waitForSelector("html[data-hydrated]", { state: "attached" });
+// Wait until the React client has mounted into `#root`. `index.html` already
+// paints a loader there before the bundle runs, so a child proves nothing:
+// wait for the mark `createRoot` leaves on its container instead.
+export async function waitForApp(page: Page): Promise<void> {
+  await page.waitForFunction(() => {
+    const root = document.getElementById("root");
+    return (
+      root !== null &&
+      Object.keys(root).some((key) => key.startsWith("__reactContainer$"))
+    );
+  });
 }

@@ -39,15 +39,17 @@ export class MetadataSectionComponent extends BaseComponent {
     await this.saveButton.click();
   }
 
-  /** The methods of every save sent from now on. */
+  /** The methods of every save sent from now on; the order's reads share its address. */
   recordSaves(): string[] {
-    return recordRequests(this.page, settingsUrls.metadataPrecedence);
+    return recordRequests(this.page, settingsUrls.metadataPrecedence, "POST");
   }
 
   /** Answers a save with the order it sent; the order is instance configuration. */
   async stubSaved(): Promise<void> {
     await this.page.route(settingsUrls.metadataPrecedence, (route) =>
-      route.fulfill({ json: route.request().postDataJSON().precedence }),
+      route.request().method() === "POST"
+        ? route.fulfill({ json: route.request().postDataJSON() })
+        : route.continue(),
     );
   }
 }

@@ -42,6 +42,9 @@ jobs:
           filters: |
             e2e:
               - "frontend/**"
+              # The React client the suite drives, and the spec its API client is generated from.
+              - "frontend-js/**"
+              - "openapi/**"
               - "shared/**"
               - "server/**"
               - "db/**"
@@ -244,8 +247,25 @@ jobs:
       - name: Install Playwright npm deps
         run: nix develop .#e2e --command bash -c 'set -euo pipefail; cd ui_tests/playwright && pnpm install --frozen-lockfile'
 
+      - name: Cache React client node_modules
+        uses: actions/cache@v4
+        with:
+          path: frontend-js/node_modules
+          key: frontend-js-node-modules-${{ runner.os }}-${{ hashFiles('frontend-js/pnpm-lock.yaml') }}
+          restore-keys: |
+            frontend-js-node-modules-${{ runner.os }}-
+
+      # Built at base `/`: the suite drives the React client at the origin's root.
+      # The API client is generated explicitly: a cached node_modules lets
+      # `install` skip the `prepare` script that would otherwise do it.
+      # OMNIBUS_VERSION is the build's version line, which the user menu spec reads.
+      - name: Build React client
+        run: nix develop .#e2e --command bash -c 'set -euo pipefail; cd frontend-js && pnpm install --frozen-lockfile && pnpm run generate && OMNIBUS_VERSION=v0.0.0 pnpm exec vite build --base=/'
+
       # Backgrounded with `nohup ... &` + `disown` so the server survives the
-      # step's shell exit and the next step can poll it.
+      # step's shell exit and the next step can poll it. `vite preview` serves
+      # the React client on :3001 and proxies /api to the server on :3000, so
+      # the browser and the specs' API calls share one origin.
       - name: Start server
         run: |
           nix develop .#e2e --command bash -c '
@@ -253,9 +273,8 @@ jobs:
             chmod +x ./target/dx/omnibus/release/web/server
             nohup env PORT=3000 ./target/dx/omnibus/release/web/server >server.log 2>&1 &
             disown
-            # The health probe rather than the root: a cookie-less page load
-            # answers with a redirect to /login.
-            pnpm dlx wait-on -t 60000 http://127.0.0.1:3000/api/_health
+            (cd frontend-js && OMNIBUS_PORT=3000 nohup pnpm exec vite preview --port 3001 --strictPort --host 127.0.0.1 >../react.log 2>&1 &)
+            pnpm dlx wait-on -t 60000 http://127.0.0.1:3001/api/_health
           '
 
       - name: Run Playwright tests
@@ -268,7 +287,7 @@ jobs:
           nix develop .#e2e --command bash -c '
             set -euo pipefail
             cd ui_tests/playwright
-            pnpm exec playwright test --shard=${{ matrix.shard }}/${{ env.TOTAL_SHARDS }} --reporter=list,blob,junit
+            PLAYWRIGHT_BASE_URL=http://127.0.0.1:3001 pnpm exec playwright test --shard=${{ matrix.shard }}/${{ env.TOTAL_SHARDS }} --reporter=list,blob,junit
           '
 
       # Test results → Codecov Test Analytics. `!cancelled()` so a shard's
@@ -300,7 +319,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: server-log-shard-${{ matrix.shard }}
-          path: server.log
+          path: |
+            server.log
+            react.log
           retention-days: 7
 
   # The required status check for this workflow. Always runs (no paths filter +
