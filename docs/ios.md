@@ -85,10 +85,26 @@ To see what a car sends, filter Console.app to the attached phone's
 `RemoteCommands` category: no line for a press means no seek handler saw it.
 
 **Decisions live in `CarPlayContent`.** A CarPlay template can't be read back
-from a test, so row text, the chapter window (from the previous chapter to the
-end — CarPlay can't open a list scrolled to a row), the speed cycle, the button
-row and the offer sheet's copy are pure functions there, pinned by
-`CarPlayContentTests`. The other files only translate them into templates.
+from a test, so row text, whether a list redraws, whose rows the lists hold, the
+chapter window (from the previous chapter to the end — CarPlay can't open a list
+scrolled to a row), the speed cycle, the button row and the offer sheet's copy
+are pure functions there, pinned by `CarPlayContentTests`. The other files only
+translate them into templates.
+
+**Rows are kept, not rebuilt.** `updateSections` sends a list back to its top,
+and a tapped row's spinner lives on its item, so `CarPlayController` keeps one
+`CPListItem` per book per list and sets what changed on it, handler included.
+A list only updates when which rows it holds, or their order, changes. A Library
+re-read shows what it has read so far ahead of the rows it hasn't reached, so an
+unchanged library of any length never updates; the rows it didn't find go only
+when the server has answered every page of the pass through to its end. The car's
+reads turn on `Cache.live`'s `confirmsAnswer`, so an answer that isn't fresh means
+the server's never landed. In Library it keeps the rows on screen in place, and a
+pass with one in it is cut short, so the list reads again the next time a session
+change or its tab asks; Continue takes a replica's new order as it lands. An empty
+answer the server never confirmed waits for it. A read that fails leaves the rows
+on screen, or the message on a list the server said is empty; with nothing answered
+yet it says it couldn't load, never that the list is empty.
 
 **The entitlement.** `com.apple.developer.carplay-audio` in `omnibus.entitlements`
 is granted by Apple per team, and a device build signs only once the team's

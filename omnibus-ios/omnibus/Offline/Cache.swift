@@ -215,10 +215,16 @@ enum Cache {
     /// and its own refresh also store (a review), where an answer fetched
     /// before the write would otherwise put the old state back. Off for keys
     /// written constantly, such as positions, which would refuse every answer.
+    ///
+    /// `confirmsAnswer` yields an answer the replica adopted as fresh even when it
+    /// repeats the replica, so a last answer still not fresh means the server's
+    /// never landed. For a caller that acts on that; others would only churn.
+    /// It doesn't apply with `guardsWrites`.
     static func live<T: Codable & Sendable>(
         _ key: String,
         storing: (@Sendable (T) -> T)? = nil,
         guardsWrites: Bool = false,
+        confirmsAnswer: Bool = false,
         fetch: @escaping @Sendable () async throws -> T
     ) -> AsyncThrowingStream<CacheRead<T>, Error> {
         AsyncThrowingStream { continuation in
@@ -283,7 +289,7 @@ enum Cache {
                     // `Data` on both sides already, and re-yielding an
                     // identical answer would churn every observing view for
                     // nothing.
-                    if freshData == nil || freshData != cachedData {
+                    if confirmsAnswer || freshData == nil || freshData != cachedData {
                         continuation.yield(CacheRead(value: fresh, isFresh: true))
                     }
                     continuation.finish()
