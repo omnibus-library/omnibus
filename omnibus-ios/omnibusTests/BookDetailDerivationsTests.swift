@@ -710,9 +710,14 @@ private func finishTarget(
     reviewKnown: Bool = true, rated: Bool = true, bookID: Int64 = 2, members: [Book] = [],
     states: [String: SeriesMemberState] = [:], settled: Bool = true
 ) -> FinishTarget? {
-    FinishCopy.target(
+    // A member a test doesn't name has answered, and is unread.
+    var answered = states
+    for book in members where answered[book.uuid] == nil {
+        answered[book.uuid] = SeriesMemberState(status: .unread)
+    }
+    return FinishCopy.target(
         reviewKnown: reviewKnown, rated: rated, bookID: bookID, members: members,
-        states: states, statesSettled: settled
+        states: answered, statesSettled: settled
     )
 }
 
@@ -832,4 +837,27 @@ private let holmes = [member(1, "1"), member(2, "2"), member(3, "3")]
     #expect(line(.waiting).isEmpty)
     #expect(line(.failed).contains("couldn\u{2019}t be loaded"))
     #expect(line(.known).contains("No reading recorded yet"))
+}
+
+// MARK: - Finish card: what isn't known
+
+@Test func cardPointsNowhereWhileAMembersStatusHasNotAnswered() {
+    let states = [
+        holmes[0].uuid: SeriesMemberState(status: .finished),
+        // Its place answered and its status didn't, so it could be a finished book.
+        holmes[2].uuid: SeriesMemberState(status: nil, percent: 40),
+    ]
+    let target = FinishCopy.target(
+        reviewKnown: true, rated: true, bookID: 2, members: holmes,
+        states: states, statesSettled: true
+    )
+    #expect(target == nil)
+}
+
+@Test func onlyAFinishSeenWithThePageSettledCelebrates() {
+    #expect(FinishCopy.celebrates(settled: true, was: .reading, now: .finished))
+    // Cache said reading, server said finished: done on another device.
+    #expect(!FinishCopy.celebrates(settled: false, was: .reading, now: .finished))
+    #expect(!FinishCopy.celebrates(settled: true, was: .finished, now: .finished))
+    #expect(!FinishCopy.celebrates(settled: true, was: .unread, now: .reading))
 }

@@ -363,6 +363,7 @@ struct BookStage: View {
     var onReviews: () -> Void
     var onSeries: () -> Void
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.palette) private var palette
     /// Bumped by a tap on the cover, to throw the burst again.
     @State private var burstReplays = 0
@@ -424,7 +425,7 @@ struct BookStage: View {
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 14)
-        .animation(Motion.settle, value: model.readStatus)
+        .animation(reduceMotion ? nil : Motion.settle, value: model.readStatus)
     }
 
     // MARK: - Byline

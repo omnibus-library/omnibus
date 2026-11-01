@@ -89,6 +89,10 @@ final class BookDetailModel {
 
     private var seriesStatesInFlight = false
 
+    /// Set once the first read of the status has run its course, cache then
+    /// server. Until then a change is the page catching up, not a finish.
+    private var readStatusSettled = false
+
     func load(uuid: String) async {
         isLoading = book == nil
 
@@ -134,7 +138,9 @@ final class BookDetailModel {
             group.addTask { @MainActor in
                 for await record in UserDataService.readStatus(uuid: uuid).values() {
                     // Closing the reader on its last page lands here.
-                    if self.readStatusKnown, self.readStatus != .finished, record.status == .finished {
+                    if FinishCopy.celebrates(
+                        settled: self.readStatusSettled, was: self.readStatus, now: record.status
+                    ) {
                         self.celebrations += 1
                     }
                     self.readStatus = record.status
@@ -142,6 +148,7 @@ final class BookDetailModel {
                     self.readStatusKnown = true
                     self.loadSeriesStates()
                 }
+                self.readStatusSettled = true
             }
             group.addTask { @MainActor in
                 if self.journalsAnswer == .failed { self.journalsAnswer = .waiting }
@@ -241,6 +248,8 @@ final class BookDetailModel {
         if book.seriesId != relatedSeriesId {
             relatedSeriesId = book.seriesId
             seriesBooks = []
+            seriesStates = [:]
+            seriesStatesSettled = false
             relatedInFlight = false
         }
         if firstAuthor != relatedAuthorId {
@@ -306,28 +315,46 @@ final class BookDetailModel {
         seriesStatesInFlight = true
         let others = seriesBooks.filter { $0.id != current.id }
         Task { @MainActor in
-            defer {
-                seriesStatesInFlight = false
-                seriesStatesSettled = true
-            }
-            await withTaskGroup(of: Void.self) { group in
+            // Committed whole: answers landing one at a time would have the card
+            // point at a book and then move.
+            var answers: [String: SeriesMemberState] = [:]
+            await withTaskGroup(of: (String, SeriesMemberState).self) { group in
                 for member in others {
                     group.addTask { @MainActor in
-                        let format: ProgressFormat = member.hasEbook ? .epub : .audio
-                        for await record in UserDataService.progress(
-                            uuid: member.uuid, format: format
-                        ).values() {
-                            self.seriesStates[member.uuid, default: SeriesMemberState()].percent =
-                                record?.progressPercent ?? record?.resolved?.percentThroughBook
-                        }
-                        for await record in UserDataService.readStatus(uuid: member.uuid).values() {
-                            self.seriesStates[member.uuid, default: SeriesMemberState()].status =
-                                record.status
-                        }
+                        (member.uuid, await Self.seriesMemberState(member))
                     }
                 }
+                for await (uuid, state) in group { answers[uuid] = state }
             }
+            seriesStatesInFlight = false
+            // The series changed under the read, so its answers are for another.
+            guard book?.seriesId == current.seriesId else {
+                loadSeriesStates()
+                return
+            }
+            seriesStates = answers
+            seriesStatesSettled = true
         }
+    }
+
+    /// One member's status and place. Both formats are read, since a dual-format
+    /// book's place may only exist in the one you listened to.
+    private static func seriesMemberState(_ member: Book) async -> SeriesMemberState {
+        var state = SeriesMemberState()
+        func percent(_ format: ProgressFormat) async -> Int64? {
+            var found: Int64?
+            for await record in UserDataService.progress(uuid: member.uuid, format: format).values() {
+                found = record?.progressPercent ?? record?.resolved?.percentThroughBook
+            }
+            return found
+        }
+        let reading = member.hasEbook ? await percent(.epub) : nil
+        let listening = member.hasAudiobook ? await percent(.audio) : nil
+        state.percent = reading ?? listening
+        for await record in UserDataService.readStatus(uuid: member.uuid).values() {
+            state.status = record.status
+        }
+        return state
     }
 
     /// Read the whole per-book session log, replica first.
