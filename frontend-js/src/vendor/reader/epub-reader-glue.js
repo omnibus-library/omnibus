@@ -524,7 +524,7 @@
       installStageResizeWatch(elementId);
 
       // These body backgrounds are mirrored by the per-theme `--rd-page`
-      // token in atrium.css (the reader-surface ground) — change both
+      // token in styles/theme.css (the reader-surface ground) — change both
       // together or the chrome strips stop matching the page.
       rendition.themes.register("light", {
         body: { background: "#fcfbfa", color: foregroundColorForTheme("light") },

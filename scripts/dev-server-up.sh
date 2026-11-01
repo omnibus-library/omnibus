@@ -84,9 +84,8 @@ EOF
         exit 1
     fi
 
-    # The shellHook's OMNIBUS_PUBLIC_ORIGIN names the window's base port, so
-    # it is replaced with the port we landed on, in both spellings a browser
-    # or Playwright's PLAYWRIGHT_BASE_URL uses. OMNIBUS_DEV_SEED_USER is
+    # The origin allowlist names the port we landed on, in both spellings a
+    # browser or Playwright's PLAYWRIGHT_BASE_URL uses. OMNIBUS_DEV_SEED_USER is
     # inherited from the dev shell (.env via flake.nix shellHook).
     export PORT="$port"
     export OMNIBUS_PUBLIC_ORIGIN="http://localhost:$port,http://127.0.0.1:$port"

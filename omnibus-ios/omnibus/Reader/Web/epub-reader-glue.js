@@ -1178,7 +1178,7 @@
   }
 
   // Page grounds, keyed by theme token. Mirrored by the per-theme `--rd-page`
-  // token in atrium.css and by `Palette.readerPage` in the iOS design system —
+  // token in theme.css and by `Palette.readerPage` in the iOS design system —
   // change all three together or the chrome strips stop matching the page.
   // Black matches Apple Books' dark reading theme on macOS: a pure-black page
   // under bright #ffffff text.

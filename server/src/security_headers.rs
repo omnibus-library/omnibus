@@ -47,7 +47,7 @@ fn build_csp() -> String {
         .map(|host| format!(" https://{host}"))
         .collect::<String>();
     // `style-src` needs `blob:` (epub.js renders book stylesheets via `createObjectURL`) and
-    // the Google Fonts hosts here and in `font-src` (`atrium.css` `@import`s them); `font-src`
+    // the Google Fonts hosts here and in `font-src` (`frontend-js/index.html` loads them); `font-src`
     // also needs `data:` for faces a book embeds.
     format!(
         "default-src 'self'; \
