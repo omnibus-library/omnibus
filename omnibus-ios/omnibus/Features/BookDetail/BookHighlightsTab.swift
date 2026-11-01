@@ -36,6 +36,7 @@ struct BookHighlightsTab: View {
                             chapter: ChapterLocator.label(
                                 chapters: model.chapters, cfi: highlight.epubCFIRange
                             ),
+                            opensInBook: book.hasEpub && highlight.epubCFIRange != nil,
                             onQuote: { onQuote(highlight) },
                             onOpenInBook: { onOpenInBook(highlight) },
                             onChange: { Task { await model.load(uuid: book.uuid) } }
@@ -104,6 +105,9 @@ struct BookHighlightsTab: View {
 struct KeptLineRow: View {
     let highlight: Highlight
     var chapter: String?
+    /// Whether the line can be opened at: a CFI in a book that has an EPUB. A
+    /// PDF's kept line anchors differently, and a Kobo's has no anchor at all.
+    var opensInBook = false
     var onQuote: () -> Void
     var onOpenInBook: () -> Void
     /// Run after a write, for the page to read the list again.
@@ -198,7 +202,7 @@ struct KeptLineRow: View {
                     Label("Make a quote card", systemImage: "quote.bubble")
                 }
             }
-            if highlight.epubCFIRange != nil {
+            if opensInBook {
                 Button {
                     onOpenInBook()
                 } label: {

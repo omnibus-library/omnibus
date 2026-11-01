@@ -754,6 +754,12 @@ struct ReaderView: View {
             opening = settled
             if let cfi = ReaderController.openingCFI(for: settled) { startCFI = cfi }
         }
+        // A jump asked for before this view existed, from the book page: no
+        // view was here to see `pendingCFI` change.
+        if let asked = bridge.pendingCFI {
+            startCFI = asked
+            bridge.pendingCFI = nil
+        }
         savedCFI = startCFI
 
         controller.configure(
