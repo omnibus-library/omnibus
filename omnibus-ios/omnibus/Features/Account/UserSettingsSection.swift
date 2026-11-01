@@ -66,10 +66,6 @@ struct AccountSettingToggle: Equatable {
 /// The native twin of the web Account page's user-settings card
 /// (`frontend/src/pages/account/user_settings.rs`).
 struct UserSettingsSection: View {
-    /// Owned by `AccountView`, which seeds and saves it.
-    @Binding var scrollStops: Bool
-    let scrollStopsError: String?
-
     @Environment(AppState.self) private var app
     @Environment(\.palette) private var palette
 
@@ -78,12 +74,9 @@ struct UserSettingsSection: View {
     private var connectivity = Connectivity.shared
 
     // Explicit: the private stored properties would make the memberwise init private.
-    init(scrollStops: Binding<Bool>, scrollStopsError: String?) {
-        _scrollStops = scrollStops
-        self.scrollStopsError = scrollStopsError
-    }
+    init() {}
 
-    enum Row { case stackSeries, scrollStops, shareStats }
+    enum Row { case stackSeries, shareStats }
 
     /// A row's error, else what the setting does in its current state (web's wording).
     nonisolated static func caption(_ row: Row, isOn: Bool, error: String?) -> String {
@@ -93,10 +86,6 @@ struct UserSettingsSection: View {
             return isOn
                 ? "Each series folds into one stack wherever books are listed."
                 : "Every book in a series keeps its own cover."
-        case .scrollStops:
-            return isOn
-                ? "Book details snap through one panel at a time."
-                : "Book details scroll continuously, top to bottom."
         case .shareStats:
             return isOn
                 ? "Other readers on this server can see your stats page."
@@ -120,16 +109,6 @@ struct UserSettingsSection: View {
                         .labelsHidden()
                         .tint(palette.accentColor)
                         .disabled(stack.isDisabled(online: connectivity.isOnline))
-                }
-
-                PlateRow(
-                    label: "Book details scroll stops",
-                    detail: captionText(.scrollStops, isOn: scrollStops, error: scrollStopsError)
-                ) {
-                    Toggle("Book details scroll stops", isOn: $scrollStops)
-                        .labelsHidden()
-                        .tint(palette.accentColor)
-                        .disabled(!connectivity.isOnline)
                 }
 
                 if showsShareStats {

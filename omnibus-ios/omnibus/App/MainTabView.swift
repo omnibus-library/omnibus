@@ -273,6 +273,8 @@ final class Presentation {
     func openReader(_ book: Book) {
         guard DownloadManager.shared.canOpen(book, kind: .ebook) else {
             unavailable = UnavailableBook(title: book.displayTitle, kind: .ebook)
+            // A place asked for in this book must not wait for the next one opened.
+            ReaderBridge.shared.pendingCFI = nil
             return
         }
         player = nil
@@ -316,7 +318,10 @@ struct DestinationRouter: ViewModifier {
         content.navigationDestination(for: Destination.self) { destination in
             switch destination {
             case let .book(uuid):
+                // A link can replace the book at this place in the stack; the
+                // page's state belongs to the book it was opened on.
                 BookDetailView(uuid: uuid)
+                    .id(uuid)
             case let .author(id):
                 AuthorDetailView(id: id)
             case let .series(id):
