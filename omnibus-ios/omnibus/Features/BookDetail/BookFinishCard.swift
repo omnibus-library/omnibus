@@ -8,7 +8,8 @@ import SwiftUI
 
 /// What the page knows about another book in the series.
 struct SeriesMemberState: Equatable {
-    var status: ReadStatus = .unread
+    /// `nil` when the read never answered, which is not the same as unread.
+    var status: ReadStatus?
     /// Whole-book percent of the reader's place, when there is one.
     var percent: Int64?
 
@@ -37,6 +38,9 @@ enum FinishCopy {
         guard members.count > 1, statesSettled else { return nil }
 
         let others = members.filter { $0.id != bookID }
+        // A status that never answered could be a finished book, and pointing
+        // back at one is worse than pointing nowhere.
+        guard others.allSatisfy({ states[$0.uuid]?.status != nil }) else { return nil }
         let unfinished = { (book: Book) in states[book.uuid]?.status != .finished }
         guard others.contains(where: unfinished) else { return .seriesDone }
 
@@ -47,6 +51,12 @@ enum FinishCopy {
         else { return .seriesDone }
         let state = states[next.uuid]
         return .next(next, started: state?.started ?? false, percent: state?.percent)
+    }
+
+    /// Whether a status read is the book becoming finished with the page up. On
+    /// the first read it's the page catching up to a finish made somewhere else.
+    static func celebrates(settled: Bool, was: ReadStatus, now: ReadStatus) -> Bool {
+        settled && was != .finished && now == .finished
     }
 
     /// `17 days · 13 sessions · 4 highlights`. Nothing without a finish date to

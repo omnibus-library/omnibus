@@ -1230,6 +1230,26 @@ enum UserDataService {
             "/api/stats/sessions", query: ["book": book, "before": before])
     }
 
+    /// A book's whole session log, replica first, so a page reopened offline still
+    /// has its sittings. A single book's log is small, dozens of sittings and not
+    /// thousands, and the cap keeps a pathological one from looping forever. A
+    /// failed page fails the read, rather than storing a partial list as the whole.
+    static func bookSessions(
+        uuid: String
+    ) -> AsyncThrowingStream<CacheRead<[SessionLogEntry]>, Error> {
+        Cache.live(CacheKey.bookSessions(uuid)) {
+            var entries: [SessionLogEntry] = []
+            var before: String?
+            for _ in 0..<12 {
+                let page = try await sessionLog(book: uuid, before: before)
+                entries += page.entries
+                guard let next = page.nextBefore else { break }
+                before = next
+            }
+            return entries
+        }
+    }
+
     // MARK: - Offline prefetch
 
     /// Pull down everything a book needs to be *usable* with no network: where

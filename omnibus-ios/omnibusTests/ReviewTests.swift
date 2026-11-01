@@ -300,7 +300,7 @@ struct DetailReviewsTests {
         let headline = DetailReviews.headline(page)
         #expect(headline?.count == 3)
         #expect(headline?.rounded == 4.5)
-        #expect(DetailReviews.headlineNote(headline, state: .ready(nil)) == "4.3 · 3 reviews")
+        #expect(DetailReviews.headlineSpoken(headline, state: .ready(nil)) == "Average rating 4.3 of 5, from 3 reviews")
     }
 
     @Test("below the server's threshold the stage means what the page already lists")
@@ -311,20 +311,20 @@ struct DetailReviewsTests {
         )
         let headline = DetailReviews.headline(page)
         #expect(headline == ReviewHeadline(average: 4.5, count: 2))
-        #expect(DetailReviews.headlineNote(headline, state: .ready(nil)) == "4.5 · 2 reviews")
+        #expect(DetailReviews.headlineSpoken(headline, state: .ready(nil)) == "Average rating 4.5 of 5, from 2 reviews")
         // One rating is a review, not reviews.
         let lone = DetailReviews.headline(BookReviews(mine: review(stars: 4.5), others: [], summary: nil))
-        #expect(DetailReviews.headlineNote(lone, state: .ready(nil)) == "4.5 · 1 review")
+        #expect(DetailReviews.headlineSpoken(lone, state: .ready(nil)) == "Average rating 4.5 of 5, from 1 review")
     }
 
     @Test("the stage says when nobody has rated, and when it doesn't know yet")
     func headlineStates() {
         #expect(DetailReviews.headline(nil) == nil)
         #expect(DetailReviews.headline(.empty) == nil)
-        #expect(DetailReviews.headlineNote(nil, state: .ready(nil)) == "No reviews yet")
-        #expect(DetailReviews.headlineNote(nil, state: .loading) == "Checking reviews…")
-        #expect(DetailReviews.headlineNote(nil, state: .unavailable(.offline)) == "Reviews need a connection")
-        #expect(DetailReviews.headlineNote(nil, state: .unavailable(.failed)) == "Couldn't load reviews")
+        #expect(DetailReviews.headlineSpoken(nil, state: .ready(nil)) == "No reviews yet")
+        #expect(DetailReviews.headlineSpoken(nil, state: .loading) == "Checking reviews…")
+        #expect(DetailReviews.headlineSpoken(nil, state: .unavailable(.offline)) == "Reviews need a connection")
+        #expect(DetailReviews.headlineSpoken(nil, state: .unavailable(.failed)) == "Couldn't load reviews")
     }
 
     @Test("writing is text or notes; stars alone are not")

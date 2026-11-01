@@ -282,6 +282,8 @@ final class Presentation {
     func openReader(_ book: Book) {
         guard DownloadManager.shared.canOpen(book, kind: .ebook) else {
             unavailable = UnavailableBook(title: book.displayTitle, kind: .ebook)
+            // A place asked for in this book must not wait for the next one opened.
+            ReaderBridge.shared.pendingCFI = nil
             return
         }
         player = nil

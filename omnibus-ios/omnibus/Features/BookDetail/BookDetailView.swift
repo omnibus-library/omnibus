@@ -174,13 +174,7 @@ struct BookDetailView: View {
                 }
             }
         }
-        .sheet(isPresented: $showShelfPicker, onDismiss: {
-            Task {
-                for await ids in UserDataService.shelvesContaining(uuid: uuid).values() {
-                    model.shelvesContaining = Set(ids)
-                }
-            }
-        }) {
+        .sheet(isPresented: $showShelfPicker) {
             if let book = model.book {
                 ShelfPickerSheet(book: book)
             }
@@ -315,7 +309,9 @@ struct BookDetailView: View {
 
     /// Open the reader at a kept line.
     private func openInBook(_ highlight: Highlight, _ book: Book) {
-        guard let cfi = highlight.epubCFIRange else { return }
+        guard DetailRead.opensInBook(hasEpub: book.hasEpub, anchor: highlight.epubCFIRange),
+              let cfi = highlight.epubCFIRange
+        else { return }
         ReaderBridge.shared.pendingCFI = cfi
         read(book)
     }
@@ -429,8 +425,7 @@ struct BookDetailView: View {
                     model: model,
                     onEditChips: canEditMetadata ? { chipEditing = $0 } : nil,
                     chipEditsOnline: connectivity.isOnline,
-                    jumpClearance: Self.tabStrip + 16,
-                    onShelves: { showShelfPicker = true }
+                    jumpClearance: Self.tabStrip + 16
                 )
             case .reviews:
                 BookReviewsTab(book: book, model: model, onCompose: composeReview)
