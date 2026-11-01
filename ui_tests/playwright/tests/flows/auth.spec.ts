@@ -2,12 +2,20 @@ import { auth } from "../contracts/auth";
 import type { Credentials } from "../data/users";
 import { expect, test } from "../fixtures/pageFixtures";
 import { TEST_PASSWORD, TEST_USERNAME } from "../utils/auth";
+import { waitForSignInRoom } from "../utils/signInLimit";
 
 // These specs test the login flow itself, so they start without the shared
 // session cookie that globalSetup wrote.
 test.use({ storageState: { cookies: [], origins: [] } });
 
 const admin: Credentials = { username: TEST_USERNAME, password: TEST_PASSWORD };
+
+// The suite shares one 10-a-minute sign-in budget per IP, and a fast run spends
+// it on the fixtures' accounts before this file starts. An immediate retry would
+// only meet the same fixed window, so a retry waits for the limiter to reopen.
+test.beforeEach(async ({ request }, testInfo) => {
+  if (testInfo.retry > 0) await waitForSignInRoom(request);
+});
 
 test.describe("login page", () => {
   test("show the login page layout", async ({ loginPage }) => {
