@@ -1,56 +1,36 @@
 //  BookFinishCard.swift
 //  What the stage says once a book is finished: that you did, how long it took,
-//  and the one thing to do next — leave a review, pick up the next book, or look
-//  back at a series read to the end. Plus the burst that goes off around the
-//  cover when it happens here.
+//  and the one thing to do next — leave a review or pick up the next book. Plus
+//  the burst that goes off around the cover when it happens here.
 
 import SwiftUI
-
-/// What the page knows about another book in the series.
-struct SeriesMemberState: Equatable {
-    /// `nil` when the read never answered, which is not the same as unread.
-    var status: ReadStatus?
-    /// Whole-book percent of the reader's place, when there is one.
-    var percent: Int64?
-
-    var started: Bool { status == .reading || (percent ?? 0) > 0 }
-}
 
 /// The card's one way onward.
 enum FinishTarget: Equatable {
     case review
-    case next(Book, started: Bool, percent: Int64?)
-    case seriesDone
+    case next(Book)
 }
 
 enum FinishCopy {
-    /// Where the card points, or `nil` when it has nowhere to point yet.
+    /// Where the card points, or `nil` when there's nothing to suggest.
     ///
     /// An unknown review offers nothing rather than guessing, since offering
     /// "Leave a review" to someone who already has would be a wrong answer
-    /// corrected in view; series states wait for the same reason.
+    /// corrected in view.
     static func target(
         reviewKnown: Bool, rated: Bool, bookID: Int64, members: [Book],
-        states: [String: SeriesMemberState], statesSettled: Bool
+        statuses: [String: ReadStatus]
     ) -> FinishTarget? {
         guard reviewKnown else { return nil }
         guard rated else { return .review }
-        guard members.count > 1, statesSettled else { return nil }
+        guard let at = members.firstIndex(where: { $0.id == bookID }) else { return nil }
 
-        let others = members.filter { $0.id != bookID }
-        // A status that never answered could be a finished book, and pointing
-        // back at one is worse than pointing nowhere.
-        guard others.allSatisfy({ states[$0.uuid]?.status != nil }) else { return nil }
-        let unfinished = { (book: Book) in states[book.uuid]?.status != .finished }
-        guard others.contains(where: unfinished) else { return .seriesDone }
-
+        // A status that hasn't answered counts as unfinished, so the card never
+        // waits on the rest of the series.
+        let unfinished = { (book: Book) in book.id != bookID && statuses[book.uuid] != .finished }
         // The next unread after this one, else the earliest one skipped.
-        let at = members.firstIndex { $0.id == bookID } ?? -1
-        let later = members.dropFirst(at + 1)
-        guard let next = later.first(where: unfinished) ?? others.first(where: unfinished)
-        else { return .seriesDone }
-        let state = states[next.uuid]
-        return .next(next, started: state?.started ?? false, percent: state?.percent)
+        return (members.dropFirst(at + 1).first(where: unfinished) ?? members.first(where: unfinished))
+            .map(FinishTarget.next)
     }
 
     /// Whether a status read is the book becoming finished with the page up. On
@@ -77,29 +57,10 @@ enum FinishCopy {
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
-    /// `Keep going: Title` for a book already begun, `Up next: Title` otherwise.
-    static func nextTitle(_ title: String, started: Bool) -> String {
-        "\(started ? "Keep going" : "Up next"): \(title)"
-    }
-
-    /// `34% · Book 3 of Sherlock Holmes`.
-    static func nextMeta(index: String?, series: String?, percent: Int64?) -> String {
-        var place = series.map { "In \($0)" } ?? ""
-        if let index = index?.nilIfBlank {
-            place = series.map { "Book \(index) of \($0)" } ?? "Book \(index)"
-        }
-        guard let percent, percent > 0 else { return place }
-        return place.isEmpty ? "\(percent)%" : "\(percent)% · \(place)"
-    }
-
-    /// `You've read all five`.
-    static func readAll(count: Int) -> String {
-        if count == 2 { return "You\u{2019}ve read both" }
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .spellOut
-        formatter.locale = Locale(identifier: "en_US")
-        let word = formatter.string(from: NSNumber(value: count)) ?? String(count)
-        return "You\u{2019}ve read all \(word)"
+    /// `Book 3 of Sherlock Holmes`.
+    static func nextMeta(index: String?, series: String?) -> String {
+        guard let index = index?.nilIfBlank else { return series.map { "In \($0)" } ?? "" }
+        return series.map { "Book \(index) of \($0)" } ?? "Book \(index)"
     }
 }
 
@@ -143,8 +104,7 @@ struct FinishCard: View {
             rated: (model.reviews?.mine?.stars ?? 0) > 0,
             bookID: book.id,
             members: members,
-            states: model.seriesStates,
-            statesSettled: model.seriesStatesSettled
+            statuses: model.seriesStatuses
         )
     }
 
@@ -197,7 +157,7 @@ struct FinishCard: View {
                 .buttonStyle(PressableStyle())
                 .accessibilityIdentifier("finish-review")
 
-            case .next(let next, let started, let percent):
+            case .next(let next):
                 rule
                 NavigationLink(value: Destination.book(uuid: next.uuid)) {
                     row(minHeight: 70) {
@@ -207,19 +167,13 @@ struct FinishCard: View {
                             .rotationEffect(.degrees(-2.5))
                     } text: {
                         lines(
-                            FinishCopy.nextTitle(next.displayTitle, started: started),
-                            detail: FinishCopy.nextMeta(
-                                index: next.seriesIndex, series: book.series, percent: percent
-                            )
+                            "Up next: \(next.displayTitle)",
+                            detail: FinishCopy.nextMeta(index: next.seriesIndex, series: book.series)
                         )
                     }
                 }
                 .buttonStyle(PressableStyle())
                 .accessibilityIdentifier("finish-next")
-
-            case .seriesDone:
-                rule
-                seriesDone
 
             case nil:
                 EmptyView()
@@ -231,34 +185,6 @@ struct FinishCard: View {
                 .strokeBorder(palette.bookText.opacity(0.35), lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.35), radius: 20, y: 14)
-    }
-
-    @ViewBuilder
-    private var seriesDone: some View {
-        let content = row(minHeight: 66) {
-            HStack(spacing: -12) {
-                ForEach(Array(members.prefix(5).enumerated()), id: \.element.id) { index, member in
-                    BookCover(identity: CoverIdentity(member), size: .sm, cornerRadius: 2)
-                        .frame(width: 28, height: 42)
-                        .shadow(color: .black.opacity(0.5), radius: 3, x: 2, y: 3)
-                        .rotationEffect(.degrees(Double(index - 2) * 4))
-                }
-            }
-            .accessibilityHidden(true)
-        } text: {
-            lines(
-                FinishCopy.readAll(count: members.count),
-                detail: "\(book.series ?? ""), start to finish"
-            )
-        }
-
-        if let id = book.seriesId {
-            NavigationLink(value: Destination.series(id: id)) { content }
-                .buttonStyle(PressableStyle())
-                .accessibilityIdentifier("finish-series-done")
-        } else {
-            content
-        }
     }
 
     private var rule: some View {
