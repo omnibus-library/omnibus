@@ -28,11 +28,6 @@ label="${label:-scratch-server}"
 HEALTH_TIMEOUT_SECS=120
 
 bundle_web_app() {
-    # A bundle someone else built (another worktree's, CI's): run it as is.
-    if [ -n "${OMNIBUS_E2E_BUNDLE_DIR:-}" ]; then
-        bundle_dir="$OMNIBUS_E2E_BUNDLE_DIR"
-        return
-    fi
     : "${CARGO_TARGET_DIR:?run this through \`just e2e-ci\` / \`just koreader-e2e\`, inside the nix dev shell}"
     profile_args=()
     bundle_dir="$CARGO_TARGET_DIR/e2e-ci/bundle"
