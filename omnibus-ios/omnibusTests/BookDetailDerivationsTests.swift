@@ -1,7 +1,8 @@
 //  BookDetailDerivationsTests.swift
 //  The pure derivations behind the book page: fileless records, the language
 //  names, the primary action, the progress bar, the Your reading card, kept
-//  lines and journal previews, and the journal composer's target.
+//  lines and journal previews, the journal composer's target, and where the
+//  finish card points.
 
 import Foundation
 import Testing
@@ -352,13 +353,19 @@ private func sitting(
     #expect(StageProgress.weights(starts: [10, 60]) == [10, 50, 40])
 }
 
+@Test func aSliverOfFrontMatterFoldsIntoTheChapterAfterIt() {
+    #expect(StageProgress.weights(starts: [0.5, 50]) == [50, 50])
+    // At the far end there is nothing after it to fold into.
+    #expect(StageProgress.weights(starts: [50, 99.5]) == [50, 50])
+}
+
 @Test func aBookWithNoChaptersIsOneDivision() {
     #expect(StageProgress.weights(starts: []) == [100])
     #expect(StageProgress.weights(durations: []) == [1])
 }
 
 @Test func aLongBookFoldsItsDivisionsRatherThanDottingTheBar() {
-    let starts = (0..<100).map { Double($0) }
+    let starts = stride(from: 0.0, to: 100, by: 2).map { $0 }
     let weights = StageProgress.weights(starts: starts)
     #expect(weights.count <= StageProgress.maxSegments)
     #expect(abs(weights.reduce(0, +) - 100) < 0.001)
@@ -688,4 +695,118 @@ private func entry(id: Int64, clientID: String? = nil) -> JournalEntry {
     ])
     let data = try JSONEncoder().encode(answer)
     #expect(try JSONDecoder().decode(BookSuggestions.self, from: data) == answer)
+}
+
+// MARK: - The finish card
+
+private func member(_ id: Int64, _ index: String? = nil) -> Book {
+    var book = Book(id: id, filename: "\(id).epub")
+    book.uniqueIdentifier = "u\(id)"
+    book.seriesIndex = index
+    return book
+}
+
+private func finishTarget(
+    reviewKnown: Bool = true, rated: Bool = true, bookID: Int64 = 2, members: [Book] = [],
+    states: [String: SeriesMemberState] = [:], settled: Bool = true
+) -> FinishTarget? {
+    FinishCopy.target(
+        reviewKnown: reviewKnown, rated: rated, bookID: bookID, members: members,
+        states: states, statesSettled: settled
+    )
+}
+
+private let finishedState = SeriesMemberState(status: .finished, percent: 100)
+private let holmes = [member(1, "1"), member(2, "2"), member(3, "3")]
+
+@Test func cardOffersNothingWhileYourRatingIsUnknown() {
+    #expect(finishTarget(reviewKnown: false, rated: false, members: holmes) == nil)
+}
+
+@Test func cardAsksForAReviewUntilYouHaveRated() {
+    #expect(finishTarget(rated: false) == .review)
+    #expect(finishTarget(rated: false, members: holmes) == .review)
+}
+
+@Test func aStandaloneBookHasNothingNextOnceRated() {
+    #expect(finishTarget() == nil)
+    #expect(finishTarget(members: [member(2)]) == nil)
+}
+
+@Test func cardWaitsForTheSeriesReadsRatherThanPointAndMove() {
+    #expect(finishTarget(members: holmes, settled: false) == nil)
+}
+
+@Test func nextIsTheBookAfterThisOne() {
+    #expect(
+        finishTarget(members: holmes) == .next(holmes[2], started: false, percent: nil)
+    )
+}
+
+@Test func nextAlreadyBegunIsKeepGoing() {
+    let states = ["u3": SeriesMemberState(status: .reading, percent: 34)]
+    #expect(finishTarget(members: holmes, states: states) == .next(holmes[2], started: true, percent: 34))
+}
+
+@Test func aFinishedNextIsSkippedForTheOneAfter() {
+    let series = holmes + [member(4, "4")]
+    #expect(
+        finishTarget(members: series, states: ["u3": finishedState])
+            == .next(series[3], started: false, percent: nil)
+    )
+}
+
+@Test func theLastBookPointsBackAtOneSkipped() {
+    #expect(
+        finishTarget(bookID: 3, members: holmes, states: ["u2": finishedState])
+            == .next(holmes[0], started: false, percent: nil)
+    )
+}
+
+@Test func aSeriesReadToTheEndSaysSo() {
+    #expect(
+        finishTarget(members: holmes, states: ["u1": finishedState, "u3": finishedState])
+            == .seriesDone
+    )
+}
+
+@Test func totalsCountDaysSessionsAndHighlights() {
+    let record = DetailStats.record(
+        from: [
+            sitting(start: 100_000, seconds: 600), sitting(start: 200_000, seconds: 600),
+        ],
+        now: Date(timeIntervalSince1970: 300_000)
+    )
+    #expect(
+        FinishCopy.totals(record: record, finishedAt: 100_000 + 17 * 86_400, highlights: 4)
+            == "17 days · 2 sessions · 4 highlights"
+    )
+    #expect(
+        FinishCopy.totals(record: record, finishedAt: 100_000, highlights: 0) == "1 day · 2 sessions"
+    )
+}
+
+@Test func totalsAreLeftOutWithNoFinishDateOrNothingToCount() {
+    #expect(FinishCopy.totals(record: nil, finishedAt: nil, highlights: 4) == nil)
+    #expect(FinishCopy.totals(record: nil, finishedAt: 100, highlights: 0) == nil)
+    #expect(FinishCopy.totals(record: nil, finishedAt: 100, highlights: 1) == "1 highlight")
+}
+
+@Test func nextLinesNameTheBookAndItsPlace() {
+    #expect(FinishCopy.nextTitle("The Hound", started: false) == "Up next: The Hound")
+    #expect(FinishCopy.nextTitle("The Hound", started: true) == "Keep going: The Hound")
+    #expect(
+        FinishCopy.nextMeta(index: "3", series: "Sherlock Holmes", percent: nil)
+            == "Book 3 of Sherlock Holmes"
+    )
+    #expect(
+        FinishCopy.nextMeta(index: "3", series: "Sherlock Holmes", percent: 34)
+            == "34% · Book 3 of Sherlock Holmes"
+    )
+    #expect(FinishCopy.nextMeta(index: nil, series: "Sherlock Holmes", percent: nil) == "In Sherlock Holmes")
+}
+
+@Test func aFinishedSeriesCountsInWords() {
+    #expect(FinishCopy.readAll(count: 5) == "You\u{2019}ve read all five")
+    #expect(FinishCopy.readAll(count: 2) == "You\u{2019}ve read both")
 }

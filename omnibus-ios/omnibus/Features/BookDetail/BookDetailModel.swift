@@ -54,6 +54,17 @@ final class BookDetailModel {
     var suggestions: BookSuggestions?
     /// Other readers who share their stats and have spent time in this book.
     var household: [BookHouseholdReader] = []
+    /// Where the reader stands in the rest of the series, read once the book is
+    /// finished: what the finish card points at next.
+    var seriesStates: [String: SeriesMemberState] = [:]
+    /// Whether those reads have all answered, or given up. The card says nothing
+    /// until then, rather than point somewhere and move.
+    var seriesStatesSettled = false
+    /// Bumped when the book becomes finished with the page up, which is what
+    /// the burst around the cover goes off for.
+    var celebrations = 0
+    /// Bumped when the review sheet saves, for the stage's stars to answer.
+    var reviewSaves = 0
     var isLoading = true
     var error: String?
 
@@ -70,6 +81,8 @@ final class BookDetailModel {
     /// Asks again while the server is still fetching suggestions in the
     /// background. Outside `load`, so a pull's spinner never waits on it.
     private var suggestionsRetry: Task<Void, Never>?
+
+    private var seriesStatesInFlight = false
 
     func load(uuid: String) async {
         isLoading = book == nil
@@ -114,9 +127,14 @@ final class BookDetailModel {
             }
             group.addTask { @MainActor in
                 for await record in UserDataService.readStatus(uuid: uuid).values() {
+                    // Closing the reader on its last page lands here.
+                    if self.readStatusKnown, self.readStatus != .finished, record.status == .finished {
+                        self.celebrations += 1
+                    }
                     self.readStatus = record.status
                     self.finishedAt = record.finishedAt
                     self.readStatusKnown = true
+                    self.loadSeriesStates()
                 }
             }
             group.addTask { @MainActor in
@@ -233,6 +251,7 @@ final class BookDetailModel {
                         for await detail in LibraryService.series(id: seriesId).values() {
                             self.seriesBooks = detail.books
                         }
+                        self.loadSeriesStates()
                     }
                 }
                 if let authorId {
@@ -247,6 +266,40 @@ final class BookDetailModel {
                         let manifest = try? await LibraryService.audiobookManifest(uuid: book.uuid)
                         self.audioDuration = manifest?.totalDuration
                         self.audioChapters = manifest?.chapters ?? []
+                    }
+                }
+            }
+        }
+    }
+
+    /// Read where the reader stands in the rest of the series. Only for a
+    /// finished book, the one case that asks: a read per member, and a series is
+    /// a small number of books.
+    private func loadSeriesStates() {
+        guard readStatus == .finished, let current = book, seriesBooks.count > 1,
+              !seriesStatesInFlight
+        else { return }
+        seriesStatesInFlight = true
+        let others = seriesBooks.filter { $0.id != current.id }
+        Task { @MainActor in
+            defer {
+                seriesStatesInFlight = false
+                seriesStatesSettled = true
+            }
+            await withTaskGroup(of: Void.self) { group in
+                for member in others {
+                    group.addTask { @MainActor in
+                        let format: ProgressFormat = member.hasEbook ? .epub : .audio
+                        for await record in UserDataService.progress(
+                            uuid: member.uuid, format: format
+                        ).values() {
+                            self.seriesStates[member.uuid, default: SeriesMemberState()].percent =
+                                record?.progressPercent ?? record?.resolved?.percentThroughBook
+                        }
+                        for await record in UserDataService.readStatus(uuid: member.uuid).values() {
+                            self.seriesStates[member.uuid, default: SeriesMemberState()].status =
+                                record.status
+                        }
                     }
                 }
             }
@@ -305,9 +358,11 @@ final class BookDetailModel {
             finishedAt = nil
         } else if readStatus != .finished {
             finishedAt = Int64(Date().timeIntervalSince1970)
+            celebrations += 1
         }
         readStatus = status
         readStatusKnown = true
+        loadSeriesStates()
         await UserDataService.setReadStatus(uuid: uuid, status: status)
     }
 

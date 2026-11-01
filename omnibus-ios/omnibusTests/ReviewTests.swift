@@ -437,10 +437,43 @@ struct UnknownReviewTests {
     }
 }
 
-// MARK: - The composer's draft
+// MARK: - The sheet's draft
 
 @Suite("Review draft")
 struct ReviewDraftTests {
+    @Test("stars set in the sheet go with the text, in one patch")
+    func starsJoinThePatch() {
+        var draft = ReviewDraft(review(body: "old"))
+        draft.stars = 4.5
+        draft.body = "new"
+        #expect(draft.patch == ReviewPatch(stars: .set(4.5), bodyMd: .set("new")))
+        #expect(draft.touched == [.stars, .body])
+    }
+
+    @Test("clearing the stars clears them, and stars left alone send nothing")
+    func starsClearOrStay() {
+        var draft = ReviewDraft(review(stars: 4))
+        #expect(draft.patch.isEmpty)
+        draft.stars = 0
+        #expect(draft.patch == ReviewPatch(stars: .cleared))
+        // A first review with no stars has nothing to clear.
+        #expect(ReviewDraft(nil).patch.isEmpty)
+    }
+
+    @Test("stars you didn't touch follow a fresher review; stars you did are kept and named")
+    func starsRebase() {
+        var untouched = ReviewDraft(review(stars: 3))
+        #expect(untouched.rebase(onto: review(stars: 5)).isEmpty)
+        #expect(untouched.stars == 5)
+        #expect(untouched.patch.isEmpty)
+
+        var touched = ReviewDraft(review(stars: 3))
+        touched.stars = 4
+        #expect(touched.rebase(onto: review(stars: 5)) == [.stars])
+        #expect(touched.stars == 4)
+        #expect(touched.patch == ReviewPatch(stars: .set(4)))
+    }
+
     @Test("a field you haven't touched follows a fresher review, and Save sends nothing for it")
     func untouchedFieldsFollow() {
         var draft = ReviewDraft(review(body: "replica", notes: "n"))
@@ -635,5 +668,72 @@ struct ReviewPageReadTests {
         await OfflineStore.shared.cacheDelete(key)
         #expect(shown == [2, 4])
         #expect(stored?.mine?.stars == 4)
+    }
+}
+
+// MARK: - The sheet's wording and marks
+
+@Suite("Review sheet")
+struct ReviewSheetTests {
+    @Test("every half star has its word, and nothing else does")
+    func words() {
+        #expect(ReviewWords.word(for: 0.5) == "Not for me")
+        #expect(ReviewWords.word(for: 4.5) == "Loved it")
+        #expect(ReviewWords.word(for: 5) == "A favorite")
+        #expect(ReviewWords.word(for: 0) == nil)
+        #expect(ReviewWords.compactNote(0) == "Not rated yet")
+        #expect(ReviewWords.compactNote(3.5) == "3.5 · Liked it a lot")
+        #expect(ReviewWords.spoken(0) == "Not rated")
+        #expect(ReviewWords.spoken(4) == "4 of 5, Really good")
+    }
+
+    @Test("a touch maps to the half star under it, never less than half a star")
+    func starsFromATouch() {
+        #expect(ReviewWords.stars(at: 0, width: 270) == 0.5)
+        #expect(ReviewWords.stars(at: 27, width: 270) == 0.5)
+        #expect(ReviewWords.stars(at: 28, width: 270) == 1)
+        #expect(ReviewWords.stars(at: 135, width: 270) == 2.5)
+        #expect(ReviewWords.stars(at: 400, width: 270) == 5)
+        #expect(ReviewWords.stars(at: 10, width: 0) == 0.5)
+    }
+
+    @Test("the bubble stands over the star, or over its filled half")
+    func bubble() {
+        #expect(ReviewWords.bubblePosition(1) == 0.1)
+        #expect(ReviewWords.bubblePosition(5) == 0.9)
+        #expect(abs(ReviewWords.bubblePosition(3.5) - 0.65) < 0.001)
+    }
+
+    @Test("a mark wraps the selection and keeps it selected")
+    func markWrapsTheSelection() {
+        let text = "a fine book"
+        let start = text.index(text.startIndex, offsetBy: 2)
+        let end = text.index(start, offsetBy: 4)
+        let result = ReviewMarkup.wrap(text, selection: start..<end, marker: "**")
+        #expect(result.text == "a **fine** book")
+        #expect(result.text[result.selection] == "fine")
+    }
+
+    @Test("a mark with nothing selected sets a pair with the caret inside")
+    func markWithACaret() {
+        let text = "ab"
+        let caret = text.index(after: text.startIndex)
+        let result = ReviewMarkup.wrap(text, selection: caret..<caret, marker: "||")
+        #expect(result.text == "a||||b")
+        #expect(result.selection.isEmpty)
+        #expect(result.text.distance(from: result.text.startIndex, to: result.selection.lowerBound) == 3)
+    }
+
+    @Test("a mark with no selection known goes on the end")
+    func markWithNoSelection() {
+        let result = ReviewMarkup.wrap("ab", selection: nil, marker: "*")
+        #expect(result.text == "ab**")
+        #expect(result.text.distance(from: result.text.startIndex, to: result.selection.lowerBound) == 3)
+    }
+
+    @Test("a quote goes above what is written, line by line")
+    func quoting() {
+        #expect(ReviewMarkup.quoted("A line", above: "Mine") == "> A line\n\nMine")
+        #expect(ReviewMarkup.quoted("One\nTwo", above: "") == "> One\n> Two\n\n")
     }
 }

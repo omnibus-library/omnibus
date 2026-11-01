@@ -1,7 +1,6 @@
 //  ReviewViews.swift
 //  The Reviews tab: your review at the top, stars you can set where you see
-//  them, then what the rest of the household made of the book — plus the
-//  composer behind the pencil.
+//  them, then what the rest of the household made of the book.
 //
 //  Text is set from its Markdown source through the journal pipeline, so a
 //  `||spoiler||` reads the same here as in a journal entry, and an edit still
@@ -89,7 +88,8 @@ enum DetailReviews {
     /// elsewhere; `nil` when none did.
     static func conflictNote(_ fields: Set<ReviewDraft.Field>) -> String? {
         let names = [
-            (ReviewDraft.Field.body, "review text"),
+            (ReviewDraft.Field.stars, "stars"),
+            (.body, "review text"),
             (.notes, "private notes"),
             (.spoiler, "spoiler flag"),
         ].filter { fields.contains($0.0) }.map(\.1)
@@ -151,9 +151,10 @@ enum DetailReviews {
 struct BookReviewsTab: View {
     let book: Book
     let model: BookDetailModel
+    /// Opens the review sheet, once your review is known.
+    var onCompose: () -> Void
 
     @Environment(\.palette) private var palette
-    @State private var composing: ReviewComposerTarget?
 
     private var reviews: BookReviews { model.reviews ?? .empty }
 
@@ -185,20 +186,13 @@ struct BookReviewsTab: View {
             MyReviewCard(
                 state: cardState,
                 onStars: { stars in write(.stars(stars)) },
-                onCompose: { composing = ReviewComposerTarget.make(for: cardState) },
+                onCompose: onCompose,
                 onDelete: { Task { await model.deleteReview(uuid: book.uuid) } }
             )
 
             if !reviews.others.isEmpty {
                 household
                     .padding(.top, 30)
-            }
-        }
-        .sheet(item: $composing) { target in
-            // `latest` follows the model, so an answer that lands while the
-            // composer is open rebases it rather than going unseen.
-            ReviewComposer(original: target.original, latest: cardState.review) { patch in
-                write(patch)
             }
         }
     }
@@ -499,8 +493,8 @@ struct MyReviewCard: View {
     }
 }
 
-/// A checkbox, for the editor's one yes/no about the text — a switch reads as
-/// a setting.
+/// A checkbox, for the sheet's one yes/no about the text — a switch reads as a
+/// setting.
 struct CheckboxToggleStyle: ToggleStyle {
     @Environment(\.palette) private var palette
 
@@ -511,8 +505,8 @@ struct CheckboxToggleStyle: ToggleStyle {
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: configuration.isOn ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 15))
-                    .foregroundStyle(configuration.isOn ? palette.accentColor : palette.ink3Color)
+                    .font(.system(size: 20))
+                    .foregroundStyle(configuration.isOn ? palette.bookText : palette.ink2Color)
                 configuration.label
             }
             .contentShape(Rectangle())
@@ -681,195 +675,5 @@ struct OtherReviewRow: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("review-spoiler-cover")
-    }
-}
-
-// MARK: - The draft
-
-/// What the composer holds: the three fields as typed, and the review they
-/// are a change to. A save diffs against `baseline`, so the baseline has to
-/// follow the server while the composer is open — a draft seeded from a stale
-/// replica would otherwise send text over a review the writer never saw.
-struct ReviewDraft: Equatable {
-    enum Field: Hashable { case body, notes, spoiler }
-
-    var body: String
-    var notes: String
-    var spoiler: Bool
-    private(set) var baseline: Review?
-
-    init(_ review: Review?) {
-        body = review?.bodyMd ?? ""
-        notes = review?.notesMd ?? ""
-        spoiler = review?.spoiler ?? false
-        baseline = review
-    }
-
-    /// What Save sends: the fields that differ from the baseline.
-    var patch: ReviewPatch {
-        .edits(from: baseline, body: body, notes: notes, spoiler: spoiler)
-    }
-
-    /// The fields typed over since the baseline — exactly the ones Save would
-    /// send, so blank text over no text is no edit here either.
-    var touched: Set<Field> {
-        let edits = patch
-        var out: Set<Field> = []
-        if edits.bodyMd != .unchanged { out.insert(.body) }
-        if edits.notesMd != .unchanged { out.insert(.notes) }
-        if edits.spoiler != nil { out.insert(.spoiler) }
-        return out
-    }
-
-    /// Move onto `latest`. A field you haven't touched follows it; one you
-    /// have keeps what you typed, and comes back as a conflict when `latest`
-    /// moved it too — so the composer can say so before a save replaces it.
-    /// The spoiler flag describes the text, so text you wrote keeps the flag it
-    /// was written under, and a flag moved underneath it is a conflict.
-    mutating func rebase(onto latest: Review?) -> Set<Field> {
-        let typed = touched
-        // Only text you wrote carries a flag; clearing the text leaves the
-        // flag nothing to describe.
-        let writesText: Bool = {
-            if case .set = patch.bodyMd { return true }
-            return false
-        }()
-        var conflicts: Set<Field> = []
-        if (baseline?.bodyMd ?? "") != (latest?.bodyMd ?? "") {
-            if typed.contains(.body) { conflicts.insert(.body) } else { body = latest?.bodyMd ?? "" }
-        }
-        if (baseline?.notesMd ?? "") != (latest?.notesMd ?? "") {
-            if typed.contains(.notes) { conflicts.insert(.notes) } else { notes = latest?.notesMd ?? "" }
-        }
-        if (baseline?.spoiler ?? false) != (latest?.spoiler ?? false) {
-            if typed.contains(.spoiler) || writesText {
-                conflicts.insert(.spoiler)
-            } else {
-                spoiler = latest?.spoiler ?? false
-            }
-        }
-        baseline = latest
-        return conflicts
-    }
-}
-
-// MARK: - Composer
-
-/// Write or edit your review: the public text with its spoiler flag under it,
-/// and your private notes, each in the journal's editor. Saves on Save, never
-/// per keystroke, in one patch of what changed; the stars stay on the card,
-/// where a tap saves them.
-struct ReviewComposer: View {
-    let original: Review?
-    /// Your review as it stands now. The composer can open on the replica's
-    /// first answer; a fresher one landing underneath it rebases the draft.
-    var latest: Review?
-    var onSave: (ReviewPatch) -> Void
-
-    private enum Field { case body, notes }
-
-    @Environment(\.palette) private var palette
-    @Environment(\.dismiss) private var dismiss
-
-    @State private var draft = ReviewDraft(nil)
-    /// Fields you had typed over that also changed elsewhere since.
-    @State private var conflicts: Set<ReviewDraft.Field> = []
-    @State private var didLoad = false
-    @FocusState private var focus: Field?
-
-    private var patch: ReviewPatch { draft.patch }
-
-    private var isEditing: Bool {
-        original.map(DetailReviews.hasWriting) ?? false
-    }
-
-    var body: some View {
-        NavigationStack {
-            // Whichever field has focus takes the room; the other keeps a few
-            // lines in view, so both stay one tap away.
-            VStack(spacing: 0) {
-                if let note = DetailReviews.conflictNote(conflicts) {
-                    MonoNote(text: note, color: palette.warnColor)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, Spacing.screen)
-                        .padding(.top, Spacing.sm)
-                        .accessibilityIdentifier("review-composer-conflict")
-                }
-                fieldHeader("Review", note: "every reader of this book can see it")
-                MarkdownEditorField(text: $draft.body, placeholder: "What did you think?")
-                    .focused($focus, equals: .body)
-                    .frame(maxHeight: focus == .notes ? 110 : .infinity)
-                    .accessibilityIdentifier("review-composer-body")
-
-                // Under the text it describes, and nowhere else: the card in
-                // read mode carries no spoiler control.
-                Toggle(isOn: $draft.spoiler) {
-                    Text("Contains spoilers")
-                        .font(.ui(13.5))
-                        .foregroundStyle(palette.ink1Color)
-                }
-                .toggleStyle(CheckboxToggleStyle())
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, Spacing.screen)
-                .padding(.vertical, 10)
-                .accessibilityIdentifier("review-composer-spoiler")
-
-                Hairline()
-
-                fieldHeader("Private notes", note: "only you can see these", locked: true)
-                MarkdownEditorField(text: $draft.notes, placeholder: "Notes for yourself")
-                    .focused($focus, equals: .notes)
-                    .frame(maxHeight: focus == .notes ? .infinity : 110)
-                    .accessibilityIdentifier("review-composer-notes")
-            }
-            .animation(Motion.settle, value: focus)
-            .background(ScreenBackground())
-            .navigationTitle(isEditing ? "Edit review" : "Write a review")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        Haptics.success()
-                        onSave(patch)
-                        dismiss()
-                    }
-                    .disabled(patch.isEmpty)
-                }
-            }
-        }
-        .onAppear {
-            // Seeded once, as the journal composer is: a re-appear must not
-            // discard what has been typed.
-            guard !didLoad else { return }
-            didLoad = true
-            draft = ReviewDraft(original)
-            if latest != original { conflicts.formUnion(draft.rebase(onto: latest)) }
-            focus = .body
-        }
-        .onChange(of: latest) { _, now in
-            conflicts.formUnion(draft.rebase(onto: now))
-        }
-    }
-
-    private func fieldHeader(_ title: String, note: String, locked: Bool = false) -> some View {
-        HStack(spacing: 6) {
-            if locked {
-                Image(systemName: "lock.fill")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(palette.ink3Color)
-            }
-            RowLabel(title)
-            Text("· \(note)")
-                .font(.ui(11.5))
-                .foregroundStyle(palette.ink3Color)
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, Spacing.screen)
-        .padding(.top, Spacing.md)
-        .padding(.bottom, 2)
-        .accessibilityElement(children: .combine)
     }
 }
