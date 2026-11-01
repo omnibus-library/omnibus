@@ -22,11 +22,10 @@ final class BookDetailModel {
     /// kept the date, which the page says nothing about rather than guessing.
     var finishedAt: Int64?
     var journals: [JournalEntry] = []
+    /// Whether `journals` being empty means anything yet.
+    var journalsAnswer = ReadAnswer.waiting
     var highlights: [Highlight] = []
     var bookmarks: [Bookmark] = []
-    var shelvesContaining: Set<Int64> = []
-    /// Every shelf the user has, for naming the membership chips.
-    var allShelves: [ShelfSummary] = []
     var wishlistEntry: WishlistEntry?
     /// Cross-format sync state for the Files tab; `nil` while unknown
     /// (offline, or the fetch hasn't landed). Network-only read.
@@ -46,6 +45,8 @@ final class BookDetailModel {
     var chapters: [AlignmentEbookChapter] = []
     /// This reader's sittings of this book, newest first.
     var sessions: [SessionLogEntry] = []
+    /// Whether `sessions` being empty means anything yet.
+    var sessionsAnswer = ReadAnswer.waiting
     /// The rest of the series, in reading order, when the book belongs to one.
     var seriesBooks: [Book] = []
     /// Other books by the same first author.
@@ -77,6 +78,10 @@ final class BookDetailModel {
     /// concurrently; a fetch that came back empty is retried on the next book
     /// emission or refresh rather than skipped forever.
     private var relatedInFlight = false
+    /// What the related lists were last fetched for.
+    private var relatedSeriesId: Int64?
+    private var relatedAuthorId: Int64?
+    private var relatedAudioFile: Int64?
 
     /// Asks again while the server is still fetching suggestions in the
     /// background. Outside `load`, so a pull's spinner never waits on it.
@@ -117,6 +122,7 @@ final class BookDetailModel {
             group.addTask { @MainActor in
                 for await record in UserDataService.progress(uuid: uuid, format: .audio).values() {
                     self.audioProgress = record
+                    if let book = self.book { self.loadRelated(book) }
                 }
             }
             group.addTask { @MainActor in
@@ -138,9 +144,12 @@ final class BookDetailModel {
                 }
             }
             group.addTask { @MainActor in
+                if self.journalsAnswer == .failed { self.journalsAnswer = .waiting }
                 for await entries in UserDataService.journals(uuid: uuid).values() {
                     self.journals = entries
+                    self.journalsAnswer = .known
                 }
+                if self.journalsAnswer != .known, !Task.isCancelled { self.journalsAnswer = .failed }
             }
             group.addTask { @MainActor in
                 for await items in UserDataService.highlights(uuid: uuid).values() {
@@ -152,16 +161,6 @@ final class BookDetailModel {
             group.addTask { @MainActor in
                 for await items in UserDataService.bookmarks(uuid: uuid).values() {
                     self.bookmarks = items
-                }
-            }
-            group.addTask { @MainActor in
-                for await ids in UserDataService.shelvesContaining(uuid: uuid).values() {
-                    self.shelvesContaining = Set(ids)
-                }
-            }
-            group.addTask { @MainActor in
-                for await shelves in UserDataService.shelves().values() {
-                    self.allShelves = shelves
                 }
             }
             group.addTask { @MainActor in
@@ -235,10 +234,30 @@ final class BookDetailModel {
     /// on the next book emission or pull-to-refresh instead of being skipped
     /// for the life of the model.
     private func loadRelated(_ book: Book) {
+        // The editor lives on this page, so any of these can change under it,
+        // and a saved position can name a narration other than the first.
+        let firstAuthor = book.creators.first?.id
+        let audioFile = audioProgress?.bookFileID
+        if book.seriesId != relatedSeriesId {
+            relatedSeriesId = book.seriesId
+            seriesBooks = []
+            relatedInFlight = false
+        }
+        if firstAuthor != relatedAuthorId {
+            relatedAuthorId = firstAuthor
+            authorBooks = []
+            relatedInFlight = false
+        }
+        if audioFile != relatedAudioFile {
+            relatedAudioFile = audioFile
+            audioDuration = nil
+            audioChapters = []
+            relatedInFlight = false
+        }
         guard !relatedInFlight else { return }
 
         let seriesId = seriesBooks.isEmpty ? book.seriesId : nil
-        let authorId = authorBooks.isEmpty ? book.creators.first?.id : nil
+        let authorId = authorBooks.isEmpty ? firstAuthor : nil
         let wantsDuration = book.hasAudiobook && audioDuration == nil
         guard seriesId != nil || authorId != nil || wantsDuration else { return }
 
@@ -249,6 +268,7 @@ final class BookDetailModel {
                 if let seriesId {
                     group.addTask { @MainActor in
                         for await detail in LibraryService.series(id: seriesId).values() {
+                            guard self.relatedSeriesId == seriesId else { return }
                             self.seriesBooks = detail.books
                         }
                         self.loadSeriesStates()
@@ -257,13 +277,17 @@ final class BookDetailModel {
                 if let authorId {
                     group.addTask { @MainActor in
                         for await detail in LibraryService.author(id: authorId).values() {
+                            guard self.relatedAuthorId == authorId else { return }
                             self.authorBooks = detail.books.filter { $0.id != book.id }
                         }
                     }
                 }
                 if wantsDuration {
                     group.addTask { @MainActor in
-                        let manifest = try? await LibraryService.audiobookManifest(uuid: book.uuid)
+                        let manifest = try? await LibraryService.audiobookManifest(
+                            uuid: book.uuid, fileID: audioFile
+                        )
+                        guard self.relatedAudioFile == audioFile else { return }
                         self.audioDuration = manifest?.totalDuration
                         self.audioChapters = manifest?.chapters ?? []
                     }
@@ -306,22 +330,14 @@ final class BookDetailModel {
         }
     }
 
-    /// Pages the whole per-book session log. A single book's log is small —
-    /// dozens of sittings, not thousands — but the cap keeps a pathological
-    /// one from looping forever. Committed only after every page landed: a
-    /// failed page must not publish a partial accumulator as the complete
-    /// history, wiping stats a previous load showed.
+    /// Read the whole per-book session log, replica first.
     private func loadSessions(uuid: String) async {
-        var entries: [SessionLogEntry] = []
-        var before: String?
-        for _ in 0..<12 {
-            guard let page = try? await UserDataService.sessionLog(book: uuid, before: before)
-            else { return }
-            entries += page.entries
-            guard let next = page.nextBefore else { break }
-            before = next
+        if sessionsAnswer == .failed { sessionsAnswer = .waiting }
+        for await entries in UserDataService.bookSessions(uuid: uuid).values() {
+            sessions = entries
+            sessionsAnswer = .known
         }
-        sessions = entries
+        if sessionsAnswer != .known, !Task.isCancelled { sessionsAnswer = .failed }
     }
 
     /// Patch your review: on screen at once, then whatever the replica holds
@@ -389,7 +405,7 @@ final class BookDetailModel {
             epubStarted: epubProgress != nil,
             epubPercent: epubProgress?.progressPercent,
             audioSeconds: audioProgress?.audioPositionSeconds,
-            audioDuration: audioDuration
+            audioDuration: audioProgress?.totalDurationSeconds ?? audioDuration
         )
     }
 
@@ -400,7 +416,8 @@ final class BookDetailModel {
 
     /// The chapter the reader is in, 1-based, once the server has placed it.
     var currentChapter: Int64? {
-        let record = fractionIsAudio ? audioProgress : epubProgress
-        return record?.resolved?.chapterOrdinal
+        // The same precedence as `fraction`: an EPUB record speaks for the book
+        // even with no percent, because that's what the primary action opens.
+        (epubProgress ?? audioProgress)?.resolved?.chapterOrdinal
     }
 }

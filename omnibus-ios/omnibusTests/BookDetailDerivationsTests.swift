@@ -809,4 +809,27 @@ private let holmes = [member(1, "1"), member(2, "2"), member(3, "3")]
 @Test func aFinishedSeriesCountsInWords() {
     #expect(FinishCopy.readAll(count: 5) == "You\u{2019}ve read all five")
     #expect(FinishCopy.readAll(count: 2) == "You\u{2019}ve read both")
+
+// MARK: - Kept lines and unanswered reads
+
+@Test func onlyAnEpubPositionOpensInTheEpubReader() {
+    let cfi = "epubcfi(/6/8!/4/2,/1:0,/1:10)"
+    #expect(DetailRead.opensInBook(hasEpub: true, anchor: cfi))
+    #expect(!DetailRead.opensInBook(hasEpub: false, anchor: cfi))
+    #expect(!DetailRead.opensInBook(hasEpub: true, anchor: nil))
+    // A mixed EPUB and PDF book shares one list of kept lines.
+    #expect(!DetailRead.opensInBook(hasEpub: true, anchor: "pdf-page:12"))
+    #expect(!DetailRead.opensInBook(hasEpub: true, anchor: "comic-page:3"))
+}
+
+@Test func anUnansweredSessionReadIsNotAnEmptyHistory() {
+    func line(_ history: ReadAnswer) -> String {
+        DetailStats.readingLine(
+            status: .reading, wishlistOnly: false, hasFile: true, hasPhysical: false,
+            hasPosition: false, record: nil, finishedAt: nil, history: history
+        )
+    }
+    #expect(line(.waiting).isEmpty)
+    #expect(line(.failed).contains("couldn\u{2019}t be loaded"))
+    #expect(line(.known).contains("No reading recorded yet"))
 }
