@@ -133,10 +133,15 @@ koreader-home-test:
 dev-server-down-test:
     bash scripts/tests/dev-server-down.test.sh
 
+# Tests that dev-up's React build never leaves the running server without a
+# client. Plain bash with a stubbed `pnpm`, like dev-server-down-test.
+dev-react-build-test:
+    bash scripts/tests/dev-react-build.test.sh
+
 # Run every unit/integration suite: the Rust matrix first, then the script
 # suites. Rust leads so a failing script suite can't stop the recipe
 # before the cargo results are in.
-test: test-rust explore-test module-map-test koreader-report-test koreader-plugin-test scratch-server-test koreader-dev-test koreader-home-test dev-server-down-test
+test: test-rust explore-test module-map-test koreader-report-test koreader-plugin-test scratch-server-test koreader-dev-test koreader-home-test dev-server-down-test dev-react-build-test
 
 # The Rust half of `just test`: every crate via cargo-nextest (the same runner
 # CI uses, so local and CI results match; no doctests in the tree, which is all

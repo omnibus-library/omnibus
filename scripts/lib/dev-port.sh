@@ -132,7 +132,9 @@ REACT_DIST="$MY_REPO_ROOT/frontend-js/dist"
 
 # Build the React client into REACT_DIST unless it is newer than every input
 # (the generated API client comes from openapi.json). Output goes to stderr:
-# dev-up's stdout is its one parseable line.
+# dev-up's stdout is its one parseable line. The build lands beside dist and
+# replaces it only on success: a running server reads dist, and `vite build`
+# empties its output directory first.
 ensure_react_build() {
     if [ -f "$REACT_DIST/index.html" ] && [ -z "$(find frontend-js/src frontend-js/public \
         frontend-js/index.html frontend-js/package.json frontend-js/pnpm-lock.yaml \
@@ -142,7 +144,16 @@ ensure_react_build() {
     fi
     echo "dev: building the React client into frontend-js/dist" >&2
     pnpm --dir frontend-js install --frozen-lockfile --prefer-offline >&2
-    pnpm --dir frontend-js run build >&2
+    local next="$REACT_DIST.next"
+    rm -rf "$next"
+    pnpm --dir frontend-js exec vite build --outDir "$next" --emptyOutDir >&2 || {
+        rm -rf "$next"
+        return 1
+    }
+    rm -rf "$REACT_DIST.prev"
+    [ ! -e "$REACT_DIST" ] || mv "$REACT_DIST" "$REACT_DIST.prev"
+    mv "$next" "$REACT_DIST"
+    rm -rf "$REACT_DIST.prev"
 }
 
 # Basename of a process's command, or empty once it is gone or ps fails.
