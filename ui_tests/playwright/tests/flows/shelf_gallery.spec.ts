@@ -132,6 +132,40 @@ test.describe("shelf gallery", () => {
           .toBeGreaterThanOrEqual(FIXTURE_BOOKS.length);
       });
     });
+
+    // The wording must not claim a format the shelf isn't restricted to (#2253).
+    test("say an empty shelf is empty, not that a search found nothing", async ({
+      libraryPage,
+      ownShelf,
+      expectMutation,
+    }) => {
+      test.fixme(
+        true,
+        "Parity gap: React's shelf row omits empty shelves, so an empty shelf can't be selected on the library page (the shelf page's empty state is covered in shelf_detail)",
+      );
+      const shelf = await ownShelf("E2E Gallery Empty");
+
+      await test.step("select the empty shelf", async () => {
+        await libraryPage.goto();
+        await expectMutation(shelves.page(), () =>
+          libraryPage.selectShelf(shelf),
+        );
+      });
+
+      await test.step("check the library says the shelf is empty", async () => {
+        await expect(libraryPage.shelfGallery.selectedTab).toContainText(
+          shelf.name,
+        );
+        await expect(libraryPage.shelfGallery.selectedTab).toHaveAccessibleName(
+          /\b0 books\b/,
+        );
+        await expect(libraryPage.emptyMessage).toHaveText(
+          "No books in this shelf.",
+        );
+        await expect(libraryPage.noMatchesMessage).toHaveCount(0);
+        await expect(libraryPage.pageError).toHaveCount(0);
+      });
+    });
   });
 
   test.describe("adding books", () => {
@@ -284,17 +318,25 @@ test.describe("shelf gallery", () => {
           "aria-disabled",
           "true",
         );
-        await expect(libraryPage.shelfAddBooksTile).toHaveCount(0);
+        // The tile stays mounted, held the way the hero button is.
+        await expect(libraryPage.shelfAddBooksTile).toHaveAttribute(
+          "aria-disabled",
+          "true",
+        );
       });
 
       await test.step("release the refetch", async () => {
         await release();
       });
 
-      await test.step("check the grid lists both books and the tile is back", async () => {
+      await test.step("check the grid lists both books and Add books is back", async () => {
         await expect(libraryPage.bookTile("Alpha")).toBeVisible();
         await expect(libraryPage.bookTile("Beta in the Series")).toBeVisible();
         await expect(libraryPage.shelfAddBooksButton).toHaveAttribute(
+          "aria-disabled",
+          "false",
+        );
+        await expect(libraryPage.shelfAddBooksTile).toHaveAttribute(
           "aria-disabled",
           "false",
         );

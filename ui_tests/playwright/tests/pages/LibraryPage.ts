@@ -122,18 +122,14 @@ export class LibraryPage extends BasePage {
     this.shelfAddBooksTile = page.getByTestId("shelf-add-tile");
     this.shelfFacets = page.getByTestId("shelf-facets");
     this.lastBookGridItem = this.grid.locator(":scope > *").last();
-    this.emptyMessage = page.getByText("No ebooks found.");
-    this.pageError = page
-      .getByRole("alert")
-      .filter({ hasText: "Couldn't load the library" });
-    this.sortLockedNote = page.locator(".lib-sort-locked");
+    this.emptyMessage = page.getByTestId("lib-empty");
+    this.pageError = page.getByTestId("lib-page-error");
+    this.sortLockedNote = page.getByTestId("lib-sort-locked");
     this.filteredCount = page.locator(".lib-header-count");
     this.hiddenReceipt = page.locator(".lib-header-hidden");
     this.hiddenNote = page.getByRole("link", { name: /^Hidden: / });
-    this.loading = page
-      .getByRole("status")
-      .filter({ hasText: "Taking the books off the shelf" });
-    this.noMatchesMessage = page.getByText("No books match these filters.");
+    this.loading = page.getByTestId("lib-loading");
+    this.noMatchesMessage = page.getByTestId("lib-no-matches");
     this.clearFiltersButton = page.getByRole("button", {
       name: "Clear filters",
     });
@@ -309,7 +305,7 @@ export class LibraryPage extends BasePage {
     );
   }
 
-  /** Counts every "No ebooks found." node the page inserts from now on. */
+  /** Counts every empty-library message the page inserts from now on. */
   async recordEmptyLibraryInsertions(): Promise<void> {
     await this.page.evaluate(() => {
       const seen = { count: 0 };
@@ -318,7 +314,8 @@ export class LibraryPage extends BasePage {
         for (const added of mutations.flatMap((m) => [...m.addedNodes])) {
           if (
             added instanceof Element &&
-            added.textContent?.includes("No ebooks found.")
+            (added.matches('[data-testid="lib-empty"]') ||
+              added.querySelector('[data-testid="lib-empty"]'))
           ) {
             seen.count += 1;
           }

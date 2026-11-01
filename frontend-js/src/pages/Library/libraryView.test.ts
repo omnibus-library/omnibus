@@ -49,8 +49,17 @@ describe("hiddenFormatsLabel", () => {
 
 describe("bookSlug", () => {
   it("drops the folder and extension and dashes each run of other characters", () => {
-    expect(bookSlug("public_domain/Room with a View.epub")).toBe(
-      "room-with-a-view",
-    );
+    expect(
+      bookSlug({
+        filename: "public_domain/Room with a View.epub",
+        uuid: "ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0",
+      }),
+    ).toBe("room-with-a-view");
+  });
+
+  it("falls back to the uuid for a fileless book", () => {
+    expect(
+      bookSlug({ filename: "", uuid: "EC8495E8-0ce8-4cb1-8c1d-b646b0a717e0" }),
+    ).toBe("ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0");
   });
 });

@@ -101,7 +101,11 @@ function SyncRow({ book }: { book: BookDetail }) {
         to={`/read/${book.uuid}`}
         data-testid="sync-immersive"
         // Loads the audiobook, so the reader opens with it docked.
-        onClick={() => playback.open(book.uuid, null)}
+        onClick={(e) => {
+          // A modified click opens the reader elsewhere, which loads its own audio.
+          if (!(e.metaKey || e.ctrlKey || e.shiftKey || e.altKey))
+            playback.open(book.uuid, null);
+        }}
       >
         <ImmersiveGlyph size={18} />
         Immersive

@@ -198,6 +198,9 @@ test.describe("shelves on the library page", () => {
           shelf.name,
         );
         await expect(libraryPage.pageError).toBeVisible();
+        await expect(libraryPage.pageError).toContainText(
+          "Couldn't load the library",
+        );
       });
     });
 

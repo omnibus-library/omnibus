@@ -1,4 +1,4 @@
-import type { Locator, Page, Request } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { metadataUrls } from "../contracts/metadata";
 import type { EditionAnswers, ProviderEdition } from "../data/editions";
 import { isPostTo } from "../utils/api";
@@ -20,7 +20,6 @@ export class MetadataFetchComponent extends BaseComponent {
   readonly authorField: Locator;
   readonly searchButton: Locator;
   readonly errorMessage: Locator;
-  readonly emptyMessage: Locator;
   readonly editionList: Locator;
   readonly editionButtons: Locator;
   readonly hydratingNotice: Locator;
@@ -44,7 +43,6 @@ export class MetadataFetchComponent extends BaseComponent {
       exact: true,
     });
     this.errorMessage = this.root.getByRole("alert");
-    this.emptyMessage = this.root.getByTestId("es-fetch-empty");
     this.editionList = this.root.getByRole("list", {
       name: "Matching editions",
     });
@@ -105,15 +103,6 @@ export class MetadataFetchComponent extends BaseComponent {
 
   releaseHydrate(detail: ProviderEdition | null): void {
     this.answerHydrate?.(detail);
-  }
-
-  /** A live list of the searches this page sends from now on. */
-  recordSearches(): Request[] {
-    const sent: Request[] = [];
-    this.page.on("request", (request) => {
-      if (metadataUrls.search.test(request.url())) sent.push(request);
-    });
-    return sent;
   }
 
   /** Opens the view, which searches at once; a test that asserts the search wraps it. */

@@ -176,10 +176,7 @@ function Row({
     />
   );
   return (
-    <tr
-      className="ebook-row"
-      data-testid={`ebook-row-${bookSlug(book.filename)}`}
-    >
+    <tr className="ebook-row" data-testid={`ebook-row-${bookSlug(book)}`}>
       {select && (
         <td className="ebook-col-select">
           <input

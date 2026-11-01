@@ -7,8 +7,6 @@ export const statsUrls = {
   librarySize: /\/api\/library-size(?:\?|$)/,
   libraryComposition: /\/api\/library-composition(?:\?|$)/,
   householdReaders: /\/api\/users(?:\?|$)/,
-  /** The in-progress card's read, which the user menu also makes with `limit=1`. */
-  recentProgress: /\/api\/progress\/recent(?:\?|$)/,
 };
 
 /** The reads the stats page makes, all GETs. */

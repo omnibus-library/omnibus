@@ -74,7 +74,6 @@ export function Toolbar({
             Sort by
             <select
               className="lib-sort-select"
-              data-testid="lib-sort-select"
               disabled={sortLock !== null}
               value={prefs.sort}
               onChange={(e) =>
@@ -94,7 +93,6 @@ export function Toolbar({
           <button
             type="button"
             className="lib-sort-dir"
-            data-testid="lib-sort-dir"
             disabled={sortLock !== null}
             aria-label={`Sort direction: ${prefs.dir === "asc" ? "ascending" : "descending"}`}
             onClick={() => onChange({ ...prefs, dir: toggleDir(prefs.dir) })}

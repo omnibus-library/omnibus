@@ -72,6 +72,28 @@ test.describe("immersive read", () => {
     });
   });
 
+  test("open the reader with the audiobook docked from Files & Details", async ({
+    bookDetailPage,
+    epubReaderPage,
+    dualFormatUuid,
+  }) => {
+    await test.step("open the book", async () => {
+      await bookDetailPage.goto(dualFormatUuid);
+    });
+
+    await test.step("read it immersively from the sync row", async () => {
+      await bookDetailPage.readImmersivelyFromFiles();
+      await epubReaderPage.assertDisplayedFor(dualFormatUuid);
+    });
+
+    await test.step("check the same book's audiobook is docked", async () => {
+      await expect(epubReaderPage.miniDock.root).toBeVisible();
+      await expect(epubReaderPage.miniDock.titleLabel).toHaveText(
+        DUAL_FORMAT_BOOK.title,
+      );
+    });
+  });
+
   test("stack the reader above the docked player", async ({
     bookDetailPage,
     epubReaderPage,

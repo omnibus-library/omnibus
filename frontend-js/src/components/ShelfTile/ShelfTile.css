@@ -290,6 +290,17 @@
     background: var(--bg-1);
   }
 }
+.shelf-add-tile[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+@media (hover: hover) {
+  .shelf-add-tile[aria-disabled="true"]:hover {
+    color: var(--ink-2);
+    border-color: var(--line);
+    background: transparent;
+  }
+}
 .shelf-add-tile-plus {
   font-size: 24px;
   line-height: 1;

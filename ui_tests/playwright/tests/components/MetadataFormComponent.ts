@@ -10,7 +10,6 @@ export type Suggestion = { value: string; label: string };
  * panel, the cover controls inside Artwork; a hidden tab's controls are not.
  */
 export class MetadataFormComponent extends BaseComponent {
-  readonly detailsTab: Locator;
   readonly artworkTab: Locator;
 
   readonly titleField: Locator;
@@ -44,7 +43,6 @@ export class MetadataFormComponent extends BaseComponent {
   constructor(page: Page) {
     super(page);
     // Exact: the book page under the sheet has a "Files & Details" tab.
-    this.detailsTab = page.getByRole("tab", { name: "Details", exact: true });
     this.artworkTab = page.getByRole("tab", { name: "Artwork", exact: true });
 
     const fields = page.getByRole("tabpanel", { name: "Details", exact: true });
@@ -114,10 +112,6 @@ export class MetadataFormComponent extends BaseComponent {
   /** What the Series field's datalist offers. */
   async seriesSuggestions(): Promise<Suggestion[]> {
     return this.datalistOf(this.seriesField);
-  }
-
-  async openDetails(): Promise<void> {
-    await this.detailsTab.click();
   }
 
   async openArtwork(): Promise<void> {

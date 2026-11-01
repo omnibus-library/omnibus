@@ -88,6 +88,7 @@ export class BookDetailPage extends BasePage {
   readonly listenButton: Locator;
   readonly moreActionsButton: Locator;
   readonly immersiveReadButton: Locator;
+  readonly syncImmersiveLink: Locator;
   readonly noFilesMessage: Locator;
   readonly checkInWhenAcquiredButton: Locator;
   readonly physicalPill: Locator;
@@ -163,6 +164,7 @@ export class BookDetailPage extends BasePage {
     this.immersiveReadButton = page.getByRole("menuitem", {
       name: "Immersive",
     });
+    this.syncImmersiveLink = page.getByTestId("sync-immersive");
     this.noFilesMessage = page.getByTestId("no-files-disclaimer");
     this.checkInWhenAcquiredButton = page.getByRole("link", {
       name: "Check in when acquired",
@@ -292,6 +294,12 @@ export class BookDetailPage extends BasePage {
     await this.immersiveReadButton.click();
   }
 
+  /** Opens the reader with the audiobook docked, from the Files & Details tab's sync row. */
+  async readImmersivelyFromFiles(): Promise<void> {
+    await this.openTab("Files & Details");
+    await this.syncImmersiveLink.click();
+  }
+
   /** Opens the comic pager through the CBZ's Start reading action. */
   async startReadingComic(): Promise<void> {
     await this.startReadingComicButton.click();
@@ -346,10 +354,18 @@ export class BookDetailPage extends BasePage {
     });
   }
 
-  /** Records the message of every uncaught error the page throws from now on. */
+  /** Records the message of every error the page throws or logs from now on, render errors a route boundary catches included. */
   recordPageErrors(): string[] {
     const errors: string[] = [];
     this.page.on("pageerror", (error) => errors.push(error.message));
+    // A route's error boundary swallows a render error into `console.error`, so no `pageerror` fires; a failed request is network noise.
+    this.page.on("console", (message) => {
+      if (
+        message.type() === "error" &&
+        !message.text().startsWith("Failed to load resource")
+      )
+        errors.push(message.text());
+    });
     return errors;
   }
 

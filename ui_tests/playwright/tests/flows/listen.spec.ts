@@ -759,7 +759,7 @@ test.describe("listen page", () => {
       // timer lost by re-arming to the next chapter.
       await test.step("park 2.1 seconds before the seam", async () => {
         const armAt = SLEEP_SEAM_SECONDS - 2.1;
-        await listenPage.seekTo(armAt);
+        await listenPage.releaseSeek(armAt);
         await expect
           .poll(() => listenPage.audioPosition())
           .toBeGreaterThan(armAt - 1);

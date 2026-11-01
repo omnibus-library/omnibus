@@ -2,6 +2,7 @@ import type { Locator, Page, Request, Response } from "@playwright/test";
 import { StatsDrillSheetComponent } from "../components/StatsDrillSheetComponent";
 import { StatsReaderPickerComponent } from "../components/StatsReaderPickerComponent";
 import { TopNavComponent } from "../components/TopNavComponent";
+import { progressUrls } from "../contracts/progress";
 import { stats, statsUrls } from "../contracts/stats";
 import type { StatsRange, StatsTile } from "../data/stats";
 import { expect } from "../fixtures/test";
@@ -294,7 +295,7 @@ export class StatsPage extends BasePage {
     const ownQuery = (url: string) => new URL(url).searchParams;
     const release = await holdRequests(
       this.page,
-      statsUrls.recentProgress,
+      progressUrls.recent,
       (request) => {
         const query = ownQuery(request.url());
         return !query.has("user_id") && Number(query.get("limit")) > 1;
@@ -303,7 +304,7 @@ export class StatsPage extends BasePage {
     return async () => {
       const landed = this.page.waitForResponse(
         (response) =>
-          statsUrls.recentProgress.test(response.url()) &&
+          progressUrls.recent.test(response.url()) &&
           !ownQuery(response.url()).has("user_id"),
       );
       release();

@@ -9,7 +9,7 @@ const titles = (r: { books: Book[] }) => r.books.map((b) => b.title);
 const full = (list: Book[], ready = true, errored = false): FullList => ({
   books: list,
   ready,
-  refetching: false,
+  settling: false,
   errored,
 });
 const answered = (list?: Book[], failed = false): NarrowedList => ({

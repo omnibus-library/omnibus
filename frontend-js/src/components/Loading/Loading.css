@@ -620,6 +620,9 @@
     animation: none;
     display: none;
   }
+  .ld-cover-glint > img {
+    transition: none;
+  }
   .ld-ring::before {
     animation: none;
     transform: rotate(0.35turn);

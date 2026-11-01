@@ -11,7 +11,6 @@ export class SavedPassageCardComponent extends BaseComponent {
   readonly quoteCardButton: Locator;
   readonly saveImageButton: Locator;
   readonly deleteButton: Locator;
-  readonly deleteDialog: Locator;
   readonly deleteError: Locator;
   private readonly confirmDeleteButton: Locator;
 
@@ -29,7 +28,6 @@ export class SavedPassageCardComponent extends BaseComponent {
     });
     this.saveImageButton = root.getByRole("button", { name: "Save image…" });
     this.deleteButton = root.getByRole("button", { name: "Delete highlight" });
-    this.deleteDialog = page.getByTestId("highlight-delete-modal");
     this.deleteError = page.getByTestId("highlight-delete-error");
     this.confirmDeleteButton = page.getByTestId(
       "highlight-delete-modal-confirm",

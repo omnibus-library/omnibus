@@ -4,6 +4,7 @@ import { MetadataFormComponent } from "../components/MetadataFormComponent";
 import { TopNavComponent } from "../components/TopNavComponent";
 import { coversUrls } from "../contracts/covers";
 import type { EditionAnswers } from "../data/editions";
+import { recordRequests } from "../utils/api";
 import { BasePage } from "./BasePage";
 
 /** A book's metadata editor at `/books/:uuid/edit`: a sheet over the book page. */
@@ -95,11 +96,6 @@ export class MetadataEditPage extends BasePage {
     await this.confirmRevertButton.click();
   }
 
-  /** Confirms the revert dialog that is already open, as a retry does. */
-  async confirmRevert(): Promise<void> {
-    await this.confirmRevertButton.click();
-  }
-
   async cancelRevert(): Promise<void> {
     await this.cancelRevertButton.click();
   }
@@ -112,16 +108,7 @@ export class MetadataEditPage extends BasePage {
 
   /** Listens for writes to the book's cover: an upload or a fetch from a URL. */
   recordCoverWrites(): string[] {
-    const urls: string[] = [];
-    this.page.on("request", (request) => {
-      if (
-        request.method() === "POST" &&
-        /\/api\/ebooks\/[^/]+\/cover/.test(request.url())
-      ) {
-        urls.push(request.url());
-      }
-    });
-    return urls;
+    return recordRequests(this.page, /\/api\/ebooks\/[^/]+\/cover/, "POST");
   }
 
   /** Answers a cover-from-URL write with the book as the server would return it. */

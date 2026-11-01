@@ -33,9 +33,10 @@ export function hiddenFormatsLabel(formats: string[]): string | null {
     .join(", ")}`;
 }
 
-/** A book's `data-testid` suffix: its filename's stem, lowercased, each run of other characters one `-`. */
-export function bookSlug(filename: string): string {
-  const base = filename.split("/").pop() ?? filename;
+/** A book's `data-testid` suffix: its filename's stem (a fileless book's uuid), lowercased, each run of other characters one `-`. */
+export function bookSlug(book: { filename: string; uuid: string }): string {
+  const name = book.filename || book.uuid;
+  const base = name.split("/").pop() ?? name;
   return base
     .replace(/\.[^.]*$/, "")
     .toLowerCase()

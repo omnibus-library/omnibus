@@ -35,7 +35,7 @@ function Tile({
     // biome-ignore lint/a11y/useSemanticElements: the Atrium grid styles divs; list elements would bring the browser's list margins and padding
     <div
       role="listitem"
-      data-testid={`ebook-tile-${bookSlug(book.filename)}`}
+      data-testid={`ebook-tile-${bookSlug(book)}`}
       data-flip-key={book.uuid}
       data-flip-from={volume && `stack-${volume.lead}`}
       data-flip-deck={volume?.deck}
@@ -209,8 +209,8 @@ type BookGridProps = {
   books: Book[];
   /** The series folded into stacks, riding with `books`; empty when none are. */
   stacks: SeriesStack[];
-  /** Ends the grid with an Add books tile that calls this; absent when books can't be added. */
-  onAddTile?: () => void;
+  /** Ends the grid with an Add books tile; absent when books can't be added, `disabled` while they can't yet. */
+  onAddTile?: { disabled: boolean; title?: string; onClick: () => void };
 };
 
 /** The cover wall: a tile per book, with each stacked series folded into its lead's slot. */
@@ -288,7 +288,9 @@ export function BookGrid({ books, stacks, onAddTile }: BookGridProps) {
       ))}
       {onAddTile && (
         <AddBooksTile
-          onClick={onAddTile}
+          disabled={onAddTile.disabled}
+          title={onAddTile.title}
+          onClick={onAddTile.onClick}
           style={{ animationDelay: `${staggerMs(items.length)}ms` }}
         />
       )}

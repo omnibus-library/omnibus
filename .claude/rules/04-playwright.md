@@ -7,7 +7,7 @@ These rules exist so every flow is tested the same way. Don't diverge without up
 
 ## Running specs — `just e2e-ci`
 
-`just e2e-ci [spec…]` ([`scripts/e2e-ci.sh`](../../scripts/e2e-ci.sh)) runs the suite the way [`e2e.yml`](../../.github/workflows/e2e.yml) does: it builds the `omnibus` server and the React client, starts the server on a scratch DB and data dirs at a free port in the worktree's window serving the client at `/`, runs `playwright test` against it with `CI=1` and artifacts outside the tree, then tears the server down. Args pass through, so spec paths are relative to `ui_tests/playwright`. Judge a red there, not against the dev server: its DB carries state between runs that CI's fresh one never has. The server is a debug build sharing the dev server's artifacts; `OMNIBUS_E2E_RELEASE=1` builds `--release`, as CI does. For live preview validation (not specs), see the [ui-validate](../skills/ui-validate/SKILL.md) skill.
+`just e2e-ci [spec…]` ([`scripts/e2e-ci.sh`](../../scripts/e2e-ci.sh)) runs the suite the way [`e2e.yml`](../../.github/workflows/e2e.yml) does: it builds the `omnibus` server and the React client, starts the server on a scratch DB and data dirs at a free port in the worktree's window serving the client at `/`, runs `playwright test` against it with `CI=1` and artifacts outside the tree, then tears the server down. Args pass through, so spec paths are relative to `ui_tests/playwright`. Judge a red there, not against the dev server: its DB carries state between runs that CI's fresh one never has. The server is a debug build sharing the dev server's artifacts; `OMNIBUS_E2E_RELEASE=1` builds `--release`, as CI does. A failed run keeps its scratch dir (`server.log`, `react.log`, `test-results/` with each failure's `error-context.md` ARIA snapshot). For live preview validation (not specs), see the [ui-validate](../skills/ui-validate/SKILL.md) skill.
 
 ## Toolchain — pnpm, TypeScript 7, Biome
 
@@ -71,7 +71,7 @@ way to the index, active on `/shelves` and every `/shelves/:id`.
   assert against the landing surface — the pressed tab
   (`ShelfGalleryComponent.selectedTab`) for the name and count,
   `shelf-facets` for kind/visibility/rules, `shelf-edit` for the pencil,
-  `lib-grid` for members, `lib-page-error` for a failed member fetch, and on
+  `lib-grid` for members, `lib-page-error` for a failed member fetch (`lib-empty`, `lib-loading` and `lib-sort-locked` likewise name the empty, waiting and locked-sort states), and on
   a hand-picked shelf `shelf-add-books` / the grid's closing `shelf-add-tile`.
 
 Shelf delete, the member sort control, and the Kobo badge exist **only** on

@@ -471,6 +471,9 @@ test.describe("library filters", () => {
           slugsWhere((b) => authoredBy(b, "Alfred Aho") && hasFormat(b, "pdf")),
         );
         await expect(libraryPage.noMatchesMessage).toBeVisible();
+        await expect(libraryPage.noMatchesMessage).toContainText(
+          "No books match these filters.",
+        );
         await expect(libraryPage.emptyMessage).toHaveCount(0);
       });
     });
@@ -601,6 +604,9 @@ test.describe("library filters", () => {
     await test.step("check the bar survives the error", async () => {
       expect(filterClauses(request)).toHaveLength(1);
       await expect(libraryPage.pageError).toBeVisible();
+      await expect(libraryPage.pageError).toContainText(
+        "Couldn't load the library",
+      );
       await expect(filterBar.facet("format")).toHaveAccessibleName(
         "Format PDF",
       );
