@@ -100,6 +100,17 @@ enum ReadAnswer: Equatable, Sendable {
 }
 
 enum DetailRead {
+    /// `The Reading Group, book 2 of 4`. The total is the books the library holds,
+    /// so it's left out where it can't be true of the number: book 5 of a series
+    /// with three here is still book 5.
+    static func seriesLabel(series: String, index: String?, total: Int) -> String {
+        guard let index = index?.nilIfBlank else { return series }
+        guard total > 1, let number = Double(index), number <= Double(total) else {
+            return "\(series), book \(index)"
+        }
+        return "\(series), book \(index) of \(total)"
+    }
+
     /// Whether a kept line can open in the EPUB reader. A mixed EPUB and PDF book
     /// shares one list, and a `pdf-page:` anchor means nothing to that reader.
     static func opensInBook(hasEpub: Bool, anchor: String?) -> Bool {
@@ -390,9 +401,8 @@ enum DetailStats {
         if status == .finished, let finishedAt {
             return "Finished \(DetailFormat.day(unix: finishedAt, now: now))"
         }
-        if let record {
-            return "Reading since \(DetailFormat.day(unix: record.startedAt, now: now))"
-        }
+        // The rows under this line state the rest, starting with when it began.
+        if record != nil { return "" }
         if hasPosition || hasFile {
             // An unanswered read says nothing about whether there is a history.
             switch history {
@@ -419,6 +429,7 @@ enum DetailStats {
     ) -> [DetailStatRow] {
         let sessions = StatsFormat.counted(Int64(record.sessions), "session")
         var rows = [
+            DetailStatRow(key: "Started", value: DetailFormat.day(unix: record.startedAt, now: now)),
             DetailStatRow(
                 key: record.readSeconds > 0 ? "Time read" : "Time listened",
                 value: "\(DetailFormat.duration(record.totalSeconds)) · \(sessions)"

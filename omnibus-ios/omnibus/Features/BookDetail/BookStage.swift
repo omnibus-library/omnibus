@@ -459,8 +459,9 @@ struct BookStage: View {
 
     private var seriesLabel: String {
         guard let series = book.series else { return "" }
-        guard let index = book.seriesIndex?.nilIfBlank else { return series }
-        return "\(series), book \(index)"
+        return DetailRead.seriesLabel(
+            series: series, index: book.seriesIndex, total: model.seriesBooks.count
+        )
     }
 
     // MARK: - Status and rating
