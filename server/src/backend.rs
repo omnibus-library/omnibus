@@ -137,11 +137,11 @@ async fn serve_download(
         .file_name()
         .and_then(|s| s.to_str())
         .unwrap_or("download");
+    let disposition = Some(content_disposition_attachment(filename));
     serve_file(
         req,
         path,
-        content_type,
-        Some(content_disposition_attachment(filename)),
+        conditional::FileResponse::media(content_type, disposition),
     )
     .await
 }
@@ -151,39 +151,25 @@ async fn serve_download(
 async fn serve_file(
     req: axum::extract::Request,
     path: &std::path::Path,
-    content_type: &str,
-    disposition: Option<String>,
+    spec: conditional::FileResponse<'_>,
 ) -> Response {
     let open = match conditional::open(path).await {
         Ok(open) => open,
         Err(e) => {
-            tracing::warn!(?path, error = %e, "media file open failed");
+            tracing::warn!(?path, error = %e, "file open failed");
             return axum::http::StatusCode::NOT_FOUND.into_response();
         }
     };
     let range = match conditional::evaluate(req.headers(), &open.validator, open.len) {
         conditional::Precondition::NotModified(etag) => {
-            return conditional::not_modified(
-                &etag,
-                conditional::MEDIA_CACHE_CONTROL,
-                conditional::MEDIA_VARY,
-            )
+            return conditional::not_modified(&etag, spec.cache_control, spec.vary)
         }
         conditional::Precondition::Failed => {
             return axum::http::StatusCode::PRECONDITION_FAILED.into_response()
         }
         conditional::Precondition::Proceed { range } => range,
     };
-    conditional::serve(
-        open,
-        range,
-        conditional::FileResponse {
-            content_type,
-            cache_control: conditional::MEDIA_CACHE_CONTROL,
-            disposition,
-        },
-    )
-    .await
+    conditional::serve(open, range, spec).await
 }
 
 /// Build a `Content-Disposition: attachment` value for `filename`.

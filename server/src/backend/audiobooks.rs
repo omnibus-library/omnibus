@@ -21,7 +21,7 @@ use omnibus_shared::{
     ManifestQuery, PartsQuery,
 };
 
-use super::{internal, AppState};
+use super::{conditional::FileResponse, internal, AppState};
 use crate::auth::{AuthUser, MediaAuthUser};
 
 /// Content-Type for MPEG-TS audio segments served by the HLS fallback.
@@ -349,7 +349,7 @@ pub(super) async fn get_audiobook_part(
     // not the `book_files` row: that row carries the group's `max(mtime)`
     // and summed size across every part, which is the wrong granularity for
     // a per-part URL.
-    super::serve_file(req, &abs_path, mime, None).await
+    super::serve_file(req, &abs_path, FileResponse::media(mime, None)).await
 }
 
 /// Download an audiobook file
@@ -537,7 +537,7 @@ pub(super) async fn get_audiobook_segment(
         }
     }
 
-    super::serve_file(req, &seg_path, MPEGTS_CONTENT_TYPE, None).await
+    super::serve_file(req, &seg_path, FileResponse::media(MPEGTS_CONTENT_TYPE, None)).await
 }
 
 /// `true` if `name` matches `seg-NNNN.ts` exactly (4 decimal digits).

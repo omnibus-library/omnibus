@@ -9,7 +9,7 @@
 //! with HTML. `/react/*`, where the client lived
 //! while it was opt-in, redirects to the same path at the root.
 //!
-//! Every byte goes through the conditional path (rule 09a). A `.br` or `.gz`
+//! Every byte goes through `serve_file`, the conditional path (rule 09a). A `.br` or `.gz`
 //! sibling written at build time is served in place of a file the client
 //! accepts that encoding for, under its own validator. Vite's hashed `/assets/*`
 //! are cached for a year; everything else revalidates. No auth here: the shell
@@ -146,36 +146,17 @@ async fn serve(dir: &Path, file: &Path, req: Request) -> Response {
         REVALIDATE
     };
     let (path, encoding) = precompressed(file, req.headers()).await;
-    let open = match conditional::open(&path).await {
-        Ok(open) => open,
-        Err(e) => {
-            tracing::warn!(?path, error = %e, "web client file open failed");
-            return StatusCode::NOT_FOUND.into_response();
-        }
+    let spec = conditional::FileResponse {
+        content_type: content_type(file),
+        cache_control,
+        // The client's files don't depend on who asks, only on how they can decode it.
+        vary: "Accept-Encoding",
+        disposition: None,
     };
-    let mut res = match conditional::evaluate(req.headers(), &open.validator, open.len) {
-        conditional::Precondition::NotModified(etag) => {
-            conditional::not_modified(&etag, cache_control, "Accept-Encoding")
-        }
-        conditional::Precondition::Failed => StatusCode::PRECONDITION_FAILED.into_response(),
-        conditional::Precondition::Proceed { range } => {
-            conditional::serve(
-                open,
-                range,
-                conditional::FileResponse {
-                    content_type: content_type(file),
-                    cache_control,
-                    disposition: None,
-                },
-            )
-            .await
-        }
-    };
-    let headers = res.headers_mut();
-    // The client's files don't depend on who asks, only on how they can decode it.
-    headers.insert(header::VARY, HeaderValue::from_static("Accept-Encoding"));
+    let mut res = super::serve_file(req, &path, spec).await;
     if let Some(encoding) = encoding {
-        headers.insert(header::CONTENT_ENCODING, HeaderValue::from_static(encoding));
+        res.headers_mut()
+            .insert(header::CONTENT_ENCODING, HeaderValue::from_static(encoding));
     }
     res
 }
