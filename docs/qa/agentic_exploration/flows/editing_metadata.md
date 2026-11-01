@@ -115,8 +115,8 @@ own record of what it found and what it left.
 - The description accepts a paragraph of prose. Editing it is fine; blanking
   it is not, and a description that arrived as raw HTML from the file is a
   finding about the file's import, not something to fix by hand.
-- **iOS has an editor**, on the book detail screen's `…` overflow menu. It
-  offers the same fields, and it is the only door on that surface — there
-  are no chip editors on the iOS detail page and no table view. It reports
-  no edited-field count and no save confirmation; the only feedback is an
-  orange dot beside each changed field while you are editing.
+- **iOS has an editor**, in a sheet from the book page's More menu or a book
+  cell's long press, with Details, Artwork and Identifiers tabs. It offers the
+  same fields. Unlike the web editor it holds a replaced cover until Save, so
+  the footer's "N unsaved changes" counts it and Discard drops it. A save
+  closes the sheet and says "Saved N changes to {title}" on the book page.

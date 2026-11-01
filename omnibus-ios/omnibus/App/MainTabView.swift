@@ -30,7 +30,6 @@ enum Destination: Hashable {
     /// The palette's own `total` matches for `query`, fetched whole.
     case taxonomyMatching(SearchFacet, query: String, total: UInt32)
     case searchResults(query: String)
-    case metadataEdit(uuid: String)
 
     /// Whether this screen draws its own bottom-edge chrome, so the tab bar
     /// and mini player must step aside for it.
@@ -363,8 +362,6 @@ struct DestinationRouter: ViewModifier {
                 TaxonomyMatchesView(facet: facet, query: query, total: total)
             case let .searchResults(query):
                 SearchResultsView(query: query, title: "“\(query)”")
-            case let .metadataEdit(uuid):
-                MetadataEditView(uuid: uuid)
             }
         }
     }

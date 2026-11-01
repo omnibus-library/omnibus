@@ -97,6 +97,7 @@ struct BookDetailView: View {
     @State private var showDelete = false
     @State private var mergeResult: MergeBooksResult?
     @State private var confirmWishlistRemove = false
+    @State private var showEditor = false
     /// A one-line report for the toast, when something needs saying.
     @State private var toast: String?
     /// Bumped to flip the book mark on the primary action.
@@ -205,6 +206,12 @@ struct BookDetailView: View {
             }
         }
         .sheet(isPresented: $showCheckIn) { CheckInView() }
+        .sheet(isPresented: $showEditor) {
+            MetadataEditView(uuid: uuid) { report in
+                withAnimation(Motion.settle) { toast = report }
+                Task { await model.load(uuid: uuid) }
+            }
+        }
         .sheet(isPresented: $showMerge) {
             if let book = model.book {
                 MergeBookSheet(target: book) { result in
@@ -547,10 +554,13 @@ struct BookDetailView: View {
                     .accessibilityIdentifier("export-open")
                 }
                 if rows.editMetadata {
-                    NavigationLink(value: Destination.metadataEdit(uuid: book.uuid)) {
+                    Button {
+                        showEditor = true
+                    } label: {
                         menuLabel("Edit metadata", systemImage: "pencil")
                     }
                     .disabled(!connectivity.isOnline)
+                    .accessibilityIdentifier("metadata-edit-open")
                 }
                 if rows.removeFromWishlist {
                     Button {
