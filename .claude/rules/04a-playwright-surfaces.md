@@ -78,10 +78,10 @@ state — so its two tests for those states are fixmes. Immersive reading is in
 the hero's `More actions` menu, not a button of its own.
 
 **A saved passage's locator is a chapter title, not "Chapter N".** Once the
-book's structure loads, `highlight-meta` reads `Chapter 12: Inej · saved …`;
+book's structure loads, `highlight-meta` reads `Chapter 12: Inej · <date>`;
 until then it falls back to `Section N` off the raw CFI spine step (#2356,
 #2463). Both are valid for the same position and which one a spec sees depends
-on fetch timing, so match the shape (`/^.+ · saved /`) rather than either
+on fetch timing, so match the shape (`/^.+ · .+$/`) rather than either
 branch.
 
 **A landing *table* row is not a `button`.** The row (`ebook-row-<slug>`,
