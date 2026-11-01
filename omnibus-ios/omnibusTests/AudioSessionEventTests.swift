@@ -354,7 +354,7 @@ struct AudioSessionEventTests {
         }
     }
 
-    @MainActor @Test func aControlRedrawsWhenOnlyAPendingStartChanges() {
+    @MainActor @Test func aControlHearsAWriteToPendingStarts() {
         final class Flag: @unchecked Sendable { var raised = false }
         let changed = Flag()
         let player = AudioPlayer.shared
@@ -363,7 +363,7 @@ struct AudioSessionEventTests {
         } onChange: {
             changed.raised = true
         }
-        // With no book loaded this moves `pendingStarts` and nothing else.
+        // With no book loaded this only writes `pendingStarts`, with the value it holds.
         player.play()
         #expect(changed.raised)
     }

@@ -1355,7 +1355,12 @@ final class AudioPlayer {
     /// scrubber is chapter-scoped like the in-app one; a book without chapter
     /// marks falls back to the whole-book span.
     private func updateNowPlaying() {
-        guard let book else { return }
+        guard let book else {
+            // A start still finding its book reads as playing, or a second press
+            // re-arms it rather than cancelling; never `.paused`, over `close()`'s `.stopped`.
+            MPNowPlayingInfoCenter.default().playbackState = isPlayingOrStarting ? .playing : .stopped
+            return
+        }
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: currentChapter?.title ?? book.displayTitle,
             MPMediaItemPropertyAlbumTitle: book.displayTitle,
@@ -1562,6 +1567,8 @@ final class AudioPlayer {
             guard pendingStarts.resumeIsOwed, let target else {
                 // A call's hold goes too, or its end would take the session for nothing.
                 pendingStarts = PendingStarts()
+                // No start is coming, so the system must stop reading this as playing.
+                updateNowPlaying()
                 return
             }
             // No await between here and `load`'s teardown, which hands the
