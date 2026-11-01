@@ -91,7 +91,21 @@ enum DetailFormat {
     }
 }
 
+/// Where a read that can fail has got to. Empty only means empty once it has
+/// answered, which is what keeps a slow or failed read from saying "none yet".
+enum ReadAnswer: Equatable, Sendable {
+    case waiting
+    case known
+    case failed
+}
+
 enum DetailRead {
+    /// Whether a kept line can open in the EPUB reader. A mixed EPUB and PDF book
+    /// shares one list, and a `pdf-page:` anchor means nothing to that reader.
+    static func opensInBook(hasEpub: Bool, anchor: String?) -> Bool {
+        hasEpub && anchor.map(ReaderController.isEpubCFI) == true
+    }
+
     /// The line above the title of a wishlisted book with no files.
     static func wishlistLine(source: String) -> String {
         "On your wishlist · added from \(source)"
@@ -367,7 +381,8 @@ enum DetailStats {
     /// The sentence under the card's heading.
     static func readingLine(
         status: ReadStatus, wishlistOnly: Bool, hasFile: Bool, hasPhysical: Bool,
-        hasPosition: Bool, record: DetailReadRecord?, finishedAt: Int64?, now: Date = Date()
+        hasPosition: Bool, record: DetailReadRecord?, finishedAt: Int64?,
+        history: ReadAnswer = .known, now: Date = Date()
     ) -> String {
         if wishlistOnly {
             return "Add an ebook or an audiobook to start tracking your reading stats for this book."
@@ -377,6 +392,14 @@ enum DetailStats {
         }
         if let record {
             return "Reading since \(DetailFormat.day(unix: record.startedAt, now: now))"
+        }
+        if hasPosition || hasFile {
+            // An unanswered read says nothing about whether there is a history.
+            switch history {
+            case .waiting: return ""
+            case .failed: return "Your reading history couldn\u{2019}t be loaded."
+            case .known: break
+            }
         }
         // The session log counts only sittings of a minute or more, and trails
         // a position this device just wrote.

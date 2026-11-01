@@ -689,3 +689,27 @@ private func entry(id: Int64, clientID: String? = nil) -> JournalEntry {
     let data = try JSONEncoder().encode(answer)
     #expect(try JSONDecoder().decode(BookSuggestions.self, from: data) == answer)
 }
+
+// MARK: - Kept lines and unanswered reads
+
+@Test func onlyAnEpubPositionOpensInTheEpubReader() {
+    let cfi = "epubcfi(/6/8!/4/2,/1:0,/1:10)"
+    #expect(DetailRead.opensInBook(hasEpub: true, anchor: cfi))
+    #expect(!DetailRead.opensInBook(hasEpub: false, anchor: cfi))
+    #expect(!DetailRead.opensInBook(hasEpub: true, anchor: nil))
+    // A mixed EPUB and PDF book shares one list of kept lines.
+    #expect(!DetailRead.opensInBook(hasEpub: true, anchor: "pdf-page:12"))
+    #expect(!DetailRead.opensInBook(hasEpub: true, anchor: "comic-page:3"))
+}
+
+@Test func anUnansweredSessionReadIsNotAnEmptyHistory() {
+    func line(_ history: ReadAnswer) -> String {
+        DetailStats.readingLine(
+            status: .reading, wishlistOnly: false, hasFile: true, hasPhysical: false,
+            hasPosition: false, record: nil, finishedAt: nil, history: history
+        )
+    }
+    #expect(line(.waiting).isEmpty)
+    #expect(line(.failed).contains("couldn\u{2019}t be loaded"))
+    #expect(line(.known).contains("No reading recorded yet"))
+}

@@ -46,21 +46,14 @@ enum DetailReviews {
         ((stars * 10).rounded() / 10).formatted()
     }
 
-    /// `4.5 · 3 reviews`, or what stands in its place.
-    static func headlineNote(_ headline: ReviewHeadline?, state: ReviewCardState) -> String {
+    /// The stage's rating said aloud, the one place its figures are put in words.
+    static func headlineSpoken(_ headline: ReviewHeadline?, state: ReviewCardState) -> String {
         switch state {
         case .loading: return "Checking reviews…"
         case .unavailable(.offline): return "Reviews need a connection"
         case .unavailable(.failed): return "Couldn't load reviews"
         case .ready: break
         }
-        guard let headline else { return "No reviews yet" }
-        return "\(average(headline.average)) · \(StatsFormat.counted(Int64(headline.count), "review"))"
-    }
-
-    /// The same figure said aloud.
-    static func headlineSpoken(_ headline: ReviewHeadline?, state: ReviewCardState) -> String {
-        guard case .ready = state else { return headlineNote(headline, state: state) }
         guard let headline else { return "No reviews yet" }
         return "Average rating \(average(headline.average)) of 5, from "
             + StatsFormat.counted(Int64(headline.count), "review")

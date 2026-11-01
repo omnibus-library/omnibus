@@ -36,7 +36,9 @@ struct BookHighlightsTab: View {
                             chapter: ChapterLocator.label(
                                 chapters: model.chapters, cfi: highlight.epubCFIRange
                             ),
-                            opensInBook: book.hasEpub && highlight.epubCFIRange != nil,
+                            opensInBook: DetailRead.opensInBook(
+                                hasEpub: book.hasEpub, anchor: highlight.epubCFIRange
+                            ),
                             onQuote: { onQuote(highlight) },
                             onOpenInBook: { onOpenInBook(highlight) },
                             onChange: { Task { await model.load(uuid: book.uuid) } }
@@ -69,11 +71,26 @@ struct BookHighlightsTab: View {
             .padding(.top, 32)
 
             if model.journals.isEmpty {
-                Text("No entries yet. Be the first to write one. Anyone reading this book can add to the journal.")
-                    .font(.ui(16))
-                    .foregroundStyle(palette.ink1Color)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 4)
+                switch model.journalsAnswer {
+                case .waiting:
+                    EmptyView()
+                case .failed:
+                    Text("Entries couldn\u{2019}t be loaded.")
+                        .font(.ui(16))
+                        .foregroundStyle(palette.ink1Color)
+                        .padding(.top, 4)
+                    Button("Try again") { Task { await model.load(uuid: book.uuid) } }
+                        .font(.ui(15, weight: .semibold))
+                        .foregroundStyle(palette.bookText)
+                        .frame(minHeight: 44)
+                        .accessibilityIdentifier("journal-retry")
+                case .known:
+                    Text("No entries yet. Be the first to write one. Anyone reading this book can add to the journal.")
+                        .font(.ui(16))
+                        .foregroundStyle(palette.ink1Color)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 4)
+                }
             } else {
                 LazyVStack(alignment: .leading, spacing: 10) {
                     ForEach(model.journals) { entry in

@@ -16,7 +16,6 @@ struct BookOverviewTab: View {
     /// How far above the series section a jump to it has to aim, for the
     /// section to land below the pinned tabs rather than under them.
     var jumpClearance: CGFloat = 0
-    var onShelves: () -> Void
 
     @Environment(\.palette) private var palette
 
@@ -26,10 +25,6 @@ struct BookOverviewTab: View {
         model.seriesBooks.sorted {
             (Double($0.seriesIndex ?? "") ?? 0) < (Double($1.seriesIndex ?? "") ?? 0)
         }
-    }
-
-    private var shelves: [ShelfSummary] {
-        model.allShelves.filter { model.shelvesContaining.contains($0.id) }
     }
 
     var body: some View {
@@ -103,18 +98,6 @@ struct BookOverviewTab: View {
                 }
                 .accessibilityIdentifier("book-detail-tags")
             }
-            ChipRow(label: "Shelves") {
-                ForEach(shelves) { shelf in
-                    NavigationLink(value: Destination.shelf(id: shelf.id)) {
-                        StageChip(label: shelf.name)
-                    }
-                    .buttonStyle(PressableStyle())
-                }
-                AddCircle(
-                    label: "Add to a shelf", identifier: "book-detail-add-shelf", action: onShelves
-                )
-            }
-            .accessibilityIdentifier("book-detail-shelves")
         }
     }
 
@@ -128,19 +111,23 @@ struct BookOverviewTab: View {
                 .font(.display(26, weight: .semibold))
                 .foregroundStyle(palette.ink0Color)
 
-            Text(DetailStats.readingLine(
+            let line = DetailStats.readingLine(
                 status: model.readStatus,
                 wishlistOnly: model.isWishlistOnly,
                 hasFile: model.hasFile,
                 hasPhysical: book.hasPhysical,
                 hasPosition: model.hasPosition,
                 record: record,
-                finishedAt: model.finishedAt
-            ))
-            .font(.ui(15))
-            .foregroundStyle(palette.ink1Color)
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(.top, 4)
+                finishedAt: model.finishedAt,
+                history: model.sessionsAnswer
+            )
+            if !line.isEmpty {
+                Text(line)
+                    .font(.ui(15))
+                    .foregroundStyle(palette.ink1Color)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 4)
+            }
 
             if let record, !model.isWishlistOnly {
                 ReadingStats(
@@ -511,24 +498,7 @@ private struct SeriesFan: View {
             }
             .frame(height: (spread ? SeriesFanLayout.spreadHeight : SeriesFanLayout.gatheredHeight) + 14)
             .padding(.top, 6)
-
-            Text(caption)
-                .font(.ui(14))
-                .foregroundStyle(palette.ink1Color)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 8)
         }
-    }
-
-    private var nextTitle: String? {
-        guard let position, position + 1 < members.count else { return nil }
-        return members[position + 1].displayTitle
-    }
-
-    private var caption: String {
-        let count = StatsFormat.counted(Int64(members.count), "book")
-        guard let nextTitle else { return "\(count) in your library" }
-        return "\(count) in your library · \(nextTitle) is up next"
     }
 
     @ViewBuilder
