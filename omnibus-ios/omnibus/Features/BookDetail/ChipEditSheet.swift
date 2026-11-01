@@ -64,14 +64,11 @@ enum ChipEditKind: String, Identifiable, Sendable {
     }
 }
 
-/// The "+" that opens a chip row for a reader who may edit metadata — the
-/// web hero's "+ genres" / "+ tags" pill. It leads the row rather than
-/// trailing it as the web's does: the strip scrolls sideways instead of
-/// wrapping, so a trailing "+" on a well-tagged book sits screens away.
-/// Greyed rather than gone while offline: the save it opens onto is never
-/// queued (rule 08).
-struct AddChip: View {
-    let kind: ChipEditKind
+/// The dashed "+" that ends a filing row. Drawn smaller than the finger it is
+/// sized for.
+struct AddCircle: View {
+    let label: String
+    let identifier: String
     var enabled = true
     var action: () -> Void
 
@@ -83,23 +80,38 @@ struct AddChip: View {
             action()
         } label: {
             Image(systemName: "plus")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(palette.accentColor)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(palette.ink1Color)
+                .frame(width: 34, height: 34)
                 .overlay(
-                    Capsule().strokeBorder(
-                        palette.accentColor.opacity(0.55),
+                    Circle().strokeBorder(
+                        palette.ink0Color.opacity(0.3),
                         style: StrokeStyle(lineWidth: 1, dash: [4, 3])
                     )
                 )
-                .contentShape(Capsule())
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
         }
         .buttonStyle(PressableStyle())
         .disabled(!enabled)
         .opacity(enabled ? 1 : 0.4)
-        .accessibilityLabel(kind.addLabel)
-        .accessibilityIdentifier(kind.addIdentifier)
+        .accessibilityLabel(label)
+        .accessibilityIdentifier(identifier)
+    }
+}
+
+/// The "+" that opens a chip row for a reader who may edit metadata. Greyed
+/// rather than gone while offline: the save it opens onto is never queued
+/// (rule 08).
+struct AddChip: View {
+    let kind: ChipEditKind
+    var enabled = true
+    var action: () -> Void
+
+    var body: some View {
+        AddCircle(
+            label: kind.addLabel, identifier: kind.addIdentifier, enabled: enabled, action: action
+        )
     }
 }
 
@@ -221,10 +233,7 @@ struct ChipEditSheet: View {
 
     private func removableChip(_ value: String, at index: Int) -> some View {
         HStack(spacing: 6) {
-            switch kind {
-            case .genres: GenreChip(label: value)
-            case .tags: TagChip(label: value)
-            }
+            StageChip(label: value)
             Button {
                 guard values.indices.contains(index) else { return }
                 Haptics.tap()

@@ -483,11 +483,6 @@ struct UserSummary: Codable, Hashable, Sendable {
     /// defaults a missing key to `[]`, so a pre-upgrade `CacheKey.me` blob
     /// still decodes.
     var hiddenFormats: [String] = []
-    /// Whether this reader's book detail page uses the snap-stop marquee.
-    /// The lenient `decode(Bool.Type,forKey:)` above defaults a missing key to
-    /// `false`, so a pre-0092 `/me` payload (or a cached blob from one) still
-    /// decodes, with the off default this setting ships as.
-    var bookDetailScrollStops: Bool = false
     /// Whether book grids fold each series into one tile; a missing key decodes as off.
     var stackSeries: Bool = false
     /// Raw wire value; read `shareStats`. `Bool?` rather than the file's
@@ -512,7 +507,6 @@ struct UserSummary: Codable, Hashable, Sendable {
         case displayName = "display_name"
         case hasAvatar = "has_avatar"
         case hiddenFormats = "hidden_formats"
-        case bookDetailScrollStops = "book_detail_scroll_stops"
         case stackSeries = "stack_series"
         case shareStatsSetting = "share_stats"
     }
@@ -2544,6 +2538,16 @@ struct AlignmentMatch: Codable, Hashable, Sendable {
 struct AlignmentEbookChapter: Codable, Hashable, Sendable {
     var title: String
     var percent: Double
+    /// The 0-based spine document the chapter starts in, and where inside it
+    /// when several share one — how a saved CFI finds its chapter.
+    var spineIndex: Int64? = nil
+    var anchorPath: String? = nil
+
+    enum CodingKeys: String, CodingKey {
+        case title, percent
+        case spineIndex = "spine_index"
+        case anchorPath = "anchor_path"
+    }
 }
 
 struct AlignmentEbook: Codable, Hashable, Sendable {

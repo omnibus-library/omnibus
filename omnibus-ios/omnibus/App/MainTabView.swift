@@ -316,7 +316,10 @@ struct DestinationRouter: ViewModifier {
         content.navigationDestination(for: Destination.self) { destination in
             switch destination {
             case let .book(uuid):
+                // A link can replace the book at this place in the stack; the
+                // page's state belongs to the book it was opened on.
                 BookDetailView(uuid: uuid)
+                    .id(uuid)
             case let .author(id):
                 AuthorDetailView(id: id)
             case let .series(id):

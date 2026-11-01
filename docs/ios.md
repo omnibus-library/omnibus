@@ -8,7 +8,7 @@ surface as `mobile/`, never the `/api/rpc/*` server functions.
 Each Swift file opens with a header comment saying what it is for; print the
 file map from those headers with `just modules omnibus-ios/omnibus`. This page
 covers what no single file can: the second target, CarPlay, the release
-pipeline, and the reader's design.
+pipeline, the book page, and the reader's design.
 
 ## Widgets
 
@@ -167,6 +167,27 @@ every run 403'd and — because the check then *proceeded* — refiled the same
 submissions daily. A listing that fails aborts the run instead. Its suite
 (`scripts/tests/testflight-feedback.test.py`) is gated by the same
 `script-tests.yml`.
+
+## The book page
+
+`Features/BookDetail/` draws one layout: the stage (the book standing on a blurred
+wash of its own cover, with your place in it), then Overview, Reviews, Highlights
+and Files under a tab strip that pins below the top bar, and a primary action that
+never scrolls away. The web page's `book_detail_scroll_stops` marquee has no iOS
+counterpart, so the setting has no row in iOS settings; the field stays on the wire
+for the web.
+
+Colors come from the book, at fixed lightness steps (`Palette.bookRibbon`,
+`bookText`, `bookDeep`, `bookFill`) with hue and chroma from
+`Palette.accented(byCoverOf:)`, and fall back to the theme's own ground, so the page
+reads on all four themes. Every section is its own `Cache.live` read in
+`BookDetailModel`, so nothing on the page waits on anything else.
+
+What the page can't state is left out rather than filled in. The household's activity
+says how long and how lately a reader has been in a book, never how far, because
+`GET /api/books/{uuid}/household` carries no position or status. The stage's rating
+takes the server's summary when it sends one, and below `SUMMARY_MIN_RATINGS` the
+mean of the ratings the tab already lists.
 
 ## Reader
 

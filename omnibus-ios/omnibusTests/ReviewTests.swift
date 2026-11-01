@@ -257,9 +257,9 @@ struct ReviewOptimisticTests {
     }
 }
 
-// MARK: - The block's decisions
+// MARK: - The tab's decisions
 
-@Suite("Reviews block")
+@Suite("Reviews tab")
 struct DetailReviewsTests {
     @Test("a spoiler review stays collapsed until the viewer has finished the book")
     func spoilerCollapsesUntilFinished() {
@@ -267,42 +267,6 @@ struct DetailReviewsTests {
         #expect(DetailReviews.hidesText(spoiler: true, viewerStatus: .reading))
         #expect(!DetailReviews.hidesText(spoiler: true, viewerStatus: .finished))
         #expect(!DetailReviews.hidesText(spoiler: false, viewerStatus: .reading))
-    }
-
-    @Test("written reviews and bare ratings are split, each in the server's order")
-    func groupsOtherReaders() {
-        let others = [
-            other(1, stars: 4, body: "newest"), other(2, body: "older, no stars"),
-            other(3, stars: 5), other(4, stars: 2), other(5, body: "  "),
-        ]
-        #expect(DetailReviews.written(others).map(\.userId) == [1, 2])
-        // Blank text is no text; with no stars either there is nothing to show.
-        #expect(DetailReviews.starsOnly(others).map(\.userId) == [3, 4])
-    }
-
-    @Test("the title line reads the average to one decimal and counts readers")
-    func titleLine() {
-        let summary = ReviewSummary(averageStars: 4.333, ratings: 3, buckets: [])
-        #expect(DetailReviews.titleLine(summary) == "4.3 · 3 readers")
-    }
-
-    @Test("the kicker counts other readers, and is bare with none")
-    func kicker() {
-        #expect(DetailReviews.kicker(othersCount: 0) == "Reviews")
-        #expect(DetailReviews.kicker(othersCount: 1) == "Reviews · 1 other reader")
-        #expect(DetailReviews.kicker(othersCount: 4) == "Reviews · 4 other readers")
-    }
-
-    @Test("the summary draws all ten buckets, empty ones as slots")
-    func summaryBars() {
-        let buckets = (1...10).map { ReviewBucket(halfStars: Int64($0), readers: $0 == 8 ? 3 : 0) }
-        let bars = DetailReviews.summaryBars(buckets)
-        #expect(bars.count == 10)
-        #expect(bars[7].fraction == 1)
-        #expect(bars[7].value == "3")
-        #expect(bars[7].title == "4 \u{2605} · 3 readers")
-        #expect(bars[0].isEmpty)
-        #expect(bars[0].value == nil)
     }
 
     @Test("an excerpt veils spoilers and resolves Markdown")
@@ -328,11 +292,42 @@ struct DetailReviewsTests {
         #expect(DetailReviews.excerpt("![](/x.png)\nwords") == [.text("words")])
     }
 
-    @Test("the marquee's hand-off names the other readers, or your own review")
-    func allLabel() {
-        #expect(DetailReviews.allLabel(othersCount: 0) == "Your whole review")
-        #expect(DetailReviews.allLabel(othersCount: 1) == "All reviews · 1 other reader")
-        #expect(DetailReviews.allLabel(othersCount: 3) == "All reviews · 3 other readers")
+    @Test("the stage takes the server's summary when there is one")
+    func headlineFromSummary() {
+        let summary = ReviewSummary(averageStars: 4.333, ratings: 3, buckets: [])
+        let page = BookReviews(mine: nil, others: [], summary: summary)
+        let headline = DetailReviews.headline(page)
+        #expect(headline?.count == 3)
+        #expect(headline?.rounded == 4.5)
+        #expect(DetailReviews.headlineNote(headline, state: .ready(nil)) == "4.3 · 3 reviews")
+    }
+
+    @Test("below the server's threshold the stage means what the page already lists")
+    func headlineFromTheList() {
+        let page = BookReviews(
+            mine: review(stars: 4), others: [other(1, stars: 5), other(2, body: "no stars")],
+            summary: nil
+        )
+        let headline = DetailReviews.headline(page)
+        #expect(headline == ReviewHeadline(average: 4.5, count: 2))
+        #expect(DetailReviews.headlineNote(headline, state: .ready(nil)) == "4.5 · 2 reviews")
+        // One rating is a review, not reviews.
+        let lone = DetailReviews.headline(BookReviews(mine: review(stars: 4.5), others: [], summary: nil))
+        #expect(DetailReviews.headlineNote(lone, state: .ready(nil)) == "4.5 · 1 review")
+    }
+
+    @Test("the stage says when nobody has rated, and when it doesn't know yet")
+    func headlineStates() {
+        #expect(DetailReviews.headline(nil) == nil)
+        #expect(DetailReviews.headline(.empty) == nil)
+        #expect(DetailReviews.headlineNote(nil, state: .ready(nil)) == "No reviews yet")
+        #expect(DetailReviews.headlineNote(nil, state: .loading) == "Checking reviews…")
+        #expect(DetailReviews.headlineNote(nil, state: .unavailable(.offline)) == "Reviews need a connection")
+        #expect(DetailReviews.headlineNote(nil, state: .unavailable(.failed)) == "Couldn't load reviews")
+    }
+
+    @Test("writing is text or notes; stars alone are not")
+    func hasWriting() {
         #expect(DetailReviews.hasWriting(review(notes: "n")))
         #expect(!DetailReviews.hasWriting(review(stars: 4, body: " ")))
     }
@@ -348,16 +343,16 @@ struct DetailReviewsTests {
 
     @Test("the stars note says why an unknown review can't be written yet")
     func unknownNote() {
-        #expect(DetailReviews.unknownNote(.loading) == "loading your review")
-        #expect(DetailReviews.unknownNote(.unavailable(.offline)) == "loads when you're back online")
+        #expect(DetailReviews.unknownNote(.loading) == "Loading your review…")
+        #expect(DetailReviews.unknownNote(.unavailable(.offline)) == "Loads when you're back online.")
         // A refusal or a fault is not an outage, and waiting won't fix it.
-        #expect(DetailReviews.unknownNote(.unavailable(.failed)) == "couldn't load · pull down to retry")
+        #expect(DetailReviews.unknownNote(.unavailable(.failed)) == "Couldn't load. Pull down to retry.")
     }
 
-    @Test("the note beside your stars says whether you have rated")
+    @Test("the note under your stars says whether you have rated")
     func starsNote() {
-        #expect(DetailReviews.starsNote(nil) == "tap a star to rate")
-        #expect(DetailReviews.starsNote(4.5) == "rated 4.5 of 5")
+        #expect(DetailReviews.starsNote(nil) == "Not rated yet. Tap or drag the stars, half stars count.")
+        #expect(DetailReviews.starsNote(4.5) == "You rated it 4.5")
     }
 }
 
@@ -537,11 +532,11 @@ struct ReviewDraftTests {
         #expect(DetailReviews.conflictNote([]) == nil)
         #expect(
             DetailReviews.conflictNote([.body])
-                == "Your review text changed elsewhere while this was open — Save keeps yours."
+                == "Your review text changed elsewhere while this was open. Save keeps yours."
         )
         #expect(
             DetailReviews.conflictNote([.spoiler, .body, .notes])
-                == "Your review text, private notes and spoiler flag changed elsewhere while this was open — Save keeps yours."
+                == "Your review text, private notes and spoiler flag changed elsewhere while this was open. Save keeps yours."
         )
     }
 }

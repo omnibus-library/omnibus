@@ -445,6 +445,27 @@ struct JournalBody: View {
     /// sheet, where the whole card is a button and the row's own tap — which
     /// opens the entry in the drawer — has to win.
     var revealable: Bool = true
+    /// The face prose is set in: the reading face for an entry, the interface
+    /// face where it sits among the book page's controls.
+    var face: Face = .reading
+
+    enum Face {
+        case reading, interface
+
+        var font: Font {
+            switch self {
+            case .reading: .display(18)
+            case .interface: .ui(16)
+            }
+        }
+
+        var lineSpacing: CGFloat {
+            switch self {
+            case .reading: 6
+            case .interface: 4
+            }
+        }
+    }
 
     @Environment(\.palette) private var palette
     @State private var revealed: Set<Int> = []
@@ -521,9 +542,9 @@ struct JournalBody: View {
     private func prose(_ spans: [JournalSpan]) -> some View {
         spoilerSafe(
             text(spans, ink: palette.ink1Color)
-                .font(.display(18))
+                .font(face.font)
                 .foregroundStyle(palette.ink1Color)
-                .lineSpacing(6)
+                .lineSpacing(face.lineSpacing)
                 .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, alignment: .leading),
             spans

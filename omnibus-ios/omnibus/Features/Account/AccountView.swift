@@ -27,8 +27,6 @@ struct AccountView: View {
     @State private var kindleEmail = ""
     @State private var kindleSaved = false
     @State private var kindleError: String?
-    @State private var scrollStops = false
-    @State private var scrollStopsError: String?
     @State private var hiddenFormats: Set<String> = []
     @State private var hiddenSaved = false
     @State private var hiddenError: String?
@@ -51,7 +49,7 @@ struct AccountView: View {
 
                     appearance($app)
                     reading
-                    UserSettingsSection(scrollStops: $scrollStops, scrollStopsError: scrollStopsError)
+                    UserSettingsSection()
                     library
                     offline
                     sendToKindle
@@ -88,7 +86,6 @@ struct AccountView: View {
         .task {
             kindleEmail = app.user?.kindleEmail ?? ""
             hiddenFormats = Set(app.user?.hiddenFormats ?? [])
-            scrollStops = app.user?.bookDetailScrollStops ?? false
             await connectivity.refreshPendingCount()
         }
         .onChange(of: kindleEmail) { _, _ in
@@ -98,25 +95,6 @@ struct AccountView: View {
         .onChange(of: hiddenFormats) { _, _ in
             hiddenSaved = false
             hiddenError = nil
-        }
-        .onChange(of: scrollStops) { previous, next in
-            guard next != (app.user?.bookDetailScrollStops ?? false) else { return }
-            Task {
-                do {
-                    try await AuthService.setBookDetailScrollStops(next)
-                    await app.refreshUser()
-                    scrollStopsError = nil
-                    Haptics.success()
-                } catch {
-                    // Account configuration, so no outbox takes this (rule
-                    // 08) — a swallowed failure would leave the switch
-                    // showing a setting that exists nowhere.
-                    scrollStops = previous
-                    scrollStopsError = (error as? APIError)?.errorDescription
-                        ?? error.localizedDescription
-                    Haptics.warning()
-                }
-            }
         }
     }
 
