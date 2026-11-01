@@ -396,16 +396,29 @@ struct BookStage: View {
 
     // MARK: - Byline
 
-    /// One centered line when it fits, the author over the series when not.
+    /// The author, then the series on a line of its own. Without a series, the
+    /// year beside the author when it fits and under them when not.
     private var byline: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 6) {
-                authorLink
-                bylineTail(separated: true)
-            }
-            VStack(spacing: 0) {
-                authorLink
-                bylineTail(separated: false)
+        Group {
+            if inSeries {
+                // Each line keeps a finger's height to tap and overlaps the
+                // other by a little, so the two read as one byline.
+                VStack(spacing: 0) {
+                    authorLink.padding(.vertical, -6)
+                    seriesLink.padding(.vertical, -6)
+                }
+                .padding(.vertical, 6)
+            } else {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 6) {
+                        authorLink
+                        yearText(separated: true)
+                    }
+                    VStack(spacing: 0) {
+                        authorLink
+                        yearText(separated: false)
+                    }
+                }
             }
         }
         .font(.ui(16, weight: .medium))
@@ -414,21 +427,20 @@ struct BookStage: View {
         .frame(maxWidth: .infinity)
     }
 
+    private var seriesLink: some View {
+        Button(action: onSeries) {
+            Text(seriesLabel)
+                .underline(color: palette.ink1Color.opacity(0.45))
+                .frame(minHeight: 40)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("book-series-link")
+    }
+
     @ViewBuilder
-    private func bylineTail(separated: Bool) -> some View {
-        if inSeries {
-            if separated {
-                Text("·").accessibilityHidden(true)
-            }
-            Button(action: onSeries) {
-                Text(seriesLabel)
-                    .underline(color: palette.ink1Color.opacity(0.45))
-                    .frame(minHeight: 40)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("book-series-link")
-        } else if let year = book.year {
+    private func yearText(separated: Bool) -> some View {
+        if let year = book.year {
             Text(separated ? "· \(year)" : year).frame(minHeight: 40)
         }
     }
