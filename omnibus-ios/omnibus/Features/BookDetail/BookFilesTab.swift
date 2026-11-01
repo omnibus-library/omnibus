@@ -122,7 +122,7 @@ struct BookFilesTab: View {
         BookFilesCopy.ebookDetail(
             formats: book.formats,
             sizeBytes: book.epubSizeBytes,
-            held: downloads.localURL(for: book.uuid, kind: .ebook) != nil
+            held: downloads.isDownloaded(book.uuid, kind: .ebook)
         )
     }
 
@@ -130,7 +130,7 @@ struct BookFilesTab: View {
         BookFilesCopy.audioDetail(
             files: book.audioFiles,
             duration: model.audioDuration,
-            held: downloads.localURL(for: book.uuid, kind: .audio) != nil
+            held: downloads.isDownloaded(book.uuid, kind: .audio)
         )
     }
 

@@ -352,8 +352,8 @@ struct BookDetailView: View {
             model: model,
             tab: tab,
             isOnline: connectivity.isOnline,
-            holdsCopy: downloads.localURL(for: book.uuid, kind: .ebook) != nil
-                || downloads.localURL(for: book.uuid, kind: .audio) != nil,
+            holdsCopy: downloads.isDownloaded(book.uuid, kind: .ebook)
+                || downloads.isDownloaded(book.uuid, kind: .audio),
             onReviews: { jump(to: .reviews, proxy: proxy) },
             onSeries: { jumpToSeries(proxy: proxy) }
         )
@@ -749,8 +749,7 @@ struct BookDetailView: View {
         if book.hasEbook, book.hasAudiobook {
             // The other format keeps a door: Listen beside a reading action,
             // Read beside a listening one.
-            let needsConnection = !toPlayer && !connectivity.isOnline
-                && downloads.localURL(for: book.uuid, kind: .audio) == nil
+            let needsConnection = !toPlayer && !downloads.canOpen(book, kind: .audio)
 
             Button {
                 Haptics.tap()
