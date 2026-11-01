@@ -1,6 +1,6 @@
 //  MetadataFetchTests.swift
-//  The fetch-metadata sheet's pure logic: what a request asks, what order the
-//  candidates come in, what one field would change, and what a per-source
+//  The fetch view's pure logic: what a request asks, what order the candidates
+//  come in, which rows an edition's comparison holds, and what a per-source
 //  status reads as.
 
 import Foundation
@@ -52,7 +52,7 @@ struct MetadataFetchRequestTests {
         // title/author pair rather than one flattened phrase searched inside
         // the title field.
         let request = MetadataFetchFlow.searchRequest(
-            title: "Dune", author: "Frank Herbert", isbn: "9780441013593", providers: nil
+            title: "Dune", author: "Frank Herbert", isbn: "9780441013593"
         )
         #expect(request?.title == "Dune")
         #expect(request?.author == "Frank Herbert")
@@ -63,7 +63,7 @@ struct MetadataFetchRequestTests {
     @Test func searchRequestIsNilWhenEveryFieldIsBlank() {
         #expect(
             MetadataFetchFlow.searchRequest(
-                title: "  ", author: "", isbn: "\n", providers: nil
+                title: "  ", author: "", isbn: "\n"
             ) == nil
         )
     }
@@ -72,7 +72,7 @@ struct MetadataFetchRequestTests {
         // The strongest question any provider takes, and one with no free
         // text to compose a `query` from at all.
         let request = MetadataFetchFlow.searchRequest(
-            title: "", author: "", isbn: "9780441013593", providers: nil
+            title: "", author: "", isbn: "9780441013593"
         )
         #expect(request != nil)
         #expect(request?.query == "")
@@ -81,17 +81,40 @@ struct MetadataFetchRequestTests {
 
     @Test func searchRequestTrimsEachFieldBeforeSending() {
         let request = MetadataFetchFlow.searchRequest(
-            title: "  Dune  ", author: " Frank Herbert ", isbn: " ", providers: nil
+            title: "  Dune  ", author: " Frank Herbert ", isbn: " "
         )
         #expect(request?.title == "Dune")
         #expect(request?.author == "Frank Herbert")
         #expect(request?.isbn == nil)
     }
 
+    @Test func aQueryShapedLikeAnIsbnAsksForThatPrinting() {
+        let request = MetadataFetchFlow.searchRequest(query: " 978-0-441-01359-3 ", author: "")
+        #expect(request?.isbn == "978-0-441-01359-3")
+        #expect(request?.title == nil)
+
+        let plain = MetadataFetchFlow.searchRequest(query: "Dune", author: "Frank Herbert")
+        #expect(plain?.title == "Dune")
+        #expect(plain?.author == "Frank Herbert")
+        #expect(plain?.isbn == nil)
+
+        #expect(MetadataFetchFlow.searchRequest(query: " ", author: "") == nil)
+    }
+
+    @Test func onlyTheTwoIsbnShapesLookLikeAnIsbn() {
+        #expect(MetadataFetchFlow.looksLikeISBN("9780441013593"))
+        #expect(MetadataFetchFlow.looksLikeISBN("0-441-01359-7"))
+        #expect(MetadataFetchFlow.looksLikeISBN("044101359X"))
+        // A title of digits is still a title: "2001" and "1984" are books.
+        #expect(!MetadataFetchFlow.looksLikeISBN("1984"))
+        #expect(!MetadataFetchFlow.looksLikeISBN("978044101359X"))
+        #expect(!MetadataFetchFlow.looksLikeISBN("Fahrenheit"))
+    }
+
     @Test func searchRequestEncodesTheWireFieldNames() throws {
         let request = try #require(
             MetadataFetchFlow.searchRequest(
-                title: "Dune", author: "", isbn: "", providers: [.googleBooks]
+                title: "Dune", author: "", isbn: ""
             )
         )
         let data = try JSONEncoder().encode(request)
@@ -99,7 +122,6 @@ struct MetadataFetchRequestTests {
             try JSONSerialization.jsonObject(with: data) as? [String: Any]
         )
         #expect(json["title"] as? String == "Dune")
-        #expect(json["providers"] as? [String] == ["google_books"])
         // Absent, not null: the server's `Option` fields skip when empty, and
         // an explicit null would fail nothing but says something different.
         #expect(json["isbn"] == nil)
@@ -206,12 +228,10 @@ struct MetadataFetchFieldTests {
         MetadataFetchField.publisher.apply(to: &current, from: candidate)
         #expect(current.publisher == "Chilton Books")
         #expect(current.title == loaded.title)
-        #expect(MetadataFetchField.publisher.isStaged(draft: current, loaded: loaded))
-        #expect(!MetadataFetchField.title.isStaged(draft: current, loaded: loaded))
     }
 
     @Test func aFieldTheSourceDoesNotKnowCanNeverBlankTheValueYouHave() {
-        // The whole safety property of the compare screen.
+        // The whole safety property of the comparison.
         var current = draft(publisher: "Ace")
         var candidate = edition()
         candidate.publisher = nil
@@ -223,18 +243,6 @@ struct MetadataFetchFieldTests {
         #expect(current.description == "")
         #expect(!MetadataFetchField.publisher.isAvailable(candidate))
         #expect(!MetadataFetchField.publisher.differs(draft: current, edition: candidate))
-    }
-
-    @Test func undoPutsAFieldBackToWhatTheBookHad() {
-        let loaded = draft(publisher: "Ace")
-        var current = loaded
-        var candidate = edition()
-        candidate.publisher = "Chilton Books"
-
-        MetadataFetchField.publisher.apply(to: &current, from: candidate)
-        MetadataFetchField.publisher.undo(in: &current, to: loaded)
-        #expect(current.publisher == "Ace")
-        #expect(!MetadataFetchField.publisher.isStaged(draft: current, loaded: loaded))
     }
 
     @Test func listFieldsStageTheSourcesOwnEntriesWithBlanksDropped() {
@@ -291,11 +299,10 @@ struct MetadataFetchFieldTests {
 
     @Test func aComposedQueryIsCappedToWhatTheServerAccepts() {
         // `EditionSearchRequest::validate` checks `query` first, so an
-        // over-long composition 400s with a message naming a field the sheet
+        // over-long composition 400s with a message naming a field the view
         // has no control for.
         let request = MetadataFetchFlow.searchRequest(
-            title: String(repeating: "a", count: 400), author: "Frank Herbert", isbn: "",
-            providers: nil
+            title: String(repeating: "a", count: 400), author: "Frank Herbert", isbn: ""
         )
         #expect(request?.query.count == MetadataFetchFlow.searchQueryMaxLength)
         // The structured fields are untouched — they have their own cap, and
@@ -303,27 +310,10 @@ struct MetadataFetchFieldTests {
         #expect(request?.title?.count == 400)
     }
 
-    @Test func changeCountIgnoresFieldsThatAlreadyAgree() {
-        var current = draft(title: "Dune", publisher: "Ace")
-        // Everything the source is silent on is stripped, so the count under
-        // test is exactly the one field left.
-        var candidate = edition(title: "Dune", isbn13: nil)
-        candidate.publisher = "Chilton Books"
-        candidate.year = nil
-        candidate.pages = nil
-
-        // Title agrees, publisher differs — and a field the source is silent
-        // on is not a difference, because it can't be taken.
-        #expect(MetadataFetchFlow.changeCount(edition: candidate, draft: current) == 1)
-
-        MetadataFetchField.publisher.apply(to: &current, from: candidate)
-        #expect(MetadataFetchFlow.changeCount(edition: candidate, draft: current) == 0)
-    }
-
-    @Test func everyFieldRoundTripsThroughAllSixAccessors() {
-        // `allCases` is what the compare screen renders, so a case that
-        // compiles but can't be read, taken, or undone would show as a dead
-        // card rather than as a build failure.
+    @Test func everyFieldRoundTripsThroughItsAccessors() {
+        // `allCases` is what the comparison is built from, so a case that
+        // compiles but can't be read or taken would show as a dead row rather
+        // than as a build failure.
         let loaded = draft()
         var candidate = edition()
         candidate.isbn10 = "0441013597"
@@ -335,13 +325,224 @@ struct MetadataFetchFieldTests {
         for field in MetadataFetchField.allCases {
             var current = loaded
             #expect(!field.label.isEmpty)
-            _ = field.original(loaded)
             guard field.isAvailable(candidate) else { continue }
             field.apply(to: &current, from: candidate)
             #expect(field.current(current) == field.sourceValue(candidate))
-            field.undo(in: &current, to: loaded)
-            #expect(field.current(current) == field.original(loaded))
         }
+    }
+}
+
+// MARK: - The comparison
+
+struct MetadataFetchDiffTests {
+    /// An edition offering only what a test names, so the rows under test are
+    /// exactly the ones it sets.
+    private func bare(cover: String? = nil) -> ProviderEdition {
+        var candidate = edition(title: "Dune", isbn13: nil)
+        candidate.publisher = nil
+        candidate.year = nil
+        candidate.pages = nil
+        candidate.coverURL = cover
+        return candidate
+    }
+
+    private func rows(
+        _ candidate: ProviderEdition, in current: MetadataDraft,
+        hasCover: Bool = true, staged: StagedCover? = nil
+    ) -> [MetadataDiffRow] {
+        MetadataFetchFlow.diffRows(edition: candidate, draft: current, hasCover: hasCover, staged: staged)
+    }
+
+    @Test func aFieldThatAgreesOrThatTheSourceLacksIsNoRow() {
+        var candidate = bare()
+        #expect(rows(candidate, in: draft(publisher: "Ace")).isEmpty)
+
+        candidate.publisher = "Chilton Books"
+        var current = draft(publisher: "Ace")
+        #expect(rows(candidate, in: current).map(\.id) == ["publisher"])
+
+        // Taking it makes the two agree, so the row is gone.
+        MetadataFetchField.publisher.apply(to: &current, from: candidate)
+        #expect(rows(candidate, in: current).isEmpty)
+    }
+
+    @Test func aBlankIsFilledByDefaultAndAValueIsReplacedOnlyWhenTicked() throws {
+        var candidate = bare()
+        candidate.publisher = "Chilton Books"
+        candidate.series = "Dune Chronicles"
+
+        let found = rows(candidate, in: draft(publisher: "Ace"))
+        let series = try #require(found.first { $0.id == "series" })
+        let publisher = try #require(found.first { $0.id == "publisher" })
+
+        #expect(series.fills)
+        #expect(MetadataFetchFlow.isOn(series, marks: [:]))
+        #expect(!publisher.fills)
+        #expect(publisher.before == "Ace")
+        #expect(!MetadataFetchFlow.isOn(publisher, marks: [:]))
+
+        // What the reader says outranks the default, both ways.
+        #expect(MetadataFetchFlow.isOn(publisher, marks: ["publisher": true]))
+        #expect(!MetadataFetchFlow.isOn(series, marks: ["series": false]))
+    }
+
+    @Test func aBookWithoutArtFillsTheCoverAndABookWithArtWouldReplaceIt() throws {
+        let url = "https://covers.example/1.jpg"
+        let filling = try #require(rows(bare(cover: url), in: draft(), hasCover: false).first)
+        #expect(filling.kind == .cover(url: url))
+        #expect(filling.fills)
+
+        let replacing = try #require(rows(bare(cover: url), in: draft(), hasCover: true).first)
+        #expect(!replacing.fills)
+    }
+
+    @Test func aCoverAlreadyStagedIsNoRowAndAnotherStagedOneIsNotABlank() throws {
+        let url = "https://covers.example/1.jpg"
+        #expect(rows(bare(cover: url), in: draft(), hasCover: false, staged: .url(url)).isEmpty)
+
+        let other = try #require(
+            rows(bare(cover: url), in: draft(), hasCover: false, staged: .photo(Data())).first
+        )
+        #expect(!other.fills)
+    }
+
+    @Test func aCoverAddressTheServerCouldNotFetchIsNoRow() {
+        #expect(rows(bare(cover: "   "), in: draft()).isEmpty)
+        #expect(rows(bare(cover: "/relative.jpg"), in: draft()).isEmpty)
+    }
+
+    @Test func applyingTakesOnlyTheTickedRowsAndStagesTheCover() {
+        let url = "https://covers.example/1.jpg"
+        var candidate = bare(cover: url)
+        candidate.publisher = "Chilton Books"
+        candidate.series = "Dune Chronicles"
+
+        var current = draft(publisher: "Ace")
+        var staged: StagedCover?
+        let found = rows(candidate, in: current, hasCover: false)
+
+        // Defaults: the blank series and the missing cover, not the publisher.
+        MetadataFetchFlow.apply(found, marks: [:], edition: candidate, draft: &current, staged: &staged)
+        #expect(current.series == "Dune Chronicles")
+        #expect(current.publisher == "Ace")
+        #expect(staged == .url(url))
+
+        // Ticking the replacement takes it; unticking the cover leaves it be.
+        current = draft(publisher: "Ace")
+        staged = nil
+        MetadataFetchFlow.apply(
+            found, marks: ["publisher": true, "cover": false],
+            edition: candidate, draft: &current, staged: &staged
+        )
+        #expect(current.publisher == "Chilton Books")
+        #expect(staged == nil)
+    }
+
+    @Test func aSecondEditionComparesAgainstWhatTheFirstFilledIn() throws {
+        var first = bare()
+        first.publisher = "Chilton Books"
+        var second = bare()
+        second.publisher = "Ace"
+        second.series = "Dune Chronicles"
+
+        var current = draft(publisher: "")
+        var staged: StagedCover?
+        MetadataFetchFlow.apply(
+            rows(first, in: current), marks: [:], edition: first, draft: &current, staged: &staged
+        )
+        #expect(current.publisher == "Chilton Books")
+
+        let next = rows(second, in: current)
+        let publisher = try #require(next.first { $0.id == "publisher" })
+        #expect(!publisher.fills)
+        #expect(publisher.before == "Chilton Books")
+        #expect(next.first { $0.id == "series" }?.fills == true)
+    }
+
+    @Test func applyingLeavesARowLeftUntickedInTheComparison() throws {
+        var candidate = bare()
+        candidate.publisher = "Chilton Books"
+        candidate.series = "Dune Chronicles"
+        let marks = ["series": false]
+
+        var current = draft(publisher: "")
+        var staged: StagedCover?
+        MetadataFetchFlow.apply(
+            rows(candidate, in: current), marks: marks, edition: candidate, draft: &current, staged: &staged
+        )
+
+        let left = rows(candidate, in: current)
+        #expect(left.map(\.id) == ["series"])
+        // The same marks carry on, so it doesn't tick itself back on.
+        #expect(!MetadataFetchFlow.isOn(try #require(left.first), marks: marks))
+    }
+
+    @Test func aSeriesNumberOnlyFillsABlankWhenItBelongsToThatSeries() throws {
+        var candidate = bare()
+        candidate.series = "Dune Chronicles"
+        candidate.seriesIndex = "1"
+
+        // The draft is in another series, so taking the number alone would pair
+        // this edition's number with that series.
+        var other = draft()
+        other.series = "Great Science Fiction"
+        let mismatched = rows(candidate, in: other)
+        #expect(try #require(mismatched.first { $0.id == "series" }).fills == false)
+        #expect(try #require(mismatched.first { $0.id == "seriesIndex" }).fills == false)
+
+        // No series yet: both fill together.
+        let blank = rows(candidate, in: draft())
+        #expect(try #require(blank.first { $0.id == "series" }).fills)
+        #expect(try #require(blank.first { $0.id == "seriesIndex" }).fills)
+
+        // Same series, missing its number.
+        var same = draft()
+        same.series = "Dune Chronicles"
+        #expect(try #require(rows(candidate, in: same).first { $0.id == "seriesIndex" }).fills)
+    }
+
+    @Test func groupsLeaveOutTheEmptyHeadingAndCountTheirRows() {
+        var candidate = bare()
+        candidate.series = "Dune Chronicles"
+        candidate.isbn10 = "0441013597"
+
+        let fillsOnly = MetadataFetchFlow.groups(rows(candidate, in: draft()))
+        #expect(fillsOnly.map(\.head) == ["Fills 2 blanks"])
+
+        candidate.publisher = "Chilton Books"
+        candidate.isbn10 = nil
+        let both = MetadataFetchFlow.groups(rows(candidate, in: draft(publisher: "Ace")))
+        #expect(both.map(\.head) == ["Fills 1 blank", "Would replace 1"])
+        #expect(MetadataFetchFlow.groups([]).isEmpty)
+    }
+
+    @Test func theWordsForHowMuchAnEditionChangesCountProperly() {
+        #expect(MetadataFetchFlow.changesLabel(0) == "Matches yours")
+        #expect(MetadataFetchFlow.changesLabel(1) == "1 change")
+        #expect(MetadataFetchFlow.changesLabel(5) == "5 changes")
+        #expect(MetadataFetchFlow.applyLabel(chosen: 0) == "Tick a change to apply it")
+        #expect(MetadataFetchFlow.applyLabel(chosen: 1) == "Apply 1 change")
+        #expect(MetadataFetchFlow.applyLabel(chosen: 5) == "Apply 5 changes")
+    }
+
+    @Test func anEditionsLineDropsWhatTheProviderLeftEmpty() {
+        var candidate = bare()
+        candidate.authors = ["A. Conan Doyle"]
+        candidate.publisher = "Spencer Blackett"
+        candidate.year = "1890"
+        candidate.pages = 283
+        #expect(
+            MetadataFetchFlow.metaLine(candidate)
+                == "A. Conan Doyle \u{b7} Spencer Blackett 1890 \u{b7} 283 pages"
+        )
+
+        candidate.publisher = "  "
+        candidate.pages = nil
+        #expect(MetadataFetchFlow.metaLine(candidate) == "A. Conan Doyle \u{b7} 1890")
+
+        candidate.authors = []
+        candidate.year = nil
+        #expect(MetadataFetchFlow.metaLine(candidate) == "")
     }
 }
 
@@ -408,8 +609,8 @@ struct MetadataFetchHydrateTests {
         // `authors: []`, `pages: nil`, `publisher: nil`, `isbn13: nil`. That is
         // the path `hydrate_edition` takes for any candidate with no ISBN —
         // routine for pre-ISBN works and translations — so without these
-        // restores the compare screen would show a dash for fields the list row
-        // had just displayed, and their Take controls would go inert.
+        // restores the comparison would drop fields the list row had just
+        // displayed.
         var thin = edition(title: "Dune", isbn13: "9780441013593")
         thin.authors = ["Frank Herbert"]
         thin.pages = 412
@@ -443,7 +644,7 @@ struct MetadataFetchHydrateTests {
 
     @Test func aMissIsDecodedAsNoEditionRatherThanAsAFailure() throws {
         // `POST /api/metadata/editions/hydrate` answers a bare `null` when the
-        // provider no longer knows the candidate, and the sheet absorbs that
+        // provider no longer knows the candidate, and the view absorbs that
         // by keeping the list row it already has.
         let decoded = try JSONDecoder().decode(
             ProviderEdition?.self, from: Data("null".utf8)
@@ -487,7 +688,7 @@ struct MetadataFetchDecodingTests {
         // one bad status row would fail the whole response — losing the
         // results every other provider did return.
         #expect(response.sources[4].status == .unknown)
-        #expect(MetadataFetchFlow.sourceStatus(.unknown).text == MetadataFetchFlow.empty)
+        #expect(MetadataFetchFlow.sourceStatus(.unknown).text == "\u{2014}")
         #expect(!MetadataFetchFlow.sourceStatus(.unknown).isProblem)
     }
 
@@ -557,6 +758,13 @@ struct MetadataFetchStatusTests {
         #expect(MetadataFetchFlow.sourceStatus(.answered(count: 8)).text == "8")
     }
 
+    @Test func aCooldownSaysWhatWeAreDoingRatherThanPromisingARetry() {
+        #expect(
+            MetadataFetchFlow.sourceStatus(.throttled(retryAfterSecs: 720)).text
+                == "rate limited, skipping for 12m"
+        )
+    }
+
     @Test func aCooldownIsRoundedUpAndNeverReadsAsZero() {
         #expect(MetadataFetchFlow.humanWait(0) == "1s")
         #expect(MetadataFetchFlow.humanWait(45) == "45s")
@@ -568,22 +776,6 @@ struct MetadataFetchStatusTests {
 // MARK: - Reading a candidate
 
 struct MetadataFetchCandidateTests {
-    @Test func imprintLineDropsThePartsTheProviderLeftEmpty() {
-        var candidate = edition()
-        candidate.year = nil
-        candidate.publisher = "   "
-        #expect(MetadataFetchFlow.imprintLine(candidate) == "9780441013593")
-    }
-
-    @Test func imprintLineFallsBackToADashWhenNoPrintingIsNamed() {
-        // A Hardcover search hit describes a work: no year, no publisher, and
-        // no edition ISBN. The row is still worth showing.
-        var candidate = edition(isbn13: nil, source: .hardcover)
-        candidate.year = nil
-        candidate.publisher = nil
-        #expect(MetadataFetchFlow.imprintLine(candidate) == MetadataFetchFlow.empty)
-    }
-
     @Test func aBlankOrRelativeCoverURLIsTreatedAsAbsent() {
         var candidate = edition()
         candidate.coverURL = "   "
@@ -594,17 +786,5 @@ struct MetadataFetchCandidateTests {
         #expect(MetadataFetchFlow.coverURL(candidate) == nil)
         candidate.coverURL = "  https://covers.example/1.jpg  "
         #expect(MetadataFetchFlow.coverURL(candidate) == "https://covers.example/1.jpg")
-    }
-
-    @Test func authorsLineFallsBackToADashWhenTheProviderNamedNone() {
-        #expect(MetadataFetchFlow.authorsLine(edition(authors: [])) == MetadataFetchFlow.empty)
-    }
-
-    @Test func theTakeAllLabelCountsWhatIsLeftToTake() {
-        // `nil` is the bar's own disabled state — there is nothing to take, so
-        // there is nothing to label.
-        #expect(MetadataFetchFlow.takeAllLabel(changes: 0) == nil)
-        #expect(MetadataFetchFlow.takeAllLabel(changes: 1) == "Take 1 field")
-        #expect(MetadataFetchFlow.takeAllLabel(changes: 4) == "Take all 4 fields")
     }
 }

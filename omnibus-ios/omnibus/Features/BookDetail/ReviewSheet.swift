@@ -420,6 +420,8 @@ struct ReviewSheet: View {
         } message: {
             Text("Your stars and what you wrote here won\u{2019}t be saved.")
         }
+        // The dialog's answers read in ink; the book's tone is too faint on a light ground.
+        .tint(palette.ink0Color)
         .onAppear {
             // Seeded once: a re-appear must not discard what has been typed.
             guard !didLoad else { return }

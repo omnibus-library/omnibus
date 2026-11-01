@@ -12,7 +12,6 @@ import Testing
 
 @Test func onlyTheBookDetailYieldsTheBottomEdge() {
     #expect(Destination.book(uuid: "u").hidesTabBar)
-    #expect(!Destination.metadataEdit(uuid: "u").hidesTabBar)
     #expect(!Destination.author(id: 1).hidesTabBar)
     #expect(!Destination.shelves.hidesTabBar)
     #expect(!Destination.settings.hidesTabBar)
@@ -22,11 +21,10 @@ import Testing
     #expect(![Destination]().hidesTabBar)
     #expect(![Destination.shelves, .shelf(id: 1)].hidesTabBar)
 
-    // A detail pushed over a detail, and the metadata editor pushed over
-    // one: both still hold the edge, so the answer is about the whole stack
-    // rather than its top.
+    // A detail pushed over a detail, and an author pushed over one: both still
+    // hold the edge, so the answer is about the whole stack rather than its top.
     #expect([Destination.book(uuid: "a"), .book(uuid: "b")].hidesTabBar)
-    #expect([Destination.book(uuid: "a"), .metadataEdit(uuid: "a")].hidesTabBar)
+    #expect([Destination.book(uuid: "a"), .author(id: 1)].hidesTabBar)
 
     // And popping the last detail is what brings the bar back.
     #expect(![Destination.author(id: 1)].hidesTabBar)

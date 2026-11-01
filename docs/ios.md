@@ -195,6 +195,16 @@ back at a series read to the end. It says nothing while your review or the serie
 read states are still unknown, rather than point somewhere and move. The burst goes
 off only when the book becomes finished with the page up, and stays until you leave.
 
+The metadata editor is one sheet, opened from the More menu or a book cell's long
+press. Nothing writes until Save: the fields wait in `MetadataDraft` and a replacement
+cover in `StagedCover` beside it, so "N unsaved changes" and Discard mean the same for
+both, where the web editor writes a cover the moment it is picked. A save posts the
+fields, then the cover, so a cover the server can't fetch leaves only itself unsaved.
+Fetch metadata turns the same sheet rather than opening another on top of it. In an
+edition's comparison the blanks it would fill start ticked and the values it would
+replace don't. Applying moves the ticked rows into the draft and stays put, so the
+next edition compares against what the last one filled in.
+
 ## Reader
 
 **Why the reader is a WebView.** iOS ships no EPUB renderer, and epub.js already

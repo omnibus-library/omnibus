@@ -1,28 +1,39 @@
 //  MetadataEditView.swift
-//  Metadata override editor.
+//  The metadata editor: one sheet with three tabs, a fetch view it can turn
+//  into, and one footer that says how many changes are waiting.
 //
-//  Built as an editable colophon rather than a `Form`: the detail screen states
-//  a book's printing details as mono small-caps keys over the reading face, and
-//  this is the same plate with the values made editable. A stock `Form` also
-//  used each field's placeholder as its only label, so a filled row lost its
-//  name — "en" with nothing to say it meant Language.
+//  Nothing writes until Save. That includes the cover, which sits in
+//  `StagedCover` beside the draft, so "N unsaved changes" and Discard mean the
+//  same for every thing on the sheet. Metadata is library-wide configuration
+//  (rule 08), so a save calls straight through and reports failure here; it is
+//  never queued.
 
 import PhotosUI
 import SwiftUI
 
+/// The sheet's three tabs.
+enum MetadataEditTab: String, CaseIterable, Identifiable {
+    case details = "Details"
+    case artwork = "Artwork"
+    case identifiers = "Identifiers"
+
+    var id: String { rawValue }
+}
+
 struct MetadataEditView: View {
     let uuid: String
-    /// Runs after a save or revert lands, before the editor dismisses — the
-    /// long-press entry points use it to refresh the grid behind their sheet.
-    var onSaved: (() -> Void)?
+    /// Runs with the line to report once a save or revert has landed and the
+    /// sheet is gone, so the surface behind it can refresh.
+    var onSaved: ((String) -> Void)?
 
-    init(uuid: String, onSaved: (() -> Void)? = nil) {
+    init(uuid: String, onSaved: ((String) -> Void)? = nil) {
         self.uuid = uuid
         self.onSaved = onSaved
     }
 
     @Environment(\.palette) private var palette
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var book: Book?
     @State private var draft = MetadataDraft()
@@ -30,510 +41,683 @@ struct MetadataEditView: View {
     @State private var isLoading = true
     @State private var isSaving = false
     @State private var error: String?
-    /// An author typed into the add field but not yet committed to a chip.
-    /// Held here rather than inside the chip field so saving can flush it.
-    @State private var pendingAuthor = ""
-    /// Same, for the tags field.
-    @State private var pendingTag = ""
-    /// Same, for the genres field.
-    @State private var pendingGenre = ""
-
-    /// Set to `errorAnchor` to scroll the error banner into view, then
-    /// cleared by `ScrollViewReader`'s `onChange`. A plain `Bool` wouldn't
-    /// re-fire for a second failed save.
-    @State private var scrollTarget: String?
-    private static let errorAnchor = "metadata-edit-error"
-
-    /// Whether this instance has any provider to search. Offering a search
-    /// that could only fail is worse than not offering one, so the trigger
-    /// renders nothing until the catalog says otherwise.
-    @State private var canFetch = false
+    @State private var tab = MetadataEditTab.details
+    /// The search is a turn of this sheet, not a sheet on top of it.
     @State private var showFetch = false
 
-    /// The reader's own replacement cover, picked from the photo library.
-    /// A cover write lands immediately and outside the draft — same contract
-    /// as the fetch sheet's from-URL apply — so these live beside the draft
-    /// state, never in it.
-    @State private var coverPhotoItem: PhotosPickerItem?
-    @State private var coverStatus: String?
-    @State private var isCoverBusy = false
-    @State private var coverURLText = ""
-    /// Bumped after a cover write so the previews re-read: the thumb path
-    /// doesn't change across a replacement, so a fresh `book` alone would
-    /// still be served the cached bytes.
-    @State private var coverRevision = 0
-    private var connectivity = Connectivity.shared
+    /// Text in a chip's entry field but not yet committed. Held here so a save
+    /// can flush it.
+    @State private var pendingAuthor = ""
+    @State private var pendingTag = ""
+    @State private var pendingGenre = ""
 
-    /// Autocomplete pools for the chip and series fields, filled best-effort
-    /// while the editor is up — an empty pool just means no dropdown.
+    @State private var stagedCover: StagedCover?
+    @State private var coverPhotoItem: PhotosPickerItem?
+    /// A picked photo still on its way, which can take a while from iCloud.
+    @State private var photoLoad: Task<Void, Never>?
+    @State private var coverURLText = ""
+    /// Turns the header cover over when an applied edition brought new art.
+    @State private var coverFlips = 0
+    /// What this visit to the search has taken, across every edition.
+    @State private var fetchApplied: [MetadataDiffRow] = []
+
+    /// Empty leaves the fetch button out: offering a search that could only
+    /// fail is worse than not offering one.
+    @State private var providers: [ProviderInfo] = []
+
+    /// Autocomplete pools, filled best-effort; empty just means no dropdown.
     @State private var authorPool: [SuggestionItem] = []
     @State private var tagPool: [SuggestionItem] = []
     @State private var genrePool: [SuggestionItem] = []
     @State private var seriesPool: [SuggestionItem] = []
 
-    private var pendingAuthorName: String {
-        pendingAuthor.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
+    @State private var confirmLeave = false
+    @State private var confirmRevert = false
+    /// The line owed to `onSaved`, set the moment a write lands. Reported on
+    /// the way out rather than on the spot, so fields that saved ahead of a
+    /// cover that failed still refresh the page however the sheet closes.
+    @State private var landed: String?
 
-    private var pendingTagName: String {
-        pendingTag.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private var pendingGenreName: String {
-        pendingGenre.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private var isDirty: Bool {
-        draft != loaded || !pendingAuthorName.isEmpty || !pendingTagName.isEmpty
-            || !pendingGenreName.isEmpty
-    }
-
-    /// The fields a save would write right now, pending chip entries included.
-    private var editedFields: [String] {
+    private var pendingDraft: MetadataDraft {
         draft.committingPending(author: pendingAuthor, tag: pendingTag, genre: pendingGenre)
-            .editedFields(since: loaded)
     }
 
-    /// How many fields the last save wrote — set once it lands, and shown for
-    /// a beat before the editor closes, so a save is confirmed, not assumed.
-    @State private var savedCount: Int?
+    private var detailEdits: Int { pendingDraft.editedCount(since: loaded) }
+
+    private var hasCoverEdit: Bool {
+        stagedCover != nil || coverURLText.nilIfBlank != nil || photoLoad != nil
+    }
+
+    private var changeCount: Int { detailEdits + (hasCoverEdit ? 1 : 0) }
 
     var body: some View {
         Group {
             if isLoading {
                 LoadingView()
+            } else if let book {
+                if showFetch {
+                    MetadataFetchView(
+                        book: book,
+                        draft: $draft,
+                        staged: $stagedCover,
+                        pendingChanges: changeCount,
+                        onApplied: { rows in
+                            fetchApplied += rows
+                            // A cover just chosen outranks a photo still on its way.
+                            if rows.contains(where: \.isCover) { cancelPhotoLoad() }
+                        },
+                        onBack: leaveFetch
+                    )
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                } else {
+                    editor(book)
+                        .transition(.move(edge: .leading).combined(with: .opacity))
+                }
             } else {
-                content
+                ErrorStateView(message: error ?? "This book couldn\u{2019}t be loaded.") {
+                    Task { await load() }
+                }
             }
         }
-        .background(ScreenBackground())
-        .navigationTitle("Edit metadata")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar { toolbar }
+        .bookSheet([.large])
+        .interactiveDismissDisabled(changeCount > 0 || isSaving)
         .task { await load() }
         .task { await loadSuggestionPools() }
-        .task { await checkProviders() }
-        .safeAreaInset(edge: .bottom, spacing: 0) { saveReport }
-        .sheet(isPresented: $showFetch) { fetchSheet }
+        .task { await loadProviders() }
         .onChange(of: coverPhotoItem) { _, item in
-            Task { await uploadPickedCover(item) }
+            guard let item else { return }
+            photoLoad?.cancel()
+            photoLoad = Task { await stagePhoto(item) }
+        }
+        .onChange(of: tab) { _, _ in stagePastedCover() }
+        .onDisappear {
+            photoLoad?.cancel()
+            if let landed { onSaved?(landed) }
         }
     }
 
-    /// Presented rather than pushed: finding an edition is a detour off the
-    /// form, not a step through it, and a sheet is what says "you'll come back
-    /// here" on iOS.
-    @ViewBuilder
-    private var fetchSheet: some View {
-        // Bound under another name so `book` stays the assignable `@State` the
-        // cover callback writes back into.
-        if let loadedBook = book {
-            MetadataFetchSheet(
-                uuid: uuid,
-                book: loadedBook,
-                draft: $draft,
-                loaded: loaded,
-                // A cover write lands immediately and outside the draft, so
-                // the editor takes the fresh record rather than re-reading:
-                // `book` is what the header's `CoverIdentity` comes from, and
-                // its `hasCover` is what gates the thumbnail request at all.
-                // Deliberately not touching `draft`/`loaded` — a cover is not
-                // a draft change and must not register as one.
-                onCoverApplied: {
-                    book = $0
-                    coverRevision += 1
+    // MARK: - The editor
+
+    private func editor(_ book: Book) -> some View {
+        VStack(spacing: 0) {
+            header(book)
+            if !providers.isEmpty { fetchButton }
+            tabStrip
+
+            ScrollView {
+                Group {
+                    switch tab {
+                    case .details: detailsTab(book)
+                    case .artwork: artworkTab(book)
+                    case .identifiers: identifiersTab(book)
+                    }
                 }
+                .padding(.horizontal, 16)
+                .padding(.top, 14)
+                .padding(.bottom, 18)
+            }
+            .scrollIndicators(.hidden)
+            .scrollDismissesKeyboard(.interactively)
+
+            footer
+        }
+        .padding(.top, 12)
+        // A save has read the form, and a landed one marks the form as saved. An
+        // edit made in between would be marked too, without having been sent.
+        .disabled(isSaving)
+        .confirmationDialog(
+            MetadataEditCopy.leaveTitle(count: changeCount),
+            isPresented: $confirmLeave,
+            titleVisibility: .visible
+        ) {
+            Button("Save") { Task { await save() } }
+            Button("Don\u{2019}t save", role: .destructive) { dismiss() }
+            // No cancel role: the system would fold it away into a tap outside,
+            // and this is the answer that keeps the work.
+            Button("Keep editing") {}
+        }
+        .confirmationDialog(
+            "Revert to scanned values?", isPresented: $confirmRevert, titleVisibility: .visible
+        ) {
+            Button("Revert", role: .destructive) { Task { await revert() } }
+            Button("Cancel") {}
+        } message: {
+            Text(
+                "Every edit to this book, its cover included, is dropped and the values read from its files come back. This can\u{2019}t be undone."
             )
         }
+        // The dialogs' answers read in ink; the book's tone is too faint on a light ground.
+        .tint(palette.ink0Color)
     }
 
-    private var content: some View {
-        ScrollViewReader { proxy in
-            formScroll
-                .onChange(of: scrollTarget) { _, target in
-                    guard let target else { return }
-                    // `.center`, not `.bottom`: the bottom of the scroll view
-                    // is where the tab bar and a still-retracting keyboard
-                    // are, and a message parked under either is no message.
-                    proxy.scrollTo(target, anchor: .center)
-                    scrollTarget = nil
-                }
-        }
-    }
-
-    private var formScroll: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: Spacing.xl) {
-                if let book { header(book) }
-                if book != nil { coverURLRow }
-
-                if canFetch, book != nil { fetchButton }
-
-                group("Title & authors") {
-                    Plate {
-                        field("Title", \.title, isFirst: true)
-                        ChipListField(
-                            label: "Authors",
-                            placeholder: "Add an author",
-                            values: $draft.authors,
-                            entry: $pendingAuthor,
-                            isEdited: draft.authors != loaded.authors,
-                            suggestions: authorPool
-                        )
-                    }
-                }
-
-                group("Series") {
-                    Plate {
-                        field("Series", \.series, isFirst: true, suggestions: seriesPool)
-                        field("Index", \.seriesIndex, keyboard: .decimalPad)
-                    }
-                }
-
-                group("Publication") {
-                    Plate {
-                        field("Publisher", \.publisher, isFirst: true)
-                        field("Published", \.published, hint: "YYYY-MM-DD")
-                        field("Language", \.language, hint: "e.g. en")
-                        field("ISBN-13", \.isbn13, keyboard: .numberPad)
-                        // Not `.numberPad`: an ISBN-10's check digit can be X.
-                        field("ISBN-10", \.isbn10, hint: "10 characters", keyboard: .asciiCapable)
-                        field("Print Pages", \.printPages, hint: "whole number", keyboard: .numberPad)
-                    }
-                }
-
-                group("Tags") {
-                    Plate {
-                        ChipListField(
-                            label: "Tags",
-                            placeholder: "Add a tag",
-                            values: $draft.tags,
-                            entry: $pendingTag,
-                            isEdited: draft.tags != loaded.tags,
-                            deduplicates: true,
-                            isFirst: true,
-                            suggestions: tagPool
-                        )
-                    }
-                }
-
-                group("Genres") {
-                    Plate {
-                        ChipListField(
-                            label: "Genres",
-                            placeholder: "Add a genre",
-                            values: $draft.genres,
-                            entry: $pendingGenre,
-                            isEdited: draft.genres != loaded.genres,
-                            deduplicates: true,
-                            isFirst: true,
-                            suggestions: genrePool
-                        )
-                    }
-                }
-
-                group("Description") {
-                    Plate {
-                        field("Summary", \.description, isFirst: true, multiline: true)
-                    }
-                }
-
-                if let error {
-                    Text(error)
-                        .font(.ui(13))
-                        .foregroundStyle(palette.badColor)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .id(Self.errorAnchor)
-                        .accessibilityIdentifier("metadata-edit-error")
-                }
-
-                if book?.hasOverride == true {
-                    revertButton
-                }
-            }
-            .screenPadding()
-            .padding(.top, Spacing.md)
-            .padding(.bottom, 48)
-        }
-        .scrollIndicators(.hidden)
-    }
-
-    // MARK: - Pieces
-
-    /// The web save bar's report: how many fields a save will write and which,
-    /// then what it wrote once it has.
-    @ViewBuilder
-    private var saveReport: some View {
-        let edited = editedFields
-        if savedCount != nil || !edited.isEmpty {
-            HStack(spacing: 8) {
-                if let savedCount {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(palette.okColor)
-                    Text(MetadataDraft.savedLabel(count: savedCount))
-                        .font(.ui(13, weight: .medium))
-                        .foregroundStyle(palette.ink0Color)
-                } else {
-                    Circle()
-                        .fill(palette.accentColor)
-                        .frame(width: 6, height: 6)
-                    Text(MetadataDraft.editedLabel(count: edited.count))
-                        .font(.ui(13, weight: .medium))
-                        .foregroundStyle(palette.ink0Color)
-                    Text(edited.joined(separator: " · "))
-                        .font(.monoUI(10))
-                        .foregroundStyle(palette.ink3Color)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
-                Spacer(minLength: 0)
-            }
-            .screenPadding()
-            .padding(.vertical, 12)
-            .background {
-                palette.bg1Color
-                    .overlay(alignment: .top) { Hairline() }
-                    .ignoresSafeArea(edges: .bottom)
-            }
-            .accessibilityElement(children: .combine)
-            .accessibilityIdentifier("metadata-edit-status")
-            .transition(.move(edge: .bottom).combined(with: .opacity))
-        }
-    }
-
-    /// Which book you're editing — a title in the bar alone isn't enough
-    /// anchoring once the fields are full of someone else's punctuation.
-    ///
-    /// The cover doubles as the replace-cover control — the iOS face of the
-    /// web editor's Cover card (`cover_editor.rs`): tap to pick a photo,
-    /// long-press to revert to the original. A pick uploads on the spot;
-    /// there is no staged state to save, which is why the write reports
-    /// through its own status line instead of joining the draft.
     private func header(_ book: Book) -> some View {
-        HStack(spacing: Spacing.md) {
-            PhotosPicker(selection: $coverPhotoItem, matching: .images) {
-                BookCover(identity: CoverIdentity(book), size: .sm, cornerRadius: 4)
-                    .id(coverRevision)
-                    .frame(width: 48)
-                    .coverShadow(0.6)
-                    // Says "this is editable" without adding a second control:
-                    // a small camera badge riding the cover's corner.
-                    .overlay(alignment: .bottomTrailing) { coverBadge }
-            }
-            .buttonStyle(.plain)
-            .disabled(isCoverBusy || !connectivity.isOnline)
-            .contextMenu {
-                if book.hasCoverOverride {
-                    Button {
-                        Task { await revertCover() }
-                    } label: {
-                        Label("Revert to original cover", systemImage: "arrow.uturn.backward")
+        HStack(spacing: 12) {
+            EditCoverArt(book: book, staged: stagedCover, size: .sm)
+                .frame(width: 46, height: 68)
+                .clipShape(UnevenRoundedRectangle(
+                    topLeadingRadius: 2, bottomLeadingRadius: 2, bottomTrailingRadius: 3, topTrailingRadius: 3
+                ))
+                .keyframeAnimator(initialValue: 8.0, trigger: coverFlips) { view, angle in
+                    view.rotation3DEffect(
+                        .degrees(reduceMotion ? 8 : angle), axis: (x: 0, y: 1, z: 0), perspective: 0.3
+                    )
+                } keyframes: { _ in
+                    KeyframeTrack {
+                        MoveKeyframe(180)
+                        CubicKeyframe(8, duration: 0.72)
                     }
-                    .disabled(isCoverBusy || !connectivity.isOnline)
                 }
-            }
-            .accessibilityIdentifier("cover-replace")
-            .accessibilityLabel("Replace cover")
+                .rotationEffect(.degrees(-2.5))
+                .shadow(color: .black.opacity(0.5), radius: 7, x: 4, y: 6)
+                .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text(book.displayTitle)
-                    .font(.display(22))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(draft.title.nilIfBlank ?? book.displayTitle)
+                    .font(.display(23, weight: .semibold))
                     .foregroundStyle(palette.ink0Color)
                     .lineLimit(2)
+                Text(pendingDraft.authors.first ?? "No author")
+                    .font(.ui(14))
+                    .foregroundStyle(palette.ink1Color)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
-                Text(book.hasOverride ? "Edited" : "As scanned")
-                    .font(.monoUI(10, weight: .medium))
-                    .tracking(0.7)
-                    .textCase(.uppercase)
-                    .foregroundStyle(book.hasOverride ? palette.accentColor : palette.ink3Color)
+            Button(action: requestClose) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(palette.ink0Color)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .disabled(isSaving)
+            .accessibilityLabel("Close")
+            .accessibilityIdentifier("metadata-close")
+        }
+        .padding(.leading, 16)
+        .padding(.trailing, 6)
+        .padding(.vertical, 8)
+    }
 
-                if let coverStatus {
-                    Text(coverStatus)
-                        .font(.ui(12))
-                        .foregroundStyle(palette.ink2Color)
-                        .accessibilityIdentifier("cover-status")
+    /// Sits above the fields because it is the fastest route through the sheet:
+    /// someone fixing a badly-scanned book should find it before they type.
+    private var fetchButton: some View {
+        Button {
+            Haptics.tap()
+            stagePastedCover()
+            flushPendingChips()
+            withAnimation(Motion.settle) { showFetch = true }
+        } label: {
+            HStack(spacing: 11) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(palette.bookText)
+
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Fetch metadata")
+                        .font(.ui(16, weight: .semibold))
+                        .foregroundStyle(palette.ink0Color)
+                    Text(MetadataEditCopy.providersLine(providers))
+                        .font(.ui(13))
+                        .foregroundStyle(palette.ink1Color)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
                 }
-            }
 
-            Spacer(minLength: 0)
+                Spacer(minLength: 0)
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(palette.ink0Color)
+            }
+            .padding(.leading, 14)
+            .padding(.trailing, 12)
+            .padding(.vertical, 7)
+            .frame(minHeight: 56)
+            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(palette.bookWash))
+            .overlay {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(palette.bookRim, lineWidth: 1)
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(PressableStyle())
+        .padding(.horizontal, 16)
+        .padding(.bottom, 6)
+        .accessibilityIdentifier("metadata-fetch-open")
+    }
+
+    private var tabStrip: some View {
+        HStack(spacing: 0) {
+            ForEach(MetadataEditTab.allCases) { option in
+                Button {
+                    guard tab != option else { return }
+                    Haptics.select()
+                    tab = option
+                } label: {
+                    HStack(spacing: 6) {
+                        Text(option.rawValue)
+                            .font(.ui(15, weight: tab == option ? .semibold : .medium))
+                            .foregroundStyle(tab == option ? palette.ink0Color : palette.ink1Color)
+                        if hasEdits(option) {
+                            Circle()
+                                .fill(palette.bookText)
+                                .frame(width: 6, height: 6)
+                                .accessibilityLabel("has edits")
+                        }
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 46)
+                    .overlay(alignment: .bottom) {
+                        if tab == option {
+                            Rectangle().fill(palette.bookText).frame(height: 2)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(tab == option ? .isSelected : [])
+                .accessibilityIdentifier("metadata-tab-\(option.rawValue.lowercased())")
+            }
+        }
+        .padding(.horizontal, 16)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(palette.ink0Color.opacity(0.12)).frame(height: 1)
         }
     }
 
-    /// "Or paste an image URL" beside the header cover (rule 08: a direct write, never queued).
-    private var coverURLRow: some View {
-        HStack(spacing: Spacing.sm) {
-            TextField("Or paste an image URL", text: $coverURLText)
-                .keyboardType(.URL)
-                .textContentType(.URL)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .submitLabel(.go)
-                .onSubmit { Task { await applyCoverURL() } }
-                .disabled(isCoverBusy || !connectivity.isOnline)
-                .accessibilityIdentifier("cover-url-field")
+    private func hasEdits(_ option: MetadataEditTab) -> Bool {
+        switch option {
+        case .details: detailEdits > 0
+        case .artwork: hasCoverEdit
+        case .identifiers: false
+        }
+    }
 
-            Button("Apply") {
-                Task { await applyCoverURL() }
-            }
-            .disabled(
-                LibraryService.coverURLToApply(
-                    coverURLText, isBusy: isCoverBusy, isOnline: connectivity.isOnline
-                ) == nil
+    // MARK: - Details
+
+    private func detailsTab(_ book: Book) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            field("Title", \.title, hint: "Title", capitalization: .words, identifier: "title")
+            EditChipField(
+                label: "Authors",
+                hint: "Primary author first",
+                values: $draft.authors,
+                entry: $pendingAuthor,
+                isEdited: draft.authors != loaded.authors,
+                suggestions: authorPool,
+                identifier: "metadata-field-authors"
             )
-            .accessibilityIdentifier("cover-url-apply")
-        }
-    }
+            SpanRow(spans: [4, 2]) {
+                field(
+                    "Series", \.series, hint: "None", capitalization: .words,
+                    suggestions: seriesPool, identifier: "series"
+                )
+                field("Number", \.seriesIndex, hint: "None", keyboard: .decimalPad, identifier: "number")
+            }
+            field("Publisher", \.publisher, hint: "None", capitalization: .words, identifier: "publisher")
+            SpanRow(spans: [3, 3]) {
+                field("Published", \.published, hint: "Year", identifier: "published")
+                field("Language", \.language, hint: "en", identifier: "language")
+            }
+            SpanRow(spans: [2, 4]) {
+                field("Print pages", \.printPages, hint: "0", keyboard: .numberPad, identifier: "pages")
+                field("ISBN-13", \.isbn13, hint: "13 digits", keyboard: .numberPad, identifier: "isbn13")
+            }
+            // Not `.numberPad`: an ISBN-10's check digit can be X.
+            field("ISBN-10", \.isbn10, hint: "10 characters", keyboard: .asciiCapable, identifier: "isbn10")
+            EditParagraphField(
+                label: "Description",
+                text: $draft.description,
+                hint: "Plain text or HTML",
+                isEdited: draft.description != loaded.description,
+                identifier: "metadata-field-description"
+            )
+            EditChipField(
+                label: "Tags",
+                hint: "Add a tag",
+                values: $draft.tags,
+                entry: $pendingTag,
+                isEdited: draft.tags != loaded.tags,
+                deduplicates: true,
+                suggestions: tagPool,
+                identifier: "metadata-field-tags"
+            )
+            EditChipField(
+                label: "Genres",
+                hint: "Add a genre",
+                values: $draft.genres,
+                entry: $pendingGenre,
+                isEdited: draft.genres != loaded.genres,
+                deduplicates: true,
+                suggestions: genrePool,
+                identifier: "metadata-field-genres"
+            )
 
-    /// The camera badge on the header cover's corner.
-    private var coverBadge: some View {
-        Image(systemName: "camera.fill")
-            .font(.system(size: 8, weight: .semibold))
-            .foregroundStyle(palette.ink1Color)
-            .padding(4)
-            .background(Circle().fill(palette.bg1Color.opacity(0.92)))
-            .overlay(Circle().strokeBorder(palette.line2.color, lineWidth: 0.5))
-            .offset(x: 6, y: 6)
-            // Purely decorative — without this VoiceOver announces it as an
-            // extra element inside the picker control.
-            .accessibilityHidden(true)
-    }
-
-    private func group<Content: View>(
-        _ title: String,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.sm) {
-            Text(title)
-                .font(.display(23))
-                .foregroundStyle(palette.ink0Color)
-            content()
+            VStack(alignment: .leading, spacing: 12) {
+                if book.hasOverride || book.hasCoverOverride {
+                    Button("Revert to scanned values") {
+                        Haptics.warning()
+                        confirmRevert = true
+                    }
+                    .font(.ui(15, weight: .semibold))
+                    .foregroundStyle(palette.dangerText)
+                    .frame(minHeight: 44)
+                    .accessibilityIdentifier("metadata-revert")
+                }
+                Text("Omnibus never writes to your book files. Your edits are saved in the Omnibus library database.")
+                    .font(.ui(13))
+                    .foregroundStyle(palette.ink1Color)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
     private func field(
         _ label: String,
         _ key: WritableKeyPath<MetadataDraft, String>,
-        isFirst: Bool = false,
-        hint: String? = nil,
+        hint: String,
         keyboard: UIKeyboardType = .default,
-        multiline: Bool = false,
-        suggestions: [SuggestionItem] = []
+        capitalization: TextInputAutocapitalization = .never,
+        suggestions: [SuggestionItem] = [],
+        identifier: String
     ) -> some View {
-        PlateField(
+        EditTextField(
             label: label,
             text: Binding(
                 get: { draft[keyPath: key] },
                 set: { draft[keyPath: key] = $0 }
             ),
-            isEdited: draft[keyPath: key] != loaded[keyPath: key],
-            isFirst: isFirst,
             hint: hint,
+            isEdited: draft[keyPath: key] != loaded[keyPath: key],
             keyboard: keyboard,
-            multiline: multiline,
-            suggestions: suggestions
+            capitalization: capitalization,
+            suggestions: suggestions,
+            identifier: "metadata-field-\(identifier)"
         )
     }
 
-    /// The way into the provider search. Sits above the fields rather than in
-    /// the toolbar because it is the fastest route through this whole screen —
-    /// a reader fixing a badly-scanned book should find it before they start
-    /// typing, not after.
-    private var fetchButton: some View {
-        Button {
-            Haptics.tap()
-            showFetch = true
-        } label: {
-            HStack(spacing: 11) {
-                Image(systemName: "sparkle.magnifyingglass")
-                    .font(.system(size: 17, weight: .medium))
-                    .foregroundStyle(palette.accentColor)
+    // MARK: - Artwork
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Fetch metadata")
+    private func artworkTab(_ book: Book) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(spacing: 20) {
+                EditCoverArt(book: book, staged: stagedCover, size: .lg)
+                    .frame(width: 158, height: 234)
+                    .clipShape(UnevenRoundedRectangle(
+                        topLeadingRadius: 3, bottomLeadingRadius: 3, bottomTrailingRadius: 5, topTrailingRadius: 5
+                    ))
+                    .rotation3DEffect(.degrees(8), axis: (x: 0, y: 1, z: 0), perspective: 0.2)
+                    .rotationEffect(.degrees(-2.5))
+                    .shadow(color: .black.opacity(0.55), radius: 20, x: 14, y: 20)
+                    .accessibilityLabel(stagedCover == .scanned
+                        ? "The file\u{2019}s own cover, shown once you save"
+                        : "Cover as it will read")
+
+                Text(photoLoad != nil
+                    ? "Getting your photo\u{2026}"
+                    : MetadataEditCopy.coverHint(staged: stagedCover, book: book))
+                    .font(.ui(14))
+                    .foregroundStyle(palette.ink1Color)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("metadata-cover-hint")
+            }
+            .frame(maxWidth: .infinity)
+
+            PhotosPicker(selection: $coverPhotoItem, matching: .images) {
+                Text("Choose a photo")
+                    .font(.ui(16, weight: .semibold))
+                    .foregroundStyle(palette.ink0Color)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 50)
+                    .background(Capsule().fill(palette.quietFill))
+            }
+            .buttonStyle(PressableStyle())
+            .padding(.top, 16)
+            .accessibilityIdentifier("metadata-cover-photo")
+
+            Text("Or paste an image URL")
+                .font(.ui(14, weight: .semibold))
+                .foregroundStyle(palette.ink0Color)
+                .padding(.top, 16)
+                .padding(.bottom, 5)
+
+            TextField(
+                "", text: $coverURLText,
+                prompt: Text("https://\u{2026}").foregroundStyle(palette.ink1Color.opacity(0.7))
+            )
+            .font(.ui(16))
+            .foregroundStyle(palette.ink0Color)
+            .tint(palette.bookText)
+            .keyboardType(.URL)
+            .textContentType(.URL)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .submitLabel(.done)
+            .onSubmit { stagePastedCover() }
+            .padding(.horizontal, 12)
+            .frame(height: 46)
+            .editInputBox()
+            .accessibilityLabel("Image URL")
+            .accessibilityIdentifier("metadata-cover-url")
+
+            // Not in a menu of its own: dropping a replacement is the one thing
+            // this tab has to offer once there is one, and it stages like the rest.
+            if book.hasCoverOverride, stagedCover != .scanned {
+                Button("Use the file\u{2019}s own cover") {
+                    Haptics.tap()
+                    coverURLText = ""
+                    cancelPhotoLoad()
+                    stagedCover = .scanned
+                }
+                .font(.ui(15, weight: .semibold))
+                .foregroundStyle(palette.bookText)
+                .frame(minHeight: 44)
+                .padding(.top, 8)
+                .accessibilityIdentifier("metadata-cover-scanned")
+            }
+        }
+    }
+
+    /// Stage what sits in the URL box. Blank clears nothing: a box left empty
+    /// has no opinion about a photo already chosen.
+    private func stagePastedCover() {
+        guard let text = coverURLText.nilIfBlank else { return }
+        guard let cover = StagedCover.pasted(text) else {
+            error = "That doesn\u{2019}t look like an image URL. It should start with https://."
+            return
+        }
+        error = nil
+        cancelPhotoLoad()
+        stagedCover = cover
+        coverURLText = ""
+    }
+
+    private func cancelPhotoLoad() {
+        photoLoad?.cancel()
+        photoLoad = nil
+    }
+
+    /// Read and re-encode the picked photo now, so a bad one is said at once
+    /// rather than at Save.
+    private func stagePhoto(_ item: PhotosPickerItem) async {
+        // Cleared so picking the same photo again re-fires the selection.
+        coverPhotoItem = nil
+        let raw = try? await item.loadTransferable(type: Data.self)
+        // Discard or another choice got there first; this one no longer applies.
+        guard !Task.isCancelled else { return }
+        defer { photoLoad = nil }
+        guard let raw, let image = UIImage(data: raw) else {
+            error = "That image couldn\u{2019}t be read."
+            Haptics.warning()
+            return
+        }
+        // 1600px long edge: covers render at most a phone screen tall, and
+        // the server regenerates every thumb from what lands here — while a
+        // camera-roll original could blow the route's 10 MiB cap.
+        guard let encoded = UploadImageEncoder.jpeg(image, maxDimension: 1600) else {
+            error = "That image couldn\u{2019}t be prepared for upload."
+            Haptics.warning()
+            return
+        }
+        error = nil
+        coverURLText = ""
+        stagedCover = .photo(encoded)
+    }
+
+    // MARK: - Identifiers
+
+    private func identifiersTab(_ book: Book) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(book.identifiers.isEmpty
+                ? "The file carries no identifiers."
+                : "As the file carries them. Read only.")
+                .font(.ui(14))
+                .foregroundStyle(palette.ink1Color)
+
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(book.identifiers.enumerated()), id: \.offset) { _, identifier in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(MetadataEditCopy.scheme(identifier))
+                            .font(.ui(14))
+                            .foregroundStyle(palette.ink1Color)
+                        Text(identifier.value)
+                            .font(.ui(16))
+                            .foregroundStyle(palette.ink0Color)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 11)
+                    .overlay(alignment: .top) {
+                        Rectangle().fill(palette.ink0Color.opacity(0.12)).frame(height: 1)
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Footer
+
+    private var footer: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let error {
+                Text(error)
+                    .font(.ui(14))
+                    .foregroundStyle(palette.dangerText)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("metadata-error")
+            }
+
+            HStack(spacing: 8) {
+                Text(MetadataEditCopy.summary(count: changeCount))
+                    .font(.ui(14, weight: changeCount > 0 ? .semibold : .regular))
+                    .foregroundStyle(changeCount > 0 ? palette.ink0Color : palette.ink1Color)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityIdentifier("metadata-status")
+
+                if changeCount > 0 {
+                    Button("Discard", action: discard)
                         .font(.ui(15, weight: .semibold))
                         .foregroundStyle(palette.ink0Color)
-                    Text("Search Open Library, Google Books and more")
-                        .font(.ui(12))
-                        .foregroundStyle(palette.ink2Color)
-                        .lineLimit(1)
+                        .frame(minHeight: 44)
+                        .padding(.horizontal, 6)
+                        .disabled(isSaving)
+                        .accessibilityIdentifier("metadata-discard")
                 }
 
-                Spacer(minLength: 0)
-
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(palette.ink3Color)
+                Button {
+                    if changeCount == 0 {
+                        dismiss()
+                    } else {
+                        Task { await save() }
+                    }
+                } label: {
+                    Text(isSaving ? "Saving\u{2026}" : changeCount > 0 ? "Save" : "Done")
+                        .font(.ui(16, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 20)
+                        .frame(minWidth: 84)
+                        .frame(height: 46)
+                        .background(Capsule().fill(palette.bookDeep))
+                }
+                .buttonStyle(PressableStyle())
+                .disabled(isSaving)
+                .accessibilityIdentifier("metadata-save")
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 13)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                    .fill(palette.bg1Color)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                    .strokeBorder(palette.accentColor.opacity(0.35), lineWidth: 1)
-            )
         }
-        .buttonStyle(PressableStyle())
-        .accessibilityIdentifier("metadata-fetch-open")
+        .padding(.horizontal, 16)
+        .padding(.top, 10)
+        .padding(.bottom, 8)
+        .background {
+            palette.bg2Color.opacity(0.45)
+                .overlay(alignment: .top) {
+                    Rectangle().fill(palette.ink0Color.opacity(0.12)).frame(height: 1)
+                }
+                .ignoresSafeArea(edges: .bottom)
+        }
     }
 
-    private var revertButton: some View {
-        Button {
-            Haptics.warning()
-            Task { await revert() }
-        } label: {
-            Label("Revert to scanned metadata", systemImage: "arrow.uturn.backward")
-                .font(.ui(14, weight: .medium))
-                .foregroundStyle(palette.badColor)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 13)
-                .background(
-                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                        .fill(palette.bg1Color)
-                )
+    private func requestClose() {
+        if changeCount > 0 {
+            confirmLeave = true
+        } else {
+            dismiss()
         }
-        .buttonStyle(.plain)
     }
 
-    @ToolbarContentBuilder
-    private var toolbar: some ToolbarContent {
-        ToolbarItem(placement: .confirmationAction) {
-            Button("Save") { Task { await save() } }
-                // Nothing to save until something actually differs from what
-                // was loaded, so the control states that rather than always
-                // inviting a no-op write.
-                .disabled(isSaving || isLoading || !isDirty)
+    private func discard() {
+        Haptics.tap()
+        draft = loaded
+        pendingAuthor = ""
+        pendingTag = ""
+        pendingGenre = ""
+        cancelPhotoLoad()
+        stagedCover = nil
+        coverURLText = ""
+        error = nil
+    }
+
+    /// Back from the search: the tab that shows what came with it, if anything
+    /// did, and new art turns the header's cover over.
+    private func leaveFetch() {
+        let applied = fetchApplied
+        fetchApplied = []
+        let brought = applied.filter(\.isCover)
+        if !applied.isEmpty { tab = brought.count == applied.count ? .artwork : .details }
+        withAnimation(Motion.settle) { showFetch = false }
+        guard !brought.isEmpty else { return }
+        // After the editor is back, or the turn plays on a view not yet drawn.
+        Task {
+            try? await Task.sleep(for: .milliseconds(40))
+            coverFlips += 1
         }
     }
 
     // MARK: - Data
 
     private func load() async {
-        book = try? await LibraryService.settledBook(uuid: uuid)
-        guard let book else {
-            isLoading = false
-            return
+        isLoading = true
+        error = nil
+        do {
+            let fetched = try await LibraryService.settledBook(uuid: uuid)
+            book = fetched
+            loaded = MetadataDraft(book: fetched)
+            draft = loaded
+        } catch {
+            self.error = (error as? APIError)?.errorDescription ?? error.localizedDescription
         }
-        loaded = MetadataDraft(book: book)
-        draft = loaded
         isLoading = false
     }
 
-    /// Whether to offer the provider search at all. One read, best-effort: a
-    /// catalog that can't be fetched leaves the trigger absent, which is the
-    /// same answer an instance with no configured source gets.
-    private func checkProviders() async {
+    private func loadProviders() async {
         let catalog: [ProviderInfo] = (try? await APIClient.shared.get("/api/metadata/providers")) ?? []
-        withAnimation(Motion.settle) { canFetch = catalog.contains(where: \.configured) }
+        providers = catalog.filter(\.configured)
     }
 
-    /// Fill the four autocomplete pools, mirroring the web editor's
-    /// `use_suggestion_pools`. Each pool streams replica-first (`Cache.live`),
-    /// so a cached listing paints suggestions immediately and the server's
-    /// answer refines them; a failed read just leaves that pool empty.
+    /// Mirrors the web editor's `use_suggestion_pools`. Each pool streams
+    /// replica-first, so a cached listing paints suggestions immediately and
+    /// the server's answer refines them.
     private func loadSuggestionPools() async {
         async let authors: Void = collectAuthorPool()
         async let tags: Void = collectTagPool()
@@ -575,282 +759,152 @@ struct MetadataEditView: View {
     }
 
     private func save() async {
+        guard !isSaving else { return }
+        isSaving = true
+        defer { isSaving = false }
         error = nil
+        // A photo on its way is part of what's being saved.
+        await photoLoad?.value
+        stagePastedCover()
+        // A URL the box refuses stays in the box, with the reason in the footer.
+        guard error == nil else {
+            tab = .artwork
+            Haptics.warning()
+            return
+        }
 
         // Before the chip flush below, which mutates `draft`: a rejected save
         // has to leave the form exactly as the reader left it, or a bad page
-        // count silently consumes the author they were half-way through
-        // typing. The web editor orders it the same way, rejecting in
-        // `build_on_save`'s first statement.
+        // count silently consumes the author they were half-way through typing.
         do {
             try draft.validate(since: loaded)
         } catch {
-            reportSaveFailure(error)
+            tab = .details
+            report(error)
             return
         }
-
-        isSaving = true
-        defer { isSaving = false }
 
         flushPendingChips()
 
-        let written = draft.editedFields(since: loaded).count
+        let edits = draft.editedCount(since: loaded)
         let body = draft.payload(since: loaded)
-        // Nothing to send. Not merely wasteful: an empty body makes the
-        // server insert an override row that latches this book to "Edited"
-        // permanently — see `MetadataOverridesPayload.isEmpty`.
-        guard !body.isEmpty else {
-            dismiss()
-            return
-        }
+        let title = draft.title.nilIfBlank ?? book?.displayTitle ?? ""
+        var written = 0
 
         do {
-            let _: Empty = try await APIClient.shared.post(
-                "/api/ebooks/\(uuid)/overrides", body: body
-            )
-            await OfflineStore.shared.cacheDelete(CacheKey.book(uuid))
+            // Skipped when empty, not merely to save a trip: an empty body makes
+            // the server insert an override row that latches the book to "Edited"
+            // for good. See `MetadataOverridesPayload.isEmpty`.
+            if !body.isEmpty {
+                let _: Empty = try await APIClient.shared.post(
+                    "/api/ebooks/\(uuid)/overrides", body: body
+                )
+                await OfflineStore.shared.cacheDelete(CacheKey.book(uuid))
+                written = edits
+                // So a cover that fails below leaves only itself unsaved.
+                loaded = draft
+                landed = MetadataEditCopy.savedToast(count: written, title: title)
+            }
+            if let stagedCover {
+                book = try await write(stagedCover)
+                self.stagedCover = nil
+                written += 1
+                landed = MetadataEditCopy.savedToast(count: written, title: title)
+            }
             Haptics.success()
-            onSaved?()
-            dismissKeyboard()
-            withAnimation(Motion.settle) { savedCount = written }
-            try? await Task.sleep(for: .milliseconds(900))
             dismiss()
         } catch {
-            reportSaveFailure(error)
+            report(error)
         }
     }
 
-    /// Surface a failed save. The message alone isn't enough: it renders at
-    /// the bottom of a scrolling form, well below the fields that cause it,
-    /// so without the haptic and the scroll a rejected Save looks to the
-    /// reader like a Save that did nothing at all. The keyboard has to go
-    /// too — the field being rejected is usually the one still focused, and
-    /// its keypad covers exactly the part of the form the message lands in.
-    private func reportSaveFailure(_ error: Error) {
+    private func write(_ cover: StagedCover) async throws -> Book {
+        switch cover {
+        case let .url(url): try await LibraryService.applyCoverFromURL(uuid: uuid, url: url)
+        case let .photo(data): try await LibraryService.uploadCover(uuid: uuid, jpegData: data)
+        case .scanned: try await LibraryService.revertCover(uuid: uuid)
+        }
+    }
+
+    private func report(_ error: Error) {
         self.error = (error as? APIError)?.errorDescription ?? error.localizedDescription
         Haptics.warning()
-        dismissKeyboard()
-        withAnimation(Motion.snap) { scrollTarget = Self.errorAnchor }
     }
 
-    private func dismissKeyboard() {
-        UIApplication.shared.sendAction(
-            #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil
-        )
-    }
-
-    /// A value typed into an add field but never committed to a chip is still
-    /// what the user meant to save; dropping it silently is worse than
-    /// accepting it.
+    /// A value typed into an entry field but never committed is still what the
+    /// reader meant to save.
     private func flushPendingChips() {
-        draft = draft.committingPending(author: pendingAuthor, tag: pendingTag, genre: pendingGenre)
+        draft = pendingDraft
         pendingAuthor = ""
         pendingTag = ""
         pendingGenre = ""
     }
 
     private func revert() async {
+        guard !isSaving else { return }
+        isSaving = true
+        defer { isSaving = false }
         do {
-            let _: Empty = try await APIClient.shared.delete("/api/ebooks/\(uuid)/overrides")
-            await OfflineStore.shared.cacheDelete(CacheKey.book(uuid))
+            try await LibraryService.revertOverrides(uuid: uuid)
             Haptics.success()
-            onSaved?()
+            landed = "Reverted to scanned values"
             dismiss()
         } catch {
-            self.error = (error as? APIError)?.errorDescription ?? error.localizedDescription
+            report(error)
         }
-    }
-
-    // MARK: - Cover writes
-
-    /// Upload the picked photo as the book's cover. Metadata overrides are
-    /// library-wide configuration (rule 08), so this calls straight through
-    /// and reports failure inline — never queued for replay.
-    private func uploadPickedCover(_ item: PhotosPickerItem?) async {
-        guard let item else { return }
-        // Cleared so picking the same photo again re-fires the selection.
-        defer { coverPhotoItem = nil }
-        // Claimed before the read/re-encode, not after: that work is async,
-        // and a second pick landing during it would otherwise start a second
-        // concurrent upload.
-        guard !isCoverBusy else { return }
-        isCoverBusy = true
-        coverStatus = "Uploading cover\u{2026}"
-        defer { isCoverBusy = false }
-        guard let raw = try? await item.loadTransferable(type: Data.self),
-            let image = UIImage(data: raw)
-        else {
-            coverStatus = "That image couldn't be read."
-            Haptics.warning()
-            return
-        }
-        // 1600px long edge: covers render at most a phone screen tall, and
-        // the server regenerates every thumb from what lands here — while a
-        // camera-roll original could blow the route's 10 MiB cap.
-        guard let encoded = UploadImageEncoder.jpeg(image, maxDimension: 1600) else {
-            coverStatus = "That image couldn't be prepared for upload."
-            Haptics.warning()
-            return
-        }
-        do {
-            let updated = try await LibraryService.uploadCover(uuid: uuid, jpegData: encoded)
-            applyCoverWrite(updated, status: "Cover updated.")
-        } catch {
-            reportCoverFailure(error)
-        }
-    }
-
-    private func applyCoverURL() async {
-        guard
-            let url = LibraryService.coverURLToApply(
-                coverURLText, isBusy: isCoverBusy, isOnline: connectivity.isOnline
-            )
-        else { return }
-        isCoverBusy = true
-        coverStatus = "Applying cover\u{2026}"
-        defer { isCoverBusy = false }
-        do {
-            let updated = try await LibraryService.applyCoverFromURL(uuid: uuid, url: url)
-            applyCoverWrite(updated, status: "Cover updated.")
-            coverURLText = ""
-        } catch {
-            reportCoverFailure(error)
-        }
-    }
-
-    private func revertCover() async {
-        guard !isCoverBusy else { return }
-        Haptics.warning()
-        isCoverBusy = true
-        coverStatus = "Reverting\u{2026}"
-        defer { isCoverBusy = false }
-        do {
-            let updated = try await LibraryService.revertCover(uuid: uuid)
-            applyCoverWrite(updated, status: "Reverted to scanned cover.")
-        } catch {
-            reportCoverFailure(error)
-        }
-    }
-
-    /// Fold the record a cover write returned into the screen. The record is
-    /// the point, not a courtesy: a book that had no art has `hasCover ==
-    /// false`, and `BookCover` gates its whole image layer on it — while the
-    /// revision bump is what makes the unchanged thumb path re-fetch.
-    private func applyCoverWrite(_ updated: Book, status: String) {
-        book = updated
-        coverRevision += 1
-        coverStatus = status
-        Haptics.success()
-    }
-
-    private func reportCoverFailure(_ error: Error) {
-        coverStatus = (error as? APIError)?.errorDescription ?? error.localizedDescription
-        Haptics.warning()
     }
 }
 
-/// A list-valued field: removable chips plus an add field. Authors and tags
-/// share it — order is meaningful in both (the byline; the tag order the
-/// server stores), so entries append and can be removed individually rather
-/// than being re-typed as one delimited string.
-private struct ChipListField: View {
-    let label: String
-    let placeholder: String
-    @Binding var values: [String]
-    @Binding var entry: String
-    var isEdited = false
-    /// Tags refuse an exact re-add (ignoring case) the way the web chip
-    /// editor does; authors keep duplicates because two credited
-    /// contributors can legitimately share a name.
-    var deduplicates = false
-    /// First row of its plate — no leading hairline.
-    var isFirst = false
-    /// Autocomplete pool for the entry field. Empty → free-text entry only,
-    /// same as the web chip editor.
-    var suggestions: [SuggestionItem] = []
+/// The cover as a save would leave it: a staged replacement if there is one,
+/// else the book's own art or generated plate.
+struct EditCoverArt: View {
+    let book: Book
+    let staged: StagedCover?
+    var size: ThumbSize = .sm
 
     @Environment(\.palette) private var palette
 
     var body: some View {
-        VStack(spacing: 0) {
-            if !isFirst {
-                Rectangle()
-                    .fill(palette.line2.color)
-                    .frame(height: 0.5)
+        switch staged {
+        case let .url(url):
+            // Keyed by address: the loader keeps its last image when a new one
+            // fails, which would show one cover while Save sends another.
+            ExternalImage(url: url) { plate }
+                .id(url)
+        case let .photo(data):
+            if let image = UIImage(data: data) {
+                Image(uiImage: image).resizable().scaledToFill()
+            } else {
+                plate
             }
-
-            VStack(alignment: .leading, spacing: 9) {
-                HStack(spacing: 6) {
-                    Text(label.uppercased())
-                        .font(.monoUI(10, weight: .medium))
-                        .tracking(0.7)
-                        .foregroundStyle(isEdited ? palette.accentColor : palette.ink3Color)
-
-                    if isEdited {
-                        Circle()
-                            .fill(palette.accentColor)
-                            .frame(width: 4, height: 4)
-                            .transition(.scale.combined(with: .opacity))
-                    }
-
-                    Spacer(minLength: 0)
-                }
-
-                if !values.isEmpty {
-                    FlowLayout(spacing: 6, lineSpacing: 6) {
-                        // Index-identified: authors can legitimately repeat a
-                        // name, and the name is also what changes.
-                        ForEach(Array(values.enumerated()), id: \.offset) { index, name in
-                            chip(name, at: index)
-                        }
-                    }
-                }
-            }
-            .padding(.horizontal, 14)
-            .padding(.top, 12)
-            .animation(Motion.snap, value: isEdited)
-            .animation(Motion.snap, value: values)
-
-            // `ChipEntryField` insets itself, so it sits outside the padded block above.
-            ChipEntryField(
-                placeholder: placeholder, entry: $entry, current: values, pool: suggestions
-            ) { pick($0) }
-            .padding(.top, 9)
-            .padding(.bottom, 12)
+        case .scanned:
+            fileCoverTile
+        case nil:
+            BookCover(identity: CoverIdentity(book), size: size, cornerRadius: 0)
         }
     }
 
-    private func chip(_ name: String, at index: Int) -> some View {
-        HStack(spacing: 5) {
-            Text(name)
-                .font(.ui(13, weight: .medium))
+    private var plate: some View {
+        GeneratedCoverPlate(identity: CoverIdentity(book))
+    }
+
+    /// The file's own cover isn't served while an override stands, so this says
+    /// what's coming rather than drawing a cover it isn't.
+    private var fileCoverTile: some View {
+        Rectangle()
+            .fill(palette.bg2Color)
+            .overlay {
+                VStack(spacing: 8) {
+                    Image(systemName: "book.closed")
+                        .font(.system(size: size == .sm ? 16 : 30))
+                    if size != .sm {
+                        Text("The file\u{2019}s own cover")
+                            .font(.ui(14))
+                            .multilineTextAlignment(.center)
+                    }
+                }
                 .foregroundStyle(palette.ink1Color)
-
-            Button {
-                Haptics.tap()
-                values.remove(at: index)
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(palette.ink3Color)
+                .padding(10)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Remove \(name)")
-        }
-        .padding(.leading, 11)
-        .padding(.trailing, 8)
-        .padding(.vertical, 6)
-        .background(Capsule().fill(palette.bg2Color))
-        .overlay(Capsule().strokeBorder(palette.line2.color, lineWidth: 0.5))
-    }
-
-    /// Commit `name` as a chip — from the entry field, a suggestion row, or
-    /// the "+ Create" row.
-    private func pick(_ name: String) {
-        guard let chip = ChipEntry.committed(
-            from: name, existing: values, deduplicating: deduplicates
-        ) else { return }
-        Haptics.select()
-        values.append(chip)
     }
 }

@@ -40,17 +40,6 @@ struct MetadataProvider: RawRepresentable, Codable, Hashable, Sendable {
                 .joined(separator: " ")
         }
     }
-
-    /// Tint for the source badge, so two candidates from different sources are
-    /// told apart at a glance rather than by reading the label.
-    var badgeHue: Double {
-        switch rawValue {
-        case "open_library": 250
-        case "google_books": 155
-        case "hardcover": 330
-        default: 70
-        }
-    }
 }
 
 /// What one provider can be asked and what it can return, independent of
@@ -196,8 +185,6 @@ struct EditionSearchRequest: Encodable, Equatable, Sendable {
     var title: String?
     var author: String?
     var isbn: String?
-    /// Which providers to ask. `nil` means every configured one.
-    var providers: [MetadataProvider]?
 }
 
 /// Fan-out results: the candidates, plus one status row per provider
@@ -224,9 +211,8 @@ struct EditionHydrateRequest: Encodable, Sendable {
     }
 }
 
-/// Body for `POST /api/ebooks/{uuid}/cover/from-url` — a provider's cover
-/// (the compare screen's one field that cannot stage) or a reader-pasted
-/// URL (the editor's header row); either way the server fetches it.
+/// Body for `POST /api/ebooks/{uuid}/cover/from-url` — a provider's cover or a
+/// reader-pasted URL; either way the server fetches it.
 struct CoverFromURLRequest: Encodable, Sendable {
     var url: String
 }
