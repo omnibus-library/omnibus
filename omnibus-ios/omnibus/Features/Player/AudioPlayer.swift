@@ -1383,6 +1383,7 @@ final class AudioPlayer {
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
         // Stated rather than left to the system to infer: CarPlay's Now Playing
         // stayed on its play button through playback no remote command started.
+        // This call is each tick's re-statement, for a car connected mid-listen.
         // A start still owed reads as playing, as on the app's own controls; the
         // rate above stays real, or the system runs the scrubber on with no audio.
         publishPlaybackState()
@@ -1395,16 +1396,15 @@ final class AudioPlayer {
     /// `isPlaying`, `pendingStarts` or `book` can leave the car on a stale button.
     /// Once per main-actor turn, after its `nowPlayingInfo`: a start passes through
     /// not-playing between its writes, and the system would flash its play button.
+    /// Written even if unchanged: the system's copy can drift from the app's value.
     private func publishPlaybackState() {
         guard !playbackStatePublishIsQueued else { return }
         playbackStatePublishIsQueued = true
         Task { @MainActor in
             playbackStatePublishIsQueued = false
-            let state = Self.nowPlayingState(
+            MPNowPlayingInfoCenter.default().playbackState = Self.nowPlayingState(
                 isPlayingOrStarting: isPlayingOrStarting, hasBook: book != nil
             )
-            let center = MPNowPlayingInfoCenter.default()
-            if center.playbackState != state { center.playbackState = state }
         }
     }
 
