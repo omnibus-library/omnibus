@@ -36,7 +36,7 @@ matching builder function in
 `content_routes()`, `data_routes()`, `progress_routes()`, `shelf_routes()`,
 `check_in_routes()`, and the other per-domain builders it defines, or add a
 new one and merge it into `data_routes()` (or `content_routes()`) if none
-fits. `rest_router()` / `rest_router_with_search_limiter()` in
+fits. `rest_router()` in
 [server/src/backend.rs](../../../server/src/backend.rs) only **compose**
 these builder functions into the final router, and no route is registered
 there. `routes!` reads the path from the attribute, so the path is written

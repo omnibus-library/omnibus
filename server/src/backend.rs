@@ -310,29 +310,19 @@ impl AppState {
     }
 }
 
-/// Build the `/api/*` REST router with a fresh per-call search rate-limiter.
+/// Build the `/api/*` REST router, with its own per-IP search rate limiter.
 pub fn rest_router(state: AppState) -> Router {
-    // Standalone/test entrypoint: a fresh, dedicated search limiter per call.
-    // The live server uses `rest_router_with_search_limiter` to share one (#249).
     let search_limiter = RateLimiter::with_policy(SEARCH_RATE_LIMIT_WINDOW, SEARCH_RATE_LIMIT_MAX)
         .with_limits(state.rate_limits());
-    rest_router_with_search_limiter(state, std::sync::Arc::new(search_limiter))
-}
-
-/// Build the `/api/*` REST router around the caller's `search_limiter`.
-pub fn rest_router_with_search_limiter(
-    state: AppState,
-    search_limiter: std::sync::Arc<RateLimiter>,
-) -> Router {
     rest_router_with_timeouts(
         state,
-        search_limiter,
+        std::sync::Arc::new(search_limiter),
         REQUEST_TIMEOUT,
         uploads::UPLOAD_BODY_IDLE_TIMEOUT,
     )
 }
 
-/// [`rest_router_with_search_limiter`] with both time limits as arguments,
+/// [`rest_router`] with the search limiter and both time limits as arguments,
 /// so a test can drive them at a sub-second scale.
 fn rest_router_with_timeouts(
     state: AppState,

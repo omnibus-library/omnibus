@@ -263,9 +263,9 @@ mod server {
         });
     }
 
-    /// Per-IP rate limiters `build_router` wires onto the auth and search
-    /// route surfaces, bundled so the constructor and the merge step each
-    /// take one named argument instead of four positional `Arc`s.
+    /// The per-IP auth rate limiter `build_router` wires onto the auth route
+    /// surface, bundled so the constructor and the merge step each take one
+    /// named argument.
     struct RouterLimiters {
         auth: Arc<rate_limit::RateLimiter>,
         /// Prefix-scope the auth limiter to credential-handling endpoints only.
@@ -274,8 +274,6 @@ mod server {
         /// rendering (and parallel Playwright workers on one loopback IP). Logout stays
         /// limited, as a stolen token could otherwise be used to DoS revoke endpoints.
         auth_prefixes: Arc<Vec<&'static str>>,
-        /// The per-IP budget the REST `/api/search/*` routes share.
-        search: Arc<rate_limit::RateLimiter>,
     }
 
     fn build_router_limiters(limits: rate_limit::RateLimits) -> RouterLimiters {
@@ -287,13 +285,6 @@ mod server {
                 "/api/auth/logout",
                 "/api/auth/password",
             ]),
-            search: Arc::new(
-                rate_limit::RateLimiter::with_policy(
-                    backend::SEARCH_RATE_LIMIT_WINDOW,
-                    backend::SEARCH_RATE_LIMIT_MAX,
-                )
-                .with_limits(limits),
-            ),
         }
     }
 
@@ -347,10 +338,7 @@ mod server {
             // timeout itself, minus the book uploads — whose body alone can
             // take minutes to arrive.
             .layer(backend::request_timeout_layer())
-            .merge(backend::rest_router_with_search_limiter(
-                state,
-                limiters.search.clone(),
-            ))
+            .merge(backend::rest_router(state))
     }
 
     /// Assemble the full Axum router: the route surfaces (each under the request timeout, see

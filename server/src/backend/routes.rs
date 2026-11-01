@@ -1,5 +1,5 @@
 //! Route-group builder functions merged into the top-level `/api/*` router
-//! by [`super::rest_router_with_search_limiter`]. Each function owns one
+//! by [`super::rest_router`]. Each function owns one
 //! feature area; the grouping used to be carried as inline comments in a
 //! single flat route list.
 
