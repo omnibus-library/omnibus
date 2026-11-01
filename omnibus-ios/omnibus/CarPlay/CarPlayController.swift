@@ -4,8 +4,8 @@
 //  Reads go through the same local-first services the phone uses, so a car
 //  with no signal still lists what this device holds. Continue re-reads each
 //  time it appears and when the connection returns; Library only when it can
-//  have changed — a sign-in, an empty list, the connection back — since a
-//  re-read pages through all of it.
+//  have changed — a sign-in, an empty list, the connection back, a pass the
+//  server cut short — since a re-read pages through all of it.
 //  Rows are kept, not rebuilt: an updated CarPlay list jumps back to its top,
 //  and a row that leaves it takes its spinner along. So each book keeps its
 //  `CPListItem`, updated in place when a tab appears, the loaded book changes
@@ -40,6 +40,9 @@ final class CarPlayController: NSObject, CPInterfaceControllerDelegate {
     /// failed, so the empty message never stands in for what isn't known.
     private var continuePoints: [ResumePoint]?
     private var libraryBooks: [Book]?
+    /// The last Library pass ended without the server reaching the end of the
+    /// list, so the rows may be short or stale.
+    private var libraryPassCutShort = false
     /// One per list: a `CPListItem` can't be shared across the two tabs.
     private var continueRows = ListedRows()
     private var libraryRows = ListedRows()
@@ -48,6 +51,8 @@ final class CarPlayController: NSObject, CPInterfaceControllerDelegate {
     private var continueRead: Task<Void, Never>?
     private var libraryRead: Task<Void, Never>?
     private var coverLoad: Task<Void, Never>?
+    /// A render found a cover pass running, so one more follows it.
+    private var coverPassWanted = false
     /// A connect's read, until the first template appears: reading Continue
     /// again for that appear would only repeat it.
     private var connectReadStands = false
@@ -92,6 +97,7 @@ final class CarPlayController: NSObject, CPInterfaceControllerDelegate {
     private func cancelReads() {
         for task in [continueRead, libraryRead, coverLoad] { task?.cancel() }
         coverLoad = nil
+        coverPassWanted = false
     }
 
     // MARK: - Root
@@ -132,7 +138,7 @@ final class CarPlayController: NSObject, CPInterfaceControllerDelegate {
                 if CarPlayContent.rereads(shown: continuePoints, isReading: continueRead != nil) {
                     reloadContinue()
                 }
-                if CarPlayContent.rereads(shown: libraryBooks, isReading: libraryRead != nil) {
+                if libraryRereads {
                     reloadLibrary()
                 }
             } else {
@@ -150,10 +156,12 @@ final class CarPlayController: NSObject, CPInterfaceControllerDelegate {
 
     /// The account signed in on the phone, or `nil` when no one is.
     private static func signedInAccount() async -> CarPlayContent.Account? {
-        guard let server = ServerURLStore.load(), await APIClient.shared.hasToken() else {
+        guard let server = ServerURLStore.load(), let session = await APIClient.shared.sessionID() else {
             return nil
         }
-        return CarPlayContent.Account(server: server, userID: await AuthService.localMe()?.id)
+        return CarPlayContent.Account(
+            server: server, userID: await AuthService.localMe()?.id, session: session
+        )
     }
 
     /// Replace the root, then let Now Playing raise again what it took down.
@@ -188,6 +196,7 @@ final class CarPlayController: NSObject, CPInterfaceControllerDelegate {
         abandonOpening()
         continuePoints = nil
         libraryBooks = nil
+        libraryPassCutShort = false
         covers = [:]
         continueRows = ListedRows()
         libraryRows = ListedRows()
@@ -214,20 +223,25 @@ final class CarPlayController: NSObject, CPInterfaceControllerDelegate {
     }
 
     private func readContinue() async {
+        var answered = false
         do {
             for try await answer in UserDataService.recentAudio() {
                 guard !Task.isCancelled else { return }
+                answered = true
                 continuePoints = Array(
                     answer.value.filter(\.isAudio).prefix(UserDataService.recentAudioLimit)
                 )
                 renderContinue()
             }
+            // A save queued during the fetch ends the read with no replica to offer.
+            if answered { return }
         } catch {
-            // Rows on screen stay; an empty list would claim nothing is in progress.
-            guard !Task.isCancelled, continuePoints?.isEmpty ?? true else { return }
-            continuePoints = nil
-            show([], whenEmpty: CarPlayContent.readFailed, on: continueList, listed: \.continueRows)
+            // Handled below, as no answer is.
         }
+        // Rows on screen stay; an empty list would claim nothing is in progress.
+        guard !Task.isCancelled, CarPlayContent.showsReadFailure(shown: continuePoints) else { return }
+        continuePoints = nil
+        show([], whenEmpty: CarPlayContent.readFailed, on: continueList, listed: \.continueRows)
     }
 
     private func renderContinue() {
@@ -250,24 +264,41 @@ final class CarPlayController: NSObject, CPInterfaceControllerDelegate {
         replace(\.libraryRead) { [weak self] in await self?.readLibrary() }
     }
 
+    /// Whether Library reads again for a session change or its tab appearing.
+    private var libraryRereads: Bool {
+        CarPlayContent.rereads(
+            shown: libraryBooks, isReading: libraryRead != nil, cutShort: libraryPassCutShort
+        )
+    }
+
     /// Every audiobook, newest added first, page by page up to what CarPlay
-    /// lets a list hold. A pass that reaches the end drops the rows it didn't
-    /// find; one cut short leaves them.
+    /// lets a list hold. A pass the server answered to the end drops the rows
+    /// it didn't find; one cut short leaves them, and is remembered for a re-read.
     private func readLibrary() async {
         let cap = CPListTemplate.maximumItemCount
         var books: [Book] = []
         var cursor: String?
-        repeat {
-            let before = books.count
-            guard let page = await readLibraryPage(at: cursor, after: books, cap: cap) else { return }
+        while let page = await readLibraryPage(at: cursor, after: books, cap: cap) {
+            let step = CarPlayContent.libraryPassStep(
+                cursor: cursor, isFresh: page.isFresh, gained: page.books.count > books.count,
+                next: page.next, isFull: page.books.count >= cap
+            )
             books = page.books
-            // Nothing new: the mirror's fallback repeating its start.
-            guard cursor == nil || books.count > before else { return }
-            cursor = page.next
-        } while cursor != nil && books.count < cap && !Task.isCancelled
-        guard !Task.isCancelled else { return }
-        libraryBooks = Array(books.prefix(cap))
-        renderLibrary()
+            switch step {
+            case let .read(next):
+                cursor = next
+            case .finished:
+                libraryPassCutShort = false
+                libraryBooks = Array(books.prefix(cap))
+                renderLibrary()
+                return
+            case .cutShort:
+                libraryPassCutShort = true
+                return
+            }
+        }
+        // A cancelled pass has left all this to whatever replaced it.
+        if !Task.isCancelled { libraryPassCutShort = true }
     }
 
     /// The page at `cursor` added to `read`, by its last answer. Each answer
@@ -275,8 +306,9 @@ final class CarPlayController: NSObject, CPInterfaceControllerDelegate {
     /// `CarPlayContent.showsAtOnce` holds back, shown only if nothing follows it.
     private func readLibraryPage(
         at cursor: String?, after read: [Book], cap: Int
-    ) async -> (books: [Book], next: String?)? {
-        var last: (books: [Book], next: String?)?
+    ) async -> (books: [Book], next: String?, isFresh: Bool)? {
+        var last: (books: [Book], next: String?, isFresh: Bool)?
+        var heldBack = false
         do {
             for try await answer in LibraryService.page(
                 sort: .newestAdded, direction: .desc,
@@ -284,30 +316,35 @@ final class CarPlayController: NSObject, CPInterfaceControllerDelegate {
             ) {
                 guard !Task.isCancelled else { return nil }
                 let books = CarPlayContent.appending(answer.value.books, to: read)
-                last = (books, answer.value.nextCursor)
-                if CarPlayContent.showsAtOnce(books, isFresh: answer.isFresh) {
-                    showLibrary(books, cap: cap)
+                last = (books, answer.value.nextCursor, answer.isFresh)
+                heldBack = !CarPlayContent.showsAtOnce(books, isFresh: answer.isFresh)
+                if !heldBack {
+                    let keepingPlaces = CarPlayContent.isFallback(cursor: cursor, isFresh: answer.isFresh)
+                    showLibrary(books, keepingPlaces: keepingPlaces, cap: cap)
                 }
             }
         } catch {
-            // No answer, however the read ended, is handled below.
+            // An empty replica the failure stands behind answered nothing;
+            // no answer, however the read ended, is handled below.
+            if heldBack { last = nil }
         }
         guard !Task.isCancelled else { return nil }
         guard let last else {
             // Rows on screen stay; an empty list would claim there are no audiobooks.
-            if libraryBooks?.isEmpty ?? true {
+            if CarPlayContent.showsReadFailure(shown: libraryBooks) {
                 libraryBooks = nil
                 show([], whenEmpty: CarPlayContent.readFailed, on: libraryList, listed: \.libraryRows)
             }
             return nil
         }
-        showLibrary(last.books, cap: cap)
+        if heldBack { showLibrary(last.books, cap: cap) }
         return last
     }
 
     /// What a pass has read so far, ahead of the rows it hasn't reached.
-    private func showLibrary(_ read: [Book], cap: Int) {
-        libraryBooks = Array(CarPlayContent.libraryRows(read: read, shown: libraryBooks).prefix(cap))
+    private func showLibrary(_ read: [Book], keepingPlaces: Bool = false, cap: Int) {
+        let rows = CarPlayContent.libraryRows(read: read, shown: libraryBooks, keepingPlaces: keepingPlaces)
+        libraryBooks = Array(rows.prefix(cap))
         renderLibrary()
     }
 
@@ -448,9 +485,14 @@ final class CarPlayController: NSObject, CPInterfaceControllerDelegate {
     /// Covers for what the lists hold, one at a time off the disk cache, fetched
     /// when missing. CarPlay doesn't load list images lazily, so they arrive
     /// after the rows rather than holding them back. One pass runs at a time and
-    /// looks at the lists afresh each step, so a render never restarts it.
+    /// looks at the lists afresh each step, so a render never restarts it. What
+    /// the pass has already tried it won't try again, so a render during one asks
+    /// for one more after it: bounded, as a pass triggers no render of its own.
     private func loadCovers() {
-        guard coverLoad == nil else { return }
+        guard coverLoad == nil else {
+            coverPassWanted = true
+            return
+        }
         coverLoad = Task {
             let scale = interface.carTraitCollection.displayScale
             var tried: Set<String> = []
@@ -459,7 +501,12 @@ final class CarPlayController: NSObject, CPInterfaceControllerDelegate {
                 await loadCover(of: book, scale: scale)
             }
             // A cancelled pass has left the slot to whatever replaced it.
-            if !Task.isCancelled { coverLoad = nil }
+            guard !Task.isCancelled else { return }
+            coverLoad = nil
+            if coverPassWanted {
+                coverPassWanted = false
+                loadCovers()
+            }
         }
     }
 
@@ -471,21 +518,22 @@ final class CarPlayController: NSObject, CPInterfaceControllerDelegate {
 
     private func loadCover(of book: Book, scale: CGFloat) async {
         let art = book.coverURL == nil ? nil : await Self.art(for: book)
+        guard !Task.isCancelled else { return }
+        // A cover that didn't load shows its plate for now and is tried again
+        // on the next pass.
+        let isFinal = art != nil || book.coverURL == nil
+        let rows = [continueRows.items[book.uuid], libraryRows.items[book.uuid]]
+            .compactMap { $0 }
+            .filter { isFinal || $0.image == nil }
         // Square: the shape of the row's image slot, and of most audiobook art.
-        guard !Task.isCancelled,
+        guard CarPlayContent.drawsCover(isFinal: isFinal, rowsWanting: rows.count),
               let tile = CoverBitmap.render(
                   CoverIdentity(book), art: art, size: CPListItem.maximumImageSize,
                   cornerRadius: 4, scale: scale
               )
         else { return }
-        // A cover that didn't load shows its plate for now and is tried again
-        // on the next render that finds no pass running.
-        let isFinal = art != nil || book.coverURL == nil
         if isFinal { covers[book.uuid] = tile }
-        for item in [continueRows.items[book.uuid], libraryRows.items[book.uuid]].compactMap({ $0 })
-        where isFinal || item.image == nil {
-            item.setImage(tile)
-        }
+        for item in rows { item.setImage(tile) }
     }
 
     private static func art(for book: Book) async -> UIImage? {
@@ -538,7 +586,7 @@ final class CarPlayController: NSObject, CPInterfaceControllerDelegate {
             // with the progress from before it. Save a connect's, just begun.
             if !isFirstAppear { reloadContinue() }
         } else if aTemplate === libraryList {
-            if CarPlayContent.rereads(shown: libraryBooks, isReading: libraryRead != nil) {
+            if libraryRereads {
                 reloadLibrary()
             } else {
                 // Greying and covers can change while away; the rows only on a re-read.

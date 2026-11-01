@@ -7,6 +7,7 @@
 //  warm one until something actually needs the network.
 
 import Foundation
+import os
 
 /// Declaration order is the picker's order, and mirrors the web toolbar's
 /// `SORT_KEYS`. Raw values are the shared wire vocabulary
@@ -236,7 +237,8 @@ enum LibraryService {
 
     /// The first page: replica, then server, then — if the server can't be
     /// reached and nothing was cached — the mirror. The last hop is what makes
-    /// a cold launch offline show a library instead of an error.
+    /// a cold launch offline show a library instead of an error. An empty
+    /// replica counts as nothing cached until the server has confirmed it.
     static func firstPage(
         signature: String,
         fetch: @escaping @Sendable () async throws -> LibraryPageResult,
@@ -244,23 +246,33 @@ enum LibraryService {
     ) -> AsyncThrowingStream<CacheRead<LibraryPageResult>, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
+                // `Cache.live` doesn't repeat an identical answer, so only `fetch`
+                // can tell an empty library from an empty replica nobody confirmed.
+                let serverAnswered = OSAllocatedUnfairLock(initialState: false)
                 var delivered = false
+                var lastIsEmptyReplica = false
+                var failure: Error?
                 do {
                     let live = Cache.live(
-                        CacheKey.libraryPage(signature), storing: { $0.withoutViewerState },
-                        fetch: fetch
-                    )
+                        CacheKey.libraryPage(signature), storing: { $0.withoutViewerState }
+                    ) {
+                        let page = try await fetch()
+                        serverAnswered.withLock { $0 = true }
+                        return page
+                    }
                     for try await read in live {
                         delivered = true
+                        lastIsEmptyReplica = !read.isFresh && read.value.books.isEmpty
                         continuation.yield(read)
                     }
-                    continuation.finish()
                 } catch {
-                    guard !delivered else {
-                        continuation.finish()
-                        return
-                    }
-                    await settle(after: error, with: fallback, into: continuation)
+                    failure = error
+                }
+                let unconfirmed = lastIsEmptyReplica && !serverAnswered.withLock { $0 } && !Task.isCancelled
+                if unconfirmed || (failure != nil && !delivered) {
+                    await settle(after: failure ?? APIError.offline, with: fallback, into: continuation)
+                } else {
+                    continuation.finish()
                 }
             }
             continuation.onTermination = { _ in task.cancel() }

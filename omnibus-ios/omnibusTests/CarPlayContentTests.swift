@@ -36,6 +36,12 @@ private func book(_ uuid: String) -> Book {
     Book(id: 1, filename: "\(uuid).m4b", title: uuid, uniqueIdentifier: uuid, formats: ["m4b"])
 }
 
+private func account(
+    _ userID: Int64?, session: String = "session-1", server: String = "https://a.example"
+) -> CarPlayContent.Account {
+    CarPlayContent.Account(server: server, userID: userID, session: session)
+}
+
 struct CarPlayContentTests {
     @Test func speedStepsUpThroughTheCarsPresetsAndWrapsToOne() {
         #expect(CarPlayContent.nextRate(after: 1.0) == 1.2)
@@ -119,6 +125,115 @@ struct CarPlayContentTests {
         #expect(!CarPlayContent.rereads(shown: [] as [Book], isReading: true))
     }
 
+    @Test func listCutShortRereadsOverItsRowsButNeverOverARunningRead() {
+        #expect(CarPlayContent.rereads(shown: [book("a")], isReading: false, cutShort: true))
+        #expect(!CarPlayContent.rereads(shown: [book("a")], isReading: true, cutShort: true))
+        #expect(!CarPlayContent.rereads(shown: nil as [Book]?, isReading: true, cutShort: true))
+    }
+
+    @Test func libraryPassReadsOnWhileThereIsAnotherPage() {
+        // The first page's replica ends non-fresh, and proves nothing either way.
+        #expect(
+            CarPlayContent.libraryPassStep(cursor: nil, isFresh: false, gained: true, next: "c1", isFull: false)
+                == .read("c1")
+        )
+        #expect(
+            CarPlayContent.libraryPassStep(cursor: "c1", isFresh: true, gained: true, next: "c2", isFull: false)
+                == .read("c2")
+        )
+    }
+
+    @Test func libraryPassPrunesOnceTheServerAnsweredThroughToTheEnd() {
+        #expect(
+            CarPlayContent.libraryPassStep(cursor: "c1", isFresh: true, gained: true, next: nil, isFull: false)
+                == .finished
+        )
+        // At the cap with more to come, the rest wouldn't fit anyway.
+        #expect(
+            CarPlayContent.libraryPassStep(cursor: "c1", isFresh: true, gained: true, next: "c2", isFull: true)
+                == .finished
+        )
+        // An answer identical to the replica ends non-fresh, on a first page only.
+        #expect(
+            CarPlayContent.libraryPassStep(cursor: nil, isFresh: false, gained: false, next: nil, isFull: false)
+                == .finished
+        )
+    }
+
+    @Test func libraryPassPrunesOnAnEmptyTerminalPageFromTheServer() {
+        // The rows past the last page were deleted, so it gains nothing and still ends the pass.
+        #expect(
+            CarPlayContent.libraryPassStep(cursor: "c1", isFresh: true, gained: false, next: nil, isFull: false)
+                == .finished
+        )
+    }
+
+    @Test func libraryPassKeepsTheRowsWhenTheMirrorStoodInForALaterPage() {
+        // The mirror's fallback repeats its start.
+        #expect(
+            CarPlayContent.libraryPassStep(cursor: "c1", isFresh: false, gained: false, next: nil, isFull: false)
+                == .cutShort
+        )
+        #expect(
+            CarPlayContent.libraryPassStep(cursor: "c1", isFresh: false, gained: false, next: "local:60", isFull: false)
+                == .cutShort
+        )
+        // A book the pass hadn't reached lets it walk the mirror, but never prune.
+        #expect(
+            CarPlayContent.libraryPassStep(cursor: "c1", isFresh: false, gained: true, next: "local:60", isFull: false)
+                == .read("local:60")
+        )
+        #expect(
+            CarPlayContent.libraryPassStep(cursor: "local:60", isFresh: false, gained: true, next: nil, isFull: false)
+                == .cutShort
+        )
+        #expect(
+            CarPlayContent.libraryPassStep(cursor: "c1", isFresh: false, gained: true, next: "local:60", isFull: true)
+                == .cutShort
+        )
+    }
+
+    @Test func libraryPassFromTheMirrorsFirstPageNeverPrunes() {
+        #expect(
+            CarPlayContent.libraryPassStep(cursor: nil, isFresh: false, gained: true, next: "local:60", isFull: true)
+                == .cutShort
+        )
+    }
+
+    @Test func libraryFallbackLeavesRowsWhereTheyAre() {
+        let shown = ["a", "b", "c", "d"].map(book)
+        // A tied sort order: the mirror hands over `d` as though it came next.
+        let rows = CarPlayContent.libraryRows(
+            read: ["a", "b", "d"].map(book), shown: shown, keepingPlaces: true
+        )
+        #expect(rows.map(\.uuid) == ["a", "b", "c", "d"])
+        #expect(
+            CarPlayContent.libraryRows(read: ["a", "e"].map(book), shown: shown, keepingPlaces: true).map(\.uuid)
+                == ["a", "b", "c", "d", "e"]
+        )
+        #expect(
+            CarPlayContent.libraryRows(read: [book("a")], shown: nil, keepingPlaces: true).map(\.uuid) == ["a"]
+        )
+    }
+
+    @Test func onlyALaterPageNotFromTheServerIsAFallback() {
+        #expect(CarPlayContent.isFallback(cursor: "c1", isFresh: false))
+        #expect(!CarPlayContent.isFallback(cursor: "c1", isFresh: true))
+        #expect(!CarPlayContent.isFallback(cursor: nil, isFresh: false))
+    }
+
+    @Test func aFailedReadSaysSoOnlyWithNoRowsToKeep() {
+        #expect(CarPlayContent.showsReadFailure(shown: nil as [Book]?))
+        #expect(CarPlayContent.showsReadFailure(shown: [] as [Book]))
+        #expect(!CarPlayContent.showsReadFailure(shown: [book("a")]))
+    }
+
+    @Test func aCoverTileIsDrawnWhenFinalOrWhenARowHasNoImage() {
+        #expect(CarPlayContent.drawsCover(isFinal: true, rowsWanting: 0))
+        #expect(CarPlayContent.drawsCover(isFinal: false, rowsWanting: 1))
+        #expect(!CarPlayContent.drawsCover(isFinal: false, rowsWanting: 0))
+    }
+
     @Test func libraryPassKeepsTheRowsItHasNotReachedSoAnUnchangedListNeverChanges() {
         let shown = ["a", "b", "c", "d", "e", "f"].map(book)
         let uuids = shown.map(\.uuid)
@@ -160,8 +275,8 @@ struct CarPlayContentTests {
     }
 
     @Test func accountForgetsNothingWhenTheSameSessionLearnsItsUserID() {
-        let unknown = CarPlayContent.Account(server: "https://a.example", userID: nil)
-        let known = CarPlayContent.Account(server: "https://a.example", userID: 1)
+        let unknown = account(nil)
+        let known = account(1)
         #expect(CarPlayContent.sameAccount(held: unknown, signedIn: known) == known)
         #expect(CarPlayContent.sameAccount(held: known, signedIn: known) == known)
         #expect(CarPlayContent.sameAccount(held: unknown, signedIn: unknown) == unknown)
@@ -169,38 +284,45 @@ struct CarPlayContentTests {
 
     @Test func accountKeepsTheIDItKnowsWhenTheCachedUserGoesAway() {
         // Saving a Kindle email deletes the cached `me`.
-        let unknown = CarPlayContent.Account(server: "https://a.example", userID: nil)
-        let known = CarPlayContent.Account(server: "https://a.example", userID: 1)
+        let unknown = account(nil)
+        let known = account(1)
         let held = CarPlayContent.sameAccount(held: known, signedIn: unknown)
         #expect(held == known)
         // So another user after that still reads as another user.
-        let other = CarPlayContent.Account(server: "https://a.example", userID: 2)
-        #expect(CarPlayContent.sameAccount(held: held, signedIn: other) == nil)
+        #expect(CarPlayContent.sameAccount(held: held, signedIn: account(2)) == nil)
+    }
+
+    @Test func accountIsForgottenForAnotherSessionWhenItsUserIDIsUnknown() {
+        // A token that outlived its `me`, then someone signing in on the phone.
+        let held = account(nil, session: "session-1")
+        #expect(CarPlayContent.sameAccount(held: held, signedIn: account(2, session: "session-2")) == nil)
+        #expect(CarPlayContent.sameAccount(held: held, signedIn: account(nil, session: "session-2")) == nil)
+        #expect(CarPlayContent.sameAccount(held: account(1), signedIn: account(nil, session: "session-2")) == nil)
+    }
+
+    @Test func accountSurvivesANewTokenForTheSameKnownUser() {
+        let renewed = account(1, session: "session-2")
+        #expect(CarPlayContent.sameAccount(held: account(1), signedIn: renewed) == renewed)
+    }
+
+    @Test func sessionIDTellsTokensApartWithoutHoldingThem() {
+        let one = APIClient.sessionID(of: "token-one")
+        #expect(one == APIClient.sessionID(of: "token-one"))
+        #expect(one != APIClient.sessionID(of: "token-two"))
+        #expect(!one.contains("token-one"))
     }
 
     @Test func accountIsForgottenForAnotherKnownUserOrAnotherServer() {
-        let account = CarPlayContent.Account(server: "https://a.example", userID: 1)
+        let held = account(1)
+        #expect(CarPlayContent.sameAccount(held: held, signedIn: account(2)) == nil)
+        #expect(CarPlayContent.sameAccount(held: held, signedIn: account(1, server: "https://b.example")) == nil)
         #expect(
-            CarPlayContent.sameAccount(
-                held: account, signedIn: .init(server: "https://a.example", userID: 2)
-            ) == nil
-        )
-        #expect(
-            CarPlayContent.sameAccount(
-                held: account, signedIn: .init(server: "https://b.example", userID: 1)
-            ) == nil
-        )
-        #expect(
-            CarPlayContent.sameAccount(
-                held: .init(server: "https://a.example", userID: nil),
-                signedIn: .init(server: "https://b.example", userID: nil)
-            ) == nil
+            CarPlayContent.sameAccount(held: account(nil), signedIn: account(nil, server: "https://b.example")) == nil
         )
     }
 
     @Test func accountHeldByNoOneIsNeverTheSame() {
-        let account = CarPlayContent.Account(server: "https://a.example", userID: 1)
-        #expect(CarPlayContent.sameAccount(held: nil, signedIn: account) == nil)
+        #expect(CarPlayContent.sameAccount(held: nil, signedIn: account(1)) == nil)
     }
 
     @Test func failedReadDoesNotClaimAListIsEmpty() {

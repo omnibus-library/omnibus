@@ -96,8 +96,10 @@ and a tapped row's spinner lives on its item, so `CarPlayController` keeps one
 `CPListItem` per book per list and sets what changed on it, handler included.
 A list only updates when which rows it holds, or their order, changes. A Library
 re-read shows what it has read so far ahead of the rows it hasn't reached, so an
-unchanged library of any length never updates; the rows it didn't find go when
-the pass reaches its end. A read that fails with rows on screen leaves them; with
+unchanged library of any length never updates; the rows it didn't find go only
+when the server has answered the pass through to its end. A pass the server cut
+short keeps the rows in place, and the list reads again the next time a session
+change or its tab asks. A read that fails with rows on screen leaves them; with
 none it says it couldn't load, never that the list is empty.
 
 **The entitlement.** `com.apple.developer.carplay-audio` in `omnibus.entitlements`

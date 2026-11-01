@@ -6,6 +6,7 @@
 //  transport failure marks the client offline so the cache layer can serve
 //  reads without waiting on a timeout.
 
+import CryptoKit
 import Foundation
 
 enum APIError: LocalizedError {
@@ -146,6 +147,12 @@ actor APIClient {
 
     func currentBaseURL() -> String? { baseURL }
     func hasToken() -> Bool { token != nil }
+    /// What tells this session from another, safe to hold where the token isn't.
+    func sessionID() -> String? { token.map(Self.sessionID(of:)) }
+
+    static func sessionID(of token: String) -> String {
+        SHA256.hash(data: Data(token.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
 
     /// Absolute URL for a server-relative path (covers, audio parts, EPUB
     /// files). Returns `nil` before a server is configured.

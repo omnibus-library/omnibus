@@ -728,6 +728,68 @@ struct LibraryFilterDeclineTests {
     }
 }
 
+// MARK: - An empty replica nobody confirmed
+
+struct LibraryFirstPageEmptyReplicaTests {
+    /// A first-page read over a replica that already holds `replica`.
+    private func reads(
+        over replica: LibraryPageResult,
+        fetch: @escaping @Sendable () async throws -> LibraryPageResult,
+        fallback: @escaping @Sendable () async throws -> LibraryPageResult
+    ) async -> AsyncThrowingStream<CacheRead<LibraryPageResult>, Error> {
+        await OfflineStore.shared.open()
+        let signature = "test-\(UUID().uuidString)"
+        await Cache.write(CacheKey.libraryPage(signature), replica)
+        return LibraryService.firstPage(signature: signature, fetch: fetch, fallback: fallback)
+    }
+
+    private static let noBooks = LibraryPageResult(books: [])
+    private static let oneBook = LibraryPageResult(
+        books: [Book(id: 1, filename: "a.m4b", title: "A", uniqueIdentifier: "a", formats: ["m4b"])]
+    )
+
+    @Test func firstPageReportsTheFailureWhenTheServerFailsBehindAnEmptyReplicaAndAnEmptyMirror() async {
+        for serverError in [APIError.offline, .http(status: 500, message: "")] {
+            let answers = await reads(
+                over: Self.noBooks, fetch: { throw serverError }, fallback: { Self.noBooks }
+            )
+            let error = await failure(of: answers) as? APIError
+            #expect(error?.errorDescription == serverError.errorDescription)
+        }
+    }
+
+    @Test func firstPageAnswersFromTheMirrorWhenTheServerFailsBehindAnEmptyReplica() async throws {
+        let answers = await reads(
+            over: Self.noBooks, fetch: { throw APIError.offline }, fallback: { Self.oneBook }
+        )
+        var last: CacheRead<LibraryPageResult>?
+        for try await read in answers { last = read }
+        #expect(last?.value.books.map(\.uuid) == ["a"])
+        #expect(last?.isFresh == false)
+    }
+
+    @Test func firstPageSettlesEmptyWhenTheServerRepeatsAnEmptyReplica() async throws {
+        let answers = await reads(
+            over: Self.noBooks, fetch: { Self.noBooks },
+            fallback: { throw LibraryFilterError.needsConnection }
+        )
+        var seen: [CacheRead<LibraryPageResult>] = []
+        for try await read in answers { seen.append(read) }
+        #expect(seen.map(\.isFresh) == [false], "an identical answer isn't repeated, so it ends non-fresh")
+        #expect(seen.first?.value.books.isEmpty == true)
+    }
+
+    @Test func firstPageFinishesQuietlyWhenTheServerFailsBehindAReplicaWithBooks() async throws {
+        let answers = await reads(
+            over: Self.oneBook, fetch: { throw APIError.offline },
+            fallback: { throw LibraryFilterError.needsConnection }
+        )
+        var seen: [CacheRead<LibraryPageResult>] = []
+        for try await read in answers { seen.append(read) }
+        #expect(seen.map(\.value.books.count) == [1])
+    }
+}
+
 // MARK: - Pages a shelf clause reads
 
 struct ShelfClausePageInvalidationTests {

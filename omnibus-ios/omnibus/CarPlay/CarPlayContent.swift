@@ -61,14 +61,60 @@ enum CarPlayContent {
     /// The Library list while a pass reads: what it has so far, then the rows
     /// it hasn't reached. Without them a re-read would shrink a long list to
     /// one page and grow it back, an update each way, for nothing that changed.
-    static func libraryRows(read: [Book], shown: [Book]?) -> [Book] {
-        appending(shown ?? [], to: read)
+    /// `keepingPlaces` is for a failed read's fallback: rows on screen stay
+    /// where they are, and only what they lack goes on, after them.
+    static func libraryRows(read: [Book], shown: [Book]?, keepingPlaces: Bool = false) -> [Book] {
+        keepingPlaces ? appending(read, to: shown ?? []) : appending(shown ?? [], to: read)
+    }
+
+    /// Whether a Library answer is the mirror's, standing in for a later page
+    /// the server didn't answer. A first page can't say: `Cache.live` doesn't
+    /// repeat a server answer identical to the replica, so that ends non-fresh too.
+    static func isFallback(cursor: String?, isFresh: Bool) -> Bool {
+        cursor != nil && !isFresh
+    }
+
+    /// Where a Library pass goes after a page.
+    enum LibraryPassStep: Equatable {
+        /// On to the page at this cursor.
+        case read(String)
+        /// The server answered through to the end: what it didn't name is gone.
+        case finished
+        /// The server didn't get it there: the rows on screen stay, and the
+        /// list reads again the next time it could.
+        case cutShort
+    }
+
+    /// `gained` is whether the page added a book; `isFull`, whether the list has
+    /// reached the car's cap. A fallback starts over from the mirror's top, so
+    /// one with nothing new would only repeat itself; a fresh page always has
+    /// its say, as an empty one is how the server ends a list that shrank.
+    static func libraryPassStep(
+        cursor: String?, isFresh: Bool, gained: Bool, next: String?, isFull: Bool
+    ) -> LibraryPassStep {
+        let mirrorAnswered = isFallback(cursor: cursor, isFresh: isFresh)
+        if mirrorAnswered && !gained { return .cutShort }
+        if let next, !isFull { return .read(next) }
+        return mirrorAnswered || LibraryIndex.offset(fromCursor: next) != nil ? .cutShort : .finished
+    }
+
+    /// Whether a failed read says so: only with no rows to keep, as an empty
+    /// list would claim there is nothing to list.
+    static func showsReadFailure<Row>(shown: [Row]?) -> Bool {
+        shown?.isEmpty ?? true
     }
 
     /// Whether a list reads again with nothing new to prompt it, rather than
-    /// keeping the rows it holds: only one with nothing on it, and nothing loading.
-    static func rereads<Row>(shown: [Row]?, isReading: Bool) -> Bool {
-        !isReading && (shown?.isEmpty ?? true)
+    /// keeping the rows it holds: only one with nothing on it, or whose last
+    /// pass was cut short, and nothing loading.
+    static func rereads<Row>(shown: [Row]?, isReading: Bool, cutShort: Bool = false) -> Bool {
+        !isReading && (cutShort || showsReadFailure(shown: shown))
+    }
+
+    /// Whether a cover tile is worth drawing: a final one is kept for rows to
+    /// come, a stand-in only serves rows with no image yet.
+    static func drawsCover(isFinal: Bool, rowsWanting: Int) -> Bool {
+        isFinal || rowsWanting > 0
     }
 
     /// Whether a list takes an `updateSections`, which sends it back to its top
@@ -84,16 +130,25 @@ enum CarPlayContent {
         var server: String
         /// `nil` while no `me` is cached: a token can outlive it.
         var userID: Int64?
+        /// `APIClient.sessionID()`: who it is while the id isn't known.
+        var session: String
     }
 
     /// `held` with what `signedIn` adds to it, or `nil` when `signedIn` is
     /// someone else and the lists have to be forgotten. An id not known yet
-    /// isn't a different one: forgetting then would blank the lists and kill a
-    /// tapped load, for a session that only just learned who it is.
+    /// isn't a different one within a session: forgetting then would blank the
+    /// lists and kill a tapped load, for a session that only just learned who
+    /// it is. Across sessions an unknown id says nothing, so the lists go.
     static func sameAccount(held: Account?, signedIn: Account) -> Account? {
         guard let held, held.server == signedIn.server else { return nil }
-        if let known = held.userID, let id = signedIn.userID, known != id { return nil }
-        return Account(server: held.server, userID: signedIn.userID ?? held.userID)
+        if let known = held.userID, let id = signedIn.userID {
+            guard known == id else { return nil }
+        } else if held.session != signedIn.session {
+            return nil
+        }
+        return Account(
+            server: held.server, userID: signedIn.userID ?? held.userID, session: signedIn.session
+        )
     }
 
     /// The second line of a row that can't play — offline, not downloaded.
