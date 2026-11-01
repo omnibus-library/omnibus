@@ -216,10 +216,15 @@ enum Cache {
     /// and its own refresh also store (a review), where an answer fetched
     /// before the write would otherwise put the old state back. Off for keys
     /// written constantly, such as positions, which would refuse every answer.
+    ///
+    /// `confirmsAnswer` yields an answer the replica adopted as fresh even when it
+    /// repeats the replica, so a last answer still not fresh means the server's
+    /// never landed. For a caller that acts on that; others would only churn.
     static func live<T: Codable & Sendable>(
         _ key: String,
         storing: (@Sendable (T) -> T)? = nil,
         guardsWrites: Bool = false,
+        confirmsAnswer: Bool = false,
         fetch: @escaping @Sendable () async throws -> T
     ) -> AsyncThrowingStream<CacheRead<T>, Error> {
         AsyncThrowingStream { continuation in
@@ -246,6 +251,7 @@ enum Cache {
                     if guardsWrites {
                         try await revalidateGuarded(
                             key, cachedData: cachedData, storing: storing,
+                            confirmsAnswer: confirmsAnswer,
                             store: .shared, fetch: fetch, into: continuation
                         )
                         return
@@ -284,7 +290,7 @@ enum Cache {
                     // `Data` on both sides already, and re-yielding an
                     // identical answer would churn every observing view for
                     // nothing.
-                    if freshData == nil || freshData != cachedData {
+                    if confirmsAnswer || freshData == nil || freshData != cachedData {
                         continuation.yield(CacheRead(value: fresh, isFresh: true))
                     }
                     continuation.finish()
@@ -322,6 +328,7 @@ enum Cache {
         _ key: String,
         cachedData: Data?,
         storing: (@Sendable (T) -> T)? = nil,
+        confirmsAnswer: Bool = false,
         store: OfflineStore,
         fetch: @Sendable () async throws -> T,
         into continuation: AsyncThrowingStream<CacheRead<T>, Error>.Continuation
@@ -362,7 +369,7 @@ enum Cache {
                 // Nothing held at all: this answer is still the best there is.
             }
             guard !Task.isCancelled else { break }
-            if freshData == nil || freshData != shown {
+            if confirmsAnswer || freshData == nil || freshData != shown {
                 continuation.yield(CacheRead(value: fresh, isFresh: true))
             }
             break

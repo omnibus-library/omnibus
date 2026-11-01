@@ -102,9 +102,11 @@ enum UserDataService {
 
     /// The audiobooks you were listening to, newest first, each at its latest
     /// listening position even when you have read it since — which the rail
-    /// would show as its ebook card.
-    static func recentAudio() -> AsyncThrowingStream<CacheRead<[ResumePoint]>, Error> {
-        Cache.live(CacheKey.recentAudio) { try await fetchRecentAudio() }
+    /// would show as its ebook card. `confirmsAnswer`: see `Cache.live`.
+    static func recentAudio(
+        confirmsAnswer: Bool = false
+    ) -> AsyncThrowingStream<CacheRead<[ResumePoint]>, Error> {
+        Cache.live(CacheKey.recentAudio, confirmsAnswer: confirmsAnswer) { try await fetchRecentAudio() }
     }
 
     /// `recentAudio()` settled to one answer for a caller acting once on the

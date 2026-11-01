@@ -37,7 +37,7 @@ private func book(_ uuid: String) -> Book {
 }
 
 private func account(
-    _ userID: Int64?, session: String = "session-1", server: String = "https://a.example"
+    _ userID: Int64?, session: Int = 1, server: String = "https://a.example"
 ) -> CarPlayContent.Account {
     CarPlayContent.Account(server: server, userID: userID, session: session)
 }
@@ -116,6 +116,12 @@ struct CarPlayContentTests {
         #expect(CarPlayContent.showsAtOnce([book("a")], isFresh: true))
     }
 
+    @Test func continueHoldsBackOnlyAnEmptyAnswerFromTheReplica() {
+        #expect(!CarPlayContent.showsAtOnce([] as [ResumePoint], isFresh: false))
+        #expect(CarPlayContent.showsAtOnce([] as [ResumePoint], isFresh: true))
+        #expect(CarPlayContent.showsAtOnce([point()], isFresh: false))
+    }
+
     @Test func listRereadsOnlyWhenItHoldsNothingAndNothingIsLoading() {
         #expect(CarPlayContent.rereads(shown: nil as [Book]?, isReading: false))
         #expect(CarPlayContent.rereads(shown: [] as [Book], isReading: false))
@@ -131,72 +137,51 @@ struct CarPlayContentTests {
         #expect(!CarPlayContent.rereads(shown: nil as [Book]?, isReading: true, cutShort: true))
     }
 
-    @Test func libraryPassReadsOnWhileThereIsAnotherPage() {
-        // The first page's replica ends non-fresh, and proves nothing either way.
+    @Test func libraryPassReadsOnWhileAPageGainsAndThereIsAnother() {
         #expect(
-            CarPlayContent.libraryPassStep(cursor: nil, isFresh: false, gained: true, next: "c1", isFull: false)
-                == .read("c1")
+            CarPlayContent.libraryPassStep(allFresh: true, gained: true, next: "c1", isFull: false) == .read("c1")
+        )
+        // The offline walk: the replica's first page, then the mirror's.
+        #expect(
+            CarPlayContent.libraryPassStep(allFresh: false, gained: true, next: "c1", isFull: false) == .read("c1")
         )
         #expect(
-            CarPlayContent.libraryPassStep(cursor: "c1", isFresh: true, gained: true, next: "c2", isFull: false)
-                == .read("c2")
+            CarPlayContent.libraryPassStep(allFresh: false, gained: true, next: "local:60", isFull: false)
+                == .read("local:60")
         )
     }
 
-    @Test func libraryPassPrunesOnceTheServerAnsweredThroughToTheEnd() {
-        #expect(
-            CarPlayContent.libraryPassStep(cursor: "c1", isFresh: true, gained: true, next: nil, isFull: false)
-                == .finished
-        )
+    @Test func libraryPassPrunesOnlyWhenTheServerAnsweredEveryPageToTheEnd() {
+        #expect(CarPlayContent.libraryPassStep(allFresh: true, gained: true, next: nil, isFull: false) == .finished)
         // At the cap with more to come, the rest wouldn't fit anyway.
-        #expect(
-            CarPlayContent.libraryPassStep(cursor: "c1", isFresh: true, gained: true, next: "c2", isFull: true)
-                == .finished
-        )
-        // An answer identical to the replica ends non-fresh, on a first page only.
-        #expect(
-            CarPlayContent.libraryPassStep(cursor: nil, isFresh: false, gained: false, next: nil, isFull: false)
-                == .finished
-        )
+        #expect(CarPlayContent.libraryPassStep(allFresh: true, gained: true, next: "c2", isFull: true) == .finished)
     }
 
     @Test func libraryPassPrunesOnAnEmptyTerminalPageFromTheServer() {
         // The rows past the last page were deleted, so it gains nothing and still ends the pass.
-        #expect(
-            CarPlayContent.libraryPassStep(cursor: "c1", isFresh: true, gained: false, next: nil, isFull: false)
-                == .finished
-        )
+        #expect(CarPlayContent.libraryPassStep(allFresh: true, gained: false, next: nil, isFull: false) == .finished)
     }
 
-    @Test func libraryPassKeepsTheRowsWhenTheMirrorStoodInForALaterPage() {
-        // The mirror's fallback repeats its start.
+    @Test func libraryPassNeverPrunesWhenTheServerMissedAPage() {
+        // A 500 on the first page, its replica's cursor used, later pages fresh to the
+        // end. And a one-page library the replica answered with the server down.
+        #expect(CarPlayContent.libraryPassStep(allFresh: false, gained: true, next: nil, isFull: false) == .cutShort)
+        // The mirror's repeat, or a fresh terminal page after a page the server missed.
+        #expect(CarPlayContent.libraryPassStep(allFresh: false, gained: false, next: nil, isFull: false) == .cutShort)
+    }
+
+    @Test func libraryPassStopsAtAPageThatGainsNothingAndHasAnotherCursor() {
+        // A repeating cursor never grows the list, so the cap would never stop it.
+        #expect(CarPlayContent.libraryPassStep(allFresh: true, gained: false, next: "c2", isFull: false) == .cutShort)
         #expect(
-            CarPlayContent.libraryPassStep(cursor: "c1", isFresh: false, gained: false, next: nil, isFull: false)
-                == .cutShort
-        )
-        #expect(
-            CarPlayContent.libraryPassStep(cursor: "c1", isFresh: false, gained: false, next: "local:60", isFull: false)
-                == .cutShort
-        )
-        // A book the pass hadn't reached lets it walk the mirror, but never prune.
-        #expect(
-            CarPlayContent.libraryPassStep(cursor: "c1", isFresh: false, gained: true, next: "local:60", isFull: false)
-                == .read("local:60")
-        )
-        #expect(
-            CarPlayContent.libraryPassStep(cursor: "local:60", isFresh: false, gained: true, next: nil, isFull: false)
-                == .cutShort
-        )
-        #expect(
-            CarPlayContent.libraryPassStep(cursor: "c1", isFresh: false, gained: true, next: "local:60", isFull: true)
+            CarPlayContent.libraryPassStep(allFresh: false, gained: false, next: "local:60", isFull: false)
                 == .cutShort
         )
     }
 
-    @Test func libraryPassFromTheMirrorsFirstPageNeverPrunes() {
+    @Test func libraryPassFromTheMirrorNeverPrunesAtTheCap() {
         #expect(
-            CarPlayContent.libraryPassStep(cursor: nil, isFresh: false, gained: true, next: "local:60", isFull: true)
-                == .cutShort
+            CarPlayContent.libraryPassStep(allFresh: false, gained: true, next: "local:60", isFull: true) == .cutShort
         )
     }
 
@@ -216,22 +201,17 @@ struct CarPlayContentTests {
         )
     }
 
-    @Test func onlyALaterPageNotFromTheServerIsAFallback() {
-        #expect(CarPlayContent.isFallback(cursor: "c1", isFresh: false))
-        #expect(!CarPlayContent.isFallback(cursor: "c1", isFresh: true))
-        #expect(!CarPlayContent.isFallback(cursor: nil, isFresh: false))
+    @Test func libraryFirstPageFromTheMirrorDoesNotUpdateRowsAlreadyShown() {
+        // The replica wiped, the server unreachable: the mirror orders ties its own way.
+        let shown = ["a", "b", "c"].map(book)
+        let rows = CarPlayContent.libraryRows(read: ["b", "a"].map(book), shown: shown, keepingPlaces: true)
+        #expect(!CarPlayContent.updatesSections(shown: shown.map(\.uuid), next: rows.map(\.uuid), isNewMessage: false))
     }
 
     @Test func aFailedReadSaysSoOnlyWithNoRowsToKeep() {
         #expect(CarPlayContent.showsReadFailure(shown: nil as [Book]?))
         #expect(CarPlayContent.showsReadFailure(shown: [] as [Book]))
         #expect(!CarPlayContent.showsReadFailure(shown: [book("a")]))
-    }
-
-    @Test func aCoverTileIsDrawnWhenFinalOrWhenARowHasNoImage() {
-        #expect(CarPlayContent.drawsCover(isFinal: true, rowsWanting: 0))
-        #expect(CarPlayContent.drawsCover(isFinal: false, rowsWanting: 1))
-        #expect(!CarPlayContent.drawsCover(isFinal: false, rowsWanting: 0))
     }
 
     @Test func libraryPassKeepsTheRowsItHasNotReachedSoAnUnchangedListNeverChanges() {
@@ -294,22 +274,39 @@ struct CarPlayContentTests {
 
     @Test func accountIsForgottenForAnotherSessionWhenItsUserIDIsUnknown() {
         // A token that outlived its `me`, then someone signing in on the phone.
-        let held = account(nil, session: "session-1")
-        #expect(CarPlayContent.sameAccount(held: held, signedIn: account(2, session: "session-2")) == nil)
-        #expect(CarPlayContent.sameAccount(held: held, signedIn: account(nil, session: "session-2")) == nil)
-        #expect(CarPlayContent.sameAccount(held: account(1), signedIn: account(nil, session: "session-2")) == nil)
+        let held = account(nil, session: 1)
+        #expect(CarPlayContent.sameAccount(held: held, signedIn: account(2, session: 2)) == nil)
+        #expect(CarPlayContent.sameAccount(held: held, signedIn: account(nil, session: 2)) == nil)
+        #expect(CarPlayContent.sameAccount(held: account(1), signedIn: account(nil, session: 2)) == nil)
     }
 
     @Test func accountSurvivesANewTokenForTheSameKnownUser() {
-        let renewed = account(1, session: "session-2")
+        let renewed = account(1, session: 2)
         #expect(CarPlayContent.sameAccount(held: account(1), signedIn: renewed) == renewed)
     }
 
-    @Test func sessionIDTellsTokensApartWithoutHoldingThem() {
-        let one = APIClient.sessionID(of: "token-one")
-        #expect(one == APIClient.sessionID(of: "token-one"))
-        #expect(one != APIClient.sessionID(of: "token-two"))
-        #expect(!one.contains("token-one"))
+    @Test func sessionGenerationMovesWhenTheTokensValueChangesAndNotAtLaunch() async {
+        // Loaded first, so the keychain writes below can't reach the shared client.
+        _ = await APIClient.shared.hasToken()
+        let stored = TokenStore.load()
+        defer {
+            if let stored { TokenStore.save(stored) } else { TokenStore.clear() }
+        }
+        TokenStore.save("token-one")
+        // What a launch does, and a car connecting after it sees no new session.
+        let client = APIClient()
+        let atLaunch = await client.sessionGeneration()
+        #expect(atLaunch == 0)
+        await client.setToken("token-one")
+        #expect(await client.sessionGeneration() == atLaunch)
+        await client.setToken("token-two")
+        let second = await client.sessionGeneration()
+        #expect(second != nil && second != atLaunch)
+        await client.setToken(nil)
+        #expect(await client.sessionGeneration() == nil)
+        await client.setToken("token-one")
+        let third = await client.sessionGeneration()
+        #expect(third != nil && third != atLaunch && third != second)
     }
 
     @Test func accountIsForgottenForAnotherKnownUserOrAnotherServer() {

@@ -156,9 +156,9 @@ final class CarPlayController: NSObject, CPInterfaceControllerDelegate {
 
     /// The account signed in on the phone, or `nil` when no one is.
     private static func signedInAccount() async -> CarPlayContent.Account? {
-        guard let server = ServerURLStore.load(), let session = await APIClient.shared.sessionID() else {
-            return nil
-        }
+        guard let server = ServerURLStore.load(),
+              let session = await APIClient.shared.sessionGeneration()
+        else { return nil }
         return CarPlayContent.Account(
             server: server, userID: await AuthService.localMe()?.id, session: session
         )
@@ -225,15 +225,18 @@ final class CarPlayController: NSObject, CPInterfaceControllerDelegate {
     private func readContinue() async {
         var answered = false
         do {
-            for try await answer in UserDataService.recentAudio() {
+            for try await answer in UserDataService.recentAudio(confirmsAnswer: true) {
                 guard !Task.isCancelled else { return }
-                answered = true
-                continuePoints = Array(
+                let points = Array(
                     answer.value.filter(\.isAudio).prefix(UserDataService.recentAudioLimit)
                 )
+                guard CarPlayContent.showsAtOnce(points, isFresh: answer.isFresh) else { continue }
+                answered = true
+                continuePoints = points
                 renderContinue()
             }
-            // A save queued during the fetch ends the read with no replica to offer.
+            // Ended with nothing to show: no replica, as when a save queued during
+            // the fetch, or an empty one the server never confirmed.
             if answered { return }
         } catch {
             // Handled below, as no answer is.
@@ -278,9 +281,11 @@ final class CarPlayController: NSObject, CPInterfaceControllerDelegate {
         let cap = CPListTemplate.maximumItemCount
         var books: [Book] = []
         var cursor: String?
+        var allFresh = true
         while let page = await readLibraryPage(at: cursor, after: books, cap: cap) {
+            allFresh = allFresh && page.isFresh
             let step = CarPlayContent.libraryPassStep(
-                cursor: cursor, isFresh: page.isFresh, gained: page.books.count > books.count,
+                allFresh: allFresh, gained: page.books.count > books.count,
                 next: page.next, isFull: page.books.count >= cap
             )
             books = page.books
@@ -303,7 +308,7 @@ final class CarPlayController: NSObject, CPInterfaceControllerDelegate {
 
     /// The page at `cursor` added to `read`, by its last answer. Each answer
     /// shows as it lands — the replica's before the server's — save the one
-    /// `CarPlayContent.showsAtOnce` holds back, shown only if nothing follows it.
+    /// `CarPlayContent.showsAtOnce` holds back.
     private func readLibraryPage(
         at cursor: String?, after read: [Book], cap: Int
     ) async -> (books: [Book], next: String?, isFresh: Bool)? {
@@ -312,16 +317,13 @@ final class CarPlayController: NSObject, CPInterfaceControllerDelegate {
         do {
             for try await answer in LibraryService.page(
                 sort: .newestAdded, direction: .desc,
-                filter: LibraryCategory.audiobooks.filter, cursor: cursor
+                filter: LibraryCategory.audiobooks.filter, cursor: cursor, confirmsAnswer: true
             ) {
                 guard !Task.isCancelled else { return nil }
                 let books = CarPlayContent.appending(answer.value.books, to: read)
                 last = (books, answer.value.nextCursor, answer.isFresh)
                 heldBack = !CarPlayContent.showsAtOnce(books, isFresh: answer.isFresh)
-                if !heldBack {
-                    let keepingPlaces = CarPlayContent.isFallback(cursor: cursor, isFresh: answer.isFresh)
-                    showLibrary(books, keepingPlaces: keepingPlaces, cap: cap)
-                }
+                if !heldBack { showLibrary(books, keepingPlaces: !answer.isFresh, cap: cap) }
             }
         } catch {
             // An empty replica the failure stands behind answered nothing;
@@ -337,12 +339,11 @@ final class CarPlayController: NSObject, CPInterfaceControllerDelegate {
             }
             return nil
         }
-        if heldBack { showLibrary(last.books, cap: cap) }
         return last
     }
 
     /// What a pass has read so far, ahead of the rows it hasn't reached.
-    private func showLibrary(_ read: [Book], keepingPlaces: Bool = false, cap: Int) {
+    private func showLibrary(_ read: [Book], keepingPlaces: Bool, cap: Int) {
         let rows = CarPlayContent.libraryRows(read: read, shown: libraryBooks, keepingPlaces: keepingPlaces)
         libraryBooks = Array(rows.prefix(cap))
         renderLibrary()
@@ -526,7 +527,7 @@ final class CarPlayController: NSObject, CPInterfaceControllerDelegate {
             .compactMap { $0 }
             .filter { isFinal || $0.image == nil }
         // Square: the shape of the row's image slot, and of most audiobook art.
-        guard CarPlayContent.drawsCover(isFinal: isFinal, rowsWanting: rows.count),
+        guard isFinal || !rows.isEmpty,
               let tile = CoverBitmap.render(
                   CoverIdentity(book), art: art, size: CPListItem.maximumImageSize,
                   cornerRadius: 4, scale: scale
@@ -586,12 +587,9 @@ final class CarPlayController: NSObject, CPInterfaceControllerDelegate {
             // with the progress from before it. Save a connect's, just begun.
             if !isFirstAppear { reloadContinue() }
         } else if aTemplate === libraryList {
-            if libraryRereads {
-                reloadLibrary()
-            } else {
-                // Greying and covers can change while away; the rows only on a re-read.
-                renderLibrary()
-            }
+            // Greying and covers can change while away; the rows only on a re-read.
+            renderLibrary()
+            if libraryRereads { reloadLibrary() }
         }
     }
 }

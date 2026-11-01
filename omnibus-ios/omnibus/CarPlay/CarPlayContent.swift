@@ -53,25 +53,18 @@ enum CarPlayContent {
 
     /// Whether a first-page answer goes on screen as it lands. An empty one
     /// from the replica waits for the server: on a fresh sign-in the replica
-    /// has nothing yet, and "No audiobooks" mustn't stand in for a page loading.
-    static func showsAtOnce(_ books: [Book], isFresh: Bool) -> Bool {
-        isFresh || !books.isEmpty
+    /// has nothing yet, and an empty list's message mustn't stand in for a page loading.
+    static func showsAtOnce<Row>(_ rows: [Row], isFresh: Bool) -> Bool {
+        isFresh || !rows.isEmpty
     }
 
     /// The Library list while a pass reads: what it has so far, then the rows
     /// it hasn't reached. Without them a re-read would shrink a long list to
     /// one page and grow it back, an update each way, for nothing that changed.
-    /// `keepingPlaces` is for a failed read's fallback: rows on screen stay
-    /// where they are, and only what they lack goes on, after them.
+    /// `keepingPlaces` is for an answer the server didn't give: rows on screen
+    /// stay where they are, and only what they lack goes on, after them.
     static func libraryRows(read: [Book], shown: [Book]?, keepingPlaces: Bool = false) -> [Book] {
         keepingPlaces ? appending(read, to: shown ?? []) : appending(shown ?? [], to: read)
-    }
-
-    /// Whether a Library answer is the mirror's, standing in for a later page
-    /// the server didn't answer. A first page can't say: `Cache.live` doesn't
-    /// repeat a server answer identical to the replica, so that ends non-fresh too.
-    static func isFallback(cursor: String?, isFresh: Bool) -> Bool {
-        cursor != nil && !isFresh
     }
 
     /// Where a Library pass goes after a page.
@@ -85,17 +78,16 @@ enum CarPlayContent {
         case cutShort
     }
 
-    /// `gained` is whether the page added a book; `isFull`, whether the list has
-    /// reached the car's cap. A fallback starts over from the mirror's top, so
-    /// one with nothing new would only repeat itself; a fresh page always has
-    /// its say, as an empty one is how the server ends a list that shrank.
+    /// `allFresh` is whether the server answered every page so far, this one
+    /// included; `gained`, whether this page added a book; `isFull`, whether the
+    /// list has reached the car's cap. A page with nothing new and a cursor only
+    /// repeats itself, while a fresh one with no cursor is how the server ends a
+    /// list that shrank. The mirror's pages read on, but can't finish a pass.
     static func libraryPassStep(
-        cursor: String?, isFresh: Bool, gained: Bool, next: String?, isFull: Bool
+        allFresh: Bool, gained: Bool, next: String?, isFull: Bool
     ) -> LibraryPassStep {
-        let mirrorAnswered = isFallback(cursor: cursor, isFresh: isFresh)
-        if mirrorAnswered && !gained { return .cutShort }
-        if let next, !isFull { return .read(next) }
-        return mirrorAnswered || LibraryIndex.offset(fromCursor: next) != nil ? .cutShort : .finished
+        if let next, gained, !isFull { return .read(next) }
+        return allFresh && (next == nil || gained) ? .finished : .cutShort
     }
 
     /// Whether a failed read says so: only with no rows to keep, as an empty
@@ -111,12 +103,6 @@ enum CarPlayContent {
         !isReading && (cutShort || showsReadFailure(shown: shown))
     }
 
-    /// Whether a cover tile is worth drawing: a final one is kept for rows to
-    /// come, a stand-in only serves rows with no image yet.
-    static func drawsCover(isFinal: Bool, rowsWanting: Int) -> Bool {
-        isFinal || rowsWanting > 0
-    }
-
     /// Whether a list takes an `updateSections`, which sends it back to its top
     /// and can cost a tapped row its spinner: when which rows it holds, or
     /// their order, changed, or when an empty list has a new message to draw.
@@ -130,8 +116,8 @@ enum CarPlayContent {
         var server: String
         /// `nil` while no `me` is cached: a token can outlive it.
         var userID: Int64?
-        /// `APIClient.sessionID()`: who it is while the id isn't known.
-        var session: String
+        /// `APIClient.sessionGeneration()`: who it is while the id isn't known.
+        var session: Int
     }
 
     /// `held` with what `signedIn` adds to it, or `nil` when `signedIn` is

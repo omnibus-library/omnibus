@@ -6,7 +6,6 @@
 //  transport failure marks the client offline so the cache layer can serve
 //  reads without waiting on a timeout.
 
-import CryptoKit
 import Foundation
 
 enum APIError: LocalizedError {
@@ -67,7 +66,11 @@ actor APIClient {
     static let shared = APIClient()
 
     private var baseURL: String?
-    private var token: String?
+    // Not run for `init`'s load: the launch's token is the session a car first sees.
+    private var token: String? {
+        didSet { if token != oldValue { tokenGeneration += 1 } }
+    }
+    private var tokenGeneration = 0
     private(set) var isOnline = true
 
     /// While set, requests fail immediately instead of dialling a server that
@@ -147,12 +150,8 @@ actor APIClient {
 
     func currentBaseURL() -> String? { baseURL }
     func hasToken() -> Bool { token != nil }
-    /// What tells this session from another, safe to hold where the token isn't.
-    func sessionID() -> String? { token.map(Self.sessionID(of:)) }
-
-    static func sessionID(of token: String) -> String {
-        SHA256.hash(data: Data(token.utf8)).map { String(format: "%02x", $0) }.joined()
-    }
+    /// What tells this session from another within a launch, or `nil` with no token.
+    func sessionGeneration() -> Int? { token == nil ? nil : tokenGeneration }
 
     /// Absolute URL for a server-relative path (covers, audio parts, EPUB
     /// files). Returns `nil` before a server is configured.

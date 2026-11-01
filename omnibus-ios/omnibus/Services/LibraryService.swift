@@ -7,7 +7,6 @@
 //  warm one until something actually needs the network.
 
 import Foundation
-import os
 
 /// Declaration order is the picker's order, and mirrors the web toolbar's
 /// `SORT_KEYS`. Raw values are the shared wire vocabulary
@@ -104,11 +103,13 @@ enum LibraryService {
     /// past the first page offline reaches the rest of the shelf instead of a
     /// wall. A cursor the index minted (`local:<offset>`) is served from the
     /// index without trying the network at all — the server has never seen it.
+    /// `confirmsAnswer`: see `firstPage`.
     static func page(
         sort: SortKey,
         direction: SortDirection,
         filter: LibraryFilter,
-        cursor: String?
+        cursor: String?,
+        confirmsAnswer: Bool = false
     ) -> AsyncThrowingStream<CacheRead<LibraryPageResult>, Error> {
         let query = pageQuery(
             sort: sort, direction: direction, formats: filter.formats,
@@ -134,7 +135,7 @@ enum LibraryService {
             }
         }
 
-        return firstPage(signature: signature) {
+        return firstPage(signature: signature, confirmsAnswer: confirmsAnswer) {
             let (library, next, hidden): (EbookLibrary, String?, Int64?) =
                 try await APIClient.shared.getPagedCounted("/api/ebooks", query: query)
             return LibraryPageResult(
@@ -237,29 +238,27 @@ enum LibraryService {
 
     /// The first page: replica, then server, then — if the server can't be
     /// reached and nothing was cached — the mirror. The last hop is what makes
-    /// a cold launch offline show a library instead of an error. An empty
-    /// replica counts as nothing cached until the server has confirmed it.
+    /// a cold launch offline show a library instead of an error.
+    ///
+    /// `confirmsAnswer` is `Cache.live`'s, so a last answer not fresh means the
+    /// server's never landed. An empty one then counts as nothing cached too;
+    /// off, it stands, as an empty filter or library cached offline should.
     static func firstPage(
         signature: String,
+        confirmsAnswer: Bool = false,
         fetch: @escaping @Sendable () async throws -> LibraryPageResult,
         fallback: @escaping @Sendable () async throws -> LibraryPageResult
     ) -> AsyncThrowingStream<CacheRead<LibraryPageResult>, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
-                // `Cache.live` doesn't repeat an identical answer, so only `fetch`
-                // can tell an empty library from an empty replica nobody confirmed.
-                let serverAnswered = OSAllocatedUnfairLock(initialState: false)
                 var delivered = false
                 var lastIsEmptyReplica = false
                 var failure: Error?
                 do {
                     let live = Cache.live(
-                        CacheKey.libraryPage(signature), storing: { $0.withoutViewerState }
-                    ) {
-                        let page = try await fetch()
-                        serverAnswered.withLock { $0 = true }
-                        return page
-                    }
+                        CacheKey.libraryPage(signature), storing: { $0.withoutViewerState },
+                        confirmsAnswer: confirmsAnswer, fetch: fetch
+                    )
                     for try await read in live {
                         delivered = true
                         lastIsEmptyReplica = !read.isFresh && read.value.books.isEmpty
@@ -268,7 +267,7 @@ enum LibraryService {
                 } catch {
                     failure = error
                 }
-                let unconfirmed = lastIsEmptyReplica && !serverAnswered.withLock { $0 } && !Task.isCancelled
+                let unconfirmed = confirmsAnswer && lastIsEmptyReplica && !Task.isCancelled
                 if unconfirmed || (failure != nil && !delivered) {
                     await settle(after: failure ?? APIError.offline, with: fallback, into: continuation)
                 } else {
