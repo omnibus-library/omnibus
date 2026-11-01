@@ -1,17 +1,12 @@
 //  WishlistSection.swift
 //  The wording behind a wishlisted book on the page: where the entry came from,
-//  what is being tracked, and what removing it costs. The way off the wishlist
-//  lives in the page's More menu, behind a confirmation the web button doesn't
-//  ask for, since a mis-tap here has nothing to undo it with.
+//  and what removing it costs. The way off the wishlist lives in the page's More
+//  menu, behind a confirmation the web button doesn't ask for, since a mis-tap
+//  here has nothing to undo it with.
 
 import Foundation
 
 enum WishlistCopy {
-    /// The stage's line under a wishlisted book's title.
-    static func trackingLine(since addedAt: Int64, now: Date = Date()) -> String {
-        "Tracking since \(DetailFormat.day(unix: addedAt, now: now)). Check it in when you find a copy."
-    }
-
     /// Human phrase for where an entry came from. Mirrors `source_label` on
     /// the web page.
     static func sourceLabel(_ source: WishlistSource) -> String {
