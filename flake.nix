@@ -76,6 +76,11 @@
           # are fetched from one cache instead of each worktree's target/
           # rebuilding (and incrementally re-caching) the same dependency tree.
           pkgs.sccache
+          # Structural CSS linter for `just lint-css` / the css-lint CI job.
+          # Lives in slim (not webExtras) because it's a lint tool that runs
+          # in the same `just lint` shell as fmt/clippy; the nixpkgs build is
+          # self-contained (bundles its own node), so this adds no npm project.
+          pkgs.stylelint
           # Coverage driver for `just coverage` / the CI coverage job. Wraps the
           # LLVM source-based instrumentation; pairs with the llvm-tools-preview
           # component in rustCore. In slim because it runs the same native test

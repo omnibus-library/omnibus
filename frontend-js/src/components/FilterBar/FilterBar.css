@@ -315,6 +315,7 @@
   .fb-clear,
   .fb-save {
     flex: none;
+    height: 34px;
   }
   .fb-scrim {
     background: color-mix(in oklch, black 55%, transparent);
@@ -338,10 +339,5 @@
   }
   .fb-facet-wrap > .fb-pop .fb-opt {
     min-height: 44px;
-  }
-  .fb-facet-wrap,
-  .fb-clear,
-  .fb-save {
-    height: 34px;
   }
 }

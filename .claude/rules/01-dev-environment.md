@@ -13,7 +13,7 @@ The flake exposes four purpose-built shells so daily cargo work doesn't pay for 
 
 | Shell | Headline tools | When to use |
 |---|---|---|
-| `default` (slim) | rust core (+ `llvm-tools-preview`) + sqlite + openssl + just + zellij + process-compose + cargo-llvm-cov + cargo-nextest + luajit | Daily `cargo test`/`clippy`/`fmt`, editor, rust-analyzer, `just lint`, `just coverage`, `just koreader-plugin-test` — this is what direnv auto-loads via `.envrc` |
+| `default` (slim) | rust core (+ `llvm-tools-preview`) + sqlite + openssl + just + zellij + process-compose + stylelint + cargo-llvm-cov + cargo-nextest + luajit | Daily `cargo test`/`clippy`/`fmt`, editor, rust-analyzer, `just lint`, `just lint-css`, `just coverage`, `just koreader-plugin-test` — this is what direnv auto-loads via `.envrc` |
 | `web` | default + node + pnpm + ffmpeg + kepubify | `just dev-up` (it builds the React client), `just react`, the `frontend-js/` checks, anything that drives the Playwright npm project |
 | `e2e` | web + Playwright Chromium bundle | `pnpm exec playwright test`, `just lint-ts`, `just e2e-ci`, the `playwright` pane in the multiplexer, CI's E2E job |
 | `audit` | default + cargo-audit + cargo-deny | Local `cargo audit` / `cargo deny`, mirrors CI's security job |
@@ -31,7 +31,7 @@ If a task requires a new system dependency, add it to [flake.nix](../../flake.ni
 
 ## Cached dev-env for hot recipes
 
-Each `nix develop` invocation re-copies the flake source into `/nix/store` and re-evaluates the flake. To avoid paying that on every `just` run, the hot recipes (`dev-up`, `dev-bounce`, `lint`, `test`) go through [`scripts/with-dev-env.sh`](../../scripts/with-dev-env.sh) `<shell> <cmd…>` instead: it captures `nix print-dev-env .#<shell>` once, cached under `.claude/runtime/nix-env-cache/` keyed on `sha256(flake.nix + flake.lock + shell)`, then sources it (re-running the shellHook, so per-workspace `PORT`/`.env`/sccache stay live) and execs the command. On a cache hit this skips Nix entirely; only a flake edit — or a `nix store gc` collecting a referenced path (the wrapper spot-checks and self-heals) — forces a rebuild. Interactive shells and the multiplexer paths stay on plain `nix develop`. Escape hatches: `OMNIBUS_NO_ENV_CACHE=1` bypasses the cache; `just env-clear` deletes it.
+Each `nix develop` invocation re-copies the flake source into `/nix/store` and re-evaluates the flake. To avoid paying that on every `just` run, the hot recipes (`dev-up`, `dev-bounce`, `lint`, `lint-css`, `test`) go through [`scripts/with-dev-env.sh`](../../scripts/with-dev-env.sh) `<shell> <cmd…>` instead: it captures `nix print-dev-env .#<shell>` once, cached under `.claude/runtime/nix-env-cache/` keyed on `sha256(flake.nix + flake.lock + shell)`, then sources it (re-running the shellHook, so per-workspace `PORT`/`.env`/sccache stay live) and execs the command. On a cache hit this skips Nix entirely; only a flake edit — or a `nix store gc` collecting a referenced path (the wrapper spot-checks and self-heals) — forces a rebuild. Interactive shells and the multiplexer paths stay on plain `nix develop`. Escape hatches: `OMNIBUS_NO_ENV_CACHE=1` bypasses the cache; `just env-clear` deletes it.
 
 ## Test fixtures
 
@@ -42,6 +42,10 @@ just fixtures    # one-time download; instant no-op thereafter
 ```
 
 `just test` runs it automatically; Playwright's `globalSetup` and the `db` public-domain tests fail with a "run `just fixtures`" pointer when missing. Publishing a new fixture set: `scripts/publish-fixtures.sh v<N>` (see [test_data/epubs/README.md](../../test_data/epubs/README.md)).
+
+## CSS structural lint
+
+`stylelint` lives in the slim shell so `just lint` (which runs `just lint-css`) and the `css-lint.yml` CI job both guard `frontend-js/src/**/*.css` against structural errors — chiefly an unclosed `}`, which under CSS nesting silently reparents every following rule as a descendant of the unclosed selector and breaks layouts the build never exercises. The ruleset ([`.stylelintrc.json`](../../.stylelintrc.json)) is parse/structural-only, so it errors on broken CSS but never nags about pre-existing style. Its one check beyond parsing is `no-duplicate-selectors`: a selector declared twice in one stylesheet (within one at-rule context) is an error, because the later block overrides the earlier one from out of sight. Fold the two into one block only where nothing between them can change the cascade for the declarations that move; where something can, or the split is deliberate, keep it behind `/* stylelint-disable-next-line no-duplicate-selectors -- <reason> */`. Run `just lint-css` to check just the CSS.
 
 ## Code coverage
 

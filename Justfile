@@ -186,6 +186,14 @@ coverage-html: fixtures
         cargo llvm-cov nextest --no-report -p omnibus-mock-kobo && \
         cargo llvm-cov report --html --open'
 
+# Structural CSS lint — stylelint over the React client's stylesheets, scoped to
+# parse / structural errors (unclosed rules, misplaced @import, a selector
+# declared twice in one stylesheet), not style.
+# An unclosed `}` silently reparents later rules under CSS nesting, so a
+# missing brace must fail the build. stylelint is Nix-pinned in slimPackages.
+lint-css:
+    scripts/with-dev-env.sh default stylelint 'frontend-js/src/**/*.css'
+
 # TypeScript lint + format-check + typecheck for the Playwright project.
 # Biome (formatter + linter, config in ui_tests/playwright/biome.json) is the
 # single source of truth, pinned as a pnpm devDependency; `tsc --noEmit` runs
@@ -234,8 +242,9 @@ openapi: openapi-gen
 # Format check + clippy, including the crates a bare `cargo clippy`
 # (default-members) misses. `-D warnings` on every invocation mirrors CI's
 # clippy job (.github/workflows/rust.yml) so a clean local run can't go on to
-# fail in CI.
-lint:
+# fail in CI. Depends on `lint-css` so the CSS structural guard rides the same
+# gate as fmt/clippy.
+lint: lint-css
     scripts/with-dev-env.sh default bash -ec '\
         cargo fmt --check && \
         cargo clippy --all-targets -- -D warnings && \

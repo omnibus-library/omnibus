@@ -185,7 +185,7 @@
     right: 0;
     bottom: 0;
     width: auto;
-    max-height: 78vh;
+    max-height: 92vh;
     border-left: 0;
     border-top: 1px solid var(--line-2);
     border-radius: 20px 20px 0 0;
@@ -204,9 +204,6 @@
   }
   .rd-desktop-only {
     display: none;
-  }
-  .rd-drawer.rd-quote-drawer {
-    max-height: 92vh;
   }
   .rd-quote-actions > .btn {
     flex: 1;

@@ -1,0 +1,109 @@
+name: CSS Lint
+
+# Structural guard for the React client's stylesheets. A single missing `}`
+# in frontend-js/src silently reparents every following rule as a
+# CSS-nesting descendant of the unclosed selector, so those rules stop
+# matching — a class of bug the build never exercises and Rust CI can't
+# see. stylelint's parser turns that into an "Unclosed block" error. The
+# ruleset is deliberately parse/structural-only (see .stylelintrc.json), so
+# this never nags about pre-existing stylistic choices. Beyond parsing it
+# checks `@import` placement and rejects duplicate selectors: a selector
+# declared twice in one stylesheet lets the later block override the earlier
+# one out of sight.
+
+on:
+  # No workflow-level `paths:` filter: this workflow must run on EVERY PR so
+  # its `stylelint-required` gate always reports a status (a required check
+  # keyed on a path-filtered workflow never resolves on a PR that doesn't
+  # match, blocking the merge forever). Path gating moved into the `changes`
+  # job below; `stylelint` skips when no CSS input changed, and the gate treats
+  # skipped as pass.
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: css-lint-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  # Detect whether this PR touches anything stylelint cares about. On push (and
+  # any non-PR event) `stylelint` runs unconditionally, so this output is only
+  # consulted for pull_request events.
+  changes:
+    name: detect changes
+    runs-on: ubuntu-latest
+    # `pull-requests: read` so `dorny/paths-filter` can list the PR's changed
+    # files via the API under the workflow's `contents: read` (matches
+    # release.yml).
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      css: ${{ steps.filter.outputs.css }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            css:
+              - "frontend-js/src/**/*.css"
+              - ".stylelintrc.json"
+              - ".github/workflows/css-lint.yml"
+              - "flake.nix"
+              - "flake.lock"
+
+  stylelint:
+    name: stylelint
+    needs: changes
+    if: ${{ needs.changes.outputs.css == 'true' || github.event_name != 'pull_request' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # See rust.yml: id-token for the Nix installer's FlakeHub OIDC auth,
+      # actions:write for cache-nix-action's `purge: true` self-eviction.
+      id-token: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v22
+
+      # Distinct nix cache prefix from rust.yml/e2e.yml so the workflows
+      # don't clobber each other. The slim shell realizes stylelint only.
+      - name: Cache Nix store
+        uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-css-${{ runner.os }}-${{ hashFiles('flake.lock', 'flake.nix') }}
+          restore-prefixes-first-match: nix-css-${{ runner.os }}-
+          purge: true
+          purge-prefixes: nix-css-${{ runner.os }}-
+          purge-last-accessed: 604800
+          purge-primary-key: never
+          gc-max-store-size-linux: 2G
+
+      - name: stylelint (structural CSS lint)
+        run: nix develop --command stylelint 'frontend-js/src/**/*.css'
+
+  # The required status check for this workflow. Always runs (no paths filter +
+  # `if: always()`), so branch protection gets a resolved status on every PR —
+  # green when `stylelint` passed or was skipped, red when it failed. Mark ONLY
+  # `🔒 Stylelint Required` as required in branch protection; do not require the
+  # `stylelint` job directly (it skips on non-CSS PRs and would hang the merge).
+  stylelint-required:
+    name: 🔒 Stylelint Required
+    needs: [changes, stylelint]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: seamus-sloan/gh-actions/ci-gate@ci-gate-v1
+        with:
+          needs: ${{ toJSON(needs) }}

@@ -66,6 +66,7 @@ review. CI runs the same checks and all of them are required to merge:
 | Clippy | `cargo clippy -D warnings` across every crate and target |
 | Cargo Test | the full test matrix (`just test`) |
 | Cargo Audit | RustSec advisory scan of `Cargo.lock` |
+| Stylelint | structural CSS lint of the React client's stylesheets |
 | TS Lint | biome + `tsc --noEmit` for Playwright |
 | Playwright | end-to-end browser tests |
 | iOS Tests | the `omnibusTests` unit suite and the `omnibusUITests` UI suite |
