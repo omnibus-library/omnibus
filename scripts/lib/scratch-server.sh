@@ -28,11 +28,6 @@ label="${label:-scratch-server}"
 HEALTH_TIMEOUT_SECS=120
 
 build_server() {
-    # A binary someone else built (another worktree's, CI's): run it as is.
-    if [ -n "${OMNIBUS_E2E_BUNDLE_DIR:-}" ]; then
-        server_bin="$OMNIBUS_E2E_BUNDLE_DIR/omnibus"
-        return
-    fi
     : "${CARGO_TARGET_DIR:?run this through \`just e2e-ci\` / \`just koreader-e2e\`, inside the nix dev shell}"
     local profile_args=() profile=debug
     if [ "${OMNIBUS_E2E_RELEASE:-}" = 1 ]; then

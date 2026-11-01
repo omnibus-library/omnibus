@@ -47,6 +47,7 @@ jobs:
               - "shared/**"
               - "server/**"
               - "db/**"
+              - "mcp/**"
               # The KOReader plugin, embedded in the server by `include_str!`.
               - "koreader/**"
               - "ui_tests/playwright/**"
@@ -81,7 +82,7 @@ jobs:
       - name: Compute server cache key
         id: server-key
         run: |
-          key="server-bin-${{ runner.os }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'flake.lock', 'flake.nix', 'shared/**', 'server/**', 'db/**', 'koreader/**', '.github/workflows/e2e.yml') }}"
+          key="server-bin-${{ runner.os }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'flake.lock', 'flake.nix', 'shared/**', 'server/**', 'db/**', 'mcp/**', 'koreader/**', '.github/workflows/e2e.yml') }}"
           echo "key=$key" >> "$GITHUB_OUTPUT"
 
       # Split restore + save so the save happens as a normal step right after
