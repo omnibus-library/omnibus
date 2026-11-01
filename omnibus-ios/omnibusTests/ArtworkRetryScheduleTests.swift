@@ -69,8 +69,7 @@ struct ArtworkRetryScheduleTests {
         #expect(schedule.fetchIsDue(at: start + .seconds(60)))
     }
 
-    /// A rebuild stops and restarts playback, updating Now Playing each time,
-    /// without a listener's play.
+    /// `noteCurrent` alone never lifts a wait, however often Now Playing updates.
     @Test func updatesWithoutAResumeLeaveTheWaitInPlace() {
         var schedule = failed(2)
         for _ in 0..<4 { schedule.noteCurrent(uuid: "a") }

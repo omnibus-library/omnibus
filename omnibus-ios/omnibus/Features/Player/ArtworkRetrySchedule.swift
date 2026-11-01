@@ -12,9 +12,11 @@
 //  fetch and the probe brings it back seconds later, so lifting every wait
 //  would keep fetching at the probe's pace for as long as the book plays.
 //
-//  A listener's play lifts any wait, and `AudioPlayer` reports it rather than
-//  the schedule inferring it from `isPlaying`: a stream that keeps failing
-//  restarts itself with each rebuild, which would then fetch every time.
+//  Any `play()` lifts a wait: a listener's tap, an interruption's end, a load's
+//  owed start. `AudioPlayer` reports it rather than the schedule inferring it
+//  from `isPlaying`: a stream that keeps failing restarts itself with each
+//  rebuild, through `startPlayback` rather than `play()`, and inferring would
+//  then fetch every time.
 
 /// One book's exponential wait between failed cover fetches.
 struct ArtworkRetrySchedule {
@@ -41,7 +43,7 @@ struct ArtworkRetrySchedule {
         retryAt = nil
     }
 
-    /// A listener's play lifts the wait; its failures still count towards the next.
+    /// Any `play()` lifts the wait; the failures so far still count towards the next.
     mutating func noteResumed() {
         retryAt = nil
     }

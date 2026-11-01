@@ -689,7 +689,7 @@ final class AudioPlayer {
     /// Start playback — or, with a load in flight, owe it the start, and with
     /// a book whose load failed, load it again.
     func play() {
-        // Here, not in `startPlayback`: a rebuild's own start is no resume.
+        // Every caller is a resume; a rebuild's own start takes `startPlayback` instead.
         if !isPlaying { artworkRetry.noteResumed() }
         pendingStarts.overruleCall()
         // Nothing to start yet: the load makes the start once it lands.
