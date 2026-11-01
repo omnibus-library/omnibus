@@ -129,7 +129,7 @@ export class LibraryPage extends BasePage {
     this.hiddenReceipt = page.locator(".lib-header-hidden");
     this.hiddenNote = page.getByRole("link", { name: /^Hidden: / });
     this.loading = page.getByTestId("lib-loading");
-    this.noMatchesMessage = page.getByText("No books match these filters.");
+    this.noMatchesMessage = page.getByTestId("lib-no-matches");
     this.clearFiltersButton = page.getByRole("button", {
       name: "Clear filters",
     });

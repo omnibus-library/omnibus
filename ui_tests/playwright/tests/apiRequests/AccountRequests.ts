@@ -3,10 +3,6 @@ import { BaseRequests } from "./BaseRequests";
 
 /** The context's user's own account: switches, profile, devices and tokens. */
 export class AccountRequests extends BaseRequests {
-  postScrollStops(enabled: boolean): Promise<APIResponse> {
-    return this.post("/api/account/book-detail-scroll-stops", { enabled });
-  }
-
   postShareStats(enabled: boolean): Promise<APIResponse> {
     return this.post("/api/account/share-stats", { enabled });
   }

@@ -471,6 +471,9 @@ test.describe("library filters", () => {
           slugsWhere((b) => authoredBy(b, "Alfred Aho") && hasFormat(b, "pdf")),
         );
         await expect(libraryPage.noMatchesMessage).toBeVisible();
+        await expect(libraryPage.noMatchesMessage).toContainText(
+          "No books match these filters.",
+        );
         await expect(libraryPage.emptyMessage).toHaveCount(0);
       });
     });

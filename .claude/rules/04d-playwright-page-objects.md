@@ -52,4 +52,4 @@ browser context signed in as them; `readerExpectMutation` is bound to that page
 and `readerRequest` makes the API calls. A household needs a second reader:
 `secondReaderAccount`, `secondReaderPage` and `secondReaderExpectMutation`.
 Because tests share the accounts, every fixture that changes one resets it on
-teardown (`presetStackSeries`, `presetScrollStops`).
+teardown (`presetStackSeries`, `presetShareStats`).
