@@ -208,10 +208,16 @@ struct CarPlayContentTests {
         #expect(!CarPlayContent.updatesSections(shown: shown.map(\.uuid), next: rows.map(\.uuid), isNewMessage: false))
     }
 
-    @Test func aFailedReadSaysSoOnlyWithNoRowsToKeep() {
+    @Test func aFailedReadSaysSoOnlyWhenNothingHasAnswered() {
         #expect(CarPlayContent.showsReadFailure(shown: nil as [Book]?))
-        #expect(CarPlayContent.showsReadFailure(shown: [] as [Book]))
+        // The server said it's empty, and a failure doesn't take that back.
+        #expect(!CarPlayContent.showsReadFailure(shown: [] as [Book]))
         #expect(!CarPlayContent.showsReadFailure(shown: [book("a")]))
+    }
+
+    @Test func listTheServerSaidIsEmptyKeepsItsMessageAndStillRereads() {
+        #expect(!CarPlayContent.showsReadFailure(shown: [] as [Book]))
+        #expect(CarPlayContent.rereads(shown: [] as [Book], isReading: false))
     }
 
     @Test func libraryPassKeepsTheRowsItHasNotReachedSoAnUnchangedListNeverChanges() {
@@ -285,27 +291,20 @@ struct CarPlayContentTests {
         #expect(CarPlayContent.sameAccount(held: account(1), signedIn: renewed) == renewed)
     }
 
-    @Test func sessionGenerationMovesWhenTheTokensValueChangesAndNotAtLaunch() async {
-        // Loaded first, so the keychain writes below can't reach the shared client.
-        _ = await APIClient.shared.hasToken()
-        let stored = TokenStore.load()
-        defer {
-            if let stored { TokenStore.save(stored) } else { TokenStore.clear() }
-        }
-        TokenStore.save("token-one")
+    @Test func sessionGenerationMovesWhenTheTokensValueChangesAndNotAtLaunch() {
         // What a launch does, and a car connecting after it sees no new session.
-        let client = APIClient()
-        let atLaunch = await client.sessionGeneration()
+        var session = TokenSession(token: "token-one")
+        let atLaunch = session.generation
         #expect(atLaunch == 0)
-        await client.setToken("token-one")
-        #expect(await client.sessionGeneration() == atLaunch)
-        await client.setToken("token-two")
-        let second = await client.sessionGeneration()
+        session.token = "token-one"
+        #expect(session.generation == atLaunch)
+        session.token = "token-two"
+        let second = session.generation
         #expect(second != nil && second != atLaunch)
-        await client.setToken(nil)
-        #expect(await client.sessionGeneration() == nil)
-        await client.setToken("token-one")
-        let third = await client.sessionGeneration()
+        session.token = nil
+        #expect(session.generation == nil)
+        session.token = "token-one"
+        let third = session.generation
         #expect(third != nil && third != atLaunch && third != second)
     }
 

@@ -12,16 +12,14 @@ import Testing
 
 /// The freshness of each answer a read over a replica holding `[1]` gives.
 private func freshness(
-    guardsWrites: Bool = false, confirmsAnswer: Bool,
+    confirmsAnswer: Bool,
     fetch: @escaping @Sendable () async throws -> [Int]
 ) async throws -> [Bool] {
     await OfflineStore.shared.open()
     let key = "test-live:\(UUID().uuidString)"
     await Cache.write(key, [1])
     var seen: [Bool] = []
-    for try await read in Cache.live(
-        key, guardsWrites: guardsWrites, confirmsAnswer: confirmsAnswer, fetch: fetch
-    ) {
+    for try await read in Cache.live(key, confirmsAnswer: confirmsAnswer, fetch: fetch) {
         seen.append(read.isFresh)
     }
     await OfflineStore.shared.cacheDelete(key)
@@ -35,7 +33,6 @@ struct CacheLiveTests {
 
     @Test func liveYieldsAnIdenticalAnswerAsFreshWhenAskedToConfirmIt() async throws {
         #expect(try await freshness(confirmsAnswer: true) { [1] } == [false, true])
-        #expect(try await freshness(guardsWrites: true, confirmsAnswer: true) { [1] } == [false, true])
     }
 
     @Test func liveYieldsADifferentAnswerAsFreshEitherWay() async throws {

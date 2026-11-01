@@ -90,17 +90,17 @@ enum CarPlayContent {
         return allFresh && (next == nil || gained) ? .finished : .cutShort
     }
 
-    /// Whether a failed read says so: only with no rows to keep, as an empty
-    /// list would claim there is nothing to list.
+    /// Whether a failed read says so: only when nothing has answered. Rows stay,
+    /// and so does the message on a list the server said is empty.
     static func showsReadFailure<Row>(shown: [Row]?) -> Bool {
-        shown?.isEmpty ?? true
+        shown == nil
     }
 
     /// Whether a list reads again with nothing new to prompt it, rather than
     /// keeping the rows it holds: only one with nothing on it, or whose last
     /// pass was cut short, and nothing loading.
     static func rereads<Row>(shown: [Row]?, isReading: Bool, cutShort: Bool = false) -> Bool {
-        !isReading && (cutShort || showsReadFailure(shown: shown))
+        !isReading && (cutShort || (shown?.isEmpty ?? true))
     }
 
     /// Whether a list takes an `updateSections`, which sends it back to its top

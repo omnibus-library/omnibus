@@ -99,11 +99,12 @@ re-read shows what it has read so far ahead of the rows it hasn't reached, so an
 unchanged library of any length never updates; the rows it didn't find go only
 when the server has answered every page of the pass through to its end. The car's
 reads turn on `Cache.live`'s `confirmsAnswer`, so an answer that isn't fresh means
-the server's never landed: it keeps the rows on screen in place, and a pass with
-one in it is cut short, so the list reads again the next time a session change or
-its tab asks. An empty answer the server never confirmed waits for it. A read that
-fails with rows on screen leaves them; with none it says it couldn't load, never
-that the list is empty.
+the server's never landed. In Library it keeps the rows on screen in place, and a
+pass with one in it is cut short, so the list reads again the next time a session
+change or its tab asks; Continue takes a replica's new order as it lands. An empty
+answer the server never confirmed waits for it. A read that fails leaves the rows
+on screen, or the message on a list the server said is empty; with nothing answered
+yet it says it couldn't load, never that the list is empty.
 
 **The entitlement.** `com.apple.developer.carplay-audio` in `omnibus.entitlements`
 is granted by Apple per team, and a device build signs only once the team's

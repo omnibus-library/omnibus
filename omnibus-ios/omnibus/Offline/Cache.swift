@@ -220,6 +220,7 @@ enum Cache {
     /// `confirmsAnswer` yields an answer the replica adopted as fresh even when it
     /// repeats the replica, so a last answer still not fresh means the server's
     /// never landed. For a caller that acts on that; others would only churn.
+    /// It doesn't apply with `guardsWrites`.
     static func live<T: Codable & Sendable>(
         _ key: String,
         storing: (@Sendable (T) -> T)? = nil,
@@ -251,7 +252,6 @@ enum Cache {
                     if guardsWrites {
                         try await revalidateGuarded(
                             key, cachedData: cachedData, storing: storing,
-                            confirmsAnswer: confirmsAnswer,
                             store: .shared, fetch: fetch, into: continuation
                         )
                         return
@@ -328,7 +328,6 @@ enum Cache {
         _ key: String,
         cachedData: Data?,
         storing: (@Sendable (T) -> T)? = nil,
-        confirmsAnswer: Bool = false,
         store: OfflineStore,
         fetch: @Sendable () async throws -> T,
         into continuation: AsyncThrowingStream<CacheRead<T>, Error>.Continuation
@@ -369,7 +368,7 @@ enum Cache {
                 // Nothing held at all: this answer is still the best there is.
             }
             guard !Task.isCancelled else { break }
-            if confirmsAnswer || freshData == nil || freshData != shown {
+            if freshData == nil || freshData != shown {
                 continuation.yield(CacheRead(value: fresh, isFresh: true))
             }
             break

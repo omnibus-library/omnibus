@@ -62,15 +62,29 @@ extension Notification.Name {
     static let omnibusConnectivityChanged = Notification.Name("omnibus.connectivity")
 }
 
+/// The bearer token, and what tells one session from another within a launch.
+struct TokenSession {
+    // Not run for `init`'s load: the launch's token is the session a car first sees.
+    var token: String? {
+        didSet { if token != oldValue { moves += 1 } }
+    }
+    private var moves = 0
+
+    init(token: String?) { self.token = token }
+
+    /// `nil` with no token.
+    var generation: Int? { token == nil ? nil : moves }
+}
+
 actor APIClient {
     static let shared = APIClient()
 
     private var baseURL: String?
-    // Not run for `init`'s load: the launch's token is the session a car first sees.
+    private var tokenSession: TokenSession
     private var token: String? {
-        didSet { if token != oldValue { tokenGeneration += 1 } }
+        get { tokenSession.token }
+        set { tokenSession.token = newValue }
     }
-    private var tokenGeneration = 0
     private(set) var isOnline = true
 
     /// While set, requests fail immediately instead of dialling a server that
@@ -130,7 +144,7 @@ actor APIClient {
         uploadConfig.requestCachePolicy = .reloadIgnoringLocalCacheData
         uploadSession = URLSession(configuration: uploadConfig)
         baseURL = ServerURLStore.load()
-        token = TokenStore.load()
+        tokenSession = TokenSession(token: TokenStore.load())
     }
 
     // MARK: - Configuration
@@ -151,7 +165,7 @@ actor APIClient {
     func currentBaseURL() -> String? { baseURL }
     func hasToken() -> Bool { token != nil }
     /// What tells this session from another within a launch, or `nil` with no token.
-    func sessionGeneration() -> Int? { token == nil ? nil : tokenGeneration }
+    func sessionGeneration() -> Int? { tokenSession.generation }
 
     /// Absolute URL for a server-relative path (covers, audio parts, EPUB
     /// files). Returns `nil` before a server is configured.

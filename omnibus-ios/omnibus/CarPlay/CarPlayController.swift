@@ -241,9 +241,8 @@ final class CarPlayController: NSObject, CPInterfaceControllerDelegate {
         } catch {
             // Handled below, as no answer is.
         }
-        // Rows on screen stay; an empty list would claim nothing is in progress.
+        // What has answered stays: rows, or the server's word that nothing is in progress.
         guard !Task.isCancelled, CarPlayContent.showsReadFailure(shown: continuePoints) else { return }
-        continuePoints = nil
         show([], whenEmpty: CarPlayContent.readFailed, on: continueList, listed: \.continueRows)
     }
 
@@ -332,9 +331,8 @@ final class CarPlayController: NSObject, CPInterfaceControllerDelegate {
         }
         guard !Task.isCancelled else { return nil }
         guard let last else {
-            // Rows on screen stay; an empty list would claim there are no audiobooks.
+            // What has answered stays: rows, or the server's word that there are no audiobooks.
             if CarPlayContent.showsReadFailure(shown: libraryBooks) {
-                libraryBooks = nil
                 show([], whenEmpty: CarPlayContent.readFailed, on: libraryList, listed: \.libraryRows)
             }
             return nil
