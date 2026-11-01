@@ -38,8 +38,18 @@ class ActorState:
             self._cache[slot] = fetch()
         return self._cache[slot]
 
+    def _require_book(self, uuid: str) -> None:
+        """Raise unless a book has this uuid, so an unknown one is unverifiable rather than "none"."""
+        def fetch() -> bool:
+            if self.client.get_json(f"/api/ebooks/{uuid}") is None:
+                raise ApiError(f"GET /api/ebooks/{uuid} -> HTTP 404: no book has that uuid")
+            return True
+
+        self._memo("book", uuid, fetch)
+
     # --- scalars ----------------------------------------------------------
     def rating(self, uuid: str) -> float | None:
+        self._require_book(uuid)
         rec = self._memo("rating", uuid, lambda: self.client.get_json(f"/api/ratings/{uuid}"))
         return None if not rec else rec.get("stars")
 
@@ -62,6 +72,7 @@ class ActorState:
         )
 
     def playback_rate(self, uuid: str) -> float | None:
+        self._require_book(uuid)
         rec = self._memo("rate", uuid, lambda: self.client.get_json(f"/api/audiobooks/{uuid}/playback-rate"))
         return None if not rec else rec.get("playback_rate")
 
