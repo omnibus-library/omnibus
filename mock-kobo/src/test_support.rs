@@ -67,11 +67,11 @@ pub struct Stub {
     pub sync_never_answers: bool,
     /// Hold the second `library_sync` page, already requested, until this is notified.
     pub second_page_gate: Option<Arc<Notify>>,
-    /// The `(name, token)` devices `POST /api/rpc/kobo/devices` lists, oldest first.
+    /// The `(name, token)` devices `GET /api/account/kobo-devices` lists, oldest first.
     pub devices: Vec<(String, String)>,
     /// The `(name, token)` KOReader devices listed after `devices`.
     pub koreader_devices: Vec<(String, String)>,
-    /// The status `POST /api/rpc/kobo/devices` answers a signed-in caller with.
+    /// The status `GET /api/account/kobo-devices` answers a signed-in caller with.
     pub devices_status: StatusCode,
     /// The status `POST /api/auth/login` answers with.
     pub login_status: StatusCode,
@@ -194,6 +194,13 @@ impl RunningStub {
                     .map(str::to_owned)
             })
             .collect()
+    }
+
+    /// The requests received with `method` at `path`, in order.
+    pub fn requests_with(&self, method: &str, path: &str) -> Vec<Recorded> {
+        let mut requests = self.requests_to(path);
+        requests.retain(|r| r.method == method);
+        requests
     }
 
     /// The paths requested so far, in order.
@@ -382,7 +389,7 @@ async fn handle(
         headers: headers.clone(),
         body: body.clone(),
     });
-    if let Some(response) = omnibus_api(&state, uri.path(), &headers, &body) {
+    if let Some(response) = omnibus_api(&state, &method, uri.path(), &headers, &body) {
         return response;
     }
     if let Some(response) = reading_services(&state, &method, uri.path()).await {
@@ -612,18 +619,22 @@ pub fn span_range() -> crate::annotations::SpanRange {
 }
 
 /// The Omnibus `/api` routes auto-wire calls: login, the device list and create, then logout.
-fn omnibus_api(state: &StubState, path: &str, headers: &HeaderMap, body: &str) -> Option<Response> {
+fn omnibus_api(
+    state: &StubState,
+    method: &Method,
+    path: &str,
+    headers: &HeaderMap,
+    body: &str,
+) -> Option<Response> {
     let signed_in = headers
         .get("authorization")
         .is_some_and(|value| value == format!("Bearer {SESSION_TOKEN}").as_str());
     match path {
         "/api/auth/login" => Some(login(state)),
         "/api/auth/logout" => Some(StatusCode::NO_CONTENT.into_response()),
-        "/api/rpc/kobo/devices" | "/api/rpc/kobo/devices/create" if !signed_in => {
-            Some(StatusCode::UNAUTHORIZED.into_response())
-        }
-        "/api/rpc/kobo/devices" => Some(list_devices(state)),
-        "/api/rpc/kobo/devices/create" => Some(create_device(body)),
+        "/api/account/kobo-devices" if !signed_in => Some(StatusCode::UNAUTHORIZED.into_response()),
+        "/api/account/kobo-devices" if method == Method::POST => Some(create_device(body)),
+        "/api/account/kobo-devices" => Some(list_devices(state)),
         _ => None,
     }
 }

@@ -25,9 +25,8 @@ pub fn hash_token(raw: &str) -> Vec<u8> {
 }
 
 /// Plain cookie name for cookie-mode sessions on plain-HTTP dev origins
-/// (loopback / LAN IPs without TLS). Centralized here so HTTP-side
-/// callers (server's `AuthUser` extractor + the rpc.rs body-side
-/// equivalent) don't drift apart.
+/// (loopback / LAN IPs without TLS). Centralized here so every HTTP-side
+/// caller reads and writes the same name.
 pub const SESSION_COOKIE_NAME: &str = "omnibus_session";
 
 /// `__Host-` prefixed cookie name used on HTTPS deployments (RFC 6265bis). The

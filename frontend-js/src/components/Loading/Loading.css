@@ -418,6 +418,7 @@
   gap: 22px;
   padding: 24px;
   background: var(--ld-stage-bg, var(--rd-page, var(--bg-0)));
+  animation: none;
 }
 .ld-stage.in-flow {
   position: relative;
@@ -438,9 +439,6 @@
   max-width: 26ch;
   text-wrap: balance;
   line-height: 1.2;
-}
-.ld-stage {
-  animation: none;
 }
 .ld-stage > * {
   animation: ld-enter 0.42s var(--ld-ease-out) var(--ld-hold) backwards;

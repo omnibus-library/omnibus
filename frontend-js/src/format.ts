@@ -276,7 +276,13 @@ export function formatStarted(unixSecs: number, timeZone?: string): string {
   return `${part("month")} ${part("day")}, ${part("year")} · ${part("hour")}:${part("minute")}`;
 }
 
-// shortcut: the UTC day, as the Dioxus tables cut it; switch to the reader's offset (rule 10) when both clients move.
+// shortcut: the UTC day, not the reader's offset (rule 10); switch once a reader far from UTC sees the wrong day.
 /** A Unix-seconds timestamp as `YYYY-MM-DD`, UTC. */
 export const utcDay = (unixSecs: number) =>
   new Date(unixSecs * 1000).toISOString().slice(0, 10);
+
+/** A build's version as the sign-in footer shows it: one leading `v` on a release, `dev` as is, and `dev` for a blank one. */
+export function versionLabel(raw: string): string {
+  const bare = raw.trim().replace(/^v+/, "") || "dev";
+  return /^\d/.test(bare) ? `v${bare}` : bare;
+}

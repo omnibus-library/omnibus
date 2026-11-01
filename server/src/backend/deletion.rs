@@ -1,8 +1,6 @@
 //! Admin book-deletion REST endpoints: what a book's delete dialog lists,
 //! and the delete itself. Thin HTTP shells over
-//! `db::book_deletion_manifest` / `db::delete_book_items` — the same helpers
-//! the web-facing `/api/rpc/books/{deletion-manifest,delete-files}` server
-//! functions call.
+//! `db::book_deletion_manifest` / `db::delete_book_items`.
 
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
@@ -41,8 +39,6 @@ pub(super) async fn get_deletion_manifest(
     State(state): State<AppState>,
     Path(uuid): Path<String>,
 ) -> Response {
-    // Repeats the `AdminUser` gate of `rpc_book_deletion_manifest` in
-    // `omnibus_frontend::rpc::books`; changing one side's gate means changing the other.
     match db::book_deletion_manifest(&state.pool, &uuid).await {
         Ok(m) => Json(BookDeletionManifest {
             files: m.files,
@@ -90,7 +86,6 @@ pub(super) async fn post_delete_book_files(
     Path(uuid): Path<String>,
     Json(req): Json<DeleteBookFilesRequest>,
 ) -> Response {
-    // Mirrors `rpc_delete_book_files`; same gate-parity note as `get_deletion_manifest`.
     match db::delete_book_items(&state.pool, &uuid, &req.file_ids, &req.copy_ids).await {
         Ok(out) => Json(DeleteBookFilesResult {
             deleted_file_ids: out.deleted_file_ids,

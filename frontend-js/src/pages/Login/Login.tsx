@@ -14,6 +14,7 @@ import { Button } from "../../components/Button/Button";
 import { Field } from "../../components/Field/Field";
 import { BusyLabel } from "../../components/Loading/Loading";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
+import { versionLabel } from "../../format";
 import { safeNext } from "../../safeNext";
 import { registrationQuery, startSession } from "../../session";
 
@@ -114,7 +115,9 @@ export function Login() {
             New here? <Link to="/register">Create an account</Link>
           </p>
         )}
-        <div className="auth-footer-note">omnibus · react proof of concept</div>
+        <div className="auth-footer-note">
+          omnibus · {versionLabel(__APP_VERSION__)}
+        </div>
       </form>
     </AuthShell>
   );

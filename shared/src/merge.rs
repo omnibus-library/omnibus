@@ -1,5 +1,4 @@
-//! Wire types for the admin book-merge surface (`/api/rpc/merge-books`
-//! and the REST mirror `/api/books/merge`).
+//! Wire types for the admin book-merge surface (`/api/books/merge`).
 
 use serde::{Deserialize, Serialize};
 

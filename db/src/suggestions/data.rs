@@ -2,7 +2,7 @@
 //! suggestions. Two tables back this (migration 0033): `book_suggestion_state`
 //! holds one TTL/`pending`/`resolved`/`empty`/`failed` marker per source book, and
 //! `book_suggestions` holds its 0..N cached result rows. Read by [`cascade`]
-//! and the suggestions RPC/REST handlers.
+//! and the suggestions REST handlers.
 
 use sqlx::SqlitePool;
 
@@ -65,7 +65,7 @@ impl SuggestionState {
 
 /// What the read path should do for a book, derived purely from its cache
 /// marker and the current time. `serve` = return whatever rows are cached;
-/// `enqueue` = post a (re)resolution task. The RPC marks `pending` before it
+/// `enqueue` = post a (re)resolution task. The handler marks `pending` before it
 /// posts so concurrent callers can't each enqueue.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CacheDecision {
@@ -223,7 +223,7 @@ pub async fn get_suggestion_cover(
 }
 
 /// Mark a book `pending` (upsert state + reset the `fetched_at` clock). Called
-/// by the RPC immediately *before* posting a resolution task so a burst of
+/// by the handler immediately *before* posting a resolution task so a burst of
 /// concurrent first-viewers collapses to a single posted job.
 pub async fn mark_pending(pool: &SqlitePool, book_uuid: &str) -> Result<(), SuggestionsDataError> {
     mark_state(pool, book_uuid, SuggestionState::Pending).await

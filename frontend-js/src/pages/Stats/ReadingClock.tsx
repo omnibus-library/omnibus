@@ -10,7 +10,7 @@ import {
 } from "./clock";
 import { hasTimePatterns } from "./summary";
 
-// Spelled out so tools/extract-atrium.cjs sees each class.
+// Spelled out so a search for each class name finds it.
 const TICK_CLASS = {
   hot: "st-clock-tick hot",
   warm: "st-clock-tick warm",

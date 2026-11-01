@@ -77,7 +77,7 @@ async fn resolve_and_cache(
 ) -> anyhow::Result<()> {
     // A sibling task (serialized behind us on the same resource key) may have
     // already produced a fresh result — skip the network work if so. We do NOT
-    // skip on `pending`: that's our own in-flight marker, set by the RPC.
+    // skip on `pending`: that's our own in-flight marker, set by the handler.
     if let Some((state, at)) = suggestion_state(pool, book_uuid).await? {
         if is_fresh(state, at, now_secs()) {
             return Ok(());

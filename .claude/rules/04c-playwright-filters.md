@@ -73,5 +73,4 @@ with the hand-picked `filterShelf` only that reader owns.
   asserted afterwards, never polled for.
 - The shelf a spec edits comes from `ownShelf`, whose `created*ShelfIds` set
   deletes it after the test, so the specs that count members never see it.
-- The phone bottom sheet is a viewport, not a build, and is covered by the
-  390px cases.
+- The phone bottom sheet is a viewport, not a build, and is covered.

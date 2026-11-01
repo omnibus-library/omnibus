@@ -1,4 +1,4 @@
-/** The anchor a comic page is saved under, the same string iOS and the Dioxus pager read. */
+/** The anchor a comic page is saved under, the same string iOS reads. */
 export const comicPageAnchor = (page: number) => `comic-page:${page}`;
 
 /** The 0-based page a `comic-page:N` anchor names; `null` for anything else, a CFI included. */

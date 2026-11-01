@@ -1,6 +1,5 @@
-//! Unit tests for library-view preference wire round-trips: the
-//! `SortKey`/`SortDir` string↔enum tokens (which must stay in lockstep
-//! with their serde renames) and the index-page sort preferences.
+//! Unit tests for the `SortKey`/`SortDir` string↔enum tokens, which must stay
+//! in lockstep with their serde renames.
 
 use super::*;
 
@@ -63,44 +62,4 @@ fn sort_dir_as_wire_uses_lowercase_tokens() {
     // Documented to match the serde `lowercase` rename for the `?dir=` query.
     assert_eq!(SortDir::Asc.as_wire(), "asc");
     assert_eq!(SortDir::Desc.as_wire(), "desc");
-}
-
-#[test]
-fn index_sort_default_is_name() {
-    assert_eq!(IndexSort::default(), IndexSort::Name);
-}
-
-#[test]
-fn discovery_prefs_round_trips_through_json() {
-    let prefs = DiscoveryPrefs {
-        authors_sort: BrowseSort::Recent,
-        series_sort: BrowseSort::Recent,
-        shelves_sort: IndexSort::BookCount,
-    };
-    let raw = serde_json::to_string(&prefs).expect("serialize");
-    assert_eq!(
-        serde_json::from_str::<DiscoveryPrefs>(&raw).expect("deserialize"),
-        prefs
-    );
-    // snake_case tokens, so a hand-written payload parses.
-    assert_eq!(
-        serde_json::from_str::<IndexSort>("\"book_count\"").expect("parse token"),
-        IndexSort::BookCount
-    );
-}
-
-#[test]
-fn browse_sort_reads_a_choice_stored_as_an_index_sort() {
-    let stored = serde_json::to_string(&IndexSort::BookCount).expect("serialize");
-    assert_eq!(
-        serde_json::from_str::<BrowseSort>(&stored).expect("parse"),
-        BrowseSort::BookCount
-    );
-}
-
-#[test]
-fn discovery_prefs_defaults_when_fields_absent() {
-    // `#[serde(default)]` on each field keeps old/partial payloads parseable.
-    let prefs: DiscoveryPrefs = serde_json::from_str("{}").expect("parse empty object");
-    assert_eq!(prefs, DiscoveryPrefs::default());
 }

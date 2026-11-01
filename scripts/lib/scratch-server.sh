@@ -3,16 +3,16 @@
 #
 # Sourced by scripts/e2e-ci.sh and scripts/koreader-e2e.sh after `cd` to the
 # repo root and after scripts/lib/dev-port.sh. Both lanes need the same
-# thing: a `dx bundle` of the web app, and that bundle's standalone `server`
-# on a scratch DB and data dirs at a free port in this worktree's window,
-# torn down afterwards. A second copy of the bring-up would let the two
-# lanes drift.
+# thing: the `omnibus` binary on a scratch DB and data dirs at a free port in
+# this worktree's window, torn down afterwards. A second copy of the bring-up
+# would let the two lanes drift.
 #
 # Callers set `label` (log-line prefix) and `kept_hint` (what a kept dir
 # holds), then:
 #
+#   build_server                                # sets server_bin
 #   make_scratch_dir                            # sets scratch; installs traps
-#   bundle_web_app                              # sets bundle_dir
+#   build_react_client                          # optional; fills $scratch/react
 #   start_scratch_server [NAME=value ...]
 #
 # `make_scratch_dir` always makes a fresh /tmp/omnibus-<label>.* dir — an
@@ -27,28 +27,41 @@
 label="${label:-scratch-server}"
 HEALTH_TIMEOUT_SECS=120
 
-bundle_web_app() {
+build_server() {
     : "${CARGO_TARGET_DIR:?run this through \`just e2e-ci\` / \`just koreader-e2e\`, inside the nix dev shell}"
-    profile_args=()
-    bundle_dir="$CARGO_TARGET_DIR/e2e-ci/bundle"
+    local profile_args=() profile=debug
     if [ "${OMNIBUS_E2E_RELEASE:-}" = 1 ]; then
         profile_args=(--release)
-        bundle_dir="$CARGO_TARGET_DIR/e2e-ci/bundle-release"
+        profile=release
     fi
+    server_bin="$CARGO_TARGET_DIR/$profile/omnibus"
     # A relative CARGO_TARGET_DIR (CI pins ./target) would resolve inside $scratch.
-    case "$bundle_dir" in /*) ;; *) bundle_dir="$PWD/$bundle_dir" ;; esac
+    case "$server_bin" in /*) ;; *) server_bin="$PWD/$server_bin" ;; esac
 
-    echo "$label: bundling the web app (${profile_args[*]:-debug})" >&2
-    dx bundle --platform web --package omnibus --fullstack --debug-symbols=false \
-        ${profile_args[@]+"${profile_args[@]}"} --out-dir "$bundle_dir"
+    echo "$label: building the server ($profile)" >&2
+    cargo build -p omnibus ${profile_args[@]+"${profile_args[@]}"}
+}
+
+# The React client, built into $scratch/react for the server to serve at `/`
+# (pass OMNIBUS_REACT_DIR="$scratch/react" to start_scratch_server).
+build_react_client() {
+    echo "$label: building the React client" >&2
+    (
+        cd frontend-js &&
+            pnpm install --frozen-lockfile --prefer-offline >/dev/null &&
+            # A cached node_modules lets install skip `prepare`, which generates the API client.
+            pnpm run generate &&
+            OMNIBUS_VERSION=v0.0.0 pnpm exec vite build --outDir "$scratch/react" --emptyOutDir
+    ) >"$scratch/react.log" 2>&1 || {
+        echo "$label: the React build failed — end of its log:" >&2
+        tail -n 30 "$scratch/react.log" >&2
+        exit 1
+    }
 }
 
 # Invoked via `trap`, which shellcheck can't see.
 # shellcheck disable=SC2329
 cleanup() {
-    if [ -n "${react_pid:-}" ]; then
-        stop_process_tree "$react_pid" 2>/dev/null || true
-    fi
     if [ -n "$server_pid" ] && kill -0 "$server_pid" 2>/dev/null; then
         kill "$server_pid" 2>/dev/null || true
         for _ in $(seq 1 50); do
@@ -109,7 +122,7 @@ start_scratch_server() {
             OMNIBUS_THUMBS_DIR="$scratch/thumbs" \
             OMNIBUS_PUBLIC_ORIGIN="$base_url,http://localhost:$port" \
             "$@" \
-            "$bundle_dir/server"
+            "$server_bin"
     ) >"$scratch/server.log" 2>&1 &
     server_pid=$!
 
@@ -126,48 +139,6 @@ start_scratch_server() {
         if ! kill -0 "$server_pid" 2>/dev/null || [ "$(date +%s)" -ge "$deadline" ]; then
             echo "$label: the server never became healthy — end of its log:" >&2
             tail -n 30 "$scratch/server.log" >&2
-            exit 1
-        fi
-        sleep 0.5
-    done
-}
-
-# The React client, built at base `/` and run under `vite preview` on the next
-# free port, proxying /api and the device routes to the scratch server (the
-# proxy list lives in frontend-js/vite.config.ts). Sets react_pid, and points
-# base_url at the client: the specs drive it, and their API calls reach the
-# server through the same proxy, as the browser's do.
-start_react_preview() {
-    local react_port
-    if ! react_port="$(choose_react_port "$port")"; then
-        echo "$label: no free port above $port for the React client" >&2
-        exit 1
-    fi
-    echo "$label: building the React client" >&2
-    (
-        cd frontend-js &&
-            pnpm install --frozen-lockfile --prefer-offline >/dev/null &&
-            # A cached node_modules lets install skip `prepare`, which generates the API client.
-            pnpm run generate &&
-            OMNIBUS_VERSION=v0.0.0 pnpm exec vite build --base=/ --outDir "$scratch/react" --emptyOutDir
-    ) >"$scratch/react.log" 2>&1 || {
-        echo "$label: the React build failed — end of its log:" >&2
-        tail -n 30 "$scratch/react.log" >&2
-        exit 1
-    }
-    (
-        cd frontend-js || exit 1
-        OMNIBUS_PORT="$port" exec pnpm exec vite preview --outDir "$scratch/react" \
-            --port "$react_port" --strictPort --host 127.0.0.1
-    ) >>"$scratch/react.log" 2>&1 &
-    react_pid=$!
-    base_url="http://127.0.0.1:$react_port"
-    local deadline
-    deadline=$(($(date +%s) + HEALTH_TIMEOUT_SECS))
-    until is_my_omnibus_response "$(curl --silent --max-time 2 "$base_url/api/_health" || true)"; do
-        if ! kill -0 "$react_pid" 2>/dev/null || [ "$(date +%s)" -ge "$deadline" ]; then
-            echo "$label: the React client never answered — end of its log:" >&2
-            tail -n 30 "$scratch/react.log" >&2
             exit 1
         fi
         sleep 0.5

@@ -1,8 +1,7 @@
-//! Bookmark REST handlers for the mobile client (`/api/bookmarks*`).
+//! Bookmark REST handlers (`/api/bookmarks*`).
 //!
-//! Web clients use the `/api/rpc/bookmarks/*` server functions defined in
-//! `omnibus_frontend::rpc`. One model serves both the audiobook player and the
-//! reader — `position` is seconds-as-string or an EPUB CFI respectively.
+//! One model serves both the audiobook player and the reader — `position` is
+//! seconds-as-string or an EPUB CFI respectively.
 
 use axum::{
     extract::{Path, Query, State},

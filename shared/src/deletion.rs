@@ -1,5 +1,5 @@
 //! Wire types for the admin book-deletion surface
-//! (`/api/rpc/books/delete-files`). The dialog deletes *items* — every
+//! (`/api/books/{uuid}/delete-files`). The dialog deletes *items* — every
 //! `book_files` row plus every physical copy — and that distinction decides
 //! whether the book row survives: a book whose last remaining item is a
 //! physical copy keeps its record.

@@ -1,5 +1,5 @@
 //! Route-group builder functions merged into the top-level `/api/*` router
-//! by [`super::rest_router_with_search_limiter`]. Each function owns one
+//! by [`super::rest_router`]. Each function owns one
 //! feature area; the grouping used to be carried as inline comments in a
 //! single flat route list.
 
@@ -129,8 +129,7 @@ fn metadata_override_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(overrides::post_rewrite_all_epubs))
 }
 
-/// Progress sync — mobile-facing REST. Web hits the analogous
-/// `/api/rpc/progress*` server functions defined in `omnibus_frontend::rpc`.
+/// Progress sync.
 fn progress_routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
         .routes(routes!(progress::post_progress))
@@ -147,11 +146,7 @@ fn progress_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(cross_format::post_cross_format_follow))
 }
 
-/// Admin book merge/unmerge — mobile-facing REST. Web hits the analogous
-/// `/api/rpc/merge-books` and `/api/rpc/merge-books/undo` server fns in
-/// `omnibus_frontend::rpc::books`, which repeat these handlers' `AdminUser` gate: the
-/// merge transaction is shared, but the gate and error mapping are not, so change one
-/// side's gate or response shape and the other needs the same edit.
+/// Admin book merge/unmerge.
 fn merge_routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
         .routes(routes!(merge::post_merge_books))
@@ -159,18 +154,14 @@ fn merge_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(merge::get_merge_candidates))
 }
 
-/// Admin book deletion — mobile-facing REST. Web hits the analogous
-/// `/api/rpc/books/deletion-manifest` and `/api/rpc/books/delete-files`
-/// server fns in `omnibus_frontend::rpc::books`; same gate-parity note as
-/// [`merge_routes`].
+/// Admin book deletion.
 fn deletion_routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
         .routes(routes!(deletion::get_deletion_manifest))
         .routes(routes!(deletion::post_delete_book_files))
 }
 
-/// Highlight annotations — mobile-facing REST. Web hits the analogous
-/// `/api/rpc/highlights/*` server functions.
+/// Highlight annotations.
 fn highlight_routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
         .routes(routes!(highlights::post_highlight))
@@ -180,9 +171,8 @@ fn highlight_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(highlights::delete_highlight))
 }
 
-/// Bookmarks — mobile-facing REST. Web hits the analogous
-/// `/api/rpc/bookmarks/*` server functions. One model serves both the
-/// audiobook player and the reader (position = seconds or EPUB CFI).
+/// Bookmarks. One model serves both the audiobook player and the reader
+/// (position = seconds or EPUB CFI).
 fn bookmark_routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
         .routes(routes!(bookmarks::post_bookmark))
@@ -191,9 +181,7 @@ fn bookmark_routes() -> OpenApiRouter<AppState> {
 }
 
 /// Reading stats, reviews (and the deprecated stars-only ratings view), and
-/// read/unread state — mobile-facing REST. Web hits the analogous
-/// `/api/rpc/stats`, `/api/rpc/reviews/*`, `/api/rpc/ratings/*`, and
-/// `/api/rpc/read-status/*` server functions.
+/// read/unread state.
 // The ratings handlers are `#[deprecated]` so the spec marks them; serving them
 // until installed clients move to `/api/reviews` is deliberate.
 #[allow(deprecated)]
@@ -221,8 +209,7 @@ fn engagement_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(read_status::get_read_status))
 }
 
-/// Physical Check-In scan flow — mobile-facing REST. Web hits the analogous
-/// `/api/rpc/scan/*` server functions.
+/// Physical Check-In scan flow.
 fn check_in_routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
         .routes(routes!(scan::post_resolve))
@@ -234,7 +221,7 @@ fn check_in_routes() -> OpenApiRouter<AppState> {
         // Any user may read this flag; it drives the check-in scan screen's
         // provider note without the admin-only masked-status route.
         .routes(routes!(scan::get_google_books_configured))
-        // Admin. Web hits the analogous `/api/rpc/google-books-key` server fn.
+        // Admin.
         .routes(routes!(
             scan::get_google_books_key,
             scan::post_google_books_key
@@ -258,9 +245,8 @@ fn physical_collection_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(physical::get_wishlist_readers))
 }
 
-/// Shelves — mobile-facing REST. Web hits the analogous
-/// `/api/rpc/shelves*` server functions. `/preview` and `/containing/{uuid}`
-/// are registered before the `{id}` param route so it can't shadow them.
+/// Shelves. `/preview` and `/containing/{uuid}` are registered before the
+/// `{id}` param route so it can't shadow them.
 fn shelf_routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
         .routes(routes!(shelves::list_shelves, shelves::create_shelf))
@@ -277,9 +263,8 @@ fn shelf_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(shelves::remove_shelf_book))
 }
 
-/// Public journal entries — mobile-facing REST. Web hits the analogous
-/// `/api/rpc/journals/*` server functions. Embedded-image reads are
-/// media-gated like covers/thumbs; the matching upload POST lives in
+/// Public journal entries. Embedded-image reads are media-gated like
+/// covers/thumbs; the matching upload POST lives in
 /// `upload_router` (rate-limited, image body cap).
 fn journal_routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
@@ -316,8 +301,7 @@ fn discovery_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(genres::get_genres))
 }
 
-/// Suggestions — mobile-facing REST. Web hits the analogous
-/// `/api/rpc/ebook-suggestions` + `/api/rpc/hardcover-key` server fns.
+/// Suggestions and the admin Hardcover key.
 fn suggestion_routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
         .routes(routes!(suggestions::get_suggestions))
@@ -328,19 +312,15 @@ fn suggestion_routes() -> OpenApiRouter<AppState> {
         ))
 }
 
-/// "Fetch Summary" — mobile-facing REST. Web hits the analogous
-/// `/api/rpc/ebook/summary/*` server fns.
+/// "Fetch Summary".
 fn summary_routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
         .routes(routes!(summary::post_ebook_summary_fetch))
         .routes(routes!(summary::get_summary_sources))
 }
 
-/// The metadata-provider surface — mobile-facing REST. Web hits the analogous
-/// `/api/rpc/metadata/*` server fns in `omnibus_frontend::rpc::metadata_search`, which
-/// repeat these handlers' gates: the catalog is read-only for any authenticated user,
-/// the edition search and hydrate are `can_edit`-gated inside their handlers. Change one
-/// side's gate or response shape and the other needs the same edit.
+/// The metadata-provider surface: the catalog is read-only for any authenticated user,
+/// the edition search and hydrate are `can_edit`-gated inside their handlers.
 fn metadata_routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
         .routes(routes!(metadata::get_providers))
@@ -350,9 +330,7 @@ fn metadata_routes() -> OpenApiRouter<AppState> {
 
 /// Send-to-Kindle plus the per-user account preferences that grew up
 /// beside it (hidden formats, the book-detail scroll-stops switch, Stack
-/// series, sharing stats with the household, the profile and its avatar) —
-/// all mobile-facing REST. Web hits the analogous `/api/rpc/kindle/send`,
-/// `/api/rpc/account/*`, and `/api/rpc/smtp*` server fns.
+/// series, sharing stats with the household, the profile and its avatar).
 fn kindle_routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
         .routes(routes!(kindle::post_send))

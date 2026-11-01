@@ -1,7 +1,7 @@
 //! Diacritic folding for user-typed match input.
 //!
-//! Shared by the server's author-search predicate and the browser's
-//! authors-index filter, so a reader typing a name without its accents
+//! Used by the server's author-search predicate and mirrored by the web
+//! client's authors-index filter (`foldForMatch` in `frontend-js/`), so a reader typing a name without its accents
 //! reaches the same rows either way. Punctuation and spacing survive —
 //! this folds characters, it does not tokenize.
 

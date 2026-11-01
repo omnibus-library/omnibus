@@ -1,5 +1,5 @@
 # Launch the dev multiplexer with Zellij. Server tab auto-starts; the
-# android/ios/playwright tabs are preloaded with their
+# react/ios/playwright tabs are preloaded with their
 # commands suspended — press Enter in the pane to start them.
 # The server pane runs scripts/dev-serve-fg.sh, which picks a free port in
 # this worktree's window, so `just serve` in two worktrees never collides.
@@ -7,21 +7,22 @@ serve:
     zellij --layout .zellij/layout.kdl
 
 # Launch the dev multiplexer with process-compose. Server process auto-starts;
-# android/ios/playwright are disabled by default — select
+# react/ios/playwright are disabled by default — select
 # one in the TUI and press F7 to start. Same per-worktree port resolution
 # as `just serve`.
 serve-pc:
     process-compose up
 
-# The React client's dev server (frontend-js/) on its own port, proxying /api
-# to this worktree's server — run it beside `just serve`, whose `react` pane
-# runs the same script.
+# The React client's hot-reloading dev server (frontend-js/) on its own port,
+# proxying /api to this worktree's server — run it beside `just serve` or
+# `just dev-up`; the `react` pane runs the same script.
 react:
     nix develop .#web --command scripts/react-dev-fg.sh
 
 # Idempotent dev-server ensure-running. Probes /api/_health for THIS
 # workspace's server (identity-checked via repo_root); reuses if healthy,
-# starts a fresh daemonized `dx serve` if missing. Port-walks $PORT..$PORT+9
+# starts a fresh daemonized `cargo run -p omnibus` if missing, serving the
+# React build (rebuilt when stale) at `/`. Port-walks $PORT..$PORT+9
 # ($PORT is the worktree's own window base — 3000 for the main checkout,
 # hash-derived in 3010..3900 for any other worktree; see flake.nix).
 # Emits one parseable line on stdout:
@@ -34,7 +35,7 @@ dev-up:
 # Peek at THIS workspace's dev server without mutating anything.
 # Exit 0 + emit OMNIBUS_DEV_READY when healthy; exit 1 if no server is
 # running for this workspace; exit 2 if a server is bound but unhealthy
-# (likely a wedged dx serve build — try `just dev-bounce`).
+# (still compiling, or hung — try `just dev-bounce`).
 dev-status:
     scripts/dev-server-status.sh
 
@@ -50,9 +51,9 @@ dev-down:
 env-clear:
     rm -rf .claude/runtime/nix-env-cache
 
-# Restart THIS workspace's dev server cleanly. Use after adding a sqlx
-# migration (the running server boots its migrations at startup) or when
-# `dx serve` has wedged on a compile error and `dev-up` exits 2.
+# Restart THIS workspace's dev server cleanly. Use after a Rust change (the
+# server doesn't rebuild itself), after adding a sqlx migration (it runs its
+# migrations at startup), or when `dev-status` exits 2.
 dev-bounce:
     scripts/with-dev-env.sh web scripts/dev-server-bounce.sh
 
@@ -132,48 +133,40 @@ koreader-home-test:
 dev-server-down-test:
     bash scripts/tests/dev-server-down.test.sh
 
+# Tests that dev-up's React build never leaves the running server without a
+# client. Plain bash with a stubbed `pnpm`, like dev-server-down-test.
+dev-react-build-test:
+    bash scripts/tests/dev-react-build.test.sh
+
 # Run every unit/integration suite: the Rust matrix first, then the script
 # suites. Rust leads so a failing script suite can't stop the recipe
 # before the cargo results are in.
-test: test-rust explore-test module-map-test koreader-report-test koreader-plugin-test scratch-server-test koreader-dev-test koreader-home-test dev-server-down-test
+test: test-rust explore-test module-map-test koreader-report-test koreader-plugin-test scratch-server-test koreader-dev-test koreader-home-test dev-server-down-test dev-react-build-test
 
-# The Rust half of `just test`: the full matrix via cargo-nextest (the same
-# runner CI uses, so local and CI results match; no doctests in the tree, which
-# is all nextest can't run). A bare `--workspace` is a trap here — it silently skips
-# the frontend rpc/page tests (they need --features server) — so run each crate
-# explicitly. The frontend runs twice
-# with different feature sets: `server` (rpc/page tests) and `mobile` (the
-# `data::token_store` / `app_dirs` persistence tests) — the `web`/`mobile`/
-# `server` impls are cfg-split, so each set exercises a different code path.
-# The `omnibus-mobile` shell crate itself has no tests (lint covers it via
-# `just lint`).
+# The Rust half of `just test`: every crate via cargo-nextest (the same runner
+# CI uses, so local and CI results match; no doctests in the tree, which is all
+# nextest can't run). Each crate is named, so a failure says which one, and
+# because a bare run covers only default-members (server, shared).
 # Self-wraps in the slim nix shell so it works from a bare checkout too.
 test-rust: fixtures
     scripts/with-dev-env.sh default bash -ec '\
         cargo nextest run -p omnibus-db && \
         cargo nextest run -p omnibus && \
-        cargo nextest run -p omnibus-frontend --features server && \
-        cargo nextest run -p omnibus-frontend --features mobile && \
         cargo nextest run -p omnibus-shared && \
         cargo nextest run -p omnibus-mcp && \
         cargo nextest run -p omnibus-mock-kobo'
 
-# Line/region coverage over the same crate matrix as `just test`, via
+# Line/region coverage over the same crates as `just test`, via
 # cargo-llvm-cov driving cargo-nextest (matches the CI `test` job). Each crate
-# runs under `--no-report` to accumulate profraw, then a single `report` merges every
-# feature-split run into one number — mirroring the `test` recipe so the
-# coverage build exercises the identical code paths. `clean` first drops stale
-# profiles from a previous run. Writes lcov.info (Codecov / CI) and prints the
-# per-file summary. The wasm32 `web` feature is intentionally absent —
-# llvm-cov can't instrument the wasm32 target, so coverage reflects the
-# server + mobile-feature Rust only. Self-wraps in the slim nix shell.
+# runs under `--no-report` to accumulate profraw, then a single `report` merges
+# every run into one number. `clean` first drops stale profiles from a previous
+# run. Writes lcov.info (Codecov / CI) and prints the per-file summary.
+# Self-wraps in the slim nix shell.
 coverage: fixtures
     scripts/with-dev-env.sh default bash -ec '\
         cargo llvm-cov clean --workspace && \
         cargo llvm-cov nextest --no-report -p omnibus-db && \
         cargo llvm-cov nextest --no-report -p omnibus && \
-        cargo llvm-cov nextest --no-report -p omnibus-frontend --features server && \
-        cargo llvm-cov nextest --no-report -p omnibus-frontend --features mobile && \
         cargo llvm-cov nextest --no-report -p omnibus-shared && \
         cargo llvm-cov nextest --no-report -p omnibus-mcp && \
         cargo llvm-cov nextest --no-report -p omnibus-mock-kobo && \
@@ -188,20 +181,18 @@ coverage-html: fixtures
         cargo llvm-cov clean --workspace && \
         cargo llvm-cov nextest --no-report -p omnibus-db && \
         cargo llvm-cov nextest --no-report -p omnibus && \
-        cargo llvm-cov nextest --no-report -p omnibus-frontend --features server && \
-        cargo llvm-cov nextest --no-report -p omnibus-frontend --features mobile && \
         cargo llvm-cov nextest --no-report -p omnibus-shared && \
         cargo llvm-cov nextest --no-report -p omnibus-mcp && \
         cargo llvm-cov nextest --no-report -p omnibus-mock-kobo && \
         cargo llvm-cov report --html --open'
 
-# Structural CSS lint — stylelint over frontend/assets, scoped to parse /
-# structural errors (unclosed rules, misplaced @import, a selector declared
-# twice in one stylesheet), not style.
+# Structural CSS lint — stylelint over the React client's stylesheets, scoped to
+# parse / structural errors (unclosed rules, misplaced @import, a selector
+# declared twice in one stylesheet), not style.
 # An unclosed `}` silently reparents later rules under CSS nesting, so a
 # missing brace must fail the build. stylelint is Nix-pinned in slimPackages.
 lint-css:
-    scripts/with-dev-env.sh default stylelint 'frontend/assets/**/*.css'
+    scripts/with-dev-env.sh default stylelint 'frontend-js/{src,public}/**/*.css'
 
 # TypeScript lint + format-check + typecheck for the Playwright project.
 # Biome (formatter + linter, config in ui_tests/playwright/biome.json) is the
@@ -216,12 +207,13 @@ lint-ts:
         pnpm exec biome check . && \
         pnpm exec tsc --noEmit'
 
-# Run Playwright the way CI does (scripts/e2e-ci.sh): `dx bundle` the web app,
-# start its standalone server on a scratch DB and a free port in this worktree's
-# window, run the specs against it, and tear the server down. Never touches the
-# dev server or its DB. Args pass through to `playwright test`, so specs are
-# relative to ui_tests/playwright: `just e2e-ci tests/flows/landing.spec.ts`.
-# OMNIBUS_E2E_RELEASE=1 bundles `--release` like CI (slower to build).
+# Run Playwright the way CI does (scripts/e2e-ci.sh): build the server and the
+# React client, start the server on a scratch DB and a free port in this
+# worktree's window serving React at `/`, run the specs against it, and tear the
+# server down. Never touches the dev server or its DB. Args pass through to
+# `playwright test`, so specs are relative to ui_tests/playwright:
+# `just e2e-ci tests/flows/landing.spec.ts`.
+# OMNIBUS_E2E_RELEASE=1 builds `--release` like CI (slower to build).
 [positional-arguments]
 e2e-ci *specs: fixtures
     scripts/with-dev-env.sh e2e scripts/e2e-ci.sh "$@"
@@ -247,21 +239,17 @@ openapi-gen:
 openapi: openapi-gen
     python3 scripts/openapi-view.py
 
-# Format check + clippy, including the crate/feature combos a bare
-# `cargo clippy` (default-members, default features) misses. `-D warnings` on
-# every invocation and the wasm32 `frontend-web` variant mirror CI's clippy
-# matrix (.github/workflows/rust.yml) so a clean local run can't go on to fail
-# in CI. Depends on `lint-css` so the CSS structural guard rides the same gate
-# as fmt/clippy.
+# Format check + clippy, including the crates a bare `cargo clippy`
+# (default-members) misses. `-D warnings` on every invocation mirrors CI's
+# clippy job (.github/workflows/rust.yml) so a clean local run can't go on to
+# fail in CI. Depends on `lint-css` so the CSS structural guard rides the same
+# gate as fmt/clippy.
 lint: lint-css
     scripts/with-dev-env.sh default bash -ec '\
         cargo fmt --check && \
         cargo clippy --all-targets -- -D warnings && \
-        cargo clippy -p omnibus-frontend --features server --all-targets -- -D warnings && \
-        cargo clippy -p omnibus-mobile --all-targets -- -D warnings && \
         cargo clippy -p omnibus-mcp --all-targets -- -D warnings && \
         cargo clippy -p omnibus-mock-kobo --all-targets -- -D warnings'
-    scripts/with-dev-env.sh web cargo clippy -p omnibus-frontend --features web --all-targets --target wasm32-unknown-unknown -- -D warnings
 
 # Lint then test — the pre-push gate referenced by rule 99.
 check: lint test

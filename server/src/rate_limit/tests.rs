@@ -1,7 +1,6 @@
 //! Tests for the per-IP rate limiter: window/max enforcement, per-IP bucket
 //! isolation, window reset, prefix-scoped middleware pass-through, the
-//! shared-budget wiring between REST and RPC search, the auth-router
-//! allow-list, bucket pruning at capacity, `client_ip` resolution, and the
+//! auth-router allow-list, bucket pruning at capacity, `client_ip` resolution, and the
 //! dev-only `RateLimits` switch.
 
 use super::*;
@@ -42,8 +41,8 @@ async fn rate_limiter_allow_window_resets_after_elapsed() {
 
 #[tokio::test]
 async fn rate_limit_paths_limits_matching_prefix_and_passes_others() {
-    // Mirrors the `main.rs` RPC wiring: `rate_limit_paths` mounted with
-    // the search-palette prefix. Drives the route via `oneshot` to assert
+    // Mirrors the `main.rs` auth wiring: `rate_limit_paths` mounted with
+    // the login prefix. Drives the route via `oneshot` to assert
     // both the over-limit (429) and the pass-through (non-matching path)
     // cases. `oneshot` carries no `ConnectInfo`, so every request shares
     // the `0.0.0.0` fallback bucket — exactly one budget under test.
@@ -53,15 +52,15 @@ async fn rate_limit_paths_limits_matching_prefix_and_passes_others() {
 
     let max = 3u32;
     let limiter = Arc::new(RateLimiter::with_policy(Duration::from_secs(60), max));
-    let prefixes: Arc<Vec<&'static str>> = Arc::new(vec!["/api/rpc/search-palette"]);
+    let prefixes: Arc<Vec<&'static str>> = Arc::new(vec!["/api/auth/login"]);
     let app = Router::new()
-        .route("/api/rpc/search-palette", get(|| async { "ok" }))
-        .route("/api/rpc/other", get(|| async { "ok" }))
+        .route("/api/auth/login", get(|| async { "ok" }))
+        .route("/api/auth/me", get(|| async { "ok" }))
         .layer(from_fn_with_state((limiter, prefixes), rate_limit_paths));
 
     let palette_req = || {
         Request::builder()
-            .uri("/api/rpc/search-palette?q=hello")
+            .uri("/api/auth/login")
             .body(Body::empty())
             .unwrap()
     };
@@ -74,7 +73,7 @@ async fn rate_limit_paths_limits_matching_prefix_and_passes_others() {
     let over = app.clone().oneshot(palette_req()).await.unwrap();
     assert_eq!(over.status(), StatusCode::TOO_MANY_REQUESTS);
 
-    // Non-matching `/api/rpc/*` path bypasses the limiter entirely: it still
+    // A non-matching path bypasses the limiter entirely: it still
     // returns 200 even though the shared bucket is already over budget,
     // proving the prefix filter short-circuits before `allow()`.
     for _ in 0..(max + 5) {
@@ -82,7 +81,7 @@ async fn rate_limit_paths_limits_matching_prefix_and_passes_others() {
             .clone()
             .oneshot(
                 Request::builder()
-                    .uri("/api/rpc/other")
+                    .uri("/api/auth/me")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -91,67 +90,7 @@ async fn rate_limit_paths_limits_matching_prefix_and_passes_others() {
         assert_eq!(
             res.status(),
             StatusCode::OK,
-            "non-matching /api/rpc/* path must bypass the limiter"
-        );
-    }
-}
-
-#[tokio::test]
-async fn one_shared_limiter_unifies_rest_and_rpc_search_budget() {
-    // #249: REST and RPC search layers handed the same Arc must share one
-    // per-IP budget. `oneshot` has no ConnectInfo, so all share 0.0.0.0.
-    use axum::middleware::from_fn_with_state;
-    use axum::{body::Body, routing::get, Router};
-    use tower::ServiceExt;
-
-    let max = 4u32;
-    let limiter = Arc::new(RateLimiter::with_policy(Duration::from_secs(60), max));
-    // Prefix covers both /api/rpc/search and /api/rpc/search-palette.
-    let rpc_prefixes: Arc<Vec<&'static str>> = Arc::new(vec!["/api/rpc/search"]);
-
-    // REST limited by rate_limit_by_ip, RPC by rate_limit_paths — same Arc.
-    let rest = Router::new()
-        .route("/api/search", get(|| async { "ok" }))
-        .layer(from_fn_with_state(limiter.clone(), rate_limit_by_ip));
-    let app = Router::new()
-        .route("/api/rpc/search", get(|| async { "ok" }))
-        .route("/api/rpc/search-palette", get(|| async { "ok" }))
-        .merge(rest)
-        .layer(from_fn_with_state(
-            (limiter.clone(), rpc_prefixes),
-            rate_limit_paths,
-        ));
-
-    // Spend the entire budget on the REST family.
-    for i in 0..max {
-        let res = app
-            .clone()
-            .oneshot(
-                Request::builder()
-                    .uri("/api/search?q=x")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(
-            res.status(),
-            StatusCode::OK,
-            "REST request #{i} within budget"
-        );
-    }
-    // Both RPC search routes are now exhausted too, proving one shared
-    // budget — and that the full search is covered, not just the palette.
-    for uri in ["/api/rpc/search?q=x", "/api/rpc/search-palette?q=x"] {
-        let rpc = app
-            .clone()
-            .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-        assert_eq!(
-            rpc.status(),
-            StatusCode::TOO_MANY_REQUESTS,
-            "{uri} must be blocked once REST has spent the shared budget"
+            "a non-matching path must bypass the limiter"
         );
     }
 }
@@ -371,7 +310,7 @@ async fn client_ip_falls_back_to_the_peer_when_no_forwarded_header_is_present() 
     );
 }
 
-/// No peer at all (a `oneshot`, or a dioxus bump that stops handing us a
+/// No peer at all (a `oneshot`, or a serve change that stops handing us a
 /// make-service with connect info) falls back to the process-wide sentinel.
 #[tokio::test]
 async fn client_ip_falls_back_to_the_sentinel_when_no_peer_is_available() {

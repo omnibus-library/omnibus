@@ -188,3 +188,47 @@ class KoboShelfReadTests(unittest.TestCase):
     def test_kobo_smart_shelves_names_only_the_smart_shelves_synced_to_the_kobo(self) -> None:
         actor, _ = self._state()
         self.assertEqual(actor.kobo_smart_shelves(), ["Rules"])
+
+
+class PerBookReadTests(unittest.TestCase):
+    """The per-book reads go to the REST routes and return what each one answers."""
+
+    LIBRARY_BOOK = {f"/api/ebooks/{BOOK}": {"unique_identifier": BOOK}}
+
+    def _actor(self, routes):
+        return state.ActorState(FakeShelfClient(routes), "agent-1")
+
+    def test_rating_reads_the_stars_from_the_rating_route(self) -> None:
+        record = {"book_uuid": BOOK, "stars": 4.5, "updated_at": 0}
+        actor = self._actor({**self.LIBRARY_BOOK, f"/api/ratings/{BOOK}": record})
+        self.assertEqual(actor.rating(BOOK), 4.5)
+
+    def test_rating_is_none_when_the_route_answers_null(self) -> None:
+        self.assertIsNone(self._actor(self.LIBRARY_BOOK).rating(BOOK))
+
+    def test_rating_raises_when_no_book_has_the_uuid(self) -> None:
+        # The rating route answers 200 null for a uuid no book has, which would read as "unrated".
+        with self.assertRaises(ApiError):
+            self._actor({}).rating(BOOK)
+
+    def test_playback_rate_reads_the_rate_from_the_audiobook_route(self) -> None:
+        record = {"book_uuid": BOOK, "playback_rate": 1.25, "updated_at": 0}
+        actor = self._actor({**self.LIBRARY_BOOK, f"/api/audiobooks/{BOOK}/playback-rate": record})
+        self.assertEqual(actor.playback_rate(BOOK), 1.25)
+
+    def test_playback_rate_raises_when_no_book_has_the_uuid(self) -> None:
+        with self.assertRaises(ApiError):
+            self._actor({}).playback_rate(BOOK)
+
+    def test_journals_keeps_only_the_signed_in_readers_entries(self) -> None:
+        mine, theirs = {"id": 1, "author_id": 7, "body_md": "mine"}, {"id": 2, "author_id": 9, "body_md": "theirs"}
+        actor = self._actor({f"/api/journals/book/{BOOK}": [mine, theirs]})
+        self.assertEqual(actor.journals(BOOK), [mine])
+
+    def test_highlights_reads_the_book_scoped_highlight_list(self) -> None:
+        row = {"id": 3, "text": "a passage", "color": "amber"}
+        self.assertEqual(self._actor({f"/api/highlights/book/{BOOK}": [row]}).highlights(BOOK), [row])
+
+    def test_bookmarks_reads_the_book_scoped_bookmark_list(self) -> None:
+        row = {"id": 4, "position": "epubcfi(/6/2)", "title": "chapter one"}
+        self.assertEqual(self._actor({f"/api/bookmarks/book/{BOOK}": [row]}).bookmarks(BOOK), [row])

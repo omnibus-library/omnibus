@@ -2,7 +2,7 @@ import type { StatsSummary } from "../../api";
 import { plural } from "../../format";
 import { buildHeatmap, cellTitle, type Level } from "./heatmap";
 
-// Spelled out so tools/extract-atrium.cjs sees each class.
+// Spelled out so a search for each class name finds it.
 const CELL_CLASS = {
   0: "st-hm-cell st-hm-0",
   1: "st-hm-cell st-hm-1",

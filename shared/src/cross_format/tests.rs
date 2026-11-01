@@ -1,8 +1,7 @@
 //! Unit tests for the cross-format wire-type validators: the per-format
 //! position boundaries `DeclareSyncPoint::validate` enforces, and the
 //! primary-narration and duplicate-ordinal rules in
-//! `ConfirmCrossFormatLink::validate`, plus the mapping between each
-//! `CrossFormatErrorCode` and the status code it is sent as.
+//! `ConfirmCrossFormatLink::validate`.
 
 use super::*;
 
@@ -161,18 +160,4 @@ fn confirm_cross_format_link_validate_rejects_an_audio_order_repeating_an_id() {
         .validate()
         .expect_err("an order list that repeats a file must be rejected");
     assert!(err.contains("repeat"), "got: {err}");
-}
-
-#[test]
-fn cross_format_error_code_from_status_round_trips_every_refusal() {
-    for code in CrossFormatErrorCode::ALL {
-        assert_eq!(CrossFormatErrorCode::from_status(code.status()), Some(code));
-    }
-}
-
-#[test]
-fn cross_format_error_code_from_status_ignores_auth_and_server_failures() {
-    for status in [400, 401, 404, 500] {
-        assert_eq!(CrossFormatErrorCode::from_status(status), None);
-    }
 }

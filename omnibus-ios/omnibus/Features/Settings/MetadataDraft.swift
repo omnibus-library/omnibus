@@ -160,9 +160,8 @@ struct MetadataDraft: Equatable {
     /// Unlike every scalar above, this one can't be diffed as a raw string:
     /// the wire field is an integer, and there is no "empty" integer to carry
     /// the empty-string-clears convention. So a blanked field means *leave the
-    /// override alone*, not *clear it* — matching the web editor
-    /// (`build_overrides` in `frontend/src/pages/metadata_edit.rs`), which the
-    /// two editors have to agree on. `validate(since:)` refuses that blank up
+    /// override alone*, not *clear it* — matching the web editor,
+    /// which the two editors have to agree on. `validate(since:)` refuses that blank up
     /// front so the gap surfaces as a message rather than a silent no-op.
     private func changedPrintPages(since loaded: MetadataDraft) -> Int64? {
         guard let parsed = printPagesValue else { return nil }

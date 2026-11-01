@@ -20,6 +20,7 @@
   background: color-mix(in oklch, var(--bg-0) 80%, transparent);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
+  transition: transform 0.22s ease;
 }
 .rd-top {
   top: 0;
@@ -137,10 +138,6 @@
   .rd-viewer {
     inset: 0;
   }
-}
-.rd-top,
-.rd-bottom {
-  transition: transform 0.22s ease;
 }
 @media (max-width: 480px), (hover: none) and (pointer: coarse) {
   .rd-chrome-hidden .rd-top {

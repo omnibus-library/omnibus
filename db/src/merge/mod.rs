@@ -1,4 +1,4 @@
-//! Manual format merge for the admin merge RPC: absorb one `books`
+//! Manual format merge for the admin merge route: absorb one `books`
 //! row (the **source**) into another (the **target**) so a work
 //! indexed as two format-siblings becomes one book with multiple
 //! `book_files`. `merge_books` runs in one transaction and snapshots

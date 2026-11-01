@@ -632,7 +632,7 @@ test.describe("shelf gallery", () => {
         await libraryPage.assertResumeCardOnStack(uuid, seedResumePoint);
       });
 
-      // The ribbon is in the DOM from first paint so SSR and hydration agree (rule 07).
+      // The ribbon is in the DOM from first paint, off-screen until the stack scrolls.
       await test.step("check the ribbon waits off-screen", async () => {
         await expect(stack.edgeRibbon).toBeAttached();
         await expect(stack.landingRoot).not.toHaveClass(/lmq--past/);

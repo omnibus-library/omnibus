@@ -30,7 +30,7 @@ pub use keys::{
     set_hardcover_api_key,
 };
 
-/// `settings` KV keys consumed by the UI/RPC layer. Kept as constants so the
+/// `settings` KV keys consumed by the settings handlers. Kept as constants so the
 /// indexer, settings handlers, and tests all reference the same identifier.
 const EBOOK_LIBRARY_PATH_KEY: &str = "ebook_library_path";
 const AUDIOBOOK_LIBRARY_PATH_KEY: &str = "audiobook_library_path";

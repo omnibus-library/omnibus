@@ -1,8 +1,7 @@
 //! Omnibus data layer: schema migrations, SQLite pool init, the normalized
 //! query layer, and the indexing pipeline (file scan → EPUB metadata
-//! extraction → atomic per-library upsert). Consumed by both `server/`
-//! (axum REST handlers) and `frontend/` (Dioxus server functions under
-//! `feature = "server"`).
+//! extraction → atomic per-library upsert). Consumed by `server/`'s axum
+//! handlers.
 
 pub mod admin_health;
 pub mod anchor;

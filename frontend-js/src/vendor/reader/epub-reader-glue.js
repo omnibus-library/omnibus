@@ -8,12 +8,12 @@
  *   - `ePub`  (epubjs@0.3.93)  — vendored at ./epub.min.js
  *   - `JSZip` (jszip@3.10.1)   — vendored at ./jszip.min.js
  *
- * The Rust reader page sets two optional callbacks on `window`:
+ * The host page sets two optional callbacks on `window`:
  *   - `__omnibusOnRelocate(json)` — invoked (debounced) on every epub.js
  *     "relocated" event with a JSON string containing CFI + page/chapter
- *     data so the Rust side can update the bottom bar and persist position.
+ *     data so the host can update the bottom bar and persist position.
  *   - `__omnibusOnStatus(state)` — invoked with "ready" once the first page
- *     paints, or "error" if the book fails to open/render. Lets the Rust side
+ *     paints, or "error" if the book fails to open/render. Lets the host
  *     drive a loading/error UI instead of leaving a blank viewer. Emits
  *     "nav-error" when a display(target) navigation rejects or never lands.
  * Same-origin .epub fetch is performed by epub.js via XHR, so the session
@@ -73,7 +73,7 @@
  * Table-of-contents callback:
  *   - `__omnibusOnToc(json)` — invoked once the book is ready (and on
  *     requestToc()), with a flat [{ label, href, level }] array.
- * Native-share shims (optional; mobile shell only):
+ * Native-share shims (optional; native hosts only):
  *   - `__omnibusOnShareText(text)` — when defined, shareText routes here
  *     instead of the Web Share API (absent in WKWebView) and the host
  *     presents the OS share sheet. (`__omnibusOnShareImage` is the same
@@ -471,7 +471,7 @@
   }
 
   // The most recent init() call's arguments — retry() replays them verbatim
-  // so a stalled/failed rendition (AC3) can recover without the Rust side
+  // so a stalled/failed rendition (AC3) can recover without the host
   // having to re-derive the bootstrap literals (theme, font, saved CFI, …).
   var lastInitArgs = null;
 
@@ -511,8 +511,8 @@
         spread: "auto",
         // Without `allow-scripts` on the section iframe, WebKit dispatches NO
         // events to listeners inside it — gestures AND text selection are dead
-        // on iOS. The mobile shell opts in (its books are the user's own
-        // library); the web build keeps the stricter sandbox since desktop
+        // on iOS. A native host opts in (its books are the user's own
+        // library); the web client keeps the stricter sandbox since desktop
         // engines still fire parent-attached listeners.
         allowScriptedContent: !!opts.allowScriptedContent,
       });
@@ -524,7 +524,7 @@
       installStageResizeWatch(elementId);
 
       // These body backgrounds are mirrored by the per-theme `--rd-page`
-      // token in atrium.css (the reader-surface ground) — change both
+      // token in styles/theme.css (the reader-surface ground) — change both
       // together or the chrome strips stop matching the page.
       rendition.themes.register("light", {
         body: { background: "#fcfbfa", color: foregroundColorForTheme("light") },
@@ -659,7 +659,7 @@
       })
       .then(function () {
         // Re-emit current location now that locations are resolved so the
-        // Rust side gets a real whole-book `pct` on first load (page/total
+        // host gets a real whole-book `pct` on first load (page/total
         // are already live off the current render — see buildRelocateData).
         // An echo: it re-states the position, it doesn't report movement.
         if (book === locBook && rendition && rendition.location) {
@@ -840,7 +840,7 @@
     });
 
     // Arrow keys page the book when the content iframe has focus. Key events
-    // inside the iframe never bubble to the host document (so the Rust surface
+    // inside the iframe never bubble to the host document (so the host's
     // keydown handler can't see them) — epub.js forwards them here instead.
     const prevPageKeys = new Set(["ArrowLeft", "ArrowUp", "H", "K"]);
     const nextPageKeys = new Set(["ArrowRight", "ArrowDown", "L", "J"]);
@@ -2035,10 +2035,10 @@
   }
 
   // Ask the host to toggle the reader chrome (top/bottom bars). The bars are
-  // Dioxus-owned DOM; rather than mutate their class from here (the reconciler
-  // could clobber it, and it splits state across two owners), we signal through
-  // the same `__omnibusOn*` bridge the rest of the glue uses and let the host
-  // flip a `chrome_hidden` signal — the single source of truth on both targets.
+  // host-owned DOM; rather than mutate their class from here (the host's
+  // renderer could clobber it, and it splits state across two owners), we signal
+  // through the same `__omnibusOn*` bridge the rest of the glue uses and let the
+  // host flip its own state — the single source of truth.
   function emitToggleChrome() {
     if (typeof window.__omnibusOnToggleChrome === "function") {
       window.__omnibusOnToggleChrome("");
@@ -2209,7 +2209,7 @@
   }
 
   // Walk the nested TOC into a flat [{label, href, level}] list and hand it
-  // to the Rust side. Level is the nesting depth (0 = top), used to indent
+  // to the host. Level is the nesting depth (0 = top), used to indent
   // the contents drawer. Re-emittable on demand via requestToc().
   function collectToc(items, level, out) {
     if (!items) return;
@@ -2451,8 +2451,8 @@
   // fires straight through `rendition.display()` — from the first "resized"
   // event of a burst until this fires once, reporting the settled, nudged
   // landing as a single echo. A rotation re-paginates but is not reading
-  // movement: `!data.echo` is what already keeps `build_relocate_callback`
-  // (frontend/src/pages/reader/interop.rs) from persisting it.
+  // movement: `!data.echo` is what already keeps the host's relocate handler
+  // from persisting it.
   function finishResizeCorrection(r, current) {
     // Superseded by a user turn (cancelResizeCorrection) or a newer resize
     // burst — that path already resumed relocates (or will report its own
@@ -2580,9 +2580,9 @@
 
   function shareText(text) {
     if (!text) return;
-    // Native bridge first: WKWebView exposes no usable Web Share API, so the
-    // mobile shell installs this shim and presents the OS share sheet from
-    // Rust instead. Web builds never define it.
+    // Native bridge first: WKWebView exposes no usable Web Share API, so a
+    // native host installs this shim and presents the OS share sheet itself.
+    // The web client never defines it.
     if (typeof window.__omnibusOnShareText === "function") {
       try {
         window.__omnibusOnShareText(text);

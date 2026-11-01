@@ -293,7 +293,11 @@ async fn perform_wire_retargets_to_new_device_when_none_matches() {
     let saved = saved(&path).await;
     assert_eq!(saved.token, STUB_TOKEN);
     assert_eq!(saved.wired_url, Some(stub.origin.clone()));
-    assert_eq!(stub.requests_to("/api/rpc/kobo/devices/create").len(), 1);
+    assert_eq!(
+        stub.requests_with("POST", "/api/account/kobo-devices")
+            .len(),
+        1
+    );
 }
 
 #[tokio::test]

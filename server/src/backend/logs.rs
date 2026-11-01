@@ -1,5 +1,5 @@
 //! `GET /api/admin/logs`, the admin log viewer's read over the on-disk logs.
-//! The REST twin of `rpc_get_logs`, `AdminUser`-gated.
+//! `AdminUser`-gated.
 
 use axum::{
     extract::Query,

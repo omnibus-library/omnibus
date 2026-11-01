@@ -5,7 +5,7 @@ import { dayNumber } from "./calendar";
 import { AnnualGoalRing, DailyGoalsCard, GoalsLink } from "./GoalCluster";
 import { buildSpark, type SparkBar, streakLine } from "./hero";
 
-// Spelled out so tools/extract-atrium.cjs sees each class.
+// Spelled out so a search for each class name finds it.
 function sparkBarClass({ inStreak, active }: SparkBar) {
   if (inStreak) return "st-spark-bar on";
   return active ? "st-spark-bar" : "st-spark-bar off";

@@ -69,26 +69,11 @@ hand-roll a set/restore guard.
   branches on them.
 - **`server::backend` handlers:** 200 success, 4xx client errors,
   5xx DB-failure paths.
-- **`frontend::pages` components with logic:** rendered output
-  contains expected content.
-- **`frontend::rpc` server functions:** thin wrappers — covered
-  transitively by db tests; only add a direct test if the wrapper
-  composes multiple db calls non-trivially.
-- **`frontend::data` wrappers:** not exempt like `rpc/` — they
-  dispatch to `rpc::` or native `reqwest`, not to db, so nothing
-  covers them transitively. Test the branching, not the dispatch: a
-  wrapper with logic of its own (status/error classification,
-  response shaping such as a 404 read as `None`, temp-id
-  short-circuits, platform fallbacks, retries, a conditional cache
-  bypass) gets a happy path plus one failure path. A pure
-  pass-through — a `#[cfg]` split, a plain
-  `read_through`/`write_through` wrap, or `note_status` →
-  `drain_error` → `.json()` — is exempt.
-  Drive mobile arms against an in-process stub
-  (`offline::test_support::spawn_router`), never a live server. A
-  web-only `gloo-net` branch can't run natively: move the decision
-  into a pure fn compiled on every target and test that
-  (`auth_failure_message` in `data/auth.rs` is the model).
+- **React client (`frontend-js/`):** pure logic gets a vitest unit
+  test beside it (`<name>.test.ts`); a page or component with
+  behaviour gets a Storybook story whose `play` asserts it, run by
+  the `storybook` vitest project. Its rules live in
+  [frontend-js/README.md](../../frontend-js/README.md).
 - **New features** must not ship without tests covering their
   acceptance criteria from the relevant roadmap initiative.
 
@@ -118,12 +103,10 @@ async fn get_book_propagates_db_error_when_pool_is_closed() { ... }
 ## Running
 
 ```bash
-just test                                          # full matrix (db + server + frontend(server + mobile) + shared + mcp + mock-kobo), then the script suites
-just test-rust                                     # the Rust matrix alone
+just test                                          # every Rust suite (db + server + shared + mcp + mock-kobo), then the script suites
+just test-rust                                     # the Rust suites alone
 cargo test -p omnibus                              # /api/* REST integration tests
 cargo test -p omnibus-db                           # db + scanner + sync tests
-cargo test -p omnibus-frontend --features server   # rpc + page tests
-cargo test -p omnibus-frontend --features mobile   # data/ + offline mobile-arm tests
 cargo test -p omnibus-shared                       # shared serde / ebook / progress tests
 cargo test -p omnibus-mcp                          # MCP tool-layer tests (out of default-members)
 cargo test -p omnibus-mock-kobo                    # fake Kobo firmware tests (out of default-members)

@@ -27,13 +27,13 @@ pid="$(cat "$RUNTIME_DIR/server.pid" 2>/dev/null || true)"
 port="$(cat "$RUNTIME_DIR/port" 2>/dev/null || true)"
 
 clean_stale() {
-    echo "dev-down: PID ${pid:-<empty>} is not a running dx; cleaning stale runtime files." >&2
+    echo "dev-down: PID ${pid:-<empty>} is not a running dev server; cleaning stale runtime files." >&2
     rm -f "$RUNTIME_DIR/server.pid" "$RUNTIME_DIR/port" "$RUNTIME_DIR/env.sh"
     exit 0
 }
 
-# A PID file outlives the dx it named, and once the PID is reused the port
-# is silent and the identity check below passes: anything not dx is stale.
+# A PID file outlives the server it named, and once the PID is reused the
+# port is silent and the identity check below passes: anything else is stale.
 if [ -z "$pid" ] || ! proc_is_live "$pid"; then
     clean_stale
 fi
@@ -42,10 +42,10 @@ if [ -z "$name" ]; then
     # Live but unnamed means ps can't answer, not that the PID is stale:
     # dropping the files would orphan a server that may still be ours.
     proc_is_live "$pid" || clean_stale
-    echo "dev-down: pid $pid is running but ps can't name it; left it and the runtime files alone. Stop it by hand if it is this worktree's dx." >&2
+    echo "dev-down: pid $pid is running but ps can't name it; left it and the runtime files alone. Stop it by hand if it is this worktree's server." >&2
     exit 3
 fi
-is_dx_name "$name" || clean_stale
+is_server_name "$name" || clean_stale
 
 # Identity check via /api/_health.repo_root. If the server doesn't
 # respond, we have a wedged process — still ours by PID file, kill it.

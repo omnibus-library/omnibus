@@ -299,9 +299,8 @@ fn shelf_summary_without_cover_uuids_deserializes_to_empty_vec() {
 #[test]
 fn shelf_page_query_defaults_to_recently_interacted_descending() {
     let q: ShelfPageQuery = serde_json::from_value(serde_json::json!({})).unwrap();
-    // The shelf surfaces used to disagree — this endpoint defaulted to
-    // NewestAdded while the web page defaulted to Title. Both are Recently
-    // Interacted now, so pin it here rather than let them drift apart again.
+    // Every shelf surface defaults to Recently Interacted; pin it here so
+    // this endpoint can't drift from the others.
     assert_eq!(q.sort_key(), SortKey::RecentlyInteracted);
     assert_eq!(q.sort_dir(), SortDir::Desc);
 }

@@ -28,9 +28,9 @@ shift
 # cache path and a `rm -f "$cache_dir/$shell-"*` glob, so an unconstrained
 # value (`/`, `..`) could read/delete outside the cache dir.
 case "$shell" in
-  default | web | e2e | mobile | audit) ;;
+  default | web | e2e | audit) ;;
   *)
-    echo "with-dev-env: unknown shell '$shell' (expected: default|web|e2e|mobile|audit)" >&2
+    echo "with-dev-env: unknown shell '$shell' (expected: default|web|e2e|audit)" >&2
     exit 2
     ;;
 esac

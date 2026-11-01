@@ -124,8 +124,8 @@ await expect(flow.errorMessage).toBeVisible();
 
 1. `getByRole` — buttons, headings, links, form landmarks, live regions.
 2. `getByText` — visible text not tied to a role.
-3. `getByLabel` — form inputs. Add the label to the React markup (`frontend-js/src/`) if missing.
-4. `getByTestId` — only when nothing else fits. Add `data-testid` to the React component.
+3. `getByLabel` — form inputs. Add the label in the markup if missing.
+4. `getByTestId` — only when nothing else fits. Add `data-testid` in the React markup (a component's `testId` prop where it has one).
 5. `locator` — last resort. Never XPath.
 
 ## 6. Where everything else goes
@@ -144,24 +144,20 @@ locator half: see [04d](../../rules/04d-playwright-page-objects.md#lint).
 
 ## 7. Run
 
-The suite drives the React client (`frontend-js/`), which proxies `/api` to an
-omnibus server; it never calls `/api/rpc/*`. Run the spec the way CI does — its
-own server bundle, scratch DB and `vite preview` of the React client:
+Run the spec the way CI does — its own server build and scratch DB:
 
 ```bash
 just e2e-ci tests/flows/<flow>.spec.ts   # args pass through to `playwright test`
 ```
 
 A red there is worth chasing; a red against the dev server may be its DB
-instead. A failed run keeps its scratch dir; each failure's `error-context.md`
-is the ARIA snapshot of what React actually drew. To iterate against the dev
-stack anyway, run `just serve` (its server and react panes reserve the React
-port and allowlist its origin), then point Playwright at the React client:
+instead. To iterate against the dev server anyway:
 
 ```bash
+just dev-up                            # idempotent, identity-checked, fast on reuse
+source .claude/runtime/env.sh          # picks up PLAYWRIGHT_BASE_URL for the chosen port
 cd ui_tests/playwright
-PLAYWRIGHT_BASE_URL=http://localhost:$(cat ../../.claude/runtime/react-port) \
-  pnpm exec playwright test            # pnpm, not npm/npx
+pnpm exec playwright test              # pnpm, not npm/npx
 ```
 
 Before pushing, lint + typecheck the TS: `just lint-ts` (Biome check + `tsc --noEmit`), or `pnpm run lint` / `pnpm run typecheck` from `ui_tests/playwright`.

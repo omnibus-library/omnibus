@@ -23,11 +23,7 @@ api_port="$(cat "$RUNTIME_DIR/port")"
 
 if [ -f "$RUNTIME_DIR/react-port" ]; then
     react_port="$(cat "$RUNTIME_DIR/react-port")"
-elif react_port="$(choose_react_port "$api_port")"; then
-    # A server started by `just dev-up` reserves no port, so its origin
-    # allowlist lacks this one: cookie-authed POSTs (sign out) answer 403.
-    echo "react: the server reserved no port; sign-out and other POSTs may 403" >&2
-else
+elif ! react_port="$(choose_react_port "$api_port")"; then
     echo "react: no free port above $api_port in $START_PORT-$END_PORT." >&2
     exit 1
 fi

@@ -1,9 +1,7 @@
 //  TokenStore.swift
 //  Bearer-token persistence in the iOS Keychain.
 //
-//  The Dioxus shell persists the token as a 0o600 file under the app data dir
-//  and carries a TODO to harden it (`mobile/src/main.rs`). Keychain with
-//  `afterFirstUnlock` is that hardening: encrypted at rest, still readable by
+//  Keychain with `afterFirstUnlock`: encrypted at rest, still readable by
 //  a background refresh after a cold boot.
 
 import Foundation

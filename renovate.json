@@ -66,16 +66,8 @@
       "automerge": false
     },
     {
-      "description": "`dx` rejects any dioxus but its own, and dioxus-cli comes from nixpkgs-unstable.",
-      "matchDepNames": ["dioxus", "dioxus-*", "nixpkgs-unstable"],
-      "groupName": "dioxus",
-      "dependencyDashboardApproval": true,
-      "automerge": false
-    },
-    {
-      "description": "`dx` needs wasm-bindgen-cli in flake.nix to match the locked crate.",
-      "matchDepNames": ["wasm-bindgen", "wasm-bindgen-*", "js-sys", "web-sys"],
-      "groupName": "rust-wasm-bindgen monorepo",
+      "description": "nixpkgs-unstable carries the Rust toolchain (fenix follows it), node and pnpm; pin it to a channel release by hand.",
+      "matchDepNames": ["nixpkgs-unstable"],
       "dependencyDashboardApproval": true,
       "automerge": false
     },

@@ -15,7 +15,7 @@ A cinematic-dark visual direction for Omnibus, sourced from a Claude Design hand
 > | `--mono` | Geist Mono | **Space Mono** |
 >
 > Two conventions came with the swap, and both are live in
-> [`frontend/assets/atrium.css`](../../frontend/assets/atrium.css):
+> [`frontend-js/src/styles/theme.css`](../../frontend-js/src/styles/theme.css):
 >
 > - **Headings are upright.** `font-style: italic` is reserved for inline
 >   emphasis (`em`, `.cm-em`, `.m-em`) and quoted / passage text (pull-quotes,
@@ -27,7 +27,11 @@ A cinematic-dark visual direction for Omnibus, sourced from a Claude Design hand
 >   iOS client forces the same via a font descriptor.
 >
 > The tokens, themes, accent extraction, and primitives described below are
-> otherwise unchanged.
+> otherwise unchanged. Their implementation is not: the Dioxus components,
+> `asset!` pipeline and `frontend/` paths below are the F1.7 record, and the
+> web client today is React, with the tokens and themes in
+> [`frontend-js/src/styles/`](../../frontend-js/src/styles/) and the primitives
+> in [`frontend-js/src/components/`](../../frontend-js/src/components/).
 
 ---
 

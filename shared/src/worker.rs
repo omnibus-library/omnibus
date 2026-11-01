@@ -70,7 +70,7 @@ pub struct GhostFilesWarning {
 }
 
 // `current_item` is user-facing display text and must never carry an absolute
-// server path: `rpc_worker_status` is readable by any user.
+// server path: `GET /api/worker/status` is readable by any user.
 /// Live detail about a task: its phase, the item it is on and, for a scan, its file
 /// counts. Every field may be absent.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
