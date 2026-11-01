@@ -189,6 +189,12 @@ says how long and how lately a reader has been in a book, never how far, because
 takes the server's summary when it sends one, and below `SUMMARY_MIN_RATINGS` the
 mean of the ratings the tab already lists.
 
+A finished book's card points at one thing next, decided in `FinishCopy.target`: a
+review until you have rated, then the next unfinished book in the series, then a look
+back at a series read to the end. It says nothing while your review or the series'
+read states are still unknown, rather than point somewhere and move. The burst goes
+off only when the book becomes finished with the page up, and stays until you leave.
+
 ## Reader
 
 **Why the reader is a WebView.** iOS ships no EPUB renderer, and epub.js already

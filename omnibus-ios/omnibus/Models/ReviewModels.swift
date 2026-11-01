@@ -151,13 +151,17 @@ struct ReviewPatch: Encodable, Equatable, Sendable {
         ReviewPatch(stars: value > 0 ? .set(value) : .cleared)
     }
 
-    /// The fields the composer changed against `original`. Blank text counts
-    /// as none, as it does on the server, so emptying a field clears it and
-    /// leaving an absent one blank sends nothing.
+    /// The fields the sheet changed against `original`. Blank text counts as
+    /// none, as it does on the server, so emptying a field clears it and leaving
+    /// an absent one blank sends nothing. `stars` left out are left alone; 0 is
+    /// the star row's "none".
     static func edits(
-        from original: Review?, body: String, notes: String, spoiler: Bool
+        from original: Review?, stars: Double? = nil, body: String, notes: String, spoiler: Bool
     ) -> ReviewPatch {
         var patch = ReviewPatch()
+        if let stars, stars != original?.stars ?? 0 {
+            patch.stars = stars > 0 ? .set(stars) : .cleared
+        }
         patch.bodyMd = textEdit(from: original?.bodyMd, to: body)
         patch.notesMd = textEdit(from: original?.notesMd, to: notes)
         if spoiler != (original?.spoiler ?? false) { patch.spoiler = spoiler }

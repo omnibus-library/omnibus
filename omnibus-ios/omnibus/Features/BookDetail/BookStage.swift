@@ -113,6 +113,10 @@ struct StageBackdrop: View {
 /// shadow on the floor. It leans as the page moves under it.
 struct StageCover: View {
     let book: Book
+    /// Whether the burst is out around the book.
+    var bursts = false
+    /// Bumped to throw it again.
+    var burstReplays = 0
     var onTap: () -> Void
 
     @Environment(\.palette) private var palette
@@ -132,6 +136,12 @@ struct StageCover: View {
         } label: {
             cover
                 .background { halo }
+                .overlay {
+                    if bursts {
+                        StageBurst(replays: burstReplays)
+                            .frame(width: Self.width * 1.8, height: Self.height * 1.4)
+                    }
+                }
         }
         .buttonStyle(.plain)
         .accessibilityLabel("\(book.displayTitle) cover")
@@ -240,8 +250,11 @@ struct TightLeading: TextRenderer {
 struct StageStars: View {
     let stars: Double
     var size: CGFloat = 18
+    /// Bumped to have the row answer, a star at a time.
+    var pulse = 0
 
     @Environment(\.palette) private var palette
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 2) {
@@ -252,6 +265,17 @@ struct StageStars: View {
                     .font(.system(size: size * 0.86))
                     .foregroundStyle(filled || half ? palette.bookText : palette.ink0Color.opacity(0.6))
                     .frame(width: size, height: size)
+                    .keyframeAnimator(initialValue: 0.0, trigger: pulse) { view, amount in
+                        view
+                            .scaleEffect(reduceMotion ? 1 : 1 + 0.4 * amount)
+                            .rotationEffect(.degrees(reduceMotion ? 0 : -10 * amount))
+                    } keyframes: { _ in
+                        KeyframeTrack {
+                            LinearKeyframe(0, duration: 0.24 + Double(slot - 1) * 0.05)
+                            CubicKeyframe(1, duration: 0.18)
+                            CubicKeyframe(0, duration: 0.28)
+                        }
+                    }
             }
         }
     }
@@ -335,11 +359,14 @@ struct BookStage: View {
     var isOnline = true
     /// Whether this device holds a copy the reader can open with no network.
     var holdsCopy = false
-    var onCover: () -> Void = {}
+    var onReview: () -> Void = {}
     var onReviews: () -> Void
     var onSeries: () -> Void
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.palette) private var palette
+    /// Bumped by a tap on the cover, to throw the burst again.
+    @State private var burstReplays = 0
 
     private var titleSize: CGFloat {
         let length = book.displayTitle.count
@@ -357,7 +384,13 @@ struct BookStage: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            StageCover(book: book, onTap: onCover)
+            StageCover(
+                book: book,
+                bursts: model.readStatus == .finished && model.celebrations > 0,
+                burstReplays: burstReplays + model.celebrations
+            ) {
+                burstReplays += 1
+            }
 
             if model.isWishlistOnly, let entry = model.wishlistEntry {
                 Text(DetailRead.wishlistLine(source: WishlistCopy.sourceLabel(entry.source)))
@@ -392,6 +425,7 @@ struct BookStage: View {
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 14)
+        .animation(reduceMotion ? nil : Motion.settle, value: model.readStatus)
     }
 
     // MARK: - Byline
@@ -516,7 +550,7 @@ struct BookStage: View {
             onReviews()
         } label: {
             HStack(spacing: 5) {
-                StageStars(stars: headline?.rounded ?? 0)
+                StageStars(stars: headline?.rounded ?? 0, pulse: model.reviewSaves)
                     .opacity(model.reviews == nil ? 0.45 : 1)
                 Image(systemName: "chevron.right")
                     .font(.system(size: 12, weight: .bold))
@@ -536,7 +570,16 @@ struct BookStage: View {
     @ViewBuilder
     private var place: some View {
         if model.hasFile {
-            if model.readStatus == .reading { reading }
+            switch model.readStatus {
+            case .reading:
+                reading
+            case .unread:
+                EmptyView()
+            case .finished:
+                FinishCard(book: book, model: model, onReview: onReview)
+                    .padding(.top, 12)
+                    .transition(.opacity.combined(with: .offset(y: 26)))
+            }
             if !isOnline, !holdsCopy { offlineNote }
         }
     }

@@ -257,6 +257,10 @@ enum StageProgress {
     /// and a long book's bar reads as a dotted line.
     static let maxSegments = 24
 
+    /// A division thinner than this share of the bar folds into the next one:
+    /// a title page reads as a stray tick rather than as part of the book.
+    static let minShare = 0.015
+
     /// Division widths from where each chapter starts, in percent of the book.
     static func weights(starts: [Double]) -> [Double] {
         let inside = starts.filter { $0 > 0 && $0 < 100 }.sorted()
@@ -271,12 +275,27 @@ enum StageProgress {
         return merged(widths.isEmpty ? [1] : widths)
     }
 
-    /// Folds neighbouring divisions together until the count fits.
+    /// Folds neighbouring divisions together: slivers into what follows them,
+    /// then evenly until the count fits.
     private static func merged(_ widths: [Double]) -> [Double] {
-        guard widths.count > maxSegments else { return widths }
-        let size = Int((Double(widths.count) / Double(maxSegments)).rounded(.up))
-        return stride(from: 0, to: widths.count, by: size).map { start in
-            widths[start..<min(start + size, widths.count)].reduce(0, +)
+        let floor = widths.reduce(0, +) * minShare
+        var kept: [Double] = []
+        var carried = 0.0
+        for width in widths {
+            if width + carried < floor {
+                carried += width
+            } else {
+                kept.append(width + carried)
+                carried = 0
+            }
+        }
+        if carried > 0 {
+            if kept.isEmpty { kept.append(carried) } else { kept[kept.count - 1] += carried }
+        }
+        guard kept.count > maxSegments else { return kept }
+        let size = Int((Double(kept.count) / Double(maxSegments)).rounded(.up))
+        return stride(from: 0, to: kept.count, by: size).map { start in
+            kept[start..<min(start + size, kept.count)].reduce(0, +)
         }
     }
 

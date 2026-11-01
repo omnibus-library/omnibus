@@ -66,6 +66,8 @@ struct BookDetailView: View {
     @State private var showCheckIn = false
     /// The chip row whose quick editor is up, when one is.
     @State private var chipEditing: ChipEditKind?
+    /// What the review sheet is open on, when it is.
+    @State private var reviewTarget: ReviewComposerTarget?
     /// The entry open in the journal drawer.
     @State private var openJournal: JournalEntry?
     /// The passage being turned into a card, driving the quote sheet.
@@ -219,6 +221,22 @@ struct BookDetailView: View {
                 }
             }
         }
+        .sheet(item: $reviewTarget) { target in
+            if let book = model.book {
+                // `latest` follows the model, so an answer that lands while the
+                // sheet is open rebases it rather than going unseen.
+                ReviewSheet(
+                    book: book,
+                    original: target.original,
+                    latest: reviewState.review,
+                    highlights: model.highlights,
+                    chapters: model.chapters
+                ) { patch in
+                    model.reviewSaves += 1
+                    Task { await model.patchReview(patch, uuid: uuid) }
+                }
+            }
+        }
         .sheet(item: $quoteTarget) { request in
             if let book = model.book {
                 QuoteCardSheet(quote: request.text, book: book)
@@ -269,6 +287,16 @@ struct BookDetailView: View {
     private var bookPalette: Palette {
         guard let book = model.book else { return palette }
         return palette.accented(byCoverOf: book)
+    }
+
+    private var reviewState: ReviewCardState {
+        .resolve(model.reviews, failure: model.reviewsFailure)
+    }
+
+    /// Open the review sheet. A target only exists once your review is known: a
+    /// sheet seeded from an unknown one would send text over what the server holds.
+    private func composeReview() {
+        reviewTarget = ReviewComposerTarget.make(for: reviewState)
     }
 
     /// Open the quote-card sheet on a kept line's passage.
@@ -354,6 +382,7 @@ struct BookDetailView: View {
             isOnline: connectivity.isOnline,
             holdsCopy: downloads.isDownloaded(book.uuid, kind: .ebook)
                 || downloads.isDownloaded(book.uuid, kind: .audio),
+            onReview: composeReview,
             onReviews: { jump(to: .reviews, proxy: proxy) },
             onSeries: { jumpToSeries(proxy: proxy) }
         )
@@ -380,7 +409,7 @@ struct BookDetailView: View {
                     jumpClearance: Self.tabStrip + 16
                 )
             case .reviews:
-                BookReviewsTab(book: book, model: model)
+                BookReviewsTab(book: book, model: model, onCompose: composeReview)
             case .highlights:
                 BookHighlightsTab(
                     book: book,
