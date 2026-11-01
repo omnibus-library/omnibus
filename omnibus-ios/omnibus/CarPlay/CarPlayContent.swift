@@ -2,9 +2,9 @@
 //  What the CarPlay screens say and offer, as plain values the templates are built from.
 //
 //  A CarPlay template can't be inspected from a test, so every decision about
-//  what the car shows — a row's text, which chapters the list holds, the speed
-//  the button steps to, which buttons Now Playing gets, the copy of an offer —
-//  lives here as a pure function. The files that import CarPlay only translate
+//  what the car shows — a row's text, whether a list redraws, which chapters
+//  the list holds, the speed the button steps to, which buttons Now Playing
+//  gets, the copy of an offer — lives here as a pure function. The files that import CarPlay only translate
 //  these into templates.
 
 import Foundation
@@ -53,22 +53,88 @@ enum CarPlayContent {
 
     /// Whether a first-page answer goes on screen as it lands. An empty one
     /// from the replica waits for the server: on a fresh sign-in the replica
-    /// has nothing yet, and "No audiobooks" mustn't stand in for a page loading.
-    static func showsAtOnce(_ books: [Book], isFresh: Bool) -> Bool {
-        isFresh || !books.isEmpty
+    /// has nothing yet, and an empty list's message mustn't stand in for a page loading.
+    static func showsAtOnce<Row>(_ rows: [Row], isFresh: Bool) -> Bool {
+        isFresh || !rows.isEmpty
     }
 
-    /// Whether the Library tab re-reads as it appears, rather than repainting
-    /// the rows it holds: only a list with nothing on it, and nothing loading.
-    static func rereadsLibrary(shown: [Book]?, isReading: Bool) -> Bool {
-        !isReading && (shown?.isEmpty ?? true)
+    /// The Library list while a pass reads: what it has so far, then the rows
+    /// it hasn't reached. Without them a re-read would shrink a long list to
+    /// one page and grow it back, an update each way, for nothing that changed.
+    /// `keepingPlaces` is for an answer the server didn't give: rows on screen
+    /// stay where they are, and only what they lack goes on, after them.
+    static func libraryRows(read: [Book], shown: [Book]?, keepingPlaces: Bool = false) -> [Book] {
+        keepingPlaces ? appending(read, to: shown ?? []) : appending(shown ?? [], to: read)
+    }
+
+    /// Where a Library pass goes after a page.
+    enum LibraryPassStep: Equatable {
+        /// On to the page at this cursor.
+        case read(String)
+        /// The server answered through to the end: what it didn't name is gone.
+        case finished
+        /// The server didn't get it there: the rows on screen stay, and the
+        /// list reads again the next time it could.
+        case cutShort
+    }
+
+    /// `allFresh` is whether the server answered every page so far, this one
+    /// included; `gained`, whether this page added a book; `isFull`, whether the
+    /// list has reached the car's cap. A page with nothing new and a cursor only
+    /// repeats itself, while a fresh one with no cursor is how the server ends a
+    /// list that shrank. The mirror's pages read on, but can't finish a pass.
+    static func libraryPassStep(
+        allFresh: Bool, gained: Bool, next: String?, isFull: Bool
+    ) -> LibraryPassStep {
+        if let next, gained, !isFull { return .read(next) }
+        return allFresh && (next == nil || gained) ? .finished : .cutShort
+    }
+
+    /// Whether a failed read says so: only when nothing has answered. Rows stay,
+    /// and so does the message on a list the server said is empty.
+    static func showsReadFailure<Row>(shown: [Row]?) -> Bool {
+        shown == nil
+    }
+
+    /// Whether a list reads again with nothing new to prompt it, rather than
+    /// keeping the rows it holds: only one with nothing on it, or whose last
+    /// pass was cut short, and nothing loading.
+    static func rereads<Row>(shown: [Row]?, isReading: Bool, cutShort: Bool = false) -> Bool {
+        !isReading && (cutShort || (shown?.isEmpty ?? true))
+    }
+
+    /// Whether a list takes an `updateSections`, which sends it back to its top
+    /// and can cost a tapped row its spinner: when which rows it holds, or
+    /// their order, changed, or when an empty list has a new message to draw.
+    static func updatesSections(shown: [String], next: [String], isNewMessage: Bool) -> Bool {
+        shown != next || (next.isEmpty && isNewMessage)
     }
 
     /// Who the car's lists belong to. Another account, or the same id on
     /// another server, never sees the rows read for this one.
     struct Account: Equatable {
         var server: String
+        /// `nil` while no `me` is cached: a token can outlive it.
         var userID: Int64?
+        /// `APIClient.sessionGeneration()`: who it is while the id isn't known.
+        var session: Int
+    }
+
+    /// `held` with what `signedIn` adds to it, or `nil` when `signedIn` is
+    /// someone else and the lists have to be forgotten. An id not known yet
+    /// isn't a different one within a session: forgetting then would blank the
+    /// lists and kill a tapped load, for a session that only just learned who
+    /// it is. Across sessions an unknown id says nothing, so the lists go.
+    static func sameAccount(held: Account?, signedIn: Account) -> Account? {
+        guard let held, held.server == signedIn.server else { return nil }
+        if let known = held.userID, let id = signedIn.userID {
+            guard known == id else { return nil }
+        } else if held.session != signedIn.session {
+            return nil
+        }
+        return Account(
+            server: held.server, userID: signedIn.userID ?? held.userID, session: signedIn.session
+        )
     }
 
     /// The second line of a row that can't play — offline, not downloaded.
@@ -129,5 +195,10 @@ enum CarPlayContent {
     )
     static let noAudiobooks = Message(
         title: "No audiobooks", detail: "Audiobooks in your library appear here."
+    )
+    /// A read that failed with no rows to keep. Not an empty list's message:
+    /// nothing has said the list is empty.
+    static let readFailed = Message(
+        title: "Couldn't load your books", detail: "They'll be here once your server can be reached."
     )
 }
