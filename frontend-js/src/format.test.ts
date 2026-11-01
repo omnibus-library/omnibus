@@ -134,6 +134,8 @@ describe("versionLabel", () => {
     ["vv0.8.9", "v0.8.9"],
     [" v0.8.9 ", "v0.8.9"],
     ["dev", "dev"],
+    ["v", "dev"],
+    ["  ", "dev"],
   ])("labels %j as %s", (raw, label) => {
     expect(versionLabel(raw)).toBe(label);
   });

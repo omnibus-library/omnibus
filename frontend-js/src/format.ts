@@ -281,8 +281,8 @@ export function formatStarted(unixSecs: number, timeZone?: string): string {
 export const utcDay = (unixSecs: number) =>
   new Date(unixSecs * 1000).toISOString().slice(0, 10);
 
-/** A build's version as the sign-in footer shows it: one leading `v` on a release, `dev` as is. */
+/** A build's version as the sign-in footer shows it: one leading `v` on a release, `dev` as is, and `dev` for a blank one. */
 export function versionLabel(raw: string): string {
-  const bare = raw.trim().replace(/^v+/, "");
+  const bare = raw.trim().replace(/^v+/, "") || "dev";
   return /^\d/.test(bare) ? `v${bare}` : bare;
 }
