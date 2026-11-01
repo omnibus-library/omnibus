@@ -55,12 +55,9 @@ final class BookDetailModel {
     var suggestions: BookSuggestions?
     /// Other readers who share their stats and have spent time in this book.
     var household: [BookHouseholdReader] = []
-    /// Where the reader stands in the rest of the series, read once the book is
-    /// finished: what the finish card points at next.
-    var seriesStates: [String: SeriesMemberState] = [:]
-    /// Whether those reads have all answered, or given up. The card says nothing
-    /// until then, rather than point somewhere and move.
-    var seriesStatesSettled = false
+    /// Where the rest of the series stands, read once the book is finished: the
+    /// finish card skips what's already read.
+    var seriesStatuses: [String: ReadStatus] = [:]
     /// Bumped when the book becomes finished with the page up, which is what
     /// the burst around the cover goes off for.
     var celebrations = 0
@@ -87,7 +84,7 @@ final class BookDetailModel {
     /// background. Outside `load`, so a pull's spinner never waits on it.
     private var suggestionsRetry: Task<Void, Never>?
 
-    private var seriesStatesInFlight = false
+    private var seriesStatusesInFlight = false
 
     /// Set once the first read of the status has run its course, cache then
     /// server. Until then a change is the page catching up, not a finish.
@@ -146,7 +143,7 @@ final class BookDetailModel {
                     self.readStatus = record.status
                     self.finishedAt = record.finishedAt
                     self.readStatusKnown = true
-                    self.loadSeriesStates()
+                    self.loadSeriesStatuses()
                 }
                 self.readStatusSettled = true
             }
@@ -248,8 +245,7 @@ final class BookDetailModel {
         if book.seriesId != relatedSeriesId {
             relatedSeriesId = book.seriesId
             seriesBooks = []
-            seriesStates = [:]
-            seriesStatesSettled = false
+            seriesStatuses = [:]
             relatedInFlight = false
         }
         if firstAuthor != relatedAuthorId {
@@ -280,7 +276,7 @@ final class BookDetailModel {
                             guard self.relatedSeriesId == seriesId else { return }
                             self.seriesBooks = detail.books
                         }
-                        self.loadSeriesStates()
+                        self.loadSeriesStatuses()
                     }
                 }
                 if let authorId {
@@ -305,56 +301,39 @@ final class BookDetailModel {
         }
     }
 
-    /// Read where the reader stands in the rest of the series. Only for a
-    /// finished book, the one case that asks: a read per member, and a series is
-    /// a small number of books.
-    private func loadSeriesStates() {
+    /// Read which of the rest of the series are finished. Only for a finished
+    /// book, the one case that asks: a read per member, and a series is a small
+    /// number of books.
+    private func loadSeriesStatuses() {
         guard readStatus == .finished, let current = book, seriesBooks.count > 1,
-              !seriesStatesInFlight
+              !seriesStatusesInFlight
         else { return }
-        seriesStatesInFlight = true
+        seriesStatusesInFlight = true
         let others = seriesBooks.filter { $0.id != current.id }
         Task { @MainActor in
-            // Committed whole: answers landing one at a time would have the card
-            // point at a book and then move.
-            var answers: [String: SeriesMemberState] = [:]
-            await withTaskGroup(of: (String, SeriesMemberState).self) { group in
+            // Committed whole: answers landing one at a time could walk the card
+            // along the series.
+            var answers: [String: ReadStatus] = [:]
+            await withTaskGroup(of: (String, ReadStatus?).self) { group in
                 for member in others {
                     group.addTask { @MainActor in
-                        (member.uuid, await Self.seriesMemberState(member))
+                        var status: ReadStatus?
+                        for await record in UserDataService.readStatus(uuid: member.uuid).values() {
+                            status = record.status
+                        }
+                        return (member.uuid, status)
                     }
                 }
-                for await (uuid, state) in group { answers[uuid] = state }
+                for await (uuid, status) in group { answers[uuid] = status }
             }
-            seriesStatesInFlight = false
+            seriesStatusesInFlight = false
             // The series changed under the read, so its answers are for another.
             guard book?.seriesId == current.seriesId else {
-                loadSeriesStates()
+                loadSeriesStatuses()
                 return
             }
-            seriesStates = answers
-            seriesStatesSettled = true
+            seriesStatuses = answers
         }
-    }
-
-    /// One member's status and place. Both formats are read, since a dual-format
-    /// book's place may only exist in the one you listened to.
-    private static func seriesMemberState(_ member: Book) async -> SeriesMemberState {
-        var state = SeriesMemberState()
-        func percent(_ format: ProgressFormat) async -> Int64? {
-            var found: Int64?
-            for await record in UserDataService.progress(uuid: member.uuid, format: format).values() {
-                found = record?.progressPercent ?? record?.resolved?.percentThroughBook
-            }
-            return found
-        }
-        let reading = member.hasEbook ? await percent(.epub) : nil
-        let listening = member.hasAudiobook ? await percent(.audio) : nil
-        state.percent = reading ?? listening
-        for await record in UserDataService.readStatus(uuid: member.uuid).values() {
-            state.status = record.status
-        }
-        return state
     }
 
     /// Read the whole per-book session log, replica first.
@@ -405,7 +384,7 @@ final class BookDetailModel {
         }
         readStatus = status
         readStatusKnown = true
-        loadSeriesStates()
+        loadSeriesStatuses()
         await UserDataService.setReadStatus(uuid: uuid, status: status)
     }
 

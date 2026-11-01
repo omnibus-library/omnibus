@@ -697,20 +697,14 @@ private func member(_ id: Int64, _ index: String? = nil) -> Book {
 
 private func finishTarget(
     reviewKnown: Bool = true, rated: Bool = true, bookID: Int64 = 2, members: [Book] = [],
-    states: [String: SeriesMemberState] = [:], settled: Bool = true
+    statuses: [String: ReadStatus] = [:]
 ) -> FinishTarget? {
-    // A member a test doesn't name has answered, and is unread.
-    var answered = states
-    for book in members where answered[book.uuid] == nil {
-        answered[book.uuid] = SeriesMemberState(status: .unread)
-    }
-    return FinishCopy.target(
+    FinishCopy.target(
         reviewKnown: reviewKnown, rated: rated, bookID: bookID, members: members,
-        states: answered, statesSettled: settled
+        statuses: statuses
     )
 }
 
-private let finishedState = SeriesMemberState(status: .finished, percent: 100)
 private let holmes = [member(1, "1"), member(2, "2"), member(3, "3")]
 
 @Test func cardOffersNothingWhileYourRatingIsUnknown() {
@@ -727,41 +721,35 @@ private let holmes = [member(1, "1"), member(2, "2"), member(3, "3")]
     #expect(finishTarget(members: [member(2)]) == nil)
 }
 
-@Test func cardWaitsForTheSeriesReadsRatherThanPointAndMove() {
-    #expect(finishTarget(members: holmes, settled: false) == nil)
-}
-
 @Test func nextIsTheBookAfterThisOne() {
-    #expect(
-        finishTarget(members: holmes) == .next(holmes[2], started: false, percent: nil)
-    )
+    #expect(finishTarget(members: holmes) == .next(holmes[2]))
 }
 
-@Test func nextAlreadyBegunIsKeepGoing() {
-    let states = ["u3": SeriesMemberState(status: .reading, percent: 34)]
-    #expect(finishTarget(members: holmes, states: states) == .next(holmes[2], started: true, percent: 34))
+@Test func cardPointsOnwardBeforeAnyMemberStatusHasAnswered() {
+    #expect(finishTarget(members: holmes, statuses: [:]) == .next(holmes[2]))
+    // Only one answered, and the book after this one's status never came.
+    #expect(finishTarget(members: holmes, statuses: ["u1": .finished]) == .next(holmes[2]))
+}
+
+@Test func aBookAlreadyBegunIsStillUpNext() {
+    #expect(finishTarget(members: holmes, statuses: ["u3": .reading]) == .next(holmes[2]))
 }
 
 @Test func aFinishedNextIsSkippedForTheOneAfter() {
     let series = holmes + [member(4, "4")]
-    #expect(
-        finishTarget(members: series, states: ["u3": finishedState])
-            == .next(series[3], started: false, percent: nil)
-    )
+    #expect(finishTarget(members: series, statuses: ["u3": .finished]) == .next(series[3]))
 }
 
 @Test func theLastBookPointsBackAtOneSkipped() {
-    #expect(
-        finishTarget(bookID: 3, members: holmes, states: ["u2": finishedState])
-            == .next(holmes[0], started: false, percent: nil)
-    )
+    #expect(finishTarget(bookID: 3, members: holmes, statuses: ["u2": .finished]) == .next(holmes[0]))
 }
 
-@Test func aSeriesReadToTheEndSaysSo() {
-    #expect(
-        finishTarget(members: holmes, states: ["u1": finishedState, "u3": finishedState])
-            == .seriesDone
-    )
+@Test func aSeriesReadToTheEndHasNothingToSuggest() {
+    #expect(finishTarget(members: holmes, statuses: ["u1": .finished, "u3": .finished]) == nil)
+}
+
+@Test func aBookMissingFromItsSeriesListHasNothingNext() {
+    #expect(finishTarget(bookID: 9, members: holmes) == nil)
 }
 
 @Test func totalsCountDaysSessionsAndHighlights() {
@@ -786,23 +774,9 @@ private let holmes = [member(1, "1"), member(2, "2"), member(3, "3")]
     #expect(FinishCopy.totals(record: nil, finishedAt: 100, highlights: 1) == "1 highlight")
 }
 
-@Test func nextLinesNameTheBookAndItsPlace() {
-    #expect(FinishCopy.nextTitle("The Hound", started: false) == "Up next: The Hound")
-    #expect(FinishCopy.nextTitle("The Hound", started: true) == "Keep going: The Hound")
-    #expect(
-        FinishCopy.nextMeta(index: "3", series: "Sherlock Holmes", percent: nil)
-            == "Book 3 of Sherlock Holmes"
-    )
-    #expect(
-        FinishCopy.nextMeta(index: "3", series: "Sherlock Holmes", percent: 34)
-            == "34% · Book 3 of Sherlock Holmes"
-    )
-    #expect(FinishCopy.nextMeta(index: nil, series: "Sherlock Holmes", percent: nil) == "In Sherlock Holmes")
-}
-
-@Test func aFinishedSeriesCountsInWords() {
-    #expect(FinishCopy.readAll(count: 5) == "You\u{2019}ve read all five")
-    #expect(FinishCopy.readAll(count: 2) == "You\u{2019}ve read both")
+@Test func nextMetaNamesTheBooksPlaceInTheSeries() {
+    #expect(FinishCopy.nextMeta(index: "3", series: "Sherlock Holmes") == "Book 3 of Sherlock Holmes")
+    #expect(FinishCopy.nextMeta(index: nil, series: "Sherlock Holmes") == "In Sherlock Holmes")
 }
 
 // MARK: - Kept lines and unanswered reads
@@ -829,20 +803,7 @@ private let holmes = [member(1, "1"), member(2, "2"), member(3, "3")]
     #expect(line(.known).contains("No reading recorded yet"))
 }
 
-// MARK: - Finish card: what isn't known
-
-@Test func cardPointsNowhereWhileAMembersStatusHasNotAnswered() {
-    let states = [
-        holmes[0].uuid: SeriesMemberState(status: .finished),
-        // Its place answered and its status didn't, so it could be a finished book.
-        holmes[2].uuid: SeriesMemberState(status: nil, percent: 40),
-    ]
-    let target = FinishCopy.target(
-        reviewKnown: true, rated: true, bookID: 2, members: holmes,
-        states: states, statesSettled: true
-    )
-    #expect(target == nil)
-}
+// MARK: - Finish card: the burst
 
 @Test func onlyAFinishSeenWithThePageSettledCelebrates() {
     #expect(FinishCopy.celebrates(settled: true, was: .reading, now: .finished))
