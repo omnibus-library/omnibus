@@ -338,22 +338,27 @@ struct BookDetailView: View {
         GeometryReader { geometry in
             ScrollViewReader { proxy in
                 ScrollView(.vertical) {
-                    LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+                    // Not a lazy stack with pinned views: it re-estimates the
+                    // stage as that scrolls off, and on a page ending about
+                    // there the scroll came to rest with the end under the bar.
+                    VStack(alignment: .leading, spacing: 0) {
                         stage(book, proxy: proxy)
-                        Section {
-                            panel(book)
-                                // Tall enough that the tabs can stay pinned on
-                                // the shortest panel: a tab change must not
-                                // drop the page out from under the reader.
-                                .frame(
-                                    maxWidth: .infinity,
-                                    minHeight: geometry.size.height - Self.barRow
-                                        - Self.tabStrip - Self.actionBar + 4,
-                                    alignment: .top
-                                )
-                        } header: {
-                            BookTabStrip(selected: tab) { pick($0) }
-                        }
+                        BookTabStrip(selected: tab) { pick($0) }
+                            .visualEffect { content, strip in
+                                let top = strip.frame(in: .scrollView(axis: .vertical)).minY
+                                return content.offset(y: max(0, -top))
+                            }
+                            .zIndex(1)
+                        panel(book)
+                            // Tall enough that the tabs can stay pinned on the
+                            // shortest panel: a tab change must not drop the
+                            // page out from under the reader.
+                            .frame(
+                                maxWidth: .infinity,
+                                minHeight: geometry.size.height - Self.barRow
+                                    - Self.tabStrip - Self.actionBar + 4,
+                                alignment: .top
+                            )
                     }
                 }
                 .scrollIndicators(.hidden)
