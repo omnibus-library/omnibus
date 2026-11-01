@@ -102,6 +102,16 @@ async fn resolve_returns_the_shell_for_a_client_route_with_dots_in_its_last_segm
 }
 
 #[tokio::test]
+async fn resolve_returns_the_shell_for_a_nested_route_ending_in_a_known_extension() {
+    let dir = build_dir();
+
+    assert_eq!(
+        resolve(dir.path(), "search/Node.js").await,
+        Resolved::File(dir.path().join("index.html"))
+    );
+}
+
+#[tokio::test]
 async fn resolve_returns_not_found_for_a_missing_file_under_a_build_directory() {
     let dir = build_dir();
 
@@ -112,7 +122,9 @@ async fn resolve_returns_not_found_for_a_missing_file_under_a_build_directory() 
 async fn resolve_returns_not_found_for_a_missing_root_file_with_a_known_extension() {
     let dir = build_dir();
 
-    assert_eq!(resolve(dir.path(), "gone.png").await, Resolved::NotFound);
+    for rel in ["gone.png", "favicon.ico", "robots.txt"] {
+        assert_eq!(resolve(dir.path(), rel).await, Resolved::NotFound, "{rel}");
+    }
 }
 
 #[tokio::test]

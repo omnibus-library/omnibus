@@ -5,7 +5,7 @@
 //! an unknown `/api/*` path answers a JSON 404, and everything else is the
 //! client. A path naming no file gets `index.html`, so a deep link reaches the
 //! client's router, unless it names an asset (under a directory of the build, or
-//! with an extension the build emits): that 404s rather than answering a script
+//! a root file with an extension the build emits): that 404s rather than answering a script
 //! with HTML. `/react/*`, where the client lived
 //! while it was opt-in, redirects to the same path at the root.
 //!
@@ -76,14 +76,14 @@ pub async fn resolve(dir: &Path, rel: &str) -> Resolved {
 }
 
 /// Whether a missing `rel` was a request for a build asset rather than a client route:
-/// it sits under one of the build's directories, or ends in an extension the build emits.
-/// A route like `/search/J.K.%20Rowling` has a dot but is neither.
+/// it sits under one of the build's directories, or is a root-level file with an extension the
+/// build emits. A route like `/search/Node.js` has a dot but is neither.
 async fn names_an_asset(dir: &Path, rel: &Path) -> bool {
     let under_a_build_dir = match rel.components().next() {
         Some(first) => is_dir(&dir.join(first)).await,
         None => false,
     };
-    under_a_build_dir || known_content_type(rel).is_some()
+    under_a_build_dir || (rel.components().count() == 1 && known_content_type(rel).is_some())
 }
 
 /// The router's fallback: unknown `/api/*` paths as JSON 404s, `/react/*` redirected to
