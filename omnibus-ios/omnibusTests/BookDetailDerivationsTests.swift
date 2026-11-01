@@ -815,6 +815,7 @@ private let holmes = [member(1, "1"), member(2, "2"), member(3, "3")]
 @Test func aFinishedSeriesCountsInWords() {
     #expect(FinishCopy.readAll(count: 5) == "You\u{2019}ve read all five")
     #expect(FinishCopy.readAll(count: 2) == "You\u{2019}ve read both")
+}
 
 // MARK: - Kept lines and unanswered reads
 
