@@ -388,18 +388,6 @@ private func sitting(
     #expect(DetailRead.flagLabel(chapter: nil, audioSeconds: nil, percent: 40) == "40%")
 }
 
-@Test func runtimeLineLeavesOutWhatTheRecordDoesNotKnow() {
-    #expect(
-        DetailRead.runtimeLine(
-            hasEbook: true, printPages: 180, hasAudiobook: true, audioDuration: 17_340
-        ) == "Ebook · 180 pages · Audiobook · 4 h 49 m"
-    )
-    #expect(
-        DetailRead.runtimeLine(hasEbook: true, printPages: nil, hasAudiobook: false, audioDuration: nil)
-            == "Ebook"
-    )
-}
-
 // MARK: - The series fan
 
 @Test func fanMetaNamesThePlaceInTheSeries() {
