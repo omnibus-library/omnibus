@@ -146,10 +146,12 @@ export function ReviewCard({
     pencil.current?.focus();
   }, [composing]);
   const [confirming, setConfirming] = useState(false);
-  // A refused rating takes the review back away, and the confirm with it.
+  // A refused rating takes the review back away, and the confirm with it; its opener went too, so the pencil takes focus.
   useEffect(() => {
-    if (!mine) setConfirming(false);
-  }, [mine]);
+    if (mine || !confirming) return;
+    setConfirming(false);
+    pencil.current?.focus();
+  }, [mine, confirming]);
   const hasWriting = mine?.bodyMd != null || mine?.notesMd != null;
   const writeLabel = hasWriting ? "Edit review" : "Write review";
   return (

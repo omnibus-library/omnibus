@@ -468,6 +468,10 @@ export const ARefusedFirstTapClosesTheDeleteConfirm: Story = {
     await expect(
       canvas.queryByRole("dialog", { name: "Delete your review?" }),
     ).not.toBeInTheDocument();
+    // The trash that opened the confirm is gone, so the pencil takes focus.
+    await waitFor(() =>
+      expect(canvas.getByTestId("review-write")).toHaveFocus(),
+    );
   },
 };
 
