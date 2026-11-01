@@ -61,13 +61,14 @@ private func readingLine(
     let record = DetailStats.record(
         from: [sitting(start: 100_000, seconds: 600)], now: Date(timeIntervalSince1970: 200_000)
     )
-    #expect(readingLine(status: .reading, hasFile: true, record: record).hasPrefix("Reading since "))
+    // The start is a row now, so the line doesn't say it again.
+    #expect(readingLine(status: .reading, hasFile: true, record: record).isEmpty)
     #expect(
         readingLine(status: .finished, hasFile: true, record: record, finishedAt: 150_000)
             .hasPrefix("Finished ")
     )
     // No date on record: the page falls back rather than inventing one.
-    #expect(readingLine(status: .finished, hasFile: true, record: record).hasPrefix("Reading since "))
+    #expect(readingLine(status: .finished, hasFile: true, record: record).isEmpty)
 }
 
 // MARK: - Language
@@ -264,10 +265,10 @@ private func sitting(
         record: try! #require(record), percent: 50, status: .reading,
         now: Date(timeIntervalSince1970: 300_000)
     )
-    #expect(rows.map(\.key) == ["Time read", "Pace", "Last read", "Longest sitting", "Time left"])
-    #expect(rows[0].value == "1 h 00 m · 2 sessions")
-    #expect(rows[1].value == "About 50% an hour")
-    #expect(rows[4].value == "About 1 h 00 m")
+    #expect(rows.map(\.key) == ["Started", "Time read", "Pace", "Last read", "Longest sitting", "Time left"])
+    #expect(rows[1].value == "1 h 00 m · 2 sessions")
+    #expect(rows[2].value == "About 50% an hour")
+    #expect(rows[5].value == "About 1 h 00 m")
 }
 
 @Test func aFinishedBookHasNoTimeLeftToState() {
@@ -290,7 +291,7 @@ private func sitting(
         record: try! #require(record), percent: nil, status: .reading,
         now: Date(timeIntervalSince1970: 300_000)
     )
-    #expect(rows.first?.key == "Time listened")
+    #expect(rows.dropFirst().first?.key == "Time listened")
     #expect(!rows.map(\.key).contains("Pace"))
 }
 
@@ -1020,4 +1021,20 @@ private func bookmark(position: String, title: String? = nil) -> Bookmark {
         BookExportCopy.fileName(title: "Dracula", suggested: "a.mp3", fallbackExtension: "m4b", part: 2)
             == "Dracula - part 02.mp3"
     )
+}
+
+// MARK: - The hero's series line
+
+@Test func theSeriesLineSaysWhereThisBookFallsInTheSeries() {
+    let line = { DetailRead.seriesLabel(series: "The Reading Group", index: $0, total: $1) }
+    #expect(line("2", 4) == "The Reading Group, book 2 of 4")
+    #expect(line("2.5", 4) == "The Reading Group, book 2.5 of 4")
+    // The members haven't landed, or there's nothing to count against.
+    #expect(line("2", 0) == "The Reading Group, book 2")
+    #expect(line("2", 1) == "The Reading Group, book 2")
+    // The library holds three of a longer series, and 5 of 3 can't be right.
+    #expect(line("5", 3) == "The Reading Group, book 5")
+    #expect(line("Prequel", 3) == "The Reading Group, book Prequel")
+    #expect(line(nil, 4) == "The Reading Group")
+    #expect(line("  ", 4) == "The Reading Group")
 }

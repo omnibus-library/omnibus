@@ -133,8 +133,7 @@ struct BookOverviewTab: View {
                 ReadingStats(
                     rows: DetailStats.rows(
                         record: record, percent: percent, status: model.readStatus
-                    ),
-                    sessions: model.sessions
+                    )
                 )
                 .padding(.top, 16)
             }
@@ -381,10 +380,8 @@ struct StageChip: View {
 /// The rows of the Your reading card, and the sittings behind them.
 private struct ReadingStats: View {
     let rows: [DetailStatRow]
-    let sessions: [SessionLogEntry]
 
     @Environment(\.palette) private var palette
-    @State private var showsSessions = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -408,42 +405,6 @@ private struct ReadingStats: View {
                 }
                 .accessibilityElement(children: .combine)
             }
-
-            if showsSessions {
-                ForEach(sessions) { session in
-                    HStack(alignment: .firstTextBaseline, spacing: 16) {
-                        Text(DetailFormat.lastRead(unix: session.startedAt))
-                            .foregroundStyle(palette.ink1Color)
-                        Spacer(minLength: 0)
-                        Text(DetailFormat.duration(session.seconds))
-                            .foregroundStyle(palette.ink0Color)
-                            .monospacedDigit()
-                    }
-                    .font(.ui(14))
-                    .padding(.vertical, 8)
-                    .accessibilityElement(children: .combine)
-                }
-                .transition(.opacity)
-            }
-
-            Button {
-                Haptics.tap()
-                withAnimation(Motion.settle) { showsSessions.toggle() }
-            } label: {
-                HStack(spacing: 6) {
-                    Text(showsSessions ? "Hide sessions" : "Show sessions")
-                        .font(.ui(15, weight: .semibold))
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 11, weight: .bold))
-                        .rotationEffect(.degrees(showsSessions ? 180 : 0))
-                }
-                .foregroundStyle(palette.ink1Color)
-                .frame(minHeight: 44)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .padding(.top, 6)
-            .accessibilityIdentifier("book-show-sessions")
         }
     }
 }
