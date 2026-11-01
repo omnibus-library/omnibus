@@ -192,7 +192,7 @@ coverage-html: fixtures
 # An unclosed `}` silently reparents later rules under CSS nesting, so a
 # missing brace must fail the build. stylelint is Nix-pinned in slimPackages.
 lint-css:
-    scripts/with-dev-env.sh default stylelint 'frontend-js/src/**/*.css'
+    scripts/with-dev-env.sh default stylelint 'frontend-js/{src,public}/**/*.css'
 
 # TypeScript lint + format-check + typecheck for the Playwright project.
 # Biome (formatter + linter, config in ui_tests/playwright/biome.json) is the
