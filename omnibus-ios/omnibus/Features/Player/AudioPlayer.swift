@@ -39,7 +39,9 @@ final class AudioPlayer {
     /// the same banner slot as [`syncOffer`].
     private(set) var crossFormatOffer: CrossFormatCandidate?
 
-    private(set) var book: Book?
+    private(set) var book: Book? {
+        didSet { publishPlaybackState() }
+    }
     private(set) var manifest: AudiobookManifest?
     /// The `book_files` row playback was built against. Resolved on load —
     /// an explicit pick, else the file the saved position was taken in, else
@@ -308,8 +310,7 @@ final class AudioPlayer {
         error = nil
         position = 0
         duration = 0
-        // `book` fires no observer: the car and the lock screen hear of it, and
-        // of its start, now rather than when it lands.
+        // The car and the lock screen get the title now, not when the load lands.
         updateNowPlaying()
 
         // The default file, the offer's file match and `isDefaultFileSelected`
@@ -393,6 +394,8 @@ final class AudioPlayer {
             finishLoad(generation)
             if pendingStarts.afterLoad == generation { pendingStarts.afterLoad = nil }
             self.error = (error as? APIError)?.errorDescription ?? error.localizedDescription
+            // The load's end is when `currentArtwork`'s gate lifts for the cover.
+            updateNowPlaying()
         }
     }
 
@@ -957,8 +960,6 @@ final class AudioPlayer {
         position = 0
         duration = 0
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
-        // Explicit: `book = nil` fires no observer, and `teardown` ran with it set.
-        MPNowPlayingInfoCenter.default().playbackState = .stopped
 
         guard let closing else { return }
         Task {
@@ -1387,16 +1388,28 @@ final class AudioPlayer {
         publishPlaybackState()
     }
 
+    /// Whether a publish is queued for the end of this main-actor turn.
+    @ObservationIgnored private var playbackStatePublishIsQueued = false
+
     /// State the system's play/pause control from what it follows, so no write to
-    /// `isPlaying` or `pendingStarts` can leave the car on a stale button.
+    /// `isPlaying`, `pendingStarts` or `book` can leave the car on a stale button.
+    /// Once per main-actor turn, after its `nowPlayingInfo`: a start passes through
+    /// not-playing between its writes, and the system would flash its play button.
     private func publishPlaybackState() {
-        MPNowPlayingInfoCenter.default().playbackState = Self.nowPlayingState(
-            isPlayingOrStarting: isPlayingOrStarting, hasBook: book != nil
-        )
+        guard !playbackStatePublishIsQueued else { return }
+        playbackStatePublishIsQueued = true
+        Task { @MainActor in
+            playbackStatePublishIsQueued = false
+            let state = Self.nowPlayingState(
+                isPlayingOrStarting: isPlayingOrStarting, hasBook: book != nil
+            )
+            let center = MPNowPlayingInfoCenter.default()
+            if center.playbackState != state { center.playbackState = state }
+        }
     }
 
     /// A start still finding its book reads as playing, or a second press re-arms
-    /// it rather than cancelling; never `.paused` with no book, over `close()`'s `.stopped`.
+    /// it rather than cancelling; never `.paused` with no book.
     nonisolated static func nowPlayingState(
         isPlayingOrStarting: Bool, hasBook: Bool
     ) -> MPNowPlayingPlaybackState {

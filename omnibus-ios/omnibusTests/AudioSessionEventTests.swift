@@ -382,11 +382,19 @@ struct AudioSessionEventTests {
         #expect(AudioPlayer.nowPlayingState(isPlayingOrStarting: idle, hasBook: false) == .stopped)
     }
 
-    @MainActor @Test func aWriteToPendingStartsReachesTheSystemControlWithNoBook() {
+    @MainActor @Test func aWriteToPendingStartsReachesTheSystemControlWithNoBook() async {
         let center = MPNowPlayingInfoCenter.default()
         center.playbackState = .playing
-        // With no book loaded this only writes `pendingStarts`, and states nothing itself.
+        // With no book loaded this only writes `pendingStarts`, whose publish waits
+        // for this main-actor turn to end.
         AudioPlayer.shared.play()
+        #expect(center.playbackState == .playing)
+        // Already queued on the main actor, so yielding lets it run; the deadline
+        // only bounds a publish that never comes.
+        let deadline = ContinuousClock.now + .seconds(5)
+        while center.playbackState != .stopped, ContinuousClock.now < deadline {
+            await Task.yield()
+        }
         #expect(center.playbackState == .stopped)
     }
 }
