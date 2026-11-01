@@ -626,29 +626,26 @@ struct ShelfPickerSheet: View {
         let shelf = preview.shelf
         let isOn = member.contains(shelf.id)
 
-        return Button {
-            Task { await toggle(shelf, currentlyOn: isOn) }
-        } label: {
-            HStack(spacing: 14) {
-                stack(preview, withBook: isOn)
-                    .animation(Motion.settle, value: isOn)
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(shelf.name)
-                        .font(.ui(16, weight: .semibold))
-                        .foregroundStyle(palette.ink0Color)
-                    Text(StatsFormat.counted(shelf.bookCount, "book"))
-                        .font(.ui(14))
-                        .foregroundStyle(palette.ink1Color)
-                }
-                Spacer(minLength: 0)
-                check(isOn: isOn, busy: busy.contains(shelf.id))
+        return HStack(spacing: 14) {
+            stack(preview, withBook: isOn)
+                .animation(Motion.settle, value: isOn)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(shelf.name)
+                    .font(.ui(16, weight: .semibold))
+                    .foregroundStyle(palette.ink0Color)
+                Text(StatsFormat.counted(shelf.bookCount, "book"))
+                    .font(.ui(14))
+                    .foregroundStyle(palette.ink1Color)
             }
-            .padding(.vertical, 8)
-            .frame(minHeight: 66)
-            .overlay(alignment: .top) { rule() }
-            .contentShape(Rectangle())
+            Spacer(minLength: 0)
+            check(isOn: isOn, busy: busy.contains(shelf.id))
         }
-        .buttonStyle(.plain)
+        .padding(.vertical, 8)
+        .frame(minHeight: 66)
+        .overlay(alignment: .top) { rule() }
+        .tapRow {
+            Task { await toggle(shelf, currentlyOn: isOn) }
+        }
         .accessibilityAddTraits(isOn ? .isSelected : [])
         .accessibilityIdentifier("shelf-row-\(shelf.id)")
     }

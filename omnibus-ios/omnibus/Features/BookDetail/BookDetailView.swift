@@ -479,7 +479,7 @@ struct BookDetailView: View {
     /// The byline's series link. The section only exists once its panel has
     /// been laid out, so the page moves to Overview before going looking for it.
     private func jumpToSeries(proxy: ScrollViewProxy) {
-        jump(to: .overview, proxy: proxy)
+        pick(.overview)
         Task {
             try? await Task.sleep(for: .milliseconds(60))
             withAnimation(reduceMotion ? nil : Motion.settle) {

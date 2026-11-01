@@ -224,21 +224,7 @@ struct ScrubStars: View {
                     .rotationEffect(.degrees(reduceMotion ? 0 : pop.turn))
                     .offset(y: reduceMotion ? 0 : pop.lift)
             } keyframes: { _ in
-                KeyframeTrack(\.scale) {
-                    LinearKeyframe(1, duration: 0.001 + delay)
-                    CubicKeyframe(isPopping && !wave ? 1.22 : 1, duration: 0.13)
-                    CubicKeyframe(1, duration: 0.19)
-                }
-                KeyframeTrack(\.turn) {
-                    LinearKeyframe(0, duration: 0.001 + delay)
-                    CubicKeyframe(isPopping ? -6 : 0, duration: 0.13)
-                    CubicKeyframe(0, duration: 0.19)
-                }
-                KeyframeTrack(\.lift) {
-                    LinearKeyframe(0, duration: 0.001 + delay)
-                    CubicKeyframe(wave ? -9 : 0, duration: 0.19)
-                    CubicKeyframe(0, duration: 0.29)
-                }
+                StarPop.keyframes(isPopping: isPopping, wave: wave, delay: delay)
             }
     }
 
@@ -300,10 +286,35 @@ struct ScrubStars: View {
     }
 }
 
-private struct StarPop {
+struct StarPop {
     var scale: CGFloat = 1
     var turn: Double = 0
     var lift: CGFloat = 0
+
+    /// Each track opens with a jump to rest, not a 1 ms ramp to it: a drag
+    /// restarts this mid-flight, and a ramp's speed would carry into the next
+    /// keyframe and throw the star across the screen.
+    @KeyframesBuilder<StarPop>
+    static func keyframes(isPopping: Bool, wave: Bool, delay: Double) -> some Keyframes<StarPop> {
+        KeyframeTrack(\.scale) {
+            MoveKeyframe(1)
+            LinearKeyframe(1, duration: 0.001 + delay)
+            CubicKeyframe(isPopping && !wave ? 1.22 : 1, duration: 0.13)
+            CubicKeyframe(1, duration: 0.19)
+        }
+        KeyframeTrack(\.turn) {
+            MoveKeyframe(0)
+            LinearKeyframe(0, duration: 0.001 + delay)
+            CubicKeyframe(isPopping ? -6 : 0, duration: 0.13)
+            CubicKeyframe(0, duration: 0.19)
+        }
+        KeyframeTrack(\.lift) {
+            MoveKeyframe(0)
+            LinearKeyframe(0, duration: 0.001 + delay)
+            CubicKeyframe(wave ? -9 : 0, duration: 0.19)
+            CubicKeyframe(0, duration: 0.29)
+        }
+    }
 }
 
 // MARK: - The sheet

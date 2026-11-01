@@ -161,34 +161,31 @@ struct DeleteBookSheet: View {
     ) -> some View {
         let isOn = picked.wrappedValue.contains(id)
 
-        return Button {
+        return HStack(spacing: 14) {
+            Image(systemName: isOn ? "checkmark.square.fill" : "square")
+                .font(.system(size: 22))
+                .foregroundStyle(isOn ? palette.dangerText : palette.ink2Color)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.ui(16, weight: .semibold))
+                    .foregroundStyle(palette.ink0Color)
+                Text(detail)
+                    .font(.ui(14))
+                    .foregroundStyle(palette.ink1Color)
+            }
+            .multilineTextAlignment(.leading)
+            .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 8)
+        .frame(minHeight: 66)
+        .overlay(alignment: .top) {
+            Rectangle().fill(palette.ink0Color.opacity(0.1)).frame(height: 1)
+        }
+        .tapRow {
             Haptics.tap()
             if isOn { picked.wrappedValue.remove(id) } else { picked.wrappedValue.insert(id) }
-        } label: {
-            HStack(spacing: 14) {
-                Image(systemName: isOn ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 22))
-                    .foregroundStyle(isOn ? palette.dangerText : palette.ink2Color)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(title)
-                        .font(.ui(16, weight: .semibold))
-                        .foregroundStyle(palette.ink0Color)
-                    Text(detail)
-                        .font(.ui(14))
-                        .foregroundStyle(palette.ink1Color)
-                }
-                .multilineTextAlignment(.leading)
-                .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
-            }
-            .padding(.vertical, 8)
-            .frame(minHeight: 66)
-            .overlay(alignment: .top) {
-                Rectangle().fill(palette.ink0Color.opacity(0.1)).frame(height: 1)
-            }
-            .contentShape(Rectangle())
         }
-        .buttonStyle(PressableStyle())
         .accessibilityAddTraits(isOn ? .isSelected : [])
         .accessibilityIdentifier("delete-item-\(id)")
     }
