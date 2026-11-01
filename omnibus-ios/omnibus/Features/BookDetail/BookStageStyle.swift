@@ -259,6 +259,8 @@ struct BarCTAStyle: ButtonStyle {
 struct QuietPillStyle: ButtonStyle {
     @Environment(\.palette) private var palette
     var height: CGFloat = 52
+    /// Whether it takes its share of a row rather than its label's width.
+    var fills = false
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -266,6 +268,7 @@ struct QuietPillStyle: ButtonStyle {
             .foregroundStyle(palette.ink0Color)
             .lineLimit(1)
             .padding(.horizontal, 18)
+            .frame(maxWidth: fills ? .infinity : nil)
             .frame(height: height)
             .background(Capsule().fill(palette.quietFill))
             .scaleEffect(configuration.isPressed ? 0.97 : 1)

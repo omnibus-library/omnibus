@@ -86,11 +86,10 @@ struct BookDetailView: View {
     /// metadata editor, a nested detail — was popped off, and whatever it
     /// wrote should show immediately.
     @State private var hasAppeared = false
-    /// Set while a Send-to-Kindle job is in flight, so the row says so and a
-    /// second tap can't enqueue a duplicate delivery.
-    @State private var kindleSending = false
-    /// The finished send's outcome — the alert's payload, success or failure.
-    @State private var kindleReport: KindleReport?
+    @State private var showExport = false
+    /// The bookmark chosen in the sheet, opened from its `onDismiss`, for the
+    /// same reason as `pickedAudioFile`.
+    @State private var pickedBookmark: Bookmark?
     /// Admin: the merge and delete sheets, and the receipt a landed merge
     /// leaves behind — held until dismissed or undone, since the undo handle
     /// it carries is only good while something keeps it.
@@ -180,9 +179,16 @@ struct BookDetailView: View {
                 ShelfPickerSheet(book: book)
             }
         }
-        .sheet(isPresented: $showBookmarks) {
+        .sheet(isPresented: $showBookmarks, onDismiss: openPickedBookmark) {
             if let book = model.book {
-                BookmarksSheet(book: book, isAudio: book.hasAudiobook)
+                BookmarksSheet(book: book, isAudio: book.hasAudiobook, chapters: model.chapters) {
+                    pickedBookmark = $0
+                }
+            }
+        }
+        .sheet(isPresented: $showExport) {
+            if let book = model.book {
+                BookExportSheet(book: book)
             }
         }
         .sheet(isPresented: $showAudioFilePicker, onDismiss: openPickedAudioFile) {
@@ -209,6 +215,12 @@ struct BookDetailView: View {
                     if result.bookDeleted {
                         dismiss()
                     } else {
+                        withAnimation(Motion.settle) {
+                            toast = DeleteSelectionCopy.doneToast(
+                                files: result.deletedFileIds.count,
+                                copies: result.deletedCopyIds.count
+                            )
+                        }
                         Task { await model.load(uuid: uuid) }
                     }
                 }
@@ -257,16 +269,6 @@ struct BookDetailView: View {
                 }
             }
         }
-        // A send runs on the server's worker and can fail there, well after
-        // the menu that started it has closed — so its outcome arrives as an
-        // alert rather than as in-place state on a row nobody is looking at.
-        .alert(item: $kindleReport) { report in
-            Alert(
-                title: Text(report.title),
-                message: Text(report.message),
-                dismissButton: .default(Text("OK"))
-            )
-        }
         .confirmationDialog(
             "Remove from wishlist?", isPresented: $confirmWishlistRemove, titleVisibility: .visible
         ) {
@@ -312,6 +314,29 @@ struct BookDetailView: View {
         else { return }
         ReaderBridge.shared.pendingCFI = cfi
         read(book)
+    }
+
+    /// Open at the bookmark the sheet chose, once its sheet is gone: a position
+    /// that reads as seconds is the audiobook's, anything else a place in the text.
+    private func openPickedBookmark() {
+        guard let bookmark = pickedBookmark, let book = model.book else { return }
+        pickedBookmark = nil
+        if let seconds = BookmarkCopy.listeningSeconds(bookmark) {
+            guard DownloadManager.shared.canOpen(book, kind: .audio) else {
+                Presentation.shared.openPlayer(book)
+                return
+            }
+            // Opened after: the player loads on appearing, and two loads at once
+            // tear each other down and lose the seek. This way it reuses this one.
+            Task {
+                await player.load(book: book)
+                await player.seek(to: seconds)
+                Presentation.shared.openPlayer(book)
+            }
+        } else {
+            ReaderBridge.shared.pendingCFI = bookmark.position
+            read(book)
+        }
     }
 
     /// Open the player on the file the picker chose, once its sheet is gone.
@@ -497,55 +522,116 @@ struct BookDetailView: View {
         }
     }
 
+    /// A native menu: its rows, thick separators and greyed states are the
+    /// ones the design draws. Three groups — this book and you, what can be done
+    /// to its record, and the two admin writes.
     private func moreMenu(_ book: Book) -> some View {
-        Menu {
-            Button {
-                showShelfPicker = true
-            } label: {
-                Label("Add to shelf", systemImage: "square.stack")
-            }
-            Button {
-                showBookmarks = true
-            } label: {
-                Label("Bookmarks", systemImage: "bookmark")
-            }
-            if app.user?.canEdit == true {
-                NavigationLink(value: Destination.metadataEdit(uuid: book.uuid)) {
-                    Label("Edit metadata", systemImage: "pencil")
-                }
-            }
-            // `formats` empty is a record with nothing on disk — a
-            // wishlist entry or a paper-only book. There is no file to
-            // export, so the row is absent rather than offering a share
-            // sheet that can only fail (#2471). Send to Kindle already
-            // drops itself the same way, via its own sendable-file gate.
-            if app.user?.canDownload == true, !book.formats.isEmpty {
+        let rows = menuRows(book)
+
+        return Menu {
+            Section {
                 Button {
-                    Task { await shareBook(book) }
+                    showShelfPicker = true
                 } label: {
-                    Label("Export file", systemImage: "square.and.arrow.up")
+                    Label("Add to shelf", systemImage: "books.vertical")
+                }
+                if rows.bookmarks {
+                    Button {
+                        showBookmarks = true
+                    } label: {
+                        Label("Bookmarks", systemImage: "bookmark")
+                    }
                 }
             }
-            kindleRow(book)
-            if model.wishlistEntry != nil {
-                Button {
-                    confirmWishlistRemove = true
-                } label: {
-                    Text("Remove from wishlist")
-                    if !connectivity.isOnline { Text("Needs a connection") }
-                    Image(systemName: "heart.slash")
+            Section {
+                if rows.export {
+                    Button {
+                        showExport = true
+                    } label: {
+                        Label("Export\u{2026}", systemImage: "square.and.arrow.up")
+                    }
+                    .accessibilityIdentifier("export-open")
                 }
-                // Direct, never queued: its add can't be (rule 08).
-                .disabled(!connectivity.isOnline)
-                .accessibilityIdentifier("wishlist-remove")
+                if rows.editMetadata {
+                    NavigationLink(value: Destination.metadataEdit(uuid: book.uuid)) {
+                        menuLabel("Edit metadata", systemImage: "pencil")
+                    }
+                    .disabled(!connectivity.isOnline)
+                }
+                if rows.removeFromWishlist {
+                    Button {
+                        confirmWishlistRemove = true
+                    } label: {
+                        menuLabel("Remove from wishlist", systemImage: "heart.slash")
+                    }
+                    // Direct, never queued: its add can't be (rule 08).
+                    .disabled(!connectivity.isOnline)
+                    .accessibilityIdentifier("wishlist-remove")
+                }
             }
-            adminRows(book)
+            if rows.merge || rows.delete {
+                // Library-wide writes, never queued (rule 08 test 1), so both
+                // grey out offline.
+                Section {
+                    if rows.merge {
+                        Button {
+                            showMerge = true
+                        } label: {
+                            menuLabel("Merge with\u{2026}", systemImage: "arrow.triangle.merge")
+                        }
+                        .disabled(!connectivity.isOnline)
+                        .accessibilityIdentifier("merge-open")
+                    }
+                    if rows.delete {
+                        Button(role: .destructive) {
+                            showDelete = true
+                        } label: {
+                            menuLabel(
+                                DeleteSelectionCopy.menuLabel(hasFiles: !book.formats.isEmpty),
+                                systemImage: "trash"
+                            )
+                        }
+                        .disabled(!connectivity.isOnline)
+                        .accessibilityIdentifier("delete-open")
+                    }
+                }
+            }
         } label: {
             Image(systemName: "ellipsis")
                 .font(.system(size: 17, weight: .semibold))
         }
+        .menuOrder(.fixed)
         .buttonStyle(DiscButtonStyle())
         .accessibilityLabel("More")
+        .accessibilityIdentifier("book-more")
+    }
+
+    private func menuRows(_ book: Book) -> BookMenuRows {
+        let gate = KindleService.gate(
+            hasSendableFile: book.hasEpub || book.hasPDF,
+            epubSizeBytes: book.epubSizeBytes,
+            kindleEmail: app.user?.kindleEmail,
+            isOnline: connectivity.isOnline
+        )
+        return BookMenuRows.resolve(
+            // `formats` empty is a record with nothing on disk: a wishlist
+            // entry or a paper-only book has no file to export or bookmark.
+            hasFiles: !book.formats.isEmpty,
+            canDownload: app.user?.canDownload == true,
+            canSendToKindle: !gate.isHidden,
+            canEdit: canEditMetadata,
+            wishlisted: model.wishlistEntry != nil,
+            isAdmin: app.user?.isAdmin == true
+        )
+    }
+
+    /// A row that needs the server: its reason beneath it while there is none.
+    /// Two `Text`s in a menu row render as title + subtitle.
+    @ViewBuilder
+    private func menuLabel(_ title: String, systemImage: String) -> some View {
+        Text(title)
+        if !connectivity.isOnline { Text("Needs a connection") }
+        Image(systemName: systemImage)
     }
 
     private func removeFromWishlist() {
@@ -570,85 +656,6 @@ struct BookDetailView: View {
                     toast = (error as? APIError)?.errorDescription ?? error.localizedDescription
                 }
             }
-        }
-    }
-
-    /// The Send-to-Kindle row, beside Export file — both put the book
-    /// somewhere off the phone. Absent for a book with neither an EPUB nor a
-    /// PDF, since those are all the endpoint knows how to send; every other
-    /// case renders, so a reader who can't send learns why instead of
-    /// finding nothing there.
-    ///
-    /// Two blocked cases keep their tap. Oversize spends it on Amazon's
-    /// uploader, which takes files the email path can't — the same answer
-    /// `send_to_kindle_action` gives on web. A missing address spends it
-    /// saying so: the row's subtitle is a nicety the menu may or may not
-    /// draw, so the reason a reader can act on can't rest on it alone.
-    /// Offline is the one that greys out, matching every other network-only
-    /// control here, and is never queued (rule 08 test 2).
-    @ViewBuilder
-    private func kindleRow(_ book: Book) -> some View {
-        let gate = KindleService.gate(
-            hasSendableFile: book.hasEpub || book.hasPDF,
-            epubSizeBytes: book.epubSizeBytes,
-            kindleEmail: app.user?.kindleEmail,
-            isOnline: connectivity.isOnline
-        )
-        if !gate.isHidden {
-            Button {
-                switch gate {
-                case .ready:
-                    sendToKindle(book)
-                case .oversize:
-                    if let url = KindleService.webUploadURL {
-                        openURL(url)
-                    } else {
-                        kindleReport = KindleService.oversizeFallbackReport
-                    }
-                default:
-                    kindleReport = gate.blockedReport
-                }
-            } label: {
-                // Two `Text`s in a menu row render as title + subtitle.
-                Text(kindleSending ? "Sending\u{2026}" : "Send to Kindle")
-                if let reason = gate.reason {
-                    Text(reason)
-                }
-                Image(systemName: "paperplane")
-            }
-            .disabled(kindleSending || !gate.isTappable)
-        }
-    }
-
-    /// The two admin rows, Merge with… and Delete files…. Absent entirely for
-    /// a reader who isn't an admin; greyed offline, since both are library-
-    /// wide writes that are never queued (rule 08 test 1) — the same answer
-    /// the web page gives, where the buttons exist only for admins.
-    @ViewBuilder
-    private func adminRows(_ book: Book) -> some View {
-        let gate = AdminBookGate.resolve(
-            isAdmin: app.user?.isAdmin == true,
-            isOnline: connectivity.isOnline
-        )
-        if !gate.isHidden {
-            Divider()
-            Button {
-                showMerge = true
-            } label: {
-                Label("Merge with\u{2026}", systemImage: "arrow.triangle.merge")
-            }
-            .disabled(!gate.isEnabled)
-            .accessibilityIdentifier("merge-open")
-            Button(role: .destructive) {
-                showDelete = true
-            } label: {
-                Label(
-                    DeleteSelectionCopy.menuLabel(hasFiles: !book.formats.isEmpty),
-                    systemImage: "trash"
-                )
-            }
-            .disabled(!gate.isEnabled)
-            .accessibilityIdentifier("delete-open")
         }
     }
 
@@ -849,58 +856,6 @@ struct BookDetailView: View {
         } else {
             Presentation.shared.openPlayer(book)
         }
-    }
-
-    /// Enqueue the send and poll it to an outcome, then report that outcome.
-    ///
-    /// Straight to `APIClient` by way of `KindleService`, never the outbox:
-    /// per rule 08 test 2 a send is a command, and one replayed hours later
-    /// delivers a book the reader may have already finished. So it reports
-    /// what happened — including the server-side refusals the gate can't
-    /// pre-flight, chiefly an instance with no SMTP relay configured.
-    private func sendToKindle(_ book: Book) {
-        guard !kindleSending else { return }
-        Haptics.tap()
-        kindleSending = true
-        Task {
-            defer { kindleSending = false }
-            do {
-                try await KindleService.send(uuid: book.uuid)
-                let to = app.user?.kindleEmail?.nilIfBlank ?? "your Kindle"
-                kindleReport = KindleReport(
-                    title: "Sent to Kindle",
-                    message: "\(book.displayTitle) is on its way to \(to)."
-                )
-            } catch {
-                // The caller went away, not the send — which may already be in
-                // flight, so reporting a failure is the one wrong answer.
-                guard !isCancellation(error) else { return }
-                kindleReport = KindleReport(
-                    title: "Couldn't send",
-                    message: (error as? LocalizedError)?.errorDescription
-                        ?? error.localizedDescription
-                )
-            }
-        }
-    }
-
-    private func shareBook(_ book: Book) async {
-        // Reuse the offline copy when one exists so an export costs nothing.
-        var url = downloads.localURL(for: book.uuid, kind: .ebook)
-        if url == nil {
-            guard let data = try? await APIClient.shared.data(for: "/api/ebooks/\(book.uuid)/download")
-            else { return }
-            // `/download` serves the EPUB > CBZ > PDF ladder; the share item
-            // has to carry the extension of the file that actually came back.
-            let ext = DownloadManager.targetFile(book, kind: .ebook)?.format.lowercased()
-                ?? DownloadManager.fallbackEbookExtension(book)
-            let temp = FileManager.default.temporaryDirectory
-                .appendingPathComponent("\(book.displayTitle).\(ext)")
-            try? data.write(to: temp)
-            url = temp
-        }
-        guard let url else { return }
-        ShareSheet.present(items: [url])
     }
 }
 

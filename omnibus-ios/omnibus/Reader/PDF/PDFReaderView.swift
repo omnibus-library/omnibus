@@ -641,6 +641,13 @@ struct PDFReaderView: View {
         if let settled = await firstResult(of: remote, within: PositionSync.openDeadline) {
             start = resumePage(of: settled, count: source.pageCount)
         }
+        // A page asked for before this view existed, from the book page's bookmarks.
+        if let asked = ReaderBridge.shared.pendingCFI {
+            ReaderBridge.shared.pendingCFI = nil
+            if let wanted = PDFPosition.parseAnchor(asked) {
+                start = min(max(wanted, 0), source.pageCount - 1)
+            }
+        }
 
         page = start
         stage.page = start

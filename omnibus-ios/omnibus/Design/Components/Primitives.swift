@@ -77,6 +77,19 @@ struct PressableStyle: ButtonStyle {
     }
 }
 
+extension View {
+    /// Makes a whole row a control that a scroll can't set off, for a row whose
+    /// tap changes state. A `Button` in a scroll view still fires when a press
+    /// lingers before the drag; a tap gesture gives up once the finger moves.
+    func tapRow(perform action: @escaping () -> Void) -> some View {
+        contentShape(Rectangle())
+            .onTapGesture(perform: action)
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { action() }
+    }
+}
+
 // MARK: - Chips
 
 struct Chip: View {

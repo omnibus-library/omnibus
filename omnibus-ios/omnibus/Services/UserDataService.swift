@@ -965,6 +965,14 @@ enum UserDataService {
         }
     }
 
+    /// The smart shelves whose rules match the book right now. Apart from
+    /// `shelvesContaining` because a smart shelf's membership can't be toggled.
+    static func smartShelvesContaining(uuid: String) -> AsyncThrowingStream<CacheRead<[Int64]>, Error> {
+        Cache.live(CacheKey.smartShelvesContaining(uuid)) {
+            try await APIClient.shared.get("/api/shelves/containing/\(uuid)/smart")
+        }
+    }
+
     /// Pre-endpoint fallback: read every manual shelf's page and look. Smart
     /// shelves are skipped — their membership is derived and can't be toggled.
     private static func shelvesContainingByScan(uuid: String) async -> [Int64] {

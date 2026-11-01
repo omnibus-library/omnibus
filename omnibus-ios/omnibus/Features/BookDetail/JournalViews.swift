@@ -1,6 +1,5 @@
 //  JournalViews.swift
-//  Journal composer, the Markdown editor it shares with the review composer,
-//  and the bookmarks sheet.
+//  Journal composer, and the Markdown editor it writes in.
 
 import SwiftUI
 
@@ -180,98 +179,5 @@ struct MarkdownEditorField: View {
                         .allowsHitTesting(false)
                 }
             }
-    }
-}
-
-// MARK: - Bookmarks
-
-struct BookmarksSheet: View {
-    let book: Book
-    let isAudio: Bool
-
-    @Environment(\.palette) private var palette
-    @Environment(\.dismiss) private var dismiss
-    @Environment(AudioPlayer.self) private var player
-
-    @State private var bookmarks: [Bookmark] = []
-    @State private var isLoading = true
-
-    var body: some View {
-        NavigationStack {
-            Group {
-                if isLoading {
-                    LoadingView()
-                } else if bookmarks.isEmpty {
-                    EmptyStateView(
-                        icon: "bookmark",
-                        title: "No bookmarks",
-                        message: "Bookmarks you save while reading or listening show up here."
-                    )
-                } else {
-                    List {
-                        ForEach(bookmarks) { bookmark in
-                            Button {
-                                open(bookmark)
-                            } label: {
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(bookmark.title?.nilIfBlank ?? positionLabel(bookmark))
-                                        .font(.ui(15, weight: .medium))
-                                        .foregroundStyle(palette.ink0Color)
-                                    Text(Format.relative(unix: bookmark.createdAt))
-                                        .font(.ui(11))
-                                        .foregroundStyle(palette.ink3Color)
-                                }
-                            }
-                            .listRowBackground(palette.bg1Color)
-                        }
-                        .onDelete { offsets in
-                            let doomed = offsets.map { bookmarks[$0] }
-                            Task {
-                                for bookmark in doomed {
-                                    await UserDataService.deleteBookmark(bookmark)
-                                }
-                                await load()
-                            }
-                        }
-                    }
-                    .scrollContentBackground(.hidden)
-                    .background(palette.bg0Color)
-                }
-            }
-            .background(ScreenBackground())
-            .navigationTitle("Bookmarks")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                }
-            }
-        }
-        .presentationDetents([.medium, .large])
-        .task { await load() }
-    }
-
-    private func load() async {
-        for await items in UserDataService.bookmarks(uuid: book.uuid).values() {
-            bookmarks = items
-            isLoading = false
-        }
-        isLoading = false
-    }
-
-    private func positionLabel(_ bookmark: Bookmark) -> String {
-        if isAudio, let seconds = Double(bookmark.position) {
-            return Format.duration(seconds)
-        }
-        return "Saved position"
-    }
-
-    private func open(_ bookmark: Bookmark) {
-        if isAudio, let seconds = Double(bookmark.position) {
-            Task { await player.seek(to: seconds) }
-        } else {
-            ReaderBridge.shared.pendingCFI = bookmark.position
-        }
-        dismiss()
     }
 }
