@@ -193,6 +193,11 @@ struct MetadataDiffRow: Identifiable, Equatable {
         case .cover: "cover"
         }
     }
+
+    var isCover: Bool {
+        if case .cover = kind { return true }
+        return false
+    }
 }
 
 /// One heading's worth of comparison rows.
@@ -488,10 +493,19 @@ enum MetadataFetchFlow {
                     before: before,
                     after: field.sourceValue(edition),
                     fills: before.nilIfBlank == nil
+                        && (field != .seriesIndex || numberBelongs(to: draft, edition: edition))
                 )
             )
         }
         return rows
+    }
+
+    /// Whether an edition's series number means anything for the draft's series.
+    /// Filling a blank number from another series would pair it with the wrong
+    /// one, which is the mismatch `merged` guards against, so that stays opt-in.
+    private static func numberBelongs(to draft: MetadataDraft, edition: ProviderEdition) -> Bool {
+        let series = draft.series.nilIfBlank
+        return series == nil || series == edition.series?.nilIfBlank
     }
 
     /// Whether a row is ticked: what the reader said, else its default.

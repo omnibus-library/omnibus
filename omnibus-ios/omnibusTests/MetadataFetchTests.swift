@@ -477,6 +477,30 @@ struct MetadataFetchDiffTests {
         #expect(!MetadataFetchFlow.isOn(try #require(left.first), marks: marks))
     }
 
+    @Test func aSeriesNumberOnlyFillsABlankWhenItBelongsToThatSeries() throws {
+        var candidate = bare()
+        candidate.series = "Dune Chronicles"
+        candidate.seriesIndex = "1"
+
+        // The draft is in another series, so taking the number alone would pair
+        // this edition's number with that series.
+        var other = draft()
+        other.series = "Great Science Fiction"
+        let mismatched = rows(candidate, in: other)
+        #expect(try #require(mismatched.first { $0.id == "series" }).fills == false)
+        #expect(try #require(mismatched.first { $0.id == "seriesIndex" }).fills == false)
+
+        // No series yet: both fill together.
+        let blank = rows(candidate, in: draft())
+        #expect(try #require(blank.first { $0.id == "series" }).fills)
+        #expect(try #require(blank.first { $0.id == "seriesIndex" }).fills)
+
+        // Same series, missing its number.
+        var same = draft()
+        same.series = "Dune Chronicles"
+        #expect(try #require(rows(candidate, in: same).first { $0.id == "seriesIndex" }).fills)
+    }
+
     @Test func groupsLeaveOutTheEmptyHeadingAndCountTheirRows() {
         var candidate = bare()
         candidate.series = "Dune Chronicles"

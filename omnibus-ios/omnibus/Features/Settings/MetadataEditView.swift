@@ -53,6 +53,8 @@ struct MetadataEditView: View {
 
     @State private var stagedCover: StagedCover?
     @State private var coverPhotoItem: PhotosPickerItem?
+    /// A picked photo still on its way, which can take a while from iCloud.
+    @State private var photoLoad: Task<Void, Never>?
     @State private var coverURLText = ""
     /// Turns the header cover over when an applied edition brought new art.
     @State private var coverFlips = 0
@@ -82,7 +84,9 @@ struct MetadataEditView: View {
 
     private var detailEdits: Int { pendingDraft.editedCount(since: loaded) }
 
-    private var hasCoverEdit: Bool { stagedCover != nil || coverURLText.nilIfBlank != nil }
+    private var hasCoverEdit: Bool {
+        stagedCover != nil || coverURLText.nilIfBlank != nil || photoLoad != nil
+    }
 
     private var changeCount: Int { detailEdits + (hasCoverEdit ? 1 : 0) }
 
@@ -97,7 +101,11 @@ struct MetadataEditView: View {
                         draft: $draft,
                         staged: $stagedCover,
                         pendingChanges: changeCount,
-                        onApplied: { fetchApplied += $0 },
+                        onApplied: { rows in
+                            fetchApplied += rows
+                            // A cover just chosen outranks a photo still on its way.
+                            if rows.contains(where: \.isCover) { cancelPhotoLoad() }
+                        },
                         onBack: leaveFetch
                     )
                     .transition(.move(edge: .trailing).combined(with: .opacity))
@@ -117,10 +125,13 @@ struct MetadataEditView: View {
         .task { await loadSuggestionPools() }
         .task { await loadProviders() }
         .onChange(of: coverPhotoItem) { _, item in
-            Task { await stagePhoto(item) }
+            guard let item else { return }
+            photoLoad?.cancel()
+            photoLoad = Task { await stagePhoto(item) }
         }
         .onChange(of: tab) { _, _ in stagePastedCover() }
         .onDisappear {
+            photoLoad?.cancel()
             if let landed { onSaved?(landed) }
         }
     }
@@ -151,6 +162,9 @@ struct MetadataEditView: View {
             footer
         }
         .padding(.top, 12)
+        // A save has read the form, and a landed one marks the form as saved. An
+        // edit made in between would be marked too, without having been sent.
+        .disabled(isSaving)
         .confirmationDialog(
             MetadataEditCopy.leaveTitle(count: changeCount),
             isPresented: $confirmLeave,
@@ -231,6 +245,7 @@ struct MetadataEditView: View {
         Button {
             Haptics.tap()
             stagePastedCover()
+            flushPendingChips()
             withAnimation(Motion.settle) { showFetch = true }
         } label: {
             HStack(spacing: 11) {
@@ -434,9 +449,13 @@ struct MetadataEditView: View {
                     .rotation3DEffect(.degrees(8), axis: (x: 0, y: 1, z: 0), perspective: 0.2)
                     .rotationEffect(.degrees(-2.5))
                     .shadow(color: .black.opacity(0.55), radius: 20, x: 14, y: 20)
-                    .accessibilityLabel("Cover as it will read")
+                    .accessibilityLabel(stagedCover == .scanned
+                        ? "The file\u{2019}s own cover, shown once you save"
+                        : "Cover as it will read")
 
-                Text(MetadataEditCopy.coverHint(staged: stagedCover, book: book))
+                Text(photoLoad != nil
+                    ? "Getting your photo\u{2026}"
+                    : MetadataEditCopy.coverHint(staged: stagedCover, book: book))
                     .font(.ui(14))
                     .foregroundStyle(palette.ink1Color)
                     .multilineTextAlignment(.center)
@@ -488,6 +507,7 @@ struct MetadataEditView: View {
                 Button("Use the file\u{2019}s own cover") {
                     Haptics.tap()
                     coverURLText = ""
+                    cancelPhotoLoad()
                     stagedCover = .scanned
                 }
                 .font(.ui(15, weight: .semibold))
@@ -508,19 +528,26 @@ struct MetadataEditView: View {
             return
         }
         error = nil
+        cancelPhotoLoad()
         stagedCover = cover
         coverURLText = ""
     }
 
+    private func cancelPhotoLoad() {
+        photoLoad?.cancel()
+        photoLoad = nil
+    }
+
     /// Read and re-encode the picked photo now, so a bad one is said at once
     /// rather than at Save.
-    private func stagePhoto(_ item: PhotosPickerItem?) async {
-        guard let item else { return }
+    private func stagePhoto(_ item: PhotosPickerItem) async {
         // Cleared so picking the same photo again re-fires the selection.
-        defer { coverPhotoItem = nil }
-        guard let raw = try? await item.loadTransferable(type: Data.self),
-            let image = UIImage(data: raw)
-        else {
+        coverPhotoItem = nil
+        let raw = try? await item.loadTransferable(type: Data.self)
+        // Discard or another choice got there first; this one no longer applies.
+        guard !Task.isCancelled else { return }
+        defer { photoLoad = nil }
+        guard let raw, let image = UIImage(data: raw) else {
             error = "That image couldn\u{2019}t be read."
             Haptics.warning()
             return
@@ -645,6 +672,7 @@ struct MetadataEditView: View {
         pendingAuthor = ""
         pendingTag = ""
         pendingGenre = ""
+        cancelPhotoLoad()
         stagedCover = nil
         coverURLText = ""
         error = nil
@@ -655,10 +683,7 @@ struct MetadataEditView: View {
     private func leaveFetch() {
         let applied = fetchApplied
         fetchApplied = []
-        let brought = applied.filter { row in
-            if case .cover = row.kind { return true }
-            return false
-        }
+        let brought = applied.filter(\.isCover)
         if !applied.isEmpty { tab = brought.count == applied.count ? .artwork : .details }
         withAnimation(Motion.settle) { showFetch = false }
         guard !brought.isEmpty else { return }
@@ -735,7 +760,11 @@ struct MetadataEditView: View {
 
     private func save() async {
         guard !isSaving else { return }
+        isSaving = true
+        defer { isSaving = false }
         error = nil
+        // A photo on its way is part of what's being saved.
+        await photoLoad?.value
         stagePastedCover()
         // A URL the box refuses stays in the box, with the reason in the footer.
         guard error == nil else {
@@ -755,8 +784,6 @@ struct MetadataEditView: View {
             return
         }
 
-        isSaving = true
-        defer { isSaving = false }
         flushPendingChips()
 
         let edits = draft.editedCount(since: loaded)
@@ -835,10 +862,15 @@ struct EditCoverArt: View {
     let staged: StagedCover?
     var size: ThumbSize = .sm
 
+    @Environment(\.palette) private var palette
+
     var body: some View {
         switch staged {
         case let .url(url):
+            // Keyed by address: the loader keeps its last image when a new one
+            // fails, which would show one cover while Save sends another.
             ExternalImage(url: url) { plate }
+                .id(url)
         case let .photo(data):
             if let image = UIImage(data: data) {
                 Image(uiImage: image).resizable().scaledToFill()
@@ -846,7 +878,7 @@ struct EditCoverArt: View {
                 plate
             }
         case .scanned:
-            plate
+            fileCoverTile
         case nil:
             BookCover(identity: CoverIdentity(book), size: size, cornerRadius: 0)
         }
@@ -854,5 +886,25 @@ struct EditCoverArt: View {
 
     private var plate: some View {
         GeneratedCoverPlate(identity: CoverIdentity(book))
+    }
+
+    /// The file's own cover isn't served while an override stands, so this says
+    /// what's coming rather than drawing a cover it isn't.
+    private var fileCoverTile: some View {
+        Rectangle()
+            .fill(palette.bg2Color)
+            .overlay {
+                VStack(spacing: 8) {
+                    Image(systemName: "book.closed")
+                        .font(.system(size: size == .sm ? 16 : 30))
+                    if size != .sm {
+                        Text("The file\u{2019}s own cover")
+                            .font(.ui(14))
+                            .multilineTextAlignment(.center)
+                    }
+                }
+                .foregroundStyle(palette.ink1Color)
+                .padding(10)
+            }
     }
 }
