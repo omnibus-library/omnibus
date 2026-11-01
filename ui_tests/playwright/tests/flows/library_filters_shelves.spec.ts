@@ -216,6 +216,9 @@ test.describe("library filters", () => {
 
       await test.step("check the error shows and the bar stays", async () => {
         await expect(readerLibraryPage.pageError).toBeVisible();
+        await expect(readerLibraryPage.pageError).toContainText(
+          "Couldn't load the library",
+        );
         await expect(filterBar.facetClearButtons).toHaveCount(1);
       });
 

@@ -601,6 +601,9 @@ test.describe("library filters", () => {
     await test.step("check the bar survives the error", async () => {
       expect(filterClauses(request)).toHaveLength(1);
       await expect(libraryPage.pageError).toBeVisible();
+      await expect(libraryPage.pageError).toContainText(
+        "Couldn't load the library",
+      );
       await expect(filterBar.facet("format")).toHaveAccessibleName(
         "Format PDF",
       );

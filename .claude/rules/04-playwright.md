@@ -71,7 +71,7 @@ way to the index, active on `/shelves` and every `/shelves/:id`.
   assert against the landing surface — the pressed tab
   (`ShelfGalleryComponent.selectedTab`) for the name and count,
   `shelf-facets` for kind/visibility/rules, `shelf-edit` for the pencil,
-  `lib-grid` for members, `lib-page-error` for a failed member fetch, and on
+  `lib-grid` for members, `lib-page-error` for a failed member fetch (`lib-empty`, `lib-loading` and `lib-sort-locked` likewise name the empty, waiting and locked-sort states), and on
   a hand-picked shelf `shelf-add-books` / the grid's closing `shelf-add-tile`.
 
 Shelf delete, the member sort control, and the Kobo badge exist **only** on
