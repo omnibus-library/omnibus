@@ -33,6 +33,9 @@ type Story = StoryObj<typeof meta>;
 export const Empty: Story = {
   play: async ({ canvas }) => {
     await expect(canvas.getByRole("button", { name: "Log in" })).toBeDisabled();
+    await expect(canvas.getByText(/^omnibus · /)).toHaveTextContent(
+      "omnibus · dev",
+    );
   },
 };
 

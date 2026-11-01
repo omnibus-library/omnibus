@@ -89,7 +89,7 @@ pub async fn send(
     };
 
     // Defense in depth: the UI disables the button for oversized EPUBs, but the
-    // REST/RPC endpoints (and mobile) can still enqueue a send. Check the size
+    // REST endpoint can still be called directly to enqueue a send. Check the size
     // from the file's metadata *before* reading it, so a doomed 150 MB delivery
     // is rejected without first allocating the whole file in memory — surfaced
     // to the poller as a clear Failed message via `TooLarge`'s display text.

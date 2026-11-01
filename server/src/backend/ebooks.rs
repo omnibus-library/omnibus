@@ -480,7 +480,7 @@ async fn read_ebook_file(
         Ok(resolved) => resolved,
         Err(resp) => return resp,
     };
-    super::serve_file(req, &path, mime, None).await
+    super::serve_file(req, &path, conditional::FileResponse::media(mime, None)).await
 }
 
 /// Get a comic page

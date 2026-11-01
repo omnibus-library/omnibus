@@ -253,7 +253,7 @@
     color: var(--ink-1);
     font-weight: 400;
   }
-  /* Atrium's later `.atrium h2` clamp is what Dioxus renders here, not 28px. */
+  /* Atrium's later `.atrium h2` clamp applies here, not 28px. */
   .settings-section-head h2 {
     font-size: clamp(24px, 8vw, 32px);
   }
@@ -278,7 +278,7 @@
 /* On a phone the accounts table reads as a list, one block per person, with
    the columns inline and the actions on a line of their own. This block must
    stay before the base `.users-table td` rule below, which then wins on padding
-   and border: that is what Dioxus renders. */
+   and border. */
 @media (max-width: 720px) {
   [data-testid="users-table"] thead {
     display: none;

@@ -187,7 +187,7 @@ describe("prefs", () => {
   beforeEach(() => localStorage.clear());
   afterEach(() => vi.restoreAllMocks());
 
-  it("round-trips a position, a rate and a volume under the keys Dioxus uses", () => {
+  it("round-trips a position, a rate and a volume under their localStorage keys", () => {
     saveLocalPosition("u", 12.5);
     saveLocalRate(7, "u", 1.5);
     saveVolume(0.4);

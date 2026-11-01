@@ -1136,7 +1136,7 @@ pub async fn lock_account(pool: &SqlitePool, user_id: i64) -> i64 {
 // ---------------------------------------------------------------------------
 
 /// Seed an epub position for `(user, uuid)` — the one shape every progress
-/// fixture across `db`/`server`/`frontend` upserts (one CFI, no percent).
+/// fixture across `db`/`server` upserts (one CFI, no percent).
 pub async fn seed_epub_position(pool: &SqlitePool, user: i64, uuid: &str) {
     crate::progress::upsert_progress(
         pool,

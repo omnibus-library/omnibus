@@ -12,7 +12,7 @@ layout {
     tab name="server" focus=true {
         pane command="nix" {
             // dev-serve-fg.sh resolves a free port inside this worktree's
-            // window before exec'ing dx serve, so two worktrees running
+            // window before exec'ing the server, so two worktrees running
             // `just serve` at once never collide. It also binds 0.0.0.0 and
             // publishes the chosen port to .claude/runtime/ — see the
             // script for the LAN-exposure caveat.
@@ -24,11 +24,6 @@ layout {
         // for it, proxying /api to that server. Suspended: press Enter to start.
         pane command="nix" start_suspended=true {
             args "develop" ".#web" "--command" "scripts/react-dev-fg.sh"
-        }
-    }
-    tab name="android" {
-        pane command="nix" start_suspended=true {
-            args "develop" ".#mobile" "--command" "dx" "serve" "--platform" "android" "--package" "omnibus-mobile"
         }
     }
     tab name="ios" {

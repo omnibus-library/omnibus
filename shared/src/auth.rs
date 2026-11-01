@@ -1,4 +1,4 @@
-//! Auth wire types shared between the server and both clients.
+//! Auth wire types shared between the server and its clients.
 //!
 //! Used by `/api/auth/{login,register,me}` and the mobile bearer-token flow.
 //! `LoginRequest` / `RegisterRequest` deliberately do not derive `Debug` so a

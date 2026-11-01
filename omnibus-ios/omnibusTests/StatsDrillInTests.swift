@@ -1,7 +1,7 @@
 //  StatsDrillInTests.swift
 //  The tile drill-in's derivations — the delta chip, the trend bars, and the
 //  Pages copy. Every one mirrors a function in the web drill-in
-//  (`frontend/src/pages/stats/drill_in.rs`), so these pin the two surfaces to
+//  (`frontend-js/src/pages/Stats/drillIn.ts`), so these pin the two surfaces to
 //  the same answer: a reader switching from the site to the phone must read
 //  the same "▲ +18% vs last month" — and the tile above it must say "+18%".
 

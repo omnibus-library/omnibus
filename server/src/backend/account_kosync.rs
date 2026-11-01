@@ -1,5 +1,4 @@
-//! `/api/account/kosync` — the signed-in reader's KOReader progress-sync password. Mirrors the
-//! web server functions in `frontend::rpc::kosync` over the same `db::kosync` calls.
+//! `/api/account/kosync` — the signed-in reader's KOReader progress-sync password.
 
 use axum::{
     extract::State,

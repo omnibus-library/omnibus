@@ -930,13 +930,6 @@ button.spoiler.revealed {
   margin-top: 14px;
   max-width: 560px;
 }
-.bdmq-overlay-static {
-  cursor: auto;
-}
-.bdmq-ocard-composer {
-  max-width: 720px;
-  padding: 0;
-}
 .bdmq-ocard-composer .bd-journal-composer {
   border: 0;
   margin: 0;
@@ -1130,6 +1123,7 @@ button.spoiler.revealed {
 .bdmq-syncerr {
   color: var(--warn);
 }
+/* stylelint-disable-next-line no-duplicate-selectors -- the later override stays after the rules between, so their cascade is unchanged */
 .bp-root .bd-sync-panel {
   margin-top: 0;
 }
@@ -1143,6 +1137,7 @@ button.spoiler.revealed {
   border: 0;
   box-shadow: none;
 }
+/* stylelint-disable-next-line no-duplicate-selectors -- the later override stays after the rules between, so their cascade is unchanged */
 .bdmq-ocard-composer .bd-journal-composer {
   margin: 0;
 }

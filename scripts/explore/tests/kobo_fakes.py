@@ -1,8 +1,8 @@
 """Test doubles for the Kobo lane: a local server that speaks Omnibus's contract.
 
 `FakeOmnibus` answers the routes `kobo_wire.py` uses (login, me, logout and the
-Kobo device RPCs) over real HTTP, so the scripts under test keep their real
-HTTP stack. Like `auth::origin_check`, it refuses a POST whose `Origin` is not
+Kobo device routes) over real HTTP, so the scripts under test keep their real
+HTTP stack. Like `auth::origin_check`, it refuses a write whose `Origin` is not
 the instance's own.
 """
 
@@ -15,6 +15,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
 COOKIE = "omnibus_session"
+DEVICES = "/api/account/kobo-devices"
 
 
 class FakeOmnibus:
@@ -28,7 +29,7 @@ class FakeOmnibus:
         self.accounts = accounts
         self.devices = {user: [dict(row) for row in rows] for user, rows in (devices or {}).items()}
         self.requests: list[dict[str, Any]] = []
-        self._failures: dict[str, int] = {}
+        self._failures: dict[tuple[str, str], int] = {}
         self._sessions: dict[str, str] = {}
         self._counter = 100
         self._server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
@@ -54,16 +55,16 @@ class FakeOmnibus:
         self.devices.setdefault(user, []).append(device)
         return device
 
-    def fail(self, path: str, status: int) -> None:
-        """Answer `path` with `status` instead of its normal reply."""
-        self._failures[path] = status
+    def fail(self, method: str, path: str, status: int) -> None:
+        """Answer `method path` with `status` instead of its normal reply."""
+        self._failures[(method, path)] = status
 
-    def recover(self, path: str) -> None:
-        """Undo `fail` for `path`."""
-        self._failures.pop(path, None)
+    def recover(self, method: str, path: str) -> None:
+        """Undo `fail` for `method path`."""
+        self._failures.pop((method, path), None)
 
-    def calls(self, path: str) -> list[dict[str, Any]]:
-        return [r for r in self.requests if r["path"] == path]
+    def calls(self, path: str, method: str | None = None) -> list[dict[str, Any]]:
+        return [r for r in self.requests if r["path"] == path and method in (None, r["method"])]
 
     def logins(self) -> list[str]:
         """The usernames that logged in successfully, in order."""
@@ -78,10 +79,10 @@ class FakeOmnibus:
         session = _cookie(headers.get("Cookie", ""), COOKIE)
         record = {"method": method, "path": path, "body": body, "origin": headers.get("Origin"), "user": self._sessions.get(session or "")}
         self.requests.append(record)
-        if method == "POST" and record["origin"] != self.origin:
+        if method != "GET" and record["origin"] != self.origin:
             return 403, [], "forbidden origin"
-        if path in self._failures:
-            return self._failures[path], [], json.dumps({"error": "injected failure"})
+        if (method, path) in self._failures:
+            return self._failures[(method, path)], [], json.dumps({"error": "injected failure"})
         return self._route(method, path, body, record)
 
     def _route(self, method: str, path: str, body: Any, record: dict[str, Any]) -> tuple[int, list[tuple[str, str]], str]:
@@ -95,14 +96,17 @@ class FakeOmnibus:
             return 401, [], json.dumps({"error": "not signed in"})
         if (method, path) == ("GET", "/api/auth/me"):
             return 200, [], json.dumps({"id": list(self.accounts).index(user) + 1, "username": user})
-        if (method, path) == ("POST", "/api/rpc/kobo/devices"):
+        if (method, path) == ("GET", DEVICES):
             return 200, [], json.dumps(self.devices.get(user, []))
-        if (method, path) == ("POST", "/api/rpc/kobo/devices/create"):
+        if (method, path) == ("POST", DEVICES):
             return 200, [], json.dumps(self.add_device(user, body["name"]))
-        if (method, path) == ("POST", "/api/rpc/kobo/devices/revoke"):
+        if method == "DELETE" and path.startswith(DEVICES + "/"):
             rows = self.devices.get(user, [])
-            self.devices[user] = [row for row in rows if row["id"] != body["id"]]
-            return 200, [], "null"
+            kept = [row for row in rows if str(row["id"]) != path.rsplit("/", 1)[1]]
+            if len(kept) == len(rows):
+                return 404, [], json.dumps({"error": "no such device"})
+            self.devices[user] = kept
+            return 204, [], ""
         return 404, [], json.dumps({"error": f"no route for {method} {path}"})
 
     def _login(self, body: Any, record: dict[str, Any]) -> tuple[int, list[tuple[str, str]], str]:
@@ -140,3 +144,6 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         self._serve("POST")
+
+    def do_DELETE(self) -> None:
+        self._serve("DELETE")

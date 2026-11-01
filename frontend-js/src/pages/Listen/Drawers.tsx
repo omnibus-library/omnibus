@@ -89,7 +89,7 @@ export function useBookmarks(uuid: BookUuid) {
 
   const edit = (change: (rows: AudioBookmark[]) => AudioBookmark[]) =>
     client.setQueryData<AudioBookmark[]>(key, (rows) => change(rows ?? []));
-  // shortcut: a failed write is dropped without a word, as on Dioxus; surface it once there is a place to
+  // shortcut: a failed write is dropped without a word; surface it once there is a place to
   return {
     list,
     status,

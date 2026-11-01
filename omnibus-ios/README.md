@@ -1,17 +1,13 @@
 # Omnibus for iOS (native)
 
-A native SwiftUI client for a self-hosted Omnibus server — an experiment in
-replacing the Dioxus/WKWebView shell in [`mobile/`](../mobile) with something
-that feels like an iOS app. The Rust mobile crate is untouched and still builds;
-this is a parallel client, not a replacement.
+A native SwiftUI client for a self-hosted Omnibus server.
 
 ## Why it exists
 
-The hybrid build renders shared `omnibus-frontend` rsx into a system WebView.
-That gives one codebase for web + iOS + Android, but it can't give iOS scroll
-physics, interactive swipe-back, native navigation transitions, keyboard
-avoidance, or lock-screen audio. This app talks to the same server over the same
-`/api/*` REST surface and gets all of that from the platform.
+A web view can't give iOS scroll physics, interactive swipe-back, native
+navigation transitions, keyboard avoidance, or lock-screen audio. This app talks
+to the same server over the same `/api/*` REST surface as the web client and
+gets all of that from the platform.
 
 ## Running it
 
@@ -55,7 +51,7 @@ to scope an exception to.
 | Path | What's in it |
 |---|---|
 | `omnibus/App/` | `AppState` (auth phase, server URL, theme), root routing, tab shell |
-| `omnibus/Design/` | Atrium palette ported from `frontend/assets/atrium.css`, shared components |
+| `omnibus/Design/` | Atrium palette ported from the web client's `frontend-js/src/styles/`, shared components |
 | `omnibus/Models/` | `Codable` mirrors of `omnibus-shared` wire types |
 | `omnibus/Networking/` | Bearer-auth `APIClient`, Keychain token store |
 | `omnibus/Offline/` | SQLite replica cache, mutation outbox, download manager, reachability |
@@ -240,8 +236,8 @@ fills it, so a grid row can't go ragged when source images disagree on aspect
 ratio.
 
 **The palette is OKLCH, not hex.** `Design/OKLCH.swift` implements the
-OKLCH→sRGB conversion so tokens can be written in the same notation as
-`atrium.css`. A change on either side is a direct comparison instead of a
+OKLCH→sRGB conversion so tokens can be written in the same notation as the web
+client's `frontend-js/src/styles/theme.css`. A change on either side is a direct comparison instead of a
 guess.
 
 **Serde omits things Swift's decoder requires.** The server drops `false` bools
@@ -253,7 +249,8 @@ for `String`/`Int` — defaulting those would hide a real contract break.
 **The EPUB reader reuses epub.js.** iOS ships no EPUB renderer, and the
 vendored glue already implements CFI positions, pagination, and annotations
 against exactly the contract the server expects. `Reader/Web/` is a copy of
-`frontend/assets/vendor/` **plus** `frontend/assets/reader-fonts/` (four woff2s
+the web client's `frontend-js/src/vendor/reader/` epub.js runtime **plus**
+`frontend-js/public/reader-fonts/` (four woff2s
 — two static Instrument Serif cuts and two variable EB Garamond ones, each
 covering weights 400–500 — and `reader-fonts.css`); everything around it —
 chrome, tap zones,
@@ -406,7 +403,7 @@ already reserves its room, so a toggle never moves the page.
 > screen edges with the margin control appearing to do nothing.
 
 > `Reader/Web/epub-reader-glue.js` has **diverged** from
-> `frontend/assets/vendor/` — it carries iOS-only additions the web build
+> `frontend-js/src/vendor/reader/` — it carries iOS-only additions the web build
 > doesn't have: annotation taps (`__omnibusOnAnnotationTap`), note underlines,
 > `seek(fraction, id)` for the scrubber and follow jumps, `chapterPagesLeft` and
 > `settledSeek` on the relocate payload,
@@ -575,20 +572,16 @@ bug rather than a cancellation one. `View.refreshTask` runs the work
 unstructured and awaits it, detaching it from that cancellation while keeping
 the spinner up until the refresh has settled.
 
-**Offline is Swift-native.** The Rust layer pairs its download registry with a
-loopback HTTP server so the WebView can play a local file. `AVPlayer` and
-`WKWebView` both load `file://` directly, so that hop is gone. The rest is a
-port: a SQLite kv replica, a coalescing mutation outbox that drains on
+**Offline is Swift-native.** `AVPlayer` and `WKWebView` both load a download
+from `file://` directly. Beside them sit a SQLite kv replica, a coalescing mutation outbox that drains on
 reconnect, and per-account scoping that wipes user-scoped keys on a user
 switch.
 
-**Tokens live in the Keychain.** The Rust shell persists a 0o600 file and
-carries a TODO to harden it; this does that.
+**Tokens live in the Keychain.**
 
 ## Known gaps
 
-- Android is not covered. `mobile/` builds for both from one codebase; this is
-  iOS-only.
+- Android is not covered: it is a separate app, in the `omnibus-android` repo.
 - Journal entries render as raw markdown source rather than the server's
   sanitized `body_html`.
 - Only the dark themes have been exercised end to end; Light and Sepia are

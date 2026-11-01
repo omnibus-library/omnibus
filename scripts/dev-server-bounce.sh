@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# Restart THIS workspace's dev server cleanly. Useful after adding a sqlx
-# migration (the running server boots its migrations at startup), or when
-# `dx serve` has wedged on a compile error and `dev-up` exits 2 telling
-# you to bounce.
+# Restart THIS workspace's dev server cleanly: after any Rust change (the
+# server doesn't rebuild itself), after adding a sqlx migration (it runs its
+# migrations at startup), or when `dev-status` exits 2 telling you to bounce.
 #
 # Always identity-checked via dev-server-down.sh — never touches a
 # sibling workspace's server.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tests for the OMNIBUS_REACT switch in docker/entrypoint.sh.
+# Tests for how docker/entrypoint.sh points the server at the web client.
 #
 # Runs the real entrypoint with its root-only commands (groupmod, usermod,
 # chown, gosu) stubbed on PATH. The gosu stub drops the user argument and runs
@@ -39,16 +39,14 @@ check() {
     fi
 }
 
-check "serves the bundled react build when OMNIBUS_REACT is 1" \
-    "/app/react" "$(booted_react_dir OMNIBUS_REACT=1)"
-check "leaves react off when OMNIBUS_REACT is unset" \
-    "unset" "$(booted_react_dir)"
-check "leaves react off when OMNIBUS_REACT is any other value" \
-    "unset" "$(booted_react_dir OMNIBUS_REACT=true)"
-check "keeps an explicit OMNIBUS_REACT_DIR over OMNIBUS_REACT" \
-    "/srv/my-build" "$(booted_react_dir OMNIBUS_REACT=1 OMNIBUS_REACT_DIR=/srv/my-build)"
-check "keeps an explicitly empty OMNIBUS_REACT_DIR over OMNIBUS_REACT" \
-    "" "$(booted_react_dir OMNIBUS_REACT=1 OMNIBUS_REACT_DIR=)"
+check "serves the bundled react build by default" \
+    "/app/react" "$(booted_react_dir)"
+check "serves the bundled react build whatever OMNIBUS_REACT says" \
+    "/app/react" "$(booted_react_dir OMNIBUS_REACT=0)"
+check "keeps an explicit OMNIBUS_REACT_DIR" \
+    "/srv/my-build" "$(booted_react_dir OMNIBUS_REACT_DIR=/srv/my-build)"
+check "serves the bundled react build when OMNIBUS_REACT_DIR is empty" \
+    "/app/react" "$(booted_react_dir OMNIBUS_REACT=1 OMNIBUS_REACT_DIR=)"
 
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

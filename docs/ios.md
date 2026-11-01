@@ -1,9 +1,9 @@
 # iOS app
 
-Native SwiftUI client, and the iOS surface going forward — an Xcode project
+Native SwiftUI client, and the iOS surface — an Xcode project
 (`omnibus-ios/omnibus.xcodeproj`), **not** a Cargo crate, so it is invisible to
 `cargo build` / `just lint` / `just test`. It consumes the same `/api/*` REST
-surface as `mobile/`, never the `/api/rpc/*` server functions.
+surface as the web client.
 
 Each Swift file opens with a header comment saying what it is for; print the
 file map from those headers with `just modules omnibus-ios/omnibus`. This page
@@ -278,7 +278,7 @@ one host-document rule, `markStyleCss`, which switches blend mode with the
 reading theme.
 
 **The glue is forked.** `omnibus-ios/omnibus/Reader/Web/epub-reader-glue.js` is a
-copy of `frontend/assets/vendor/epub-reader-glue.js`, and the two have diverged:
+copy of `frontend-js/src/vendor/reader/epub-reader-glue.js`, and the two have diverged:
 the iOS copy carries `sectionRanges` / `pagesLeftInSection`, the host's
 `minSpreadWidth` init option, plus the whole selection engine above, and the web
 copy has since moved its pagination onto `location.start.displayed` and still

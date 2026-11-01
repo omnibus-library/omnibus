@@ -33,7 +33,7 @@ const OTHER_LABEL: &str = "Other";
 /// The year at or below which a parsed `pubdate` means *unknown*, not
 /// *ancient*. Calibre writes `UNDEFINED_DATE = datetime(101, 1, 1)` into OPF
 /// as `0101-01-01`, and `CAST(substr(…, 1, 4) AS INTEGER)` yields 0 for an
-/// absent or unparseable value — mirrors `frontend::format::SENTINEL_YEAR_MAX`
+/// absent or unparseable value — mirrors `SENTINEL_YEAR_MAX` in `frontend-js/src/format.ts`
 /// so a decade histogram and a rendered date agree on which books have one.
 const SENTINEL_YEAR_MAX: i64 = 101;
 

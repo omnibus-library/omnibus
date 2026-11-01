@@ -1,8 +1,8 @@
-//! Shelf wire types shared between web (`#[server]`) and mobile (`reqwest`). A
-//! shelf is a named library subset: **smart** (membership from a `field op
-//! value` rule over normalized metadata) or **manual** (an explicit, ordered
-//! book list). The condition shape (`RuleField` / `RuleOp` / `ShelfRule`) is
-//! defined once here so advanced search can reuse it.
+//! Shelf wire types. A shelf is a named library subset: **smart**
+//! (membership from a `field op value` rule over normalized metadata) or
+//! **manual** (an explicit, ordered book list). The condition shape
+//! (`RuleField` / `RuleOp` / `ShelfRule`) is defined once here so advanced
+//! search can reuse it.
 
 use serde::{Deserialize, Serialize};
 
@@ -497,8 +497,7 @@ impl ShelfPageQuery {
 
 /// Reject an over-long list of book uuids, or any uuid string itself over
 /// [`crate::BOOK_UUID_MAX_LEN`], before a DB round trip. Shared by
-/// `CreateShelfRequest::validate`, the REST `AddBooksRequest`, and
-/// `rpc_add_shelf_books`.
+/// `CreateShelfRequest::validate` and the REST `AddBooksRequest`.
 pub fn validate_book_uuids(uuids: &[String]) -> Result<(), String> {
     if uuids.len() > MAX_SHELF_BOOK_UUIDS {
         return Err(format!(
@@ -517,8 +516,8 @@ pub fn validate_book_uuids(uuids: &[String]) -> Result<(), String> {
 }
 
 /// Reject more than [`MAX_PREVIEW_RULES`] conditions before validating each
-/// one. Shared by `RulePreviewRequest::validate`, `CreateShelfRequest::validate`,
-/// and `rpc_preview_shelf_rule`.
+/// one. Shared by `RulePreviewRequest::validate` and
+/// `CreateShelfRequest::validate`.
 pub fn validate_rule_count(rules: &[ShelfRule]) -> Result<(), String> {
     if rules.len() > MAX_PREVIEW_RULES {
         return Err(format!(

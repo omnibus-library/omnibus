@@ -233,8 +233,8 @@ Growth is not the smell; an unbranched variant is.
 
 **Pattern (coarsening that pays).** `CleanupStoreError` in
 [db/src/cleanup/review.rs](../db/src/cleanup/review.rs) is the same rule
-applied in the other direction. Its callers are `map_store_error` /
-`map_apply_error` in `frontend/src/rpc/cleanup.rs`, which branch on
+applied in the other direction. Its callers are `store_error` /
+`apply_error` in `server/src/backend/cleanup.rs`, which branch on
 exactly one thing — is this an internal fault to log and genericize, or
 a sentence safe to show the admin? So the four review refusals that used
 to be their own unit variants are one message-carrying variant, while
@@ -372,7 +372,7 @@ items without changing any behaviour. Not worth it.
 Hoist when the second consumer appears.
 
 **Rule (DB rows vs wire DTOs):** when the same record crosses the
-HTTP/RPC boundary, it's fine to have a `db::Foo` and a `shared::Foo`
+HTTP boundary, it's fine to have a `db::Foo` and a `shared::Foo`
 that look similar, with `From` / `Into` at the boundary. Don't try to
 make one type serve both — the DB type wants sqlx derives, the wire
 type wants serde, and the two can drift independently

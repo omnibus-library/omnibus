@@ -1,14 +1,13 @@
 ---
-paths: "frontend/src/offline/**, frontend/src/data.rs, frontend/src/data/**, omnibus-ios/omnibus/Offline/**, omnibus-ios/omnibus/Services/**, omnibus-ios/omnibusTests/OfflineSyncTests.swift, frontend/src/offline.rs"
+paths: "omnibus-ios/omnibus/Offline/**, omnibus-ios/omnibus/Services/**, omnibus-ios/omnibusTests/OfflineSyncTests.swift"
 ---
 # 08 — What may be queued offline
 
-Both clients hold a durable mutation outbox — `OpKind` in
-[omnibus-ios/omnibus/Offline/SyncEngine.swift](../../omnibus-ios/omnibus/Offline/SyncEngine.swift)
-and the `Op` enum in
-[frontend/src/offline/outbox.rs](../../frontend/src/offline/outbox.rs) — that
-records a write locally, applies it optimistically to the replica, and replays
-it when the server is reachable again.
+The iOS client holds a durable mutation outbox — `OpKind` in
+[omnibus-ios/omnibus/Offline/SyncEngine.swift](../../omnibus-ios/omnibus/Offline/SyncEngine.swift) —
+that records a write locally, applies it optimistically to the replica, and
+replays it when the server is reachable again. Any other client that grows one
+answers to the same tests.
 
 **The outbox carries per-user content state. It never carries configuration,
 and it never carries commands.**
@@ -60,8 +59,6 @@ payload without asking the server.
   handle, so the iOS client refuses it rather than queueing every later op
   against an id that does not exist — see `createShelf` in
   [omnibus-ios/omnibus/Services/UserDataService.swift](../../omnibus-ios/omnibus/Services/UserDataService.swift).
-  The web client solves the same test differently, with negative temp ids that
-  remap on drain; both are valid answers to it.
 - **Complete.** The check-in routes fail here. `bookUUID` and `ExternalBookMeta`
   come out of the server's ISBN lookup ladder, so queueing a check-in queues a
   question rather than an answer.
@@ -112,8 +109,8 @@ Not queued, by test:
 | `POST /api/account/kindle-email` | 1 — account configuration |
 | `POST /api/account/profile`, avatar upload/delete | 1 — account configuration |
 | `POST /api/account/book-detail-scroll-stops` | 1 — account configuration |
-| `POST /api/account/stack-series`, `/api/rpc/account/stack-series` (Stack series) | 1 — account configuration |
-| `POST /api/account/share-stats`, `/api/rpc/account/share-stats` (Share stats with household) | 1 — account configuration |
+| `POST /api/account/stack-series` (Stack series) | 1 — account configuration |
+| `POST /api/account/share-stats` (Share stats with household) | 1 — account configuration |
 | `PUT /api/stats/goal` (annual reading goal) | 1 — account configuration |
 | `PUT /api/stats/goal/daily` (daily pages / minutes goals) | 1 — account configuration |
 | Metadata overrides | 1 — library-wide, every user sees it |
@@ -131,8 +128,7 @@ Not queued, by test:
 | Wishlist **remove** | none, on its own — held back to match its add (below) |
 | `POST /api/shelves/preview` | not a mutation; a read wearing POST |
 
-The `/api/rpc/cross-format/{link,unlink,sync-point,follow}` counterparts follow
-the same exclusions. These writes go directly to the server and surface failures.
+These writes go directly to the server and surface failures.
 
 The wishlist remove is the one entry here that passes all four tests: it names
 its target with a uuid the device already holds and carries no payload. It
@@ -159,8 +155,3 @@ is the shape: direct call, `throws`, control disabled offline.
 4. Cover it per [03-unit-testing.md](03-unit-testing.md) — the iOS suite's
    equivalent is `omnibus-ios/omnibusTests/OfflineSyncTests.swift`.
 
-## Known divergence
-
-`Op::SetKindleEmail` in `frontend/src/offline/outbox.rs` queues a write that
-test 1 excludes; the iOS client does not. The two clients should agree, and the
-web side is the one out of step.

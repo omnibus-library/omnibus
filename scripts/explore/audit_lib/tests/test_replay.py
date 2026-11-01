@@ -43,17 +43,22 @@ class ReplayTests(unittest.TestCase):
         payload = replay._progress_payload(BOOK, {"axis": "audio", "seconds": 42.5})
         self.assertEqual(payload, {"book_uuid": BOOK, "format": "audio", "audio_position_seconds": 42.5})
 
-    def test_replay_sets_playback_rate_with_the_rpc_shape(self) -> None:
-        # PY-1: the server function takes (uuid, update) and the update's
-        # field is `playback_rate` — the old flat body could never succeed.
+    def test_replay_sets_playback_rate_through_the_audiobook_route(self) -> None:
         client = FakeClient()
         exp = expectations.Expectation("agent-2", 51, "playback_rate", "playback rate", BOOK, "x", 1.5)
         step = replay.replay_one(exp, FakeState(client=client))
         self.assertTrue(step.ok)
         self.assertEqual(
             client.calls,
-            [("POST", "/api/rpc/audiobooks/playback-rate/set", {"uuid": BOOK, "update": {"playback_rate": 1.5}})],
+            [("PUT", f"/api/audiobooks/{BOOK}/playback-rate", {"playback_rate": 1.5})],
         )
+
+    def test_replay_clears_a_rating_through_the_rating_route(self) -> None:
+        client = FakeClient()
+        exp = expectations.Expectation("agent-2", 52, "rating", "rating", BOOK, "x", None)
+        step = replay.replay_one(exp, FakeState(client=client))
+        self.assertTrue(step.ok)
+        self.assertEqual(client.calls, [("DELETE", f"/api/ratings/{BOOK}", None)])
 
     def test_replay_lands_the_note_through_its_own_patch(self) -> None:
         # PY-2: CreateHighlight has no note field and unknown fields are

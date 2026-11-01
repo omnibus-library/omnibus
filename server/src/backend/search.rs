@@ -45,8 +45,7 @@ fn scope_uuids(params: &ContentSearchQuery) -> Vec<String> {
 
 /// Reject an over-length query with 400 so oversized input is never forwarded
 /// into the search db calls. Returns `Some(response)` when `q` exceeds
-/// `omnibus_shared::SEARCH_QUERY_MAX_LEN` — the same cap the RPC search
-/// entrypoints enforce via [`search_query_too_long`].
+/// `omnibus_shared::SEARCH_QUERY_MAX_LEN`.
 fn reject_if_over_length(q: &str) -> Option<Response> {
     search_query_too_long(q).then(|| (StatusCode::BAD_REQUEST, "query too long").into_response())
 }

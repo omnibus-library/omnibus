@@ -428,7 +428,7 @@ impl ChartSpec {
     /// Reject a spec the builder must not compile to SQL.
     ///
     /// Called on the server before any query runs, not merely in the UI: the spec
-    /// arrives over RPC, so this is the contract. An **empty selection is valid**
+    /// arrives over the wire, so this is the contract. An **empty selection is valid**
     /// and answers with an empty result, since the surface has a prompt for it.
     pub fn validate(&self) -> Result<(), ChartSpecError> {
         let mut seen: Vec<ChartMeasure> = Vec::new();

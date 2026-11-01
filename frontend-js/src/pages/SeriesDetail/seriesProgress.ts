@@ -11,7 +11,7 @@ import { readerHref } from "../../resume";
 /** Highest number `missingNumbers` looks for gaps below; a series numbered by year or issue past it isn't a run a reader collects book by book. */
 export const MAX_GAP_SCAN = 200;
 
-// What Rust's `f64::from_str` accepts, which the Dioxus page parses an index with.
+// What Rust's `f64::from_str` accepts; `Number` alone would also take hex and blanks.
 const F64 = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
 
 /** The book the reading strip offers next. */

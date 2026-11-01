@@ -7,10 +7,15 @@ import { RouterProvider } from "react-router";
 import { AtriumRoot } from "./components/Theme/AtriumRoot";
 import { watchImageLoads } from "./imageWatch";
 import { router } from "./router";
+import { reloadOnStaleChunk } from "./staleChunk";
 
 watchImageLoads();
+reloadOnStaleChunk(window, {
+  storage: sessionStorage,
+  reload: () => window.location.reload(),
+});
 
-// No retries, as on Dioxus: a failed fetch shows its error at once.
+// No retries: a failed fetch shows its error at once.
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: false } },
 });

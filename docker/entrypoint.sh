@@ -19,10 +19,10 @@ usermod  -o -u "$PUID" omnibus
 # pre-existing data owned by a different uid? chown it once on the host.
 chown omnibus:omnibus /config /cache 2>/dev/null || true
 
-# OMNIBUS_REACT=1 serves the React build baked into the image at /react/.
-if [ "${OMNIBUS_REACT:-}" = "1" ]; then
-    export OMNIBUS_REACT_DIR="${OMNIBUS_REACT_DIR-/app/react}"
-fi
+# The web client is the React build baked into the image. `:-`, not `-`: an empty
+# value (the old way to turn the opt-in React client off) must not leave the
+# server with no UI. OMNIBUS_REACT, that opt-in's switch, is ignored now.
+export OMNIBUS_REACT_DIR="${OMNIBUS_REACT_DIR:-/app/react}"
 
 echo "omnibus: starting as uid=${PUID} gid=${PGID}"
 exec gosu omnibus:omnibus "$@"

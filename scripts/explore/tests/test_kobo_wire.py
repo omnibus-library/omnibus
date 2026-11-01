@@ -26,7 +26,7 @@ sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent))
 
 import kobo_wire  # noqa: E402
-from kobo_fakes import FakeOmnibus  # noqa: E402
+from kobo_fakes import DEVICES, FakeOmnibus  # noqa: E402
 
 KOBO_WIRE = HERE.parent / "kobo_wire.py"
 PASSWORDS = {"explorer-1": "pw-one", "explorer-2": "pw-two"}
@@ -162,6 +162,10 @@ class KoboWireCliTests(unittest.TestCase):
     def sent(self):
         return [(r["method"], r["path"]) for r in self.fake.requests]
 
+    def revoked(self):
+        """The ids of the devices deleted, in order."""
+        return [int(path.rsplit("/", 1)[1]) for method, path in self.sent() if method == "DELETE"]
+
 
 class CreateTests(KoboWireCliTests):
     def test_prints_the_created_devices_details_as_json(self):
@@ -184,18 +188,20 @@ class CreateTests(KoboWireCliTests):
         self.assertEqual(self.sent(), [
             ("POST", "/api/auth/login"),
             ("GET", "/api/auth/me"),
-            ("POST", "/api/rpc/kobo/devices"),
-            ("POST", "/api/rpc/kobo/devices/create"),
+            ("GET", DEVICES),
+            ("POST", DEVICES),
             ("POST", "/api/auth/logout"),
         ])
         self.assertEqual(self.fake.calls("/api/auth/login")[0]["body"], {"username": "explorer-2", "password": "pw-two"})
-        self.assertEqual(self.fake.calls("/api/rpc/kobo/devices/create")[0]["body"], {"name": "Mock Kobo"})
+        self.assertEqual(self.fake.calls(DEVICES, "POST")[0]["body"], {"name": "Mock Kobo"})
 
-    def test_sends_the_instance_origin_on_every_post(self):
+    def test_sends_the_instance_origin_on_every_write(self):
+        self.fake.add_device("explorer-1", "Mock Kobo")
         self.wire()
 
-        posts = [r for r in self.fake.requests if r["method"] == "POST"]
-        self.assertEqual({r["origin"] for r in posts}, {self.fake.origin})
+        writes = [r for r in self.fake.requests if r["method"] != "GET"]
+        self.assertEqual({r["method"] for r in writes}, {"POST", "DELETE"})
+        self.assertEqual({r["origin"] for r in writes}, {self.fake.origin})
 
     def test_prints_the_token_on_stdout_only(self):
         proc = self.wire()
@@ -216,8 +222,8 @@ class ReuseTests(KoboWireCliTests):
         self.assertEqual(json.loads(proc.stdout)["wired"], "reused")
         self.assertEqual(json.loads(proc.stdout)["token"], device["token"])
         self.assertEqual(self.fake.devices["explorer-1"], [device])
-        self.assertEqual(self.fake.calls("/api/rpc/kobo/devices/create"), [])
-        self.assertEqual(self.fake.calls("/api/rpc/kobo/devices/revoke"), [])
+        self.assertEqual(self.fake.calls(DEVICES, "POST"), [])
+        self.assertEqual(self.revoked(), [])
 
 
 class RecreateTests(KoboWireCliTests):
@@ -228,7 +234,7 @@ class RecreateTests(KoboWireCliTests):
         self.assertNotEqual(out["token"], stale["token"])
         mine = [d for d in self.fake.devices["explorer-1"] if d["name"] == "Mock Kobo"]
         self.assertEqual([d["token"] for d in mine], [out["token"]])
-        self.assertEqual(self.fake.calls("/api/rpc/kobo/devices/revoke")[0]["body"], {"id": stale["id"]})
+        self.assertEqual(self.revoked(), [stale["id"]])
 
     def test_recreates_the_device_when_there_is_no_state_file(self):
         stale = self.fake.add_device("explorer-1", "Mock Kobo")
@@ -274,11 +280,9 @@ class RecreateTests(KoboWireCliTests):
         proc = self.wire()
 
         self.assertEqual(json.loads(proc.stdout)["wired"], "recreated")
-        revoked = [r["body"] for r in self.fake.calls("/api/rpc/kobo/devices/revoke")]
-        self.assertEqual(revoked, [{"id": first["id"]}, {"id": second["id"]}])
-        paths = [path for _, path in self.sent()]
-        self.assertLess(paths.index("/api/rpc/kobo/devices/revoke"), paths.index("/api/rpc/kobo/devices/create"))
-        self.assertEqual(paths.count("/api/rpc/kobo/devices/revoke"), 2)
+        self.assertEqual(self.revoked(), [first["id"], second["id"]])
+        sent = self.sent()
+        self.assertLess(sent.index(("DELETE", f"{DEVICES}/{second['id']}")), sent.index(("POST", DEVICES)))
 
     def test_leaves_a_same_named_koreader_alone_and_creates_a_kobo(self):
         koreader = self.fake.add_device("explorer-1", "Mock Kobo", kind="koreader")
@@ -287,7 +291,7 @@ class RecreateTests(KoboWireCliTests):
         proc = self.wire()
 
         self.assertEqual(json.loads(proc.stdout)["wired"], "created", proc.stderr)
-        self.assertEqual(self.fake.calls("/api/rpc/kobo/devices/revoke"), [])
+        self.assertEqual(self.revoked(), [])
         self.assertIn(koreader, self.fake.devices["explorer-1"])
 
     def test_leaves_devices_with_other_names_alone(self):
@@ -341,25 +345,24 @@ class UsageErrorTests(KoboWireCliTests):
 
 
 class InstanceFailureTests(KoboWireCliTests):
-    DEVICE_CALLS = (
-        "/api/rpc/kobo/devices",
-        "/api/rpc/kobo/devices/revoke",
-        "/api/rpc/kobo/devices/create",
-    )
+    @staticmethod
+    def device_calls(stale):
+        """Each device call the wiring makes against `stale`, in the order it makes them."""
+        return (("GET", DEVICES), ("DELETE", f"{DEVICES}/{stale['id']}"), ("POST", DEVICES))
 
     def assert_failed_cleanly(self, proc):
         self.assertEqual(proc.returncode, 1, proc.stderr)
         self.assertEqual(proc.stdout, "")
         self.assertNotIn("Traceback", proc.stderr)
 
-    def wire_while_failing(self, path):
-        """Wire against a stale "Mock Kobo" while `path` answers 500, so every device call is reached."""
+    def wire_while_failing(self, method, path):
+        """Wire against a stale "Mock Kobo" while `method path` answers 500, so every device call is reached."""
         self.fake.requests.clear()
-        self.fake.fail(path, 500)
+        self.fake.fail(method, path, 500)
         try:
             return self.wire()
         finally:
-            self.fake.recover(path)
+            self.fake.recover(method, path)
 
     def test_exits_1_when_the_login_is_rejected(self):
         accounts = self.accounts_file([{"actor": "agent-1", "username": "explorer-1", "password": "wrong"}])
@@ -376,18 +379,18 @@ class InstanceFailureTests(KoboWireCliTests):
 
     def test_exits_1_naming_the_failed_call_when_a_device_call_fails(self):
         stale = self.fake.add_device("explorer-1", "Mock Kobo")
-        for path in self.DEVICE_CALLS:
-            with self.subTest(path=path):
-                proc = self.wire_while_failing(path)
+        for method, path in self.device_calls(stale):
+            with self.subTest(method=method, path=path):
+                proc = self.wire_while_failing(method, path)
                 self.assert_failed_cleanly(proc)
-                self.assertIn(f"POST {path} -> HTTP 500", proc.stderr)
+                self.assertIn(f"{method} {path} -> HTTP 500", proc.stderr)
                 self.assertNotIn(stale["token"], proc.stderr)
 
     def test_logs_out_when_a_device_call_fails(self):
-        self.fake.add_device("explorer-1", "Mock Kobo")
-        for path in self.DEVICE_CALLS:
-            with self.subTest(path=path):
-                self.wire_while_failing(path)
+        stale = self.fake.add_device("explorer-1", "Mock Kobo")
+        for method, path in self.device_calls(stale):
+            with self.subTest(method=method, path=path):
+                self.wire_while_failing(method, path)
                 self.assertEqual(self.sent()[-1], ("POST", "/api/auth/logout"))
 
 

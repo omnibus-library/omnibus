@@ -108,7 +108,7 @@ extension StatsView {
         let v = Double(n)
         // Each tier opens at 999.5 of the one below rather than at a clean
         // power of ten: 999_999 rounds to 1000 at "K", so it has to render as
-        // "1.0M". Mirrors `compact` in frontend/src/pages/stats/library.rs.
+        // "1.0M". Mirrors `compact` in frontend-js/src/pages/Stats/library.ts.
         for (limit, div, suffix) in [(999.5e6, 1e9, "B"), (999.5e3, 1e6, "M"), (1e4, 1e3, "K")] {
             if v >= limit {
                 let scaled = v / div

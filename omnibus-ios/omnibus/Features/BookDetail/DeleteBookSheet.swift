@@ -1,7 +1,7 @@
 //  DeleteBookSheet.swift
 //  Admin "Delete files…" on book detail: pick the items to remove, then
 //  confirm with copy that says whether the book itself goes. Port of the web
-//  `DeleteBookDialog` (frontend/src/components/delete_book_dialog.rs); the
+//  `DeleteBookDialog` (frontend-js/src/components/DeleteBookDialog/); the
 //  wording lives in `DeleteSelectionCopy` so it can be pinned by a test.
 
 import SwiftUI

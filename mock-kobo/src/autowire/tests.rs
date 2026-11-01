@@ -168,9 +168,9 @@ async fn wire_reuses_device_with_matching_name() {
     let wired = wire(&stub.origin, &admin(), "Mock Kobo").await.unwrap();
 
     assert_eq!(wired.token, "tok-a");
-    assert!(!stub
-        .paths()
-        .contains(&"/api/rpc/kobo/devices/create".to_owned()));
+    assert!(stub
+        .requests_with("POST", "/api/account/kobo-devices")
+        .is_empty());
 }
 
 #[tokio::test]
@@ -185,7 +185,11 @@ async fn wire_creates_a_kobo_when_only_a_koreader_has_the_name() {
 
     assert_eq!(wired.token, STUB_TOKEN);
     assert!(!wired.reused);
-    assert_eq!(stub.requests_to("/api/rpc/kobo/devices/create").len(), 1);
+    assert_eq!(
+        stub.requests_with("POST", "/api/account/kobo-devices")
+            .len(),
+        1
+    );
 }
 
 #[tokio::test]
@@ -197,7 +201,7 @@ async fn wire_creates_device_when_no_name_matches() {
         .unwrap();
 
     assert_eq!(wired.token, STUB_TOKEN);
-    let created = stub.requests_to("/api/rpc/kobo/devices/create");
+    let created = stub.requests_with("POST", "/api/account/kobo-devices");
     assert_eq!(created.len(), 1);
     let body: Value = serde_json::from_str(&created[0].body).unwrap();
     assert_eq!(body, json!({ "name": "Mock Kobo (other)" }));
@@ -242,14 +246,12 @@ async fn wire_sends_login_bearer_to_device_routes() {
 
     wire(&stub.origin, &admin(), "Mock Kobo").await.unwrap();
 
-    let list = stub.requests_to("/api/rpc/kobo/devices");
-    let create = stub.requests_to("/api/rpc/kobo/devices/create");
+    let list = stub.requests_with("GET", "/api/account/kobo-devices");
+    let create = stub.requests_with("POST", "/api/account/kobo-devices");
     for request in list.iter().chain(&create) {
         assert_eq!(request.headers["authorization"], "Bearer stub-session");
     }
     assert_eq!((list.len(), create.len()), (1, 1));
-    let list_body: Value = serde_json::from_str(&list[0].body).unwrap();
-    assert_eq!(list_body, json!({}));
 }
 
 #[tokio::test]
@@ -297,7 +299,7 @@ async fn wire_logs_out_when_listing_devices_fails() {
     assert!(matches!(
         error,
         AutoWireError::Rejected {
-            step: "POST /api/rpc/kobo/devices",
+            step: "GET /api/account/kobo-devices",
             status: 500
         }
     ));

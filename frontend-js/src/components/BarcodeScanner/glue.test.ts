@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import glue from "../../vendor/barcode/barcode-scanner-glue.js?raw";
 
@@ -107,17 +105,5 @@ describe("barcode scanner glue", () => {
     expect(cams[0]?.stopped).toHaveBeenCalledTimes(1);
     expect(statuses).toContain("error");
     expect(statuses).not.toContain("ready");
-  });
-
-  it("is the same file in both asset directories", () => {
-    const dioxus = readFileSync(
-      resolve(
-        import.meta.dirname,
-        "../../../../frontend/assets/vendor/barcode-scanner-glue.js",
-      ),
-      "utf8",
-    );
-
-    expect(dioxus).toBe(glue);
   });
 });

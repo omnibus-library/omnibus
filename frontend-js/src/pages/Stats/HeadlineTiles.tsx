@@ -2,7 +2,7 @@ import type { StatsSummary } from "../../api";
 import { VS_LABELS } from "./drillIn";
 import { buildTiles, type Direction, type Metric, type Tile } from "./tiles";
 
-// Spelled out so tools/extract-atrium.cjs sees each class.
+// Spelled out so a search for each class name finds it.
 const DELTA_CLASS = {
   up: "st-tile-delta up",
   down: "st-tile-delta down",

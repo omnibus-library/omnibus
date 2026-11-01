@@ -2,7 +2,7 @@ import type { ChartBucket, ChartResult, ChartSeries } from "../../api";
 import { fixed } from "../../format";
 import { monthAbbr } from "../Stats/calendar";
 
-// The plot's labels and geometry, a port of `chart_builder/plot.rs`.
+// The plot's labels and geometry.
 
 // A key's `i`th dash-separated part as a whole number, `null` when it isn't one.
 function part(key: string, i: number): number | null {

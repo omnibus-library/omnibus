@@ -5,8 +5,8 @@
 # Usage: scripts/koreader-e2e.sh   (normally `just koreader-e2e`)
 #
 # What it does:
-#   1. `dx bundle` the web app and starts the bundle's standalone server on a
-#      scratch DB with a seeded library: the two committed fixture EPUBs
+#   1. Builds the server and starts it on a scratch DB with a seeded
+#      library: the two committed fixture EPUBs
 #      (test_data/epubs/generated/alpha.epub, beta.epub), the two the `precise`
 #      scenario puts on the shelf (standalone-lagoon.epub, frontmatter-relay.epub)
 #      and the first (admin) account, registered here as on CI.
@@ -43,7 +43,7 @@ label=koreader
 kept_hint="server.log, results/"
 deb="$(awk '/_amd64\.deb$/ {print $2}' ui_tests/koreader/koreader.sha256)"
 docker build -t "omnibus-koreader:$deb" ui_tests/koreader
-bundle_web_app
+build_server
 
 # Seed the library before the server boots: an empty index would kick its
 # boot scan off on nothing.

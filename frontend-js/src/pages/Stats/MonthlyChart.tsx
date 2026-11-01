@@ -1,7 +1,7 @@
 import type { StatsSummary } from "../../api";
 import { averageLabel, buildBars, type MonthBar } from "./monthly";
 
-// Spelled out so tools/extract-atrium.cjs sees each class.
+// Spelled out so a search for each class name finds it.
 function columnClass(bar: MonthBar, peak: number) {
   if (bar.current) return "st-mo-col current";
   return peak > 0 && bar.books === peak ? "st-mo-col peak" : "st-mo-col";

@@ -1,10 +1,10 @@
 //  AudioPlayer.swift
 //  AVPlayer-backed audiobook playback.
 //
-//  Replaces the WebView's hls.js path entirely: AVPlayer speaks HLS natively,
+//  AVPlayer rather than a WebView's hls.js: AVPlayer speaks HLS natively,
 //  and routing through `MPNowPlayingInfoCenter` / `MPRemoteCommandCenter` gets
 //  lock-screen, Control Center, AirPlay, and CarPlay transport for free —
-//  none of which the hybrid build could offer.
+//  none of which a WebView player could offer.
 
 import AVFoundation
 import Combine
@@ -701,6 +701,8 @@ final class AudioPlayer {
     /// Start playback — or, with a load in flight, owe it the start, and with
     /// a book whose load failed, load it again.
     func play() {
+        // Every caller is a resume; a rebuild's own start takes `startPlayback` instead.
+        if !isPlaying { artworkRetry.noteResumed() }
         pendingStarts.overruleCall()
         // Nothing to start yet: the load makes the start once it lands.
         if let loadingGeneration {
@@ -1405,40 +1407,58 @@ final class AudioPlayer {
     /// The book's artwork; not `isFinal` while it is the plate standing in
     /// for art that didn't load.
     private var artworkCache: (uuid: String, artwork: MPMediaItemArtwork, isFinal: Bool)?
-    /// The book whose artwork is loading. Now Playing updates twice a second,
-    /// and each would otherwise start another fetch and render of the cover.
-    private var artworkLoading: String?
+    /// The `loadGeneration` whose artwork is loading. Now Playing updates twice
+    /// a second, and each would otherwise start another fetch and render of the
+    /// cover. A load left over from before a book change holds nothing up.
+    private var artworkLoading: Int?
     /// Whether a plate waits on the connection to try its art again.
     private var artworkAwaitsConnection = false
+    /// When a plate may ask the server for its art again.
+    private var artworkRetry = ArtworkRetrySchedule()
 
     private var currentArtwork: MPMediaItemArtwork? {
         guard let book else { return nil }
         let cached = artworkCache?.uuid == book.uuid ? artworkCache : nil
         if let cached, cached.isFinal { return cached.artwork }
-        // Offline, each tick's attempt would wait out a request timeout.
-        guard artworkLoading != book.uuid, cached == nil || Connectivity.shared.isOnline else {
-            return cached?.artwork
-        }
-        artworkLoading = book.uuid
+        artworkRetry.noteCurrent(uuid: book.uuid)
+        // Offline, each tick's attempt would wait out a request timeout. Mid-load,
+        // the `play()` the load is about to make would lift a failure's wait at once.
+        guard !isLoading, artworkLoading != loadGeneration,
+              cached == nil || Connectivity.shared.isOnline, artworkRetry.fetchIsDue(at: .now)
+        else { return cached?.artwork }
+        let generation = loadGeneration
+        artworkLoading = generation
         Task {
-            await loadArtwork(for: book)
-            if artworkLoading == book.uuid { artworkLoading = nil }
+            await loadArtwork(for: book, generation: generation)
+            if artworkLoading == generation { artworkLoading = nil }
         }
         return cached?.artwork
     }
 
-    private func loadArtwork(for book: Book) async {
+    private func loadArtwork(for book: Book, generation: Int) async {
         if let cached = artworkCache, cached.uuid == book.uuid, cached.isFinal { return }
         var art: UIImage?
+        var fetchFailed = false
         if book.coverURL != nil {
             art = await ImageCache.shared.image(for: "/api/thumbs/\(book.uuid)/lg")
-            if art == nil, Connectivity.shared.isOnline,
-               let data = try? await APIClient.shared.data(for: "/api/covers/\(book.uuid)") {
-                art = UIImage(data: data)
+            if art == nil, Connectivity.shared.isOnline {
+                do {
+                    let data = try await APIClient.shared.data(for: "/api/covers/\(book.uuid)")
+                    art = UIImage(data: data)
+                    fetchFailed = art == nil
+                } catch APIError.offline {
+                    // Refused without being sent, so it costs the schedule nothing.
+                } catch {
+                    fetchFailed = true
+                }
             }
         }
+        // A load from before a book change says nothing about the book now
+        // playing, and writing its plate would drop that book's artwork.
+        guard generation == loadGeneration else { return }
+        if fetchFailed { artworkRetry.noteFailure(at: .now) }
         // Art that didn't load shows the plate meanwhile, and is tried again on
-        // a later update — offline, once the connection is back.
+        // a later update, once the schedule allows and the connection is there.
         let isFinal = art != nil || book.coverURL == nil
         if isFinal || artworkCache?.uuid != book.uuid,
            let image = Self.artworkImage(for: book, art: art) {
@@ -1446,21 +1466,24 @@ final class AudioPlayer {
             artworkCache = (book.uuid, artwork, isFinal)
             updateNowPlaying()
         }
-        if !isFinal, !Connectivity.shared.isOnline { retryArtworkOnceOnline() }
+        if !isFinal { retryArtworkOnceOnline() }
     }
 
     /// Update Now Playing once the connection is back, which tries the art
-    /// again — a paused book sends no updates of its own.
+    /// again — a paused book sends no updates of its own. Armed online as well:
+    /// a fetch's own transport failure reaches `Connectivity` after it returns.
     private func retryArtworkOnceOnline() {
         guard !artworkAwaitsConnection else { return }
         artworkAwaitsConnection = true
+        let wasOnline = Connectivity.shared.isOnline
         withObservationTracking {
             _ = Connectivity.shared.isOnline
         } onChange: { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
                 self.artworkAwaitsConnection = false
-                if Connectivity.shared.isOnline {
+                if Connectivity.shared.isOnline, !wasOnline {
+                    self.artworkRetry.noteConnectionReturned()
                     self.updateNowPlaying()
                 } else {
                     self.retryArtworkOnceOnline()

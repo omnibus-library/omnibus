@@ -1,6 +1,4 @@
-//! Send-to-Kindle REST handlers (mobile-facing). Mirrors the web server
-//! functions in `frontend/src/rpc/{kindle,account}.rs` and the SMTP admin RPCs
-//! in `frontend/src/rpc/settings.rs`: per-user send + Kindle-email, delivery
+//! Send-to-Kindle REST handlers: per-user send + Kindle-email, delivery
 //! readiness, and the admin-only SMTP config (get / set / clear / test).
 
 use axum::{

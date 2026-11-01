@@ -1,7 +1,4 @@
-//! Highlight annotation REST handlers for the mobile client (`/api/highlights*`).
-//!
-//! Web clients use the `/api/rpc/highlights/*` server functions defined in
-//! `omnibus_frontend::rpc`.
+//! Highlight annotation REST handlers (`/api/highlights*`).
 
 use axum::{
     extract::{Path, Query, State},

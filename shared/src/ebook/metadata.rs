@@ -1,7 +1,6 @@
 //! Wire shape for a single ebook row.
 //!
-//! `EbookMetadata` is the row returned by `/api/ebooks`, `rpc_get_ebooks`,
-//! and downstream detail / discovery views. `Contributor` and `Identifier`
+//! `EbookMetadata` is the row returned by `/api/ebooks` and downstream detail / discovery views. `Contributor` and `Identifier`
 //! are its two non-scalar sub-types.
 
 use serde::{Deserialize, Serialize};

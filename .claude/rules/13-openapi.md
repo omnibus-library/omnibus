@@ -23,8 +23,8 @@ Rust code generates it; nobody edits it by hand.
   [`server/src/backend/openapi.rs`](../../server/src/backend/openapi.rs), with the
   overview prose in [`overview.md`](../../server/src/backend/openapi/overview.md) beside it.
 
-Out of scope: the Dioxus server functions (`/api/rpc/*`), Kobo, KOReader (`/koreader/v1`), OPDS, `/metrics`, `/mcp`
-and `/react`. Their clients fix those formats, so they keep plain `.route(...)`.
+Out of scope: Kobo, KOReader (`/koreader/v1`), OPDS, `/metrics`, `/mcp` and the React
+client's files (the router's fallback). Their clients fix those formats, so they keep plain `.route(...)`.
 
 ## Annotating a handler
 

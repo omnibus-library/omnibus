@@ -36,8 +36,8 @@ export type {
 // These are values as well as types, because the picker lists every option the spec allows.
 export { ChartBucket, ChartMeasure } from "./generated/schemas";
 
-// The stats and chart answers stay wire-shaped (snake_case), because each helper behind the
-// page is a port of its Rust over the same field names. The summary and library mappers fill the
+// The stats and chart answers stay wire-shaped (snake_case), so every helper behind the page
+// reads the field names the server sends. The summary and library mappers fill the
 // fields the server may omit with their Rust `Default`, once; the finished books' `rating` and
 // `author`, a chart series' `slice` and the chart result stay optional and are guarded on screen.
 
@@ -198,7 +198,7 @@ export async function fetchChartSeries(spec: ChartSpec) {
   );
 }
 
-// Dioxus refetches on neither focus nor reconnect. A refetch that failed here would replace the
+// No refetch on focus or reconnect: a refetch that failed here would replace the
 // figures on screen with the page's error, or with the empty fallback the context reads return.
 export const NO_AMBIENT_REFETCH = {
   refetchOnWindowFocus: false,

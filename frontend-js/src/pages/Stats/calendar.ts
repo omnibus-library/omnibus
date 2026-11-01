@@ -2,7 +2,7 @@ import type { StatsRange } from "../../api";
 import { RANGE_LABELS } from "./summary";
 
 // Day math runs on epoch-day numbers over the stats' `YYYY-MM-DD` strings, with no date
-// library, as the Rust page does, so every figure falls on the same day.
+// library, so no timezone rule can move a figure onto another day.
 
 export const remEuclid = (a: number, b: number) => ((a % b) + b) % b;
 

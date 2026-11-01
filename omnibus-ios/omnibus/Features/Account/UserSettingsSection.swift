@@ -63,8 +63,8 @@ struct AccountSettingToggle: Equatable {
     func isDisabled(online: Bool) -> Bool { !online || isSaving }
 }
 
-/// The native twin of the web Account page's user-settings card
-/// (`frontend/src/pages/account/user_settings.rs`).
+/// The native twin of the web client's preferences settings
+/// (`frontend-js/src/pages/Settings/PreferencesSection.tsx`).
 struct UserSettingsSection: View {
     @Environment(AppState.self) private var app
     @Environment(\.palette) private var palette

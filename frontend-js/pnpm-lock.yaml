@@ -96,9 +96,6 @@ importers:
       playwright:
         specifier: 1.63.0
         version: 1.63.0
-      postcss:
-        specifier: 8.5.29
-        version: 8.5.29
       storybook:
         specifier: 10.6.2
         version: 10.6.2(@types/react@19.3.0)(react@19.3.0)

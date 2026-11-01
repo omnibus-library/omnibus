@@ -91,6 +91,12 @@ class CompareTests(unittest.TestCase):
         found = compare.unexpected("agent-2", state2, baseline, claimed)
         self.assertEqual([f.observed for f in found], ["shelf 'mystery pile'"])
 
+    def test_unexpected_skips_a_baseline_book_that_is_gone_and_still_checks_the_rest(self) -> None:
+        baseline = {"library": [OTHER, BOOK], "actors": {"agent-1": {"books": {}, "shelves": []}}}
+        state = FakeState(gone={OTHER}, ratings={BOOK: 5.0}, statuses={}, journals={}, shelves=[])
+        found = compare.unexpected("agent-1", state, baseline, claims_of())
+        self.assertEqual([(f.kind, f.target) for f in found], [(compare.UNEXPECTED, BOOK)])
+
     def test_unexpected_stays_quiet_about_state_the_baseline_already_held(self) -> None:
         baseline = {"library": [BOOK], "actors": {"agent-1": {"books": {BOOK: {"rating": 5.0}}, "shelves": []}}}
         state = FakeState(ratings={BOOK: 5.0}, statuses={}, journals={}, shelves=[])
@@ -255,7 +261,7 @@ class ContainmentTests(unittest.TestCase):
         class OneBadUuid(FakeState):
             def rating(self, uuid: str) -> Any:
                 if uuid == bad:
-                    raise ApiError(f"POST /api/rpc/ratings/get -> HTTP 500 for {uuid}")
+                    raise ApiError(f"GET /api/ratings/{uuid} -> HTTP 500")
                 return super().rating(uuid)
 
         good = expectations.Expectation("agent-1", 1, "rating", "rating", BOOK, "x", 4.5)

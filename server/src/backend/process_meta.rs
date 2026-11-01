@@ -4,7 +4,7 @@
 //! stable for the process lifetime.
 
 /// Process-start build id, captured once so any HMR cycle that restarts the server (the
-/// only way `dx serve` rebuilds Rust changes) produces a new id; Claude's `ui-validate`
+/// way a rebuilt server comes up) produces a new id; Claude's `ui-validate`
 /// skill polls it to know a rebuild landed. `main.rs` calls [`init_build_id`] eagerly
 /// during boot so it is set before any request reads it.
 pub fn build_id() -> u128 {

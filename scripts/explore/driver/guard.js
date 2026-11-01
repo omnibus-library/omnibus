@@ -13,9 +13,9 @@
 // then has to copy each request body into one DevTools event before the
 // handler can see it — a multi-hundred-MB audiobook took the whole browser
 // down with it, before the upload ever reached the app. The wrapper sees the
-// same requests (the WASM client's HTTP all goes through `fetch`; nothing in
-// the app uses XMLHttpRequest) and never touches a body it is not about to
-// inspect, so an upload of any size passes straight through.
+// same requests (the web client's HTTP goes through `fetch`; only uploads use
+// XMLHttpRequest, and no upload is destructive) and never touches a body it is
+// not about to inspect, so an upload of any size passes straight through.
 //
 // State lives in the driver's Node process, reached over bindings, so a
 // navigation resets nothing: `driver.sh refusals` reads
@@ -102,34 +102,25 @@
     window.__omnibusGuardVersion = version;
 
     // Endpoints that destroy or restructure a book. Anything book-scoped is
-    // gated on the owned set; author and series deletion is refused outright,
+    // gated on the owned set; author deletion is refused outright,
     // because start.md forbids it for every agent regardless of ownership.
     // Only the calls that name a book uuid and destroy something can be
     // ownership-checked, so only they belong here: file deletion, merge, and
-    // the two routes that delete a fileless book. A blanket `physical/` — run
-    // r-20260908-01's fix for copy removals slipping past — refused the whole
-    // surface instead, reads included, because no copy route carries a uuid.
-    const BOOK_SCOPED =
-      /\/api\/(rpc\/(books\/delete-files|merge-books|physical\/book\/delete)$|physical\/[0-9a-f-]{36}$)/;
-    // Reads wearing POST, plus the wishlist. The wishlist is per-user state on
-    // any book in the library, so gating it on the owned set would stop an
-    // agent wishlisting a book somebody else uploaded — which every reader may
-    // do.
-    const PHYSICAL_ALLOWED = /\/api\/rpc\/physical\/(copies|wishlist\/(get|add|remove))$/;
+    // the route that deletes a fileless book. The wishlist (`physical/{uuid}/
+    // wishlist`) is per-user state any reader may set on any book, so it stays
+    // out of the owned-set check.
+    const BOOK_SCOPED = /\/api\/(books\/[0-9a-f-]{36}\/delete-files|books\/merge|physical\/[0-9a-f-]{36})$/;
     // A copy note or removal names a copy id and no book uuid. The copy card
     // that sends it sits on its book's page, so the guard asks the server who
     // filed that copy and lets through only the signed-in account's own.
-    const COPY_SCOPED = /\/api\/(rpc\/physical\/copies\/(note|delete)$|physical\/copies\/\d+$)/;
-    const ALWAYS_REFUSED = /\/api\/rpc\/(author\/delete|cleanup\/delete-entity)/;
+    const COPY_SCOPED = /\/api\/physical\/copies\/\d+$/;
+    const ALWAYS_REFUSED = /\/api\/authors\/\d+$/;
     // Undo is destructive and owner-only, but its payload carries a merge_log_id
     // and no uuid, so ownership cannot be read from the request. Refusing it
     // outright would block the very step that found the undo data-loss bug
     // (#2234), so instead it is allowed only to reverse a merge this guard
     // already approved — which was itself ownership-checked.
-    const UNDO = /\/api\/rpc\/merge-books\/undo$/;
-    // `merge-books/candidates` is a search, not a mutation. It must keep working
-    // or the merge dialog cannot be used at all.
-    const MERGE_READ = /\/api\/rpc\/merge-books\/candidates$/;
+    const UNDO = /\/api\/books\/merge\/undo$/;
 
     const uuidsIn = (text) =>
       (text || "").match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g) || [];
@@ -154,20 +145,14 @@
       return response.json();
     };
     // Why a copy write is refused, or null when the signed-in account filed it.
-    const copyRefusal = async (url, text) => {
-      const match = /copies\/(\d+)$/.exec(url) || /copy_id\D{0,4}(\d+)/.exec(text);
+    const copyRefusal = async (url) => {
+      const match = /copies\/(\d+)$/.exec(url);
       if (!match) return "copy call carried no copy id to check";
       const [book] = uuidsIn(location.pathname);
       if (!book) return "copy call made from a page that names no book";
       try {
         const me = await json(await originalFetch("/api/auth/me"));
-        const copies = await json(
-          await originalFetch("/api/rpc/physical/copies", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ uuid: book }),
-          }),
-        );
+        const copies = await json(await originalFetch(`/api/physical/${book}/copies`));
         const copy = copies.find((c) => c.id === Number(match[1]));
         if (!copy) return `copy ${match[1]} is not on book ${book}`;
         return copy.added_by_user_id === me.id ? null : "copy was filed by another reader";
@@ -194,22 +179,20 @@
           status: 403,
           headers: { "content-type": "application/json" },
         });
-        // A synthetic Response has an empty `url`, and the Dioxus server-function
-        // client parses `response.url` before it reads the status — so the
-        // refusal surfaced as "relative URL without a base", a transport error
+        // A synthetic Response has an empty `url`, and a client that parses
+        // `response.url` before it reads the status surfaced the refusal as
+        // "relative URL without a base", a transport error
         // an agent cannot tell from an app bug (r-20260908-01). Give it the URL
         // the request was made to, so the app renders the 403 it was built for.
         Object.defineProperty(response, "url", { value: url });
         return response;
       };
 
-      if (ALWAYS_REFUSED.test(url)) return refuse("author and series deletion are forbidden by the rails", []);
-      if (PHYSICAL_ALLOWED.test(url)) return originalFetch.call(this, input, init);
+      if (ALWAYS_REFUSED.test(url)) return refuse("author deletion is forbidden by the rails", []);
       if (COPY_SCOPED.test(url)) {
-        const why = await copyRefusal(url, await bodyText(input, init));
+        const why = await copyRefusal(url);
         return why ? refuse(why, []) : originalFetch.call(this, input, init);
       }
-      if (MERGE_READ.test(url)) return originalFetch.call(this, input, init);
       if (UNDO.test(url)) {
         if (await window.__omnibusGuardMerge("spend")) return originalFetch.call(this, input, init);
         return refuse("undo has no uuid to check and follows no merge this guard approved", []);
@@ -227,7 +210,7 @@
         }
         if (unowned.length > 0) return refuse("actor does not own these books", unowned);
         // Remember an approved merge so its undo can be allowed through.
-        if (/merge-books$/.test(url)) await window.__omnibusGuardMerge("approve");
+        if (/books\/merge$/.test(url)) await window.__omnibusGuardMerge("approve");
       }
       return originalFetch.call(this, input, init);
     };

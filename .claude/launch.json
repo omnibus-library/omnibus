@@ -2,9 +2,9 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "omnibus-fullstack",
+      "name": "omnibus",
       "runtimeExecutable": "nix",
-      "runtimeArgs": ["develop", ".#web", "--command", "bash", "-c", "PORT=3030 OMNIBUS_PUBLIC_ORIGIN=http://localhost:3030,http://127.0.0.1:3030 exec dx serve --platform web --fullstack --port 3030 --package omnibus"],
+      "runtimeArgs": ["develop", ".#web", "--command", "bash", "-c", "pnpm --dir frontend-js install --frozen-lockfile && pnpm --dir frontend-js run build && PORT=3030 OMNIBUS_PUBLIC_ORIGIN=http://localhost:3030,http://127.0.0.1:3030 OMNIBUS_REACT_DIR=frontend-js/dist exec cargo run -p omnibus"],
       "port": 3030
     },
     {

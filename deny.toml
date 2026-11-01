@@ -49,30 +49,11 @@ ignore = [
     # find it. No fixed `rsa` release exists yet — revisit when one ships,
     # and keep the two tools' exemptions in sync until then.
 
-    # ---- Unmaintained (informational) advisories pulled in by the Dioxus
-    # desktop/mobile native shell tree (wry/tao → gtk-rs/webkit2gtk on Linux,
-    # plus a few proc-macro helpers). These are NOT vulnerabilities; they are
-    # "crate is no longer maintained" notices. We accept them because:
-    #   1. They originate exclusively from upstream Dioxus dependencies.
-    #      Removing them requires upstream Dioxus to migrate off these
-    #      crates — not in our control.
-    #   2. cargo-audit (the blocking vulnerability gate in rust.yml's
-    #      `security` job) covers real RUSTSEC vulnerabilities. cargo-deny
-    #      here adds source/ban enforcement; surfacing unmaintained notices
-    #      is informational, not a security gate.
-    # Revisit when Dioxus upgrades the affected sub-trees.
-    { id = "RUSTSEC-2024-0370", reason = "proc-macro-error unmaintained — transitive via Dioxus mobile/desktop crates; awaiting upstream migration" },
-    { id = "RUSTSEC-2024-0411", reason = "gtk-rs GTK3 binding unmaintained — Linux-only Dioxus desktop dep (wry/tao); awaiting upstream migration to GTK4" },
-    { id = "RUSTSEC-2024-0412", reason = "gtk-rs GTK3 binding unmaintained — Linux-only Dioxus desktop dep (wry/tao); awaiting upstream migration to GTK4" },
-    { id = "RUSTSEC-2024-0413", reason = "gtk-rs GTK3 binding unmaintained — Linux-only Dioxus desktop dep (wry/tao); awaiting upstream migration to GTK4" },
-    { id = "RUSTSEC-2024-0414", reason = "gtk-rs GTK3 binding unmaintained — Linux-only Dioxus desktop dep (wry/tao); awaiting upstream migration to GTK4" },
-    { id = "RUSTSEC-2024-0415", reason = "gtk-rs GTK3 binding unmaintained — Linux-only Dioxus desktop dep (wry/tao); awaiting upstream migration to GTK4" },
-    { id = "RUSTSEC-2024-0416", reason = "gtk-rs GTK3 binding unmaintained — Linux-only Dioxus desktop dep (wry/tao); awaiting upstream migration to GTK4" },
-    { id = "RUSTSEC-2024-0418", reason = "gtk-rs GTK3 binding unmaintained — Linux-only Dioxus desktop dep (wry/tao); awaiting upstream migration to GTK4" },
-    { id = "RUSTSEC-2024-0419", reason = "gtk-rs GTK3 binding unmaintained — Linux-only Dioxus desktop dep (wry/tao); awaiting upstream migration to GTK4" },
-    { id = "RUSTSEC-2024-0420", reason = "gtk-rs GTK3 binding unmaintained — Linux-only Dioxus desktop dep (wry/tao); awaiting upstream migration to GTK4" },
-    { id = "RUSTSEC-2024-0436", reason = "paste unmaintained — transitive via Dioxus mobile/desktop crates; awaiting upstream migration" },
-    { id = "RUSTSEC-2025-0057", reason = "fxhash unmaintained — transitive via Dioxus mobile/desktop crates; awaiting upstream migration" },
+    # ---- Unmaintained (informational) notice for `paste`, a proc-macro
+    # helper reached through `lofty` (db's audiobook tag reader). Not a
+    # vulnerability: cargo-audit (the blocking gate in rust.yml's `security`
+    # job) covers those. Revisit when lofty drops paste.
+    { id = "RUSTSEC-2024-0436", reason = "paste unmaintained — proc-macro via lofty (db audiobook tags); awaiting upstream migration" },
 
     # ---- Unmaintained notice behind the PDF text extractor (#2568).
     # `ttf-parser` is `lopdf`'s embedded-font parser, reached only through
@@ -83,39 +64,10 @@ ignore = [
     # Revisit when lopdf moves to a maintained font parser.
     { id = "RUSTSEC-2026-0192", reason = "ttf-parser unmaintained — transitive via lopdf 0.42 / pdf-extract (db::pdf); lopdf 0.42 is required for RUSTSEC-2026-0187, so a downgrade is worse; awaiting an upstream font-parser migration" },
 
-    # ---- Unsound (informational) advisories in the Dioxus desktop/mobile
-    # GTK/WebKit tree. Like the unmaintained notices above these are NOT
-    # vulnerabilities (cargo-audit's --json gate counts 0 vulnerabilities);
-    # they flag `unsafe` blocks upstream can misuse. Both are confined to the
-    # mobile/desktop native shell and neither is reachable from the shipped
-    # `omnibus` server. Fixing them requires an upstream Dioxus bump we don't
-    # control (both crates are pinned deep under Dioxus's wry/gtk tree).
-    # Triaged 2026-07-06 (issue #773). Revisit when Dioxus upgrades wry/gtk.
-    #
-    # NB: RUSTSEC-2026-0186 (memmap2 unchecked pointer offset) is the third
-    # advisory from that triage. It was NOT ignored — it was the one path
-    # reachable from the default (non-mobile) build (memmap2 → subsecond →
-    # dioxus-core), so it was fixed for real by bumping memmap2 0.9.10 → 0.9.11
-    # (`cargo update -p memmap2`; patched in >= 0.9.11), which needs no change
-    # to the Dioxus version. See Cargo.lock.
-    { id = "RUSTSEC-2024-0429", reason = "glib 0.18.5 VariantStrIter unsoundness — mobile/desktop only via wry→gtk→glib (patched in glib 0.20, forced by upstream gtk-rs 0.18 pin under wry); not reachable in the server build" },
-    { id = "RUSTSEC-2026-0097", reason = "rand 0.7.3 unsoundness — aliased mutable reference when a custom `log` logger calls rand::rng()/thread_rng() and ThreadRng reseeds mid-log; build-dependency only via phf_generator 0.8, pulled in by kuchikiki (wry's bundled HTML/CSS engine, an old html5ever/cssparser codegen path), not ammonia — ammonia is a direct omnibus-db dependency but sits on a separate, newer markup5ever lineage that uses phf_generator 0.13 (fastrand-backed, no rand at all); never links into any runtime binary and that logger-reseed path is not exercised in a build script" },
-
-    # ---- Unsound (informational) advisory reachable in the DEFAULT (server)
-    # build — unlike the two mobile/desktop-confined entries just above, `lru`
-    # is pulled in transitively via `dioxus-server` 0.7.9 -> `dioxus`
-    # (`cargo tree -i lru` shows
-    # `dioxus-server -> dioxus -> omnibus`/`omnibus-frontend`). Triggering the
-    # unsoundness requires `catch_unwind` plus a panicking `Drop` on a cached
-    # key during `LruCache::pop()`, which `dioxus-server`'s internal use does
-    # not exercise. Triaged 2026-08-12 (issue #1859). Revisit when Dioxus
-    # bumps its `lru` dependency to >= 0.18.2.
-    { id = "RUSTSEC-2026-0253", reason = "lru 0.16.4 LruCache::pop() use-after-free under a panicking Drop — reachable via the dioxus-server 0.7.9 -> dioxus dependency; requires catch_unwind plus a panicking key Drop during a cache pop, which dioxus-server's internal use does not trigger" },
-
     # ---- zip `extract()` advisories (SUID/SGID bits, symlink targets, perms
     # applied through symlinks), fixed only in zip >= 9.0.0. `zip 3.0.0` is
     # reachable in the default build via `epub 2.1.5` (the latest epub, which
-    # pins `zip = "3.0.0"`); our own db/ and frontend/ deps are on zip 9.
+    # pins `zip = "3.0.0"`); our own db/ and server/ deps are on zip 9.
     # All three hit only `ZipArchive::extract()` / `ZipStreamReader::extract()`,
     # and neither this repo nor epub calls them (archives are read entry by
     # entry, never extracted to disk). Triaged 2026-10-17 (issue #2756).
@@ -125,21 +77,20 @@ ignore = [
     { id = "RUSTSEC-2026-0368", reason = "zip 3.0.0 extract() symlink targets, pinned by epub 2.1.5 (fixed in zip >= 9.0.0); only ZipArchive::extract()/ZipStreamReader::extract() are affected and nothing here or in epub calls them" },
     { id = "RUSTSEC-2026-0369", reason = "zip 3.0.0 extract() permissions applied through symlinks, pinned by epub 2.1.5 (fixed in zip >= 9.0.0); only ZipArchive::extract()/ZipStreamReader::extract() are affected and nothing here or in epub calls them" },
 
-    # ---- webpki-roots distrusted emSign roots (RUSTSEC-2026-0381), fixed in
-    # webpki-roots >= 1.0.10, which Cargo.lock now holds. The match left is
-    # `webpki-roots 0.26.11` via sqlx-core 0.8.6: a semver-trick shim whose
-    # only content re-exports webpki-roots 1.x, so it serves the patched
-    # roots. sqlx opens SQLite files only and makes no TLS connection.
-    # No 0.26.x release carries the fix. Triaged 2026-10-20 (issue #2841).
-    # Revisit when sqlx moves to webpki-roots 1. Listed here and on the
-    # cargo-audit step in rust.yml.
-    { id = "RUSTSEC-2026-0381", reason = "webpki-roots 0.26.11 via sqlx-core 0.8.6 is a shim re-exporting webpki-roots 1.x, locked at the patched 1.0.10; sqlx makes no TLS connection here (SQLite only)" },
 ]
+
+# NB: RUSTSEC-2026-0381 (webpki-roots distrusted emSign roots) has no entry
+# here for the same reason as rsa above: cargo-deny's graph never reaches
+# `webpki-roots 0.26.11`, the semver-trick shim sqlx-core 0.8.6 locks, which
+# re-exports the patched webpki-roots 1.0.10. cargo-audit scans the raw
+# Cargo.lock and does find it, so its exemption is the `--ignore` on the
+# cargo-audit step in rust.yml. sqlx opens SQLite files only and makes no TLS
+# connection. Revisit when sqlx moves to webpki-roots 1.
 
 # NB: RUSTSEC-2026-0221 (event-listener unsoundness, reachable via sqlx-core)
 # is NOT ignored here — it was fixed for real by bumping event-listener
-# 5.4.1 -> 5.4.2 (`cargo update -p event-listener`; patched in >= 5.4.2),
-# same pattern as the memmap2 fix noted above. See Cargo.lock and issue #1681.
+# 5.4.1 -> 5.4.2 (`cargo update -p event-listener`; patched in >= 5.4.2).
+# See Cargo.lock and issue #1681.
 
 # ---------------------------------------------------------------------------
 # Licenses
@@ -162,8 +113,8 @@ allow = [
     "Zlib",
     "MPL-2.0",
     "CC0-1.0",
-    # Boost Software License — permissive, OSI-approved. Used by `xxhash-rust`
-    # (transitive via dioxus-fullstack).
+    # Boost Software License — permissive, OSI-approved. Used by `ryu`
+    # (`ryu` is `Apache-2.0 OR BSL-1.0`, via serde_json).
     "BSL-1.0",
     # Community Data License Agreement, Permissive 2.0 — Linux Foundation
     # license used by `webpki-roots` (Mozilla CA bundle data). Permissive;
@@ -191,25 +142,14 @@ allow = [
 allow = ["GPL-3.0"]
 name = "epub"
 
-[[licenses.exceptions]]
-# `libfuzzer-sys` is `(MIT OR Apache-2.0) AND NCSA`. NCSA (University of
-# Illinois/NCSA Open Source License) is permissive and OSI-approved, but is
-# the only crate in the tree that uses it, so scoping it here keeps the global
-# allow list lean. The crate enters the lock graph via `rav1e → ravif → image`
-# (and `dioxus-desktop`); our `image` features (`jpeg`, `png`, `webp`) do not
-# enable `avif`, so this never actually links into the runtime binary.
-allow = ["MIT", "Apache-2.0", "NCSA"]
-name = "libfuzzer-sys"
-
 # ---------------------------------------------------------------------------
 # Bans
 # ---------------------------------------------------------------------------
 # Duplicates are audited in docs/dependency-audit.md — entries below cover
-# the families listed there plus their proc-macro/companion crates
-# (e.g. `thiserror-impl`, `rand_core`, `foldhash`, `const-serialize-macro`)
-# that ship in lockstep with the duplicated runtime crate.
-# Warn rather than deny so new skew is visible without blocking CI — most of
-# the families below are upstream Dioxus/Axum splits we cannot collapse.
+# the families listed there plus their companion crates (e.g. `rand_core`,
+# `foldhash`) that ship in lockstep with the duplicated runtime crate.
+# Warn rather than deny so new skew is visible without blocking CI — the
+# families below are upstream splits we cannot collapse.
 [bans]
 multiple-versions = "warn"
 # Deny crates that should never appear in the dependency tree.
@@ -219,61 +159,26 @@ deny = []
 # Accepted / blocked duplicate families (see docs/dependency-audit.md)
 # ---------------------------------------------------------------------------
 skip = [
-    # --- WebSocket stack split (Dioxus vs Axum) ---
-    # tungstenite: 0.27 (async-tungstenite/dioxus-fullstack), 0.28
-    # (dioxus-devtools), 0.29 (axum). Blocked by upstream Dioxus.
-    { name = "tungstenite", version = "0.27.0" },
-    { name = "tungstenite", version = "0.28.0" },
-    # tokio-tungstenite: 0.28 (dioxus), 0.29 (axum). Same root cause.
-    { name = "tokio-tungstenite", version = "0.28.0" },
-
-    # --- thiserror v1 ---
-    # thiserror 1 reaches the tree by two independent routes: (1) `gloo-net`
-    # (→ dioxus-fullstack, a DIRECT dep of omnibus/omnibus-frontend, NOT under
-    # the native shell) in the default server build; (2) the desktop/mobile
-    # native shell (cairo-rs, gio, glib, jni, ndk) under wry/tao. Our first-
-    # party crates are on v2. No explicit skip is listed here: with the wry/tao
-    # skip-tree below in effect, `cargo deny check bans` already collapses
-    # thiserror to a single counted version, so an explicit skip trips its
-    # `unnecessary-skip` lint. If the native-shell (skip-tree) paths ever go
-    # away, re-add `{ name = "thiserror"/"thiserror-impl", version = "1.0.69" }`
-    # here to keep the gloo-net path triaged. Blocked until upstream bumps to
-    # thiserror 2.
-
-    # --- const-serialize alpha ---
-    # manganis/manganis-core 0.7.9 depend on both on purpose: 0.7.2 (renamed
-    # `const-serialize-07`, `=`-pinned) beside 0.8.0-alpha.0. By design
-    # upstream until manganis drops the 0.7 format.
-    { name = "const-serialize", version = "0.7.2" },
-    { name = "const-serialize-macro", version = "0.7.2" },
-
-    # --- getrandom + rand_core (four-way getrandom split) ---
-    # 0.1 from rand 0.7.3 (phf_generator, build-dep only).
-    # 0.2 intentionally kept for argon2/rand_core 0.6 auth path in db.
-    # 0.3 from tungstenite/rand 0.9. 0.4 runtime via uuid (see below).
-    # rand_core 0.5/0.6/0.9 mirror those paths.
+    # --- getrandom + rand_core ---
+    # 0.2 intentionally kept for the argon2/rand_core 0.6 auth path in db.
+    # 0.3 from jobserver (→ cc, build-dep only). 0.4 runtime via uuid (below).
+    # rand_core 0.6/0.9 mirror the argon2 and metrics-util paths.
     # See docs/dependency-audit.md for upgrade trigger conditions.
-    { name = "getrandom", version = "0.1.16" },
     { name = "getrandom", version = "0.2.17" },
     { name = "getrandom", version = "0.3.4" },
-    # getrandom 0.4 pulled in since the June triage via `uuid 1.x` — a RUNTIME
-    # dependency: db::helpers::mint_uuid calls Uuid::new_v4() in non-test code
-    # (uuid's `v4` feature → getrandom 0.4), so it DOES link into the shipped
-    # server binary; uuid also enters via cfb/infer under dioxus-asset-resolver.
-    # (tempfile 3 is the dev/test path.) Accepted — this is the modern getrandom
-    # line and cannot collapse onto the 0.2 auth pin without an argon2 upgrade.
+    # getrandom 0.4 via `uuid 1.x` — a RUNTIME dependency: db::helpers::mint_uuid
+    # calls Uuid::new_v4() in non-test code (uuid's `v4` feature → getrandom
+    # 0.4), so it DOES link into the shipped server binary. (tempfile 3 is the
+    # dev/test path.) Accepted — this is the modern getrandom line and cannot
+    # collapse onto the 0.2 auth pin without an argon2 upgrade.
     { name = "getrandom", version = "0.4.2" },
-    { name = "rand_core", version = "0.5.1" },
     { name = "rand_core", version = "0.6.4" },
-    # rand_core 0.9 appeared alongside rand 0.9 (tungstenite websocket path,
-    # see below). Mirrors that split; blocked by the same upstream pin.
     { name = "rand_core", version = "0.9.5" },
 
-    # --- hashbrown four-way split ---
-    # 0.14 from dashmap (dioxus-server), 0.15 from sqlx-core,
-    # 0.16 from lru (dioxus-server), 0.17 from indexmap.
-    # All internal impl details — not in any public API surface.
-    { name = "hashbrown", version = "0.14.5" },
+    # --- hashbrown split ---
+    # 0.15 from sqlx-core (and its hashlink), 0.16 from metrics-util
+    # (axum-prometheus), 0.17 from indexmap. All internal impl details — not in
+    # any public API surface.
     { name = "hashbrown", version = "0.15.5" },
     { name = "hashbrown", version = "0.16.1" },
     # foldhash ships one copy per hashbrown minor: 0.1 with hashbrown 0.15,
@@ -281,91 +186,22 @@ skip = [
     { name = "foldhash", version = "0.1.5" },
     { name = "foldhash", version = "0.2.0" },
 
-    # --- lru (dioxus-server vs the mock-kobo TUI) ---
-    # 0.16.4 from dioxus-server (→ dioxus); 0.18.x from ratatui-core, behind
-    # mock-kobo's `tui` feature (dev tooling, never in the server binary).
-    # Collapses when Dioxus bumps its lru dependency to >= 0.18.2.
-    { name = "lru", version = "0.16.4" },
-
-    # --- hashlink (rusqlite vs sqlx split) ---
-    # 0.9.1 from rusqlite 0.32.1 (omnibus-frontend's mobile-offline SQLite
-    # store); 0.10.0 from sqlx-core 0.8.6. Downstream instance of the
-    # rusqlite/sqlx libsqlite3-sys coupling from issue #1529.
-    { name = "hashlink", version = "0.9.1" },
-    { name = "hashlink", version = "0.10.0" },
-
-    # --- convert_case (proc-macro only) ---
-    # 0.4 from derive_more 0.99.20 (transitive via Dioxus desktop/mobile);
-    # 0.8 from Dioxus proc-macro crates; 0.10 from derive_more (dioxus-fullstack).
-    # Not in any runtime binary.
-    { name = "convert_case", version = "0.4.0" },
-    { name = "convert_case", version = "0.8.0" },
-
-    # --- rand 0.7 / 0.8 (build-dep only) + 0.9 (websocket) ---
-    # phf_generator uses rand 0.7 and 0.8 via two separate phf_generator
-    # versions on the codegen path, both pulled in transitively by kuchikiki
-    # (wry's bundled HTML/CSS engine, on an old html5ever/cssparser
-    # lineage) — NOT by `ammonia` (a direct omnibus-db dependency), which
-    # sits on its own newer markup5ever chain using phf_generator 0.13
-    # (fastrand-backed, no rand at all; verified with `cargo tree -i
-    # rand@0.7.3`/`@0.8.6` and `cargo tree -p omnibus-db`, issue #2054).
-    # Never links into the runtime binary. rand 0.9 is the runtime copy pulled by
-    # tungstenite (masking-key RNG) across all three websocket versions;
-    # blocked by the same Dioxus/Axum websocket split as tungstenite above.
-    { name = "rand", version = "0.7.3" },
-    { name = "rand", version = "0.8.6" },
+    # --- rand 0.9 (metrics) ---
+    # From metrics-util (→ metrics-exporter-prometheus → axum-prometheus), beside
+    # the workspace's newer rand. Collapses when metrics-util bumps rand.
     { name = "rand", version = "0.9.4" },
 
-    # --- libloading (native shell vs Dioxus hot-patch machinery) ---
-    # 0.7.4 from libappindicator-sys (→ libappindicator → tray-icon →
-    # dioxus-desktop, native shell only, Linux tray icon support). 0.8.9 from
-    # `subsecond` (→ dioxus-core → dioxus), which IS in the default build —
-    # not purely a wry/tao-tree duplicate, so the skip-tree below doesn't
-    # collapse it. Internal impl detail either way (issue #2054).
-    { name = "libloading", version = "0.7.4" },
-    { name = "libloading", version = "0.8.9" },
-
-    # --- png (native shell tray icon vs cover/thumbnail decoding) ---
-    # 0.17.16 from muda/tray-icon (→ dioxus-desktop, native shell only).
-    # 0.18.1 from `image` (→ omnibus-db directly, default build — cover art
-    # and thumbnail decoding). Same "listed as a skip-tree example but not
-    # actually collapsed" gap as libloading: the default-build copy reaches
-    # the tree through `image`, not through wry/tao (issue #2054).
-    { name = "png", version = "0.17.16" },
-    { name = "png", version = "0.18.1" },
-
     # --- zip (epub's pin vs ours) ---
-    # 3.0.0 from `epub` 2.1.5, which asks for `zip = "3.0.0"`; 9.0.5 from
-    # omnibus-db/omnibus-frontend directly. Collapses when epub moves to zip 9.
+    # 3.0.0 from `epub` 2.1.5, which asks for `zip = "3.0.0"`; 9.x from
+    # omnibus-db/omnibus directly. Collapses when epub moves to zip 9.
     { name = "zip", version = "3.0.0" },
-
-    # --- rustc-hash (both versions reach the default build) ---
-    # 1.1.0 from sledgehammer_utils (→ dioxus-interpreter-js → BOTH
-    # dioxus-desktop and dioxus-server — the latter IS the default server
-    # build). 2.1.2 from dioxus-core directly. Neither copy is confined to
-    # the wry/tao native-shell subtree, so the skip-tree below deliberately
-    # excludes this crate (see docs/dependency-audit.md's rustc-hash row);
-    # explicit skip is the correct mechanism here (issue #2054).
-    { name = "rustc-hash", version = "1.1.0" },
-    { name = "rustc-hash", version = "2.1.2" },
 
     # --- windows-sys (four-way split, all windows-target-conditional) ---
     # `cargo deny` resolves the crate graph across every target (like
     # `cargo tree --target all`), so these Windows-only (`cfg(windows)`)
-    # copies show up even though this project ships Linux/container-only.
-    # Each version straddles BOTH the native shell and the default build,
-    # so none can be absorbed by the wry/tao skip-tree alone:
-    #   0.52.0 — errno→rustix (native shell: x11rb/global-hotkey; dev-only:
-    #            tempfile) AND ring/rustls-webpki + signal-hook-registry→
-    #            tokio (default build, TLS + async runtime).
-    #   0.59.0 — dirs-sys + global-hotkey (native shell) AND nu-ansi-term→
-    #            tracing-subscriber (default build, Windows console color).
-    #   0.60.2 — muda/tray-icon (native shell) AND socket2→hyper-util/
-    #            lettre/tokio (default build).
-    #   0.61.2 — mio→tokio (default build) AND rfd + schannel→native-tls→
-    #            tungstenite (native shell) AND rustls-native-certs→
-    #            rustls-platform-verifier→reqwest (default build).
-    # Confirmed via `cargo deny -L debug check bans` (issue #2054).
+    # copies show up even though this project ships Linux/container-only:
+    # ring/rustls-webpki, tokio and its socket2/mio, tracing-subscriber,
+    # tempfile and rustls-platform-verifier each pin their own.
     { name = "windows-sys", version = "0.52.0" },
     { name = "windows-sys", version = "0.59.0" },
     { name = "windows-sys", version = "0.60.2" },
@@ -376,64 +212,10 @@ skip = [
     # Collapses when sqlx bumps its rustls deps.
     { name = "webpki-roots", version = "0.26.11" },
 
-    # --- Dioxus version lag (axum-extra / tower-http / reqwest) ---
-    # dioxus-fullstack 0.7.9 carries older copies of these three crates than
-    # our own server crate/workspace pin. See
-    # docs/dependency-audit.md for full source chains (issue #1100).
-    { name = "axum-extra", version = "0.10.3" },
-    # tower-http 0.6.11 also arrives via reqwest 0.12.28 AND reqwest 0.13.4
-    # (each vendors its own copy) — not purely a Dioxus-lag issue; persists
-    # until reqwest itself upgrades to tower-http 0.7.
+    # --- tower-http ---
+    # 0.6.11 from reqwest 0.13 (which vendors its own copy) beside the server's
+    # own pin; persists until reqwest upgrades to tower-http 0.7.
     { name = "tower-http", version = "0.6.11" },
-    # reqwest: two *major* versions (0.12 vs 0.13), the largest gap in this
-    # list. 0.12.28 is the dioxus-fullstack copy; 0.13.4 is the
-    # workspace-pinned version (Cargo.toml [workspace.dependencies]).
-    { name = "reqwest", version = "0.12.28" },
-
-    # --- Dioxus version lag (gloo-net / gloo-timers / gloo-utils) ---
-    # The split described in docs/dependency-audit.md (issue #1621) is real,
-    # but CI's `cargo deny check` invocation (rust.yml, no `--features`) never
-    # enables omnibus-frontend's `web` feature, so omnibus-frontend's own
-    # gloo-net 0.7.0 / gloo-timers 0.4.0 / gloo-utils 0.3.0 pins never enter
-    # that resolve — only the dioxus-fullstack copies (0.6.0 / 0.3.0 /
-    # 0.2.0) do, as a single version each. Explicit skips here therefore trip
-    # `unnecessary-skip`/`unmatched-skip` (verified via `cargo deny check
-    # advisories sources bans licenses`, the exact CI command; issue #1681) —
-    # deliberately omitted, not forgotten. Re-add if a `--features web` (or
-    # `--all-features`) invocation is ever added to CI.
-]
-
-# ---------------------------------------------------------------------------
-# Accepted duplicate SUBTREES (skip-tree)
-# ---------------------------------------------------------------------------
-# `cargo deny check bans` scans the whole workspace across all targets —
-# including `omnibus-mobile`, which is out of default-members — so it surfaces
-# a large tail of duplicates from the Dioxus **desktop/mobile native shell**
-# that a default-build `cargo tree -d` never shows (wry/tao → webkit2gtk/gtk-rs
-# on Linux, muda/tray-icon, plus the windows-* and core-foundation/core-graphics
-# platform crates). These are old pinned versions carried by the native webview
-# stack (e.g. bitflags 1, derive_more 0.99, heck 0.4, html5ever/markup5ever,
-# string_cache, jni, raw-window-handle, siphasher). Spot-checked against the
-# default-build packages with `cargo tree -p omnibus` and
-# `cargo tree -p omnibus-frontend` (see #1276). None of these link into the
-# shipped `omnibus` server binary — they exist only under the native shell.
-# Exceptions: `rustc-hash`, `libloading`, `png`, and `windows-sys` also
-# duplicate via a path that reaches the default (non-mobile) build directly
-# — not through wry or tao — so skip-tree alone doesn't collapse them;
-# they're each an explicit `skip` entry above instead (see
-# docs/dependency-audit.md's rustc-hash row for the original case, issue
-# #2054 for the other three). `windows-targets` (windows-sys's own
-# dependency) has no matching `skip` entry because `cargo deny check bans`
-# does not flag it at all — its several Cargo.lock versions never surface as
-# a duplicate, presumably pruned by cargo-deny's own graph resolution the
-# same way `rsa` is (see the advisories section above). Collapsing the rest
-# requires upstream wry/tao to migrate off gtk-rs 0.18 / bitflags 1 etc., which is
-# gated on a Dioxus bump (the `=` pin in root Cargo.toml). We skip
-# the whole subtree rather than enumerate ~40 leaf crates that all share this
-# single root cause. Revisit when Dioxus upgrades wry/tao.
-skip-tree = [
-    { name = "wry" },
-    { name = "tao" },
 ]
 
 # ---------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 //  APIClient.swift
 //  Bearer-authenticated transport for the `/api/*` REST surface.
 //
-//  Mirrors `frontend/src/data/`: every request carries the stored bearer
+//  Every request carries the stored bearer
 //  token, a 401 clears it and flips the app back to the login screen, and a
 //  transport failure marks the client offline so the cache layer can serve
 //  reads without waiting on a timeout.

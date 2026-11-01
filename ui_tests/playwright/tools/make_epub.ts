@@ -90,7 +90,7 @@ interface EpubInput {
   blobStylesheet?: boolean;
   /**
    * When true, ship an embedded font (`fonts/FixtureSerif.woff2` — the EB
-   * Garamond Regular bytes from frontend/assets/reader-fonts/, under a
+   * Garamond Regular bytes from frontend-js/public/reader-fonts/, under a
    * fixture-only family name) declared by `styles/publisher.css` via a `../`
    * relative url(), plus a `p { font-family }` rule using it. The reader's
    * typeface specs need exactly this shape: the stylesheet sits in a

@@ -1,14 +1,12 @@
 //! Global HTTP security response headers, applied to every response served
-//! by the axum router (SSR HTML, WASM bundle, server-function responses,
-//! the `/api/*` REST surface, static assets) in one place rather than
-//! depending on each handler to remember. See [`DEFAULT_CSP`],
-//! [`baseline_layers`], and [`hsts_layer`] for the per-header rationale.
+//! by the axum router (the React client's files, the `/api/*` REST surface,
+//! the device protocols) in one place rather than depending on each handler
+//! to remember. See [`DEFAULT_CSP`], [`baseline_layers`], and [`hsts_layer`]
+//! for the per-header rationale.
 //!
-//! `script-src` carries `'unsafe-inline'` and `'unsafe-eval'` because the Dioxus web
-//! runtime needs both (an inline hydration bootstrap with no nonce, and `Function()` in
-//! the interpreter), so it buys almost no injection protection. `'wasm-unsafe-eval'` can't
-//! replace `'unsafe-eval'`: it permits only `WebAssembly.instantiate`, not `Function()`, so
-//! the WASM panics on init under it. The CSP's value lives in the other directives:
+//! `script-src` keeps `'unsafe-inline'` and `'unsafe-eval'`, so it buys almost no injection
+//! protection: dropping them waits on proof that the reader stack (epub.js, pdf.js, the
+//! zxing WASM) runs without them. The CSP's value lives in the other directives:
 //! `connect-src 'self'` blocks exfiltration, and `object-src`, `base-uri`, `form-action`
 //! and `frame-ancestors` are locked down. The `style-src`/`font-src` hosts are explained
 //! in `build_csp`.
@@ -18,9 +16,9 @@ use std::sync::LazyLock;
 use axum::http::{header, HeaderName, HeaderValue};
 use tower_http::set_header::SetResponseHeaderLayer;
 
-/// Conservative content-security policy that still hydrates Dioxus WASM: defense-in-depth
-/// against any XSS gap in SSR-rendered user content (book descriptions are sanitized via
-/// `ammonia`). `img-src` lists every provider cover host from [`db::all_cover_hosts`], so
+/// Conservative content-security policy: defense-in-depth against any XSS gap in rendered
+/// user content (book descriptions are sanitized via `ammonia`). `img-src` lists every
+/// provider cover host from [`db::all_cover_hosts`], so
 /// adding a provider can't leave its covers silently blocked; once applied, a cover is
 /// served same-origin from `/api/covers/:uuid`.
 static DEFAULT_CSP: LazyLock<String> = LazyLock::new(build_csp);
@@ -49,7 +47,7 @@ fn build_csp() -> String {
         .map(|host| format!(" https://{host}"))
         .collect::<String>();
     // `style-src` needs `blob:` (epub.js renders book stylesheets via `createObjectURL`) and
-    // the Google Fonts hosts here and in `font-src` (`atrium.css` `@import`s them); `font-src`
+    // the Google Fonts hosts here and in `font-src` (`frontend-js/index.html` loads them); `font-src`
     // also needs `data:` for faces a book embeds.
     format!(
         "default-src 'self'; \

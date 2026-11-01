@@ -43,7 +43,7 @@ pub async fn search_books_for_paths(
 
 /// Same as [`search_books`] but also returns the *true* FTS5 hit count (before
 /// the `MAX_BOOKS_RETURNED` cap), from a single FTS5 pass, so the REST handler
-/// and RPC server function need no second `count_search_books` query. Empty or
+/// needs no second `count_search_books` query. Empty or
 /// oversized `q` yields `(vec![], 0)`, as in `search_books`.
 pub async fn search_books_with_total(
     pool: &SqlitePool,

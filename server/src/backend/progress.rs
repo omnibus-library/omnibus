@@ -1,8 +1,7 @@
-//! Progress-sync REST handlers for the mobile client (`/api/progress*`).
+//! Progress-sync REST handlers (`/api/progress*`).
 //!
 //! Accepts a discriminated `{ format: "epub" | "audio" }` payload and fans
-//! out to per-format write paths in `omnibus_db::progress`. Web clients use
-//! the `/api/rpc/progress*` server functions in `omnibus_frontend::rpc`.
+//! out to per-format write paths in `omnibus_db::progress`.
 
 use axum::{
     extract::{Path, Query, State},

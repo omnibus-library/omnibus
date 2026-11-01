@@ -1,6 +1,4 @@
-// Session-scoped window scroll restoration, a port of the Dioxus client's
-// frontend/src/scroll_restore.rs (RESTORE_JS and its two hooks). Offsets live in
-// memory per route path; a page's content arrives after mount, so a restore
+// Session-scoped window scroll restoration. Offsets live in memory per route path; a page's content arrives after mount, so a restore
 // retries each frame until the window reaches the offset.
 import { useEffect, useLayoutEffect, useRef } from "react";
 

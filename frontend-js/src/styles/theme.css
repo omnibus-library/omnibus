@@ -42,6 +42,22 @@
   --gap: 18px;
 
   color-scheme: dark;
+  --hl-amber: rgb(245, 158, 11);
+  --hl-green: rgb(34, 197, 94);
+  --hl-blue: rgb(59, 130, 246);
+  --hl-rose: rgb(244, 63, 94);
+  --hl-violet: rgb(139, 92, 246);
+  /* The page-turn curve: a slow lift, a quick fall, a soft landing. */
+  --ld-ease: cubic-bezier(0.45, 0.05, 0.25, 1);
+  --ld-ease-out: cubic-bezier(0.2, 0.7, 0.3, 1);
+  /* One pass of the line; one full riffle. */
+  --ld-beat: 1.7s;
+  --ld-turn: 2.7s;
+  /* A loader that resolves inside this window is never seen at all. */
+  --ld-hold: 160ms;
+  /* The book page's curves: a long glide to rest, and a quick pull away. */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.55, 0, 0.8, 0.4);
 }
 [data-theme="black"] {
   --bg-0: oklch(0 0 0);
@@ -174,12 +190,6 @@ body.atrium,
   letter-spacing: -0.005em;
   margin: 0;
   color: var(--ink-0);
-}
-.atrium h1,
-.atrium h2,
-.atrium h3,
-.atrium h4,
-.atrium h5 {
   --descender-guard: max(0px, calc((0.6015 - var(--lh, 1.203) / 2) * 1em));
   padding-bottom: var(--descender-guard);
 }
@@ -217,9 +227,6 @@ body.atrium,
   color: inherit;
   text-decoration: none;
 }
-:root {
-  color-scheme: dark;
-}
 .atrium {
   --auth-ink-0: var(--ink-0);
   --auth-ink-1: var(--ink-1);
@@ -243,13 +250,6 @@ body.atrium,
   --auth-serif: var(--serif);
   --auth-mono: var(--mono);
 }
-:root {
-  --hl-amber: rgb(245, 158, 11);
-  --hl-green: rgb(34, 197, 94);
-  --hl-blue: rgb(59, 130, 246);
-  --hl-rose: rgb(244, 63, 94);
-  --hl-violet: rgb(139, 92, 246);
-}
 @media (max-width: 720px) {
   .atrium h1 {
     font-size: clamp(30px, 10vw, 42px);
@@ -257,18 +257,4 @@ body.atrium,
   .atrium h2 {
     font-size: clamp(24px, 8vw, 32px);
   }
-}
-
-:root {
-  /* The page-turn curve: a slow lift, a quick fall, a soft landing. */
-  --ld-ease: cubic-bezier(0.45, 0.05, 0.25, 1);
-  --ld-ease-out: cubic-bezier(0.2, 0.7, 0.3, 1);
-  /* One pass of the line; one full riffle. */
-  --ld-beat: 1.7s;
-  --ld-turn: 2.7s;
-  /* A loader that resolves inside this window is never seen at all. */
-  --ld-hold: 160ms;
-  /* The book page's curves: a long glide to rest, and a quick pull away. */
-  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-in: cubic-bezier(0.55, 0, 0.8, 0.4);
 }

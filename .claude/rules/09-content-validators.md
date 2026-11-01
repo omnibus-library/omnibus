@@ -1,5 +1,5 @@
 ---
-paths: "frontend/src/offline/**, frontend/src/data/books/library.rs, omnibus-ios/omnibus/Offline/**, shared/src/ebook/**, db/src/indexer/**, db/src/thumbs.rs, db/src/thumbs/**, server/src/backend.rs, server/src/backend/conditional.rs, server/src/backend/conditional/**, server/src/backend/ebooks.rs, server/src/backend/ebooks/**, server/src/backend/audiobooks.rs, server/src/backend/audiobooks/**, server/src/backend/covers.rs, server/src/backend/covers/**, frontend/src/offline.rs, db/src/books/get.rs, omnibus-ios/omnibus/Design/Components/RemoteImage.swift"
+paths: "omnibus-ios/omnibus/Offline/**, shared/src/ebook/**, db/src/indexer/**, db/src/thumbs.rs, db/src/thumbs/**, server/src/backend.rs, server/src/backend/conditional.rs, server/src/backend/conditional/**, server/src/backend/ebooks.rs, server/src/backend/ebooks/**, server/src/backend/audiobooks.rs, server/src/backend/audiobooks/**, server/src/backend/covers.rs, server/src/backend/covers/**, db/src/books/get.rs, omnibus-ios/omnibus/Design/Components/RemoteImage.swift"
 ---
 # 09 — Content validators
 
@@ -53,25 +53,23 @@ breaks multi-server clusters, which a self-hosted single instance is not.
 and timestamp (`rsync --inplace`, `dd`) still slips through. No stat-derived
 validator catches that.
 
-`frontend/src/offline/downloads/verify.rs` backstops it from the other end,
-and how well is **format-dependent** — say which when you touch it:
+The client's integrity check after a download (`DownloadManager` in
+`omnibus-ios/omnibus/Offline/DownloadManager.swift`, run before anything is
+installed) backstops it from the other end, and how well is
+**format-dependent** — say which when you touch it:
 
-- **EPUB** is CRC-backed. Every member is read to EOF, which checks the
-  CRC-32 the central directory recorded, so any corruption is caught —
+- **CBZ** is CRC-backed (`ComicArchive.verify`). Every entry is read to EOF,
+  which checks the CRC-32 the archive recorded, so any corruption is caught —
   including a same-length splice that leaves the archive's structure and all
   its offsets perfectly valid. An offsets-only check calls that intact; only
   the CRCs give it away.
-- **M4B/M4A** is structural only. The box chain must tile the file, which
-  catches truncation, garbage, and a splice that changes a box size — but a
-  same-length splice *inside* `mdat` leaves every header untouched and is
-  undetectable. The format carries no checksum to catch it with.
-- **PDF** is structural only (`PDFIntegrity` on iOS): `%PDF-` header, `%%EOF`
-  in the last KiB, a parse that yields pages. Truncation and a non-PDF body
-  are caught; a same-length splice is not, and no checksum exists to catch it.
-- **MP3** has no container and reports `Unverifiable`.
+- **PDF** is structural only (`PDFIntegrity`): `%PDF-` header, `%%EOF` in the
+  last KiB, a parse that yields pages. Truncation and a non-PDF body are
+  caught; a same-length splice is not, and no checksum exists to catch it.
+- **EPUB and audio** have no verifier on this client yet.
 
 Do not describe this as "verifying the file parses". It is a CRC check for
-one format and a structure walk for another, and the audio gap is real.
+one format and a structure walk for another, and the EPUB and audio gaps are real.
 
 ## Resume state must be durable and provable
 
@@ -101,10 +99,9 @@ hard way:
 
 ## Clients: snapshot, then compare
 
-Both offline clients snapshot `BookFileInfo.etag` when a download starts and
-compare it against a later metadata refresh — `PlannedFile.source_etag` in
-`frontend/src/offline/downloads.rs`, `DownloadRecord.sourceEtag` in
-`omnibus-ios/omnibus/Offline/OfflineStore.swift`. Two rules hold on both sides:
+An offline client snapshots `BookFileInfo.etag` when a download starts and
+compares it against a later metadata refresh — `DownloadRecord.sourceEtag` in
+`omnibus-ios/omnibus/Offline/OfflineStore.swift`. Two rules hold:
 
 - **The comparison is three-valued.** A missing validator on either side means
   *can't tell*, which is not the same as *not stale*. A renderer may collapse
@@ -141,7 +138,7 @@ just applied**: a view fetches once per path and a cover write never changes
 the path, so a mounted `RemoteImage` re-asks when `ImageInvalidations` says its
 key's generation moved — the detail hero kept the old art otherwise (#2490).
 
-**A missing validator is not a fourth skip.** It once was, on both clients, and
+**A missing validator is not a fourth skip.** It once was, and
 the reasoning looked sound: with nothing to offer as `If-None-Match` the check
 would be a full refetch, so why spend it. But nothing else ever *restored* the
 validator, so "cannot ask cheaply" became "never asks again" — the entry stayed
@@ -156,7 +153,7 @@ the answer carries the validator that puts it back on the cheap path.
 The other half of that is a server rule: **a cacheable 200 from a byte-serving
 route publishes a validator, including the stand-in ones.** `/api/thumbs/*`
 answers a cache miss with the full cover while the WebP generates, and that body
-is cached by both offline clients like any other. Its validator is the cover's
+is cached like any other. Its validator is the cover's
 own content hash rather than `thumb_etag`, **and namespaced** (`"cover-…"`) so
 it cannot collide with one: every validator here renders as 16 hex digits, so
 two drawn from unrelated inputs can come out equal, and a chance equality would
@@ -172,8 +169,7 @@ carries no metadata — the alternative (a full per-book metadata fetch each
 tick) is a data and battery cost on the phone and an O(N) load cost on the
 server, and it grows with the reader's library.
 
-Both clients sweep — `refresh_stale_flags` in
-`frontend/src/offline/downloads/staleness.rs`, `refreshStaleFlags` in
+The client sweeps — `refreshStaleFlags` in
 `omnibus-ios/omnibus/Offline/DownloadStaleness.swift`. A client that does not
 sweep is not merely slower: iOS saw a replaced file only when the reader
 opened that book's own detail page, because the screen listing downloads reads
@@ -188,12 +184,12 @@ Three things follow, and each has already been got wrong:
   finished; stamping an *empty* registry — which on iOS hydrates
   asynchronously, so "no downloads" and "not loaded yet" look alike at
   launch — skips the first real sweep for a whole window.
-- **Do not smuggle metadata through it.** Writing a fetched `EbookMetadata`
-  straight into the cache with `put_json` bypasses the compare/put/notify
-  path, so an open page keeps rendering the old fields even though the cache
-  now holds new ones. If a refresh needs metadata, it goes through
-  `cache::read_through`; if it only needs validators, it uses this endpoint
-  and touches no cache at all.
+- **Do not smuggle metadata through it.** Writing a fetched book's metadata
+  straight into the cache bypasses the compare/store/notify path, so an open
+  screen keeps rendering the old fields even though the cache now holds new
+  ones. If a refresh needs metadata, it goes through the normal cached read;
+  if it only needs validators, it uses this endpoint and touches no cache at
+  all.
 
 ## Out of scope
 

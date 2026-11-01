@@ -138,7 +138,7 @@ holds, not by which list is nearer**:
 
 ## After adding a migration
 
-A running dev server applies migrations only at startup, so a live
-`dx serve` won't pick up a new file until it restarts. Run
+A running dev server applies migrations only at startup, so it won't
+pick up a new file until it restarts. Run
 **`just dev-bounce`** to restart it cleanly (see
 [01-dev-environment.md](01-dev-environment.md) and the `justfile`).
