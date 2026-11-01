@@ -119,10 +119,11 @@ fn legacy_react_target(uri: &Uri) -> Option<String> {
     if !(rest.is_empty() || rest.starts_with('/')) {
         return None;
     }
-    let path = if rest.is_empty() { "/" } else { rest };
+    // `//host` and `/\host` read as a scheme-relative URL, so only one leading slash survives.
+    let path = format!("/{}", rest.trim_start_matches(['/', '\\']));
     Some(match uri.query() {
         Some(query) => format!("{path}?{query}"),
-        None => path.to_owned(),
+        None => path,
     })
 }
 

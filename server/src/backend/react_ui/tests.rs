@@ -13,6 +13,8 @@ fn build_dir() -> TempDir {
     std::fs::write(dir.path().join("index.html"), "<div id=\"root\"></div>").unwrap();
     std::fs::create_dir(dir.path().join("assets")).unwrap();
     std::fs::write(dir.path().join("assets/app.js"), "console.log(1)").unwrap();
+    std::fs::create_dir(dir.path().join("vendor")).unwrap();
+    std::fs::write(dir.path().join("vendor/lib.js"), "lib").unwrap();
     dir
 }
 
@@ -87,6 +89,30 @@ async fn resolve_returns_not_found_for_a_missing_asset() {
         resolve(dir.path(), "assets/gone.js").await,
         Resolved::NotFound
     );
+}
+
+#[tokio::test]
+async fn resolve_returns_the_shell_for_a_client_route_with_dots_in_its_last_segment() {
+    let dir = build_dir();
+
+    assert_eq!(
+        resolve(dir.path(), "search/J.K.%20Rowling").await,
+        Resolved::File(dir.path().join("index.html"))
+    );
+}
+
+#[tokio::test]
+async fn resolve_returns_not_found_for_a_missing_file_under_a_build_directory() {
+    let dir = build_dir();
+
+    assert_eq!(resolve(dir.path(), "vendor/x").await, Resolved::NotFound);
+}
+
+#[tokio::test]
+async fn resolve_returns_not_found_for_a_missing_root_file_with_a_known_extension() {
+    let dir = build_dir();
+
+    assert_eq!(resolve(dir.path(), "gone.png").await, Resolved::NotFound);
 }
 
 #[tokio::test]
@@ -192,6 +218,19 @@ async fn react_ui_router_falls_back_to_gzip_when_brotli_is_refused() {
 }
 
 #[tokio::test]
+async fn react_ui_router_reads_a_refusal_with_an_uppercase_or_spaced_q() {
+    let dir = build_dir();
+    std::fs::write(dir.path().join("assets/app.js.br"), "brotli bytes").unwrap();
+    std::fs::write(dir.path().join("assets/app.js.gz"), "gzip bytes").unwrap();
+
+    for accept in ["br;Q=0, gzip", "br; q = 0, gzip"] {
+        let res = get_with(&dir, "/assets/app.js", header::ACCEPT_ENCODING, accept).await;
+
+        assert_eq!(res.headers()[header::CONTENT_ENCODING], "gzip", "{accept}");
+    }
+}
+
+#[tokio::test]
 async fn react_ui_router_serves_identity_when_no_sibling_was_built() {
     let dir = build_dir();
 
@@ -229,6 +268,43 @@ async fn react_ui_router_redirects_the_bare_prefix_to_the_root() {
     let res = get(&dir, "/react").await;
 
     assert_eq!(res.headers()[header::LOCATION], "/");
+}
+
+#[tokio::test]
+async fn react_ui_router_keeps_a_double_slash_redirect_on_this_origin() {
+    let dir = build_dir();
+
+    let res = get(&dir, "/react//evil.example/x").await;
+
+    assert_eq!(res.status(), StatusCode::PERMANENT_REDIRECT);
+    assert_eq!(res.headers()[header::LOCATION], "/evil.example/x");
+}
+
+#[test]
+fn legacy_react_target_strips_leading_backslashes_so_the_target_stays_on_this_origin() {
+    let uri = Uri::try_from("/react/\\\\evil.example").unwrap();
+
+    assert_eq!(legacy_react_target(&uri).as_deref(), Some("/evil.example"));
+}
+
+#[tokio::test]
+async fn react_ui_router_does_not_redirect_a_path_that_only_starts_with_react() {
+    let dir = build_dir();
+
+    let res = get(&dir, "/reactions").await;
+
+    assert_eq!(res.status(), StatusCode::OK);
+    assert_eq!(body_text(res).await, "<div id=\"root\"></div>");
+}
+
+#[tokio::test]
+async fn react_ui_router_serves_the_shell_for_a_search_deep_link_with_dots() {
+    let dir = build_dir();
+
+    let res = get(&dir, "/search/J.K.%20Rowling").await;
+
+    assert_eq!(res.status(), StatusCode::OK);
+    assert_eq!(body_text(res).await, "<div id=\"root\"></div>");
 }
 
 #[tokio::test]
