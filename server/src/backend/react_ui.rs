@@ -4,8 +4,9 @@
 //! Docker image sets `/app/react`). Every path no other route claims lands here:
 //! an unknown `/api/*` path answers a JSON 404, and everything else is the
 //! client. A path naming no file gets `index.html`, so a deep link reaches the
-//! client's router, unless it names an asset (it has an extension): that 404s
-//! rather than answering a script with HTML. `/react/*`, where the client lived
+//! client's router, unless it names an asset (under a directory of the build, or
+//! with an extension the build emits): that 404s rather than answering a script
+//! with HTML. `/react/*`, where the client lived
 //! while it was opt-in, redirects to the same path at the root.
 //!
 //! Every byte goes through the conditional path (rule 09a). A `.br` or `.gz`
@@ -57,8 +58,8 @@ pub enum Resolved {
 }
 
 /// Resolve `rel`, the request path without its leading `/`, inside `dir`: the
-/// file itself, the app shell for any other extensionless path, and `NotFound`
-/// for a missing asset or a path that would step outside `dir`.
+/// file itself, the app shell for any other path, and `NotFound` for a missing
+/// asset or a path that would step outside `dir`.
 pub async fn resolve(dir: &Path, rel: &str) -> Resolved {
     let rel = Path::new(rel);
     if !rel.components().all(|c| matches!(c, Component::Normal(_))) {
@@ -68,10 +69,21 @@ pub async fn resolve(dir: &Path, rel: &str) -> Resolved {
     if is_file(&candidate).await {
         return Resolved::File(candidate);
     }
-    if rel.extension().is_some() {
+    if names_an_asset(dir, rel).await {
         return Resolved::NotFound;
     }
     Resolved::File(dir.join("index.html"))
+}
+
+/// Whether a missing `rel` was a request for a build asset rather than a client route:
+/// it sits under one of the build's directories, or ends in an extension the build emits.
+/// A route like `/search/J.K.%20Rowling` has a dot but is neither.
+async fn names_an_asset(dir: &Path, rel: &Path) -> bool {
+    let under_a_build_dir = match rel.components().next() {
+        Some(first) => is_dir(&dir.join(first)).await,
+        None => false,
+    };
+    under_a_build_dir || known_content_type(rel).is_some()
 }
 
 /// The router's fallback: unknown `/api/*` paths as JSON 404s, `/react/*` redirected to
@@ -196,13 +208,17 @@ fn accepts_encoding(headers: &HeaderMap, coding: &str) -> bool {
             let mut parts = item.split(';');
             let name = parts.next().unwrap_or_default().trim();
             name.eq_ignore_ascii_case(coding)
-                && !parts.any(|p| {
-                    p.trim()
-                        .strip_prefix("q=")
-                        .and_then(|q| q.parse::<f32>().ok())
-                        == Some(0.0)
+                && !parts.any(|param| {
+                    let (key, value) = param.split_once('=').unwrap_or_default();
+                    key.trim().eq_ignore_ascii_case("q") && value.trim().parse::<f32>() == Ok(0.0)
                 })
         })
+}
+
+async fn is_dir(path: &Path) -> bool {
+    tokio::fs::metadata(path)
+        .await
+        .is_ok_and(|meta| meta.is_dir())
 }
 
 async fn is_file(path: &Path) -> bool {
@@ -213,20 +229,24 @@ async fn is_file(path: &Path) -> bool {
 
 /// The MIME type for what `vite build` emits; anything else is opaque bytes.
 fn content_type(path: &Path) -> &'static str {
-    match path.extension().and_then(|ext| ext.to_str()) {
-        Some("html") => "text/html; charset=utf-8",
-        Some("js" | "mjs") => "text/javascript; charset=utf-8",
-        Some("css") => "text/css; charset=utf-8",
-        Some("json" | "webmanifest") => "application/json",
-        Some("svg") => "image/svg+xml",
-        Some("png") => "image/png",
-        Some("webp") => "image/webp",
-        Some("ico") => "image/x-icon",
-        Some("woff2") => "font/woff2",
-        Some("wasm") => "application/wasm",
-        Some("txt") => "text/plain; charset=utf-8",
-        _ => "application/octet-stream",
-    }
+    known_content_type(path).unwrap_or("application/octet-stream")
+}
+
+fn known_content_type(path: &Path) -> Option<&'static str> {
+    Some(match path.extension().and_then(|ext| ext.to_str())? {
+        "html" => "text/html; charset=utf-8",
+        "js" | "mjs" => "text/javascript; charset=utf-8",
+        "css" => "text/css; charset=utf-8",
+        "json" | "webmanifest" => "application/json",
+        "svg" => "image/svg+xml",
+        "png" => "image/png",
+        "webp" => "image/webp",
+        "ico" => "image/x-icon",
+        "woff2" => "font/woff2",
+        "wasm" => "application/wasm",
+        "txt" => "text/plain; charset=utf-8",
+        _ => return None,
+    })
 }
 
 #[cfg(test)]
