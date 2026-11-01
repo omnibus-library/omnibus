@@ -175,13 +175,7 @@ struct BookDetailView: View {
                 }
             }
         }
-        .sheet(isPresented: $showShelfPicker, onDismiss: {
-            Task {
-                for await ids in UserDataService.shelvesContaining(uuid: uuid).values() {
-                    model.shelvesContaining = Set(ids)
-                }
-            }
-        }) {
+        .sheet(isPresented: $showShelfPicker) {
             if let book = model.book {
                 ShelfPickerSheet(book: book)
             }
@@ -322,7 +316,9 @@ struct BookDetailView: View {
 
     /// Open the reader at a kept line.
     private func openInBook(_ highlight: Highlight, _ book: Book) {
-        guard let cfi = highlight.epubCFIRange else { return }
+        guard DetailRead.opensInBook(hasEpub: book.hasEpub, anchor: highlight.epubCFIRange),
+              let cfi = highlight.epubCFIRange
+        else { return }
         ReaderBridge.shared.pendingCFI = cfi
         read(book)
     }
@@ -332,12 +328,18 @@ struct BookDetailView: View {
     private func openPickedBookmark() {
         guard let bookmark = pickedBookmark, let book = model.book else { return }
         pickedBookmark = nil
-        if let seconds = Double(bookmark.position) {
+        if let seconds = BookmarkCopy.listeningSeconds(bookmark) {
+            guard DownloadManager.shared.canOpen(book, kind: .audio) else {
+                Presentation.shared.openPlayer(book)
+                return
+            }
+            // Opened after: the player loads on appearing, and two loads at once
+            // tear each other down and lose the seek. This way it reuses this one.
             Task {
                 await player.load(book: book)
                 await player.seek(to: seconds)
+                Presentation.shared.openPlayer(book)
             }
-            Presentation.shared.openPlayer(book)
         } else {
             ReaderBridge.shared.pendingCFI = bookmark.position
             read(book)
@@ -436,8 +438,7 @@ struct BookDetailView: View {
                     model: model,
                     onEditChips: canEditMetadata ? { chipEditing = $0 } : nil,
                     chipEditsOnline: connectivity.isOnline,
-                    jumpClearance: Self.tabStrip + 16,
-                    onShelves: { showShelfPicker = true }
+                    jumpClearance: Self.tabStrip + 16
                 )
             case .reviews:
                 BookReviewsTab(book: book, model: model, onCompose: composeReview)

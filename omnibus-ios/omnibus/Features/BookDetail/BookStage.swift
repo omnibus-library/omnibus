@@ -363,6 +363,7 @@ struct BookStage: View {
     var onReviews: () -> Void
     var onSeries: () -> Void
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.palette) private var palette
     /// Bumped by a tap on the cover, to throw the burst again.
     @State private var burstReplays = 0
@@ -424,7 +425,7 @@ struct BookStage: View {
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 14)
-        .animation(Motion.settle, value: model.readStatus)
+        .animation(reduceMotion ? nil : Motion.settle, value: model.readStatus)
     }
 
     // MARK: - Byline
@@ -548,15 +549,8 @@ struct BookStage: View {
             onReviews()
         } label: {
             HStack(spacing: 5) {
-                VStack(alignment: .trailing, spacing: 3) {
-                    StageStars(stars: headline?.rounded ?? 0, pulse: model.reviewSaves)
-                        .opacity(model.reviews == nil ? 0.45 : 1)
-                    Text(DetailReviews.headlineNote(headline, state: state))
-                        .font(.ui(13, weight: .medium))
-                        .foregroundStyle(palette.ink1Color)
-                        .lineLimit(1)
-                        .fixedSize()
-                }
+                StageStars(stars: headline?.rounded ?? 0, pulse: model.reviewSaves)
+                    .opacity(model.reviews == nil ? 0.45 : 1)
                 Image(systemName: "chevron.right")
                     .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(palette.ink1Color)

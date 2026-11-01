@@ -711,9 +711,14 @@ private func finishTarget(
     reviewKnown: Bool = true, rated: Bool = true, bookID: Int64 = 2, members: [Book] = [],
     states: [String: SeriesMemberState] = [:], settled: Bool = true
 ) -> FinishTarget? {
-    FinishCopy.target(
+    // A member a test doesn't name has answered, and is unread.
+    var answered = states
+    for book in members where answered[book.uuid] == nil {
+        answered[book.uuid] = SeriesMemberState(status: .unread)
+    }
+    return FinishCopy.target(
         reviewKnown: reviewKnown, rated: rated, bookID: bookID, members: members,
-        states: states, statesSettled: settled
+        states: answered, statesSettled: settled
     )
 }
 
@@ -810,6 +815,52 @@ private let holmes = [member(1, "1"), member(2, "2"), member(3, "3")]
 @Test func aFinishedSeriesCountsInWords() {
     #expect(FinishCopy.readAll(count: 5) == "You\u{2019}ve read all five")
     #expect(FinishCopy.readAll(count: 2) == "You\u{2019}ve read both")
+
+// MARK: - Kept lines and unanswered reads
+
+@Test func onlyAnEpubPositionOpensInTheEpubReader() {
+    let cfi = "epubcfi(/6/8!/4/2,/1:0,/1:10)"
+    #expect(DetailRead.opensInBook(hasEpub: true, anchor: cfi))
+    #expect(!DetailRead.opensInBook(hasEpub: false, anchor: cfi))
+    #expect(!DetailRead.opensInBook(hasEpub: true, anchor: nil))
+    // A mixed EPUB and PDF book shares one list of kept lines.
+    #expect(!DetailRead.opensInBook(hasEpub: true, anchor: "pdf-page:12"))
+    #expect(!DetailRead.opensInBook(hasEpub: true, anchor: "comic-page:3"))
+}
+
+@Test func anUnansweredSessionReadIsNotAnEmptyHistory() {
+    func line(_ history: ReadAnswer) -> String {
+        DetailStats.readingLine(
+            status: .reading, wishlistOnly: false, hasFile: true, hasPhysical: false,
+            hasPosition: false, record: nil, finishedAt: nil, history: history
+        )
+    }
+    #expect(line(.waiting).isEmpty)
+    #expect(line(.failed).contains("couldn\u{2019}t be loaded"))
+    #expect(line(.known).contains("No reading recorded yet"))
+}
+
+// MARK: - Finish card: what isn't known
+
+@Test func cardPointsNowhereWhileAMembersStatusHasNotAnswered() {
+    let states = [
+        holmes[0].uuid: SeriesMemberState(status: .finished),
+        // Its place answered and its status didn't, so it could be a finished book.
+        holmes[2].uuid: SeriesMemberState(status: nil, percent: 40),
+    ]
+    let target = FinishCopy.target(
+        reviewKnown: true, rated: true, bookID: 2, members: holmes,
+        states: states, statesSettled: true
+    )
+    #expect(target == nil)
+}
+
+@Test func onlyAFinishSeenWithThePageSettledCelebrates() {
+    #expect(FinishCopy.celebrates(settled: true, was: .reading, now: .finished))
+    // Cache said reading, server said finished: done on another device.
+    #expect(!FinishCopy.celebrates(settled: false, was: .reading, now: .finished))
+    #expect(!FinishCopy.celebrates(settled: true, was: .finished, now: .finished))
+    #expect(!FinishCopy.celebrates(settled: true, was: .unread, now: .reading))
 }
 
 // MARK: - The More menu
@@ -931,4 +982,44 @@ private func bookmark(position: String, title: String? = nil) -> Bookmark {
     #expect(BookExportCopy.ebookMeta(sizeBytes: nil) == "opens the share sheet")
     let files = [BookFileInfo(id: 1, format: "m4b", filename: "a.m4b", ordinal: 0)]
     #expect(BookExportCopy.audioMeta(files: files) == "M4B · opens the share sheet")
+}
+
+// MARK: - Bookmarks and the audiobook export
+
+@Test func aBookmarkPositionThatCantBeSecondsIsNeverTreatedAsThem() {
+    func bookmark(_ position: String) -> Bookmark {
+        Bookmark(id: 1, bookUUID: "b", position: position, title: title, clientID: nil, createdAt: 100_000)
+    }
+    #expect(BookmarkCopy.listeningSeconds(bookmark("4320")) == 4320)
+    // Each of these parses as a Double, and three of them trap in `Int64()`.
+    for position in ["nan", "inf", "-inf", "1e30", "-5"] {
+        #expect(BookmarkCopy.listeningSeconds(bookmark(position)) == nil)
+        #expect(BookmarkCopy.name(bookmark(position)) == "Saved position")
+    }
+    #expect(BookmarkCopy.listeningSeconds(bookmark("epubcfi(/6/8!/4/2)")) == nil)
+    #expect(BookmarkCopy.name(bookmark("4320")).hasPrefix("Listening"))
+}
+
+@Test func aMultiPartAudiobookExportsEveryPart() throws {
+    func manifest(_ json: String) throws -> AudiobookManifest {
+        try JSONDecoder().decode(AudiobookManifest.self, from: Data(json.utf8))
+    }
+    let part = { (ordinal: Int) in
+        #"{"ordinal":\#(ordinal),"url":"/p\#(ordinal)","duration_seconds":60,"mime":"audio/mpeg"}"#
+    }
+    let two = try manifest(
+        #"{"mode":"direct","total_duration_seconds":120,"parts":[\#(part(0)),\#(part(1))]}"#
+    )
+    #expect(
+        BookExportCopy.audioPaths(uuid: "u", manifest: two)
+            == ["/api/audiobooks/u/download?part=0", "/api/audiobooks/u/download?part=1"]
+    )
+    let one = try manifest(#"{"mode":"direct","total_duration_seconds":60,"parts":[\#(part(0))]}"#)
+    #expect(BookExportCopy.audioPaths(uuid: "u", manifest: one) == ["/api/audiobooks/u/download"])
+    let streamed = try manifest(#"{"mode":"hls","playlist_url":"/m.m3u8"}"#)
+    #expect(BookExportCopy.audioPaths(uuid: "u", manifest: streamed) == ["/api/audiobooks/u/download"])
+    #expect(
+        BookExportCopy.fileName(title: "Dracula", suggested: "a.mp3", fallbackExtension: "m4b", part: 2)
+            == "Dracula - part 02.mp3"
+    )
 }

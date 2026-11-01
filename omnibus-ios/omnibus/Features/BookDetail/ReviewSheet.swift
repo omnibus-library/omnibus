@@ -332,6 +332,7 @@ struct ReviewSheet: View {
 
     private enum Field { case body, notes }
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.palette) private var palette
     @Environment(\.dismiss) private var dismiss
     @State private var draft = ReviewDraft(nil)
@@ -385,8 +386,8 @@ struct ReviewSheet: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, typing ? 8 : 34)
-                .animation(Motion.settle, value: typing)
-                .animation(Motion.settle, value: notesOpen)
+                .animation(reduceMotion ? nil : Motion.settle, value: typing)
+                .animation(reduceMotion ? nil : Motion.settle, value: notesOpen)
             }
             .scrollDisabled(typing)
             .scrollIndicators(.hidden)
@@ -607,6 +608,9 @@ struct ReviewSheet: View {
             .accessibilityElement(children: .combine)
 
             TextEditor(text: $draft.body, selection: $selection)
+                // `scrollDisabled` on the sheet's own scroll would stop this too,
+                // and a long review has to scroll while it's being written.
+                .environment(\.isScrollEnabled, true)
                 .font(.ui(16))
                 .foregroundStyle(palette.ink0Color)
                 .tint(palette.bookText)

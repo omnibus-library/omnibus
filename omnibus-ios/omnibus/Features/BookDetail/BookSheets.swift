@@ -98,10 +98,20 @@ struct BookMenuRows: Equatable {
 // MARK: - Bookmarks
 
 enum BookmarkCopy {
+    /// A listening bookmark's seconds, or `nil` for a place in the text. The API
+    /// only bounds a position's length, so `nan` and `1e30` can arrive, and both
+    /// parse as a `Double` that traps on the way to an `Int64`.
+    static func listeningSeconds(_ bookmark: Bookmark) -> Double? {
+        guard let seconds = Double(bookmark.position), seconds.isFinite,
+              (0...1_000_000_000).contains(seconds)
+        else { return nil }
+        return seconds
+    }
+
     /// The bookmark's name, or where it is when it has none.
     static func name(_ bookmark: Bookmark) -> String {
         if let title = bookmark.title?.nilIfBlank { return title }
-        if let seconds = Double(bookmark.position) {
+        if let seconds = listeningSeconds(bookmark) {
             return "Listening, \(DetailFormat.duration(Int64(seconds))) in"
         }
         return "Saved position"
@@ -233,7 +243,7 @@ struct BookmarksSheet: View {
     private func open(_ bookmark: Bookmark) {
         if let onOpen {
             onOpen(bookmark)
-        } else if isAudio, let seconds = Double(bookmark.position) {
+        } else if isAudio, let seconds = BookmarkCopy.listeningSeconds(bookmark) {
             Task { await player.seek(to: seconds) }
         } else {
             ReaderBridge.shared.pendingCFI = bookmark.position
@@ -309,14 +319,25 @@ enum BookExportCopy {
     /// What to call a saved file: the book's title, since the server names one
     /// by uuid, with the extension the server actually answered with. A KEPUB
     /// that failed to convert arrives as a plain EPUB and must say so.
-    static func fileName(title: String, suggested: String?, fallbackExtension: String) -> String {
+    static func fileName(
+        title: String, suggested: String?, fallbackExtension: String, part: Int? = nil
+    ) -> String {
         let safe = title
             .components(separatedBy: CharacterSet(charactersIn: "/\\:"))
             .joined(separator: " ")
         let name = suggested?.lowercased() ?? ""
         if name.hasSuffix(".kepub.epub") { return "\(safe).kepub.epub" }
         let ext = (name as NSString).pathExtension
-        return "\(safe).\(ext.isEmpty ? fallbackExtension : ext)"
+        let stem = part.map { String(format: "%@ - part %02d", safe, $0) } ?? safe
+        return "\(stem).\(ext.isEmpty ? fallbackExtension : ext)"
+    }
+
+    /// Every download an audiobook takes. A streamed book has no parts to name,
+    /// and a one-part book's own route serves it whole.
+    static func audioPaths(uuid: String, manifest: AudiobookManifest) -> [String] {
+        let route = "/api/audiobooks/\(uuid)/download"
+        guard case let .direct(parts, _, _) = manifest, parts.count > 1 else { return [route] }
+        return parts.map { "\(route)?part=\($0.ordinal)" }
     }
 }
 
@@ -390,6 +411,8 @@ struct BookExportSheet: View {
             .scrollIndicators(.hidden)
         }
         .bookSheet([.fraction(0.64), .large])
+        // The send's outcome lives here, so the sheet has to stay for it.
+        .interactiveDismissDisabled(kindle == .sending)
     }
 
     private func sectionHead(_ title: String) -> some View {
@@ -504,20 +527,49 @@ struct BookExportSheet: View {
     }
 
     private var audioRow: some View {
-        let held = downloads.localURL(for: book.uuid, kind: .audio) != nil
+        let held = downloads.localFiles(for: book.uuid, kind: .audio)
 
         return shareRow(
             "Download audiobook",
             meta: BookExportCopy.audioMeta(files: book.audioFiles),
-            needsNetwork: !held,
+            needsNetwork: held.isEmpty,
             busy: saving == .audio
         ) {
-            save(
-                .audio, path: "/api/audiobooks/\(book.uuid)/download", kind: .audio,
-                fallback: book.audioFiles.first?.format.lowercased() ?? "m4b"
-            )
+            saveAudio(held: held)
         }
         .accessibilityIdentifier("export-audio")
+    }
+
+    /// Put the whole audiobook in the share sheet. A multi-part one is several
+    /// files, and its `/download` with no part serves only the first of them.
+    private func saveAudio(held: [URL]) {
+        guard saving == nil else { return }
+        Haptics.tap()
+        guard held.isEmpty else {
+            ShareSheet.present(items: held)
+            return
+        }
+        saving = .audio
+        saveError = nil
+        Task {
+            defer { saving = nil }
+            do {
+                let manifest = try await LibraryService.audiobookManifest(uuid: book.uuid)
+                let paths = BookExportCopy.audioPaths(uuid: book.uuid, manifest: manifest)
+                var items: [URL] = []
+                for (index, path) in paths.enumerated() {
+                    items.append(
+                        try await fetchToShare(
+                            path, fallback: book.audioFiles.first?.format.lowercased() ?? "m4b",
+                            part: paths.count > 1 ? index + 1 : nil
+                        )
+                    )
+                }
+                ShareSheet.present(items: items)
+            } catch {
+                report(error)
+            }
+        }
     }
 
     /// Put a file in the share sheet: the copy on this phone when there is one,
@@ -534,23 +586,32 @@ struct BookExportSheet: View {
         Task {
             defer { saving = nil }
             do {
-                let fetched = try await APIClient.shared.file(for: path)
-                let folder = FileManager.default.temporaryDirectory
-                    .appendingPathComponent(UUID().uuidString, isDirectory: true)
-                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-                let name = BookExportCopy.fileName(
-                    title: book.displayTitle, suggested: fetched.suggestedName,
-                    fallbackExtension: fallback
-                )
-                let destination = folder.appendingPathComponent(name)
-                try FileManager.default.moveItem(at: fetched.url, to: destination)
-                ShareSheet.present(items: [destination])
+                ShareSheet.present(items: [try await fetchToShare(path, fallback: fallback)])
             } catch {
-                guard !isCancellation(error) else { return }
-                saveError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-                Haptics.warning()
+                report(error)
             }
         }
+    }
+
+    /// Fetch a file to disk under the name it should be shared by.
+    private func fetchToShare(_ path: String, fallback: String, part: Int? = nil) async throws -> URL {
+        let fetched = try await APIClient.shared.file(for: path)
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let name = BookExportCopy.fileName(
+            title: book.displayTitle, suggested: fetched.suggestedName,
+            fallbackExtension: fallback, part: part
+        )
+        let destination = folder.appendingPathComponent(name)
+        try FileManager.default.moveItem(at: fetched.url, to: destination)
+        return destination
+    }
+
+    private func report(_ error: Error) {
+        guard !isCancellation(error) else { return }
+        saveError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        Haptics.warning()
     }
 
     private func shareRow(

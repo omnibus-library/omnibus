@@ -181,13 +181,13 @@ struct MainTabView: View {
                 dismissButton: .default(Text("OK"))
             )
         }
-        #if DEBUG
-        // `initial`: a link that arrived during launch is waiting when this mounts.
         .onChange(of: Presentation.shared.requestedTab) { _, tab in
             guard let tab else { return }
             Presentation.shared.requestedTab = nil
             selection = tab
         }
+        #if DEBUG
+        // `initial`: a link that arrived during launch is waiting when this mounts.
         .onChange(of: DebugScreenLink.shared.pending, initial: true) { _, route in
             guard let route else { return }
             DebugScreenLink.shared.pending = nil
@@ -281,6 +281,8 @@ final class Presentation {
     func openReader(_ book: Book) {
         guard DownloadManager.shared.canOpen(book, kind: .ebook) else {
             unavailable = UnavailableBook(title: book.displayTitle, kind: .ebook)
+            // A place asked for in this book must not wait for the next one opened.
+            ReaderBridge.shared.pendingCFI = nil
             return
         }
         player = nil
