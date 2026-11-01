@@ -987,17 +987,14 @@ private func bookmark(position: String, title: String? = nil) -> Bookmark {
 // MARK: - Bookmarks and the audiobook export
 
 @Test func aBookmarkPositionThatCantBeSecondsIsNeverTreatedAsThem() {
-    func bookmark(_ position: String) -> Bookmark {
-        Bookmark(id: 1, bookUUID: "b", position: position, title: title, clientID: nil, createdAt: 100_000)
-    }
-    #expect(BookmarkCopy.listeningSeconds(bookmark("4320")) == 4320)
+    #expect(BookmarkCopy.listeningSeconds(bookmark(position: "4320")) == 4320)
     // Each of these parses as a Double, and three of them trap in `Int64()`.
     for position in ["nan", "inf", "-inf", "1e30", "-5"] {
-        #expect(BookmarkCopy.listeningSeconds(bookmark(position)) == nil)
-        #expect(BookmarkCopy.name(bookmark(position)) == "Saved position")
+        #expect(BookmarkCopy.listeningSeconds(bookmark(position: position)) == nil)
+        #expect(BookmarkCopy.name(bookmark(position: position)) == "Saved position")
     }
-    #expect(BookmarkCopy.listeningSeconds(bookmark("epubcfi(/6/8!/4/2)")) == nil)
-    #expect(BookmarkCopy.name(bookmark("4320")).hasPrefix("Listening"))
+    #expect(BookmarkCopy.listeningSeconds(bookmark(position: "epubcfi(/6/8!/4/2)")) == nil)
+    #expect(BookmarkCopy.name(bookmark(position: "4320")).hasPrefix("Listening"))
 }
 
 @Test func aMultiPartAudiobookExportsEveryPart() throws {
