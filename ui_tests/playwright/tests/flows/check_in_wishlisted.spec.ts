@@ -23,6 +23,7 @@ test.describe("wishlist check-in", () => {
   }) => {
     const wish = await wishFor(buildExternalBook());
 
+    // Dropped with the Dioxus client: the "0 books" / "1 book in your library" author-block counts. React's More by row has no empty state (the fixmes in book_detail.spec.ts).
     await test.step("open the wished-for book", async () => {
       await bookDetailPage.goto(wish.uuid);
     });

@@ -2,6 +2,7 @@ import { overrides } from "../contracts/overrides";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/pageFixtures";
 import { failing } from "../utils/api";
+import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { fixturesDir, seedLibrary } from "../utils/seed";
 
 // Reserved: the saving tests write overrides on this book and revert them
@@ -339,6 +340,55 @@ test.describe("inline edit", () => {
           table.chooseSuggestion(TARGET.slug, "tags", POOL_TAG),
         );
         await expect(table.chip(TARGET.slug, "tags", POOL_TAG)).toBeVisible();
+      });
+    });
+
+    // The override save materializes a `tags` row, so a page loaded after it
+    // finds the tag in the autocomplete pool.
+    test("autocomplete a tag an override saved", async ({
+      libraryPage,
+      overridesRequests,
+      expectMutation,
+      revertOverridesOf,
+      request,
+    }) => {
+      const table = libraryPage.table;
+      await revertOverridesOf(TARGET.title);
+
+      await test.step("give the book the tag through the api", async () => {
+        const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+        const saved = await overridesRequests.postOverrides(uuid, {
+          subjects: [NEW_TAG],
+        });
+        await expect(saved).toBeOK();
+      });
+
+      await test.step("open the tags editor", async () => {
+        await libraryPage.goto();
+        await table.switchTo();
+        await table.openCell(TARGET.slug, "tags");
+        await expect(table.cellInput(TARGET.slug, "tags")).toBeVisible();
+      });
+
+      // The suggestions leave out tags already on the book, so the chip goes first.
+      await test.step("remove the tag from the book", async () => {
+        await expectMutation(overrides.save(), () =>
+          table.removeTag(TARGET.slug, NEW_TAG),
+        );
+      });
+
+      await test.step("type a prefix of the tag", async () => {
+        await table.fillCell(TARGET.slug, "tags", "Specul");
+        await expect(
+          table.suggestion(TARGET.slug, "tags", NEW_TAG),
+        ).toBeAttached();
+      });
+
+      await test.step("pick the suggestion", async () => {
+        await expectMutation(overrides.save(), () =>
+          table.chooseSuggestion(TARGET.slug, "tags", NEW_TAG),
+        );
+        await expect(table.chip(TARGET.slug, "tags", NEW_TAG)).toBeVisible();
       });
     });
   });

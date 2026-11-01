@@ -132,6 +132,36 @@ test.describe("shelf gallery", () => {
           .toBeGreaterThanOrEqual(FIXTURE_BOOKS.length);
       });
     });
+
+    // The wording must not claim a format the shelf isn't restricted to (#2253).
+    test("say an empty shelf is empty, not that a search found nothing", async ({
+      libraryPage,
+      ownShelf,
+      expectMutation,
+    }) => {
+      const shelf = await ownShelf("E2E Gallery Empty");
+
+      await test.step("select the empty shelf", async () => {
+        await libraryPage.goto();
+        await expectMutation(shelves.page(), () =>
+          libraryPage.selectShelf(shelf),
+        );
+      });
+
+      await test.step("check the library says the shelf is empty", async () => {
+        await expect(libraryPage.shelfGallery.selectedTab).toContainText(
+          shelf.name,
+        );
+        await expect(libraryPage.shelfGallery.selectedTab).toHaveAccessibleName(
+          /\b0 books\b/,
+        );
+        await expect(libraryPage.emptyMessage).toHaveText(
+          "No books in this shelf.",
+        );
+        await expect(libraryPage.noMatchesMessage).toHaveCount(0);
+        await expect(libraryPage.pageError).toHaveCount(0);
+      });
+    });
   });
 
   test.describe("adding books", () => {
