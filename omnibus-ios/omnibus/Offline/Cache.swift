@@ -76,6 +76,7 @@ enum CacheKey {
     static func bookHousehold(_ uuid: String) -> String { "book_household:\(uuid)" }
     static func bookChapters(_ uuid: String) -> String { "book_chapters:\(uuid)" }
     static func shelvesContaining(_ uuid: String) -> String { "shelves_with:\(uuid)" }
+    static func smartShelvesContaining(_ uuid: String) -> String { "smart_shelves_with:\(uuid)" }
     static func wishlistEntry(_ uuid: String) -> String { "wishlist:\(uuid)" }
 }
 

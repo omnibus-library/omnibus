@@ -2,7 +2,8 @@
 //  The pure derivations behind the book page: fileless records, the language
 //  names, the primary action, the progress bar, the Your reading card, kept
 //  lines and journal previews, the journal composer's target, and where the
-//  finish card points.
+//  finish card points, who sees which row of the More menu, and how a bookmark
+//  and an export describe themselves.
 
 import Foundation
 import Testing
@@ -809,4 +810,125 @@ private let holmes = [member(1, "1"), member(2, "2"), member(3, "3")]
 @Test func aFinishedSeriesCountsInWords() {
     #expect(FinishCopy.readAll(count: 5) == "You\u{2019}ve read all five")
     #expect(FinishCopy.readAll(count: 2) == "You\u{2019}ve read both")
+}
+
+// MARK: - The More menu
+
+private func rows(
+    hasFiles: Bool = true, canDownload: Bool = true, canSendToKindle: Bool = true,
+    canEdit: Bool = true, wishlisted: Bool = false, isAdmin: Bool = true
+) -> BookMenuRows {
+    BookMenuRows.resolve(
+        hasFiles: hasFiles, canDownload: canDownload, canSendToKindle: canSendToKindle,
+        canEdit: canEdit, wishlisted: wishlisted, isAdmin: isAdmin
+    )
+}
+
+@Test func anAdminSeesEveryRowForABookWithFiles() {
+    #expect(
+        rows() == BookMenuRows(
+            bookmarks: true, export: true, editMetadata: true, removeFromWishlist: false,
+            merge: true, delete: true
+        )
+    )
+}
+
+@Test func aReaderSeesNothingThatWritesToTheLibrary() {
+    let reader = rows(canEdit: false, isAdmin: false)
+    #expect(!reader.editMetadata)
+    #expect(!reader.merge)
+    #expect(!reader.delete)
+    #expect(reader.bookmarks)
+    #expect(reader.export)
+}
+
+@Test func aRecordWithNoFilesOffersNothingThatNeedsOne() {
+    let record = rows(hasFiles: false, wishlisted: true)
+    #expect(!record.bookmarks)
+    #expect(!record.export)
+    #expect(!record.merge)
+    #expect(record.removeFromWishlist)
+    // Still deletable: that is how a stray record goes.
+    #expect(record.delete)
+}
+
+@Test func exportNeedsSomewhereForTheBookToGo() {
+    #expect(!rows(canDownload: false, canSendToKindle: false).export)
+    #expect(rows(canDownload: false, canSendToKindle: true).export)
+    #expect(rows(canDownload: true, canSendToKindle: false).export)
+}
+
+// MARK: - Bookmarks
+
+private func bookmark(position: String, title: String? = nil) -> Bookmark {
+    Bookmark(id: 1, bookUUID: "b", position: position, title: title, clientID: nil, createdAt: 100_000)
+}
+
+@Test func aBookmarkIsCalledWhatItWasNamed() {
+    #expect(BookmarkCopy.name(bookmark(position: "epubcfi(/6/8!/4)", title: "The Barrel")) == "The Barrel")
+    #expect(BookmarkCopy.name(bookmark(position: "epubcfi(/6/8!/4)")) == "Saved position")
+    #expect(BookmarkCopy.name(bookmark(position: "4320")) == "Listening, 1 h 12 m in")
+}
+
+@Test func aBookmarkPlacesItsChapterWhenItCan() {
+    let now = Date(timeIntervalSince1970: 200_000)
+    let reading = BookmarkCopy.meta(
+        bookmark(position: "epubcfi(/6/6!/4/2)"), chapters: tocChapters, now: now
+    )
+    #expect(reading.hasPrefix("Chapter 1 · "))
+    let listening = BookmarkCopy.meta(bookmark(position: "4320"), chapters: tocChapters, now: now)
+    #expect(!listening.contains("Chapter"))
+}
+
+// MARK: - Export
+
+@Test func kindleRowFollowsTheSend() {
+    func copy(_ state: KindleSendState, hasEpub: Bool = true) -> KindleRowCopy {
+        BookExportCopy.kindleRow(gate: .ready, state: state, hasEpub: hasEpub)
+    }
+    #expect(copy(.idle) == KindleRowCopy(meta: "Emails the EPUB to your Kindle", end: "Send", enabled: true))
+    #expect(copy(.idle, hasEpub: false).meta == "Emails the book to your Kindle")
+    #expect(copy(.sending).end == "Sending\u{2026}")
+    #expect(!copy(.sending).enabled)
+    #expect(copy(.sent) == KindleRowCopy(meta: "Sent to your Kindle.", end: "Sent", enabled: false))
+    #expect(copy(.failed("No relay")) == KindleRowCopy(meta: "No relay", end: "Retry", enabled: true))
+}
+
+@Test func kindleRowSaysWhatIsInTheWay() {
+    let noAddress = BookExportCopy.kindleRow(gate: .noAddress, state: .idle, hasEpub: true)
+    #expect(noAddress.end == "Settings")
+    #expect(noAddress.enabled)
+    let oversize = BookExportCopy.kindleRow(gate: .oversize, state: .idle, hasEpub: true)
+    #expect(oversize.end == "Open")
+    #expect(oversize.enabled)
+    let offline = BookExportCopy.kindleRow(gate: .offline, state: .idle, hasEpub: true)
+    #expect(offline.meta == "Needs a connection")
+    #expect(!offline.enabled)
+}
+
+@Test func savedFilesTakeTheTitleAndTheExtensionTheServerSent() {
+    #expect(
+        BookExportCopy.fileName(title: "Dracula", suggested: "abc.kepub.epub", fallbackExtension: "epub")
+            == "Dracula.kepub.epub"
+    )
+    // A conversion that failed answers with the plain EPUB, and must say so.
+    #expect(
+        BookExportCopy.fileName(title: "Dracula", suggested: "abc.epub", fallbackExtension: "epub")
+            == "Dracula.epub"
+    )
+    #expect(
+        BookExportCopy.fileName(title: "Dracula", suggested: nil, fallbackExtension: "m4b")
+            == "Dracula.m4b"
+    )
+    // A title can't be allowed to name a folder.
+    #expect(
+        BookExportCopy.fileName(title: "AC/DC: Live", suggested: nil, fallbackExtension: "epub")
+            == "AC DC  Live.epub"
+    )
+}
+
+@Test func exportMetaLeavesOutASizeItDoesNotKnow() {
+    #expect(BookExportCopy.ebookMeta(sizeBytes: nil) == "opens the share sheet")
+    let files = [BookFileInfo(id: 1, format: "m4b", filename: "a.m4b", ordinal: 0)]
+    #expect(BookExportCopy.audioMeta(files: files) == "M4B · opens the share sheet")
 }

@@ -510,175 +510,212 @@ enum ShelfEmptyCopy {
 
 /// Toggle a book's shelves.
 ///
-/// Was a one-shot "pick a shelf, we add and dismiss" list, which gave no way to
-/// see what a book was already on and no way to take it off. Now every manual
-/// shelf is a row with its mosaic and a live checkmark, and smart shelves are
-/// listed read-only so their absence isn't mistaken for a bug.
+/// Every hand-picked shelf is a row with a live check, its covers gaining this
+/// book as it goes on. Smart shelves this book matches are listed read-only, so
+/// their absence from the toggles isn't mistaken for a bug.
 struct ShelfPickerSheet: View {
     let book: Book
 
     @Environment(\.palette) private var palette
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var previews: [ShelfPreview] = []
     @State private var member: Set<Int64> = []
+    @State private var smart: Set<Int64> = []
     @State private var busy: Set<Int64> = []
     @State private var isLoading = true
     @State private var showCreate = false
 
     private var manual: [ShelfPreview] { previews.filter { $0.shelf.kind == .manual } }
-    private var derived: [ShelfPreview] { previews.filter { $0.shelf.kind != .manual } }
+    private var automatic: [ShelfPreview] {
+        previews.filter { $0.shelf.kind != .manual && smart.contains($0.shelf.id) }
+    }
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if isLoading {
-                    LoadingView()
-                } else {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 28) {
-                            VStack(alignment: .leading, spacing: Spacing.sm) {
-                                if !manual.isEmpty { SectionLabel("Your shelves") }
+        VStack(alignment: .leading, spacing: 0) {
+            BookSheetHeader(title: "Add to shelf") { dismiss() }
 
-                                VStack(spacing: 0) {
-                                    ForEach(Array(manual.enumerated()), id: \.element.id) { index, preview in
-                                        row(preview, isFirst: index == 0)
-                                    }
-                                    newShelfRow(isFirst: manual.isEmpty)
-                                    RecordRule()
-                                }
-                            }
-
-                            if !derived.isEmpty {
-                                VStack(alignment: .leading, spacing: Spacing.sm) {
-                                    SectionLabel("Automatic")
-
-                                    Text("Membership follows each shelf's own rules.")
-                                        .font(.ui(12.5))
-                                        .foregroundStyle(palette.ink3Color)
-
-                                    VStack(spacing: 0) {
-                                        ForEach(Array(derived.enumerated()), id: \.element.id) { index, preview in
-                                            row(preview, readOnly: true, isFirst: index == 0)
-                                        }
-                                        RecordRule()
-                                    }
-                                }
-                            }
+            if isLoading {
+                LoadingView()
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        if manual.isEmpty {
+                            Text("You have no hand-picked shelves yet. Make one and this book goes on it.")
+                                .font(.ui(16))
+                                .foregroundStyle(palette.ink1Color)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .padding(.top, 6)
+                                .padding(.bottom, 12)
+                        } else {
+                            Text("Tap a shelf to add or remove this book.")
+                                .font(.ui(14))
+                                .foregroundStyle(palette.ink1Color)
+                                .padding(.top, 2)
+                                .padding(.bottom, 8)
+                            ForEach(manual) { row($0) }
                         }
-                        .screenPadding()
-                        .padding(.vertical, Spacing.lg)
+
+                        newShelfRow
+
+                        if !automatic.isEmpty {
+                            Text("Automatic")
+                                .font(.ui(15, weight: .semibold))
+                                .foregroundStyle(palette.ink0Color)
+                                .padding(.top, 20)
+                                .padding(.bottom, 2)
+                            Text("These follow each shelf\u{2019}s rules, so they can\u{2019}t be changed here.")
+                                .font(.ui(14))
+                                .foregroundStyle(palette.ink1Color)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .padding(.bottom, 6)
+                            ForEach(automatic) { automaticRow($0) }
+                        }
                     }
-                    .scrollIndicators(.hidden)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 28)
                 }
-            }
-            .background(ScreenBackground())
-            .navigationTitle("Add to shelf")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                }
-            }
-            .sheet(isPresented: $showCreate) {
-                CreateShelfSheet { Task { await load() } }
+                .scrollIndicators(.hidden)
             }
         }
-        .presentationDetents([.medium, .large])
+        .bookSheet([.fraction(0.82), .large])
+        .sheet(isPresented: $showCreate) {
+            CreateShelfSheet(bookUUIDs: [book.uuid]) { Task { await load() } }
+        }
         .task { await load() }
     }
 
-    private func row(
-        _ preview: ShelfPreview, readOnly: Bool = false, isFirst: Bool = false
-    ) -> some View {
+    /// Two of the shelf's covers fanned, and this book laid on top once it
+    /// belongs there.
+    private func stack(_ preview: ShelfPreview, withBook: Bool, dimmed: Bool = false) -> some View {
+        let covers = preview.covers.filter { $0.id != book.id }.prefix(withBook ? 2 : 3)
+
+        return HStack(spacing: -14) {
+            ForEach(Array(covers.enumerated()), id: \.element.id) { index, cover in
+                stackCover(CoverIdentity(cover), turn: index == 0 ? -4 : 2)
+            }
+            if withBook {
+                stackCover(CoverIdentity(book), turn: 4)
+                    .transition(
+                        reduceMotion
+                            ? .opacity
+                            : .opacity
+                                .combined(with: .offset(y: -22))
+                                .combined(with: .scale(scale: 0.8))
+                    )
+            }
+        }
+        .opacity(dimmed ? 0.82 : 1)
+        .frame(width: 66, alignment: .leading)
+        .accessibilityHidden(true)
+    }
+
+    private func stackCover(_ identity: CoverIdentity, turn: Double) -> some View {
+        BookCover(identity: identity, size: .sm, cornerRadius: 2)
+            .frame(width: 30, height: 45)
+            .shadow(color: .black.opacity(0.5), radius: 3, x: 2, y: 3)
+            .rotationEffect(.degrees(turn))
+    }
+
+    private func rule() -> some View {
+        Rectangle().fill(palette.ink0Color.opacity(0.1)).frame(height: 1)
+    }
+
+    private func row(_ preview: ShelfPreview) -> some View {
         let shelf = preview.shelf
         let isOn = member.contains(shelf.id)
 
-        return VStack(spacing: 0) {
-            if !isFirst {
-                Rectangle()
-                    .fill(palette.line2.color)
-                    .frame(height: 0.5)
-            }
-
-            Button {
-                guard !readOnly else { return }
-                Task { await toggle(shelf, currentlyOn: isOn) }
-            } label: {
-                HStack(spacing: Spacing.md) {
-                    ShelfMosaic(preview: preview, cornerRadius: 4)
-                        .frame(width: 34)
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(shelf.name)
-                            .font(.ui(15, weight: .medium))
-                            .foregroundStyle(palette.ink0Color)
-                        Text("\(shelf.bookCount) book\(shelf.bookCount == 1 ? "" : "s")")
-                            .font(.ui(11.5))
-                            .foregroundStyle(palette.ink3Color)
-                    }
-
-                    Spacer(minLength: 0)
-
-                    if busy.contains(shelf.id) {
-                        ProgressView()
-                    } else if readOnly {
-                        Image(systemName: shelf.kind.glyph)
-                            .font(.system(size: 13))
-                            .foregroundStyle(palette.ink3Color)
-                    } else {
-                        Image(systemName: isOn ? "checkmark.circle.fill" : "circle")
-                            .font(.system(size: 21))
-                            .foregroundStyle(isOn ? palette.accentColor : palette.ink3Color)
-                            .contentTransition(.symbolEffect(.replace))
-                    }
+        return Button {
+            Task { await toggle(shelf, currentlyOn: isOn) }
+        } label: {
+            HStack(spacing: 14) {
+                stack(preview, withBook: isOn)
+                    .animation(Motion.settle, value: isOn)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(shelf.name)
+                        .font(.ui(16, weight: .semibold))
+                        .foregroundStyle(palette.ink0Color)
+                    Text(StatsFormat.counted(shelf.bookCount, "book"))
+                        .font(.ui(14))
+                        .foregroundStyle(palette.ink1Color)
                 }
-                .padding(.vertical, 11)
-                .contentShape(Rectangle())
+                Spacer(minLength: 0)
+                check(isOn: isOn, busy: busy.contains(shelf.id))
             }
-            .buttonStyle(.plain)
-            .disabled(readOnly)
+            .padding(.vertical, 8)
+            .frame(minHeight: 66)
+            .overlay(alignment: .top) { rule() }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isOn ? .isSelected : [])
+        .accessibilityIdentifier("shelf-row-\(shelf.id)")
+    }
+
+    @ViewBuilder
+    private func check(isOn: Bool, busy: Bool) -> some View {
+        if busy {
+            ProgressView().controlSize(.small).frame(width: 26, height: 26)
+        } else {
+            ZStack {
+                Circle()
+                    .fill(isOn ? palette.bookDeep : .clear)
+                    .overlay {
+                        if !isOn {
+                            Circle().strokeBorder(palette.ink0Color.opacity(0.34), lineWidth: 1.5)
+                        }
+                    }
+                if isOn {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(.white)
+                }
+            }
+            .frame(width: 26, height: 26)
         }
     }
 
-    private func newShelfRow(isFirst: Bool) -> some View {
-        VStack(spacing: 0) {
-            if !isFirst {
-                Rectangle()
-                    .fill(palette.line2.color)
-                    .frame(height: 0.5)
+    private var newShelfRow: some View {
+        Button {
+            Haptics.tap()
+            showCreate = true
+        } label: {
+            HStack(spacing: 14) {
+                Image(systemName: "plus")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(palette.bookText)
+                    .frame(width: 52)
+                Text("New shelf")
+                    .font(.ui(16, weight: .semibold))
+                    .foregroundStyle(palette.ink0Color)
+                Spacer(minLength: 0)
             }
-
-            Button {
-                Haptics.tap()
-                showCreate = true
-            } label: {
-                HStack(spacing: Spacing.md) {
-                    // Same 2:3 box as a shelf mosaic, so the row's leading
-                    // gutter stays one column rather than stepping in.
-                    Image(systemName: "plus")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(palette.accentColor)
-                        .frame(width: 34, height: 51)
-                        .background(
-                            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                .strokeBorder(
-                                    palette.line2.color,
-                                    style: StrokeStyle(lineWidth: 1, dash: [3, 3])
-                                )
-                        )
-
-                    Text("New shelf")
-                        .font(.ui(15, weight: .medium))
-                        .foregroundStyle(palette.accentColor)
-
-                    Spacer(minLength: 0)
-                }
-                .padding(.vertical, 11)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
+            .frame(minHeight: 56)
+            .overlay(alignment: .top) { rule() }
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("shelf-new")
+    }
+
+    private func automaticRow(_ preview: ShelfPreview) -> some View {
+        HStack(spacing: 14) {
+            stack(preview, withBook: false, dimmed: true)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(preview.shelf.name)
+                    .font(.ui(16, weight: .medium))
+                    .foregroundStyle(palette.ink0Color)
+                Text(StatsFormat.counted(preview.shelf.bookCount, "book"))
+                    .font(.ui(14))
+                    .foregroundStyle(palette.ink1Color)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 6)
+        .frame(minHeight: 60)
+        .overlay(alignment: .top) { rule() }
+        .accessibilityElement(children: .combine)
     }
 
     private func toggle(_ shelf: ShelfSummary, currentlyOn: Bool) async {
@@ -704,6 +741,9 @@ struct ShelfPickerSheet: View {
         for await value in UserDataService.shelfPreviews().values() { previews = value }
         for await ids in UserDataService.shelvesContaining(uuid: book.uuid).values() {
             member = Set(ids)
+        }
+        for await ids in UserDataService.smartShelvesContaining(uuid: book.uuid).values() {
+            smart = Set(ids)
         }
         isLoading = false
     }

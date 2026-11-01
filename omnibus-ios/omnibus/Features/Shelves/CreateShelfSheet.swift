@@ -8,6 +8,8 @@
 import SwiftUI
 
 struct CreateShelfSheet: View {
+    /// Books a hand-picked shelf starts with, when it is made from one of them.
+    var bookUUIDs: [String] = []
     var onCreated: () -> Void
 
     @Environment(\.palette) private var palette
@@ -188,7 +190,7 @@ struct CreateShelfSheet: View {
             visibility: visibility,
             matchMode: kind == .smart ? matchMode : nil,
             rules: kind == .smart ? validRules : [],
-            bookUUIDs: []
+            bookUUIDs: kind == .manual ? bookUUIDs : []
         )
         do {
             _ = try await UserDataService.createShelf(request)

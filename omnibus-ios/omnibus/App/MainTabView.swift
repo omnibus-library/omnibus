@@ -184,6 +184,11 @@ struct MainTabView: View {
         }
         #if DEBUG
         // `initial`: a link that arrived during launch is waiting when this mounts.
+        .onChange(of: Presentation.shared.requestedTab) { _, tab in
+            guard let tab else { return }
+            Presentation.shared.requestedTab = nil
+            selection = tab
+        }
         .onChange(of: DebugScreenLink.shared.pending, initial: true) { _, route in
             guard let route else { return }
             DebugScreenLink.shared.pending = nil
@@ -264,6 +269,10 @@ final class Presentation {
     func noteProgressPersisted() {
         progressToken &+= 1
     }
+
+    /// A tab something behind a sheet needs the reader on. Taken and cleared by
+    /// the tab view, the only thing that knows which tab is up.
+    var requestedTab: AppTab?
 
     /// A book the reader or player was asked for and can't have. Presented as
     /// an alert rather than opened, so the answer arrives on the tap instead of

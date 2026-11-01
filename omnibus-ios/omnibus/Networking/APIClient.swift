@@ -205,6 +205,30 @@ actor APIClient {
         return data
     }
 
+    /// `GET path` into a temporary file, with the name the server suggests, for
+    /// a body too large to hold in memory. On the long-transfer session: the
+    /// read session gives up on a whole response after two minutes.
+    func file(for path: String) async throws -> (url: URL, suggestedName: String?) {
+        guard let url = absoluteURL(path) else { throw APIError.notConfigured }
+        try failFastWhenUnreachable()
+        var request = URLRequest(url: url)
+        if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        do {
+            let (file, response) = try await uploadSession.download(for: request)
+            noteOutcome(reachable: true)
+            if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+                try validate(response, data: (try? Data(contentsOf: file)) ?? Data())
+            }
+            return (file, response.suggestedFilename)
+        } catch let error as APIError {
+            throw error
+        } catch {
+            try rethrowIfCancelled(error)
+            noteOutcome(reachable: false)
+            throw APIError.transport(error.localizedDescription)
+        }
+    }
+
     /// A fetched image plus the validator the server published for it, or —
     /// when the caller offered an `If-None-Match` the server matched — the
     /// bodyless answer that its cached copy is still current.

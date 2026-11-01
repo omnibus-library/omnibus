@@ -23,38 +23,56 @@ struct DeleteBookSheet: View {
 
     private var picked: Int { pickedFiles.count + pickedCopies.count }
 
-    var body: some View {
-        NavigationStack {
-            Group {
-                if let manifest {
-                    // A book with nothing to pick skips straight to the
-                    // record-delete confirm.
-                    if confirming || manifest.itemCount == 0 {
-                        confirm(manifest)
-                    } else {
-                        choose(manifest)
-                    }
-                } else if let error {
-                    ErrorStateView(message: error) { Task { await load() } }
-                } else {
-                    LoadingView()
-                }
-            }
-            .background(ScreenBackground())
-            .navigationTitle(DeleteSelectionCopy.menuLabel(hasFiles: manifest?.files.isEmpty == false))
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                        // No dismissal mid-delete — closing would hide the
-                        // outcome while the request keeps running.
-                        .disabled(busy)
-                }
-            }
-            .interactiveDismissDisabled(busy)
+    /// Whether the confirm step is up. A book with nothing to pick skips
+    /// straight to the record-delete confirm.
+    private func isConfirming(_ manifest: BookDeletionManifest) -> Bool {
+        confirming || manifest.itemCount == 0
+    }
+
+    private var title: String {
+        guard let manifest else { return DeleteSelectionCopy.menuLabel(hasFiles: !book.formats.isEmpty) }
+        guard isConfirming(manifest) else {
+            return "Delete files from \u{201c}\(book.displayTitle)\u{201d}?"
         }
-        .presentationDetents([.large])
-        .presentationBackground(palette.bg1Color)
+        return confirmCopy(manifest).heading
+    }
+
+    private func confirmCopy(_ manifest: BookDeletionManifest) -> DeleteSelectionCopy {
+        .resolve(
+            title: book.displayTitle,
+            manifest: manifest,
+            pickedFiles: pickedFiles,
+            pickedCopies: pickedCopies
+        )
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // No dismissal mid-delete — closing would hide the outcome while
+            // the request keeps running.
+            BookSheetHeader(title: title, closes: !busy) { dismiss() }
+
+            if let manifest {
+                ScrollView {
+                    Group {
+                        if isConfirming(manifest) {
+                            confirm(manifest)
+                        } else {
+                            choose(manifest)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 28)
+                }
+                .scrollIndicators(.hidden)
+            } else if let error {
+                ErrorStateView(message: error) { Task { await load() } }
+            } else {
+                LoadingView()
+            }
+        }
+        .bookSheet([.fraction(0.7), .large])
+        .interactiveDismissDisabled(busy)
         .task { await load() }
     }
 
@@ -71,201 +89,178 @@ struct DeleteBookSheet: View {
 
     private func choose(_ manifest: BookDeletionManifest) -> some View {
         let hasCopies = !manifest.copies.isEmpty
-        return VStack(alignment: .leading, spacing: Spacing.lg) {
+
+        return VStack(alignment: .leading, spacing: 0) {
             Text(hasCopies
-                ? "Choose what to remove. Files are deleted from disk; a physical copy is only un-recorded."
-                : "Choose the files to remove. Each one is deleted from disk and from the library database. This cannot be undone.")
-                .font(.ui(13))
-                .foregroundStyle(palette.ink2Color)
+                ? "Choose what to remove. Files are deleted from disk, and a physical copy is only un-recorded."
+                : "Each file you choose is deleted from disk and from the library database. This can\u{2019}t be undone.")
+                .font(.ui(15))
+                .foregroundStyle(palette.ink1Color)
                 .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 2)
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: Spacing.lg) {
-                    if !manifest.files.isEmpty {
-                        section(
-                            hasCopies ? "Files on disk" : "\(manifest.files.count) \(manifest.files.count == 1 ? "file" : "files") on disk",
-                            rows: manifest.files.map { file in
-                                itemRow(
-                                    id: file.id,
-                                    title: file.label?.nilIfBlank ?? file.filename,
-                                    detail: fileDetail(file),
-                                    badge: file.format.uppercased(),
-                                    picked: $pickedFiles
-                                )
-                            }
-                        )
-                    }
-                    if hasCopies {
-                        section(
-                            "Physical copies",
-                            rows: manifest.copies.map { copy in
-                                itemRow(
-                                    id: copy.id,
-                                    title: copy.isbn.map { "ISBN \($0)" } ?? "Copy without an ISBN",
-                                    detail: copy.note?.nilIfBlank ?? "Un-recorded only \u{2014} nothing on disk.",
-                                    badge: "PHYS",
-                                    picked: $pickedCopies
-                                )
-                            }
-                        )
+            HStack {
+                Text(DeleteSelectionCopy.chooseHeading(manifest))
+                    .font(.ui(15, weight: .semibold))
+                    .foregroundStyle(palette.ink0Color)
+                Spacer(minLength: 0)
+                Button(picked == manifest.itemCount ? "Clear selection" : "Select all") {
+                    Haptics.tap()
+                    if picked == manifest.itemCount {
+                        pickedFiles = []
+                        pickedCopies = []
+                    } else {
+                        pickedFiles = Set(manifest.files.map(\.id))
+                        pickedCopies = Set(manifest.copies.map(\.id))
                     }
                 }
+                .font(.ui(15, weight: .semibold))
+                .foregroundStyle(palette.bookText)
+                .frame(minHeight: 44)
+                .accessibilityIdentifier("delete-select-all")
             }
-            .scrollIndicators(.hidden)
+            .padding(.top, 14)
 
-            Button(picked == manifest.itemCount ? "Clear selection" : "Select everything") {
-                if picked == manifest.itemCount {
-                    pickedFiles = []
-                    pickedCopies = []
-                } else {
-                    pickedFiles = Set(manifest.files.map(\.id))
-                    pickedCopies = Set(manifest.copies.map(\.id))
+            ForEach(manifest.files) { file in
+                itemRow(
+                    id: file.id,
+                    title: file.label?.nilIfBlank ?? file.filename,
+                    detail: fileDetail(file),
+                    picked: $pickedFiles
+                )
+            }
+            ForEach(manifest.copies) { copy in
+                itemRow(
+                    id: copy.id,
+                    title: copy.isbn.map { "Physical copy, ISBN \($0)" } ?? "Physical copy",
+                    detail: copy.note?.nilIfBlank ?? "Un-recorded only. Nothing on disk.",
+                    picked: $pickedCopies
+                )
+            }
+
+            HStack(spacing: 10) {
+                Button("Cancel") { dismiss() }
+                    .buttonStyle(QuietPillStyle(fills: true))
+
+                Button {
+                    Haptics.tap()
+                    confirming = true
+                } label: {
+                    Text(DeleteSelectionCopy.chooseAction(picked: picked, hasCopies: hasCopies))
                 }
+                .buttonStyle(DangerPillStyle(enabled: picked > 0))
+                .disabled(picked == 0)
+                .accessibilityIdentifier("delete-continue")
             }
-            .font(.ui(13, weight: .medium))
-            .foregroundStyle(palette.accentColor)
-            .accessibilityIdentifier("delete-select-all")
-
-            Button {
-                Haptics.tap()
-                confirming = true
-            } label: {
-                Text(DeleteSelectionCopy.chooseAction(picked: picked, hasCopies: hasCopies))
-            }
-            .buttonStyle(FilledButtonStyle())
-            .disabled(picked == 0)
-            .accessibilityIdentifier("delete-continue")
-        }
-        .screenPadding()
-        .padding(.vertical, Spacing.lg)
-    }
-
-    private func section(_ title: String, rows: [AnyView]) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.sm) {
-            Text(title.uppercased())
-                .font(.monoUI(9.5))
-                .tracking(1.2)
-                .foregroundStyle(palette.ink3Color)
-            VStack(spacing: 0) {
-                ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
-                    if index > 0 { Hairline() }
-                    row
-                }
-                RecordRule()
-            }
+            .padding(.top, 16)
         }
     }
 
     private func itemRow(
-        id: Int64, title: String, detail: String, badge: String, picked: Binding<Set<Int64>>
-    ) -> AnyView {
+        id: Int64, title: String, detail: String, picked: Binding<Set<Int64>>
+    ) -> some View {
         let isOn = picked.wrappedValue.contains(id)
-        return AnyView(
-            Button {
-                Haptics.tap()
-                if isOn { picked.wrappedValue.remove(id) } else { picked.wrappedValue.insert(id) }
-            } label: {
-                HStack(spacing: Spacing.md) {
-                    Image(systemName: isOn ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 20, weight: .light))
-                        .foregroundStyle(isOn ? palette.accentColor : palette.ink3Color)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(title)
-                            .font(.ui(14.5, weight: .medium))
-                            .foregroundStyle(palette.ink0Color)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.leading)
-                        Text(detail)
-                            .font(.ui(12))
-                            .foregroundStyle(palette.ink3Color)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.leading)
-                    }
-                    Spacer(minLength: 0)
-                    Badge(text: badge)
+
+        return Button {
+            Haptics.tap()
+            if isOn { picked.wrappedValue.remove(id) } else { picked.wrappedValue.insert(id) }
+        } label: {
+            HStack(spacing: 14) {
+                Image(systemName: isOn ? "checkmark.square.fill" : "square")
+                    .font(.system(size: 22))
+                    .foregroundStyle(isOn ? palette.dangerText : palette.ink2Color)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title)
+                        .font(.ui(16, weight: .semibold))
+                        .foregroundStyle(palette.ink0Color)
+                    Text(detail)
+                        .font(.ui(14))
+                        .foregroundStyle(palette.ink1Color)
                 }
-                .padding(.vertical, Spacing.sm)
-                .contentShape(Rectangle())
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
             }
-            .buttonStyle(PressableStyle())
-            .accessibilityAddTraits(isOn ? .isSelected : [])
-            .accessibilityIdentifier("delete-item-\(id)")
-        )
+            .padding(.vertical, 8)
+            .frame(minHeight: 66)
+            .overlay(alignment: .top) {
+                Rectangle().fill(palette.ink0Color.opacity(0.1)).frame(height: 1)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressableStyle())
+        .accessibilityAddTraits(isOn ? .isSelected : [])
+        .accessibilityIdentifier("delete-item-\(id)")
     }
 
     private func fileDetail(_ file: BookFileInfo) -> String {
-        var parts: [String] = []
+        var parts = [file.format.uppercased()]
         if file.sizeBytes > 0 { parts.append(Format.bytes(file.sizeBytes)) }
-        if let path = file.path?.nilIfBlank { parts.append(path) }
-        return parts.isEmpty ? file.filename : parts.joined(separator: " · ")
+        return parts.joined(separator: " · ")
     }
 
     // MARK: - Step 2: confirm
 
     private func confirm(_ manifest: BookDeletionManifest) -> some View {
-        let copy = DeleteSelectionCopy.resolve(
-            title: book.displayTitle,
-            manifest: manifest,
-            pickedFiles: pickedFiles,
-            pickedCopies: pickedCopies
-        )
-        return VStack(alignment: .leading, spacing: Spacing.lg) {
-            SectionLabel(copy.heading)
+        let copy = confirmCopy(manifest)
 
+        return VStack(alignment: .leading, spacing: 0) {
             Text(copy.body)
-                .font(.ui(14))
-                .foregroundStyle(palette.ink1Color)
+                .font(.ui(17))
+                .foregroundStyle(palette.ink0Color)
                 .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 4)
                 .accessibilityIdentifier("delete-confirm-copy")
 
             if !copy.losses.isEmpty {
-                Text("Also deleted: \(copy.losses.joined(separator: ", ")).")
-                    .font(.ui(13))
-                    .foregroundStyle(palette.badColor)
+                Text("Also gone for good: \(ListFormatter.localizedString(byJoining: copy.losses)).")
+                    .font(.ui(15))
+                    .foregroundStyle(palette.ink1Color)
                     .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous).fill(palette.bg2Color)
+                    )
+                    .padding(.top, 14)
                     .accessibilityIdentifier("delete-losses")
             }
 
             if let error {
                 Text(error)
-                    .font(.ui(12.5))
-                    .foregroundStyle(palette.badColor)
+                    .font(.ui(14))
+                    .foregroundStyle(palette.dangerText)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 12)
                     .accessibilityIdentifier("delete-error")
             }
 
-            Spacer(minLength: 0)
-
-            Button(role: .destructive) {
-                Haptics.tap()
-                run(manifest)
-            } label: {
-                Text(busy ? "Deleting\u{2026}" : copy.action)
-                    .font(.ui(16, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .background(
-                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                            .fill(palette.badColor)
-                    )
-            }
-            .buttonStyle(PressableStyle())
-            .disabled(busy)
-            .accessibilityIdentifier("delete-confirm")
-
-            if manifest.itemCount > 0 {
-                Button("Back") {
+            HStack(spacing: 10) {
+                Button(manifest.itemCount > 0 ? "Back" : "Cancel") {
                     error = nil
-                    confirming = false
+                    if manifest.itemCount > 0 {
+                        confirming = false
+                    } else {
+                        dismiss()
+                    }
                 }
-                .buttonStyle(QuietButtonStyle())
-                .frame(maxWidth: .infinity)
+                .buttonStyle(QuietPillStyle(fills: true))
                 .disabled(busy)
                 .accessibilityIdentifier("delete-back")
+
+                Button(role: .destructive) {
+                    Haptics.tap()
+                    run(manifest)
+                } label: {
+                    Text(busy ? "Deleting\u{2026}" : copy.action)
+                }
+                .buttonStyle(DangerPillStyle())
+                .disabled(busy)
+                .accessibilityIdentifier("delete-confirm")
             }
+            .padding(.top, 22)
         }
-        .screenPadding()
-        .padding(.vertical, Spacing.lg)
     }
 
     private func run(_ manifest: BookDeletionManifest) {
@@ -289,5 +284,26 @@ struct DeleteBookSheet: View {
                 self.error = (error as? APIError)?.errorDescription ?? error.localizedDescription
             }
         }
+    }
+}
+
+/// A pill that deletes something.
+private struct DangerPillStyle: ButtonStyle {
+    var enabled = true
+
+    @Environment(\.palette) private var palette
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.ui(17, weight: .semibold))
+            .foregroundStyle(enabled ? .white : palette.ink0Color.opacity(0.6))
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
+            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity)
+            .frame(height: 52)
+            .background(Capsule().fill(enabled ? palette.dangerFill : palette.quietFill))
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(Motion.lift, value: configuration.isPressed)
     }
 }
