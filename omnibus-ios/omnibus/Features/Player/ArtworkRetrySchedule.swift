@@ -11,6 +11,10 @@
 //  A route that alone drops its connections flips the app offline with each
 //  fetch and the probe brings it back seconds later, so lifting every wait
 //  would keep fetching at the probe's pace for as long as the book plays.
+//
+//  A listener's play lifts any wait, and `AudioPlayer` reports it rather than
+//  the schedule inferring it from `isPlaying`: a stream that keeps failing
+//  restarts itself with each rebuild, which would then fetch every time.
 
 /// One book's exponential wait between failed cover fetches.
 struct ArtworkRetrySchedule {
@@ -22,7 +26,6 @@ struct ArtworkRetrySchedule {
     private var uuid: String?
     private var failures = 0
     private var retryAt: ContinuousClock.Instant?
-    private var wasPlaying = false
 
     /// The wait after `failures` failures in a row, at least one.
     static func delay(afterFailures failures: Int) -> Duration {
@@ -30,16 +33,17 @@ struct ArtworkRetrySchedule {
         min(firstDelay * (1 << min(failures - 1, 8)), longestDelay)
     }
 
-    /// What Now Playing is showing. A book other than the last starts clean; a
-    /// resume lifts the wait, and its failures still count towards the next.
-    mutating func noteCurrent(uuid: String, isPlaying: Bool) {
-        if uuid != self.uuid {
-            self.uuid = uuid
-            failures = 0
-            retryAt = nil
-        }
-        if isPlaying, !wasPlaying { retryAt = nil }
-        wasPlaying = isPlaying
+    /// What Now Playing is showing. A book other than the last starts clean.
+    mutating func noteCurrent(uuid: String) {
+        guard uuid != self.uuid else { return }
+        self.uuid = uuid
+        failures = 0
+        retryAt = nil
+    }
+
+    /// A listener's play lifts the wait; its failures still count towards the next.
+    mutating func noteResumed() {
+        retryAt = nil
     }
 
     /// Whether the current book's cover may be fetched at `now`.

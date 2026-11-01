@@ -689,6 +689,8 @@ final class AudioPlayer {
     /// Start playback — or, with a load in flight, owe it the start, and with
     /// a book whose load failed, load it again.
     func play() {
+        // Here, not in `startPlayback`: a rebuild's own start is no resume.
+        if !isPlaying { artworkRetry.noteResumed() }
         pendingStarts.overruleCall()
         // Nothing to start yet: the load makes the start once it lands.
         if let loadingGeneration {
@@ -1379,9 +1381,9 @@ final class AudioPlayer {
         guard let book else { return nil }
         let cached = artworkCache?.uuid == book.uuid ? artworkCache : nil
         if let cached, cached.isFinal { return cached.artwork }
-        artworkRetry.noteCurrent(uuid: book.uuid, isPlaying: isPlaying)
+        artworkRetry.noteCurrent(uuid: book.uuid)
         // Offline, each tick's attempt would wait out a request timeout. Mid-load,
-        // the start the load is about to make would read as a resume of a failure.
+        // the `play()` the load is about to make would lift a failure's wait at once.
         guard !isLoading, artworkLoading != loadGeneration,
               cached == nil || Connectivity.shared.isOnline, artworkRetry.fetchIsDue(at: .now)
         else { return cached?.artwork }

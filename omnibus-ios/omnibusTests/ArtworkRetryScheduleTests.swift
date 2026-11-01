@@ -8,10 +8,10 @@ import Testing
 struct ArtworkRetryScheduleTests {
     private let start = ContinuousClock.now
 
-    /// A schedule on book "a", playing, that has failed `failures` times at `start`.
+    /// A schedule on book "a" that has failed `failures` times at `start`.
     private func failed(_ failures: Int) -> ArtworkRetrySchedule {
         var schedule = ArtworkRetrySchedule()
-        schedule.noteCurrent(uuid: "a", isPlaying: true)
+        schedule.noteCurrent(uuid: "a")
         for _ in 0..<failures { schedule.noteFailure(at: start) }
         return schedule
     }
@@ -35,7 +35,7 @@ struct ArtworkRetryScheduleTests {
         var fetchedAt: [Int] = []
         for tick in 0..<(600 * 4) {
             let now = start + .milliseconds(tick * 250)
-            schedule.noteCurrent(uuid: "a", isPlaying: true)
+            schedule.noteCurrent(uuid: "a")
             if schedule.fetchIsDue(at: now) {
                 fetchedAt.append(tick / 4)
                 schedule.noteFailure(at: now)
@@ -46,11 +46,11 @@ struct ArtworkRetryScheduleTests {
 
     @Test func anotherBookStartsCleanAndComingBackStartsCleanAgain() {
         var schedule = failed(3)
-        schedule.noteCurrent(uuid: "b", isPlaying: true)
+        schedule.noteCurrent(uuid: "b")
         #expect(schedule.fetchIsDue(at: start))
         schedule.noteFailure(at: start)
 
-        schedule.noteCurrent(uuid: "a", isPlaying: true)
+        schedule.noteCurrent(uuid: "a")
         #expect(schedule.fetchIsDue(at: start))
         schedule.noteFailure(at: start)
         #expect(!schedule.fetchIsDue(at: start + .seconds(14)))
@@ -59,18 +59,23 @@ struct ArtworkRetryScheduleTests {
 
     @Test func aResumeLiftsTheWaitWithoutForgettingTheFailures() {
         var schedule = failed(2)
-
-        // Neither a tick nor a pause is a resume.
-        schedule.noteCurrent(uuid: "a", isPlaying: true)
-        schedule.noteCurrent(uuid: "a", isPlaying: false)
         #expect(!schedule.fetchIsDue(at: start + .seconds(1)))
 
-        schedule.noteCurrent(uuid: "a", isPlaying: true)
+        schedule.noteResumed()
         #expect(schedule.fetchIsDue(at: start + .seconds(1)))
 
         schedule.noteFailure(at: start)
         #expect(!schedule.fetchIsDue(at: start + .seconds(59)))
         #expect(schedule.fetchIsDue(at: start + .seconds(60)))
+    }
+
+    /// A rebuild stops and restarts playback, updating Now Playing each time,
+    /// without a listener's play.
+    @Test func updatesWithoutAResumeLeaveTheWaitInPlace() {
+        var schedule = failed(2)
+        for _ in 0..<4 { schedule.noteCurrent(uuid: "a") }
+        #expect(!schedule.fetchIsDue(at: start + .seconds(29)))
+        #expect(schedule.fetchIsDue(at: start + .seconds(30)))
     }
 
     @Test func aReturningConnectionLiftsOnlyAFirstFailuresWait() {
