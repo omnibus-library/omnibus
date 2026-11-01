@@ -313,6 +313,9 @@ struct AudioBarsMark: View {
                         view.scaleEffect(y: reduceMotion ? level : scale, anchor: .bottom)
                     } keyframes: { _ in
                         KeyframeTrack {
+                            // A jump, not a 1 ms ramp: restarted mid-flight, a
+                            // ramp's speed carries into the next keyframe.
+                            MoveKeyframe(level)
                             LinearKeyframe(level, duration: 0.001 + Double(index) * 0.09)
                             CubicKeyframe(0.2, duration: 0.2)
                             CubicKeyframe(1, duration: 0.2)
