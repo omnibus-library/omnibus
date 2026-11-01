@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from .. import expectations, journal
+from ..client import ApiError
 
 
 def entry(action: str, **kw: Any) -> journal.Entry:
@@ -33,6 +34,8 @@ class FakeState:
         self.client = client
 
     def rating(self, uuid: str) -> Any:
+        if uuid in self.facts.get("gone", ()):
+            raise ApiError(f"GET /api/ebooks/{uuid} -> HTTP 404: no book has that uuid")
         return self.facts.get("ratings", {}).get(uuid)
 
     def read_status(self, uuid: str) -> Any:

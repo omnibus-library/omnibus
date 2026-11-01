@@ -325,7 +325,10 @@ def unexpected(
     for uuid in baseline.get("library") or []:
         was = books.get(uuid) or {}
         if ("rating", uuid) not in claims.slots:
-            now = state.rating(uuid)
+            try:
+                now = state.rating(uuid)
+            except ApiError:  # the book was deleted or merged away since the baseline
+                continue
             if now is not None and was.get("rating") != now:
                 out.append(_bare(actor, UNEXPECTED, "rating", uuid, "nothing journalled", _describe_rating(now)))
         if ("read_status", uuid) not in claims.slots:
