@@ -209,8 +209,8 @@ type BookGridProps = {
   books: Book[];
   /** The series folded into stacks, riding with `books`; empty when none are. */
   stacks: SeriesStack[];
-  /** Ends the grid with an Add books tile that calls this; absent when books can't be added. */
-  onAddTile?: () => void;
+  /** Ends the grid with an Add books tile; absent when books can't be added, `disabled` while they can't yet. */
+  onAddTile?: { disabled: boolean; onClick: () => void };
 };
 
 /** The cover wall: a tile per book, with each stacked series folded into its lead's slot. */
@@ -288,7 +288,8 @@ export function BookGrid({ books, stacks, onAddTile }: BookGridProps) {
       ))}
       {onAddTile && (
         <AddBooksTile
-          onClick={onAddTile}
+          disabled={onAddTile.disabled}
+          onClick={onAddTile.onClick}
           style={{ animationDelay: `${staggerMs(items.length)}ms` }}
         />
       )}

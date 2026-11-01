@@ -265,7 +265,9 @@ export function ShelfBooks({
               onRemove={() => take(book)}
             />
           ))}
-          {removable && full.ready && <AddBooksTile onClick={onAdd} />}
+          {removable && full.ready && (
+            <AddBooksTile onClick={onAdd} disabled={full.settling} />
+          )}
         </div>
       )}
     </section>

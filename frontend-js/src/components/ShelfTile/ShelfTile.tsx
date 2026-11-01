@@ -160,9 +160,12 @@ export function ShelfTileFace({
 /** The grid's last tile: opens the picker that adds books to the shelf. */
 export function AddBooksTile({
   onClick,
+  disabled = false,
   style,
 }: {
   onClick: () => void;
+  /** Held, still mounted, while the shelf's books are out of date. */
+  disabled?: boolean;
   style?: CSSProperties;
 }) {
   return (
@@ -171,7 +174,8 @@ export function AddBooksTile({
       className="shelf-add-tile"
       data-testid="shelf-add-tile"
       style={style}
-      onClick={onClick}
+      aria-disabled={disabled}
+      onClick={() => !disabled && onClick()}
     >
       <span className="shelf-add-tile-plus">
         <PlusGlyph />

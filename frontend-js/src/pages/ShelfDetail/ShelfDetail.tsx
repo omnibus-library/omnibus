@@ -19,6 +19,7 @@ import { fullList } from "./narrow";
 import { ShelfBooks } from "./ShelfBooks";
 import { ShelfHero } from "./ShelfHero";
 import { canEdit, resolveAccess } from "./shelfAccess";
+import { useSettling } from "./useSettling";
 import "./ShelfDetail.css";
 
 /** The way back to the index, above every state of the page. */
@@ -48,6 +49,7 @@ export function ShelfDetail() {
   const client = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [settling, settle] = useSettling();
   const [sort, setSort] = useState<SortKey>("recently_interacted");
   const shelf = useQuery(shelfQuery(id));
   // The whole member list, which the filter narrows and Add books marks as already on the shelf.
@@ -82,7 +84,7 @@ export function ShelfDetail() {
 
   const current = shelf.data;
   const access = resolveAccess(viewer, current);
-  const full = fullList(members);
+  const full = fullList(members, settling);
   return (
     <div
       className="shd-page"
@@ -116,7 +118,7 @@ export function ShelfDetail() {
           onClose={() => setAdding(false)}
           onAdded={() => {
             setAdding(false);
-            invalidateShelf(client, current.id);
+            settle(invalidateShelf(client, current.id));
           }}
         />
       )}

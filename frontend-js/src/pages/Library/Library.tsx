@@ -31,6 +31,7 @@ import {
   canEdit,
   resolveAccess,
 } from "../ShelfDetail/shelfAccess";
+import { useSettling } from "../ShelfDetail/useSettling";
 import { BookGrid } from "./BookGrid";
 import { BookTable } from "./BookTable";
 import { BulkEditBar, BulkEditModal, BulkShelfPicker } from "./BulkEdit";
@@ -163,9 +164,10 @@ export function Library() {
   const client = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [settling, settle] = useSettling();
   const shelf = detail.data ?? null;
   const mayEdit = shelf !== null && canEdit(resolveAccess(user, shelf));
-  const full = fullList(members);
+  const full = fullList(members, settling);
   const addBooks = addBooksState(mayEdit && shelf?.kind === "manual", full);
   // The lens is the shelf's page or, on All Books, the browse list.
   const lens = shelfId === null ? pages : shelfPage;
@@ -354,7 +356,12 @@ export function Library() {
                   books={books}
                   stacks={shelfId === null ? stacks : []}
                   onAddTile={
-                    addBooks?.ready ? () => setAdding(true) : undefined
+                    addBooks
+                      ? {
+                          disabled: !addBooks.ready,
+                          onClick: () => setAdding(true),
+                        }
+                      : undefined
                   }
                 />
               ))}
@@ -439,7 +446,7 @@ export function Library() {
             onClose={() => setAdding(false)}
             onAdded={() => {
               setAdding(false);
-              invalidateShelf(client, shelf.id);
+              settle(invalidateShelf(client, shelf.id));
             }}
           />
         )}

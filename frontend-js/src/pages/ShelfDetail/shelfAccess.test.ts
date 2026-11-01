@@ -73,10 +73,10 @@ describe("resolveAccess", () => {
 });
 
 describe("addBooksState", () => {
-  const full = (ready: boolean, errored: boolean, refetching = false) => ({
+  const full = (ready: boolean, errored: boolean, settling = false) => ({
     books: [],
     ready,
-    refetching,
+    settling,
     errored,
   });
   it.each([
@@ -89,7 +89,7 @@ describe("addBooksState", () => {
       { ready: false, title: "Still loading this shelf’s books…" },
     ],
     [
-      "the members are being refetched",
+      "an add's refetch is still out",
       true,
       full(true, false, true),
       { ready: false, title: "Still loading this shelf’s books…" },

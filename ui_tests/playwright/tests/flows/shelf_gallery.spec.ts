@@ -284,17 +284,25 @@ test.describe("shelf gallery", () => {
           "aria-disabled",
           "true",
         );
-        await expect(libraryPage.shelfAddBooksTile).toHaveCount(0);
+        // The tile stays mounted, held the way the hero button is.
+        await expect(libraryPage.shelfAddBooksTile).toHaveAttribute(
+          "aria-disabled",
+          "true",
+        );
       });
 
       await test.step("release the refetch", async () => {
         await release();
       });
 
-      await test.step("check the grid lists both books and the tile is back", async () => {
+      await test.step("check the grid lists both books and Add books is back", async () => {
         await expect(libraryPage.bookTile("Alpha")).toBeVisible();
         await expect(libraryPage.bookTile("Beta in the Series")).toBeVisible();
         await expect(libraryPage.shelfAddBooksButton).toHaveAttribute(
+          "aria-disabled",
+          "false",
+        );
+        await expect(libraryPage.shelfAddBooksTile).toHaveAttribute(
           "aria-disabled",
           "false",
         );
