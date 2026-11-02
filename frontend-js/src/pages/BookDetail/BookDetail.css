@@ -789,6 +789,22 @@ button.spoiler.revealed {
   font-size: 13px;
   color: var(--ink-3);
 }
+/* The note shares one cell with every line it can read, so a hover preview never resizes it. */
+.bd-starsmeta-slot {
+  display: grid;
+  /* Each line sits at the cell's start, so an inherited centre never shifts the note per preview. */
+  justify-items: start;
+}
+.bd-starsmeta-slot > * {
+  grid-area: 1 / 1;
+}
+.bd-starsmeta-sizer {
+  visibility: hidden;
+}
+/* Generated content, so the note's words are in the DOM once and a text query finds one. */
+.bd-starsmeta-sizer::before {
+  content: attr(data-line);
+}
 .bd-review-mine-body {
   display: flex;
   flex-direction: column;

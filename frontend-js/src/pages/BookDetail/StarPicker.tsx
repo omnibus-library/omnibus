@@ -13,6 +13,14 @@ const HALVES = [
   { side: "left", className: "bd-star-half bd-star-half-left" },
   { side: "right", className: "bd-star-half bd-star-half-right" },
 ] as const;
+type Side = (typeof HALVES)[number]["side"];
+/** The rating a half of a slot stands for: the left half is the half star below it. */
+const halfValue = (slot: number, side: Side) =>
+  side === "left" ? slot - 0.5 : slot;
+// Every value a preview can show, so the note's sizers cover each one.
+const VALUES = SLOTS.flatMap((slot) =>
+  HALVES.map(({ side }) => halfValue(slot, side)),
+);
 
 /** The five-point star every control here draws, outlined or filled by its parent's CSS. */
 export function StarShape() {
@@ -49,6 +57,8 @@ export function StarPicker({
   const group = useRef<HTMLDivElement>(null);
   // A hover preview wins over the saved value.
   const shown = hover ?? stars ?? 0;
+  // The note's box fits every line it can read: a preview that resized it would reflow the stars from under the pointer.
+  const lines = new Set([note, ...VALUES.map((v) => previewNote(v, stars))]);
 
   const commit = (next: number | null) => {
     // The fill should show the answer, not the pointer.
@@ -103,7 +113,7 @@ export function StarPicker({
               </span>
             </span>
             {HALVES.map(({ side, className }) => {
-              const value = side === "left" ? slot - 0.5 : slot;
+              const value = halfValue(slot, side);
               const label = halfStarLabel(value, stars);
               return (
                 <button
@@ -124,13 +134,23 @@ export function StarPicker({
           </span>
         ))}
       </div>
-      <div
-        className="mono bd-review-starsmeta"
-        role="status"
-        aria-live={hover === null ? "polite" : "off"}
-        data-testid="review-stars-meta"
-      >
-        {hover === null ? note : previewNote(hover, stars)}
+      <div className="bd-starsmeta-slot" data-testid="review-stars-meta-slot">
+        <div
+          className="mono bd-review-starsmeta"
+          role="status"
+          aria-live={hover === null ? "polite" : "off"}
+          data-testid="review-stars-meta"
+        >
+          {hover === null ? note : previewNote(hover, stars)}
+        </div>
+        {[...lines].map((line) => (
+          <span
+            key={line}
+            className="mono bd-review-starsmeta bd-starsmeta-sizer"
+            data-line={line}
+            aria-hidden="true"
+          />
+        ))}
       </div>
     </div>
   );
