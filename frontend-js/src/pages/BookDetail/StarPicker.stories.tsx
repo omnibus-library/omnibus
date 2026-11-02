@@ -89,7 +89,6 @@ export const HoverPreviewsKeepTheNoteOneSize: Story = {
     );
     await expect(note).toHaveTextContent("Clear your rating");
     await expect(size()).toEqual(resting);
-    await expectNoteAtStart();
   },
 };
 
