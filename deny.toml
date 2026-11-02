@@ -119,14 +119,14 @@ allow = [
 # Per-crate license carve-outs. Prefer this over expanding `allow` when a
 # single crate is the only user of an otherwise-undesirable license.
 [[licenses.exceptions]]
-# `epub` is GPL-3.0, used in `omnibus-db` to parse EPUB metadata. This is a
+# `epub` is GPL-3.0-or-later, used in `omnibus-db` to parse EPUB metadata. This is a
 # direct dependency carried over from before the licenses check was wired up;
 # the rest of the workspace is MIT. Scoping the GPL-3.0 acceptance to this one
 # crate keeps the policy honest — any other GPL crate sneaking in via a future
 # dependency bump still fails the check. Revisit by either porting metadata
 # extraction onto a non-GPL EPUB parser or accepting the copyleft posture
 # explicitly in LICENSE.
-allow = ["GPL-3.0"]
+allow = ["GPL-3.0-or-later"]
 name = "epub"
 
 # ---------------------------------------------------------------------------
