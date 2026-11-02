@@ -1,6 +1,6 @@
 # Dependency Audit — Cargo.lock Duplicate Families
 
-Last updated: 2026-10-31 (issue #2790; previously PR #2793, issues #2756, #2724, #522, #2054, #1767, #1710, #1621, #1529, #1530, #1100, #1268, #1147, #643).
+Last updated: 2026-11-02 (`epub 2.1.6` drops `zip 3`; previously issue #2790, PR #2793, issues #2756, #2724, #522, #2054, #1767, #1710, #1621, #1529, #1530, #1100, #1268, #1147, #643).
 
 Run `cargo tree -d --target all` and inspect the output any time Axum, sqlx or
 reqwest are bumped. The `deny.toml` `[bans]` section has matching `skip`
@@ -16,7 +16,6 @@ warns on anything outside this list.
 | `rand` | 0.9.4, 0.10.2 | 0.9 via `metrics-util` → `metrics-exporter-prometheus` → `axum-prometheus`; 0.10 via `rmcp` and `lopdf` | **blocked by upstream** | Collapses when `metrics-util` bumps `rand`. |
 | `hashbrown` | 0.15.5, 0.16.1, 0.17.1 | 0.15 from `sqlx-core` + `hashlink`; 0.16 from `metrics-util` (axum-prometheus) and `kasuari` (ratatui-core, mock-kobo's `tui`); 0.17 from `indexmap` | **blocked by upstream** | All internal impl details — `hashbrown` does not appear in any public API. Collapses as each upstream crate catches up to the same minor. |
 | `foldhash` | 0.1.5, 0.2.0 | 0.1 with `hashbrown 0.15`; 0.2 with `hashbrown 0.16` | **accepted intentionally** | One copy per `hashbrown` minor, same root cause as the row above. |
-| `zip` | 3.0.0, 9.0.5 | 3.0.0 via `epub 2.1.5` (the latest `epub`, which asks for `zip = "3.0.0"`); 9.0.5 via `omnibus-db` and `omnibus` directly | **blocked by upstream** | Ours moved to 9 for the `extract()` advisories below; `epub` has not. Collapses when `epub` moves to zip >= 9. |
 | `webpki-roots` | 0.26.11, 1.0.10 | 0.26 from `sqlx-core`; 1.0 from `hyper-rustls` (reqwest) | **blocked by upstream** | sqlx-core pins 0.26; reqwest/hyper-rustls have moved to 1.x. Collapses when sqlx bumps its rustls deps. |
 | `tower-http` | 0.6.11, 0.7.1 | 0.6.11 via `reqwest 0.13.5` (which vendors its own copy); 0.7.1 via our own `omnibus` server crate directly | **blocked by upstream** | Persists until `reqwest` upgrades to `tower-http 0.7`, or our server's direct dep is downgraded to 0.6 to match. |
 | `windows-sys` | 0.48.0, 0.52.0, 0.59.0, 0.60.2, 0.61.2 | `cfg(windows)`-gated, so `cargo deny`'s all-target resolution surfaces them even though this project ships Linux/container-only: `ring`/`rustls-webpki`, `tokio` and its `socket2`/`mio`, `tracing-subscriber`, `tempfile` and `rustls-platform-verifier` each pin their own; 0.48 via `winapi-util` → `walkdir` | **blocked by upstream** | 0.52–0.61 are skipped, leaving 0.48 as the counted copy. Windows target support in those crates is out of this project's control. |
@@ -51,18 +50,6 @@ warns on anything outside this list.
   do this pruning) — its exemption lives on the `--ignore RUSTSEC-2023-0071`
   flag on the cargo-audit step in `rust.yml`, which is the tool that
   actually encounters it.
-- `zip 3.0.0`, RUSTSEC-2026-0367 (`extract()` keeps SUID/SGID bits),
-  RUSTSEC-2026-0368 (`extract()` creates symlinks whose targets escape the
-  destination) and RUSTSEC-2026-0369 (`ZipStreamReader::extract()` applies
-  permissions through symlinks). Fixed only in zip >= 9.0.0. `zip 3.0.0`
-  reaches the production graph via `epub 2.1.5` (the latest `epub`, which pins
-  `zip = "3.0.0"`); our own `db/` and `server/` deps are on zip 9, but that
-  alone does not drop it. Accepted. All three hit only
-  `ZipArchive::extract()` / `ZipStreamReader::extract()`, and neither this repo
-  nor `epub` calls them (archives are read entry by entry, never extracted to
-  disk). `deny.toml` ignores all three with a matching comment, and the
-  cargo-audit step in `rust.yml` passes `--ignore` for each. Revisit when
-  `epub` moves to zip >= 9.
 - `webpki-roots 0.26.11`, RUSTSEC-2026-0381 (bundled roots trust distrusted
   emSign intermediates). Fixed in webpki-roots >= 1.0.10, which Cargo.lock
   holds, alongside the patched `rustls-webpki 0.103.16` (RUSTSEC-2026-0382)
