@@ -134,7 +134,7 @@ export function StarPicker({
           </span>
         ))}
       </div>
-      <div className="bd-starsmeta-slot">
+      <div className="bd-starsmeta-slot" data-testid="review-stars-meta-slot">
         <div
           className="mono bd-review-starsmeta"
           role="status"
