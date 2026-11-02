@@ -197,7 +197,7 @@ jobs:
       # asset. Only the `server` and `db` variants need them.
       - name: Cache test fixtures
         if: matrix.fixtures
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             test_data/epubs/public_domain
