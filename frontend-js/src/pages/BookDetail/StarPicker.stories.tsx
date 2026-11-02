@@ -47,6 +47,30 @@ export const ClickingTheSavedValueClears: Story = {
   },
 };
 
+// A preview that resized the note reflowed the hero, moving the stars from under a still pointer, forever.
+export const HoverPreviewsKeepTheNoteOneSize: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const note = canvas.getByTestId("review-stars-meta");
+    const size = () => {
+      const { width, height } = note.getBoundingClientRect();
+      return { width, height };
+    };
+    const resting = size();
+
+    await userEvent.hover(
+      canvas.getByRole("button", { name: "Rate 3.5 stars" }),
+    );
+    await expect(note).toHaveTextContent("Rate 3.5");
+    await expect(size()).toEqual(resting);
+
+    await userEvent.hover(
+      canvas.getByRole("button", { name: "Clear your 3-star rating" }),
+    );
+    await expect(note).toHaveTextContent("Clear your rating");
+    await expect(size()).toEqual(resting);
+  },
+};
+
 export const DisabledStarsTakeNoPick: Story = {
   args: { stars: null, disabled: true, note: "Loading your rating…" },
   play: async ({ args, canvas, userEvent }) => {
