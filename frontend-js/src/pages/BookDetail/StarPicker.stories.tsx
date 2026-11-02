@@ -51,10 +51,14 @@ export const ClickingTheSavedValueClears: Story = {
 export const HoverPreviewsKeepTheNoteOneSize: Story = {
   play: async ({ canvas, userEvent }) => {
     const note = canvas.getByTestId("review-stars-meta");
+    // The slot is the box that takes layout space; the note inside it is only as wide as its words.
+    const slot = note.parentElement as HTMLElement;
     const size = () => {
-      const { width, height } = note.getBoundingClientRect();
+      const { width, height } = slot.getBoundingClientRect();
       return { width, height };
     };
+    // A web font swapping in between the two readings would resize the slot on its own.
+    await document.fonts.ready;
     const resting = size();
 
     await userEvent.hover(

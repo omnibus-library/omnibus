@@ -792,6 +792,8 @@ button.spoiler.revealed {
 /* The note shares one cell with every line it can read, so a hover preview never resizes it. */
 .bd-starsmeta-slot {
   display: grid;
+  /* Each line sits at the cell's start, so an inherited centre never shifts the note per preview. */
+  justify-items: start;
 }
 .bd-starsmeta-slot > * {
   grid-area: 1 / 1;

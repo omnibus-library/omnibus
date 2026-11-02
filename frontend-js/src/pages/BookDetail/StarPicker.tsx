@@ -13,7 +13,14 @@ const HALVES = [
   { side: "left", className: "bd-star-half bd-star-half-left" },
   { side: "right", className: "bd-star-half bd-star-half-right" },
 ] as const;
-const VALUES = SLOTS.flatMap((slot) => [slot - 0.5, slot]);
+type Side = (typeof HALVES)[number]["side"];
+/** The rating a half of a slot stands for: the left half is the half star below it. */
+const halfValue = (slot: number, side: Side) =>
+  side === "left" ? slot - 0.5 : slot;
+// Every value a preview can show, so the note's sizers cover each one.
+const VALUES = SLOTS.flatMap((slot) =>
+  HALVES.map(({ side }) => halfValue(slot, side)),
+);
 
 /** The five-point star every control here draws, outlined or filled by its parent's CSS. */
 export function StarShape() {
@@ -106,7 +113,7 @@ export function StarPicker({
               </span>
             </span>
             {HALVES.map(({ side, className }) => {
-              const value = side === "left" ? slot - 0.5 : slot;
+              const value = halfValue(slot, side);
               const label = halfStarLabel(value, stars);
               return (
                 <button
