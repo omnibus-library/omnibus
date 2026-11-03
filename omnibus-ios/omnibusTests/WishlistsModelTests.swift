@@ -50,7 +50,10 @@ func fakeAPI(
     readers: @escaping @Sendable () async throws -> WishlistReaders = { fakeReaders },
     books: @escaping @Sendable (WishlistScope) async throws -> [WishlistBook] = { _ in [] }
 ) -> WishlistsAPI {
-    WishlistsAPI(readers: readers, books: books, remove: { _ in false }, add: { _ in })
+    WishlistsAPI(
+        readers: readers, books: books, remove: { _ in false }, add: { _ in },
+        entry: { _ in nil }, addScanned: { _ in "new" }, resolveMeta: { _ in .unresolved }
+    )
 }
 
 /// A wishlist that remembers what the model did to it, so reloads see the writes.
@@ -62,6 +65,11 @@ actor FakeWishlist {
     var addResult: Result<Void, Error> = .success(())
     var removeGate: Gate?
     var removeStarted: Gate?
+    var listed: Set<String> = []
+    var scanned: [WishlistAddRequest] = []
+    var resolved: [ExternalBookMeta] = []
+    var resolveOutcome: ScanOutcome = .unresolved
+    var addScannedResult: Result<Void, Error> = .success(())
 
     init(_ list: [WishlistBook]) {
         self.list = list
@@ -70,6 +78,9 @@ actor FakeWishlist {
     func failRemoves() { removeResult = .failure(FakeFailure()) }
     func failAdds() { addResult = .failure(FakeFailure()) }
     func deleteBookOnRemove() { removeResult = .success(true) }
+    func alreadyListed(_ uuid: String) { listed.insert(uuid) }
+    func resolveTo(_ outcome: ScanOutcome) { resolveOutcome = outcome }
+    func failAddScanned() { addScannedResult = .failure(FakeFailure()) }
     func holdRemoves(started: Gate, until gate: Gate) { removeStarted = started; removeGate = gate }
 
     nonisolated var api: WishlistsAPI {
@@ -77,7 +88,10 @@ actor FakeWishlist {
             readers: { fakeReaders },
             books: { _ in await self.list },
             remove: { try await self.remove($0) },
-            add: { try await self.add($0) }
+            add: { try await self.add($0) },
+            entry: { await self.entry($0) },
+            addScanned: { try await self.addScanned($0) },
+            resolveMeta: { await self.resolveMeta($0) }
         )
     }
 
@@ -90,6 +104,24 @@ actor FakeWishlist {
         let result = try removeResult.get()
         list.removeAll { $0.id == uuid }
         return result
+    }
+
+    private func entry(_ uuid: String) -> WishlistEntry? {
+        listed.contains(uuid)
+            ? WishlistEntry(id: 1, userID: 1, bookUUID: uuid, addedAt: 1, source: .detail) : nil
+    }
+
+    private func resolveMeta(_ meta: ExternalBookMeta) -> ScanOutcome {
+        resolved.append(meta)
+        return resolveOutcome
+    }
+
+    private func addScanned(_ request: WishlistAddRequest) throws -> String {
+        try addScannedResult.get()
+        scanned.append(request)
+        let uuid = request.bookUUID ?? "minted"
+        list.append(wishlistBook(uuid, title: request.meta?.title ?? "Dune"))
+        return uuid
     }
 
     private func add(_ uuid: String) throws {
@@ -221,5 +253,92 @@ struct WishlistsModelTests {
         await fake.failAdds()
         await model.undo(try #require(model.toast))
         #expect(model.toast?.text == "Couldn\u{2019}t put A back: boom")
+    }
+
+    private let dune = ScanBook(
+        uuid: "lib", title: "Dune", authors: ["Frank Herbert"], coverURL: nil, hasPhysical: false, isbn: nil
+    )
+    private let duneRecord = ExternalBookMeta(
+        isbn13: "9780441172719", title: "Dune", authors: ["Frank Herbert"], year: nil, pages: nil,
+        publisher: nil, description: nil, coverURL: nil, source: "open_library"
+    )
+
+    @Test(arguments: [
+        (FoundVia.barcodeScan, WishlistSource.scan),
+        (.isbnEntry, .manual),
+        (.titleSearch, .search),
+    ])
+    func addSendsALibraryHitByUuidWithTheDoorsSource(via: FoundVia, source: WishlistSource) async throws {
+        let fake = FakeWishlist([])
+        let model = WishlistsModel(api: fake.api)
+        let failure = await model.add(.library(dune), via: via)
+        let request = try #require(await fake.scanned.first)
+        #expect(failure == nil)
+        #expect(request.bookUUID == "lib")
+        #expect(request.meta == nil)
+        #expect(request.source == source)
+    }
+
+    @Test func addMatchesAnOnlineHitToALibraryBookBeforeSendingTheRecord() async throws {
+        let fake = FakeWishlist([])
+        await fake.resolveTo(.closeMatch(books: [dune], scanned: duneRecord))
+        let model = WishlistsModel(api: fake.api)
+        _ = await model.add(.online(duneRecord, lookup: nil), via: .titleSearch)
+        let request = try #require(await fake.scanned.first)
+        #expect(request.bookUUID == "lib")
+        #expect(request.meta == nil)
+        #expect(await fake.resolved == [duneRecord])
+    }
+
+    @Test func addSendsTheProviderRecordWhenNothingInTheLibraryMatches() async throws {
+        let fake = FakeWishlist([])
+        await fake.resolveTo(.notInLibrary(online: duneRecord))
+        let model = WishlistsModel(api: fake.api)
+        _ = await model.add(.online(duneRecord, lookup: nil), via: .titleSearch)
+        let request = try #require(await fake.scanned.first)
+        #expect(request.bookUUID == nil)
+        #expect(request.meta == duneRecord)
+    }
+
+    @Test func addUsesTheIsbnLookupsMatchWithoutResolvingAgain() async throws {
+        let fake = FakeWishlist([])
+        let model = WishlistsModel(api: fake.api)
+        _ = await model.add(.online(duneRecord, lookup: .inLibraryUnowned(book: dune)), via: .isbnEntry)
+        let request = try #require(await fake.scanned.first)
+        #expect(request.bookUUID == "lib")
+        #expect(await fake.resolved.isEmpty)
+    }
+
+    @Test func addSaysAlreadyOnYourWishlistWithoutUndoWhenTheEntryExisted() async {
+        let fake = FakeWishlist([])
+        await fake.alreadyListed("lib")
+        let model = WishlistsModel(api: fake.api)
+        let failure = await model.add(.library(dune), via: .titleSearch)
+        #expect(failure == nil)
+        #expect(model.toast?.text == "Dune is already on your wishlist")
+        #expect(model.toast?.undo == nil)
+    }
+
+    @Test func addOffersUndoThatTakesTheNewEntryOff() async throws {
+        let fake = FakeWishlist([])
+        let model = WishlistsModel(api: fake.api)
+        await model.load()
+        _ = await model.add(.library(dune), via: .titleSearch)
+        #expect(model.toast?.text == "Added Dune to your wishlist")
+        #expect(model.toast?.undo == .remove(uuid: "lib", title: "Dune"))
+        #expect(model.books?.map(\.id) == ["lib"])
+        await model.undo(try #require(model.toast))
+        #expect(await fake.removed == ["lib"])
+        #expect(model.books?.isEmpty == true)
+        #expect(model.toast == nil)
+    }
+
+    @Test func addReturnsTheErrorAndLeavesNoToastWhenTheWriteFails() async {
+        let fake = FakeWishlist([])
+        await fake.failAddScanned()
+        let model = WishlistsModel(api: fake.api)
+        let failure = await model.add(.library(dune), via: .titleSearch)
+        #expect(failure == "Couldn\u{2019}t add Dune: boom")
+        #expect(model.toast == nil)
     }
 }

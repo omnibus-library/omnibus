@@ -1071,6 +1071,21 @@ enum UserDataService {
         return removal.bookDeleted
     }
 
+    /// The caller's wishlist entry read straight from the server, bypassing the
+    /// replica: the Add sheet needs the live answer to decide whether Undo is safe.
+    static func wishlistEntryNow(uuid: String) async throws -> WishlistEntry? {
+        try await APIClient.shared.get("/api/physical/\(uuid)/wishlist")
+    }
+
+    /// Wishlist a library book or a provider's record (`POST /api/scan/wishlist`);
+    /// the book's uuid. Direct call, never queued — the payload comes from a lookup.
+    static func addScannedToWishlist(_ request: WishlistAddRequest) async throws -> String {
+        let ref: BookRef = try await APIClient.shared.post("/api/scan/wishlist", body: request)
+        await dropShelfClausePages()
+        await shelvesChanged()
+        return ref.bookUUID
+    }
+
     /// Put a library book on the caller's wishlist (Undo of a remove). Direct
     /// call, never queued — same contract as `removeWishlistEntry`, with the
     /// same cache and shelf invalidations.

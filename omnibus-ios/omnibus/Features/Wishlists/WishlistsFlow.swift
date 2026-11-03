@@ -32,6 +32,19 @@ enum WishlistRequestKind: CaseIterable, Sendable {
     }
 }
 
+/// What the Add sheet's field asks for.
+enum WishlistSearch: Equatable {
+    case idle
+    /// Hyphens and spaces stripped.
+    case isbn(String)
+    case text(String)
+
+    /// The normalized ISBN, when this is one.
+    var isbnValue: String? {
+        if case let .isbn(isbn) = self { isbn } else { nil }
+    }
+}
+
 enum WishlistsFlow {
     private static let audioFormats: Set<String> = ["M4B", "M4A", "MP3"]
 
@@ -138,5 +151,45 @@ enum WishlistsFlow {
                 offersAdd: false
             )
         }
+    }
+
+    // MARK: - Add to your wishlist
+
+    static func search(for text: String) -> WishlistSearch {
+        guard let trimmed = text.nilIfBlank else { return .idle }
+        guard MetadataFetchFlow.looksLikeISBN(trimmed) else { return .text(trimmed) }
+        return .isbn(trimmed.filter { $0.isNumber || $0 == "X" || $0 == "x" }.uppercased())
+    }
+
+    /// What an ISBN lookup puts under "In your library" and under the providers' name.
+    static func isbnResults(_ outcome: ScanOutcome) -> (library: [ScanBook], online: [ExternalBookMeta]) {
+        switch outcome {
+        case let .alreadyOwned(book), let .onWishlist(book), let .inLibraryUnowned(book):
+            ([book], [])
+        case let .closeMatch(books, scanned): (books, [scanned])
+        case let .notInLibrary(online): ([], [online])
+        case .unresolved: ([], [])
+        }
+    }
+
+    /// The library book an outcome matched, so a provider's record goes onto
+    /// the list and is never minted as a second book. A different edition of
+    /// the same work is the same book, so a close match counts.
+    static func existingBook(_ outcome: ScanOutcome) -> ScanBook? {
+        switch outcome {
+        case let .alreadyOwned(book), let .onWishlist(book), let .inLibraryUnowned(book): book
+        case let .closeMatch(books, _): books.first
+        case .notInLibrary, .unresolved: nil
+        }
+    }
+
+    /// The heading over the providers' results: whichever answered.
+    static func onlineHeading(_ online: [ExternalBookMeta]) -> String {
+        var names: [String] = []
+        for meta in online {
+            let name = MetadataProvider(rawValue: meta.source).displayName
+            if !names.contains(name) { names.append(name) }
+        }
+        return names.isEmpty ? "From online providers" : "From " + names.joined(separator: " and ")
     }
 }

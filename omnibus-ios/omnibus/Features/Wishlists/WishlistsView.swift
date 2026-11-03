@@ -9,6 +9,7 @@ struct WishlistsView: View {
     @Environment(\.palette) private var palette
     @State private var model = WishlistsModel()
     @State private var getting: WishlistBook?
+    @State private var adding = false
 
     var body: some View {
         Group {
@@ -29,9 +30,14 @@ struct WishlistsView: View {
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) { readerPicker }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { adding = true } label: { Image(systemName: "plus") }
+                    .accessibilityLabel("Add to your wishlist")
+            }
         }
         .overlay(alignment: .bottom) { toastLayer }
         .animation(Motion.settle, value: model.toast?.id)
+        .sheet(isPresented: $adding) { AddToWishlistSheet(model: model) }
         .sheet(item: $getting) { item in
             WishlistGetSheet(item: item, scope: model.scope, viewer: app.user?.id) {
                 Task { await model.remove(item) }
@@ -83,7 +89,11 @@ struct WishlistsView: View {
 
     private var empty: some View {
         let copy = WishlistsFlow.emptyCopy(model.scope, readers: model.readers)
-        return EmptyStateView(icon: "heart", title: copy.title, message: copy.message, fanned: true)
+        return EmptyStateView(
+            icon: "heart", title: copy.title, message: copy.message, fanned: true,
+            actionTitle: copy.offersAdd ? "Add to your wishlist" : nil,
+            action: { adding = true }
+        )
     }
 
     /// A menu of text rows; its label carries the avatar because a menu can't draw a remote image.

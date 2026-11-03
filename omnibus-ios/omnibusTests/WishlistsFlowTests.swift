@@ -15,6 +15,17 @@ private func readers(_ list: [WishlistReader], everyone: Int64 = 0) -> WishlistR
     WishlistReaders(everyone: everyone, readers: list)
 }
 
+private func scanBook(_ uuid: String) -> ScanBook {
+    ScanBook(uuid: uuid, title: "Dune", authors: ["Frank Herbert"], coverURL: nil, hasPhysical: false, isbn: nil)
+}
+
+private func meta(_ isbn: String = "9780441172719", source: String = "open_library") -> ExternalBookMeta {
+    ExternalBookMeta(
+        isbn13: isbn, title: "Dune", authors: ["Frank Herbert"], year: nil, pages: nil,
+        publisher: nil, description: nil, coverURL: nil, source: source
+    )
+}
+
 struct WishlistsFlowTests {
     @Test func userParamIsNilForYouAllForEveryoneAndTheIdForAReader() {
         #expect(WishlistScope.you.userParam == nil)
@@ -105,5 +116,51 @@ struct WishlistsFlowTests {
     func requestableOffersOnlyTheKindsTheLibraryLacks(formats: [String], kinds: [WishlistRequestKind]) {
         let holdings = formats.map { WishlistHolding(format: $0, count: 1) }
         #expect(WishlistsFlow.requestable(holdings) == kinds)
+    }
+
+    @Test func searchReadsAnIsbnAsALookupAndAnythingElseAsText() {
+        #expect(WishlistsFlow.search(for: "   ") == .idle)
+        #expect(WishlistsFlow.search(for: "978-0-441-17271-9") == .isbn("9780441172719"))
+        #expect(WishlistsFlow.search(for: " 080442957x ") == .isbn("080442957X"))
+        #expect(WishlistsFlow.search(for: "  Dune  ") == .text("Dune"))
+        #expect(WishlistsFlow.search(for: "12345") == .text("12345"))
+    }
+
+    @Test func isbnResultsSplitsEachOutcomeIntoLibraryAndOnline() {
+        let books = [scanBook("a"), scanBook("b")]
+        let owned = WishlistsFlow.isbnResults(.alreadyOwned(book: books[0]))
+        #expect(owned.library == [books[0]] && owned.online.isEmpty)
+        let wished = WishlistsFlow.isbnResults(.onWishlist(book: books[0]))
+        #expect(wished.library == [books[0]] && wished.online.isEmpty)
+        let unowned = WishlistsFlow.isbnResults(.inLibraryUnowned(book: books[0]))
+        #expect(unowned.library == [books[0]] && unowned.online.isEmpty)
+        let close = WishlistsFlow.isbnResults(.closeMatch(books: books, scanned: meta()))
+        #expect(close.library == books && close.online == [meta()])
+        let missing = WishlistsFlow.isbnResults(.notInLibrary(online: meta()))
+        #expect(missing.library.isEmpty && missing.online == [meta()])
+        let unresolved = WishlistsFlow.isbnResults(.unresolved)
+        #expect(unresolved.library.isEmpty && unresolved.online.isEmpty)
+    }
+
+    @Test func existingBookFindsTheLibraryBookAnOutcomeMatched() {
+        let books = [scanBook("a"), scanBook("b")]
+        #expect(WishlistsFlow.existingBook(.alreadyOwned(book: books[0]))?.uuid == "a")
+        #expect(WishlistsFlow.existingBook(.onWishlist(book: books[0]))?.uuid == "a")
+        #expect(WishlistsFlow.existingBook(.inLibraryUnowned(book: books[0]))?.uuid == "a")
+        #expect(WishlistsFlow.existingBook(.closeMatch(books: books, scanned: meta()))?.uuid == "a")
+        #expect(WishlistsFlow.existingBook(.notInLibrary(online: meta())) == nil)
+        #expect(WishlistsFlow.existingBook(.unresolved) == nil)
+    }
+
+    @Test func onlineHeadingNamesTheProvidersThatAnsweredOnce() {
+        #expect(WishlistsFlow.onlineHeading([]) == "From online providers")
+        #expect(
+            WishlistsFlow.onlineHeading([meta(source: "open_library"), meta(source: "open_library")])
+                == "From Open Library"
+        )
+        #expect(
+            WishlistsFlow.onlineHeading([meta(source: "open_library"), meta(source: "google_books")])
+                == "From Open Library and Google Books"
+        )
     }
 }
