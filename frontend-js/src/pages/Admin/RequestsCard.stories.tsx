@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { HttpResponse, http } from "msw";
-import { expect, waitFor } from "storybook/test";
+import { expect, waitFor, within } from "storybook/test";
 import {
   aWireRequestsSettings,
   type RequestsWrites,
@@ -41,6 +41,9 @@ export const Loading: Story = {
     const status = canvas.getByTestId("requests-status");
     await expect(status).toHaveTextContent("Checking…");
     await expect(canvas.getByText("Checking…")).toHaveClass("ld-sheen");
+    const address = canvas.getByLabelText("Prowlarr address");
+    await expect(address).toBeDisabled();
+    await expect(address).toHaveClass("ld-unknown");
     await expect(canvas.getByRole("button", { name: SAVE })).toBeDisabled();
     await expect(
       canvas.getByRole("button", { name: "Test Prowlarr" }),
@@ -66,6 +69,7 @@ export const LoadFailed: Story = {
     await expect(
       canvas.getByRole("button", { name: "Try again" }),
     ).toBeInTheDocument();
+    await expect(canvas.getByLabelText("Prowlarr address")).toBeDisabled();
     await expect(canvas.getByRole("button", { name: SAVE })).toBeDisabled();
   },
 };
@@ -103,43 +107,8 @@ export const ShowsSavedConnections: Story = {
       canvas.getByLabelText("The same folder, as Omnibus sees it"),
     ).toHaveValue("/mnt/downloads");
     const status = canvas.getByTestId("requests-status");
-    await expect(status).toHaveTextContent(
-      "Prowlarr and qBittorrent addresses set",
-    );
+    await expect(status).toHaveTextContent("Prowlarr and qBittorrent set up");
     await expect(status.querySelector(".api-key-dot")).toHaveClass("connected");
-  },
-};
-
-export const ShowsUnsetConnections: Story = {
-  beforeEach({ msw }) {
-    msw.use(
-      ...requestsHandlers(
-        aWireRequestsSettings({
-          prowlarr_url: null,
-          prowlarr_api_key_masked: null,
-          prowlarr_api_key_source: "none",
-          download_client_url: null,
-          download_client_username: null,
-          download_client_password_masked: null,
-          download_client_path_prefix: null,
-          download_path_prefix: null,
-        }),
-        writes,
-      ),
-    );
-  },
-  play: async ({ canvas }) => {
-    await waitFor(() =>
-      expect(canvas.getByTestId("requests-status")).toHaveTextContent(
-        "Not set up",
-      ),
-    );
-    await expect(canvas.getByLabelText("Prowlarr address")).toHaveValue("");
-    await expect(canvas.getByLabelText("Prowlarr API key")).toHaveAttribute(
-      "placeholder",
-      "",
-    );
-    await expect(canvas.getByRole("button", { name: SAVE })).toBeEnabled();
   },
 };
 
@@ -200,7 +169,15 @@ export const RefusesAnAddressThatIsNotHttp: Story = {
     const message = await canvas.findByText(
       "Enter an http:// or https:// address.",
     );
-    await expect(message).toHaveClass("settings-status", "error");
+    await expect(address).toHaveAttribute("aria-invalid", "true");
+    await expect(address.getAttribute("aria-describedby")).toBe(message.id);
+    await expect(
+      canvas.getByText("Nothing saved yet. Check the addresses marked above."),
+    ).toHaveClass("settings-status", "error");
+    await expect(canvas.getByLabelText("Prowlarr address")).toHaveAttribute(
+      "aria-invalid",
+      "false",
+    );
     await expect(writes.saved).toEqual([]);
   },
 };
@@ -278,5 +255,111 @@ export const ShowsWhyATestFailed: Story = {
       canvas.getByRole("button", { name: "Test qBittorrent" }),
     );
     await canvas.findByText("The download client test failed: not set up yet");
+  },
+};
+
+export const WaitsForTheKeyBeforeCallingItSetUp: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...requestsHandlers(
+        aWireRequestsSettings({
+          prowlarr_api_key_masked: null,
+          prowlarr_api_key_source: "none",
+        }),
+        writes,
+      ),
+    );
+  },
+  play: async ({ canvas }) => {
+    await waitFor(() =>
+      expect(canvas.getByTestId("requests-status")).toHaveTextContent(
+        "Not set up",
+      ),
+    );
+    await expect(
+      canvas.queryByRole("button", { name: "Clear API key…" }),
+    ).not.toBeInTheDocument();
+  },
+};
+
+export const HoldsTheTestsBackWhileTheFormIsEdited: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const address = canvas.getByLabelText("Prowlarr address");
+    await waitFor(() => expect(address).toHaveValue("http://prowlarr:9696"));
+    await expect(
+      canvas.getByRole("button", { name: "Test Prowlarr" }),
+    ).toBeEnabled();
+    await userEvent.type(address, "x");
+
+    await expect(
+      canvas.getByRole("button", { name: "Test Prowlarr" }),
+    ).toBeDisabled();
+    await expect(
+      canvas.getByRole("button", { name: "Test qBittorrent" }),
+    ).toBeDisabled();
+  },
+};
+
+export const ClearsTheKeyAfterConfirming: Story = {
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Clear API key…" }),
+    );
+
+    const dialog = await canvas.findByTestId("requests-clear-dialog");
+    await expect(writes.saved).toEqual([]);
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Clear API key" }),
+    );
+
+    await expect(
+      await canvas.findByText("Prowlarr API key cleared."),
+    ).toHaveClass("settings-status", "success");
+    await expect(writes.saved).toHaveLength(1);
+    await expect(writes.saved[0]).toMatchObject({ prowlarr_api_key: "" });
+    await expect(writes.saved[0]).not.toHaveProperty(
+      "download_client_password",
+    );
+    await expect(
+      canvas.queryByTestId("requests-clear-dialog"),
+    ).not.toBeInTheDocument();
+  },
+};
+
+export const ClearsThePasswordAfterConfirming: Story = {
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Clear password…" }),
+    );
+
+    const dialog = await canvas.findByTestId("requests-clear-dialog");
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Clear password" }),
+    );
+
+    await expect(
+      await canvas.findByText("qBittorrent password cleared."),
+    ).toHaveClass("settings-status", "success");
+    await expect(writes.saved[0]).toMatchObject({
+      download_client_password: "",
+    });
+    await expect(writes.saved[0]).not.toHaveProperty("prowlarr_api_key");
+  },
+};
+
+export const OffersNoClearForAKeyFromTheEnvironment: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...requestsHandlers(
+        aWireRequestsSettings({ prowlarr_api_key_source: "env" }),
+        writes,
+      ),
+    );
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByRole("button", { name: "Clear password…" });
+    await expect(
+      canvas.queryByRole("button", { name: "Clear API key…" }),
+    ).not.toBeInTheDocument();
   },
 };
