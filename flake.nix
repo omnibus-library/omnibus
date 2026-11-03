@@ -94,9 +94,13 @@
           # plain `cargo test` produces neither. No doctests in the tree, so
           # nextest (which can't run them) drops no coverage.
           pkgs.cargo-nextest
+          # EPUB→KEPUB converter for the "Send to Kobo" download (`db::kepub`
+          # shells out via OMNIBUS_KEPUBIFY_PATH). In slim so `just test` and
+          # CI always run the real-conversion round trip rather than skip it.
+          pkgs.kepubify
         ];
 
-        # Web extras: node + pnpm + ffmpeg + kepubify. Node + pnpm build the
+        # Web extras: node + pnpm + ffmpeg. Node + pnpm build the
         # React client (frontend-js/) the dev server serves, and run the
         # Playwright npm project's tooling (e.g. `ui_tests/playwright/tools/`,
         # via `pnpm exec tsx …`). pnpm is the package manager for both npm
@@ -104,14 +108,11 @@
         # build-script allowlist and version self-management are configured in
         # each project's `pnpm-workspace.yaml` / `.npmrc`. ffmpeg is the runtime backend for the F2.3 audiobook HLS
         # pipeline (`db::hls` shells out via OMNIBUS_FFMPEG_PATH); kept out of
-        # slim `default` since daily cargo work doesn't need it. kepubify is the
-        # EPUB→KEPUB converter for the F4.1 "Send to Kobo" download
-        # (`db::kepub` shells out via OMNIBUS_KEPUBIFY_PATH).
+        # slim `default` since daily cargo work doesn't need it.
         webExtras = [
           pkgs-unstable.nodejs_22
           pkgs-unstable.pnpm
           pkgs.ffmpeg-headless
-          pkgs.kepubify
         ];
 
         # E2E extras layer on top of webExtras: Playwright's Nix-provided

@@ -47,7 +47,7 @@ HLS audiobook transcode cache (read by `db::hls`):
 - `OMNIBUS_FFMPEG_PATH` — explicit ffmpeg path; otherwise ffmpeg must be on `$PATH`
 
 Kobo KEPUB conversion (read by `db::kepub`, for the "Send to Kobo" download):
-- `OMNIBUS_KEPUBIFY_PATH` — explicit kepubify path; otherwise kepubify must be on `$PATH`. Absent → download falls back to plain EPUB with a one-time startup warning. Bundled in the `.#web` shell and the release image.
+- `OMNIBUS_KEPUBIFY_PATH` — explicit kepubify path; otherwise kepubify must be on `$PATH`. Absent → download falls back to plain EPUB with a one-time startup warning. Bundled in every Nix dev shell and the release image.
 - `OMNIBUS_KEPUB_DIR` — directory for the KEPUB cache, used verbatim when set; otherwise defaults to `$OMNIBUS_DATA_DIR/kepub/`. Purely a regenerable cache (safe to delete, rebuilt on next download).
 
 Calibre format conversion (read by `db::convert`):
