@@ -137,6 +137,12 @@
     padding: 0 8px;
   }
 }
+/* An admin's phone bar needs ~364px with the wordmark, plus up to 15px for a classic scrollbar. */
+@media (max-width: 399px) {
+  .atrium-brand-word {
+    display: none;
+  }
+}
 @media (hover: none) {
   .atrium-nav a:active {
     color: var(--ink-0);

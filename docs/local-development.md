@@ -98,7 +98,7 @@ tests fail with a pointer to it when they're missing.
 
 ```bash
 just test    # full matrix: db + server + shared + mcp + mock-kobo, then the script suites
-just lint    # cargo fmt --check + clippy, mcp and mock-kobo included
+just lint    # cargo fmt --check + clippy, mcp and mock-kobo included, + migration numbers vs origin/main
 just check   # lint then test
 
 just coverage       # lcov + per-file summary via cargo-llvm-cov over nextest
