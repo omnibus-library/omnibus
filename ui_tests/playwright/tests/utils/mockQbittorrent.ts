@@ -1,6 +1,5 @@
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { join } from "node:path";
 
 /** A file the mock's download holds, listed the way qBittorrent lists it. */
 export type MockFile = { name: string; size: number };
@@ -11,8 +10,6 @@ export type MockQbittorrent = {
   url: string;
   /** The folder its downloads sit in, as it reports them. */
   saveDir: string;
-  /** The tag of each download the server added, in order. */
-  added: string[];
   /** The tag of each download the server asked it to delete, in order. */
   deleted: string[];
   /** From now on every download it holds reports as complete. */
@@ -38,7 +35,6 @@ export async function startMockQbittorrent(
   saveDir: string,
   files: MockFile[],
 ): Promise<MockQbittorrent> {
-  const added: string[] = [];
   const deleted: string[] = [];
   const held = new Set<string>();
   let done = false;
@@ -56,11 +52,8 @@ export async function startMockQbittorrent(
     switch (`${req.method} ${url.pathname}`) {
       case "POST /api/v2/auth/login":
         return text("Ok.", { "Set-Cookie": "SID=e2e; path=/" });
-      case "GET /api/v2/app/version":
-        return text("v5.0.0");
       case "POST /api/v2/torrents/add": {
         const tag = (await formOf(req)).get("tags") ?? "";
-        added.push(tag);
         held.add(tag);
         return text("Ok.");
       }
@@ -71,7 +64,6 @@ export async function startMockQbittorrent(
           {
             hash: `hash-${tag}`,
             ...(done ? COMPLETE : DOWNLOADING),
-            content_path: join(saveDir, files[0]?.name ?? ""),
             save_path: saveDir,
           },
         ]);
@@ -100,7 +92,6 @@ export async function startMockQbittorrent(
   return {
     url: `http://127.0.0.1:${port}`,
     saveDir,
-    added,
     deleted,
     finish() {
       done = true;

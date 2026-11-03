@@ -1,4 +1,5 @@
 import {
+  cpSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -11,13 +12,7 @@ import type { EbooksRequests } from "../apiRequests/EbooksRequests";
 import type { IndexedBook } from "../data/authors";
 import { isAudioFormat } from "../data/bookDetail";
 import type { SeededBookmark } from "../data/bookmarks";
-import {
-  type ClientFields,
-  clientFieldsOf,
-  clientUpdate,
-  prowlarrUpdate,
-  type RequestsConnections,
-} from "../data/bookRequests";
+import { prowlarrUpdate, type RequestsConnections } from "../data/bookRequests";
 import type { EbookDetail, LibraryBook, UploadedEbook } from "../data/ebooks";
 import {
   buildHighlight,
@@ -59,12 +54,15 @@ import {
   type MockQbittorrent,
   startMockQbittorrent,
 } from "../utils/mockQbittorrent";
-import { fixturesDir } from "../utils/seed";
+import { fixturesDir, waitForWorkerIdle } from "../utils/seed";
 import { test as base, expect } from "./accountFixtures";
 import { MERGE_PRIMARY, MERGE_SECONDARY } from "./audiobooks";
 import { DUAL_FORMAT_BOOK, RESUME_PROMPT_BOOK } from "./dual_format";
 import { FIXTURE_BOOKS } from "./epubs";
 import { cleanupSet, type Owner } from "./lifecycle";
+
+/** A throwaway copy of the fixture library, and the wished-for books to delete from it. */
+export type ImportLibrary = { root: string; books: Set<string> };
 
 /** A file a finished download holds: its name inside the download folder, and its bytes. */
 export type DownloadedFile = { name: string; bytes: Buffer };
@@ -122,7 +120,7 @@ type DataFixtures = {
   createdBookUuids: Set<string>;
   prowlarrFor: (releases: MockRelease[]) => Promise<MockProwlarr>;
   qbittorrentFor: (files: DownloadedFile[]) => Promise<MockQbittorrent>;
-  requestedBookUuids: Set<string>;
+  libraryForImports: ImportLibrary;
   filedCopies: FiledCopy[];
   seededHighlightIds: Set<number>;
   seededBookmarkIds: Set<number>;
@@ -275,22 +273,23 @@ export const test = base.extend<DataFixtures>({
       }));
       const mock = await startMockQbittorrent(folder, listed);
       started.push({ mock, folder });
-      const client: ClientFields = {
-        ...clientFieldsOf(before),
+      const current: RequestsConnections = await (
+        await bookRequestsRequests.getConnections()
+      ).json();
+      const saved = await bookRequestsRequests.putConnections({
+        ...prowlarrUpdate(current, current.prowlarr_url ?? "", null),
         download_client_url: mock.url,
         download_client_path_prefix: folder,
         download_path_prefix: folder,
-      };
-      const current = await bookRequestsRequests.getConnections();
-      const saved = await bookRequestsRequests.putConnections(
-        clientUpdate(await current.json(), client),
-      );
+      });
       await expect(saved).toBeOK();
       return mock;
     });
-    const current = await bookRequestsRequests.getConnections();
+    const current: RequestsConnections = await (
+      await bookRequestsRequests.getConnections()
+    ).json();
     const restored = await bookRequestsRequests.putConnections(
-      clientUpdate(await current.json(), clientFieldsOf(before)),
+      prowlarrUpdate(before, current.prowlarr_url ?? "", null),
     );
     await expect(restored).toBeOK();
     for (const { mock, folder } of started) {
@@ -299,21 +298,48 @@ export const test = base.extend<DataFixtures>({
     }
   },
 
-  // Books a request flow wished for, deleted with whatever files an import filed under them.
-  requestedBookUuids: async ({ ebooksRequests }, use) =>
-    cleanupSet(
-      use,
-      async (uuid: string) => {
+  // Points the server's ebook library at a copy of the fixtures, so an import files its book
+  // there and not in the committed tree. The copy keeps every relative path and timestamp, so
+  // the books already indexed stay the same books. The books a test registers are deleted with
+  // their files first, then the library path is put back; the lock keeps another saving test
+  // from taking the copy for the original.
+  libraryForImports: async (
+    { request, settingsRequests, ebooksRequests },
+    use,
+  ) => {
+    await withLock("library-settings", async () => {
+      const before = await settingsRequests.getSettings();
+      await expect(before, "read the library settings").toBeOK();
+      const original: ServerLibrary = await before.json();
+      const root = mkdtempSync(join(tmpdir(), "omnibus-e2e-library-"));
+      cpSync(fixturesDir(), root, {
+        recursive: true,
+        preserveTimestamps: true,
+      });
+      const moved = await settingsRequests.postSettings({
+        ...original,
+        ebook_library_path: root,
+      });
+      await expect(moved, "point the ebook library at the copy").toBeOK();
+      await waitForWorkerIdle(request);
+      const books = new Set<string>();
+      await use({ root, books });
+      for (const uuid of books) {
         const manifest = await ebooksRequests.getDeletionManifest(uuid);
         await expect(manifest).toBeOK();
         const { files, copies } = await manifest.json();
-        return ebooksRequests.postDeleteFiles(uuid, {
+        const deleted = await ebooksRequests.postDeleteFiles(uuid, {
           file_ids: files.map((f: { id: number }) => f.id),
           copy_ids: copies.map((c: { id: number }) => c.id),
         });
-      },
-      (uuid) => `delete ${uuid} with its files`,
-    ),
+        await expect(deleted, `delete ${uuid} with its files`).toBeOK();
+      }
+      const restored = await settingsRequests.postSettings(original);
+      await expect(restored, "restore the library settings").toBeOK();
+      await waitForWorkerIdle(request);
+      rmSync(root, { recursive: true, force: true });
+    });
+  },
 
   filedCopies: async ({ physicalRequests }, use) => {
     const filed: FiledCopy[] = [];

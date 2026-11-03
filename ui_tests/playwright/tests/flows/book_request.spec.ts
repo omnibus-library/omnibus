@@ -95,7 +95,7 @@ test.describe("book request", () => {
   test("a requested ebook reaches Ready to read on the wished book", async ({
     scanRequests,
     ebooksRequests,
-    requestedBookUuids,
+    libraryForImports,
     prowlarrFor,
     qbittorrentFor,
     wishlistsPage,
@@ -112,7 +112,7 @@ test.describe("book request", () => {
       const added = await scanRequests.postWishlistEntry(book);
       await expect(added).toBeOK();
       uuid = (await added.json()).book_uuid;
-      requestedBookUuids.add(uuid);
+      libraryForImports.books.add(uuid);
     });
 
     await test.step("find versions, and a download client that holds an EPUB", async () => {
@@ -176,7 +176,7 @@ test.describe("book request", () => {
   test("a release with only an executable shows Couldn't add it", async ({
     scanRequests,
     ebooksRequests,
-    requestedBookUuids,
+    libraryForImports,
     prowlarrFor,
     qbittorrentFor,
     wishlistsPage,
@@ -191,7 +191,7 @@ test.describe("book request", () => {
       const added = await scanRequests.postWishlistEntry(book);
       await expect(added).toBeOK();
       uuid = (await added.json()).book_uuid;
-      requestedBookUuids.add(uuid);
+      libraryForImports.books.add(uuid);
       await prowlarrFor(releasesFor(book));
       const client = await qbittorrentFor([
         { name: "Release/setup.exe", bytes: Buffer.from("MZ") },
