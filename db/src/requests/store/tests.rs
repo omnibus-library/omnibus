@@ -426,6 +426,129 @@ mod choose {
     }
 }
 
+mod cancel {
+    use super::*;
+
+    const NOW: i64 = 1_800_000_000;
+
+    #[tokio::test]
+    async fn marks_the_request_cancelled_with_who_when_and_what_undo_restores() {
+        let pool = pool().await;
+        for state in ["looking", "choose", "chosen", "on_its_way"] {
+            let ada = seed_user(&pool, state).await;
+            let id = start(&pool, ada, "book-1", RequestKind::Ebook, 5)
+                .await
+                .unwrap()
+                .request
+                .id;
+            set_state(&pool, id, state).await;
+
+            cancel(&pool, id, ada, NOW).await.unwrap();
+
+            let row = state_of(&pool, id).await;
+            assert_eq!(row.state, RequestState::Cancelled, "{state}");
+            assert_eq!(row.prior_state, RequestState::from_db(state), "{state}");
+            assert_eq!(row.cancelled_by, Some(ada), "{state}");
+            assert_eq!(row.cancel_at, Some(NOW + 8), "{state}");
+        }
+    }
+
+    #[tokio::test]
+    async fn refuses_a_request_that_is_stuck_cancelled_or_fully_downloaded() {
+        let pool = pool().await;
+        let id = start_looking(&pool).await;
+        for (state, progress) in [
+            ("stuck", "NULL"),
+            ("cancelled", "NULL"),
+            ("on_its_way", "1"),
+        ] {
+            sqlx::query(&format!(
+                "UPDATE book_requests SET state = '{state}', progress = {progress} WHERE id = ?"
+            ))
+            .bind(id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+            let result = cancel(&pool, id, 1, NOW).await;
+
+            assert!(matches!(result, Err(RequestError::WrongState)), "{state}");
+        }
+    }
+
+    #[tokio::test]
+    async fn refuses_a_request_whose_earlier_download_is_still_being_removed() {
+        let pool = pool().await;
+        let id = start_looking(&pool).await;
+        sqlx::query("UPDATE book_requests SET state = 'choose', cancel_at = ? WHERE id = ?")
+            .bind(NOW)
+            .bind(id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let result = cancel(&pool, id, 1, NOW).await;
+
+        assert!(matches!(result, Err(RequestError::WrongState)));
+    }
+
+    #[tokio::test]
+    async fn cancels_once_when_two_clicks_arrive() {
+        let pool = pool().await;
+        let id = start_looking(&pool).await;
+
+        let first = cancel(&pool, id, 1, NOW).await;
+        let second = cancel(&pool, id, 1, NOW + 1).await;
+
+        assert!(first.is_ok());
+        assert!(matches!(second, Err(RequestError::WrongState)));
+        assert_eq!(state_of(&pool, id).await.cancel_at, Some(NOW + 8));
+    }
+}
+
+mod undo_cancel {
+    use super::*;
+
+    const NOW: i64 = 1_800_000_000;
+
+    #[tokio::test]
+    async fn restores_the_state_the_request_was_cancelled_from() {
+        let pool = pool().await;
+        let id = start_looking(&pool).await;
+        set_state(&pool, id, "on_its_way").await;
+        cancel(&pool, id, 1, NOW).await.unwrap();
+
+        let restored = undo_cancel(&pool, id, NOW + 7).await.unwrap();
+
+        assert_eq!(restored.state, RequestState::OnItsWay);
+        assert_eq!(restored.prior_state, None);
+        assert_eq!(restored.cancelled_by, None);
+        assert_eq!(restored.cancel_at, None);
+    }
+
+    #[tokio::test]
+    async fn refuses_from_the_moment_the_grace_ends() {
+        let pool = pool().await;
+        let id = start_looking(&pool).await;
+        cancel(&pool, id, 1, NOW).await.unwrap();
+
+        let at_the_end = undo_cancel(&pool, id, NOW + 8).await;
+
+        assert!(matches!(at_the_end, Err(RequestError::WrongState)));
+        assert_eq!(state_of(&pool, id).await.state, RequestState::Cancelled);
+    }
+
+    #[tokio::test]
+    async fn refuses_a_request_that_was_not_cancelled() {
+        let pool = pool().await;
+        let id = start_looking(&pool).await;
+
+        let result = undo_cancel(&pool, id, NOW).await;
+
+        assert!(matches!(result, Err(RequestError::WrongState)));
+    }
+}
+
 mod database_failure {
     use super::*;
 

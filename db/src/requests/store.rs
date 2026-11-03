@@ -338,6 +338,54 @@ pub async fn choose(pool: &SqlitePool, id: i64, result_id: i64) -> Result<(), Re
     }
 }
 
+/// How long after a cancel the download keeps going, so Undo can take it back.
+pub const CANCEL_GRACE_SECS: i64 = 8;
+
+/// Cancel request `id` for user `by` at `now`: it reads `cancelled` at once, and the
+/// download is removed once [`CANCEL_GRACE_SECS`] pass. [`RequestError::WrongState`] unless the
+/// request is still going: not stuck, cancelled, fully downloaded, or waiting on the
+/// removal of an earlier download. One statement, so a double click cancels once.
+pub async fn cancel(pool: &SqlitePool, id: i64, by: i64, now: i64) -> Result<(), RequestError> {
+    let moved = sqlx::query(&format!(
+        "UPDATE book_requests
+         SET prior_state = state, state = 'cancelled', cancelled_by = ?, cancel_at = ?,
+             updated_at = {NOW}
+         WHERE id = ? AND cancel_at IS NULL
+           AND (state IN ('looking', 'choose', 'chosen')
+                OR (state = 'on_its_way' AND (progress IS NULL OR progress < 1)))"
+    ))
+    .bind(by)
+    .bind(now + CANCEL_GRACE_SECS)
+    .bind(id)
+    .execute(pool)
+    .await?
+    .rows_affected();
+    if moved == 0 {
+        return Err(RequestError::WrongState);
+    }
+    Ok(())
+}
+
+/// Take back a cancel while its grace lasts, returning the restored request.
+/// [`RequestError::WrongState`] once the grace has ended or for a request not cancelled.
+pub async fn undo_cancel(pool: &SqlitePool, id: i64, now: i64) -> Result<RequestRow, RequestError> {
+    let row = sqlx::query(&format!(
+        "UPDATE book_requests
+         SET state = prior_state, prior_state = NULL, cancelled_by = NULL, cancel_at = NULL,
+             updated_at = {NOW}
+         WHERE id = ? AND state = 'cancelled' AND cancel_at > ? AND prior_state IS NOT NULL
+         RETURNING {COLUMNS}"
+    ))
+    .bind(id)
+    .bind(now)
+    .fetch_optional(pool)
+    .await?;
+    match row {
+        Some(row) => Ok(row_to_request(&row)?),
+        None => Err(RequestError::WrongState),
+    }
+}
+
 /// The tag a request's download carries in the client, so a restart finds it again.
 fn client_tag(id: i64) -> String {
     format!("omnibus-{id}")

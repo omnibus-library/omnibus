@@ -21,7 +21,7 @@ use omnibus_db::{
         store::{self, RequestError, RequestRow},
     },
 };
-use omnibus_shared::{BookRequest, ChooseVersion, RequestKind, StartRequest};
+use omnibus_shared::{BookRequest, ChooseVersion, RequestKind, RequestState, StartRequest};
 
 use crate::auth::AuthUser;
 
@@ -387,6 +387,88 @@ pub(super) async fn post_choose_version(
             (StatusCode::CONFLICT, "this request isn't waiting on a pick").into_response()
         }
         Err(e) => internal("choose version", e),
+    }
+}
+
+/// Cancel a request
+///
+/// The request reads `cancelled` at once. The download is told to stop a few seconds later
+/// (see `cancel_at`), so `DELETE /api/requests/{id}/cancel` can take the cancel back until
+/// then. Only a request that is searching, waiting on a pick, picked or still downloading can
+/// be cancelled. Only the reader who made the request, or an admin, can do this.
+#[utoipa::path(
+    post,
+    path = "/api/requests/{id}/cancel",
+    tag = "Requests",
+    operation_id = "cancel_book_request",
+    params(("id" = i64, Path, description = "The request's id.")),
+    responses(
+        (status = 200, description = "The request is cancelled; undo it until `cancel_at`.", body = BookRequest),
+        (status = 401, description = "You aren't signed in."),
+        (status = 403, description = "Your account can't make requests, or the request is another reader's."),
+        (status = 404, description = "Book requests are off on this server, or there is no such request."),
+        (status = 409, description = "The request can't be cancelled now: it is stuck, already cancelled or fully downloaded."),
+    ),
+)]
+pub(super) async fn post_cancel_request(
+    RequestsUser(user): RequestsUser,
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Response {
+    if let Err(res) = own_request(&state, &user, id).await {
+        return res;
+    }
+    match store::cancel(state.pool(), id, user.id, store::unix_now()).await {
+        Ok(()) => {
+            state.request_kick().notify_one();
+            answer(&state, id, &user).await
+        }
+        Err(RequestError::WrongState) => {
+            (StatusCode::CONFLICT, "this request can't be cancelled").into_response()
+        }
+        Err(e) => internal("cancel request", e),
+    }
+}
+
+/// Undo a cancel
+///
+/// Takes a cancel back while its grace lasts (until `cancel_at`), putting the request in the
+/// state it was cancelled from. After that the download is stopped and cannot be undone. Only
+/// the reader who made the request, or an admin, can do this.
+#[utoipa::path(
+    delete,
+    path = "/api/requests/{id}/cancel",
+    tag = "Requests",
+    operation_id = "undo_cancel_book_request",
+    params(("id" = i64, Path, description = "The request's id.")),
+    responses(
+        (status = 200, description = "The request is back as it was.", body = BookRequest),
+        (status = 401, description = "You aren't signed in."),
+        (status = 403, description = "Your account can't make requests, or the request is another reader's."),
+        (status = 404, description = "Book requests are off on this server, or there is no such request."),
+        (status = 409, description = "The request isn't cancelled, or the undo grace has ended."),
+    ),
+)]
+pub(super) async fn delete_cancel_request(
+    RequestsUser(user): RequestsUser,
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Response {
+    if let Err(res) = own_request(&state, &user, id).await {
+        return res;
+    }
+    match store::undo_cancel(state.pool(), id, store::unix_now()).await {
+        Ok(restored) => {
+            // A search cut short by the cancel left nothing behind, so look again.
+            if restored.state == RequestState::Looking {
+                spawn_search(&state, id);
+            }
+            answer(&state, id, &user).await
+        }
+        Err(RequestError::WrongState) => {
+            (StatusCode::CONFLICT, "this cancel can't be undone").into_response()
+        }
+        Err(e) => internal("undo cancel", e),
     }
 }
 

@@ -6370,6 +6370,96 @@
         }
       }
     },
+    "/api/requests/{id}/cancel": {
+      "post": {
+        "tags": [
+          "Requests"
+        ],
+        "summary": "Cancel a request",
+        "description": "The request reads `cancelled` at once. The download is told to stop a few seconds later\n(see `cancel_at`), so `DELETE /api/requests/{id}/cancel` can take the cancel back until\nthen. Only a request that is searching, waiting on a pick, picked or still downloading can\nbe cancelled. Only the reader who made the request, or an admin, can do this.",
+        "operationId": "cancel_book_request",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The request's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The request is cancelled; undo it until `cancel_at`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookRequest"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "You aren't signed in."
+          },
+          "403": {
+            "description": "Your account can't make requests, or the request is another reader's."
+          },
+          "404": {
+            "description": "Book requests are off on this server, or there is no such request."
+          },
+          "409": {
+            "description": "The request can't be cancelled now: it is stuck, already cancelled or fully downloaded."
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Requests"
+        ],
+        "summary": "Undo a cancel",
+        "description": "Takes a cancel back while its grace lasts (until `cancel_at`), putting the request in the\nstate it was cancelled from. After that the download is stopped and cannot be undone. Only\nthe reader who made the request, or an admin, can do this.",
+        "operationId": "undo_cancel_book_request",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The request's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The request is back as it was.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookRequest"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "You aren't signed in."
+          },
+          "403": {
+            "description": "Your account can't make requests, or the request is another reader's."
+          },
+          "404": {
+            "description": "Book requests are off on this server, or there is no such request."
+          },
+          "409": {
+            "description": "The request isn't cancelled, or the undo grace has ended."
+          }
+        }
+      }
+    },
     "/api/requests/{id}/choose": {
       "post": {
         "tags": [
