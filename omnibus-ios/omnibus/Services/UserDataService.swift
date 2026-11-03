@@ -1031,7 +1031,7 @@ enum UserDataService {
     // MARK: - Wishlist
 
     /// The caller's wishlist entry for a book, or `nil` when not tracked.
-    /// Adds happen elsewhere (the scan flow) and fail rule 08's test 3 — the
+    /// Adds (the scan flow, the Wishlists Add sheet) fail rule 08's test 3 — the
     /// payload comes from the server's lookup — so they never queue offline.
     static func wishlistEntry(uuid: String) -> AsyncThrowingStream<CacheRead<WishlistEntry?>, Error> {
         Cache.live(CacheKey.wishlistEntry(uuid)) {
@@ -1071,6 +1071,33 @@ enum UserDataService {
         return removal.bookDeleted
     }
 
+    /// The caller's wishlist entry read straight from the server, bypassing the
+    /// replica: the Add sheet needs the live answer to decide whether Undo is safe.
+    static func wishlistEntryNow(uuid: String) async throws -> WishlistEntry? {
+        try await APIClient.shared.get("/api/physical/\(uuid)/wishlist")
+    }
+
+    /// Wishlist a library book or a provider's record (`POST /api/scan/wishlist`);
+    /// the book's uuid. Direct call, never queued — the payload comes from a lookup.
+    static func addScannedToWishlist(_ request: WishlistAddRequest) async throws -> String {
+        let ref: BookRef = try await APIClient.shared.post("/api/scan/wishlist", body: request)
+        // The reply carries no entry, so forget the cached one rather than write a guess.
+        await OfflineStore.shared.cacheDelete(CacheKey.wishlistEntry(ref.bookUUID))
+        await dropCachedWishlistPages()
+        await shelvesChanged()
+        return ref.bookUUID
+    }
+
+    /// Put a library book on the caller's wishlist (Undo of a remove). Direct
+    /// call, never queued — same contract as `removeWishlistEntry`, with the
+    /// same cache and shelf invalidations.
+    static func addWishlistEntry(uuid: String) async throws {
+        let entry: WishlistEntry = try await APIClient.shared.post("/api/physical/\(uuid)/wishlist", body: Empty())
+        await Cache.write(CacheKey.wishlistEntry(uuid), Optional(entry))
+        await dropCachedWishlistPages()
+        await shelvesChanged()
+    }
+
     /// Forget any cached wishlist shelf page, so the shelf doesn't keep showing
     /// a book that is no longer on it, and every page a shelf clause keyed — a
     /// wishlist can be a clause's shelf. Deliberately over-broad on an admin's
@@ -1082,6 +1109,19 @@ enum UserDataService {
         for shelf in shelves where shelf.kind == .wishlist {
             await dropShelfPages(shelf.id)
         }
+    }
+
+    // MARK: - Household wishlists
+
+    /// Every reader and the size of their wishlists. Online-only, like the
+    /// lists: another reader's wishlist is never mirrored on this device.
+    static func wishlistReaders() async throws -> WishlistReaders {
+        try await APIClient.shared.get("/api/wishlists/readers")
+    }
+
+    /// The books on `scope`'s wishlist, newest add first.
+    static func wishlists(scope: WishlistScope) async throws -> [WishlistBook] {
+        try await APIClient.shared.get("/api/wishlists", query: ["user": scope.userParam])
     }
 
     // MARK: - Stats
