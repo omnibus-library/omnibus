@@ -138,10 +138,20 @@ dev-server-down-test:
 dev-react-build-test:
     bash scripts/tests/dev-react-build.test.sh
 
+# Tests for scripts/check-migration-numbers.sh against throwaway git repos.
+# Plain bash, like dev-react-build-test.
+migration-numbers-test:
+    bash scripts/tests/check-migration-numbers.test.sh
+
+# Fail when a migration this branch adds is numbered at or below the highest on
+# the base (default origin/main), before CI's UNIQUE-version failure would.
+migration-numbers base="origin/main":
+    scripts/check-migration-numbers.sh {{base}}
+
 # Run every unit/integration suite: the Rust matrix first, then the script
 # suites. Rust leads so a failing script suite can't stop the recipe
 # before the cargo results are in.
-test: test-rust explore-test module-map-test koreader-report-test koreader-plugin-test scratch-server-test koreader-dev-test koreader-home-test dev-server-down-test dev-react-build-test
+test: test-rust explore-test module-map-test koreader-report-test koreader-plugin-test scratch-server-test koreader-dev-test koreader-home-test dev-server-down-test dev-react-build-test migration-numbers-test
 
 # The Rust half of `just test`: every crate via cargo-nextest (the same runner
 # CI uses, so local and CI results match; no doctests in the tree, which is all
@@ -244,7 +254,7 @@ openapi: openapi-gen
 # clippy job (.github/workflows/rust.yml) so a clean local run can't go on to
 # fail in CI. Depends on `lint-css` so the CSS structural guard rides the same
 # gate as fmt/clippy.
-lint: lint-css
+lint: lint-css migration-numbers
     scripts/with-dev-env.sh default bash -ec '\
         cargo fmt --check && \
         cargo clippy --all-targets -- -D warnings && \
