@@ -95,6 +95,9 @@ struct WishlistsFlowTests {
         let everyone = WishlistsFlow.emptyCopy(.everyone, readers: list)
         #expect(everyone.title == "No one has anything on their wishlist yet")
         #expect(everyone.offersAdd)
+        #expect(
+            everyone.message == "When someone in the household adds a book to their wishlist, it shows up here, so you can find or request it for them. Start with yours."
+        )
         let ada = WishlistsFlow.emptyCopy(.reader(id: 2), readers: list)
         #expect(ada.title == "Nothing on Ada\u{2019}s wishlist yet")
         #expect(!ada.offersAdd)
@@ -126,6 +129,16 @@ struct WishlistsFlowTests {
         #expect(WishlistsFlow.search(for: "12345") == .text("12345"))
     }
 
+    @Test func foundViaCallsOnlyTheScannedIsbnABarcodeScan() {
+        let scanned = WishlistsFlow.foundVia(WishlistsFlow.search(for: "9780441172719"), scanned: "978-0-441-17271-9")
+        #expect(scanned == .barcodeScan)
+        let typed = WishlistsFlow.foundVia(WishlistsFlow.search(for: "9780441172719"), scanned: "9780306406157")
+        #expect(typed == .isbnEntry)
+        #expect(WishlistsFlow.foundVia(.isbn("9780441172719"), scanned: nil) == .isbnEntry)
+        #expect(WishlistsFlow.foundVia(.text("Dune"), scanned: "9780441172719") == .titleSearch)
+        #expect(WishlistsFlow.foundVia(.idle, scanned: nil) == .titleSearch)
+    }
+
     @Test func isbnResultsSplitsEachOutcomeIntoLibraryAndOnline() {
         let books = [scanBook("a"), scanBook("b")]
         let owned = WishlistsFlow.isbnResults(.alreadyOwned(book: books[0]))
@@ -140,16 +153,6 @@ struct WishlistsFlowTests {
         #expect(missing.library.isEmpty && missing.online == [meta()])
         let unresolved = WishlistsFlow.isbnResults(.unresolved)
         #expect(unresolved.library.isEmpty && unresolved.online.isEmpty)
-    }
-
-    @Test func existingBookFindsTheLibraryBookAnOutcomeMatched() {
-        let books = [scanBook("a"), scanBook("b")]
-        #expect(WishlistsFlow.existingBook(.alreadyOwned(book: books[0]))?.uuid == "a")
-        #expect(WishlistsFlow.existingBook(.onWishlist(book: books[0]))?.uuid == "a")
-        #expect(WishlistsFlow.existingBook(.inLibraryUnowned(book: books[0]))?.uuid == "a")
-        #expect(WishlistsFlow.existingBook(.closeMatch(books: books, scanned: meta()))?.uuid == "a")
-        #expect(WishlistsFlow.existingBook(.notInLibrary(online: meta())) == nil)
-        #expect(WishlistsFlow.existingBook(.unresolved) == nil)
     }
 
     @Test func onlineHeadingNamesTheProvidersThatAnsweredOnce() {

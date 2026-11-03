@@ -38,11 +38,6 @@ enum WishlistSearch: Equatable {
     /// Hyphens and spaces stripped.
     case isbn(String)
     case text(String)
-
-    /// The normalized ISBN, when this is one.
-    var isbnValue: String? {
-        if case let .isbn(isbn) = self { isbn } else { nil }
-    }
 }
 
 enum WishlistsFlow {
@@ -140,7 +135,7 @@ enum WishlistsFlow {
         case .everyone:
             return EmptyCopy(
                 title: "No one has anything on their wishlist yet",
-                message: "When someone in the household adds a book to their wishlist, it shows up here. Start with yours.",
+                message: "When someone in the household adds a book to their wishlist, it shows up here, so you can find or request it for them. Start with yours.",
                 offersAdd: true
             )
         case .reader:
@@ -161,6 +156,12 @@ enum WishlistsFlow {
         return .isbn(trimmed.filter { $0.isNumber || $0 == "X" || $0 == "x" }.uppercased())
     }
 
+    /// Only the camera is a scan; a typed ISBN is manual and a title search is neither.
+    static func foundVia(_ search: WishlistSearch, scanned: String?) -> FoundVia {
+        guard case .isbn = search else { return .titleSearch }
+        return scanned.map(Self.search(for:)) == search ? .barcodeScan : .isbnEntry
+    }
+
     /// What an ISBN lookup puts under "In your library" and under the providers' name.
     static func isbnResults(_ outcome: ScanOutcome) -> (library: [ScanBook], online: [ExternalBookMeta]) {
         switch outcome {
@@ -169,17 +170,6 @@ enum WishlistsFlow {
         case let .closeMatch(books, scanned): (books, [scanned])
         case let .notInLibrary(online): ([], [online])
         case .unresolved: ([], [])
-        }
-    }
-
-    /// The library book an outcome matched, so a provider's record goes onto
-    /// the list and is never minted as a second book. A different edition of
-    /// the same work is the same book, so a close match counts.
-    static func existingBook(_ outcome: ScanOutcome) -> ScanBook? {
-        switch outcome {
-        case let .alreadyOwned(book), let .onWishlist(book), let .inLibraryUnowned(book): book
-        case let .closeMatch(books, _): books.first
-        case .notInLibrary, .unresolved: nil
         }
     }
 

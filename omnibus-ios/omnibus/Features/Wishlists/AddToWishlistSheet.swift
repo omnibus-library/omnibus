@@ -20,7 +20,9 @@ struct AddToWishlistSheet: View {
     @State private var query = ""
     @State private var library = Results.loading
     @State private var online = Results.loading
-    @State private var scannedISBN: String?
+    @State private var scannedCode: String?
+    /// How the results on screen were found, fixed when their search started.
+    @State private var resultsVia = FoundVia.titleSearch
     @State private var scanning = false
     @State private var addError: String?
     @State private var scannerAvailable = DataScannerViewController.isSupported
@@ -28,11 +30,7 @@ struct AddToWishlistSheet: View {
 
     private var search: WishlistSearch { WishlistsFlow.search(for: query) }
 
-    /// Only the camera is a scan; a typed ISBN is manual and a title search is neither.
-    private var via: FoundVia {
-        guard case let .isbn(isbn) = search else { return .titleSearch }
-        return isbn == scannedISBN ? .barcodeScan : .isbnEntry
-    }
+    private var isOnline: Bool { Connectivity.shared.isOnline }
 
     var body: some View {
         NavigationStack {
@@ -98,7 +96,7 @@ struct AddToWishlistSheet: View {
         NavigationStack {
             BarcodeScannerView { code in
                 Haptics.success()
-                scannedISBN = WishlistsFlow.search(for: code).isbnValue
+                scannedCode = code
                 query = code
                 scanning = false
             }
@@ -165,7 +163,7 @@ struct AddToWishlistSheet: View {
             Spacer(minLength: 0)
             Button("Add") { Task { await add(hit) } }
                 .buttonStyle(EmptyStateActionStyle())
-                .disabled(model.isAdding)
+                .disabled(model.isAdding || !isOnline)
                 .accessibilityLabel("Add \(hit.title)")
         }
         .padding(.vertical, Spacing.xs)
@@ -204,7 +202,7 @@ struct AddToWishlistSheet: View {
         case let .library(book):
             book.authors.joined(separator: ", ")
         case let .online(meta, _):
-            ([meta.authors.joined(separator: ", ")] + [meta.publisher, meta.year].compactMap { $0?.nilIfBlank })
+            ([meta.authorDisplay] + CheckInFlow.detailLines(for: meta))
                 .filter { !$0.isEmpty }
                 .joined(separator: " \u{b7} ")
         }
@@ -214,7 +212,7 @@ struct AddToWishlistSheet: View {
 
     private func add(_ hit: WishlistHit) async {
         addError = nil
-        addError = await model.add(hit, via: via)
+        addError = await model.add(hit, via: resultsVia)
         if addError == nil { dismiss() }
     }
 
@@ -224,10 +222,12 @@ struct AddToWishlistSheet: View {
         case .idle:
             return
         case let .isbn(isbn):
+            resultsVia = WishlistsFlow.foundVia(search, scanned: scannedCode)
             library = .loading
             online = .loading
             await lookUp(isbn)
         case let .text(text):
+            resultsVia = .titleSearch
             library = .loading
             online = .loading
             async let books: Void = searchLibrary(text)

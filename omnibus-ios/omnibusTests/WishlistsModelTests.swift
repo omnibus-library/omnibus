@@ -31,18 +31,28 @@ let fakeReaders = WishlistReaders(
 
 /// Holds a fake's answer until the test lets it go.
 actor Gate {
-    private var continuation: CheckedContinuation<Void, Never>?
+    private var continuations: [CheckedContinuation<Void, Never>] = []
     private var isOpen = false
 
     func wait() async {
         if isOpen { return }
-        await withCheckedContinuation { continuation = $0 }
+        await withCheckedContinuation { continuations.append($0) }
     }
 
     func open() {
         isOpen = true
-        continuation?.resume()
-        continuation = nil
+        continuations.forEach { $0.resume() }
+        continuations = []
+    }
+}
+
+/// Numbers a fake's calls so it can answer the first differently from the rest.
+actor CallCounter {
+    private var count = 0
+
+    func next() -> Int {
+        count += 1
+        return count
     }
 }
 
@@ -70,6 +80,9 @@ actor FakeWishlist {
     var resolved: [ExternalBookMeta] = []
     var resolveOutcome: ScanOutcome = .unresolved
     var addScannedResult: Result<Void, Error> = .success(())
+    var entryResult: Result<Void, Error> = .success(())
+    var addScannedGate: Gate?
+    var addScannedStarted: Gate?
 
     init(_ list: [WishlistBook]) {
         self.list = list
@@ -81,6 +94,8 @@ actor FakeWishlist {
     func alreadyListed(_ uuid: String) { listed.insert(uuid) }
     func resolveTo(_ outcome: ScanOutcome) { resolveOutcome = outcome }
     func failAddScanned() { addScannedResult = .failure(FakeFailure()) }
+    func failEntry() { entryResult = .failure(FakeFailure()) }
+    func holdAddScanned(started: Gate, until gate: Gate) { addScannedStarted = started; addScannedGate = gate }
     func holdRemoves(started: Gate, until gate: Gate) { removeStarted = started; removeGate = gate }
 
     nonisolated var api: WishlistsAPI {
@@ -89,7 +104,7 @@ actor FakeWishlist {
             books: { _ in await self.list },
             remove: { try await self.remove($0) },
             add: { try await self.add($0) },
-            entry: { await self.entry($0) },
+            entry: { try await self.entry($0) },
             addScanned: { try await self.addScanned($0) },
             resolveMeta: { await self.resolveMeta($0) }
         )
@@ -106,8 +121,9 @@ actor FakeWishlist {
         return result
     }
 
-    private func entry(_ uuid: String) -> WishlistEntry? {
-        listed.contains(uuid)
+    private func entry(_ uuid: String) throws -> WishlistEntry? {
+        try entryResult.get()
+        return listed.contains(uuid)
             ? WishlistEntry(id: 1, userID: 1, bookUUID: uuid, addedAt: 1, source: .detail) : nil
     }
 
@@ -116,7 +132,11 @@ actor FakeWishlist {
         return resolveOutcome
     }
 
-    private func addScanned(_ request: WishlistAddRequest) throws -> String {
+    private func addScanned(_ request: WishlistAddRequest) async throws -> String {
+        if let addScannedStarted, let addScannedGate {
+            await addScannedStarted.open()
+            await addScannedGate.wait()
+        }
         try addScannedResult.get()
         scanned.append(request)
         let uuid = request.bookUUID ?? "minted"
@@ -187,6 +207,26 @@ struct WishlistsModelTests {
         #expect(model.books == [wishlistBook("all")])
     }
 
+    @Test func anOlderLoadFinishingAfterANewerOneIsIgnored() async {
+        let started = Gate()
+        let release = Gate()
+        let calls = CallCounter()
+        let model = WishlistsModel(
+            api: fakeAPI(books: { _ in
+                guard await calls.next() == 1 else { return [wishlistBook("new")] }
+                await started.open()
+                await release.wait()
+                return [wishlistBook("old")]
+            })
+        )
+        let older = Task { await model.load() }
+        await started.wait()
+        await model.load()
+        await release.open()
+        await older.value
+        #expect(model.books == [wishlistBook("new")])
+    }
+
     @Test func removeDropsTheRowAndOffersUndo() async {
         let fake = FakeWishlist([wishlistBook("a", title: "A"), wishlistBook("b", title: "B")])
         let model = WishlistsModel(api: fake.api)
@@ -228,9 +268,12 @@ struct WishlistsModelTests {
         await model.load()
         let first = Task { await model.remove(wishlistBook("a", title: "A")) }
         await started.wait()
-        await model.remove(wishlistBook("a", title: "A"))
+        let second = Task { await model.remove(wishlistBook("a", title: "A")) }
+        // Without the guard the second remove parks on the gate too; release once it has.
+        try? await Task.sleep(for: .milliseconds(100))
         await release.open()
         await first.value
+        await second.value
         #expect(await fake.removed == ["a"])
     }
 
@@ -317,6 +360,63 @@ struct WishlistsModelTests {
         #expect(failure == nil)
         #expect(model.toast?.text == "Dune is already on your wishlist")
         #expect(model.toast?.undo == nil)
+        #expect(await fake.scanned.isEmpty)
+    }
+
+    @Test func addSaysAlreadyOnYourWishlistWhenTheLookupFoundItThereWithoutReadingTheEntry() async {
+        let fake = FakeWishlist([])
+        let model = WishlistsModel(api: fake.api)
+        let failure = await model.add(.online(duneRecord, lookup: .onWishlist(book: dune)), via: .isbnEntry)
+        #expect(failure == nil)
+        #expect(model.toast?.text == "Dune is already on your wishlist")
+        #expect(await fake.scanned.isEmpty)
+    }
+
+    @Test func addStopsAndReturnsTheErrorWhenTheEntryReadFails() async {
+        let fake = FakeWishlist([])
+        await fake.failEntry()
+        let model = WishlistsModel(api: fake.api)
+        let failure = await model.add(.library(dune), via: .titleSearch)
+        #expect(failure == "Couldn\u{2019}t add Dune: boom")
+        #expect(await fake.scanned.isEmpty)
+        #expect(model.toast == nil)
+    }
+
+    @Test func aSecondAddWhileOneIsInFlightIsRefusedWithoutWriting() async {
+        let fake = FakeWishlist([])
+        let started = Gate()
+        let release = Gate()
+        await fake.holdAddScanned(started: started, until: release)
+        let model = WishlistsModel(api: fake.api)
+        let first = Task { await model.add(.library(dune), via: .titleSearch) }
+        await started.wait()
+        let second = await model.add(.library(dune), via: .titleSearch)
+        await release.open()
+        _ = await first.value
+        #expect(second == "Still adding the last book.")
+        #expect(await fake.scanned.count == 1)
+    }
+
+    @Test func addClosesTheSheetWithoutWaitingForTheReloadItStarts() async {
+        let reloadStarted = Gate()
+        let release = Gate()
+        let calls = CallCounter()
+        let model = WishlistsModel(
+            api: fakeAPI(books: { _ in
+                if await calls.next() > 1 {
+                    await reloadStarted.open()
+                    await release.wait()
+                }
+                return []
+            })
+        )
+        await model.load()
+        let adding = Task { await model.add(.library(dune), via: .titleSearch) }
+        await reloadStarted.wait()
+        // The add is still waiting on the reload if it hasn't let go of the sheet.
+        #expect(!model.isAdding)
+        await release.open()
+        #expect(await adding.value == nil)
     }
 
     @Test func addOffersUndoThatTakesTheNewEntryOff() async throws {
@@ -324,6 +424,8 @@ struct WishlistsModelTests {
         let model = WishlistsModel(api: fake.api)
         await model.load()
         _ = await model.add(.library(dune), via: .titleSearch)
+        // The reload add starts is unawaited; wait for it to land.
+        for _ in 0..<200 where model.books?.isEmpty != false { try? await Task.sleep(for: .milliseconds(10)) }
         #expect(model.toast?.text == "Added Dune to your wishlist")
         #expect(model.toast?.undo == .remove(uuid: "lib", title: "Dune"))
         #expect(model.books?.map(\.id) == ["lib"])

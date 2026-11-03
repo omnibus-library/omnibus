@@ -71,6 +71,8 @@ final class WishlistsModel {
     var toast: WishlistToast?
     /// Books with a remove in flight, so a second tap is ignored.
     private var removing: Set<String> = []
+    /// Numbers each load so only the newest one's answer is applied.
+    private var loadGeneration = 0
 
     private let api: WishlistsAPI
 
@@ -82,17 +84,19 @@ final class WishlistsModel {
     /// leaves the picker at Everyone and You rather than failing the screen.
     func load() async {
         let requested = scope
+        loadGeneration += 1
+        let generation = loadGeneration
         async let fetchedReaders = try? api.readers()
         do {
             let list = try await api.books(requested)
-            if requested == scope {
+            if requested == scope, generation == loadGeneration {
                 books = list
                 failure = nil
             }
         } catch {
-            if requested == scope { failure = Self.message(error) }
+            if requested == scope, generation == loadGeneration { failure = Self.message(error) }
         }
-        if let fetchedReaders = await fetchedReaders { readers = fetchedReaders }
+        if let fetchedReaders = await fetchedReaders, generation == loadGeneration { readers = fetchedReaders }
     }
 
     func select(_ newScope: WishlistScope) async {
@@ -149,15 +153,18 @@ final class WishlistsModel {
         defer { isAdding = false }
         let title = hit.title
         do {
-            let request = try await request(for: hit, source: CheckInFlow.wishlistSource(via))
+            let (request, onWishlist) = try await request(for: hit, via: via)
             // Undo must never take off an entry that predates this add, and a failed read stops the add.
-            var alreadyListed = false
-            if let uuid = request.bookUUID { alreadyListed = try await api.entry(uuid) != nil }
+            var alreadyListed = onWishlist
+            if !alreadyListed, let uuid = request.bookUUID { alreadyListed = try await api.entry(uuid) != nil }
+            if alreadyListed {
+                toast = WishlistToast(text: "\(title) is already on your wishlist")
+                return nil
+            }
             let uuid = try await api.addScanned(request)
-            toast = alreadyListed
-                ? WishlistToast(text: "\(title) is already on your wishlist")
-                : WishlistToast(text: "Added \(title) to your wishlist", undo: .remove(uuid: uuid, title: title))
-            await load()
+            toast = WishlistToast(text: "Added \(title) to your wishlist", undo: .remove(uuid: uuid, title: title))
+            // Unawaited so the sheet closes now, not behind a toast that is already counting down.
+            Task { await load() }
             return nil
         } catch {
             return "Couldn\u{2019}t add \(title): \(Self.message(error))"
@@ -165,18 +172,23 @@ final class WishlistsModel {
     }
 
     /// A provider's record that matches a library book goes against that book;
-    /// only one that matches none is made into a new one.
-    private func request(for hit: WishlistHit, source: WishlistSource) async throws -> WishlistAddRequest {
+    /// only one that matches none is made into a new one. `onWishlist` is true
+    /// when the lookup itself says the book is already on your list.
+    private func request(
+        for hit: WishlistHit, via: FoundVia
+    ) async throws -> (request: WishlistAddRequest, onWishlist: Bool) {
         switch hit {
         case let .library(book):
-            return WishlistAddRequest(bookUUID: book.uuid, meta: nil, source: source)
+            return (WishlistAddRequest(bookUUID: book.uuid, meta: nil, source: CheckInFlow.wishlistSource(via)), false)
         case let .online(meta, lookup):
             let outcome: ScanOutcome
             if let lookup { outcome = lookup } else { outcome = try await api.resolveMeta(meta) }
-            if let found = WishlistsFlow.existingBook(outcome) {
-                return WishlistAddRequest(bookUUID: found.uuid, meta: nil, source: source)
+            if let found = WishlistsFlow.isbnResults(outcome).library.first {
+                let request = WishlistAddRequest(bookUUID: found.uuid, meta: nil, source: CheckInFlow.wishlistSource(via))
+                if case .onWishlist = outcome { return (request, true) }
+                return (request, false)
             }
-            return WishlistAddRequest(bookUUID: nil, meta: meta, source: source)
+            return (CheckInFlow.wishlistRequest(meta: meta, foundVia: via), false)
         }
     }
 
