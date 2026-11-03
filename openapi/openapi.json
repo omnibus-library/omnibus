@@ -1117,7 +1117,7 @@
           "Admin"
         ],
         "summary": "Set a user's permissions",
-        "description": "Replaces all four permission flags. Needs an admin account.",
+        "description": "Replaces all five permission flags. Needs an admin account.",
         "operationId": "admin_set_user_permissions",
         "parameters": [
           {

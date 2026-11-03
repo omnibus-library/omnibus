@@ -57,7 +57,7 @@ export async function createUser(request: CreateUserRequest) {
   await send(getAdminCreateUserUrl(), "POST", request);
 }
 
-/** Replaces an account's four permission flags. */
+/** Replaces an account's five permission flags. */
 export async function setUserPermissions(
   id: number,
   permissions: UserPermissions,
