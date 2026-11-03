@@ -52,8 +52,12 @@ mod post_swap_request {
         let body: BookRequest = body_json(res).await;
         assert_eq!(body.state, RequestState::Choose);
         assert_eq!(body.note.as_deref(), Some("Swapped for another version"));
-        let titles: Vec<&str> = body.versions.iter().map(|v| v.title.as_str()).collect();
-        assert_eq!(titles, ["other"]);
+        let seen: Vec<(&str, bool)> = body
+            .versions
+            .iter()
+            .map(|v| (v.title.as_str(), v.rejected))
+            .collect();
+        assert_eq!(seen, [("other", false), ("picked", true)]);
         let woken = tokio::time::timeout(Duration::from_secs(1), state.request_kick().notified());
         assert!(woken.await.is_ok());
     }
@@ -90,6 +94,37 @@ mod post_swap_request {
     }
 
     #[tokio::test]
+    async fn answers_429_and_changes_nothing_when_it_needs_a_search_the_reader_may_not_start() {
+        let (app, state, pool) = fixture_book_requests(true).await;
+        let (ada, token) = requester(&pool, "ada").await;
+        let (id, _) = on_its_way(&pool, ada).await;
+        sqlx::query("UPDATE book_request_results SET rejected = 1 WHERE title = 'other'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        for _ in 0..10 {
+            state.request_starts().record(ada);
+        }
+
+        let res = send(&app, "POST", &swap_uri(id), Some(&token), None).await;
+
+        assert_eq!(res.status(), StatusCode::TOO_MANY_REQUESTS);
+        let row = store::get(&pool, id).await.unwrap().unwrap();
+        assert_eq!(row.state, RequestState::OnItsWay);
+    }
+
+    #[tokio::test]
+    async fn answers_500_when_the_database_fails() {
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let (_, token) = requester(&pool, "ada").await;
+        pool.close().await;
+
+        let res = send(&app, "POST", &swap_uri(1), Some(&token), None).await;
+
+        assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test]
     async fn answers_404_for_an_unknown_request() {
         let (app, _, pool) = fixture_book_requests(true).await;
         let (_, token) = requester(&pool, "ada").await;
@@ -115,7 +150,7 @@ mod post_retry_request_when_stopped_moving {
         .execute(&pool)
         .await
         .unwrap();
-        for _ in 0..9 {
+        for _ in 0..10 {
             state.request_starts().record(ada);
         }
 
@@ -132,6 +167,5 @@ mod post_retry_request_when_stopped_moving {
         let body: BookRequest = body_json(res).await;
         assert_eq!(body.state, RequestState::Choose);
         assert_eq!(body.stuck_reason, None);
-        assert!(state.request_starts().has_room(ada));
     }
 }

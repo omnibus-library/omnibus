@@ -71,6 +71,17 @@ mod post_cancel_request {
     }
 
     #[tokio::test]
+    async fn answers_500_when_the_database_fails() {
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let (_, token) = requester(&pool, "ada").await;
+        pool.close().await;
+
+        let res = send(&app, "POST", &cancel_uri(1), Some(&token), None).await;
+
+        assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test]
     async fn answers_404_for_an_unknown_request() {
         let (app, _, pool) = fixture_book_requests(true).await;
         let (_, token) = requester(&pool, "ada").await;
@@ -148,5 +159,46 @@ mod delete_cancel_request {
         let res = send(&app, "DELETE", &cancel_uri(id), Some(&grace), None).await;
 
         assert_eq!(res.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn charges_the_new_search_to_the_start_cap() {
+        let (app, state, pool) = fixture_book_requests(true).await;
+        let (ada, token) = requester(&pool, "ada").await;
+        let uuid = seed_book(&pool, "Dracula").await;
+        let id = seed_request(&pool, ada, &uuid).await;
+        send(&app, "POST", &cancel_uri(id), Some(&token), None).await;
+        for _ in 0..9 {
+            state.request_starts().record(ada);
+        }
+
+        send(&app, "DELETE", &cancel_uri(id), Some(&token), None).await;
+
+        assert!(!state.request_starts().has_room(ada));
+    }
+
+    #[tokio::test]
+    async fn answers_409_once_the_reader_started_another_request_for_the_book() {
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let (ada, token) = requester(&pool, "ada").await;
+        let uuid = seed_book(&pool, "Dracula").await;
+        let id = seed_request(&pool, ada, &uuid).await;
+        send(&app, "POST", &cancel_uri(id), Some(&token), None).await;
+        seed_request(&pool, ada, &uuid).await;
+
+        let res = send(&app, "DELETE", &cancel_uri(id), Some(&token), None).await;
+
+        assert_eq!(res.status(), StatusCode::CONFLICT);
+    }
+
+    #[tokio::test]
+    async fn answers_500_when_the_database_fails() {
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let (_, token) = requester(&pool, "ada").await;
+        pool.close().await;
+
+        let res = send(&app, "DELETE", &cancel_uri(1), Some(&token), None).await;
+
+        assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
     }
 }

@@ -28,12 +28,6 @@ impl Patience {
         budget: Duration::from_secs(10 * 60),
         first_wait: Duration::from_secs(5),
     };
-
-    /// No retry: the first failure ends the search.
-    pub const NONE: Patience = Patience {
-        budget: Duration::ZERO,
-        first_wait: Duration::ZERO,
-    };
 }
 
 const MAX_WAIT: Duration = Duration::from_secs(60);

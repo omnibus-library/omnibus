@@ -144,6 +144,9 @@ pub struct RequestVersion {
     pub indexer: Option<String>,
     /// Whether this is the version Omnibus suggests. At most one version has it.
     pub best_match: bool,
+    /// Whether this version was picked and given up. It is shown as one that did not work
+    /// and cannot be chosen again.
+    pub rejected: bool,
 }
 
 /// A request and, once the search has run, the versions it found.

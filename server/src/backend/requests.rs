@@ -21,7 +21,9 @@ use omnibus_db::{
         store::{self, RequestError, RequestRow},
     },
 };
-use omnibus_shared::{BookRequest, ChooseVersion, RequestKind, RequestState, StartRequest};
+use omnibus_shared::{
+    BookRequest, ChooseVersion, RequestKind, RequestState, StartRequest, StuckReason,
+};
 
 use crate::auth::AuthUser;
 
@@ -179,6 +181,15 @@ fn spawn_search(state: &AppState, id: i64) {
     });
 }
 
+/// What the history says of a version given up for another.
+const SWAPPED: &str = "Swapped for another version";
+
+/// Search again for request `id`, charged to `user` like a start.
+fn search_again(state: &AppState, user: i64, id: i64) {
+    state.request_starts().record(user);
+    spawn_search(state, id);
+}
+
 fn too_many(what: &str) -> Response {
     (StatusCode::TOO_MANY_REQUESTS, what.to_string()).into_response()
 }
@@ -230,8 +241,7 @@ pub(super) async fn post_start_request(
         Err(e) => return internal("start request", e),
     };
     let status = if started.created {
-        state.request_starts().record(user.id);
-        spawn_search(&state, started.request.id);
+        search_again(&state, user.id, started.request.id);
         StatusCode::CREATED
     } else {
         StatusCode::OK
@@ -331,17 +341,17 @@ pub(super) async fn post_retry_request(
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> Response {
-    if let Err(res) = own_request(&state, &user, id).await {
-        return res;
-    }
-    if !state.request_starts().has_room(user.id) {
+    let row = match own_request(&state, &user, id).await {
+        Ok(row) => row,
+        Err(res) => return res,
+    };
+    let stopped =
+        row.state == RequestState::Stuck && row.stuck_reason == Some(StuckReason::StoppedMoving);
+    if !stopped && !state.request_starts().has_room(user.id) {
         return too_many("you started too many requests; try again in a few minutes");
     }
     match store::restart(state.pool(), id, store::unix_now()).await {
-        Ok(RequestState::Looking) => {
-            state.request_starts().record(user.id);
-            spawn_search(&state, id);
-        }
+        Ok(RequestState::Looking) => search_again(&state, user.id, id),
         Ok(_) => state.request_kick().notify_one(),
         Err(RequestError::WrongState) => {
             return (StatusCode::CONFLICT, "this request can't be searched again").into_response();
@@ -355,8 +365,9 @@ pub(super) async fn post_retry_request(
 ///
 /// Gives up the version that is downloading (or has stopped) for good and goes back to
 /// `choose` among the other versions found; the download is removed a moment later. The
-/// request carries a `note` saying so. With no other version left it searches again and is
-/// `looking`. Only a request that is `on_its_way` and not fully downloaded, or stuck on a
+/// request carries a `note` saying so, and the version is listed with `rejected` set. With no
+/// other version left it searches again and is `looking`, which counts as a start toward the
+/// rate limit. Only a request that is `on_its_way` and not fully downloaded, or stuck on a
 /// stopped download, can be swapped. Only the reader who made the request, or an admin, can
 /// do this.
 #[utoipa::path(
@@ -371,6 +382,7 @@ pub(super) async fn post_retry_request(
         (status = 403, description = "Your account can't make requests, or the request is another reader's."),
         (status = 404, description = "Book requests are off on this server, or there is no such request."),
         (status = 409, description = "The request isn't downloading, or its download is complete."),
+        (status = 429, description = "It would need a new search and you started too many requests lately."),
     ),
 )]
 pub(super) async fn post_swap_request(
@@ -381,10 +393,18 @@ pub(super) async fn post_swap_request(
     if let Err(res) = own_request(&state, &user, id).await {
         return res;
     }
-    match store::swap(state.pool(), id, store::unix_now()).await {
-        Ok(now_in) => {
-            if now_in == RequestState::Looking {
-                spawn_search(&state, id);
+    // With no other version to choose from, the swap searches again, which counts as a start.
+    let others = match store::versions(state.pool(), id).await {
+        Ok(versions) => versions.iter().filter(|v| !v.rejected).count(),
+        Err(e) => return internal("read request versions", e),
+    };
+    if others <= 1 && !state.request_starts().has_room(user.id) {
+        return too_many("you started too many requests; try again in a few minutes");
+    }
+    match store::swap(state.pool(), id, store::unix_now(), Some(SWAPPED)).await {
+        Ok(swapped) => {
+            if swapped.state == RequestState::Looking {
+                search_again(&state, user.id, id);
             }
             state.request_kick().notify_one();
             answer(&state, id, &user).await
@@ -483,8 +503,10 @@ pub(super) async fn post_cancel_request(
 /// Undo a cancel
 ///
 /// Takes a cancel back while its grace lasts (until `cancel_at`), putting the request in the
-/// state it was cancelled from. After that the download is stopped and cannot be undone. Only
-/// the reader who made the request, or an admin, can do this.
+/// state it was cancelled from; a request cancelled while looking searches again, which counts
+/// as a start. After the grace the download is stopped and cannot be undone, nor can a cancel
+/// once you started another request for the same book. Only the reader who made the request, or
+/// an admin, can do this.
 #[utoipa::path(
     delete,
     path = "/api/requests/{id}/cancel",
@@ -496,7 +518,8 @@ pub(super) async fn post_cancel_request(
         (status = 401, description = "You aren't signed in."),
         (status = 403, description = "Your account can't make requests, or the request is another reader's."),
         (status = 404, description = "Book requests are off on this server, or there is no such request."),
-        (status = 409, description = "The request isn't cancelled, or the undo grace has ended."),
+        (status = 409, description = "The request isn't cancelled, the undo grace has ended, or you have started another request for this book."),
+        (status = 429, description = "You have too many requests in progress to restore this one."),
     ),
 )]
 pub(super) async fn delete_cancel_request(
@@ -507,17 +530,18 @@ pub(super) async fn delete_cancel_request(
     if let Err(res) = own_request(&state, &user, id).await {
         return res;
     }
-    match store::undo_cancel(state.pool(), id, store::unix_now()).await {
+    match store::undo_cancel(state.pool(), id, store::unix_now(), MAX_LIVE).await {
         Ok(restored) => {
             // A search cut short by the cancel left nothing behind, so look again.
             if restored.state == RequestState::Looking {
-                spawn_search(&state, id);
+                search_again(&state, user.id, id);
             }
             answer(&state, id, &user).await
         }
         Err(RequestError::WrongState) => {
             (StatusCode::CONFLICT, "this cancel can't be undone").into_response()
         }
+        Err(RequestError::TooManyLive) => too_many("you have too many requests in progress"),
         Err(e) => internal("undo cancel", e),
     }
 }

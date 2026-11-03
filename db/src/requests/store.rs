@@ -11,10 +11,14 @@ use super::rank::Ranked;
 /// A request live for its reader: searching, waiting on a pick, picked or downloading.
 const LIVE_STATES: &str = "('looking', 'choose', 'chosen', 'on_its_way')";
 
+/// A request whose picked version is still downloading. A finished download stays
+/// `on_its_way` with `progress = 1` for the import to pick up.
+const DOWNLOADING: &str = "(state = 'on_its_way' AND (progress IS NULL OR progress < 1))";
+
 const NOW: &str = "strftime('%s', 'now')";
 
 const COLUMNS: &str = "id, book_uuid, user_id, kind, state, stuck_reason, stuck_detail, \
-                       chosen_result_id, client_tag, progress, moved_at, cancel_at, cancelled_by, \
+                       chosen_result_id, client_tag, remove_tag, remove_since, progress, moved_at, cancel_at, cancelled_by, \
                        prior_state, note, created_at, updated_at";
 
 /// Why a request could not be recorded or changed.
@@ -44,8 +48,12 @@ pub struct RequestRow {
     pub stuck_reason: Option<StuckReason>,
     pub stuck_detail: Option<String>,
     pub chosen_result_id: Option<i64>,
-    /// The name of the download in the client; never sent to a reader.
+    /// The name of the live download in the client; never sent to a reader.
     pub client_tag: Option<String>,
+    /// A download to take out of the client, and `remove_since` when that began (Unix
+    /// seconds; `None` once the client has shown it).
+    pub remove_tag: Option<String>,
+    pub remove_since: Option<i64>,
     /// How much of the download is done, 0 to 1.
     pub progress: Option<f64>,
     /// When the download last gained bytes, in Unix seconds.
@@ -100,6 +108,8 @@ fn row_to_request(row: &SqliteRow) -> Result<RequestRow, sqlx::Error> {
         stuck_detail: row.try_get("stuck_detail")?,
         chosen_result_id: row.try_get("chosen_result_id")?,
         client_tag: row.try_get("client_tag")?,
+        remove_tag: row.try_get("remove_tag")?,
+        remove_since: row.try_get("remove_since")?,
         progress: row.try_get("progress")?,
         moved_at: row.try_get("moved_at")?,
         cancel_at: row.try_get("cancel_at")?,
@@ -191,15 +201,16 @@ pub async fn list_for_book(
         .collect::<Result<Vec<_>, sqlx::Error>>()?)
 }
 
-/// The versions worth showing for a request, best first. Rejected ones are kept in the
-/// table but never returned.
+/// The versions worth showing for a request, best first: the ones to choose from, then the
+/// ones that were picked and given up (`rejected`). Versions the ranking dropped are never
+/// returned.
 pub async fn versions(
     pool: &SqlitePool,
     request_id: i64,
 ) -> Result<Vec<RequestVersion>, RequestError> {
     let rows = sqlx::query(
-        "SELECT id, title, size_bytes, format, indexer, best_match FROM book_request_results
-         WHERE request_id = ? AND rejected = 0 ORDER BY score DESC, id",
+        "SELECT id, title, size_bytes, format, indexer, best_match, tried FROM book_request_results
+         WHERE request_id = ? AND (rejected = 0 OR tried = 1) ORDER BY tried, score DESC, id",
     )
     .bind(request_id)
     .fetch_all(pool)
@@ -214,18 +225,25 @@ pub async fn versions(
                 format: r.try_get("format")?,
                 indexer: r.try_get("indexer")?,
                 best_match: r.try_get::<i64, _>("best_match")? != 0,
+                rejected: r.try_get::<i64, _>("tried")? != 0,
             })
         })
         .collect::<Result<Vec<_>, sqlx::Error>>()?)
 }
 
 /// Record how a search ended, but only for a request still `looking`: one that was
-/// restarted, picked or answered meanwhile keeps its state.
+/// restarted, picked or answered meanwhile keeps its state. Versions given up earlier stay
+/// in the table and are not offered again; a search that finds nothing else ends `not_found`.
 pub async fn finish_search(
     pool: &SqlitePool,
     id: i64,
     outcome: SearchOutcome,
 ) -> Result<(), RequestError> {
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+    let outcome = match outcome {
+        SearchOutcome::Found(ranked) => without_given_up(&mut tx, id, ranked).await?,
+        stuck => stuck,
+    };
     let (state, reason, detail) = match &outcome {
         SearchOutcome::Found(_) => (RequestState::Choose, None, None),
         SearchOutcome::Stuck { reason, detail } => (
@@ -234,7 +252,6 @@ pub async fn finish_search(
             detail.as_deref(),
         ),
     };
-    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     let moved = sqlx::query(&format!(
         "UPDATE book_requests SET state = ?, stuck_reason = ?, stuck_detail = ?, updated_at = {NOW}
          WHERE id = ? AND state = 'looking'"
@@ -250,7 +267,7 @@ pub async fn finish_search(
         return Ok(());
     }
     if let SearchOutcome::Found(ranked) = &outcome {
-        sqlx::query("DELETE FROM book_request_results WHERE request_id = ?")
+        sqlx::query("DELETE FROM book_request_results WHERE request_id = ? AND tried = 0")
             .bind(id)
             .execute(&mut *tx)
             .await?;
@@ -260,6 +277,29 @@ pub async fn finish_search(
     }
     tx.commit().await?;
     Ok(())
+}
+
+/// `ranked` without the releases this request already tried and gave up; `not_found` when none that
+/// was worth showing is left.
+async fn without_given_up(
+    tx: &mut sqlx::SqliteConnection,
+    id: i64,
+    mut ranked: Vec<Ranked>,
+) -> Result<SearchOutcome, sqlx::Error> {
+    let given_up: Vec<String> = sqlx::query_scalar(
+        "SELECT guid FROM book_request_results WHERE request_id = ? AND tried = 1",
+    )
+    .bind(id)
+    .fetch_all(tx)
+    .await?;
+    ranked.retain(|r| !given_up.contains(&r.release.guid));
+    if ranked.iter().all(|r| r.rejected) {
+        return Ok(SearchOutcome::Stuck {
+            reason: StuckReason::NotFound,
+            detail: None,
+        });
+    }
+    Ok(SearchOutcome::Found(ranked))
 }
 
 async fn insert_result(
@@ -294,13 +334,20 @@ async fn insert_result(
 /// back to choosing, as [`swap`] does. [`RequestError::WrongState`] for one already waiting
 /// on a pick or picked.
 pub async fn restart(pool: &SqlitePool, id: i64, now: i64) -> Result<RequestState, RequestError> {
-    let stopped = get(pool, id).await?.is_some_and(|r| {
-        r.state == RequestState::Stuck && r.stuck_reason == Some(StuckReason::StoppedMoving)
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+    let stuck: Option<(String, Option<String>)> =
+        sqlx::query_as("SELECT state, stuck_reason FROM book_requests WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&mut *tx)
+            .await?;
+    let stopped = stuck.is_some_and(|(state, reason)| {
+        state == "stuck" && reason.as_deref() == Some(StuckReason::StoppedMoving.as_str())
     });
     if stopped {
-        return swap(pool, id, now).await;
+        let row = change::swap_in(&mut tx, id, now, None).await?;
+        tx.commit().await?;
+        return Ok(row.state);
     }
-    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     let moved = sqlx::query(&format!(
         "UPDATE book_requests
          SET state = 'looking', stuck_reason = NULL, stuck_detail = NULL, updated_at = {NOW}
@@ -319,47 +366,6 @@ pub async fn restart(pool: &SqlitePool, id: i64, now: i64) -> Result<RequestStat
         .await?;
     tx.commit().await?;
     Ok(RequestState::Looking)
-}
-
-/// Give up the picked version of a downloading or stopped request: it is never offered again,
-/// and the request goes back to choosing among the others (to `looking` when none is left,
-/// which the caller then searches for). The client is told to drop the download at `now`.
-/// [`RequestError::WrongState`] for a request not downloading or stopped.
-pub async fn swap(pool: &SqlitePool, id: i64, now: i64) -> Result<RequestState, RequestError> {
-    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
-    let picked: Option<Option<i64>> = sqlx::query_scalar(
-        "SELECT chosen_result_id FROM book_requests
-         WHERE id = ? AND ((state = 'on_its_way' AND (progress IS NULL OR progress < 1))
-                           OR (state = 'stuck' AND stuck_reason = 'stopped_moving'))",
-    )
-    .bind(id)
-    .fetch_optional(&mut *tx)
-    .await?;
-    let Some(picked) = picked else {
-        return Err(RequestError::WrongState);
-    };
-    sqlx::query("UPDATE book_request_results SET rejected = 1 WHERE id = ?")
-        .bind(picked)
-        .execute(&mut *tx)
-        .await?;
-    let state: String = sqlx::query_scalar(&format!(
-        "UPDATE book_requests
-         SET state = CASE WHEN EXISTS (SELECT 1 FROM book_request_results
-                                       WHERE request_id = ?1 AND rejected = 0)
-                          THEN 'choose' ELSE 'looking' END,
-             chosen_result_id = NULL, progress = NULL, moved_at = NULL, cancel_at = ?2,
-             stuck_reason = NULL, stuck_detail = NULL, note = 'Swapped for another version',
-             updated_at = {NOW}
-         WHERE id = ?1 RETURNING state"
-    ))
-    .bind(id)
-    .bind(now)
-    .fetch_one(&mut *tx)
-    .await?;
-    tx.commit().await?;
-    let decoded = RequestState::from_db(&state)
-        .ok_or_else(|| sqlx::Error::Decode(format!("book_requests.state holds {state:?}").into()));
-    Ok(decoded?)
 }
 
 /// Pick `result_id` for request `id`. The version must be a kept one of this request, and the
@@ -387,198 +393,15 @@ pub async fn choose(pool: &SqlitePool, id: i64, result_id: i64) -> Result<(), Re
     }
 }
 
-/// How long after a cancel the download keeps going, so Undo can take it back.
-pub const CANCEL_GRACE_SECS: i64 = 8;
+mod change;
+mod download;
 
-/// Cancel request `id` for user `by` at `now`: it reads `cancelled` at once, and the
-/// download is removed once [`CANCEL_GRACE_SECS`] pass. [`RequestError::WrongState`] unless the
-/// request is still going: not stuck, cancelled, fully downloaded, or waiting on the
-/// removal of an earlier download. One statement, so a double click cancels once.
-pub async fn cancel(pool: &SqlitePool, id: i64, by: i64, now: i64) -> Result<(), RequestError> {
-    let moved = sqlx::query(&format!(
-        "UPDATE book_requests
-         SET prior_state = state, state = 'cancelled', cancelled_by = ?, cancel_at = ?,
-             updated_at = {NOW}
-         WHERE id = ? AND cancel_at IS NULL
-           AND (state IN ('looking', 'choose', 'chosen')
-                OR (state = 'on_its_way' AND (progress IS NULL OR progress < 1)))"
-    ))
-    .bind(by)
-    .bind(now + CANCEL_GRACE_SECS)
-    .bind(id)
-    .execute(pool)
-    .await?
-    .rows_affected();
-    if moved == 0 {
-        return Err(RequestError::WrongState);
-    }
-    Ok(())
-}
-
-/// Take back a cancel while its grace lasts, returning the restored request.
-/// [`RequestError::WrongState`] once the grace has ended or for a request not cancelled.
-pub async fn undo_cancel(pool: &SqlitePool, id: i64, now: i64) -> Result<RequestRow, RequestError> {
-    let row = sqlx::query(&format!(
-        "UPDATE book_requests
-         SET state = prior_state, prior_state = NULL, cancelled_by = NULL, cancel_at = NULL,
-             updated_at = {NOW}
-         WHERE id = ? AND state = 'cancelled' AND cancel_at > ? AND prior_state IS NOT NULL
-         RETURNING {COLUMNS}"
-    ))
-    .bind(id)
-    .bind(now)
-    .fetch_optional(pool)
-    .await?;
-    match row {
-        Some(row) => Ok(row_to_request(&row)?),
-        None => Err(RequestError::WrongState),
-    }
-}
-
-/// The tag a request's download carries in the client, so a restart finds it again.
-fn client_tag(id: i64) -> String {
-    format!("omnibus-{id}")
-}
-
-/// The Unix time now, as the state changes below take it.
-pub fn unix_now() -> i64 {
-    crate::auth::now_unix()
-}
-
-/// Requests whose download the client is to remove: their `cancel_at` has come.
-pub async fn due_removals(pool: &SqlitePool, now: i64) -> Result<Vec<RequestRow>, RequestError> {
-    let rows = sqlx::query(&format!(
-        "SELECT {COLUMNS} FROM book_requests WHERE cancel_at IS NOT NULL AND cancel_at <= ? ORDER BY id"
-    ))
-    .bind(now)
-    .fetch_all(pool)
-    .await?;
-    Ok(rows.iter().map(row_to_request).collect::<Result<_, _>>()?)
-}
-
-/// Forget a removal that has been carried out: the client no longer has the download.
-pub async fn finish_removal(pool: &SqlitePool, id: i64, now: i64) -> Result<(), RequestError> {
-    sqlx::query(
-        "UPDATE book_requests SET client_tag = NULL, cancel_at = NULL
-         WHERE id = ? AND cancel_at <= ?",
-    )
-    .bind(id)
-    .bind(now)
-    .execute(pool)
-    .await?;
-    Ok(())
-}
-
-/// Picked requests no download has been started for.
-pub async fn awaiting_add(pool: &SqlitePool) -> Result<Vec<RequestRow>, RequestError> {
-    let rows = sqlx::query(&format!(
-        "SELECT {COLUMNS} FROM book_requests
-         WHERE state = 'chosen' AND cancel_at IS NULL AND chosen_result_id IS NOT NULL ORDER BY id"
-    ))
-    .fetch_all(pool)
-    .await?;
-    Ok(rows.iter().map(row_to_request).collect::<Result<_, _>>()?)
-}
-
-/// Mark request `id`'s download with its tag, then return `(tag, link)` for the client. The tag
-/// is written before the client is called, so a cancel that lands meanwhile still finds the
-/// download to remove. `None` once the request is no longer waiting to be added. The link can
-/// carry an indexer key: hand it to the client and nowhere else.
-pub async fn begin_download(
-    pool: &SqlitePool,
-    id: i64,
-) -> Result<Option<(String, String)>, RequestError> {
-    let tag = client_tag(id);
-    let moved = sqlx::query(
-        "UPDATE book_requests SET client_tag = ?
-         WHERE id = ? AND state = 'chosen' AND cancel_at IS NULL",
-    )
-    .bind(&tag)
-    .bind(id)
-    .execute(pool)
-    .await?
-    .rows_affected();
-    if moved == 0 {
-        return Ok(None);
-    }
-    let link: Option<String> = sqlx::query_scalar(
-        "SELECT r.download_url FROM book_request_results r
-         JOIN book_requests q ON q.chosen_result_id = r.id WHERE q.id = ?",
-    )
-    .bind(id)
-    .fetch_optional(pool)
-    .await?;
-    Ok(link.map(|link| (tag, link)))
-}
-
-/// Move a picked request to `on_its_way` once its download is with the client.
-pub async fn mark_on_its_way(pool: &SqlitePool, id: i64, now: i64) -> Result<(), RequestError> {
-    sqlx::query(&format!(
-        "UPDATE book_requests SET state = 'on_its_way', moved_at = ?, updated_at = {NOW}
-         WHERE id = ? AND state = 'chosen' AND cancel_at IS NULL"
-    ))
-    .bind(now)
-    .bind(id)
-    .execute(pool)
-    .await?;
-    Ok(())
-}
-
-/// Requests on their way whose download has not finished.
-pub async fn downloading(pool: &SqlitePool) -> Result<Vec<RequestRow>, RequestError> {
-    let rows = sqlx::query(&format!(
-        "SELECT {COLUMNS} FROM book_requests
-         WHERE state = 'on_its_way' AND client_tag IS NOT NULL AND (progress IS NULL OR progress < 1)
-         ORDER BY id"
-    ))
-    .fetch_all(pool)
-    .await?;
-    Ok(rows.iter().map(row_to_request).collect::<Result<_, _>>()?)
-}
-
-/// Record how far request `id`'s download is, and when it last gained bytes.
-pub async fn record_progress(
-    pool: &SqlitePool,
-    id: i64,
-    progress: f64,
-    moved_at: i64,
-) -> Result<(), RequestError> {
-    sqlx::query(
-        "UPDATE book_requests SET progress = ?, moved_at = ? WHERE id = ? AND state = 'on_its_way'",
-    )
-    .bind(progress)
-    .bind(moved_at)
-    .bind(id)
-    .execute(pool)
-    .await?;
-    Ok(())
-}
-
-/// End a picked or downloading request as `stopped_moving`. `detail` is for admins.
-pub async fn mark_stopped(pool: &SqlitePool, id: i64, detail: &str) -> Result<(), RequestError> {
-    sqlx::query(&format!(
-        "UPDATE book_requests
-         SET state = 'stuck', stuck_reason = 'stopped_moving', stuck_detail = ?, updated_at = {NOW}
-         WHERE id = ? AND state IN ('chosen', 'on_its_way')"
-    ))
-    .bind(detail)
-    .bind(id)
-    .execute(pool)
-    .await?;
-    Ok(())
-}
-
-/// Whether the poller has anything to watch: a pick to add, a download to follow or a
-/// removal to carry out.
-pub async fn has_download_work(pool: &SqlitePool) -> Result<bool, RequestError> {
-    Ok(sqlx::query_scalar(
-        "SELECT EXISTS (SELECT 1 FROM book_requests
-         WHERE state = 'chosen' OR cancel_at IS NOT NULL
-            OR (state = 'on_its_way' AND (progress IS NULL OR progress < 1)))",
-    )
-    .fetch_one(pool)
-    .await?)
-}
+pub use change::{cancel, swap, undo_cancel, CANCEL_GRACE_SECS};
+pub use download::{
+    awaiting_add, begin_download, claim_due_cancels, downloading, finish_removal,
+    has_download_work, mark_on_its_way, mark_removal_seen, mark_stopped, pending_removals,
+    record_progress, unix_now,
+};
 
 #[cfg(test)]
 mod tests;

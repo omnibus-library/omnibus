@@ -27,6 +27,8 @@ pub enum Call {
 struct Script {
     statuses: HashMap<String, TorrentStatus>,
     unreachable: bool,
+    /// Tags whose link `add` refuses.
+    refused: Vec<String>,
     calls: Vec<Call>,
 }
 
@@ -49,6 +51,18 @@ impl StubClient {
 
     /// Give the download marked `tag` this `progress` and client `state` word.
     pub fn with_status(self, tag: &str, progress: f64, state: &str) -> Self {
+        self.appears(tag, progress, state);
+        self
+    }
+
+    /// A client that refuses to add a download marked `tag`.
+    pub fn refusing(self, tag: &str) -> Self {
+        self.script().refused.push(tag.to_string());
+        self
+    }
+
+    /// The client starts showing the download marked `tag`, as a link it fetched at last.
+    pub fn appears(&self, tag: &str, progress: f64, state: &str) {
         let status = TorrentStatus {
             hash: format!("hash-{tag}"),
             progress,
@@ -56,7 +70,6 @@ impl StubClient {
             content_path: String::new(),
         };
         self.script().statuses.insert(tag.to_string(), status);
-        self
     }
 
     /// Every call made so far, oldest first.
@@ -84,7 +97,13 @@ impl DownloadClient for StubClient {
             link: link.to_string(),
             category: category.to_string(),
             tag: tag.to_string(),
-        })
+        })?;
+        if self.script().refused.iter().any(|t| t == tag) {
+            return Err(ConnectionError::Rejected(
+                "stub refused the link".to_string(),
+            ));
+        }
+        Ok(())
     }
 
     async fn status(&self, tag: &str) -> Result<Option<TorrentStatus>, ConnectionError> {
@@ -100,7 +119,9 @@ impl DownloadClient for StubClient {
         self.record(Call::Remove {
             tag: tag.to_string(),
             delete_files,
-        })
+        })?;
+        self.script().statuses.remove(tag);
+        Ok(())
     }
 
     async fn test(&self) -> Result<(), ConnectionError> {

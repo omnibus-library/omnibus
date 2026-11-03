@@ -6420,7 +6420,7 @@
           "Requests"
         ],
         "summary": "Undo a cancel",
-        "description": "Takes a cancel back while its grace lasts (until `cancel_at`), putting the request in the\nstate it was cancelled from. After that the download is stopped and cannot be undone. Only\nthe reader who made the request, or an admin, can do this.",
+        "description": "Takes a cancel back while its grace lasts (until `cancel_at`), putting the request in the\nstate it was cancelled from; a request cancelled while looking searches again, which counts\nas a start. After the grace the download is stopped and cannot be undone, nor can a cancel\nonce you started another request for the same book. Only the reader who made the request, or\nan admin, can do this.",
         "operationId": "undo_cancel_book_request",
         "parameters": [
           {
@@ -6455,7 +6455,10 @@
             "description": "Book requests are off on this server, or there is no such request."
           },
           "409": {
-            "description": "The request isn't cancelled, or the undo grace has ended."
+            "description": "The request isn't cancelled, the undo grace has ended, or you have started another request for this book."
+          },
+          "429": {
+            "description": "You have too many requests in progress to restore this one."
           }
         }
       }
@@ -6574,7 +6577,7 @@
           "Requests"
         ],
         "summary": "Pick another version",
-        "description": "Gives up the version that is downloading (or has stopped) for good and goes back to\n`choose` among the other versions found; the download is removed a moment later. The\nrequest carries a `note` saying so. With no other version left it searches again and is\n`looking`. Only a request that is `on_its_way` and not fully downloaded, or stuck on a\nstopped download, can be swapped. Only the reader who made the request, or an admin, can\ndo this.",
+        "description": "Gives up the version that is downloading (or has stopped) for good and goes back to\n`choose` among the other versions found; the download is removed a moment later. The\nrequest carries a `note` saying so, and the version is listed with `rejected` set. With no\nother version left it searches again and is `looking`, which counts as a start toward the\nrate limit. Only a request that is `on_its_way` and not fully downloaded, or stuck on a\nstopped download, can be swapped. Only the reader who made the request, or an admin, can\ndo this.",
         "operationId": "swap_request_version",
         "parameters": [
           {
@@ -6610,6 +6613,9 @@
           },
           "409": {
             "description": "The request isn't downloading, or its download is complete."
+          },
+          "429": {
+            "description": "It would need a new search and you started too many requests lately."
           }
         }
       }
@@ -15474,7 +15480,8 @@
         "required": [
           "id",
           "title",
-          "best_match"
+          "best_match",
+          "rejected"
         ],
         "properties": {
           "best_match": {
@@ -15498,6 +15505,10 @@
               "null"
             ],
             "description": "The source the version came from; shown behind Details."
+          },
+          "rejected": {
+            "type": "boolean",
+            "description": "Whether this version was picked and given up. It is shown as one that did not work\nand cannot be chosen again."
           },
           "size_bytes": {
             "type": [

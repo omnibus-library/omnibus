@@ -1,7 +1,8 @@
 //! The task that hands a picked version to the download client and follows it. Each pass
-//! sends due removals first, then adds what was picked, then reads every unfinished
-//! download; all request state lives in the table, so a restart picks up where it stopped.
-//! The client is asked by tag, never by hash, and its answers are judged by [`judge`].
+//! claims the cancels whose grace ended and takes out what is on the removal list, then adds
+//! what was picked, then reads every unfinished download. All request state lives in the
+//! table, so a restart picks up where it stopped. The client is asked by tag, never by hash,
+//! and its answers are judged by [`judge`].
 
 use std::time::Duration;
 
@@ -50,7 +51,6 @@ enum PassError {
 enum Verdict {
     Wait,
     Progress(f64),
-    Done,
     Stopped(&'static str),
 }
 
@@ -66,7 +66,13 @@ pub async fn poll_tick(pool: &SqlitePool, failing_since: &mut Option<i64>) -> Du
     };
     let client = match client_for(&config) {
         Ok(client) => client,
-        Err(ConnectionError::NotConfigured) => return IDLE_WAIT,
+        Err(ConnectionError::NotConfigured) => {
+            // Nothing can move without a client; a download already on its way is not coming.
+            if let Err(e) = stop_downloading(pool, "no download client configured").await {
+                tracing::error!(error = %e, "request poller could not read the table");
+            }
+            return IDLE_WAIT;
+        }
         Err(e) => {
             tracing::warn!(error = %e, "build the download client");
             return IDLE_WAIT;
@@ -103,7 +109,11 @@ pub async fn poll_once(
             }
             let since = *failing_since.get_or_insert(now);
             if now - since >= UNREACHABLE_SECS {
-                stop_waiting(pool).await?;
+                stop_downloading(
+                    pool,
+                    "the download client could not be reached for ten minutes",
+                )
+                .await?;
             }
         }
     }
@@ -116,27 +126,47 @@ async fn pass(
     category: &str,
     now: i64,
 ) -> Result<(), PassError> {
-    remove_due(pool, client, now).await?;
+    store::claim_due_cancels(pool, now).await?;
+    remove_pending(pool, client, now).await?;
     add_picked(pool, client, category, now).await?;
     follow_downloads(pool, client, now).await
 }
 
-/// Tell the client to drop each download whose undo grace has passed, files and all.
-async fn remove_due(
+/// A refusal tied to one request's link or request rather than to the client being down.
+fn refused_one(e: &ConnectionError) -> bool {
+    matches!(e, ConnectionError::Rejected(_) | ConnectionError::BadUrl(_))
+}
+
+/// Take each download on the removal list out of the client, files and all. A job the client
+/// has not shown yet may still be being fetched, so its tag stays until it has been seen and
+/// removed, or [`APPEAR_SECS`] have passed without it.
+async fn remove_pending(
     pool: &SqlitePool,
     client: &impl DownloadClient,
     now: i64,
 ) -> Result<(), PassError> {
-    for row in store::due_removals(pool, now).await? {
-        if let Some(tag) = &row.client_tag {
-            client.remove(tag, true).await?;
+    for row in store::pending_removals(pool).await? {
+        let Some(tag) = row.remove_tag.as_deref() else {
+            continue;
+        };
+        if client.status(tag).await?.is_some() {
+            store::mark_removal_seen(pool, row.id, tag).await?;
+            match client.remove(tag, true).await {
+                Err(e) if refused_one(&e) => tracing::warn!(error = %e, "remove a download"),
+                other => other?,
+            }
+        } else if row
+            .remove_since
+            .is_none_or(|since| now - since > APPEAR_SECS)
+        {
+            store::finish_removal(pool, row.id, tag).await?;
         }
-        store::finish_removal(pool, row.id, now).await?;
     }
     Ok(())
 }
 
-/// Start the download of every picked version the client does not already have.
+/// Start the download of every picked version the client does not already have. A link the
+/// client refuses stops that request alone.
 async fn add_picked(
     pool: &SqlitePool,
     client: &impl DownloadClient,
@@ -148,7 +178,15 @@ async fn add_picked(
             continue;
         };
         if client.status(&tag).await?.is_none() {
-            client.add(&link, category, &tag).await?;
+            match client.add(&link, category, &tag).await {
+                Ok(()) => {}
+                Err(e) if refused_one(&e) => {
+                    let why = e.to_string();
+                    store::mark_stopped(pool, row.id, row.chosen_result_id, &why).await?;
+                    continue;
+                }
+                Err(e) => return Err(e.into()),
+            }
         }
         store::mark_on_its_way(pool, row.id, now).await?;
     }
@@ -165,11 +203,11 @@ async fn follow_downloads(
             continue;
         };
         let status = client.status(tag).await?;
+        let pick = row.chosen_result_id;
         match judge(&row, status.as_ref(), now) {
             Verdict::Wait => {}
-            Verdict::Progress(p) => store::record_progress(pool, row.id, p, now).await?,
-            Verdict::Done => store::record_progress(pool, row.id, 1.0, now).await?,
-            Verdict::Stopped(why) => store::mark_stopped(pool, row.id, why).await?,
+            Verdict::Progress(p) => store::record_progress(pool, row.id, pick, p, now).await?,
+            Verdict::Stopped(why) => store::mark_stopped(pool, row.id, pick, why).await?,
         }
     }
     Ok(())
@@ -191,7 +229,7 @@ fn judge(row: &RequestRow, status: Option<&TorrentStatus>, now: i64) -> Verdict 
         return Verdict::Stopped("the download client reports an error");
     }
     if status.progress >= 1.0 || FINISHED_STATES.contains(&status.state.as_str()) {
-        return Verdict::Done;
+        return Verdict::Progress(1.0);
     }
     if row.progress.is_none_or(|p| status.progress > p) {
         return Verdict::Progress(status.progress);
@@ -202,15 +240,11 @@ fn judge(row: &RequestRow, status: Option<&TorrentStatus>, now: i64) -> Verdict 
     Verdict::Wait
 }
 
-/// The client has been out of reach too long: stop every request waiting on it.
-async fn stop_waiting(pool: &SqlitePool) -> Result<(), RequestError> {
-    let waiting = store::awaiting_add(pool)
-        .await?
-        .into_iter()
-        .chain(store::downloading(pool).await?);
-    for row in waiting {
-        let why = "the download client could not be reached for ten minutes";
-        store::mark_stopped(pool, row.id, why).await?;
+/// Stop every download on its way, for `why`. A pick not yet added keeps waiting: it has not
+/// failed, and nothing has been given up.
+async fn stop_downloading(pool: &SqlitePool, why: &str) -> Result<(), RequestError> {
+    for row in store::downloading(pool).await? {
+        store::mark_stopped(pool, row.id, row.chosen_result_id, why).await?;
     }
     Ok(())
 }

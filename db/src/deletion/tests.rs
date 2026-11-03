@@ -174,6 +174,54 @@ async fn delete_book_items_purges_the_book_and_its_user_data_when_every_item_goe
 }
 
 #[tokio::test]
+async fn delete_book_items_keeps_a_request_with_a_download_cancelled_and_due_and_drops_the_rest() {
+    let dir = temp_dir("purge-requests");
+    let _env = cache_env(&dir);
+    let pool = pool().await;
+    let lib = seed_root(&pool, "/lib").await;
+    let book = seed_book(&pool, lib, "uuid-a", "Doomed").await;
+    let file = seed_file(&pool, book, "/lib", "a", "a", "EPUB").await;
+    let ada = seed_user(&pool, "ada").await;
+    let grace = seed_user(&pool, "grace").await;
+    for (user, tag) in [(ada, Some("omnibus-1-1")), (grace, None)] {
+        sqlx::query(
+            "INSERT INTO book_requests (book_uuid, user_id, kind, state, client_tag)
+             VALUES ('uuid-a', ?, 'ebook', 'on_its_way', ?)",
+        )
+        .bind(user)
+        .bind(tag)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+
+    delete_book_items(&pool, "uuid-a", &[file], &[])
+        .await
+        .unwrap();
+
+    let kept: Vec<(i64, String, Option<String>)> = sqlx::query_as(
+        "SELECT user_id, state, client_tag FROM book_requests
+         WHERE cancel_at IS NOT NULL AND cancel_at <= strftime('%s', 'now')",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        kept,
+        [(
+            ada,
+            "cancelled".to_string(),
+            Some("omnibus-1-1".to_string())
+        )]
+    );
+    assert_eq!(
+        count_rows(&pool, "SELECT COUNT(*) FROM book_requests").await,
+        1
+    );
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[tokio::test]
 async fn delete_book_items_sweeps_the_images_its_reviews_and_open_merges_embedded() {
     let dir = temp_dir("review_images");
     let _env = cache_env(&dir);

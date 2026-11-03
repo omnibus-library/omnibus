@@ -1,16 +1,23 @@
+use std::time::{Duration, Instant};
+
 use omnibus_shared::{RequestKind, RequestState, RequestsSettingsUpdate, StuckReason};
 use serde_json::{json, Value};
 use sqlx::SqlitePool;
 use wiremock::matchers::{header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use std::time::{Duration, Instant};
-
 use crate::physical::FilelessBook;
 use crate::requests::store::{self, RequestRow};
 use crate::test_support::{closed_port_url, EnvVarGuard};
 
 use super::*;
+
+fn patience(budget_ms: u64, first_wait_ms: u64) -> Patience {
+    Patience {
+        budget: Duration::from_millis(budget_ms),
+        first_wait: Duration::from_millis(first_wait_ms),
+    }
+}
 
 async fn pool_with_prowlarr(url: &str) -> SqlitePool {
     pool_with_prowlarr_key(url, "indexer-key").await
@@ -156,7 +163,7 @@ mod run_search {
         let pool = pool_with_prowlarr(&closed_port_url()).await;
         let id = looking_request(&pool).await;
 
-        run_search_with(&pool, id, Patience::NONE).await.unwrap();
+        run_search_with(&pool, id, patience(0, 0)).await.unwrap();
 
         let stuck = row(&pool, id).await;
         assert_eq!(stuck.stuck_reason, Some(StuckReason::SearchFailed));
@@ -191,10 +198,10 @@ mod run_search {
         // handed this server's port.
         let pool = pool_with_prowlarr_key(&server.uri(), "key-search-429-cooldown").await;
         let first = looking_request(&pool).await;
-        run_search_with(&pool, first, Patience::NONE).await.unwrap();
+        run_search_with(&pool, first, patience(0, 0)).await.unwrap();
         store::restart(&pool, first, 0).await.unwrap();
 
-        run_search_with(&pool, first, Patience::NONE).await.unwrap();
+        run_search_with(&pool, first, patience(0, 0)).await.unwrap();
 
         let stuck = row(&pool, first).await;
         assert_eq!(stuck.stuck_reason, Some(StuckReason::SearchFailed));
@@ -222,13 +229,6 @@ mod run_search {
 
 mod retrying {
     use super::*;
-
-    fn patience(budget_ms: u64, first_wait_ms: u64) -> Patience {
-        Patience {
-            budget: Duration::from_millis(budget_ms),
-            first_wait: Duration::from_millis(first_wait_ms),
-        }
-    }
 
     #[tokio::test]
     async fn offers_the_versions_when_prowlarr_rate_limits_once_and_then_answers() {
