@@ -916,6 +916,60 @@
         }
       }
     },
+    "/api/admin/requests/settings/test-client": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Test the download client connection",
+        "description": "Logs in to the download client with the saved address and login and reports whether it\nanswered. It changes nothing. Needs an admin account.",
+        "operationId": "test_download_client_connection",
+        "responses": {
+          "200": {
+            "description": "The download client answered and accepted the login."
+          },
+          "403": {
+            "description": "You aren't an admin."
+          },
+          "404": {
+            "description": "Book requests are off on this server."
+          },
+          "409": {
+            "description": "The download client address isn't set."
+          },
+          "502": {
+            "description": "The download client didn't answer or refused the call; the body says why."
+          }
+        }
+      }
+    },
+    "/api/admin/requests/settings/test-indexer": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Test the Prowlarr connection",
+        "description": "Calls Prowlarr with the saved address and API key and reports whether it answered. It\nchanges nothing. Needs an admin account.",
+        "operationId": "test_prowlarr_connection",
+        "responses": {
+          "200": {
+            "description": "Prowlarr answered and accepted the API key."
+          },
+          "403": {
+            "description": "You aren't an admin."
+          },
+          "404": {
+            "description": "Book requests are off on this server."
+          },
+          "409": {
+            "description": "The Prowlarr address or API key isn't set."
+          },
+          "502": {
+            "description": "Prowlarr didn't answer or refused the call; the body says why."
+          }
+        }
+      }
+    },
     "/api/admin/rewrite-all-epubs": {
       "post": {
         "tags": [
