@@ -7,6 +7,9 @@
 //! addresses; its calls go out only to the connections an admin saved.
 
 use std::sync::OnceLock;
+use std::time::Duration;
+
+use reqwest::StatusCode;
 
 pub mod clients;
 pub mod paths;
@@ -32,7 +35,7 @@ pub enum ConnectionError {
 
 impl ConnectionError {
     /// A transport failure, described without the request URL `reqwest` puts in its text.
-    pub(crate) fn from_transport(e: &reqwest::Error) -> Self {
+    pub fn from_transport(e: &reqwest::Error) -> Self {
         let reason = if e.is_timeout() {
             "timed out"
         } else if e.is_connect() {
@@ -44,13 +47,35 @@ impl ConnectionError {
     }
 }
 
-/// The process-wide HTTP client for both connections, built once and cloned.
-pub(crate) fn http_client() -> Result<reqwest::Client, ConnectionError> {
+/// Bound on each request, so a dead service cannot hold a worker.
+pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// The process-wide HTTP client for both connections, built once and cloned. It follows no
+/// redirect: one could carry the API key or the login form to another host.
+pub fn http_client() -> Result<reqwest::Client, ConnectionError> {
     static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
     if let Some(c) = CLIENT.get() {
         return Ok(c.clone());
     }
-    let new = crate::http_client::build_client(&crate::http_client::default_user_agent())
+    let new = reqwest::Client::builder()
+        .user_agent(crate::http_client::default_user_agent())
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
         .map_err(|e| ConnectionError::from_transport(&e))?;
     Ok(CLIENT.get_or_init(|| new).clone())
+}
+
+/// Map the statuses both services share: 404 is the wrong address, 401 and 403 are
+/// `bad_credentials`, and any other failure is a refusal naming `service`.
+pub fn check_status(
+    status: StatusCode,
+    service: &str,
+    bad_credentials: ConnectionError,
+) -> Result<(), ConnectionError> {
+    match status {
+        StatusCode::NOT_FOUND => Err(ConnectionError::BadUrl(service.to_string())),
+        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => Err(bad_credentials),
+        s if !s.is_success() => Err(ConnectionError::Rejected(format!("{service} answered {s}"))),
+        _ => Ok(()),
+    }
 }

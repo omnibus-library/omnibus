@@ -61,6 +61,38 @@ mod prowlarr_test {
         }
 
         #[tokio::test]
+        async fn reports_another_arr_app_as_a_bad_url() {
+            let server = MockServer::start().await;
+            let status = json!({"appName": "Readarr", "version": "0.4.1"});
+            mount_get(
+                &server,
+                "/api/v1/system/status",
+                ResponseTemplate::new(200).set_body_json(status),
+            )
+            .await;
+
+            let err = client_for(&server).test().await.unwrap_err();
+
+            assert!(matches!(err, ConnectionError::BadUrl(_)));
+        }
+
+        #[tokio::test]
+        async fn does_not_follow_a_redirect_to_another_host() {
+            let elsewhere = MockServer::start().await;
+            let to_elsewhere = ResponseTemplate::new(302).insert_header(
+                "location",
+                format!("{}/api/v1/system/status", elsewhere.uri()),
+            );
+            let server = MockServer::start().await;
+            mount_get(&server, "/api/v1/system/status", to_elsewhere).await;
+
+            let result = client_for(&server).test().await;
+
+            assert!(result.is_err());
+            assert!(elsewhere.received_requests().await.unwrap().is_empty());
+        }
+
+        #[tokio::test]
         async fn reports_a_page_that_is_not_json_as_a_bad_url() {
             let server = MockServer::start().await;
             let page = ResponseTemplate::new(200).set_body_string("<html>sign in</html>");

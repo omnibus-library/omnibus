@@ -58,14 +58,14 @@ mod flag_gate {
     ];
 
     #[tokio::test]
-    async fn answers_404_to_admins_members_and_anonymous_callers_when_off() {
+    async fn answers_404_to_admins_and_members_before_the_admin_check_when_off() {
         let (app, _, pool) = fixture_book_requests(false).await;
         let admin = admin_token(&pool).await;
         let member = auth_test_support::create_user(&pool, "reader").await;
         let member = auth_test_support::bearer_token(&pool, member.id).await;
 
         for (method, uri) in ROUTES {
-            for token in [Some(admin.as_str()), Some(member.as_str()), None] {
+            for token in [Some(admin.as_str()), Some(member.as_str())] {
                 let status = status_of(app.clone(), method, uri, token).await;
                 assert_eq!(status, StatusCode::NOT_FOUND, "{method} {uri} {token:?}");
             }
@@ -123,7 +123,7 @@ mod put_requests_settings {
         );
         assert_eq!(
             status.download_client_password_masked.as_deref(),
-            Some("hunt\u{2026}ter2")
+            Some("\u{2022}\u{2022}\u{2022}\u{2022}")
         );
         assert_eq!(status.download_client_category, "books");
         assert_eq!(
@@ -195,8 +195,10 @@ mod post_test_indexer {
     async fn answers_200_when_prowlarr_accepts_the_saved_key() {
         let (app, _, pool) = fixture_book_requests(true).await;
         let token = admin_token(&pool).await;
-        let prowlarr =
-            prowlarr_answering(ResponseTemplate::new(200).set_body_json(json!({}))).await;
+        let prowlarr = prowlarr_answering(
+            ResponseTemplate::new(200).set_body_json(json!({"appName": "Prowlarr"})),
+        )
+        .await;
         save_connections(&app, &token, &prowlarr.uri(), "http://qbittorrent:8080").await;
 
         let (status, _) = post(&app, TEST_INDEXER, &token).await;

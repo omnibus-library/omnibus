@@ -6,8 +6,9 @@ use std::future::Future;
 
 use omnibus_shared::DownloadClientKind;
 
-use super::ConnectionError;
 use crate::settings::RequestsConfig;
+
+use super::ConnectionError;
 
 pub mod qbittorrent;
 
