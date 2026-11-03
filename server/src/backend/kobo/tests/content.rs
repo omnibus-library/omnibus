@@ -169,8 +169,6 @@ async fn download_does_not_record_download_state_when_the_file_open_fails() {
 async fn download_bakes_a_metadata_override_into_the_plain_epub_fallback() {
     use std::io::Cursor;
 
-    let _kepubify_absent =
-        db::test_support::EnvVarGuard::set("OMNIBUS_KEPUBIFY_PATH", Some("/no/such/kepubify"));
     let (app, pool, token, uid) = fixture().await;
 
     let pid = std::process::id();
@@ -181,9 +179,11 @@ async fn download_bakes_a_metadata_override_into_the_plain_epub_fallback() {
     let tmp = std::env::temp_dir().join(format!("omnibus_kobo_dl_override_{pid}_{nanos}"));
     let export = tmp.join("export");
     std::fs::create_dir_all(&export).unwrap();
-    // Isolate the export cache so the rewrite doesn't land in ./data.
+    // Isolate the export cache so the rewrite doesn't land in ./data. One
+    // guard for both vars: a second guard would deadlock on the env lock.
     let _env =
-        db::test_support::EnvVarGuard::set_os("OMNIBUS_EXPORT_EPUB_DIR", Some(export.as_os_str()));
+        db::test_support::EnvVarGuard::set_os("OMNIBUS_EXPORT_EPUB_DIR", Some(export.as_os_str()))
+            .also_set("OMNIBUS_KEPUBIFY_PATH", Some("/no/such/kepubify"));
 
     // Copy a real fixture EPUB so the rewrite has a valid container to parse.
     let fixture_epub = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
