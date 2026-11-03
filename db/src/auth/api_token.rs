@@ -120,6 +120,7 @@ pub async fn lookup_api_token(pool: &SqlitePool, raw_token: &str) -> AuthResult<
         "SELECT t.id AS t_id, t.user_id, t.name, t.created_at, t.last_used_at, t.revoked_at,
                 t.suffix,
                 u.id AS u_id, u.username, u.is_admin, u.can_upload, u.can_edit, u.can_download,
+                u.can_request,
                 u.kindle_email, u.display_name, u.hidden_formats,
                 u.book_detail_scroll_stops, u.stack_series, u.share_stats,
                 EXISTS(SELECT 1 FROM user_avatars a WHERE a.user_id = u.id) AS has_avatar

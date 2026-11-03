@@ -70,6 +70,7 @@ fn user_summary(u: &auth_db::User) -> UserSummary {
         can_upload: u.can_upload,
         can_edit: u.can_edit,
         can_download: u.can_download,
+        can_request: u.can_request,
         kindle_email: u.kindle_email.clone(),
         display_name: u.display_name.clone(),
         has_avatar: u.has_avatar,

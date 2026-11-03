@@ -174,6 +174,7 @@ async fn fetch_session_row(pool: &SqlitePool, hash: &[u8]) -> AuthResult<sqlx::s
         "SELECT s.id AS s_id, s.user_id, s.device_id, s.impersonator_id, s.kind, s.created_at,
                 s.last_used_at, s.expires_at, s.revoked_at, s.user_agent,
                 u.id AS u_id, u.username, u.is_admin, u.can_upload, u.can_edit, u.can_download,
+                u.can_request,
                 u.kindle_email, u.display_name, u.hidden_formats,
                 u.book_detail_scroll_stops, u.stack_series, u.share_stats,
                 EXISTS(SELECT 1 FROM user_avatars a WHERE a.user_id = u.id) AS has_avatar

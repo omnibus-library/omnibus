@@ -211,6 +211,7 @@ fn basic_auth_user(user: auth_db::User) -> AuthUser {
         can_upload: user.can_upload,
         can_edit: user.can_edit,
         can_download: user.can_download,
+        can_request: user.can_request,
         kindle_email: user.kindle_email,
         display_name: user.display_name,
         has_avatar: user.has_avatar,

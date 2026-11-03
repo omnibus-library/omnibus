@@ -84,6 +84,26 @@ async fn admin_create_user_sets_permissions_and_bypasses_registration_gate() {
 }
 
 #[tokio::test]
+async fn admin_create_user_stores_can_request_only_when_granted() {
+    let p = pool().await;
+    create_user(&p, "alice", "hunter2-real-long").await.unwrap();
+
+    let without = admin_create_user(&p, "bob", "bunker9-longer-pass", READER)
+        .await
+        .unwrap();
+    let granted = UserPermissions {
+        can_request: true,
+        ..READER
+    };
+    let with = admin_create_user(&p, "carol", "bunker9-longer-pass", granted)
+        .await
+        .unwrap();
+
+    assert!(!without.can_request);
+    assert!(with.can_request);
+}
+
+#[tokio::test]
 async fn admin_create_user_rejects_duplicate_username_nocase() {
     let p = pool().await;
     create_user(&p, "Alice", "hunter2-real-long").await.unwrap();
@@ -125,6 +145,7 @@ async fn update_user_permissions_replaces_flags() {
             can_upload: true,
             can_edit: true,
             can_download: false,
+            can_request: false,
         },
     )
     .await
@@ -138,6 +159,31 @@ async fn update_user_permissions_replaces_flags() {
         .unwrap();
     assert!(bob_row.can_upload && bob_row.can_edit);
     assert!(!bob_row.can_download && !bob_row.is_admin);
+}
+
+#[tokio::test]
+async fn update_user_permissions_grants_then_revokes_can_request() {
+    let p = pool().await;
+    create_user(&p, "alice", "hunter2-real-long").await.unwrap();
+    let bob = admin_create_user(&p, "bob", "bunker9-longer-pass", READER)
+        .await
+        .unwrap();
+    let can_request_of = |rows: Vec<AdminUserRow>| {
+        rows.into_iter()
+            .find(|u| u.id == bob.id)
+            .unwrap()
+            .can_request
+    };
+
+    let granted = UserPermissions {
+        can_request: true,
+        ..READER
+    };
+    update_user_permissions(&p, bob.id, granted).await.unwrap();
+    assert!(can_request_of(list_users(&p).await.unwrap()));
+
+    update_user_permissions(&p, bob.id, READER).await.unwrap();
+    assert!(!can_request_of(list_users(&p).await.unwrap()));
 }
 
 #[tokio::test]

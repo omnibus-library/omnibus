@@ -40,6 +40,7 @@ fn fake_opds_user() -> OpdsAuthUser {
         can_upload: false,
         can_edit: false,
         can_download: true,
+        can_request: false,
         kindle_email: None,
         display_name: None,
         has_avatar: false,

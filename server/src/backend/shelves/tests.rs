@@ -701,6 +701,7 @@ async fn api_smart_shelves_containing_returns_500_when_the_db_is_unavailable() {
         can_upload: false,
         can_edit: false,
         can_download: false,
+        can_request: false,
         kindle_email: None,
         display_name: None,
         has_avatar: false,

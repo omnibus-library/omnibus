@@ -90,6 +90,7 @@ fn caller() -> crate::auth::AuthUser {
         can_upload: false,
         can_edit: false,
         can_download: false,
+        can_request: false,
         kindle_email: None,
         display_name: None,
         has_avatar: false,
