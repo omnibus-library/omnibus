@@ -320,7 +320,10 @@ pub(super) async fn get_request(
 /// `looking`; poll `GET /api/requests/{id}` as after a start. That counts as a start toward
 /// the rate limit. A request stuck on a stopped download (`stopped_moving`) instead drops that
 /// download and goes back to `choose` among the other versions, with nothing searched and
-/// nothing counted. Only the reader who made the request, or an admin, can do this.
+/// nothing counted. One stuck because its finished download could not be added to the library
+/// (`couldnt_add`) goes back to `on_its_way` and only the adding is tried again: the download
+/// is kept, nothing is searched or fetched, and nothing is counted. Only the reader who made
+/// the request, or an admin, can do this.
 #[utoipa::path(
     post,
     path = "/api/requests/{id}/retry",
@@ -328,7 +331,7 @@ pub(super) async fn get_request(
     operation_id = "retry_book_request",
     params(("id" = i64, Path, description = "The request's id.")),
     responses(
-        (status = 200, description = "The request is looking again, or choosing again after a stopped download.", body = BookRequest),
+        (status = 200, description = "The request is looking again, choosing again after a stopped download, or on its way again after a download that could not be added.", body = BookRequest),
         (status = 401, description = "You aren't signed in."),
         (status = 403, description = "Your account can't make requests, or the request is another reader's."),
         (status = 404, description = "Book requests are off on this server, or there is no such request."),
@@ -345,9 +348,13 @@ pub(super) async fn post_retry_request(
         Ok(row) => row,
         Err(res) => return res,
     };
-    let stopped =
-        row.state == RequestState::Stuck && row.stuck_reason == Some(StuckReason::StoppedMoving);
-    if !stopped && !state.request_starts().has_room(user.id) {
+    // Only a search counts toward the cap; these two stuck requests are not searched.
+    let searches = !(row.state == RequestState::Stuck
+        && matches!(
+            row.stuck_reason,
+            Some(StuckReason::StoppedMoving | StuckReason::CouldntAdd)
+        ));
+    if searches && !state.request_starts().has_room(user.id) {
         return too_many("you started too many requests; try again in a few minutes");
     }
     match store::restart(state.pool(), id, store::unix_now()).await {

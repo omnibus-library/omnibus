@@ -4,6 +4,7 @@ use sqlx::SqlitePool;
 use crate::requests::store::{self, RequestRow};
 use crate::requests::test_support::{Call, StubClient};
 use crate::test_support::seed_user;
+use crate::worker::{Worker, WorkerConfig};
 
 use super::*;
 
@@ -435,7 +436,9 @@ mod no_client {
         let downloading = on_its_way(&pool, "ada", 0.4, NOW).await;
         let picked = seed(&pool, "grace", "chosen").await;
 
-        poll_tick(&pool, &mut None).await;
+        let worker = Worker::new(pool.clone(), WorkerConfig::default());
+
+        poll_tick(&pool, &worker, &mut None).await;
 
         let stopped = row(&pool, downloading).await;
         assert_eq!(stopped.state, RequestState::Stuck);

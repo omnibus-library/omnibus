@@ -28,7 +28,9 @@ pub async fn merge_books(
     if source_uuid == target_uuid {
         return Err(MergeError::SameBook);
     }
-    let mut tx = pool.begin().await?;
+    // Immediate, so a write that commits mid-merge (a scan's follow-up backfills) makes the
+    // merge wait its turn rather than fail with a stale snapshot.
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
 
     let (source_id, target_id, mut snapshot) =
         snapshot_source_book(&mut tx, source_uuid, target_uuid).await?;

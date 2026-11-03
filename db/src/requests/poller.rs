@@ -1,16 +1,19 @@
 //! The task that hands a picked version to the download client and follows it. Each pass
 //! claims the cancels whose grace ended and takes out what is on the removal list, then adds
-//! what was picked, then reads every unfinished download. All request state lives in the
-//! table, so a restart picks up where it stopped. The client is asked by tag, never by hash,
+//! what was picked, then reads every unfinished download; a tick then adds the finished ones
+//! to the library. All request state lives in the table, so a restart picks up where it stopped. The client is asked by tag, never by hash,
 //! and its answers are judged by [`judge`].
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use sqlx::SqlitePool;
 
 use super::clients::{client_for, DownloadClient, TorrentStatus};
+use super::import::import_finished;
 use super::store::{self, RequestError, RequestRow};
 use super::ConnectionError;
+use crate::worker::Worker;
 
 /// How long a download's bytes may sit still before it counts as stopped. A fixed 12 hours
 /// for now; it may become an admin setting.
@@ -54,9 +57,13 @@ enum Verdict {
     Stopped(&'static str),
 }
 
-/// Read the connection settings and run one pass; returns how long to wait for the next.
-/// With no client set up there is nothing to do, and nothing changes.
-pub async fn poll_tick(pool: &SqlitePool, failing_since: &mut Option<i64>) -> Duration {
+/// Read the connection settings, run one pass and import what finished; returns how long to
+/// wait for the next. With no client set up there is nothing to do, and nothing changes.
+pub async fn poll_tick(
+    pool: &SqlitePool,
+    worker: &Arc<Worker>,
+    failing_since: &mut Option<i64>,
+) -> Duration {
     let config = match crate::effective_requests_config(pool).await {
         Ok(config) => config,
         Err(e) => {
@@ -79,13 +86,24 @@ pub async fn poll_tick(pool: &SqlitePool, failing_since: &mut Option<i64>) -> Du
         }
     };
     let category = &config.download_client_category;
-    match poll_once(pool, &client, category, store::unix_now(), failing_since).await {
-        Ok(true) => BUSY_WAIT,
-        Ok(false) => IDLE_WAIT,
+    let busy = match poll_once(pool, &client, category, store::unix_now(), failing_since).await {
+        Ok(busy) => busy,
         Err(e) => {
             tracing::error!(error = %e, "request poller could not read the table");
-            IDLE_WAIT
+            return IDLE_WAIT;
         }
+    };
+    let import_waiting = match import_finished(pool, &client, worker, &config).await {
+        Ok(waiting) => waiting,
+        Err(e) => {
+            tracing::error!(error = %e, "request poller could not read the table");
+            return IDLE_WAIT;
+        }
+    };
+    if busy || import_waiting {
+        BUSY_WAIT
+    } else {
+        IDLE_WAIT
     }
 }
 

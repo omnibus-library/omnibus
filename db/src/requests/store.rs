@@ -335,22 +335,38 @@ async fn insert_result(
 
 /// Send a `looking` or `stuck` request back to `looking` and forget what it found, and say
 /// what it is now in. A request stuck on a stopped download keeps what was found: it goes
-/// back to choosing, as [`swap`] does. [`RequestError::WrongState`] for one already waiting
-/// on a pick or picked.
+/// back to choosing, as [`swap`] does. One stuck on `couldnt_add` goes back to the import,
+/// keeping its download and where it was filed, so nothing is fetched or searched again.
+/// [`RequestError::WrongState`] for one already waiting on a pick or picked.
 pub async fn restart(pool: &SqlitePool, id: i64, now: i64) -> Result<RequestState, RequestError> {
     let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
-    let stuck: Option<(String, Option<String>)> =
+    let current: Option<(String, Option<String>)> =
         sqlx::query_as("SELECT state, stuck_reason FROM book_requests WHERE id = ?")
             .bind(id)
             .fetch_optional(&mut *tx)
             .await?;
-    let stopped = stuck.is_some_and(|(state, reason)| {
-        state == "stuck" && reason.as_deref() == Some(StuckReason::StoppedMoving.as_str())
-    });
-    if stopped {
+    let stuck_on = |reason: StuckReason| {
+        current.as_ref().is_some_and(|(state, stuck)| {
+            state == "stuck" && stuck.as_deref() == Some(reason.as_str())
+        })
+    };
+    if stuck_on(StuckReason::StoppedMoving) {
         let row = change::swap_in(&mut tx, id, now, None).await?;
         tx.commit().await?;
         return Ok(row.state);
+    }
+    if stuck_on(StuckReason::CouldntAdd) {
+        sqlx::query(&format!(
+            "UPDATE book_requests
+             SET state = 'on_its_way', progress = 1, stuck_reason = NULL, stuck_detail = NULL,
+                 updated_at = {NOW}
+             WHERE id = ?"
+        ))
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        return Ok(RequestState::OnItsWay);
     }
     let moved = sqlx::query(&format!(
         "UPDATE book_requests
@@ -402,9 +418,9 @@ mod download;
 
 pub use change::{cancel, swap, undo_cancel, CANCEL_GRACE_SECS};
 pub use download::{
-    awaiting_add, begin_download, claim_due_cancels, downloading, finish_removal,
-    has_download_work, mark_on_its_way, mark_removal_seen, mark_stopped, pending_removals,
-    record_progress, unix_now,
+    awaiting_add, awaiting_import, begin_download, claim_due_cancels, downloading, finish_removal,
+    has_download_work, mark_couldnt_add, mark_on_its_way, mark_ready, mark_removal_seen,
+    mark_stopped, pending_removals, record_progress, set_import_key, unix_now,
 };
 
 #[cfg(test)]

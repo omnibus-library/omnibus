@@ -1,6 +1,6 @@
 //! What the download poller writes: tagging a pick before the client is called, moving a
-//! request on its way, recording progress, stopping it, and working through the downloads
-//! to take out of the client. Every write that follows a verdict names the pick it was read
+//! request on its way, recording progress, stopping it, working through the downloads
+//! to take out of the client, and ending the import of a finished one. Every write that follows a verdict names the pick it was read
 //! for, so a verdict about an old pick never lands on a new one.
 
 use sqlx::SqlitePool;
@@ -126,6 +126,74 @@ pub async fn downloading(pool: &SqlitePool) -> Result<Vec<RequestRow>, RequestEr
     .fetch_all(pool)
     .await?;
     Ok(rows.iter().map(row_to_request).collect::<Result<_, _>>()?)
+}
+
+/// Requests whose download is complete and waiting to be added to the library.
+pub async fn awaiting_import(pool: &SqlitePool) -> Result<Vec<RequestRow>, RequestError> {
+    let rows = sqlx::query(&format!(
+        "SELECT {COLUMNS} FROM book_requests
+         WHERE state = 'on_its_way' AND progress >= 1 AND client_tag IS NOT NULL ORDER BY id"
+    ))
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.iter().map(row_to_request).collect::<Result<_, _>>()?)
+}
+
+/// Note where request `id`'s pick `chosen` was filed, `key` being its library-relative path,
+/// so a retried import resumes there instead of filing a second copy.
+pub async fn set_import_key(
+    pool: &SqlitePool,
+    id: i64,
+    chosen: Option<i64>,
+    key: &str,
+) -> Result<(), RequestError> {
+    sqlx::query(
+        "UPDATE book_requests SET import_key = ?
+         WHERE id = ? AND state = 'on_its_way' AND chosen_result_id = ?",
+    )
+    .bind(key)
+    .bind(id)
+    .bind(chosen)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// End the import of request `id`'s pick `chosen`: the book is in the library.
+pub async fn mark_ready(
+    pool: &SqlitePool,
+    id: i64,
+    chosen: Option<i64>,
+) -> Result<(), RequestError> {
+    sqlx::query(&format!(
+        "UPDATE book_requests SET state = 'ready', updated_at = {NOW}
+         WHERE id = ? AND state = 'on_its_way' AND chosen_result_id = ?"
+    ))
+    .bind(id)
+    .bind(chosen)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// End the import of request `id`'s pick `chosen` as `couldnt_add`. `detail` is for admins.
+pub async fn mark_couldnt_add(
+    pool: &SqlitePool,
+    id: i64,
+    chosen: Option<i64>,
+    detail: &str,
+) -> Result<(), RequestError> {
+    sqlx::query(&format!(
+        "UPDATE book_requests
+         SET state = 'stuck', stuck_reason = 'couldnt_add', stuck_detail = ?, updated_at = {NOW}
+         WHERE id = ? AND state = 'on_its_way' AND chosen_result_id = ?"
+    ))
+    .bind(detail)
+    .bind(id)
+    .bind(chosen)
+    .execute(pool)
+    .await?;
+    Ok(())
 }
 
 /// Record how far request `id`'s download of pick `chosen` is, and when it last gained bytes.

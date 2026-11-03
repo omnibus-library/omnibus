@@ -442,6 +442,32 @@ mod restart {
     }
 
     #[tokio::test]
+    async fn sends_couldnt_add_back_to_the_import_keeping_the_download() {
+        let pool = pool().await;
+        let (id, picked, _) = on_its_way_with_two_versions(&pool).await;
+        sqlx::query(
+            "UPDATE book_requests SET state = 'stuck', stuck_reason = 'couldnt_add',
+             stuck_detail = 'the scan failed', progress = 1, import_key = 'a/b/b.epub' WHERE id = ?",
+        )
+        .bind(id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let now_in = restart(&pool, id, NOW).await.unwrap();
+
+        assert_eq!(now_in, RequestState::OnItsWay);
+        let row = state_of(&pool, id).await;
+        assert_eq!(row.stuck_reason, None);
+        assert_eq!(row.stuck_detail, None);
+        assert_eq!(row.progress, Some(1.0));
+        assert_eq!(row.chosen_result_id, Some(picked));
+        assert_eq!(row.client_tag.as_deref(), Some("omnibus-1"));
+        assert_eq!(row.import_key.as_deref(), Some("a/b/b.epub"));
+        assert_eq!(awaiting_import(&pool).await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
     async fn restarts_a_request_still_looking() {
         let pool = pool().await;
         let id = start_looking(&pool).await;
