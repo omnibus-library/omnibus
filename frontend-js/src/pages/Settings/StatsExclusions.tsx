@@ -13,6 +13,7 @@ import { Loading } from "../../components/Loading/Loading";
 import { Modal } from "../../components/Modal/Modal";
 import { bookCount } from "../../format";
 import { useCurrentUser, useStatsExclusions } from "../../session";
+import "../../components/ShelfPicker/ShelfPicker.css";
 import { SaveStatus, SettingRow } from "./SettingRow";
 
 /** The library's first page under `clauses`, folded by series: the one request that says what a filter would leave out. */
@@ -98,23 +99,15 @@ function EditDialog({
   return (
     <Modal
       label="Leave out of my stats"
-      backdropClass="stats-excl-backdrop"
-      dialogClass="stats-excl-dialog"
+      backdropClass="shelf-modal-overlay"
+      dialogClass="shelf-modal-card stats-excl-dialog"
       dialogTestId="stats-exclusions-dialog"
       onClose={onClose}
     >
       <h4 className="stats-excl-title">Leave out of my stats</h4>
-      {/* biome-ignore lint/a11y/noStaticElementInteractions: it only keeps a filter menu's Escape from closing the dialog around it */}
-      <div
-        onKeyDown={(e) => {
-          // The menu has already taken this Escape; the dialog stays.
-          if (e.key === "Escape" && e.defaultPrevented) e.stopPropagation();
-        }}
-      >
-        <FilterBar clauses={draft} onChange={setDraft} />
-      </div>
+      <FilterBar clauses={draft} onChange={setDraft} />
       <Preview clauses={draft} />
-      <div className="stats-excl-foot">
+      <div className="shelf-modal-foot">
         <Button variant="ghost" onClick={onClose}>
           Cancel
         </Button>

@@ -346,27 +346,11 @@
   background: var(--bg-2);
   color: var(--ink-0);
 }
-.stats-excl-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 120;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  background: color-mix(in oklch, black 62%, transparent);
-}
-/* No overflow clipping: a filter menu opens below the bar and may reach past the card. */
-.stats-excl-dialog {
+/* A filter menu opens below the bar and may reach past the card, so no clipping. */
+.shelf-modal-card.stats-excl-dialog {
   width: min(640px, 100%);
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding: 18px;
-  background: var(--bg-1);
-  border: 1px solid var(--line-2);
-  border-radius: 16px;
-  box-shadow: 0 24px 60px color-mix(in oklch, black 55%, transparent);
+  max-height: none;
+  overflow: visible;
 }
 .stats-excl-title {
   margin: 0;
@@ -388,11 +372,4 @@
   padding-left: 1.25rem;
   font-size: 0.85rem;
   color: var(--ink-1);
-}
-.stats-excl-foot {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  border-top: 1px solid var(--line-2);
-  padding-top: 12px;
 }
