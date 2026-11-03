@@ -137,6 +137,20 @@
     padding: 0 8px;
   }
 }
+/* An admin's phone bar needs ~361px with the wordmark, so narrower phones keep only the mark; the word stays the link's name. */
+@media (max-width: 374px) {
+  .atrium-brand {
+    gap: 0;
+  }
+  .atrium-brand-word {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+}
 @media (hover: none) {
   .atrium-nav a:active {
     color: var(--ink-0);

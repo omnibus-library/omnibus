@@ -80,4 +80,31 @@ test.describe("always-on scrollbars", () => {
       });
     });
   }
+
+  // The phone bar drops its nav links; 360 is the common Android width and 320 the narrowest.
+  for (const width of [320, 360]) {
+    test.describe(`${width} wide`, () => {
+      test.use({ viewport: { width, height: 600 } });
+
+      test(`keep the phone top bar inside a ${width}px window`, async ({
+        libraryPage,
+      }) => {
+        const { topNav, scroll } = libraryPage;
+
+        await test.step("open the library with scrollbars drawn", async () => {
+          await libraryPage.goto();
+          await scroll.showClassicScrollbars();
+          await expect.poll(() => scroll.scrollbarWidth()).toBeGreaterThan(0);
+          await scroll.waitForFonts();
+        });
+
+        await test.step("check every bar control shows and nothing scrolls sideways", async () => {
+          await expect(topNav.homeLink).toBeVisible();
+          await expect(topNav.checkInButton).toBeVisible();
+          await expect(topNav.addBooksButton).toBeVisible();
+          expect(await scroll.scrollsSideways()).toBe(false);
+        });
+      });
+    });
+  }
 });
