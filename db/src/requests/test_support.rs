@@ -5,8 +5,26 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
+use crate::settings::RequestsConfig;
+use omnibus_shared::DownloadClientKind;
+
 use super::clients::{ClientFile, DownloadClient, TorrentStatus};
 use super::ConnectionError;
+
+/// Connection settings with no services set up and the two download folders as given.
+pub fn requests_config(client_prefix: Option<&str>, local_prefix: Option<&str>) -> RequestsConfig {
+    RequestsConfig {
+        prowlarr_url: None,
+        prowlarr_api_key: None,
+        download_client_kind: DownloadClientKind::Qbittorrent,
+        download_client_url: None,
+        download_client_username: None,
+        download_client_password: None,
+        download_client_category: "omnibus".to_string(),
+        download_client_path_prefix: client_prefix.map(str::to_string),
+        download_path_prefix: local_prefix.map(str::to_string),
+    }
+}
 
 /// One call the pipeline made to the client.
 #[derive(Debug, Clone, PartialEq)]
@@ -17,6 +35,7 @@ pub enum Call {
         tag: String,
     },
     Status(String),
+    Files(String),
     Remove {
         tag: String,
         delete_files: bool,
@@ -26,6 +45,7 @@ pub enum Call {
 #[derive(Default)]
 struct Script {
     statuses: HashMap<String, TorrentStatus>,
+    files: HashMap<String, Vec<ClientFile>>,
     unreachable: bool,
     /// Tags whose link `add` refuses.
     refused: Vec<String>,
@@ -55,6 +75,26 @@ impl StubClient {
         self
     }
 
+    /// Give the download marked `tag` finished, saved in `save_path` and holding `files`
+    /// (name and size).
+    pub fn with_files(self, tag: &str, save_path: &str, files: &[(&str, u64)]) -> Self {
+        self.appears(tag, 1.0, "stalledUP");
+        let mut script = self.script();
+        if let Some(status) = script.statuses.get_mut(tag) {
+            status.save_path = save_path.to_string();
+        }
+        let listed = files
+            .iter()
+            .map(|(name, size)| ClientFile {
+                name: (*name).to_string(),
+                size: *size,
+            })
+            .collect();
+        script.files.insert(tag.to_string(), listed);
+        drop(script);
+        self
+    }
+
     /// A client that refuses to add a download marked `tag`.
     pub fn refusing(self, tag: &str) -> Self {
         self.script().refused.push(tag.to_string());
@@ -68,6 +108,7 @@ impl StubClient {
             progress,
             state: state.to_string(),
             content_path: String::new(),
+            save_path: String::new(),
         };
         self.script().statuses.insert(tag.to_string(), status);
     }
@@ -111,8 +152,9 @@ impl DownloadClient for StubClient {
         Ok(self.script().statuses.get(tag).cloned())
     }
 
-    async fn files(&self, _tag: &str) -> Result<Vec<ClientFile>, ConnectionError> {
-        Ok(Vec::new())
+    async fn files(&self, tag: &str) -> Result<Vec<ClientFile>, ConnectionError> {
+        self.record(Call::Files(tag.to_string()))?;
+        Ok(self.script().files.get(tag).cloned().unwrap_or_default())
     }
 
     async fn remove(&self, tag: &str, delete_files: bool) -> Result<(), ConnectionError> {

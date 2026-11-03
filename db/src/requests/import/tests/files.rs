@@ -1,0 +1,162 @@
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use crate::requests::clients::{ClientFile, TorrentStatus};
+use crate::requests::test_support::requests_config;
+
+use super::super::files::{pick, resolve};
+use super::super::ImportError;
+
+const EPUB_BYTES: &[u8] = b"PK\x03\x04 an epub";
+const PDF_BYTES: &[u8] = b"%PDF-1.7 a pdf";
+
+fn status(save_path: &str) -> TorrentStatus {
+    TorrentStatus {
+        hash: "h".to_string(),
+        progress: 1.0,
+        state: "stalledUP".to_string(),
+        content_path: String::new(),
+        save_path: save_path.to_string(),
+    }
+}
+
+fn listed(names: &[&str]) -> Vec<ClientFile> {
+    names
+        .iter()
+        .map(|name| ClientFile {
+            name: (*name).to_string(),
+            size: 1,
+        })
+        .collect()
+}
+
+/// Write `bytes` to `root/name`, making the folders it sits in.
+fn write(root: &Path, name: &str, bytes: &[u8]) -> PathBuf {
+    let path = root.join(name);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(&path, bytes).unwrap();
+    path
+}
+
+mod resolve {
+    use super::*;
+
+    #[test]
+    fn finds_a_file_wrapped_in_a_subfolder() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dl = tmp.path().join("dl");
+        let file = write(&dl, "Release/Dune.epub", EPUB_BYTES);
+        let config = requests_config(Some("/downloads"), dl.to_str());
+
+        let found = resolve(
+            &status("/downloads"),
+            &listed(&["Release/Dune.epub"]),
+            &config,
+        )
+        .unwrap();
+
+        assert_eq!(found, vec![file.canonicalize().unwrap()]);
+    }
+
+    #[test]
+    fn uses_the_save_folder_when_the_folders_are_not_mapped() {
+        let tmp = tempfile::tempdir().unwrap();
+        let file = write(tmp.path(), "Dune.epub", EPUB_BYTES);
+        let config = requests_config(None, None);
+
+        let found = resolve(
+            &status(tmp.path().to_str().unwrap()),
+            &listed(&["Dune.epub"]),
+            &config,
+        )
+        .unwrap();
+
+        assert_eq!(found, vec![file.canonicalize().unwrap()]);
+    }
+
+    #[test]
+    fn refuses_a_path_that_escapes_the_download_folder() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dl = tmp.path().join("dl");
+        fs::create_dir_all(&dl).unwrap();
+        write(tmp.path(), "outside/secret.epub", EPUB_BYTES);
+        let config = requests_config(None, None);
+
+        let err = resolve(
+            &status(dl.to_str().unwrap()),
+            &listed(&["../outside/secret.epub"]),
+            &config,
+        )
+        .unwrap_err();
+
+        assert!(matches!(err, ImportError::NotVisible(_)), "{err}");
+    }
+
+    #[test]
+    fn refuses_a_path_outside_the_client_prefix() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dl = tmp.path().join("dl");
+        write(&dl, "Dune.epub", EPUB_BYTES);
+        let config = requests_config(Some("/downloads"), dl.to_str());
+
+        let err = resolve(&status("/elsewhere"), &listed(&["Dune.epub"]), &config).unwrap_err();
+
+        assert!(matches!(err, ImportError::NotVisible(_)), "{err}");
+    }
+}
+
+mod pick {
+    use super::*;
+
+    #[test]
+    fn drops_an_executable_and_an_unknown_extension() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = vec![
+            write(tmp.path(), "setup.exe", b"MZ not a book"),
+            write(tmp.path(), "book.cbz", EPUB_BYTES),
+        ];
+
+        let err = pick(&paths).unwrap_err();
+
+        assert!(matches!(err, ImportError::NothingImportable), "{err}");
+    }
+
+    #[test]
+    fn drops_an_epub_whose_bytes_are_not_a_zip() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = vec![write(tmp.path(), "fake.epub", b"<html>not an epub</html>")];
+
+        let err = pick(&paths).unwrap_err();
+
+        assert!(matches!(err, ImportError::NothingImportable), "{err}");
+    }
+
+    #[test]
+    fn prefers_the_epub_when_a_release_carries_epub_and_pdf() {
+        let tmp = tempfile::tempdir().unwrap();
+        let epub = write(tmp.path(), "small.epub", EPUB_BYTES);
+        let pdf = write(tmp.path(), "huge.pdf", &[PDF_BYTES, &[b'x'; 4096]].concat());
+
+        let picked = pick(&[pdf, epub.clone()]).unwrap();
+
+        assert_eq!(picked, (epub, "epub"));
+    }
+
+    #[test]
+    fn takes_the_larger_of_two_epubs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let small = write(tmp.path(), "a.epub", EPUB_BYTES);
+        let large = write(tmp.path(), "b.epub", &[EPUB_BYTES, &[b'x'; 4096]].concat());
+
+        let picked = pick(&[small, large.clone()]).unwrap();
+
+        assert_eq!(picked, (large, "epub"));
+    }
+
+    #[test]
+    fn fails_nothing_importable_on_an_empty_list() {
+        let err = pick(&[]).unwrap_err();
+
+        assert!(matches!(err, ImportError::NothingImportable), "{err}");
+    }
+}
