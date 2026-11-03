@@ -62,7 +62,12 @@ pub fn auth_router(state: AppState) -> Router {
         .layer(Extension(pool))
 }
 
-fn user_summary(u: &auth_db::User) -> UserSummary {
+/// A session's `can_request`: the stored grant (admins always hold it), off entirely with the feature.
+fn request_access(book_requests: bool, is_admin: bool, stored: bool) -> bool {
+    book_requests && (is_admin || stored)
+}
+
+fn user_summary(u: &auth_db::User, book_requests: bool) -> UserSummary {
     UserSummary {
         id: u.id,
         username: u.username.clone(),
@@ -70,7 +75,7 @@ fn user_summary(u: &auth_db::User) -> UserSummary {
         can_upload: u.can_upload,
         can_edit: u.can_edit,
         can_download: u.can_download,
-        can_request: u.can_request,
+        can_request: request_access(book_requests, u.is_admin, u.can_request),
         kindle_email: u.kindle_email.clone(),
         display_name: u.display_name.clone(),
         has_avatar: u.has_avatar,
@@ -337,7 +342,7 @@ async fn issue_session(
     };
 
     let body = LoginResponse {
-        user: user_summary(&user),
+        user: user_summary(&user, state.book_requests()),
         token: if bearer {
             Some(issued.raw_token.clone())
         } else {
@@ -458,6 +463,7 @@ async fn me_handler(user: AuthUser, State(state): State<AppState>) -> Response {
     };
     Json(UserSummary {
         impersonation,
+        can_request: request_access(state.book_requests(), user.is_admin, user.can_request),
         ..user.summary()
     })
     .into_response()
