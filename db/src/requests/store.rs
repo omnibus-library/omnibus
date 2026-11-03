@@ -336,9 +336,16 @@ async fn insert_result(
 /// Send a `looking` or `stuck` request back to `looking` and forget what it found, and say
 /// what it is now in. A request stuck on a stopped download keeps what was found: it goes
 /// back to choosing, as [`swap`] does. One stuck on `couldnt_add` goes back to the import,
-/// keeping its download and where it was filed, so nothing is fetched or searched again.
+/// keeping its download and where it was filed, so nothing is fetched or searched again; like
+/// [`undo_cancel`] it is refused when the reader has meanwhile asked for the same book
+/// ([`RequestError::WrongState`]) or holds `max_live` requests ([`RequestError::TooManyLive`]).
 /// [`RequestError::WrongState`] for one already waiting on a pick or picked.
-pub async fn restart(pool: &SqlitePool, id: i64, now: i64) -> Result<RequestState, RequestError> {
+pub async fn restart(
+    pool: &SqlitePool,
+    id: i64,
+    now: i64,
+    max_live: i64,
+) -> Result<RequestState, RequestError> {
     let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     let current: Option<(String, Option<String>)> =
         sqlx::query_as("SELECT state, stuck_reason FROM book_requests WHERE id = ?")
@@ -356,6 +363,7 @@ pub async fn restart(pool: &SqlitePool, id: i64, now: i64) -> Result<RequestStat
         return Ok(row.state);
     }
     if stuck_on(StuckReason::CouldntAdd) {
+        change::ensure_room(&mut tx, id, max_live).await?;
         sqlx::query(&format!(
             "UPDATE book_requests
              SET state = 'on_its_way', progress = 1, stuck_reason = NULL, stuck_detail = NULL,
@@ -419,8 +427,8 @@ mod download;
 pub use change::{cancel, swap, undo_cancel, CANCEL_GRACE_SECS};
 pub use download::{
     awaiting_add, awaiting_import, begin_download, claim_due_cancels, downloading, finish_removal,
-    has_download_work, mark_couldnt_add, mark_on_its_way, mark_ready, mark_removal_seen,
-    mark_stopped, pending_removals, record_progress, set_import_key, unix_now,
+    has_download_work, mark_on_its_way, mark_ready, mark_removal_seen, mark_stuck,
+    pending_removals, record_progress, set_import_key, unix_now,
 };
 
 #[cfg(test)]

@@ -38,7 +38,8 @@ mod post_retry_request_when_couldnt_add {
         let (app, state, pool) = fixture_book_requests(true).await;
         let (ada, token) = requester(&pool, "ada").await;
         let id = couldnt_add(&pool, ada).await;
-        for _ in 0..10 {
+        // One short of the cap: a recorded start would use up the last.
+        for _ in 0..9 {
             state.request_starts().record(ada);
         }
 
@@ -56,6 +57,12 @@ mod post_retry_request_when_couldnt_add {
         assert_eq!(body.state, RequestState::OnItsWay);
         assert_eq!(body.stuck_reason, None);
         assert_eq!(body.progress, Some(1.0));
+        assert!(state.request_starts().has_room(ada));
+        let results: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM book_request_results")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(results, 1);
         let kept = store::get(&pool, id).await.unwrap().unwrap();
         assert_eq!(kept.client_tag.as_deref(), Some("omnibus-1"));
         assert_eq!(

@@ -6563,10 +6563,10 @@
             "description": "Book requests are off on this server, or there is no such request."
           },
           "409": {
-            "description": "The request is past searching: it is waiting on a pick or was picked."
+            "description": "The request is past searching: it is waiting on a pick or was picked, or its download can't be added again because you asked for the same book since."
           },
           "429": {
-            "description": "You started too many requests lately."
+            "description": "You started too many requests lately, or have too many in progress."
           }
         }
       }

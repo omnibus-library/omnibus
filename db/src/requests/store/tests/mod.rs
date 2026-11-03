@@ -7,6 +7,8 @@ use super::*;
 
 mod change;
 
+const MAX_LIVE: i64 = 5;
+
 async fn pool() -> SqlitePool {
     crate::pool::init_db("sqlite::memory:").await.unwrap()
 }
@@ -372,7 +374,9 @@ mod a_verdict_for_an_old_pick {
         let stale = Some(picked + 100);
 
         record_progress(&pool, id, stale, 0.9, NOW).await.unwrap();
-        mark_stopped(&pool, id, stale, "old news").await.unwrap();
+        mark_stuck(&pool, id, stale, StuckReason::StoppedMoving, "old news")
+            .await
+            .unwrap();
 
         let row = state_of(&pool, id).await;
         assert_eq!(row.state, RequestState::OnItsWay);
@@ -380,15 +384,40 @@ mod a_verdict_for_an_old_pick {
     }
 
     #[tokio::test]
+    async fn keeps_no_import_key_once_the_request_holds_another_pick() {
+        let pool = pool().await;
+        let (id, picked, _) = on_its_way_with_two_versions(&pool).await;
+
+        set_import_key(&pool, id, Some(picked + 100), "a/b/b.epub")
+            .await
+            .unwrap();
+
+        assert_eq!(state_of(&pool, id).await.import_key, None);
+    }
+
+    #[tokio::test]
+    async fn is_not_ready_once_the_request_holds_another_pick() {
+        let pool = pool().await;
+        let (id, picked, _) = on_its_way_with_two_versions(&pool).await;
+
+        mark_ready(&pool, id, Some(picked + 100)).await.unwrap();
+
+        assert_eq!(state_of(&pool, id).await.state, RequestState::OnItsWay);
+    }
+
+    #[tokio::test]
     async fn applies_to_the_pick_it_was_read_for() {
         let pool = pool().await;
         let (id, picked, _) = on_its_way_with_two_versions(&pool).await;
 
-        mark_stopped(&pool, id, Some(picked), "no data")
+        mark_stuck(&pool, id, Some(picked), StuckReason::CouldntAdd, "no room")
             .await
             .unwrap();
 
-        assert_eq!(state_of(&pool, id).await.state, RequestState::Stuck);
+        let row = state_of(&pool, id).await;
+        assert_eq!(row.state, RequestState::Stuck);
+        assert_eq!(row.stuck_reason, Some(StuckReason::CouldntAdd));
+        assert_eq!(row.stuck_detail.as_deref(), Some("no room"));
     }
 }
 
@@ -406,7 +435,7 @@ mod restart {
         finish_search(&pool, id, stuck).await.unwrap();
         seed_result(&pool, id, "old", 1.0, 0).await;
 
-        restart(&pool, id, NOW).await.unwrap();
+        restart(&pool, id, NOW, MAX_LIVE).await.unwrap();
 
         let row = state_of(&pool, id).await;
         assert_eq!(row.state, RequestState::Looking);
@@ -427,7 +456,7 @@ mod restart {
         .await
         .unwrap();
 
-        let now_in = restart(&pool, id, NOW).await.unwrap();
+        let now_in = restart(&pool, id, NOW, MAX_LIVE).await.unwrap();
 
         assert_eq!(now_in, RequestState::Choose);
         let row = state_of(&pool, id).await;
@@ -454,7 +483,7 @@ mod restart {
         .await
         .unwrap();
 
-        let now_in = restart(&pool, id, NOW).await.unwrap();
+        let now_in = restart(&pool, id, NOW, MAX_LIVE).await.unwrap();
 
         assert_eq!(now_in, RequestState::OnItsWay);
         let row = state_of(&pool, id).await;
@@ -468,11 +497,64 @@ mod restart {
     }
 
     #[tokio::test]
+    async fn refuses_couldnt_add_once_the_reader_asked_for_the_same_book_again() {
+        let pool = pool().await;
+        let ada = seed_user(&pool, "ada").await;
+        let first = start(&pool, ada, "book-1", RequestKind::Ebook, 5)
+            .await
+            .unwrap()
+            .request
+            .id;
+        sqlx::query(
+            "UPDATE book_requests SET state = 'stuck', stuck_reason = 'couldnt_add' WHERE id = ?",
+        )
+        .bind(first)
+        .execute(&pool)
+        .await
+        .unwrap();
+        start(&pool, ada, "book-1", RequestKind::Ebook, 5)
+            .await
+            .unwrap();
+
+        let result = restart(&pool, first, NOW, MAX_LIVE).await;
+
+        assert!(matches!(result, Err(RequestError::WrongState)));
+        assert_eq!(state_of(&pool, first).await.state, RequestState::Stuck);
+    }
+
+    #[tokio::test]
+    async fn refuses_couldnt_add_once_the_reader_holds_the_live_limit() {
+        let pool = pool().await;
+        let ada = seed_user(&pool, "ada").await;
+        let first = start(&pool, ada, "book-1", RequestKind::Ebook, 5)
+            .await
+            .unwrap()
+            .request
+            .id;
+        sqlx::query(
+            "UPDATE book_requests SET state = 'stuck', stuck_reason = 'couldnt_add' WHERE id = ?",
+        )
+        .bind(first)
+        .execute(&pool)
+        .await
+        .unwrap();
+        for n in 2..=3 {
+            start(&pool, ada, &format!("book-{n}"), RequestKind::Ebook, 5)
+                .await
+                .unwrap();
+        }
+
+        let result = restart(&pool, first, NOW, 2).await;
+
+        assert!(matches!(result, Err(RequestError::TooManyLive)));
+    }
+
+    #[tokio::test]
     async fn restarts_a_request_still_looking() {
         let pool = pool().await;
         let id = start_looking(&pool).await;
 
-        restart(&pool, id, NOW).await.unwrap();
+        restart(&pool, id, NOW, MAX_LIVE).await.unwrap();
 
         assert_eq!(state_of(&pool, id).await.state, RequestState::Looking);
     }
@@ -489,7 +571,7 @@ mod restart {
                 .await
                 .unwrap();
 
-            let result = restart(&pool, id, NOW).await;
+            let result = restart(&pool, id, NOW, MAX_LIVE).await;
 
             assert!(matches!(result, Err(RequestError::WrongState)), "{state}");
         }

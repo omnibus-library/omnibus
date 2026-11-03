@@ -41,7 +41,6 @@ fn torrent_info(hash: &str) -> serde_json::Value {
         "hash": hash,
         "progress": 0.5,
         "state": "downloading",
-        "content_path": "/downloads/omnibus/Dune.epub",
         "save_path": "/downloads/omnibus",
     }])
 }
@@ -269,7 +268,6 @@ mod qbittorrent_status {
             hash: "h1".into(),
             progress: 0.5,
             state: "downloading".into(),
-            content_path: "/downloads/omnibus/Dune.epub".into(),
             save_path: "/downloads/omnibus".into(),
         };
         assert_eq!(status, Some(expected));

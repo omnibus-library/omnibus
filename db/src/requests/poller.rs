@@ -1,19 +1,22 @@
 //! The task that hands a picked version to the download client and follows it. Each pass
 //! claims the cancels whose grace ended and takes out what is on the removal list, then adds
 //! what was picked, then reads every unfinished download; a tick then adds the finished ones
-//! to the library. All request state lives in the table, so a restart picks up where it stopped. The client is asked by tag, never by hash,
-//! and its answers are judged by [`judge`].
+//! to the library. All request state lives in the table, so a restart picks up where it
+//! stopped. The client is asked by tag, never by hash, and its answers are judged by [`judge`].
 
 use std::sync::Arc;
 use std::time::Duration;
 
+use omnibus_shared::StuckReason;
 use sqlx::SqlitePool;
+
+use crate::settings::RequestsConfig;
+use crate::worker::Worker;
 
 use super::clients::{client_for, DownloadClient, TorrentStatus};
 use super::import::import_finished;
 use super::store::{self, RequestError, RequestRow};
 use super::ConnectionError;
-use crate::worker::Worker;
 
 /// How long a download's bytes may sit still before it counts as stopped. A fixed 12 hours
 /// for now; it may become an admin setting.
@@ -28,6 +31,8 @@ const APPEAR_SECS: i64 = 600;
 /// The pause between passes while something needs watching, and while nothing does.
 const BUSY_WAIT: Duration = Duration::from_secs(5);
 const IDLE_WAIT: Duration = Duration::from_secs(60);
+
+const STOPPED: StuckReason = StuckReason::StoppedMoving;
 
 /// qBittorrent's states for a download that has all its data.
 const FINISHED_STATES: [&str; 7] = [
@@ -85,15 +90,27 @@ pub async fn poll_tick(
             return IDLE_WAIT;
         }
     };
+    tick_with(pool, worker, &client, &config, failing_since).await
+}
+
+/// [`poll_tick`] once the connections are read and the client built: a pass, then the import
+/// of what finished.
+pub async fn tick_with(
+    pool: &SqlitePool,
+    worker: &Arc<Worker>,
+    client: &impl DownloadClient,
+    config: &RequestsConfig,
+    failing_since: &mut Option<i64>,
+) -> Duration {
     let category = &config.download_client_category;
-    let busy = match poll_once(pool, &client, category, store::unix_now(), failing_since).await {
+    let busy = match poll_once(pool, client, category, store::unix_now(), failing_since).await {
         Ok(busy) => busy,
         Err(e) => {
             tracing::error!(error = %e, "request poller could not read the table");
             return IDLE_WAIT;
         }
     };
-    let import_waiting = match import_finished(pool, &client, worker, &config).await {
+    let import_waiting = match import_finished(pool, client, worker, config).await {
         Ok(waiting) => waiting,
         Err(e) => {
             tracing::error!(error = %e, "request poller could not read the table");
@@ -200,7 +217,7 @@ async fn add_picked(
                 Ok(()) => {}
                 Err(e) if refused_one(&e) => {
                     let why = e.to_string();
-                    store::mark_stopped(pool, row.id, row.chosen_result_id, &why).await?;
+                    store::mark_stuck(pool, row.id, row.chosen_result_id, STOPPED, &why).await?;
                     continue;
                 }
                 Err(e) => return Err(e.into()),
@@ -225,7 +242,7 @@ async fn follow_downloads(
         match judge(&row, status.as_ref(), now) {
             Verdict::Wait => {}
             Verdict::Progress(p) => store::record_progress(pool, row.id, pick, p, now).await?,
-            Verdict::Stopped(why) => store::mark_stopped(pool, row.id, pick, why).await?,
+            Verdict::Stopped(why) => store::mark_stuck(pool, row.id, pick, STOPPED, why).await?,
         }
     }
     Ok(())
@@ -262,7 +279,7 @@ fn judge(row: &RequestRow, status: Option<&TorrentStatus>, now: i64) -> Verdict 
 /// failed, and nothing has been given up.
 async fn stop_downloading(pool: &SqlitePool, why: &str) -> Result<(), RequestError> {
     for row in store::downloading(pool).await? {
-        store::mark_stopped(pool, row.id, row.chosen_result_id, why).await?;
+        store::mark_stuck(pool, row.id, row.chosen_result_id, STOPPED, why).await?;
     }
     Ok(())
 }

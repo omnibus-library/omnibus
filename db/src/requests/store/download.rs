@@ -3,6 +3,7 @@
 //! to take out of the client, and ending the import of a finished one. Every write that follows a verdict names the pick it was read
 //! for, so a verdict about an old pick never lands on a new one.
 
+use omnibus_shared::StuckReason;
 use sqlx::SqlitePool;
 
 use super::{row_to_request, RequestError, RequestRow, COLUMNS, DOWNLOADING, NOW};
@@ -176,26 +177,6 @@ pub async fn mark_ready(
     Ok(())
 }
 
-/// End the import of request `id`'s pick `chosen` as `couldnt_add`. `detail` is for admins.
-pub async fn mark_couldnt_add(
-    pool: &SqlitePool,
-    id: i64,
-    chosen: Option<i64>,
-    detail: &str,
-) -> Result<(), RequestError> {
-    sqlx::query(&format!(
-        "UPDATE book_requests
-         SET state = 'stuck', stuck_reason = 'couldnt_add', stuck_detail = ?, updated_at = {NOW}
-         WHERE id = ? AND state = 'on_its_way' AND chosen_result_id = ?"
-    ))
-    .bind(detail)
-    .bind(id)
-    .bind(chosen)
-    .execute(pool)
-    .await?;
-    Ok(())
-}
-
 /// Record how far request `id`'s download of pick `chosen` is, and when it last gained bytes.
 pub async fn record_progress(
     pool: &SqlitePool,
@@ -217,19 +198,21 @@ pub async fn record_progress(
     Ok(())
 }
 
-/// End a request's pick `chosen`, picked or downloading, as `stopped_moving`. `detail` is
+/// End a request's pick `chosen`, picked or downloading, as stuck for `reason`. `detail` is
 /// for admins.
-pub async fn mark_stopped(
+pub async fn mark_stuck(
     pool: &SqlitePool,
     id: i64,
     chosen: Option<i64>,
+    reason: StuckReason,
     detail: &str,
 ) -> Result<(), RequestError> {
     sqlx::query(&format!(
         "UPDATE book_requests
-         SET state = 'stuck', stuck_reason = 'stopped_moving', stuck_detail = ?, updated_at = {NOW}
+         SET state = 'stuck', stuck_reason = ?, stuck_detail = ?, updated_at = {NOW}
          WHERE id = ? AND state IN ('chosen', 'on_its_way') AND chosen_result_id = ?"
     ))
+    .bind(reason.as_str())
     .bind(detail)
     .bind(id)
     .bind(chosen)

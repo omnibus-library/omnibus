@@ -199,7 +199,7 @@ mod run_search {
         let pool = pool_with_prowlarr_key(&server.uri(), "key-search-429-cooldown").await;
         let first = looking_request(&pool).await;
         run_search_with(&pool, first, patience(0, 0)).await.unwrap();
-        store::restart(&pool, first, 0).await.unwrap();
+        store::restart(&pool, first, 0, 5).await.unwrap();
 
         run_search_with(&pool, first, patience(0, 0)).await.unwrap();
 

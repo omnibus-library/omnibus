@@ -1,15 +1,14 @@
+//! Placing a download in the library: the staging folder, the rename, and the scan's view of it.
+
 use std::fs;
 use std::path::Path;
 
 use super::super::place::{discard_staging, place_blocking};
-
-const EPUB_BYTES: &[u8] = b"PK\x03\x04 an epub";
+use super::{write, EPUB_BYTES};
 
 /// A download folder holding `Dune.epub`, and an empty library root beside it.
 fn download_and_library(tmp: &Path) -> (std::path::PathBuf, std::path::PathBuf) {
-    let src = tmp.join("dl/Dune.epub");
-    fs::create_dir_all(src.parent().unwrap()).unwrap();
-    fs::write(&src, EPUB_BYTES).unwrap();
+    let src = write(tmp, "dl/Dune.epub", EPUB_BYTES);
     let root = tmp.join("library");
     fs::create_dir_all(&root).unwrap();
     (src, root)

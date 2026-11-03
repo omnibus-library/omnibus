@@ -1,9 +1,8 @@
-use omnibus_shared::{RequestKind, RequestState, StuckReason};
+use omnibus_shared::{RequestState, StuckReason};
 use sqlx::SqlitePool;
 
 use crate::requests::store::{self, RequestRow};
-use crate::requests::test_support::{Call, StubClient};
-use crate::test_support::seed_user;
+use crate::requests::test_support::{on_its_way, seed, tag, update, Call, StubClient};
 use crate::worker::{Worker, WorkerConfig};
 
 use super::*;
@@ -15,57 +14,6 @@ const CATEGORY: &str = "omnibus";
 
 async fn pool() -> SqlitePool {
     crate::pool::init_db("sqlite::memory:").await.unwrap()
-}
-
-/// A reader named `name` with a request in `state` for a book of the same name, and a version
-/// of it picked. Returns the request's id.
-async fn seed(pool: &SqlitePool, name: &str, state: &str) -> i64 {
-    let user = seed_user(pool, name).await;
-    let id = store::start(pool, user, name, RequestKind::Ebook, 5)
-        .await
-        .unwrap()
-        .request
-        .id;
-    let result: i64 = sqlx::query_scalar(
-        "INSERT INTO book_request_results (request_id, guid, title, download_url, score)
-         VALUES (?, 'g', 't', 'magnet:?xt=urn:btih:abc', 1.0) RETURNING id",
-    )
-    .bind(id)
-    .fetch_one(pool)
-    .await
-    .unwrap();
-    update(
-        pool,
-        id,
-        &format!("state = '{state}', chosen_result_id = {result}"),
-    )
-    .await;
-    id
-}
-
-/// Run `UPDATE book_requests SET <set> WHERE id = <id>`.
-async fn update(pool: &SqlitePool, id: i64, set: &str) {
-    sqlx::query(&format!("UPDATE book_requests SET {set} WHERE id = {id}"))
-        .execute(pool)
-        .await
-        .unwrap();
-}
-
-/// A request on its way whose download reported `progress` at `moved_at`.
-async fn on_its_way(pool: &SqlitePool, name: &str, progress: f64, moved_at: i64) -> i64 {
-    let id = seed(pool, name, "on_its_way").await;
-    let set = format!(
-        "client_tag = '{}', progress = {progress}, moved_at = {moved_at}",
-        tag(id)
-    );
-    update(pool, id, &set).await;
-    id
-}
-
-/// The tag of request `id`'s pick, as the poller names it. Every request seeded here holds
-/// one version, whose id equals the request's.
-fn tag(id: i64) -> String {
-    format!("omnibus-{id}-{id}")
 }
 
 async fn row(pool: &SqlitePool, id: i64) -> RequestRow {

@@ -5,11 +5,78 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
+use omnibus_shared::{DownloadClientKind, RequestKind};
+use sqlx::SqlitePool;
+
 use crate::settings::RequestsConfig;
-use omnibus_shared::DownloadClientKind;
+use crate::test_support::seed_user;
 
 use super::clients::{ClientFile, DownloadClient, TorrentStatus};
+use super::store;
 use super::ConnectionError;
+
+/// A new reader named `reader` with a `kind` request for `book_uuid` in `state`, and a version
+/// of it picked. Returns the request's id.
+pub async fn seed_picked(
+    pool: &SqlitePool,
+    reader: &str,
+    book_uuid: &str,
+    kind: RequestKind,
+    state: &str,
+) -> i64 {
+    let user = seed_user(pool, reader).await;
+    let id = store::start(pool, user, book_uuid, kind, 5)
+        .await
+        .unwrap()
+        .request
+        .id;
+    let result: i64 = sqlx::query_scalar(
+        "INSERT INTO book_request_results (request_id, guid, title, download_url, score)
+         VALUES (?, 'g', 't', 'magnet:?xt=urn:btih:abc', 1.0) RETURNING id",
+    )
+    .bind(id)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    update(
+        pool,
+        id,
+        &format!("state = '{state}', chosen_result_id = {result}"),
+    )
+    .await;
+    id
+}
+
+/// A reader named `name` with an ebook request in `state` for a book of the same name, and a
+/// version of it picked. Returns the request's id.
+pub async fn seed(pool: &SqlitePool, name: &str, state: &str) -> i64 {
+    seed_picked(pool, name, name, RequestKind::Ebook, state).await
+}
+
+/// Run `UPDATE book_requests SET <set> WHERE id = <id>`.
+pub async fn update(pool: &SqlitePool, id: i64, set: &str) {
+    sqlx::query(&format!("UPDATE book_requests SET {set} WHERE id = {id}"))
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
+/// A request on its way whose download reported `progress` at `moved_at`.
+pub async fn on_its_way(pool: &SqlitePool, name: &str, progress: f64, moved_at: i64) -> i64 {
+    let id = seed(pool, name, "on_its_way").await;
+    let set = format!(
+        "client_tag = '{}', progress = {progress}, moved_at = {moved_at}",
+        tag(id)
+    );
+    update(pool, id, &set).await;
+    id
+}
+
+/// The tag of request `id`'s pick, as the poller names it. Every request seeded here holds
+/// one version, whose id equals the request's.
+pub fn tag(id: i64) -> String {
+    format!("omnibus-{id}-{id}")
+}
 
 /// Connection settings with no services set up and the two download folders as given.
 pub fn requests_config(client_prefix: Option<&str>, local_prefix: Option<&str>) -> RequestsConfig {
@@ -95,6 +162,14 @@ impl StubClient {
         self
     }
 
+    /// The client reports the download marked `tag` in `state`, keeping the rest of its status.
+    pub fn with_state(self, tag: &str, state: &str) -> Self {
+        if let Some(status) = self.script().statuses.get_mut(tag) {
+            status.state = state.to_string();
+        }
+        self
+    }
+
     /// A client that refuses to add a download marked `tag`.
     pub fn refusing(self, tag: &str) -> Self {
         self.script().refused.push(tag.to_string());
@@ -107,7 +182,6 @@ impl StubClient {
             hash: format!("hash-{tag}"),
             progress,
             state: state.to_string(),
-            content_path: String::new(),
             save_path: String::new(),
         };
         self.script().statuses.insert(tag.to_string(), status);

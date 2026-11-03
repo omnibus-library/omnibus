@@ -44,29 +44,18 @@ pub async fn undo_cancel(
     max_live: i64,
 ) -> Result<RequestRow, RequestError> {
     let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
-    let live: Option<(i64, i64)> = sqlx::query_as(&format!(
-        "SELECT (SELECT COUNT(*) FROM book_requests o WHERE o.user_id = q.user_id
-                                                         AND o.state IN {LIVE_STATES}),
-                (SELECT COUNT(*) FROM book_requests o WHERE o.user_id = q.user_id
-                                                         AND o.book_uuid = q.book_uuid
-                                                         AND o.kind = q.kind
-                                                         AND o.state IN {LIVE_STATES})
-         FROM book_requests q
-         WHERE q.id = ? AND q.state = 'cancelled' AND q.cancel_at > ? AND q.prior_state IS NOT NULL"
-    ))
+    let cancelled: Option<i64> = sqlx::query_scalar(
+        "SELECT 1 FROM book_requests
+         WHERE id = ? AND state = 'cancelled' AND cancel_at > ? AND prior_state IS NOT NULL",
+    )
     .bind(id)
     .bind(now)
     .fetch_optional(&mut *tx)
     .await?;
-    let Some((all, same)) = live else {
-        return Err(RequestError::WrongState);
-    };
-    if same > 0 {
+    if cancelled.is_none() {
         return Err(RequestError::WrongState);
     }
-    if all >= max_live {
-        return Err(RequestError::TooManyLive);
-    }
+    ensure_room(&mut tx, id, max_live).await?;
     let row = sqlx::query(&format!(
         "UPDATE book_requests
          SET state = prior_state, prior_state = NULL, cancelled_by = NULL, cancel_at = NULL,
@@ -80,6 +69,35 @@ pub async fn undo_cancel(
     .await?;
     tx.commit().await?;
     Ok(row_to_request(&row)?)
+}
+
+/// Whether request `id` may go live again: its reader has no live request for the same book
+/// and format ([`RequestError::WrongState`]) and holds fewer than `max_live`
+/// ([`RequestError::TooManyLive`]).
+pub(super) async fn ensure_room(
+    tx: &mut sqlx::SqliteConnection,
+    id: i64,
+    max_live: i64,
+) -> Result<(), RequestError> {
+    let (all, same): (i64, i64) = sqlx::query_as(&format!(
+        "SELECT (SELECT COUNT(*) FROM book_requests o WHERE o.user_id = q.user_id
+                                                         AND o.state IN {LIVE_STATES}),
+                (SELECT COUNT(*) FROM book_requests o WHERE o.user_id = q.user_id
+                                                         AND o.book_uuid = q.book_uuid
+                                                         AND o.kind = q.kind
+                                                         AND o.state IN {LIVE_STATES})
+         FROM book_requests q WHERE q.id = ?"
+    ))
+    .bind(id)
+    .fetch_one(tx)
+    .await?;
+    if same > 0 {
+        return Err(RequestError::WrongState);
+    }
+    if all >= max_live {
+        return Err(RequestError::TooManyLive);
+    }
+    Ok(())
 }
 
 /// Give up the picked version of a downloading or stopped request: it is never offered again

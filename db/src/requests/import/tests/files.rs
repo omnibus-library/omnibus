@@ -1,13 +1,14 @@
+//! Picking the book out of a finished download: mapping its files and choosing one.
+
 use std::fs;
-use std::path::{Path, PathBuf};
 
 use crate::requests::clients::{ClientFile, TorrentStatus};
 use crate::requests::test_support::requests_config;
 
 use super::super::files::{pick, resolve};
 use super::super::ImportError;
+use super::{write, EPUB_BYTES};
 
-const EPUB_BYTES: &[u8] = b"PK\x03\x04 an epub";
 const PDF_BYTES: &[u8] = b"%PDF-1.7 a pdf";
 
 fn status(save_path: &str) -> TorrentStatus {
@@ -15,7 +16,6 @@ fn status(save_path: &str) -> TorrentStatus {
         hash: "h".to_string(),
         progress: 1.0,
         state: "stalledUP".to_string(),
-        content_path: String::new(),
         save_path: save_path.to_string(),
     }
 }
@@ -28,14 +28,6 @@ fn listed(names: &[&str]) -> Vec<ClientFile> {
             size: 1,
         })
         .collect()
-}
-
-/// Write `bytes` to `root/name`, making the folders it sits in.
-fn write(root: &Path, name: &str, bytes: &[u8]) -> PathBuf {
-    let path = root.join(name);
-    fs::create_dir_all(path.parent().unwrap()).unwrap();
-    fs::write(&path, bytes).unwrap();
-    path
 }
 
 mod resolve {
@@ -72,6 +64,51 @@ mod resolve {
         .unwrap();
 
         assert_eq!(found, vec![file.canonicalize().unwrap()]);
+    }
+
+    #[test]
+    fn leaves_out_a_listed_file_that_was_never_written() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dune = write(tmp.path(), "Dune.epub", EPUB_BYTES);
+        let config = requests_config(None, None);
+
+        let found = resolve(
+            &status(tmp.path().to_str().unwrap()),
+            &listed(&["Dune.epub", "missing.epub", "missing.exe"]),
+            &config,
+        )
+        .unwrap();
+
+        assert_eq!(found, vec![dune.canonicalize().unwrap()]);
+    }
+
+    #[test]
+    fn refuses_a_download_folder_this_server_cannot_see() {
+        let tmp = tempfile::tempdir().unwrap();
+        let gone = tmp.path().join("not-mounted");
+        let config = requests_config(None, None);
+
+        let err = resolve(
+            &status(gone.to_str().unwrap()),
+            &listed(&["Dune.epub"]),
+            &config,
+        )
+        .unwrap_err();
+
+        assert!(matches!(err, ImportError::NotVisible(_)), "{err}");
+    }
+
+    #[test]
+    fn refuses_only_one_of_the_two_download_folders_set() {
+        let tmp = tempfile::tempdir().unwrap();
+        write(tmp.path(), "Dune.epub", EPUB_BYTES);
+        let dir = tmp.path().to_str();
+
+        for config in [requests_config(dir, None), requests_config(None, dir)] {
+            let err = resolve(&status(dir.unwrap()), &listed(&["Dune.epub"]), &config).unwrap_err();
+
+            assert!(matches!(err, ImportError::Cannot(_)), "{err}");
+        }
     }
 
     #[test]

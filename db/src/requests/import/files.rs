@@ -3,20 +3,22 @@
 //! [`pick`] keeps the ones whose bytes really are an EPUB or PDF.
 
 use std::fs::File;
-use std::io::Read;
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
 use omnibus_shared::{detect_ebook_format, EBOOK_MAGIC_LEN};
 
 use crate::requests::clients::{ClientFile, TorrentStatus};
-use crate::requests::paths::map_client_path;
+use crate::requests::paths::{map_client_path, PathMapError};
 use crate::settings::RequestsConfig;
 
 use super::ImportError;
 
-/// Every file of the download as a canonical path on this server. The two download folders
-/// map the client's view onto ours; with either unset, the download's own save folder is
-/// the same place to both. Does blocking filesystem calls.
+/// The EPUB and PDF files of the download as canonical paths on this server; other files are
+/// left unmapped. The two download folders map the client's view onto ours: both set, or
+/// neither, in which case the download's own save folder is the same place to both. A listed
+/// file that was never written (the client lists files it was told to skip) is left out; one
+/// that leads outside the download folder fails the import. Does blocking filesystem calls.
 pub fn resolve(
     status: &TorrentStatus,
     files: &[ClientFile],
@@ -28,18 +30,27 @@ pub fn resolve(
         config.download_path_prefix.as_deref(),
     ) {
         (Some(client), Some(local)) => (Path::new(client), Path::new(local)),
-        _ => (save, save),
+        (None, None) => (save, save),
+        _ => {
+            return Err(ImportError::Cannot(
+                "set both download folders or neither".into(),
+            ))
+        }
     };
-    files
+    // A missing download folder is not a missing file.
+    local_prefix.canonicalize().map_err(PathMapError::from)?;
+    let mut found = Vec::new();
+    for file in files
         .iter()
-        .map(|file| {
-            Ok(map_client_path(
-                &save.join(&file.name),
-                client_prefix,
-                local_prefix,
-            )?)
-        })
-        .collect()
+        .filter(|f| ebook_extension(Path::new(&f.name)).is_some())
+    {
+        match map_client_path(&save.join(&file.name), client_prefix, local_prefix) {
+            Ok(path) => found.push(path),
+            Err(PathMapError::Io(e)) if e.kind() == io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e.into()),
+        }
+    }
+    Ok(found)
 }
 
 /// The file to add and its format: an EPUB over a PDF, then the largest. Only a file whose
@@ -60,17 +71,20 @@ pub fn pick(paths: &[PathBuf]) -> Result<(PathBuf, &'static str), ImportError> {
         .ok_or(ImportError::NothingImportable)
 }
 
+/// `epub` or `pdf` when `path`'s extension names it, in any case.
+fn ebook_extension(path: &Path) -> Option<String> {
+    let extension = path.extension()?.to_string_lossy().to_ascii_lowercase();
+    matches!(extension.as_str(), "epub" | "pdf").then_some(extension)
+}
+
 /// `epub` or `pdf` when `path`'s extension names it and its opening bytes agree.
 fn confirmed_format(path: &Path) -> Result<Option<&'static str>, ImportError> {
-    let extension = path
-        .extension()
-        .map(|e| e.to_string_lossy().to_ascii_lowercase());
-    if !matches!(extension.as_deref(), Some("epub" | "pdf")) {
+    let Some(extension) = ebook_extension(path) else {
         return Ok(None);
-    }
+    };
     let mut head = Vec::with_capacity(EBOOK_MAGIC_LEN);
     File::open(path)?
         .take(EBOOK_MAGIC_LEN as u64)
         .read_to_end(&mut head)?;
-    Ok(detect_ebook_format(&head).filter(|sniffed| Some(*sniffed) == extension.as_deref()))
+    Ok(detect_ebook_format(&head).filter(|sniffed| *sniffed == extension))
 }

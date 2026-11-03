@@ -335,8 +335,8 @@ pub(super) async fn get_request(
         (status = 401, description = "You aren't signed in."),
         (status = 403, description = "Your account can't make requests, or the request is another reader's."),
         (status = 404, description = "Book requests are off on this server, or there is no such request."),
-        (status = 409, description = "The request is past searching: it is waiting on a pick or was picked."),
-        (status = 429, description = "You started too many requests lately."),
+        (status = 409, description = "The request is past searching: it is waiting on a pick or was picked, or its download can't be added again because you asked for the same book since."),
+        (status = 429, description = "You started too many requests lately, or have too many in progress."),
     ),
 )]
 pub(super) async fn post_retry_request(
@@ -357,11 +357,14 @@ pub(super) async fn post_retry_request(
     if searches && !state.request_starts().has_room(user.id) {
         return too_many("you started too many requests; try again in a few minutes");
     }
-    match store::restart(state.pool(), id, store::unix_now()).await {
+    match store::restart(state.pool(), id, store::unix_now(), MAX_LIVE).await {
         Ok(RequestState::Looking) => search_again(&state, user.id, id),
         Ok(_) => state.request_kick().notify_one(),
         Err(RequestError::WrongState) => {
             return (StatusCode::CONFLICT, "this request can't be searched again").into_response();
+        }
+        Err(RequestError::TooManyLive) => {
+            return too_many("you have too many requests in progress");
         }
         Err(e) => return internal("restart request", e),
     }

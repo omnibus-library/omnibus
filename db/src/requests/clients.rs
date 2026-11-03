@@ -22,8 +22,6 @@ pub struct TorrentStatus {
     pub progress: f64,
     /// The client's own state word, such as `downloading` or `stalledUP`.
     pub state: String,
-    /// The finished file or folder, as the client sees it.
-    pub content_path: String,
     /// The folder the download's files sit in, as the client sees it.
     pub save_path: String,
 }
