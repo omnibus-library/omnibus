@@ -155,20 +155,15 @@ async fn merge_books_posts_the_pair_and_returns_the_undo_handle_when_confirmed()
 }
 
 #[tokio::test]
-async fn merge_books_names_the_admin_requirement_on_a_403() {
+async fn merge_books_names_the_edit_permission_on_a_403() {
     let (service, stub) = stub_service().await;
-    *stub.fail.lock().unwrap() = Some((403, "admin required"));
+    *stub.fail.lock().unwrap() = Some((403, "edit permission required"));
     let err = expect_err(
         service
             .merge_books(Parameters(merge_params(Some(true))))
             .await,
     );
-    assert!(err.message.contains("admin"), "got: {}", err.message);
-    assert!(
-        !err.message.contains("can_edit is required"),
-        "must name the admin gate, not can_edit: {}",
-        err.message
-    );
+    assert!(err.message.contains("can_edit"), "got: {}", err.message);
 }
 
 #[tokio::test]
