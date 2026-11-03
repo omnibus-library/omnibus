@@ -125,7 +125,15 @@ fn cookie_header(response: &Response) -> String {
     pairs.join("; ")
 }
 
+/// The part of a 5.x `torrents/add` answer that says whether the link was taken.
+#[derive(serde::Deserialize)]
+struct AddOutcome {
+    failure_count: u32,
+}
+
 impl DownloadClient for Qbittorrent {
+    /// `Ok` means qBittorrent accepted the link; a URL is fetched asynchronously, so the
+    /// torrent may still be pending, and `status` can answer `None` for a while.
     async fn add(&self, link: &str, category: &str, tag: &str) -> Result<(), ConnectionError> {
         let cookie = self.login().await?;
         let form = [("urls", link), ("category", category), ("tags", tag)];
@@ -136,10 +144,15 @@ impl DownloadClient for Qbittorrent {
             .text()
             .await
             .map_err(|e| ConnectionError::from_transport(&e))?;
-        // 4.x answers 200 "Fails." for a link it cannot use; trusting the status would lose the download.
-        if body.trim() == "Fails." {
+        // 5.x answers 202 with JSON counts; 4.x answers 200 "Ok." or "Fails." (a 200 for a link it cannot use).
+        let refused = if body.trim_start().starts_with('{') {
+            serde_json::from_str::<AddOutcome>(&body).is_ok_and(|o| o.failure_count > 0)
+        } else {
+            body.trim() == "Fails."
+        };
+        if refused {
             return Err(ConnectionError::Rejected(format!(
-                "{SERVICE} refused the download"
+                "{SERVICE} did not accept the link"
             )));
         }
         Ok(())
