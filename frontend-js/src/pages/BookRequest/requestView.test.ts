@@ -3,7 +3,9 @@ import { ApiError } from "../../api";
 import {
   holdsAudiobook,
   holdsEbook,
+  isCancellable,
   isSearchStale,
+  progressPercent,
   requestPath,
   startFailure,
   stateView,
@@ -110,5 +112,32 @@ describe("holdsAudiobook", () => {
   it("counts M4B, M4A and MP3 and nothing else", () => {
     expect(holdsAudiobook(["mp3"])).toBe(true);
     expect(holdsAudiobook(["EPUB", "PRINT"])).toBe(false);
+  });
+});
+
+describe("isCancellable", () => {
+  it.each([
+    ["looking", null, true],
+    ["choose", null, true],
+    ["chosen", null, true],
+    ["on_its_way", null, true],
+    ["on_its_way", 0.4, true],
+    ["on_its_way", 1, false],
+    ["stuck", null, false],
+    ["cancelled", null, false],
+  ] as const)("reads a %s request at %s as %s", (state, progress, expected) => {
+    expect(isCancellable({ state, progress })).toBe(expected);
+  });
+});
+
+describe("progressPercent", () => {
+  it("rounds down so a bar never reads done before it is", () => {
+    expect(progressPercent(0.426)).toBe(42);
+    expect(progressPercent(0.999)).toBe(99);
+  });
+
+  it("reads a finished download as 100 and an unread one as 0", () => {
+    expect(progressPercent(1)).toBe(100);
+    expect(progressPercent(null)).toBe(0);
   });
 });

@@ -1,4 +1,9 @@
-import { ApiError, type RequestState, type StuckReason } from "../../api";
+import {
+  ApiError,
+  type BookRequest,
+  type RequestState,
+  type StuckReason,
+} from "../../api";
 import { fileSize } from "../../format";
 
 /** What a request's state is called on the page, in Omnibus's words rather than the downloader's. */
@@ -45,6 +50,23 @@ export function stateView(
     }
   }
 }
+
+/** Whether Cancel is offered: any request still going, until its download is complete. */
+export const isCancellable = ({
+  state,
+  progress,
+}: Pick<BookRequest, "state" | "progress">) =>
+  state === "looking" ||
+  state === "choose" ||
+  state === "chosen" ||
+  (state === "on_its_way" && (progress ?? 0) < 1);
+
+/** A download's progress as a whole percent, rounded down so the bar never reads done early. */
+export const progressPercent = (progress: number | null) =>
+  Math.floor((progress ?? 0) * 100);
+
+/** How long the Undo toast stays: under the server's 8 s grace, so Undo is never offered after it ends. */
+export const UNDO_TOAST_MS = 7000;
 
 /** A request's own page: the book's address with `/request`. */
 export const requestPath = (uuid: string, id: number) =>

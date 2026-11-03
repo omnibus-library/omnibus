@@ -6,7 +6,7 @@ import {
   StartRequest,
 } from "../api/generated/schemas";
 
-// A stateful MSW fake of the five book-request routes, in the shape the server sends them.
+// A stateful MSW fake of the book-request routes, in the shape the server sends them.
 // A write a story makes shows in the next read; `writes` records them in order.
 
 const NOW = Math.floor(Date.now() / 1000);
@@ -39,6 +39,10 @@ export function aWireRequest(
     stuck_reason: null,
     stuck_detail: null,
     chosen_result_id: null,
+    progress: null,
+    cancel_at: null,
+    cancelled_by: null,
+    note: null,
     created_at: NOW,
     updated_at: NOW,
     versions: [],
@@ -50,6 +54,9 @@ export function aWireRequest(
 export type RequestWrite =
   | { kind: "start"; uuid: string }
   | { kind: "retry"; id: number }
+  | { kind: "cancel"; id: number }
+  | { kind: "undo"; id: number }
+  | { kind: "swap"; id: number }
   | { kind: "choose"; id: number; resultId: number };
 
 export type RequestFake = {
@@ -57,12 +64,31 @@ export type RequestFake = {
   writes: RequestWrite[];
 };
 
-/** The routes over `initial` requests. A start adds a looking request; a retry puts one back to looking. */
+const SWAPPED = "Swapped for another version";
+
+/** The routes over `initial` requests. A start adds a looking request; a retry puts one back to looking, or back to choosing after a stopped download. */
 export function requestFake(initial: BookRequest[] = []): RequestFake {
   const requests = new Map(initial.map((r) => [r.id, r]));
+  // The state a cancel left, which an undo puts back.
+  const before = new Map<number, BookRequest["state"]>();
   const fake: RequestFake = { handlers: [], writes: [] };
   const find = (raw: unknown) => requests.get(Number(raw));
   const refuse = (status: number) => new HttpResponse("refused", { status });
+  /** Drops the picked version and goes back to choosing among the rest. */
+  const giveUpPick = (found: BookRequest) => {
+    const back = {
+      ...found,
+      state: "choose" as const,
+      stuck_reason: null,
+      stuck_detail: null,
+      chosen_result_id: null,
+      progress: null,
+      note: SWAPPED,
+      versions: found.versions.filter((v) => v.id !== found.chosen_result_id),
+    };
+    requests.set(back.id, back);
+    return back;
+  };
   fake.handlers = [
     http.post("/api/books/:uuid/requests", async ({ params, request }) => {
       StartRequest.parse(await request.json());
@@ -86,6 +112,9 @@ export function requestFake(initial: BookRequest[] = []): RequestFake {
         return refuse(409);
       }
       fake.writes.push({ kind: "retry", id: found.id });
+      if (found.stuck_reason === "stopped_moving") {
+        return HttpResponse.json(giveUpPick(found));
+      }
       const again = {
         ...found,
         state: "looking" as const,
@@ -112,5 +141,47 @@ export function requestFake(initial: BookRequest[] = []): RequestFake {
       return HttpResponse.json(chosen);
     }),
   ];
+  fake.handlers.push(
+    http.post("/api/requests/:id/cancel", ({ params }) => {
+      const found = find(params.id);
+      if (!found) return refuse(404);
+      if (found.state === "stuck" || found.state === "cancelled") {
+        return refuse(409);
+      }
+      fake.writes.push({ kind: "cancel", id: found.id });
+      before.set(found.id, found.state);
+      const cancelled = {
+        ...found,
+        state: "cancelled" as const,
+        cancelled_by: found.user_id,
+        cancel_at: NOW + 8,
+      };
+      requests.set(cancelled.id, cancelled);
+      return HttpResponse.json(cancelled);
+    }),
+    http.delete("/api/requests/:id/cancel", ({ params }) => {
+      const found = find(params.id);
+      const restored = found && before.get(found.id);
+      if (!found || !restored || found.state !== "cancelled") {
+        return refuse(409);
+      }
+      fake.writes.push({ kind: "undo", id: found.id });
+      const back = {
+        ...found,
+        state: restored,
+        cancelled_by: null,
+        cancel_at: null,
+      };
+      requests.set(back.id, back);
+      return HttpResponse.json(back);
+    }),
+    http.post("/api/requests/:id/swap", ({ params }) => {
+      const found = find(params.id);
+      if (!found) return refuse(404);
+      if (found.state !== "on_its_way") return refuse(409);
+      fake.writes.push({ kind: "swap", id: found.id });
+      return HttpResponse.json(giveUpPick(found));
+    }),
+  );
   return fake;
 }

@@ -68,6 +68,9 @@
 .rq-state[data-state="stuck"] {
   color: var(--warn);
 }
+.rq-state[data-state="cancelled"] {
+  color: var(--ink-2);
+}
 .rq-note {
   color: var(--ink-2);
   font-size: 14px;
@@ -131,6 +134,43 @@
 }
 .rq-details dd {
   overflow-wrap: anywhere;
+}
+
+/* ---- on its way ---- */
+
+.rq-progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.rq-bar {
+  flex: 1;
+  height: 8px;
+  appearance: none;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: var(--bg-3);
+  overflow: hidden;
+}
+.rq-bar::-webkit-progress-bar {
+  background: var(--bg-3);
+}
+.rq-bar::-webkit-progress-value {
+  background: var(--accent);
+}
+.rq-bar::-moz-progress-bar {
+  background: var(--accent);
+}
+.rq-percent {
+  min-width: 4ch;
+  text-align: end;
+  font: 500 12px / 1 var(--mono);
+  color: var(--ink-1);
+}
+.rq-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 /* ---- chosen and stuck ---- */

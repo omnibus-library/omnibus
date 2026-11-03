@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useId, useState } from "react";
 import { Link, Navigate, useParams, useSearchParams } from "react-router";
 import {
@@ -22,17 +22,17 @@ import { nowSecs } from "../../format";
 import { useCurrentUser } from "../../session";
 import { bookQuery } from "../BookDetail/queries";
 import {
+  isCancellable,
   isSearchStale,
+  progressPercent,
   requestPath,
   SEARCH_STALE_AFTER_SECS,
   stateView,
   versionFormat,
   versionSize,
 } from "./requestView";
+import { messageOf, useAnswer, useCancel, useSwap } from "./useRequestActions";
 import "./BookRequest.css";
-
-const messageOf = (error: unknown) =>
-  error instanceof Error ? error.message : "Something went wrong.";
 
 /** One version found: its format and size, a Best match badge, Details, and Choose. */
 function VersionRow({
@@ -108,13 +108,6 @@ function VersionRow({
   );
 }
 
-/** Replaces the cached request with the server's latest answer to a write, so polling follows the new state. */
-function useAnswer(id: number) {
-  const client = useQueryClient();
-  return (request: Request) =>
-    client.setQueryData(bookRequestQuery(id).queryKey, request);
-}
-
 function Choices({ request, canAct }: { request: Request; canAct: boolean }) {
   const toast = useToast();
   const answer = useAnswer(request.id);
@@ -126,17 +119,24 @@ function Choices({ request, canAct }: { request: Request; canAct: boolean }) {
       toast(`Couldn’t choose that version: ${messageOf(error)}`),
   });
   return (
-    <ul className="rq-versions" aria-label="Versions found">
-      {request.versions.map((version) => (
-        <VersionRow
-          key={version.id}
-          version={version}
-          choosing={choose.isPending && choose.variables === version.id}
-          locked={choose.isPending}
-          onChoose={canAct ? () => choose.mutate(version.id) : null}
-        />
-      ))}
-    </ul>
+    <>
+      {request.note && (
+        <p className="rq-note" data-testid="request-note">
+          {request.note}
+        </p>
+      )}
+      <ul className="rq-versions" aria-label="Versions found">
+        {request.versions.map((version) => (
+          <VersionRow
+            key={version.id}
+            version={version}
+            choosing={choose.isPending && choose.variables === version.id}
+            locked={choose.isPending}
+            onChoose={canAct ? () => choose.mutate(version.id) : null}
+          />
+        ))}
+      </ul>
+    </>
   );
 }
 
@@ -148,6 +148,68 @@ function Chosen({ request }: { request: Request }) {
         ? `${versionFormat(picked.format)}${versionSize(picked.sizeBytes) ? `, ${versionSize(picked.sizeBytes)}` : ""}`
         : "Your pick"}
     </p>
+  );
+}
+
+/** The one bar for a download: a native progress element, labelled, with its percent beside it. */
+function Downloading({ request }: { request: Request }) {
+  const percent = progressPercent(request.progress);
+  return (
+    <div className="rq-progress" data-testid="request-downloading">
+      <progress
+        className="rq-bar"
+        aria-label="Download progress"
+        value={percent}
+        max={100}
+      />
+      <span className="rq-percent" data-testid="request-percent">
+        {percent}%
+      </span>
+    </div>
+  );
+}
+
+/** Cancel while a request is still going, and Pick another while its version downloads. */
+function Actions({
+  request,
+  cancel,
+}: {
+  request: Request;
+  cancel: ReturnType<typeof useCancel>;
+}) {
+  const swap = useSwap(request.id);
+  const downloading =
+    request.state === "on_its_way" && (request.progress ?? 0) < 1;
+  return (
+    <div className="rq-actions">
+      {downloading && (
+        <Button
+          data-testid="request-pick-another"
+          disabled={swap.isPending}
+          aria-busy={swap.isPending}
+          onClick={() => swap.mutate()}
+        >
+          <BusyLabel
+            busy={swap.isPending}
+            label="Pick another"
+            busyLabel="Picking…"
+          />
+        </Button>
+      )}
+      <Button
+        variant="ghost"
+        data-testid="request-cancel"
+        disabled={cancel.isPending}
+        aria-busy={cancel.isPending}
+        onClick={() => cancel.mutate()}
+      >
+        <BusyLabel
+          busy={cancel.isPending}
+          label="Cancel"
+          busyLabel="Cancelling…"
+        />
+      </Button>
+    </div>
   );
 }
 
@@ -223,6 +285,8 @@ function Looking({ request, canAct }: { request: Request; canAct: boolean }) {
 /** The ebook lane: what became of the request, in the state's own words. */
 function Lane({ request }: { request: Request }) {
   const viewer = useCurrentUser();
+  // Held here: a cancelled request has no Cancel button left, but its Undo toast still needs this.
+  const cancel = useCancel(request.id);
   // Anyone may read a request; only its maker, or an admin, may act on it.
   const canAct = viewer.id === request.userId || viewer.isAdmin;
   const { heading, note } = stateView(request.state, request.stuckReason);
@@ -253,7 +317,11 @@ function Lane({ request }: { request: Request }) {
         <Choices request={request} canAct={canAct} />
       )}
       {request.state === "chosen" && <Chosen request={request} />}
+      {request.state === "on_its_way" && <Downloading request={request} />}
       {request.state === "stuck" && <Stuck request={request} canAct={canAct} />}
+      {canAct && isCancellable(request) && (
+        <Actions request={request} cancel={cancel} />
+      )}
     </section>
   );
 }

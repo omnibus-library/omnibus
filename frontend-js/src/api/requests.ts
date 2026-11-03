@@ -3,12 +3,15 @@ import type { BookUuid, UserId } from "./core";
 import { ok, send } from "./core";
 import {
   getBookRequest,
+  getCancelBookRequestUrl,
   getChooseRequestVersionUrl,
   getRequestsSettings,
   getRetryBookRequestUrl,
   getStartBookRequestUrl,
+  getSwapRequestVersionUrl,
   getTestDownloadClientConnectionUrl,
   getTestProwlarrConnectionUrl,
+  getUndoCancelBookRequestUrl,
   setRequestsSettings,
 } from "./generated/omnibus";
 import type {
@@ -91,16 +94,20 @@ export function toBookRequest(wire: BookRequestWire) {
 
 export type BookRequest = ReturnType<typeof toBookRequest>;
 
-/** How often a request still being looked for is asked about again. */
+/** How often a request still moving is asked about again. */
 export const REQUEST_POLL_MS = 2000;
 
-/** One request; while it is still looking, it is read again every couple of seconds. */
+/** One request; while it is looking, picked or downloading, it is read again every couple of seconds. */
 export const bookRequestQuery = (id: number) =>
   queryOptions({
     queryKey: ["requests", id],
     queryFn: async () => toBookRequest(ok(await getBookRequest(id))),
-    refetchInterval: (query) =>
-      query.state.data?.state === "looking" ? REQUEST_POLL_MS : false,
+    refetchInterval: (query) => {
+      const state = query.state.data?.state;
+      const moving =
+        state === "looking" || state === "chosen" || state === "on_its_way";
+      return moving ? REQUEST_POLL_MS : false;
+    },
   });
 
 async function answered(res: Response): Promise<BookRequest> {
@@ -125,4 +132,19 @@ export async function chooseRequestVersion(
 ): Promise<BookRequest> {
   const url = getChooseRequestVersionUrl(id);
   return answered(await send(url, "POST", { result_id: resultId }));
+}
+
+/** Cancels a request at once; its download stops a few seconds later, until when it can be undone. */
+export async function cancelBookRequest(id: number): Promise<BookRequest> {
+  return answered(await send(getCancelBookRequestUrl(id), "POST"));
+}
+
+/** Takes a cancel back while its grace lasts. */
+export async function undoCancelBookRequest(id: number): Promise<BookRequest> {
+  return answered(await send(getUndoCancelBookRequestUrl(id), "DELETE"));
+}
+
+/** Gives up the version that is downloading and goes back to choosing among the others. */
+export async function swapRequestVersion(id: number): Promise<BookRequest> {
+  return answered(await send(getSwapRequestVersionUrl(id), "POST"));
 }
