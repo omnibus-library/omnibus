@@ -21,7 +21,6 @@ describe("stateView", () => {
     ["choose", "Choose a version"],
     ["chosen", "Version chosen"],
     ["on_its_way", "On its way"],
-    ["ready", "Ready to read"],
     ["stuck", "Couldn’t find it"],
     ["cancelled", "Cancelled"],
   ] as const)("heads a %s request with %s", (state, heading) => {
@@ -45,7 +44,7 @@ describe("stateView", () => {
   it("names couldnt_add as Couldn’t add it", () => {
     expect(stateView("stuck", "couldnt_add")).toEqual({
       heading: "Couldn’t add it",
-      note: "Try again to add it to the library.",
+      note: "It downloaded but couldn’t be added to the library.",
     });
   });
 

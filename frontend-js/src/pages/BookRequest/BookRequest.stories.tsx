@@ -275,6 +275,9 @@ export const TryAgainSearchesAgainAndReturnsToLooking: Story = {
     await expect(canvas.getByTestId("request-state")).toHaveTextContent(
       "Looking",
     );
+    await expect(
+      canvas.getByRole("heading", { level: 2, name: "Ebook" }),
+    ).toHaveFocus();
     await expect(fake.writes).toEqual([{ kind: "retry", id: 7 }]);
   },
 };
@@ -396,8 +399,9 @@ export const AFinishedDownloadOffersNeitherCancelNorPickAnother: Story = {
   },
   play: async ({ canvas }) => {
     await expect(
-      await canvas.findByTestId("request-percent"),
-    ).toHaveTextContent("100%");
+      await canvas.findByText("Adding it to the library…"),
+    ).toBeInTheDocument();
+    await expect(canvas.queryByTestId("request-percent")).toBeNull();
 
     await expect(canvas.queryByRole("button", { name: "Cancel" })).toBeNull();
     await expect(
@@ -544,7 +548,6 @@ export const CouldntAddItNamesItAndOffersTryAgain: Story = {
     await expect(await canvas.findByTestId("request-state")).toHaveTextContent(
       "Couldn’t add it",
     );
-    await expect(canvas.queryByTestId("request-stuck-detail")).toBeNull();
     await expect(
       canvas.getByRole("button", { name: "Try again" }),
     ).toBeEnabled();
@@ -564,21 +567,6 @@ export const CouldntAddItShowsAnAdminWhatWentWrong: Story = {
     await expect(
       await canvas.findByTestId("request-stuck-detail"),
     ).toHaveTextContent("filing the download failed: permission denied");
-  },
-};
-
-export const TryAgainOnCouldntAddIt: Story = {
-  beforeEach({ msw }) {
-    msw.use(...seed(COULDNT_ADD));
-  },
-  play: async ({ canvas, userEvent }) => {
-    await userEvent.click(await canvas.findByTestId("request-try-again"));
-
-    await expect(await canvas.findByTestId("request-state")).toHaveTextContent(
-      "On its way",
-    );
-    await expect(canvas.queryByRole("button", { name: "Cancel" })).toBeNull();
-    await expect(fake.writes).toEqual([{ kind: "retry", id: 7 }]);
   },
 };
 

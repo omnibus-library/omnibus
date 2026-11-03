@@ -18,6 +18,7 @@ export class BookRequestPage extends BasePage {
   readonly chosen: Locator;
   /** The download's percent, once the client has reported. */
   readonly percent: Locator;
+  readonly lane: Locator;
   readonly tryAgain: Locator;
   /** What went wrong, in technical words; only an admin sees it. */
   readonly stuckDetail: Locator;
@@ -34,9 +35,10 @@ export class BookRequestPage extends BasePage {
     this.bestMatchBadges = page.getByTestId("request-best-match");
     this.chosen = page.getByTestId("request-chosen");
     this.percent = page.getByTestId("request-percent");
-    this.tryAgain = page.getByTestId("request-try-again");
+    this.lane = page.getByTestId("request-lane-ebook");
+    this.tryAgain = this.lane.getByRole("button", { name: "Try again" });
     this.stuckDetail = page.getByTestId("request-stuck-detail");
-    this.cancel = page.getByTestId("request-cancel");
+    this.cancel = this.lane.getByRole("button", { name: "Cancel" });
   }
 
   protected get readyLocator(): Locator {

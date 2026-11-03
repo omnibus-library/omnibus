@@ -16,7 +16,7 @@ function stuckView(reason: StuckReason | null) {
     case "couldnt_add":
       return {
         heading: "Couldn’t add it",
-        note: "Try again to add it to the library.",
+        note: "It downloaded but couldn’t be added to the library.",
       };
     default:
       return {

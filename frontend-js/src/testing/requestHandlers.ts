@@ -67,7 +67,7 @@ export type RequestFake = {
 
 const SWAPPED = "Swapped for another version";
 
-/** The routes over `initial` requests. A start adds a looking request; a retry puts one back to looking, back to choosing after a stopped download, or back to the add after a download that could not be added. */
+/** The routes over `initial` requests. A start adds a looking request; a retry puts one back to looking, or back to choosing after a stopped download. */
 export function requestFake(initial: BookRequest[] = []): RequestFake {
   const requests = new Map(initial.map((r) => [r.id, r]));
   // The state a cancel left, which an undo puts back.
@@ -120,17 +120,6 @@ export function requestFake(initial: BookRequest[] = []): RequestFake {
       fake.writes.push({ kind: "retry", id: found.id });
       if (found.stuck_reason === "stopped_moving") {
         return HttpResponse.json(giveUpPick(found));
-      }
-      if (found.stuck_reason === "couldnt_add") {
-        const adding = {
-          ...found,
-          state: "on_its_way" as const,
-          stuck_reason: null,
-          stuck_detail: null,
-          progress: 1,
-        };
-        requests.set(adding.id, adding);
-        return HttpResponse.json(adding);
       }
       const again = {
         ...found,
