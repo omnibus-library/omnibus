@@ -1,6 +1,6 @@
 //! User CRUD.
 
-use omnibus_shared::{AdminUserRow, UserPermissions};
+use omnibus_shared::{AdminUserRow, UserPermissions, ViewFilters};
 use sqlx::{Row, SqliteConnection, SqlitePool};
 
 use super::password::{hash_password, validate_password, validate_username, verify_password};
@@ -91,6 +91,7 @@ pub async fn create_user(pool: &SqlitePool, username: &str, password: &str) -> A
         book_detail_scroll_stops: false,
         stack_series: false,
         share_stats: true,
+        stats_exclusions: ViewFilters::default(),
     })
 }
 
@@ -138,7 +139,7 @@ async fn check_registration_preconditions(
 pub(crate) const USER_COLUMNS: &str =
     "u.id, u.username, u.is_admin, u.can_upload, u.can_edit, u.can_download, u.can_request,
      u.kindle_email, u.display_name, u.hidden_formats, u.book_detail_scroll_stops, u.stack_series,
-     u.share_stats,
+     u.share_stats, u.stats_exclusions,
      EXISTS(SELECT 1 FROM user_avatars a WHERE a.user_id = u.id) AS has_avatar";
 
 /// Look up a user record by username (case-insensitive); returns `None` if no match.
@@ -339,6 +340,27 @@ pub async fn get_book_detail_scroll_stops(pool: &SqlitePool, user_id: i64) -> Au
 pub async fn set_stack_series(pool: &SqlitePool, user_id: i64, enabled: bool) -> AuthResult<()> {
     sqlx::query("UPDATE users SET stack_series = ? WHERE id = ?")
         .bind(i64::from(enabled))
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Set (or clear, when empty) the filter whose matching books are left out of a user's stats.
+/// [`AuthError::Validation`] when [`ViewFilters::validate`] rejects it.
+pub async fn set_stats_exclusions(
+    pool: &SqlitePool,
+    user_id: i64,
+    filters: &ViewFilters,
+) -> AuthResult<()> {
+    filters.validate().map_err(AuthError::Validation)?;
+    let stored = if filters.is_empty() {
+        None
+    } else {
+        Some(serde_json::to_string(filters).map_err(|e| AuthError::Internal(e.to_string()))?)
+    };
+    sqlx::query("UPDATE users SET stats_exclusions = ? WHERE id = ?")
+        .bind(stored)
         .bind(user_id)
         .execute(pool)
         .await?;

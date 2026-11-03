@@ -21,7 +21,7 @@ use crate::books::{
 };
 use crate::metadata_overrides::sql::override_join_sql;
 use crate::shelves::filter::{filter_predicate, Viewer};
-use crate::shelves::rules::{membership_predicate, Bind, Predicate};
+use crate::shelves::rules::{bind_all, membership_predicate, Bind, Predicate};
 
 /// Ids of the hand-picked shelves `viewer_id` can see that hold `uuid`: the
 /// membership answer for one book in one request, so a client needn't fetch
@@ -430,20 +430,6 @@ async fn fetch_manual(
         .fetch_all(pool)
         .await?;
     hydrate(pool, &rows).await
-}
-
-/// Bind a predicate's `binds` onto `q`, in order.
-fn bind_all<'q>(
-    mut q: sqlx::query::Query<'q, sqlx::Sqlite, sqlx::sqlite::SqliteArguments<'q>>,
-    binds: &[Bind],
-) -> sqlx::query::Query<'q, sqlx::Sqlite, sqlx::sqlite::SqliteArguments<'q>> {
-    for b in binds {
-        q = match b {
-            Bind::Text(s) => q.bind(s.clone()),
-            Bind::Int(i) => q.bind(*i),
-        };
-    }
-    q
 }
 
 // --- uuid-only membership, for Kobo sync (#924) -----------------------------

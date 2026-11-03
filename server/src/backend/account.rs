@@ -1,5 +1,5 @@
 //! `/api/account/*` — the caller's own reading preferences: hidden formats,
-//! book-detail scroll stops, Stack series, and share stats. The read sides
+//! book-detail scroll stops, Stack series, share stats, and the stats exclusion filter. The read sides
 //! ride `GET /api/auth/me` as `UserSummary` fields.
 
 use axum::{
@@ -9,7 +9,9 @@ use axum::{
     Json,
 };
 use omnibus_db::{self as db};
-use omnibus_shared::{SetBookDetailScrollStops, SetHiddenFormats, SetShareStats, SetStackSeries};
+use omnibus_shared::{
+    SetBookDetailScrollStops, SetHiddenFormats, SetShareStats, SetStackSeries, ViewFilters,
+};
 
 use super::{internal, AppState};
 use crate::auth::AuthUser;
@@ -107,6 +109,39 @@ pub(super) async fn post_share_stats(
         Ok(()) => StatusCode::OK.into_response(),
         Err(e) => internal("set share stats", e),
     }
+}
+
+/// Set the books left out of your stats
+///
+/// Replaces the filter whose matching books are left out of your reading stats. An empty
+/// filter leaves nothing out. Read back as `stats_exclusions` on `GET /api/auth/me`.
+#[utoipa::path(
+    post,
+    path = "/api/account/stats-exclusions",
+    tag = "Account",
+    request_body = ViewFilters,
+    responses(
+        (status = 200, description = "The filter is saved."),
+        (status = 422, description = "The filter has more than 16 clauses or a clause no book could match; the body says which."),
+    ),
+)]
+pub(super) async fn post_stats_exclusions(
+    user: AuthUser,
+    State(state): State<AppState>,
+    Json(body): Json<ViewFilters>,
+) -> Response {
+    match db::auth::set_stats_exclusions(&state.pool, user.id, &body).await {
+        Ok(()) => {}
+        Err(db::auth::AuthError::Validation(msg)) => {
+            return (StatusCode::UNPROCESSABLE_ENTITY, msg).into_response();
+        }
+        Err(e) => return internal("set stats exclusions", e),
+    }
+    // The rule is saved either way; the next stats request rebuilds the set if this fails.
+    if let Err(e) = db::stats::refresh_exclusions(&state.pool, user.id).await {
+        tracing::warn!(error = %e, user_id = user.id, "refresh stats exclusions failed");
+    }
+    StatusCode::OK.into_response()
 }
 
 #[cfg(test)]

@@ -369,7 +369,7 @@ fn sample_times(
 
     let mut starts = Vec::new();
     let mut cursor = 0u64;
-    'entries: for entry in table.chunks_exact(8) {
+    'entries: for entry in table.as_chunks::<8>().0.iter() {
         let count = be_u32(&entry[0..4]);
         let delta = u64::from(be_u32(&entry[4..8]));
         for _ in 0..count {
@@ -417,7 +417,9 @@ fn sample_locations(file: &mut std::fs::File, stbl: &BoxInfo) -> Option<Vec<(u64
     let chunks = chunk_offsets(file, stbl)?;
     let stsc = find_child_box(file, stbl.data_offset, stbl.data_size, b"stsc")?;
     let runs: Vec<(u32, u32)> = read_table(file, &stsc, 12)?
-        .chunks_exact(12)
+        .as_chunks::<12>()
+        .0
+        .iter()
         .map(|entry| (be_u32(&entry[0..4]), be_u32(&entry[4..8])))
         .collect();
 
@@ -474,7 +476,13 @@ fn sample_sizes(file: &mut std::fs::File, stbl: &BoxInfo) -> Option<Vec<u64>> {
     file.seek(SeekFrom::Start(stsz.data_offset.checked_add(12)?))
         .ok()?;
     file.read_exact(&mut buf).ok()?;
-    Some(buf.chunks_exact(4).map(|e| u64::from(be_u32(e))).collect())
+    Some(
+        buf.as_chunks::<4>()
+            .0
+            .iter()
+            .map(|e| u64::from(be_u32(e)))
+            .collect(),
+    )
 }
 
 /// Chunk offsets from `stco` (32-bit) or `co64` (64-bit), whichever the track
@@ -483,7 +491,9 @@ fn chunk_offsets(file: &mut std::fs::File, stbl: &BoxInfo) -> Option<Vec<u64>> {
     if let Some(stco) = find_child_box(file, stbl.data_offset, stbl.data_size, b"stco") {
         return Some(
             read_table(file, &stco, 4)?
-                .chunks_exact(4)
+                .as_chunks::<4>()
+                .0
+                .iter()
                 .map(|e| u64::from(be_u32(e)))
                 .collect(),
         );
@@ -491,8 +501,10 @@ fn chunk_offsets(file: &mut std::fs::File, stbl: &BoxInfo) -> Option<Vec<u64>> {
     let co64 = find_child_box(file, stbl.data_offset, stbl.data_size, b"co64")?;
     Some(
         read_table(file, &co64, 8)?
-            .chunks_exact(8)
-            .map(be_u64)
+            .as_chunks::<8>()
+            .0
+            .iter()
+            .map(|e| be_u64(e))
             .collect(),
     )
 }
@@ -553,7 +565,9 @@ fn decode_text_sample(bytes: &[u8]) -> String {
 /// ID3 text decoder, which frames its input differently but decodes the same.
 fn decode_utf16(bytes: &[u8], big_endian: bool) -> String {
     let units: Vec<u16> = bytes
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|p| {
             if big_endian {
                 u16::from_be_bytes([p[0], p[1]])

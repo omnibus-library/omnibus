@@ -161,6 +161,7 @@ pub async fn goal_for_year(
     year: i64,
     claimed_offset_minutes: Option<i64>,
 ) -> Result<Option<ReadingGoal>, StatsError> {
+    super::refresh_exclusions(pool, user_id).await?;
     let Some(target) = year_target(pool, user_id, year).await? else {
         return Ok(None);
     };
@@ -296,6 +297,7 @@ pub async fn daily_goals(
     user_id: i64,
     claimed_offset_minutes: Option<i64>,
 ) -> Result<DailyGoals, StatsError> {
+    super::refresh_exclusions(pool, user_id).await?;
     let offset = user_offset::resolve_offset_minutes(pool, user_id, claimed_offset_minutes).await?;
     daily_goals_at(pool, user_id, offset).await
 }

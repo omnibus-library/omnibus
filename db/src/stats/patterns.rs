@@ -38,12 +38,16 @@ const WEEKDAY_LABELS: [&str; WEEKDAYS] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sa
 // Checkpoint rows are bucketed as written, which is correct: the web tracker's
 // `rollover()` restarts a segment every 60s, so a sit spanning an hour boundary
 // already arrives as two rows. Coalescing must not credit it all to its start hour.
-pub(super) const SESSION_LOCAL_ROWS: &str = "\
-    SELECT started_at, utc_offset_minutes, seconds_read AS secs FROM reading_sessions \
-        WHERE user_id = ? AND started_at >= ? \
-    UNION ALL \
-    SELECT started_at, utc_offset_minutes, seconds_listened FROM listening_sessions \
-        WHERE user_id = ? AND started_at >= ?";
+pub(super) const SESSION_LOCAL_ROWS: &str = concat!(
+    "SELECT started_at, utc_offset_minutes, seconds_read AS secs FROM reading_sessions \
+        WHERE user_id = ? AND started_at >= ? AND ",
+    kept!("reading_sessions"),
+    " \
+     UNION ALL \
+     SELECT started_at, utc_offset_minutes, seconds_listened FROM listening_sessions \
+        WHERE user_id = ? AND started_at >= ? AND ",
+    kept!("listening_sessions")
+);
 
 /// Both time-pattern strips plus the seconds neither could place.
 #[derive(Debug)]

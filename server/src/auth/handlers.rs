@@ -83,6 +83,7 @@ fn user_summary(u: &auth_db::User, book_requests: bool) -> UserSummary {
         book_detail_scroll_stops: u.book_detail_scroll_stops,
         stack_series: u.stack_series,
         share_stats: u.share_stats,
+        stats_exclusions: u.stats_exclusions.clone(),
         impersonation: None,
     }
 }
