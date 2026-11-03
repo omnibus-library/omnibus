@@ -14,8 +14,8 @@ use super::{
     account, account_kosync, admin_health, admin_sessions, audiobooks, author_photos, authors,
     bookmarks, cleanup, covers, cross_format, deletion, ebooks, genres, highlights, journals,
     kindle, kobo_devices, logs, merge, metadata, overrides, physical, profile, progress, ratings,
-    read_status, reviews, scan, search, series, settings, shelves, stats, suggestions, summary,
-    tags, tasks, uploads, users, AppState,
+    read_status, requests_admin, reviews, scan, search, series, settings, shelves, stats,
+    suggestions, summary, tags, tasks, uploads, users, AppState,
 };
 
 /// Health check, settings, ebooks, and audiobook playback routes.
@@ -109,6 +109,7 @@ pub(super) fn data_routes(
         .merge(summary_routes())
         .merge(metadata_routes())
         .merge(kindle_routes())
+        .merge(request_admin_routes())
         .merge(kobo_device_routes())
 }
 
@@ -348,6 +349,14 @@ fn kindle_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(kindle::get_smtp, kindle::post_smtp))
         .routes(routes!(kindle::post_smtp_clear))
         .routes(routes!(kindle::post_smtp_test))
+}
+
+/// The admin connections for book requests; each answers 404 while the feature is off.
+fn request_admin_routes() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new().routes(routes!(
+        requests_admin::get_requests_settings,
+        requests_admin::put_requests_settings
+    ))
 }
 
 /// The signed-in reader's Kobo devices and KOReader progress-sync password.
