@@ -101,6 +101,30 @@ export const NewUserStartsWithDownloadOnly: Story = {
   },
 };
 
+export const NewUserOffersNoRequestGrantWhenRequestsAreOff: Story = {
+  parameters: { user: { ...WIRE_ADA, can_request: false } },
+  render: () => <NewUserModal onClose={close} onCreated={done} />,
+  play: async ({ canvas }) => {
+    const dialog = await canvas.findByRole("dialog", { name: "New user" });
+    await expect(checkbox(dialog, "Download")).toBeInTheDocument();
+    await expect(
+      within(dialog).queryByRole("checkbox", { name: "Request books" }),
+    ).toBeNull();
+  },
+};
+
+export const EditUserOffersNoRequestGrantWhenRequestsAreOff: Story = {
+  parameters: { user: { ...WIRE_ADA, can_request: false } },
+  render: editAlice,
+  play: async ({ canvas }) => {
+    const dialog = await canvas.findByRole("dialog", { name: "Edit alice" });
+    await expect(checkbox(dialog, "Download")).toBeInTheDocument();
+    await expect(
+      within(dialog).queryByRole("checkbox", { name: "Request books" }),
+    ).toBeNull();
+  },
+};
+
 export const NewUserMeterFollowsThePassword: Story = {
   render: () => <NewUserModal onClose={close} onCreated={done} />,
   play: async ({ canvas, userEvent }) => {
