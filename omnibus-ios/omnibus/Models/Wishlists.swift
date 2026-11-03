@@ -5,7 +5,7 @@
 import Foundation
 
 /// One reader on `GET /api/wishlists/readers`, with how many books they want.
-struct WishlistReader: Codable, Hashable, Sendable, Identifiable {
+struct WishlistReader: Codable, Hashable, Sendable {
     var id: Int64
     var name: String
     var hasAvatar: Bool
@@ -27,7 +27,7 @@ struct WishlistReaders: Codable, Hashable, Sendable {
 }
 
 /// A reader who wants a book.
-struct WishlistWanter: Codable, Hashable, Sendable, Identifiable {
+struct WishlistWanter: Codable, Hashable, Sendable {
     var id: Int64
     var name: String
 }

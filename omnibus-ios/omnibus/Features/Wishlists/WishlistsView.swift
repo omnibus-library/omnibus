@@ -25,6 +25,7 @@ struct WishlistsView: View {
                 LoadingView()
             }
         }
+        .refreshTask { await model.load() }
         .background(ScreenBackground())
         .navigationTitle(WishlistsFlow.title(model.scope, readers: model.readers))
         .navigationBarTitleDisplayMode(.large)
@@ -32,6 +33,7 @@ struct WishlistsView: View {
             ToolbarItem(placement: .topBarTrailing) { readerPicker }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { adding = true } label: { Image(systemName: "plus") }
+                    .disabled(!Connectivity.shared.isOnline)
                     .accessibilityLabel("Add to your wishlist")
             }
         }
@@ -84,16 +86,20 @@ struct WishlistsView: View {
             .padding(.vertical, Spacing.md)
         }
         .scrollIndicators(.hidden)
-        .refreshTask { await model.load() }
     }
 
     private var empty: some View {
         let copy = WishlistsFlow.emptyCopy(model.scope, readers: model.readers)
-        return EmptyStateView(
-            icon: "heart", title: copy.title, message: copy.message, fanned: true,
-            actionTitle: copy.offersAdd ? "Add to your wishlist" : nil,
-            action: { adding = true }
-        )
+        // A scroll view, so pull-to-refresh works on an empty list too.
+        return ScrollView {
+            EmptyStateView(
+                icon: "heart", title: copy.title, message: copy.message, fanned: true,
+                actionTitle: copy.offersAdd ? "Add to your wishlist" : nil,
+                action: { adding = true }
+            )
+            .containerRelativeFrame(.vertical)
+        }
+        .scrollIndicators(.hidden)
     }
 
     /// A menu of text rows; its label carries the avatar because a menu can't draw a remote image.

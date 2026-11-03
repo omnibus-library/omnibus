@@ -111,7 +111,7 @@ struct WishlistGetSheet: View {
                 openDestination(.book(uuid: item.id))
             }
             if scope == .you {
-                action("Remove from wishlist", destructive: true) {
+                action("Remove from wishlist", enabled: Connectivity.shared.isOnline, destructive: true) {
                     dismiss()
                     onRemove()
                 }
@@ -121,7 +121,7 @@ struct WishlistGetSheet: View {
         .screenPadding()
         .padding(.top, Spacing.lg)
         .background(ScreenBackground())
-        .presentationDetents([.medium])
+        .presentationDetents([.medium, .large])
     }
 
     private var header: some View {

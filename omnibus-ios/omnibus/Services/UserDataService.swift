@@ -1031,7 +1031,7 @@ enum UserDataService {
     // MARK: - Wishlist
 
     /// The caller's wishlist entry for a book, or `nil` when not tracked.
-    /// Adds happen elsewhere (the scan flow) and fail rule 08's test 3 — the
+    /// Adds (the scan flow, the Wishlists Add sheet) fail rule 08's test 3 — the
     /// payload comes from the server's lookup — so they never queue offline.
     static func wishlistEntry(uuid: String) -> AsyncThrowingStream<CacheRead<WishlistEntry?>, Error> {
         Cache.live(CacheKey.wishlistEntry(uuid)) {
@@ -1081,7 +1081,9 @@ enum UserDataService {
     /// the book's uuid. Direct call, never queued — the payload comes from a lookup.
     static func addScannedToWishlist(_ request: WishlistAddRequest) async throws -> String {
         let ref: BookRef = try await APIClient.shared.post("/api/scan/wishlist", body: request)
-        await dropShelfClausePages()
+        // The reply carries no entry, so forget the cached one rather than write a guess.
+        await OfflineStore.shared.cacheDelete(CacheKey.wishlistEntry(ref.bookUUID))
+        await dropCachedWishlistPages()
         await shelvesChanged()
         return ref.bookUUID
     }
