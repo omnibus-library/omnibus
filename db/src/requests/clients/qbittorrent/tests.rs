@@ -4,6 +4,8 @@ use serde_json::json;
 use wiremock::matchers::{body_string_contains, header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
+use crate::test_support::closed_port_url;
+
 use super::*;
 
 const MAGNET: &str = "magnet:?xt=urn:btih:abc123&dn=Dune";
@@ -136,9 +138,7 @@ mod qbittorrent_test {
 
         #[tokio::test]
         async fn reports_a_refused_connection_as_unreachable() {
-            let server = MockServer::start().await;
-            let client = client_for(&server);
-            drop(server);
+            let client = Qbittorrent::new(&closed_port_url(), "admin", "hunter2").unwrap();
 
             let err = client.test().await.unwrap_err();
 

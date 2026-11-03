@@ -2,6 +2,8 @@ use serde_json::json;
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
+use crate::test_support::closed_port_url;
+
 use super::*;
 
 fn client_for(server: &MockServer) -> Prowlarr {
@@ -71,9 +73,7 @@ mod prowlarr_test {
 
         #[tokio::test]
         async fn reports_a_refused_connection_as_unreachable() {
-            let server = MockServer::start().await;
-            let client = client_for(&server);
-            drop(server);
+            let client = Prowlarr::new(&closed_port_url(), "indexer-key").unwrap();
 
             let err = client.test().await.unwrap_err();
 
