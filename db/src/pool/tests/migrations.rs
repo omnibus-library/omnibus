@@ -510,6 +510,27 @@ async fn migration_0099_turns_share_stats_on_for_every_existing_reader() {
     );
 }
 
+#[tokio::test]
+async fn migration_0111_grants_can_request_to_existing_admins_only() {
+    let pool = pool_before(111).await;
+    sqlx::query(
+        "INSERT INTO users (id, username, password_hash, is_admin) VALUES (1, 'a', 'h', 1), (2, 'r', 'h', 0)",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    apply_migration(&pool, 111).await;
+
+    let can_request = |id: i64| {
+        sqlx::query_scalar::<_, i64>("SELECT can_request FROM users WHERE id = ?")
+            .bind(id)
+            .fetch_one(&pool)
+    };
+    assert_eq!(can_request(1).await.unwrap(), 1, "an admin may request");
+    assert_eq!(can_request(2).await.unwrap(), 0, "a reader may not");
+}
+
 /// A pool just below `version` holding user 1 and the Kobo `old-token`.
 async fn pool_before_with_old_device(version: i64) -> SqlitePool {
     let pool = pool_before(version).await;
