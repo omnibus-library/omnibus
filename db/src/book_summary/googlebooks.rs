@@ -187,9 +187,6 @@ fn is_retryable(status: reqwest::StatusCode) -> bool {
 /// Build the volumes URL, percent-encoding `q`. Carries no key — that rides on
 /// [`API_KEY_HEADER`], attached in [`get_with_retry`].
 fn volumes_url(config: &GoogleBooksSummaryConfig, q: &str) -> anyhow::Result<reqwest::Url> {
-    reqwest::Url::parse_with_params(
-        &format!("{}/books/v1/volumes", config.base_url),
-        &[("q", q)],
-    )
-    .context("failed to build google books url")
+    reqwest::Url::parse_with_params(&format!("{}/books/v1/volumes", config.base_url), [("q", q)])
+        .context("failed to build google books url")
 }
