@@ -126,6 +126,8 @@ Not queued, by test:
 | Shelf create (iOS) | 3 — no client-minted handle |
 | Check-in, physical-only, wishlist **add** | 3 — payload comes from the server's lookup |
 | Wishlist **remove** | none, on its own — held back to match its add (below) |
+| `POST /api/physical/{uuid}/wishlist` (Undo of a Wishlists-screen remove) | none, on its own — the other half of the remove pair (below) |
+| `POST /api/scan/wishlist` (Wishlists-screen Add sheet) | 3 — payload comes from the server's lookup |
 | `POST /api/shelves/preview` | not a mutation; a read wearing POST |
 
 These writes go directly to the server and surface failures.
