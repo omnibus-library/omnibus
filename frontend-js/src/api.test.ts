@@ -14,6 +14,7 @@ import {
   toShelf,
   toUser,
 } from "./api";
+import type { UserSummary } from "./api/generated/schemas";
 import {
   aWireBook,
   aWireBookReading,
@@ -341,6 +342,7 @@ describe("toUser", () => {
       stackSeries: false,
       bookDetailScrollStops: false,
       shareStats: true,
+      statsExclusions: [],
       impersonation: null,
     });
   });
@@ -363,12 +365,15 @@ describe("toUser", () => {
   });
 
   it("carries the preferences and Kindle address the server sends", () => {
-    const wire = {
+    const wire: UserSummary = {
       ...WIRE_ADA,
       hidden_formats: ["m4b"],
       stack_series: true,
       book_detail_scroll_stops: true,
       share_stats: false,
+      stats_exclusions: {
+        clauses: [{ field: "tag", mode: "include", values: ["Sports"] }],
+      },
       kindle_email: "ada@kindle.com",
     };
 
@@ -377,6 +382,7 @@ describe("toUser", () => {
       stackSeries: true,
       bookDetailScrollStops: true,
       shareStats: false,
+      statsExclusions: [{ field: "tag", mode: "include", values: ["Sports"] }],
       kindleEmail: "ada@kindle.com",
     });
   });

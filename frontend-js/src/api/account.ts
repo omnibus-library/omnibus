@@ -11,7 +11,9 @@ import {
   getPostProfileUrl,
   getPostShareStatsUrl,
   getPostStackSeriesUrl,
+  getPostStatsExclusionsUrl,
 } from "./generated/omnibus";
+import type { FilterClause } from "./library";
 
 /** Saves the name other readers see; `null` clears it, so the username shows. */
 export async function setDisplayName(name: string | null): Promise<void> {
@@ -50,6 +52,13 @@ export const setShareStats = saveSwitch(getPostShareStatsUrl());
 /** Replaces the formats the reader's library view leaves out. */
 export async function setHiddenFormats(formats: string[]): Promise<void> {
   await send(getPostHiddenFormatsUrl(), "POST", { formats });
+}
+
+/** Replaces the filter whose matching books the reader's stats leave out; no clauses leaves nothing out. */
+export async function setStatsExclusions(
+  clauses: FilterClause[],
+): Promise<void> {
+  await send(getPostStatsExclusionsUrl(), "POST", { clauses });
 }
 
 /** Saves the address Send to Kindle delivers to; `null` clears it. */
