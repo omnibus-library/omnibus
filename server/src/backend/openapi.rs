@@ -48,6 +48,7 @@ use utoipa::{
         (name = "Stats", description = "Reading statistics and goals: yours, and those other readers share."),
         (name = "Shelves", description = "Shelves you fill by hand, and smart shelves that fill themselves from a rule."),
         (name = "Physical books", description = "The physical collection: ISBN check-in, copies, and the wishlist."),
+        (name = "Requests", description = "Asking for a digital format of a book, and choosing which version found to fetch."),
         (name = "Discovery", description = "Authors, series, tags and genres."),
         (name = "Account", description = "Your profile, avatar and preferences, Kobo devices, and Send to Kindle."),
         (name = "Admin", description = "Server administration: users, sessions, settings, maintenance and health."),

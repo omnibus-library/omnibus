@@ -3273,6 +3273,117 @@
         }
       }
     },
+    "/api/books/{uuid}/requests": {
+      "get": {
+        "tags": [
+          "Requests"
+        ],
+        "summary": "List a book's requests",
+        "description": "Every request made for the book, newest first, whoever made it. A book nobody has\nrequested has an empty list.",
+        "operationId": "list_book_requests",
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "The book's uuid.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The book's requests.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BookRequest"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "You aren't signed in."
+          },
+          "403": {
+            "description": "Your account can't make requests."
+          },
+          "404": {
+            "description": "Book requests are off on this server."
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Requests"
+        ],
+        "summary": "Start a request for a book",
+        "description": "Asks for one digital format of the book and starts looking for versions of it; poll\n`GET /api/requests/{id}` until it leaves `looking`. If you already have a live request for\nthat format of that book, it is returned instead with 200 and nothing new starts.",
+        "operationId": "start_book_request",
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "The book's uuid.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "You already had a live request for this format; here it is.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookRequest"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The request started.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookRequest"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Only `ebook` can be requested yet."
+          },
+          "401": {
+            "description": "You aren't signed in."
+          },
+          "403": {
+            "description": "Your account can't make requests."
+          },
+          "404": {
+            "description": "Book requests are off on this server, or the book doesn't exist."
+          },
+          "429": {
+            "description": "You started too many requests lately, or have too many in progress."
+          }
+        }
+      }
+    },
     "/api/books/{uuid}/sync-point": {
       "post": {
         "tags": [
@@ -6218,6 +6329,49 @@
           },
           "409": {
             "description": "No ebook library path is set."
+          }
+        }
+      }
+    },
+    "/api/requests/{id}": {
+      "get": {
+        "tags": [
+          "Requests"
+        ],
+        "summary": "Get a request",
+        "description": "One request and the versions found so far. Any reader who can make requests may read any\nrequest. Only an admin is sent `stuck_detail`.",
+        "operationId": "get_book_request",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The request's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookRequest"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "You aren't signed in."
+          },
+          "403": {
+            "description": "Your account can't make requests."
+          },
+          "404": {
+            "description": "Book requests are off on this server, or there is no such request."
           }
         }
       }
@@ -10165,6 +10319,82 @@
         "properties": {
           "book_uuid": {
             "type": "string"
+          }
+        }
+      },
+      "BookRequest": {
+        "type": "object",
+        "description": "A request and, once the search has run, the versions it found.",
+        "required": [
+          "id",
+          "book_uuid",
+          "user_id",
+          "kind",
+          "state",
+          "created_at",
+          "updated_at",
+          "versions"
+        ],
+        "properties": {
+          "book_uuid": {
+            "type": "string",
+            "description": "The requested book's uuid."
+          },
+          "chosen_result_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The picked version's id once `state` is `chosen`."
+          },
+          "created_at": {
+            "type": "string",
+            "description": "ISO 8601 UTC."
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/RequestKind"
+          },
+          "state": {
+            "$ref": "#/components/schemas/RequestState"
+          },
+          "stuck_detail": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "What the search ran into, in technical words. Only an admin is sent it."
+          },
+          "stuck_reason": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/StuckReason",
+                "description": "Set while `state` is `stuck`."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updated_at": {
+            "type": "string",
+            "description": "ISO 8601 UTC."
+          },
+          "user_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The reader who made the request."
+          },
+          "versions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RequestVersion"
+            },
+            "description": "The versions found, best first. Empty until the search has run."
           }
         }
       },
@@ -14932,6 +15162,68 @@
           }
         }
       },
+      "RequestKind": {
+        "type": "string",
+        "description": "Which format a request fetches.",
+        "enum": [
+          "ebook",
+          "audiobook"
+        ]
+      },
+      "RequestState": {
+        "type": "string",
+        "description": "Where a request stands.",
+        "enum": [
+          "looking",
+          "choose",
+          "chosen",
+          "stuck"
+        ]
+      },
+      "RequestVersion": {
+        "type": "object",
+        "description": "One version of the book the search found.",
+        "required": [
+          "id",
+          "title",
+          "best_match"
+        ],
+        "properties": {
+          "best_match": {
+            "type": "boolean",
+            "description": "Whether this is the version Omnibus suggests. At most one version has it."
+          },
+          "format": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`EPUB`, `PDF` or `CBZ`. Null when the name does not say."
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "indexer": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The source the version came from; shown behind Details."
+          },
+          "size_bytes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "title": {
+            "type": "string",
+            "description": "The name the version was published under."
+          }
+        }
+      },
       "RequestsSettingsStatus": {
         "type": "object",
         "description": "The Prowlarr and download client connections, with both secrets masked. It never\ncarries the API key or the password itself.",
@@ -16588,6 +16880,19 @@
           }
         }
       },
+      "StartRequest": {
+        "type": "object",
+        "description": "Starts a request for one format of a book.",
+        "required": [
+          "kind"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/RequestKind",
+            "description": "Only `ebook` can be requested yet."
+          }
+        }
+      },
       "StatsRange": {
         "type": "string",
         "description": "The period reading stats cover. Each calendar period runs from its start to now, in\nyour time zone.",
@@ -16885,6 +17190,14 @@
             "minimum": 0
           }
         }
+      },
+      "StuckReason": {
+        "type": "string",
+        "description": "Why a request is stuck. Both read \"Couldn't find it\" to the requester.",
+        "enum": [
+          "not_found",
+          "search_failed"
+        ]
       },
       "SuggestionCard": {
         "type": "object",
@@ -18002,6 +18315,10 @@
     {
       "name": "Physical books",
       "description": "The physical collection: ISBN check-in, copies, and the wishlist."
+    },
+    {
+      "name": "Requests",
+      "description": "Asking for a digital format of a book, and choosing which version found to fetch."
     },
     {
       "name": "Discovery",
