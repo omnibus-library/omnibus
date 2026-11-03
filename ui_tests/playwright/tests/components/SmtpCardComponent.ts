@@ -31,9 +31,9 @@ export class SmtpCardComponent extends BaseComponent {
   constructor(page: Page) {
     super(page);
     this.card = page.getByTestId("smtp-card");
-    this.hostField = page.getByLabel("SMTP host");
-    this.fromEmailField = page.getByLabel("From address");
-    this.passwordField = page.getByLabel("Password");
+    this.hostField = this.card.getByLabel("SMTP host");
+    this.fromEmailField = this.card.getByLabel("From address");
+    this.passwordField = this.card.getByLabel("Password");
     this.saveButton = page.getByTestId("smtp-save");
     this.saveStatus = page.getByTestId("smtp-config-status");
     this.configuredStatus = page.getByTestId("smtp-status");
