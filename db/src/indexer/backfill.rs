@@ -67,19 +67,23 @@ async fn batch_update_books_column(
     Ok(())
 }
 
-/// Query the first-part filename (ordinal=0) and format for every book under
-/// `library_path` that needs chapter backfill (no `file_chapters` rows yet).
-/// Every row returned lives under `library_path`, so the caller resolves paths
-/// against it directly.
+/// Query the first-part filename (ordinal=0), format, and whether chapters are
+/// stored, for every audiobook under `library_path` with no `file_chapters` rows
+/// or an MP4 holding only the synthetic fallback. Every row returned lives under
+/// `library_path`, so the caller resolves paths against it directly.
 async fn fetch_backfill_candidates(
     pool: &SqlitePool,
     library_path: &str,
-) -> anyhow::Result<Vec<(i64, String, String)>> {
+) -> anyhow::Result<Vec<(i64, String, String, bool)>> {
     // Scope on the file's own root (`COALESCE(bf.library_path, l.path)`), not the
     // book's: a merged audiobook's files hang off a target book whose `library_id`
     // is the *target's* scan root, so the book's would drop every merged audiobook.
-    let rows: Vec<(i64, String, String)> = sqlx::query_as(
-        "SELECT bf.id, bfp.filename, bf.format \
+    // An MP4 whose stored chapters are all the synthetic `Part N` may predate
+    // QuickTime chapter-track parsing, so it is read again. MP3s aren't: their
+    // extractor reads the whole file, too costly to repeat after every scan.
+    let rows: Vec<(i64, String, String, bool)> = sqlx::query_as(
+        "SELECT bf.id, bfp.filename, bf.format, \
+                EXISTS (SELECT 1 FROM file_chapters fc WHERE fc.book_file_id = bf.id) \
          FROM book_files bf \
          JOIN books b ON bf.book_id = b.id \
          JOIN scan_roots l ON b.library_id = l.id \
@@ -87,7 +91,11 @@ async fn fetch_backfill_candidates(
          WHERE COALESCE(bf.library_path, l.path) = ? \
            AND bf.format IN ('M4B', 'M4A', 'MP3') \
            AND bfp.ordinal = 0 \
-           AND NOT EXISTS (SELECT 1 FROM file_chapters fc WHERE fc.book_file_id = bf.id) \
+           AND NOT EXISTS ( \
+                 SELECT 1 FROM file_chapters fc \
+                 WHERE fc.book_file_id = bf.id \
+                   AND (bf.format NOT IN ('M4B', 'M4A') \
+                        OR fc.title != 'Part ' || (fc.ordinal + 1))) \
          ORDER BY bf.id",
     )
     .bind(library_path)
@@ -143,10 +151,10 @@ async fn bulk_fetch_parts(
 /// reads each, bounding both transaction size and peak `extracted` memory.
 const CHAPTER_BATCH: usize = 250;
 
-/// Fill `file_chapters` for audiobook `book_files` rows that have none, as a
-/// separate worker task (the diff-based reindex skips unchanged files); a no-op
-/// once all books have chapters. `on_progress(processed, total, item)` is called
-/// after each book for the UI.
+/// Fill `file_chapters` for audiobook `book_files` rows that have none, or replace
+/// an MP4's synthetic fallback once real markers are found, as a separate worker
+/// task (the diff-based reindex skips unchanged files). `on_progress(processed,
+/// total, item)` is called after each book for the UI.
 pub(crate) async fn backfill_chapters(
     pool: &SqlitePool,
     library_path: &str,
@@ -165,7 +173,7 @@ pub(crate) async fn backfill_chapters(
 
     // One bulk `book_file_parts` fetch up front rather than one per book; chapter
     // inserts commit in `CHAPTER_BATCH`-sized batches to avoid per-book WAL flushes.
-    let book_file_ids: Vec<i64> = rows.iter().map(|(id, _, _)| *id).collect();
+    let book_file_ids: Vec<i64> = rows.iter().map(|(id, _, _, _)| *id).collect();
     let parts_by_id = bulk_fetch_parts(pool, &book_file_ids).await?;
 
     let root_name = super::root_display_name(library_path);
@@ -178,7 +186,7 @@ pub(crate) async fn backfill_chapters(
         // in `pool.rs` for large files, which surfaces as SQLITE_BUSY in the
         // indexer and in readers saving progress.
         let mut extracted = Vec::with_capacity(chunk.len());
-        for (i, (book_file_id, first_part_filename, format)) in chunk.iter().enumerate() {
+        for (i, (book_file_id, first_part_filename, format, _)) in chunk.iter().enumerate() {
             extracted.push(
                 extract_chapters_off_thread(
                     *book_file_id,
@@ -200,7 +208,17 @@ pub(crate) async fn backfill_chapters(
         }
 
         let mut tx = pool.begin().await?;
-        for ((book_file_id, _, _), chapters) in chunk.iter().zip(&extracted) {
+        for ((book_file_id, _, _, has_chapters), chapters) in chunk.iter().zip(&extracted) {
+            if *has_chapters {
+                // Still no markers: the stored synthetic rows are already right.
+                if chapters.is_empty() {
+                    continue;
+                }
+                sqlx::query("DELETE FROM file_chapters WHERE book_file_id = ?")
+                    .bind(book_file_id)
+                    .execute(&mut *tx)
+                    .await?;
+            }
             let parts = parts_by_id
                 .get(book_file_id)
                 .map(Vec::as_slice)
