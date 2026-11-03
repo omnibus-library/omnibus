@@ -5,11 +5,15 @@ use axum::{body::to_bytes, http::StatusCode, Router};
 use omnibus_shared::RequestsSettingsStatus;
 use serde_json::{json, Value};
 use tower::ServiceExt;
+use wiremock::matchers::{header, method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use crate::auth::test_support as auth_test_support;
 use crate::backend::test_support::{fixture_book_requests, request};
 
 const SETTINGS: &str = "/api/admin/requests/settings";
+const TEST_INDEXER: &str = "/api/admin/requests/settings/test-indexer";
+const TEST_CLIENT: &str = "/api/admin/requests/settings/test-client";
 
 fn settings_body() -> Value {
     json!({
@@ -46,7 +50,12 @@ async fn status_of(app: Router, method: &str, uri: &str, token: Option<&str>) ->
 mod flag_gate {
     use super::*;
 
-    const ROUTES: [(&str, &str); 2] = [("GET", SETTINGS), ("PUT", SETTINGS)];
+    const ROUTES: [(&str, &str); 4] = [
+        ("GET", SETTINGS),
+        ("PUT", SETTINGS),
+        ("POST", TEST_INDEXER),
+        ("POST", TEST_CLIENT),
+    ];
 
     #[tokio::test]
     async fn answers_404_to_admins_members_and_anonymous_callers_when_off() {
@@ -143,5 +152,136 @@ mod put_requests_settings {
 
         let status: RequestsSettingsStatus = serde_json::from_str(&body_text(get).await).unwrap();
         assert_eq!(status.prowlarr_url, None);
+    }
+}
+
+/// Save the connections with Prowlarr and the download client at `prowlarr` / `client`.
+async fn save_connections(app: &Router, token: &str, prowlarr: &str, client: &str) {
+    let mut body = settings_body();
+    body["prowlarr_url"] = json!(prowlarr);
+    body["download_client_url"] = json!(client);
+    let res = app
+        .clone()
+        .oneshot(request("PUT", SETTINGS, Some(token), Some(body)))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+}
+
+async fn post(app: &Router, uri: &str, token: &str) -> (StatusCode, String) {
+    let res = app
+        .clone()
+        .oneshot(request("POST", uri, Some(token), None))
+        .await
+        .unwrap();
+    (res.status(), body_text(res).await)
+}
+
+mod post_test_indexer {
+    use super::*;
+
+    async fn prowlarr_answering(response: ResponseTemplate) -> MockServer {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v1/system/status"))
+            .and(header("x-api-key", "indexer-key-abcdef"))
+            .respond_with(response)
+            .mount(&server)
+            .await;
+        server
+    }
+
+    #[tokio::test]
+    async fn answers_200_when_prowlarr_accepts_the_saved_key() {
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let token = admin_token(&pool).await;
+        let prowlarr =
+            prowlarr_answering(ResponseTemplate::new(200).set_body_json(json!({}))).await;
+        save_connections(&app, &token, &prowlarr.uri(), "http://qbittorrent:8080").await;
+
+        let (status, _) = post(&app, TEST_INDEXER, &token).await;
+
+        assert_eq!(status, StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn answers_502_with_a_plain_reason_that_leaves_out_the_key() {
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let token = admin_token(&pool).await;
+        let prowlarr = prowlarr_answering(ResponseTemplate::new(401)).await;
+        save_connections(&app, &token, &prowlarr.uri(), "http://qbittorrent:8080").await;
+
+        let (status, body) = post(&app, TEST_INDEXER, &token).await;
+
+        assert_eq!(status, StatusCode::BAD_GATEWAY);
+        assert_eq!(body, "the API key was rejected");
+    }
+
+    #[tokio::test]
+    async fn answers_409_when_nothing_is_saved() {
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let token = admin_token(&pool).await;
+
+        let (status, _) = post(&app, TEST_INDEXER, &token).await;
+
+        assert_eq!(status, StatusCode::CONFLICT);
+    }
+}
+
+mod post_test_client {
+    use super::*;
+
+    async fn qbittorrent_answering_login(body: &'static str) -> MockServer {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/v2/auth/login"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("set-cookie", "SID=abc123; path=/")
+                    .set_body_string(body),
+            )
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/api/v2/app/version"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("v5.0.4"))
+            .mount(&server)
+            .await;
+        server
+    }
+
+    #[tokio::test]
+    async fn answers_200_when_the_client_accepts_the_saved_login() {
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let token = admin_token(&pool).await;
+        let client = qbittorrent_answering_login("Ok.").await;
+        save_connections(&app, &token, "http://prowlarr:9696", &client.uri()).await;
+
+        let (status, _) = post(&app, TEST_CLIENT, &token).await;
+
+        assert_eq!(status, StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn answers_502_with_a_plain_reason_that_leaves_out_the_password() {
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let token = admin_token(&pool).await;
+        let client = qbittorrent_answering_login("Fails.").await;
+        save_connections(&app, &token, "http://prowlarr:9696", &client.uri()).await;
+
+        let (status, body) = post(&app, TEST_CLIENT, &token).await;
+
+        assert_eq!(status, StatusCode::BAD_GATEWAY);
+        assert_eq!(body, "the login was rejected");
+    }
+
+    #[tokio::test]
+    async fn answers_409_when_nothing_is_saved() {
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let token = admin_token(&pool).await;
+
+        let (status, _) = post(&app, TEST_CLIENT, &token).await;
+
+        assert_eq!(status, StatusCode::CONFLICT);
     }
 }
