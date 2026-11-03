@@ -182,12 +182,20 @@ final class LibraryFilterStore {
     static let shared = LibraryFilterStore()
 
     private(set) var clauses: [FilterClause]
-    private let defaults: UserDefaults
+    /// Where each change is written; `nil` for a store that lives only in memory.
+    private let defaults: UserDefaults?
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         // A filter saved before one clause per field can hold more on a field.
         clauses = Self.onePerField(LibraryFilterPreference.load(from: defaults).clauses)
+    }
+
+    /// A store that starts on `clauses` and never touches `UserDefaults`, so editing a
+    /// filter somewhere other than the library leaves the library's own untouched.
+    init(clauses: [FilterClause]) {
+        defaults = nil
+        self.clauses = Self.onePerField(clauses)
     }
 
     /// The first clause on each field, in field order, so the list's order
@@ -215,6 +223,6 @@ final class LibraryFilterStore {
         // Every write is a reload for whoever observes the list, so an unchanged one is skipped.
         guard next != clauses else { return }
         clauses = next
-        LibraryFilterPreference(clauses: next).save(to: defaults)
+        if let defaults { LibraryFilterPreference(clauses: next).save(to: defaults) }
     }
 }
