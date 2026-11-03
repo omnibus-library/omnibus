@@ -48,6 +48,41 @@ export function prowlarrUpdate(
   };
 }
 
+/** The download client fields of a connections update. */
+export type ClientFields = Pick<
+  RequestsConnectionsUpdate,
+  | "download_client_url"
+  | "download_client_username"
+  | "download_client_category"
+  | "download_client_path_prefix"
+  | "download_path_prefix"
+>;
+
+/** The client fields `connections` holds, for putting back later. */
+export function clientFieldsOf(connections: RequestsConnections): ClientFields {
+  return {
+    download_client_url: connections.download_client_url ?? "",
+    download_client_username: connections.download_client_username ?? "",
+    download_client_category: connections.download_client_category,
+    download_client_path_prefix: connections.download_client_path_prefix ?? "",
+    download_path_prefix: connections.download_path_prefix ?? "",
+  };
+}
+
+/**
+ * The update that gives the download client `client` and leaves Prowlarr as `current` has
+ * it, key and all.
+ */
+export function clientUpdate(
+  current: RequestsConnections,
+  client: ClientFields,
+): RequestsConnectionsUpdate {
+  return {
+    ...prowlarrUpdate(current, current.prowlarr_url ?? "", null),
+    ...client,
+  };
+}
+
 /** The versions the mock Prowlarr offers for `book`: a retail EPUB and a smaller PDF. */
 export function releasesFor(book: ExternalBookMeta) {
   const named = (format: string) =>

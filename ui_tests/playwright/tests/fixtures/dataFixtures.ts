@@ -1,10 +1,23 @@
-import { readFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import type { EbooksRequests } from "../apiRequests/EbooksRequests";
 import type { IndexedBook } from "../data/authors";
 import { isAudioFormat } from "../data/bookDetail";
 import type { SeededBookmark } from "../data/bookmarks";
-import { prowlarrUpdate, type RequestsConnections } from "../data/bookRequests";
+import {
+  type ClientFields,
+  clientFieldsOf,
+  clientUpdate,
+  prowlarrUpdate,
+  type RequestsConnections,
+} from "../data/bookRequests";
 import type { EbookDetail, LibraryBook, UploadedEbook } from "../data/ebooks";
 import {
   buildHighlight,
@@ -42,12 +55,19 @@ import {
   type MockRelease,
   startMockProwlarr,
 } from "../utils/mockProwlarr";
+import {
+  type MockQbittorrent,
+  startMockQbittorrent,
+} from "../utils/mockQbittorrent";
 import { fixturesDir } from "../utils/seed";
 import { test as base, expect } from "./accountFixtures";
 import { MERGE_PRIMARY, MERGE_SECONDARY } from "./audiobooks";
 import { DUAL_FORMAT_BOOK, RESUME_PROMPT_BOOK } from "./dual_format";
 import { FIXTURE_BOOKS } from "./epubs";
 import { cleanupSet, type Owner } from "./lifecycle";
+
+/** A file a finished download holds: its name inside the download folder, and its bytes. */
+export type DownloadedFile = { name: string; bytes: Buffer };
 
 /** Registers merges so each is undone, newest first, before the lock frees. */
 export type MergeLock = {
@@ -101,6 +121,8 @@ type DataFixtures = {
   savedMetadataKeys: Set<MetadataProvider>;
   createdBookUuids: Set<string>;
   prowlarrFor: (releases: MockRelease[]) => Promise<MockProwlarr>;
+  qbittorrentFor: (files: DownloadedFile[]) => Promise<MockQbittorrent>;
+  requestedBookUuids: Set<string>;
   filedCopies: FiledCopy[];
   seededHighlightIds: Set<number>;
   seededBookmarkIds: Set<number>;
@@ -230,6 +252,68 @@ export const test = base.extend<DataFixtures>({
     await expect(restored).toBeOK();
     for (const mock of started) await mock.stop();
   },
+
+  // Writes `files` into a fresh folder and points the download client at a mock that holds
+  // them as a download, with both folder prefixes at that folder. The saved client fields
+  // are put back afterwards; Prowlarr is read fresh then, so its own fixture is not undone.
+  // A scratch server has no client of its own, so the fixture refuses to overwrite one.
+  qbittorrentFor: async ({ bookRequestsRequests }, use) => {
+    const read = await bookRequestsRequests.getConnections();
+    await expect(read).toBeOK();
+    const before: RequestsConnections = await read.json();
+    expect(before.download_client_url).toBeNull();
+    const started: { mock: MockQbittorrent; folder: string }[] = [];
+    await use(async (files) => {
+      const folder = mkdtempSync(join(tmpdir(), "omnibus-e2e-download-"));
+      for (const { name, bytes } of files) {
+        mkdirSync(dirname(join(folder, name)), { recursive: true });
+        writeFileSync(join(folder, name), bytes);
+      }
+      const listed = files.map(({ name, bytes }) => ({
+        name,
+        size: bytes.length,
+      }));
+      const mock = await startMockQbittorrent(folder, listed);
+      started.push({ mock, folder });
+      const client: ClientFields = {
+        ...clientFieldsOf(before),
+        download_client_url: mock.url,
+        download_client_path_prefix: folder,
+        download_path_prefix: folder,
+      };
+      const current = await bookRequestsRequests.getConnections();
+      const saved = await bookRequestsRequests.putConnections(
+        clientUpdate(await current.json(), client),
+      );
+      await expect(saved).toBeOK();
+      return mock;
+    });
+    const current = await bookRequestsRequests.getConnections();
+    const restored = await bookRequestsRequests.putConnections(
+      clientUpdate(await current.json(), clientFieldsOf(before)),
+    );
+    await expect(restored).toBeOK();
+    for (const { mock, folder } of started) {
+      await mock.stop();
+      rmSync(folder, { recursive: true, force: true });
+    }
+  },
+
+  // Books a request flow wished for, deleted with whatever files an import filed under them.
+  requestedBookUuids: async ({ ebooksRequests }, use) =>
+    cleanupSet(
+      use,
+      async (uuid: string) => {
+        const manifest = await ebooksRequests.getDeletionManifest(uuid);
+        await expect(manifest).toBeOK();
+        const { files, copies } = await manifest.json();
+        return ebooksRequests.postDeleteFiles(uuid, {
+          file_ids: files.map((f: { id: number }) => f.id),
+          copy_ids: copies.map((c: { id: number }) => c.id),
+        });
+      },
+      (uuid) => `delete ${uuid} with its files`,
+    ),
 
   filedCopies: async ({ physicalRequests }, use) => {
     const filed: FiledCopy[] = [];

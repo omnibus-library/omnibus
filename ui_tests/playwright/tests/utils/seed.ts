@@ -58,6 +58,33 @@ export async function seedLibrary(
 }
 
 /**
+ * Wait until the server's background tasks have drained, including the ones a scan
+ * queues behind itself. A scan the server runs next waits behind them, and the book
+ * request import awaits one.
+ */
+export async function waitForWorkerIdle(
+  request: APIRequestContext,
+): Promise<void> {
+  let idleReads = 0;
+  await expect
+    .poll(
+      async () => {
+        const resp = await request.get("/api/worker/status");
+        const active = resp.status() === 200 ? (await resp.json()).active : [];
+        idleReads =
+          resp.status() === 200 && active.length === 0 ? idleReads + 1 : 0;
+        return idleReads;
+      },
+      {
+        message: "the server's background tasks never finished",
+        timeout: 240_000,
+        intervals: [500, 1_000, 2_000],
+      },
+    )
+    .toBeGreaterThanOrEqual(3);
+}
+
+/**
  * Seed only the audiobook library while preserving any existing ebook
  * library path. Reads the current settings first so parallel specs that
  * share the same server don't lose their ebook data.
