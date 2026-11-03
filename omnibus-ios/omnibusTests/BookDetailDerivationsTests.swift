@@ -987,3 +987,13 @@ private func bookmark(position: String, title: String? = nil) -> Bookmark {
     #expect(line(nil, 4) == "The Reading Group")
     #expect(line("  ", 4) == "The Reading Group")
 }
+
+// MARK: - The pinned tab strip
+
+@Test func theTabStripReadsAsPinnedOnceItDocksUnderTheBar() {
+    #expect(BookTab.tabsPinned(stripTop: 0))
+    #expect(BookTab.tabsPinned(stripTop: -120))
+    // A tab jump settles the strip a point below the bar.
+    #expect(BookTab.tabsPinned(stripTop: 1))
+    #expect(!BookTab.tabsPinned(stripTop: 2))
+}

@@ -378,9 +378,9 @@ struct BookDetailView: View {
                                 let top = strip.frame(in: .scrollView(axis: .vertical)).minY
                                 return content.offset(y: max(0, -top))
                             }
-                            // Layout ignores the offset above, so minY <= 0 means pinned.
+                            // Layout ignores the offset above, so minY reads the unpinned position.
                             .onGeometryChange(for: Bool.self) { strip in
-                                strip.frame(in: .scrollView(axis: .vertical)).minY <= 0
+                                BookTab.tabsPinned(stripTop: strip.frame(in: .scrollView(axis: .vertical)).minY)
                             } action: { pinned in
                                 withAnimation(reduceMotion ? nil : Motion.snap) { tabsPinned = pinned }
                             }

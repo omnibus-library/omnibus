@@ -137,7 +137,9 @@ struct BookTabStrip: View {
 
     private func labelColor(_ tab: BookTab) -> Color {
         guard tab == selected else { return palette.ink1Color }
-        return pinned ? .white : palette.ink0Color
+        guard pinned else { return palette.ink0Color }
+        // bookRibbon is lighter on dark grounds, where white text falls under 4.5:1.
+        return palette.bg0.l > 0.5 ? .white : palette.bg0Color
     }
 
     private var ribbon: some View {
