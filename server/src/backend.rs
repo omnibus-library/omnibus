@@ -55,6 +55,7 @@ mod progress;
 mod ratings;
 mod react_ui;
 mod read_status;
+mod requests_admin;
 mod reviews;
 mod routes;
 mod scan;

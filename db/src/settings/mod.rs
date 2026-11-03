@@ -8,15 +8,18 @@ use std::collections::HashMap;
 use std::path::Path;
 
 pub use omnibus_shared::{
-    is_plausible_email, EbookConvertStatus, GoogleBooksKeyStatus, HardcoverKeyStatus, Settings,
-    SmtpConfigStatus, SmtpConfigUpdate, SmtpSecurity, EMAIL_MAX_LEN, GOOGLE_BOOKS_API_KEY_MAX_LEN,
-    HARDCOVER_API_KEY_MAX_LEN, SMTP_FIELD_MAX_LEN, SMTP_PASSWORD_MAX_LEN,
+    is_plausible_email, DownloadClientKind, EbookConvertStatus, GoogleBooksKeyStatus,
+    HardcoverKeyStatus, RequestsSettingsStatus, RequestsSettingsUpdate, Settings, SmtpConfigStatus,
+    SmtpConfigUpdate, SmtpSecurity, EMAIL_MAX_LEN, GOOGLE_BOOKS_API_KEY_MAX_LEN,
+    HARDCOVER_API_KEY_MAX_LEN, REQUESTS_FIELD_MAX_LEN, REQUESTS_SECRET_MAX_LEN, SMTP_FIELD_MAX_LEN,
+    SMTP_PASSWORD_MAX_LEN,
 };
 use omnibus_shared::{is_valid_metadata_precedence, MetadataSource, DEFAULT_METADATA_PRECEDENCE};
 use sqlx::{SqlitePool, Transaction};
 
 mod ebook_convert;
 mod keys;
+mod requests;
 mod secret_key;
 
 pub use ebook_convert::{
@@ -28,6 +31,9 @@ pub use keys::{
     get_hardcover_api_key, google_books_key_status, hardcover_key_status, provider_keys,
     seed_google_books_key_from_env, seed_hardcover_key_from_env, set_google_books_api_key,
     set_hardcover_api_key,
+};
+pub use requests::{
+    effective_requests_config, requests_settings_status, set_requests_settings, RequestsConfig,
 };
 
 /// `settings` KV keys consumed by the settings handlers. Kept as constants so the
