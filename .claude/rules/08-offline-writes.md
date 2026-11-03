@@ -111,6 +111,7 @@ Not queued, by test:
 | `POST /api/account/book-detail-scroll-stops` | 1 — account configuration |
 | `POST /api/account/stack-series` (Stack series) | 1 — account configuration |
 | `POST /api/account/share-stats` (Share stats with household) | 1 — account configuration |
+| `POST /api/account/stats-exclusions` (Leave out of my stats) | 1 — account configuration |
 | `PUT /api/stats/goal` (annual reading goal) | 1 — account configuration |
 | `PUT /api/stats/goal/daily` (daily pages / minutes goals) | 1 — account configuration |
 | Metadata overrides | 1 — library-wide, every user sees it |
@@ -126,6 +127,8 @@ Not queued, by test:
 | Shelf create (iOS) | 3 — no client-minted handle |
 | Check-in, physical-only, wishlist **add** | 3 — payload comes from the server's lookup |
 | Wishlist **remove** | none, on its own — held back to match its add (below) |
+| `POST /api/physical/{uuid}/wishlist` (Undo of a Wishlists-screen remove) | none, on its own — the other half of the remove pair (below) |
+| `POST /api/scan/wishlist` (Wishlists-screen Add sheet) | 3 — payload comes from the server's lookup |
 | `POST /api/shelves/preview` | not a mutation; a read wearing POST |
 
 These writes go directly to the server and surface failures.

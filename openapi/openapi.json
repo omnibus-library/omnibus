@@ -476,6 +476,34 @@
         }
       }
     },
+    "/api/account/stats-exclusions": {
+      "post": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Set the books left out of your stats",
+        "description": "Replaces the filter whose matching books are left out of your reading stats. An empty\nfilter leaves nothing out. Read back as `stats_exclusions` on `GET /api/auth/me`.",
+        "operationId": "post_stats_exclusions",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ViewFilters"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The filter is saved."
+          },
+          "422": {
+            "description": "The filter has more than 16 clauses or a clause no book could match; the body says which."
+          }
+        }
+      }
+    },
     "/api/admin/background-tasks": {
       "get": {
         "tags": [
@@ -13036,6 +13064,49 @@
         "format": "binary",
         "description": "A file's raw bytes, such as an image, an EPUB or an audio part. It is never JSON. The\noperation's content type says what the bytes are."
       },
+      "FilterClause": {
+        "type": "object",
+        "description": "One clause of a library filter. A book matches it when it carries any of `values`,\ncompared after trimming whitespace and ignoring ASCII letter case. Up to 64 values of\nup to 512 characters each, none blank.",
+        "required": [
+          "field",
+          "mode",
+          "values"
+        ],
+        "properties": {
+          "field": {
+            "$ref": "#/components/schemas/FilterField"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/FilterMode"
+          },
+          "values": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "FilterField": {
+        "type": "string",
+        "description": "The book attribute a `FilterClause` matches. The values of a `shelf` clause are shelf\nids written as decimal strings.",
+        "enum": [
+          "tag",
+          "genre",
+          "author",
+          "series",
+          "format",
+          "shelf"
+        ]
+      },
+      "FilterMode": {
+        "type": "string",
+        "description": "Whether a clause keeps the books that match it or drops them.",
+        "enum": [
+          "include",
+          "exclude"
+        ]
+      },
       "FinishedBook": {
         "type": "object",
         "description": "A book finished in the period. A book counts as finished when its read status is set\nto `finished`, or a journal entry on it says 100 percent.",
@@ -18225,8 +18296,27 @@
             "type": "boolean",
             "description": "Whether the user's library grid shows each series as one tile."
           },
+          "stats_exclusions": {
+            "$ref": "#/components/schemas/ViewFilters",
+            "description": "Books matching this filter are left out of the user's reading stats. An empty\nfilter leaves nothing out."
+          },
           "username": {
             "type": "string"
+          }
+        }
+      },
+      "ViewFilters": {
+        "type": "object",
+        "description": "A library filter. A book passes when it matches every clause. Up to 16 clauses.\nFormat values are lowercase, such as `epub` or `m4b`. On input it also takes the older\n`authors`, `series`, `formats`, `tags` and `genres` lists, each read as an include\nclause. Output carries `clauses` only.",
+        "required": [
+          "clauses"
+        ],
+        "properties": {
+          "clauses": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FilterClause"
+            }
           }
         }
       },

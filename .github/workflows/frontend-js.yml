@@ -73,7 +73,7 @@ jobs:
           gc-max-store-size-linux: 5G
 
       - name: Cache node_modules
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: frontend-js/node_modules
           key: frontend-js-node-modules-${{ runner.os }}-${{ hashFiles('frontend-js/pnpm-lock.yaml') }}

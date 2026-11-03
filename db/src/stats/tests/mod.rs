@@ -2,6 +2,7 @@
 //! below; the session, link, rating and completion seeding fixtures they
 //! share live here (and are reused by `builder/tests`).
 
+mod exclusions;
 mod finished;
 mod genres_ratings;
 mod summary;

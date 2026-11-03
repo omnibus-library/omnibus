@@ -93,7 +93,7 @@ jobs:
       # hard way; see https://github.com/omnibus-library/omnibus/pull/319.)
       - name: Restore server cache
         id: server-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: target/release/omnibus
           key: ${{ steps.server-key.outputs.key }}
@@ -133,7 +133,7 @@ jobs:
       # above for the rust-cache cleanup race we're dodging.
       - name: Save server cache
         if: steps.server-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: target/release/omnibus
           key: ${{ steps.server-key.outputs.key }}
@@ -162,7 +162,7 @@ jobs:
       # release asset. Cache them so shards/pushes don't re-download 156 MB;
       # the fetch script no-ops on a cache hit (marker + sentinel check).
       - name: Cache test fixtures
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             test_data/epubs/public_domain
@@ -193,7 +193,7 @@ jobs:
           gc-max-store-size-linux: 5G
 
       - name: Cache Playwright node_modules
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ui_tests/playwright/node_modules
           key: playwright-node-modules-${{ runner.os }}-${{ hashFiles('ui_tests/playwright/pnpm-lock.yaml') }}
@@ -207,7 +207,7 @@ jobs:
       # so "Re-run failed jobs" still works on a flake.
       - name: Restore server cache
         id: server-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: target/release/omnibus
           key: ${{ needs.server.outputs.cache-key }}
@@ -233,7 +233,7 @@ jobs:
       - name: Save server cache
         if: steps.server-cache.outputs.cache-hit != 'true'
         continue-on-error: true
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: target/release/omnibus
           key: ${{ needs.server.outputs.cache-key }}
@@ -242,7 +242,7 @@ jobs:
         run: nix develop .#e2e --command bash -c 'set -euo pipefail; cd ui_tests/playwright && pnpm install --frozen-lockfile'
 
       - name: Cache React client node_modules
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: frontend-js/node_modules
           key: frontend-js-node-modules-${{ runner.os }}-${{ hashFiles('frontend-js/pnpm-lock.yaml') }}

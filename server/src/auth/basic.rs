@@ -219,6 +219,7 @@ fn basic_auth_user(user: auth_db::User) -> AuthUser {
         book_detail_scroll_stops: user.book_detail_scroll_stops,
         stack_series: user.stack_series,
         share_stats: user.share_stats,
+        stats_exclusions: user.stats_exclusions,
         session_id: 0,
         session_kind: SessionKind::Basic,
         impersonator_id: None,

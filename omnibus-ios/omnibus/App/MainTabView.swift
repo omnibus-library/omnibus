@@ -15,12 +15,14 @@ enum Destination: Hashable {
     case seriesIndex
     case shelves
     case shelf(id: Int64)
+    case wishlists
     case tags
     case tag(name: String)
     case genres
     case genre(name: String)
     case settings
     case readingGoals
+    case statsExclusions
     case downloads
     case authorsIndex
     /// An index narrowed to the names containing `query`, where a search
@@ -37,6 +39,11 @@ enum Destination: Hashable {
         if case .book = self { return true }
         return false
     }
+}
+
+extension EnvironmentValues {
+    /// Pushes a screen onto the selected tab's stack, for sheets that can't hold a `NavigationLink`.
+    @Entry var openDestination: (Destination) -> Void = { _ in }
 }
 
 extension [Destination] {
@@ -151,6 +158,8 @@ struct MainTabView: View {
         // the modified view — on the inset's content it is a no-op (#2102).
         .ignoresSafeArea(.keyboard, edges: .bottom)
         .environment(reselect)
+        // The selected tab's own stack, so the pushed screen still decides the tab bar's fate.
+        .environment(\.openDestination) { paths[selection].append($0) }
         .sheet(isPresented: $addSheetPresented) {
             AddBooksSheet()
         }
@@ -340,6 +349,8 @@ struct DestinationRouter: ViewModifier {
                 ShelvesView()
             case let .shelf(id):
                 ShelfDetailView(id: id)
+            case .wishlists:
+                WishlistsView()
             case .tags:
                 TaxonomyCloudView(facet: .tag)
             case let .tag(name):
@@ -352,6 +363,8 @@ struct DestinationRouter: ViewModifier {
                 SettingsView()
             case .readingGoals:
                 ReadingGoalsView()
+            case .statsExclusions:
+                StatsExclusionsView()
             case .downloads:
                 DownloadsView()
             case .authorsIndex:

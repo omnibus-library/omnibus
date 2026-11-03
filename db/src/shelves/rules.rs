@@ -23,6 +23,20 @@ pub(crate) enum Bind {
     Int(i64),
 }
 
+/// Bind a predicate's `binds` onto `q`, in order.
+pub(crate) fn bind_all<'q>(
+    mut q: sqlx::query::Query<'q, sqlx::Sqlite, sqlx::sqlite::SqliteArguments<'q>>,
+    binds: &[Bind],
+) -> sqlx::query::Query<'q, sqlx::Sqlite, sqlx::sqlite::SqliteArguments<'q>> {
+    for b in binds {
+        q = match b {
+            Bind::Text(s) => q.bind(s.clone()),
+            Bind::Int(i) => q.bind(*i),
+        };
+    }
+    q
+}
+
 /// A WHERE fragment over the `books b` alias plus its ordered binds.
 pub(crate) struct Predicate {
     pub sql: String,

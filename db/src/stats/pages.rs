@@ -148,10 +148,12 @@ fn ledger_days(offset_minutes: i64, prune: &LedgerPrune) -> String {
         "SELECT {slot_day} AS day,
                 s.book_uuid AS uuid,
                 s.percent_gained AS percent_gained
-           FROM reading_progress_slots s WHERE s.user_id = ?1 AND {slots}
+           FROM reading_progress_slots s WHERE s.user_id = ?1 AND {slots} AND {kept_s}
          UNION ALL
          SELECT d.day, d.book_uuid, d.percent_gained
-           FROM reading_progress_daily d WHERE d.user_id = ?2 AND {daily}"
+           FROM reading_progress_daily d WHERE d.user_id = ?2 AND {daily} AND {kept_d}",
+        kept_s = kept!("s"),
+        kept_d = kept!("d"),
     )
 }
 
@@ -207,9 +209,12 @@ pub(super) async fn pages_read(
 // Lifetime, not windowed: a book begun in March and finished in April would pair
 // April's whole length with April's hours alone. `reading_sessions` only, since
 // listening time would measure the narrator.
-const BOOK_READING_SECS: &str = "\
-    SELECT book_uuid, SUM(seconds_read) AS secs FROM reading_sessions \
-        WHERE user_id = ? GROUP BY book_uuid";
+const BOOK_READING_SECS: &str = concat!(
+    "SELECT book_uuid, SUM(seconds_read) AS secs FROM reading_sessions \
+        WHERE user_id = ? AND ",
+    kept!("reading_sessions"),
+    " GROUP BY book_uuid"
+);
 
 /// Estimated pages read per hour over the window: a seconds-weighted mean, not a
 /// mean of per-book rates, over **the same books** on both sides (distinct live
@@ -425,12 +430,13 @@ async fn pages_book_counts(
 /// pages — there is no page analogue — but a window of nothing but listening
 /// must not read as a window of nothing.
 async fn audio_books(pool: &SqlitePool, user_id: i64, start: i64) -> Result<i64, StatsError> {
-    Ok(sqlx::query_scalar(
+    Ok(sqlx::query_scalar(concat!(
         "SELECT COUNT(DISTINCT ls.book_uuid)
          FROM listening_sessions ls
          JOIN books b ON b.uuid = ls.book_uuid
-         WHERE ls.user_id = ? AND ls.started_at >= ?",
-    )
+         WHERE ls.user_id = ? AND ls.started_at >= ? AND ",
+        kept!("ls")
+    ))
     .bind(user_id)
     .bind(start)
     .fetch_one(pool)

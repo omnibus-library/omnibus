@@ -179,6 +179,7 @@ struct AccountView: View {
                     showAddBooks = true
                 }
                 linkRow("Shelves", icon: "square.stack", to: .shelves)
+                linkRow("Wishlists", icon: "heart", to: .wishlists)
                 linkRow("Authors", icon: "person.2", to: .authorsIndex)
                 linkRow("Series", icon: "square.grid.2x2", to: .seriesIndex)
                 linkRow("Tags", icon: "tag", to: .tags)
