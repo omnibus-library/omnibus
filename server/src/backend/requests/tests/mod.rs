@@ -22,6 +22,7 @@ use crate::backend::test_support::{
 use super::*;
 
 mod cancel;
+mod swap;
 
 /// A reader allowed to request: id and bearer token.
 async fn requester(pool: &SqlitePool, name: &str) -> (i64, String) {
@@ -115,10 +116,11 @@ fn start_uri(uuid: &str) -> String {
 mod flag_and_permission_gate {
     use super::*;
 
-    fn writes() -> [(&'static str, String, Option<Value>); 5] {
+    fn writes() -> [(&'static str, String, Option<Value>); 6] {
         [
             ("POST", start_uri("any"), Some(json!({"kind": "ebook"}))),
             ("POST", "/api/requests/1/retry".to_string(), None),
+            ("POST", "/api/requests/1/swap".to_string(), None),
             ("POST", "/api/requests/1/cancel".to_string(), None),
             ("DELETE", "/api/requests/1/cancel".to_string(), None),
             (

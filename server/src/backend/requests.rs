@@ -307,8 +307,10 @@ pub(super) async fn get_request(
 /// Try a request again
 ///
 /// Searches again for a request that is `stuck` or still `looking`, and puts it back to
-/// `looking`; poll `GET /api/requests/{id}` as after a start. It counts as a start toward
-/// the rate limit. Only the reader who made the request, or an admin, can do this.
+/// `looking`; poll `GET /api/requests/{id}` as after a start. That counts as a start toward
+/// the rate limit. A request stuck on a stopped download (`stopped_moving`) instead drops that
+/// download and goes back to `choose` among the other versions, with nothing searched and
+/// nothing counted. Only the reader who made the request, or an admin, can do this.
 #[utoipa::path(
     post,
     path = "/api/requests/{id}/retry",
@@ -316,7 +318,7 @@ pub(super) async fn get_request(
     operation_id = "retry_book_request",
     params(("id" = i64, Path, description = "The request's id.")),
     responses(
-        (status = 200, description = "The request is looking again.", body = BookRequest),
+        (status = 200, description = "The request is looking again, or choosing again after a stopped download.", body = BookRequest),
         (status = 401, description = "You aren't signed in."),
         (status = 403, description = "Your account can't make requests, or the request is another reader's."),
         (status = 404, description = "Book requests are off on this server, or there is no such request."),
@@ -335,15 +337,63 @@ pub(super) async fn post_retry_request(
     if !state.request_starts().has_room(user.id) {
         return too_many("you started too many requests; try again in a few minutes");
     }
-    match store::restart(state.pool(), id).await {
-        Ok(()) => state.request_starts().record(user.id),
+    match store::restart(state.pool(), id, store::unix_now()).await {
+        Ok(RequestState::Looking) => {
+            state.request_starts().record(user.id);
+            spawn_search(&state, id);
+        }
+        Ok(_) => state.request_kick().notify_one(),
         Err(RequestError::WrongState) => {
             return (StatusCode::CONFLICT, "this request can't be searched again").into_response();
         }
         Err(e) => return internal("restart request", e),
     }
-    spawn_search(&state, id);
     answer(&state, id, &user).await
+}
+
+/// Pick another version
+///
+/// Gives up the version that is downloading (or has stopped) for good and goes back to
+/// `choose` among the other versions found; the download is removed a moment later. The
+/// request carries a `note` saying so. With no other version left it searches again and is
+/// `looking`. Only a request that is `on_its_way` and not fully downloaded, or stuck on a
+/// stopped download, can be swapped. Only the reader who made the request, or an admin, can
+/// do this.
+#[utoipa::path(
+    post,
+    path = "/api/requests/{id}/swap",
+    tag = "Requests",
+    operation_id = "swap_request_version",
+    params(("id" = i64, Path, description = "The request's id.")),
+    responses(
+        (status = 200, description = "The request is choosing again (or looking, with nothing else to choose).", body = BookRequest),
+        (status = 401, description = "You aren't signed in."),
+        (status = 403, description = "Your account can't make requests, or the request is another reader's."),
+        (status = 404, description = "Book requests are off on this server, or there is no such request."),
+        (status = 409, description = "The request isn't downloading, or its download is complete."),
+    ),
+)]
+pub(super) async fn post_swap_request(
+    RequestsUser(user): RequestsUser,
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Response {
+    if let Err(res) = own_request(&state, &user, id).await {
+        return res;
+    }
+    match store::swap(state.pool(), id, store::unix_now()).await {
+        Ok(now_in) => {
+            if now_in == RequestState::Looking {
+                spawn_search(&state, id);
+            }
+            state.request_kick().notify_one();
+            answer(&state, id, &user).await
+        }
+        Err(RequestError::WrongState) => {
+            (StatusCode::CONFLICT, "this request has no download to swap").into_response()
+        }
+        Err(e) => internal("swap version", e),
+    }
 }
 
 /// Choose a version

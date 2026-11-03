@@ -289,9 +289,17 @@ async fn insert_result(
     Ok(())
 }
 
-/// Send a `looking` or `stuck` request back to `looking` and forget what it found.
-/// [`RequestError::WrongState`] for one already waiting on a pick or picked.
-pub async fn restart(pool: &SqlitePool, id: i64) -> Result<(), RequestError> {
+/// Send a `looking` or `stuck` request back to `looking` and forget what it found, and say
+/// what it is now in. A request stuck on a stopped download keeps what was found: it goes
+/// back to choosing, as [`swap`] does. [`RequestError::WrongState`] for one already waiting
+/// on a pick or picked.
+pub async fn restart(pool: &SqlitePool, id: i64, now: i64) -> Result<RequestState, RequestError> {
+    let stopped = get(pool, id).await?.is_some_and(|r| {
+        r.state == RequestState::Stuck && r.stuck_reason == Some(StuckReason::StoppedMoving)
+    });
+    if stopped {
+        return swap(pool, id, now).await;
+    }
     let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     let moved = sqlx::query(&format!(
         "UPDATE book_requests
@@ -310,7 +318,48 @@ pub async fn restart(pool: &SqlitePool, id: i64) -> Result<(), RequestError> {
         .execute(&mut *tx)
         .await?;
     tx.commit().await?;
-    Ok(())
+    Ok(RequestState::Looking)
+}
+
+/// Give up the picked version of a downloading or stopped request: it is never offered again,
+/// and the request goes back to choosing among the others (to `looking` when none is left,
+/// which the caller then searches for). The client is told to drop the download at `now`.
+/// [`RequestError::WrongState`] for a request not downloading or stopped.
+pub async fn swap(pool: &SqlitePool, id: i64, now: i64) -> Result<RequestState, RequestError> {
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+    let picked: Option<Option<i64>> = sqlx::query_scalar(
+        "SELECT chosen_result_id FROM book_requests
+         WHERE id = ? AND ((state = 'on_its_way' AND (progress IS NULL OR progress < 1))
+                           OR (state = 'stuck' AND stuck_reason = 'stopped_moving'))",
+    )
+    .bind(id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let Some(picked) = picked else {
+        return Err(RequestError::WrongState);
+    };
+    sqlx::query("UPDATE book_request_results SET rejected = 1 WHERE id = ?")
+        .bind(picked)
+        .execute(&mut *tx)
+        .await?;
+    let state: String = sqlx::query_scalar(&format!(
+        "UPDATE book_requests
+         SET state = CASE WHEN EXISTS (SELECT 1 FROM book_request_results
+                                       WHERE request_id = ?1 AND rejected = 0)
+                          THEN 'choose' ELSE 'looking' END,
+             chosen_result_id = NULL, progress = NULL, moved_at = NULL, cancel_at = ?2,
+             stuck_reason = NULL, stuck_detail = NULL, note = 'Swapped for another version',
+             updated_at = {NOW}
+         WHERE id = ?1 RETURNING state"
+    ))
+    .bind(id)
+    .bind(now)
+    .fetch_one(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    let decoded = RequestState::from_db(&state)
+        .ok_or_else(|| sqlx::Error::Decode(format!("book_requests.state holds {state:?}").into()));
+    Ok(decoded?)
 }
 
 /// Pick `result_id` for request `id`. The version must be a kept one of this request, and the
@@ -319,7 +368,7 @@ pub async fn restart(pool: &SqlitePool, id: i64) -> Result<(), RequestError> {
 /// checks and the change are one statement, so a double click picks once.
 pub async fn choose(pool: &SqlitePool, id: i64, result_id: i64) -> Result<(), RequestError> {
     let moved = sqlx::query(&format!(
-        "UPDATE book_requests SET state = 'chosen', chosen_result_id = ?1, updated_at = {NOW}
+        "UPDATE book_requests SET state = 'chosen', chosen_result_id = ?1, note = NULL, updated_at = {NOW}
          WHERE id = ?2 AND state = 'choose'
            AND EXISTS (SELECT 1 FROM book_request_results
                        WHERE id = ?1 AND request_id = ?2 AND rejected = 0)"
