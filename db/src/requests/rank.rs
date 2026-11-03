@@ -98,14 +98,6 @@ fn format_of(tokens: &[String]) -> Format {
     }
 }
 
-/// A result that passed every drop rule, short only of the size term, which needs the
-/// median of the others.
-struct Kept {
-    release: ProwlarrRelease,
-    format: Option<String>,
-    fixed_score: f64,
-}
-
 /// Drop what cannot be the book or cannot be used, then order what is left best first.
 pub fn rank(releases: Vec<ProwlarrRelease>, title: &str, author: &str) -> Vec<Ranked> {
     let author_tokens: Vec<String> = normalize_author(author)
@@ -114,22 +106,16 @@ pub fn rank(releases: Vec<ProwlarrRelease>, title: &str, author: &str) -> Vec<Ra
         .filter(|t| t.len() >= 2)
         .map(str::to_string)
         .collect();
-    let (mut kept, mut rejected) = (Vec::new(), Vec::new());
-    for release in releases {
-        match assess(release, title, &author_tokens) {
-            Ok(k) => kept.push(k),
-            Err(r) => rejected.push(r),
-        }
-    }
+    let (kept, rejected): (Vec<Ranked>, Vec<Ranked>) = releases
+        .into_iter()
+        .map(|release| assess(release, title, &author_tokens))
+        .partition(|r| !r.rejected);
     let median = median_size(&kept);
     let mut ranked: Vec<Ranked> = kept
         .into_iter()
-        .map(|k| Ranked {
-            score: k.fixed_score + size_closeness(k.release.size_bytes, median),
-            release: k.release,
-            format: k.format,
-            best_match: false,
-            rejected: false,
+        .map(|mut r| {
+            r.score += size_closeness(r.release.size_bytes, median);
+            r
         })
         .collect();
     ranked.sort_by(|a, b| b.score.total_cmp(&a.score));
@@ -140,15 +126,12 @@ pub fn rank(releases: Vec<ProwlarrRelease>, title: &str, author: &str) -> Vec<Ra
     ranked
 }
 
-/// Score one result, or flag it dropped as the `Err`.
-fn assess(release: ProwlarrRelease, title: &str, author_tokens: &[String]) -> Result<Kept, Ranked> {
+/// Score one result without the size term, which needs the median of the others; a
+/// dropped one scores 0.
+fn assess(release: ProwlarrRelease, title: &str, author_tokens: &[String]) -> Ranked {
     let words = tokens(&release.title);
     let format = format_of(&words);
     let title_score = score_title_match(title, &release.title);
-    let format_name = match format {
-        Format::Readable(place) => Some(EBOOK_EXTENSIONS[place].to_uppercase()),
-        _ => None,
-    };
     let unusable = !release
         .categories
         .iter()
@@ -160,24 +143,25 @@ fn assess(release: ProwlarrRelease, title: &str, author_tokens: &[String]) -> Re
         || matches!(format, Format::Unreadable);
     let wrong_book = title_score < MIN_RELEVANCE_SCORE
         || (!author_tokens.is_empty() && !author_tokens.iter().any(|t| words.contains(t)));
-    if unusable || wrong_book {
-        return Err(Ranked {
-            release,
-            format: format_name,
-            score: 0.0,
-            best_match: false,
-            rejected: true,
-        });
-    }
-    let fixed_score = title_score * TITLE_WEIGHT
-        + format_points(&format)
-        + language_and_pack_points(&release, &words)
-        + SEEDER_WEIGHT * (1.0 + release.seeders.unwrap_or(0) as f64).ln();
-    Ok(Kept {
+    let rejected = unusable || wrong_book;
+    let score = if rejected {
+        0.0
+    } else {
+        title_score * TITLE_WEIGHT
+            + format_points(&format)
+            + language_and_pack_points(&release, &words)
+            + SEEDER_WEIGHT * (1.0 + release.seeders.unwrap_or(0) as f64).ln()
+    };
+    Ranked {
+        format: match format {
+            Format::Readable(place) => Some(EBOOK_EXTENSIONS[place].to_uppercase()),
+            _ => None,
+        },
         release,
-        format: format_name,
-        fixed_score,
-    })
+        score,
+        best_match: false,
+        rejected,
+    }
 }
 
 fn format_points(format: &Format) -> f64 {
@@ -203,7 +187,7 @@ fn language_and_pack_points(release: &ProwlarrRelease, words: &[String]) -> f64 
     points
 }
 
-fn median_size(kept: &[Kept]) -> Option<f64> {
+fn median_size(kept: &[Ranked]) -> Option<f64> {
     let mut sizes: Vec<i64> = kept.iter().filter_map(|k| k.release.size_bytes).collect();
     sizes.sort_unstable();
     sizes.get(sizes.len() / 2).map(|s| *s as f64)
