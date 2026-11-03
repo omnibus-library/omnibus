@@ -56,3 +56,23 @@ export function startFailure(error: unknown): string {
       return "Couldn’t start the request.";
   }
 }
+
+/** How long a search may run before its request offers Try again: past the server's 30 s timeout. */
+export const SEARCH_STALE_AFTER_SECS = 60;
+
+/** Whether a search that began at `updatedAt` (Unix seconds) has run past its timeout by `now`. */
+export const isSearchStale = (updatedAt: number, now: number) =>
+  now - updatedAt >= SEARCH_STALE_AFTER_SECS;
+
+const AUDIO_FORMATS = ["M4B", "M4A", "MP3"];
+
+const upper = (formats: readonly string[]) =>
+  formats.map((f) => f.toUpperCase());
+
+/** Whether `formats` include an ebook: print never counts, audio is M4B, M4A or MP3, and any other format is an ebook. */
+export const holdsEbook = (formats: readonly string[]) =>
+  upper(formats).some((f) => f !== "PRINT" && !AUDIO_FORMATS.includes(f));
+
+/** Whether `formats` include an audiobook. */
+export const holdsAudiobook = (formats: readonly string[]) =>
+  upper(formats).some((f) => AUDIO_FORMATS.includes(f));

@@ -4,8 +4,10 @@ import type { BookDetail } from "../../api";
 import { Button, ButtonLink } from "../../components/Button/Button";
 import { FormatSwitcher } from "../../components/FormatSwitcher/FormatSwitcher";
 import { ImmersiveGlyph, PencilGlyph } from "../../components/Glyphs/Glyphs";
+import { BusyLabel } from "../../components/Loading/Loading";
 import { usePlayback } from "../../playback/PlaybackProvider";
 import { useCurrentUser } from "../../session";
+import { holdsEbook } from "../BookRequest/requestView";
 import { useStartRequest } from "../BookRequest/useStartRequest";
 import type { BookDialog } from "./BookDialogs";
 import { ExportMenu } from "./ExportMenu";
@@ -125,10 +127,17 @@ function EbookSlot({ book }: { book: BookDetail }) {
       <Button
         size="sm"
         data-testid="files-request-ebook"
-        disabled={start.isPending}
-        onClick={() => start.mutate()}
+        aria-disabled={start.isPending}
+        aria-busy={start.isPending}
+        onClick={() => {
+          if (!start.isPending) start.mutate();
+        }}
       >
-        Request
+        <BusyLabel
+          busy={start.isPending}
+          label="Request"
+          busyLabel="Requesting…"
+        />
       </Button>
     </div>
   );
@@ -143,7 +152,9 @@ export function FilesDetails({
   onOpenDialog: (dialog: BookDialog) => void;
 }) {
   const hasFiles = book.formats.length > 0;
-  const canRequestEbook = useCurrentUser().canRequest && !book.hasEbook;
+  // Any ebook format counts as held, not only an EPUB.
+  const canRequestEbook =
+    useCurrentUser().canRequest && !holdsEbook(book.formats);
   return (
     <div className="bp-files-tab">
       <div className="bp-file-column">

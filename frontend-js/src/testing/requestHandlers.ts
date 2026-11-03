@@ -9,6 +9,8 @@ import {
 // A stateful MSW fake of the five book-request routes, in the shape the server sends them.
 // A write a story makes shows in the next read; `writes` records them in order.
 
+const NOW = Math.floor(Date.now() / 1000);
+
 /** A version the search found, as the server sends it. */
 export function aWireVersion(
   overrides: Partial<RequestVersion> = {},
@@ -37,8 +39,8 @@ export function aWireRequest(
     stuck_reason: null,
     stuck_detail: null,
     chosen_result_id: null,
-    created_at: "2026-11-03T12:00:00Z",
-    updated_at: "2026-11-03T12:00:00Z",
+    created_at: NOW,
+    updated_at: NOW,
     versions: [],
     ...overrides,
   };
@@ -53,45 +55,26 @@ export type RequestWrite =
 export type RequestFake = {
   handlers: HttpHandler[];
   writes: RequestWrite[];
-  /** What a request becomes after it is retried (it is searched again at once). */
-  afterRetry: Partial<BookRequest>;
-  /** The server's refusal for the next start, if any. */
-  refuseStart: number | null;
-  /** The request a start makes. */
-  started: Partial<BookRequest>;
 };
 
-/** The routes over `initial` requests. A start adds a looking request; a retry sets `afterRetry`. */
+/** The routes over `initial` requests. A start adds a looking request; a retry puts one back to looking. */
 export function requestFake(initial: BookRequest[] = []): RequestFake {
   const requests = new Map(initial.map((r) => [r.id, r]));
-  const fake: RequestFake = {
-    handlers: [],
-    writes: [],
-    afterRetry: {},
-    refuseStart: null,
-    started: {},
-  };
+  const fake: RequestFake = { handlers: [], writes: [] };
   const find = (raw: unknown) => requests.get(Number(raw));
   const refuse = (status: number) => new HttpResponse("refused", { status });
   fake.handlers = [
     http.post("/api/books/:uuid/requests", async ({ params, request }) => {
       StartRequest.parse(await request.json());
-      if (fake.refuseStart) return refuse(fake.refuseStart);
       const uuid = String(params.uuid);
       fake.writes.push({ kind: "start", uuid });
       const made = aWireRequest({
         id: Math.max(0, ...requests.keys()) + 1,
         book_uuid: uuid,
-        ...fake.started,
       });
       requests.set(made.id, made);
       return HttpResponse.json(made, { status: 201 });
     }),
-    http.get("/api/books/:uuid/requests", ({ params }) =>
-      HttpResponse.json(
-        [...requests.values()].filter((r) => r.book_uuid === params.uuid),
-      ),
-    ),
     http.get("/api/requests/:id", ({ params }) => {
       const found = find(params.id);
       return found ? HttpResponse.json(found) : refuse(404);
@@ -109,7 +92,6 @@ export function requestFake(initial: BookRequest[] = []): RequestFake {
         stuck_reason: null,
         stuck_detail: null,
         versions: [],
-        ...fake.afterRetry,
       };
       requests.set(again.id, again);
       return HttpResponse.json(again);

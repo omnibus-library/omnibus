@@ -77,6 +77,8 @@ export function toBookRequest(wire: BookRequestWire) {
     stuckReason: wire.stuck_reason ?? null,
     stuckDetail: wire.stuck_detail ?? null,
     chosenResultId: wire.chosen_result_id ?? null,
+    /** Unix seconds. */
+    updatedAt: wire.updated_at,
     versions: wire.versions.map(toVersion),
   };
 }

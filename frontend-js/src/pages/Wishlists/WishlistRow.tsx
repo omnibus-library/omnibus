@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Link } from "react-router";
 import {
   addToWishlist,
@@ -11,6 +11,7 @@ import {
 import { Button } from "../../components/Button/Button";
 import { Cover } from "../../components/Cover/Cover";
 import { ChevronDownGlyph } from "../../components/Glyphs/Glyphs";
+import { BusyLabel } from "../../components/Loading/Loading";
 import { MoreMenu } from "../../components/MoreMenu/MoreMenu";
 import { Sheet } from "../../components/Sheet/Sheet";
 import { useToast } from "../../components/Toast/Toast";
@@ -91,6 +92,38 @@ function useRemove(book: WishlistBook) {
 const messageOf = (error: unknown) =>
   error instanceof Error ? error.message : "Something went wrong.";
 
+const AUDIOBOOK_REASON = "Audiobook requests aren’t available yet";
+
+/** Request ▾ with nothing to ask for yet: it stays focusable, says why, and does nothing. */
+function RequestUnavailable() {
+  const reason = useId();
+  // Without a pointer to hover with, a tap is what shows why it can't be used.
+  const [tapped, setTapped] = useState(false);
+  return (
+    <span className="wl-request-wrap">
+      <button
+        type="button"
+        className="btn sm wl-act wl-request"
+        data-testid="wishlists-request"
+        aria-disabled="true"
+        aria-describedby={reason}
+        onClick={() => setTapped(!tapped)}
+        onBlur={() => setTapped(false)}
+      >
+        Request
+        <ChevronDownGlyph size={10} />
+      </button>
+      <span
+        role="tooltip"
+        id={reason}
+        className={tapped ? "wl-tip is-shown" : "wl-tip"}
+      >
+        {AUDIOBOOK_REASON}
+      </span>
+    </span>
+  );
+}
+
 /** Request ▾: what can be asked for. An ebook starts a request and opens it; an audiobook can't be asked for yet. */
 function RequestMenu({
   book,
@@ -102,6 +135,7 @@ function RequestMenu({
   start: StartRequest;
 }) {
   const [open, setOpen] = useState(false);
+  if (!kinds.includes("ebook")) return <RequestUnavailable />;
   return (
     <span className="wl-request-wrap">
       <button
@@ -110,10 +144,17 @@ function RequestMenu({
         data-testid="wishlists-request"
         aria-haspopup="menu"
         aria-expanded={open}
-        disabled={start.isPending}
-        onClick={() => setOpen(!open)}
+        aria-disabled={start.isPending}
+        aria-busy={start.isPending}
+        onClick={() => {
+          if (!start.isPending) setOpen(!open);
+        }}
       >
-        Request
+        <BusyLabel
+          busy={start.isPending}
+          label="Request"
+          busyLabel="Requesting…"
+        />
         <ChevronDownGlyph size={10} />
       </button>
       {open && (

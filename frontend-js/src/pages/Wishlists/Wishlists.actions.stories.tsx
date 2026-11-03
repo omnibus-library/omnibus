@@ -126,7 +126,28 @@ export const ARefusedRequestSaysWhyAndStaysOnTheList: Story = {
       ),
     ).toBeInTheDocument();
     await expect(canvas.queryByTestId("where")).toBeNull();
-    await expect(row.getByTestId("wishlists-request")).toBeEnabled();
+    await expect(row.getByTestId("wishlists-request")).toHaveFocus();
+    await expect(row.getByTestId("wishlists-request")).not.toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+  },
+};
+
+export const RequestIsAnUnavailableButtonWhenOnlyAnAudiobookIsLeft: Story = {
+  play: async ({ canvas, userEvent }) => {
+    // An epub is held, so only the audiobook is left to ask for, and that can't be asked for yet.
+    const row = within(await rowOf(canvas, "Project Hail Mary"));
+    const request = row.getByTestId("wishlists-request");
+    await expect(request).toHaveAttribute("aria-disabled", "true");
+    await expect(request).toHaveAccessibleDescription(
+      "Audiobook requests aren’t available yet",
+    );
+
+    await userEvent.click(request);
+
+    await expect(canvas.queryByRole("menu")).not.toBeInTheDocument();
+    await expect(requests.writes).toEqual([]);
   },
 };
 

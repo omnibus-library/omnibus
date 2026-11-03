@@ -1,7 +1,7 @@
 /* A book's request page: the book above, one lane per format below. */
 .rq-page {
   display: grid;
-  gap: 28px;
+  gap: var(--pad);
   max-width: 880px;
   margin-inline: auto;
   padding-block: 32px 64px;
@@ -44,7 +44,8 @@
 .rq-panel {
   display: grid;
   gap: 14px;
-  padding: 24px;
+  padding: 20px;
+  border: 1px solid var(--line-2);
   border-radius: var(--r-lg);
   background: var(--bg-1);
 }

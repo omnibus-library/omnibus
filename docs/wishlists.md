@@ -33,6 +33,7 @@ Omnibus uses its own words for a request, never the downloader's ("release", "in
 
 1. **Looking**: Omnibus is searching for versions of the book. A new request starts here.
 2. **Choose a version**: versions were found and the user picks one. This is the only state that needs the user.
+   Once picked, the request shows as "Version chosen" until the download slice turns it into **On its way**.
 3. **On its way**: the chosen version is downloading and being added to the library, shown as one progress bar.
 4. **Ready**: the format is in the library ("Ready to read" or "Ready to listen").
 

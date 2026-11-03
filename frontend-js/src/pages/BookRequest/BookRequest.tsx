@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useId, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router";
+import { useEffect, useId, useState } from "react";
+import { Link, Navigate, useParams, useSearchParams } from "react-router";
 import {
   type BookUuid,
   bookRequestQuery,
@@ -18,9 +18,17 @@ import { BusyLabel, Loading } from "../../components/Loading/Loading";
 import { PageError, PageNotFound } from "../../components/PageState/PageState";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
 import { ToastProvider, useToast } from "../../components/Toast/Toast";
+import { nowSecs } from "../../format";
 import { useCurrentUser } from "../../session";
 import { bookQuery } from "../BookDetail/queries";
-import { stateView, versionFormat, versionSize } from "./requestView";
+import {
+  isSearchStale,
+  requestPath,
+  SEARCH_STALE_AFTER_SECS,
+  stateView,
+  versionFormat,
+  versionSize,
+} from "./requestView";
 import "./BookRequest.css";
 
 const messageOf = (error: unknown) =>
@@ -29,12 +37,17 @@ const messageOf = (error: unknown) =>
 /** One version found: its format and size, a Best match badge, Details, and Choose. */
 function VersionRow({
   version,
-  busy,
+  choosing,
+  locked,
   onChoose,
 }: {
   version: RequestVersion;
-  busy: boolean;
-  onChoose: () => void;
+  /** This is the version being chosen. */
+  choosing: boolean;
+  /** Some version is being chosen, so no other can be. */
+  locked: boolean;
+  /** Absent when the viewer may not pick for this request. */
+  onChoose: (() => void) | null;
 }) {
   const [open, setOpen] = useState(false);
   const detailsId = useId();
@@ -65,16 +78,19 @@ function VersionRow({
         >
           Details
         </Button>
-        <Button
-          variant={version.bestMatch ? "primary" : "default"}
-          size="sm"
-          data-testid="request-choose"
-          aria-label={`Choose the ${format} version${size ? `, ${size}` : ""}`}
-          disabled={busy}
-          onClick={onChoose}
-        >
-          Choose
-        </Button>
+        {onChoose && (
+          <Button
+            variant={version.bestMatch ? "primary" : "default"}
+            size="sm"
+            data-testid="request-choose"
+            aria-label={`Choose the ${format} version${size ? `, ${size}` : ""}`}
+            aria-busy={choosing}
+            disabled={locked}
+            onClick={onChoose}
+          >
+            <BusyLabel busy={choosing} label="Choose" busyLabel="Choosing…" />
+          </Button>
+        )}
       </div>
       {open && (
         <dl id={detailsId} className="rq-details" data-testid="request-details">
@@ -99,7 +115,7 @@ function useAnswer(id: number) {
     client.setQueryData(bookRequestQuery(id).queryKey, request);
 }
 
-function Choices({ request }: { request: Request }) {
+function Choices({ request, canAct }: { request: Request; canAct: boolean }) {
   const toast = useToast();
   const answer = useAnswer(request.id);
   const choose = useMutation({
@@ -115,8 +131,9 @@ function Choices({ request }: { request: Request }) {
         <VersionRow
           key={version.id}
           version={version}
-          busy={choose.isPending}
-          onChoose={() => choose.mutate(version.id)}
+          choosing={choose.isPending && choose.variables === version.id}
+          locked={choose.isPending}
+          onChoose={canAct ? () => choose.mutate(version.id) : null}
         />
       ))}
     </ul>
@@ -134,8 +151,8 @@ function Chosen({ request }: { request: Request }) {
   );
 }
 
-function Stuck({ request }: { request: Request }) {
-  const viewer = useCurrentUser();
+/** Searches again for the request; the one way out of a search that came up empty or never ended. */
+function TryAgain({ request }: { request: Request }) {
   const toast = useToast();
   const answer = useAnswer(request.id);
   const retry = useMutation({
@@ -144,31 +161,70 @@ function Stuck({ request }: { request: Request }) {
     onError: (error) => toast(`Couldn’t try again: ${messageOf(error)}`),
   });
   return (
+    <Button
+      variant="primary"
+      data-testid="request-try-again"
+      disabled={retry.isPending}
+      aria-busy={retry.isPending}
+      onClick={() => retry.mutate()}
+    >
+      <BusyLabel busy={retry.isPending} label="Try again" busyLabel="Trying…" />
+    </Button>
+  );
+}
+
+function Stuck({ request, canAct }: { request: Request; canAct: boolean }) {
+  return (
     <div className="rq-stuck">
-      {request.stuckDetail && viewer.isAdmin && (
+      {request.stuckDetail && (
         <p className="rq-stuck-detail" data-testid="request-stuck-detail">
           {request.stuckDetail}
         </p>
       )}
-      <Button
-        variant="primary"
-        data-testid="request-try-again"
-        disabled={retry.isPending}
-        aria-busy={retry.isPending}
-        onClick={() => retry.mutate()}
-      >
-        <BusyLabel
-          busy={retry.isPending}
-          label="Try again"
-          busyLabel="Trying…"
-        />
-      </Button>
+      {canAct && <TryAgain request={request} />}
     </div>
+  );
+}
+
+/** Whether a search that began at `updatedAt` should have ended by now; re-checked when it would turn so. */
+function useSearchStale(updatedAt: number) {
+  const [now, setNow] = useState(nowSecs);
+  useEffect(() => {
+    const wait = updatedAt + SEARCH_STALE_AFTER_SECS - nowSecs();
+    if (wait <= 0) return;
+    const timer = setTimeout(() => setNow(nowSecs()), (wait + 1) * 1000);
+    return () => clearTimeout(timer);
+  }, [updatedAt]);
+  return isSearchStale(updatedAt, now);
+}
+
+/** The wait for a search, with a way out once it has run past its timeout. */
+function Looking({ request, canAct }: { request: Request; canAct: boolean }) {
+  const stale = useSearchStale(request.updatedAt);
+  return (
+    <>
+      <Loading
+        kind="section"
+        label="Looking for versions…"
+        testId="request-looking"
+      />
+      {stale && canAct && (
+        <div className="rq-stuck">
+          <p className="rq-note" data-testid="request-still-looking">
+            Still looking…
+          </p>
+          <TryAgain request={request} />
+        </div>
+      )}
+    </>
   );
 }
 
 /** The ebook lane: what became of the request, in the state's own words. */
 function Lane({ request }: { request: Request }) {
+  const viewer = useCurrentUser();
+  // Anyone may read a request; only its maker, or an admin, may act on it.
+  const canAct = viewer.id === request.userId || viewer.isAdmin;
   const { heading, note } = stateView(request.state);
   return (
     <section
@@ -182,6 +238,7 @@ function Lane({ request }: { request: Request }) {
         </h2>
         <p
           className="rq-state"
+          role="status"
           data-testid="request-state"
           data-state={request.state}
         >
@@ -190,15 +247,13 @@ function Lane({ request }: { request: Request }) {
       </div>
       <p className="rq-note">{note}</p>
       {request.state === "looking" && (
-        <Loading
-          kind="section"
-          label="Looking for versions…"
-          testId="request-looking"
-        />
+        <Looking request={request} canAct={canAct} />
       )}
-      {request.state === "choose" && <Choices request={request} />}
+      {request.state === "choose" && (
+        <Choices request={request} canAct={canAct} />
+      )}
       {request.state === "chosen" && <Chosen request={request} />}
-      {request.state === "stuck" && <Stuck request={request} />}
+      {request.state === "stuck" && <Stuck request={request} canAct={canAct} />}
     </section>
   );
 }
@@ -207,21 +262,25 @@ function RequestPage({ uuid, id }: { uuid: BookUuid; id: number }) {
   const book = useQuery(bookQuery(uuid));
   const request = useQuery(bookRequestQuery(id));
   const back = `/books/${uuid}`;
-  if (book.isPending || request.isPending) return <Loading kind="page" />;
-  if (book.isError || request.isError) {
-    const error = book.error ?? request.error;
+  // A failed background poll keeps showing what was last read.
+  if (book.data === undefined || request.data === undefined) {
+    if (book.isPending || request.isPending) return <Loading kind="page" />;
     return (
       <PageError
-        message={messageOf(error)}
+        message={messageOf(book.error ?? request.error)}
         backTo={back}
         backLabel="Back to book"
       />
     );
   }
-  if (!book.data) return <PageNotFound subject="Book" />;
+  if (book.data === null) return <PageNotFound subject="Book" />;
+  // The address named the book by an old uuid; the request knows the current one.
+  if (request.data.bookUuid !== uuid) {
+    return <Navigate replace to={requestPath(request.data.bookUuid, id)} />;
+  }
   const { title, authors } = book.data;
   return (
-    <main className="rq-page" data-testid="request-page">
+    <div className="rq-page" data-testid="request-page">
       <PageTitle page={`Request ${title}`} />
       <header className="rq-head">
         <div className="rq-cover">
@@ -244,7 +303,7 @@ function RequestPage({ uuid, id }: { uuid: BookUuid; id: number }) {
         </div>
       </header>
       <Lane request={request.data} />
-    </main>
+    </div>
   );
 }
 

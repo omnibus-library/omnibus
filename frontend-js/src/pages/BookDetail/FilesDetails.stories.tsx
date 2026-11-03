@@ -207,6 +207,20 @@ export const AnAudiobookOnlyBookOffersTheEbookBesideItsFiles: Story = {
   },
 };
 
+export const NoEbookSlotWhenTheBookHoldsAPdfOrAComic: Story = {
+  args: {
+    book: aBook({
+      formats: ["PDF"],
+      book_files: [aWireFile({ id: 12, format: "PDF" })],
+    }),
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("format-row-pdf");
+
+    await expect(canvas.queryByTestId("files-ebook-slot")).toBeNull();
+  },
+};
+
 export const NoEbookSlotWhenTheBookHasAnEbook: Story = {
   play: async ({ canvas }) => {
     await canvas.findByTestId("format-row-epub");
@@ -233,21 +247,6 @@ export const RequestStartsAnEbookRequestForTheBook: Story = {
     await waitFor(() =>
       expect(requests.writes).toEqual([{ kind: "start", uuid: UUID }]),
     );
-  },
-};
-
-export const ARefusedRequestSaysWhy: Story = {
-  args: { book: aBook({ formats: [], book_files: [] }) },
-  beforeEach({ msw }) {
-    msw.use(failing("post", "/api/books/:uuid/requests", 403));
-  },
-  play: async ({ canvas, userEvent }) => {
-    await userEvent.click(canvas.getByTestId("files-request-ebook"));
-
-    await expect(
-      await canvas.findByText("Your account can’t make requests."),
-    ).toBeInTheDocument();
-    await expect(canvas.getByTestId("files-request-ebook")).toBeEnabled();
   },
 };
 

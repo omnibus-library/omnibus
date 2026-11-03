@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { HttpResponse, http } from "msw";
 import { Route, Routes } from "react-router";
 import { expect, waitFor, within } from "storybook/test";
-import { bookHandler, failing } from "../../testing/handlers";
+import { bookHandler, deferred, failing } from "../../testing/handlers";
 import {
   aWireRequest,
   aWireVersion,
@@ -247,11 +247,10 @@ export const StuckSaysCouldntFindItAndOffersTryAgain: Story = {
     await expect(
       canvas.getByRole("button", { name: "Try again" }),
     ).toBeEnabled();
-    await expect(canvas.queryByTestId("request-stuck-detail")).toBeNull();
   },
 };
 
-export const StuckShowsAnAdminWhatWentWrong: Story = {
+export const StuckShowsWhatWentWrongWhenTheServerSendsIt: Story = {
   beforeEach({ msw }) {
     msw.use(...seed(STUCK));
   },
@@ -259,18 +258,6 @@ export const StuckShowsAnAdminWhatWentWrong: Story = {
     await expect(
       await canvas.findByTestId("request-stuck-detail"),
     ).toHaveTextContent("indexer 3 disabled until 2030-01-01T00:00:00Z");
-  },
-};
-
-export const StuckKeepsTheDetailFromAReader: Story = {
-  parameters: { user: READER },
-  beforeEach({ msw }) {
-    msw.use(...seed(STUCK));
-  },
-  play: async ({ canvas }) => {
-    await canvas.findByTestId("request-try-again");
-
-    await expect(canvas.queryByTestId("request-stuck-detail")).toBeNull();
   },
 };
 
@@ -319,21 +306,139 @@ export const TheBookLinkGoesBackToTheBookPage: Story = {
   },
 };
 
-export const WithoutARequestIdTheRequestIsNotFound: Story = {
-  parameters: { path: `/books/${UUID}/request` },
-  play: async ({ canvas }) => {
-    await expect(
-      await canvas.findByText("Request not found."),
-    ).toBeInTheDocument();
-  },
-};
-
 export const AnUnknownRequestShowsTheErrorWithAWayBack: Story = {
   parameters: { path: `/books/${UUID}/request?id=99` },
   play: async ({ canvas }) => {
     await expect(await canvas.findByRole("alert")).toBeInTheDocument();
     await expect(
       canvas.getByRole("link", { name: "Back to book" }),
+    ).toHaveAttribute("href", `/books/${UUID}`);
+  },
+};
+
+const OLD = Math.floor(Date.now() / 1000) - 120;
+const NOT_THE_MAKER = { ...WIRE_ADA, id: 2, is_admin: false };
+
+export const ALongRunningSearchOffersTryAgain: Story = {
+  beforeEach({ msw }) {
+    msw.use(...seed({ updated_at: OLD }));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await expect(
+      await canvas.findByTestId("request-still-looking"),
+    ).toHaveTextContent("Still looking…");
+
+    await userEvent.click(canvas.getByTestId("request-try-again"));
+
+    await waitFor(() =>
+      expect(fake.writes).toEqual([{ kind: "retry", id: 7 }]),
+    );
+  },
+};
+
+export const AFreshSearchOffersNoTryAgain: Story = {
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("request-looking");
+
+    await expect(canvas.queryByTestId("request-try-again")).toBeNull();
+    await expect(canvas.queryByTestId("request-still-looking")).toBeNull();
+  },
+};
+
+export const AnotherReadersChoiceCanBeReadButNotMade: Story = {
+  parameters: { user: NOT_THE_MAKER },
+  beforeEach({ msw }) {
+    msw.use(...seed({ state: "choose", versions: [EPUB, PDF] }));
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findAllByTestId("request-version")).toHaveLength(
+      2,
+    );
+
+    await expect(canvas.queryByTestId("request-choose")).toBeNull();
+    await expect(canvas.getAllByTestId("request-details-toggle")).toHaveLength(
+      2,
+    );
+  },
+};
+
+export const AnotherReadersStuckRequestOffersNoTryAgain: Story = {
+  parameters: { user: NOT_THE_MAKER },
+  beforeEach({ msw }) {
+    msw.use(...seed(STUCK));
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("request-stuck-detail");
+
+    await expect(canvas.queryByTestId("request-try-again")).toBeNull();
+  },
+};
+
+export const AdminMayActOnAnotherReadersRequest: Story = {
+  beforeEach({ msw }) {
+    msw.use(...seed({ user_id: 9, state: "choose", versions: [EPUB] }));
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByTestId("request-choose")).toBeEnabled();
+  },
+};
+
+let held = deferred();
+
+export const ChoosingMarksOnlyTheChosenRowBusy: Story = {
+  beforeEach({ msw }) {
+    held = deferred();
+    msw.use(
+      http.post("/api/requests/:id/choose", async () => {
+        await held.promise;
+        return HttpResponse.json(
+          aWireRequest({
+            state: "chosen",
+            chosen_result_id: 12,
+            versions: [EPUB, PDF],
+          }),
+        );
+      }),
+      ...seed({ state: "choose", versions: [EPUB, PDF] }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    const rows = await canvas.findAllByTestId("request-version");
+    const [first, second] = [versionAt(rows, 0), versionAt(rows, 1)];
+
+    await userEvent.click(within(second).getByTestId("request-choose"));
+
+    await waitFor(() =>
+      expect(within(second).getByTestId("request-choose")).toHaveAttribute(
+        "aria-busy",
+        "true",
+      ),
+    );
+    await expect(within(first).getByTestId("request-choose")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+    await expect(within(first).getByTestId("request-choose")).toBeDisabled();
+    held.release();
+    await waitFor(() =>
+      expect(canvas.getByTestId("request-state")).toHaveTextContent(
+        "Version chosen",
+      ),
+    );
+  },
+};
+
+export const AnOldUuidInTheAddressMovesToTheBooksCurrentOne: Story = {
+  parameters: { path: "/books/old-uuid/request?id=7" },
+  beforeEach({ msw }) {
+    msw.use(
+      http.get("/api/ebooks/:uuid", () => HttpResponse.json(BOOK)),
+      ...seed({}),
+    );
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByRole("link", { name: "Back to book" }),
     ).toHaveAttribute("href", `/books/${UUID}`);
   },
 };

@@ -12,7 +12,6 @@ export class WishlistsPage extends BasePage {
   readonly rows: Locator;
   /** The Request menu's ebook item, once a row's menu is open. */
   readonly requestEbookItem: Locator;
-  readonly requestAudiobookItem: Locator;
 
   constructor(page: Page) {
     super(page);
@@ -21,9 +20,6 @@ export class WishlistsPage extends BasePage {
     this.rows = page.getByTestId("wishlists-row");
     this.requestEbookItem = page.getByRole("menuitem", {
       name: "Request ebook",
-    });
-    this.requestAudiobookItem = page.getByRole("menuitem", {
-      name: /Request audiobook/,
     });
   }
 
