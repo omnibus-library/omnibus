@@ -18,7 +18,7 @@ pub struct UserSummary {
     pub can_upload: bool,
     pub can_edit: bool,
     pub can_download: bool,
-    /// Whether the user may request books the library lacks. Admins always may.
+    /// Whether the user may request books the library lacks: false for everyone while the server has book requests off, else admins always may.
     #[serde(default)]
     pub can_request: bool,
     /// The address Send to Kindle emails books to. Null when the user hasn't set one.

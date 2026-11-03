@@ -81,12 +81,12 @@ pub use process_meta::{
 };
 pub use react_ui::{react_dir, react_ui_router, REACT_DIR_ENV};
 
-/// Per-IP rate-limit budget for `/api/search/*`, separate from the auth limiter. Each
-/// request runs four FTS5 queries plus joins; the budget still covers a user typing into
-/// the command palette.
 /// The boot env var that turns the book-requests feature on (`1`, `true` or `yes`).
 pub const BOOK_REQUESTS_ENV: &str = "OMNIBUS_BOOK_REQUESTS";
 
+/// Per-IP rate-limit budget for `/api/search/*`, separate from the auth limiter. Each
+/// request runs four FTS5 queries plus joins; the budget still covers a user typing into
+/// the command palette.
 pub const SEARCH_RATE_LIMIT_WINDOW: std::time::Duration = std::time::Duration::from_secs(10);
 /// Max search requests per [`SEARCH_RATE_LIMIT_WINDOW`] per IP.
 pub const SEARCH_RATE_LIMIT_MAX: u32 = 30;
