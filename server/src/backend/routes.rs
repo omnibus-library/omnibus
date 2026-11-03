@@ -354,10 +354,13 @@ fn kindle_routes() -> OpenApiRouter<AppState> {
 
 /// The admin connections for book requests; each answers 404 while the feature is off.
 fn request_admin_routes() -> OpenApiRouter<AppState> {
-    OpenApiRouter::new().routes(routes!(
-        requests_admin::get_requests_settings,
-        requests_admin::put_requests_settings
-    ))
+    OpenApiRouter::new()
+        .routes(routes!(
+            requests_admin::get_requests_settings,
+            requests_admin::put_requests_settings
+        ))
+        .routes(routes!(requests_admin::post_test_indexer))
+        .routes(routes!(requests_admin::post_test_client))
 }
 
 /// The signed-in reader's Kobo devices and KOReader progress-sync password.

@@ -1,5 +1,5 @@
 //! Admin REST handlers for the book-request connections: the Prowlarr and download client
-//! settings. Every route answers 404 while the book-requests flag is off, before any
+//! settings, and a test button for each. Every route answers 404 while the book-requests flag is off, before any
 //! auth check, so an off server shows nothing of the feature even to its admins.
 
 use axum::{
@@ -8,7 +8,14 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use omnibus_db as db;
+use omnibus_db::{
+    self as db,
+    requests::{
+        clients::{client_for, DownloadClient},
+        prowlarr::Prowlarr,
+        ConnectionError,
+    },
+};
 use omnibus_shared::{RequestsSettingsStatus, RequestsSettingsUpdate};
 
 use super::{internal, AppState};
@@ -90,6 +97,82 @@ pub(super) async fn put_requests_settings(
     match db::requests_settings_status(&state.pool).await {
         Ok(s) => Json(s).into_response(),
         Err(e) => internal("read requests settings", e),
+    }
+}
+
+/// Test the Prowlarr connection
+///
+/// Calls Prowlarr with the saved address and API key and reports whether it answered. It
+/// changes nothing. Needs an admin account.
+#[utoipa::path(
+    post,
+    path = "/api/admin/requests/settings/test-indexer",
+    tag = "Admin",
+    operation_id = "test_prowlarr_connection",
+    responses(
+        (status = 200, description = "Prowlarr answered and accepted the API key."),
+        (status = 403, description = "You aren't an admin."),
+        (status = 404, description = "Book requests are off on this server."),
+        (status = 409, description = "The Prowlarr address or API key isn't set."),
+        (status = 502, description = "Prowlarr didn't answer or refused the call; the body says why."),
+    ),
+)]
+pub(super) async fn post_test_indexer(
+    _admin: RequestsAdmin,
+    State(state): State<AppState>,
+) -> Response {
+    let config = match db::effective_requests_config(&state.pool).await {
+        Ok(c) => c,
+        Err(e) => return internal("read requests settings", e),
+    };
+    let result = match Prowlarr::from_config(&config) {
+        Ok(prowlarr) => prowlarr.test().await,
+        Err(e) => Err(e),
+    };
+    connection_response(result)
+}
+
+/// Test the download client connection
+///
+/// Logs in to the download client with the saved address and login and reports whether it
+/// answered. It changes nothing. Needs an admin account.
+#[utoipa::path(
+    post,
+    path = "/api/admin/requests/settings/test-client",
+    tag = "Admin",
+    operation_id = "test_download_client_connection",
+    responses(
+        (status = 200, description = "The download client answered and accepted the login."),
+        (status = 403, description = "You aren't an admin."),
+        (status = 404, description = "Book requests are off on this server."),
+        (status = 409, description = "The download client address isn't set."),
+        (status = 502, description = "The download client didn't answer or refused the call; the body says why."),
+    ),
+)]
+pub(super) async fn post_test_client(
+    _admin: RequestsAdmin,
+    State(state): State<AppState>,
+) -> Response {
+    let config = match db::effective_requests_config(&state.pool).await {
+        Ok(c) => c,
+        Err(e) => return internal("read requests settings", e),
+    };
+    let result = match client_for(&config) {
+        Ok(client) => client.test().await,
+        Err(e) => Err(e),
+    };
+    connection_response(result)
+}
+
+/// 200 on success, 409 when unset, else 502 with the plain reason. A [`ConnectionError`]
+/// never carries a URL or secret, so its text is safe to send back.
+fn connection_response(result: Result<(), ConnectionError>) -> Response {
+    match result {
+        Ok(()) => StatusCode::OK.into_response(),
+        Err(e @ ConnectionError::NotConfigured) => {
+            (StatusCode::CONFLICT, e.to_string()).into_response()
+        }
+        Err(e) => (StatusCode::BAD_GATEWAY, e.to_string()).into_response(),
     }
 }
 
