@@ -35,14 +35,17 @@ export const ADMIN_CHIP = "Admin";
 /** The chip a row shows when it holds no permission. */
 export const NO_PERMISSIONS = "—";
 
-/** A single "Admin" chip for an administrator, else one per granted capability, or a dash when none. */
-export function permissionChips(user: UserPermissions): string[] {
+/** A single "Admin" chip for an administrator, else one per granted capability, or a dash when none; `requests` is whether book requests are on. */
+export function permissionChips(
+  user: UserPermissions,
+  requests = true,
+): string[] {
   if (user.is_admin) return [ADMIN_CHIP];
   const chips = [
     user.can_upload && "Upload",
     user.can_edit && "Edit",
     user.can_download && "Download",
-    user.can_request && "Request",
+    requests && user.can_request && "Request",
   ].filter((chip) => chip !== false);
   return chips.length > 0 ? chips : [NO_PERMISSIONS];
 }

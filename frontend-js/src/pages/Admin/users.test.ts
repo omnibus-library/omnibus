@@ -55,6 +55,18 @@ describe("permissionChips", () => {
   it("returns a dash when nothing is granted", () => {
     expect(permissionChips(NONE)).toEqual(["—"]);
   });
+
+  it("leaves out Request when requests are off", () => {
+    expect(
+      permissionChips({ ...NONE, can_upload: true, can_request: true }, false),
+    ).toEqual(["Upload"]);
+  });
+
+  it("returns a dash when Request is the only grant and requests are off", () => {
+    expect(permissionChips({ ...NONE, can_request: true }, false)).toEqual([
+      "—",
+    ]);
+  });
 });
 
 const CREDENTIALS = "Enter a username and password.";
