@@ -785,6 +785,21 @@ mod post_choose_version {
     }
 
     #[tokio::test]
+    async fn wakes_the_download_poller_after_a_pick() {
+        let (app, state, pool) = fixture_book_requests(true).await;
+        let (ada, token) = requester(&pool, "ada").await;
+        let uuid = seed_book(&pool, "Dracula").await;
+        let id = seed_request(&pool, ada, &uuid).await;
+        let (kept, _) = offer_versions(&pool, id).await;
+        let body = Some(json!({"result_id": kept}));
+
+        send(&app, "POST", &choose_uri(id), Some(&token), body).await;
+
+        let woken = tokio::time::timeout(Duration::from_secs(1), state.request_kick().notified());
+        assert!(woken.await.is_ok());
+    }
+
+    #[tokio::test]
     async fn answers_404_for_a_dropped_version_or_another_requests_version() {
         let (app, _, pool) = fixture_book_requests(true).await;
         let (ada, token) = requester(&pool, "ada").await;

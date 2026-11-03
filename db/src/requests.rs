@@ -13,10 +13,14 @@ use reqwest::StatusCode;
 
 pub mod clients;
 pub mod paths;
+pub mod poller;
 pub mod prowlarr;
 pub mod rank;
 pub mod search;
 pub mod store;
+
+#[cfg(test)]
+mod test_support;
 
 /// Why a call to Prowlarr or the download client failed. Every message is safe to show an
 /// admin: none carries a URL, key or password.

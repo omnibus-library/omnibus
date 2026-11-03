@@ -1,0 +1,501 @@
+use omnibus_shared::{RequestKind, RequestState, StuckReason};
+use sqlx::SqlitePool;
+
+use crate::requests::store::{self, RequestRow};
+use crate::requests::test_support::{Call, StubClient};
+use crate::test_support::seed_user;
+
+use super::*;
+
+const NOW: i64 = 1_800_000_000;
+const CATEGORY: &str = "omnibus";
+
+async fn pool() -> SqlitePool {
+    crate::pool::init_db("sqlite::memory:").await.unwrap()
+}
+
+/// A reader named `name` with a request in `state` for a book of the same name, and a version
+/// of it picked. Returns the request's id.
+async fn seed(pool: &SqlitePool, name: &str, state: &str) -> i64 {
+    let user = seed_user(pool, name).await;
+    let id = store::start(pool, user, name, RequestKind::Ebook, 5)
+        .await
+        .unwrap()
+        .request
+        .id;
+    let result: i64 = sqlx::query_scalar(
+        "INSERT INTO book_request_results (request_id, guid, title, download_url, score)
+         VALUES (?, 'g', 't', 'magnet:?xt=urn:btih:abc', 1.0) RETURNING id",
+    )
+    .bind(id)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    update(
+        pool,
+        id,
+        &format!("state = '{state}', chosen_result_id = {result}"),
+    )
+    .await;
+    id
+}
+
+/// Run `UPDATE book_requests SET <set> WHERE id = <id>`.
+async fn update(pool: &SqlitePool, id: i64, set: &str) {
+    sqlx::query(&format!("UPDATE book_requests SET {set} WHERE id = {id}"))
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
+/// A request on its way whose download reported `progress` at `moved_at`.
+async fn on_its_way(pool: &SqlitePool, name: &str, progress: f64, moved_at: i64) -> i64 {
+    let id = seed(pool, name, "on_its_way").await;
+    let set = format!(
+        "client_tag = '{}', progress = {progress}, moved_at = {moved_at}",
+        tag(id)
+    );
+    update(pool, id, &set).await;
+    id
+}
+
+fn tag(id: i64) -> String {
+    format!("omnibus-{id}")
+}
+
+async fn row(pool: &SqlitePool, id: i64) -> RequestRow {
+    store::get(pool, id).await.unwrap().unwrap()
+}
+
+/// One tick at `now` with a fresh failure clock; returns whether work remains.
+async fn tick(pool: &SqlitePool, client: &StubClient, now: i64) -> bool {
+    poll_once(pool, client, CATEGORY, now, &mut None)
+        .await
+        .unwrap()
+}
+
+mod poll_once {
+    use super::*;
+
+    mod adding {
+        use super::*;
+
+        #[tokio::test]
+        async fn hands_a_chosen_version_to_the_client_and_marks_it_on_its_way() {
+            let pool = pool().await;
+            let id = seed(&pool, "ada", "chosen").await;
+            let client = StubClient::new();
+
+            tick(&pool, &client, NOW).await;
+
+            let added = Call::Add {
+                link: "magnet:?xt=urn:btih:abc".to_string(),
+                category: CATEGORY.to_string(),
+                tag: tag(id),
+            };
+            assert_eq!(client.calls()[..2], [Call::Status(tag(id)), added]);
+            let after = row(&pool, id).await;
+            assert_eq!(after.state, RequestState::OnItsWay);
+            assert_eq!(after.client_tag, Some(tag(id)));
+            assert_eq!(after.moved_at, Some(NOW));
+        }
+
+        #[tokio::test]
+        async fn adds_nothing_when_the_client_already_has_the_download() {
+            let pool = pool().await;
+            let id = seed(&pool, "ada", "chosen").await;
+            let client = StubClient::new().with_status(&tag(id), 0.2, "downloading");
+
+            tick(&pool, &client, NOW).await;
+
+            assert!(!client.calls().iter().any(|c| matches!(c, Call::Add { .. })));
+            assert_eq!(row(&pool, id).await.state, RequestState::OnItsWay);
+        }
+
+        #[tokio::test]
+        async fn waits_to_add_while_the_removal_is_still_ahead() {
+            let pool = pool().await;
+            let id = seed(&pool, "ada", "chosen").await;
+            update(
+                &pool,
+                id,
+                &format!("client_tag = '{}', cancel_at = {}", tag(id), NOW + 5),
+            )
+            .await;
+            let client = StubClient::new();
+
+            let busy = tick(&pool, &client, NOW).await;
+
+            assert!(client.calls().is_empty());
+            assert!(busy);
+        }
+    }
+
+    mod tracking {
+        use super::*;
+
+        #[tokio::test]
+        async fn asks_about_a_request_on_its_way_after_a_restart_and_never_adds_it_again() {
+            let pool = pool().await;
+            let id = on_its_way(&pool, "ada", 0.4, NOW - 60).await;
+            let client = StubClient::new().with_status(&tag(id), 0.4, "downloading");
+
+            tick(&pool, &client, NOW).await;
+
+            assert_eq!(client.calls(), [Call::Status(tag(id))]);
+        }
+
+        #[tokio::test]
+        async fn records_rising_progress_and_restarts_the_stall_clock() {
+            let pool = pool().await;
+            let id = on_its_way(&pool, "ada", 0.4, NOW - 60).await;
+            let client = StubClient::new().with_status(&tag(id), 0.55, "downloading");
+
+            tick(&pool, &client, NOW).await;
+
+            let after = row(&pool, id).await;
+            assert_eq!(after.progress, Some(0.55));
+            assert_eq!(after.moved_at, Some(NOW));
+        }
+
+        #[tokio::test]
+        async fn keeps_waiting_while_a_download_with_no_peers_is_inside_the_stall_window() {
+            let pool = pool().await;
+            let id = on_its_way(&pool, "ada", 0.4, NOW - STALL_SECS).await;
+            let client = StubClient::new().with_status(&tag(id), 0.4, "stalledDL");
+
+            tick(&pool, &client, NOW).await;
+
+            assert_eq!(row(&pool, id).await.state, RequestState::OnItsWay);
+        }
+
+        #[tokio::test]
+        async fn stops_a_download_whose_bytes_have_not_moved_for_longer_than_the_stall_window() {
+            let pool = pool().await;
+            let id = on_its_way(&pool, "ada", 0.4, NOW - STALL_SECS - 1).await;
+            let client = StubClient::new().with_status(&tag(id), 0.4, "stalledDL");
+
+            tick(&pool, &client, NOW).await;
+
+            let after = row(&pool, id).await;
+            assert_eq!(after.state, RequestState::Stuck);
+            assert_eq!(after.stuck_reason, Some(StuckReason::StoppedMoving));
+        }
+
+        #[tokio::test]
+        async fn stops_a_download_the_client_reports_as_failed() {
+            let pool = pool().await;
+            let broken = on_its_way(&pool, "ada", 0.4, NOW).await;
+            let missing = on_its_way(&pool, "grace", 0.4, NOW).await;
+            let client = StubClient::new()
+                .with_status(&tag(broken), 0.5, "error")
+                .with_status(&tag(missing), 0.5, "missingFiles");
+
+            tick(&pool, &client, NOW).await;
+
+            for id in [broken, missing] {
+                assert_eq!(row(&pool, id).await.state, RequestState::Stuck, "{id}");
+            }
+        }
+    }
+
+    mod finishing {
+        use super::*;
+
+        #[tokio::test]
+        async fn marks_a_finished_download_complete_and_leaves_it_on_its_way() {
+            let pool = pool().await;
+            let seeding = on_its_way(&pool, "ada", 0.9, NOW - 60).await;
+            let paused = on_its_way(&pool, "grace", 0.9, NOW - 60).await;
+            let client = StubClient::new()
+                .with_status(&tag(seeding), 1.0, "stalledUP")
+                .with_status(&tag(paused), 1.0, "pausedUP");
+
+            let busy = tick(&pool, &client, NOW).await;
+
+            for id in [seeding, paused] {
+                let after = row(&pool, id).await;
+                assert_eq!(after.state, RequestState::OnItsWay, "{id}");
+                assert_eq!(after.progress, Some(1.0), "{id}");
+            }
+            assert!(!busy);
+        }
+
+        #[tokio::test]
+        async fn stops_asking_about_a_download_once_it_is_complete() {
+            let pool = pool().await;
+            on_its_way(&pool, "ada", 1.0, NOW - 60).await;
+            let client = StubClient::new();
+
+            let busy = tick(&pool, &client, NOW).await;
+
+            assert!(client.calls().is_empty());
+            assert!(!busy);
+        }
+
+        #[tokio::test]
+        async fn does_not_call_a_download_complete_while_the_client_is_still_checking_it() {
+            let pool = pool().await;
+            let id = on_its_way(&pool, "ada", 0.9, NOW - 60).await;
+            let client = StubClient::new().with_status(&tag(id), 0.99, "checkingDL");
+
+            tick(&pool, &client, NOW).await;
+
+            assert_eq!(row(&pool, id).await.progress, Some(0.99));
+        }
+    }
+
+    mod vanished_downloads {
+        use super::*;
+
+        #[tokio::test]
+        async fn stops_a_download_the_client_no_longer_has_after_it_reported_progress() {
+            let pool = pool().await;
+            let id = on_its_way(&pool, "ada", 0.4, NOW - 60).await;
+
+            tick(&pool, &StubClient::new(), NOW).await;
+
+            let after = row(&pool, id).await;
+            assert_eq!(after.state, RequestState::Stuck);
+            assert_eq!(after.stuck_reason, Some(StuckReason::StoppedMoving));
+        }
+
+        #[tokio::test]
+        async fn waits_for_a_download_the_client_is_still_fetching_the_link_for() {
+            let pool = pool().await;
+            let id = seed(&pool, "ada", "on_its_way").await;
+            update(
+                &pool,
+                id,
+                &format!("client_tag = '{}', moved_at = {}", tag(id), NOW - 599),
+            )
+            .await;
+
+            tick(&pool, &StubClient::new(), NOW).await;
+
+            assert_eq!(row(&pool, id).await.state, RequestState::OnItsWay);
+        }
+
+        #[tokio::test]
+        async fn stops_a_download_that_never_appears_in_the_client() {
+            let pool = pool().await;
+            let id = seed(&pool, "ada", "on_its_way").await;
+            update(
+                &pool,
+                id,
+                &format!("client_tag = '{}', moved_at = {}", tag(id), NOW - 601),
+            )
+            .await;
+
+            tick(&pool, &StubClient::new(), NOW).await;
+
+            assert_eq!(row(&pool, id).await.state, RequestState::Stuck);
+        }
+    }
+
+    mod unreachable_client {
+        use super::*;
+
+        #[tokio::test]
+        async fn changes_nothing_for_the_first_failed_tick_and_starts_the_failure_clock() {
+            let pool = pool().await;
+            let id = on_its_way(&pool, "ada", 0.4, NOW - 60).await;
+            let mut failing_since = None;
+
+            poll_once(
+                &pool,
+                &StubClient::unreachable(),
+                CATEGORY,
+                NOW,
+                &mut failing_since,
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(row(&pool, id).await.state, RequestState::OnItsWay);
+            assert_eq!(failing_since, Some(NOW));
+        }
+
+        #[tokio::test]
+        async fn stops_every_download_waiting_on_the_client_after_ten_minutes_of_failing() {
+            let pool = pool().await;
+            let tracked = on_its_way(&pool, "ada", 0.4, NOW).await;
+            let waiting = seed(&pool, "grace", "chosen").await;
+            let finished = on_its_way(&pool, "linus", 1.0, NOW).await;
+            let mut failing_since = Some(NOW - 600);
+
+            poll_once(
+                &pool,
+                &StubClient::unreachable(),
+                CATEGORY,
+                NOW,
+                &mut failing_since,
+            )
+            .await
+            .unwrap();
+
+            for id in [tracked, waiting] {
+                let after = row(&pool, id).await;
+                assert_eq!(after.state, RequestState::Stuck, "{id}");
+                assert_eq!(after.stuck_reason, Some(StuckReason::StoppedMoving), "{id}");
+            }
+            assert_eq!(row(&pool, finished).await.state, RequestState::OnItsWay);
+        }
+
+        #[tokio::test]
+        async fn waits_while_the_failure_is_shorter_than_ten_minutes() {
+            let pool = pool().await;
+            let id = on_its_way(&pool, "ada", 0.4, NOW).await;
+            let mut failing_since = Some(NOW - 599);
+
+            poll_once(
+                &pool,
+                &StubClient::unreachable(),
+                CATEGORY,
+                NOW,
+                &mut failing_since,
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(row(&pool, id).await.state, RequestState::OnItsWay);
+        }
+
+        #[tokio::test]
+        async fn forgets_the_failure_when_the_client_answers_again() {
+            let pool = pool().await;
+            let mut failing_since = Some(NOW - 300);
+
+            poll_once(&pool, &StubClient::new(), CATEGORY, NOW, &mut failing_since)
+                .await
+                .unwrap();
+
+            assert_eq!(failing_since, None);
+        }
+    }
+
+    mod removals {
+        use super::*;
+
+        #[tokio::test]
+        async fn waits_out_the_undo_grace_before_removing_a_cancelled_download() {
+            let pool = pool().await;
+            let id = seed(&pool, "ada", "cancelled").await;
+            update(
+                &pool,
+                id,
+                &format!("client_tag = '{}', cancel_at = {}", tag(id), NOW + 1),
+            )
+            .await;
+            let client = StubClient::new();
+
+            let busy = tick(&pool, &client, NOW).await;
+
+            assert!(client.calls().is_empty());
+            assert!(busy);
+        }
+
+        #[tokio::test]
+        async fn removes_the_download_and_its_files_once_after_the_grace_and_clears_its_tag() {
+            let pool = pool().await;
+            let id = seed(&pool, "ada", "cancelled").await;
+            update(
+                &pool,
+                id,
+                &format!("client_tag = '{}', cancel_at = {}", tag(id), NOW),
+            )
+            .await;
+            let client = StubClient::new();
+
+            tick(&pool, &client, NOW).await;
+            tick(&pool, &client, NOW + 5).await;
+
+            assert_eq!(
+                client.calls(),
+                [Call::Remove {
+                    tag: tag(id),
+                    delete_files: true
+                }]
+            );
+            let after = row(&pool, id).await;
+            assert_eq!(after.state, RequestState::Cancelled);
+            assert_eq!(after.client_tag, None);
+            assert_eq!(after.cancel_at, None);
+        }
+
+        #[tokio::test]
+        async fn only_clears_the_grace_of_a_cancelled_request_that_never_reached_the_client() {
+            let pool = pool().await;
+            let id = seed(&pool, "ada", "cancelled").await;
+            update(&pool, id, &format!("cancel_at = {NOW}")).await;
+            let client = StubClient::new();
+
+            tick(&pool, &client, NOW).await;
+
+            assert!(client.calls().is_empty());
+            assert_eq!(row(&pool, id).await.cancel_at, None);
+        }
+
+        #[tokio::test]
+        async fn removes_the_old_download_before_adding_a_version_picked_after_a_swap() {
+            let pool = pool().await;
+            let id = seed(&pool, "ada", "chosen").await;
+            update(
+                &pool,
+                id,
+                &format!("client_tag = '{}', cancel_at = {NOW}", tag(id)),
+            )
+            .await;
+            let client = StubClient::new();
+
+            tick(&pool, &client, NOW).await;
+
+            let calls = client.calls();
+            assert_eq!(
+                calls[0],
+                Call::Remove {
+                    tag: tag(id),
+                    delete_files: true
+                }
+            );
+            assert_eq!(calls[1], Call::Status(tag(id)));
+            assert!(
+                matches!(&calls[2], Call::Add { link, .. } if link == "magnet:?xt=urn:btih:abc")
+            );
+        }
+    }
+
+    mod busy {
+        use super::*;
+
+        #[tokio::test]
+        async fn reports_no_work_for_an_empty_table() {
+            let pool = pool().await;
+
+            assert!(!tick(&pool, &StubClient::new(), NOW).await);
+        }
+
+        #[tokio::test]
+        async fn reports_work_while_a_download_is_incomplete() {
+            let pool = pool().await;
+            let id = on_its_way(&pool, "ada", 0.4, NOW).await;
+            let client = StubClient::new().with_status(&tag(id), 0.5, "downloading");
+
+            assert!(tick(&pool, &client, NOW).await);
+        }
+    }
+}
+
+mod database_failure {
+    use super::*;
+
+    #[tokio::test]
+    async fn poll_once_propagates_a_db_error_when_the_pool_is_closed() {
+        let pool = pool().await;
+        pool.close().await;
+
+        let result = poll_once(&pool, &StubClient::new(), CATEGORY, NOW, &mut None).await;
+
+        assert!(matches!(result, Err(RequestError::Db(_))));
+    }
+}

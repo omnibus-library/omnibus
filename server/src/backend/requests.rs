@@ -378,7 +378,10 @@ pub(super) async fn post_choose_version(
         return res;
     }
     match store::choose(state.pool(), id, body.result_id).await {
-        Ok(()) => answer(&state, id, &user).await,
+        Ok(()) => {
+            state.request_kick().notify_one();
+            answer(&state, id, &user).await
+        }
         Err(RequestError::NotFound) => (StatusCode::NOT_FOUND, "version not found").into_response(),
         Err(RequestError::WrongState) => {
             (StatusCode::CONFLICT, "this request isn't waiting on a pick").into_response()
