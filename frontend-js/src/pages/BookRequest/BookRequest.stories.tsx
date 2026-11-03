@@ -415,13 +415,17 @@ export const CancellingShowsCancelledAtOnceWithAnUndoThatPutsItBack: Story = {
       await canvas.findByRole("button", { name: "Cancel" }),
     );
 
-    await expect(await canvas.findByTestId("request-state")).toHaveTextContent(
-      "Cancelled",
+    await waitFor(() =>
+      expect(canvas.getByTestId("request-state")).toHaveTextContent(
+        "Cancelled",
+      ),
     );
     await expect(canvas.queryByTestId("request-downloading")).toBeNull();
     await userEvent.click(await canvas.findByRole("button", { name: "Undo" }));
-    await expect(await canvas.findByTestId("request-state")).toHaveTextContent(
-      "On its way",
+    await waitFor(() =>
+      expect(canvas.getByTestId("request-state")).toHaveTextContent(
+        "On its way",
+      ),
     );
     await waitFor(() =>
       expect(canvas.getByRole("heading", { name: "Ebook" })).toHaveFocus(),
@@ -464,9 +468,11 @@ export const PickAnotherGoesBackToTheVersionsWithThePickedOneMarkedDidntWork: St
         await canvas.findByRole("button", { name: "Pick another" }),
       );
 
-      await expect(
-        await canvas.findByTestId("request-state"),
-      ).toHaveTextContent("Choose a version");
+      await waitFor(() =>
+        expect(canvas.getByTestId("request-state")).toHaveTextContent(
+          "Choose a version",
+        ),
+      );
       await expect(canvas.getByTestId("request-note")).toHaveTextContent(
         "Swapped for another version",
       );
@@ -504,8 +510,10 @@ export const StoppedMovingNamesItAndTryAgainOffersTheOtherVersions: Story = {
 
     await userEvent.click(canvas.getByRole("button", { name: "Try again" }));
 
-    await expect(await canvas.findByTestId("request-state")).toHaveTextContent(
-      "Choose a version",
+    await waitFor(() =>
+      expect(canvas.getByTestId("request-state")).toHaveTextContent(
+        "Choose a version",
+      ),
     );
     await expect(canvas.getAllByTestId("request-version")).toHaveLength(2);
     await expect(canvas.getByTestId("request-didnt-work")).toBeInTheDocument();
