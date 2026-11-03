@@ -38,7 +38,7 @@ mod set_requests_settings {
             download_client_kind: DownloadClientKind::Qbittorrent,
             download_client_url: Some("http://qbittorrent:8080".into()),
             download_client_username: Some("admin".into()),
-            download_client_password_masked: Some("hunt\u{2026}ter2".into()),
+            download_client_password_masked: Some("\u{2022}\u{2022}\u{2022}\u{2022}".into()),
             download_client_category: "books".into(),
             download_client_path_prefix: Some("/downloads".into()),
             download_path_prefix: Some("/mnt/completed".into()),
@@ -88,6 +88,35 @@ mod set_requests_settings {
         assert_eq!(status.prowlarr_api_key_masked, None);
         assert_eq!(status.prowlarr_api_key_source, "none");
         assert_eq!(status.download_client_password_masked, None);
+    }
+
+    #[tokio::test]
+    async fn stores_a_password_exactly_as_typed_whitespace_included() {
+        let _env = EnvVarGuard::set("OMNIBUS_PROWLARR_API_KEY", None);
+        let pool = init_db("sqlite::memory:").await.unwrap();
+        for typed in [" pw ", " "] {
+            let mut next = update();
+            next.download_client_password = Some(typed.into());
+
+            set_requests_settings(&pool, &next).await.unwrap();
+
+            let config = effective_requests_config(&pool).await.unwrap();
+            assert_eq!(config.download_client_password.as_deref(), Some(typed));
+        }
+    }
+
+    #[tokio::test]
+    async fn reports_the_password_only_as_set_without_any_of_its_characters() {
+        let _env = EnvVarGuard::set("OMNIBUS_PROWLARR_API_KEY", None);
+        let pool = init_db("sqlite::memory:").await.unwrap();
+        let mut next = update();
+        next.download_client_password = Some("hunter2-hunter2".into());
+        set_requests_settings(&pool, &next).await.unwrap();
+
+        let status = requests_settings_status(&pool).await.unwrap();
+
+        let masked = status.download_client_password_masked.unwrap();
+        assert!(!masked.chars().any(|c| "hunter2-".contains(c)), "{masked}");
     }
 
     #[tokio::test]

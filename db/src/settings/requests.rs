@@ -11,7 +11,10 @@ use omnibus_shared::{
 use sqlx::SqlitePool;
 
 use super::secret_key::SecretKeySpec;
-use super::{get_setting, mask_key, upsert_or_clear, SettingsError};
+use super::{get_setting, upsert_or_clear, SettingsError};
+
+/// What the status shows for a saved download client password.
+const MASKED_PASSWORD: &str = "\u{2022}\u{2022}\u{2022}\u{2022}";
 
 const PROWLARR_URL_KEY: &str = "prowlarr_url";
 const CLIENT_KIND_KEY: &str = "download_client_kind";
@@ -82,26 +85,30 @@ fn check_url(label: &str, v: &str) -> Result<(), SettingsError> {
 fn validate(u: &RequestsSettingsUpdate) -> Result<(), SettingsError> {
     check_url("prowlarr url", &u.prowlarr_url)?;
     check_url("download client url", &u.download_client_url)?;
-    check_len(
-        "download client username",
-        &u.download_client_username,
-        REQUESTS_FIELD_MAX_LEN,
-    )?;
-    check_len(
-        "download client category",
-        &u.download_client_category,
-        REQUESTS_FIELD_MAX_LEN,
-    )?;
-    check_len(
-        "download client path prefix",
-        &u.download_client_path_prefix,
-        REQUESTS_PATH_MAX_LEN,
-    )?;
-    check_len(
-        "download path prefix",
-        &u.download_path_prefix,
-        REQUESTS_PATH_MAX_LEN,
-    )?;
+    for (label, value, max) in [
+        (
+            "download client username",
+            &u.download_client_username,
+            REQUESTS_FIELD_MAX_LEN,
+        ),
+        (
+            "download client category",
+            &u.download_client_category,
+            REQUESTS_FIELD_MAX_LEN,
+        ),
+        (
+            "download client path prefix",
+            &u.download_client_path_prefix,
+            REQUESTS_PATH_MAX_LEN,
+        ),
+        (
+            "download path prefix",
+            &u.download_path_prefix,
+            REQUESTS_PATH_MAX_LEN,
+        ),
+    ] {
+        check_len(label, value, max)?;
+    }
     for (label, secret) in [
         (PROWLARR_KEY.label, &u.prowlarr_api_key),
         ("download client password", &u.download_client_password),
@@ -139,13 +146,24 @@ pub async fn set_requests_settings(
         (PROWLARR_KEY.kv_key, &update.prowlarr_api_key),
         (CLIENT_PASSWORD_KEY, &update.download_client_password),
     ];
+    // Secrets are stored exactly as typed; only an empty string clears one.
     for (key, value) in secrets {
         if let Some(v) = value {
-            upsert_or_clear(&mut tx, key, field(v)).await?;
+            upsert_or_clear(&mut tx, key, Some(v.as_str()).filter(|s| !s.is_empty())).await?;
         }
     }
     tx.commit().await?;
     Ok(())
+}
+
+/// The saved password as typed: unlike [`get_setting`], a whitespace-only one is kept.
+async fn stored_password(pool: &SqlitePool) -> Result<Option<String>, SettingsError> {
+    Ok(
+        sqlx::query_scalar::<_, String>("SELECT value FROM settings WHERE key = ?")
+            .bind(CLIENT_PASSWORD_KEY)
+            .fetch_optional(pool)
+            .await?,
+    )
 }
 
 /// The connections the server acts on: saved values, with the Prowlarr key falling back
@@ -162,7 +180,7 @@ pub async fn effective_requests_config(pool: &SqlitePool) -> Result<RequestsConf
         ),
         download_client_url: get_setting(pool, CLIENT_URL_KEY).await?,
         download_client_username: get_setting(pool, CLIENT_USERNAME_KEY).await?,
-        download_client_password: get_setting(pool, CLIENT_PASSWORD_KEY).await?,
+        download_client_password: stored_password(pool).await?,
         download_client_category: get_setting(pool, CLIENT_CATEGORY_KEY)
             .await?
             .unwrap_or_else(|| DEFAULT_DOWNLOAD_CATEGORY.to_string()),
@@ -185,7 +203,10 @@ pub async fn requests_settings_status(
         download_client_kind: config.download_client_kind,
         download_client_url: config.download_client_url,
         download_client_username: config.download_client_username,
-        download_client_password_masked: config.download_client_password.as_deref().map(mask_key),
+        // Only whether it is set: a password is typed by a person, so any part of it would give it away.
+        download_client_password_masked: config
+            .download_client_password
+            .map(|_| MASKED_PASSWORD.to_string()),
         download_client_category: config.download_client_category,
         download_client_path_prefix: config.download_client_path_prefix,
         download_path_prefix: config.download_path_prefix,
