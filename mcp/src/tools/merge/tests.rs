@@ -164,6 +164,12 @@ async fn merge_books_names_the_edit_permission_on_a_403() {
             .await,
     );
     assert!(err.message.contains("can_edit"), "got: {}", err.message);
+    assert!(
+        err.message.contains("edit permission"),
+        "got: {}",
+        err.message
+    );
+    assert!(err.message.contains("admin"), "got: {}", err.message);
 }
 
 #[tokio::test]

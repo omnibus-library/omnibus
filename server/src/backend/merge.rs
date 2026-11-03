@@ -13,8 +13,9 @@ use omnibus_shared::{
 
 use omnibus_db as db;
 
-use super::{internal, AppState};
 use crate::auth::AuthUser;
+
+use super::{internal, AppState};
 
 #[cfg(test)]
 mod tests;

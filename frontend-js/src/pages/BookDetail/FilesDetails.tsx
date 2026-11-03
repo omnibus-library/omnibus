@@ -26,7 +26,6 @@ function CuratorActions({
   // Merging folds this record's files into another book, so a record with none can't be offered it.
   const hasFiles = book.formats.length > 0;
   const mayMerge = (viewer.isAdmin || viewer.canEdit) && hasFiles;
-  if (!mayMerge && !viewer.isAdmin) return null;
   return (
     <>
       {mayMerge && (

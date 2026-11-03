@@ -17791,7 +17791,7 @@
     },
     {
       "name": "Metadata",
-      "description": "Correcting a book's metadata, and looking books up at external providers."
+      "description": "Correcting a book's metadata, merging duplicate books, and looking books up at external providers."
     },
     {
       "name": "Uploads",
