@@ -54,11 +54,15 @@ async fn active_days(
 ) -> Result<Vec<i64>, StatsError> {
     let sql = format!(
         "SELECT DISTINCT {} AS dnum FROM (
-             SELECT started_at FROM reading_sessions   WHERE user_id = ? AND started_at >= ?
+             SELECT started_at FROM reading_sessions
+                 WHERE user_id = ? AND started_at >= ? AND {kept_r}
              UNION ALL
-             SELECT started_at FROM listening_sessions WHERE user_id = ? AND started_at >= ?
+             SELECT started_at FROM listening_sessions
+                 WHERE user_id = ? AND started_at >= ? AND {kept_l}
          ) ORDER BY dnum",
-        calendar::local_day_number("started_at", offset_minutes)
+        calendar::local_day_number("started_at", offset_minutes),
+        kept_r = kept!("reading_sessions"),
+        kept_l = kept!("listening_sessions"),
     );
     Ok(sqlx::query_scalar(&sql)
         .bind(user_id)

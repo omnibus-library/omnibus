@@ -13,11 +13,13 @@ use super::{calendar, StatsError};
 /// Bind order is `user_id`. A review with no stars is no rating.
 ///
 /// A rating the book page cannot render must not move the mean.
-pub(super) const LIVE_RATINGS: &str = "\
-    SELECT r.user_id AS user_id, r.half_stars AS half_stars, r.rated_at AS rated_at \
-    FROM reviews r \
-    JOIN books b ON b.uuid = r.book_uuid \
-    WHERE r.user_id = ? AND r.half_stars IS NOT NULL";
+pub(super) const LIVE_RATINGS: &str = concat!(
+    "SELECT r.user_id AS user_id, r.half_stars AS half_stars, r.rated_at AS rated_at \
+     FROM reviews r \
+     JOIN books b ON b.uuid = r.book_uuid \
+     WHERE r.user_id = ? AND r.half_stars IS NOT NULL AND ",
+    kept!("r")
+);
 
 /// Mean star rating over books the user rated within the window, in stars
 /// (`half_stars` is 1..=10, so the SQL mean halves it); `None` when nothing was
