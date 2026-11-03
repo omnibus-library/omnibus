@@ -1,8 +1,9 @@
 -- A reader's request for one digital format of a book, and the versions the search found.
--- `book_uuid` is the canonical `books.uuid` and carries no foreign key: a request outlives
--- its wishlist entry, and the book's row is not what the request is about.
+-- `book_uuid` is the canonical `books.uuid`, soft-referenced like the other user data: a
+-- request outlives its wishlist entry, and a merge retargets it. Ids never repeat, so a
+-- stale link or a stale Choose click cannot land on a later row.
 CREATE TABLE book_requests (
-    id               INTEGER PRIMARY KEY,
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
     book_uuid        TEXT    NOT NULL,
     user_id          INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     kind             TEXT    NOT NULL CHECK (kind IN ('ebook', 'audiobook')),
@@ -20,7 +21,7 @@ CREATE INDEX idx_book_requests_user ON book_requests(user_id, state);
 
 -- `download_url` stays on the server: it can carry the indexer's key and no response shows it.
 CREATE TABLE book_request_results (
-    id           INTEGER PRIMARY KEY,
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
     request_id   INTEGER NOT NULL REFERENCES book_requests(id) ON DELETE CASCADE,
     guid         TEXT    NOT NULL,
     title        TEXT    NOT NULL,
