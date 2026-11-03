@@ -85,6 +85,8 @@ private struct HangingRibbon: View {
 /// The page's four tabs, and the ribbon that swings across them.
 struct BookTabStrip: View {
     let selected: BookTab
+    /// Whether the strip rides under the top bar, where the ribbon would cover the page.
+    var pinned = false
     var onPick: (BookTab) -> Void
 
     @Environment(\.palette) private var palette
@@ -108,10 +110,13 @@ struct BookTabStrip: View {
                 } label: {
                     Text(tab.label)
                         .font(.ui(16, weight: tab == selected ? .semibold : .medium))
-                        .foregroundStyle(tab == selected ? palette.ink0Color : palette.ink1Color)
+                        .foregroundStyle(labelColor(tab))
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
                         .frame(maxWidth: .infinity, minHeight: 50)
+                        .background {
+                            if pinned && tab == selected { palette.bookRibbon }
+                        }
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -130,13 +135,20 @@ struct BookTabStrip: View {
         .overlay(alignment: .bottomLeading) { ribbon }
     }
 
+    private func labelColor(_ tab: BookTab) -> Color {
+        guard tab == selected else { return palette.ink1Color }
+        return pinned ? .white : palette.ink0Color
+    }
+
     private var ribbon: some View {
         GeometryReader { geometry in
             let cell = (geometry.size.width - Self.inset * 2) / CGFloat(BookTab.allCases.count)
             let x = Self.inset + cell * (CGFloat(selected.rawValue) + 0.5) - Self.ribbonWidth / 2
 
             HangingRibbon()
-                .frame(width: Self.ribbonWidth, height: 38)
+                .frame(width: Self.ribbonWidth, height: 28)
+                .scaleEffect(y: pinned ? 0 : 1, anchor: .top)
+                .opacity(pinned ? 0 : 1)
                 .keyframeAnimator(initialValue: 0.0, trigger: swings) { view, angle in
                     view.rotationEffect(.degrees(reduceMotion ? 0 : angle), anchor: .top)
                 } keyframes: { _ in

@@ -59,6 +59,8 @@ struct BookDetailView: View {
     /// Whether the cover has scrolled away, so the bar fills in behind the
     /// controls and takes over naming the book.
     @State private var scrolledPast = false
+    /// Whether the tab strip has reached the top bar and is riding there.
+    @State private var tabsPinned = false
     @State private var showShelfPicker = false
     @State private var showAlignment = false
     @State private var showBookmarks = false
@@ -371,10 +373,16 @@ struct BookDetailView: View {
                     // there the scroll came to rest with the end under the bar.
                     VStack(alignment: .leading, spacing: 0) {
                         stage(book, proxy: proxy)
-                        BookTabStrip(selected: tab) { pick($0) }
+                        BookTabStrip(selected: tab, pinned: tabsPinned) { pick($0) }
                             .visualEffect { content, strip in
                                 let top = strip.frame(in: .scrollView(axis: .vertical)).minY
                                 return content.offset(y: max(0, -top))
+                            }
+                            // Layout ignores the offset above, so minY <= 0 means pinned.
+                            .onGeometryChange(for: Bool.self) { strip in
+                                strip.frame(in: .scrollView(axis: .vertical)).minY <= 0
+                            } action: { pinned in
+                                withAnimation(reduceMotion ? nil : Motion.snap) { tabsPinned = pinned }
                             }
                             .zIndex(1)
                         panel(book)
