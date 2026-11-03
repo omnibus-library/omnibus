@@ -38,7 +38,7 @@ kept_hint="server.log, react.log, test-results/"
 build_server
 make_scratch_dir
 build_react_client
-start_scratch_server OMNIBUS_REACT_DIR="$scratch/react"
+start_scratch_server OMNIBUS_REACT_DIR="$scratch/react" OMNIBUS_BOOK_REQUESTS=1
 
 cd ui_tests/playwright
 pnpm install --frozen-lockfile
