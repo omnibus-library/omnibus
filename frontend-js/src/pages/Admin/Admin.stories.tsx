@@ -178,9 +178,31 @@ export const ShowsTheIntegrationCardsInOrder: Story = {
       "Email delivery (SMTP)",
       "Hardcover suggestions",
       "Google Books lookup",
+      "Book requests",
       "Calibre format conversion",
       "Hosted MCP endpoint",
     ]);
+  },
+};
+
+export const HidesTheRequestsCardWithoutRequestAccess: Story = {
+  args: { path: "/admin?section=integrations" },
+  parameters: { user: { ...WIRE_ADA, can_request: false } },
+  play: async ({ canvas }) => {
+    await canvas.findByRole("heading", {
+      level: 3,
+      name: "Hosted MCP endpoint",
+    });
+    await expect(
+      canvas.getAllByRole("heading", { level: 3 }).map((h) => h.textContent),
+    ).toEqual([
+      "Email delivery (SMTP)",
+      "Hardcover suggestions",
+      "Google Books lookup",
+      "Calibre format conversion",
+      "Hosted MCP endpoint",
+    ]);
+    await expect(canvas.queryByTestId("requests-card")).toBeNull();
   },
 };
 

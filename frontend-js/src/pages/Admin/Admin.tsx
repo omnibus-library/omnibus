@@ -24,6 +24,7 @@ import { McpCard } from "./McpCard";
 import { MetadataOrderCard } from "./MetadataOrderCard";
 import { RecentTasksCard } from "./RecentTasksCard";
 import { RegistrationCard } from "./RegistrationCard";
+import { RequestsCard } from "./RequestsCard";
 import { SecretKeyCard } from "./SecretKeyCard";
 import { SmtpCard } from "./SmtpCard";
 import { SourcesCard } from "./SourcesCard";
@@ -49,11 +50,14 @@ function People() {
 }
 
 function Integrations() {
+  // The feature's boot flag reaches the client only as the signed-in admin's own `canRequest`.
+  const canRequest = useCurrentUser().canRequest;
   return (
     <>
       <SmtpCard />
       <SecretKeyCard kind="hardcover" />
       <SecretKeyCard kind="google-books" />
+      {canRequest && <RequestsCard />}
       <EbookConvertCard />
       <McpCard />
     </>
