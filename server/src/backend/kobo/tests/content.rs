@@ -161,14 +161,16 @@ async fn download_does_not_record_download_state_when_the_file_open_fails() {
     );
 }
 
-/// #1391: kepubify is absent in the test environment, so `download` takes its
-/// plain-EPUB fallback arm — which must still route through
+/// #1391: with kepubify forced absent, `download` takes its plain-EPUB
+/// fallback arm — which must still route through
 /// `rewritten_or_source` (mirrors `api_get_ebook_download_bakes_metadata_override_into_epub`
 /// in `ebooks/tests.rs`) rather than serving the raw on-disk file.
 #[tokio::test]
 async fn download_bakes_a_metadata_override_into_the_plain_epub_fallback() {
     use std::io::Cursor;
 
+    let _kepubify_absent =
+        db::test_support::EnvVarGuard::set("OMNIBUS_KEPUBIFY_PATH", Some("/no/such/kepubify"));
     let (app, pool, token, uid) = fixture().await;
 
     let pid = std::process::id();

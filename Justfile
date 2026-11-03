@@ -144,9 +144,9 @@ migration-numbers-test:
     bash scripts/tests/check-migration-numbers.test.sh
 
 # Fail when a migration this branch adds is numbered at or below the highest on
-# the base (default origin/main), before CI's UNIQUE-version failure would.
-migration-numbers base="origin/main":
-    scripts/check-migration-numbers.sh {{base}}
+# origin/main, before CI's UNIQUE-version failure would.
+migration-numbers:
+    scripts/check-migration-numbers.sh
 
 # Run every unit/integration suite: the Rust matrix first, then the script
 # suites. Rust leads so a failing script suite can't stop the recipe

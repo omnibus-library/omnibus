@@ -3,8 +3,8 @@
 //! Kobo-placeable on its own, without another write or a restart. The unit
 //! fixtures can only assert the two halves separately (the conversion is
 //! requested; a warm cache materializes) — this is the seam where they meet.
-//! Skips (passes trivially) when the binary is absent, so the slim-shell
-//! matrix stays green; run inside `nix develop .#web` to exercise it.
+//! Every dev shell provides kepubify, so a missing binary fails the test
+//! rather than letting a green run skip the loop.
 
 use std::time::{Duration, Instant};
 
@@ -34,10 +34,10 @@ const SETTLE: Duration = Duration::from_secs(60);
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_web_highlight_reaches_kobo_after_the_conversion_it_requested() {
-    if !omnibus_db::kepubify_available() {
-        eprintln!("kepubify unavailable; skipping cold-cache downsync loop");
-        return;
-    }
+    assert!(
+        omnibus_db::kepubify_available(),
+        "kepubify not found: run inside `nix develop`, or set OMNIBUS_KEPUBIFY_PATH"
+    );
     let dir = make_test_dir("kobo_downsync_cold_cache");
     std::fs::write(
         dir.join("book.epub"),
