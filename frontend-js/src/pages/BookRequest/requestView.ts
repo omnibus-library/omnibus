@@ -6,6 +6,26 @@ import {
 } from "../../api";
 import { fileSize } from "../../format";
 
+function stuckView(reason: StuckReason | null) {
+  switch (reason) {
+    case "stopped_moving":
+      return {
+        heading: "Stopped moving",
+        note: "The download stopped making progress.",
+      };
+    case "couldnt_add":
+      return {
+        heading: "Couldn’t add it",
+        note: "Try again to add it to the library.",
+      };
+    default:
+      return {
+        heading: "Couldn’t find it",
+        note: "Nothing worth showing turned up.",
+      };
+  }
+}
+
 /** What a request's state is called on the page, in Omnibus's words rather than the downloader's. */
 export function stateView(
   state: RequestState,
@@ -32,16 +52,10 @@ export function stateView(
         heading: "On its way",
         note: "Downloading, then adding it to the library.",
       };
+    case "ready":
+      return { heading: "Ready to read", note: "It’s in the library." };
     case "stuck":
-      return stuckReason === "stopped_moving"
-        ? {
-            heading: "Stopped moving",
-            note: "The download stopped making progress.",
-          }
-        : {
-            heading: "Couldn’t find it",
-            note: "Nothing worth showing turned up.",
-          };
+      return stuckView(stuckReason);
     case "cancelled":
       return { heading: "Cancelled", note: "This request was cancelled." };
     default: {

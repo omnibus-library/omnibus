@@ -45,6 +45,8 @@ pub enum RequestState {
     Chosen,
     /// The chosen version is downloading, then being added to the library.
     OnItsWay,
+    /// The download is in the library, filed under the requested book.
+    Ready,
     /// The search came up empty or failed, or the download stopped; the reader can try again.
     Stuck,
     /// The reader cancelled it.
@@ -59,6 +61,7 @@ impl RequestState {
             RequestState::Choose => "choose",
             RequestState::Chosen => "chosen",
             RequestState::OnItsWay => "on_its_way",
+            RequestState::Ready => "ready",
             RequestState::Stuck => "stuck",
             RequestState::Cancelled => "cancelled",
         }
@@ -71,6 +74,7 @@ impl RequestState {
             "choose" => Some(RequestState::Choose),
             "chosen" => Some(RequestState::Chosen),
             "on_its_way" => Some(RequestState::OnItsWay),
+            "ready" => Some(RequestState::Ready),
             "stuck" => Some(RequestState::Stuck),
             "cancelled" => Some(RequestState::Cancelled),
             _ => None,
@@ -79,7 +83,7 @@ impl RequestState {
 }
 
 /// Why a request is stuck. The two search reasons read "Couldn't find it" to the requester;
-/// `stopped_moving` reads "Stopped moving".
+/// `stopped_moving` reads "Stopped moving" and `couldnt_add` reads "Couldn't add it".
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
@@ -90,6 +94,8 @@ pub enum StuckReason {
     SearchFailed,
     /// The download stalled, failed, vanished from the client or the client went unreachable.
     StoppedMoving,
+    /// The download finished but could not be added to the library; Try again re-runs only the add.
+    CouldntAdd,
 }
 
 impl StuckReason {
@@ -99,6 +105,7 @@ impl StuckReason {
             StuckReason::NotFound => "not_found",
             StuckReason::SearchFailed => "search_failed",
             StuckReason::StoppedMoving => "stopped_moving",
+            StuckReason::CouldntAdd => "couldnt_add",
         }
     }
 
@@ -108,6 +115,7 @@ impl StuckReason {
             "not_found" => Some(StuckReason::NotFound),
             "search_failed" => Some(StuckReason::SearchFailed),
             "stopped_moving" => Some(StuckReason::StoppedMoving),
+            "couldnt_add" => Some(StuckReason::CouldntAdd),
             _ => None,
         }
     }
@@ -182,4 +190,20 @@ pub struct BookRequest {
     /// The versions found, best first. Empty until the search has run, and always empty in
     /// a book's list of requests: read one request for its versions.
     pub versions: Vec<RequestVersion>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn request_state_and_stuck_reason_round_trip_their_tokens() {
+        assert_eq!(RequestState::from_db("ready"), Some(RequestState::Ready));
+        assert_eq!(RequestState::Ready.as_str(), "ready");
+        assert_eq!(
+            StuckReason::from_db("couldnt_add"),
+            Some(StuckReason::CouldntAdd)
+        );
+        assert_eq!(StuckReason::CouldntAdd.as_str(), "couldnt_add");
+    }
 }

@@ -6,17 +6,19 @@
 -- being undoable, `prior_state` what Undo restores, and `moved_at` when the download last gained
 -- bytes. A job to take out of the client moves to `remove_tag`; `remove_since` is when, and goes
 -- NULL once the client has shown the job, which is how a job still being fetched is told from one
--- that never came.
+-- that never came. `import_key` is the library-relative key of the file a finished download was
+-- placed as, so a retried import resumes at the scan instead of filing a second copy.
 CREATE TABLE book_requests (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
     book_uuid        TEXT    NOT NULL,
     user_id          INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     kind             TEXT    NOT NULL CHECK (kind IN ('ebook', 'audiobook')),
-    state            TEXT    NOT NULL CHECK (state IN ('looking', 'choose', 'chosen', 'on_its_way', 'stuck', 'cancelled')),
+    state            TEXT    NOT NULL CHECK (state IN ('looking', 'choose', 'chosen', 'on_its_way', 'ready', 'stuck', 'cancelled')),
     stuck_reason     TEXT,
     stuck_detail     TEXT,
     chosen_result_id INTEGER,
     client_tag       TEXT,
+    import_key       TEXT,
     remove_tag       TEXT,
     remove_since     INTEGER,
     progress         REAL,

@@ -15470,6 +15470,7 @@
           "choose",
           "chosen",
           "on_its_way",
+          "ready",
           "stuck",
           "cancelled"
         ]
@@ -17492,11 +17493,12 @@
       },
       "StuckReason": {
         "type": "string",
-        "description": "Why a request is stuck. The two search reasons read \"Couldn't find it\" to the requester;\n`stopped_moving` reads \"Stopped moving\".",
+        "description": "Why a request is stuck. The two search reasons read \"Couldn't find it\" to the requester;\n`stopped_moving` reads \"Stopped moving\" and `couldnt_add` reads \"Couldn't add it\".",
         "enum": [
           "not_found",
           "search_failed",
-          "stopped_moving"
+          "stopped_moving",
+          "couldnt_add"
         ]
       },
       "SuggestionCard": {

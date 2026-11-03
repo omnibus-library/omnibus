@@ -21,6 +21,7 @@ describe("stateView", () => {
     ["choose", "Choose a version"],
     ["chosen", "Version chosen"],
     ["on_its_way", "On its way"],
+    ["ready", "Ready to read"],
     ["stuck", "Couldn’t find it"],
     ["cancelled", "Cancelled"],
   ] as const)("heads a %s request with %s", (state, heading) => {
@@ -34,14 +35,30 @@ describe("stateView", () => {
     );
   });
 
+  it("names ready as Ready to read", () => {
+    expect(stateView("ready")).toEqual({
+      heading: "Ready to read",
+      note: "It’s in the library.",
+    });
+  });
+
+  it("names couldnt_add as Couldn’t add it", () => {
+    expect(stateView("stuck", "couldnt_add")).toEqual({
+      heading: "Couldn’t add it",
+      note: "Try again to add it to the library.",
+    });
+  });
+
   it("never uses the downloader's words", () => {
     const states = [
       ["looking", null],
       ["choose", null],
       ["chosen", null],
       ["on_its_way", null],
+      ["ready", null],
       ["stuck", "not_found"],
       ["stuck", "stopped_moving"],
+      ["stuck", "couldnt_add"],
       ["cancelled", null],
     ] as const;
     for (const [state, reason] of states) {
@@ -125,6 +142,7 @@ describe("isCancellable", () => {
     ["on_its_way", null, true],
     ["on_its_way", 0.4, true],
     ["on_its_way", 1, false],
+    ["ready", 1, false],
     ["stuck", null, false],
     ["cancelled", null, false],
   ] as const)("reads a %s request at %s as %s", (state, progress, expected) => {

@@ -18,7 +18,7 @@ const DOWNLOADING: &str = "(state = 'on_its_way' AND (progress IS NULL OR progre
 const NOW: &str = "strftime('%s', 'now')";
 
 const COLUMNS: &str = "id, book_uuid, user_id, kind, state, stuck_reason, stuck_detail, \
-                       chosen_result_id, client_tag, remove_tag, remove_since, progress, moved_at, cancel_at, cancelled_by, \
+                       chosen_result_id, client_tag, import_key, remove_tag, remove_since, progress, moved_at, cancel_at, cancelled_by, \
                        prior_state, note, created_at, updated_at";
 
 /// Why a request could not be recorded or changed.
@@ -50,6 +50,9 @@ pub struct RequestRow {
     pub chosen_result_id: Option<i64>,
     /// The name of the live download in the client; never sent to a reader.
     pub client_tag: Option<String>,
+    /// The library-relative key of the file a finished download was placed as, once it has
+    /// been; a retried import resumes from it.
+    pub import_key: Option<String>,
     /// A download to take out of the client, and `remove_since` when that began (Unix
     /// seconds; `None` once the client has shown it).
     pub remove_tag: Option<String>,
@@ -108,6 +111,7 @@ fn row_to_request(row: &SqliteRow) -> Result<RequestRow, sqlx::Error> {
         stuck_detail: row.try_get("stuck_detail")?,
         chosen_result_id: row.try_get("chosen_result_id")?,
         client_tag: row.try_get("client_tag")?,
+        import_key: row.try_get("import_key")?,
         remove_tag: row.try_get("remove_tag")?,
         remove_since: row.try_get("remove_since")?,
         progress: row.try_get("progress")?,
