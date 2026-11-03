@@ -4,16 +4,20 @@
 //! unfiltered. Each test claims its own user ids, since `user_stats` reads
 //! through the process-wide cache.
 
-use omnibus_shared::{FilterClause, FilterField, FilterMode, ReadingGoalUpdate, ViewFilters};
+use omnibus_shared::{
+    ChartBreakdown, ChartBucket, ChartMeasure, ChartSpec, FilterClause, FilterField, FilterMode,
+    ReadingGoalUpdate, ViewFilters,
+};
+
+use crate::auth::set_stats_exclusions;
+use crate::init_db;
+use crate::test_support::seed_minimal_books;
 
 use super::super::*;
 use super::{
     book_id, finish_journal, link_tag, listening_session, rate_book, reading_session,
     seed_user_with_id, this_month_secs, DAY, T0,
 };
-use crate::auth::set_stats_exclusions;
-use crate::init_db;
-use crate::test_support::seed_minimal_books;
 
 const SPORTS: &str = "Sports";
 
@@ -24,7 +28,7 @@ fn include(field: FilterField, value: &str) -> ViewFilters {
 }
 
 /// A pool with two books, `uuid-2` tagged [`SPORTS`], and one reader whose rule
-/// leaves out [`SPORTS`] books.
+/// leaves out [`SPORTS`] books, already materialized into their excluded set.
 async fn pool_with_sports_rule(user_id: i64) -> (SqlitePool, i64) {
     let pool = init_db("sqlite::memory:").await.unwrap();
     seed_minimal_books(&pool, 2).await;
@@ -34,6 +38,8 @@ async fn pool_with_sports_rule(user_id: i64) -> (SqlitePool, i64) {
     set_stats_exclusions(&pool, user, &include(FilterField::Tag, SPORTS))
         .await
         .unwrap();
+    // Book-scoped reads never refresh, so the set must exist before they run.
+    refresh_exclusions(&pool, user).await.unwrap();
     (pool, user)
 }
 
@@ -72,6 +78,36 @@ async fn user_stats_leaves_matching_book_out_of_reading_seconds() {
 
     assert_eq!(s.reading_seconds, 600);
     assert_eq!(s.listening_seconds, 300);
+}
+
+#[tokio::test]
+async fn user_stats_leaves_matching_book_out_of_heatmap() {
+    let (pool, user) = pool_with_sports_rule(9980).await;
+    reading_session(&pool, user, "uuid-1", T0, 600).await;
+    reading_session(&pool, user, "uuid-2", T0 + 1_000, 900).await;
+
+    let s = all_time(&pool, user).await;
+
+    assert_eq!(s.heatmap.iter().map(|d| d.seconds).sum::<i64>(), 600);
+}
+
+#[tokio::test]
+async fn chart_series_leaves_matching_book_out_of_reading_minutes() {
+    let (pool, user) = pool_with_sports_rule(9981).await;
+    reading_session(&pool, user, "uuid-1", T0, 600).await;
+    reading_session(&pool, user, "uuid-2", T0 + 1_000, 900).await;
+    let spec = ChartSpec {
+        measures: vec![ChartMeasure::ReadingMinutes],
+        bucket: ChartBucket::Year,
+        range: StatsRange::AllTime,
+        breakdown: ChartBreakdown::None,
+    };
+
+    let r = chart_series(&pool, user, &spec, Some(0)).await.unwrap();
+
+    // The year axis runs through today, so later buckets are present and zero.
+    let total: f64 = r.series[0].values.iter().flatten().sum();
+    assert_eq!(total, 10.0);
 }
 
 #[tokio::test]

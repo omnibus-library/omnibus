@@ -5,7 +5,7 @@
 
 use sqlx::{Row, SqlitePool};
 
-use crate::shelves::filter::{filter_predicate, Bind, Viewer, MATCH_ALL};
+use crate::shelves::filter::{bind_all, filter_predicate, Viewer, MATCH_ALL};
 
 use super::StatsError;
 
@@ -81,18 +81,4 @@ pub async fn refresh_exclusions(pool: &SqlitePool, user_id: i64) -> Result<(), S
     tx.commit().await?;
     super::invalidate_user(user_id);
     Ok(())
-}
-
-/// Bind a predicate's `binds` onto `q`, in order.
-fn bind_all<'q>(
-    mut q: sqlx::query::Query<'q, sqlx::Sqlite, sqlx::sqlite::SqliteArguments<'q>>,
-    binds: &[Bind],
-) -> sqlx::query::Query<'q, sqlx::Sqlite, sqlx::sqlite::SqliteArguments<'q>> {
-    for b in binds {
-        q = match b {
-            Bind::Text(s) => q.bind(s.clone()),
-            Bind::Int(i) => q.bind(*i),
-        };
-    }
-    q
 }

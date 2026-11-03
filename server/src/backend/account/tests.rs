@@ -21,7 +21,9 @@ use crate::auth::AuthUser;
 use crate::backend::test_support::*;
 use crate::backend::AppState;
 
-use super::{post_share_stats, post_stack_series, SetShareStats, SetStackSeries};
+use super::{
+    post_share_stats, post_stack_series, post_stats_exclusions, SetShareStats, SetStackSeries,
+};
 
 /// Build an authenticated JSON POST request.
 fn post_json(uri: &str, token: &str, body: serde_json::Value) -> Request<Body> {
@@ -436,6 +438,15 @@ async fn post_stats_exclusions_refreshes_cached_stats_after_save() {
         .unwrap();
     assert_eq!(saved.status(), StatusCode::OK);
 
+    // `/api/stats` refreshes on its own, so only the stored set proves the handler did.
+    let excluded: Vec<String> =
+        sqlx::query_scalar("SELECT book_uuid FROM stats_excluded_books WHERE user_id = ?")
+            .bind(user.id)
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(excluded, [uuid]);
+
     let after: StatsSummary = body_json(
         app.clone()
             .oneshot(get_with_bearer(stats_uri, &token))
@@ -444,4 +455,35 @@ async fn post_stats_exclusions_refreshes_cached_stats_after_save() {
     )
     .await;
     assert_eq!(after.reading_seconds, 0);
+}
+
+// Invoked directly: a closed pool would fail the bearer extractor before the handler ran.
+#[tokio::test]
+async fn post_stats_exclusions_returns_500_when_the_db_is_unavailable() {
+    let (_app, state, pool) = fixture().await;
+    pool.close().await;
+    let user = AuthUser {
+        id: 1,
+        username: "reader".to_string(),
+        is_admin: false,
+        can_upload: false,
+        can_edit: false,
+        can_download: false,
+        kindle_email: None,
+        display_name: None,
+        has_avatar: false,
+        hidden_formats: Vec::new(),
+        book_detail_scroll_stops: false,
+        stack_series: false,
+        share_stats: true,
+        stats_exclusions: Default::default(),
+        session_id: 1,
+        session_kind: SessionKind::Bearer,
+        impersonator_id: None,
+        session_expires_at: i64::MAX,
+    };
+
+    let res = post_stats_exclusions(user, State(state), Json(ViewFilters::default())).await;
+
+    assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
 }
