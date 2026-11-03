@@ -1084,6 +1084,19 @@ enum UserDataService {
         }
     }
 
+    // MARK: - Household wishlists
+
+    /// Every reader and the size of their wishlists. Online-only, like the
+    /// lists: another reader's wishlist is never mirrored on this device.
+    static func wishlistReaders() async throws -> WishlistReaders {
+        try await APIClient.shared.get("/api/wishlists/readers")
+    }
+
+    /// The books on `scope`'s wishlist, newest add first.
+    static func wishlists(scope: WishlistScope) async throws -> [WishlistBook] {
+        try await APIClient.shared.get("/api/wishlists", query: ["user": scope.userParam])
+    }
+
     // MARK: - Stats
 
     /// The reader's stats over `range`.
