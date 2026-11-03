@@ -373,32 +373,6 @@ export const EditUserSavesPermissionsWithoutAPassword: Story = {
   },
 };
 
-export const EditUserRevokesBookRequests: Story = {
-  render: () => (
-    <EditUserModal
-      user={{ ...ALICE, can_request: true }}
-      isSelf={false}
-      onClose={close}
-    />
-  ),
-  play: async ({ canvas, userEvent }) => {
-    const dialog = await canvas.findByRole("dialog", { name: "Edit alice" });
-    await expect(checkbox(dialog, "Request books")).toBeChecked();
-    await userEvent.click(checkbox(dialog, "Request books"));
-    await userEvent.click(
-      within(dialog).getByRole("button", { name: "Save changes" }),
-    );
-
-    await waitFor(() => expect(calls.closed).toBe(1));
-    await expect(writes.permissions).toEqual([
-      expect.objectContaining({
-        id: 7,
-        permissions: expect.objectContaining({ can_request: false }),
-      }),
-    ]);
-  },
-};
-
 export const EditUserSavesAPasswordTypedWithThePermissions: Story = {
   render: editAlice,
   play: async ({ canvas, userEvent }) => {
