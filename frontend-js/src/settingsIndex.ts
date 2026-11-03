@@ -82,6 +82,8 @@ export type SettingsEntry = {
   label: string;
   keywords: readonly string[];
   section: Section;
+  /** Set for a setting that exists only for readers who can request books. */
+  needsRequestAccess?: true;
 };
 
 const entry = (
@@ -149,6 +151,14 @@ const SETTINGS_INDEX: readonly SettingsEntry[] = [
     ["calibre", "ebook-convert", "convert"],
     INTEGRATIONS,
   ),
+  {
+    ...entry(
+      "Book requests",
+      ["prowlarr", "qbittorrent", "download client"],
+      INTEGRATIONS,
+    ),
+    needsRequestAccess: true,
+  },
   entry("Hosted MCP endpoint", ["mcp"], INTEGRATIONS),
   entry(
     "Server health",
@@ -172,14 +182,16 @@ const SETTINGS_INDEX: readonly SettingsEntry[] = [
 // So settings never bury the books.
 const MAX_SETTINGS_MATCHES = 5;
 
-/** Settings whose label or keywords contain `query`, server ones for admins only. */
+/** Settings whose label or keywords contain `query`, server ones for admins only, and request ones only with `canRequest`. */
 export function matchingSettings(
   query: string,
   isAdmin: boolean,
+  canRequest = false,
 ): SettingsEntry[] {
   const q = query.trim().toLowerCase();
   if (!q) return [];
   return SETTINGS_INDEX.filter((e) => isAdmin || e.section.area === "settings")
+    .filter((e) => canRequest || !e.needsRequestAccess)
     .filter(
       (e) =>
         e.label.toLowerCase().includes(q) ||
