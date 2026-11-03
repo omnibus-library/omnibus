@@ -77,6 +77,12 @@ export function toBookRequest(wire: BookRequestWire) {
     stuckReason: wire.stuck_reason ?? null,
     stuckDetail: wire.stuck_detail ?? null,
     chosenResultId: wire.chosen_result_id ?? null,
+    /** 0 to 1 while the download runs. */
+    progress: wire.progress ?? null,
+    /** Unix seconds; when a cancelled request stops being undoable. */
+    cancelAt: wire.cancel_at ?? null,
+    cancelledBy: (wire.cancelled_by ?? null) as UserId | null,
+    note: wire.note ?? null,
     /** Unix seconds. */
     updatedAt: wire.updated_at,
     versions: wire.versions.map(toVersion),

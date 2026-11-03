@@ -8,13 +8,14 @@ use sqlx::{sqlite::SqliteRow, Row, SqlitePool};
 
 use super::rank::Ranked;
 
-/// A request live for its reader: still searching, waiting on a pick, or picked.
-const LIVE_STATES: &str = "('looking', 'choose', 'chosen')";
+/// A request live for its reader: searching, waiting on a pick, picked or downloading.
+const LIVE_STATES: &str = "('looking', 'choose', 'chosen', 'on_its_way')";
 
 const NOW: &str = "strftime('%s', 'now')";
 
 const COLUMNS: &str = "id, book_uuid, user_id, kind, state, stuck_reason, stuck_detail, \
-                       chosen_result_id, created_at, updated_at";
+                       chosen_result_id, client_tag, progress, moved_at, cancel_at, cancelled_by, \
+                       prior_state, note, created_at, updated_at";
 
 /// Why a request could not be recorded or changed.
 #[derive(Debug, thiserror::Error)]
@@ -33,7 +34,7 @@ pub enum RequestError {
 }
 
 /// One request as stored. `stuck_detail` is for admins only; the handler withholds it.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct RequestRow {
     pub id: i64,
     pub book_uuid: String,
@@ -43,6 +44,18 @@ pub struct RequestRow {
     pub stuck_reason: Option<StuckReason>,
     pub stuck_detail: Option<String>,
     pub chosen_result_id: Option<i64>,
+    /// The name of the download in the client; never sent to a reader.
+    pub client_tag: Option<String>,
+    /// How much of the download is done, 0 to 1.
+    pub progress: Option<f64>,
+    /// When the download last gained bytes, in Unix seconds.
+    pub moved_at: Option<i64>,
+    /// When the client is told to remove the download, in Unix seconds.
+    pub cancel_at: Option<i64>,
+    pub cancelled_by: Option<i64>,
+    /// The state Undo restores while `cancel_at` is ahead.
+    pub prior_state: Option<RequestState>,
+    pub note: Option<String>,
     /// Unix seconds.
     pub created_at: i64,
     /// Unix seconds.
@@ -50,7 +63,7 @@ pub struct RequestRow {
 }
 
 /// The outcome of [`start`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Started {
     pub request: RequestRow,
     /// False when the reader already had a live request and it is returned unchanged.
@@ -74,6 +87,7 @@ fn row_to_request(row: &SqliteRow) -> Result<RequestRow, sqlx::Error> {
     let kind: String = row.try_get("kind")?;
     let state: String = row.try_get("state")?;
     let reason: Option<String> = row.try_get("stuck_reason")?;
+    let prior: Option<String> = row.try_get("prior_state")?;
     Ok(RequestRow {
         id: row.try_get("id")?,
         book_uuid: row.try_get("book_uuid")?,
@@ -85,6 +99,15 @@ fn row_to_request(row: &SqliteRow) -> Result<RequestRow, sqlx::Error> {
             .transpose()?,
         stuck_detail: row.try_get("stuck_detail")?,
         chosen_result_id: row.try_get("chosen_result_id")?,
+        client_tag: row.try_get("client_tag")?,
+        progress: row.try_get("progress")?,
+        moved_at: row.try_get("moved_at")?,
+        cancel_at: row.try_get("cancel_at")?,
+        cancelled_by: row.try_get("cancelled_by")?,
+        prior_state: prior
+            .map(|p| RequestState::from_db(&p).ok_or_else(|| corrupt("prior_state", p)))
+            .transpose()?,
+        note: row.try_get("note")?,
         created_at: row.try_get("created_at")?,
         updated_at: row.try_get("updated_at")?,
     })

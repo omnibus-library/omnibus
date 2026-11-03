@@ -1,18 +1,25 @@
 -- A reader's request for one digital format of a book, and the versions the search found.
 -- `book_uuid` is the canonical `books.uuid`, soft-referenced like the other user data: a
 -- request outlives its wishlist entry, and a merge retargets it. Ids never repeat, so a
--- stale link or a stale Choose click cannot land on a later row.
+-- stale link or a stale Choose click cannot land on a later row. `client_tag` names the job in
+-- the download client; `cancel_at` is when it is told to stop (the Undo grace), `prior_state`
+-- what Undo restores, and `moved_at` when the download last gained bytes.
 CREATE TABLE book_requests (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
     book_uuid        TEXT    NOT NULL,
     user_id          INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     kind             TEXT    NOT NULL CHECK (kind IN ('ebook', 'audiobook')),
-    state            TEXT    NOT NULL CHECK (state IN ('looking', 'choose', 'chosen', 'stuck')),
+    state            TEXT    NOT NULL CHECK (state IN ('looking', 'choose', 'chosen', 'on_its_way', 'stuck', 'cancelled')),
     stuck_reason     TEXT,
     stuck_detail     TEXT,
     chosen_result_id INTEGER,
     client_tag       TEXT,
     progress         REAL,
+    moved_at         INTEGER,
+    cancel_at        INTEGER,
+    cancelled_by     INTEGER,
+    prior_state      TEXT,
+    note             TEXT,
     created_at       INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
     updated_at       INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
 );

@@ -10442,6 +10442,22 @@
             "type": "string",
             "description": "The requested book's uuid."
           },
+          "cancel_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "While `cancelled`, when the download is told to stop, in Unix seconds; the request can\nbe undone until then. Null once it has stopped, and for a request never cancelled."
+          },
+          "cancelled_by": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The user who cancelled it, once `state` is `cancelled`."
+          },
           "chosen_result_id": {
             "type": [
               "integer",
@@ -10461,6 +10477,21 @@
           },
           "kind": {
             "$ref": "#/components/schemas/RequestKind"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "What Omnibus knows about why it moved on, such as \"Swapped for another version\"."
+          },
+          "progress": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "How much of the download is done, 0 to 1, once `state` is `on_its_way`."
           },
           "state": {
             "$ref": "#/components/schemas/RequestState"
@@ -15296,7 +15327,9 @@
           "looking",
           "choose",
           "chosen",
-          "stuck"
+          "on_its_way",
+          "stuck",
+          "cancelled"
         ]
       },
       "RequestVersion": {
@@ -17312,10 +17345,11 @@
       },
       "StuckReason": {
         "type": "string",
-        "description": "Why a request is stuck. Both read \"Couldn't find it\" to the requester.",
+        "description": "Why a request is stuck. The two search reasons read \"Couldn't find it\" to the requester;\n`stopped_moving` reads \"Stopped moving\".",
         "enum": [
           "not_found",
-          "search_failed"
+          "search_failed",
+          "stopped_moving"
         ]
       },
       "SuggestionCard": {

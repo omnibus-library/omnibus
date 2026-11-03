@@ -225,7 +225,7 @@ function Lane({ request }: { request: Request }) {
   const viewer = useCurrentUser();
   // Anyone may read a request; only its maker, or an admin, may act on it.
   const canAct = viewer.id === request.userId || viewer.isAdmin;
-  const { heading, note } = stateView(request.state);
+  const { heading, note } = stateView(request.state, request.stuckReason);
   return (
     <section
       className="rq-panel rq-lane"

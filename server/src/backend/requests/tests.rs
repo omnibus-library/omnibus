@@ -462,6 +462,37 @@ mod get_request {
     }
 
     #[tokio::test]
+    async fn carries_the_progress_of_a_request_on_its_way_and_never_its_client_tag() {
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let (ada, token) = requester(&pool, "ada").await;
+        let uuid = seed_book(&pool, "Dracula").await;
+        let id = seed_request(&pool, ada, &uuid).await;
+        sqlx::query(
+            "UPDATE book_requests SET state = 'on_its_way', progress = 0.4,
+             client_tag = 'omnibus-secret' WHERE id = ?",
+        )
+        .bind(id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let res = send(
+            &app,
+            "GET",
+            &format!("/api/requests/{id}"),
+            Some(&token),
+            None,
+        )
+        .await;
+
+        let text = body_text(res).await;
+        let body: BookRequest = serde_json::from_str(&text).unwrap();
+        assert_eq!(body.state, RequestState::OnItsWay);
+        assert_eq!(body.progress, Some(0.4));
+        assert!(!text.contains("omnibus-secret"));
+    }
+
+    #[tokio::test]
     async fn answers_404_for_an_unknown_request() {
         let (app, _, pool) = fixture_book_requests(true).await;
         let (_, token) = requester(&pool, "ada").await;

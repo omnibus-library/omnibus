@@ -1,8 +1,11 @@
-import { ApiError, type RequestState } from "../../api";
+import { ApiError, type RequestState, type StuckReason } from "../../api";
 import { fileSize } from "../../format";
 
 /** What a request's state is called on the page, in Omnibus's words rather than the downloader's. */
-export function stateView(state: RequestState): {
+export function stateView(
+  state: RequestState,
+  stuckReason: StuckReason | null = null,
+): {
   heading: string;
   note: string;
 } {
@@ -19,11 +22,23 @@ export function stateView(state: RequestState): {
       };
     case "chosen":
       return { heading: "Version chosen", note: "We’ll fetch it next." };
-    case "stuck":
+    case "on_its_way":
       return {
-        heading: "Couldn’t find it",
-        note: "Nothing worth showing turned up.",
+        heading: "On its way",
+        note: "Downloading, then adding it to the library.",
       };
+    case "stuck":
+      return stuckReason === "stopped_moving"
+        ? {
+            heading: "Stopped moving",
+            note: "The download stopped making progress.",
+          }
+        : {
+            heading: "Couldn’t find it",
+            note: "Nothing worth showing turned up.",
+          };
+    case "cancelled":
+      return { heading: "Cancelled", note: "This request was cancelled." };
     default: {
       const _exhaustive: never = state;
       return _exhaustive;

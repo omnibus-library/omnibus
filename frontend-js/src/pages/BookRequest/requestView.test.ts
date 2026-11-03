@@ -16,15 +16,35 @@ describe("stateView", () => {
     ["looking", "Looking"],
     ["choose", "Choose a version"],
     ["chosen", "Version chosen"],
+    ["on_its_way", "On its way"],
     ["stuck", "Couldn’t find it"],
+    ["cancelled", "Cancelled"],
   ] as const)("heads a %s request with %s", (state, heading) => {
     expect(stateView(state).heading).toBe(heading);
   });
 
+  it("heads a request stuck on a stalled download Stopped moving", () => {
+    expect(stateView("stuck", "stopped_moving").heading).toBe("Stopped moving");
+    expect(stateView("stuck", "search_failed").heading).toBe(
+      "Couldn’t find it",
+    );
+  });
+
   it("never uses the downloader's words", () => {
-    for (const state of ["looking", "choose", "chosen", "stuck"] as const) {
-      const { heading, note } = stateView(state);
-      expect(`${heading} ${note}`).not.toMatch(/release|indexer|grab|seed/i);
+    const states = [
+      ["looking", null],
+      ["choose", null],
+      ["chosen", null],
+      ["on_its_way", null],
+      ["stuck", "not_found"],
+      ["stuck", "stopped_moving"],
+      ["cancelled", null],
+    ] as const;
+    for (const [state, reason] of states) {
+      const { heading, note } = stateView(state, reason);
+      expect(`${heading} ${note}`).not.toMatch(
+        /release|torrent|indexer|grab|seed/i,
+      );
     }
   });
 });

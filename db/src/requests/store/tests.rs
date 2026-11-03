@@ -89,6 +89,28 @@ mod start {
     }
 
     #[tokio::test]
+    async fn returns_the_request_on_its_way_and_starts_afresh_after_a_cancel() {
+        let pool = pool().await;
+        let ada = seed_user(&pool, "ada").await;
+        let first = start(&pool, ada, "book-1", RequestKind::Ebook, 5)
+            .await
+            .unwrap();
+        set_state(&pool, first.request.id, "on_its_way").await;
+
+        let again = start(&pool, ada, "book-1", RequestKind::Ebook, 5)
+            .await
+            .unwrap();
+        set_state(&pool, first.request.id, "cancelled").await;
+        let after_cancel = start(&pool, ada, "book-1", RequestKind::Ebook, 5)
+            .await
+            .unwrap();
+
+        assert!(!again.created);
+        assert_eq!(again.request.id, first.request.id);
+        assert!(after_cancel.created);
+    }
+
+    #[tokio::test]
     async fn refuses_a_new_request_once_the_reader_holds_the_live_limit() {
         let pool = pool().await;
         let ada = seed_user(&pool, "ada").await;
@@ -162,8 +184,47 @@ async fn start_looking(pool: &SqlitePool) -> i64 {
         .id
 }
 
+async fn set_state(pool: &SqlitePool, id: i64, state: &str) {
+    sqlx::query("UPDATE book_requests SET state = ? WHERE id = ?")
+        .bind(state)
+        .bind(id)
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
 async fn state_of(pool: &SqlitePool, id: i64) -> RequestRow {
     get(pool, id).await.unwrap().unwrap()
+}
+
+mod get {
+    use super::*;
+
+    #[tokio::test]
+    async fn reads_back_the_download_columns_of_a_cancelled_request() {
+        let pool = pool().await;
+        let id = start_looking(&pool).await;
+        sqlx::query(
+            "UPDATE book_requests SET state = 'cancelled', prior_state = 'on_its_way',
+             progress = 0.4, cancel_at = 1700000008, cancelled_by = 1, note = 'n',
+             moved_at = 1700000000, client_tag = 'omnibus-1' WHERE id = ?",
+        )
+        .bind(id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let row = state_of(&pool, id).await;
+
+        assert_eq!(row.state, RequestState::Cancelled);
+        assert_eq!(row.prior_state, Some(RequestState::OnItsWay));
+        assert_eq!(row.progress, Some(0.4));
+        assert_eq!(row.cancel_at, Some(1_700_000_008));
+        assert_eq!(row.cancelled_by, Some(1));
+        assert_eq!(row.note.as_deref(), Some("n"));
+        assert_eq!(row.moved_at, Some(1_700_000_000));
+        assert_eq!(row.client_tag.as_deref(), Some("omnibus-1"));
+    }
 }
 
 mod finish_search {
