@@ -15,6 +15,7 @@ import {
   SetProfile,
   SetStackSeries,
   type UserSummary,
+  ViewFilters,
 } from "../api/generated/schemas";
 import { nowSecs } from "../format";
 import { svg } from "./handlers";
@@ -118,6 +119,10 @@ export function settingsHandlers(server: SettingsServer) {
         return empty();
       }),
     ),
+    http.post("/api/account/stats-exclusions", async ({ request }) => {
+      patch({ stats_exclusions: ViewFilters.parse(await request.json()) });
+      return empty();
+    }),
     http.get("/api/stats", () =>
       HttpResponse.json(aWireStatsGoals(server.goals)),
     ),

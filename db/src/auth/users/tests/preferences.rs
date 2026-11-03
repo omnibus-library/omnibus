@@ -1,6 +1,8 @@
 //! Per-account preferences: Kindle email, hidden formats, book-detail
-//! scroll-stops, Stack series, and share stats — each read back through
-//! `get_user_by_id`.
+//! scroll-stops, Stack series, share stats, and the stats exclusion rule — each
+//! read back through `get_user_by_id`.
+
+use omnibus_shared::{FilterClause, FilterField, FilterMode, ViewFilters};
 
 use super::super::*;
 use crate::auth::test_support::pool;
@@ -179,4 +181,54 @@ async fn set_share_stats_round_trips_through_get_share_stats_and_get_user_by_id(
 async fn get_share_stats_reads_false_for_a_missing_user() {
     let p = pool().await;
     assert!(!get_share_stats(&p, 999).await.unwrap());
+}
+
+fn tag_filter(tag: &str) -> ViewFilters {
+    ViewFilters {
+        clauses: vec![FilterClause::new(
+            FilterField::Tag,
+            FilterMode::Include,
+            &[tag],
+        )],
+    }
+}
+
+#[tokio::test]
+async fn set_stats_exclusions_returns_saved_filter_on_user_summary() {
+    let p = pool().await;
+    let u = create_user(&p, "alice", "hunter2-real-long").await.unwrap();
+    assert!(u.stats_exclusions.is_empty());
+
+    set_stats_exclusions(&p, u.id, &tag_filter("Sports"))
+        .await
+        .unwrap();
+    let saved = get_user_by_id(&p, u.id).await.unwrap().unwrap();
+    assert_eq!(saved.stats_exclusions, tag_filter("Sports"));
+
+    set_stats_exclusions(&p, u.id, &ViewFilters::default())
+        .await
+        .unwrap();
+    let stored: Option<String> =
+        sqlx::query_scalar("SELECT stats_exclusions FROM users WHERE id = ?")
+            .bind(u.id)
+            .fetch_one(&p)
+            .await
+            .unwrap();
+    assert_eq!(stored, None, "an empty filter clears the column");
+}
+
+#[tokio::test]
+async fn set_stats_exclusions_rejects_filter_that_fails_validation() {
+    let p = pool().await;
+    let u = create_user(&p, "alice", "hunter2-real-long").await.unwrap();
+    let blank = ViewFilters {
+        clauses: vec![FilterClause::new(
+            FilterField::Tag,
+            FilterMode::Include,
+            &["  "],
+        )],
+    };
+
+    let err = set_stats_exclusions(&p, u.id, &blank).await.unwrap_err();
+    assert!(matches!(err, AuthError::Validation(_)));
 }

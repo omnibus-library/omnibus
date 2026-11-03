@@ -1,4 +1,3 @@
-import type { ReactNode } from "react";
 import { ThemePicker } from "../../components/ThemePicker/ThemePicker";
 import {
   type UserSwitch,
@@ -7,67 +6,8 @@ import {
   useUserSwitch,
 } from "../../session";
 import { formatOptions, withFormat } from "./hiddenFormats";
-
-type SettingRowProps = {
-  label: string;
-  description: string;
-  controlId: string;
-  testId?: string;
-  children: ReactNode;
-};
-
-/** A setting's name and what it does on the left, its control on the right. */
-function SettingRow({
-  label,
-  description,
-  controlId,
-  testId,
-  children,
-}: SettingRowProps) {
-  return (
-    <div className="setting-row" data-testid={testId}>
-      <div className="setting-row-text">
-        <label className="setting-row-label" htmlFor={controlId}>
-          {label}
-        </label>
-        <p className="setting-row-desc" id={`${controlId}-desc`}>
-          {description}
-        </p>
-      </div>
-      <div className="setting-row-control">{children}</div>
-    </div>
-  );
-}
-
-/** The inline result beside an autosaving control: a live region mounted before the first save so that save is announced. */
-function SaveStatus({
-  testId,
-  save,
-}: {
-  testId: string;
-  save: {
-    isPending: boolean;
-    isError: boolean;
-    isSuccess: boolean;
-    error: Error | null;
-  };
-}) {
-  const { isPending, isError, isSuccess, error } = save;
-  let text = "";
-  if (isPending) text = "Saving…";
-  else if (isError) text = `Couldn’t save: ${error?.message}`;
-  else if (isSuccess) text = "Saved";
-  const className = isError
-    ? "pref-status error"
-    : isPending
-      ? "pref-status ld-sheen"
-      : "pref-status";
-  return (
-    <span role="status" className={className} data-testid={testId}>
-      {text}
-    </span>
-  );
-}
+import { SaveStatus, SettingRow } from "./SettingRow";
+import { StatsExclusions } from "./StatsExclusions";
 
 type SwitchRowProps = {
   setting: UserSwitch;
@@ -149,7 +89,7 @@ function HiddenFormats() {
   );
 }
 
-/** Theme (this device), then the library, book page and privacy preferences; each control saves the moment it changes. */
+/** Theme (this device), then the library, stats, book page and privacy preferences; each control saves the moment it changes. */
 export function PreferencesSection() {
   return (
     <>
@@ -172,6 +112,10 @@ export function PreferencesSection() {
           description="Fold each series into one stack in the library grid."
         />
         <HiddenFormats />
+      </section>
+      <section className="card" data-testid="preferences-stats">
+        <h3>Stats</h3>
+        <StatsExclusions />
       </section>
       <section className="card" data-testid="preferences-book-page">
         <h3>Book page</h3>

@@ -32,7 +32,9 @@ pub(super) fn read_info(pdf: &Pdf) -> PdfInfo {
 pub fn decode_pdf_string(bytes: &[u8]) -> Option<String> {
     let text = if let Some(rest) = bytes.strip_prefix(&[0xFE, 0xFF]) {
         let units: Vec<u16> = rest
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|pair| u16::from_be_bytes([pair[0], pair[1]]))
             .collect();
         String::from_utf16_lossy(&units)

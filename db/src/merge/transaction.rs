@@ -408,7 +408,7 @@ pub(super) fn retarget_set(table: &str) -> &'static str {
 /// `merge_settles_every_book_uuid_table` holds the schema to it.
 // Only that test reads it; it lives here so the reason sits beside the list.
 #[cfg_attr(not(test), allow(dead_code))]
-pub(super) const MERGE_EXEMPT_TABLES: [(&str, &str); 4] = [
+pub(super) const MERGE_EXEMPT_TABLES: [(&str, &str); 5] = [
     (
         "metadata_overrides",
         "settled by `overrides::merge_overrides` in the same transaction and parked in the snapshot for undo",
@@ -424,6 +424,10 @@ pub(super) const MERGE_EXEMPT_TABLES: [(&str, &str); 4] = [
     (
         "kobo_books_sync",
         "per-device sync snapshot: the stranded row is what tells the device on its next sync that the source entitlement is gone",
+    ),
+    (
+        "stats_excluded_books",
+        "materialized stats exclusion set, rebuilt from the rule at the start of each stats request",
     ),
 ];
 

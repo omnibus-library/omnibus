@@ -9,7 +9,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use omnibus_db::auth::{self as auth_db, SessionAuthError, SessionKind};
-use omnibus_shared::UserSummary;
+use omnibus_shared::{UserSummary, ViewFilters};
 use sqlx::SqlitePool;
 
 use crate::http_errors::internal;
@@ -33,6 +33,7 @@ pub struct AuthUser {
     pub book_detail_scroll_stops: bool,
     pub stack_series: bool,
     pub share_stats: bool,
+    pub stats_exclusions: ViewFilters,
     pub session_id: i64,
     pub session_kind: SessionKind,
     /// The admin signed in as this user, when the session is an impersonation.
@@ -59,6 +60,7 @@ impl AuthUser {
             book_detail_scroll_stops: self.book_detail_scroll_stops,
             stack_series: self.stack_series,
             share_stats: self.share_stats,
+            stats_exclusions: self.stats_exclusions.clone(),
             impersonation: None,
         }
     }
@@ -148,6 +150,7 @@ fn build_auth_user(user: auth_db::User, session: auth_db::Session) -> AuthUser {
         book_detail_scroll_stops: user.book_detail_scroll_stops,
         stack_series: user.stack_series,
         share_stats: user.share_stats,
+        stats_exclusions: user.stats_exclusions,
         session_id: session.id,
         session_kind: session.kind,
         impersonator_id: session.impersonator_id,

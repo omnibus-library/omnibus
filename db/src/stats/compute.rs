@@ -35,48 +35,64 @@ pub(super) const FINISHED_BOOKS_LIMIT: i64 = 100;
 /// The book-scoped session union reused by the top-N rollups: one
 /// `(book_uuid, secs)` row per reading and listening session in the window.
 /// Bind order is `user_id, start, user_id, start`.
-pub(super) const SESSION_BOOK_SECS: &str = "\
-    SELECT book_uuid, seconds_read AS secs FROM reading_sessions \
-        WHERE user_id = ? AND started_at >= ? \
-    UNION ALL \
-    SELECT book_uuid, seconds_listened AS secs FROM listening_sessions \
-        WHERE user_id = ? AND started_at >= ?";
+pub(super) const SESSION_BOOK_SECS: &str = concat!(
+    "SELECT book_uuid, seconds_read AS secs FROM reading_sessions \
+        WHERE user_id = ? AND started_at >= ? AND ",
+    kept!("reading_sessions"),
+    " \
+     UNION ALL \
+     SELECT book_uuid, seconds_listened AS secs FROM listening_sessions \
+        WHERE user_id = ? AND started_at >= ? AND ",
+    kept!("listening_sessions")
+);
 
 /// The time-scoped session union, reused by the busiest-week rollup, the
 /// sitting count and the superlatives: one
 /// `(book_uuid, started_at, ended_at, secs, is_audio)` checkpoint row per
 /// session in the window, where `is_audio` discriminates the two tables for
 /// [`sessionize::stitched`]. Bind order is `user_id, start, user_id, start`.
-pub(super) const SESSION_ROWS: &str = "\
-    SELECT book_uuid, started_at, ended_at, seconds_read AS secs, 0 AS is_audio \
-        FROM reading_sessions WHERE user_id = ? AND started_at >= ? \
-    UNION ALL \
-    SELECT book_uuid, started_at, ended_at, seconds_listened AS secs, 1 AS is_audio \
-        FROM listening_sessions WHERE user_id = ? AND started_at >= ?";
+pub(super) const SESSION_ROWS: &str = concat!(
+    "SELECT book_uuid, started_at, ended_at, seconds_read AS secs, 0 AS is_audio \
+        FROM reading_sessions WHERE user_id = ? AND started_at >= ? AND ",
+    kept!("reading_sessions"),
+    " \
+     UNION ALL \
+     SELECT book_uuid, started_at, ended_at, seconds_listened AS secs, 1 AS is_audio \
+        FROM listening_sessions WHERE user_id = ? AND started_at >= ? AND ",
+    kept!("listening_sessions")
+);
 
 /// The **unwindowed** session union for one user: one `(book_uuid, started_at,
 /// secs)` row per reading and listening session on record. Bind order is
 /// `user_id, user_id`.
 // Separate from `SESSION_ROWS`: a figure about how a book was read must not be
 // clipped to a period, or a March-to-April read reports as an April sprint.
-pub(super) const USER_SESSION_ROWS: &str = "\
-    SELECT book_uuid, started_at, seconds_read AS secs FROM reading_sessions \
-        WHERE user_id = ? \
-    UNION ALL \
-    SELECT book_uuid, started_at, seconds_listened AS secs FROM listening_sessions \
-        WHERE user_id = ?";
+pub(super) const USER_SESSION_ROWS: &str = concat!(
+    "SELECT book_uuid, started_at, seconds_read AS secs FROM reading_sessions \
+        WHERE user_id = ? AND ",
+    kept!("reading_sessions"),
+    " \
+     UNION ALL \
+     SELECT book_uuid, started_at, seconds_listened AS secs FROM listening_sessions \
+        WHERE user_id = ? AND ",
+    kept!("listening_sessions")
+);
 
 /// Book-level completion events for a user, unioned across the two ways a book
 /// can be "finished": a 100% journal entry (keyed on `created_at`) and an
 /// explicit read-status `finished` (keyed on `finished_at`). Callers window on
 /// `finished_at` and `COUNT(DISTINCT book_uuid)` so a book finished both ways
 /// counts once. Bind order is `user_id, user_id`.
-pub(super) const FINISHED_EVENTS: &str = "\
-    SELECT book_uuid, created_at AS finished_at FROM journal_entries \
-        WHERE user_id = ? AND progress = 100 \
-    UNION ALL \
-    SELECT book_uuid, finished_at FROM book_read_status \
-        WHERE user_id = ? AND status = 'finished' AND finished_at IS NOT NULL";
+pub(super) const FINISHED_EVENTS: &str = concat!(
+    "SELECT book_uuid, created_at AS finished_at FROM journal_entries \
+        WHERE user_id = ? AND progress = 100 AND ",
+    kept!("journal_entries"),
+    " \
+     UNION ALL \
+     SELECT book_uuid, finished_at FROM book_read_status \
+        WHERE user_id = ? AND status = 'finished' AND finished_at IS NOT NULL AND ",
+    kept!("book_read_status")
+);
 
 /// [`FINISHED_EVENTS`] narrowed to completions on a book that still exists, the
 /// liveness filter **every** completion metric shares (so one that opts out has
@@ -208,7 +224,9 @@ pub(super) async fn sum_seconds(
 ) -> Result<i64, StatsError> {
     // `table` / `col` are fixed literals chosen by the caller, never user input.
     let sql = format!(
-        "SELECT COALESCE(SUM({col}), 0) FROM {table} WHERE user_id = ? AND started_at >= ?"
+        "SELECT COALESCE(SUM({col}), 0) FROM {table} \
+         WHERE user_id = ? AND started_at >= ? AND {}",
+        kept!(table)
     );
     Ok(sqlx::query_scalar(&sql)
         .bind(user_id)
@@ -251,11 +269,13 @@ pub(super) async fn heatmap(
     let sql = format!(
         "SELECT day, SUM(secs) AS seconds FROM (
              SELECT {day} AS day, seconds_read AS secs
-                 FROM reading_sessions   WHERE user_id = ? AND started_at >= ?
+                 FROM reading_sessions   WHERE user_id = ? AND started_at >= ? AND {kept_r}
              UNION ALL
              SELECT {day}, seconds_listened
-                 FROM listening_sessions WHERE user_id = ? AND started_at >= ?
-         ) GROUP BY day ORDER BY day"
+                 FROM listening_sessions WHERE user_id = ? AND started_at >= ? AND {kept_l}
+         ) GROUP BY day ORDER BY day",
+        kept_r = kept!("reading_sessions"),
+        kept_l = kept!("listening_sessions"),
     );
     let rows = sqlx::query(&sql)
         .bind(user_id)
@@ -575,7 +595,8 @@ async fn sum_seconds_bounded(
     // `table` / `col` are fixed literals chosen by the caller, never user input.
     let sql = format!(
         "SELECT COALESCE(SUM({col}), 0) FROM {table} \
-         WHERE user_id = ? AND started_at >= ? AND started_at < ?"
+         WHERE user_id = ? AND started_at >= ? AND started_at < ? AND {}",
+        kept!(table)
     );
     Ok(sqlx::query_scalar(&sql)
         .bind(user_id)
@@ -619,9 +640,10 @@ pub(super) async fn listening_daily(
 ) -> Result<Vec<DayActivity>, StatsError> {
     let sql = format!(
         "SELECT {} AS day, SUM(seconds_listened) AS seconds
-         FROM listening_sessions WHERE user_id = ? AND started_at >= ?
+         FROM listening_sessions WHERE user_id = ? AND started_at >= ? AND {}
          GROUP BY day ORDER BY day",
-        calendar::local_day("started_at", offset_minutes)
+        calendar::local_day("started_at", offset_minutes),
+        kept!("listening_sessions")
     );
     let rows = sqlx::query(&sql)
         .bind(user_id)
