@@ -189,6 +189,53 @@ mod qbittorrent_add {
         assert_eq!(form_pairs(&sent[0]), expected);
     }
 
+    async fn add_answering(response: ResponseTemplate) -> Result<(), ConnectionError> {
+        let server = signed_in_server().await;
+        Mock::given(method("POST"))
+            .and(path("/api/v2/torrents/add"))
+            .respond_with(response)
+            .mount(&server)
+            .await;
+        client_for(&server).add(MAGNET, "books", "omnibus-7").await
+    }
+
+    #[tokio::test]
+    async fn accepts_a_202_json_answer_with_no_failures() {
+        let body = json!({
+            "added_torrent_ids": [],
+            "failure_count": 0,
+            "pending_count": 1,
+            "success_count": 0,
+        });
+
+        let result = add_answering(ResponseTemplate::new(202).set_body_json(body)).await;
+
+        assert!(result.is_ok(), "{result:?}");
+    }
+
+    #[tokio::test]
+    async fn rejects_a_202_json_answer_that_counts_a_failure() {
+        let body = json!({
+            "added_torrent_ids": [],
+            "failure_count": 1,
+            "pending_count": 0,
+            "success_count": 0,
+        });
+
+        let err = add_answering(ResponseTemplate::new(202).set_body_json(body))
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, ConnectionError::Rejected(_)));
+    }
+
+    #[tokio::test]
+    async fn accepts_a_legacy_200_ok_answer() {
+        let result = add_answering(ResponseTemplate::new(200).set_body_string("Ok.")).await;
+
+        assert!(result.is_ok(), "{result:?}");
+    }
+
     #[tokio::test]
     async fn rejects_a_link_the_client_refuses() {
         let server = signed_in_server().await;
