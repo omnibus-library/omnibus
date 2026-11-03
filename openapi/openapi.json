@@ -17379,7 +17379,7 @@
           },
           "can_request": {
             "type": "boolean",
-            "description": "Whether the user may request books the library lacks. Admins always may."
+            "description": "Whether the user may request books the library lacks: false for everyone while the server has book requests off, else admins always may."
           },
           "can_upload": {
             "type": "boolean"

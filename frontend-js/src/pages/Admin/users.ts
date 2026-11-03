@@ -38,7 +38,7 @@ export const NO_PERMISSIONS = "—";
 /** A single "Admin" chip for an administrator, else one per granted capability, or a dash when none; `requests` is whether book requests are on. */
 export function permissionChips(
   user: UserPermissions,
-  requests = true,
+  requests: boolean,
 ): string[] {
   if (user.is_admin) return [ADMIN_CHIP];
   const chips = [

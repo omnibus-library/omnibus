@@ -98,7 +98,7 @@ function PermissionToggles({
                   can_upload: true,
                   can_edit: true,
                   can_download: true,
-                  can_request: true,
+                  can_request: requests || perms.can_request,
                 }
               : { ...perms, is_admin: false },
           )

@@ -63,6 +63,17 @@ async fn insert_user(pool: &SqlitePool, username: &str, is_admin: bool) -> User 
     }
 }
 
+/// Overwrite a user's stored `is_admin` and `can_request`, as an admin editing them would.
+pub async fn set_request_flags(pool: &SqlitePool, user_id: i64, is_admin: bool, can_request: bool) {
+    sqlx::query("UPDATE users SET is_admin = ?, can_request = ? WHERE id = ?")
+        .bind(is_admin)
+        .bind(can_request)
+        .bind(user_id)
+        .execute(pool)
+        .await
+        .expect("set request flags");
+}
+
 /// Create a non-admin user.
 pub async fn create_user(pool: &SqlitePool, username: &str) -> User {
     insert_user(pool, username, false).await
