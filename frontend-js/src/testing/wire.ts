@@ -472,6 +472,7 @@ export const WIRE_ADA: UserSummary = {
   can_upload: true,
   can_edit: true,
   can_download: true,
+  can_request: true,
   kindle_email: null,
 };
 

@@ -35,12 +35,14 @@ const NEW_USER_PERMISSIONS: UserPermissions = {
   can_upload: false,
   can_edit: false,
   can_download: true,
+  can_request: false,
 };
 
 const GRANTS = [
   { flag: "can_upload", label: "Upload books" },
   { flag: "can_edit", label: "Edit metadata" },
   { flag: "can_download", label: "Download" },
+  { flag: "can_request", label: "Request books" },
 ] as const;
 
 function PermissionCheckbox({
@@ -70,7 +72,7 @@ function PermissionCheckbox({
   );
 }
 
-// An administrator can do everything, so ticking Administrator grants the other three and locks them.
+// An administrator can do everything, so ticking Administrator grants the others and locks them.
 function PermissionToggles({
   perms,
   onChange,
@@ -94,6 +96,7 @@ function PermissionToggles({
                   can_upload: true,
                   can_edit: true,
                   can_download: true,
+                  can_request: true,
                 }
               : { ...perms, is_admin: false },
           )

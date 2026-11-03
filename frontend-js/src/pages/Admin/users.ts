@@ -16,6 +16,7 @@ export const EditUserSchema = z.object({
     can_upload: z.boolean(),
     can_edit: z.boolean(),
     can_download: z.boolean(),
+    can_request: z.boolean(),
   }) satisfies z.ZodType<UserPermissions>,
   new_password: z.string().trim(),
 });
@@ -26,6 +27,7 @@ export const permissionsOf = (user: UserPermissions): UserPermissions => ({
   can_upload: user.can_upload,
   can_edit: user.can_edit,
   can_download: user.can_download,
+  can_request: user.can_request,
 });
 
 export const ADMIN_CHIP = "Admin";
@@ -40,6 +42,7 @@ export function permissionChips(user: UserPermissions): string[] {
     user.can_upload && "Upload",
     user.can_edit && "Edit",
     user.can_download && "Download",
+    user.can_request && "Request",
   ].filter((chip) => chip !== false);
   return chips.length > 0 ? chips : [NO_PERMISSIONS];
 }
