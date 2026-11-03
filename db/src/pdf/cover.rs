@@ -57,7 +57,7 @@ fn render_page(page: &Page<'_>) -> Option<(String, Vec<u8>)> {
     // Premultiplied RGBA over an opaque white ground is plain RGB for every
     // pixel, so dropping the alpha channel is the whole conversion.
     let mut rgb = Vec::with_capacity((w * h * 3) as usize);
-    for px in pixmap.data_as_u8_slice().chunks_exact(4) {
+    for px in pixmap.data_as_u8_slice().as_chunks::<4>().0.iter() {
         rgb.extend_from_slice(&px[..3]);
     }
     let image = image::RgbImage::from_raw(w, h, rgb)?;

@@ -20,25 +20,41 @@ pub const SESSION_LOG_DEFAULT_LIMIT: i64 = 25;
 pub const SESSION_LOG_MAX_LIMIT: i64 = 100;
 
 /// One `(book_uuid, started_at, ended_at, secs, is_audio)` union of every
-/// checkpoint row a user recorded, in either table. Bind order is `user_id, user_id`.
+/// checkpoint row a user recorded, in either table; `kept_only` leaves out the
+/// books the reader excludes from their stats. Bind order is `user_id, user_id`.
 // `book_uuid` is read straight off the row, not resolved through the merge ledger:
 // `record_session_tx` and `merge::transaction`'s `RETARGET_TABLES` already keep it
 // canonical, and resolving would defeat the `(user_id, book_uuid)` index.
-const USER_SESSION_ROWS: &str = "\
-    SELECT book_uuid, started_at, ended_at, seconds_read AS secs, 0 AS is_audio \
-      FROM reading_sessions WHERE user_id = ? \
-    UNION ALL \
-    SELECT book_uuid, started_at, ended_at, seconds_listened, 1 \
-      FROM listening_sessions WHERE user_id = ?";
+fn user_session_rows(kept_only: bool) -> String {
+    let (kept_r, kept_l) = if kept_only {
+        (
+            format!("AND {}", kept!("reading_sessions")),
+            format!("AND {}", kept!("listening_sessions")),
+        )
+    } else {
+        (String::new(), String::new())
+    };
+    format!(
+        "SELECT book_uuid, started_at, ended_at, seconds_read AS secs, 0 AS is_audio \
+           FROM reading_sessions WHERE user_id = ? {kept_r} \
+         UNION ALL \
+         SELECT book_uuid, started_at, ended_at, seconds_listened, 1 \
+           FROM listening_sessions WHERE user_id = ? {kept_l}"
+    )
+}
 
 /// The page query. `book_scoped` adds the canonical-uuid filter, `cursored`
 /// the keyset predicate; both are threaded as binds by [`session_log`], which
 /// owns the matching bind order.
 fn page_sql(book_scoped: bool, cursored: bool) -> String {
+    // A book's own log keeps its excluded sittings; only the all-books log leaves them out.
     let rows = if book_scoped {
-        format!("SELECT * FROM ({USER_SESSION_ROWS}) WHERE book_uuid = ?")
+        format!(
+            "SELECT * FROM ({}) WHERE book_uuid = ?",
+            user_session_rows(false)
+        )
     } else {
-        USER_SESSION_ROWS.to_string()
+        user_session_rows(true)
     };
     let sittings = sessionize::stitched(&rows);
     let min_secs = sessionize::MIN_SITTING_SECS;
@@ -77,6 +93,9 @@ pub async fn session_log(
     limit: i64,
 ) -> Result<SessionLogPage, StatsError> {
     let limit = limit.clamp(1, SESSION_LOG_MAX_LIMIT);
+    if book_uuid.is_none() {
+        super::refresh_exclusions(pool, user_id).await?;
+    }
     let canonical = match book_uuid {
         Some(uuid) => match crate::books::resolve_canonical_book_uuid(pool, uuid).await? {
             Some(resolved) => Some(resolved),

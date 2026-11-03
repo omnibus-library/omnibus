@@ -6,6 +6,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::ViewFilters;
+
 // A safe projection of a `users` row: no password field ever crosses the wire.
 /// A user account: who it is, what it may do, and its saved preferences. It never
 /// carries a password.
@@ -48,6 +50,10 @@ pub struct UserSummary {
     /// default.
     #[serde(default = "share_stats_default")]
     pub share_stats: bool,
+    /// Books matching this filter are left out of the user's reading stats. An empty
+    /// filter leaves nothing out.
+    #[serde(default)]
+    pub stats_exclusions: ViewFilters,
     /// Set while an admin is signed in as this user; null for an ordinary sign-in.
     #[serde(default)]
     pub impersonation: Option<Impersonation>,

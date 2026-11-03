@@ -10,6 +10,9 @@ enum BookTab: Int, CaseIterable, Identifiable {
 
     var id: Int { rawValue }
 
+    /// Whether the strip, `stripTop` below the scroll view's top, is docked; 1pt of slack for where a tab jump settles.
+    static func tabsPinned(stripTop: CGFloat) -> Bool { stripTop <= 1 }
+
     var label: String {
         switch self {
         case .overview: "Overview"

@@ -79,6 +79,7 @@ final class DebugScreenLink {
         case "genres": return .genres
         case "settings": return .settings
         case "goals": return .readingGoals
+        case "stats-exclusions": return .statsExclusions
         case "downloads": return .downloads
         // A bare `series` is the index; `series/<id>` one series.
         case "series":
