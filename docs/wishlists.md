@@ -156,7 +156,7 @@ End result: The download is stopped and cleaned up, the cancelled request stays 
 
 Notes:
 
-- "Choose another" is not a cancel: it stops this download and goes back to the versions found, but the request stays alive
+- "Pick another" is not a cancel: it stops this download and goes back to the versions found, but the request stays alive
 - History only records what Omnibus knows: who cancelled, when, which version and how far it got (e.g. "Cancelled by
   you · EPUB · 2.4 MB · stopped at 40%"). It never guesses a reason; choosing another version records "Swapped for
   another version" instead

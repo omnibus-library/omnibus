@@ -64,6 +64,8 @@ function toVersion(wire: RequestVersionWire) {
     format: wire.format ?? null,
     indexer: wire.indexer ?? null,
     bestMatch: wire.best_match,
+    /** Picked and given up: shown as one that did not work. */
+    rejected: wire.rejected,
   };
 }
 
@@ -84,7 +86,6 @@ export function toBookRequest(wire: BookRequestWire) {
     progress: wire.progress ?? null,
     /** Unix seconds; when a cancelled request stops being undoable. */
     cancelAt: wire.cancel_at ?? null,
-    cancelledBy: (wire.cancelled_by ?? null) as UserId | null,
     note: wire.note ?? null,
     /** Unix seconds. */
     updatedAt: wire.updated_at,

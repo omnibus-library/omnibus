@@ -51,22 +51,29 @@ export function stateView(
   }
 }
 
-/** Whether Cancel is offered: any request still going, until its download is complete. */
-export const isCancellable = ({
+/** Whether a request's picked version is still downloading. */
+export const isDownloading = ({
   state,
   progress,
 }: Pick<BookRequest, "state" | "progress">) =>
-  state === "looking" ||
-  state === "choose" ||
-  state === "chosen" ||
-  (state === "on_its_way" && (progress ?? 0) < 1);
+  state === "on_its_way" && (progress ?? 0) < 1;
+
+/** Whether Cancel is offered: any request still going, until its download is complete. */
+export const isCancellable = (
+  request: Pick<BookRequest, "state" | "progress">,
+) =>
+  request.state === "looking" ||
+  request.state === "choose" ||
+  request.state === "chosen" ||
+  isDownloading(request);
 
 /** A download's progress as a whole percent, rounded down so the bar never reads done early. */
 export const progressPercent = (progress: number | null) =>
   Math.floor((progress ?? 0) * 100);
 
-/** How long the Undo toast stays: under the server's 8 s grace, so Undo is never offered after it ends. */
-export const UNDO_TOAST_MS = 7000;
+/** How long the Undo toast stays: until a second and a half before the server's `cancelAt` (Unix seconds), so Undo is never offered after the grace. */
+export const undoToastMs = (cancelAt: number, now: number) =>
+  Math.max(0, (cancelAt - now - 1.5) * 1000);
 
 /** A request's own page: the book's address with `/request`. */
 export const requestPath = (uuid: string, id: number) =>

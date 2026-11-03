@@ -4,11 +4,13 @@ import {
   holdsAudiobook,
   holdsEbook,
   isCancellable,
+  isDownloading,
   isSearchStale,
   progressPercent,
   requestPath,
   startFailure,
   stateView,
+  undoToastMs,
   versionFormat,
   versionSize,
 } from "./requestView";
@@ -139,5 +141,28 @@ describe("progressPercent", () => {
   it("reads a finished download as 100 and an unread one as 0", () => {
     expect(progressPercent(1)).toBe(100);
     expect(progressPercent(null)).toBe(0);
+  });
+});
+
+describe("isDownloading", () => {
+  it.each([
+    ["on_its_way", null, true],
+    ["on_its_way", 0.99, true],
+    ["on_its_way", 1, false],
+    ["chosen", null, false],
+    ["stuck", 0.4, false],
+  ] as const)("reads a %s request at %s as %s", (state, progress, expected) => {
+    expect(isDownloading({ state, progress })).toBe(expected);
+  });
+});
+
+describe("undoToastMs", () => {
+  it("ends a second and a half before the server stops taking the cancel back", () => {
+    expect(undoToastMs(110, 100)).toBe(8500);
+  });
+
+  it("never goes negative once the grace has all but gone", () => {
+    expect(undoToastMs(101, 100)).toBe(0);
+    expect(undoToastMs(90, 100)).toBe(0);
   });
 });

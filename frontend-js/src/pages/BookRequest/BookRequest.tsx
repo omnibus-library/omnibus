@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useEffect, useId, useState } from "react";
+import { type Ref, useEffect, useId, useRef, useState } from "react";
 import { Link, Navigate, useParams, useSearchParams } from "react-router";
 import {
   type BookUuid,
@@ -23,6 +23,7 @@ import { useCurrentUser } from "../../session";
 import { bookQuery } from "../BookDetail/queries";
 import {
   isCancellable,
+  isDownloading,
   isSearchStale,
   progressPercent,
   requestPath,
@@ -40,6 +41,7 @@ function VersionRow({
   choosing,
   locked,
   onChoose,
+  rowRef,
 }: {
   version: RequestVersion;
   /** This is the version being chosen. */
@@ -48,6 +50,8 @@ function VersionRow({
   locked: boolean;
   /** Absent when the viewer may not pick for this request. */
   onChoose: (() => void) | null;
+  /** Lets the page move focus to this row. */
+  rowRef?: Ref<HTMLLIElement>;
 }) {
   const [open, setOpen] = useState(false);
   const detailsId = useId();
@@ -55,17 +59,26 @@ function VersionRow({
   const size = versionSize(version.sizeBytes);
   return (
     <li
+      ref={rowRef}
+      tabIndex={-1}
       className="rq-version"
       data-testid="request-version"
-      data-best-match={version.bestMatch}
+      data-best-match={version.bestMatch && !version.rejected}
+      data-rejected={version.rejected}
     >
       <div className="rq-version-main">
         <span className="rq-format">{format}</span>
         <span className="rq-size">{size ?? "Size unknown"}</span>
-        {version.bestMatch && (
-          <span className="rq-best" data-testid="request-best-match">
-            Best match
+        {version.rejected ? (
+          <span className="rq-tried" data-testid="request-didnt-work">
+            Didn’t work
           </span>
+        ) : (
+          version.bestMatch && (
+            <span className="rq-best" data-testid="request-best-match">
+              Best match
+            </span>
+          )
         )}
         <Button
           variant="ghost"
@@ -78,7 +91,7 @@ function VersionRow({
         >
           Details
         </Button>
-        {onChoose && (
+        {onChoose && !version.rejected && (
           <Button
             variant={version.bestMatch ? "primary" : "default"}
             size="sm"
@@ -108,7 +121,24 @@ function VersionRow({
   );
 }
 
-function Choices({ request, canAct }: { request: Request; canAct: boolean }) {
+function Choices({
+  request,
+  canAct,
+  focusFirst,
+  onFocused,
+}: {
+  request: Request;
+  canAct: boolean;
+  /** Move focus to the first version, once, as the lane arrives after a swap. */
+  focusFirst: boolean;
+  onFocused: () => void;
+}) {
+  const first = useRef<HTMLLIElement>(null);
+  useEffect(() => {
+    if (!focusFirst) return;
+    first.current?.focus();
+    onFocused();
+  }, [focusFirst, onFocused]);
   const toast = useToast();
   const answer = useAnswer(request.id);
   const choose = useMutation({
@@ -126,9 +156,10 @@ function Choices({ request, canAct }: { request: Request; canAct: boolean }) {
         </p>
       )}
       <ul className="rq-versions" aria-label="Versions found">
-        {request.versions.map((version) => (
+        {request.versions.map((version, index) => (
           <VersionRow
             key={version.id}
+            rowRef={index === 0 ? first : undefined}
             version={version}
             choosing={choose.isPending && choose.variables === version.id}
             locked={choose.isPending}
@@ -151,43 +182,49 @@ function Chosen({ request }: { request: Request }) {
   );
 }
 
-/** The one bar for a download: a native progress element, labelled, with its percent beside it. */
+/** The one bar for a download: a native progress element, labelled, with its percent beside it. Before the client has reported, the bar has no value and no percent. */
 function Downloading({ request }: { request: Request }) {
-  const percent = progressPercent(request.progress);
+  const percent =
+    request.progress === null ? null : progressPercent(request.progress);
   return (
     <div className="rq-progress" data-testid="request-downloading">
       <progress
         className="rq-bar"
         aria-label="Download progress"
-        value={percent}
+        value={percent ?? undefined}
         max={100}
       />
-      <span className="rq-percent" data-testid="request-percent">
-        {percent}%
-      </span>
+      {percent !== null && (
+        <span className="rq-percent" data-testid="request-percent">
+          {percent}%
+        </span>
+      )}
     </div>
   );
 }
 
-/** Cancel while a request is still going, and Pick another while its version downloads. */
+/** Cancel while a request is still going, and Pick another while its version downloads; one at a time. */
 function Actions({
   request,
   cancel,
+  swap,
 }: {
   request: Request;
   cancel: ReturnType<typeof useCancel>;
+  swap: ReturnType<typeof useSwap>;
 }) {
-  const swap = useSwap(request.id);
-  const downloading =
-    request.state === "on_its_way" && (request.progress ?? 0) < 1;
+  const busy = cancel.isPending || swap.isPending;
   return (
     <div className="rq-actions">
-      {downloading && (
+      {isDownloading(request) && (
         <Button
           data-testid="request-pick-another"
-          disabled={swap.isPending}
+          // aria-disabled, not disabled: a control that disables itself drops the keyboard's focus.
+          aria-disabled={busy}
           aria-busy={swap.isPending}
-          onClick={() => swap.mutate()}
+          onClick={() => {
+            if (!busy) swap.mutate();
+          }}
         >
           <BusyLabel
             busy={swap.isPending}
@@ -199,9 +236,11 @@ function Actions({
       <Button
         variant="ghost"
         data-testid="request-cancel"
-        disabled={cancel.isPending}
+        aria-disabled={busy}
         aria-busy={cancel.isPending}
-        onClick={() => cancel.mutate()}
+        onClick={() => {
+          if (!busy) cancel.mutate();
+        }}
       >
         <BusyLabel
           busy={cancel.isPending}
@@ -286,7 +325,10 @@ function Looking({ request, canAct }: { request: Request; canAct: boolean }) {
 function Lane({ request }: { request: Request }) {
   const viewer = useCurrentUser();
   // Held here: a cancelled request has no Cancel button left, but its Undo toast still needs this.
-  const cancel = useCancel(request.id);
+  const title = useRef<HTMLHeadingElement>(null);
+  const cancel = useCancel(request.id, () => title.current?.focus());
+  const [focusVersions, setFocusVersions] = useState(false);
+  const swap = useSwap(request.id, () => setFocusVersions(true));
   // Anyone may read a request; only its maker, or an admin, may act on it.
   const canAct = viewer.id === request.userId || viewer.isAdmin;
   const { heading, note } = stateView(request.state, request.stuckReason);
@@ -297,7 +339,12 @@ function Lane({ request }: { request: Request }) {
       data-testid="request-lane-ebook"
     >
       <div className="rq-lane-head">
-        <h2 id="rq-lane-title" className="rq-lane-title">
+        <h2
+          ref={title}
+          tabIndex={-1}
+          id="rq-lane-title"
+          className="rq-lane-title"
+        >
           Ebook
         </h2>
         <p
@@ -314,13 +361,18 @@ function Lane({ request }: { request: Request }) {
         <Looking request={request} canAct={canAct} />
       )}
       {request.state === "choose" && (
-        <Choices request={request} canAct={canAct} />
+        <Choices
+          request={request}
+          canAct={canAct}
+          focusFirst={focusVersions}
+          onFocused={() => setFocusVersions(false)}
+        />
       )}
       {request.state === "chosen" && <Chosen request={request} />}
       {request.state === "on_its_way" && <Downloading request={request} />}
       {request.state === "stuck" && <Stuck request={request} canAct={canAct} />}
       {canAct && isCancellable(request) && (
-        <Actions request={request} cancel={cancel} />
+        <Actions request={request} cancel={cancel} swap={swap} />
       )}
     </section>
   );
@@ -370,7 +422,7 @@ function RequestPage({ uuid, id }: { uuid: BookUuid; id: number }) {
           </Link>
         </div>
       </header>
-      <Lane request={request.data} />
+      <Lane key={request.data.id} request={request.data} />
     </div>
   );
 }

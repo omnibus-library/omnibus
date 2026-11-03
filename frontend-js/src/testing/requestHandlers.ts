@@ -22,6 +22,7 @@ export function aWireVersion(
     format: "EPUB",
     indexer: "Books",
     best_match: false,
+    rejected: false,
     ...overrides,
   };
 }
@@ -84,7 +85,12 @@ export function requestFake(initial: BookRequest[] = []): RequestFake {
       chosen_result_id: null,
       progress: null,
       note: SWAPPED,
-      versions: found.versions.filter((v) => v.id !== found.chosen_result_id),
+      versions: [
+        ...found.versions.filter((v) => v.id !== found.chosen_result_id),
+        ...found.versions
+          .filter((v) => v.id === found.chosen_result_id)
+          .map((v) => ({ ...v, rejected: true })),
+      ],
     };
     requests.set(back.id, back);
     return back;

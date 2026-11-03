@@ -36,6 +36,7 @@ const UNNAMED = aWireVersion({
 });
 
 let fake = requestFake();
+let held = deferred();
 
 /** The version row at `index`. */
 function versionAt(rows: HTMLElement[], index: number) {
@@ -345,6 +346,50 @@ export const TheBarFollowsTheDownloadAsItIsPolled: Story = {
   },
 };
 
+export const ABarBeforeTheClientReportsHasNoValueAndNoPercent: Story = {
+  beforeEach({ msw }) {
+    msw.use(...seed({ ...DOWNLOADING, progress: null }));
+  },
+  play: async ({ canvas }) => {
+    const bar = await canvas.findByRole("progressbar", {
+      name: "Download progress",
+    });
+
+    await expect(bar).not.toHaveAttribute("value");
+    await expect(canvas.queryByTestId("request-percent")).toBeNull();
+  },
+};
+
+export const CancelAndPickAnotherLockTogetherWhileOneIsPending: Story = {
+  beforeEach({ msw }) {
+    held = deferred();
+    msw.use(
+      http.post("/api/requests/:id/cancel", async () => {
+        await held.promise;
+        return HttpResponse.json(
+          aWireRequest({ ...DOWNLOADING, state: "cancelled" }),
+        );
+      }),
+      ...seed(DOWNLOADING),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Cancel" }),
+    );
+
+    await waitFor(() =>
+      expect(canvas.getByTestId("request-pick-another")).toHaveAttribute(
+        "aria-disabled",
+        "true",
+      ),
+    );
+    await userEvent.click(canvas.getByTestId("request-pick-another"));
+    await expect(fake.writes).toEqual([]);
+    held.release();
+  },
+};
+
 export const AFinishedDownloadOffersNeitherCancelNorPickAnother: Story = {
   beforeEach({ msw }) {
     msw.use(...seed({ ...DOWNLOADING, progress: 1 }));
@@ -378,6 +423,9 @@ export const CancellingShowsCancelledAtOnceWithAnUndoThatPutsItBack: Story = {
     await expect(await canvas.findByTestId("request-state")).toHaveTextContent(
       "On its way",
     );
+    await waitFor(() =>
+      expect(canvas.getByRole("heading", { name: "Ebook" })).toHaveFocus(),
+    );
     await expect(fake.writes).toEqual([
       { kind: "cancel", id: 7 },
       { kind: "undo", id: 7 },
@@ -406,7 +454,7 @@ export const AFailedCancelTellsYouAndKeepsTheDownload: Story = {
   },
 };
 
-export const PickAnotherGoesBackToTheVersionsWithoutThePickedOneAndSaysWhy: Story =
+export const PickAnotherGoesBackToTheVersionsWithThePickedOneMarkedDidntWork: Story =
   {
     beforeEach({ msw }) {
       msw.use(...seed(DOWNLOADING));
@@ -422,8 +470,18 @@ export const PickAnotherGoesBackToTheVersionsWithoutThePickedOneAndSaysWhy: Stor
       await expect(canvas.getByTestId("request-note")).toHaveTextContent(
         "Swapped for another version",
       );
-      await expect(canvas.getAllByTestId("request-version")).toHaveLength(1);
-      await expect(canvas.getByText("PDF")).toBeInTheDocument();
+      const rows = canvas.getAllByTestId("request-version");
+      await expect(rows).toHaveLength(2);
+      await expect(rows[0]).toHaveFocus();
+      await expect(
+        within(versionAt(rows, 0)).getByText("PDF"),
+      ).toBeInTheDocument();
+      await expect(
+        within(versionAt(rows, 1)).getByTestId("request-didnt-work"),
+      ).toHaveTextContent("Didn’t work");
+      await expect(
+        within(versionAt(rows, 1)).queryByTestId("request-choose"),
+      ).toBeNull();
       await expect(fake.writes).toEqual([{ kind: "swap", id: 7 }]);
     },
   };
@@ -449,7 +507,9 @@ export const StoppedMovingNamesItAndTryAgainOffersTheOtherVersions: Story = {
     await expect(await canvas.findByTestId("request-state")).toHaveTextContent(
       "Choose a version",
     );
-    await expect(canvas.getAllByTestId("request-version")).toHaveLength(1);
+    await expect(canvas.getAllByTestId("request-version")).toHaveLength(2);
+    await expect(canvas.getByTestId("request-didnt-work")).toBeInTheDocument();
+    await expect(canvas.getAllByTestId("request-choose")).toHaveLength(1);
     await expect(fake.writes).toEqual([{ kind: "retry", id: 7 }]);
   },
 };
@@ -542,8 +602,6 @@ export const AdminMayActOnAnotherReadersRequest: Story = {
     await expect(await canvas.findByTestId("request-choose")).toBeEnabled();
   },
 };
-
-let held = deferred();
 
 export const ChoosingMarksOnlyTheChosenRowBusy: Story = {
   beforeEach({ msw }) {
