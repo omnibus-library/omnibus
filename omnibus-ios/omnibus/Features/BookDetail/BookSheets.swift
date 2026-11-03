@@ -89,7 +89,7 @@ struct BookMenuRows: Equatable {
             export: hasFiles && (canDownload || canSendToKindle),
             editMetadata: canEdit,
             removeFromWishlist: wishlisted,
-            merge: isAdmin && hasFiles,
+            merge: (isAdmin || canEdit) && hasFiles,
             delete: isAdmin
         )
     }

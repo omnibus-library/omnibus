@@ -844,6 +844,13 @@ private func rows(
     #expect(reader.export)
 }
 
+@Test func anEditorWhoIsNotAnAdminCanMergeButNotDelete() {
+    let editor = rows(canEdit: true, isAdmin: false)
+    #expect(editor.merge)
+    #expect(!editor.delete)
+    #expect(editor.editMetadata)
+}
+
 @Test func aRecordWithNoFilesOffersNothingThatNeedsOne() {
     let record = rows(hasFiles: false, wishlisted: true)
     #expect(!record.bookmarks)
