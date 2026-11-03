@@ -137,18 +137,10 @@
     padding: 0 8px;
   }
 }
-/* An admin's phone bar needs ~361px with the wordmark, so narrower phones keep only the mark; the word stays the link's name. */
-@media (max-width: 374px) {
-  .atrium-brand {
-    gap: 0;
-  }
+/* An admin's phone bar needs ~364px with the wordmark, plus up to 15px for a classic scrollbar. */
+@media (max-width: 399px) {
   .atrium-brand-word {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
+    display: none;
   }
 }
 @media (hover: none) {

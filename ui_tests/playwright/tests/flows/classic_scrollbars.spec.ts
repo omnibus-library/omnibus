@@ -81,8 +81,8 @@ test.describe("always-on scrollbars", () => {
     });
   }
 
-  // The phone bar drops its nav links; 360 is the common Android width and 320 the narrowest.
-  for (const width of [320, 360]) {
+  // 320 is the narrowest phone, 360 the common Android width, 399 and 400 either side of the wordmark breakpoint.
+  for (const width of [320, 360, 399, 400]) {
     test.describe(`${width} wide`, () => {
       test.use({ viewport: { width, height: 600 } });
 
