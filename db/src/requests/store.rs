@@ -25,6 +25,9 @@ pub enum RequestError {
     /// The request is not in a state this change applies to.
     #[error("the request is not in the right state")]
     WrongState,
+    /// The request has no such version to pick.
+    #[error("no such version")]
+    NotFound,
     #[error(transparent)]
     Db(#[from] sqlx::Error),
 }
@@ -283,6 +286,31 @@ pub async fn restart(pool: &SqlitePool, id: i64) -> Result<(), RequestError> {
         .await?;
     tx.commit().await?;
     Ok(())
+}
+
+/// Pick `result_id` for request `id`. The version must be a kept one of this request, and the
+/// request must be waiting on a pick ([`RequestError::WrongState`] otherwise;
+/// [`RequestError::NotFound`] when the version is not this request's or was dropped). The
+/// checks and the change are one statement, so a double click picks once.
+pub async fn choose(pool: &SqlitePool, id: i64, result_id: i64) -> Result<(), RequestError> {
+    let moved = sqlx::query(&format!(
+        "UPDATE book_requests SET state = 'chosen', chosen_result_id = ?1, updated_at = {NOW}
+         WHERE id = ?2 AND state = 'choose'
+           AND EXISTS (SELECT 1 FROM book_request_results
+                       WHERE id = ?1 AND request_id = ?2 AND rejected = 0)"
+    ))
+    .bind(result_id)
+    .bind(id)
+    .execute(pool)
+    .await?
+    .rows_affected();
+    if moved == 1 {
+        return Ok(());
+    }
+    match get(pool, id).await? {
+        Some(r) if r.state != RequestState::Choose => Err(RequestError::WrongState),
+        _ => Err(RequestError::NotFound),
+    }
 }
 
 #[cfg(test)]

@@ -6376,6 +6376,65 @@
         }
       }
     },
+    "/api/requests/{id}/choose": {
+      "post": {
+        "tags": [
+          "Requests"
+        ],
+        "summary": "Choose a version",
+        "description": "Picks one of the versions a request found, which ends the choosing. Only a request in\n`choose` takes a pick, and only a version the request offers. The body carries the\nversion's `id` and nothing else. Only the reader who made the request, or an admin, can\npick.",
+        "operationId": "choose_request_version",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The request's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChooseVersion"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The version is picked; the request is now `chosen`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookRequest"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "You aren't signed in."
+          },
+          "403": {
+            "description": "Your account can't make requests, or the request is another reader's."
+          },
+          "404": {
+            "description": "Book requests are off on this server, or there is no such request or version."
+          },
+          "409": {
+            "description": "The request isn't waiting on a pick."
+          },
+          "422": {
+            "description": "The body isn't just a version id."
+          }
+        }
+      }
+    },
     "/api/requests/{id}/retry": {
       "post": {
         "tags": [
@@ -11116,6 +11175,21 @@
             ]
           }
         }
+      },
+      "ChooseVersion": {
+        "type": "object",
+        "description": "The version a reader picks. Only an id: the download link is never taken from the caller.",
+        "required": [
+          "result_id"
+        ],
+        "properties": {
+          "result_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "A version's `id` from the request being answered."
+          }
+        },
+        "additionalProperties": false
       },
       "CleanupAction": {
         "type": "string",

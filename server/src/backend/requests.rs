@@ -21,7 +21,7 @@ use omnibus_db::{
         store::{self, RequestError, RequestRow},
     },
 };
-use omnibus_shared::{BookRequest, RequestKind, StartRequest};
+use omnibus_shared::{BookRequest, ChooseVersion, RequestKind, StartRequest};
 
 use crate::auth::AuthUser;
 
@@ -103,6 +103,32 @@ async fn view(state: &AppState, row: RequestRow, is_admin: bool) -> Result<BookR
         updated_at: row.updated_at,
         versions,
     })
+}
+
+/// Request `id` as the answer to `viewer`: 404 when it is gone.
+async fn answer(state: &AppState, id: i64, viewer: &AuthUser) -> Response {
+    let row = match store::get(state.pool(), id).await {
+        Ok(Some(row)) => row,
+        Ok(None) => return (StatusCode::NOT_FOUND, "request not found").into_response(),
+        Err(e) => return internal("read request", e),
+    };
+    match view(state, row, viewer.is_admin).await {
+        Ok(request) => Json(request).into_response(),
+        Err(res) => res,
+    }
+}
+
+/// Request `id` if it exists and `user` made it or is an admin; else the 404 or 403 to send.
+async fn own_request(state: &AppState, user: &AuthUser, id: i64) -> Result<RequestRow, Response> {
+    let row = match store::get(state.pool(), id).await {
+        Ok(Some(row)) => row,
+        Ok(None) => return Err((StatusCode::NOT_FOUND, "request not found").into_response()),
+        Err(e) => return Err(internal("read request", e)),
+    };
+    if row.user_id != user.id && !user.is_admin {
+        return Err((StatusCode::FORBIDDEN, "this isn't your request").into_response());
+    }
+    Ok(row)
 }
 
 /// Look for versions of the request's book in the background, once its row is committed.
@@ -239,15 +265,7 @@ pub(super) async fn get_request(
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> Response {
-    let row = match store::get(state.pool(), id).await {
-        Ok(Some(row)) => row,
-        Ok(None) => return (StatusCode::NOT_FOUND, "request not found").into_response(),
-        Err(e) => return internal("read request", e),
-    };
-    match view(&state, row, user.is_admin).await {
-        Ok(request) => Json(request).into_response(),
-        Err(res) => res,
-    }
+    answer(&state, id, &user).await
 }
 
 /// Try a request again
@@ -275,13 +293,8 @@ pub(super) async fn post_retry_request(
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> Response {
-    let row = match store::get(state.pool(), id).await {
-        Ok(Some(row)) => row,
-        Ok(None) => return (StatusCode::NOT_FOUND, "request not found").into_response(),
-        Err(e) => return internal("read request", e),
-    };
-    if row.user_id != user.id && !user.is_admin {
-        return (StatusCode::FORBIDDEN, "this isn't your request").into_response();
+    if let Err(res) = own_request(&state, &user, id).await {
+        return res;
     }
     if !state.request_starts().allow(user.id) {
         return too_many("you started too many requests; try again in a few minutes");
@@ -294,14 +307,47 @@ pub(super) async fn post_retry_request(
         Err(e) => return internal("restart request", e),
     }
     spawn_search(&state, id);
-    let restarted = match store::get(state.pool(), id).await {
-        Ok(Some(row)) => row,
-        Ok(None) => return (StatusCode::NOT_FOUND, "request not found").into_response(),
-        Err(e) => return internal("read request", e),
-    };
-    match view(&state, restarted, user.is_admin).await {
-        Ok(request) => Json(request).into_response(),
-        Err(res) => res,
+    answer(&state, id, &user).await
+}
+
+/// Choose a version
+///
+/// Picks one of the versions a request found, which ends the choosing. Only a request in
+/// `choose` takes a pick, and only a version the request offers. The body carries the
+/// version's `id` and nothing else. Only the reader who made the request, or an admin, can
+/// pick.
+#[utoipa::path(
+    post,
+    path = "/api/requests/{id}/choose",
+    tag = "Requests",
+    operation_id = "choose_request_version",
+    params(("id" = i64, Path, description = "The request's id.")),
+    request_body = ChooseVersion,
+    responses(
+        (status = 200, description = "The version is picked; the request is now `chosen`.", body = BookRequest),
+        (status = 401, description = "You aren't signed in."),
+        (status = 403, description = "Your account can't make requests, or the request is another reader's."),
+        (status = 404, description = "Book requests are off on this server, or there is no such request or version."),
+        (status = 409, description = "The request isn't waiting on a pick."),
+        (status = 422, description = "The body isn't just a version id."),
+    ),
+)]
+pub(super) async fn post_choose_version(
+    RequestsUser(user): RequestsUser,
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Json(body): Json<ChooseVersion>,
+) -> Response {
+    if let Err(res) = own_request(&state, &user, id).await {
+        return res;
+    }
+    match store::choose(state.pool(), id, body.result_id).await {
+        Ok(()) => answer(&state, id, &user).await,
+        Err(RequestError::NotFound) => (StatusCode::NOT_FOUND, "version not found").into_response(),
+        Err(RequestError::WrongState) => {
+            (StatusCode::CONFLICT, "this request isn't waiting on a pick").into_response()
+        }
+        Err(e) => internal("choose version", e),
     }
 }
 

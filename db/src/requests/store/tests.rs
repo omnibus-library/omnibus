@@ -296,3 +296,79 @@ mod restart {
         }
     }
 }
+
+mod choose {
+    use super::*;
+
+    /// A request waiting on a pick with a kept version and a dropped one; returns
+    /// `(request, kept version, dropped version)`.
+    async fn waiting_on_a_pick(pool: &SqlitePool) -> (i64, i64, i64) {
+        let id = start_looking(pool).await;
+        let found = SearchOutcome::Found(vec![
+            ranked("kept", 900.0, true, false),
+            ranked("dropped", 0.0, false, true),
+        ]);
+        finish_search(pool, id, found).await.unwrap();
+        let ids: Vec<i64> = sqlx::query_scalar(
+            "SELECT id FROM book_request_results WHERE request_id = ? ORDER BY id",
+        )
+        .bind(id)
+        .fetch_all(pool)
+        .await
+        .unwrap();
+        (id, ids[0], ids[1])
+    }
+
+    #[tokio::test]
+    async fn marks_the_request_chosen_with_the_picked_version() {
+        let pool = pool().await;
+        let (id, kept, _) = waiting_on_a_pick(&pool).await;
+
+        choose(&pool, id, kept).await.unwrap();
+
+        let row = state_of(&pool, id).await;
+        assert_eq!(row.state, RequestState::Chosen);
+        assert_eq!(row.chosen_result_id, Some(kept));
+    }
+
+    #[tokio::test]
+    async fn refuses_a_dropped_version_and_leaves_the_request_waiting() {
+        let pool = pool().await;
+        let (id, _, dropped) = waiting_on_a_pick(&pool).await;
+
+        let result = choose(&pool, id, dropped).await;
+
+        assert!(matches!(result, Err(RequestError::NotFound)));
+        assert_eq!(state_of(&pool, id).await.state, RequestState::Choose);
+    }
+
+    #[tokio::test]
+    async fn refuses_a_version_of_another_request() {
+        let pool = pool().await;
+        let (_, kept, _) = waiting_on_a_pick(&pool).await;
+        let other = seed_user(&pool, "grace").await;
+        let other_id = start(&pool, other, "book-2", RequestKind::Ebook, 5)
+            .await
+            .unwrap()
+            .request
+            .id;
+        let found = SearchOutcome::Found(vec![ranked("theirs", 900.0, true, false)]);
+        finish_search(&pool, other_id, found).await.unwrap();
+
+        let result = choose(&pool, other_id, kept).await;
+
+        assert!(matches!(result, Err(RequestError::NotFound)));
+        assert_eq!(state_of(&pool, other_id).await.state, RequestState::Choose);
+    }
+
+    #[tokio::test]
+    async fn refuses_a_request_that_is_not_waiting_on_a_pick() {
+        let pool = pool().await;
+        let (id, kept, _) = waiting_on_a_pick(&pool).await;
+        choose(&pool, id, kept).await.unwrap();
+
+        let again = choose(&pool, id, kept).await;
+
+        assert!(matches!(again, Err(RequestError::WrongState)));
+    }
+}
