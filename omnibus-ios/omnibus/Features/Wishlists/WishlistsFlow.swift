@@ -20,7 +20,31 @@ enum WishlistScope: Hashable, Sendable {
     }
 }
 
+/// What a reader may ask the library to find for them.
+enum WishlistRequestKind: CaseIterable, Sendable {
+    case ebook, audiobook
+
+    var title: String {
+        switch self {
+        case .ebook: "Request ebook"
+        case .audiobook: "Request audiobook"
+        }
+    }
+}
+
 enum WishlistsFlow {
+    private static let audioFormats: Set<String> = ["M4B", "M4A", "MP3"]
+
+    /// The kinds the library lacks: audio is M4B, M4A or MP3, any other
+    /// digital format is an ebook, and print counts as neither.
+    static func requestable(_ holdings: [WishlistHolding]) -> [WishlistRequestKind] {
+        let formats = holdings.map { $0.format.uppercased() }
+        var kinds: [WishlistRequestKind] = []
+        if !formats.contains(where: { $0 != "PRINT" && !audioFormats.contains($0) }) { kinds.append(.ebook) }
+        if !formats.contains(where: audioFormats.contains) { kinds.append(.audiobook) }
+        return kinds
+    }
+
     /// Everyone, you, then every other reader in server order. The server's
     /// `is_you` row is dropped — `.you` already stands for it.
     static func pickerOptions(from readers: WishlistReaders?) -> [WishlistScope] {
@@ -65,6 +89,13 @@ enum WishlistsFlow {
         let others = wanters.filter { $0.id != viewer }.map(\.name)
         if others.count == wanters.count { return others.joined(separator: ", ") }
         return others.isEmpty ? "You" : others.joined(separator: ", ") + ", you"
+    }
+
+    /// "Wanted by Ada, you" on Everyone's list, else "Added Oct 30, 2026".
+    static func meta(_ item: WishlistBook, scope: WishlistScope, viewer: Int64?) -> String {
+        scope == .everyone
+            ? "Wanted by \(wantedBy(item.wantedBy, viewer: viewer))"
+            : "Added \(Format.date(unix: item.addedAt))"
     }
 
     /// Authors, then the series and its index, joined by " · ".

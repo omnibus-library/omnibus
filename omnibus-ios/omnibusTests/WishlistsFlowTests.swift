@@ -92,4 +92,18 @@ struct WishlistsFlowTests {
     @Test func theWishlistsScreenKeepsTheTabBarUp() {
         #expect(!Destination.wishlists.hidesTabBar)
     }
+
+    @Test(arguments: [
+        ([], [WishlistRequestKind.ebook, .audiobook]),
+        (["EPUB"], [.audiobook]),
+        (["epub"], [.audiobook]),
+        (["M4B"], [.ebook]),
+        (["mp3"], [.ebook]),
+        (["PRINT"], [.ebook, .audiobook]),
+        (["EPUB", "M4B"], []),
+    ] as [([String], [WishlistRequestKind])])
+    func requestableOffersOnlyTheKindsTheLibraryLacks(formats: [String], kinds: [WishlistRequestKind]) {
+        let holdings = formats.map { WishlistHolding(format: $0, count: 1) }
+        #expect(WishlistsFlow.requestable(holdings) == kinds)
+    }
 }

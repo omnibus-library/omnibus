@@ -8,6 +8,7 @@ struct WishlistsView: View {
     @Environment(AppState.self) private var app
     @Environment(\.palette) private var palette
     @State private var model = WishlistsModel()
+    @State private var getting: WishlistBook?
 
     var body: some View {
         Group {
@@ -29,7 +30,34 @@ struct WishlistsView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) { readerPicker }
         }
+        .overlay(alignment: .bottom) { toastLayer }
+        .animation(Motion.settle, value: model.toast?.id)
+        .sheet(item: $getting) { item in
+            WishlistGetSheet(item: item, scope: model.scope, viewer: app.user?.id) {
+                Task { await model.remove(item) }
+            }
+        }
         .task { await model.load() }
+    }
+
+    @ViewBuilder
+    private var toastLayer: some View {
+        if let toast = model.toast {
+            StageToast(
+                text: toast.text,
+                actionLabel: toast.undo == nil ? nil : "Undo",
+                action: { Task { await model.undo(toast) } },
+                onDismiss: { model.toast = nil }
+            )
+            .padding(.horizontal, 16)
+            .padding(.bottom, Spacing.md)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .task(id: toast.id) {
+                try? await Task.sleep(for: .seconds(4))
+                guard !Task.isCancelled else { return }
+                model.toast = nil
+            }
+        }
     }
 
     private func list(_ books: [WishlistBook]) -> some View {
@@ -42,7 +70,7 @@ struct WishlistsView: View {
                         .padding(.bottom, Spacing.sm)
                 }
                 ForEach(books) { item in
-                    WishlistRow(item: item, scope: model.scope, viewer: app.user?.id)
+                    WishlistRow(item: item, scope: model.scope, viewer: app.user?.id) { getting = item }
                     Hairline()
                 }
             }

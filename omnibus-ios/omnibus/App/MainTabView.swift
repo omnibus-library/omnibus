@@ -40,6 +40,11 @@ enum Destination: Hashable {
     }
 }
 
+extension EnvironmentValues {
+    /// Pushes a screen onto the selected tab's stack, for sheets that can't hold a `NavigationLink`.
+    @Entry var openDestination: (Destination) -> Void = { _ in }
+}
+
 extension [Destination] {
     /// Whether anything in this stack is holding the bottom edge.
     ///
@@ -152,6 +157,8 @@ struct MainTabView: View {
         // the modified view — on the inset's content it is a no-op (#2102).
         .ignoresSafeArea(.keyboard, edges: .bottom)
         .environment(reselect)
+        // The selected tab's own stack, so the pushed screen still decides the tab bar's fate.
+        .environment(\.openDestination) { paths[selection].append($0) }
         .sheet(isPresented: $addSheetPresented) {
             AddBooksSheet()
         }

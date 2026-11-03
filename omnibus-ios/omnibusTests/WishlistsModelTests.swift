@@ -50,7 +50,53 @@ func fakeAPI(
     readers: @escaping @Sendable () async throws -> WishlistReaders = { fakeReaders },
     books: @escaping @Sendable (WishlistScope) async throws -> [WishlistBook] = { _ in [] }
 ) -> WishlistsAPI {
-    WishlistsAPI(readers: readers, books: books)
+    WishlistsAPI(readers: readers, books: books, remove: { _ in false }, add: { _ in })
+}
+
+/// A wishlist that remembers what the model did to it, so reloads see the writes.
+actor FakeWishlist {
+    var list: [WishlistBook]
+    var removed: [String] = []
+    var added: [String] = []
+    var removeResult: Result<Bool, Error> = .success(false)
+    var addResult: Result<Void, Error> = .success(())
+    var removeGate: Gate?
+    var removeStarted: Gate?
+
+    init(_ list: [WishlistBook]) {
+        self.list = list
+    }
+
+    func failRemoves() { removeResult = .failure(FakeFailure()) }
+    func failAdds() { addResult = .failure(FakeFailure()) }
+    func deleteBookOnRemove() { removeResult = .success(true) }
+    func holdRemoves(started: Gate, until gate: Gate) { removeStarted = started; removeGate = gate }
+
+    nonisolated var api: WishlistsAPI {
+        WishlistsAPI(
+            readers: { fakeReaders },
+            books: { _ in await self.list },
+            remove: { try await self.remove($0) },
+            add: { try await self.add($0) }
+        )
+    }
+
+    private func remove(_ uuid: String) async throws -> Bool {
+        if let removeStarted, let removeGate {
+            await removeStarted.open()
+            await removeGate.wait()
+        }
+        removed.append(uuid)
+        let result = try removeResult.get()
+        list.removeAll { $0.id == uuid }
+        return result
+    }
+
+    private func add(_ uuid: String) throws {
+        try addResult.get()
+        added.append(uuid)
+        list.append(wishlistBook(uuid, title: uuid.uppercased()))
+    }
 }
 
 @MainActor
@@ -107,5 +153,73 @@ struct WishlistsModelTests {
         await release.open()
         await first.value
         #expect(model.books == [wishlistBook("all")])
+    }
+
+    @Test func removeDropsTheRowAndOffersUndo() async {
+        let fake = FakeWishlist([wishlistBook("a", title: "A"), wishlistBook("b", title: "B")])
+        let model = WishlistsModel(api: fake.api)
+        await model.load()
+        await model.remove(wishlistBook("a", title: "A"))
+        #expect(model.books?.map(\.id) == ["b"])
+        #expect(model.toast?.text == "Removed A from your wishlist")
+        #expect(model.toast?.undo == .readd(uuid: "a", title: "A"))
+        #expect(await fake.removed == ["a"])
+    }
+
+    @Test func removeOffersNoUndoWhenTheBookWentWithItsLastEntry() async {
+        let fake = FakeWishlist([wishlistBook("a", title: "A")])
+        await fake.deleteBookOnRemove()
+        let model = WishlistsModel(api: fake.api)
+        await model.load()
+        await model.remove(wishlistBook("a", title: "A"))
+        #expect(model.toast?.text == "Removed A from your wishlist")
+        #expect(model.toast?.undo == nil)
+    }
+
+    @Test func removeKeepsTheRowAndToastsTheErrorWhenItFails() async {
+        let fake = FakeWishlist([wishlistBook("a", title: "A")])
+        await fake.failRemoves()
+        let model = WishlistsModel(api: fake.api)
+        await model.load()
+        await model.remove(wishlistBook("a", title: "A"))
+        #expect(model.books?.map(\.id) == ["a"])
+        #expect(model.toast?.text == "Couldn\u{2019}t remove A: boom")
+        #expect(model.toast?.undo == nil)
+    }
+
+    @Test func aSecondRemoveOfTheSameBookIsIgnoredWhileTheFirstIsInFlight() async {
+        let fake = FakeWishlist([wishlistBook("a", title: "A")])
+        let started = Gate()
+        let release = Gate()
+        await fake.holdRemoves(started: started, until: release)
+        let model = WishlistsModel(api: fake.api)
+        await model.load()
+        let first = Task { await model.remove(wishlistBook("a", title: "A")) }
+        await started.wait()
+        await model.remove(wishlistBook("a", title: "A"))
+        await release.open()
+        await first.value
+        #expect(await fake.removed == ["a"])
+    }
+
+    @Test func undoingARemovePutsTheBookBack() async throws {
+        let fake = FakeWishlist([wishlistBook("a", title: "A")])
+        let model = WishlistsModel(api: fake.api)
+        await model.load()
+        await model.remove(wishlistBook("a", title: "A"))
+        await model.undo(try #require(model.toast))
+        #expect(await fake.added == ["a"])
+        #expect(model.books?.map(\.id) == ["a"])
+        #expect(model.toast == nil)
+    }
+
+    @Test func undoToastsTheErrorWhenPuttingTheBookBackFails() async throws {
+        let fake = FakeWishlist([wishlistBook("a", title: "A")])
+        let model = WishlistsModel(api: fake.api)
+        await model.load()
+        await model.remove(wishlistBook("a", title: "A"))
+        await fake.failAdds()
+        await model.undo(try #require(model.toast))
+        #expect(model.toast?.text == "Couldn\u{2019}t put A back: boom")
     }
 }

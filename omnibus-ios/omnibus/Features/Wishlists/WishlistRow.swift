@@ -50,7 +50,7 @@ struct WishlistRow: View {
 
             holdings
 
-            Text(meta)
+            Text(WishlistsFlow.meta(item, scope: scope, viewer: viewer))
                 .font(.ui(11.5))
                 .foregroundStyle(palette.ink3Color)
                 .lineLimit(1)
@@ -80,10 +80,93 @@ struct WishlistRow: View {
             .accessibilityElement(children: .combine)
         }
     }
+}
 
-    private var meta: String {
-        scope == .everyone
-            ? "Wanted by \(WishlistsFlow.wantedBy(item.wantedBy, viewer: viewer))"
-            : "Added \(Format.date(unix: item.addedAt))"
+/// The Get menu for one book: where to find it, what can't be requested yet,
+/// its page, and on your own list Remove.
+struct WishlistGetSheet: View {
+    let item: WishlistBook
+    let scope: WishlistScope
+    let viewer: Int64?
+    var onRemove: () -> Void
+
+    @Environment(\.palette) private var palette
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
+    @Environment(\.openDestination) private var openDestination
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            header
+            Hairline()
+            action("Find a copy", detail: "Opens an Amazon search for this book") {
+                StoreLink.open(book: item.book, with: openURL)
+                dismiss()
+            }
+            ForEach(WishlistsFlow.requestable(item.holdings), id: \.self) { kind in
+                action(kind.title, detail: "Not available yet", enabled: false) {}
+            }
+            action("Open book page") {
+                dismiss()
+                openDestination(.book(uuid: item.id))
+            }
+            if scope == .you {
+                action("Remove from wishlist", destructive: true) {
+                    dismiss()
+                    onRemove()
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .screenPadding()
+        .padding(.top, Spacing.lg)
+        .background(ScreenBackground())
+        .presentationDetents([.medium])
+    }
+
+    private var header: some View {
+        let meta = WishlistsFlow.meta(item, scope: scope, viewer: viewer)
+        return HStack(spacing: Spacing.md) {
+            BookCover(identity: CoverIdentity(item.book), size: .sm, cornerRadius: 4)
+                .frame(width: 44)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(item.book.displayTitle)
+                    .font(.ui(16, weight: .semibold))
+                    .foregroundStyle(palette.ink0Color)
+                    .lineLimit(2)
+                Text("\(item.book.authorDisplay) \u{b7} \(meta.prefix(1).lowercased() + meta.dropFirst())")
+                    .font(.ui(12.5))
+                    .foregroundStyle(palette.ink2Color)
+                    .lineLimit(2)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.bottom, Spacing.md)
+    }
+
+    private func action(
+        _ title: String, detail: String? = nil, enabled: Bool = true, destructive: Bool = false,
+        run: @escaping () -> Void
+    ) -> some View {
+        VStack(spacing: 0) {
+            Button(action: run) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.ui(15.5, weight: .medium))
+                        .foregroundStyle(destructive ? palette.badColor : palette.ink0Color)
+                    if let detail {
+                        Text(detail)
+                            .font(.ui(12))
+                            .foregroundStyle(palette.ink3Color)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 12)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(!enabled)
+            Hairline()
+        }
     }
 }

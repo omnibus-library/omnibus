@@ -1071,6 +1071,16 @@ enum UserDataService {
         return removal.bookDeleted
     }
 
+    /// Put a library book on the caller's wishlist (Undo of a remove). Direct
+    /// call, never queued — same contract as `removeWishlistEntry`, with the
+    /// same cache and shelf invalidations.
+    static func addWishlistEntry(uuid: String) async throws {
+        let entry: WishlistEntry = try await APIClient.shared.post("/api/physical/\(uuid)/wishlist", body: Empty())
+        await Cache.write(CacheKey.wishlistEntry(uuid), Optional(entry))
+        await dropCachedWishlistPages()
+        await shelvesChanged()
+    }
+
     /// Forget any cached wishlist shelf page, so the shelf doesn't keep showing
     /// a book that is no longer on it, and every page a shelf clause keyed — a
     /// wishlist can be a clause's shelf. Deliberately over-broad on an admin's
