@@ -3,23 +3,26 @@
 //! key travels in the `X-Api-Key` header, never the URL, so no error or log line can carry
 //! it.
 
-use std::time::Duration;
-
 use serde::Deserialize;
 
-use super::{http_client, ConnectionError};
 use crate::settings::RequestsConfig;
 
-const SERVICE: &str = "Prowlarr";
+use super::{check_status, http_client, ConnectionError, REQUEST_TIMEOUT};
 
-/// Bound on each request, so a dead server cannot hold a worker.
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
+const SERVICE: &str = "Prowlarr";
 
 /// A Prowlarr instance and the key to reach it. No `Debug`: it holds the key.
 pub struct Prowlarr {
     http: reqwest::Client,
     base: String,
     api_key: String,
+}
+
+/// The part of `system/status` that says which app answered.
+#[derive(Deserialize)]
+struct SystemStatus {
+    #[serde(rename = "appName")]
+    app_name: String,
 }
 
 /// One indexer Prowlarr currently reports as failing.
@@ -53,10 +56,12 @@ impl Prowlarr {
 
     /// Check the address and API key work, changing nothing.
     pub async fn test(&self) -> Result<(), ConnectionError> {
-        // A wrong address often answers 200 with a web page, so the body must be JSON too.
-        self.get::<serde_json::Value>("system/status")
-            .await
-            .map(drop)
+        // Readarr and Lidarr answer the same path with the same header, so name the app.
+        let status: SystemStatus = self.get("system/status").await?;
+        if status.app_name != SERVICE {
+            return Err(ConnectionError::BadUrl(SERVICE.to_string()));
+        }
+        Ok(())
     }
 
     /// The indexers Prowlarr currently reports as failing.
@@ -76,17 +81,15 @@ impl Prowlarr {
             .send()
             .await
             .map_err(|e| ConnectionError::from_transport(&e))?;
-        let bad_url = || ConnectionError::BadUrl(SERVICE.to_string());
-        match response.status() {
-            reqwest::StatusCode::UNAUTHORIZED | reqwest::StatusCode::FORBIDDEN => {
-                Err(ConnectionError::BadApiKey)
+        check_status(response.status(), SERVICE, ConnectionError::BadApiKey)?;
+        // A page that is not JSON means the address is not Prowlarr; a dropped body is a transport fault.
+        response.json().await.map_err(|e| {
+            if e.is_decode() {
+                ConnectionError::BadUrl(SERVICE.to_string())
+            } else {
+                ConnectionError::from_transport(&e)
             }
-            reqwest::StatusCode::NOT_FOUND => Err(bad_url()),
-            s if !s.is_success() => {
-                Err(ConnectionError::Rejected(format!("{SERVICE} answered {s}")))
-            }
-            _ => response.json().await.map_err(|_| bad_url()),
-        }
+        })
     }
 }
 

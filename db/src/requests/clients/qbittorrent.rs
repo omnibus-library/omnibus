@@ -5,18 +5,14 @@
 //! own policy in qBittorrent.
 // shortcut: one login per call; cache the cookie if the poller's cadence ever makes it matter.
 
-use std::time::Duration;
-
 use reqwest::header::{COOKIE, SET_COOKIE};
 use reqwest::{RequestBuilder, Response, StatusCode};
 
+use crate::requests::{check_status, http_client, ConnectionError, REQUEST_TIMEOUT};
+
 use super::{ClientFile, DownloadClient, TorrentStatus};
-use crate::requests::{http_client, ConnectionError};
 
 const SERVICE: &str = "qBittorrent";
-
-/// Bound on each request, so a dead client cannot hold a worker.
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// A qBittorrent instance and the login to reach it. No `Debug`: it holds the password.
 pub struct Qbittorrent {
@@ -24,7 +20,7 @@ pub struct Qbittorrent {
     base: String,
     username: String,
     password: String,
-    timeout: Duration,
+    timeout: std::time::Duration,
 }
 
 impl Qbittorrent {
@@ -40,12 +36,20 @@ impl Qbittorrent {
     }
 
     /// The same client with `timeout` bound on each request.
-    pub fn with_timeout(self, timeout: Duration) -> Self {
+    pub fn with_timeout(self, timeout: std::time::Duration) -> Self {
         Self { timeout, ..self }
     }
 
     fn url(&self, endpoint: &str) -> String {
         format!("{}/api/v2/{endpoint}", self.base)
+    }
+
+    fn get(&self, endpoint: &str, cookie: &str) -> RequestBuilder {
+        self.http.get(self.url(endpoint)).header(COOKIE, cookie)
+    }
+
+    fn post(&self, endpoint: &str, cookie: &str) -> RequestBuilder {
+        self.http.post(self.url(endpoint)).header(COOKIE, cookie)
     }
 
     /// Log in and return the `Cookie` header value to send on later calls.
@@ -64,40 +68,42 @@ impl Qbittorrent {
             .ok_or(ConnectionError::BadLogin)
     }
 
-    /// Send `request` under the timeout, mapping the statuses every endpoint shares.
-    async fn send(&self, request: RequestBuilder) -> Result<Response, ConnectionError> {
-        let response = request
+    /// Send `request` under the timeout and return whatever status it got.
+    async fn call(&self, request: RequestBuilder) -> Result<Response, ConnectionError> {
+        request
             .timeout(self.timeout)
             .send()
             .await
-            .map_err(|e| ConnectionError::from_transport(&e))?;
-        match response.status() {
-            StatusCode::NOT_FOUND => Err(ConnectionError::BadUrl(SERVICE.to_string())),
-            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => Err(ConnectionError::BadLogin),
-            s if !s.is_success() => {
-                Err(ConnectionError::Rejected(format!("{SERVICE} answered {s}")))
-            }
-            _ => Ok(response),
-        }
+            .map_err(|e| ConnectionError::from_transport(&e))
     }
 
-    /// Log in, then run the call `build` makes against the session.
-    async fn authed(
+    /// [`Self::call`], failing on any status that is not a success.
+    async fn send(&self, request: RequestBuilder) -> Result<Response, ConnectionError> {
+        let response = self.call(request).await?;
+        check_status(response.status(), SERVICE, ConnectionError::BadLogin)?;
+        Ok(response)
+    }
+
+    /// [`Self::send`], but a 404 is `None`: a torrent addressed by hash that has vanished.
+    async fn send_unless_gone(
         &self,
-        build: impl FnOnce(&Self, String) -> RequestBuilder,
-    ) -> Result<Response, ConnectionError> {
-        let cookie = self.login().await?;
-        self.send(build(self, cookie)).await
+        request: RequestBuilder,
+    ) -> Result<Option<Response>, ConnectionError> {
+        let response = self.call(request).await?;
+        if response.status() == StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        check_status(response.status(), SERVICE, ConnectionError::BadLogin)?;
+        Ok(Some(response))
     }
 
-    async fn torrent_with_tag(&self, tag: &str) -> Result<Option<TorrentStatus>, ConnectionError> {
+    async fn status_with(
+        &self,
+        cookie: &str,
+        tag: &str,
+    ) -> Result<Option<TorrentStatus>, ConnectionError> {
         let response = self
-            .authed(|c, cookie| {
-                c.http
-                    .get(c.url("torrents/info"))
-                    .query(&[("tag", tag)])
-                    .header(COOKIE, cookie)
-            })
+            .send(self.get("torrents/info", cookie).query(&[("tag", tag)]))
             .await?;
         let found: Vec<TorrentStatus> = response
             .json()
@@ -121,14 +127,10 @@ fn cookie_header(response: &Response) -> String {
 
 impl DownloadClient for Qbittorrent {
     async fn add(&self, link: &str, category: &str, tag: &str) -> Result<(), ConnectionError> {
+        let cookie = self.login().await?;
         let form = [("urls", link), ("category", category), ("tags", tag)];
         let response = self
-            .authed(|c, cookie| {
-                c.http
-                    .post(c.url("torrents/add"))
-                    .header(COOKIE, cookie)
-                    .form(&form)
-            })
+            .send(self.post("torrents/add", &cookie).form(&form))
             .await?;
         let body = response
             .text()
@@ -144,21 +146,21 @@ impl DownloadClient for Qbittorrent {
     }
 
     async fn status(&self, tag: &str) -> Result<Option<TorrentStatus>, ConnectionError> {
-        self.torrent_with_tag(tag).await
+        let cookie = self.login().await?;
+        self.status_with(&cookie, tag).await
     }
 
     async fn files(&self, tag: &str) -> Result<Vec<ClientFile>, ConnectionError> {
-        let Some(torrent) = self.torrent_with_tag(tag).await? else {
+        let cookie = self.login().await?;
+        let Some(torrent) = self.status_with(&cookie, tag).await? else {
             return Ok(Vec::new());
         };
-        let response = self
-            .authed(|c, cookie| {
-                c.http
-                    .get(c.url("torrents/files"))
-                    .query(&[("hash", torrent.hash.as_str())])
-                    .header(COOKIE, cookie)
-            })
-            .await?;
+        let request = self
+            .get("torrents/files", &cookie)
+            .query(&[("hash", torrent.hash.as_str())]);
+        let Some(response) = self.send_unless_gone(request).await? else {
+            return Ok(Vec::new());
+        };
         response
             .json()
             .await
@@ -166,26 +168,22 @@ impl DownloadClient for Qbittorrent {
     }
 
     async fn remove(&self, tag: &str, delete_files: bool) -> Result<(), ConnectionError> {
-        let Some(torrent) = self.torrent_with_tag(tag).await? else {
+        let cookie = self.login().await?;
+        let Some(torrent) = self.status_with(&cookie, tag).await? else {
             return Ok(());
         };
         let form = [
             ("hashes", torrent.hash.as_str()),
             ("deleteFiles", if delete_files { "true" } else { "false" }),
         ];
-        self.authed(|c, cookie| {
-            c.http
-                .post(c.url("torrents/delete"))
-                .header(COOKIE, cookie)
-                .form(&form)
-        })
-        .await?;
+        self.send_unless_gone(self.post("torrents/delete", &cookie).form(&form))
+            .await?;
         Ok(())
     }
 
     async fn test(&self) -> Result<(), ConnectionError> {
-        self.authed(|c, cookie| c.http.get(c.url("app/version")).header(COOKIE, cookie))
-            .await?;
+        let cookie = self.login().await?;
+        self.send(self.get("app/version", &cookie)).await?;
         Ok(())
     }
 }

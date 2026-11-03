@@ -1,6 +1,7 @@
 //! Admin REST handlers for the book-request connections: the Prowlarr and download client
-//! settings, and a test button for each. Every route answers 404 while the book-requests flag is off, before any
-//! auth check, so an off server shows nothing of the feature even to its admins.
+//! settings, and a test button for each. Every route answers 404 while the book-requests
+//! flag is off, before the admin check (403), so an off server shows nothing of the feature
+//! even to its admins.
 
 use axum::{
     extract::{FromRequestParts, State},
@@ -18,11 +19,12 @@ use omnibus_db::{
 };
 use omnibus_shared::{RequestsSettingsStatus, RequestsSettingsUpdate};
 
-use super::{internal, AppState};
 use crate::auth::AdminUser;
 
-/// An admin on a server with book requests on. The flag is checked first, so with it off
-/// the answer is 404 for everyone, not the 401 or 403 the auth check would give.
+use super::{internal, AppState};
+
+/// An admin on a server with book requests on. The flag is checked before the admin check,
+/// so with it off the answer is 404 for a signed-in caller, not the 403 the admin check gives.
 pub(super) struct RequestsAdmin;
 
 impl FromRequestParts<AppState> for RequestsAdmin {
@@ -121,15 +123,11 @@ pub(super) async fn post_test_indexer(
     _admin: RequestsAdmin,
     State(state): State<AppState>,
 ) -> Response {
-    let config = match db::effective_requests_config(&state.pool).await {
+    let config = match load_config(&state).await {
         Ok(c) => c,
-        Err(e) => return internal("read requests settings", e),
+        Err(res) => return res,
     };
-    let result = match Prowlarr::from_config(&config) {
-        Ok(prowlarr) => prowlarr.test().await,
-        Err(e) => Err(e),
-    };
-    connection_response(result)
+    connection_response(async { Prowlarr::from_config(&config)?.test().await }.await)
 }
 
 /// Test the download client connection
@@ -153,15 +151,18 @@ pub(super) async fn post_test_client(
     _admin: RequestsAdmin,
     State(state): State<AppState>,
 ) -> Response {
-    let config = match db::effective_requests_config(&state.pool).await {
+    let config = match load_config(&state).await {
         Ok(c) => c,
-        Err(e) => return internal("read requests settings", e),
+        Err(res) => return res,
     };
-    let result = match client_for(&config) {
-        Ok(client) => client.test().await,
-        Err(e) => Err(e),
-    };
-    connection_response(result)
+    connection_response(async { client_for(&config)?.test().await }.await)
+}
+
+/// The saved connections, or the 500 to answer with when they can't be read.
+async fn load_config(state: &AppState) -> Result<db::RequestsConfig, Response> {
+    db::effective_requests_config(&state.pool)
+        .await
+        .map_err(|e| internal("read requests settings", e))
 }
 
 /// 200 on success, 409 when unset, else 502 with the plain reason. A [`ConnectionError`]

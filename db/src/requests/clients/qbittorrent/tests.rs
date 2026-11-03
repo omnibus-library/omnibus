@@ -269,6 +269,36 @@ mod qbittorrent_files {
         ];
         assert_eq!(files, expected);
     }
+
+    #[tokio::test]
+    async fn logs_in_once_for_the_whole_call() {
+        let server = signed_in_server().await;
+        mount_info(&server, "omnibus-7", torrent_info("h1")).await;
+        Mock::given(method("GET"))
+            .and(path("/api/v2/torrents/files"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
+            .mount(&server)
+            .await;
+
+        client_for(&server).files("omnibus-7").await.unwrap();
+
+        assert_eq!(requests_to(&server, "auth/login").await.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn returns_an_empty_list_when_the_torrent_vanished_before_its_files_were_read() {
+        let server = signed_in_server().await;
+        mount_info(&server, "omnibus-7", torrent_info("h1")).await;
+        Mock::given(method("GET"))
+            .and(path("/api/v2/torrents/files"))
+            .respond_with(ResponseTemplate::new(404))
+            .mount(&server)
+            .await;
+
+        let files = client_for(&server).files("omnibus-7").await.unwrap();
+
+        assert_eq!(files, Vec::new());
+    }
 }
 
 mod qbittorrent_remove {
@@ -303,6 +333,21 @@ mod qbittorrent_remove {
             ];
             assert_eq!(form_pairs(&sent[0]), expected);
         }
+    }
+
+    #[tokio::test]
+    async fn succeeds_when_the_torrent_vanished_before_it_was_deleted() {
+        let server = signed_in_server().await;
+        mount_info(&server, "omnibus-7", torrent_info("h1")).await;
+        Mock::given(method("POST"))
+            .and(path("/api/v2/torrents/delete"))
+            .respond_with(ResponseTemplate::new(404))
+            .mount(&server)
+            .await;
+
+        let result = client_for(&server).remove("omnibus-7", true).await;
+
+        assert!(result.is_ok(), "{result:?}");
     }
 
     #[tokio::test]
