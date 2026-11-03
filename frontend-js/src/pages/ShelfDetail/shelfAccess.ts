@@ -38,7 +38,8 @@ export function addBooksState(
   full: FullList,
 ): { ready: boolean; title?: string } | null {
   if (!editable) return null;
-  if (full.ready) return { ready: true };
+  // A list from before the add would offer a book it just filed as not yet on the shelf.
+  if (full.ready && !full.settling) return { ready: true };
   return {
     ready: false,
     title: full.errored

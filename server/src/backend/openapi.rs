@@ -5,8 +5,7 @@
 //! path a route is served at and the path it is documented at are one string. [`spec`]
 //! adds what no handler owns: the overview, the security schemes and the tag order.
 //! `just openapi-gen` writes the result, and a test fails while the committed file is
-//! stale. The Dioxus server functions (`/api/rpc/*`), Kobo and OPDS are left out: their
-//! clients fix those formats.
+//! stale. Kobo and OPDS are left out: their clients fix those formats.
 
 use omnibus_shared::{SortDir, SortKey, SpoilerFilter};
 use utoipa::{

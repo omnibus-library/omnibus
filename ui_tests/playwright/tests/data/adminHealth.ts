@@ -1,4 +1,4 @@
-/** The report `POST /api/rpc/admin-health` answers with. */
+/** The report `GET /api/admin/health` answers with. */
 export type AdminHealthReport = {
   index: {
     ebook_library_path: string | null;

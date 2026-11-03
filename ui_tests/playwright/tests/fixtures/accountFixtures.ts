@@ -147,7 +147,6 @@ type AccountFixtures = {
   seedUser: () => Promise<SeededUser>;
   anonymousRequest: APIRequestContext;
   anonymousLogViewerRequests: LogViewerRequests;
-  presetScrollStops: (enabled: boolean, owner?: Owner) => Promise<void>;
   presetStackSeries: (enabled: boolean, owner?: Owner) => Promise<void>;
   householdTarget: ReaderAccount;
 };
@@ -372,15 +371,6 @@ export const test = base.extend<AccountFixtures, AccountWorkerFixtures>({
   anonymousLogViewerRequests: async ({ anonymousRequest }, use) => {
     await use(new LogViewerRequests(anonymousRequest));
   },
-
-  // Turns the switch back off for whoever it touched, because every other
-  // detail test reads the flow.
-  presetScrollStops: async ({ accountFor }, use) =>
-    presetting(use, {
-      write: (enabled, owner) => accountFor(owner).postScrollStops(enabled),
-      reset: false,
-      label: (enabled) => `set scroll stops to ${enabled}`,
-    }),
 
   // The preference outlives the test, so it goes back to off after.
   presetStackSeries: async ({ accountFor }, use) =>

@@ -1,7 +1,6 @@
-//! Physical-collection REST handlers for the mobile client (`/api/physical/*`):
-//! a book's library-wide copies, the caller's wishlist entry, every reader's
-//! wishlist, and fileless-book removal. Check-in lives in [`super::scan`]; web uses the `/api/rpc/physical*`
-//! server functions.
+//! Physical-collection REST handlers (`/api/physical/*`): a book's
+//! library-wide copies, the caller's wishlist entry, every reader's wishlist,
+//! and fileless-book removal. Check-in lives in [`super::scan`].
 
 use axum::{
     extract::{Path, Query, State},

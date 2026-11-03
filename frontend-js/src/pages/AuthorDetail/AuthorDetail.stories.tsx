@@ -306,7 +306,7 @@ export const NonAdmin: Story = {
         name: "More actions for Ursula K. Le Guin",
       }),
     ).toBeNull();
-    // Dioxus shows the photo overlay to every viewer; the server refuses a non-admin's edit.
+    // The photo overlay shows to every viewer; the server refuses a non-admin's edit.
     await expect(
       canvas.getByRole("button", { name: "Edit photo for Ursula K. Le Guin" }),
     ).toBeInTheDocument();

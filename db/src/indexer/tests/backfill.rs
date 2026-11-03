@@ -220,6 +220,77 @@ async fn backfill_chapters_extracts_real_chapters_for_an_audiobook_merged_into_a
     );
 }
 
+/// Seed an M4B under a fresh library root whose stored chapters are the
+/// synthetic `Part 1` an older parser wrote. Returns the root and the file id.
+async fn seed_m4b_with_synthetic_chapter(
+    pool: &SqlitePool,
+    name: &str,
+    bytes: Vec<u8>,
+) -> (std::path::PathBuf, i64) {
+    let root = make_test_dir(name);
+    let part = "book/part.m4b";
+    let abs = root.join(part);
+    std::fs::create_dir_all(abs.parent().unwrap()).unwrap();
+    std::fs::write(&abs, bytes).unwrap();
+    let lib = root.to_str().unwrap();
+    let book_file_id = seed_audiobook_for_backfill(pool, lib, None, name, part, "M4B").await;
+    sqlx::query(
+        "INSERT INTO file_chapters \
+            (book_file_id, ordinal, title, start_seconds, duration_seconds) \
+         VALUES (?, 0, 'Part 1', 0.0, 3600.0)",
+    )
+    .bind(book_file_id)
+    .execute(pool)
+    .await
+    .unwrap();
+    (root, book_file_id)
+}
+
+async fn chapter_titles(pool: &SqlitePool, book_file_id: i64) -> Vec<String> {
+    sqlx::query_scalar("SELECT title FROM file_chapters WHERE book_file_id = ? ORDER BY ordinal")
+        .bind(book_file_id)
+        .fetch_all(pool)
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn backfill_chapters_replaces_synthetic_chapters_when_the_m4b_carries_real_ones() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let (root, book_file_id) = seed_m4b_with_synthetic_chapter(
+        &pool,
+        "backfill-stale-synthetic",
+        build_m4b_with_chapters(&[(0, "Opening"), (30_000_000, "Descent")]),
+    )
+    .await;
+
+    backfill_chapters(&pool, root.to_str().unwrap(), |_, _, _| {})
+        .await
+        .unwrap();
+
+    assert_eq!(
+        chapter_titles(&pool, book_file_id).await,
+        vec!["Opening".to_string(), "Descent".to_string()]
+    );
+}
+
+#[tokio::test]
+async fn backfill_chapters_keeps_synthetic_chapters_when_the_m4b_still_has_none() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let (root, book_file_id) =
+        seed_m4b_with_synthetic_chapter(&pool, "backfill-still-synthetic", b"not an mp4".to_vec())
+            .await;
+
+    backfill_chapters(&pool, root.to_str().unwrap(), |_, _, _| {})
+        .await
+        .unwrap();
+
+    assert_eq!(
+        chapter_titles(&pool, book_file_id).await,
+        vec!["Part 1".to_string()]
+    );
+}
+
 // ---------- word-count backfill (migration 0049) ----------
 
 /// Seed an EPUB book backed by a real fixture file on disk, with a NULL

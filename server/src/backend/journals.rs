@@ -1,8 +1,7 @@
-//! Public per-book journal REST handlers for the mobile client
-//! (`/api/journals*`): create, list, edit, and delete free-form markdown notes
-//! on a book. Entries are public, but edit/delete are owner-scoped (404 for a
-//! non-owner, same as a missing row). Bodies are validated at the boundary and
-//! rendered to sanitized HTML; web clients use the `/api/rpc/journals/*` RPCs.
+//! Public per-book journal REST handlers (`/api/journals*`): create, list,
+//! edit, and delete free-form markdown notes on a book. Entries are public, but
+//! edit/delete are owner-scoped (404 for a non-owner, same as a missing row).
+//! Bodies are validated at the boundary and rendered to sanitized HTML.
 
 use axum::{
     extract::{Path, State},

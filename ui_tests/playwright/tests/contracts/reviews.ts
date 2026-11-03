@@ -1,20 +1,27 @@
 import type { ReviewPatch } from "../data/reviews";
-import { type ExpectMutationOptions, post } from "../utils/api";
+import type { ExpectMutationOptions } from "../utils/api";
 
-/** The review endpoints the book page's Reviews section posts to. */
+/** `/api/reviews/{uuid}`: a GET reads the book's reviews, a PATCH and a DELETE write yours. */
 export const reviewsUrls = {
-  /** The section's read, which a stars change or a delete re-runs. */
-  get: /\/api\/rpc\/reviews\/get(?:\?|$)/,
-  update: /\/api\/rpc\/reviews\/update(?:\?|$)/,
-  delete: /\/api\/rpc\/reviews\/delete(?:\?|$)/,
+  review: /\/api\/reviews\/[^/?]+(?:\?|$)/,
 };
+
+const reviewUrl = (bookUuid: string) =>
+  new RegExp(`/api/reviews/${bookUuid}(?:\\?|$)`);
 
 /** The writes a reader makes on their own review of a book. */
 export const reviews = {
   /** A field-level patch: only the fields in `patch` are sent. */
-  update: (bookUuid: string, patch: ReviewPatch): ExpectMutationOptions =>
-    post(reviewsUrls.update, { uuid: bookUuid, patch }),
+  update: (bookUuid: string, patch: ReviewPatch): ExpectMutationOptions => ({
+    method: "PATCH",
+    url: reviewUrl(bookUuid),
+    expectedBody: patch,
+    expectedStatus: 200,
+  }),
 
-  delete: (bookUuid: string): ExpectMutationOptions =>
-    post(reviewsUrls.delete, { uuid: bookUuid }),
+  delete: (bookUuid: string): ExpectMutationOptions => ({
+    method: "DELETE",
+    url: reviewUrl(bookUuid),
+    expectedStatus: 204,
+  }),
 };

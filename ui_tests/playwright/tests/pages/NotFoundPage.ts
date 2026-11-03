@@ -16,8 +16,8 @@ export class NotFoundPage extends BasePage {
   constructor(page: Page) {
     super(page);
     this.topNav = new TopNavComponent(page);
-    this.root = page.getByTestId("not-found-page");
-    this.heading = this.root.getByRole("heading", { name: "Page not found" });
+    this.heading = page.getByRole("heading", { name: "Page not found" });
+    this.root = page.getByRole("main").filter({ has: this.heading });
     this.backToLibraryLink = this.root.getByRole("link", {
       name: "Back to library",
     });

@@ -77,6 +77,19 @@ struct PressableStyle: ButtonStyle {
     }
 }
 
+extension View {
+    /// Makes a whole row a control that a scroll can't set off, for a row whose
+    /// tap changes state. A `Button` in a scroll view still fires when a press
+    /// lingers before the drag; a tap gesture gives up once the finger moves.
+    func tapRow(perform action: @escaping () -> Void) -> some View {
+        contentShape(Rectangle())
+            .onTapGesture(perform: action)
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { action() }
+    }
+}
+
 // MARK: - Chips
 
 struct Chip: View {
@@ -469,6 +482,11 @@ struct StarRating: View {
     let stars: Double
     var size: CGFloat = 13
     var interactive = false
+    /// Fills a star past the theme accent, for a screen that carries its own.
+    var fillTint: Color?
+    var emptyTint: Color?
+    /// Space between stars, when the caller's touch targets set it.
+    var starSpacing: CGFloat?
     var onChange: ((Double) -> Void)?
 
     @Environment(\.palette) private var palette
@@ -476,7 +494,7 @@ struct StarRating: View {
     /// has been committed upward.
     @State private var dragValue: Double?
 
-    private var spacing: CGFloat { size * 0.18 }
+    private var spacing: CGFloat { starSpacing ?? size * 0.18 }
     private var shown: Double { dragValue ?? stars }
 
     var body: some View {
@@ -502,7 +520,9 @@ struct StarRating: View {
 
         return Image(systemName: filled ? "star.fill" : (half ? "star.leadinghalf.filled" : "star"))
             .font(.system(size: size))
-            .foregroundStyle(filled || half ? palette.accentColor : palette.ink3Color)
+            .foregroundStyle(
+                filled || half ? (fillTint ?? palette.accentColor) : (emptyTint ?? palette.ink3Color)
+            )
             .scaleEffect(dragValue != nil && Double(index) <= shown ? 1.12 : 1)
             .animation(Motion.snap, value: shown)
     }

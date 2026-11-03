@@ -96,11 +96,11 @@ export class ChartBuilderPage extends BasePage {
    */
   async stubChartSeries(): Promise<void> {
     await this.page.route(chartBuilderUrls.series, (route) => {
-      const posted: { spec: ChartSpec } = route.request().postDataJSON();
+      const spec: ChartSpec = route.request().postDataJSON();
       return route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify(buildChartResult(posted.spec)),
+        body: JSON.stringify(buildChartResult(spec)),
       });
     });
   }

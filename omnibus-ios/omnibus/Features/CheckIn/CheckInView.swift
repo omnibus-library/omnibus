@@ -2,7 +2,7 @@
 //  Physical check-in: scan an ISBN barcode with VisionKit, resolve it against
 //  the library, then check in / add / wishlist.
 //
-//  Replaces the ZXing WASM scanner the hybrid build ships — VisionKit's
+//  Uses VisionKit rather than the web client's ZXing WASM scanner —
 //  `DataScannerViewController` is faster, handles focus and lighting itself,
 //  and needs no 1.5 MB of WebAssembly.
 

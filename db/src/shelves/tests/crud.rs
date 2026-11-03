@@ -278,7 +278,7 @@ async fn public_shelf_is_viewable_but_not_editable_by_non_owner() {
     let full = get_shelf(&pool, shelf.id).await.unwrap().unwrap();
 
     // AC1: a non-owner may read a public shelf. AC2: but never mutate it —
-    // the guard the rpc layer (`shelf_for_edit`) enforces before every write.
+    // the guard every shelf write checks first.
     assert!(can_view(&full, owner + 1, false));
     assert!(!can_edit(&full, owner + 1, false));
 }

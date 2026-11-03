@@ -93,7 +93,8 @@ struct PendingStarts: Equatable {
     /// playback comes back when it ends.
     var afterInterruption = false
     /// What `afterInterruption` holds is a load or a resume not yet made,
-    /// rather than playback the call paused: a toggle cancels it.
+    /// rather than playback the call paused: a toggle cancels it. Lasts until
+    /// that load lands or fails.
     var callHoldsLoad = false
 
     /// Whether audio is about to start without the listener pressing anything.
@@ -116,6 +117,10 @@ struct PendingStarts: Equatable {
         afterResume = true
     }
 
+    /// The load in flight landed or failed, so what a call holds is playback it
+    /// paused: a press starts or retries the book, and the call's end still does.
+    mutating func loadEnded() { callHoldsLoad = false }
+
     /// The starts once a load of `generation` has torn down the last book's:
     /// its autoplay, or — when a call holds the resume that asked for it — the
     /// call's, which `settled` hands back to the load when the call ends.
@@ -126,9 +131,9 @@ struct PendingStarts: Equatable {
             : PendingStarts(afterLoad: generation)
     }
 
-    /// Whether a play/pause toggle pauses; a pending start counts as playing,
-    /// and so does a load or resume a call is holding — a press then cancels
-    /// it rather than starting it under the call.
+    /// Whether a play/pause toggle pauses, and so whether a control shows pause;
+    /// a pending start counts as playing, and so does a load or resume a call
+    /// is holding — a press then cancels it rather than starting it under the call.
     func togglePauses(isPlaying: Bool) -> Bool { isPlaying || startIsPending || callHoldsLoad }
 
     /// The response to `event`; a pending start counts as playing.

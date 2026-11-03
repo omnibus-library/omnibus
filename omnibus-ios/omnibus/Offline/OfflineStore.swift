@@ -2,7 +2,7 @@
 //  Durable SQLite store backing the offline layer: replica cache, mutation
 //  outbox, and download registry.
 //
-//  Port of `frontend/src/offline/store.rs`. Best-effort by design — if the
+//  Best-effort by design — if the
 //  data dir or the SQLite open fails, every accessor degrades to a no-op and
 //  the app behaves exactly like an online-only build.
 
@@ -44,9 +44,6 @@ enum DownloadKind: String, Sendable, CaseIterable {
 
 /// One file a download is made of. An ebook or a single-file audiobook has
 /// exactly one; a multi-part audiobook has one per part, in ordinal order.
-///
-/// Mirrors `PlannedFile` in `frontend/src/offline/downloads.rs`, which has
-/// planned per-part since the web client learned to store audiobooks.
 struct DownloadFile: Codable, Sendable, Equatable {
     /// Audio part ordinal. `0` for an ebook, whose download is one file.
     var ordinal: Int64
@@ -1455,11 +1452,6 @@ actor OfflineStore {
     /// `CacheKey` can mint against `isUserScoped` so the next one can't slip
     /// through the same gap.
     ///
-    /// A near-copy of `USER_SCOPED_PREFIXES` in `frontend/src/offline.rs` but
-    /// deliberately not identical — the two clients mint different keys.
-    /// `read_status:`, `shelves_with:`, `shelf_previews`, and `recent_audio`
-    /// exist only here; `reader_cfi:` and `audio_pos:` only there. The overlap
-    /// is kept in the same order so the two can still be read side by side.
     /// `reviews:` holds the reader's private notes beside what every reader
     /// can see.
     static let userScopedPrefixes = [

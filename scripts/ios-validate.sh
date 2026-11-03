@@ -112,9 +112,6 @@ server_start() {
     bin="$CARGO_TARGET_DIR/debug/omnibus"
   fi
   [ -x "$bin" ] || die "no server binary at $bin"
-  # The fullstack server refuses to boot without a public/ beside it, even
-  # with no web bundle to serve.
-  mkdir -p "$(dirname "$bin")/public"
 
   local choice port
   choice="$(choose_port --free-only)" || die "no free port in $START_PORT..$END_PORT"

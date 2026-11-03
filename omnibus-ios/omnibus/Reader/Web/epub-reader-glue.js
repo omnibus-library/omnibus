@@ -5,12 +5,12 @@
  *   - `ePub`  (epubjs@0.3.93)  — vendored at ./epub.min.js
  *   - `JSZip` (jszip@3.10.1)   — vendored at ./jszip.min.js
  *
- * The Rust reader page sets two optional callbacks on `window`:
+ * The host page (`reader.html`) sets two optional callbacks on `window`:
  *   - `__omnibusOnRelocate(json)` — invoked (debounced) on every epub.js
  *     "relocated" event with a JSON string containing CFI + page/chapter
- *     data so the Rust side can update the bottom bar and persist position.
+ *     data so the host can update the bottom bar and persist position.
  *   - `__omnibusOnStatus(state)` — invoked with "ready" once the first page
- *     paints, or "error" if the book fails to open/render. Lets the Rust side
+ *     paints, or "error" if the book fails to open/render. Lets the host
  *     drive a loading/error UI instead of leaving a blank viewer.
  * Same-origin .epub fetch is performed by epub.js via XHR, so the session
  * cookie is sent automatically.
@@ -78,7 +78,7 @@
  * Table-of-contents callback:
  *   - `__omnibusOnToc(json)` — invoked once the book is ready (and on
  *     requestToc()), with a flat [{ label, href, level }] array.
- * Native-share shims (optional; mobile shell only):
+ * Native-share shims (optional; native hosts only):
  *   - `__omnibusOnShareText(text)` / `__omnibusOnShareImage(json)` — when
  *     defined, shareText/shareQuoteCard route here instead of the Web Share
  *     API (absent in WKWebView) and the host presents the OS share sheet.
@@ -111,7 +111,7 @@
   // True from a CFI restore until its first post-settle emission — that
   // emission re-states the restored position and is tagged `echo` so the
   // host renders it without persisting it or moving `restoreCFI` (see
-  // emitRelocate; mirrors frontend/assets/vendor/epub-reader-glue.js).
+  // emitRelocate; mirrors frontend-js/src/vendor/reader/epub-reader-glue.js).
   var restoreEchoPending = false;
   // The page the restore's echo re-stated: the same page again with no
   // navigation since is the settle chain landing late, not movement (see
@@ -449,8 +449,8 @@
         spread: "auto",
         // Without `allow-scripts` on the section iframe, WebKit dispatches NO
         // events to listeners inside it — gestures AND text selection are dead
-        // on iOS. The mobile shell opts in (its books are the user's own
-        // library); the web build keeps the stricter sandbox since desktop
+        // on iOS. The iOS host opts in (its books are the user's own
+        // library); the web client keeps the stricter sandbox since desktop
         // engines still fire parent-attached listeners.
         allowScriptedContent: !!opts.allowScriptedContent,
       };
@@ -538,7 +538,7 @@
         // Re-emit now that each entry can carry its page and percent.
         emitToc();
         // Re-emit current location now that locations are resolved so the
-        // Rust side gets real page numbers on first load. An echo: it
+        // host gets real page numbers on first load. An echo: it
         // re-states the position, it doesn't report movement.
         if (rendition && rendition.location) {
           emitRelocate(rendition.location, true);
@@ -684,7 +684,7 @@
     });
 
     // Arrow keys page the book when the content iframe has focus. Key events
-    // inside the iframe never bubble to the host document (so the Rust surface
+    // inside the iframe never bubble to the host document (so the host's
     // keydown handler can't see them) — epub.js forwards them here instead.
     const prevPageKeys = new Set(["ArrowLeft", "ArrowUp", "H", "K"]);
     const nextPageKeys = new Set(["ArrowRight", "ArrowDown", "L", "J"]);
@@ -1178,7 +1178,7 @@
   }
 
   // Page grounds, keyed by theme token. Mirrored by the per-theme `--rd-page`
-  // token in atrium.css and by `Palette.readerPage` in the iOS design system —
+  // token in theme.css and by `Palette.readerPage` in the iOS design system —
   // change all three together or the chrome strips stop matching the page.
   // Black matches Apple Books' dark reading theme on macOS: a pure-black page
   // under bright #ffffff text.
@@ -3060,10 +3060,10 @@
   }
 
   // Ask the host to toggle the reader chrome (top/bottom bars). The bars are
-  // Dioxus-owned DOM; rather than mutate their class from here (the reconciler
-  // could clobber it, and it splits state across two owners), we signal through
-  // the same `__omnibusOn*` bridge the rest of the glue uses and let the host
-  // flip a `chrome_hidden` signal — the single source of truth on both targets.
+  // native views; rather than reach them from here (it would split state
+  // across two owners), we signal through the same `__omnibusOn*` bridge the
+  // rest of the glue uses and let the host flip its own state — the single
+  // source of truth.
   function emitToggleChrome() {
     if (typeof window.__omnibusOnToggleChrome === "function") {
       window.__omnibusOnToggleChrome("");
@@ -3195,7 +3195,7 @@
   // the reframe whenever a reflow lands on the same quantized column count —
   // so a font-size step (or webfont swap) that keeps the page count leaves
   // every highlight frozen at the previous layout's pixel rects. Ported from
-  // the web fork (frontend/assets/vendor/epub-reader-glue.js); `applyMarkStyles`
+  // the web fork (frontend-js/src/vendor/reader/epub-reader-glue.js); `applyMarkStyles`
   // restyles marks but never re-measures them, so it is not a substitute.
   function repaintAnnotations() {
     if (!rendition || !rendition.manager || !rendition.manager.views) return;
@@ -3469,7 +3469,7 @@
   }
 
   // Walk the nested TOC into a flat [{label, href, level}] list and hand it
-  // to the Rust side. Level is the nesting depth (0 = top), used to indent
+  // to the host. Level is the nesting depth (0 = top), used to indent
   // the contents drawer. Re-emittable on demand via requestToc().
   // Where a TOC entry starts, in whole-book pages and percent.
   //
@@ -3902,8 +3902,7 @@
   function shareText(text) {
     if (!text) return;
     // Native bridge first: WKWebView exposes no usable Web Share API, so the
-    // mobile shell installs this shim and presents the OS share sheet from
-    // Rust instead. Web builds never define it.
+    // host installs this shim and presents the OS share sheet itself.
     if (typeof window.__omnibusOnShareText === "function") {
       try {
         window.__omnibusOnShareText(text);
@@ -4059,9 +4058,9 @@
     }, "image/png");
   }
 
-  // Native share sheet with the rendered PNG. The mobile shell's
+  // Native share sheet with the rendered PNG. The host's
   // `__omnibusOnShareImage` shim takes priority (WKWebView has no usable Web
-  // Share API — Rust presents the real sheet); after that, Web Share where it
+  // Share API — the host presents the real sheet); after that, Web Share where it
   // can take files, then a plain download (desktop browsers, older WebViews).
   function shareQuoteCard(json) {
     var r = renderQuoteCanvas(json);

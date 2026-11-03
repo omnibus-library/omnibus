@@ -1,30 +1,45 @@
-import { type ExpectMutationOptions, post } from "../utils/api";
+import type { ExpectMutationOptions } from "../utils/api";
 
-/** The physical-copy endpoints a book page posts to. */
+/** The physical-copy endpoints a book page calls; each names the book or copy in its path. */
 export const physicalUrls = {
-  deleteCopy: /\/api\/rpc\/physical\/copies\/delete$/,
-  deleteBook: /\/api\/rpc\/physical\/book\/delete$/,
-  copies: /\/api\/rpc\/physical\/copies(?:\?|$)/,
-  wishlistGet: /\/api\/rpc\/physical\/wishlist\/get(?:\?|$)/,
-  wishlistAdd: /\/api\/rpc\/physical\/wishlist\/add(?:\?|$)/,
-  wishlistRemove: /\/api\/rpc\/physical\/wishlist\/remove(?:\?|$)/,
-  copyNote: /\/api\/rpc\/physical\/copies\/note(?:\?|$)/,
+  copy: /\/api\/physical\/copies\/\d+$/,
+  book: /\/api\/physical\/[^/]+$/,
+  copies: /\/api\/physical\/[^/]+\/copies$/,
+  wishlist: /\/api\/physical\/[^/]+\/wishlist$/,
 };
 
-/** The writes a book page makes against its physical copies. */
+/** The requests a book page makes against its physical copies. */
 export const physical = {
-  deleteCopy: (): ExpectMutationOptions => post(physicalUrls.deleteCopy),
+  deleteCopy: (): ExpectMutationOptions => ({
+    method: "DELETE",
+    url: physicalUrls.copy,
+    expectedStatus: 204,
+  }),
 
-  deleteBook: (bookUuid: string): ExpectMutationOptions =>
-    post(physicalUrls.deleteBook, { uuid: bookUuid }),
+  deleteBook: (bookUuid: string): ExpectMutationOptions => ({
+    method: "DELETE",
+    url: new RegExp(`/api/physical/${bookUuid}$`),
+    expectedStatus: 204,
+  }),
 
   /** The panel's load of a book's copies, which a spec fails or stubs. */
-  copies: (): ExpectMutationOptions => post(physicalUrls.copies),
+  copies: () => ({ method: "GET", url: physicalUrls.copies }) as const,
 
-  wishlistAdd: (): ExpectMutationOptions => post(physicalUrls.wishlistAdd),
+  wishlistAdd: (): ExpectMutationOptions => ({
+    method: "POST",
+    url: physicalUrls.wishlist,
+    expectedStatus: 200,
+  }),
 
-  wishlistRemove: (): ExpectMutationOptions =>
-    post(physicalUrls.wishlistRemove),
+  wishlistRemove: (): ExpectMutationOptions => ({
+    method: "DELETE",
+    url: physicalUrls.wishlist,
+    expectedStatus: 200,
+  }),
 
-  copyNote: (): ExpectMutationOptions => post(physicalUrls.copyNote),
+  copyNote: (): ExpectMutationOptions => ({
+    method: "PATCH",
+    url: physicalUrls.copy,
+    expectedStatus: 200,
+  }),
 };

@@ -2,7 +2,7 @@
 # Tests for choose_port() in scripts/lib/dev-port.sh — the walk that keeps
 # two worktrees' dev servers off the same port.
 #
-# No network, no dx serve: the real library is sourced (so this tracks the
+# No network, no server: the real library is sourced (so this tracks the
 # shipped implementation rather than a hand-copied duplicate) and only its
 # two I/O primitives — is_port_free and probe_health — are stubbed. Each
 # scenario declares which ports are held and what /api/_health says on

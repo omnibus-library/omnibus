@@ -13,7 +13,7 @@ const TARGET = FIXTURE_BOOKS.find((b) => b.slug === "alpha")!;
 // The paste-a-URL tests stub every write, since the server's SSRF gate cannot reach a test origin.
 const PASTED_COVER_URL = "https://images.example.com/custom-cover.jpg";
 
-test.describe("metadata edit page", () => {
+test.describe("metadata edit sheet", () => {
   // Every test reads or writes override state on the same book, so they run one at a time.
   test.describe.configure({ mode: "serial" });
 
@@ -21,22 +21,22 @@ test.describe("metadata edit page", () => {
     await seedLibrary(request, fixturesDir(), FIXTURE_BOOKS.length);
   });
 
-  test("show the metadata edit page layout", async ({
+  test("show the metadata edit sheet layout", async ({
     metadataEditPage,
     request,
   }) => {
     const { form } = metadataEditPage;
     const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
-    await test.step("open the edit page", async () => {
+    await test.step("open the edit sheet", async () => {
       await metadataEditPage.goto(uuid);
     });
 
-    await test.step("check the page, its nav and its header", async () => {
+    await test.step("check the sheet, its nav and its header", async () => {
       await metadataEditPage.assertDisplayed();
       await metadataEditPage.topNav.assertDisplayed();
       await expect(metadataEditPage.bookHeading(TARGET.title)).toBeVisible();
-      await expect(metadataEditPage.breadcrumbHomeLink).toBeVisible();
+      await expect(metadataEditPage.closeButton).toBeVisible();
     });
 
     await test.step("check the form is pre-populated", async () => {
@@ -45,26 +45,33 @@ test.describe("metadata edit page", () => {
       await expect(form.authorChip(TARGET.authors[0]!)).toBeVisible();
     });
 
-    // The discard link names what it drops: a replaced cover is written at once and it cannot undo one.
-    await test.step("check the save bar and the cover URL field", async () => {
+    // Nothing is unsaved yet, so there is nothing to discard.
+    await test.step("check the save bar", async () => {
       await expect(form.saveButton).toBeVisible();
+      await expect(form.saveState).toHaveText("No changes");
       await expect(form.discardButton).toHaveText("Discard edits");
-      await expect(form.saveButton).toBeDisabled();
+      await expect(form.discardButton).toBeDisabled();
+    });
+
+    await test.step("check the cover URL field on the artwork tab", async () => {
+      await form.openArtwork();
       await expect(form.coverUrlField).toBeVisible();
       await expect(form.coverUrlField).toHaveAttribute("type", "url");
       await expect(form.applyCoverUrlButton).toBeDisabled();
     });
   });
 
-  test("open the edit page from the book detail page", async ({
+  test("open the edit sheet from the book detail page", async ({
     bookDetailPage,
     metadataEditPage,
     request,
   }) => {
     const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
+    // The link sits under the Details list on the Files & Details tab.
     await test.step("open the book", async () => {
       await bookDetailPage.goto(uuid);
+      await bookDetailPage.openTab("Files & Details");
       await expect(bookDetailPage.editMetadataLink).toBeVisible();
     });
 
@@ -86,7 +93,7 @@ test.describe("metadata edit page", () => {
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
       overriddenBookUuids.add(uuid);
 
-      await test.step("open the edit page and change the title", async () => {
+      await test.step("open the edit sheet and change the title", async () => {
         await metadataEditPage.goto(uuid);
         await form.enterTitle("Alpha Edited");
       });
@@ -124,7 +131,7 @@ test.describe("metadata edit page", () => {
         overriddenBookUuids.add(uuid);
       });
 
-      await test.step("open the edit page", async () => {
+      await test.step("open the edit sheet", async () => {
         await metadataEditPage.goto(uuid);
         await expect(metadataEditPage.revertButton).toBeVisible();
       });
@@ -152,7 +159,7 @@ test.describe("metadata edit page", () => {
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
       overriddenBookUuids.add(uuid);
 
-      await test.step("open the edit page and add a tag", async () => {
+      await test.step("open the edit sheet and add a tag", async () => {
         await metadataEditPage.goto(uuid);
         await form.addTag("test-tag");
       });
@@ -179,7 +186,7 @@ test.describe("metadata edit page", () => {
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
       overriddenBookUuids.add(uuid);
 
-      await test.step("open the edit page and edit both fields", async () => {
+      await test.step("open the edit sheet and edit both fields", async () => {
         await metadataEditPage.goto(uuid);
         await expect(form.isbn10Field).toBeVisible();
         await form.enterIsbn10("0134685997");
@@ -219,7 +226,7 @@ test.describe("metadata edit page", () => {
       const { form } = metadataEditPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
-      await test.step("open the edit page and change the title", async () => {
+      await test.step("open the edit sheet and change the title", async () => {
         await metadataEditPage.goto(uuid);
         await form.enterTitle("Should Not Be Saved");
       });
@@ -228,14 +235,19 @@ test.describe("metadata edit page", () => {
         await form.discard();
       });
 
-      await test.step("check the book page shows the original title", async () => {
+      // Discarding resets the form and keeps the sheet open.
+      await test.step("check the form is back to the scanned title", async () => {
+        await expect(form.titleField).toHaveValue(TARGET.title);
+        await expect(form.saveState).toHaveText("No changes");
+      });
+
+      await test.step("close and check the book page shows the original title", async () => {
+        await metadataEditPage.close();
         await bookDetailPage.assertDisplayedFor(uuid);
         await expect(bookDetailPage.titleHeading).toHaveText(TARGET.title);
       });
     });
 
-    // The page shows no status or alert for the failure, so what is observable
-    // is that it stays on the form and Save comes out of "Saving…".
     test("stay on the edit form when the save fails", async ({
       metadataEditPage,
       expectMutation,
@@ -255,9 +267,11 @@ test.describe("metadata edit page", () => {
         await expectMutation(failing(overrides.save()), () => form.save());
       });
 
-      await test.step("check the form keeps the edit and Save can retry", async () => {
+      await test.step("check the form keeps the edit and Done can retry", async () => {
         await metadataEditPage.assertDisplayedFor(uuid);
+        await expect(form.saveError).toBeVisible();
         await expect(form.titleField).toHaveValue("Alpha Should Not Persist");
+        await expect(form.editedSummary(1)).toBeVisible();
         await expect(form.saveButton).toBeEnabled();
       });
     });
@@ -281,7 +295,7 @@ test.describe("metadata edit page", () => {
         await bookDetailPage.assertDisplayedFor(uuid);
       });
 
-      await test.step("reopen the edit page, where Revert shows", async () => {
+      await test.step("reopen the edit sheet, where Revert shows", async () => {
         await metadataEditPage.goto(uuid);
         await expect(metadataEditPage.revertButton).toBeVisible();
       });
@@ -293,7 +307,10 @@ test.describe("metadata edit page", () => {
         );
       });
 
+      // The dialog says why and stays open over the sheet, which keeps Revert.
       await test.step("check the override is still active", async () => {
+        await expect(metadataEditPage.revertError).toBeVisible();
+        await metadataEditPage.cancelRevert();
         await metadataEditPage.assertDisplayedFor(uuid);
         await expect(metadataEditPage.revertButton).toBeVisible();
         await expect(metadataEditPage.revertButton).toBeEnabled();
@@ -316,43 +333,53 @@ test.describe("metadata edit page", () => {
     });
   });
 
+  // Suggestions are a native datalist: the browser draws and picks from it, so
+  // a test reads what it offers and commits by typing, as a pick would fill it.
   test.describe("suggestions", () => {
-    test("add an author from the suggestions with the arrow keys", async ({
+    test("suggest existing authors as a prefix is typed", async ({
       metadataEditPage,
       request,
     }) => {
       const { form } = metadataEditPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
-      await test.step("open the edit page and type an author prefix", async () => {
+      await test.step("open the edit sheet and type an author prefix", async () => {
         await metadataEditPage.goto(uuid);
         await expect(form.authorsInput).toBeVisible();
         await form.typeAuthor("Nik");
       });
 
-      // Niklaus Wirth is a Code Quartet author, and each row carries a book count.
+      // Niklaus Wirth is a Code Quartet author, and each option carries a book count.
       await test.step("check existing authors are suggested", async () => {
-        await expect(form.authorSuggestions).toBeVisible();
-        await expect(form.authorSuggestion(/Niklaus Wirth/)).toBeVisible();
-        await expect(
-          form.authorSuggestion(/Niklaus Wirth.*books?/),
-        ).toBeVisible();
-        // At most MAX_SUGGESTIONS=5 rows plus the "+ Create" footer.
         await expect
-          .poll(() => form.authorSuggestionCount(), {
-            message: "the dropdown must cap at 5 suggestions + 1 create row",
-          })
-          .toBeLessThanOrEqual(6);
+          .poll(() => form.authorSuggestions())
+          .toContainEqual({
+            value: "Niklaus Wirth",
+            label: expect.stringMatching(/\d+ books?/),
+          });
+        await expect
+          .poll(async () =>
+            (await form.authorSuggestions()).every((s) =>
+              s.value.toLowerCase().includes("nik"),
+            ),
+          )
+          .toBe(true);
       });
 
-      await test.step("pick the first suggestion", async () => {
-        await form.pickFirstAuthorSuggestion();
+      await test.step("commit the suggested name", async () => {
+        await form.typeAuthor("Niklaus Wirth");
+        await form.commitAuthor();
       });
 
       await test.step("check the chip landed and the input cleared", async () => {
         await expect(form.authorChip("Niklaus Wirth")).toBeVisible();
         await expect(form.authorsInput).toHaveValue("");
-        await expect(form.authorSuggestions).toHaveCount(0);
+        // A name already on the book is not offered again.
+        await expect
+          .poll(async () =>
+            (await form.authorSuggestions()).map((s) => s.value),
+          )
+          .not.toContain("Niklaus Wirth");
       });
     });
 
@@ -363,18 +390,13 @@ test.describe("metadata edit page", () => {
       const { form } = metadataEditPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
-      await test.step("open the edit page and type an unknown author", async () => {
+      await test.step("open the edit sheet and type an unknown author", async () => {
         await metadataEditPage.goto(uuid);
         await form.typeAuthor("ZzzMatchesNothing");
       });
 
-      // The footer lets the reader commit a new value without dismissing the dropdown.
-      await test.step("check only the create row is offered", async () => {
-        await expect(form.authorSuggestions).toBeVisible();
-        await expect(
-          form.authorSuggestion(/\+ Create.*ZzzMatchesNothing/),
-        ).toBeVisible();
-        await expect(form.authorSuggestionOptions).toHaveCount(1);
+      await test.step("check nothing is suggested", async () => {
+        await expect.poll(() => form.authorSuggestions()).toEqual([]);
       });
 
       await test.step("commit the typed value", async () => {
@@ -392,34 +414,36 @@ test.describe("metadata edit page", () => {
       const { form } = metadataEditPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
-      await test.step("open the edit page and type a series prefix", async () => {
+      await test.step("open the edit sheet", async () => {
         await metadataEditPage.goto(uuid);
         // Alpha is standalone, so the field starts empty.
         await expect(form.seriesField).toBeVisible();
         await expect(form.seriesField).toHaveValue("");
-        await form.typeSeries("Cod");
       });
 
-      // Code Quartet backs four fixture books, like the Author(s) field's dropdown.
+      // Code Quartet backs four fixture books.
       await test.step("check the existing series is suggested", async () => {
-        await expect(form.seriesSuggestions).toBeVisible();
-        await expect(form.seriesSuggestion(/Code Quartet/)).toBeVisible();
+        await expect
+          .poll(async () =>
+            (await form.seriesSuggestions()).map((s) => s.value),
+          )
+          .toContain("Code Quartet");
       });
 
-      await test.step("pick the suggestion", async () => {
-        await form.pickFirstSeriesSuggestion();
+      await test.step("take the suggestion", async () => {
+        await form.typeSeries("Code Quartet");
         await expect(form.seriesField).toHaveValue("Code Quartet");
-        await expect(form.seriesSuggestions).toHaveCount(0);
-        await expect(form.saveButton).toBeEnabled();
+        await expect(form.editedSummary(1)).toBeVisible();
       });
 
-      await test.step("discard", async () => {
+      await test.step("discard and close", async () => {
         await form.discard();
+        await metadataEditPage.close();
         await bookDetailPage.assertDisplayedFor(uuid);
       });
     });
 
-    // Series takes free text like the chip editors but has no committed list, so no create row.
+    // Series takes free text and keeps it whether or not a suggestion matches.
     test("accept a series name no suggestion matches", async ({
       metadataEditPage,
       request,
@@ -427,18 +451,25 @@ test.describe("metadata edit page", () => {
       const { form } = metadataEditPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
-      await test.step("open the edit page and type an unknown series", async () => {
+      await test.step("open the edit sheet and type an unknown series", async () => {
         await metadataEditPage.goto(uuid);
         await form.typeSeries("ZzzBrandNewSeries");
       });
 
-      await test.step("check no dropdown shows and the text stays", async () => {
-        await expect(form.seriesSuggestions).toHaveCount(0);
+      await test.step("check no suggestion matches and the text stays", async () => {
+        await expect
+          .poll(async () =>
+            (await form.seriesSuggestions()).map((s) => s.value),
+          )
+          .not.toContain("ZzzBrandNewSeries");
         await expect(form.seriesField).toHaveValue("ZzzBrandNewSeries");
+        await expect(form.editedSummary(1)).toBeVisible();
       });
     });
   });
 
+  // The cover card lives on the Artwork tab. Putting the scanned cover back is
+  // written at once; a picked or pasted cover is held until Done.
   test.describe("cover", () => {
     test("show an uploaded cover override", async ({
       metadataEditPage,
@@ -449,18 +480,19 @@ test.describe("metadata edit page", () => {
       const { form } = metadataEditPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
-      await test.step("open the edit page on the scanned cover", async () => {
+      await test.step("open the artwork tab on the scanned cover", async () => {
         await metadataEditPage.goto(uuid);
+        await form.openArtwork();
         await expect(form.coverHintText).toHaveText("extracted from file");
         await expect(form.removeCoverOverrideButton).toHaveCount(0);
       });
 
-      // The upload goes by direct multipart POST, as author_photo does, so no synthetic file-change event is needed.
       await test.step("upload a cover through the api", async () => {
         const uploaded = await overridesRequests.postCover(uuid, TINY_PNG);
         await expect(uploaded).toBeOK();
         overriddenBookUuids.add(uuid);
         await metadataEditPage.reload();
+        await form.openArtwork();
       });
 
       await test.step("check the cover is marked as an upload", async () => {
@@ -469,7 +501,6 @@ test.describe("metadata edit page", () => {
       });
     });
 
-    // The no-body revert rides the server-function transport: a POST with the uuid in its body.
     test("revert an uploaded cover override", async ({
       metadataEditPage,
       overridesRequests,
@@ -486,8 +517,9 @@ test.describe("metadata edit page", () => {
         overriddenBookUuids.add(uuid);
       });
 
-      await test.step("open the edit page", async () => {
+      await test.step("open the artwork tab", async () => {
         await metadataEditPage.goto(uuid);
+        await form.openArtwork();
         await expect(form.removeCoverOverrideButton).toBeVisible();
       });
 
@@ -496,6 +528,9 @@ test.describe("metadata edit page", () => {
       });
 
       await test.step("check the scanned cover is back", async () => {
+        await expect(form.coverUploadStatus).toHaveText(
+          "Reverted to scanned cover.",
+        );
         await expect(form.coverHintText).toHaveText("extracted from file");
         await expect(form.removeCoverOverrideButton).toHaveCount(0);
       });
@@ -517,8 +552,9 @@ test.describe("metadata edit page", () => {
         overriddenBookUuids.add(uuid);
       });
 
-      await test.step("open the edit page", async () => {
+      await test.step("open the artwork tab", async () => {
         await metadataEditPage.goto(uuid);
+        await form.openArtwork();
         await expect(form.removeCoverOverrideButton).toBeVisible();
       });
 
@@ -546,12 +582,14 @@ test.describe("metadata edit page", () => {
 
     test("apply a pasted cover URL", async ({
       metadataEditPage,
+      bookDetailPage,
       ebooksRequests,
       expectMutation,
       request,
     }) => {
       const { form } = metadataEditPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
+      const commits = metadataEditPage.recordCoverWrites();
 
       await test.step("stub the write with the book as the server returns it", async () => {
         const book = await ebooksRequests.getEbook(uuid);
@@ -559,8 +597,9 @@ test.describe("metadata edit page", () => {
         await metadataEditPage.stubCoverFromUrl(await book.json());
       });
 
-      await test.step("open the edit page and check Apply follows the field", async () => {
+      await test.step("open the artwork tab and check Apply follows the field", async () => {
         await metadataEditPage.goto(uuid);
+        await form.openArtwork();
         await expect(form.applyCoverUrlButton).toBeDisabled();
         await form.enterCoverUrl(PASTED_COVER_URL);
         await expect(form.applyCoverUrlButton).toBeEnabled();
@@ -568,27 +607,28 @@ test.describe("metadata edit page", () => {
         await expect(form.applyCoverUrlButton).toBeDisabled();
       });
 
+      // Apply holds the image; nothing is fetched until Done.
       await test.step("apply the URL", async () => {
         await form.enterCoverUrl(PASTED_COVER_URL);
-        await expectMutation(covers.fromUrl(uuid, PASTED_COVER_URL), () =>
-          form.applyCoverUrl(),
+        await form.applyCoverUrl();
+        await expect(form.coverHintText).toHaveText(
+          "from the web · fetched when you press Done",
         );
+        await expect(form.coverUrlField).toHaveValue("");
+        await expect(form.dropHeldCoverButton).toBeVisible();
+        await expect(form.editedSummary(1)).toBeVisible();
+        expect(commits).toEqual([]);
       });
 
-      await test.step("check the cover shows as replaced", async () => {
-        await expect(form.coverUploadStatus).toHaveText("Cover updated.");
-        await expect(form.coverHintText).toHaveText("custom upload");
-        await expect(form.coverUrlField).toHaveValue("");
-        await expect(form.removeCoverOverrideButton).toBeVisible();
-        await expect(form.currentCoverImage).toHaveAttribute(
-          "src",
-          /[?&]v=\d+/,
+      await test.step("save the held cover", async () => {
+        await expectMutation(covers.fromUrl(uuid, PASTED_COVER_URL), () =>
+          form.save(),
         );
-        await expect(form.coverReplacedNote).toBeVisible();
+        await bookDetailPage.assertDisplayedFor(uuid);
       });
     });
 
-    test("keep the typed URL when applying it fails", async ({
+    test("keep the held cover URL when fetching it fails", async ({
       metadataEditPage,
       expectMutation,
       request,
@@ -596,30 +636,32 @@ test.describe("metadata edit page", () => {
       const { form } = metadataEditPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
-      await test.step("open the edit page and type a URL while the server fails the write", async () => {
+      await test.step("hold a pasted URL while the server fails the write", async () => {
         await metadataEditPage.forceServerError(
           covers.fromUrl(uuid, PASTED_COVER_URL),
         );
         await metadataEditPage.goto(uuid);
+        await form.openArtwork();
         await form.enterCoverUrl(PASTED_COVER_URL);
+        await form.submitCoverUrl();
       });
 
-      await test.step("submit it with Enter", async () => {
+      await test.step("save it", async () => {
         await expectMutation(
           failing(covers.fromUrl(uuid, PASTED_COVER_URL)),
-          () => form.submitCoverUrl(),
+          () => form.save(),
         );
       });
 
-      await test.step("check the failure shows and nothing changed", async () => {
-        await expect(form.coverUploadStatus).toContainText(
-          "Couldn't apply that URL",
+      await test.step("check the failure shows and the cover is still held", async () => {
+        await metadataEditPage.assertDisplayedFor(uuid);
+        await expect(form.saveError).toContainText("Cover not saved");
+        await expect(form.saveError).toContainText("forced failure");
+        await expect(form.coverHintText).toHaveText(
+          "from the web · fetched when you press Done",
         );
-        await expect(form.coverUploadStatus).toContainText("forced failure");
-        await expect(form.coverUrlField).toHaveValue(PASTED_COVER_URL);
-        await expect(form.coverHintText).toHaveText("extracted from file");
-        await expect(form.removeCoverOverrideButton).toHaveCount(0);
-        await expect(form.applyCoverUrlButton).toBeEnabled();
+        await expect(form.editedSummary(1)).toBeVisible();
+        await expect(form.saveButton).toBeEnabled();
       });
     });
   });

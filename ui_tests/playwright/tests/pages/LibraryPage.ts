@@ -98,19 +98,25 @@ export class LibraryPage extends BasePage {
     });
     this.grid = page.getByTestId("lib-grid");
     this.toolbar = page.getByTestId("lib-toolbar");
-    this.gridViewButton = page.getByTestId("view-toggle-grid");
+    this.gridViewButton = page
+      .getByRole("group", { name: "View mode" })
+      .getByRole("button", { name: "Grid" });
     this.bookTiles = page.getByTestId(/^ebook-tile-/);
     this.firstBookTile = this.bookTiles.first();
     this.firstCover = this.grid
       .getByRole("img", { name: /^Cover of / })
       .first();
     this.firstBookTileCaption = this.firstBookTile.locator(".lib-tile-cap");
-    this.loadMoreButton = page.getByTestId("lib-load-more");
-    this.sortSelect = page.getByTestId("lib-sort-select");
-    this.sortDirectionButton = page.getByTestId("lib-sort-dir");
+    this.loadMoreButton = page.getByRole("button", { name: "Load more" });
+    this.sortSelect = page.getByRole("combobox", { name: "Sort by" });
+    this.sortDirectionButton = page.getByRole("button", {
+      name: /^Sort direction: /,
+    });
     this.stackToggle = page.getByRole("button", { name: "Stack series" });
-    this.stackTiles = page.getByTestId(/^series-stack-/);
-    this.stackError = page.getByTestId("lib-stack-error");
+    this.stackTiles = this.grid.getByRole("button", { name: /, \d+ books?$/ });
+    this.stackError = page
+      .getByRole("alert")
+      .filter({ hasText: "Couldn't save Stack series" });
     this.shelfEditButton = page.getByTestId("shelf-edit");
     this.shelfAddBooksButton = page.getByTestId("shelf-add-books");
     this.shelfAddBooksTile = page.getByTestId("shelf-add-tile");
@@ -119,11 +125,11 @@ export class LibraryPage extends BasePage {
     this.emptyMessage = page.getByTestId("lib-empty");
     this.pageError = page.getByTestId("lib-page-error");
     this.sortLockedNote = page.getByTestId("lib-sort-locked");
-    this.filteredCount = page.getByTestId("lib-filtered-count");
-    this.hiddenReceipt = page.getByTestId("lib-hidden-count");
-    this.hiddenNote = page.getByTestId("lib-hidden-formats");
+    this.filteredCount = page.locator(".lib-header-count");
+    this.hiddenReceipt = page.locator(".lib-header-hidden");
+    this.hiddenNote = page.getByRole("link", { name: /^Hidden: / });
     this.loading = page.getByTestId("lib-loading");
-    this.noMatchesMessage = page.getByText("No books match these filters.");
+    this.noMatchesMessage = page.getByTestId("lib-no-matches");
     this.clearFiltersButton = page.getByRole("button", {
       name: "Clear filters",
     });
@@ -138,10 +144,11 @@ export class LibraryPage extends BasePage {
     return this.page.getByTestId(`gallery-shelf-${shelfId}`);
   }
 
-  /** A book's grid tile: a `listitem`, not a link (see `landing/grid.rs`). */
+  /** A book's grid tile: the link inside its `listitem`. */
   bookTile(title: string): Locator {
-    return this.page.getByRole("listitem", {
+    return this.grid.getByRole("link", {
       name: `Open details for ${title}`,
+      exact: true,
     });
   }
 
@@ -184,9 +191,9 @@ export class LibraryPage extends BasePage {
       .waitFor();
   }
 
-  /** Returns once the server-rendered HTML arrives, before the client runs. */
-  async gotoBeforeHydration(): Promise<void> {
-    await this.page.goto("/", { waitUntil: "domcontentloaded" });
+  /** Returns once `index.html` arrives; a held bundle also holds `domcontentloaded`. */
+  async gotoBeforeClientRuns(): Promise<void> {
+    await this.page.goto("/", { waitUntil: "commit" });
   }
 
   async switchToGrid(): Promise<void> {
@@ -213,9 +220,9 @@ export class LibraryPage extends BasePage {
     await this.seriesStack(label).click();
   }
 
-  /** Clicks the top corner of the shelves section, a neutral spot well outside the table. */
+  /** Clicks the top corner of the page's main column, a neutral spot well outside the table. */
   async clickAway(): Promise<void> {
-    await this.shelfGallery.root.click({ position: { x: 4, y: 4 } });
+    await this.page.getByRole("main").click({ position: { x: 4, y: 4 } });
   }
 
   /** Marks every grid cell, so a cell the diff re-creates loses its mark. */
@@ -298,7 +305,7 @@ export class LibraryPage extends BasePage {
     );
   }
 
-  /** Counts every "No ebooks found." node the page inserts from now on. */
+  /** Counts every empty-library message the page inserts from now on. */
   async recordEmptyLibraryInsertions(): Promise<void> {
     await this.page.evaluate(() => {
       const seen = { count: 0 };
@@ -336,15 +343,15 @@ export class LibraryPage extends BasePage {
     await this.bookTiles.last().click();
   }
 
-  /** Records the body of every page fetch the library makes, in order. */
+  /** Records the decoded query of every page fetch the library makes, in order. */
   recordPageFetches(): string[] {
-    const bodies: string[] = [];
+    const queries: string[] = [];
     this.page.on("request", (request) => {
-      if (request.method() === "POST" && ebooksUrls.page.test(request.url())) {
-        bodies.push(request.postData() ?? "");
+      if (request.method() === "GET" && ebooksUrls.page.test(request.url())) {
+        queries.push(decodeURIComponent(new URL(request.url()).search));
       }
     });
-    return bodies;
+    return queries;
   }
 
   /** Opens a book's detail from its grid tile, a client-side hop. */

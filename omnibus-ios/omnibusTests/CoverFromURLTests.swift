@@ -1,43 +1,30 @@
 //  CoverFromURLTests.swift
-//  Applying a cover from a pasted URL: the gate before the network call, and
-//  the wire shape of the request it sends. No network stub exists for this
-//  suite, so this is what stands in for the route itself.
+//  Staging a cover from a pasted URL: what the box accepts, and the wire shape
+//  of the request a save sends. No network stub exists for this suite, so this
+//  is what stands in for the route itself.
 
 import Foundation
 import Testing
 
 @testable import omnibus
 
-@Suite("Paste a cover URL — the apply gate")
-struct CoverURLToApplyTests {
+@Suite("Paste a cover URL — what the box accepts")
+struct StagedCoverPastedTests {
     @Test("trims surrounding whitespace and newlines")
     func trimsSurroundingWhitespace() {
-        let result = LibraryService.coverURLToApply(
-            "  https://x.example/c.jpg \n", isBusy: false, isOnline: true
-        )
-        #expect(result == "https://x.example/c.jpg")
+        #expect(StagedCover.pasted("  https://x.example/c.jpg \n") == .url("https://x.example/c.jpg"))
     }
 
     @Test("nil for an empty or whitespace-only box")
     func nilForBlankInput() {
-        #expect(LibraryService.coverURLToApply("", isBusy: false, isOnline: true) == nil)
-        #expect(LibraryService.coverURLToApply("   ", isBusy: false, isOnline: true) == nil)
+        #expect(StagedCover.pasted("") == nil)
+        #expect(StagedCover.pasted("   ") == nil)
     }
 
-    @Test("nil while a previous apply is still in flight")
-    func nilWhileBusy() {
-        #expect(
-            LibraryService.coverURLToApply("https://x.example/c.jpg", isBusy: true, isOnline: true)
-                == nil
-        )
-    }
-
-    @Test("nil while offline — rule 08: a direct write, never queued")
-    func nilWhileOffline() {
-        #expect(
-            LibraryService.coverURLToApply("https://x.example/c.jpg", isBusy: false, isOnline: false)
-                == nil
-        )
+    @Test("nil for anything the server couldn't fetch")
+    func nilForANonWebAddress() {
+        #expect(StagedCover.pasted("cover.jpg") == nil)
+        #expect(StagedCover.pasted("file:///tmp/cover.jpg") == nil)
     }
 }
 

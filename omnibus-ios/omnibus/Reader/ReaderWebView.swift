@@ -1,8 +1,8 @@
 //  ReaderWebView.swift
 //  WKWebView host for the vendored epub.js reader.
 //
-//  The rendering engine is reused wholesale from the web build
-//  (`frontend/assets/vendor/epub-reader-glue.js`) — iOS ships no native EPUB
+//  The rendering engine is a fork of the web client's glue
+//  (`frontend-js/src/vendor/reader/epub-reader-glue.js`) — iOS ships no native EPUB
 //  renderer, and epub.js already implements CFI positions, pagination, and
 //  annotations against the exact contract the server expects. Everything
 //  around it (chrome, gestures, sheets, persistence) is native.
@@ -50,8 +50,8 @@ enum ReaderMargins: String, Codable, CaseIterable {
 /// pairs columns once the stage reaches `minSpreadWidth`, which the host hands
 /// epub.js at boot; `SpreadFit` decides where that can happen. Without an
 /// explicit value the reader silently inherited "auto" (issue #2081, finding 3);
-/// mirrors the web reader's `Spread` in
-/// `frontend/src/pages/reader/typography.rs`.
+/// mirrors the web reader's spread in
+/// `frontend-js/src/pages/Reader/typography.ts`.
 enum ReaderSpread: String, Codable, CaseIterable {
     case single, double
 
@@ -89,8 +89,8 @@ enum ReaderPageTurn: String, Codable, CaseIterable {
 
 /// The reader's typeface choice. `original` is the absence of an override —
 /// the publisher's embedded faces and the book's own CSS win — and the
-/// default, as in Apple Books. Mirrors `Typeface` in
-/// `frontend/src/pages/reader/typography.rs`; keep the stacks identical.
+/// default, as in Apple Books. Mirrors the typefaces in
+/// `frontend-js/src/pages/Reader/typography.ts`; keep the stacks identical.
 enum ReaderTypeface: String, Codable, CaseIterable {
     case original, editorial, classic, modern, sans, mono
 
@@ -243,7 +243,7 @@ struct RelocateData: Codable {
     /// echo write stamps a fresh clock on an unmoved position, which
     /// out-orders a newer counterpart-format position at the cross-format
     /// clock gate (the same #1972 class the web reader suppresses the same
-    /// way — `!data.echo` in `frontend/src/pages/reader/interop.rs`).
+    /// way — `echo` in `frontend-js/src/pages/Reader/relocate.ts`).
     var echo: Bool = false
     /// The id of the last host seek the glue applied or dropped, so the host
     /// stops re-sending it (`ReaderController.pendingSeek`). Absent until one is.

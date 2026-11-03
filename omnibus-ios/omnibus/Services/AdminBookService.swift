@@ -5,7 +5,7 @@
 //  Both are library-wide (every reader sees the result), so neither passes
 //  rule 08 test 1 and neither ever touches the outbox: every call here goes
 //  straight to the server, throws on failure, and is offered only while
-//  online. Mirrors `frontend/src/data/books/manage.rs`.
+//  online.
 
 import Foundation
 

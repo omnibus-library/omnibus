@@ -1,7 +1,6 @@
 //! Admin book-merge REST endpoints: find a merge partner, absorb one book
 //! into another, and reverse a recorded merge. Thin HTTP shells over
-//! `db::merge_candidates` / `db::merge_books` / `db::undo_merge` — the same
-//! helpers the web-facing `/api/rpc/merge-books*` server functions call.
+//! `db::merge_candidates` / `db::merge_books` / `db::undo_merge`.
 
 use axum::extract::{Query, State};
 use axum::http::StatusCode;
@@ -40,8 +39,6 @@ pub(super) async fn get_merge_candidates(
     State(state): State<AppState>,
     Query(params): Query<MergeCandidatesQuery>,
 ) -> Response {
-    // Mirrors `rpc_merge_candidates`, including its query-length rejection (400 here,
-    // where the RPC returns an error string).
     if search_query_too_long(&params.q) {
         return (StatusCode::BAD_REQUEST, "query too long").into_response();
     }
@@ -75,8 +72,6 @@ pub(super) async fn post_merge_books(
     State(state): State<AppState>,
     Json(req): Json<MergeBooksRequest>,
 ) -> Response {
-    // Repeats the `AdminUser` gate of `rpc_merge_books` in `omnibus_frontend::rpc::books`;
-    // changing one side's gate means changing the other.
     match db::merge_books(
         &state.pool,
         &req.source_uuid,
@@ -122,7 +117,6 @@ pub(super) async fn post_undo_merge(
     State(state): State<AppState>,
     Json(req): Json<UndoMergeRequest>,
 ) -> Response {
-    // Mirrors `rpc_undo_merge`, with the same gate-parity note as `post_merge_books`.
     match db::undo_merge(&state.pool, req.merge_log_id).await {
         Ok(uuid) => Json(UndoMergeResult {
             restored_uuid: uuid,

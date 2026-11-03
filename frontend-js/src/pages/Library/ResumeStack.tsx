@@ -78,6 +78,7 @@ function FanCard({
         style={style}
         title={title}
         aria-label={`Bring ${title} forward`}
+        data-testid={`hero-resume-${book.uuid}`}
         onClick={onLead}
       >
         {cover}
@@ -91,6 +92,7 @@ function FanCard({
       style={style}
       title={title}
       aria-label={`${eyebrow}: ${title}`}
+      data-testid={`hero-resume-${book.uuid}`}
     >
       {cover}
       <span className="lmq-veil" aria-hidden="true">
@@ -121,7 +123,11 @@ export function ResumeStack({ points, lead, onLead }: ResumeStackProps) {
   if (!front) return null;
   const { title, byline } = readout(front);
   return (
-    <section className="lmq-stack" aria-label="Continue reading">
+    <section
+      className="lmq-stack"
+      aria-label="Continue reading"
+      data-testid="continue-stack"
+    >
       <div className="lmq-stack-side">
         <Link to={`/books/${front.book.uuid}`} className="lmq-title-link">
           <h2 className="lmq-title">{title}</h2>
@@ -189,7 +195,12 @@ export function EdgeResume({
   const { book } = point;
   return (
     // inert while hidden: the ribbon is transparent and offscreen, so its button must not be tabbable.
-    <div className="lmq-edge" style={accentOf(point)} inert={!past}>
+    <div
+      className="lmq-edge"
+      style={accentOf(point)}
+      inert={!past}
+      data-testid="resume-edge"
+    >
       <span className="lmq-edge-strip" aria-hidden="true">
         <span className="lmq-edge-vert">{veilLabel}</span>
       </span>
@@ -205,6 +216,7 @@ export function EdgeResume({
           type="button"
           className="lmq-edge-go"
           aria-label={`Resume ${title}`}
+          data-testid={`resume-edge-go-${book.uuid}`}
           onClick={() => navigate(href)}
         >
           {audio ? <PlayGlyph size={11} /> : <BookGlyph size={11} />}

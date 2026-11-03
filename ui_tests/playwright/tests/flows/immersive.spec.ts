@@ -39,8 +39,8 @@ test.describe("immersive read", () => {
       await expect(bookDetailPage.listenButton).toBeVisible();
     });
 
-    // The marquee row uses the design's terser label.
     await test.step("check the immersive read action shows", async () => {
+      await bookDetailPage.openMoreActions();
       await expect(bookDetailPage.immersiveReadButton).toBeVisible();
       await expect(bookDetailPage.immersiveReadButton).toHaveText(/Immersive/);
     });
@@ -64,6 +64,28 @@ test.describe("immersive read", () => {
     });
 
     // The reader has no transport, so the dock shows the listening half.
+    await test.step("check the same book's audiobook is docked", async () => {
+      await expect(epubReaderPage.miniDock.root).toBeVisible();
+      await expect(epubReaderPage.miniDock.titleLabel).toHaveText(
+        DUAL_FORMAT_BOOK.title,
+      );
+    });
+  });
+
+  test("open the reader with the audiobook docked from Files & Details", async ({
+    bookDetailPage,
+    epubReaderPage,
+    dualFormatUuid,
+  }) => {
+    await test.step("open the book", async () => {
+      await bookDetailPage.goto(dualFormatUuid);
+    });
+
+    await test.step("read it immersively from the sync row", async () => {
+      await bookDetailPage.readImmersivelyFromFiles();
+      await epubReaderPage.assertDisplayedFor(dualFormatUuid);
+    });
+
     await test.step("check the same book's audiobook is docked", async () => {
       await expect(epubReaderPage.miniDock.root).toBeVisible();
       await expect(epubReaderPage.miniDock.titleLabel).toHaveText(

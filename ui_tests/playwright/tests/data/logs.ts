@@ -5,7 +5,7 @@ export type LogRecord = {
   message: string;
 };
 
-/** The `LogPage` body `POST /api/rpc/logs` answers with. */
+/** The `LogPage` body `GET /api/admin/logs` answers with. */
 export type LogPage = {
   records: (LogRecord & { timestamp: string })[];
   page: number;

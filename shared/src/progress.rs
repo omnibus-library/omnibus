@@ -14,8 +14,7 @@ mod tests;
 
 /// Maximum number of `SessionReport`s accepted per session-batch upload.
 ///
-/// Enforced at both API boundaries (`POST /api/progress/sessions` and the web
-/// RPC `rpc_record_sessions`) to bound per-request DB work and write-lock hold
+/// Enforced at `POST /api/progress/sessions` to bound per-request DB work and write-lock hold
 /// time. Not runtime-configurable.
 pub const SESSION_BATCH_CAP: usize = 500;
 

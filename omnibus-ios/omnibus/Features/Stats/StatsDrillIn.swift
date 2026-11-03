@@ -1,6 +1,6 @@
 //  StatsDrillIn.swift
 //  Metric-tile drill-in: the sheet a windowed tile opens. The same detail the
-//  web tiles expand to (`frontend/src/pages/stats/drill_in.rs`) — the
+//  web tiles expand to (`frontend-js/src/pages/Stats/drillIn.ts`) — the
 //  tile's own vs-previous-window delta, the metric's trend, and per metric
 //  the half-star distribution (Avg rating), the reading speed and coverage
 //  note (Pages read), or the length distribution and the books completed

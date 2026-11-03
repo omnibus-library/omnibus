@@ -1,7 +1,6 @@
 //! `GET /api/worker/status` and `GET /api/admin/background-tasks`: the live
 //! background-task feed and the recorded run history behind the Maintenance
-//! screen. REST twins of `rpc_worker_status` and `rpc_get_background_tasks`;
-//! the feed is scoped to its caller, the history is admin-only.
+//! screen. The feed is scoped to its caller, the history is admin-only.
 
 use axum::{
     extract::State,

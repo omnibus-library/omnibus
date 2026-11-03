@@ -1,5 +1,4 @@
-//! Suggestions REST handlers (mobile-facing) plus the admin Hardcover-key
-//! API; web hits the analogous `/api/rpc/*` server functions. Serves the
+//! Suggestions REST handlers plus the admin Hardcover-key API. Serves the
 //! cache-backed "readers also enjoyed" strip (`GET .../suggestions`), streams
 //! cached cover bytes (`GET .../cover`), and reads/writes the masked
 //! account-level key (`GET`/`POST /api/hardcover-key`, admin-only).

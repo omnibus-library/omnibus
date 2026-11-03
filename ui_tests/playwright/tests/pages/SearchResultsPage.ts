@@ -1,5 +1,7 @@
 import type { Locator, Page } from "@playwright/test";
 import { TopNavComponent } from "../components/TopNavComponent";
+import { searchUrls } from "../contracts/search";
+import { expect } from "../fixtures/test";
 import { BasePage } from "./BasePage";
 
 /** The full results for a query at `/search/:query`, in sections by kind. */
@@ -48,8 +50,19 @@ export class SearchResultsPage extends BasePage {
     await this.openAndSettle(`/search/${query}`);
   }
 
-  /** Expands or collapses the books section; collapsing needs no fetch. */
-  async toggleShowAllBooks(): Promise<void> {
+  /** Expands the books section and waits for the search it fetches for every hit. */
+  async showAllBooks(): Promise<void> {
+    const fetched = this.page.waitForResponse(
+      (response) =>
+        searchUrls.palette.test(response.url()) &&
+        new URL(response.url()).searchParams.has("limit"),
+    );
+    await this.showAllBooksButton.click();
+    await fetched;
+  }
+
+  /** Collapses the expanded books section, which needs no fetch. */
+  async showFewerBooks(): Promise<void> {
     await this.showAllBooksButton.click();
   }
 
@@ -60,7 +73,11 @@ export class SearchResultsPage extends BasePage {
   }
 
   /** Checks the page is showing the results for `query`. */
+  /** The query is matched decoded: the route percent-encodes it (`genre%3AX`). */
   async assertDisplayedFor(query: string): Promise<void> {
-    await this.assertDisplayedAt(new RegExp(`/search/${query}$`));
+    await expect(this.page).toHaveURL(
+      (url) => decodeURIComponent(url.pathname) === `/search/${query}`,
+    );
+    await expect(this.readyLocator).toBeVisible();
   }
 }

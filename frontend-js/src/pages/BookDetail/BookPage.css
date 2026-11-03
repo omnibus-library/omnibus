@@ -1135,6 +1135,11 @@ button.bp-byline-series {
 .bp-panels {
   view-transition-name: bp-tab-page;
 }
+/* The view-transition name makes the panels a stacking context, so a dialog opened in one sits under the tabs' 3 unless the panels rise above them. */
+.bp-panels:has([aria-modal="true"]) {
+  position: relative;
+  z-index: 4;
+}
 .bp-page-enter {
   animation: bp-page-in 440ms var(--ease-out) both;
 }

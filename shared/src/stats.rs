@@ -91,7 +91,7 @@ pub struct RankedEntity {
 }
 
 // Aggregated from the same session tables as `StatsSummary`, for one
-// `(user, book_uuid)`. The RPC wraps it in `Option`: `None` means no live
+// `(user, book_uuid)`. The handler wraps it in `Option`: `None` means no live
 // book for the uuid or no sitting worth reporting.
 /// One user's reading and listening in one book.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -770,8 +770,8 @@ impl DailyGoalUpdate {
     }
 
     /// Reject an unsupported kind or an out-of-range target. Handlers
-    /// translate `Err(_)` into 400; the db layer re-checks the same bounds,
-    /// since it is also reachable from the RPC.
+    /// translate `Err(_)` into 400; the db layer re-checks the same bounds
+    /// so no other caller can skip them.
     pub fn validate(&self) -> Result<(), String> {
         let Some(max) = Self::max_target(&self.kind) else {
             return Err(format!("unsupported daily goal kind: {}", self.kind));
@@ -831,7 +831,7 @@ impl ReadingGoalUpdate {
 
     /// Reject an unsupported kind, an out-of-range target, or an out-of-range
     /// year. Handlers translate `Err(_)` into 400; the db layer re-checks the
-    /// same bounds as typed variants, since it is also reachable from the RPC.
+    /// same bounds as typed variants so no other caller can skip them.
     pub fn validate(&self) -> Result<(), String> {
         if self.kind_or_default() != GOAL_KIND_BOOKS {
             return Err(format!("unsupported goal kind: {}", self.kind_or_default()));

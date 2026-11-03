@@ -34,7 +34,7 @@ const TIP_FLIP_PCT = 55;
 // Gridlines for a result that names none; the wire allows zero, and zero would divide by it.
 const FALLBACK_DIVISIONS = 4;
 
-// Spelled out so tools/extract-atrium.cjs sees each class.
+// Spelled out so a search for each class name finds it.
 const SERIES_CLASSES = ["cb-s0", "cb-s1", "cb-s2", "cb-s3", "cb-s4", "cb-s5"];
 
 /** The class that colours series `index`, wrapping once the palette runs out. */

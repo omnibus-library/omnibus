@@ -1,8 +1,6 @@
 //! REST handlers for the signed-in reader's Kobo and KOReader devices: list, register, rotate a
-//! device's sync token, and remove it. Mirrors the web server functions in
-//! `frontend/src/rpc/kobo.rs` over the same `db::kobo_devices` calls. Every query is
-//! scoped to the caller's id, so another reader's device is indistinguishable from an
-//! unknown one (404).
+//! device's sync token, and remove it. Every query is scoped to the caller's id, so
+//! another reader's device is indistinguishable from an unknown one (404).
 
 use axum::{
     extract::{Path, State},

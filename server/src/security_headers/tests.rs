@@ -1,5 +1,5 @@
 //! Tests for the security-headers middleware: baseline headers present on
-//! every response, CSP permissiveness for Dioxus hydration and fonts,
+//! every response, the CSP's script, style and font allowances,
 //! handler-supplied overrides winning over the baseline, and HSTS toggling.
 
 use super::*;
@@ -54,22 +54,15 @@ async fn baseline_headers_present_on_every_response() {
 }
 
 #[tokio::test]
-async fn csp_permits_dioxus_hydration_and_fonts() {
+async fn csp_keeps_the_script_style_and_font_allowances_the_client_relies_on() {
     // Guard rails so a future tightening of the CSP doesn't silently
-    // re-break the live page. These assertions encode hard requirements
-    // discovered in-browser (the header-only checks below can't observe
-    // them):
-    //   * Dioxus fullstack emits its hydration bootstrap + serialized
-    //     state as INLINE <script> tags with no nonce, so script-src must
-    //     carry 'unsafe-inline' or the SSR markup never hydrates.
-    //   * dioxus-interpreter-js builds functions via the Function()
-    //     constructor → needs 'unsafe-eval' (NOT just 'wasm-unsafe-eval',
-    //     which only permits WebAssembly.instantiate; the WASM panics on
-    //     init under it). 'unsafe-eval' subsumes WASM instantiation.
-    //   * atrium.css @imports Google Fonts (stylesheet on fonts.googleapis
-    //     .com, WOFF2 glyphs on fonts.gstatic.com) → style-src + font-src
-    //     must allowlist those hosts.
-    //   * Dioxus emits inline style="" attributes → style-src 'unsafe-inline'.
+    // break the live page:
+    //   * script-src keeps 'unsafe-inline' and 'unsafe-eval' until the
+    //     reader stack is proven to run without them.
+    //   * The Google Fonts stylesheet (fonts.googleapis.com) and its WOFF2
+    //     glyphs (fonts.gstatic.com) → style-src + font-src allowlist them.
+    //   * Inline style="" attributes and epub.js blob stylesheets →
+    //     style-src 'unsafe-inline' blob:.
     //   * thumbnails are served as data:/blob: URLs in some paths.
     let app = app_with_baseline();
     let res = app
@@ -83,7 +76,7 @@ async fn csp_permits_dioxus_hydration_and_fonts() {
         .unwrap();
     assert!(
         csp.contains("script-src 'self' 'unsafe-inline' 'unsafe-eval'"),
-        "csp must allow inline (hydration) + Function()-eval (dioxus interpreter) scripts: {csp}"
+        "csp must keep inline and eval script allowances: {csp}"
     );
     assert!(
         csp.contains("style-src 'self' 'unsafe-inline' blob: https://fonts.googleapis.com"),

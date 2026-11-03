@@ -564,7 +564,7 @@
   ],
   "narrative": {
     "northStar": "The Reading Room",
-    "overview": "Omnibus is a quiet, lamp-lit library. The grounds are warm near-blacks, every surface is a slightly lighter tone of the same warm neutral, and the only strong color in the chrome is a single lamplight amber. The books bring everything else: covers are the most colorful, most lifted objects on any screen, and each book can tint its own surroundings with its `accent_color`.\n\nThe voice is editorial and calm. Titles are set in Cormorant Garamond, the interface in Instrument Sans, and labels and numbers in Space Mono uppercase, like a catalogue card. Calm is not static, though: Omnibus likes motion and interactivity. Covers rise under the pointer, sheets slide in, and loaders breathe. The chrome stays quiet until it is touched, then responds.\n\nThe same tokens drive both web clients: the Dioxus app (`frontend/assets/atrium.css`) and the React client (`frontend-js/src/styles/theme.css`). Four themes swap the token values through `data-theme`: dark (the default, documented in the frontmatter), black, light and sepia.",
+    "overview": "Omnibus is a quiet, lamp-lit library. The grounds are warm near-blacks, every surface is a slightly lighter tone of the same warm neutral, and the only strong color in the chrome is a single lamplight amber. The books bring everything else: covers are the most colorful, most lifted objects on any screen, and each book can tint its own surroundings with its `accent_color`.\n\nThe voice is editorial and calm. Titles are set in Cormorant Garamond, the interface in Instrument Sans, and labels and numbers in Space Mono uppercase, like a catalogue card. Calm is not static, though: Omnibus likes motion and interactivity. Covers rise under the pointer, sheets slide in, and loaders breathe. The chrome stays quiet until it is touched, then responds.\n\nThe tokens live in the web client's `frontend-js/src/styles/theme.css`. Four themes swap the token values through `data-theme`: dark (the default, documented in the frontmatter), black, light and sepia.",
     "keyCharacteristics": [
       "Warm oklch neutrals (hue 70–80, chroma near zero) in four tonal steps, with no pure greys outside the black theme.",
       "One chrome accent, Lamplight Amber, used sparingly; covers carry their own color.",
@@ -600,7 +600,7 @@
       },
       {
         "name": "The Frosted Chrome Rule",
-        "body": "Fixed chrome is translucent: the top bar is `bg-0` at 92% with a 10px blur, and the tab bar is `bg-1` at 92% with a 12px blur.",
+        "body": "Fixed chrome is translucent: the top bar is `bg-0` at 92% with a 10px blur.",
         "section": "elevation"
       }
     ],

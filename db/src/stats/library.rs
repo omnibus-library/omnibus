@@ -2,7 +2,7 @@
 //! of audio. Library-scoped rather than per-`(user_id, range)`, so it carries
 //! its own cache. Every total is returned with the count of books behind it —
 //! each input has a state meaning *not measured yet*, which a bare `SUM` would
-//! read as a confident zero. Served by `server::backend::stats` and `rpc`.
+//! read as a confident zero. Served by `server::backend::stats`.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};

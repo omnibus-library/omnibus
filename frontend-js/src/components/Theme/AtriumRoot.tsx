@@ -14,7 +14,7 @@ export function isTheme(value: unknown): value is Theme {
   return THEMES.some((theme) => theme === value);
 }
 
-/** Where the theme is saved: the Dioxus client's key, so both share one per origin. */
+/** Where the theme is saved, one per origin. */
 export const THEME_STORAGE_KEY = "omn.theme";
 
 function savedTheme(): Theme {

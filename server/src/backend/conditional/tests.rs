@@ -385,6 +385,7 @@ async fn an_open_handle_keeps_serving_the_bytes_its_validator_describes() {
         FileResponse {
             content_type: "application/epub+zip",
             cache_control: MEDIA_CACHE_CONTROL,
+            vary: MEDIA_VARY,
             disposition: None,
         },
     )
@@ -420,6 +421,7 @@ async fn serve_answers_a_partial_range_with_the_right_slice_and_content_range() 
         FileResponse {
             content_type: "application/epub+zip",
             cache_control: MEDIA_CACHE_CONTROL,
+            vary: MEDIA_VARY,
             disposition: None,
         },
     )
@@ -451,6 +453,7 @@ async fn serve_answers_an_unsatisfiable_range_with_416_and_the_full_length() {
         FileResponse {
             content_type: "application/epub+zip",
             cache_control: MEDIA_CACHE_CONTROL,
+            vary: MEDIA_VARY,
             disposition: None,
         },
     )
@@ -461,6 +464,29 @@ async fn serve_answers_an_unsatisfiable_range_with_416_and_the_full_length() {
         "bytes */10"
     );
     assert!(resp.headers().get(header::ETAG).is_some());
+}
+
+#[tokio::test]
+async fn serve_publishes_the_vary_it_was_given_on_a_200_and_a_416() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("app.js");
+    tokio::fs::write(&path, b"0123456789").await.expect("write");
+
+    for range in [RangeOutcome::Full, RangeOutcome::NotSatisfiable] {
+        let opened = open(&path).await.expect("open");
+        let resp = serve(
+            opened,
+            range,
+            FileResponse {
+                content_type: "text/javascript",
+                cache_control: "no-cache",
+                vary: "Accept-Encoding",
+                disposition: None,
+            },
+        )
+        .await;
+        assert_eq!(resp.headers().get(header::VARY).unwrap(), "Accept-Encoding");
+    }
 }
 
 #[tokio::test]
@@ -477,6 +503,7 @@ async fn serve_publishes_the_headers_a_conditional_client_needs_next_time() {
         FileResponse {
             content_type: "application/epub+zip",
             cache_control: MEDIA_CACHE_CONTROL,
+            vary: MEDIA_VARY,
             disposition: Some("attachment; filename=\"b.epub\"".into()),
         },
     )

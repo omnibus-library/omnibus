@@ -6,7 +6,7 @@ export type Refusal = {
   message: string;
 };
 
-/** Places a sign-up refusal; keyed on words, as the Dioxus page is, so rewording still lands. */
+/** Places a sign-up refusal; keyed on words rather than whole messages, so rewording still lands. */
 export function refusalOf(error: Error): Refusal {
   // A throttled sign-up answers with the login limiter's generic body.
   if (error instanceof ApiError && error.status === 429) {

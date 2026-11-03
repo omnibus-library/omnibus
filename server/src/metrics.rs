@@ -20,7 +20,7 @@ use axum_prometheus::{
 const METRICS_TOKEN_ENV: &str = "OMNIBUS_METRICS_TOKEN";
 
 /// The one label every request that matched no route is reported under —
-/// the SSR fallback, a probe, a traversal attempt — so an invented URL
+/// the client fallback, a probe, a traversal attempt — so an invented URL
 /// cannot mint a Prometheus series per path an attacker cares to type.
 pub(crate) const UNMATCHED_ENDPOINT: &str = "/<unmatched>";
 

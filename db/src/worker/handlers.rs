@@ -1,6 +1,6 @@
 //! Per-task-kind handlers. `Worker::execute`'s single dispatch match pulls
 //! each [`Task`] variant's inputs and calls the owning module. Every arm's
-//! [`TaskOutcome::Err`] text is client-facing (served by `rpc_worker_status`
+//! [`TaskOutcome::Err`] text is client-facing (served by `GET /api/worker/status`
 //! and the owner-scoped Kindle poll) — no arm may return a raw error's
 //! `Display` verbatim; use the sanitizers below.
 

@@ -4,7 +4,7 @@ The normative rules. For rationale, before/after examples, and the *why*
 behind each rule, see [docs/style-guide.md](../../docs/style-guide.md).
 
 This rule applies to all Rust code in the workspace (`db/`, `server/`,
-`frontend/`, `shared/`, `mobile/`). TypeScript / Playwright style is
+`shared/`, `mcp/`, `mock-kobo/`). TypeScript / Playwright style is
 covered by [04-playwright.md](04-playwright.md).
 
 ## Comments & docs

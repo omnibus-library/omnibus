@@ -1,7 +1,7 @@
 import type { Locator, Page } from "@playwright/test";
 import { BaseComponent } from "./BaseComponent";
 
-/** The book page's cross-format row: whether the formats are linked, the follow switch, and the progress ruler. */
+/** The Files & Details tab's cross-format row: whether the formats are linked, and the follow switch. */
 export class SyncLinkComponent extends BaseComponent {
   readonly root: Locator;
   readonly linkFormatsButton: Locator;

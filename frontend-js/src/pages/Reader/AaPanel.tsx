@@ -122,7 +122,8 @@ export function AaPanel({ prefs, onChange, onClose }: AaPanelProps) {
           />
         </Row>
         <Row label="Typeface">
-          <div className="rd-typeface-row">
+          {/* biome-ignore lint/a11y/useSemanticElements: a fieldset brings a border and min-width Atrium never resets */}
+          <div className="rd-typeface-row" role="group" aria-label="Typeface">
             {TYPEFACES.map(([token, name]) => {
               const stack = TYPEFACE_CSS[token];
               return (

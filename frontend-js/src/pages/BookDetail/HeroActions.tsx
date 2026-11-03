@@ -12,6 +12,7 @@ import {
 } from "../../components/Glyphs/Glyphs";
 import { MoreMenu } from "../../components/MoreMenu/MoreMenu";
 import { spacedDuration } from "../../format";
+import { usePlayback } from "../../playback/PlaybackProvider";
 import { useCurrentUser } from "../../session";
 import type { BookDialog } from "./BookDialogs";
 import { FilePicker, isAudioFile, isReadableFile } from "./FilePicker";
@@ -155,6 +156,7 @@ function MoreActions({
 }) {
   const { isAdmin } = useCurrentUser();
   const navigate = useNavigate();
+  const playback = usePlayback();
   const [open, setOpen] = useState(false);
   const hasFiles = book.formats.length > 0;
   return (
@@ -181,7 +183,11 @@ function MoreActions({
                     label: "Immersive",
                     testId: "more-immersive",
                     icon: <ImmersiveGlyph size={20} />,
-                    onSelect: () => navigate(`/read/${book.uuid}`),
+                    // Loads the audiobook, so the reader opens with it docked.
+                    onSelect: () => {
+                      playback.open(book.uuid, null);
+                      navigate(`/read/${book.uuid}`);
+                    },
                   },
                 ]
               : []),

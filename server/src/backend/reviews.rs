@@ -1,8 +1,7 @@
 //! Book review REST handlers (`/api/reviews/{uuid}`): read a book's reviews,
 //! patch your own field by field, delete it. A patch is validated at the
 //! boundary so bad stars or oversized text return 400. Private notes reach
-//! only their author; `db::reviews` enforces that by type. Web clients use
-//! the `/api/rpc/reviews/*` server functions in `omnibus_frontend::rpc`.
+//! only their author; `db::reviews` enforces that by type.
 
 use axum::{
     extract::{Path, State},

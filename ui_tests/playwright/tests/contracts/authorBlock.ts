@@ -1,4 +1,4 @@
-/** The server function behind "From the same hand"; the REST route is mobile's. */
+/** The author read behind the Overview's "More by" row. */
 export const authorBlockUrls = {
-  author: /\/api\/rpc\/author(?:\?|$)/,
+  author: /\/api\/authors\/\d+(?:\?|$)/,
 };

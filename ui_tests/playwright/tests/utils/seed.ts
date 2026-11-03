@@ -24,12 +24,12 @@ export function audiobookFixturesDir(): string {
 }
 
 /**
- * Seed the running server: POST the fixtures path(s) to `/api/rpc/settings`,
- * then poll `GET /api/rpc/ebooks` until the indexer has surfaced
+ * Seed the running server: POST the fixtures path(s) to `/api/settings`,
+ * then poll `GET /api/ebooks` until the indexer has surfaced
  * `expectedCount` books. Indexing runs in a `tokio::spawn` after the
  * settings write returns, so we cannot rely on the POST response alone.
  *
- * `expectedCount` is the *total* number of books `/api/rpc/ebooks` should
+ * `expectedCount` is the *total* number of books `/api/ebooks` should
  * return — both ebooks and audiobooks ride on the unified landing-page
  * query (`db::library_from_db_combined`). When `audiobookLibraryPath` is
  * `null` (the default) the count is just the ebook total.
@@ -43,7 +43,7 @@ export async function seedLibrary(
   // When no explicit audiobook path is passed, preserve whatever the
   // server already has so parallel specs don't wipe each other's data.
   if (audiobookLibraryPath === null) {
-    const current = await request.get("/api/rpc/settings");
+    const current = await request.get("/api/settings");
     if (current.status() === 200) {
       const body = (await current.json()) as {
         audiobook_library_path?: string | null;
@@ -52,15 +52,7 @@ export async function seedLibrary(
     }
   }
 
-  const settingsResp = await request.post("/api/rpc/settings", {
-    data: {
-      settings: {
-        ebook_library_path: ebookLibraryPath,
-        audiobook_library_path: audiobookLibraryPath,
-      },
-    },
-  });
-  expect(settingsResp.status(), "POST /api/rpc/settings failed").toBe(200);
+  await saveLibraryPaths(request, ebookLibraryPath, audiobookLibraryPath);
 
   await pollForBookCount(request, expectedCount);
 }
@@ -75,23 +67,37 @@ export async function seedAudiobookLibrary(
   audiobookLibraryPath: string,
   expectedCount: number,
 ): Promise<void> {
-  const current = await request.get("/api/rpc/settings");
+  const current = await request.get("/api/settings");
   const currentSettings =
     current.status() === 200
       ? ((await current.json()) as { ebook_library_path?: string | null })
       : {};
 
-  const settingsResp = await request.post("/api/rpc/settings", {
-    data: {
-      settings: {
-        ebook_library_path: currentSettings.ebook_library_path ?? null,
-        audiobook_library_path: audiobookLibraryPath,
-      },
-    },
-  });
-  expect(settingsResp.status(), "POST /api/rpc/settings failed").toBe(200);
+  await saveLibraryPaths(
+    request,
+    currentSettings.ebook_library_path ?? null,
+    audiobookLibraryPath,
+  );
 
   await pollForBookCount(request, expectedCount);
+}
+
+/** Saves both library paths, then rescans both: the save alone rescans only the ebooks. */
+async function saveLibraryPaths(
+  request: APIRequestContext,
+  ebookLibraryPath: string | null,
+  audiobookLibraryPath: string | null,
+): Promise<void> {
+  const saved = await request.post("/api/settings", {
+    data: {
+      ebook_library_path: ebookLibraryPath,
+      audiobook_library_path: audiobookLibraryPath,
+    },
+  });
+  expect(saved.status(), "POST /api/settings failed").toBe(200);
+  if (audiobookLibraryPath === null) return;
+  const scanned = await request.post("/api/scan-library");
+  expect(scanned.status(), "POST /api/scan-library failed").toBe(200);
 }
 
 async function pollForBookCount(
@@ -105,13 +111,13 @@ async function pollForBookCount(
   await expect
     .poll(
       async () => {
-        const resp = await request.get("/api/rpc/ebooks");
+        const resp = await request.get("/api/ebooks");
         if (resp.status() !== 200) return -1;
         const body = (await resp.json()) as { books?: unknown[] };
         return Array.isArray(body.books) ? body.books.length : -1;
       },
       {
-        message: `expected at least ${expectedCount} books from /api/rpc/ebooks after seeding`,
+        message: `expected at least ${expectedCount} books from /api/ebooks after seeding`,
         timeout: 45_000,
         intervals: [100, 200, 500, 1_000, 2_000],
       },

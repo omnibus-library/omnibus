@@ -1,22 +1,29 @@
 import type { Locator, Page } from "@playwright/test";
+import { MetadataFetchComponent } from "../components/MetadataFetchComponent";
 import { MetadataFormComponent } from "../components/MetadataFormComponent";
-import { MetadataSearchOverlayComponent } from "../components/MetadataSearchOverlayComponent";
 import { TopNavComponent } from "../components/TopNavComponent";
 import { coversUrls } from "../contracts/covers";
 import type { EditionAnswers } from "../data/editions";
+import { recordRequests } from "../utils/api";
 import { BasePage } from "./BasePage";
 
-/** A book's metadata edit page at `/books/:uuid/edit`. */
+/** A book's metadata editor at `/books/:uuid/edit`: a sheet over the book page. */
 export class MetadataEditPage extends BasePage {
   protected readonly urlPattern = /\/books\/[^/?#]+\/edit$/;
 
   readonly topNav: TopNavComponent;
   readonly form: MetadataFormComponent;
-  readonly searchOverlay: MetadataSearchOverlayComponent;
+  readonly fetchView: MetadataFetchComponent;
 
-  readonly pageTitleLabel: Locator;
-  readonly breadcrumbHomeLink: Locator;
+  readonly sheet: Locator;
+  readonly sheetTitle: Locator;
+  readonly closeButton: Locator;
   readonly revertButton: Locator;
+  readonly revertDialog: Locator;
+  readonly revertError: Locator;
+  private readonly confirmRevertButton: Locator;
+  private readonly cancelRevertButton: Locator;
+  private readonly dontSaveButton: Locator;
   readonly genresLabel: Locator;
   readonly genresSection: Locator;
   readonly genresInput: Locator;
@@ -25,39 +32,47 @@ export class MetadataEditPage extends BasePage {
     super(page);
     this.topNav = new TopNavComponent(page);
     this.form = new MetadataFormComponent(page);
-    this.searchOverlay = new MetadataSearchOverlayComponent(page);
-    // "Edit metadata" also appears in the breadcrumb tail, so find it by test id.
-    this.pageTitleLabel = page.getByTestId("me-page-title-label");
-    this.breadcrumbHomeLink = page
-      .getByRole("navigation", { name: "breadcrumb" })
-      .getByRole("link", { name: "Home" });
+    this.fetchView = new MetadataFetchComponent(page);
+    this.sheet = page.getByTestId("edit-sheet");
+    // The head names the book as the form holds it, so it follows the Title field.
+    this.sheetTitle = page.getByTestId("es-title");
+    this.closeButton = page.getByTestId("es-close");
     this.revertButton = page.getByTestId("revert-overrides");
-    this.genresLabel = page.getByText("Genres", { exact: true });
+    this.revertDialog = page.getByTestId("revert-overrides-modal");
+    this.revertError = this.revertDialog.getByRole("alert");
+    this.confirmRevertButton = page.getByTestId(
+      "revert-overrides-modal-confirm",
+    );
+    this.cancelRevertButton = page.getByTestId("revert-overrides-modal-cancel");
+    // The leave bar's answer: "Don’t save", with a typographic apostrophe.
+    this.dontSaveButton = page.getByRole("button", { name: /^Don.t save$/ });
     this.genresSection = page.getByTestId("me-genres-section");
+    // The editor opens over the book page, whose Overview has its own "Genres" term.
+    this.genresLabel = this.genresSection.getByText("Genres", { exact: true });
     this.genresInput = this.genresSection.getByTestId("me-genres-input");
   }
 
   protected get readyLocator(): Locator {
-    return this.pageTitleLabel;
+    return this.sheetTitle;
   }
 
-  /** The heading over the form, which names the book among other text. */
+  /** The sheet's head, when it names the book `title`. */
   bookHeading(title: string): Locator {
-    return this.page.getByRole("heading", { level: 2 }).getByText(title);
+    return this.sheetTitle.filter({ hasText: title });
   }
 
   async goto(bookUuid: string): Promise<void> {
     await this.openAndSettle(`/books/${bookUuid}/edit`);
   }
 
-  /** Opens the book's edit page with the providers answering `answers`, then searches. */
+  /** Opens the book's editor with the providers answering `answers`, then fetches. */
   async searchEditions(
     bookUuid: string,
     answers: EditionAnswers,
   ): Promise<void> {
-    await this.searchOverlay.stubEditionLookup(answers);
+    await this.fetchView.stubEditionLookup(answers);
     await this.goto(bookUuid);
-    await this.searchOverlay.openAndSearch();
+    await this.fetchView.openAndSearch();
   }
 
   /** Checks the page is editing the book `bookUuid`, not just any book. */
@@ -65,9 +80,24 @@ export class MetadataEditPage extends BasePage {
     await this.assertDisplayedAt(new RegExp(`/books/${bookUuid}/edit$`));
   }
 
-  /** Clicks Revert to scanned values; a test that asserts the write wraps it. */
+  /** Closes the sheet with its ×, which asks first only when edits are unsaved. */
+  async close(): Promise<void> {
+    await this.closeButton.click();
+  }
+
+  /** Answers the leave bar's question by dropping the unsaved edits. */
+  async leaveWithoutSaving(): Promise<void> {
+    await this.dontSaveButton.click();
+  }
+
+  /** Asks to revert, then confirms; a test that asserts the write wraps it. */
   async revertOverrides(): Promise<void> {
     await this.revertButton.click();
+    await this.confirmRevertButton.click();
+  }
+
+  async cancelRevert(): Promise<void> {
+    await this.cancelRevertButton.click();
   }
 
   /** Adds a genre chip with Enter, which clears the input as the chip lands. */
@@ -76,9 +106,14 @@ export class MetadataEditPage extends BasePage {
     await this.genresInput.press("Enter");
   }
 
+  /** Listens for writes to the book's cover: an upload or a fetch from a URL. */
+  recordCoverWrites(): string[] {
+    return recordRequests(this.page, /\/api\/ebooks\/[^/]+\/cover/, "POST");
+  }
+
   /** Answers a cover-from-URL write with the book as the server would return it. */
   async stubCoverFromUrl(book: Record<string, unknown>): Promise<void> {
-    // The real handler flips both flags, and the sidebar's card reads `has_override`.
+    // The real handler flips both flags, and the cover card reads `has_cover_override`.
     await this.page.route(coversUrls.fromUrl, (route) =>
       route.request().method() === "POST"
         ? route.fulfill({

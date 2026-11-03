@@ -26,7 +26,7 @@ export function currentBook<B extends Book>(
   for (const book of books) {
     const state = states.get(book.uuid);
     if (state?.status !== "reading") continue;
-    // Later books win a tie, as `Iterator::max_by_key` does in the Dioxus page.
+    // Later books win a tie.
     if (!best || (state.lastReadAt ?? -1) >= (best.state.lastReadAt ?? -1)) {
       best = { book, state };
     }

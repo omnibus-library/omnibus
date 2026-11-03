@@ -10,7 +10,7 @@ test.describe("logs section", () => {
   test("show the logs layout", async ({ adminPage, expectMutation }) => {
     const { logs: section } = adminPage;
 
-    // The page reads the logs on mount, as a POST because the read carries a query.
+    // The page reads the logs on mount.
     await test.step("open the logs section", async () => {
       await expectMutation(logs.read(), () => adminPage.goto("logs"));
     });
@@ -147,7 +147,7 @@ test.describe("logs section", () => {
   test("reject an unauthenticated log request", async ({
     anonymousLogViewerRequests,
   }) => {
-    const response = await anonymousLogViewerRequests.postLogs({
+    const response = await anonymousLogViewerRequests.getLogs({
       page: 0,
       per_page: 5,
     });

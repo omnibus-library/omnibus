@@ -2,7 +2,7 @@
 # (`just modules`), the KOReader lane report's, scratch-server.sh's
 # scratch-dir regression test, `just koreader`'s preflight checks, run-dir
 # lifecycle, and home linking and plugin-zip install, the Docker entrypoint's
-# bash suite, and the dev server's process-tree stop.
+# bash suite, the dev server's process-tree stop, and its React build swap.
 #
 # The TestFlight scripts only ever execute against Apple's live API — one
 # during a release dispatch, one on a daily schedule — so a regression is
@@ -14,7 +14,7 @@
 # Deliberately scoped to these suites rather than all of scripts/tests/: the
 # dev-port/dev-serve/with-dev-env bash tests expect a Nix dev shell and a
 # worktree layout that this runner does not have. The scratch-server, Docker
-# entrypoint and dev-server-down ones are plain bash with stubbed I/O or
+# entrypoint, dev-server-down and dev-react-build ones are plain bash with stubbed I/O or
 # stand-in processes, so they run here.
 name: Script tests
 
@@ -45,6 +45,7 @@ on:
       - "scripts/dev-server-down.sh"
       - "scripts/dev-server-up.sh"
       - "scripts/tests/dev-server-down.test.sh"
+      - "scripts/tests/dev-react-build.test.sh"
       - ".github/workflows/script-tests.yml"
   pull_request:
     paths:
@@ -69,6 +70,7 @@ on:
       - "scripts/dev-server-down.sh"
       - "scripts/dev-server-up.sh"
       - "scripts/tests/dev-server-down.test.sh"
+      - "scripts/tests/dev-react-build.test.sh"
       - ".github/workflows/script-tests.yml"
 
 permissions:
@@ -183,3 +185,12 @@ jobs:
 
       - name: Run suite
         run: bash scripts/tests/dev-server-down.test.sh
+
+  dev-react-build:
+    name: dev-port.sh React build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run suite
+        run: bash scripts/tests/dev-react-build.test.sh

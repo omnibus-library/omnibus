@@ -143,7 +143,7 @@ export class CleanupReviewPage extends BasePage {
       route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: String(logId),
+        body: JSON.stringify({ log_id: logId }),
       }),
     );
   }
@@ -151,11 +151,7 @@ export class CleanupReviewPage extends BasePage {
   /** Accepts an undo without writing it, for the same canned card. */
   async stubUndoRecorded(): Promise<void> {
     await this.page.route(cleanupUrls.undo, (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: "null",
-      }),
+      route.fulfill({ status: 204, body: "" }),
     );
   }
 

@@ -30,7 +30,7 @@ export type ShelfOwner = Shelf["owner"] & {
 
 export type OwnerGroup = { owner: ShelfOwner; shelves: Shelf[] };
 
-// Code-unit order, as the Dioxus index sorts.
+// Code-unit order, not locale order.
 const cmp = <T extends string | number | boolean>(a: T, b: T) =>
   a < b ? -1 : a > b ? 1 : 0;
 

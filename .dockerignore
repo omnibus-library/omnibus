@@ -1,5 +1,6 @@
-# Keep the build context small and reproducible. The builder runs a clean
-# `dx bundle`, so none of these are needed (and several would poison it).
+# Keep the build context small and reproducible. The builders run a clean
+# `cargo build` and `pnpm install`, so none of these are needed (and several
+# would poison it).
 
 # Rust build output (multi-GB) — the image rebuilds from source.
 target/

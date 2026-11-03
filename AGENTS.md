@@ -8,11 +8,11 @@ regardless of which agent or tool you are:
 - **[.claude/rules/](.claude/rules/)** — numbered rules applied in order; see
   [CLAUDE.md](CLAUDE.md)'s Rules index for the current, authoritative list
   (as of this writing: dev environment, error handling, unit testing,
-  Playwright, Rust style, SQL migrations, hydration parity, offline writes,
+  Playwright, Rust style, SQL migrations, offline writes,
   content validators, keep-skills-fresh, end-of-session).
 - **[.claude/skills/](.claude/skills/)** — task recipes: `add-backend-route`,
   `add-playwright-flow`, `create-github-issue`, `ui-validate`.
-- **[docs/architecture.md](docs/architecture.md)** — how the seven crates fit
+- **[docs/architecture.md](docs/architecture.md)** — how the five crates fit
   together (request flows, cross-module design); per-module detail lives in
   each file's own `//!` doc, printed by `just modules <dir>`.
 

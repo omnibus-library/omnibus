@@ -74,7 +74,7 @@ turn up something cosmetic that no assertion would catch.
      correct, and one moving because the other did is not.
    - **Flip the scroll-stop layout.** The detail page has two shapes, chosen
      by a per-reader preference (the Scroll stops toggle in the stage's
-     top-right corner, or Settings → Preferences on the web; You → User settings on iOS): off
+     top-right corner, or Settings → Preferences on the web; iOS has one layout and no such setting): off
      (the default) is one
      continuous page with the sections introduced by rules; on snaps the page
      section by section with a dot rail. Turn it on, come back to this book

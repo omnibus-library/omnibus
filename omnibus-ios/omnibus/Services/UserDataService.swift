@@ -102,9 +102,11 @@ enum UserDataService {
 
     /// The audiobooks you were listening to, newest first, each at its latest
     /// listening position even when you have read it since — which the rail
-    /// would show as its ebook card.
-    static func recentAudio() -> AsyncThrowingStream<CacheRead<[ResumePoint]>, Error> {
-        Cache.live(CacheKey.recentAudio) { try await fetchRecentAudio() }
+    /// would show as its ebook card. `confirmsAnswer`: see `Cache.live`.
+    static func recentAudio(
+        confirmsAnswer: Bool = false
+    ) -> AsyncThrowingStream<CacheRead<[ResumePoint]>, Error> {
+        Cache.live(CacheKey.recentAudio, confirmsAnswer: confirmsAnswer) { try await fetchRecentAudio() }
     }
 
     /// `recentAudio()` settled to one answer for a caller acting once on the
@@ -965,6 +967,14 @@ enum UserDataService {
         }
     }
 
+    /// The smart shelves whose rules match the book right now. Apart from
+    /// `shelvesContaining` because a smart shelf's membership can't be toggled.
+    static func smartShelvesContaining(uuid: String) -> AsyncThrowingStream<CacheRead<[Int64]>, Error> {
+        Cache.live(CacheKey.smartShelvesContaining(uuid)) {
+            try await APIClient.shared.get("/api/shelves/containing/\(uuid)/smart")
+        }
+    }
+
     /// Pre-endpoint fallback: read every manual shelf's page and look. Smart
     /// shelves are skipped — their membership is derived and can't be toggled.
     private static func shelvesContainingByScan(uuid: String) async -> [Int64] {
@@ -1220,6 +1230,26 @@ enum UserDataService {
     {
         try await APIClient.shared.get(
             "/api/stats/sessions", query: ["book": book, "before": before])
+    }
+
+    /// A book's whole session log, replica first, so a page reopened offline still
+    /// has its sittings. A single book's log is small, dozens of sittings and not
+    /// thousands, and the cap keeps a pathological one from looping forever. A
+    /// failed page fails the read, rather than storing a partial list as the whole.
+    static func bookSessions(
+        uuid: String
+    ) -> AsyncThrowingStream<CacheRead<[SessionLogEntry]>, Error> {
+        Cache.live(CacheKey.bookSessions(uuid)) {
+            var entries: [SessionLogEntry] = []
+            var before: String?
+            for _ in 0..<12 {
+                let page = try await sessionLog(book: uuid, before: before)
+                entries += page.entries
+                guard let next = page.nextBefore else { break }
+                before = next
+            }
+            return entries
+        }
     }
 
     // MARK: - Offline prefetch

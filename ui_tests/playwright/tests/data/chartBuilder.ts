@@ -12,7 +12,7 @@ const MEASURES = {
 
 type Measure = keyof typeof MEASURES;
 
-/** What the picker posts to `/api/rpc/chart-series`, trimmed to what the stub reads. */
+/** What the picker posts to `/api/stats/chart`, trimmed to what the stub reads. */
 export type ChartSpec = {
   measures: Measure[];
   bucket: string;

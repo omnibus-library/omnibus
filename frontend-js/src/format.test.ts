@@ -22,6 +22,7 @@ import {
   singleFacetValue,
   spacedDuration,
   summaryIsSparse,
+  versionLabel,
   wishlistSource,
 } from "./format";
 
@@ -123,6 +124,20 @@ describe("singleFacetValue", () => {
     ["a facet followed by more text", 'tag:"Sci-fi" dune'],
   ])("returns null for %s", (_case, query) => {
     expect(singleFacetValue(query)).toBeNull();
+  });
+});
+
+describe("versionLabel", () => {
+  it.each([
+    ["0.8.9", "v0.8.9"],
+    ["v0.8.9", "v0.8.9"],
+    ["vv0.8.9", "v0.8.9"],
+    [" v0.8.9 ", "v0.8.9"],
+    ["dev", "dev"],
+    ["v", "dev"],
+    ["  ", "dev"],
+  ])("labels %j as %s", (raw, label) => {
+    expect(versionLabel(raw)).toBe(label);
   });
 });
 

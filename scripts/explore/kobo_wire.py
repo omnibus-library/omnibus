@@ -34,6 +34,7 @@ from audit_lib import env  # noqa: E402
 from audit_lib.client import Account, ApiError, Client, load_accounts  # noqa: E402
 
 DEVICE_NAME = "Mock Kobo"
+DEVICES = "/api/account/kobo-devices"
 DEFAULT_PORTS = {"http": 80, "https": 443}
 ORIGIN_RULE = "OMNIBUS_EXPLORE_URL must be an origin (scheme://host[:port]): no path, query, fragment or credentials"
 
@@ -116,7 +117,7 @@ def instance_url() -> str:
 
 def wire(client: Client, url: str, state: Path) -> tuple[str, str]:
     """Reuse, create or recreate the account's "Mock Kobo"; returns how, and its token."""
-    devices = client.rpc("/api/rpc/kobo/devices", {})
+    devices = client.get_json(DEVICES, [])
     ours = [d for d in devices if d["name"] == DEVICE_NAME and d.get("kind", "kobo") == "kobo"]
     saved = read_state(state)
     have_state = any(state_matches(saved, url, device["token"]) for device in ours)
@@ -124,8 +125,8 @@ def wire(client: Client, url: str, state: Path) -> tuple[str, str]:
     if action == "reuse":
         return "reused", ours[0]["token"]
     for device in ours:
-        client.rpc("/api/rpc/kobo/devices/revoke", {"id": device["id"]})
-    created = client.rpc("/api/rpc/kobo/devices/create", {"name": DEVICE_NAME})
+        client.send("DELETE", f"{DEVICES}/{device['id']}")
+    created = client.send("POST", DEVICES, {"name": DEVICE_NAME})
     return {"create": "created", "recreate": "recreated"}[action], created["token"]
 
 

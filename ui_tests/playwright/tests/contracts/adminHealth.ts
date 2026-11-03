@@ -1,18 +1,12 @@
-import { type ExpectMutationOptions, post } from "../utils/api";
+import { type ExpectMutationOptions, get } from "../utils/api";
 
 /** The endpoint the admin health page polls. */
 export const adminHealthUrls = {
-  poll: /\/api\/rpc\/admin-health(?:\?|$)/,
+  poll: /\/api\/admin\/health(?:\?|$)/,
 };
 
 /** The reads the admin health page makes. */
 export const adminHealth = {
-  /**
-   * The poll loop skips its first tick until the signed-in user resolves, so
-   * the first request lands a full interval after mount.
-   */
-  poll: (): ExpectMutationOptions => ({
-    ...post(adminHealthUrls.poll),
-    timeout: 12_000,
-  }),
+  /** The read the section makes on mount and every five seconds after. */
+  poll: (): ExpectMutationOptions => get(adminHealthUrls.poll),
 };

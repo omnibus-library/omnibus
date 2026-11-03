@@ -158,7 +158,7 @@ pub enum SmtpSecurity {
 }
 
 impl SmtpSecurity {
-    /// Wire token used in the `settings` KV table and the REST/RPC payloads.
+    /// Wire token used in the `settings` KV table and the REST payloads.
     pub fn as_str(self) -> &'static str {
         match self {
             SmtpSecurity::Starttls => "starttls",

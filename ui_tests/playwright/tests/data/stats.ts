@@ -43,7 +43,7 @@ export function buildSession(
   };
 }
 
-/** A stubbed `/api/rpc/stats` answer; the client fails the whole decode without these keys. */
+/** A stubbed `GET /api/stats` answer; the client fails the whole decode without these keys. */
 export function buildSummary(
   overrides: Record<string, unknown> = {},
 ): Record<string, unknown> {
@@ -65,7 +65,7 @@ export function buildSummary(
   };
 }
 
-/** A stubbed `/api/rpc/library-composition` answer, with publishers deliberately empty. */
+/** A stubbed `GET /api/library-composition` answer, with publishers deliberately empty. */
 export const LIBRARY_COMPOSITION = {
   books: 1510,
   ghosted_books: 4,

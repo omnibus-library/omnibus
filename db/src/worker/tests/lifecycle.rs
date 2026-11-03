@@ -300,8 +300,7 @@ async fn await_completion_prunes_completions_entry() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn fire_and_forget_tasks_drain_both_maps() {
-    // Mirrors the boot / settings-save reindex kicks (server::main,
-    // rpc::save_settings): post and discard the id, never awaiting. The
+    // Mirrors the boot / settings-save reindex kicks: post and discard the id, never awaiting. The
     // run loop must still reclaim both map slots.
     let w = make_worker_default(pool().await);
     for i in 0..5 {

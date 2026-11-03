@@ -728,6 +728,100 @@ struct LibraryFilterDeclineTests {
     }
 }
 
+// MARK: - An empty replica nobody confirmed
+
+struct LibraryFirstPageEmptyReplicaTests {
+    /// A first-page read over a replica that already holds `replica`.
+    private func reads(
+        over replica: LibraryPageResult,
+        confirmsAnswer: Bool = false,
+        fetch: @escaping @Sendable () async throws -> LibraryPageResult,
+        fallback: @escaping @Sendable () async throws -> LibraryPageResult
+    ) async -> AsyncThrowingStream<CacheRead<LibraryPageResult>, Error> {
+        await OfflineStore.shared.open()
+        let signature = "test-\(UUID().uuidString)"
+        await Cache.write(CacheKey.libraryPage(signature), replica)
+        return LibraryService.firstPage(
+            signature: signature, confirmsAnswer: confirmsAnswer, fetch: fetch, fallback: fallback
+        )
+    }
+
+    private static let noBooks = LibraryPageResult(books: [])
+    private static let oneBook = LibraryPageResult(
+        books: [Book(id: 1, filename: "a.m4b", title: "A", uniqueIdentifier: "a", formats: ["m4b"])]
+    )
+    private static let serverErrors = [APIError.offline, .http(status: 500, message: "")]
+
+    @Test func firstPageFinishesOnAnEmptyReplicaWhenTheServerFails() async throws {
+        // A filter with no matches, opened offline: the phone's empty state, not an error.
+        for serverError in Self.serverErrors {
+            let answers = await reads(
+                over: Self.noBooks, fetch: { throw serverError }, fallback: { Self.oneBook }
+            )
+            var seen: [CacheRead<LibraryPageResult>] = []
+            for try await read in answers { seen.append(read) }
+            #expect(seen.map(\.value.books.count) == [0])
+            #expect(seen.map(\.isFresh) == [false])
+        }
+    }
+
+    @Test func firstPageRepeatsNothingWhenTheServerRepeatsAnEmptyReplica() async throws {
+        let answers = await reads(
+            over: Self.noBooks, fetch: { Self.noBooks },
+            fallback: { throw LibraryFilterError.needsConnection }
+        )
+        var seen: [CacheRead<LibraryPageResult>] = []
+        for try await read in answers { seen.append(read) }
+        #expect(seen.map(\.isFresh) == [false], "an identical answer isn't repeated, so it ends non-fresh")
+    }
+
+    @Test func firstPageFinishesQuietlyWhenTheServerFailsBehindAReplicaWithBooks() async throws {
+        for confirmsAnswer in [false, true] {
+            let answers = await reads(
+                over: Self.oneBook, confirmsAnswer: confirmsAnswer, fetch: { throw APIError.offline },
+                fallback: { throw LibraryFilterError.needsConnection }
+            )
+            var seen: [CacheRead<LibraryPageResult>] = []
+            for try await read in answers { seen.append(read) }
+            #expect(seen.map(\.value.books.count) == [1])
+            #expect(seen.map(\.isFresh) == [false])
+        }
+    }
+
+    @Test func confirmedFirstPageReportsTheFailureWhenTheServerFailsBehindAnEmptyReplicaAndAnEmptyMirror() async {
+        for serverError in Self.serverErrors {
+            let answers = await reads(
+                over: Self.noBooks, confirmsAnswer: true,
+                fetch: { throw serverError }, fallback: { Self.noBooks }
+            )
+            let error = await failure(of: answers) as? APIError
+            #expect(error?.errorDescription == serverError.errorDescription)
+        }
+    }
+
+    @Test func confirmedFirstPageAnswersFromTheMirrorWhenTheServerFailsBehindAnEmptyReplica() async throws {
+        let answers = await reads(
+            over: Self.noBooks, confirmsAnswer: true,
+            fetch: { throw APIError.offline }, fallback: { Self.oneBook }
+        )
+        var last: CacheRead<LibraryPageResult>?
+        for try await read in answers { last = read }
+        #expect(last?.value.books.map(\.uuid) == ["a"])
+        #expect(last?.isFresh == false)
+    }
+
+    @Test func confirmedFirstPageEndsFreshWhenTheServerRepeatsAnEmptyReplica() async throws {
+        let answers = await reads(
+            over: Self.noBooks, confirmsAnswer: true, fetch: { Self.noBooks },
+            fallback: { throw LibraryFilterError.needsConnection }
+        )
+        var seen: [CacheRead<LibraryPageResult>] = []
+        for try await read in answers { seen.append(read) }
+        #expect(seen.map(\.isFresh) == [false, true])
+        #expect(seen.last?.value.books.isEmpty == true)
+    }
+}
+
 // MARK: - Pages a shelf clause reads
 
 struct ShelfClausePageInvalidationTests {

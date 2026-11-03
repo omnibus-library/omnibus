@@ -92,11 +92,11 @@ class Client:
             raise ApiError(f"GET {path} -> HTTP {status}: {text[:200]}")
         return json.loads(text) if text.strip() else default
 
-    def rpc(self, path: str, payload: dict[str, Any], default: Any = None) -> Any:
-        """Call a Dioxus server function. Its arguments are a named object."""
-        status, text = self._request(path, payload)
-        if status != 200:
-            raise ApiError(f"POST {path} -> HTTP {status}: {text[:200]}")
+    def send(self, method: str, path: str, payload: Any = _NO_BODY, default: Any = None) -> Any:
+        """A write whose failure is the caller's: a non-2xx raises, a JSON body is returned."""
+        status, text = self._request(path, payload, method=method)
+        if not 200 <= status < 300:
+            raise ApiError(f"{method} {path} -> HTTP {status}: {text[:200]}")
         return json.loads(text) if text.strip() else default
 
     def post(self, path: str, payload: Any) -> tuple[int, str]:
@@ -108,6 +108,9 @@ class Client:
 
     def patch(self, path: str, payload: Any) -> tuple[int, str]:
         return self._request(path, payload, method="PATCH")
+
+    def delete(self, path: str) -> tuple[int, str]:
+        return self._request(path, method="DELETE")
 
     def login(self, username: str, password: str, sleep=time.sleep) -> None:
         """Authenticate, failing loudly rather than reading as an empty account."""

@@ -24,6 +24,8 @@ struct ReaderView: View {
     @Environment(AppState.self) private var appState
     @Environment(AudioPlayer.self) private var audio
 
+    /// Opened at a place the book page asked for, which automatic resume must not move.
+    @State private var openedAtAskedPlace = false
     @State private var controller = ReaderController()
     /// The reading view opens bare, the way a book does — the buttons are one
     /// centre tap away, and opening onto them puts chrome over the first page
@@ -754,6 +756,15 @@ struct ReaderView: View {
             opening = settled
             if let cfi = ReaderController.openingCFI(for: settled) { startCFI = cfi }
         }
+        // A jump asked for before this view existed, from the book page: no
+        // view was here to see `pendingCFI` change.
+        if let asked = bridge.pendingCFI {
+            if ReaderController.isEpubCFI(asked) {
+                startCFI = asked
+                openedAtAskedPlace = true
+            }
+            bridge.pendingCFI = nil
+        }
         savedCFI = startCFI
 
         controller.configure(
@@ -841,6 +852,8 @@ struct ReaderView: View {
                     candidate.percent != nil
                 else { return }
                 if resume.follow == true {
+                    // Someone who asked for a passage came for that passage.
+                    guard !openedAtAskedPlace else { return }
                     // Follow mode: resolve-at-open — move the text to the
                     // mapped spot silently, full precision, no banner. This
                     // answer beats the book's load; `seek` holds it until then.

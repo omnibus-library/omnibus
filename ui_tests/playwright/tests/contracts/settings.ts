@@ -8,16 +8,17 @@ import {
 
 /** The endpoints the Administration sections read and write. */
 export const settingsUrls = {
-  settings: /\/api\/rpc\/settings(?:\?|$)/,
-  smtp: /\/api\/rpc\/smtp(?:\?|$)/,
-  smtpClear: /\/api\/rpc\/smtp\/clear(?:\?|$)/,
-  metadataPrecedence: /\/api\/rpc\/metadata-precedence\/set(?:\?|$)/,
+  settings: /\/api\/settings(?:\?|$)/,
+  smtp: /\/api\/smtp(?:\?|$)/,
+  smtpClear: /\/api\/smtp\/clear(?:\?|$)/,
+  metadataPrecedence:
+    /\/api\/settings\/metadata-precedence\/(?:ebook|audiobook)(?:\?|$)/,
   mcp: /\/api\/settings\/mcp(?:\?|$)/,
-  scanLibrary: /\/api\/rpc\/scan-library(?:\?|$)/,
-  rewriteAllEpubs: /\/api\/rpc\/admin\/rewrite-all-epubs(?:\?|$)/,
+  scanLibrary: /\/api\/scan-library(?:\?|$)/,
+  rewriteAllEpubs: /\/api\/admin\/rewrite-all-epubs(?:\?|$)/,
   metadataKey: {
-    hardcover: /\/api\/rpc\/hardcover-key(?:\?|$)/,
-    "google-books": /\/api\/rpc\/google-books-key(?:\?|$)/,
+    hardcover: /\/api\/hardcover-key(?:\?|$)/,
+    "google-books": /\/api\/google-books-key(?:\?|$)/,
   } satisfies Record<MetadataProvider, RegExp>,
 };
 
@@ -30,7 +31,11 @@ export const settings = {
     library: LibrarySettings,
     status = 200,
   ): ExpectMutationOptions =>
-    post(settingsUrls.settings, { settings: library }, status),
+    post(
+      settingsUrls.settings,
+      { ...library, scan_interval_hours: library.scan_interval_hours ?? null },
+      status,
+    ),
 
   saveSmtp: (): ExpectMutationOptions => post(settingsUrls.smtp),
 
@@ -39,8 +44,11 @@ export const settings = {
   rewriteAllEpubs: (): ExpectMutationOptions =>
     post(settingsUrls.rewriteAllEpubs),
 
-  saveMetadataPrecedence: (): ExpectMutationOptions =>
-    post(settingsUrls.metadataPrecedence),
+  /** A save of `library`'s order, which the address names. */
+  saveMetadataPrecedence: (
+    library: "ebook" | "audiobook",
+  ): ExpectMutationOptions =>
+    post(new RegExp(`/api/settings/metadata-precedence/${library}(?:\\?|$)`)),
 
   setMcp: (enabled: boolean): ExpectMutationOptions =>
     post(settingsUrls.mcp, { enabled }, 204),

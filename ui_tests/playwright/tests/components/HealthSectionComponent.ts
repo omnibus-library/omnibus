@@ -1,10 +1,10 @@
 import type { Locator, Page, Response } from "@playwright/test";
 import { adminHealthUrls } from "../contracts/adminHealth";
 import type { AdminHealthReport } from "../data/adminHealth";
-import { isPostTo } from "../utils/api";
+import { isGetOf } from "../utils/api";
 import { BaseComponent } from "./BaseComponent";
 
-const isPoll = isPostTo(adminHealthUrls.poll);
+const isPoll = isGetOf(adminHealthUrls.poll);
 
 /** A poll the server answered with a report. */
 const isAnsweredPoll = (response: Response) =>

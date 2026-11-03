@@ -1,5 +1,5 @@
 import { authors } from "../contracts/authors";
-import { ebooks } from "../contracts/ebooks";
+import { ebooks, filterClauses } from "../contracts/ebooks";
 import {
   authoredBy,
   clauses,
@@ -249,9 +249,9 @@ test.describe("library filters", () => {
       ));
 
     await test.step("check the facet names the format and the list narrowed", async () => {
-      expect(request.postDataJSON().filters).toEqual({
-        clauses: [{ field: "format", mode: "include", values: ["pdf"] }],
-      });
+      expect(filterClauses(request)).toEqual([
+        { field: "format", mode: "include", values: ["pdf"] },
+      ]);
       await expect(filterBar.facet("format")).toBeFocused();
       await expect(filterBar.facet("format")).toHaveAccessibleName(
         "Format PDF",
@@ -284,9 +284,9 @@ test.describe("library filters", () => {
         ));
 
     await test.step("check the facet names the first and counts the rest", async () => {
-      expect(request.postDataJSON().filters).toEqual({
-        clauses: [{ field: "author", mode: "include", values: wanted }],
-      });
+      expect(filterClauses(request)).toEqual([
+        { field: "author", mode: "include", values: wanted },
+      ]);
       await expect(filterBar.facetClearButtons).toHaveCount(1);
       await expect(filterBar.facet("author")).toHaveAccessibleName(
         "Author Monica Lam +1",
@@ -319,12 +319,10 @@ test.describe("library filters", () => {
       ));
 
     await test.step("check both clauses apply", async () => {
-      expect(request.postDataJSON().filters).toEqual({
-        clauses: [
-          { field: "series", mode: "include", values: [COMPENDIUM] },
-          { field: "author", mode: "exclude", values: ["Jeffrey Ullman"] },
-        ],
-      });
+      expect(filterClauses(request)).toEqual([
+        { field: "series", mode: "include", values: [COMPENDIUM] },
+        { field: "author", mode: "exclude", values: ["Jeffrey Ullman"] },
+      ]);
       await expect(filterBar.facetClearButtons).toHaveCount(2);
       await expect(filterBar.facet("series")).toHaveAccessibleName(
         `Series ${COMPENDIUM}`,
@@ -366,9 +364,9 @@ test.describe("library filters", () => {
         expectMutation(ebooks.page(), () => filterBar.removeClause("author")));
 
       await test.step("check only the author clause went", async () => {
-        expect(request.postDataJSON().filters).toEqual({
-          clauses: [{ field: "series", mode: "include", values: [COMPENDIUM] }],
-        });
+        expect(filterClauses(request)).toEqual([
+          { field: "series", mode: "include", values: [COMPENDIUM] },
+        ]);
         await expect(filterBar.facet("author")).toHaveAccessibleName("Author");
         await expect(filterBar.facetClearButton("author")).toHaveCount(0);
         await expect(filterBar.facet("series")).toHaveAccessibleName(
@@ -405,12 +403,10 @@ test.describe("library filters", () => {
         }));
 
       await test.step("check the exclusion replaced the inclusion", async () => {
-        expect(excluded.request.postDataJSON().filters).toEqual({
-          clauses: [
-            { field: "series", mode: "include", values: [COMPENDIUM] },
-            { field: "author", mode: "exclude", values: ["Monica Lam"] },
-          ],
-        });
+        expect(filterClauses(excluded.request)).toEqual([
+          { field: "series", mode: "include", values: [COMPENDIUM] },
+          { field: "author", mode: "exclude", values: ["Monica Lam"] },
+        ]);
         await expect(filterBar.facet("author")).toHaveAccessibleName(
           "Author not Monica Lam",
         );
@@ -432,16 +428,14 @@ test.describe("library filters", () => {
         }));
 
       await test.step("check one author clause holds both", async () => {
-        expect(widened.request.postDataJSON().filters).toEqual({
-          clauses: [
-            { field: "series", mode: "include", values: [COMPENDIUM] },
-            {
-              field: "author",
-              mode: "exclude",
-              values: ["Monica Lam", "Ravi Sethi"],
-            },
-          ],
-        });
+        expect(filterClauses(widened.request)).toEqual([
+          { field: "series", mode: "include", values: [COMPENDIUM] },
+          {
+            field: "author",
+            mode: "exclude",
+            values: ["Monica Lam", "Ravi Sethi"],
+          },
+        ]);
         await expect(filterBar.facetClearButtons).toHaveCount(2);
         await expect(filterBar.facet("author")).toHaveAccessibleName(
           "Author not Monica Lam +1",
@@ -477,6 +471,9 @@ test.describe("library filters", () => {
           slugsWhere((b) => authoredBy(b, "Alfred Aho") && hasFormat(b, "pdf")),
         );
         await expect(libraryPage.noMatchesMessage).toBeVisible();
+        await expect(libraryPage.noMatchesMessage).toContainText(
+          "No books match these filters.",
+        );
         await expect(libraryPage.emptyMessage).toHaveCount(0);
       });
     });
@@ -496,12 +493,10 @@ test.describe("library filters", () => {
         expectMutation(ebooks.page(), () => libraryPage.clearFilters()));
 
       await test.step("check the list is back without a false empty", async () => {
-        expect(request.postDataJSON().filters).toEqual({ clauses: [] });
+        expect(filterClauses(request)).toEqual([]);
         await expect(filterBar.facetClearButtons).toHaveCount(0);
         await libraryPage.assertShowsBooksIncluding(hidden);
-        await expect
-          .poll(() => libraryPage.shelfGallery.allBooksTotal())
-          .toBeGreaterThanOrEqual(hidden.length);
+        await expect(libraryPage.filteredCount).toHaveCount(0);
         await expect(libraryPage.noMatchesMessage).toHaveCount(0);
         expect(await libraryPage.emptyLibraryInsertions()).toBe(0);
       });
@@ -566,7 +561,7 @@ test.describe("library filters", () => {
       expectMutation(ebooks.page(), () => filterBar.clearAll()));
 
     await test.step("check nothing is filtered", async () => {
-      expect(cleared.request.postDataJSON().filters).toEqual({ clauses: [] });
+      expect(filterClauses(cleared.request)).toEqual([]);
       await expect(filterBar.facetClearButtons).toHaveCount(0);
       await expect(filterBar.facet("format")).toHaveAccessibleName("Format");
       await expect(filterBar.facet("author")).toHaveAccessibleName("Author");
@@ -579,7 +574,7 @@ test.describe("library filters", () => {
       expectMutation(ebooks.page(), () => libraryPage.reload()));
 
     await test.step("check the cleared filter was forgotten", async () => {
-      expect(reloaded.request.postDataJSON().filters).toEqual({ clauses: [] });
+      expect(filterClauses(reloaded.request)).toEqual([]);
       await expect(filterBar.facetClearButtons).toHaveCount(0);
       await libraryPage.assertShowsBooksIncluding(hidden);
     });
@@ -607,8 +602,11 @@ test.describe("library filters", () => {
       });
 
     await test.step("check the bar survives the error", async () => {
-      expect(request.postDataJSON().filters.clauses).toHaveLength(1);
+      expect(filterClauses(request)).toHaveLength(1);
       await expect(libraryPage.pageError).toBeVisible();
+      await expect(libraryPage.pageError).toContainText(
+        "Couldn't load the library",
+      );
       await expect(filterBar.facet("format")).toHaveAccessibleName(
         "Format PDF",
       );

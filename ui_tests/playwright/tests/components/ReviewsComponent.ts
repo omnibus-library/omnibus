@@ -1,21 +1,29 @@
-import type { Locator, Page } from "@playwright/test";
+import type { Locator, Page, Request } from "@playwright/test";
 import { journalsUrls } from "../contracts/journals";
 import { reviewsUrls } from "../contracts/reviews";
 import { holdRequests } from "../utils/api";
 import { BaseComponent } from "./BaseComponent";
 
+const isMethod = (method: string) => (request: Request) =>
+  request.method() === method;
+
 /**
- * The book page's Reviews stop: your review card and its composer, the
- * household summary, the other readers' reviews, and the title area's jump in.
+ * The book page's Reviews tab: your review card and its composer, and the
+ * other readers' reviews; plus the hero's household average, which opens the tab.
  */
 export class ReviewsComponent extends BaseComponent {
   readonly section: Locator;
-  readonly kicker: Locator;
+
+  /** The hero's household average, shown once enough readers rated. */
+  readonly summary: Locator;
+  /** The average's stars, named "3.5 out of 5 stars". */
+  readonly summaryAverage: Locator;
+  /** The average's count, "2 reviews", which opens the Reviews tab. */
   readonly jumpLink: Locator;
 
   readonly myReview: Locator;
   readonly starsGroup: Locator;
-  /** The line beside your stars; another status line shares the page. */
+  /** The line beside your stars; the hero's stars have one too. */
   readonly starsMeta: Locator;
   readonly myText: Locator;
   readonly myNotes: Locator;
@@ -29,12 +37,10 @@ export class ReviewsComponent extends BaseComponent {
   private readonly confirmDeleteButton: Locator;
 
   readonly composer: Locator;
-  /** The dialog the marquee opens the composer in, "Write" or "Edit your review". */
-  readonly composerDialog: Locator;
+  /** The review text's field: its toolbar and its editor, inert while a save is out. */
+  readonly textField: Locator;
+  readonly notesField: Locator;
   readonly textEditor: Locator;
-  /** The hidden textarea the review text's live editor mirrors its Markdown into. */
-  readonly textMarkdown: Locator;
-  readonly textBoldButton: Locator;
   private readonly textHighlightsButton: Locator;
   readonly textHighlightsPopover: Locator;
   private readonly textImageInput: Locator;
@@ -44,27 +50,23 @@ export class ReviewsComponent extends BaseComponent {
   readonly cancelButton: Locator;
   readonly saveButton: Locator;
 
-  readonly summary: Locator;
-  readonly summaryAverage: Locator;
-  readonly summaryCount: Locator;
   readonly otherReviewCards: Locator;
   readonly otherReviewText: Locator;
   readonly spoilerVeil: Locator;
   private readonly revealSpoilerButton: Locator;
-  readonly starsOnlyRow: Locator;
-  readonly starsOnlyItems: Locator;
   readonly noOtherReviewsMessage: Locator;
 
   constructor(page: Page) {
     super(page);
     this.section = page.getByTestId("reviews-section");
-    this.kicker = page.getByTestId("reviews-kicker");
-    // Tests assert both tools absent, so they keep their test ids (rule 04d).
-    this.jumpLink = page.getByTestId("reviews-jump");
+
+    this.summary = page.getByRole("group", { name: "Household average" });
+    this.summaryAverage = this.summary.getByRole("img");
+    this.jumpLink = this.summary.getByRole("button");
 
     this.myReview = page.getByRole("region", { name: "Your review" });
     this.starsGroup = this.myReview.getByRole("group", { name: "Your rating" });
-    this.starsMeta = page.getByTestId("review-stars-meta");
+    this.starsMeta = this.myReview.getByTestId("review-stars-meta");
     this.myText = page.getByTestId("my-review-text");
     this.myNotes = page.getByTestId("my-review-notes");
     this.myReviewCheckboxes = this.myReview.getByRole("checkbox");
@@ -80,17 +82,15 @@ export class ReviewsComponent extends BaseComponent {
     });
 
     this.composer = page.getByTestId("review-composer");
-    this.composerDialog = page.getByRole("dialog", { name: /your review$/ });
-    const textField = this.composer.getByTestId("review-body-field");
-    this.textMarkdown = textField.getByTestId("review-body-markdown");
-    this.textBoldButton = textField.getByRole("button", { name: "Bold" });
-    this.textHighlightsButton = textField.getByRole("button", {
+    this.textField = this.composer.getByTestId("review-body-field");
+    this.notesField = this.composer.getByTestId("review-notes-field");
+    this.textHighlightsButton = this.textField.getByRole("button", {
       name: "From highlights",
     });
-    this.textHighlightsPopover = textField.getByTestId(
-      "review-body-highlights-pop",
+    this.textHighlightsPopover = this.textField.getByTestId(
+      "journal-highlights-pop",
     );
-    this.textImageInput = textField.getByTestId("journal-image-input");
+    this.textImageInput = this.textField.getByTestId("journal-image-input");
     this.textEditor = this.composer.getByRole("textbox", {
       name: "Review text",
     });
@@ -105,18 +105,15 @@ export class ReviewsComponent extends BaseComponent {
     // Its label turns to "Saving…" while a save is out.
     this.saveButton = this.composer.getByTestId("review-save");
 
-    this.summary = page.getByTestId("review-summary");
-    this.summaryAverage = page.getByTestId("review-summary-average");
-    this.summaryCount = page.getByTestId("review-summary-count");
     this.otherReviewCards = page.getByTestId("review-card");
     this.otherReviewText = this.otherReviewCards.getByTestId("review-text");
     this.spoilerVeil = page.getByTestId("review-spoiler-veil");
     this.revealSpoilerButton = page.getByRole("button", {
       name: "Show review",
     });
-    this.starsOnlyRow = page.getByTestId("review-stars-only");
-    this.starsOnlyItems = this.starsOnlyRow.getByRole("listitem");
-    this.noOtherReviewsMessage = page.getByTestId("other-reviews-empty");
+    this.noOtherReviewsMessage = this.section.getByRole("heading", {
+      name: "No ratings or reviews yet",
+    });
   }
 
   rateButton(stars: number): Locator {
@@ -134,12 +131,12 @@ export class ReviewsComponent extends BaseComponent {
     });
   }
 
-  /** A star row anywhere in the section, by its label: "4.5 out of 5 stars". */
+  /** A star row anywhere in the tab, by its label: "4.5 out of 5 stars". */
   starsLabelled(label: string): Locator {
     return this.section.getByLabel(label, { exact: true });
   }
 
-  /** Text anywhere in the section, to show what is drawn and what is not. */
+  /** Text anywhere in the tab, to show what is drawn and what is not. */
   textInSection(text: string): Locator {
     return this.section.getByText(text);
   }
@@ -211,7 +208,7 @@ export class ReviewsComponent extends BaseComponent {
 
   /** Holds every later review save until the returned release runs. */
   async holdReviewSaves(): Promise<() => void> {
-    return holdRequests(this.page, reviewsUrls.update);
+    return holdRequests(this.page, reviewsUrls.review, isMethod("PATCH"));
   }
 
   /**
@@ -223,7 +220,8 @@ export class ReviewsComponent extends BaseComponent {
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    await this.page.route(reviewsUrls.update, async (route) => {
+    await this.page.route(reviewsUrls.review, async (route) => {
+      if (route.request().method() !== "PATCH") return route.continue();
       await gate;
       await route.fulfill({
         status: 500,
@@ -236,7 +234,7 @@ export class ReviewsComponent extends BaseComponent {
 
   /** Lets review saves through again after a hold or a forced refusal. */
   async stopHoldingReviewSaves(): Promise<void> {
-    await this.page.unroute(reviewsUrls.update);
+    await this.page.unroute(reviewsUrls.review);
   }
 
   /** Holds every later image upload until the returned release runs. */
@@ -246,6 +244,6 @@ export class ReviewsComponent extends BaseComponent {
 
   /** Holds every later read of the book's reviews until the returned release runs. */
   async holdReviewsRead(): Promise<() => void> {
-    return holdRequests(this.page, reviewsUrls.get);
+    return holdRequests(this.page, reviewsUrls.review, isMethod("GET"));
   }
 }

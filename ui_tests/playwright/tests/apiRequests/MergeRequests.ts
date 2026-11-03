@@ -5,13 +5,13 @@ import { BaseRequests } from "./BaseRequests";
 export class MergeRequests extends BaseRequests {
   /** Returns `{ merge_log_id }`, the handle `postUndo` takes. */
   postMerge(sourceUuid: string, targetUuid: string): Promise<APIResponse> {
-    return this.post("/api/rpc/merge-books", {
+    return this.post("/api/books/merge", {
       source_uuid: sourceUuid,
       target_uuid: targetUuid,
     });
   }
 
   postUndo(mergeLogId: number): Promise<APIResponse> {
-    return this.post("/api/rpc/merge-books/undo", { merge_log_id: mergeLogId });
+    return this.post("/api/books/merge/undo", { merge_log_id: mergeLogId });
   }
 }

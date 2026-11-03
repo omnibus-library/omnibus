@@ -2,11 +2,10 @@
 # Foreground dev-server launcher for the `just serve` / `just serve-pc`
 # multiplexer panes.
 #
-# The panes used to hardcode `--port 3000`, so every worktree's server
-# raced for one port. This resolves a free port inside THIS worktree's
-# window first (same walk `just dev-up` uses), publishes it to
-# .claude/runtime/, then execs `dx serve` so the pane still owns the
-# process and Ctrl-C still stops it.
+# Resolves a free port inside THIS worktree's window (same walk `just dev-up`
+# uses), publishes it to .claude/runtime/, builds the React client when it is
+# stale, then execs `cargo run -p omnibus` serving it at `/`, so the pane owns
+# the process and Ctrl-C stops it. The `react` pane hot-reloads the client.
 #
 # Override the window's base with PORT; override the bind address with
 # OMNIBUS_DEV_ADDR.
@@ -26,7 +25,7 @@ if ! choice="$(choose_port --free-only)"; then
 fi
 port="${choice%%:*}"
 
-# --addr 0.0.0.0 binds all interfaces so other devices on the LAN can reach
+# 0.0.0.0 binds all interfaces so other devices on the LAN can reach
 # the dev server. Cookie-authed POSTs from a LAN origin still need that
 # origin in OMNIBUS_PUBLIC_ORIGIN plus OMNIBUS_SECURE_COOKIES=0 — see
 # .env.example. Trusted networks only: this exposes the dev server (auth
@@ -59,13 +58,8 @@ rewrite_origin_port() {
 # could then POST into this server. Rewriting each inherited entry onto our
 # port keeps an operator's LAN host from .env while dropping its stale port.
 origins="http://localhost:$port,http://127.0.0.1:$port"
-# Reserve the React client's port (the `react` pane's Vite server) and
-# allowlist its origin: dx's proxy rewrites Host, so origin_check can't match
-# a proxied request's Origin against it and needs the allowlist instead.
+# Reserve the `react` pane's port now, so nothing else in the window takes it.
 react_port="$(choose_react_port "$port" || true)"
-if [ -n "$react_port" ]; then
-    origins="$origins,http://localhost:$react_port,http://127.0.0.1:$react_port"
-fi
 if [ -n "${OMNIBUS_PUBLIC_ORIGIN:-}" ]; then
     IFS=',' read -ra inherited <<<"$OMNIBUS_PUBLIC_ORIGIN"
     for entry in "${inherited[@]}"; do
@@ -79,8 +73,10 @@ if [ -n "${OMNIBUS_PUBLIC_ORIGIN:-}" ]; then
     done
 fi
 
+export IP="$addr"
 export PORT="$port"
 export OMNIBUS_PUBLIC_ORIGIN="$origins"
+export OMNIBUS_REACT_DIR="$REACT_DIST"
 
 write_runtime_files "$port"
 if [ -n "$react_port" ]; then
@@ -89,6 +85,6 @@ else
     rm -f "$RUNTIME_DIR/react-port"
 fi
 
-echo "serve: starting dx serve on port $port (http://localhost:$port)" >&2
-exec dx serve --platform web --fullstack \
-    --port "$port" --addr "$addr" --package omnibus
+ensure_react_build
+echo "serve: starting cargo run -p omnibus on port $port (http://localhost:$port)" >&2
+exec cargo run -p omnibus

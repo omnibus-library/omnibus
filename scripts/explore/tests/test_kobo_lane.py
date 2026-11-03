@@ -763,7 +763,7 @@ class DownTests(KoboLaneTestCase):
 
         self.assertEqual(second["wired"], "reused")
         self.assertEqual(second["hardware_id"], first["hardware_id"])
-        self.assertEqual(len(self.fake.calls("/api/rpc/kobo/devices/create")), 1)
+        self.assertEqual(len(self.fake.calls("/api/account/kobo-devices", "POST")), 1)
 
 
 class ScriptShapeTests(unittest.TestCase):

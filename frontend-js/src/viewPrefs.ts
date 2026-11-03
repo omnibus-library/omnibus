@@ -2,9 +2,7 @@ import { useCallback, useRef, useState } from "react";
 import { z } from "zod";
 import { type FilterClause, FilterClauseSchema, SortDir, SortKey } from "./api";
 
-// The Dioxus client keeps the same keys and JSON (frontend/src/view_prefs.rs,
-// shelf_selection.rs), and the React build is served on its origin, so the two
-// read one store. Anything unreadable is the default.
+// Saved in localStorage per route. Anything unreadable is the default.
 
 export type ViewMode = "grid" | "table";
 
@@ -13,7 +11,7 @@ export type Prefs = {
   sort: SortKey;
   dir: SortDir;
   clauses: FilterClause[];
-  // Never shown here, but carried through so a Dioxus value survives a save.
+  // Never shown here, but carried through so a stored value survives a save.
   filtersOpen: boolean;
 };
 
@@ -185,7 +183,7 @@ const DiscoveryStored = z.object({
   shelves_sort: z.enum(["name", "book_count"]).default("name"),
 });
 
-/** The authors, series and shelves indexes' saved orders; the same key and JSON as Dioxus. */
+/** The authors, series and shelves indexes' saved orders. */
 export type DiscoveryPrefs = z.infer<typeof DiscoveryStored>;
 
 /** The saved index orders; anything unreadable is by name. */

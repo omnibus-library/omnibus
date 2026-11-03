@@ -126,7 +126,7 @@ fn done_with_bake_errors_never_carries_a_message_key_on_the_wire() {
     // Regression guard for the PR #1756 review fix: the wire payload
     // must be uuid-only — no per-book error text, which can carry a
     // server filesystem path and is reachable by any authenticated user
-    // via `rpc_worker_status`, not only the admin who ran the bake.
+    // via `GET /api/worker/status`, not only the admin who ran the bake.
     let state = ProgressState::Done {
         processed: 1,
         ghost_warning: None,

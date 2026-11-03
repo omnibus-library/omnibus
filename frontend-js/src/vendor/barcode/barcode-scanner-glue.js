@@ -9,18 +9,16 @@
  *     (0e8d688d71932ebb6b8b33f700d43d3cb997f59ed9cab3c05102d7f10288a392), so
  *     `shasum -a 256 zxing_reader.wasm` proves the two came from one release.
  * The wasm URL is never guessed: zxing-wasm otherwise falls back to a jsDelivr
- * CDN, which mobile (bundled assets, no network to a CDN) can't reach. The Rust
- * side passes the hashed `asset!` URL through `opts.wasmUrl`.
+ * CDN, so the host passes its bundled URL through `opts.wasmUrl`.
  *
- * The Rust scanner sets three optional callbacks on `window`:
+ * The host sets three optional callbacks on `window`:
  *   - `__omnibusOnScanStatus(state)` — "starting" | "ready" | "denied" |
  *     "unsupported" | "error". Drives the permission / fallback UI.
  *   - `__omnibusOnScanTorch(flag)`  — "1" once the active track reports a
  *     torch capability, "0" otherwise. The toggle stays hidden on "0".
  *   - `__omnibusOnScanResult(text)` — the decoded 13-digit EAN. Fired once;
  *     the decode loop stops itself before firing.
- * Every callback takes a single string so the mobile `dioxus.send` shims are
- * uniform (see `check_in::scanner::interop`).
+ * Every callback takes a single string.
  *
  * Public surface: window.OmnibusScanner
  *   start(videoElementId, opts)  opts = { wasmUrl }

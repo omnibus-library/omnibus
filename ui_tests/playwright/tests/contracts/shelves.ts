@@ -1,24 +1,33 @@
 import type { Request } from "@playwright/test";
-import {
-  type ExpectMutationOptions,
-  type ForcedRequest,
-  post,
+import type { NewShelf, ShelfUpdate } from "../data/shelves";
+import type {
+  ExpectMutationOptions,
+  ForcedRequest,
+  MutationMethod,
 } from "../utils/api";
+import { filterClauses } from "./ebooks";
+
+const ID = String.raw`\d+`;
+const END = String.raw`(?:\?|$)`;
+
+/** `/api/shelves/{id}…`, for one shelf when `id` is given, else any. */
+const shelfUrl = (id: number | undefined, rest = ""): RegExp =>
+  new RegExp(String.raw`\/api\/shelves\/${id ?? ID}${rest}${END}`);
 
 /** The shelf endpoints the library and shelf pages call. */
 export const shelvesUrls = {
-  list: /\/api\/rpc\/shelves(?:\?|$)/,
-  create: /\/api\/rpc\/shelves\/create(?:\?|$)/,
-  update: /\/api\/rpc\/shelves\/update(?:\?|$)/,
-  delete: /\/api\/rpc\/shelves\/delete(?:\?|$)/,
-  addBooks: /\/api\/rpc\/shelves\/add-books(?:\?|$)/,
-  removeBook: /\/api\/rpc\/shelves\/remove-book(?:\?|$)/,
-  page: /\/api\/rpc\/shelves\/page(?:\?|$)/,
+  list: new RegExp(String.raw`\/api\/shelves${END}`),
+  page: shelfUrl(undefined, String.raw`\/page`),
 };
 
-/** How many filter clauses a shelf member read carries. */
+/** How many filter clauses a shelf member read carries, from its `filter` query. */
 export function clauseCount(request: Request): number {
-  return request.postDataJSON().filters.clauses.length;
+  return filterClauses(request).length;
+}
+
+/** The shelf a member read is for, from its path. */
+export function shelfReadId(request: Request): number {
+  return Number(new URL(request.url()).pathname.split("/")[3]);
 }
 
 /** A member read that carries a filter. */
@@ -29,26 +38,46 @@ export const filteredShelfRead = (request: Request): boolean =>
 export const unfilteredShelfRead = (request: Request): boolean =>
   clauseCount(request) === 0;
 
-/** An omitted argument leaves the body unchecked. */
-export const shelves = {
-  create: (req?: unknown): ExpectMutationOptions =>
-    post(shelvesUrls.create, req && { req }),
+const call = (
+  method: MutationMethod | "GET",
+  url: RegExp,
+  expectedStatus: number,
+  expectedBody?: unknown,
+): ExpectMutationOptions => ({ method, url, expectedBody, expectedStatus });
 
-  update: (id?: number, req?: unknown): ExpectMutationOptions =>
-    post(shelvesUrls.update, req && { id, req }),
+/** An omitted argument leaves the body (and the shelf id) unchecked. */
+export const shelves = {
+  create: (req?: Partial<NewShelf>): ExpectMutationOptions =>
+    call("POST", shelvesUrls.list, 201, req),
+
+  update: (id?: number, req?: ShelfUpdate): ExpectMutationOptions =>
+    call("PATCH", shelfUrl(id), 200, req),
 
   delete: (id?: number): ExpectMutationOptions =>
-    post(shelvesUrls.delete, id === undefined ? undefined : { id }),
+    call("DELETE", shelfUrl(id), 204),
 
   addBooks: (id?: number, bookUuids?: string[]): ExpectMutationOptions =>
-    post(shelvesUrls.addBooks, bookUuids && { id, book_uuids: bookUuids }),
+    call(
+      "POST",
+      shelfUrl(id, String.raw`\/books`),
+      204,
+      bookUuids && { book_uuids: bookUuids },
+    ),
 
   removeBook: (id?: number, bookUuid?: string): ExpectMutationOptions =>
-    post(shelvesUrls.removeBook, bookUuid && { id, book_uuid: bookUuid }),
+    call(
+      "DELETE",
+      shelfUrl(id, String.raw`\/books\/${bookUuid ?? "[^/?]+"}`),
+      204,
+    ),
 
   /** The shelf list read behind the `/shelves` index. */
   list: (): ForcedRequest => ({ method: "GET", url: shelvesUrls.list }),
 
-  /** A shelf's member read, a POST that changes nothing. */
-  page: (): ExpectMutationOptions => post(shelvesUrls.page),
+  /** A shelf's member read, which a sort or filter change refetches. */
+  page: (): ExpectMutationOptions => call("GET", shelvesUrls.page, 200),
+
+  /** A shelf's member read under a filter, never the full list read beside it. */
+  filteredPage: (): ExpectMutationOptions =>
+    call("GET", /\/api\/shelves\/\d+\/page\?(?:.*&)?filter=/, 200),
 };

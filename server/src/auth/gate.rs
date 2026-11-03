@@ -1,8 +1,8 @@
 //! `require_auth` — top-level middleware, applied in `server/src/main.rs`, that
 //! gates `/api/*` behind a live session: everything other than `/api/auth/*`
-//! and `/api/_health` needs one or gets `401`, while SSR HTML, the WASM bundle,
-//! and static assets pass through (a signed-out *page* load is redirected to
-//! `/login` by [`super::page_gate`] instead). Media read endpoints additionally
+//! and `/api/_health` needs one or gets `401`, while the React client's files
+//! pass through (it sends a signed-out reader to `/login` itself, on the 401
+//! its first API call gets). Media read endpoints additionally
 //! accept the session as a `?token=` query param — see [`is_media_read_path`].
 
 use axum::{

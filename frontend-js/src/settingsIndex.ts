@@ -1,5 +1,4 @@
-// Mirrors SETTINGS_INDEX in frontend/src/pages/settings/sections.rs, which
-// the Dioxus palette searches; keep the two in step until that one retires.
+// The settings and admin sections, as the pages and the search palette name them.
 
 import type { Location } from "react-router";
 

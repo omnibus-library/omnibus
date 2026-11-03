@@ -9,10 +9,10 @@ export class PhysicalRequests extends BaseRequests {
 
   /** Deletes a fileless book with its copies and wishlist entries. */
   deleteBook(bookUuid: string): Promise<APIResponse> {
-    return this.post("/api/rpc/physical/book/delete", { uuid: bookUuid });
+    return this.delete(`/api/physical/${bookUuid}`);
   }
 
   deleteCopy(copyId: number): Promise<APIResponse> {
-    return this.post("/api/rpc/physical/copies/delete", { copy_id: copyId });
+    return this.delete(`/api/physical/copies/${copyId}`);
   }
 }

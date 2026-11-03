@@ -3,7 +3,7 @@ import type { PreferenceTheme } from "../components/TopNavComponent";
 import { authUrls } from "../contracts/auth";
 import { expect } from "../fixtures/test";
 import type { ForcedRequest } from "../utils/api";
-import { waitForHydration } from "../utils/nav";
+import { waitForApp } from "../utils/nav";
 
 const DOCUMENT_MARK = "__omnibusE2eDocument";
 
@@ -110,7 +110,7 @@ export abstract class BasePage {
     );
   }
 
-  /** Reloads and waits until the hydrated page is ready again. */
+  /** Reloads and waits until the app has mounted and the page is ready again. */
   async reload(): Promise<void> {
     await this.page.reload();
     await this.waitUntilReady();
@@ -121,7 +121,7 @@ export abstract class BasePage {
     await this.openAndSettle(path);
   }
 
-  /** Navigates to `path` and waits until the hydrated page is ready. */
+  /** Navigates to `path` and waits until the app has mounted and the page is ready. */
   protected async open(path: string): Promise<void> {
     await this.page.goto(path);
     await this.waitUntilReady();
@@ -134,7 +134,7 @@ export abstract class BasePage {
   }
 
   private async waitUntilReady(): Promise<void> {
-    await waitForHydration(this.page);
+    await waitForApp(this.page);
     await this.readyLocator.waitFor({ timeout: this.readyTimeout });
   }
 

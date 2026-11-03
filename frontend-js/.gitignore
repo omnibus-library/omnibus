@@ -4,3 +4,5 @@ results*.xml
 coverage/
 # Generated from ../openapi/openapi.json by `pnpm run generate`.
 src/api/generated/
+*.tsbuildinfo
+dist.*/

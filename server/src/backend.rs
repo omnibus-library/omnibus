@@ -1,7 +1,5 @@
-//! Hand-written `/api/*` REST routes for the mobile client. Web uses Dioxus
-//! server functions (see `omnibus_frontend::rpc`), mounted automatically by
-//! `dioxus::server::router(App)`; these REST routes are merged alongside them
-//! in `main.rs` so mobile's existing `reqwest` paths keep working unchanged.
+//! The `/api/*` REST routes every client (web, iOS, the MCP tools) speaks, and the
+//! device protocols, merged into the top-level router in `main.rs`.
 
 use std::sync::Arc;
 
@@ -83,9 +81,9 @@ pub use process_meta::{
 };
 pub use react_ui::{react_dir, react_ui_router, REACT_DIR_ENV};
 
-/// Per-IP rate-limit budget for `/api/search/*` and the `/api/rpc/search-*` server
-/// functions, separate from the auth limiter. Each request runs four FTS5 queries plus
-/// joins; the budget still covers a user typing into the command palette.
+/// Per-IP rate-limit budget for `/api/search/*`, separate from the auth limiter. Each
+/// request runs four FTS5 queries plus joins; the budget still covers a user typing into
+/// the command palette.
 pub const SEARCH_RATE_LIMIT_WINDOW: std::time::Duration = std::time::Duration::from_secs(10);
 /// Max search requests per [`SEARCH_RATE_LIMIT_WINDOW`] per IP.
 pub const SEARCH_RATE_LIMIT_MAX: u32 = 30;
@@ -139,11 +137,11 @@ async fn serve_download(
         .file_name()
         .and_then(|s| s.to_str())
         .unwrap_or("download");
+    let disposition = Some(content_disposition_attachment(filename));
     serve_file(
         req,
         path,
-        content_type,
-        Some(content_disposition_attachment(filename)),
+        conditional::FileResponse::media(content_type, disposition),
     )
     .await
 }
@@ -153,39 +151,25 @@ async fn serve_download(
 async fn serve_file(
     req: axum::extract::Request,
     path: &std::path::Path,
-    content_type: &str,
-    disposition: Option<String>,
+    spec: conditional::FileResponse<'_>,
 ) -> Response {
     let open = match conditional::open(path).await {
         Ok(open) => open,
         Err(e) => {
-            tracing::warn!(?path, error = %e, "media file open failed");
+            tracing::warn!(?path, error = %e, "file open failed");
             return axum::http::StatusCode::NOT_FOUND.into_response();
         }
     };
     let range = match conditional::evaluate(req.headers(), &open.validator, open.len) {
         conditional::Precondition::NotModified(etag) => {
-            return conditional::not_modified(
-                &etag,
-                conditional::MEDIA_CACHE_CONTROL,
-                conditional::MEDIA_VARY,
-            )
+            return conditional::not_modified(&etag, spec.cache_control, spec.vary)
         }
         conditional::Precondition::Failed => {
             return axum::http::StatusCode::PRECONDITION_FAILED.into_response()
         }
         conditional::Precondition::Proceed { range } => range,
     };
-    conditional::serve(
-        open,
-        range,
-        conditional::FileResponse {
-            content_type,
-            cache_control: conditional::MEDIA_CACHE_CONTROL,
-            disposition,
-        },
-    )
-    .await
+    conditional::serve(open, range, spec).await
 }
 
 /// Build a `Content-Disposition: attachment` value for `filename`.
@@ -326,30 +310,19 @@ impl AppState {
     }
 }
 
-/// Build the `/api/*` REST router with a fresh per-call search rate-limiter.
+/// Build the `/api/*` REST router, with its own per-IP search rate limiter.
 pub fn rest_router(state: AppState) -> Router {
-    // Standalone/test entrypoint: a fresh, dedicated search limiter per call.
-    // The live server uses `rest_router_with_search_limiter` to share one (#249).
     let search_limiter = RateLimiter::with_policy(SEARCH_RATE_LIMIT_WINDOW, SEARCH_RATE_LIMIT_MAX)
         .with_limits(state.rate_limits());
-    rest_router_with_search_limiter(state, std::sync::Arc::new(search_limiter))
-}
-
-/// Build the `/api/*` REST router, sharing `search_limiter` with the caller so
-/// REST `/api/search/*` and RPC `/api/rpc/search-*` draw from one budget.
-pub fn rest_router_with_search_limiter(
-    state: AppState,
-    search_limiter: std::sync::Arc<RateLimiter>,
-) -> Router {
     rest_router_with_timeouts(
         state,
-        search_limiter,
+        std::sync::Arc::new(search_limiter),
         REQUEST_TIMEOUT,
         uploads::UPLOAD_BODY_IDLE_TIMEOUT,
     )
 }
 
-/// [`rest_router_with_search_limiter`] with both time limits as arguments,
+/// [`rest_router`] with the search limiter and both time limits as arguments,
 /// so a test can drive them at a sub-second scale.
 fn rest_router_with_timeouts(
     state: AppState,
@@ -372,8 +345,8 @@ fn rest_router_with_timeouts(
         // tests; in the live server `main.rs` adds the same Extension at
         // the top, which is harmless overlap.
         .layer(Extension(pool))
-        // `main.rs` layers the same cap at the top so the auth router and
-        // Dioxus server functions are covered too; duplicating it here
+        // `main.rs` layers the same cap at the top so the auth router is
+        // covered too; duplicating it here
         // means integration tests (which use `rest_router` directly) also
         // exercise it.
         .layer(axum::extract::DefaultBodyLimit::max(1024 * 1024))

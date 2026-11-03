@@ -27,9 +27,10 @@ test.describe("delete book files", () => {
       await bookDetailPage.goto(uuid);
     });
 
-    await test.step("check the rail offers an admin delete", async () => {
+    await test.step("check the files tab offers an admin delete", async () => {
       await bookDetailPage.assertDisplayed();
       await bookDetailPage.topNav.assertDisplayed();
+      await bookDetailPage.openTab("Files & Details");
       await expect(bookDetailPage.editMetadataLink).toBeVisible();
       await expect(dialog.openButton).toBeVisible();
     });
@@ -112,33 +113,38 @@ test.describe("delete book files", () => {
     });
   });
 
-  test("delete an uploaded ebook with its record and file on disk", async ({
-    bookDetailPage,
-    libraryPage,
-    uploadedEbook,
-    bookExists,
-    expectMutation,
-  }) => {
+  test.describe("uploading a book of its own", () => {
+    // The upload waits on a scan queued behind the seed's backfill, which the
+    // fixture runs before the test body could ask for more time.
     test.slow();
-    const { deleteFilesDialog: dialog } = bookDetailPage;
 
-    await test.step("select every file of the uploaded book", async () => {
-      await bookDetailPage.goto(uploadedEbook.uuid);
-      await dialog.open();
-      await dialog.selectAll();
-      await dialog.continueToConfirm();
-    });
+    test("delete an uploaded ebook with its record and file on disk", async ({
+      bookDetailPage,
+      libraryPage,
+      uploadedEbook,
+      bookExists,
+      expectMutation,
+    }) => {
+      const { deleteFilesDialog: dialog } = bookDetailPage;
 
-    await test.step("confirm the delete", async () => {
-      await expectMutation(books.deleteFiles(), () => dialog.confirmDelete());
-    });
+      await test.step("select every file of the uploaded book", async () => {
+        await bookDetailPage.goto(uploadedEbook.uuid);
+        await dialog.open();
+        await dialog.selectAll();
+        await dialog.continueToConfirm();
+      });
 
-    // The last file gone takes the book with it, and the page back to the library.
-    await test.step("check the book and its file are gone", async () => {
-      await libraryPage.assertDisplayed();
-      expect(await bookExists(uploadedEbook.uuid)).toBe(false);
-      // The canonical `<author>/<title>/` folders are pruned with the file.
-      expect(existsSync(uploadedEbook.folder)).toBe(false);
+      await test.step("confirm the delete", async () => {
+        await expectMutation(books.deleteFiles(), () => dialog.confirmDelete());
+      });
+
+      // The last file gone takes the book with it, and the page back to the library.
+      await test.step("check the book and its file are gone", async () => {
+        await libraryPage.assertDisplayed();
+        expect(await bookExists(uploadedEbook.uuid)).toBe(false);
+        // The canonical `<author>/<title>/` folders are pruned with the file.
+        expect(existsSync(uploadedEbook.folder)).toBe(false);
+      });
     });
   });
 
@@ -165,6 +171,7 @@ test.describe("delete book files", () => {
     // to delete files it hasn't got (#2471).
     await test.step("open the delete dialog", async () => {
       await bookDetailPage.goto(uuid);
+      await bookDetailPage.openTab("Files & Details");
       await expect(dialog.openButton).toHaveText(/Delete record/);
       await dialog.open();
     });

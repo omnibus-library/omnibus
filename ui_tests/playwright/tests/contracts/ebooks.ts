@@ -1,15 +1,33 @@
-import { type ExpectMutationOptions, post } from "../utils/api";
+import type { Request, Response } from "@playwright/test";
+import type { ExpectMutationOptions } from "../utils/api";
 
 /** The library listing endpoint the landing page reads. */
 export const ebooksUrls = {
-  page: /\/api\/rpc\/ebooks\/page(?:\?|$)/,
+  page: /\/api\/ebooks(?:\?|$)/,
 };
 
-/** The landing page's keyset page read, a POST that changes nothing. */
+/** The filter clauses a list read carries in its `filter` param; none when it has none. */
+export function filterClauses(request: Request): unknown[] {
+  const filter = new URL(request.url()).searchParams.get("filter");
+  return filter ? JSON.parse(filter) : [];
+}
+
+/** A `waitForResponse` predicate: a page read whose filter names `value`. */
+export function isPageReadFiltering(
+  value: string,
+): (response: Response) => boolean {
+  return (response) =>
+    ebooksUrls.page.test(response.url()) &&
+    JSON.stringify(filterClauses(response.request())).includes(value);
+}
+
+/** The landing page's keyset page read. */
 export const ebooks = {
   /** A read a full page load triggers passes a longer `timeout`. */
   page: (timeout?: number): ExpectMutationOptions => ({
-    ...post(ebooksUrls.page),
+    method: "GET",
+    url: ebooksUrls.page,
+    expectedStatus: 200,
     timeout,
   }),
 };

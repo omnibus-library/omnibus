@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { FilterClause } from "../../api";
 import { aShelf, userId } from "../../testing/books";
 import {
@@ -8,6 +8,7 @@ import {
   matching,
   namedOptions,
   noMatchLine,
+  revealBelow,
   shelfLabel,
   shelfOptions,
   statusLine,
@@ -212,5 +213,36 @@ describe("noMatchLine", () => {
     expect(noMatchLine("tags", "zz", 500)).toBe(
       "No tags match “zz” among the 500 most-used.",
     );
+  });
+});
+
+describe("revealBelow", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  // A facet in a 600px window, with its bottom edge at `bottom`.
+  const facetAt = (bottom: number, phone = false) => {
+    vi.stubGlobal("innerHeight", 600);
+    vi.stubGlobal("matchMedia", () => ({ matches: phone }));
+    const facet = document.createElement("button");
+    facet.getBoundingClientRect = () => ({ bottom }) as DOMRect;
+    facet.scrollIntoView = vi.fn();
+    return facet;
+  };
+
+  it("scrolls a facet up only when its menu would not fit below it on a wide window", () => {
+    const low = facetAt(250);
+    revealBelow(low);
+    expect(low.scrollIntoView).toHaveBeenCalledWith({
+      block: "start",
+      behavior: "instant",
+    });
+
+    const high = facetAt(100);
+    revealBelow(high);
+    expect(high.scrollIntoView).not.toHaveBeenCalled();
+
+    const phone = facetAt(250, true);
+    revealBelow(phone);
+    expect(phone.scrollIntoView).not.toHaveBeenCalled();
   });
 });

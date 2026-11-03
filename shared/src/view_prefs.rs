@@ -1,26 +1,10 @@
-//! Library-view preferences (sort, view mode, filters) persisted per library.
-//! The filter shape itself is [`crate::view_filters`].
-//!
-//! Lives here — and not in `frontend/` — so a future server-backed per-user
-//! prefs endpoint can reuse the shape verbatim. For now persistence is
-//! localStorage on web and in-memory on mobile (see `frontend/src/view_prefs.rs`).
+//! The library list's sort order on the wire: [`SortKey`] and [`SortDir`], with
+//! the tokens the REST `?sort=` and `?dir=` queries carry.
 
 use serde::{Deserialize, Serialize};
 
-use crate::view_filters::ViewFilters;
-
 #[cfg(test)]
 mod tests;
-
-/// How a library list is laid out: as a table or as a grid of covers.
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-#[serde(rename_all = "lowercase")]
-pub enum ViewMode {
-    Table,
-    #[default]
-    Grid,
-}
 
 /// The order to list books in.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -93,54 +77,4 @@ impl SortDir {
             SortDir::Desc => "desc",
         }
     }
-}
-
-/// One library's saved view settings: layout, sort order and filter.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct ViewPrefs {
-    pub view_mode: ViewMode,
-    pub sort_key: SortKey,
-    pub sort_dir: SortDir,
-    #[serde(default)]
-    pub filters: ViewFilters,
-    /// Whether the filter panel is open. Defaults to false.
-    #[serde(default)]
-    pub filters_open: bool,
-}
-
-/// How to order the shelves list: by name, or by book count with the most books first.
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-#[serde(rename_all = "snake_case")]
-pub enum IndexSort {
-    #[default]
-    Name,
-    BookCount,
-}
-
-// Its tokens match `IndexSort`'s, so a choice stored before `Recent` existed
-// still parses.
-/// How to order the authors or series list: by name, by book count, or by the ones you
-/// read most recently.
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-#[serde(rename_all = "snake_case")]
-pub enum BrowseSort {
-    #[default]
-    Name,
-    BookCount,
-    Recent,
-}
-
-/// The saved orders of the authors, series and shelves lists.
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct DiscoveryPrefs {
-    #[serde(default)]
-    pub authors_sort: BrowseSort,
-    #[serde(default)]
-    pub series_sort: BrowseSort,
-    #[serde(default)]
-    pub shelves_sort: IndexSort,
 }

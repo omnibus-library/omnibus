@@ -1,6 +1,5 @@
-//! Physical Check-In wire types shared between web (`#[server]`) and mobile
-//! (`reqwest`): a library-wide physical copy of a book and a per-user physical
-//! wishlist entry. Both reference a book by its durable `books.uuid`.
+//! Physical Check-In wire types: a library-wide physical copy of a book and a
+//! per-user physical wishlist entry. Both reference a book by its durable `books.uuid`.
 
 use serde::{Deserialize, Serialize};
 

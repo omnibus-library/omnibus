@@ -1,10 +1,10 @@
 //  AudioPlayer.swift
 //  AVPlayer-backed audiobook playback.
 //
-//  Replaces the WebView's hls.js path entirely: AVPlayer speaks HLS natively,
+//  AVPlayer rather than a WebView's hls.js: AVPlayer speaks HLS natively,
 //  and routing through `MPNowPlayingInfoCenter` / `MPRemoteCommandCenter` gets
 //  lock-screen, Control Center, AirPlay, and CarPlay transport for free —
-//  none of which the hybrid build could offer.
+//  none of which a WebView player could offer.
 
 import AVFoundation
 import Combine
@@ -39,14 +39,21 @@ final class AudioPlayer {
     /// the same banner slot as [`syncOffer`].
     private(set) var crossFormatOffer: CrossFormatCandidate?
 
-    private(set) var book: Book?
+    private(set) var book: Book? {
+        didSet { publishPlaybackState() }
+    }
     private(set) var manifest: AudiobookManifest?
     /// The `book_files` row playback was built against. Resolved on load —
     /// an explicit pick, else the file the saved position was taken in, else
     /// the server's default — and carried on every position write so a
     /// resume reopens this file rather than the book's first one.
     private(set) var fileID: Int64?
-    private(set) var isPlaying = false
+    private(set) var isPlaying = false {
+        didSet { publishPlaybackState() }
+    }
+    /// What a play/pause control draws and does: playing, or a start still owed
+    /// that a press takes back. `isPlaying` alone says whether there is audio.
+    var isPlayingOrStarting: Bool { pendingStarts.togglePauses(isPlaying: isPlaying) }
     /// Whether a load is still awaiting its item and opening position.
     var isLoading: Bool { loadingGeneration != nil }
     /// The generation of the load in flight. Not a flag: a load superseded by
@@ -123,7 +130,9 @@ final class AudioPlayer {
     /// listener's own clears every one; a play, in the app or from outside it,
     /// clears a call's hold and re-arms the start of a load or resume still in
     /// flight.
-    private var pendingStarts = PendingStarts()
+    private var pendingStarts = PendingStarts() {
+        didSet { publishPlaybackState() }
+    }
     private var interruptionObserver: NSObjectProtocol?
     private var routeChangeObserver: NSObjectProtocol?
     /// Whether a play with no player to start is still finding the book to
@@ -301,6 +310,8 @@ final class AudioPlayer {
         error = nil
         position = 0
         duration = 0
+        // The car and the lock screen get the title now, not when the load lands.
+        updateNowPlaying()
 
         // The default file, the offer's file match and `isDefaultFileSelected`
         // all read the book's files, which a resume point's mirror book lacks.
@@ -383,12 +394,16 @@ final class AudioPlayer {
             finishLoad(generation)
             if pendingStarts.afterLoad == generation { pendingStarts.afterLoad = nil }
             self.error = (error as? APIError)?.errorDescription ?? error.localizedDescription
+            // The load's end is when `currentArtwork`'s gate lifts for the cover.
+            updateNowPlaying()
         }
     }
 
     /// Mark load `generation` done, unless a newer load has taken over.
     private func finishLoad(_ generation: Int) {
-        if loadingGeneration == generation { loadingGeneration = nil }
+        guard loadingGeneration == generation else { return }
+        loadingGeneration = nil
+        pendingStarts.loadEnded()
     }
 
     /// `book` with its files, from the replica or the server; bare when
@@ -689,6 +704,8 @@ final class AudioPlayer {
     /// Start playback — or, with a load in flight, owe it the start, and with
     /// a book whose load failed, load it again.
     func play() {
+        // Every caller is a resume; a rebuild's own start takes `startPlayback` instead.
+        if !isPlaying { artworkRetry.noteResumed() }
         pendingStarts.overruleCall()
         // Nothing to start yet: the load makes the start once it lands.
         if let loadingGeneration {
@@ -703,8 +720,9 @@ final class AudioPlayer {
         }
         // Setting a rate on a failed item does nothing at all — the silent
         // dead end #2408 is named for. A manual tap is also the listener
-        // telling us to try again, so it refills the budget an automatic run
-        // may have spent before giving up.
+        // telling us to try again, and so is a call ending on a start it held,
+        // so both refill the budget an automatic run may have spent before
+        // giving up.
         if player.currentItem?.status == .failed {
             health.reset()
             error = nil
@@ -723,7 +741,7 @@ final class AudioPlayer {
     /// which the rebuilt item can itself reach `.failed`, and `play()` would
     /// then reset the budget and start recovery over at attempt 1 forever.
     /// Automatic retries must stay inside `PlaybackHealth`'s budget; only a
-    /// listener's own tap refills it.
+    /// play the listener asked for refills it.
     private func startPlayback(on player: AVPlayer) {
         player.rate = Float(rate)
         isPlaying = true
@@ -773,8 +791,14 @@ final class AudioPlayer {
 
     func toggle() {
         Haptics.tap()
-        // `play()` mid-load would re-arm the start the listener means to cancel.
-        pendingStarts.togglePauses(isPlaying: isPlaying) ? pause() : play()
+        togglePlayback(start: play)
+    }
+
+    /// A press of play/pause, in the app or from outside it, which starts the
+    /// way its caller does. Mid-load it pauses: `play()` would re-arm the start
+    /// the listener means to cancel.
+    private func togglePlayback(start: @MainActor () -> Void) {
+        isPlayingOrStarting ? pause() : start()
     }
 
     func seek(to seconds: Double) async {
@@ -936,7 +960,6 @@ final class AudioPlayer {
         position = 0
         duration = 0
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
-        MPNowPlayingInfoCenter.default().playbackState = .stopped
 
         guard let closing else { return }
         Task {
@@ -1360,46 +1383,95 @@ final class AudioPlayer {
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
         // Stated rather than left to the system to infer: CarPlay's Now Playing
         // stayed on its play button through playback no remote command started.
-        MPNowPlayingInfoCenter.default().playbackState = isPlaying ? .playing : .paused
+        // This call is each tick's re-statement, for a car connected mid-listen.
+        // A start still owed reads as playing, as on the app's own controls; the
+        // rate above stays real, or the system runs the scrubber on with no audio.
+        publishPlaybackState()
+    }
+
+    /// Whether a publish is queued for the end of this main-actor turn.
+    @ObservationIgnored private var playbackStatePublishIsQueued = false
+
+    /// State the system's play/pause control from what it follows, so no write to
+    /// `isPlaying`, `pendingStarts` or `book` can leave the car on a stale button.
+    /// Once per main-actor turn, after its `nowPlayingInfo`: a start passes through
+    /// not-playing between its writes, and the system would flash its play button.
+    /// Written even if unchanged: the system's copy can drift from the app's value.
+    private func publishPlaybackState() {
+        guard !playbackStatePublishIsQueued else { return }
+        playbackStatePublishIsQueued = true
+        Task { @MainActor in
+            playbackStatePublishIsQueued = false
+            MPNowPlayingInfoCenter.default().playbackState = Self.nowPlayingState(
+                isPlayingOrStarting: isPlayingOrStarting, hasBook: book != nil
+            )
+        }
+    }
+
+    /// A start still finding its book reads as playing, or a second press re-arms
+    /// it rather than cancelling; never `.paused` with no book.
+    nonisolated static func nowPlayingState(
+        isPlayingOrStarting: Bool, hasBook: Bool
+    ) -> MPNowPlayingPlaybackState {
+        if isPlayingOrStarting { return .playing }
+        return hasBook ? .paused : .stopped
     }
 
     /// The book's artwork; not `isFinal` while it is the plate standing in
     /// for art that didn't load.
     private var artworkCache: (uuid: String, artwork: MPMediaItemArtwork, isFinal: Bool)?
-    /// The book whose artwork is loading. Now Playing updates twice a second,
-    /// and each would otherwise start another fetch and render of the cover.
-    private var artworkLoading: String?
+    /// The `loadGeneration` whose artwork is loading. Now Playing updates twice
+    /// a second, and each would otherwise start another fetch and render of the
+    /// cover. A load left over from before a book change holds nothing up.
+    private var artworkLoading: Int?
     /// Whether a plate waits on the connection to try its art again.
     private var artworkAwaitsConnection = false
+    /// When a plate may ask the server for its art again.
+    private var artworkRetry = ArtworkRetrySchedule()
 
     private var currentArtwork: MPMediaItemArtwork? {
         guard let book else { return nil }
         let cached = artworkCache?.uuid == book.uuid ? artworkCache : nil
         if let cached, cached.isFinal { return cached.artwork }
-        // Offline, each tick's attempt would wait out a request timeout.
-        guard artworkLoading != book.uuid, cached == nil || Connectivity.shared.isOnline else {
-            return cached?.artwork
-        }
-        artworkLoading = book.uuid
+        artworkRetry.noteCurrent(uuid: book.uuid)
+        // Offline, each tick's attempt would wait out a request timeout. Mid-load,
+        // the `play()` the load is about to make would lift a failure's wait at once.
+        guard !isLoading, artworkLoading != loadGeneration,
+              cached == nil || Connectivity.shared.isOnline, artworkRetry.fetchIsDue(at: .now)
+        else { return cached?.artwork }
+        let generation = loadGeneration
+        artworkLoading = generation
         Task {
-            await loadArtwork(for: book)
-            if artworkLoading == book.uuid { artworkLoading = nil }
+            await loadArtwork(for: book, generation: generation)
+            if artworkLoading == generation { artworkLoading = nil }
         }
         return cached?.artwork
     }
 
-    private func loadArtwork(for book: Book) async {
+    private func loadArtwork(for book: Book, generation: Int) async {
         if let cached = artworkCache, cached.uuid == book.uuid, cached.isFinal { return }
         var art: UIImage?
+        var fetchFailed = false
         if book.coverURL != nil {
             art = await ImageCache.shared.image(for: "/api/thumbs/\(book.uuid)/lg")
-            if art == nil, Connectivity.shared.isOnline,
-               let data = try? await APIClient.shared.data(for: "/api/covers/\(book.uuid)") {
-                art = UIImage(data: data)
+            if art == nil, Connectivity.shared.isOnline {
+                do {
+                    let data = try await APIClient.shared.data(for: "/api/covers/\(book.uuid)")
+                    art = UIImage(data: data)
+                    fetchFailed = art == nil
+                } catch APIError.offline {
+                    // Refused without being sent, so it costs the schedule nothing.
+                } catch {
+                    fetchFailed = true
+                }
             }
         }
+        // A load from before a book change says nothing about the book now
+        // playing, and writing its plate would drop that book's artwork.
+        guard generation == loadGeneration else { return }
+        if fetchFailed { artworkRetry.noteFailure(at: .now) }
         // Art that didn't load shows the plate meanwhile, and is tried again on
-        // a later update — offline, once the connection is back.
+        // a later update, once the schedule allows and the connection is there.
         let isFinal = art != nil || book.coverURL == nil
         if isFinal || artworkCache?.uuid != book.uuid,
            let image = Self.artworkImage(for: book, art: art) {
@@ -1407,21 +1479,24 @@ final class AudioPlayer {
             artworkCache = (book.uuid, artwork, isFinal)
             updateNowPlaying()
         }
-        if !isFinal, !Connectivity.shared.isOnline { retryArtworkOnceOnline() }
+        if !isFinal { retryArtworkOnceOnline() }
     }
 
     /// Update Now Playing once the connection is back, which tries the art
-    /// again — a paused book sends no updates of its own.
+    /// again — a paused book sends no updates of its own. Armed online as well:
+    /// a fetch's own transport failure reaches `Connectivity` after it returns.
     private func retryArtworkOnceOnline() {
         guard !artworkAwaitsConnection else { return }
         artworkAwaitsConnection = true
+        let wasOnline = Connectivity.shared.isOnline
         withObservationTracking {
             _ = Connectivity.shared.isOnline
         } onChange: { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
                 self.artworkAwaitsConnection = false
-                if Connectivity.shared.isOnline {
+                if Connectivity.shared.isOnline, !wasOnline {
+                    self.artworkRetry.noteConnectionReturned()
                     self.updateNowPlaying()
                 } else {
                     self.retryArtworkOnceOnline()
@@ -1455,11 +1530,7 @@ final class AudioPlayer {
         center.togglePlayPauseCommand.addTarget { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
-                // A start still owed — a load, a rebuild, a resume finding its
-                // book, or one a call holds — counts as playing, so the toggle
-                // takes it back.
-                self.pendingStarts.togglePauses(isPlaying: self.isPlaying)
-                    ? self.pause() : self.remotePlay()
+                self.togglePlayback(start: self.remotePlay)
             }
             return .success
         }
@@ -1612,7 +1683,7 @@ final class AudioPlayer {
         if response == .resume, (try? AVAudioSession.sharedInstance().setActive(true)) == nil {
             response = .pause
         }
-        let stopping = isPlaying || pendingStarts.startIsPending
+        let stopping = isPlayingOrStarting
         // Settled before the transport moves: `play()` may arm a rebuild.
         pendingStarts = pendingStarts.settled(
             by: response, loading: loadingGeneration, recovering: recoveryTask != nil,
@@ -1623,8 +1694,10 @@ final class AudioPlayer {
             if stopping { stopTransport() }
         case .resume:
             // A load, rebuild or resume in flight has no item to play yet, so
-            // `settled` handed it the start. Calling `play()` instead would
-            // refill the rebuild budget only a listener's tap may refill.
+            // `settled` handed it the start, and `play()` would refill that
+            // rebuild's budget. With nothing in flight the start is `play()`'s,
+            // and its retry of a load or item that failed under the call is
+            // meant: the listener asked for this book before the call.
             if !pendingStarts.startIsPending { play() }
         case .ignore:
             break

@@ -1,7 +1,6 @@
 import type { BookReviews, MyReview, ReviewChange } from "../../api";
 
-// Ports of the Dioxus page's helpers (`pages/book_detail/reviews/`), so both clients
-// count, clip and word the section alike.
+// The reviews section's counting, clipping and wording.
 
 /** A write to your review: a change to some of its fields, or deleting all of it. */
 export type ReviewWrite = ReviewChange | "delete";

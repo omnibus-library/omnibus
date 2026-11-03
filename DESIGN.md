@@ -143,7 +143,7 @@ Omnibus is a quiet, lamp-lit library. The grounds are warm near-blacks, every su
 
 The voice is editorial and calm. Titles are set in Cormorant Garamond, the interface in Instrument Sans, and labels and numbers in Space Mono uppercase, like a catalogue card. Calm is not static, though: Omnibus likes motion and interactivity. Covers rise under the pointer, sheets slide in, and loaders breathe. The chrome stays quiet until it is touched, then responds.
 
-The same tokens drive both web clients: the Dioxus app (`frontend/assets/atrium.css`) and the React client (`frontend-js/src/styles/theme.css`). Four themes swap the token values through `data-theme`: dark (the default, documented in the frontmatter), black, light and sepia.
+The tokens live in the web client's `frontend-js/src/styles/theme.css`. Four themes swap the token values through `data-theme`: dark (the default, documented in the frontmatter), black, light and sepia.
 
 **Key Characteristics:**
 - Warm oklch neutrals (hue 70–80, chroma near zero) in four tonal steps, with no pure greys outside the black theme.
@@ -201,9 +201,9 @@ A warm, near-monochrome room lit by one amber lamp.
 
 ## Layout
 
-The shell is a sticky top bar over a full-width `main`, padded by a fluid gutter (`clamp(1.25rem, 4vw, 3.5rem)`). The app has no outer max-width; content blocks cap their own widths instead, mostly 560–720px for forms and dialogs and up to 1120px for wide panels. Below 720px, Dioxus adds a fixed bottom tab bar and reserves room for it. When the mini player is open, `main` gets bottom padding so the player never covers content.
+The shell is a sticky top bar over a full-width `main`, padded by a fluid gutter (`clamp(1.25rem, 4vw, 3.5rem)`). The app has no outer max-width; content blocks cap their own widths instead, mostly 560–720px for forms and dialogs and up to 1120px for wide panels. When the mini player is open, `main` gets bottom padding so the player never covers content.
 
-Breakpoints: 720px is the phone line, the one most rules key off. 900px collapses the search trigger and two-pane browse layouts, and 1100px, 560px and 480px make finer adjustments. Every hover style sits inside `@media (hover: hover)`, and touch devices get the hover colors on press instead.
+Breakpoints: 720px is the phone line, the one most rules key off. 900px collapses two-pane browse layouts, and 1100px, 560px and 480px make finer adjustments. Every hover style sits inside `@media (hover: hover)`, and touch devices get the hover colors on press instead.
 
 Rhythm: `--gap` (18px) between siblings, and `--pad` (28px) inside page-level containers.
 
@@ -222,7 +222,7 @@ Depth is layered throughout. Surfaces first separate by tone (`bg-0` → `bg-3`)
 ### Named Rules
 **The Distance Rule.** A shadow's size says how far the object sits from the page, from card to cover to popover to modal to sheet. Never give a lower layer a bigger shadow than a layer above it.
 
-**The Frosted Chrome Rule.** Fixed chrome is translucent: the top bar is `bg-0` at 92% with a 10px blur, and the tab bar is `bg-1` at 92% with a 12px blur.
+**The Frosted Chrome Rule.** Fixed chrome is translucent: the top bar is `bg-0` at 92% with a 10px blur.
 
 ## Shapes
 
@@ -260,8 +260,7 @@ Quiet until touched.
 
 ### Navigation
 - **Top bar:** sticky and frosted, 65px tall (61px on phones), with a serif 25px wordmark on the left. Nav links are mono uppercase pills: Soft Ink at rest, Page White on Shelf on hover, Page White on Raised when active. Links hide below 720px.
-- **Search trigger:** a 36px pill showing the ⌘K hint. In Dioxus it collapses to a 36px circle below 900px.
-- **Phone tab bar** (Dioxus): a frosted bottom bar whose active icon is amber, with a raised 46px amber scan button in the center.
+- **Search trigger:** a 36px pill showing the ⌘K hint.
 
 ### Book Cover
 The most important object on any screen.
@@ -270,7 +269,7 @@ The most important object on any screen.
 - **Missing cover:** a neutral plate with the author in spaced uppercase sans on top and the title in balanced serif below, both sized to the cover with container units.
 
 ### Loading
-Every wait draws from the shared loading kit (`frontend/src/components/loading.rs`, `frontend-js/src/components/Loading/`), and the mark follows the shape being filled: the riffle for a page or a reader stage (the line for an audio stage), the line for a section or sheet, and the ring for a row or a busy button. Content whose shape is known gets skeletons instead. Marks breathe on a 1.7s beat, and loaders that would show for less than 160ms never appear. [Rule 12](.claude/rules/12-loading-states.md) is the full guide.
+Every wait draws from the shared loading kit (`frontend-js/src/components/Loading/`), and the mark follows the shape being filled: the riffle for a page or a reader stage (the line for an audio stage), the line for a section or sheet, and the ring for a row or a busy button. Content whose shape is known gets skeletons instead. Marks breathe on a 1.7s beat, and loaders that would show for less than 160ms never appear. [Rule 12](.claude/rules/12-loading-states.md) is the full guide.
 
 ## Do's and Don'ts
 

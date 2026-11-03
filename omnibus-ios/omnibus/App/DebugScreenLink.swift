@@ -86,7 +86,6 @@ final class DebugScreenLink {
             rest.removeFirst()
             return .series(id: id)
         case "book": return rest.popFirst().map { .book(uuid: $0) }
-        case "edit": return rest.popFirst().map { .metadataEdit(uuid: $0) }
         case "author": return rest.popFirst().flatMap(Int64.init).map { .author(id: $0) }
         case "shelf": return rest.popFirst().flatMap(Int64.init).map { .shelf(id: $0) }
         case "tag": return rest.popFirst().map { .tag(name: $0) }

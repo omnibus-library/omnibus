@@ -11,6 +11,7 @@ import {
   facetValue,
   fieldLabel,
   MAX_FILTER_CLAUSES,
+  revealBelow,
   withFieldClause,
   withoutField,
 } from "./filters";
@@ -50,7 +51,10 @@ function Facet({
         aria-expanded={open}
         disabled={atCap}
         title={atCap ? `At most ${MAX_FILTER_CLAUSES} filters` : undefined}
-        onClick={() => setOpen(!open)}
+        onClick={() => {
+          if (!open && trigger.current) revealBelow(trigger.current);
+          setOpen(!open);
+        }}
       >
         <span>{label}</span>
         {clause && (

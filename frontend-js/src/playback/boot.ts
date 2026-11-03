@@ -1,7 +1,7 @@
 import type { ListeningResume, ListeningRow } from "../api";
 import { read, write } from "../viewPrefs";
 
-// The localStorage keys the Dioxus client uses; both clients share the origin, so the values.
+// The localStorage keys for a book's position and rate, and the player volume.
 const positionKey = (uuid: string) => `omn.listening::${uuid}`;
 const rateKey = (userId: number, uuid: string) =>
   `omn.listening.rate::${userId}::${uuid}`;

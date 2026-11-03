@@ -13,9 +13,8 @@ mod tests;
 
 /// Directory holding the on-disk JSON logs. `$OMNIBUS_LOG_DIR` is used verbatim
 /// when set; otherwise `<$OMNIBUS_DATA_DIR>/logs` (data dir default `./data`),
-/// mirroring the other durable-storage dirs. Kept here (not in `server`) so the
-/// frontend RPC — which can't depend on the `server` crate — reaches the same
-/// path the writer uses.
+/// mirroring the other durable-storage dirs. The log writer and the log-reading
+/// handler both call it, so they can't disagree on the path.
 pub fn log_dir() -> PathBuf {
     resolve_log_dir(
         std::env::var("OMNIBUS_LOG_DIR").ok(),

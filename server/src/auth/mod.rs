@@ -3,8 +3,8 @@
 //! CSRF origin check ([`csrf`]), pluggable auth backends ([`strategy`]),
 //! the initial-admin recovery hook ([`boot`]), admin impersonation
 //! ([`impersonation`]), the sessions-listing
-//! projection ([`session_view`]), the `/api/*` gate middleware ([`gate`]),
-//! and its page-load counterpart ([`page_gate`]). Mounted by [`crate::main`].
+//! projection ([`session_view`]), and the `/api/*` gate middleware ([`gate`]).
+//! Mounted by `main.rs`.
 
 pub mod api_tokens;
 pub mod basic;
@@ -14,7 +14,6 @@ pub mod extractor;
 pub mod gate;
 pub mod handlers;
 pub mod impersonation;
-pub mod page_gate;
 pub mod session_view;
 pub mod strategy;
 
@@ -26,7 +25,6 @@ pub use csrf::origin_check;
 pub use extractor::{AdminUser, AuthUser, MediaAuthUser};
 pub use gate::require_auth;
 pub use handlers::{auth_router, auth_routes};
-pub use page_gate::require_page_session;
 
 /// Plain session-cookie name used on plain-HTTP dev origins. Re-exported
 /// from `omnibus_db::auth::SESSION_COOKIE_NAME` so cookie issuance

@@ -222,7 +222,7 @@ pub(super) async fn post_scan_library(
     _admin: AdminUser,
     State(state): State<AppState>,
 ) -> Response {
-    // Fire-and-forget twin of the web `rpc_scan_library`.
+    // Fire-and-forget: the worker scans after this answers.
     let settings = match db::get_settings(&state.pool).await {
         Ok(s) => s,
         Err(error) => return internal("read settings", error),

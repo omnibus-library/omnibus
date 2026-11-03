@@ -1,73 +1,52 @@
 # syntax=docker/dockerfile:1
 
 ###############################################################################
-# Builder — compiles the Dioxus fullstack web bundle (native Axum server +
-# the hydrated WASM client). Mirrors the CI bundle step in
-# .github/workflows/e2e.yml: `dx bundle --platform web --package omnibus
-# --fullstack --release --debug-symbols=false`, which emits
-# target/dx/omnibus/release/web/.
-#
-# This deliberately does NOT use the Nix dev shell — a plain Rust toolchain
-# keeps the image conventional and light. `dx` downloads the matching
-# wasm-bindgen + wasm-opt itself, so the wasm-bindgen pin in flake.nix is not
-# needed here. The Dioxus libraries are `=`-pinned to crates.io 0.7.9 in the
-# root Cargo.toml, so the CLI is pinned to the same 0.7.9.
+# Builder — compiles the `omnibus` server binary (`server/`). A plain Rust
+# toolchain rather than the Nix dev shell keeps the image conventional and light.
 ###############################################################################
-# Debian 13 (trixie) for glibc >= 2.39: the prebuilt `dx` release binary is
-# linked against GLIBC_2.39, which bookworm (2.36) doesn't provide. The runtime
-# stage must share this glibc baseline since the server binary is compiled here.
+# Debian 13 (trixie): the runtime stage must share this glibc baseline, since
+# the server binary is compiled here.
 FROM rust:1-trixie AS builder
 
-# `clang`/`pkg-config` cover the handful of -sys crates; `curl` is for the
-# cargo-binstall bootstrap below. sqlite is statically bundled by
-# libsqlite3-sys and TLS is rustls, so no libsqlite3/openssl dev packages.
+# `clang`/`pkg-config` cover the handful of -sys crates. sqlite is statically
+# bundled by libsqlite3-sys and TLS is rustls, so no libsqlite3/openssl dev packages.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        clang pkg-config curl \
+        clang pkg-config \
     && rm -rf /var/lib/apt/lists/*
-
-RUN rustup target add wasm32-unknown-unknown
-
-# Pull the prebuilt Dioxus CLI release binary (compiling it from source would
-# add many minutes). Pinned to v0.7.10 to match the pinned Dioxus libraries.
-RUN curl -L --proto '=https' --tlsv1.2 -sSf \
-        https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash \
-    && cargo binstall -y dioxus-cli@0.7.10
 
 WORKDIR /src
 COPY . .
 
-# Release tag (e.g. "v0.8.9") the crate's own `version` never carries — every
-# merge to main cuts a release (.github/workflows/release.yml) but Cargo.toml
-# stays pinned at 0.1.0. `frontend::version::app_version` reads this via
-# `option_env!` at compile time, so it must be set before `dx bundle`
-# compiles both the server binary and the WASM client (#1055).
-ARG OMNIBUS_VERSION
-ENV OMNIBUS_VERSION=${OMNIBUS_VERSION}
-
-# Produces /src/target/dx/omnibus/release/web/{server, public/, ...}.
-# `--debug-symbols` defaults to true even with `--release`: it keeps DWARF in
-# the WASM, wasm-opt aborts parsing it, and dx ships the unoptimized module.
-RUN dx bundle --platform web --package omnibus --fullstack --release --debug-symbols=false
+RUN cargo build --release --locked -p omnibus --bin omnibus
 
 ###############################################################################
-# React — the frontend-js client, built for /react/. Shipped in every image
-# but served only when the operator sets OMNIBUS_REACT=1 (docker/entrypoint.sh).
+# React — the frontend-js client, the web UI the server serves at `/`. Each
+# text asset gets a brotli and a gzip sibling, which the server sends to a
+# browser that accepts that encoding (`backend::react_ui`).
 ###############################################################################
 FROM node:22-trixie-slim AS react
 
-RUN corepack enable
+RUN apt-get update && apt-get install -y --no-install-recommends brotli \
+    && rm -rf /var/lib/apt/lists/* \
+    && corepack enable
 
 WORKDIR /src
 # orval generates the API client from the spec during `pnpm install`.
 COPY openapi/openapi.json openapi/
 COPY frontend-js/ frontend-js/
 
+# Release tag (e.g. "v0.8.9") the client shows as its version; every merge to
+# main cuts a release (.github/workflows/release.yml) but package.json never
+# carries it.
 ARG OMNIBUS_VERSION
 ENV OMNIBUS_VERSION=${OMNIBUS_VERSION}
 
 # Corepack picks pnpm from the working directory's package.json, not `--dir`.
 WORKDIR /src/frontend-js
-RUN pnpm install --frozen-lockfile && pnpm run build
+RUN pnpm install --frozen-lockfile && pnpm run build \
+    && find dist -type f \( -name '*.js' -o -name '*.mjs' -o -name '*.css' -o -name '*.html' \
+        -o -name '*.svg' -o -name '*.json' -o -name '*.wasm' -o -name '*.txt' \) \
+        -exec brotli --keep --best {} + -exec gzip --keep --best {} +
 
 ###############################################################################
 # Runtime — slim image carrying just the bundle, ffmpeg (audiobook HLS
@@ -103,21 +82,18 @@ RUN set -eux; \
     kepubify --version
 
 WORKDIR /app
-# The server locates its `public/` assets relative to the binary, so keep the
-# whole bundle directory intact.
-COPY --from=builder /src/target/dx/omnibus/release/web/ /app/
+COPY --from=builder /src/target/release/omnibus /app/server
+# docker/entrypoint.sh points OMNIBUS_REACT_DIR here.
 COPY --from=react /src/frontend-js/dist/ /app/react/
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# Re-declared in this stage (ARG/ENV don't cross the builder's `FROM`
-# boundary) so the *running* server also reads its own release tag at boot
-# — `server::backend::app_version` calls `std::env::var("OMNIBUS_VERSION")`
-# at runtime, not compile time, unlike the frontend's `option_env!` constant
-# baked in above (#1055).
+# Re-declared in this stage (ARG/ENV don't cross a `FROM` boundary) so the
+# running server reads its own release tag at boot — `/api/_health` reports
+# `std::env::var("OMNIBUS_VERSION")`.
 ARG OMNIBUS_VERSION
 
-# Bind on all interfaces (Dioxus defaults to 127.0.0.1, unreachable from
+# Bind on all interfaces (the server defaults to 127.0.0.1, unreachable from
 # outside the container) and default the persistent paths into the /config
 # and /cache volumes. Everything here is overridable in docker-compose.yml.
 # The split is what a delete of /cache costs: only paths the server can

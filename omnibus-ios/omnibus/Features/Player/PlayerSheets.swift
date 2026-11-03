@@ -1,8 +1,8 @@
 //  PlayerSheets.swift
 //  Speed and sleep bottom sheets for the audiobook player.
 //
-//  Mirrors the web mobile player's SpeedSheet/SleepSheet
-//  (frontend/src/pages/listen/mobile/sheets.rs): same preset tables,
+//  Mirrors the web player's speed and sleep panels
+//  (frontend-js/src/pages/Listen/Panels.tsx): same preset tables,
 //  fine-tune step, and end-of-chapter option, so the two clients' player
 //  modals can't drift.
 

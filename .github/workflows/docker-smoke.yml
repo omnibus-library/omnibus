@@ -1,0 +1,58 @@
+name: Docker smoke
+
+# Builds the image a release would publish and runs scripts/docker-smoke.sh on
+# it: the React client at `/`, and a session signed in on the latest published
+# image surviving the upgrade. docker.yml only builds at release time, so
+# without this a broken image would first show up on Docker Hub.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - "Dockerfile"
+      - ".dockerignore"
+      - "docker/**"
+      - "server/**"
+      - "db/**"
+      - "shared/**"
+      - "mcp/**"
+      - "koreader/**"
+      - "frontend-js/**"
+      - "openapi/**"
+      - "Cargo.lock"
+      - "**/Cargo.toml"
+      - "scripts/docker-smoke.sh"
+      - ".github/workflows/docker-smoke.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: docker-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  smoke:
+    name: build and smoke-test the image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build the image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: omnibus:smoke
+          build-args: |
+            OMNIBUS_VERSION=smoke-${{ github.sha }}
+          # Read-only: docker.yml owns this scope, and a per-ref write would evict the rust caches.
+          cache-from: type=gha,scope=linux-amd64
+
+      - name: Smoke-test it, upgrading from the latest release
+        run: scripts/docker-smoke.sh omnibus:smoke --upgrade-from sesloan/omnibus:latest

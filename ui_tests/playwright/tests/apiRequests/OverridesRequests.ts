@@ -7,12 +7,12 @@ export class OverridesRequests extends BaseRequests {
     uuid: string,
     overrides: Record<string, unknown>,
   ): Promise<APIResponse> {
-    return this.post("/api/rpc/ebook/overrides", { uuid, overrides });
+    return this.post(`/api/ebooks/${uuid}/overrides`, overrides);
   }
 
   /** Drops every override on the book, its cover included. */
   deleteOverrides(uuid: string): Promise<APIResponse> {
-    return this.post("/api/rpc/ebook/overrides/delete", { uuid });
+    return this.delete(`/api/ebooks/${uuid}/overrides`);
   }
 
   /** Uploads `png` as the book's cover override; the REST route takes multipart. */

@@ -9,8 +9,6 @@
   font-family: var(--mono);
   font-weight: 600;
   letter-spacing: 0.02em;
-}
-.shv-card-owner-av {
   width: 22px;
   height: 22px;
   font-size: 8.5px;
@@ -290,6 +288,17 @@
     color: var(--ink-0);
     border-color: var(--accent);
     background: var(--bg-1);
+  }
+}
+.shelf-add-tile[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+@media (hover: hover) {
+  .shelf-add-tile[aria-disabled="true"]:hover {
+    color: var(--ink-2);
+    border-color: var(--line);
+    background: transparent;
   }
 }
 .shelf-add-tile-plus {

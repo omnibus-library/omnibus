@@ -90,7 +90,7 @@ struct CarModeView: View {
             }
 
             Button { player.toggle() } label: {
-                Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
+                Image(systemName: player.isPlayingOrStarting ? "pause.fill" : "play.fill")
                     .font(.system(size: 64))
                     .foregroundStyle(palette.bg0Color)
                     .frame(maxWidth: .infinity)
@@ -102,7 +102,7 @@ struct CarModeView: View {
                     .contentTransition(.symbolEffect(.replace))
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
+            .accessibilityLabel(player.isPlayingOrStarting ? "Pause" : "Play")
 
             HStack(spacing: Spacing.md) {
                 tile(

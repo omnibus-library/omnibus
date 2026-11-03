@@ -4,101 +4,86 @@ version = "0.1.0"
 edition = "2021"
 license.workspace = true
 
-# Unified Dioxus fullstack binary. Built twice by `dx serve`:
-# - Once as native (features: `server`) — axum backend + SSR + DB
-# - Once as WASM (features: `web`) — hydrated client
-#
-# All server-only deps are gated behind the `server` feature so the WASM
-# build side doesn't try to compile sqlx/tokio/axum.
+# The server binary: the axum backend, the `/api/*` REST surface and the
+# device protocols, plus the React client's build served at `/`.
 
 [dependencies]
-dioxus.workspace = true
-
-# Server-only deps — all optional and gated behind the `server` feature.
-axum = { version = "0.8", features = ["multipart"], optional = true }
-axum-extra = { version = "0.12", features = ["cookie"], optional = true }
+axum = { version = "0.8", features = ["multipart"] }
+axum-extra = { version = "0.12", features = ["cookie"] }
 # Prometheus HTTP metrics middleware + `/metrics` exposition. Groups path
 # labels by matched route (not raw id) so cardinality stays bounded.
-axum-prometheus = { version = "0.10", optional = true }
-tower-http = { version = "0.7", features = ["trace", "timeout", "set-header", "fs"], optional = true }
-tower = { version = "0.5", optional = true }
-serde = { workspace = true, optional = true }
-serde_json = { workspace = true, optional = true }
+axum-prometheus = "0.10"
+tower-http = { version = "0.7", features = ["trace", "timeout", "set-header", "fs"] }
+tower = "0.5"
+serde = { workspace = true }
+serde_json = { workspace = true }
 # PIN RATIONALE (#1529): held at 0.8 — see db/Cargo.toml for the full
-# SqlSafeStr migration rationale; keep all three crates (`server/`, `db/`,
-# `frontend/`) on 0.8 in lockstep, lifted only when that migration lands.
-sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "sqlite", "macros"], optional = true }
-tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "sync"], optional = true }
-tracing = { workspace = true, optional = true }
+# SqlSafeStr migration rationale; keep both crates (`server/`, `db/`) on
+# 0.8 in lockstep, lifted only when that migration lands.
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "sqlite", "macros"] }
+tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "sync"] }
+tracing = { workspace = true }
 # Owns the global subscriber (RUST_LOG-driven console logs); the server owns
 # its own subscriber, installed first in `main`. The `json` feature backs the
 # durable on-disk log sink (#939).
-tracing-subscriber = { version = "0.3", features = ["env-filter", "json"], optional = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 # Non-blocking rolling-file appender for the on-disk JSON log sink. Its
 # `WorkerGuard` must outlive the process so buffered records flush on shutdown.
-tracing-appender = { version = "0.2", optional = true }
-time = { version = "0.3", features = ["formatting", "parsing"], optional = true }
-futures-util = { version = "0.3", optional = true }
+tracing-appender = "0.2"
+time = { version = "0.3", features = ["formatting", "parsing"] }
+futures-util = "0.3"
 # Signs the per-image download links (`backend::ebooks::images`); pairs with
 # `sha2`, and already in the tree via `digest`, so no new crate builds.
-hmac = { version = "0.12", optional = true }
+hmac = "0.12"
 # URL-safe, unpadded encoding of the image-link signature; the OPDS Basic-auth
 # tests also use it to encode their credentials.
-base64 = { version = "0.22", optional = true }
+base64 = "0.22"
 # Fixed-digest derivation for the Kobo auth envelope. Deliberately not
 # `DefaultHasher`, whose output is not stable across toolchain versions —
 # a rotation there would drift the values a device caches across a deploy
 # (the same trap `db::helpers::stable_uuid` documents).
-sha2 = { version = "0.10", optional = true }
-# The error type returned by `serve()`/`launch()`, and used by the native
-# startup helpers in main.rs that previously lived inside an inline closure
-# (where `?` upgraded any error via type inference).
-anyhow = { version = "1.0", optional = true }
+sha2 = "0.10"
+# The error type returned by `serve()`/`launch()` and the startup helpers in main.rs.
+anyhow = "1.0"
 # IMF-fixdate parsing/formatting for the conditional-request layer's
 # `If-Modified-Since` / `If-Unmodified-Since` / date-form `If-Range`, and the
 # `Last-Modified` it publishes. Already in the tree via tower-http/hyper, so
 # depending on it directly unifies rather than adding a build.
-httpdate = { version = "1.0", optional = true }
+httpdate = "1.0"
 # Wraps the open file handle a media response streams from, so a
 # multi-hundred-MB audiobook is never buffered into memory.
-tokio-util = { version = "0.7", features = ["io"], optional = true }
+tokio-util = { version = "0.7", features = ["io"] }
 # Staging temp files for the upload-inspect parse path in
 # `backend::uploads` (RAII cleanup on drop). Also a dev-dependency below for
 # the integration tests; listed here so the server lib can use it directly.
-tempfile = { workspace = true, optional = true }
+tempfile = { workspace = true }
 # The plugin download zips the embedded plugin in memory; the same spec as `omnibus-db`, so no
 # new crate enters the lockfile.
-zip = { version = "9", default-features = false, features = ["deflate-flate2"], optional = true }
+zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
 # Percent-encoding the OPDS search feed's `self` link query — already in the
 # tree via `omnibus-db`, so depending on it directly unifies rather than
 # adding a build.
-urlencoding = { version = "2", optional = true }
+urlencoding = "2"
 
-omnibus-shared = { path = "../shared" }
+omnibus-shared = { path = "../shared", features = ["openapi"] }
 # The OpenAPI document for `/api/*` (`backend::openapi`). `utoipa-axum` builds
 # the router from the handlers' `#[utoipa::path]` annotations, so a route and
 # its documentation are declared once, together.
-utoipa = { version = "6", optional = true }
-utoipa-axum = { version = "0.3", optional = true }
-# `features` here are forwarded via our own feature flags below. Leaving it
-# bare means frontend compiles with no platform feature (components only).
-omnibus-frontend = { path = "../frontend" }
-# DB + indexing pipeline. Depended on directly (not transitively via
-# frontend) since main.rs and backend.rs call init_db/get_settings/etc.
-# straight. Optional so the `web` (WASM) build doesn't try to drag it in.
-omnibus-db = { path = "../db", optional = true }
+utoipa = "6"
+utoipa-axum = "0.3"
+# DB + indexing pipeline.
+omnibus-db = { path = "../db" }
 # MCP tool + client layer (library only — the stdio binary stays a separate
 # artifact) for the hosted `/mcp` endpoint. `http` turns on rmcp's
-# streamable-HTTP server transport. Optional for the same WASM reason.
-omnibus-mcp = { path = "../mcp", features = ["http"], optional = true }
+# streamable-HTTP server transport.
+omnibus-mcp = { path = "../mcp", features = ["http"] }
 # The rmcp SDK itself, for the transport types `mcp_http` wires into axum.
 # Version + features unified with `omnibus-mcp`'s own dependency.
-rmcp = { version = "3.1", features = ["transport-streamable-http-server"], optional = true }
+rmcp = { version = "3.1", features = ["transport-streamable-http-server"] }
 
 # Prints the OpenAPI document; `just openapi-gen` writes it to `openapi/openapi.json`.
 [[example]]
 name = "openapi"
-required-features = ["server"]
 
 [dev-dependencies]
 tower = "0.5"
@@ -107,7 +92,7 @@ tower = "0.5"
 md-5 = "0.10"
 # Test-only view of the same db crate, with `test-support` on so integration
 # tests can reuse `EnvVarGuard` instead of hand-rolling env isolation. Cargo
-# unifies this with the optional `omnibus-db` above for test builds only.
+# unifies this with the `omnibus-db` above for test builds only.
 omnibus-db = { path = "../db", features = ["test-support"] }
 # RAII temp directories so panicking integration tests don't leak fixture
 # copies under /tmp. Already a transitive dep elsewhere — explicit here only
@@ -125,43 +110,3 @@ epub = "2"
 # tests see what a reader would see, not just the response the server sends.
 # Default features off keeps the terminal UI (ratatui) out of server test builds.
 omnibus-mock-kobo = { path = "../mock-kobo", default-features = false }
-
-[features]
-default = ["server"]
-# Native server build: axum backend + SSR + DB. Also activates
-# `omnibus-frontend/server` so server-function bodies compile in.
-server = [
-    "dep:axum",
-    "dep:axum-extra",
-    "dep:axum-prometheus",
-    "dep:tower-http",
-    "dep:httpdate",
-    "dep:tokio-util",
-    "dep:tower",
-    "dep:serde",
-    "dep:serde_json",
-    "dep:sqlx",
-    "dep:tokio",
-    "dep:tracing",
-    "dep:tracing-subscriber",
-    "dep:tracing-appender",
-    "dep:time",
-    "dep:futures-util",
-    "dep:urlencoding",
-    "dep:sha2",
-    "dep:hmac",
-    "dep:base64",
-    "dep:anyhow",
-    "dep:tempfile",
-    "dep:zip",
-    "dep:omnibus-db",
-    "dep:omnibus-mcp",
-    "dep:rmcp",
-    "dep:utoipa",
-    "dep:utoipa-axum",
-    "omnibus-shared/openapi",
-    "dioxus/server",
-    "omnibus-frontend/server",
-]
-# WASM client build (activated by `dx serve --platform web`).
-web = ["dioxus/web", "omnibus-frontend/web"]

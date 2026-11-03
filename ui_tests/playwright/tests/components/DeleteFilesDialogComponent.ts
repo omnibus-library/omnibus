@@ -6,6 +6,7 @@ import { BaseComponent } from "./BaseComponent";
 /** An admin's "Delete files…" dialog on a book page: pick, confirm, delete. */
 export class DeleteFilesDialogComponent extends BaseComponent {
   readonly openButton: Locator;
+  private readonly filesTab: Locator;
   readonly root: Locator;
   readonly fileCheckboxes: Locator;
   readonly selectAllBox: Locator;
@@ -19,6 +20,7 @@ export class DeleteFilesDialogComponent extends BaseComponent {
   constructor(page: Page) {
     super(page);
     this.openButton = page.getByTestId("delete-files");
+    this.filesTab = page.getByRole("tab", { name: "Files & Details" });
     this.root = page.getByTestId("delete-book-dialog");
     this.fileCheckboxes = this.root.getByRole("checkbox");
     this.selectAllBox = page.getByTestId("delete-select-all");
@@ -30,7 +32,9 @@ export class DeleteFilesDialogComponent extends BaseComponent {
     this.errorAlert = page.getByRole("alert");
   }
 
+  /** Opens the dialog from the Files & Details tab, which holds its button. */
   async open(): Promise<void> {
+    await this.filesTab.click();
     await this.openButton.click();
   }
 

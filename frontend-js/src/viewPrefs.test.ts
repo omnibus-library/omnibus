@@ -34,7 +34,7 @@ describe("loadPrefs", () => {
     expect(loadPrefs("/elsewhere")).toEqual(DEFAULT_PREFS);
   });
 
-  it("stores the JSON the Dioxus client reads", () => {
+  it("stores the prefs as JSON under the route's key", () => {
     savePrefs("/books", SAVED);
 
     expect(
@@ -48,7 +48,7 @@ describe("loadPrefs", () => {
     });
   });
 
-  it("reads a record Dioxus wrote before filters existed", () => {
+  it("reads a record saved before filters existed", () => {
     localStorage.setItem(
       "omnibus.view_prefs::/books",
       '{"view_mode":"grid","sort_key":"series","sort_dir":"asc"}',
@@ -213,7 +213,7 @@ describe("loadDiscoveryPrefs", () => {
     });
   });
 
-  it("reads the JSON the Dioxus client stored", () => {
+  it("reads the stored JSON", () => {
     localStorage.setItem(
       "omnibus.discovery_prefs",
       '{"authors_sort":"recent","series_sort":"recent","shelves_sort":"book_count"}',
@@ -239,7 +239,7 @@ describe("loadDiscoveryPrefs", () => {
     });
   });
 
-  it("resets every field to name when one value is unknown to both clients", () => {
+  it("resets every field to name when one value is unknown", () => {
     localStorage.setItem(
       "omnibus.discovery_prefs",
       '{"authors_sort":"recent","series_sort":"newest"}',
@@ -268,7 +268,7 @@ describe("saveDiscoverySort", () => {
     });
   });
 
-  it("keeps a Recent series sort the Dioxus client saved", () => {
+  it("keeps a saved Recent series sort", () => {
     localStorage.setItem(
       "omnibus.discovery_prefs",
       '{"authors_sort":"name","series_sort":"recent","shelves_sort":"name"}',

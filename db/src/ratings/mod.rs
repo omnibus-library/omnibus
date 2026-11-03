@@ -1,5 +1,5 @@
 //! The stars-only view of [`crate::reviews`], for the older `/api/ratings`
-//! routes, their Dioxus server functions and the Kobo `RateBook` ingest. A
+//! routes and the Kobo `RateBook` ingest. A
 //! rating is a review's stars and `rated_at`; setting or clearing one patches
 //! only the stars, so text and private notes on the same review survive.
 

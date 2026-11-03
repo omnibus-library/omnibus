@@ -1,7 +1,6 @@
 /**
  * Stamps `data-loaded` on every image as it loads, which is what stops
- * Loading.css's cover glint. Capture phase, because `load` doesn't bubble;
- * the Dioxus BootScript does the same.
+ * Loading.css's cover glint. Capture phase, because `load` doesn't bubble.
  */
 export function watchImageLoads(target: Document = document): void {
   target.addEventListener(

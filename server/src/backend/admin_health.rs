@@ -1,8 +1,7 @@
 //! `GET /api/admin/health` handler — the first admin route in the app.
 //! Aggregates index status, worker queue, FTS health, storage, and the
 //! in-memory error ring into one `AdminHealthReport`. `AdminUser`-gated;
-//! the mobile-facing REST twin of `rpc_get_admin_health`, both calling
-//! `db::admin_health::build_report` so the two surfaces can't drift.
+//! the report is built by `db::admin_health::build_report`.
 
 use axum::{
     extract::State,
@@ -29,7 +28,6 @@ use crate::auth::AdminUser;
     ),
 )]
 pub(super) async fn get_admin_health(_admin: AdminUser, State(state): State<AppState>) -> Response {
-    // The web page's live-update loop polls `rpc_get_admin_health`, not this REST twin.
     match db::admin_health::build_report(state.pool(), state.worker()).await {
         Ok(report) => Json(report).into_response(),
         Err(error) => internal("admin health report", error),

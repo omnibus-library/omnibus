@@ -203,6 +203,10 @@ test.describe("pdf reader", () => {
       await test.step("check the pdf actions show", async () => {
         await expect(bookDetailPage.startReadingPdfButton).toBeVisible();
         await expect(bookDetailPage.noFilesMessage).toBeHidden();
+      });
+
+      await test.step("check its file row offers the reader", async () => {
+        await bookDetailPage.openTab("Files & Details");
         await expect(bookDetailPage.formatRow("PDF").readLink).toBeVisible();
       });
     });
@@ -534,8 +538,9 @@ test.describe("pdf reader", () => {
         const card = bookDetailPage.savedPassageCard(highlight.text);
         await test.step("check the book detail page lists it", async () => {
           await bookDetailPage.goto(uuid);
+          await bookDetailPage.openTab("Highlights & Journal");
           await expect(card.root).toHaveCount(1);
-          await expect(card.metaText).toContainText(/^.+ · saved /);
+          await expect(card.metaText).toContainText(/^.+ · /);
           await expect(card.openLink).toHaveAttribute(
             "href",
             `/pdf/${uuid}?page=9`,

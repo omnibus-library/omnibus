@@ -8,12 +8,13 @@ and the general conventions. This file is the list of surfaces whose obvious
 selector is the wrong one — each entry exists because a spec was written
 against markup that had changed, and timed out.
 
-**A book tile is not a `link`.** The landing grid tile (`landing/grid.rs`) is an
-`<a>` with **no `href`** and an explicit `role="listitem"`, and the shelf member
-tile (`components/cover_tile.rs`) is a router `Link` that also overrides
-`role="listitem"` — so `getByRole("link", { name: "Open details for …" })`
-matches nothing and times out. Use `LibraryPage.bookTile` / `ShelfPage.bookTile`
-(`getByRole("listitem", …)`) or the per-book `ebook-tile-<ident>` testid.
+**A book tile is a `listitem` holding a link.** The landing grid tile
+(`pages/Library/BookGrid.tsx`) is a `role="listitem"` div (testid
+`ebook-tile-<slug>`) around a router link named `Open details for <title>`;
+`LibraryPage.bookTile(title)` takes the link. The shelf member tile
+(`pages/ShelfDetail/ShelfBooks.tsx`) is the link itself with `role="listitem"`,
+so there the name sits on the listitem (`ShelfPage.bookTile`) and
+`getByRole("link", …)` matches nothing.
 
 **A shelf page's actions are greyed, not gone.** `/shelves/:id` renders Add
 books / Edit shelf / ⋯ for every viewer and marks them `aria-disabled="true"`
@@ -26,20 +27,21 @@ Wishlist is the only locked shelf it sees; the not-your-shelf lock needs a
 second, non-admin reader on a cookie-less context (`shelf_detail.spec.ts`).
 
 **The library picker holds one page, not the library.**
-`components/library_picker.rs` (the Add books modal and the hand-picked
+`components/LibraryPicker/` (the Add books modal and the hand-picked
 create-shelf body) is server-backed: an empty search box browses keyset pages
-of 100 behind a `picker-load-more` button — on web an `IntersectionObserver`
-clicks it as it nears view — while a typed query goes to FTS5 instead and
+of 100 behind a `picker-load-more` button, which also loads as it nears view,
+while a typed query goes to FTS5 instead and
 returns one server-capped set with **no** cursor. So a book past the first page
 is simply not in the DOM: `picker-tile-<uuid>` for an arbitrary book times out
 unless the spec searches for it first, which is what a reader does anyway.
 `picker-status` reports the server's own count — "2310 books" while browsing,
 since paging reaches every one of them, and "Showing 50 of 2310 matches ·
 narrow your search" only for a search, where the capped rows are genuinely out
-of reach. It **never** carries the picked count: that lives only on the host
-modal's submit button (`add-books-submit`, "Add 2 books").
-Picks are uuids, so they survive a query change even though the cards don't;
-`picker-review-picked` toggles a view of just them. `picker-error` is the
+of reach. It carries the picked count only in the review view:
+`picker-review-picked` ("Picked (2)") toggles a view of just the picks, and
+the host modal's submit button (`add-books-submit`, "Add 2 books") counts them
+too. Picks are uuids, so they survive a query change even though the cards
+don't. `picker-error` is the
 failed-fetch state and is distinct from `picker-empty`.
 
 **Original is an absence, not a face.** The typeface chips are
@@ -55,79 +57,70 @@ never on a named face being set somewhere.
 hand-picked shelf is a `role="checkbox"` button (a plain button in the bulk
 bar's picker) labelled by its name, so `getByRole("checkbox", { name, exact:
 true })` selects it. The smart shelves a book matches sit apart under
-`shelf-picker-automatic` as inert `shelf-picker-auto-<id>` tiles, and the More
-stop draws every held shelf, smart ones included, as a `bdmq-shelf-<id>` link.
+`shelf-picker-automatic` as inert `shelf-picker-auto-<id>` tiles. The picker
+opens from the Overview's `bp-add-to-shelf`, and the Overview's Shelves row
+draws every held shelf, smart ones included, as a `bp-shelf-<id>` link; a
+hand-picked one also has a `Take off <name>` button.
 
-**The book detail panel reads two ways.** `book_detail_scroll_stops` (off by
-default) chooses between the flow — one continuous scroller, `#bdmq-flow`,
-sections introduced by `.bdmq-flowlab` rules, a `bdmq-flowtop` back-to-the-book
-pill, and no `.bdmq-next` cue — and the snapped marquee, `#bdmq-snap` with
-`.bdmq-sec` screens. Only one exists in the DOM at a time, so a spec asserting
-either must set the preference first with the `presetScrollStops(enabled, owner?)`
-fixture, which turns it back off afterwards. Pass `"reader"` when the test then
-flips the worker reader's own Settings switch. Two controls are common to both:
-the dot rail (`bdmq-dots`, seven rows, nothing else in its box) and the
-`bdmq-mode-toggle` switch in the stage's top-right corner, which flips the
-preference in place and has no `aria-pressed` until the viewer resolves.
-
-**"From the same hand" has three states, not two.** The author block fetches
-after the page renders, so `from-same-hand-loading` (a quiet note, no count)
-precedes either `from-same-hand` or `from-same-hand-empty` — it used to assert
-"the only book by X" while still fetching (#2478). Playwright's auto-wait
-handles the settled assertions, but a spec that wants the *loading* state must
-hold the request open rather than racing it
-(`BookDetailPage.holdAuthorFetch`), and the route held is the **server
-function**, `POST /api/rpc/author`, not the REST `GET /api/authors/{id}` the
-mobile client uses. Holding it means `networkidle` never arrives, so open the
-page with `bookDetailPage.gotoUnsettled()`, not `goto()`. A spec asserting "no
-other books" must target `from-same-hand-empty`, never the mere absence of
-tiles.
+**The book page is four tabs, and only the open one is in the DOM.** Under the
+hero, the `Book sections` tablist holds Overview, Reviews, Highlights &
+Journal and Files & Details. The tab is local state, not in the URL, so every
+load opens on Overview: open the tab (`BookDetailPage.openTab(name)`) before
+asserting anything on it — the metadata list (`metaValue`), formats, physical
+copies, merge and delete live on Files & Details, saved passages and the
+journal on Highlights & Journal. The Overview carries the summary, the genre /
+tag / shelf chips, the series fan (a region named `<series> series`) and the
+"More by <author>" row (`bp-more-by`, its tiles `bp-more-by-tile`), which
+`GET /api/authors/{id}` fills (`BookDetailPage.holdAuthorFetch` holds it; a
+held page never idles, so open it with `gotoUnsettled()`). That row draws
+nothing while loading or for an author's only book — no loading note, no empty
+state — so its two tests for those states are fixmes. Immersive reading is in
+the hero's `More actions` menu, not a button of its own.
 
 **A saved passage's locator is a chapter title, not "Chapter N".** Once the
-book's structure loads, `highlight-meta` reads `Chapter 12: Inej · saved …`;
+book's structure loads, `highlight-meta` reads `Chapter 12: Inej · <date>`;
 until then it falls back to `Section N` off the raw CFI spine step (#2356,
 #2463). Both are valid for the same position and which one a spec sees depends
-on fetch timing, so match the shape (`/^.+ · saved /`) rather than either
+on fetch timing, so match the shape (`/^.+ · .+$/`) rather than either
 branch.
 
-**A landing *table* row is not a `button`.** The row (`landing/table/row.rs`)
-used to be `<tr role="button">` with an "Open details for …" name, but it
-wraps interactive editable cells (invalid ARIA), so that was dropped (#2350).
-The keyboard-reachable navigate affordance is now a `link` on the cover cell:
-`getByRole("link", { name: "Open details for …" })` **inside the row**, or the
-`ebook-cell-cover` testid — not a row-level button, and clicking an editable
-cell (title/author/…) still opens its inline editor rather than navigating.
+**A landing *table* row is not a `button`.** The row (`ebook-row-<slug>`,
+`pages/Library/BookTable.tsx`) wraps editable cells, so it has no role of its
+own. The navigate affordance is the `link` named `Open details for …` **inside
+the row** (`LibraryTableComponent.openBook`), and clicking an editable cell
+(`td.ebook-col-<column>`: title, author, …) opens its inline editor rather
+than navigating.
 
 **A series stack is not a book tile.** With a viewer's Stack series on
-(`POST /api/rpc/account/stack-series`, per-user server state, off by
+(`POST /api/account/stack-series`, per-user server state, off by
 default), the landing grid folds every series of two or more visible books
-into one `role="button"` named `"{series}, {n} books"` with the testid
-`series-stack-<slug>` — never `ebook-tile-*`, so a `/^ebook-tile-/` count
-drops by every stacked volume, and a stack's three fanned covers triple the
-`cover` testids in its cell. Opening one mounts `series-cap`
-(`series-cap-page`, `series-cap-fold`) and the volumes as ordinary
-`ebook-tile-*` tiles; Escape folds. Because the pref follows the account, a
+into one `role="button"` named `"{series}, {n} books"`
+(`LibraryPage.seriesStack(label)`) in a listitem with no `ebook-tile-*` testid,
+so a `/^ebook-tile-/` count drops by every stacked volume. Opening one deals
+out a head card (`SeriesCapComponent`: its `Fold up` button and `Series page →`
+link) and the volumes as ordinary `ebook-tile-*` tiles; Escape folds. Because the pref follows the account, a
 spec that turns it on must run as the worker reader and set it with
 `presetStackSeries(true, "reader")` (`landing_series_stacks.spec.ts`). Stacking
 the shared admin would fold volumes out from under `landing.spec.ts`.
-`lib-stack-toggle` renders only in grid view (absent, not disabled, in the
-table) and stays disabled until `/me` resolves.
+The toolbar's `Stack series` toggle (`aria-pressed`) renders only in grid view
+(absent, not disabled, in the table) and is `aria-disabled` while its save is
+out.
 
-**The landing's continue surface is a fan, not a carousel.** `landing/stack.rs`
-replaced the hero carousel, so `continue-hero`, `continue-hero-track`,
-`hero-dot-<n>` and `hero-card-<uuid>` no longer exist. The section is
-`continue-stack`; **every** card in the fan is `hero-resume-<uuid>`, whichever
-position it holds, and the front one additionally carries the `lead` class and
-the `.lmq-veil` verb. Three consequences for a spec:
+**The landing's continue surface is a fan, not a carousel.** The section is
+`continue-stack` (`pages/Library/ResumeStack.tsx`); **every** card in the fan
+is `hero-resume-<uuid>`, whichever position it holds, and the front one
+additionally carries the `lead` class and the `.lmq-veil` verb. Once the
+stack scrolls away, `resume-edge` is the ribbon that brings it back. Three
+consequences for a spec:
 
 - **A card's centre is not its own.** The fan overlaps by ~74px at rest, so
   `click()` on a card behind the front one hits its neighbour. Hover
   `.lmq-fan` first (which spreads it) and click the left sliver —
   `click({ position: { x: 12, y: 60 } })`.
-- **The cross-format chips describe the front book only.** `hero-immersive-*`,
-  `hero-crossformat-*` and `hero-link-invite-*` render for the lead card alone,
-  so a spec that asserts them must bring its book forward first — clicking a
-  card that is *already* lead navigates, so guard on the `lead` class.
+- **Bringing a book forward** (`ContinueStackComponent.bringForward`) clicks
+  only a card that is not yet lead — clicking the lead card navigates. The
+  React fan has no cross-format or Immersive chips yet, so the test that
+  asserts them is a fixme.
 - **`continue-stack` carries the synced marker**, not the card: with no
   per-card eyebrow, "synced" sits on the front book's byline.
 
@@ -135,25 +128,23 @@ the `.lmq-veil` verb. Three consequences for a spec:
 spec: it needs two books on the stack at once, and `recent_progress` drops
 `unread` and `finished`, so a book another spec marks could leave the fan mid-run.
 
-**The add-books review is the metadata edit form, not a confirm form.** A
-successful inspect mounts `add-books-review`, which is the edit page's own
-`FormGrid`/`Sidebar`/`SaveBar` over a book that does not exist yet — so the
-selectors are the edit page's: `getByLabel("Title")`, author *chips*
-(`.me-chip-item`, not an Author input), `getByLabel("Series", { exact: true })`
-and `getByLabel("Book #")` (there is no "Series index"), and the commit button
-is `me-save` reading "Add to library", never `add-books-submit`. The file's
-cover is an inline `data:` image under `cover-staged-preview`; the sidebar's
-`cover-upload-input` and the compare view's cover row **stage** a cover (hint
-"… saved with the book") and write nothing, so a spec asserting them must
-record that no `/api/ebooks/*/cover` request fires. `me-discard` is a button
-("Start over") here rather than the edit page's link. No spec commits a real
+**The add-books review is the edit sheet's form, not a confirm form.** The top
+nav's Add books opens the `Add a book` sheet over the library (there is no
+`/add-books` route). A successful inspect swaps the picker for the edit sheet's
+tabs (`Book information`), fields and cover card over a book that does not
+exist yet, so the selectors are `MetadataFormComponent`'s: fields by label in
+the Details panel (`Number in series`, not "Book #"), author *chips*, and the
+cover card only after `openArtwork()`. The commit is "Add to library", never
+`es-done`, and "Choose another file" goes back to the picker. A staged cover
+writes nothing, so a spec asserting one records that no
+`/api/ebooks/*/cover` request fires. No spec commits a real
 upload: the library is shared and a filed book is visible to every other spec.
 
 **The stats page** (period pills, the standing band, goals and household
 sharing) is covered in [04e-playwright-stats.md](04e-playwright-stats.md).
 
 **The PDF reader has no ready testid; the text layer is not an element you
-click.** `/pdf/:uuid` renders its chrome on SSR (`pdf-back`, `pdf-fit-*`,
+click.** `/pdf/:uuid` renders its chrome before the document loads (`pdf-back`, `pdf-fit-*`,
 `pdf-highlights`, `pdf-bookmarks`, `pdf-stage`, `pdf-page-host`, `pdf-prev`,
 `pdf-next`, `pdf-slider`, `pdf-footer`, `pdf-page-label`) and a `pdf-loading`
 overlay; "ready" is that overlay leaving and `pdf-page-label` reading
@@ -167,7 +158,7 @@ then the epub reader's `.rd-selection-popover` and its `Highlight <color>`
 swatches appear. The drawers, note composer and quote panel are the epub
 reader's (`reader-highlights-drawer`, `reader-bookmarks-drawer`,
 `reader-*-row`, `reader-bookmark-add`, `reader-note-composer`); `Escape` on
-the reader root closes them. Every turn POSTs `/api/rpc/progress` with
+the reader root closes them. Every turn POSTs `/api/progress` with
 `epub_cfi: "pdf-page:N"`; opening the reader POSTs nothing for position (the
 ready report is treated as already saved) but does write read status `reading`
 on an unread book. Pre-set `flatland` to `reading` in `beforeAll` (the comic
@@ -177,7 +168,7 @@ spec's pattern) or assert that write.
 holds the five personal sections (`settings-nav-<slug>`), `/admin?section=`
 the eight server ones (`admin-nav-<slug>`); `SettingsPage` and `AdminPage`
 share the frame in `SettingsShellPage`. Pre-split slugs redirect, so a spec
-opens the new URL (`AdminPage.gotoLegacy` takes an old one). Three things trip
+opens the new URL (`gotoLegacy` on `BasePage` takes an old one). Three things trip
 specs:
 
 - **Under 720px the list and the section never share the screen.** With no

@@ -8,7 +8,7 @@ export type SuggestionItem = {
   cover_url: string | null;
 };
 
-/** The answers `POST /api/rpc/ebook-suggestions` gives the strip. */
+/** The answers `GET /api/ebooks/:uuid/suggestions` gives the strip. */
 export type SuggestionsResponse =
   | { status: "not_configured" }
   | { status: "pending" }

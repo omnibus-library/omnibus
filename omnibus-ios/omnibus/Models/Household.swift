@@ -18,6 +18,24 @@ struct HouseholdReader: Codable, Hashable, Sendable, Identifiable {
     }
 }
 
+/// `omnibus_shared::BookHouseholdReader` — another reader's time in one book,
+/// from `GET /api/books/{uuid}/household`. It says how long and how lately,
+/// never how far: the route carries no position or read status.
+struct BookHouseholdReader: Codable, Hashable, Sendable, Identifiable {
+    var id: Int64
+    var name: String
+    var hasAvatar: Bool
+    var seconds: Int64
+    var sessions: Int64
+    var lastSessionAt: Int64
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, seconds, sessions
+        case hasAvatar = "has_avatar"
+        case lastSessionAt = "last_session_at"
+    }
+}
+
 /// Whose stats a read is about.
 enum StatsSubject: Hashable, Sendable {
     case you

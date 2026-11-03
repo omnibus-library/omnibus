@@ -1,4 +1,3 @@
-import { account } from "../contracts/account";
 import { journals } from "../contracts/journals";
 import { readStatus } from "../contracts/readStatus";
 import { reviews } from "../contracts/reviews";
@@ -13,15 +12,12 @@ import { fixturesDir, seedLibrary } from "../utils/seed";
 // counts every reader's stars on the book, so another writer would move it.
 const REVIEW_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "code-quartet-1")!;
 
-// Another Wirth book, reached from the review book's "From the same hand"
-// row. Only opened here, never reviewed.
+// Another Wirth book, reached from the review book's "More by" row. Only
+// opened here, never reviewed.
 const SIBLING_BOOK = FIXTURE_BOOKS.find((b) => b.slug === "code-quartet-2")!;
 
 const REVIEW_TEXT = "A clockwork of a book, wound tight to the last page.";
 const NOTES_TEXT = "Reread the recursion chapter before book club.";
-
-// The dot rail marks the stop in view with this class.
-const ON_CLASS = /\bon\b/;
 
 test.describe("book reviews", () => {
   // Every test writes the same reviews on one book, so they run in file order.
@@ -45,12 +41,15 @@ test.describe("book reviews", () => {
 
     await test.step("open the book", async () => {
       await bookDetailPage.goto(uuid);
+      await bookDetailPage.openTab("Reviews");
     });
 
-    await test.step("check the stop and your empty card show", async () => {
+    await test.step("check the tab and your empty card show", async () => {
       await bookDetailPage.topNav.assertDisplayed();
-      await expect(bookDetailPage.sectionDot("Reviews")).toBeVisible();
-      await expect(section.kicker).toHaveText("No reviews yet");
+      await expect(bookDetailPage.tab("Reviews")).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
       await expect(section.starsGroup).toBeVisible();
       await expect(section.starsMeta).toHaveText("Not rated yet");
       await expect(section.writeButton).toHaveAccessibleName("Write review");
@@ -81,6 +80,7 @@ test.describe("book reviews", () => {
 
     await test.step("open the book", async () => {
       await bookDetailPage.goto(uuid);
+      await bookDetailPage.openTab("Reviews");
     });
 
     await test.step("rate it 4.5 stars", async () => {
@@ -114,7 +114,6 @@ test.describe("book reviews", () => {
       await expect(section.myNotes).toContainText("only you can see these");
       await expect(section.writeButton).toHaveAccessibleName("Edit review");
       await expect(section.deleteButton).toBeVisible();
-      await expect(section.kicker).toHaveText("1 review · 1 rating");
     });
 
     // The flag is set in the editor alone; read mode shows no box for it.
@@ -150,6 +149,7 @@ test.describe("book reviews", () => {
 
     await test.step("open the book", async () => {
       await bookDetailPage.goto(uuid);
+      await bookDetailPage.openTab("Reviews");
     });
 
     // A flag flipped on its own is still a change, so Save sends just it.
@@ -198,6 +198,7 @@ test.describe("book reviews", () => {
 
     await test.step("open the book as the reader", async () => {
       await readerBookDetailPage.goto(uuid);
+      await readerBookDetailPage.openTab("Reviews");
     });
 
     await test.step("check the stars show and the spoiler stays hidden", async () => {
@@ -226,9 +227,10 @@ test.describe("book reviews", () => {
 
     await test.step("check the household summary shows", async () => {
       await expect(section.summary).toBeVisible();
-      await expect(section.summaryAverage).toHaveText("3.8");
-      await expect(section.summaryCount).toContainText("2 readers");
-      await expect(section.jumpLink).toContainText("3.8 · 2 readers");
+      await expect(section.summaryAverage).toHaveAccessibleName(
+        "3.8 out of 5 stars",
+      );
+      await expect(section.jumpLink).toHaveText("2 reviews");
     });
   });
 
@@ -247,16 +249,26 @@ test.describe("book reviews", () => {
 
     await test.step("open the book", async () => {
       await bookDetailPage.goto(uuid);
-      await expect(bookDetailPage.sectionDot("Home")).toHaveClass(ON_CLASS);
+      await expect(bookDetailPage.tab("Overview")).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
     });
 
     await test.step("check the title shows the household rating", async () => {
-      await expect(section.jumpLink).toContainText("3.5 · 2 readers");
+      await expect(section.summaryAverage).toHaveAccessibleName(
+        "3.5 out of 5 stars",
+      );
+      await expect(section.jumpLink).toHaveText("2 reviews");
     });
 
     await test.step("jump to the reviews", async () => {
       await section.jumpToReviews();
-      await expect(bookDetailPage.sectionDot("Reviews")).toHaveClass(ON_CLASS);
+      await expect(bookDetailPage.tab("Reviews")).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+      await expect(section.myReview).toBeVisible();
     });
   });
 
@@ -277,6 +289,7 @@ test.describe("book reviews", () => {
 
     await test.step("open the book as the reader", async () => {
       await readerBookDetailPage.goto(uuid);
+      await readerBookDetailPage.openTab("Reviews");
       await expect(section.spoilerVeil).toBeVisible();
     });
 
@@ -292,7 +305,7 @@ test.describe("book reviews", () => {
     });
   });
 
-  test("gather the readers who only rated into one row", async ({
+  test("show a reader who only rated as a rated-only card", async ({
     bookDetailPage,
     request,
     presetReview,
@@ -307,11 +320,13 @@ test.describe("book reviews", () => {
 
     await test.step("open the book", async () => {
       await bookDetailPage.goto(uuid);
+      await bookDetailPage.openTab("Reviews");
     });
 
-    await test.step("check the rating shows in the stars-only row", async () => {
-      await expect(section.otherReviewCards).toHaveCount(0);
-      await expect(section.starsOnlyItems).toHaveCount(1);
+    await test.step("check the rating shows on a rated-only card", async () => {
+      await expect(section.otherReviewCards).toHaveCount(1);
+      await expect(section.otherReviewCards).toContainText("Rated only");
+      await expect(section.otherReviewText).toHaveCount(0);
       await expect(section.starsLabelled("5 out of 5 stars")).toBeVisible();
     });
   });
@@ -333,6 +348,7 @@ test.describe("book reviews", () => {
 
     await test.step("open the book with the household summary", async () => {
       await bookDetailPage.goto(uuid);
+      await bookDetailPage.openTab("Reviews");
       await expect(section.summary).toBeVisible();
     });
 
@@ -378,6 +394,7 @@ test.describe("book reviews", () => {
 
     await test.step("open the book with the household summary", async () => {
       await bookDetailPage.goto(uuid);
+      await bookDetailPage.openTab("Reviews");
       await expect(section.summary).toBeVisible();
     });
 
@@ -400,11 +417,10 @@ test.describe("book reviews", () => {
     });
   });
 
-  test("finish the household re-read after a delete across a scroll stops flip", async ({
+  test("finish the household re-read after a delete across a tab switch", async ({
     readerBookDetailPage,
     request,
     presetReview,
-    presetScrollStops,
     readerExpectMutation,
   }) => {
     const { reviews: section } = readerBookDetailPage;
@@ -413,11 +429,11 @@ test.describe("book reviews", () => {
     await test.step("rate the book as two readers through the api", async () => {
       await presetReview(uuid, { stars: 4 });
       await presetReview(uuid, { stars: 3, body_md: REVIEW_TEXT }, "reader");
-      await presetScrollStops(false, "reader");
     });
 
     await test.step("open the book as the reader", async () => {
       await readerBookDetailPage.goto(uuid);
+      await readerBookDetailPage.openTab("Reviews");
       await expect(section.summary).toBeVisible();
     });
 
@@ -437,13 +453,11 @@ test.describe("book reviews", () => {
       await expect(section.myText).toHaveCount(0);
     });
 
-    // The flip remounts every stop; the re-read belongs to the page, not the
-    // card, so it must survive it.
-    await test.step("flip scroll stops on", async () => {
-      await readerExpectMutation(account.scrollStops(true), () =>
-        readerBookDetailPage.toggleScrollStops(),
-      );
-      await expect(readerBookDetailPage.snapScroller).toBeAttached();
+    // The re-read belongs to the page, not the tab, so leaving the tab must
+    // not drop it.
+    await test.step("switch to another tab", async () => {
+      await readerBookDetailPage.openTab("Overview");
+      await expect(section.myReview).toBeHidden();
     });
 
     await test.step("let the re-read land", async () => {
@@ -460,7 +474,7 @@ test.describe("book reviews", () => {
   }) => {
     const { reviews: section } = bookDetailPage;
     const uuid = await fetchBookUuidByTitle(request, REVIEW_BOOK.title);
-    const panics = bookDetailPage.recordPanics();
+    const errors = bookDetailPage.recordPageErrors();
 
     await test.step("delete your review through the api", async () => {
       await presetReview(uuid, null);
@@ -468,6 +482,7 @@ test.describe("book reviews", () => {
 
     await test.step("open the book", async () => {
       await bookDetailPage.goto(uuid);
+      await bookDetailPage.openTab("Reviews");
     });
 
     const release = await test.step("hold the household re-read", async () =>
@@ -480,6 +495,7 @@ test.describe("book reviews", () => {
     });
 
     await test.step("open another book while the re-read waits", async () => {
+      await bookDetailPage.openTab("Overview");
       await bookDetailPage.openSameHandBook(SIBLING_BOOK.title);
       await expect(bookDetailPage.titleHeading).toHaveText(SIBLING_BOOK.title);
     });
@@ -488,13 +504,14 @@ test.describe("book reviews", () => {
     // nothing, rather than on state that page took with it.
     await test.step("let the held reads through", async () => {
       release();
+      await bookDetailPage.openTab("Reviews");
       await expect(section.starsMeta).toBeVisible();
     });
 
     await test.step("check the page still answers", async () => {
       await section.openComposer();
       await expect(section.composer).toBeVisible();
-      expect(panics).toEqual([]);
+      expect(errors).toEqual([]);
     });
   });
 
@@ -514,6 +531,7 @@ test.describe("book reviews", () => {
 
     await test.step("open the book while deletes fail", async () => {
       await bookDetailPage.goto(uuid);
+      await bookDetailPage.openTab("Reviews");
       await bookDetailPage.forceServerError(reviews.delete(uuid));
     });
 
@@ -539,7 +557,7 @@ test.describe("book reviews", () => {
     });
   });
 
-  test("open the review editor as a dialog and give focus back on cancel", async ({
+  test("open the review editor in place with focus and give focus back on cancel", async ({
     bookDetailPage,
     request,
     presetReview,
@@ -553,23 +571,24 @@ test.describe("book reviews", () => {
 
     await test.step("open the editor", async () => {
       await bookDetailPage.goto(uuid);
+      await bookDetailPage.openTab("Reviews");
       await section.openComposer();
     });
 
-    await test.step("check it is a dialog holding the focus", async () => {
-      await expect(section.composerDialog).toBeVisible();
-      await expect(section.composerDialog).toBeFocused();
+    await test.step("check the review text holds the focus", async () => {
+      await expect(section.composer).toBeVisible();
+      await expect(section.textEditor).toBeFocused();
     });
 
     // A stray Escape must not throw away a draft.
     await test.step("press Escape", async () => {
       await section.pressEscape();
-      await expect(section.composerDialog).toBeVisible();
+      await expect(section.composer).toBeVisible();
     });
 
     await test.step("cancel the editor", async () => {
       await section.cancel();
-      await expect(section.composerDialog).toHaveCount(0);
+      await expect(section.composer).toHaveCount(0);
       await expect(section.writeButton).toBeFocused();
     });
   });
@@ -589,6 +608,7 @@ test.describe("book reviews", () => {
 
     await test.step("write a review with the highlights open", async () => {
       await bookDetailPage.goto(uuid);
+      await bookDetailPage.openTab("Reviews");
       await section.openComposer();
       await section.writeText(REVIEW_TEXT);
       await section.openTextHighlights();
@@ -603,14 +623,11 @@ test.describe("book reviews", () => {
       () => section.save(),
     );
 
-    // An edit made now would be lost when the save closes the editor.
+    // An edit made now would be lost when the save closes the editor. Each
+    // field, its toolbar and highlights popover included, goes inert.
     await test.step("check nothing can be edited while it saves", async () => {
-      await expect(section.textEditor).toHaveAttribute(
-        "contenteditable",
-        "false",
-      );
-      await expect(section.textBoldButton).toBeDisabled();
-      await expect(section.textHighlightsPopover).toHaveCount(0);
+      await expect(section.textField).toHaveAttribute("inert");
+      await expect(section.notesField).toHaveAttribute("inert");
       await expect(section.spoilerCheckbox).toBeDisabled();
       await expect(section.cancelButton).toBeDisabled();
       await expect(section.saveButton).toBeDisabled();
@@ -639,6 +656,7 @@ test.describe("book reviews", () => {
 
     await test.step("write a review", async () => {
       await bookDetailPage.goto(uuid);
+      await bookDetailPage.openTab("Reviews");
       await section.openComposer();
       await section.writeText(REVIEW_TEXT);
     });
@@ -660,7 +678,7 @@ test.describe("book reviews", () => {
       release();
       await uploaded;
       await expect(section.saveButton).toBeEnabled();
-      await expect(section.textMarkdown).toHaveValue(
+      await expect(section.textEditor).toHaveText(
         /!\[Add a caption\]\(\/api\/journals\/images\//,
       );
     });
@@ -685,6 +703,7 @@ test.describe("book reviews", () => {
 
     await test.step("open the book", async () => {
       await bookDetailPage.goto(uuid);
+      await bookDetailPage.openTab("Reviews");
     });
 
     const refuse =
@@ -734,6 +753,7 @@ test.describe("book reviews", () => {
 
     await test.step("open the delete dialog", async () => {
       await bookDetailPage.goto(uuid);
+      await bookDetailPage.openTab("Reviews");
       await section.openDeleteDialog();
       await expect(section.deleteDialog).toBeFocused();
     });
@@ -760,6 +780,7 @@ test.describe("book reviews", () => {
 
     await test.step("open the book while saves fail", async () => {
       await bookDetailPage.goto(uuid);
+      await bookDetailPage.openTab("Reviews");
       await bookDetailPage.forceServerError(reviews.update(uuid, { stars: 3 }));
     });
 
@@ -793,6 +814,7 @@ test.describe("book reviews", () => {
 
     await test.step("open the book while saves fail", async () => {
       await bookDetailPage.goto(uuid);
+      await bookDetailPage.openTab("Reviews");
       await bookDetailPage.forceServerError(
         reviews.update(uuid, { body_md: REVIEW_TEXT }),
       );

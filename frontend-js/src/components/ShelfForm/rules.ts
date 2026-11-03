@@ -8,7 +8,7 @@ import type {
   UpdateShelfRequest,
 } from "../../api/generated/schemas";
 
-// Mirrors shared/src/shelves.rs and the Dioxus rule builder, labels and order included.
+// The rule fields of shared/src/shelves.rs, in the order the builder lists them.
 export const FIELDS = [
   ["tag", "Tag"],
   ["genre", "Genre"],

@@ -1,7 +1,6 @@
 //! Candidate search for the merge dialog: one FTS5 pass over each
-//! configured library, deduped by uuid and capped small. Shared by the web
-//! `rpc_merge_candidates` server fn and the REST
-//! `GET /api/books/merge/candidates` handler so the two surfaces can't drift.
+//! configured library, deduped by uuid and capped small. Backs the REST
+//! `GET /api/books/merge/candidates` handler.
 
 use std::collections::HashSet;
 

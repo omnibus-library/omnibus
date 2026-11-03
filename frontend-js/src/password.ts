@@ -1,4 +1,4 @@
-// Presentational only, as on the Dioxus page: the server still enforces policy.
+// Presentational only: the server still enforces policy.
 
 export type StrengthScore = 0 | 1 | 2 | 3 | 4;
 

@@ -10,7 +10,7 @@ export const fileIdParam = (search: URLSearchParams) => {
   return raw !== null && /^\d+$/.test(raw) ? Number(raw) : null;
 };
 
-// Dioxus's key, so both clients share one local position per origin.
+// One local position per book per origin.
 const localKey = (uuid: BookUuid) => `omn.reading::${uuid}`;
 
 /** This device's last saved CFI for a book, the first-paint cache behind the server's row. */

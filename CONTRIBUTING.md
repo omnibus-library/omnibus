@@ -66,7 +66,7 @@ review. CI runs the same checks and all of them are required to merge:
 | Clippy | `cargo clippy -D warnings` across every crate and target |
 | Cargo Test | the full test matrix (`just test`) |
 | Cargo Audit | RustSec advisory scan of `Cargo.lock` |
-| Stylelint | structural CSS lint |
+| Stylelint | structural CSS lint of the React client's stylesheets |
 | TS Lint | biome + `tsc --noEmit` for Playwright |
 | Playwright | end-to-end browser tests |
 | iOS Tests | the `omnibusTests` unit suite and the `omnibusUITests` UI suite |
@@ -92,7 +92,7 @@ update in it is a dev dependency or a GitHub Action. The config is
 [`renovate.json`](renovate.json); the Dependency Dashboard issue lists what is
 pending.
 
-Three pins move with a Nix input, so Renovate lists them under **Pending
+Two pins move with a Nix input, so Renovate lists them under **Pending
 Approval** and never bumps them. Bump each by hand, all parts in one PR:
 
 - **Playwright:** `@playwright/test` in `ui_tests/playwright/package.json`,
@@ -101,14 +101,9 @@ Approval** and never bumps them. Bump each by hand, all parts in one PR:
   `flake.nix`. Pick a nixpkgs rev whose
   `nix eval --raw github:NixOS/nixpkgs/<rev>#playwright-driver.version` is the
   same version.
-- **Dioxus:** the `=` pins on `dioxus`, `dioxus-html` and `dioxus-router` in
-  `Cargo.toml`, `dioxus-cli@` in the `Dockerfile`, and the `nixpkgs-unstable`
-  rev in `flake.nix`, picked the same way with `#dioxus-cli.version`. That
-  input also carries node, pnpm and the cargo tools, so set `packageManager`
-  in both pnpm projects to its pnpm.
-- **wasm-bindgen:** `cargo update -p wasm-bindgen --precise <version>`, then
-  the `version` and the four `hash`es of `wasm-bindgen-cli` in `flake.nix`
-  (`nix store prefetch-file <release tarball url>` prints each one).
+- **nixpkgs-unstable:** the rev in `flake.nix`. fenix follows it, so a bump
+  moves the Rust toolchain, and it also carries node, pnpm and the cargo
+  tools, so set `packageManager` in both pnpm projects to its pnpm.
 
 A major Swift package update waits there too: raise its requirement in Xcode's
 package settings along with the pin in `Package.resolved`.
@@ -125,9 +120,9 @@ package settings along with the pin in `Package.resolved`.
   **Version** section decides whether the merge cuts a minor or patch release;
   pick one, or add the `no release` label.
 - **Playwright runs itself when it matters.** The E2E workflow path-filters:
-  it runs whenever the diff touches `frontend/`, `shared/`, `server/`, `db/`,
-  `ui_tests/playwright/`, or the build inputs, and reports as skipped
-  otherwise. There is no label to add. To force a run on a PR outside those
+  it runs whenever the diff touches `frontend-js/`, `openapi/`, `shared/`,
+  `server/`, `db/`, `ui_tests/playwright/`, or the build inputs, and reports
+  as skipped otherwise. There is no label to add. To force a run on a PR outside those
   paths, trigger the workflow manually from the Actions tab.
 - **Open as a draft** if the implementation isn't finished. Ready-for-review
   means the quality gate passes locally.

@@ -67,9 +67,7 @@ impl AuthUser {
 pub struct AdminUser(pub AuthUser);
 
 /// Pull a session token out of the request, preferring a `Bearer` header
-/// over a cookie. Thin wrapper around [`auth_db::parse_session_token`] —
-/// the pure-string parsing lives in `omnibus-db` so the rpc.rs server
-/// functions can call the same logic without pulling axum-extra in.
+/// over a cookie. Thin wrapper around [`auth_db::parse_session_token`].
 pub(super) fn extract_token(headers: &HeaderMap) -> Option<(String, SessionKind)> {
     let authorization = headers
         .get(header::AUTHORIZATION)
@@ -107,8 +105,7 @@ pub(super) async fn resolve_auth_user(
         .ok_or_else(|| internal("auth extractor", "missing SqlitePool extension"))?;
     // The cookie/bearer → live-session contract (token precedence,
     // SHA-256 hashing, absolute + idle expiry, revocation) lives in
-    // `auth_db::validate_session` so this extractor and the Dioxus
-    // server-function path in `omnibus_frontend::rpc` cannot drift.
+    // `auth_db::validate_session`, shared with the other session readers.
     let header_auth = parts
         .headers
         .get(header::AUTHORIZATION)
@@ -162,11 +159,9 @@ where
     type Rejection = Response;
 
     // The pool is read from `Extension<SqlitePool>` rather than from router
-    // state so the same extractor works on the hand-written `/api/*` REST
-    // router (which uses `with_state(AppState)`) and on the auto-mounted
-    // Dioxus server-function router for `/api/rpc/*` (whose state type is
-    // private). The top-level fullstack router in `server/src/main.rs`
-    // installs `Extension(pool)` on every request.
+    // state so the same extractor works on every router whatever its state
+    // type; the top-level router in `server/src/main.rs` installs
+    // `Extension(pool)` on every request.
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
         resolve_auth_user(parts, false).await
     }

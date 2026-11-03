@@ -7,8 +7,8 @@
 //  delivers a book the reader has since finished. The control is disabled
 //  while offline instead, and every failure is surfaced rather than swallowed.
 //
-//  Mirrors the web button in `frontend/src/components/format_switcher/
-//  kindle.rs` — same enqueue-then-poll shape, same oversize escape hatch.
+//  Mirrors the web button in
+//  `frontend-js/src/components/FormatSwitcher/SendToKindle.tsx` — same enqueue-then-poll shape, same oversize escape hatch.
 
 import Foundation
 

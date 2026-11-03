@@ -27,8 +27,8 @@ pub fn covers_dir() -> PathBuf {
 }
 
 /// Image formats we know how to round-trip through the on-disk cover cache.
-/// SVG is deliberately absent: it is a script-bearing document, the CSP that
-/// hydration needs allows inline script, and a cover URL is same-origin — so
+/// SVG is deliberately absent: it is a script-bearing document, the site's CSP
+/// allows inline script, and a cover URL is same-origin — so
 /// an EPUB that declares one is stored and served as `Bin`, the opaque
 /// fallback for bytes we cannot classify.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

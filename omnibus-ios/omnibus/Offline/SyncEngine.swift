@@ -1,8 +1,7 @@
 //  SyncEngine.swift
 //  Drains the mutation outbox against the server.
 //
-//  Port of `frontend/src/offline/sync.rs` + `outbox/apply.rs`. Every offline
-//  write lands in `ops` as a replayable request; this replays them in id order
+//  Every offline write lands in `ops` as a replayable request; this replays them in id order
 //  and drops each one that lands (or that fails in a way retrying won't fix).
 
 import Foundation

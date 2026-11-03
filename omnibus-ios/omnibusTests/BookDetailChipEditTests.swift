@@ -1,8 +1,6 @@
 //  BookDetailChipEditTests.swift
 //  The book detail's quick genre / tag editor: which list each kind reads
-//  and writes, the override body a change files, and the Home section's
-//  lifted shape under each layout — the flow never trims, so its tags and
-//  blurb can't jump as the list rises.
+//  and writes, and the override body a change files.
 
 import Testing
 
@@ -46,18 +44,6 @@ struct BookDetailChipEditTests {
         let payload = ChipEditKind.tags.payload([])
         #expect(payload.subjects == [])
         #expect(!payload.isEmpty)
-    }
-
-    // MARK: - The Home section's shape
-
-    @Test func marqueeHomeTrimsAtRestAndFillsOutOnceLifted() {
-        #expect(!DetailRead.homeLifted(scrollStops: true, lifted: false))
-        #expect(DetailRead.homeLifted(scrollStops: true, lifted: true))
-    }
-
-    @Test func flowHomeIsAlwaysWholeSoNothingJumpsAsTheListRises() {
-        #expect(DetailRead.homeLifted(scrollStops: false, lifted: false))
-        #expect(DetailRead.homeLifted(scrollStops: false, lifted: true))
     }
 
     // MARK: - Chip rows

@@ -1,7 +1,7 @@
 //! CRUD for library-wide physical copies, plus wishlist fulfillment on
 //! check-in. A copy is seen by all users (like a digital file) but belongs to
 //! the reader who filed it: only they or an admin may re-note or remove it
-//! ([`PhysicalCopy::can_change`], enforced here for REST, RPC and MCP alike).
+//! ([`PhysicalCopy::can_change`], enforced here for REST and MCP alike).
 
 use omnibus_shared::physical::PhysicalCopy;
 use sqlx::{SqlitePool, Transaction};

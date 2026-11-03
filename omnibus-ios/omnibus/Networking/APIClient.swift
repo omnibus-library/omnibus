@@ -1,7 +1,7 @@
 //  APIClient.swift
 //  Bearer-authenticated transport for the `/api/*` REST surface.
 //
-//  Mirrors `frontend/src/data/`: every request carries the stored bearer
+//  Every request carries the stored bearer
 //  token, a 401 clears it and flips the app back to the login screen, and a
 //  transport failure marks the client offline so the cache layer can serve
 //  reads without waiting on a timeout.
@@ -62,11 +62,29 @@ extension Notification.Name {
     static let omnibusConnectivityChanged = Notification.Name("omnibus.connectivity")
 }
 
+/// The bearer token, and what tells one session from another within a launch.
+struct TokenSession {
+    // Not run for `init`'s load: the launch's token is the session a car first sees.
+    var token: String? {
+        didSet { if token != oldValue { moves += 1 } }
+    }
+    private var moves = 0
+
+    init(token: String?) { self.token = token }
+
+    /// `nil` with no token.
+    var generation: Int? { token == nil ? nil : moves }
+}
+
 actor APIClient {
     static let shared = APIClient()
 
     private var baseURL: String?
-    private var token: String?
+    private var tokenSession: TokenSession
+    private var token: String? {
+        get { tokenSession.token }
+        set { tokenSession.token = newValue }
+    }
     private(set) var isOnline = true
 
     /// While set, requests fail immediately instead of dialling a server that
@@ -126,7 +144,7 @@ actor APIClient {
         uploadConfig.requestCachePolicy = .reloadIgnoringLocalCacheData
         uploadSession = URLSession(configuration: uploadConfig)
         baseURL = ServerURLStore.load()
-        token = TokenStore.load()
+        tokenSession = TokenSession(token: TokenStore.load())
     }
 
     // MARK: - Configuration
@@ -146,6 +164,8 @@ actor APIClient {
 
     func currentBaseURL() -> String? { baseURL }
     func hasToken() -> Bool { token != nil }
+    /// What tells this session from another within a launch, or `nil` with no token.
+    func sessionGeneration() -> Int? { tokenSession.generation }
 
     /// Absolute URL for a server-relative path (covers, audio parts, EPUB
     /// files). Returns `nil` before a server is configured.
@@ -203,6 +223,30 @@ actor APIClient {
             throw APIError.http(status: 304, message: "unexpected 304 for an unconditional request")
         }
         return data
+    }
+
+    /// `GET path` into a temporary file, with the name the server suggests, for
+    /// a body too large to hold in memory. On the long-transfer session: the
+    /// read session gives up on a whole response after two minutes.
+    func file(for path: String) async throws -> (url: URL, suggestedName: String?) {
+        guard let url = absoluteURL(path) else { throw APIError.notConfigured }
+        try failFastWhenUnreachable()
+        var request = URLRequest(url: url)
+        if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        do {
+            let (file, response) = try await uploadSession.download(for: request)
+            noteOutcome(reachable: true)
+            if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+                try validate(response, data: (try? Data(contentsOf: file)) ?? Data())
+            }
+            return (file, response.suggestedFilename)
+        } catch let error as APIError {
+            throw error
+        } catch {
+            try rethrowIfCancelled(error)
+            noteOutcome(reachable: false)
+            throw APIError.transport(error.localizedDescription)
+        }
     }
 
     /// A fetched image plus the validator the server published for it, or —

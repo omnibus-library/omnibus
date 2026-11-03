@@ -1,7 +1,7 @@
 //  DownloadStaleness.swift
 //  Learning that the library file under a downloaded copy has been replaced.
 //
-//  Port of `frontend/src/offline/downloads/staleness.rs`. `DownloadManager`
+//  `DownloadManager`
 //  answers the question per book from metadata it already holds; this answers
 //  it for the whole device at once, on a TTL, via one
 //  `POST /api/downloads/validators` — so the Downloads screen learns of a

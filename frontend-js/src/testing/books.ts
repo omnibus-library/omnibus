@@ -37,6 +37,7 @@ export function aBook(overrides: Partial<Book> = {}): Book {
   return {
     uuid: bookUuid("ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0"),
     title: "Aurora Station, Vol. 1",
+    filename: "aurora-station-01.cbz",
     authors: ["Sora Inkwell"],
     series: { name: "Aurora Station", index: "1" },
     accent: "oklch(0.555 0.153 28.4)",

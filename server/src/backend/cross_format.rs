@@ -98,7 +98,6 @@ pub(super) async fn get_alignment(
     State(state): State<AppState>,
     Path(uuid): Path<String>,
 ) -> Response {
-    // Mirrors `rpc_get_alignment`.
     match db::cross_format::alignment_view(&state.pool, user.id, &uuid).await {
         Ok(view) => Json(view).into_response(),
         Err(e) => error_response("get_alignment", e),
@@ -136,7 +135,7 @@ pub(super) async fn post_cross_format_link(
     if let Err(msg) = update.validate() {
         return (axum::http::StatusCode::UNPROCESSABLE_ENTITY, msg).into_response();
     }
-    // The same gate as `rpc_confirm_cross_format_link`: a re-order is library-wide.
+    // A re-order is library-wide.
     if update.audio_order.is_some() && !user.can_edit {
         return (
             axum::http::StatusCode::FORBIDDEN,
@@ -180,7 +179,6 @@ pub(super) async fn delete_cross_format_link(
     State(state): State<AppState>,
     Path(uuid): Path<String>,
 ) -> Response {
-    // Mirrors `rpc_unlink_cross_format`.
     match db::cross_format::delete_link(&state.pool, user.id, &uuid).await {
         Ok(_) => axum::http::StatusCode::NO_CONTENT.into_response(),
         Err(e) => error_response("unlink_cross_format", e),

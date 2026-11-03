@@ -84,7 +84,7 @@ async fn disk_book(
 const WEB_CFI: &str = "epubcfi(/6/2!/4/2,/1:21,/1:45)";
 
 /// Create a web-origin highlight (CFI anchor only) directly in the store,
-/// as the web reader's create RPC would.
+/// as the web reader's create request would.
 async fn create_web_highlight(pool: &SqlitePool, user: i64, uuid: &str, cfi: &str) -> i64 {
     db::annotations::create_highlight(
         pool,

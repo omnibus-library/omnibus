@@ -57,11 +57,15 @@ test.describe("author page", () => {
     libraryPage,
     authorId,
     ownShelf,
+    request,
   }) => {
     const name = "Niklaus Wirth";
-    const shelf = await ownShelf("Show in library");
+    // The row lists only a shelf with books, so it holds one not by Wirth.
+    const shelf = await ownShelf("Show in library", {
+      book_uuids: [await fetchBookUuidByTitle(request, "Alpha")],
+    });
 
-    await test.step("pick an empty shelf on the library", async () => {
+    await test.step("pick a shelf without the author's books", async () => {
       // The landing restores its last shelf pick, which would hide the books.
       await libraryPage.goto();
       await libraryPage.selectShelf(shelf);

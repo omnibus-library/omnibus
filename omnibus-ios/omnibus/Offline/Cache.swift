@@ -1,8 +1,7 @@
 //  Cache.swift
 //  Local-first replica cache over `OfflineStore`.
 //
-//  Port of `frontend/src/offline/cache.rs`. Reads go through `live`: the
-//  replica answers immediately and the server's answer follows if it differs,
+//  Reads go through `live`: the replica answers immediately and the server's answer follows if it differs,
 //  so no screen ever waits on the network to paint.
 
 import Foundation
@@ -43,6 +42,7 @@ enum CacheKey {
     static func highlights(_ uuid: String) -> String { "highlights:\(uuid)" }
     static func bookmarks(_ uuid: String) -> String { "bookmarks:\(uuid)" }
     static func journals(_ uuid: String) -> String { "journals:\(uuid)" }
+    static func bookSessions(_ uuid: String) -> String { "book-sessions:\(uuid)" }
     /// The stars-only reads the book page used before reviews; nothing reads
     /// them now. `rating` is still what a replayed legacy `rating:` op moves,
     /// and the wipe-coverage test names both so an upgraded device's leftover
@@ -73,7 +73,10 @@ enum CacheKey {
     }
     static func playbackRate(_ uuid: String) -> String { "audio_rate:\(uuid)" }
     static func suggestions(_ uuid: String) -> String { "suggestions:\(uuid)" }
+    static func bookHousehold(_ uuid: String) -> String { "book_household:\(uuid)" }
+    static func bookChapters(_ uuid: String) -> String { "book_chapters:\(uuid)" }
     static func shelvesContaining(_ uuid: String) -> String { "shelves_with:\(uuid)" }
+    static func smartShelvesContaining(_ uuid: String) -> String { "smart_shelves_with:\(uuid)" }
     static func wishlistEntry(_ uuid: String) -> String { "wishlist:\(uuid)" }
 }
 
@@ -212,10 +215,16 @@ enum Cache {
     /// and its own refresh also store (a review), where an answer fetched
     /// before the write would otherwise put the old state back. Off for keys
     /// written constantly, such as positions, which would refuse every answer.
+    ///
+    /// `confirmsAnswer` yields an answer the replica adopted as fresh even when it
+    /// repeats the replica, so a last answer still not fresh means the server's
+    /// never landed. For a caller that acts on that; others would only churn.
+    /// It doesn't apply with `guardsWrites`.
     static func live<T: Codable & Sendable>(
         _ key: String,
         storing: (@Sendable (T) -> T)? = nil,
         guardsWrites: Bool = false,
+        confirmsAnswer: Bool = false,
         fetch: @escaping @Sendable () async throws -> T
     ) -> AsyncThrowingStream<CacheRead<T>, Error> {
         AsyncThrowingStream { continuation in
@@ -280,7 +289,7 @@ enum Cache {
                     // `Data` on both sides already, and re-yielding an
                     // identical answer would churn every observing view for
                     // nothing.
-                    if freshData == nil || freshData != cachedData {
+                    if confirmsAnswer || freshData == nil || freshData != cachedData {
                         continuation.yield(CacheRead(value: fresh, isFresh: true))
                     }
                     continuation.finish()

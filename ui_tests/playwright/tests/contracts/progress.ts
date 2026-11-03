@@ -1,10 +1,15 @@
-import { type ExpectMutationOptions, post } from "../utils/api";
+import { expect } from "../fixtures/test";
+import {
+  type ExpectMutationOptions,
+  type ForcedRequest,
+  post,
+} from "../utils/api";
 
 /** The progress endpoints the reader posts to. */
 export const progressUrls = {
-  save: /\/api\/rpc\/progress(?:\?|$)/,
-  get: /\/api\/rpc\/progress\/get(?:\?|$)/,
-  recent: /\/api\/rpc\/progress\/recent(?:\?|$)/,
+  save: /\/api\/progress(?:\?|$)/,
+  get: /\/api\/progress\/[0-9a-f-]{36}(?:\?|$)/,
+  recent: /\/api\/progress\/recent(?:\?|$)/,
 };
 
 /** The writes the reader makes to the reader's saved position. */
@@ -20,12 +25,11 @@ export const progress = {
   ): ExpectMutationOptions => ({
     ...progress.save(),
     expectedBody: {
-      update: {
-        book_uuid: bookUuid,
-        format: "epub",
-        epub_cfi: epubCfi,
-        progress_percent: percent,
-      },
+      book_uuid: bookUuid,
+      format: "epub",
+      epub_cfi: epubCfi,
+      progress_percent: percent,
+      client_updated_at: expect.any(Number),
     },
   }),
 
@@ -35,8 +39,8 @@ export const progress = {
     timeout: 20_000,
   }),
 
-  /** The read the user menu makes for its resume rows, a POST that changes nothing. */
-  recent: (): ExpectMutationOptions => post(progressUrls.recent),
+  /** The read the user menu makes for its resume rows. */
+  recent: (): ForcedRequest => ({ method: "GET", url: progressUrls.recent }),
 
   /** The save the audio player makes for a position, filed under the part it plays. */
   saveAudio: (
@@ -46,12 +50,10 @@ export const progress = {
   ): ExpectMutationOptions => ({
     ...progress.save(),
     expectedBody: {
-      update: {
-        book_uuid: bookUuid,
-        format: "audio",
-        audio_position_seconds: seconds,
-        book_file_id: bookFileId,
-      },
+      book_uuid: bookUuid,
+      format: "audio",
+      audio_position_seconds: seconds,
+      book_file_id: bookFileId,
     },
   }),
 };

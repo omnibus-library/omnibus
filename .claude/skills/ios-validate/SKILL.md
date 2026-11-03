@@ -40,7 +40,7 @@ cp .claude/skills/ios-validate/screen-tour.swift omnibus-ios/omnibusUITests/Scre
 
 `ScreenTour*.swift` is gitignored, so the tour can't be committed. Replace the blocks in `testTour` with one per screen: `open(<route>)`, wait for an element that proves the screen drew, `shot(<name>)`.
 
-A route is `<tab>/<screen>/<screen>…`, opened as `omnibus://debug/screen/<route>` (DEBUG builds only). The tab is `library`, `search`, `stats` or `you`; each screen after it is pushed in order: `shelves`, `shelf/<id>`, `authors`, `author/<id>`, `series`, `series/<id>`, `tags`, `tag/<name>`, `genres`, `genre/<name>`, `book/<uuid>`, `edit/<uuid>`, `results/<query>`, `settings`, `goals`, `downloads`. `App/DebugScreenLink.swift` is the parser.
+A route is `<tab>/<screen>/<screen>…`, opened as `omnibus://debug/screen/<route>` (DEBUG builds only). The tab is `library`, `search`, `stats` or `you`; each screen after it is pushed in order: `shelves`, `shelf/<id>`, `authors`, `author/<id>`, `series`, `series/<id>`, `tags`, `tag/<name>`, `genres`, `genre/<name>`, `book/<uuid>`, `results/<query>`, `settings`, `goals`, `downloads`. `App/DebugScreenLink.swift` is the parser. The metadata editor is a sheet, not a route: open `book/<uuid>`, then tap `book-more` and `metadata-edit-open`.
 
 - **State the tour writes stays written.** A setting it flips is still flipped on the next run; start over with `server up --fresh` (about 30 s), then seed again.
 - **Lazy grids** build only the cells near the viewport: `scrollTo(element)` before asserting on or shooting anything below the fold.

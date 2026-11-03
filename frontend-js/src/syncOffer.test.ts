@@ -52,7 +52,7 @@ describe("dismissal memory", () => {
     expect(dismissedClock(1, "book-a", "epub")).toBeNull();
   });
 
-  it("shares the Dioxus client's key", () => {
+  it("stores under the omn.syncprompt key", () => {
     storeDismissedClock(7, "book-a", "epub", 42);
 
     expect(localStorage.getItem("omn.syncprompt::7::book-a::epub")).toBe("42");

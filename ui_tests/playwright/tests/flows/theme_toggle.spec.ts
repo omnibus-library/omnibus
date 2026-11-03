@@ -1,7 +1,7 @@
 import { expect, test } from "../fixtures/pageFixtures";
 
 // The segmented control in the user menu and in Settings › Preferences keeps
-// its choice under `omn.theme` and applies it after hydration. Each test starts
+// its choice under `omn.theme` and applies it when the client boots. Each test starts
 // with empty localStorage and asserts `data-theme`, the contract.
 
 test.describe("theme toggle", () => {
@@ -52,7 +52,7 @@ test.describe("theme toggle", () => {
     });
 
     await test.step("reload", async () => {
-      // SSR still renders dark; the post-hydration effect then flips it.
+      // The shell paints dark; the stored choice is applied once the client boots.
       await libraryPage.reload();
       await expect(libraryPage.themeRoot).toHaveAttribute(
         "data-theme",

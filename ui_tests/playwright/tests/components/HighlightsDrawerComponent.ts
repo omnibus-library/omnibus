@@ -1,6 +1,6 @@
 import type { Locator, Page } from "@playwright/test";
-import { highlightsUrls } from "../contracts/highlights";
-import { isPostTo } from "../utils/api";
+import { highlights } from "../contracts/highlights";
+import { isResponseTo } from "../utils/api";
 import { BaseComponent } from "./BaseComponent";
 import { HighlightRowComponent } from "./HighlightRowComponent";
 
@@ -41,7 +41,7 @@ export class HighlightsDrawerComponent extends BaseComponent {
 
   async saveNote(): Promise<void> {
     const saved = this.page.waitForResponse(
-      isPostTo(highlightsUrls.updateNote),
+      isResponseTo(highlights.updateNote()),
     );
     await this.saveNoteButton.click();
     await saved;

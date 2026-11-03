@@ -1,6 +1,4 @@
-//! On-demand book-summary fetch REST handlers (mobile-facing); web hits the
-//! analogous `/api/rpc/ebook/summary/*` server functions in
-//! `omnibus_frontend::rpc::summary`.
+//! On-demand book-summary fetch REST handlers.
 
 use axum::{
     extract::{Path, State},

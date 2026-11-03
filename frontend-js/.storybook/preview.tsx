@@ -48,8 +48,7 @@ const preview = {
   parameters: {
     // The decorator pads inside `.atrium`, so nothing shows around it.
     layout: "fullscreen",
-    // Atrium's muted inks fail colour contrast in six stories (the Dioxus app
-    // too): report them in the a11y panel and test results without failing.
+    // Atrium's muted inks fail colour contrast in six stories: report them in the a11y panel and test results without failing.
     a11y: { test: "todo" },
   },
   // Every story renders inside the app's session, router and `.atrium` root.

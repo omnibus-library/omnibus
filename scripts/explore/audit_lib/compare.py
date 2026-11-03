@@ -87,9 +87,8 @@ def check_all(
 ) -> tuple[list[Finding], list[tuple[Expectation, str]]]:
     """Check every expectation, containing a failed read to that expectation.
 
-    One agent journalling a slug where a uuid belongs makes the state read
-    error (the RPC 500s on an unresolvable uuid, and `Client.rpc` raises).
-    That must cost the run one unverifiable entry, not the whole `audit.json`.
+    A state read that fails (a 5xx, a dead session) raises `ApiError`. That
+    must cost the run one unverifiable entry, not the whole `audit.json`.
     """
     findings: list[Finding] = []
     failed: list[tuple[Expectation, str]] = []
@@ -312,7 +311,7 @@ def unexpected(
     still landed, and re-reporting it here would contradict the journal line
     that names it. The claims also carry the read-status slots of every book
     an agent merely opened, because the reading surfaces auto-write status
-    with nothing journalled (frontend/src/read_status_auto.rs).
+    with nothing journalled (frontend-js/src/autoReadStatus.ts).
 
     Requires a baseline. Without one there is nothing to subtract, and every
     fact left behind by an earlier run would be reported as a surprise.
@@ -326,7 +325,10 @@ def unexpected(
     for uuid in baseline.get("library") or []:
         was = books.get(uuid) or {}
         if ("rating", uuid) not in claims.slots:
-            now = state.rating(uuid)
+            try:
+                now = state.rating(uuid)
+            except ApiError:  # the book was deleted or merged away since the baseline
+                continue
             if now is not None and was.get("rating") != now:
                 out.append(_bare(actor, UNEXPECTED, "rating", uuid, "nothing journalled", _describe_rating(now)))
         if ("read_status", uuid) not in claims.slots:

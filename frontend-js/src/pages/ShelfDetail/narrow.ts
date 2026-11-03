@@ -5,17 +5,19 @@ export type FullList = {
   books: Book[];
   /** A fetch has succeeded for the shelf on screen. */
   ready: boolean;
+  /** The refetch an add set off is still out, so the books may predate that add. */
+  settling: boolean;
   errored: boolean;
 };
 
-/** A whole-member query read as a `FullList`. */
-export const fullList = (query: {
-  data?: Book[];
-  isSuccess: boolean;
-  isError: boolean;
-}): FullList => ({
+/** A whole-member query read as a `FullList`; `settling` while an add's refetch is out. */
+export const fullList = (
+  query: { data?: Book[]; isSuccess: boolean; isError: boolean },
+  settling: boolean,
+): FullList => ({
   books: query.data ?? [],
   ready: query.isSuccess,
+  settling,
   errored: query.isError,
 });
 

@@ -203,9 +203,24 @@ pub(super) fn not_modified(etag: &str, cache_control: &str, vary: &str) -> Respo
 pub(super) struct FileResponse<'a> {
     pub(super) content_type: &'a str,
     pub(super) cache_control: &'a str,
+    /// `Vary` on every 200, 206, 304 and 416: [`MEDIA_VARY`] unless the bytes
+    /// depend on something else (the web client's files vary on `Accept-Encoding`).
+    pub(super) vary: &'a str,
     /// `Content-Disposition` value, for the download (as opposed to inline)
     /// endpoints.
     pub(super) disposition: Option<String>,
+}
+
+impl<'a> FileResponse<'a> {
+    /// The presentation every media endpoint shares: private, revalidated, varying on credentials.
+    pub(super) fn media(content_type: &'a str, disposition: Option<String>) -> Self {
+        Self {
+            content_type,
+            cache_control: MEDIA_CACHE_CONTROL,
+            vary: MEDIA_VARY,
+            disposition,
+        }
+    }
 }
 
 /// Stream `open`'s bytes as 200, 206, or 416, from the handle its validator
@@ -230,7 +245,7 @@ pub(super) async fn serve(open: OpenFile, range: RangeOutcome, spec: FileRespons
                     (header::CONTENT_RANGE, format!("bytes */{len}")),
                     (header::ACCEPT_RANGES, "bytes".into()),
                     (header::CACHE_CONTROL, spec.cache_control.into()),
-                    (header::VARY, MEDIA_VARY.into()),
+                    (header::VARY, spec.vary.into()),
                     (header::ETAG, validator.etag),
                 ],
             );
@@ -253,7 +268,7 @@ pub(super) async fn serve(open: OpenFile, range: RangeOutcome, spec: FileRespons
         (header::CONTENT_LENGTH, span.to_string()),
         (header::ACCEPT_RANGES, "bytes".into()),
         (header::CACHE_CONTROL, spec.cache_control.into()),
-        (header::VARY, MEDIA_VARY.into()),
+        (header::VARY, spec.vary.into()),
         (header::ETAG, validator.etag),
         (
             header::LAST_MODIFIED,

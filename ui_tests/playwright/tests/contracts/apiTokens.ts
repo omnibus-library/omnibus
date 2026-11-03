@@ -1,10 +1,10 @@
-import { type ExpectMutationOptions, post } from "../utils/api";
+import type { ExpectMutationOptions } from "../utils/api";
+import { post } from "../utils/api";
 
-/** The endpoints Settings › Sign-in & security posts to for API tokens. */
+/** The endpoints Settings › Sign-in & security calls for API tokens. */
 export const apiTokensUrls = {
-  create: /\/api\/rpc\/api-tokens\/create(?:\?|$)/,
-  rename: /\/api\/rpc\/api-tokens\/rename(?:\?|$)/,
-  revoke: /\/api\/rpc\/api-tokens\/revoke(?:\?|$)/,
+  create: /\/api\/auth\/api-tokens(?:\?|$)/,
+  byId: /\/api\/auth\/api-tokens\/\d+(?:\?|$)/,
 };
 
 /** The writes a reader makes to manage tokens. */
@@ -12,7 +12,15 @@ export const apiTokens = {
   create: (name: string): ExpectMutationOptions =>
     post(apiTokensUrls.create, { name }),
 
-  rename: (): ExpectMutationOptions => post(apiTokensUrls.rename),
+  rename: (): ExpectMutationOptions => ({
+    method: "PATCH",
+    url: apiTokensUrls.byId,
+    expectedStatus: 204,
+  }),
 
-  revoke: (): ExpectMutationOptions => post(apiTokensUrls.revoke),
+  revoke: (): ExpectMutationOptions => ({
+    method: "DELETE",
+    url: apiTokensUrls.byId,
+    expectedStatus: 204,
+  }),
 };

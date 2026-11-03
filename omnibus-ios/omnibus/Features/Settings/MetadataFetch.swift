@@ -1,38 +1,30 @@
 //  MetadataFetch.swift
-//  The fetch-metadata sheet's stage machine and its pure decision logic —
-//  which screen follows what, which candidate leads the list, and what one
-//  provider field would change about the draft.
+//  The fetch view's stage machine and its pure decision logic: which screen
+//  follows what, which candidate leads the list, and which rows an edition's
+//  comparison holds.
 //
 //  Kept out of the view for the same reason `MetadataDraft` is: the copyable
-//  fields are *data* here, so the compare screen renders
-//  `MetadataFetchField.allCases` and no row is written by hand. Adding a field
-//  is one case plus the arms the compiler then demands — not three edits across
-//  three files, one of which is silently forgotten.
+//  fields are *data* here, so the comparison is built from
+//  `MetadataFetchField.allCases` and no row is written by hand.
 
 import Foundation
 
-/// Which screen the sheet is showing.
+/// Which screen the fetch view is showing.
 enum MetadataFetchStage: Equatable {
-    /// Opened, nothing asked yet. The fields are filled in from the book but
-    /// no request has gone out, so the reader can see exactly what is about to
-    /// be searched — and drop the ISBN if they want the wider list — before
-    /// anything is spent on it.
-    case ready
-    case searching
+    case asking
+    /// The search ran. An empty list is a search that found nothing, with a
+    /// per-source line saying why.
     case results
-    /// The search itself failed. Distinct from a search that ran and found
-    /// nothing, which is `.results` with an empty list and a per-source line
-    /// saying why.
-    case failed(String)
+    /// The search itself failed.
+    case failed
     case compare(ProviderEdition)
 }
 
 /// One field a source can offer and the editor can take.
 ///
-/// Adding one is: a case here, and the arms
-/// [`label`](MetadataFetchField/label), `current`, `sourceValue`, `original`,
-/// `apply`, and `undo` then refuse to build without. Nothing in the compare
-/// screen changes — it renders `allCases` and nothing else.
+/// Adding one is: a case here, and the arms `label`, `current`, `sourceValue`
+/// and `apply` then refuse to build without. Nothing in the comparison changes:
+/// it is built from `allCases` and nothing else.
 ///
 /// **Tags are deliberately absent.** A provider's subject list lands on
 /// `genres` in this codebase; `subjects` is whatever the EPUB's own
@@ -53,31 +45,25 @@ enum MetadataFetchField: String, CaseIterable, Identifiable, Sendable {
 
     var id: String { rawValue }
 
-    /// The row heading, matching the editor's own label for the same field so
-    /// a reader can see where a taken value will land.
+    /// The heading of this field's row in the comparison.
     var label: String {
         switch self {
         case .title: "Title"
-        case .authors: "Authors"
+        case .authors: "Author(s)"
         case .publisher: "Publisher"
         case .published: "Published"
         case .series: "Series"
-        case .seriesIndex: "Index"
+        case .seriesIndex: "Number in series"
         case .isbn13: "ISBN-13"
         case .isbn10: "ISBN-10"
-        case .printPages: "Print Pages"
+        case .printPages: "Print pages"
         case .genres: "Genres"
-        case .description: "Summary"
+        case .description: "Description"
         }
     }
 
-    /// Whether this field's values want the room of a paragraph rather than a
-    /// line. Only the summary, but expressed as a property so the card layout
-    /// asks the field instead of matching on one case.
-    var isProse: Bool { self == .description }
-
     /// What the *draft* currently holds — the staged value, not the saved one,
-    /// so a card reflects a take the moment it happens.
+    /// so the comparison reads against what a save would write.
     func current(_ draft: MetadataDraft) -> String {
         switch self {
         case .title: draft.title
@@ -96,7 +82,7 @@ enum MetadataFetchField: String, CaseIterable, Identifiable, Sendable {
 
     /// What the source offers, or the empty string when it offers nothing.
     ///
-    /// The empty string is the whole safety property of this screen: it is
+    /// The empty string is the whole safety property of this view: it is
     /// what `isAvailable` reads, and an unavailable field can't be taken — so
     /// a provider that doesn't know a field can never blank out a value the
     /// reader already has.
@@ -135,34 +121,10 @@ enum MetadataFetchField: String, CaseIterable, Identifiable, Sendable {
         !sourceValue(edition).isEmpty
     }
 
-    /// What the book held when the editor loaded it — the same frozen baseline
-    /// the Save button counts against.
-    ///
-    /// Formatted exactly like `current` so the two compare as strings; a
-    /// mismatch in formatting here would report a field as edited for the
-    /// shape of its rendering rather than for its value.
-    func original(_ loaded: MetadataDraft) -> String {
-        current(loaded)
-    }
-
-    /// Whether this field is currently carrying an unsaved change.
-    ///
-    /// Defined against the *baseline*, not against what this sheet happened to
-    /// do — so it is true for a field edited directly in the form too, it
-    /// survives leaving and re-entering the compare screen, and it can never
-    /// disagree with the editor's own dirty check, which asks the same
-    /// question.
-    func isStaged(draft: MetadataDraft, loaded: MetadataDraft) -> Bool {
-        current(draft) != original(loaded)
-    }
-
     /// Whether the source would actually change this field.
     ///
-    /// What the compare screen filters on: a card that says the same thing on
-    /// both sides is one the reader has to read and then dismiss, and there
-    /// are usually more of those than of the ones that matter. A field the
-    /// source has no value for is *not* a difference — it can't be taken, so
-    /// showing it would only be showing a dash beside a dead control.
+    /// A field the source has no value for is *not* a difference: it can't be
+    /// taken, so a row for it would only be a dash beside a dead control.
     func differs(draft: MetadataDraft, edition: ProviderEdition) -> Bool {
         let source = sourceValue(edition)
         return !source.isEmpty && source != current(draft)
@@ -172,14 +134,13 @@ enum MetadataFetchField: String, CaseIterable, Identifiable, Sendable {
     ///
     /// Staging only: the editor's Save button stays the single writer, so
     /// dirty tracking, validation, and the changed-fields-only payload keep
-    /// working untouched. A field the source lacks is a no-op — the guard is
-    /// here as well as on the control, because "take all" also comes through.
+    /// working untouched. A field the source lacks is a no-op.
     func apply(to draft: inout MetadataDraft, from edition: ProviderEdition) {
         guard isAvailable(edition) else { return }
         switch self {
         case .title: draft.title = sourceValue(edition)
         // The list fields write the source's own array rather than the joined
-        // string the card displays.
+        // string the row displays.
         case .authors: draft.authors = Self.nonBlank(edition.authors)
         case .publisher: draft.publisher = sourceValue(edition)
         case .published: draft.published = sourceValue(edition)
@@ -193,35 +154,18 @@ enum MetadataFetchField: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// Put this field back the way the book had it.
-    func undo(in draft: inout MetadataDraft, to loaded: MetadataDraft) {
-        switch self {
-        case .title: draft.title = loaded.title
-        case .authors: draft.authors = loaded.authors
-        case .publisher: draft.publisher = loaded.publisher
-        case .published: draft.published = loaded.published
-        case .series: draft.series = loaded.series
-        case .seriesIndex: draft.seriesIndex = loaded.seriesIndex
-        case .isbn13: draft.isbn13 = loaded.isbn13
-        case .isbn10: draft.isbn10 = loaded.isbn10
-        case .printPages: draft.printPages = loaded.printPages
-        case .genres: draft.genres = loaded.genres
-        case .description: draft.description = loaded.description
-        }
-    }
-
-    /// How a list-valued field renders on one side of a card.
+    /// How a list-valued field reads in the comparison.
     ///
     /// Blank entries are dropped before joining, so a list of them reads as
     /// absent rather than as the separator string — `["", ""]` would otherwise
-    /// render, and stage, as ", ". Used by both sides so a value and its
-    /// baseline are compared on equal terms.
+    /// render, and stage, as ", ". Used by both sides so they compare on equal
+    /// terms.
     private static func list(_ values: [String]) -> String {
         nonBlank(values).joined(separator: ", ")
     }
 
     /// The list a list-valued field actually stages: trimmed, blanks dropped,
-    /// so what is written matches what the card displayed.
+    /// so what is written matches what the row displayed.
     private static func nonBlank(_ values: [String]) -> [String] {
         values
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -229,14 +173,66 @@ enum MetadataFetchField: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+/// One row of an edition's comparison: a field or the cover it would change.
+struct MetadataDiffRow: Identifiable, Equatable {
+    enum Kind: Equatable {
+        case field(MetadataFetchField)
+        case cover(url: String)
+    }
+
+    let kind: Kind
+    let label: String
+    let before: String
+    let after: String
+    /// You have nothing there, so taking it costs nothing: on by default.
+    let fills: Bool
+
+    var id: String {
+        switch kind {
+        case let .field(field): field.rawValue
+        case .cover: "cover"
+        }
+    }
+
+    var isCover: Bool {
+        if case .cover = kind { return true }
+        return false
+    }
+}
+
+/// One heading's worth of comparison rows.
+struct MetadataDiffGroup: Identifiable, Equatable {
+    let head: String
+    let note: String
+    let rows: [MetadataDiffRow]
+
+    var id: String { note }
+}
+
 /// Pure builders and gates, separated from the view so they're testable
 /// without a server — the same split `CheckInFlow` makes.
 enum MetadataFetchFlow {
-    /// Rendered wherever a value is absent, on either side of a card. One
-    /// owner, so the screens can't drift onto different dashes.
-    static let empty = "\u{2014}"
-
     // MARK: - Asking
+
+    /// The request the search box and author field describe, or `nil` when
+    /// both are blank. A query shaped like an ISBN asks for that printing
+    /// rather than for a title of digits.
+    static func searchRequest(query: String, author: String) -> EditionSearchRequest? {
+        let isISBN = looksLikeISBN(query)
+        return searchRequest(
+            title: isISBN ? "" : query, author: author, isbn: isISBN ? query : ""
+        )
+    }
+
+    /// Ten or thirteen characters once its hyphens and spaces are gone: digits,
+    /// with an ISBN-10's check digit allowed to be an X.
+    static func looksLikeISBN(_ text: String) -> Bool {
+        let bare = text.filter { !$0.isWhitespace && $0 != "-" }
+        guard bare.count == 10 || bare.count == 13 else { return false }
+        let digits = bare.dropLast().allSatisfy { $0.isASCII && $0.isNumber }
+        let check = bare.last.map { ($0.isASCII && $0.isNumber) || (bare.count == 10 && "xX".contains($0)) }
+        return digits && check == true
+    }
 
     /// The request the three fields describe, or `nil` when they are all
     /// blank.
@@ -245,26 +241,23 @@ enum MetadataFetchFlow {
     /// each provider is asked for. `query` still carries the composed phrase,
     /// because the REST front door accepts free text from clients that have no
     /// picker — but nothing here depends on it round-tripping.
-    static func searchRequest(
-        title: String, author: String, isbn: String, providers: [MetadataProvider]?
-    ) -> EditionSearchRequest? {
+    static func searchRequest(title: String, author: String, isbn: String) -> EditionSearchRequest? {
         let title = title.nilIfBlank
         let author = author.nilIfBlank
         let isbn = isbn.nilIfBlank
         guard title != nil || author != nil || isbn != nil else { return nil }
         // Truncated because `EditionSearchRequest::validate` caps `query` and
         // checks it *first* — so a long historical title 400s with "query
-        // exceeds 200 characters", naming a field this three-field form has no
-        // control for. Safe: nothing reads `query` back. `search_query` on the
-        // server ignores it entirely whenever the structured fields are
-        // present, and they always are here.
+        // exceeds 200 characters", naming a field this form has no control
+        // for. Safe: nothing reads `query` back. `search_query` on the server
+        // ignores it entirely whenever the structured fields are present, and
+        // they always are here.
         let composed = [title, author].compactMap { $0 }.joined(separator: " ")
         return EditionSearchRequest(
             query: String(composed.prefix(searchQueryMaxLength)),
             title: title,
             author: author,
-            isbn: isbn,
-            providers: providers
+            isbn: isbn
         )
     }
 
@@ -450,16 +443,6 @@ enum MetadataFetchFlow {
 
     // MARK: - Reading a candidate
 
-    /// How many fields this candidate would change, against the draft as it
-    /// stands. Shown on the list row so the reader can tell the candidate that
-    /// would rewrite the book from the one that already matches it.
-    ///
-    /// A lower bound, and honestly so: a search hit is thinner than the record
-    /// behind it, and hydrate-on-select can only add fields.
-    static func changeCount(edition: ProviderEdition, draft: MetadataDraft) -> Int {
-        MetadataFetchField.allCases.filter { $0.differs(draft: draft, edition: edition) }.count
-    }
-
     /// The candidate's cover URL, or `nil` when the provider gave nothing
     /// usable. Blank-but-present is the case worth catching: handed to an
     /// image loader it resolves against nothing and quietly fails.
@@ -468,24 +451,126 @@ enum MetadataFetchFlow {
         return CheckInFlow.isExternalURL(url) ? url : nil
     }
 
-    /// A candidate row's second line: authors, or a dash when the source named
-    /// none.
-    static func authorsLine(_ edition: ProviderEdition) -> String {
-        edition.authorDisplay.nilIfBlank ?? empty
+    /// An edition's line of particulars, with what the provider left empty
+    /// dropped rather than rendered as a gap.
+    static func metaLine(_ edition: ProviderEdition) -> String {
+        let imprint = [edition.publisher, edition.year]
+            .compactMap { $0?.nilIfBlank }
+            .joined(separator: " ")
+        return [
+            edition.authorDisplay.nilIfBlank,
+            imprint.nilIfBlank,
+            edition.pages.map { "\($0) pages" },
+        ]
+        .compactMap { $0 }
+        .joined(separator: " \u{b7} ")
     }
 
-    /// A candidate row's third line: year, publisher, ISBN — with the parts
-    /// the provider left empty dropped rather than rendered as gaps.
+    // MARK: - The comparison
+
+    /// What taking this edition could change, against the draft as it stands.
     ///
-    /// All three can be absent at once. A Hardcover search hit describes a
-    /// *work*, so it names no printing, no publisher, and no edition ISBN; the
-    /// row is still worth showing (its title, authors, and cover are exactly
-    /// what the reader is choosing between) and hydrate-on-select fills the
-    /// rest in.
-    static func imprintLine(_ edition: ProviderEdition) -> String {
-        let parts = [edition.year, edition.publisher, edition.isbn13]
-            .compactMap { $0?.nilIfBlank }
-        return parts.isEmpty ? empty : parts.joined(separator: " \u{b7} ")
+    /// A lower bound on a list row, and honestly so: a search hit is thinner
+    /// than the record behind it, and hydrate-on-select can only add fields.
+    static func diffRows(
+        edition: ProviderEdition, draft: MetadataDraft, hasCover: Bool, staged: StagedCover?
+    ) -> [MetadataDiffRow] {
+        var rows: [MetadataDiffRow] = []
+        // A provider's address can't be compared with bytes we hold, so a book
+        // with art always gets the row. Staying off by default keeps that safe.
+        if let url = coverURL(edition), staged != .url(url) {
+            let fills = !hasCover && staged == nil
+            rows.append(
+                MetadataDiffRow(kind: .cover(url: url), label: "Cover", before: "", after: url, fills: fills)
+            )
+        }
+        for field in MetadataFetchField.allCases where field.differs(draft: draft, edition: edition) {
+            let before = field.current(draft)
+            rows.append(
+                MetadataDiffRow(
+                    kind: .field(field),
+                    label: field.label,
+                    before: before,
+                    after: field.sourceValue(edition),
+                    fills: before.nilIfBlank == nil
+                        && (field != .seriesIndex || numberBelongs(to: draft, edition: edition))
+                )
+            )
+        }
+        return rows
+    }
+
+    /// Whether an edition's series number means anything for the draft's series.
+    /// Filling a blank number from another series would pair it with the wrong
+    /// one, which is the mismatch `merged` guards against, so that stays opt-in.
+    private static func numberBelongs(to draft: MetadataDraft, edition: ProviderEdition) -> Bool {
+        let series = draft.series.nilIfBlank
+        return series == nil || series == edition.series?.nilIfBlank
+    }
+
+    /// Whether a row is ticked: what the reader said, else its default.
+    static func isOn(_ row: MetadataDiffRow, marks: [String: Bool]) -> Bool {
+        marks[row.id] ?? row.fills
+    }
+
+    /// The rows under their two headings, the empty one left out.
+    static func groups(_ rows: [MetadataDiffRow]) -> [MetadataDiffGroup] {
+        let fills = rows.filter(\.fills)
+        let replaces = rows.filter { !$0.fills }
+        var groups: [MetadataDiffGroup] = []
+        if !fills.isEmpty {
+            groups.append(
+                MetadataDiffGroup(
+                    head: "Fills \(fills.count) \(fills.count == 1 ? "blank" : "blanks")",
+                    note: "On by default, because you have nothing there.",
+                    rows: fills
+                )
+            )
+        }
+        if !replaces.isEmpty {
+            groups.append(
+                MetadataDiffGroup(
+                    head: "Would replace \(replaces.count)",
+                    note: "Off by default. Tick one to take it instead of what you have.",
+                    rows: replaces
+                )
+            )
+        }
+        return groups
+    }
+
+    /// Stage every ticked row: fields into the draft, a cover beside it. Save
+    /// stays the only thing that writes.
+    static func apply(
+        _ rows: [MetadataDiffRow],
+        marks: [String: Bool],
+        edition: ProviderEdition,
+        draft: inout MetadataDraft,
+        staged: inout StagedCover?
+    ) {
+        for row in rows where isOn(row, marks: marks) {
+            switch row.kind {
+            case let .field(field): field.apply(to: &draft, from: edition)
+            case let .cover(url): staged = .url(url)
+            }
+        }
+    }
+
+    /// The word on a list row for how much an edition would change.
+    static func changesLabel(_ count: Int) -> String {
+        switch count {
+        case 0: "Matches yours"
+        case 1: "1 change"
+        default: "\(count) changes"
+        }
+    }
+
+    static func applyLabel(chosen: Int) -> String {
+        switch chosen {
+        case 0: "Tick a change to apply it"
+        case 1: "Apply 1 change"
+        default: "Apply \(chosen) changes"
+        }
     }
 
     // MARK: - Per-source status
@@ -504,8 +589,8 @@ enum MetadataFetchFlow {
         // a quota metric of "queries per day", so it refuses until midnight
         // Pacific however long anyone waits. What is true either way is that
         // this source sits the next few minutes out.
-        case let .throttled(secs): ("paused \(humanWait(secs))", true)
-        case .unknown: (empty, false)
+        case let .throttled(secs): ("rate limited, skipping for \(humanWait(secs))", true)
+        case .unknown: ("\u{2014}", false)
         }
     }
 
@@ -515,15 +600,4 @@ enum MetadataFetchFlow {
     static func humanWait(_ seconds: UInt64) -> String {
         seconds <= 90 ? "\(max(1, seconds))s" : "\((seconds + 59) / 60)m"
     }
-
-    /// The line under the compare screen's take-all bar, or `nil` when this
-    /// edition would change nothing.
-    static func takeAllLabel(changes: Int) -> String? {
-        switch changes {
-        case 0: nil
-        case 1: "Take 1 field"
-        default: "Take all \(changes) fields"
-        }
-    }
-
 }

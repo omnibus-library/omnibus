@@ -1,7 +1,6 @@
 //! `/api/account/*` — the caller's own reading preferences: hidden formats,
-//! book-detail scroll stops, Stack series, and share stats. Mirrors the web
-//! server functions in `frontend::rpc::account`; the read sides ride
-//! `GET /api/auth/me` as `UserSummary` fields.
+//! book-detail scroll stops, Stack series, and share stats. The read sides
+//! ride `GET /api/auth/me` as `UserSummary` fields.
 
 use axum::{
     extract::State,

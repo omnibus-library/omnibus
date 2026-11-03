@@ -26,14 +26,27 @@ test.describe("library page", () => {
       await expect(libraryPage.grid).toBeVisible();
       await expect(libraryPage.toolbar).toBeVisible();
     });
+  });
 
-    // `marquee.js` arms the paging buttons only at an end with more to show.
+  // The row shows only once the reader has a shelf with books on it, so this
+  // runs as the worker reader, whose `filterShelf` no other spec sees.
+  test("show the shelves row", async ({ readerLibraryPage, filterShelf }) => {
+    const gallery = readerLibraryPage.shelfGallery;
+
+    await test.step("open the library", async () => {
+      await readerLibraryPage.goto();
+    });
+
+    // The paging buttons are armed only at an end with more to show.
     await test.step("check the shelves row shows", async () => {
-      await expect(libraryPage.shelfGallery.root).toBeVisible();
-      await expect(libraryPage.shelfGallery.allBooksTile).toBeVisible();
-      await expect(libraryPage.shelfGallery.newShelfButton).toBeVisible();
-      await expect(libraryPage.shelfGallery.previousArrow).toBeAttached();
-      await expect(libraryPage.shelfGallery.nextArrow).toBeAttached();
+      await expect(gallery.root).toBeVisible();
+      await expect(gallery.allBooksTile).toBeVisible();
+      await expect(
+        readerLibraryPage.galleryShelfTile(filterShelf.id),
+      ).toBeVisible();
+      await expect(gallery.newShelfButton).toBeVisible();
+      await expect(gallery.previousArrow).toBeAttached();
+      await expect(gallery.nextArrow).toBeAttached();
     });
   });
 
@@ -149,6 +162,7 @@ test.describe("library page", () => {
 
         await test.step("check the detail page", async () => {
           await bookDetailPage.goto(added.unique_identifier!);
+          await bookDetailPage.openTab("Files & Details");
           await expect(bookDetailPage.metaValue("Added")).toHaveText(expected);
         });
       });

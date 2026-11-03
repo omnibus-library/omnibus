@@ -3,8 +3,8 @@
  * spec asserts against. Every entry corresponds 1:1 with a file in
  * `test_data/epubs/generated/` produced by `tools/make_epub.ts`.
  *
- * The `slug` mirrors the Rust `row_slug()` derivation in
- * `frontend/src/pages/landing.rs` (filename stem, lowercased, runs of
+ * The `slug` mirrors the client's `bookSlug()` derivation in
+ * `frontend-js/src/pages/Library/libraryView.ts` (filename stem, lowercased, runs of
  * non-alphanumerics → `-`). When you add or rename a fixture, update both
  * the generator inputs and this table, then regenerate the EPUBs.
  */

@@ -49,7 +49,7 @@ test.describe("user menu", () => {
     });
 
     await test.step("check the version line", async () => {
-      // A compile-time constant (#1055), so it is there whatever OMNIBUS_VERSION is.
+      // A compile-time constant, set to the release tag by the build (v0.0.0 in the e2e builds).
       await expect(topNav.versionText).toBeVisible();
       await expect(topNav.versionText).toHaveText(/^v\d+\.\d+\.\d+$/);
     });

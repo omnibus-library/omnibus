@@ -33,17 +33,15 @@ test.describe("book journal", () => {
 
     await test.step("open the book", async () => {
       await bookDetailPage.goto(uuid);
+      await bookDetailPage.openTab("Highlights & Journal");
     });
 
-    // The kicker is counts only and this feed carries whatever the serial
-    // tests left, so it is pinned to one of its two shapes.
-    await test.step("check the journal stop", async () => {
+    // The feed carries whatever the serial tests left, and with nothing in
+    // either column the tab shows one note for both.
+    await test.step("check the journal", async () => {
       await bookDetailPage.assertDisplayed();
       await bookDetailPage.topNav.assertDisplayed();
-      await expect(journal.section).toBeVisible();
-      await expect(journal.kicker).toHaveText(
-        /^(No entries yet|\d+ entr(y|ies) from \d+ readers?( · \d+ drafts?)?)$/,
-      );
+      await expect(journal.tab).toBeVisible();
       await expect(journal.newEntryButton).toBeVisible();
     });
 
@@ -72,15 +70,18 @@ test.describe("book journal", () => {
 
       await test.step("open the composer", async () => {
         await bookDetailPage.goto(uuid);
+        await bookDetailPage.openTab("Highlights & Journal");
         await journal.openComposer();
       });
 
-      // The markdown source is read back from the hidden mirror.
+      // The editor's text is the markdown source, character for character.
       await test.step("bold the whole draft", async () => {
         await journal.write("hello world");
         await journal.selectText();
         await journal.bold();
-        await expect(journal.markdown).toHaveValue("**hello world**");
+        await expect
+          .poll(() => journal.markdownSource())
+          .toBe("**hello world**");
       });
 
       // A line-prefix command prefixes the line rather than wrapping it.
@@ -88,7 +89,7 @@ test.describe("book journal", () => {
         await journal.write("a thought");
         await journal.selectText();
         await journal.quote();
-        await expect(journal.markdown).toHaveValue("> a thought");
+        await expect.poll(() => journal.markdownSource()).toBe("> a thought");
       });
 
       await test.step("discard the draft", async () => {
@@ -113,6 +114,7 @@ test.describe("book journal", () => {
 
       await test.step("open the composer", async () => {
         await bookDetailPage.goto(uuid);
+        await bookDetailPage.openTab("Highlights & Journal");
         await journal.openComposer();
       });
 
@@ -123,9 +125,11 @@ test.describe("book journal", () => {
       });
 
       await test.step("check it lands as an attributed blockquote", async () => {
-        await expect(journal.markdown).toHaveValue(
-          new RegExp(`> ${highlight.text}[\\s\\S]*saved from highlights`),
-        );
+        await expect
+          .poll(() => journal.markdownSource())
+          .toMatch(
+            new RegExp(`> ${highlight.text}[\\s\\S]*saved from highlights`),
+          );
         await expect(journal.highlightsPopover).toHaveCount(0);
       });
 
@@ -146,6 +150,7 @@ test.describe("book journal", () => {
 
       await test.step("open the composer", async () => {
         await bookDetailPage.goto(uuid);
+        await bookDetailPage.openTab("Highlights & Journal");
         await journal.openComposer();
       });
 
@@ -174,13 +179,14 @@ test.describe("book journal", () => {
       createdJournalIds,
       expectMutation,
     }) => {
-      const { journal, journalEntry } = bookDetailPage;
+      const { journal } = bookDetailPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
       const marker = journalMarker("blocks");
       const body = `${marker} intro\n\n1. first\n2. second\n\n- parent\n  - child\n\n> quoted one\nquoted two`;
 
       await test.step("open the composer", async () => {
         await bookDetailPage.goto(uuid);
+        await bookDetailPage.openTab("Highlights & Journal");
         await journal.openComposer();
       });
 
@@ -189,28 +195,27 @@ test.describe("book journal", () => {
       await test.step("type the entry", async () => {
         await journal.type(body);
         // Blank lines and the sub-bullet's indent must survive the round-trip.
-        await expect(journal.markdown).toHaveValue(body);
+        await expect.poll(() => journal.markdownSource()).toBe(body);
       });
 
+      // The autosave made the draft, so the publish updates it.
       await test.step("publish the entry", async () => {
-        const { response } = await expectMutation(journals.save(), () =>
+        await journal.assertAutosaved();
+        const { response } = await expectMutation(journals.update(), () =>
           journal.publish(),
         );
         const { id }: JournalEntryRef = await response.json();
         createdJournalIds.add(id);
       });
 
-      await test.step("open the entry", async () => {
-        await journal.openEntry(marker);
-      });
-
       await test.step("check the markup is structured", async () => {
-        await expect(journalEntry.orderedListItems).toHaveCount(2);
-        await expect(journalEntry.nestedListItem).toHaveText("child");
+        const entry = journal.entry(marker);
+        await expect(entry.orderedListItems).toHaveCount(2);
+        await expect(entry.nestedListItem).toHaveText("child");
         // The lazy continuation line keeps its own row: soft breaks are
         // promoted to <br> on publish.
-        await expect(journalEntry.blockquote).toContainText("quoted two");
-        await expect(journalEntry.blockquoteBreaks).toHaveCount(1);
+        await expect(entry.blockquote).toContainText("quoted two");
+        await expect(entry.blockquoteBreaks).toHaveCount(1);
       });
     });
 
@@ -220,12 +225,13 @@ test.describe("book journal", () => {
       createdJournalIds,
       expectMutation,
     }) => {
-      const { journal, journalEntry } = bookDetailPage;
+      const { journal } = bookDetailPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
       const marker = journalMarker("image");
 
       await test.step("open the composer", async () => {
         await bookDetailPage.goto(uuid);
+        await bookDetailPage.openTab("Highlights & Journal");
         await journal.openComposer();
         await journal.write(`figure test ${marker}`);
       });
@@ -236,15 +242,19 @@ test.describe("book journal", () => {
         await expectMutation(journals.uploadImage(), () =>
           journal.uploadImage(TINY_PNG),
         );
-        await expect(journal.markdown).toHaveValue(
-          new RegExp(
-            `figure test ${marker}[\\s\\S]*!\\[Add a caption\\]\\(/api/journals/images/`,
-          ),
-        );
+        await expect
+          .poll(() => journal.markdownSource())
+          .toMatch(
+            new RegExp(
+              `figure test ${marker}[\\s\\S]*!\\[Add a caption\\]\\(/api/journals/images/`,
+            ),
+          );
       });
 
+      // The autosave made the draft, so the publish updates it.
       await test.step("publish the entry", async () => {
-        const { response } = await expectMutation(journals.save(), () =>
+        await journal.assertAutosaved();
+        const { response } = await expectMutation(journals.update(), () =>
           journal.publish(),
         );
         const { id }: JournalEntryRef = await response.json();
@@ -253,9 +263,9 @@ test.describe("book journal", () => {
 
       // The alt text is the caption.
       await test.step("check the lone image renders as a captioned figure", async () => {
-        await journal.openEntry(marker);
-        await expect(journalEntry.figureImage).toBeVisible();
-        await expect(journalEntry.figureCaption).toHaveText("Add a caption");
+        const entry = journal.entry(marker);
+        await expect(entry.figureImage).toBeVisible();
+        await expect(entry.figureCaption).toHaveText("Add a caption");
       });
     });
 
@@ -269,6 +279,7 @@ test.describe("book journal", () => {
 
       await test.step("type two lines", async () => {
         await bookDetailPage.goto(uuid);
+        await bookDetailPage.openTab("Highlights & Journal");
         await journal.openComposer();
         // Typed, not filled: the editor only inserts a newline through its
         // Enter handler, and a raw multi-line fill collapses to one line.
@@ -289,9 +300,9 @@ test.describe("book journal", () => {
         await journal.focusLine(0);
         await expect(journal.editorLine(0)).toHaveClass(/cm-active/);
         await expect(journal.editorLine(1)).not.toHaveClass(/cm-active/);
-        await expect(journal.markdown).toHaveValue(
-          "# Heading line\n**bold line**",
-        );
+        await expect
+          .poll(() => journal.markdownSource())
+          .toBe("# Heading line\n**bold line**");
       });
 
       await test.step("discard the draft", async () => {
@@ -313,6 +324,7 @@ test.describe("book journal", () => {
 
       await test.step("type a bullet, a task and a plain line", async () => {
         await bookDetailPage.goto(uuid);
+        await bookDetailPage.openTab("Highlights & Journal");
         await journal.openComposer();
         await journal.typeLines([
           "- bulleted line",
@@ -328,9 +340,9 @@ test.describe("book journal", () => {
         await expect(journal.editorLine(2)).toHaveClass(/cm-active/);
         await expect.poll(() => journal.listMarkerContent(0)).toBe('"•"');
         await expect.poll(() => journal.listMarkerContent(1)).toBe('"☑"');
-        await expect(journal.markdown).toHaveValue(
-          "- bulleted line\n- [x] done line\nplain line",
-        );
+        await expect
+          .poll(() => journal.markdownSource())
+          .toBe("- bulleted line\n- [x] done line\nplain line");
       });
 
       await test.step("move the caret onto the bullet", async () => {
@@ -359,6 +371,7 @@ test.describe("book journal", () => {
 
       await test.step("type three lines", async () => {
         await bookDetailPage.goto(uuid);
+        await bookDetailPage.openTab("Highlights & Journal");
         await journal.openComposer();
         await journal.typeLines(["# First", "**second**", "third"]);
       });
@@ -367,17 +380,17 @@ test.describe("book journal", () => {
         await journal.focusLine(0);
         await journal.press("ControlOrMeta+End");
         await journal.typeAtCaret("!");
-        await expect(journal.markdown).toHaveValue(
-          "# First\n**second**\nthird!",
-        );
+        await expect
+          .poll(() => journal.markdownSource())
+          .toBe("# First\n**second**\nthird!");
       });
 
       await test.step("jump to the start and prepend", async () => {
         await journal.press("ControlOrMeta+Home");
         await journal.typeAtCaret(">");
-        await expect(journal.markdown).toHaveValue(
-          "># First\n**second**\nthird!",
-        );
+        await expect
+          .poll(() => journal.markdownSource())
+          .toBe("># First\n**second**\nthird!");
       });
 
       // Shift extends from the selection's anchor, and a Range reports its ends
@@ -408,24 +421,24 @@ test.describe("book journal", () => {
       createdJournalIds,
       expectMutation,
     }) => {
-      const { journal, journalEntry } = bookDetailPage;
+      const { journal } = bookDetailPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
       const marker = journalMarker("journal");
 
       await test.step("publish an entry", async () => {
         await bookDetailPage.goto(uuid);
-        const { response } = await expectMutation(journals.save(), () =>
+        await bookDetailPage.openTab("Highlights & Journal");
+        const { response } = await expectMutation(journals.create(), () =>
           journal.publishEntry(`First thoughts ${marker}`),
         );
         const { id }: JournalEntryRef = await response.json();
         createdJournalIds.add(id);
       });
 
-      // The new entry lands in the excerpt ladder; its card carries the
-      // author's "you" chip, since the current user owns it.
-      await test.step("open the entry", async () => {
-        await journal.openEntry(marker);
-        await expect(journalEntry.youChip).toBeVisible();
+      // The new entry lands in the feed; its card carries the author's "you"
+      // chip, since the current user owns it.
+      await test.step("check the entry's card", async () => {
+        await expect(journal.entry(marker).youChip).toBeVisible();
       });
     });
 
@@ -435,7 +448,7 @@ test.describe("book journal", () => {
       journalEntryOn,
       expectMutation,
     }) => {
-      const { journal, journalEntry } = bookDetailPage;
+      const { journal } = bookDetailPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
       const marker = journalMarker("journal-edit");
 
@@ -445,20 +458,21 @@ test.describe("book journal", () => {
 
       await test.step("open the entry", async () => {
         await bookDetailPage.goto(uuid);
-        await journal.openEntry(marker);
+        await bookDetailPage.openTab("Highlights & Journal");
       });
 
       // Edit mode swaps the rendered body for a live editor, so the open
       // editor is found on the page, not through the marker.
       await test.step("rewrite the body", async () => {
-        await journalEntry.startEdit();
-        await journalEntry.rewrite(`Revised thoughts ${marker}`);
-        await expectMutation(journals.update(), () => journalEntry.saveEdit());
+        const entry = journal.entry(marker);
+        await entry.startEdit();
+        await entry.rewrite(`Revised thoughts ${marker}`);
+        await expectMutation(journals.update(), () => entry.saveEdit());
       });
 
       await test.step("check the entry shows the new body", async () => {
         await expect(
-          journalEntry.entryWithText(`Revised thoughts ${marker}`),
+          journal.entryCard(`Revised thoughts ${marker}`),
         ).toBeVisible();
       });
     });
@@ -472,7 +486,7 @@ test.describe("book journal", () => {
       createdJournalIds,
       expectMutation,
     }) => {
-      const { journal, journalEntry } = bookDetailPage;
+      const { journal } = bookDetailPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
       const marker = journalMarker("journal-delete");
 
@@ -481,34 +495,32 @@ test.describe("book journal", () => {
 
       await test.step("open the entry", async () => {
         await bookDetailPage.goto(uuid);
-        await journal.openEntry(marker);
+        await bookDetailPage.openTab("Highlights & Journal");
       });
 
       await test.step("confirm the delete", async () => {
-        await journalEntry.startDelete();
-        await expectMutation(journals.delete(), () =>
-          journalEntry.confirmDelete(),
-        );
+        const entry = journal.entry(marker);
+        await entry.startDelete();
+        await expect(entry.deleteDialog).toContainText("can’t be undone");
+        await expectMutation(journals.delete(), () => entry.confirmDelete());
         createdJournalIds.delete(id);
       });
 
       await test.step("check the entry left the feed", async () => {
-        await expect(journal.ladderRow(marker)).toHaveCount(0);
-        await expect(journalEntry.root).toHaveCount(0);
+        await expect(journal.entryCard(marker)).toHaveCount(0);
       });
     });
 
-    test("open a long entry whole, filling the backdrop", async ({
+    // The feed clamps a card's body to two lines; Read more opens it whole.
+    test("open a long entry whole with Read more", async ({
       request,
       bookDetailPage,
       createdJournalIds,
       expectMutation,
     }) => {
-      const { journal, journalEntry } = bookDetailPage;
+      const { journal } = bookDetailPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
       const marker = journalMarker("whole");
-      // Past both collapse thresholds (900 chars, 12 lines), and taller than the
-      // backdrop at any plausible window size, so the cap decides the height.
       const filler = Array.from(
         { length: 30 },
         (_, i) => `- padding line ${i} ${"long enough to matter ".repeat(4)}`,
@@ -516,128 +528,66 @@ test.describe("book journal", () => {
 
       await test.step("publish a long entry", async () => {
         await bookDetailPage.goto(uuid);
-        const { response } = await expectMutation(journals.save(), () =>
+        await bookDetailPage.openTab("Highlights & Journal");
+        const { response } = await expectMutation(journals.create(), () =>
           journal.publishEntry(`${marker} intro\n\n${filler}`),
         );
         const { id }: JournalEntryRef = await response.json();
         createdJournalIds.add(id);
       });
 
-      await test.step("open the entry", async () => {
-        await journal.openEntry(marker);
+      const entry = journal.entry(marker);
+
+      await test.step("check the card opens clamped", async () => {
+        await expect(entry.readMoreButton).toHaveText("Read more");
+        await expect(entry.readMoreButton).toHaveAttribute(
+          "aria-expanded",
+          "false",
+        );
+        await expect(entry.clampedBody).toHaveCount(1);
       });
 
-      // Opening the row already asked for the whole entry, so the feed card's
-      // "Show more" must not be inherited.
-      await test.step("check the entry opens whole", async () => {
-        await expect(journalEntry.showMoreButton).toHaveCount(0);
-        await expect(journalEntry.collapsedBody).toHaveCount(0);
+      await test.step("read the rest", async () => {
+        await entry.readMore();
       });
 
-      // The card takes the room the backdrop has, not the old fixed 640x560 box;
-      // its height is capped at the backdrop's box less 36px padding each edge.
-      await test.step("check the card fills the backdrop", async () => {
-        const overlayBox = await journalEntry.overlayBox();
-        const cardBox = await journalEntry.cardBox();
-        expect(overlayBox, "the overlay must have a box").not.toBeNull();
-        expect(cardBox, "the overlay card must have a box").not.toBeNull();
-        expect(cardBox!.width).toBeGreaterThan(640);
-        expect(cardBox!.height).toBeGreaterThanOrEqual(overlayBox!.height - 74);
+      await test.step("check the whole entry shows", async () => {
+        await expect(entry.readMoreButton).toHaveText("Show less");
+        await expect(entry.readMoreButton).toHaveAttribute(
+          "aria-expanded",
+          "true",
+        );
+        await expect(entry.clampedBody).toHaveCount(0);
+        await expect.poll(() => entry.showsWholeBody()).toBe(true);
       });
     });
 
-    // The counterpart to the long entry: `max-height`, not `height`, keeps an
-    // ordinary entry content-sized instead of a scrolling fixed box.
-    test("size an entry that fits to its own content", async ({
+    // The counterpart to the long entry: nothing to open, so no control.
+    test("offer no Read more on an entry that fits", async ({
       request,
       bookDetailPage,
       createdJournalIds,
       expectMutation,
     }) => {
-      const { journal, journalEntry } = bookDetailPage;
+      const { journal } = bookDetailPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
       const marker = journalMarker("fits");
 
       await test.step("publish a short entry", async () => {
         await bookDetailPage.goto(uuid);
-        const { response } = await expectMutation(journals.save(), () =>
-          journal.publishEntry(
-            `${marker} intro\n\n- one note\n- another note\n- a third note`,
-          ),
+        await bookDetailPage.openTab("Highlights & Journal");
+        const { response } = await expectMutation(journals.create(), () =>
+          journal.publishEntry(`${marker} one short note`),
         );
         const { id }: JournalEntryRef = await response.json();
         createdJournalIds.add(id);
       });
 
-      await test.step("open the entry", async () => {
-        await journal.openEntry(marker);
-      });
-
-      await test.step("check the card is shorter than the backdrop and does not scroll", async () => {
-        const overlayBox = await journalEntry.overlayBox();
-        const cardBox = await journalEntry.cardBox();
-        expect(overlayBox, "the overlay must have a box").not.toBeNull();
-        expect(cardBox, "the overlay card must have a box").not.toBeNull();
-        expect(cardBox!.height).toBeLessThan(overlayBox!.height - 74);
-        // Nothing to scroll: the whole entry is on screen at once.
-        expect(await journalEntry.cardOverflow()).toBeLessThanOrEqual(1);
-      });
-    });
-
-    // The flow scroller once carried the scrim's `backdrop-filter`, which made it
-    // the containing block for the fixed overlay, so a scrolled page rendered the
-    // overlay `scrollTop` pixels above the viewport (#2529).
-    test("open a readable entry from a scrolled page", async ({
-      request,
-      bookDetailPage,
-      createdJournalIds,
-      expectMutation,
-    }) => {
-      const { journal, journalEntry } = bookDetailPage;
-      const uuid = await fetchBookUuidByTitle(request, TARGET.title);
-      const marker = journalMarker("scrolled-open");
-
-      await test.step("publish an entry", async () => {
-        await bookDetailPage.goto(uuid);
-        const { response } = await expectMutation(journals.save(), () =>
-          journal.publishEntry(
-            `Reading this one back from halfway down the page. ${marker}`,
-          ),
-        );
-        const { id }: JournalEntryRef = await response.json();
-        createdJournalIds.add(id);
-      });
-
-      await test.step("scroll the entry's row into view", async () => {
-        await journal.scrollRowIntoView(marker);
-        expect(
-          await bookDetailPage.flowScrollTop(),
-          "the flow scroller must have scrolled for this to bite",
-        ).toBeGreaterThan(0);
-      });
-
-      await test.step("open the entry", async () => {
-        await journal.openEntry(marker);
-      });
-
-      // `toBeVisible` is not enough: an element positioned entirely outside the
-      // viewport still satisfies it, which is why earlier coverage passed.
-      await test.step("check the entry is on screen", async () => {
-        await expect(journalEntry.entryWithText(marker)).toBeInViewport();
-        await expect(journalEntry.closeButton).toBeInViewport();
-      });
-
-      // Both axes: the bug also confined the backdrop to the 57%-wide flow
-      // column, so a vertical-only check would let a column-sized one pass.
-      await test.step("check the backdrop covers the viewport", async () => {
-        const box = await journalEntry.overlayBox();
-        const viewport = journalEntry.viewportSize();
-        expect(box, "the overlay must have a box").not.toBeNull();
-        expect(viewport, "the test needs a viewport size").not.toBeNull();
-        expect(box!.y).toBeGreaterThanOrEqual(0);
-        expect(box!.y + box!.height).toBeGreaterThan(viewport!.height / 2);
-        expect(box!.x).toBeLessThanOrEqual(1);
-        expect(box!.width).toBeGreaterThan(viewport!.width * 0.95);
+      await test.step("check the card shows it whole with no Read more", async () => {
+        const entry = journal.entry(marker);
+        await expect(entry.root).toBeVisible();
+        await expect(entry.readMoreButton).toHaveCount(0);
+        expect(await entry.showsWholeBody()).toBe(true);
       });
     });
   });
@@ -649,37 +599,33 @@ test.describe("book journal", () => {
       createdJournalIds,
       expectMutation,
     }) => {
-      const { journal, journalEntry } = bookDetailPage;
+      const { journal } = bookDetailPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
       const marker = journalMarker("spoiler");
 
       await test.step("publish an entry with a spoiler", async () => {
         await bookDetailPage.goto(uuid);
-        const { response } = await expectMutation(journals.save(), () =>
+        await bookDetailPage.openTab("Highlights & Journal");
+        const { response } = await expectMutation(journals.create(), () =>
           journal.publishEntry(`reveal ${marker}: ||the secret||`),
         );
         const { id }: JournalEntryRef = await response.json();
         createdJournalIds.add(id);
       });
 
+      const entry = journal.entry(marker);
+
       // A `role="button"` span, so `aria-expanded` reflects its state.
-      await test.step("open the entry and check the spoiler is blurred", async () => {
-        await journal.openEntry(marker);
-        await expect(journalEntry.spoiler).toHaveText("the secret");
-        await expect(journalEntry.spoiler).not.toHaveClass(/revealed/);
-        await expect(journalEntry.spoiler).toHaveAttribute(
-          "aria-expanded",
-          "false",
-        );
+      await test.step("check the entry's spoiler is blurred", async () => {
+        await expect(entry.spoiler).toHaveText("the secret");
+        await expect(entry.spoiler).not.toHaveClass(/revealed/);
+        await expect(entry.spoiler).toHaveAttribute("aria-expanded", "false");
       });
 
       await test.step("click the spoiler", async () => {
-        await journalEntry.revealSpoilerWithClick();
-        await expect(journalEntry.spoiler).toHaveClass(/revealed/);
-        await expect(journalEntry.spoiler).toHaveAttribute(
-          "aria-expanded",
-          "true",
-        );
+        await entry.revealSpoilerWithClick();
+        await expect(entry.spoiler).toHaveClass(/revealed/);
+        await expect(entry.spoiler).toHaveAttribute("aria-expanded", "true");
       });
     });
 
@@ -691,28 +637,33 @@ test.describe("book journal", () => {
       createdJournalIds,
       expectMutation,
     }) => {
-      const { journal, journalEntry } = bookDetailPage;
+      const { journal } = bookDetailPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
       const marker = journalMarker("wrap");
       const long = "a spoiler far too long to sit on one line ".repeat(5);
 
       await test.step("publish a list item holding a long spoiler", async () => {
         await bookDetailPage.goto(uuid);
+        await bookDetailPage.openTab("Highlights & Journal");
         await journal.openComposer();
         await journal.type(`${marker} intro\n\n- ||${long}||`);
-        const { response } = await expectMutation(journals.save(), () =>
+        // The autosave made the draft, so the publish updates it.
+        await journal.assertAutosaved();
+        const { response } = await expectMutation(journals.update(), () =>
           journal.publish(),
         );
         const { id }: JournalEntryRef = await response.json();
         createdJournalIds.add(id);
       });
 
-      await test.step("open the entry", async () => {
-        await journal.openEntry(marker);
+      const entry = journal.entry(marker);
+
+      await test.step("open the entry whole", async () => {
+        await entry.readMore();
       });
 
       await test.step("check the spoiler wraps beside the list marker", async () => {
-        const layout = await journalEntry.spoilerInListLayout();
+        const layout = await entry.spoilerInListLayout();
         expect(layout.inList, "the fixture must build a real list item").toBe(
           true,
         );
@@ -733,7 +684,7 @@ test.describe("book journal", () => {
       createdJournalIds,
       expectMutation,
     }) => {
-      const { journal, journalEntry } = bookDetailPage;
+      const { journal } = bookDetailPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
       const marker = journalMarker("prose");
 
@@ -741,7 +692,8 @@ test.describe("book journal", () => {
       // too wide for what is left of its line.
       await test.step("publish a spoiler inside brackets", async () => {
         await bookDetailPage.goto(uuid);
-        const { response } = await expectMutation(journals.save(), () =>
+        await bookDetailPage.openTab("Highlights & Journal");
+        const { response } = await expectMutation(journals.create(), () =>
           journal.publishEntry(
             `${marker} It's a happy ending and one that you can imagine going in different directions (||war continues, constant hardships for Darrow, Mustang, and Pax forever... or war ends & peace forever||)`,
           ),
@@ -750,12 +702,10 @@ test.describe("book journal", () => {
         createdJournalIds.add(id);
       });
 
-      await test.step("open the entry", async () => {
-        await journal.openEntry(marker);
-      });
-
       await test.step("check the bracket stays on the spoiler's line", async () => {
-        const layout = await journalEntry.measureSpoilerInNarrowParagraph();
+        const layout = await journal
+          .entry(marker)
+          .measureSpoilerInNarrowParagraph();
         expect(layout.bracket).toBe("(");
         // A `<button>` laid out one atomic box on a line of its own; a span
         // continues the current line and wraps onto the next.
@@ -773,64 +723,57 @@ test.describe("book journal", () => {
       createdJournalIds,
       expectMutation,
     }) => {
-      const { journal, journalEntry } = bookDetailPage;
+      const { journal } = bookDetailPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
       const marker = journalMarker("spoiler-kb");
 
-      // The spoiler is the card's only interactive element, so Tab, Enter and
-      // Space unambiguously drive it.
-      await test.step("publish an entry holding only a spoiler control", async () => {
+      await test.step("publish an entry holding a spoiler control", async () => {
         await bookDetailPage.goto(uuid);
-        const { response } = await expectMutation(journals.save(), () =>
+        await bookDetailPage.openTab("Highlights & Journal");
+        const { response } = await expectMutation(journals.create(), () =>
           journal.publishEntry(`keyboard ${marker}: ||hidden reveal||`),
         );
         const { id }: JournalEntryRef = await response.json();
         createdJournalIds.add(id);
       });
 
+      const entry = journal.entry(marker);
+
       // Announced as a named, collapsed control, with its text not read out
       // before it is revealed, and in the focus order, not only focusable by script.
-      await test.step("open the entry and check the spoiler is a collapsed control", async () => {
-        await journal.openEntry(marker);
-        await expect(journalEntry.revealSpoilerButton).toHaveAttribute(
+      await test.step("check the spoiler is a collapsed control", async () => {
+        await expect(entry.revealSpoilerButton).toHaveAttribute(
           "aria-expanded",
           "false",
         );
-        await expect(journalEntry.revealedSpoiler("hidden reveal")).toHaveCount(
-          0,
-        );
-        await expect(journalEntry.spoilerText).toHaveAttribute(
-          "aria-hidden",
-          "true",
-        );
-        await expect(journalEntry.revealSpoilerButton).toHaveAttribute(
+        await expect(entry.revealedSpoiler("hidden reveal")).toHaveCount(0);
+        await expect(entry.spoilerText).toHaveAttribute("aria-hidden", "true");
+        await expect(entry.revealSpoilerButton).toHaveAttribute(
           "tabindex",
           "0",
         );
       });
 
       await test.step("reveal the spoiler with Enter", async () => {
-        await journalEntry.focusSpoiler();
-        await expect(journalEntry.revealSpoilerButton).toBeFocused();
-        await journalEntry.press("Enter");
+        await entry.focusSpoiler();
+        await expect(entry.revealSpoilerButton).toBeFocused();
+        await entry.press("Enter");
         // Revealed, it is named by its text and reports itself expanded.
-        const revealed = journalEntry.revealedSpoiler("hidden reveal");
+        const revealed = entry.revealedSpoiler("hidden reveal");
         await expect(revealed).toHaveClass(/revealed/);
         await expect(revealed).toHaveAttribute("aria-expanded", "true");
       });
 
       // Space also scrolls the page by default, which the control must cancel.
       await test.step("hide the spoiler again with Space", async () => {
-        await journalEntry.watchSpaceKey();
-        await journalEntry.press("Space");
-        await expect(journalEntry.revealSpoilerButton).not.toHaveClass(
-          /revealed/,
-        );
-        await expect(journalEntry.revealSpoilerButton).toHaveAttribute(
+        await entry.watchSpaceKey();
+        await entry.press("Space");
+        await expect(entry.revealSpoilerButton).not.toHaveClass(/revealed/);
+        await expect(entry.revealSpoilerButton).toHaveAttribute(
           "aria-expanded",
           "false",
         );
-        expect(await journalEntry.spaceKeyWasPrevented()).toBe(true);
+        expect(await entry.spaceKeyWasPrevented()).toBe(true);
       });
     });
   });
@@ -842,27 +785,27 @@ test.describe("book journal", () => {
       createdJournalIds,
       expectMutation,
     }) => {
-      const { journal, journalEntry } = bookDetailPage;
+      const { journal } = bookDetailPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
       const marker = journalMarker("draft");
 
       await test.step("save a draft", async () => {
         await bookDetailPage.goto(uuid);
+        await bookDetailPage.openTab("Highlights & Journal");
         await journal.openComposer();
         await journal.write(`Draft thoughts ${marker}`);
-        const { response } = await expectMutation(journals.save(), () =>
+        const { response } = await expectMutation(journals.create(), () =>
           journal.saveDraft(),
         );
         const { id }: JournalEntryRef = await response.json();
         createdJournalIds.add(id);
       });
 
-      // The composer closes and the entry lands in the ladder with a Draft
-      // chip on its row; drafts are owner-private, so only this user sees it.
+      // The composer closes and the entry lands in the feed with a Draft chip
+      // on its card; drafts are owner-private, so only this user sees it.
       await test.step("check the feed marks it as a draft", async () => {
-        await expect(journal.draftChipRow).toBeVisible();
-        await journal.openEntry(marker);
-        await expect(journalEntry.draftChip).toBeVisible();
+        await expect(journal.composer).toHaveCount(0);
+        await expect(journal.entry(marker).draftChip).toBeVisible();
       });
     });
 
@@ -872,7 +815,7 @@ test.describe("book journal", () => {
       journalEntryOn,
       expectMutation,
     }) => {
-      const { journal, journalEntry } = bookDetailPage;
+      const { journal } = bookDetailPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
       const marker = journalMarker("draft-publish");
 
@@ -880,21 +823,21 @@ test.describe("book journal", () => {
         await journalEntryOn(uuid, `Draft thoughts ${marker}`, "draft");
       });
 
+      const entry = journal.entry(marker);
+
       await test.step("open the draft", async () => {
         await bookDetailPage.goto(uuid);
-        await journal.openEntry(marker);
-        await expect(journalEntry.draftChip).toBeVisible();
+        await bookDetailPage.openTab("Highlights & Journal");
+        await expect(entry.draftChip).toBeVisible();
       });
 
       await test.step("publish it", async () => {
-        await expectMutation(journals.update(), () =>
-          journalEntry.publishDraft(),
-        );
+        await expectMutation(journals.update(), () => entry.publishDraft());
       });
 
       await test.step("check the card is no longer a draft", async () => {
-        await expect(journalEntry.draftChip).toHaveCount(0);
-        await expect(journalEntry.publishDraftButton).toHaveCount(0);
+        await expect(entry.draftChip).toHaveCount(0);
+        await expect(entry.publishDraftButton).toHaveCount(0);
       });
     });
 
@@ -910,6 +853,7 @@ test.describe("book journal", () => {
 
       await test.step("open the composer", async () => {
         await bookDetailPage.goto(uuid);
+        await bookDetailPage.openTab("Highlights & Journal");
         await journal.openComposer();
       });
 
@@ -933,7 +877,7 @@ test.describe("book journal", () => {
 
       await test.step("check nothing is left behind", async () => {
         await expect(journal.composer).toHaveCount(0);
-        await expect(journal.ladderRow(marker)).toHaveCount(0);
+        await expect(journal.entryCard(marker)).toHaveCount(0);
       });
     });
   });
@@ -947,22 +891,28 @@ test.describe("book journal", () => {
       const { journal } = bookDetailPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
 
-      // The debounced autosave may already have created the draft row, turning
-      // the publish into an update, so both routes fail.
+      // The debounced autosave would turn the publish into an update, so both
+      // routes fail.
       await test.step("open the composer while saves fail", async () => {
         await bookDetailPage.goto(uuid);
-        await bookDetailPage.forceServerError(journals.save());
+        await bookDetailPage.openTab("Highlights & Journal");
+        await bookDetailPage.forceServerError(journals.create());
+        await bookDetailPage.forceServerError(journals.update());
         await journal.openComposer();
         await journal.write("this will fail");
       });
 
       await test.step("publish the draft", async () => {
-        await expectMutation(failing(journals.save()), () => journal.publish());
+        await expectMutation(failing(journals.create()), () =>
+          journal.publish(),
+        );
       });
 
       await test.step("check the composer stays open with the draft and an error", async () => {
         await expect(journal.composer).toBeVisible();
-        await expect(journal.markdown).toHaveValue("this will fail");
+        await expect
+          .poll(() => journal.markdownSource())
+          .toBe("this will fail");
         await expect(journal.composerError).toBeVisible();
       });
     });
@@ -975,46 +925,46 @@ test.describe("book journal", () => {
       createdJournalIds,
       expectMutation,
     }) => {
-      const { journal, journalEntry } = bookDetailPage;
+      const { journal } = bookDetailPage;
       const uuid = await fetchBookUuidByTitle(request, TARGET.title);
       const marker = journalMarker("journal-delete-fail");
 
       const entryId = await test.step("publish an entry", async () => {
         await bookDetailPage.goto(uuid);
-        const { response } = await expectMutation(journals.save(), () =>
+        await bookDetailPage.openTab("Highlights & Journal");
+        const { response } = await expectMutation(journals.create(), () =>
           journal.publishEntry(`Doomed thoughts ${marker}`),
         );
         const { id }: JournalEntryRef = await response.json();
         createdJournalIds.add(id);
-        await journal.openEntry(marker);
         return id;
       });
 
+      const entry = journal.entry(marker);
+
       await test.step("confirm a delete while deletes fail", async () => {
         await bookDetailPage.forceServerError(journals.delete());
-        await journalEntry.startDelete();
+        await entry.startDelete();
         await expectMutation(failing(journals.delete()), () =>
-          journalEntry.confirmDelete(),
+          entry.confirmDelete(),
         );
       });
 
       await test.step("check the card stays with an error", async () => {
-        await expect(journalEntry.entryWithText(marker)).toBeVisible();
-        await expect(journalEntry.errorAlert).toBeVisible();
+        await expect(entry.root).toBeVisible();
+        await expect(entry.errorAlert).toBeVisible();
       });
 
       // A failed delete leaves the confirm modal open, so the retry goes
       // through it rather than the card's Delete, which the modal now covers.
       await test.step("retry through the open confirm", async () => {
         await bookDetailPage.stopForcingServerError(journals.delete());
-        await expectMutation(journals.delete(), () =>
-          journalEntry.confirmDelete(),
-        );
+        await expectMutation(journals.delete(), () => entry.confirmDelete());
         createdJournalIds.delete(entryId);
       });
 
       await test.step("check the entry is gone", async () => {
-        await expect(journalEntry.entryWithText(marker)).toHaveCount(0);
+        await expect(entry.root).toHaveCount(0);
       });
     });
   });

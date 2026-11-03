@@ -84,7 +84,7 @@ pub fn kobo_device_name_message() -> String {
 }
 
 /// `true` once a trimmed device name is empty or exceeds
-/// [`KOBO_DEVICE_NAME_MAX_LEN`]. Shared by the RPC boundary and any client
+/// [`KOBO_DEVICE_NAME_MAX_LEN`]. Shared by the server boundary and any client
 /// pre-check so both reject the same inputs.
 pub fn kobo_device_name_invalid(name: &str) -> bool {
     let trimmed = name.trim();

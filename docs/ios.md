@@ -1,14 +1,14 @@
 # iOS app
 
-Native SwiftUI client, and the iOS surface going forward — an Xcode project
+Native SwiftUI client, and the iOS surface — an Xcode project
 (`omnibus-ios/omnibus.xcodeproj`), **not** a Cargo crate, so it is invisible to
 `cargo build` / `just lint` / `just test`. It consumes the same `/api/*` REST
-surface as `mobile/`, never the `/api/rpc/*` server functions.
+surface as the web client.
 
 Each Swift file opens with a header comment saying what it is for; print the
 file map from those headers with `just modules omnibus-ios/omnibus`. This page
 covers what no single file can: the second target, CarPlay, the release
-pipeline, and the reader's design.
+pipeline, the book page, and the reader's design.
 
 ## Widgets
 
@@ -85,10 +85,26 @@ To see what a car sends, filter Console.app to the attached phone's
 `RemoteCommands` category: no line for a press means no seek handler saw it.
 
 **Decisions live in `CarPlayContent`.** A CarPlay template can't be read back
-from a test, so row text, the chapter window (from the previous chapter to the
-end — CarPlay can't open a list scrolled to a row), the speed cycle, the button
-row and the offer sheet's copy are pure functions there, pinned by
-`CarPlayContentTests`. The other files only translate them into templates.
+from a test, so row text, whether a list redraws, whose rows the lists hold, the
+chapter window (from the previous chapter to the end — CarPlay can't open a list
+scrolled to a row), the speed cycle, the button row and the offer sheet's copy
+are pure functions there, pinned by `CarPlayContentTests`. The other files only
+translate them into templates.
+
+**Rows are kept, not rebuilt.** `updateSections` sends a list back to its top,
+and a tapped row's spinner lives on its item, so `CarPlayController` keeps one
+`CPListItem` per book per list and sets what changed on it, handler included.
+A list only updates when which rows it holds, or their order, changes. A Library
+re-read shows what it has read so far ahead of the rows it hasn't reached, so an
+unchanged library of any length never updates; the rows it didn't find go only
+when the server has answered every page of the pass through to its end. The car's
+reads turn on `Cache.live`'s `confirmsAnswer`, so an answer that isn't fresh means
+the server's never landed. In Library it keeps the rows on screen in place, and a
+pass with one in it is cut short, so the list reads again the next time a session
+change or its tab asks; Continue takes a replica's new order as it lands. An empty
+answer the server never confirmed waits for it. A read that fails leaves the rows
+on screen, or the message on a list the server said is empty; with nothing answered
+yet it says it couldn't load, never that the list is empty.
 
 **The entitlement.** `com.apple.developer.carplay-audio` in `omnibus.entitlements`
 is granted by Apple per team, and a device build signs only once the team's
@@ -168,6 +184,43 @@ submissions daily. A listing that fails aborts the run instead. Its suite
 (`scripts/tests/testflight-feedback.test.py`) is gated by the same
 `script-tests.yml`.
 
+## The book page
+
+`Features/BookDetail/` draws one layout: the stage (the book standing on a blurred
+wash of its own cover, with your place in it), then Overview, Reviews, Highlights
+and Files under a tab strip that pins below the top bar, and a primary action that
+never scrolls away. The web page's `book_detail_scroll_stops` marquee has no iOS
+counterpart, so the setting has no row in iOS settings; the field stays on the wire
+for the web.
+
+Colors come from the book, at fixed lightness steps (`Palette.bookRibbon`,
+`bookText`, `bookDeep`, `bookFill`) with hue and chroma from
+`Palette.accented(byCoverOf:)`, and fall back to the theme's own ground, so the page
+reads on all four themes. Every section is its own `Cache.live` read in
+`BookDetailModel`, so nothing on the page waits on anything else.
+
+What the page can't state is left out rather than filled in. The household's activity
+says how long and how lately a reader has been in a book, never how far, because
+`GET /api/books/{uuid}/household` carries no position or status. The stage's rating
+takes the server's summary when it sends one, and below `SUMMARY_MIN_RATINGS` the
+mean of the ratings the tab already lists.
+
+A finished book's card points at one thing next, decided in `FinishCopy.target`: a
+review until you have rated, then the next unfinished book in the series, then a look
+back at a series read to the end. It says nothing while your review or the series'
+read states are still unknown, rather than point somewhere and move. The burst goes
+off only when the book becomes finished with the page up, and stays until you leave.
+
+The metadata editor is one sheet, opened from the More menu or a book cell's long
+press. Nothing writes until Save: the fields wait in `MetadataDraft` and a replacement
+cover in `StagedCover` beside it, so "N unsaved changes" and Discard mean the same for
+both, where the web editor writes a cover the moment it is picked. A save posts the
+fields, then the cover, so a cover the server can't fetch leaves only itself unsaved.
+Fetch metadata turns the same sheet rather than opening another on top of it. In an
+edition's comparison the blanks it would fill start ticked and the values it would
+replace don't. Applying moves the ticked rows into the draft and stays put, so the
+next edition compares against what the last one filled in.
+
 ## Reader
 
 **Why the reader is a WebView.** iOS ships no EPUB renderer, and epub.js already
@@ -241,7 +294,7 @@ one host-document rule, `markStyleCss`, which switches blend mode with the
 reading theme.
 
 **The glue is forked.** `omnibus-ios/omnibus/Reader/Web/epub-reader-glue.js` is a
-copy of `frontend/assets/vendor/epub-reader-glue.js`, and the two have diverged:
+copy of `frontend-js/src/vendor/reader/epub-reader-glue.js`, and the two have diverged:
 the iOS copy carries `sectionRanges` / `pagesLeftInSection`, the host's
 `minSpreadWidth` init option, plus the whole selection engine above, and the web
 copy has since moved its pagination onto `location.start.displayed` and still

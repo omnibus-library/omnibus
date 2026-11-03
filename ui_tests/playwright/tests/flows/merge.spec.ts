@@ -46,9 +46,10 @@ test.describe("book merge", () => {
       await bookDetailPage.goto(uuid);
     });
 
-    await test.step("check the rail offers an admin merge", async () => {
+    await test.step("check the files tab offers an admin merge", async () => {
       await bookDetailPage.assertDisplayed();
       await bookDetailPage.topNav.assertDisplayed();
+      await bookDetailPage.openTab("Files & Details");
       await expect(bookDetailPage.editMetadataLink).toBeVisible();
       await expect(mergeDialog.openButton).toBeVisible();
     });
@@ -87,8 +88,7 @@ test.describe("book merge", () => {
       await expectMutation(failing(merge.books()), () => mergeDialog.confirm());
     });
 
-    // The marquee files stop lists a book's formats as one copies row, and
-    // one badge tile, per format.
+    // The Files & Details tab lists one format row, and one badge, per format.
     await test.step("check the dialog shows the error and the book is unchanged", async () => {
       await expect(mergeDialog.errorAlert).toBeVisible();
       await mergeDialog.cancel();

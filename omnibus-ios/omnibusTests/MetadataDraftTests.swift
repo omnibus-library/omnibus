@@ -545,32 +545,78 @@ struct ChipEntryTests {
     }
 }
 
-// MARK: - Save report
+// MARK: - What the sheet says
 
-@Test func editedFieldsNameEveryChangedFieldInFormOrder() {
+@Test func editedCountCountsEveryChangedField() {
     let loaded = MetadataDraft(book: gatsby())
     var draft = loaded
     draft.description = "A summer on West Egg."
     draft.title = "Trimalchio"
     draft.authors = ["F. Scott Fitzgerald", "Maxwell Perkins"]
 
-    #expect(draft.editedFields(since: loaded) == ["Title", "Authors", "Summary"])
-    #expect(loaded.editedFields(since: loaded).isEmpty)
+    #expect(draft.editedCount(since: loaded) == 3)
+    #expect(loaded.editedCount(since: loaded) == 0)
 }
 
-@Test func editedFieldsCountAChipStillSittingInItsEntryField() {
+@Test func editedCountCountsAChipStillSittingInItsEntryField() {
     let loaded = MetadataDraft(book: gatsby())
     let pending = loaded.committingPending(author: "", tag: "  Jazz Age ", genre: "")
     #expect(pending.tags == ["Classics", "Novel", "Jazz Age"])
-    #expect(pending.editedFields(since: loaded) == ["Tags"])
+    #expect(pending.editedCount(since: loaded) == 1)
     // A duplicate tag commits nothing, so it is no edit.
     let duplicate = loaded.committingPending(author: "", tag: "novel", genre: "")
-    #expect(duplicate.editedFields(since: loaded).isEmpty)
+    #expect(duplicate.editedCount(since: loaded) == 0)
 }
 
-@Test func saveReportCountsFieldsTheWayTheWebSaveBarDoes() {
-    #expect(MetadataDraft.editedLabel(count: 1) == "1 field edited")
-    #expect(MetadataDraft.editedLabel(count: 2) == "2 fields edited")
-    #expect(MetadataDraft.savedLabel(count: 1) == "Saved · 1 field")
-    #expect(MetadataDraft.savedLabel(count: 3) == "Saved · 3 fields")
+@Test func theFooterCountsChangesAndNamesNoneWhenThereAreNone() {
+    #expect(MetadataEditCopy.summary(count: 0) == "No changes")
+    #expect(MetadataEditCopy.summary(count: 1) == "1 unsaved change")
+    #expect(MetadataEditCopy.summary(count: 3) == "3 unsaved changes")
+}
+
+@Test func theLeaveQuestionAndTheToastAgreeOnTheCount() {
+    #expect(MetadataEditCopy.leaveTitle(count: 1) == "Save your change before closing?")
+    #expect(MetadataEditCopy.leaveTitle(count: 4) == "Save your 4 changes before closing?")
+    #expect(MetadataEditCopy.savedToast(count: 1, title: "Dune") == "Saved 1 change to Dune")
+    #expect(MetadataEditCopy.savedToast(count: 4, title: "Dune") == "Saved 4 changes to Dune")
+}
+
+@Test func theCoverHintSaysWhereTheCoverComesFromAndWhenItIsWritten() {
+    var book = gatsby()
+    book.coverURL = nil
+    book.hasCoverOverride = false
+    #expect(MetadataEditCopy.coverHint(staged: nil, book: book) == "No cover available")
+    book.coverURL = "/api/covers/gatsby"
+    #expect(MetadataEditCopy.coverHint(staged: nil, book: book) == "Extracted from the file")
+    book.hasCoverOverride = true
+    #expect(MetadataEditCopy.coverHint(staged: nil, book: book) == "Replaced in Omnibus")
+
+    // A staged cover outranks what the book has, and every one says when it lands.
+    for staged in [StagedCover.url("https://x.example/c.jpg"), .photo(Data()), .scanned] {
+        #expect(MetadataEditCopy.coverHint(staged: staged, book: book).contains("press Save"))
+    }
+}
+
+@Test func theFetchButtonNamesOnlyTheSourcesThisInstanceAsks() {
+    func provider(_ id: MetadataProvider, _ name: String, configured: Bool = true) -> ProviderInfo {
+        ProviderInfo(id: id, displayName: name, configured: configured, requiresKey: false)
+    }
+    let hardcover = provider(.hardcover, "Hardcover")
+    let openLibrary = provider(.openLibrary, "Open Library")
+    let google = provider(.googleBooks, "Google Books")
+    let unset = provider(.hardcover, "Hardcover", configured: false)
+
+    #expect(
+        MetadataEditCopy.providersLine([hardcover, openLibrary, google])
+            == "Hardcover, Open Library and Google Books"
+    )
+    #expect(MetadataEditCopy.providersLine([unset, openLibrary, google]) == "Open Library and Google Books")
+    #expect(MetadataEditCopy.providersLine([openLibrary]) == "Open Library")
+    #expect(MetadataEditCopy.providersLine([unset]) == "")
+}
+
+@Test func anIdentifierWithNoRealSchemeSaysSo() {
+    #expect(MetadataEditCopy.scheme(Identifier(value: "1187", scheme: "calibre")) == "calibre")
+    #expect(MetadataEditCopy.scheme(Identifier(value: "x", scheme: "unknown")) == "Type unknown")
+    #expect(MetadataEditCopy.scheme(Identifier(value: "x", scheme: nil)) == "Type unknown")
 }

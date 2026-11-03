@@ -124,8 +124,8 @@ await expect(flow.errorMessage).toBeVisible();
 
 1. `getByRole` — buttons, headings, links, form landmarks, live regions.
 2. `getByText` — visible text not tied to a role.
-3. `getByLabel` — form inputs. Add the label in SSR markup if missing.
-4. `getByTestId` — only when nothing else fits. Add `data-testid` alongside `id` in the Dioxus rsx.
+3. `getByLabel` — form inputs. Add the label in the markup if missing.
+4. `getByTestId` — only when nothing else fits. Add `data-testid` in the React markup (a component's `testId` prop where it has one).
 5. `locator` — last resort. Never XPath.
 
 ## 6. Where everything else goes
@@ -144,14 +144,14 @@ locator half: see [04d](../../rules/04d-playwright-page-objects.md#lint).
 
 ## 7. Run
 
-Run the spec the way CI does — its own bundle, server and scratch DB:
+Run the spec the way CI does — its own server build and scratch DB:
 
 ```bash
 just e2e-ci tests/flows/<flow>.spec.ts   # args pass through to `playwright test`
 ```
 
-A red there is worth chasing; a red against the dev server may be its DB or
-hot-reload instead. To iterate against the dev server anyway:
+A red there is worth chasing; a red against the dev server may be its DB
+instead. To iterate against the dev server anyway:
 
 ```bash
 just dev-up                            # idempotent, identity-checked, fast on reuse

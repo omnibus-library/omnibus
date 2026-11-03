@@ -71,14 +71,7 @@ private struct BookContextMenuModifier<Extras: View>: ViewModifier {
             // four different NavigationStacks, and a sheet needs none of their
             // paths — edit, save, and you're still where you were.
             .sheet(isPresented: $showEditor) {
-                NavigationStack {
-                    MetadataEditView(uuid: book.uuid, onSaved: onEdited)
-                        .toolbar {
-                            ToolbarItem(placement: .cancellationAction) {
-                                Button("Cancel") { showEditor = false }
-                            }
-                        }
-                }
+                MetadataEditView(uuid: book.uuid) { _ in onEdited?() }
             }
     }
 }

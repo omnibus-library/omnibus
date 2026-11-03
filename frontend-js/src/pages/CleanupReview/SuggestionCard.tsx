@@ -166,7 +166,7 @@ export function SuggestionCardView({
         <img
           className="cleanup-card-photo"
           src={card.photo_url}
-          // biome-ignore lint/a11y/noRedundantAlt: the alt text is the Dioxus page's
+          // biome-ignore lint/a11y/noRedundantAlt: the image is a photo, and the alt says whose
           alt={`Photo of ${card.primary_name}`}
           data-testid="cleanup-card-photo"
         />

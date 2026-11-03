@@ -21,7 +21,7 @@ import { type FinishedBook, FinishedCover } from "./FinishedCover";
 import { LengthRows } from "./GenreDonut";
 import { audioOnly, type Comparison, comparison, type Metric } from "./tiles";
 
-// Spelled out so tools/extract-atrium.cjs sees each class.
+// Spelled out so a search for each class name finds it.
 const DELTA_CLASS = {
   up: "st-drill-delta up",
   down: "st-drill-delta down",

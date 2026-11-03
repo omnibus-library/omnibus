@@ -3,8 +3,7 @@ import { formatHmsShort } from "./resume";
 import { read, write } from "./viewPrefs";
 
 // With follow off, the reader and player offer the other format's place instead of moving to
-// it. The copy and the re-arm rule are the Dioxus client's (pages/listen/sync_prompt.rs) and
-// iOS's (SyncPromptStore), and so is the stored key: both web clients share the origin.
+// it. The copy and the re-arm rule match iOS's (SyncPromptStore).
 
 export type OfferTarget = "epub" | "audio";
 

@@ -85,7 +85,7 @@ async function bothFormatsUuid(
 /** Every book the library lists, with the author and series ids the indexer gave it. */
 async function indexedBooks(ebooks: EbooksRequests): Promise<IndexedBook[]> {
   const listed = await ebooks.getEbooks();
-  await expect(listed, "GET /api/rpc/ebooks").toBeOK();
+  await expect(listed, "GET /api/ebooks").toBeOK();
   const { books }: { books: IndexedBook[] } = await listed.json();
   return books;
 }
@@ -544,9 +544,8 @@ export const test = base.extend<DataFixtures>({
 
   bookExists: async ({ ebooksRequests }, use) => {
     await use(async (bookUuid) => {
-      const detail = await ebooksRequests.postEbookDetail(bookUuid);
-      if (detail.status() !== 200) return false;
-      return (await detail.json()) !== null;
+      const detail = await ebooksRequests.getEbook(bookUuid);
+      return detail.status() === 200;
     });
   },
 
@@ -701,7 +700,7 @@ export const test = base.extend<DataFixtures>({
       const target = FIXTURE_BOOKS[1]!;
       const uuid = await fetchBookUuidByTitle(request, target.title);
       const listed = await ebooksRequests.getEbooks();
-      await expect(listed, "GET /api/rpc/ebooks").toBeOK();
+      await expect(listed, "GET /api/ebooks").toBeOK();
       const { books }: { books: Record<string, unknown>[] } =
         await listed.json();
       const book = books.find(
@@ -754,11 +753,14 @@ export const test = base.extend<DataFixtures>({
     await use(async (bookUuid) => {
       let newest = 0;
       for (const format of ["epub", "audio"] as const) {
-        const stored = await progressRequests.postProgressGet(bookUuid, format);
+        const stored = await progressRequests.getProgress(bookUuid, format);
         if (stored.status() !== 200) continue;
-        const record: { client_updated_at: number | null } | null =
-          await stored.json();
-        newest = Math.max(newest, record?.client_updated_at ?? 0);
+        const envelope: {
+          records: { client_updated_at: number | null }[];
+        } | null = await stored.json();
+        for (const record of envelope?.records ?? []) {
+          newest = Math.max(newest, record.client_updated_at ?? 0);
+        }
       }
       return newest;
     });

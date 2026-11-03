@@ -1,23 +1,30 @@
-import type { Locator, Page } from "@playwright/test";
+import type { Locator, Page, Response } from "@playwright/test";
 import { journalsUrls } from "../contracts/journals";
 import { expect } from "../fixtures/test";
 import { isPostTo } from "../utils/api";
 import { BaseComponent } from "./BaseComponent";
-import { JournalEntryOverlayComponent } from "./JournalEntryOverlayComponent";
+import { JournalEntryCardComponent } from "./JournalEntryCardComponent";
 
-/** The book page's journal stop: the feed of entries and the composer over it. */
+/** A publish or Save draft: a create before any autosave, an update after one. */
+const isEntrySave = (response: Response) => {
+  const method = response.request().method();
+  return (
+    (method === "POST" && journalsUrls.create.test(response.url())) ||
+    (method === "PATCH" && journalsUrls.entry.test(response.url()))
+  );
+};
+
+/** The Highlights & Journal tab's journal: the feed of entries and the composer modal. */
 export class JournalSectionComponent extends BaseComponent {
+  /** The tab's two columns, or the one note it shows while both are empty. */
+  readonly tab: Locator;
   readonly section: Locator;
-  readonly kicker: Locator;
   readonly newEntryButton: Locator;
-  readonly draftChipRow: Locator;
 
   readonly composer: Locator;
   readonly composerError: Locator;
   readonly editor: Locator;
   readonly editorLines: Locator;
-  /** The hidden textarea that mirrors the editor's markdown. */
-  readonly markdown: Locator;
   readonly spoilerHelp: Locator;
   readonly toolbar: Locator;
   readonly boldButton: Locator;
@@ -33,21 +40,19 @@ export class JournalSectionComponent extends BaseComponent {
   private readonly saveDraftButton: Locator;
   private readonly cancelButton: Locator;
 
-  private readonly entry: JournalEntryOverlayComponent;
-
   constructor(page: Page) {
     super(page);
-    this.entry = new JournalEntryOverlayComponent(page);
+    this.tab = page
+      .getByTestId("highlights-journal")
+      .or(page.getByTestId("highlights-journal-empty"));
     this.section = page.getByTestId("journal-section");
-    this.kicker = page.getByTestId("journal-kicker");
+    // The feed's own button, or the tab's empty note's while nothing is in it.
     this.newEntryButton = page.getByTestId("journal-open-composer");
-    this.draftChipRow = page.getByTestId("journal-draft-chip-row").first();
 
     this.composer = page.getByTestId("journal-composer");
     this.composerError = this.composer.getByRole("alert");
     this.editor = page.getByTestId("journal-editor");
     this.editorLines = this.editor.locator(".cm-line");
-    this.markdown = page.getByTestId("journal-body");
     this.spoilerHelp = page.getByTestId("journal-spoiler-help");
     this.toolbar = page.getByTestId("journal-toolbar");
     this.boldButton = this.toolbar.getByRole("button", { name: "Bold" });
@@ -55,20 +60,31 @@ export class JournalSectionComponent extends BaseComponent {
     this.insertHighlightButton = page.getByTestId("journal-insert-highlight");
     this.highlightsPopover = page.getByTestId("journal-highlights-pop");
     this.previewToggle = page.getByTestId("journal-preview-toggle");
-    this.writeTab = page.getByText("Write", { exact: true });
+    this.writeTab = this.composer.getByRole("button", {
+      name: "Write",
+      exact: true,
+    });
     this.previewBold = page.getByTestId("journal-preview").locator("strong");
     this.autosavedNote = page.getByTestId("journal-autosaved");
-    this.imageInput = page.getByTestId("journal-image-input").first();
+    this.imageInput = this.composer.getByTestId("journal-image-input");
     this.publishButton = page.getByTestId("journal-publish");
     this.saveDraftButton = page.getByTestId("journal-save-draft");
-    this.cancelButton = page.getByRole("button", { name: "Cancel" });
+    this.cancelButton = this.composer.getByRole("button", { name: "Cancel" });
   }
 
-  /** The feed row whose excerpt contains `marker`. */
-  ladderRow(marker: string): Locator {
-    return this.page
-      .getByTestId("journal-ladder-row")
-      .filter({ hasText: marker });
+  /** The feed card whose entry contains `marker`. */
+  entry(marker: string): JournalEntryCardComponent {
+    return new JournalEntryCardComponent(this.page, this.entryCard(marker));
+  }
+
+  /** The feed card whose entry contains `marker`, as a locator. */
+  entryCard(marker: string): Locator {
+    return this.page.getByTestId("journal-entry").filter({ hasText: marker });
+  }
+
+  /** The editor's text, which is the draft's markdown character for character. */
+  markdownSource(): Promise<string> {
+    return this.editor.evaluate((el) => el.textContent ?? "");
   }
 
   editorLine(index: number): Locator {
@@ -151,17 +167,11 @@ export class JournalSectionComponent extends BaseComponent {
   }
 
   async publish(): Promise<void> {
-    await this.clickAndAwait(this.publishButton, journalsUrls.save);
+    await this.clickAndAwait(this.publishButton, isEntrySave);
   }
 
   async saveDraft(): Promise<void> {
-    await this.clickAndAwait(this.saveDraftButton, journalsUrls.save);
-  }
-
-  /** Clicks the end of the New entry button nearest the dot rail, as a real pointer would. */
-  async clickNewEntryRailEnd(): Promise<void> {
-    const box = (await this.newEntryButton.boundingBox())!;
-    await this.page.mouse.click(box.x + box.width - 4, box.y + box.height / 2);
+    await this.clickAndAwait(this.saveDraftButton, isEntrySave);
   }
 
   /** Closes a composer nothing was typed in, so no draft is written to delete. */
@@ -171,11 +181,18 @@ export class JournalSectionComponent extends BaseComponent {
 
   /** Cancels the composer, which deletes the draft the autosave created. */
   async discardDraft(): Promise<void> {
-    await this.clickAndAwait(this.cancelButton, journalsUrls.delete);
+    await this.clickAndAwait(
+      this.cancelButton,
+      (r) =>
+        r.request().method() === "DELETE" && journalsUrls.entry.test(r.url()),
+    );
   }
 
   async togglePreview(): Promise<void> {
-    await this.clickAndAwait(this.previewToggle, journalsUrls.preview);
+    await this.clickAndAwait(
+      this.previewToggle,
+      isPostTo(journalsUrls.preview),
+    );
   }
 
   /** Leaves the preview for the editor, which the preview hides. */
@@ -192,16 +209,6 @@ export class JournalSectionComponent extends BaseComponent {
       buffer: png,
     });
     await uploaded;
-  }
-
-  /** Opens the feed row for `marker` in the overlay and waits for its card. */
-  async openEntry(marker: string): Promise<void> {
-    await this.ladderRow(marker).click();
-    await this.entry.entryWithText(marker).waitFor();
-  }
-
-  async scrollRowIntoView(marker: string): Promise<void> {
-    await this.ladderRow(marker).scrollIntoViewIfNeeded();
   }
 
   /** The text of the selection the page holds, which is empty when collapsed. */
@@ -224,8 +231,11 @@ export class JournalSectionComponent extends BaseComponent {
     });
   }
 
-  private async clickAndAwait(button: Locator, url: RegExp): Promise<void> {
-    const responded = this.page.waitForResponse(isPostTo(url));
+  private async clickAndAwait(
+    button: Locator,
+    responds: (response: Response) => boolean,
+  ): Promise<void> {
+    const responded = this.page.waitForResponse(responds);
     await button.click();
     await responded;
   }

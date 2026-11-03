@@ -418,6 +418,7 @@
   gap: 22px;
   padding: 24px;
   background: var(--ld-stage-bg, var(--rd-page, var(--bg-0)));
+  animation: none;
 }
 .ld-stage.in-flow {
   position: relative;
@@ -438,9 +439,6 @@
   max-width: 26ch;
   text-wrap: balance;
   line-height: 1.2;
-}
-.ld-stage {
-  animation: none;
 }
 .ld-stage > * {
   animation: ld-enter 0.42s var(--ld-ease-out) var(--ld-hold) backwards;
@@ -573,6 +571,12 @@
 .ld-cover-glint > img {
   position: relative;
   z-index: 1;
+  /* A browser draws an image as its bytes arrive, so the cover fades in whole once decoded. */
+  opacity: 0;
+  transition: opacity 0.25s var(--ld-ease-out);
+}
+.ld-cover-glint > img[data-loaded] {
+  opacity: 1;
 }
 .ld-cover-glint:has(img[data-loaded])::before {
   animation: none;
@@ -615,6 +619,9 @@
   .ld-stale.is-stale::before {
     animation: none;
     display: none;
+  }
+  .ld-cover-glint > img {
+    transition: none;
   }
   .ld-ring::before {
     animation: none;

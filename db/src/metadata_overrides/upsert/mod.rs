@@ -2,7 +2,7 @@
 //! shared row-write/last-modified/cache-invalidation helpers, single-book
 //! upsert, plain get/delete, and the bulk-read helper `list_books`/
 //! `search_books` join against. Called by `db::metadata_overrides` and,
-//! through it, the settings and books RPC/REST handlers.
+//! through it, the settings and books REST handlers.
 
 use std::collections::HashMap;
 

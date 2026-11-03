@@ -1,8 +1,6 @@
-//! Metadata-provider REST handlers — mobile-facing; web hits the analogous
-//! `/api/rpc/metadata/*` server fns, which mirror these gates. The catalog is
-//! readable by any authenticated user and carries no key material; the edition
-//! search and hydrate are `can_edit`-gated, since they spend outbound provider
-//! calls.
+//! Metadata-provider REST handlers. The catalog is readable by any authenticated
+//! user and carries no key material; the edition search and hydrate are
+//! `can_edit`-gated, since they spend outbound provider calls.
 
 use axum::{
     extract::State,
@@ -138,7 +136,7 @@ pub(super) async fn post_edition_hydrate(
         // got and the provider's own cause would reach nothing. `Debug` walks
         // the chain. Safe to log in full — `providers::http::strip_url` has
         // already removed the request URL, and so any `?key=`, from every
-        // provider error. Mirrors `rpc_hydrate_edition`'s handling.
+        // provider error.
         Err(e) => {
             tracing::warn!(error = ?e, "hydrate edition failed");
             (StatusCode::BAD_GATEWAY, e.to_string()).into_response()
@@ -148,8 +146,6 @@ pub(super) async fn post_edition_hydrate(
 
 /// Turn a request into the query the providers are actually asked. The structured
 /// fields win when the caller sent them; free text falls back to a title-only query.
-/// Mirrors `omnibus_frontend::rpc::metadata_search`'s own helper, as the two front
-/// doors must agree on what a request means.
 fn search_query(req: &EditionSearchRequest) -> db::SearchQuery {
     // Built first, then checked for content — the structured fields are
     // *cleaned* (blanks trimmed to absent, an unusable ISBN discarded), so

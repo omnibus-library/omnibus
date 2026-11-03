@@ -34,7 +34,7 @@
  *   retry()              re-run the most recent init() verbatim
  *   destroy()
  *
- * Callbacks the Rust side sets on `window` (each takes one string):
+ * Callbacks the host sets on `window` (each takes one string):
  *   __omnibusOnPdfReady(json)     { page, pageCount } once the first page
  *                                 painted
  *   __omnibusOnPdfPage(json)      { page, pageCount } after every later render

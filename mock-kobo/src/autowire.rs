@@ -8,7 +8,6 @@ use std::path::Path;
 
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 
 use crate::cli::DEFAULT_STATE_PATH;
 use crate::client::REQUEST_TIMEOUT;
@@ -23,8 +22,8 @@ pub const DEVICE_NAME: &str = "Mock Kobo";
 pub const LOGIN_DEVICE_NAME: &str = "omnibus-mock-kobo";
 
 const LOGIN_STEP: &str = "POST /api/auth/login";
-const LIST_STEP: &str = "POST /api/rpc/kobo/devices";
-const CREATE_STEP: &str = "POST /api/rpc/kobo/devices/create";
+const LIST_STEP: &str = "GET /api/account/kobo-devices";
+const CREATE_STEP: &str = "POST /api/account/kobo-devices";
 
 /// "Mock Kobo" for the default state file however spelled, "Mock Kobo (<stem>)" for any other path.
 pub fn device_name(state: &Path) -> String {
@@ -148,9 +147,9 @@ async fn reuse_or_create(
     session: &str,
     name: &str,
 ) -> Result<Wired, AutoWireError> {
-    let list_url = format!("{url}/api/rpc/kobo/devices");
+    let devices_url = format!("{url}/api/account/kobo-devices");
     let devices: Vec<DeviceRow> =
-        post(http, LIST_STEP, &list_url, Some(session), &json!({})).await?;
+        read_reply(LIST_STEP, http.get(&devices_url).bearer_auth(session)).await?;
     if let Some(device) = devices
         .into_iter()
         .find(|device| device.name == name && device.kind == "kobo")
@@ -160,11 +159,10 @@ async fn reuse_or_create(
             reused: true,
         });
     }
-    let create_url = format!("{url}/api/rpc/kobo/devices/create");
     let created: DeviceRow = post(
         http,
         CREATE_STEP,
-        &create_url,
+        &devices_url,
         Some(session),
         &CreateBody { name },
     )
@@ -213,6 +211,14 @@ async fn post<B: Serialize, R: DeserializeOwned>(
     if let Some(token) = bearer {
         request = request.bearer_auth(token);
     }
+    read_reply(step, request).await
+}
+
+/// Send `request` and read its JSON reply, a non-2xx status being a rejection.
+async fn read_reply<R: DeserializeOwned>(
+    step: &'static str,
+    request: reqwest::RequestBuilder,
+) -> Result<R, AutoWireError> {
     let response = request.send().await.map_err(|error| failed(step, error))?;
     let status = response.status();
     if !status.is_success() {

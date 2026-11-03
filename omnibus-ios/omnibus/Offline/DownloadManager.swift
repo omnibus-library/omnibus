@@ -1,10 +1,8 @@
 //  DownloadManager.swift
 //  Offline file downloads for ebooks and audiobooks.
 //
-//  Port of `frontend/src/offline/downloads/`. The Rust side pairs the registry
-//  with a loopback HTTP server so the WebView can play a local file; on iOS
-//  `AVPlayer` and `WKWebView` both load `file://` URLs directly, so the
-//  loopback hop is dropped entirely.
+//  `AVPlayer` and `WKWebView` both load `file://` URLs directly, so a
+//  download plays from disk with no loopback server in between.
 
 import Foundation
 import Observation

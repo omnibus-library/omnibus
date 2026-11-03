@@ -468,7 +468,7 @@ struct PlayerView: View {
                 // Solid rather than hierarchical: hierarchical renders the disc
                 // at a fraction of the ink, which left the one control the
                 // thumb reaches for as the dimmest thing in the transport.
-                Image(systemName: player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                Image(systemName: player.isPlayingOrStarting ? "pause.circle.fill" : "play.circle.fill")
                     .font(.system(size: 74))
                     .symbolRenderingMode(.palette)
                     .foregroundStyle(palette.bg0Color, palette.ink0Color)
@@ -737,7 +737,7 @@ struct MiniPlayerBar: View {
                         Spacer(minLength: 0)
 
                         control("gobackward.15") { player.skip(-RemoteTransport.backSeconds) }
-                        control(player.isPlaying ? "pause.fill" : "play.fill") { player.toggle() }
+                        control(player.isPlayingOrStarting ? "pause.fill" : "play.fill") { player.toggle() }
                         // The bar had no way out, so `close()` — which is what
                         // flushes the position and reports the listening
                         // session — was unreachable and never ran.

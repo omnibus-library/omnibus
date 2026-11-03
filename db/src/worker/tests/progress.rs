@@ -389,7 +389,7 @@ async fn owned_task_state_scopes_reads_to_the_owner() {
     let _ = w.await_completion(id).await;
 }
 
-/// Reproduces the #1163 leak: `rpc_worker_status` is `AuthUser`-scoped (not
+/// Reproduces the #1163 leak: the worker-status poll is `AuthUser`-scoped (not
 /// `AdminUser`), so any authenticated user could previously read another
 /// user's owned task off the general worker-status poll — the same
 /// guessable-task-id concern [`Worker::owned_task_state`] already guards

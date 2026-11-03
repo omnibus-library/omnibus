@@ -68,9 +68,7 @@ pub async fn get_book(
     // rows there withheld the validator from exactly the common case.
     //
     // Whether to *render* per-file detail or a compact format badge stays a
-    // presentation question, decided by the surfaces that show it (see
-    // `files_list` in `frontend/src/pages/book_detail/mobile.rs` and the
-    // per-format count in `format_switcher`).
+    // presentation question, decided by the clients that show it.
     book.book_files = files;
 
     Ok(Some(book))

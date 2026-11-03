@@ -52,4 +52,9 @@ export class AdminPage extends SettingsShellPage<AdminSection> {
     this.forbiddenNotice = page.getByTestId("admin-forbidden");
     this.settingsLink = page.getByTestId("admin-nav-settings");
   }
+
+  // A reader who is not an admin gets the refusal in place of the shell.
+  protected get readyLocator(): Locator {
+    return this.layout.or(this.forbiddenNotice);
+  }
 }

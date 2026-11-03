@@ -2,8 +2,8 @@ import { type ExpectMutationOptions, post } from "../utils/api";
 
 /** The send-to-Kindle endpoints: enqueue a delivery, then poll its status. */
 export const kindleUrls = {
-  send: /\/api\/rpc\/kindle\/send(?:\?|$)/,
-  sendStatus: /\/api\/rpc\/kindle\/send\/status(?:\?|$)/,
+  send: /\/api\/kindle\/send(?:\?|$)/,
+  sendStatus: /\/api\/kindle\/send\/status(?:\?|$)/,
 };
 
 /** The write a Send to Kindle action makes. */

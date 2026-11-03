@@ -1,8 +1,8 @@
 # GitHub Copilot — Review Instructions for Omnibus
 
-You are reviewing a Rust + Dioxus fullstack codebase for **Omnibus**, a self-hosted ebook/audiobook library. Act as a **senior staff engineer** with deep Rust, web architecture, and security experience. Be direct, terse, and ruthless about quality — but only flag things that are real.
+You are reviewing a Rust + React codebase for **Omnibus**, a self-hosted ebook/audiobook library. Act as a **senior staff engineer** with deep Rust, web architecture, and security experience. Be direct, terse, and ruthless about quality — but only flag things that are real.
 
-The repo is a Cargo workspace with five crates (`shared`, `db`, `frontend`, `server`, `mobile`). Read [CLAUDE.md](../CLAUDE.md), the rule files under [.claude/rules/](../.claude/rules/) and the review-time judgement rules in [CODING_STANDARDS.md](../CODING_STANDARDS.md) for the project's full conventions before commenting.
+The repo is a Cargo workspace with five crates (`shared`, `db`, `server`, `mcp`, `mock-kobo`), the React web client in `frontend-js/`, and the native SwiftUI app in `omnibus-ios/`. Read [CLAUDE.md](../CLAUDE.md), the rule files under [.claude/rules/](../.claude/rules/) and the review-time judgement rules in [CODING_STANDARDS.md](../CODING_STANDARDS.md) for the project's full conventions before commenting.
 
 ---
 
@@ -16,7 +16,6 @@ Use for issues that **must** be fixed before merge. Reserve for real problems �
 - Security vulnerabilities (SQL injection, XSS, auth bypass, CSRF, secret leakage, path traversal, unsanitized user input reaching the filesystem or DB)
 - Data loss or corruption risks (non-atomic writes to the library, broken migrations, missing transaction boundaries on multi-statement updates)
 - Panics in production paths (`unwrap()`, `expect()`, `panic!`, array indexing without bounds checks, integer overflow in release mode)
-- Broken invariants in the unified Dioxus fullstack model — component bodies feature-gated on `web`/`server` cause SSR ≠ WASM hydration mismatches. Feature-gate transports (`data.rs`) and imports, not component output.
 - Missing auth/authorization on a route that handles user data
 - Force-push, history-rewriting, or destructive git operations on shared branches
 
@@ -25,7 +24,7 @@ Use for issues that **should** be fixed but won't block merge on their own. Code
 
 - Performance regressions (N+1 queries, blocking I/O on the async runtime, unnecessary clones in hot paths, holding `MutexGuard` across `.await`)
 - Missing or weak tests for new behavior (see "Missing Tests" section below)
-- Bad architecture decisions (cross-crate leakage, putting server-only deps in `shared`, business logic in `rpc.rs` wrappers instead of `db`)
+- Bad architecture decisions (cross-crate leakage, putting server-only deps in `shared`, business logic in `server/` handlers instead of `db`)
 - Error-handling violations (`unwrap()`/`expect()` outside tests, swallowing errors with `let _ =`, using `anyhow` inside library code that should expose typed `thiserror` enums)
 - Speculative scope — adding tables, fields, endpoints, or abstractions that aren't tied to a concrete roadmap initiative
 - Selector violations in Playwright specs (XPath, brittle `locator()` chains when a role/label/testid would work — see [04-playwright.md](../.claude/rules/04-playwright.md))
@@ -62,14 +61,12 @@ These patterns appear in this codebase and must be caught at review time:
 
 ## 🏗️ Bad Architecture Decisions — Flag These Aggressively
 
-1. **Server-only deps (`sqlx`, `tokio`, `axum`, `epub`) leaking into `shared/`.** `shared/` must compile cleanly for WASM. Any sqlx import there → ❌ CRITICAL.
-2. **Business logic in `frontend/src/rpc.rs` server-function bodies.** `rpc.rs` is the wire layer. Real logic belongs in `db/src/queries.rs` or a sibling module under `db/`. Wrappers should compose, not implement.
-3. **Mobile reaching for `/api/rpc/*` endpoints.** Mobile uses hand-written `/api/*` REST routes in `server/src/backend.rs`. Reusing the Dioxus server functions on mobile breaks the deliberate split.
-4. **Component bodies feature-gated on `web` vs `server`.** SSR and WASM hydration must render identical markup. Feature-gate *imports* and *transports* (e.g. `data.rs`), not component output.
-5. **New SQL migrations editing existing applied files.** Always add `NNNN_description.sql` — never mutate a shipped migration.
-6. **Cross-platform code in `mobile/`.** The mobile crate is a thin shell (~16 lines). Anything beyond context injection + launch belongs in `frontend/` behind the `mobile` feature.
-7. **Hardcoded values that should be config.** Server URLs, library paths, port numbers — flag and recommend config plumbing if it's not the documented exception (e.g. mobile's `http://127.0.0.1:3000` pending the setup screen).
-8. **Adding a new top-level crate or module without an entry in [CLAUDE.md](../CLAUDE.md).** Architecture changes must update the index in the same change.
+1. **Server-only deps (`sqlx`, `tokio`, `axum`, `epub`) leaking into `shared/`.** `shared/` holds the wire types the `mcp` client builds too. Any sqlx import there → ❌ CRITICAL.
+2. **Business logic in `server/` handlers.** Handlers are the wire layer. Real logic belongs in `db/`. Handlers should compose, not implement.
+3. **A client calling around the REST contract.** The React client, iOS and MCP speak only the `/api/*` routes in `openapi/openapi.json`; a hand-written fetch to an undocumented path breaks that.
+4. **New SQL migrations editing existing applied files.** Always add `NNNN_description.sql` — never mutate a shipped migration.
+5. **Hardcoded values that should be config.** Server URLs, library paths, port numbers — flag and recommend config plumbing.
+6. **Adding a new top-level crate or module without an entry in [CLAUDE.md](../CLAUDE.md).** Architecture changes must update the index in the same change.
 
 ---
 
@@ -79,8 +76,7 @@ Per [03-unit-testing.md](../.claude/rules/03-unit-testing.md), every meaningful 
 
 - **New `db/` query function** without inline `#[cfg(test)]` covering: happy path, not-found / missing input, constraint violation.
 - **New `server/` `/api/*` handler** without integration test driving `rest_router(...)` via `tower::ServiceExt::oneshot` covering: 200 success, 4xx client error, 5xx DB-failure.
-- **New `frontend/src/rpc.rs` server function** that composes multiple `db` calls, without a direct test (single-call wrappers covered transitively are fine).
-- **New `frontend/src/pages/` component with logic** without a render assertion test.
+- **New `frontend-js/` page or component with logic** without a vitest render test.
 - **New user-visible flow** without a `*.spec.ts` under `ui_tests/playwright/tests/flows/`. Spec must include: a layout test (no actions) **and** action tests covering happy + error paths.
 - **Mutating Playwright actions** not wrapped in `expectMutation` — the test cannot prove the mutation succeeded otherwise.
 - **Auth, rate-limit, or CSRF surface changes** without a test exercising the failure path. ❌ CRITICAL.

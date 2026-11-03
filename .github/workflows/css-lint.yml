@@ -1,9 +1,9 @@
 name: CSS Lint
 
-# Structural guard for the design-system stylesheet. A single missing `}`
-# in frontend/assets/atrium.css silently reparents every following rule as
-# a CSS-nesting descendant of the unclosed selector, so those rules stop
-# matching — a class of bug the web build never exercises and Rust CI can't
+# Structural guard for the React client's stylesheets. A single missing `}`
+# in frontend-js/src silently reparents every following rule as a
+# CSS-nesting descendant of the unclosed selector, so those rules stop
+# matching — a class of bug the build never exercises and Rust CI can't
 # see. stylelint's parser turns that into an "Unclosed block" error. The
 # ruleset is deliberately parse/structural-only (see .stylelintrc.json), so
 # this never nags about pre-existing stylistic choices. Beyond parsing it
@@ -52,7 +52,7 @@ jobs:
         with:
           filters: |
             css:
-              - "frontend/assets/**/*.css"
+              - "frontend-js/{src,public}/**/*.css"
               - ".stylelintrc.json"
               - ".github/workflows/css-lint.yml"
               - "flake.nix"
@@ -89,7 +89,7 @@ jobs:
           gc-max-store-size-linux: 2G
 
       - name: stylelint (structural CSS lint)
-        run: nix develop --command stylelint 'frontend/assets/**/*.css'
+        run: nix develop --command stylelint 'frontend-js/{src,public}/**/*.css'
 
   # The required status check for this workflow. Always runs (no paths filter +
   # `if: always()`), so branch protection gets a resolved status on every PR —

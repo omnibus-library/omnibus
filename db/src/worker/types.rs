@@ -307,7 +307,7 @@ impl Task {
             // Reuse the per-book GenerateThumbs kind rather than Scan: unlike
             // its sibling backfills, this one has an existing, sensible
             // "Generating thumbnail" / "Thumbnail generation" label already
-            // wired in `frontend::components::worker_status` (AC4).
+            // wired in the web client's `WorkerStatus` component (AC4).
             Task::BackfillThumbs { .. } => TaskKind::GenerateThumbs,
             // Reuse Scan kind — a scan-follow-up with no dedicated progress
             // widget, mirroring BackfillWordCounts above.
@@ -372,7 +372,7 @@ pub enum TaskOutcome {
     /// respective all-clear condition) reports `None`.
     Ok(Option<TaskSuccessDetail>),
     /// The handler failed. This string is client-facing (served by
-    /// `rpc_worker_status` and the owner-scoped Kindle poll), so
+    /// `GET /api/worker/status` and the owner-scoped Kindle poll), so
     /// `handlers::execute`'s arms sanitize it, never the raw error's `Display`.
     /// Also produced when the spawned task is dropped or panics before reporting
     /// (see [`Worker::await_completion`]).
@@ -467,7 +467,6 @@ pub(super) struct ProgressEntry {
 /// `completions` / `progress` maps are best-effort in-memory bookkeeping with no
 /// invariant left broken by a partial write, so taking the inner guard and
 /// carrying on beats turning one panic into a crash on every subsequent task.
-/// Mirrors `frontend::data`'s `unpoison` helper.
 pub(super) fn lock_unpoison<T>(m: &StdMutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }

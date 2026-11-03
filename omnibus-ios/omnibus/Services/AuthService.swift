@@ -1,7 +1,7 @@
 //  AuthService.swift
 //  Bearer login / register / logout, and the `me` lookup.
 //
-//  Port of `frontend/src/data/auth.rs`. `client_kind: "ios"` is the signal the
+//  `client_kind: "ios"` is the signal the
 //  server uses to issue a bearer token in the JSON body instead of a cookie.
 
 import Foundation
@@ -131,15 +131,6 @@ enum AuthService {
     static func setHiddenFormats(_ formats: [String]) async throws {
         struct Body: Encodable { let formats: [String] }
         let _: Empty = try await APIClient.shared.post("/api/account/hidden-formats", body: Body(formats: formats))
-        await OfflineStore.shared.cacheDelete(CacheKey.me)
-    }
-
-    /// Set whether the reader's book detail page uses the snap-stop marquee.
-    /// Account configuration like the two above: never queued (rule 08), so a
-    /// failure throws and the caller surfaces it.
-    static func setBookDetailScrollStops(_ enabled: Bool) async throws {
-        struct Body: Encodable { let enabled: Bool }
-        let _: Empty = try await APIClient.shared.post("/api/account/book-detail-scroll-stops", body: Body(enabled: enabled))
         await OfflineStore.shared.cacheDelete(CacheKey.me)
     }
 

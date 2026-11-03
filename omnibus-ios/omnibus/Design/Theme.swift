@@ -1,5 +1,5 @@
 //  Theme.swift
-//  The Atrium palette, ported token-for-token from `frontend/assets/atrium.css`.
+//  The Atrium palette, ported token-for-token from `frontend-js/src/styles/theme.css`.
 //  Values stay in OKLCH so a change on either side is a direct comparison.
 
 import CoreText
@@ -31,7 +31,7 @@ enum ThemeName: String, CaseIterable, Codable, Sendable {
 }
 
 /// One resolved palette. Field names mirror the CSS custom properties so a
-/// token can be traced straight back to `atrium.css`.
+/// token can be traced straight back to `frontend-js/src/styles/theme.css`.
 struct Palette: Sendable {
     let bg0: OKLCH
     let bg1: OKLCH

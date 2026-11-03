@@ -33,7 +33,13 @@ test.describe("shelves index", () => {
   test("reach the index from the library's shelves row", async ({
     libraryPage,
     shelvesIndexPage,
+    ownShelf,
+    request,
   }) => {
+    // The row shows only once a shelf holds a book.
+    const alpha = await fetchBookUuidByTitle(request, "Alpha");
+    await ownShelf("E2E Index Row", { book_uuids: [alpha] });
+
     await test.step("open the library", async () => {
       await libraryPage.goto();
     });

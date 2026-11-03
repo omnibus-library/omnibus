@@ -8,7 +8,7 @@ use axum::extract::ConnectInfo;
 use axum::routing::get;
 use axum::Router;
 
-use super::serve_with_peer_addresses;
+use super::{listen_address, serve_with_peer_addresses};
 
 async fn probe(ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>) -> String {
     addr.ip().to_string()
@@ -36,4 +36,28 @@ async fn serve_with_peer_addresses_attaches_the_real_peer_to_each_request() {
 
     assert!(body.contains("127.0.0.1"), "got response: {body}");
     assert!(!body.contains("0.0.0.0"), "got response: {body}");
+}
+
+#[test]
+fn listen_address_binds_the_ip_and_port_it_is_given() {
+    assert_eq!(
+        listen_address(Some("0.0.0.0"), Some("3000")),
+        "0.0.0.0:3000".parse().unwrap()
+    );
+}
+
+#[test]
+fn listen_address_falls_back_to_loopback_8080_when_unset_or_unparseable() {
+    assert_eq!(
+        listen_address(None, Some("not-a-port")),
+        "127.0.0.1:8080".parse().unwrap()
+    );
+}
+
+#[test]
+fn listen_address_falls_back_to_loopback_when_the_ip_is_a_hostname() {
+    assert_eq!(
+        listen_address(Some("localhost"), Some("3000")),
+        "127.0.0.1:3000".parse().unwrap()
+    );
 }

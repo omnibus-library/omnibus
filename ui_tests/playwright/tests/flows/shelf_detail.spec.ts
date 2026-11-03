@@ -1,7 +1,7 @@
 import { scan } from "../contracts/scan";
 import { shelves } from "../contracts/shelves";
 import { type BookRef, buildExternalBook, notInLibrary } from "../data/scan";
-import { buildShelfUpdate, smartShelfBy } from "../data/shelves";
+import { smartShelfBy } from "../data/shelves";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/pageFixtures";
 import { failing } from "../utils/api";
@@ -366,7 +366,7 @@ test.describe("shelf page", () => {
 
       await test.step("turn Sync to my devices on", async () => {
         await expectMutation(
-          shelves.update(shelf.id, buildShelfUpdate({ sync_to_kobo: true })),
+          shelves.update(shelf.id, { sync_to_kobo: true }),
           () => shelfPage.toggleKoboSync(),
         );
       });

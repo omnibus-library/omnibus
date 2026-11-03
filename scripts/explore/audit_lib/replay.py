@@ -73,7 +73,7 @@ def replay_one(exp: Expectation, state: ActorState) -> Step:
 
     if exp.family == "rating":
         if exp.value is None:
-            status, body = client.post("/api/rpc/ratings/clear", {"uuid": uuid})
+            status, body = client.delete(f"/api/ratings/{uuid}")
             return Step(exp.actor, exp.seq, exp.family, uuid, "clear rating", status, body[:160])
         status, body = client.post("/api/ratings", {"book_uuid": uuid, "stars": float(exp.value)})
         return Step(exp.actor, exp.seq, exp.family, uuid, f"set rating {exp.value:g}", status, body[:160])
@@ -83,12 +83,7 @@ def replay_one(exp: Expectation, state: ActorState) -> Step:
         return Step(exp.actor, exp.seq, exp.family, uuid, f"set status {exp.value}", status, body[:160])
 
     if exp.family == "playback_rate":
-        # The server function takes two arguments — the uuid and the update
-        # struct — and the struct's field is `playback_rate`, range 0.5..=3.
-        status, body = client.post(
-            "/api/rpc/audiobooks/playback-rate/set",
-            {"uuid": uuid, "update": {"playback_rate": float(exp.value)}},
-        )
+        status, body = client.put(f"/api/audiobooks/{uuid}/playback-rate", {"playback_rate": float(exp.value)})
         return Step(exp.actor, exp.seq, exp.family, uuid, f"set rate {exp.value:g}x", status, body[:160])
 
     if exp.family == "progress":

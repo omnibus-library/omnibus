@@ -1,6 +1,5 @@
 //  SuggestionDropdown.swift
-//  Autocomplete pools + dropdown shared by the chip fields and `PlateField`,
-//  mirroring the web's `frontend/src/components/suggestion_dropdown/`: at most
+//  Autocomplete pools + dropdown shared by the chip fields and `PlateField`: at most
 //  five case-insensitive substring matches, values already present excluded,
 //  an optional "+ Create" trailing row, and a name + book-count row layout.
 

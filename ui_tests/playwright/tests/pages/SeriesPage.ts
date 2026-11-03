@@ -1,5 +1,6 @@
 import type { Locator, Page } from "@playwright/test";
 import { TopNavComponent } from "../components/TopNavComponent";
+import { isPageReadFiltering } from "../contracts/ebooks";
 import { expect } from "../fixtures/test";
 import { BasePage } from "./BasePage";
 
@@ -51,11 +52,7 @@ export class SeriesPage extends BasePage {
 
   /** Opens the library on `name`'s books, once its first page answers for them. */
   async showInLibrary(name: string): Promise<void> {
-    const answered = this.page.waitForResponse(
-      (res) =>
-        res.url().includes("/api/rpc/ebooks/page") &&
-        (res.request().postData() ?? "").includes(name),
-    );
+    const answered = this.page.waitForResponse(isPageReadFiltering(name));
     await this.showInLibraryButton.click();
     await answered;
   }

@@ -56,6 +56,7 @@ test.describe("check-in chooser", () => {
     await test.step("check its page shows the copy", async () => {
       await bookDetailPage.goto(uuid);
       await expect(bookDetailPage.titleHeading).toHaveText(book.title);
+      await bookDetailPage.openTab("Files & Details");
       await expect(bookDetailPage.physicalPill).toBeVisible();
     });
   });
@@ -79,6 +80,7 @@ test.describe("check-in chooser", () => {
 
     await test.step("ask to remove its only copy", async () => {
       await bookDetailPage.goto(uuid);
+      await bookDetailPage.openTab("Files & Details");
       await expect(bookDetailPage.physicalPill).toBeVisible();
       await bookDetailPage.physicalCopy.openDeleteDialog();
       await expect(bookDetailPage.physicalCopy.lastCopyDialog).toBeVisible();

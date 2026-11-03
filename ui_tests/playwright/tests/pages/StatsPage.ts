@@ -1,12 +1,12 @@
-import type { Locator, Page, Response } from "@playwright/test";
+import type { Locator, Page, Request, Response } from "@playwright/test";
 import { StatsDrillSheetComponent } from "../components/StatsDrillSheetComponent";
 import { StatsReaderPickerComponent } from "../components/StatsReaderPickerComponent";
 import { TopNavComponent } from "../components/TopNavComponent";
 import { progressUrls } from "../contracts/progress";
-import { statsUrls } from "../contracts/stats";
+import { stats, statsUrls } from "../contracts/stats";
 import type { StatsRange, StatsTile } from "../data/stats";
 import { expect } from "../fixtures/test";
-import { holdRequests, isPostTo } from "../utils/api";
+import { holdRequests } from "../utils/api";
 import { BasePage } from "./BasePage";
 
 /**
@@ -213,11 +213,6 @@ export class StatsPage extends BasePage {
     );
   }
 
-  /** Opens your own page while a held fetch keeps the network from idling. */
-  async gotoUnsettled(): Promise<void> {
-    await this.open("/stats");
-  }
-
   /** Waits for the fetches a click-through navigation started. */
   async waitForSettled(): Promise<void> {
     await this.page.waitForLoadState("networkidle");
@@ -266,7 +261,30 @@ export class StatsPage extends BasePage {
 
   /** Arms a wait for the composition fetch; call it before `goto`. */
   waitForLibraryComposition(): Promise<Response> {
-    return this.page.waitForResponse(isPostTo(statsUrls.libraryComposition));
+    return this.page.waitForResponse(
+      (response) =>
+        response.request().method() === "GET" &&
+        statsUrls.libraryComposition.test(response.url()),
+    );
+  }
+
+  /**
+   * Arms a wait for the summary read of `range` for `reader` (your own page
+   * when null), matching its query exactly; call it before the click.
+   */
+  waitForSummary(
+    range: StatsRange,
+    reader: number | null = null,
+  ): Promise<Request> {
+    const expected = new URLSearchParams(stats.summary(range, reader));
+    expected.sort();
+    return this.page.waitForRequest((request) => {
+      if (request.method() !== "GET" || !statsUrls.summary.test(request.url()))
+        return false;
+      const query = new URL(request.url()).searchParams;
+      query.sort();
+      return query.toString() === expected.toString();
+    });
   }
 
   /**
@@ -274,20 +292,20 @@ export class StatsPage extends BasePage {
    * through, so the nav still settles. The release waits for the answer to land.
    */
   async holdOwnInProgress(): Promise<() => Promise<void>> {
+    const ownQuery = (url: string) => new URL(url).searchParams;
     const release = await holdRequests(
       this.page,
       progressUrls.recent,
       (request) => {
-        const { limit, user_id }: { limit: number; user_id: number | null } =
-          request.postDataJSON();
-        return user_id === null && limit > 1;
+        const query = ownQuery(request.url());
+        return !query.has("user_id") && Number(query.get("limit")) > 1;
       },
     );
     return async () => {
       const landed = this.page.waitForResponse(
         (response) =>
-          isPostTo(progressUrls.recent)(response) &&
-          response.request().postDataJSON().user_id === null,
+          progressUrls.recent.test(response.url()) &&
+          !ownQuery(response.url()).has("user_id"),
       );
       release();
       await landed;

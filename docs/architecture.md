@@ -5,38 +5,26 @@ itself — its `//!` doc, or a Swift file's header comment — and nowhere else.
 Print any directory's map from those docs on demand:
 
 ```bash
-just modules db/src                 # or frontend/src/pages, omnibus-ios/omnibus, …
+just modules db/src                 # or server/src/backend, omnibus-ios/omnibus, …
 ```
 
 ## Workspace
 
-Cargo workspace with seven crates:
+Cargo workspace with five crates:
 
 - **`shared/`** (`omnibus-shared`) — every type on the `/api/*` wire, plus
   the other serde types shared across targets and logic the server and its
   clients must agree on (range parsing, text
   folding, sort order, ETags, ISBN normalization) so the two sides cannot
-  drift. No Dioxus / axum / sqlx deps.
+  drift. No axum / sqlx deps.
 - **`db/`** (`omnibus-db`) — server-side data layer: SQL migrations, SQLite
   pool init, the normalized query layer, and the indexing pipeline (scanner →
-  ebook metadata extraction → atomic per-library upsert). Consumed by both
-  `server/` (REST handlers) and `frontend/` (server-function bodies). Holds all
-  sqlx / tokio / epub / anyhow dependencies on the server side.
-- **`frontend/`** (`omnibus-frontend`) — Dioxus UI + server-function wire layer
-  (`rpc/`). Feature-gated:
-  - `web` — WASM client build (used by `server/` when `dx serve --platform web`
-    builds it for WASM).
-  - `mobile` — native Dioxus build; uses `reqwest` against `/api/*` REST routes.
-  - `server` — SSR/native build; pulls in `omnibus-db` and compiles
-    server-function bodies. The name is hardcoded by the dioxus_fullstack_macro
-    and can't be renamed.
-- **`server/`** (`omnibus`) — **unified Dioxus fullstack binary**. Built twice
-  by `dx serve`: once native (feature `server`) for the axum backend + SSR, once
-  WASM (feature `web`) for the hydrated client. Hosts the hand-written `/api/*`
-  REST router. Depends directly on `omnibus-db`.
-- **`mobile/`** (`omnibus-mobile`) — thin Dioxus Native shell that seeds the
-  reactive `ServerUrl` context and launches `omnibus_frontend::App`.
-  Android-only: the iOS surface is the native `omnibus-ios/` app.
+  ebook metadata extraction → atomic per-library upsert). Consumed by
+  `server/` (REST handlers). Holds all sqlx / tokio / epub / anyhow
+  dependencies on the server side.
+- **`server/`** (`omnibus`) — the axum binary: the `/api/*` REST router, Kobo,
+  KOReader and kosync, OPDS, `/metrics`, the hosted `/mcp` endpoint, and the
+  web client's build served at `/`. Depends directly on `omnibus-db`.
 - **`mcp/`** (`omnibus-mcp`) — MCP tool layer over the `/api/*` REST surface,
   served over stdio (the crate's binary) and hosted at `/mcp` by `server/`
   behind an admin toggle, default off. Depends only on `omnibus-shared` plus
@@ -56,12 +44,10 @@ Cargo workspace with seven crates:
   Docker image — and it depends on no `omnibus-*` crate, so its wire types can
   catch a server-side shape change that a shared DTO would hide.
 
-Default `cargo build` / `clippy` covers `server`, `shared`, `frontend` only.
-Mobile is excluded via workspace `default-members` because its `mobile` feature
-is mutually exclusive with `web`; build it explicitly: `cargo build -p
-omnibus-mobile`. `mcp` is likewise excluded (a client binary daily server work
-never compiles): `cargo build -p omnibus-mcp`. So is `mock-kobo`: `cargo test
--p omnibus-mock-kobo`.
+Default `cargo build` / `clippy` covers `server` and `shared` (and `db` through
+`server`). `mcp` is excluded via workspace `default-members` (a client binary
+daily server work never compiles): `cargo build -p omnibus-mcp`. So is
+`mock-kobo`: `cargo test -p omnibus-mock-kobo`.
 
 Beside the workspace:
 
@@ -73,30 +59,23 @@ Beside the workspace:
   `contracts/`, `data/`, `fixtures/` (plus `utils/`). Conventions in
   [rule 04](../.claude/rules/04-playwright.md).
 - **`openapi/`** — the REST contract; see [below](#the-rest-contract).
-- **`frontend-js/`** — a React client over the REST API, typed from that
-  contract.
+- **`frontend-js/`** — the web client: a React SPA over the REST API, typed
+  from that contract.
 - **`site/`** — the marketing site; see [below](#site).
 
 ## Request flows
 
-**Web (fullstack):** browser → axum serves SSR'd HTML + WASM bundle → hydration
-→ signal effects call Dioxus server functions (`#[get]`/`#[post]` in
-`frontend/src/rpc/`) at `/api/rpc/*` → same handlers execute server-side against
-the SQLite pool via an `axum::Extension<SqlitePool>` layer.
+**Web:** browser → axum serves the React build from `OMNIBUS_REACT_DIR` as the
+router's fallback (`backend::react_ui`; a deep link gets `index.html`) → the
+client calls `/api/*` through the fetchers and TanStack Query hooks generated
+from the contract, authenticated by the session cookie. Unset
+`OMNIBUS_REACT_DIR`, the API still answers and `/` is a 503.
 
-**Mobile:** Dioxus signal/effect → `reqwest` call to `/api/*` (hand-written
-handlers in `server/src/backend.rs`) → signal update → re-render. Mobile
-deliberately does **not** use the `/api/rpc/*` server functions. Every mobile
-read is cache-first (stale-while-revalidate): the local copy is served
-instantly, a background revalidation refreshes it and nudges rendered pages via
-a generation channel, and known-offline reads never touch the network. User
-writes queue to a durable outbox on connectivity failure, and a periodic
-background tick keeps the outbox drained and the library replica fresh — see
-`frontend/src/offline.rs`.
+**iOS:** the native app calls the same `/api/*` routes with a bearer token, and
+keeps its own offline store and outbox — see [ios.md](ios.md).
 
-Most features are therefore served twice — a `/api/*` handler for the mobile and
-iOS clients, and a server function for the web — each with its own permission
-gate and error mapping. A change to one usually needs the other.
+Every client — web, iOS, MCP — speaks that one REST surface, so a feature has
+one handler, one permission gate and one error mapping.
 
 ## The REST contract
 
@@ -119,7 +98,7 @@ code generates it; nobody writes it by hand.
   and MSW handlers from the file with orval, so a wire change becomes a
   TypeScript error there.
 
-Left out: the Dioxus server functions (`/api/rpc/*`), Kobo, KOReader (its plugin and its
+Left out: Kobo, KOReader (its plugin and its
 built-in `/kosync` progress sync) and OPDS, whose formats their clients fix. Conventions are in
 [rule 13](../.claude/rules/13-openapi.md).
 
@@ -178,34 +157,6 @@ No single module owns these, so a change to any one surface has to keep them:
 - **Optional binaries.** Calibre and kepubify degrade rather than fail the
   boot: one startup warning, then conversion is disabled or the download falls
   back to plain EPUB.
-
-## Mobile shell
-
-**Server URL:** the backend base URL is a reactive `ServerUrl(Signal<String>)`
-context, seeded at launch from `data::server_url_store` (persisted at
-`<data_dir>/server` — `Library/Application Support/omnibus/server` on iOS,
-`$HOME/.omnibus/server` on desktop/dev, `Context.getFilesDir()/server` on
-Android — plaintext, all builds; the URL isn't secret). Empty on first run → the mobile `ScreenLayout` gate routes to the
-unguarded `/connect` route (`pages/server_connect.rs`), which validates
-reachability via `data::check_server` (`GET /api/_health`) before persisting
-and advancing to `/login`. The login screen shows a connected-to bar with a Back
-button to change it. `use_server_url()` returns a `String` snapshot;
-`use_server_url_signal()` is the writer accessor.
-
-**Auth:** the bearer-token login flow lives in `frontend/src/data/auth.rs` under
-`feature = "mobile"`. `data::mobile_login` / `mobile_register` POST to
-`/api/auth/{login,register}` with `client_kind: ios|android|bearer` so the
-server returns a bearer token in the JSON body. `data::token_store`
-(`frontend/src/data/stores.rs`) keeps the token in a process-local
-`OnceLock<RwLock<...>>` and persists it to `<data_dir>/token` with `0o600`
-perms, so the user stays signed in across a cold start and is only logged out
-when the server rejects the bearer. UI components subscribe to
-`data::token_store::subscribe()` (a `tokio::sync::watch` receiver) so a
-401-driven `token_store::clear()` reactively redirects to `/login` (the gate
-checks the `ServerUrl` context first, redirecting to `/connect` when it's
-empty). At-rest protection is the iOS sandbox + Data Protection / Android's
-per-app UID sandbox + the `0o600` perms; **TODO**: harden with iOS Keychain /
-Android Keystore.
 
 ## MCP tool boundary
 
