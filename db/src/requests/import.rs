@@ -9,6 +9,7 @@ use super::store::RequestError;
 use crate::merge::MergeError;
 
 pub mod files;
+pub mod place;
 
 /// Why a finished download could not be added. Each message is for an admin: the reader
 /// sees only "Couldn't add it".
