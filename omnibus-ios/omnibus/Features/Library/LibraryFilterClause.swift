@@ -200,7 +200,7 @@ final class LibraryFilterStore {
 
     /// The first clause on each field, in field order, so the list's order
     /// never changes what it means.
-    private static func onePerField(_ clauses: [FilterClause]) -> [FilterClause] {
+    nonisolated static func onePerField(_ clauses: [FilterClause]) -> [FilterClause] {
         FilterField.allCases.compactMap { field in clauses.first { $0.field == field } }
     }
 

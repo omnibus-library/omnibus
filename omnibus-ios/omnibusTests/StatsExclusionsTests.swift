@@ -56,6 +56,27 @@ struct StatsExclusionsTests {
                 == #"{"clauses":[{"field":"tag","mode":"include","values":["Sports"]}]}"#)
     }
 
+    @MainActor @Test func aRuleSavedInAnotherClauseOrderIsNotAnUnsavedEdit() {
+        let author = FilterClause(field: .author, mode: .include, values: ["A"])
+        let draft = StatsExclusionsDraft(
+            seededFrom: user(saved: StatsExclusions(clauses: [author, sports])))
+        let store = LibraryFilterStore(clauses: draft.saved)
+
+        #expect(draft.update(for: store.clauses) == nil)
+    }
+
+    @Test func previewKeepsTwoSameNamedSameSizedSeriesApart() {
+        func stack(_ lead: String) -> SeriesStack {
+            SeriesStack(leadUuid: lead, name: "Saga", members: [Book(id: 1, filename: "\(lead).epub")])
+        }
+        let page = LibraryPageResult(
+            books: [], nextCursor: nil, total: 2, hiddenCount: nil, stacks: [stack("a"), stack("b")])
+
+        let ids = StatsExclusionsPreview(page: page).seriesLines.map(\.id)
+
+        #expect(ids == ["a", "b"])
+    }
+
     @MainActor @Test func clearingTheLastClauseSendsAnEmptyRule() throws {
         let draft = StatsExclusionsDraft(seededFrom: user(saved: StatsExclusions(clauses: [sports])))
         let store = LibraryFilterStore(clauses: draft.saved)

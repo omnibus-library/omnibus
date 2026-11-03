@@ -9,11 +9,12 @@ import SwiftUI
 /// What the screen opened on and what saving would send, apart from the view
 /// so the save rules are testable without a UI or a server.
 struct StatsExclusionsDraft: Equatable {
-    /// The rule the server held when the screen opened.
+    /// The rule the server held when the screen opened, in the order the filter store keeps it,
+    /// so a rule saved elsewhere in another order doesn't read as an edit.
     let saved: [FilterClause]
 
     init(seededFrom user: UserSummary?) {
-        saved = user?.statsExclusionsSetting?.clauses ?? []
+        saved = LibraryFilterStore.onePerField(user?.statsExclusionsSetting?.clauses ?? [])
     }
 
     /// The body to save for `clauses`; `nil` while they match what the server holds.
@@ -22,12 +23,18 @@ struct StatsExclusionsDraft: Equatable {
     }
 }
 
+/// One stack's line, keyed on its lead book since two series can share a name and a count.
+struct SeriesLine: Equatable, Identifiable {
+    let id: String
+    let text: String
+}
+
 /// What the rule would leave out, read from the library's first page folded by series.
 struct StatsExclusionsPreview: Equatable {
     /// How many books match; the page's own count when the server sent none.
     let total: Int64
     /// One "<series> · n" line per stack on the page.
-    let seriesLines: [String]
+    let seriesLines: [SeriesLine]
     /// Books on the page that sit in no stack.
     let loose: Int
     /// More books than the page holds, so the series lines are partial.
@@ -37,7 +44,9 @@ struct StatsExclusionsPreview: Equatable {
         let stacks = page.stacks ?? []
         let leads = Set(stacks.map(\.leadUuid))
         total = page.total ?? Int64(page.books.count)
-        seriesLines = stacks.map { "\($0.name) · \($0.members.count)" }
+        seriesLines = stacks.map {
+            SeriesLine(id: $0.leadUuid, text: "\($0.name) · \($0.members.count)")
+        }
         loose = page.books.filter { !leads.contains($0.uuid) }.count
         isPartial = page.nextCursor != nil
     }
@@ -127,8 +136,8 @@ private struct StatsExclusionsForm: View {
                     .font(.ui(14, weight: .semibold))
                     .foregroundStyle(palette.ink0Color)
                     .accessibilityIdentifier("stats-exclusions-total")
-                ForEach(preview.seriesLines, id: \.self) { line in
-                    caption(line)
+                ForEach(preview.seriesLines) { line in
+                    caption(line.text)
                 }
                 if preview.loose > 0 { caption("\(preview.loose) outside a series") }
                 if preview.isPartial { caption("The series list covers the first page of these books.") }
