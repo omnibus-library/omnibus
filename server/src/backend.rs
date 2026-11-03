@@ -84,6 +84,9 @@ pub use react_ui::{react_dir, react_ui_router, REACT_DIR_ENV};
 /// Per-IP rate-limit budget for `/api/search/*`, separate from the auth limiter. Each
 /// request runs four FTS5 queries plus joins; the budget still covers a user typing into
 /// the command palette.
+/// The boot env var that turns the book-requests feature on (`1`, `true` or `yes`).
+pub const BOOK_REQUESTS_ENV: &str = "OMNIBUS_BOOK_REQUESTS";
+
 pub const SEARCH_RATE_LIMIT_WINDOW: std::time::Duration = std::time::Duration::from_secs(10);
 /// Max search requests per [`SEARCH_RATE_LIMIT_WINDOW`] per IP.
 pub const SEARCH_RATE_LIMIT_MAX: u32 = 30;
@@ -219,6 +222,10 @@ pub struct AppState {
     /// links). CSRF still reads `auth::csrf::allowed_origins()`.
     /// An `Arc` keeps the per-request clone cheap.
     public_origins: Arc<[String]>,
+    /// `OMNIBUS_BOOK_REQUESTS`, read once at boot. Off: every `/api/requests/*` and
+    /// `/api/admin/requests/*` route answers 404, no download poller runs, and sessions
+    /// report no request access.
+    book_requests: bool,
 }
 
 impl AppState {
@@ -231,6 +238,15 @@ impl AppState {
             remote_image_config: Arc::new(db::author_photos::RemoteImageConfig::default()),
             rate_limits: RateLimits::default(),
             public_origins: Arc::default(),
+            book_requests: false,
+        }
+    }
+
+    /// Turn the book-requests feature on or off; `new` defaults to off.
+    pub fn with_book_requests(self, enabled: bool) -> Self {
+        Self {
+            book_requests: enabled,
+            ..self
         }
     }
 
@@ -302,6 +318,11 @@ impl AppState {
     /// SSRF guard config consulted before fetching admin-supplied URLs.
     pub fn remote_image_config(&self) -> &db::author_photos::RemoteImageConfig {
         &self.remote_image_config
+    }
+
+    /// Whether the book-requests feature is on for this process.
+    pub fn book_requests(&self) -> bool {
+        self.book_requests
     }
 
     /// Whether the per-IP limiters wired from this state enforce or admit everything.
