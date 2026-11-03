@@ -423,7 +423,8 @@ export const Failing: Story = {
   },
 };
 
-const NOT_ADMIN = { ...WIRE_ADA, is_admin: false };
+const READER = { ...WIRE_ADA, is_admin: false, can_edit: false };
+const EDITOR = { ...WIRE_ADA, is_admin: false, can_edit: true };
 const volume = aWireBook({
   id: 22,
   title: "Aurora Station, Vol. 2",
@@ -447,13 +448,26 @@ export const AdminSeesMergeAndDelete: Story = {
 };
 
 export const ReaderSeesNeither: Story = {
-  parameters: { user: NOT_ADMIN },
+  parameters: { user: READER },
   beforeEach({ msw }) {
     msw.use(...bookDetailHandlers(BOOK));
   },
   play: async ({ canvas }) => {
     await canvas.findByTestId("edit-metadata");
     await expect(canvas.queryByTestId("merge-with")).not.toBeInTheDocument();
+    await expect(canvas.queryByTestId("delete-files")).not.toBeInTheDocument();
+  },
+};
+
+export const EditorSeesMergeButNotDelete: Story = {
+  parameters: { user: EDITOR },
+  beforeEach({ msw }) {
+    msw.use(...bookDetailHandlers(BOOK));
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByTestId("merge-with")).toHaveTextContent(
+      "Merge with…",
+    );
     await expect(canvas.queryByTestId("delete-files")).not.toBeInTheDocument();
   },
 };

@@ -91,7 +91,7 @@ pub(super) async fn relocate_attachment(
 /// Conservative title+author match for a brand-new file: the book it should
 /// attach to, if there is **exactly one** candidate with the same normalized
 /// title and author and no `format` file yet. Ambiguity returns `None` (a
-/// duplicate the admin can merge beats a guess). Global across libraries; returns
+/// duplicate an editor can merge beats a guess). Global across libraries; returns
 /// the candidate's uuid with its id for the relocation check against Removed.
 pub(super) async fn find_attach_target(
     tx: &mut Transaction<'_, sqlx::Sqlite>,

@@ -115,7 +115,7 @@ impl ServerHandler for OmnibusMcp {
                  apply_metadata_changes and revert_metadata_overrides write metadata \
                  overrides — library-wide state every user sees — and refuse to run \
                  until called with confirm: true after the user has approved the diff. \
-                 Duplicate resolution is admin-only and the strongest write here: \
+                 Duplicate resolution needs the edit permission (can_edit) and is the strongest write here: \
                  merge_books deletes the source book's row and retargets every reader's \
                  state onto the target, undo_merge reverses a merge via its returned \
                  merge_log_id, and both refuse to run without confirm: true — fetch both \

@@ -9,7 +9,7 @@ export const mergeUrls = {
 /** What a merge answers with: the log id that `merge.undo` takes back. */
 export type MergeResult = { merge_log_id: number; target_uuid: string };
 
-/** The writes an admin makes to merge two books and take it back. */
+/** The writes an editor or admin makes to merge two books and take it back. */
 export const merge = {
   books: (body?: {
     source_uuid: string;

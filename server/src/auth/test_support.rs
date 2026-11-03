@@ -66,6 +66,20 @@ pub async fn create_user(pool: &SqlitePool, username: &str) -> User {
     insert_user(pool, username, false).await
 }
 
+/// Create a non-admin user holding the edit permission.
+pub async fn create_editor(pool: &SqlitePool, username: &str) -> User {
+    let user = create_user(pool, username).await;
+    sqlx::query("UPDATE users SET can_edit = 1 WHERE id = ?")
+        .bind(user.id)
+        .execute(pool)
+        .await
+        .expect("grant can_edit");
+    User {
+        can_edit: true,
+        ..user
+    }
+}
+
 /// Create an admin user.
 pub async fn create_admin(pool: &SqlitePool, username: &str) -> User {
     insert_user(pool, username, true).await
