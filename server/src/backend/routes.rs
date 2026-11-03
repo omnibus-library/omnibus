@@ -338,6 +338,7 @@ fn kindle_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(kindle::post_kindle_email))
         .routes(routes!(kindle::get_delivery))
         .routes(routes!(account::post_hidden_formats))
+        .routes(routes!(account::post_stats_exclusions))
         .routes(routes!(account::post_book_detail_scroll_stops))
         .routes(routes!(account::post_stack_series))
         .routes(routes!(account::post_share_stats))
