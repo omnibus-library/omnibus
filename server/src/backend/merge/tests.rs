@@ -1,4 +1,4 @@
-//! Tests for the admin merge/unmerge REST endpoints: auth + admin gate,
+//! Tests for the merge/unmerge REST endpoints: auth + edit-permission gate,
 //! the happy merge/undo round-trip, per-reader-state retargeting, and
 //! the per-variant 4xx mappings.
 
@@ -85,7 +85,7 @@ async fn api_merge_requires_auth() {
 }
 
 #[tokio::test]
-async fn api_merge_rejects_a_non_admin_user() {
+async fn api_merge_rejects_a_user_without_edit_permission() {
     let (app, _state, pool) = fixture().await;
     let user = auth_test_support::create_user(&pool, "alice").await;
     let token = auth_test_support::bearer_token(&pool, user.id).await;
@@ -98,6 +98,23 @@ async fn api_merge_rejects_a_non_admin_user() {
     assert_eq!(res.status(), StatusCode::FORBIDDEN);
     // The gate rejected before the transaction: both books survive.
     assert_eq!(books_row_count(&pool, &source_uuid).await, 1);
+}
+
+#[tokio::test]
+async fn api_merge_lets_a_non_admin_editor_merge() {
+    let (app, _state, pool) = fixture().await;
+    let editor = auth_test_support::create_editor(&pool, "edith").await;
+    let token = auth_test_support::bearer_token(&pool, editor.id).await;
+    let (source_uuid, target_uuid) = seed_source_and_target(&pool).await;
+    let body = serde_json::json!({ "source_uuid": source_uuid, "target_uuid": target_uuid });
+    let res = app
+        .oneshot(post_json("/api/books/merge", &token, body))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let out: MergeBooksResult = body_json(res).await;
+    assert_eq!(out.target_uuid, target_uuid);
+    assert_eq!(books_row_count(&pool, &source_uuid).await, 0);
 }
 
 #[tokio::test]
@@ -226,6 +243,29 @@ async fn api_undo_merge_restores_the_source_book() {
 }
 
 #[tokio::test]
+async fn api_undo_merge_lets_a_non_admin_editor_undo() {
+    let (app, _state, pool) = fixture().await;
+    let editor = auth_test_support::create_editor(&pool, "edith").await;
+    let token = auth_test_support::bearer_token(&pool, editor.id).await;
+    let (source_uuid, target_uuid) = seed_source_and_target(&pool).await;
+    let body = serde_json::json!({ "source_uuid": source_uuid, "target_uuid": target_uuid });
+    let res = app
+        .clone()
+        .oneshot(post_json("/api/books/merge", &token, body))
+        .await
+        .unwrap();
+    let merged: MergeBooksResult = body_json(res).await;
+
+    let body = serde_json::json!({ "merge_log_id": merged.merge_log_id });
+    let res = app
+        .oneshot(post_json("/api/books/merge/undo", &token, body))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    assert_eq!(books_row_count(&pool, &source_uuid).await, 1);
+}
+
+#[tokio::test]
 async fn api_undo_merge_requires_auth() {
     let (app, _state, _pool) = fixture().await;
     let body = serde_json::json!({ "merge_log_id": 1 });
@@ -244,7 +284,7 @@ async fn api_undo_merge_requires_auth() {
 }
 
 #[tokio::test]
-async fn api_undo_merge_rejects_a_non_admin_user() {
+async fn api_undo_merge_rejects_a_user_without_edit_permission() {
     let (app, _state, pool) = fixture().await;
     let user = auth_test_support::create_user(&pool, "alice").await;
     let token = auth_test_support::bearer_token(&pool, user.id).await;
@@ -358,7 +398,7 @@ async fn api_merge_candidates_requires_auth() {
 }
 
 #[tokio::test]
-async fn api_merge_candidates_rejects_a_non_admin_user() {
+async fn api_merge_candidates_rejects_a_user_without_edit_permission() {
     let (app, _state, pool) = fixture().await;
     let user = auth_test_support::create_user(&pool, "alice").await;
     let token = auth_test_support::bearer_token(&pool, user.id).await;
@@ -370,6 +410,21 @@ async fn api_merge_candidates_rejects_a_non_admin_user() {
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn api_merge_candidates_lets_a_non_admin_editor_search() {
+    let (app, _state, pool) = fixture().await;
+    let editor = auth_test_support::create_editor(&pool, "edith").await;
+    let token = auth_test_support::bearer_token(&pool, editor.id).await;
+    let res = app
+        .oneshot(get_with_bearer(
+            "/api/books/merge/candidates?q=book",
+            &token,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
 }
 
 #[tokio::test]

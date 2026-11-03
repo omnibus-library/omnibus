@@ -2666,10 +2666,10 @@
     "/api/books/merge": {
       "post": {
         "tags": [
-          "Admin"
+          "Metadata"
         ],
         "summary": "Merge two books",
-        "description": "Folds the source book into the target: the target takes the source's files, links,\nidentifiers and every reader's progress, highlights and other data, and the source\nbook disappears. `POST /api/books/merge/undo` with the returned `merge_log_id` reverses\nit. Needs an admin account.",
+        "description": "Folds the source book into the target: the target takes the source's files, links,\nidentifiers and every reader's progress, highlights and other data, and the source\nbook disappears. `POST /api/books/merge/undo` with the returned `merge_log_id` reverses\nit. Needs the edit permission.",
         "operationId": "merge_books",
         "requestBody": {
           "content": {
@@ -2693,7 +2693,7 @@
             }
           },
           "403": {
-            "description": "You aren't an admin."
+            "description": "Your account lacks the edit permission."
           },
           "404": {
             "description": "No book has the source or target uuid; the body says which."
@@ -2707,10 +2707,10 @@
     "/api/books/merge/candidates": {
       "get": {
         "tags": [
-          "Admin"
+          "Metadata"
         ],
         "summary": "Find books to merge with",
-        "description": "Searches the ebook and audiobook libraries for a book to merge another into, and returns\nup to 20 matches. Needs an admin account.",
+        "description": "Searches the ebook and audiobook libraries for a book to merge another into, and returns\nup to 20 matches. Needs the edit permission.",
         "operationId": "get_merge_candidates",
         "parameters": [
           {
@@ -2741,7 +2741,7 @@
             "description": "`q` is missing or over 1024 bytes."
           },
           "403": {
-            "description": "You aren't an admin."
+            "description": "Your account lacks the edit permission."
           }
         }
       }
@@ -2749,10 +2749,10 @@
     "/api/books/merge/undo": {
       "post": {
         "tags": [
-          "Admin"
+          "Metadata"
         ],
         "summary": "Undo a merge",
-        "description": "Splits a merged book back into the two it was made from, and returns the restored\nsource book's uuid. Needs an admin account.",
+        "description": "Splits a merged book back into the two it was made from, and returns the restored\nsource book's uuid. Needs the edit permission.",
         "operationId": "undo_merge",
         "requestBody": {
           "content": {
@@ -2776,7 +2776,7 @@
             }
           },
           "403": {
-            "description": "You aren't an admin."
+            "description": "Your account lacks the edit permission."
           },
           "404": {
             "description": "No merge has that `merge_log_id`."
