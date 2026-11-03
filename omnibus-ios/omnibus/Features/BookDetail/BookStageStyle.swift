@@ -110,12 +110,12 @@ struct BookTabStrip: View {
                 } label: {
                     Text(tab.label)
                         .font(.ui(16, weight: tab == selected ? .semibold : .medium))
-                        .foregroundStyle(labelColor(tab))
+                        .foregroundStyle(tab == selected ? palette.ink0Color : palette.ink1Color)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
                         .frame(maxWidth: .infinity, minHeight: 50)
                         .background {
-                            if pinned && tab == selected { palette.bookRibbon }
+                            if pinned && tab == selected { glow }
                         }
                         .contentShape(Rectangle())
                 }
@@ -135,11 +135,19 @@ struct BookTabStrip: View {
         .overlay(alignment: .bottomLeading) { ribbon }
     }
 
-    private func labelColor(_ tab: BookTab) -> Color {
-        guard tab == selected else { return palette.ink1Color }
-        guard pinned else { return palette.ink0Color }
-        // bookRibbon is lighter on dark grounds, where white text falls under 4.5:1.
-        return palette.bg0.l > 0.5 ? .white : palette.bg0Color
+    /// The pinned tab's light: the cover halo's warm core and ribbon fall, sized to the cell.
+    private var glow: some View {
+        EllipticalGradient(
+            stops: [
+                .init(color: Color(red: 1, green: 0.74, blue: 0.48).opacity(0.24), location: 0),
+                .init(color: palette.bookRibbon.opacity(0.42), location: 0.38),
+                .init(color: palette.bookRibbon.opacity(0.1), location: 0.72),
+                .init(color: .clear, location: 1),
+            ],
+            startRadiusFraction: 0,
+            endRadiusFraction: 0.5
+        )
+        .allowsHitTesting(false)
     }
 
     private var ribbon: some View {
