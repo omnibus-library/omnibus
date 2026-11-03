@@ -22,6 +22,7 @@ enum Destination: Hashable {
     case genre(name: String)
     case settings
     case readingGoals
+    case statsExclusions
     case downloads
     case authorsIndex
     /// An index narrowed to the names containing `query`, where a search
@@ -362,6 +363,8 @@ struct DestinationRouter: ViewModifier {
                 SettingsView()
             case .readingGoals:
                 ReadingGoalsView()
+            case .statsExclusions:
+                StatsExclusionsView()
             case .downloads:
                 DownloadsView()
             case .authorsIndex:

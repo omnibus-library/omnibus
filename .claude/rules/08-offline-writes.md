@@ -111,6 +111,7 @@ Not queued, by test:
 | `POST /api/account/book-detail-scroll-stops` | 1 — account configuration |
 | `POST /api/account/stack-series` (Stack series) | 1 — account configuration |
 | `POST /api/account/share-stats` (Share stats with household) | 1 — account configuration |
+| `POST /api/account/stats-exclusions` (Leave out of my stats) | 1 — account configuration |
 | `PUT /api/stats/goal` (annual reading goal) | 1 — account configuration |
 | `PUT /api/stats/goal/daily` (daily pages / minutes goals) | 1 — account configuration |
 | Metadata overrides | 1 — library-wide, every user sees it |

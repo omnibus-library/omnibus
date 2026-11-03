@@ -43,6 +43,7 @@ export function toUser(user: UserSummary) {
     bookDetailScrollStops: user.book_detail_scroll_stops ?? false,
     // Matches the wire default: stats are shared until a reader opts out.
     shareStats: user.share_stats ?? true,
+    statsExclusions: user.stats_exclusions?.clauses ?? [],
     // Set while an admin is signed in as this user.
     impersonation: user.impersonation
       ? {

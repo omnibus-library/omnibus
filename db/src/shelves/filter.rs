@@ -6,7 +6,7 @@
 use omnibus_shared::{FilterClause, FilterField, FilterMode, RuleField, ViewFilters};
 
 use super::rules::name_membership;
-pub(crate) use super::rules::{Bind, Predicate};
+pub(crate) use super::rules::{bind_all, Bind, Predicate};
 
 /// `Predicate.sql` when no clause applies.
 pub(crate) const MATCH_ALL: &str = "1";

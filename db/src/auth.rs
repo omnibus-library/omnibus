@@ -47,10 +47,11 @@ pub use users::{
     get_book_detail_scroll_stops, get_hidden_formats, get_kindle_email, get_share_stats,
     get_user_by_id, get_user_by_username, list_users, promote_to_admin, registration_enabled,
     set_book_detail_scroll_stops, set_display_name, set_hidden_formats, set_kindle_email,
-    set_registration_enabled, set_share_stats, set_stack_series, unlock_user,
+    set_registration_enabled, set_share_stats, set_stack_series, set_stats_exclusions, unlock_user,
     update_user_permissions, DISPLAY_NAME_MAX_LEN,
 };
 
+use omnibus_shared::ViewFilters;
 use sqlx::Row;
 
 /// Auth-layer error space.
@@ -130,6 +131,8 @@ pub struct User {
     /// Whether other readers on this server may see this user's stats page.
     /// `true` by default.
     pub share_stats: bool,
+    /// Books matching this filter are left out of the user's stats. Empty leaves nothing out.
+    pub stats_exclusions: ViewFilters,
 }
 
 /// One live login. `device_id` is set only for bearer sessions minted by a
@@ -217,6 +220,7 @@ pub(crate) fn build_user_from_joined_row(row: &sqlx::sqlite::SqliteRow) -> User 
         book_detail_scroll_stops: row.get::<i64, _>("book_detail_scroll_stops") != 0,
         stack_series: row.get::<i64, _>("stack_series") != 0,
         share_stats: row.get::<i64, _>("share_stats") != 0,
+        stats_exclusions: parse_stats_exclusions(row.get("stats_exclusions")),
     }
 }
 
@@ -235,6 +239,7 @@ pub(crate) fn row_to_user(row: &sqlx::sqlite::SqliteRow) -> User {
         book_detail_scroll_stops: row.get::<i64, _>("book_detail_scroll_stops") != 0,
         stack_series: row.get::<i64, _>("stack_series") != 0,
         share_stats: row.get::<i64, _>("share_stats") != 0,
+        stats_exclusions: parse_stats_exclusions(row.get("stats_exclusions")),
     }
 }
 
@@ -249,6 +254,12 @@ pub(crate) fn parse_hidden_formats(raw: Option<String>) -> Vec<String> {
             .collect()
     })
     .unwrap_or_default()
+}
+
+/// Lenient like [`parse_hidden_formats`]: a blob that no longer parses excludes nothing.
+pub(crate) fn parse_stats_exclusions(raw: Option<String>) -> ViewFilters {
+    raw.and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
 }
 
 pub(crate) fn now_unix() -> i64 {

@@ -1,6 +1,6 @@
 //! Tests for the account preferences: hidden formats (set/normalize/validate
-//! via `POST /api/account/hidden-formats`) and the book-detail scroll-stops,
-//! Stack series, and share-stats switches. The `/api/auth/me` round trip is
+//! via `POST /api/account/hidden-formats`), the book-detail scroll-stops,
+//! Stack series, and share-stats switches, and the stats exclusion filter. The `/api/auth/me` round trip is
 //! covered in `crate::auth::handlers::tests` (the route lives on that router).
 
 use axum::{
@@ -12,12 +12,18 @@ use axum::{
 use tower::ServiceExt;
 
 use omnibus_db::{self as db, auth::SessionKind};
+use omnibus_shared::{
+    FilterClause, FilterField, FilterMode, StatsSummary, UserSummary, ViewFilters,
+};
 
 use crate::auth::test_support as auth_test_support;
 use crate::auth::AuthUser;
 use crate::backend::test_support::*;
+use crate::backend::AppState;
 
-use super::{post_share_stats, post_stack_series, SetShareStats, SetStackSeries};
+use super::{
+    post_share_stats, post_stack_series, post_stats_exclusions, SetShareStats, SetStackSeries,
+};
 
 /// Build an authenticated JSON POST request.
 fn post_json(uri: &str, token: &str, body: serde_json::Value) -> Request<Body> {
@@ -211,6 +217,7 @@ async fn post_stack_series_returns_500_when_the_db_is_unavailable() {
         book_detail_scroll_stops: false,
         stack_series: false,
         share_stats: true,
+        stats_exclusions: Default::default(),
         session_id: 1,
         session_kind: SessionKind::Bearer,
         impersonator_id: None,
@@ -306,6 +313,7 @@ async fn post_share_stats_returns_500_when_the_db_is_unavailable() {
         book_detail_scroll_stops: false,
         stack_series: false,
         share_stats: true,
+        stats_exclusions: Default::default(),
         session_id: 1,
         session_kind: SessionKind::Bearer,
         impersonator_id: None,
@@ -313,6 +321,169 @@ async fn post_share_stats_returns_500_when_the_db_is_unavailable() {
     };
 
     let res = post_share_stats(user, State(state), Json(SetShareStats { enabled: false })).await;
+
+    assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+}
+
+fn sports_clause() -> serde_json::Value {
+    serde_json::json!({ "field": "tag", "mode": "include", "values": ["Sports"] })
+}
+
+/// `GET /api/auth/me`, which lives on the auth router rather than the REST one.
+async fn me(state: &AppState, token: &str) -> UserSummary {
+    let res = crate::auth::auth_router(state.clone())
+        .oneshot(get_with_bearer("/api/auth/me", token))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    body_json(res).await
+}
+
+#[tokio::test]
+async fn post_stats_exclusions_saves_filter_and_returns_it_on_me() {
+    let (app, state, pool) = fixture().await;
+    let user = auth_test_support::create_user(&pool, "reader").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+
+    let response = app
+        .clone()
+        .oneshot(post_json(
+            "/api/account/stats-exclusions",
+            &token,
+            serde_json::json!({ "clauses": [sports_clause()] }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let expected = ViewFilters {
+        clauses: vec![FilterClause::new(
+            FilterField::Tag,
+            FilterMode::Include,
+            &["Sports"],
+        )],
+    };
+    assert_eq!(me(&state, &token).await.stats_exclusions, expected);
+}
+
+#[tokio::test]
+async fn post_stats_exclusions_rejects_filter_over_clause_limit() {
+    let (app, state, pool) = fixture().await;
+    let user = auth_test_support::create_user(&pool, "reader").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+    let clauses = vec![sports_clause(); 17];
+
+    let response = app
+        .clone()
+        .oneshot(post_json(
+            "/api/account/stats-exclusions",
+            &token,
+            serde_json::json!({ "clauses": clauses }),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(
+        body_text(response).await,
+        "a filter may have at most 16 clauses"
+    );
+    assert!(me(&state, &token).await.stats_exclusions.is_empty());
+}
+
+#[tokio::test]
+async fn post_stats_exclusions_refreshes_cached_stats_after_save() {
+    let (app, _state, pool) = fixture().await;
+    let (book_id, uuid) = seed_book_with_uuid(&pool, "/lib", "Book A").await;
+    sqlx::query("INSERT INTO tags (name) VALUES ('Sports')")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO books_tags_link (book, tag) SELECT ?, id FROM tags")
+        .bind(book_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let user = auth_test_support::create_user(&pool, "reader").await;
+    let token = auth_test_support::bearer_token(&pool, user.id).await;
+    // Late-2023, so the all-time window holds it. The offset is this test's own
+    // cache key: the cache is process-wide and every fixture pool restarts user ids at 1.
+    sqlx::query(
+        "INSERT INTO reading_sessions (user_id, book_uuid, started_at, ended_at, seconds_read)
+         VALUES (?, ?, 1700000000, 1700000600, 600)",
+    )
+    .bind(user.id)
+    .bind(&uuid)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let stats_uri = "/api/stats?range=all_time&utc_offset_minutes=317";
+    let before: StatsSummary = body_json(
+        app.clone()
+            .oneshot(get_with_bearer(stats_uri, &token))
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(before.reading_seconds, 600);
+
+    let saved = app
+        .clone()
+        .oneshot(post_json(
+            "/api/account/stats-exclusions",
+            &token,
+            serde_json::json!({ "clauses": [sports_clause()] }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(saved.status(), StatusCode::OK);
+
+    // `/api/stats` refreshes on its own, so only the stored set proves the handler did.
+    let excluded: Vec<String> =
+        sqlx::query_scalar("SELECT book_uuid FROM stats_excluded_books WHERE user_id = ?")
+            .bind(user.id)
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(excluded, [uuid]);
+
+    let after: StatsSummary = body_json(
+        app.clone()
+            .oneshot(get_with_bearer(stats_uri, &token))
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(after.reading_seconds, 0);
+}
+
+// Invoked directly: a closed pool would fail the bearer extractor before the handler ran.
+#[tokio::test]
+async fn post_stats_exclusions_returns_500_when_the_db_is_unavailable() {
+    let (_app, state, pool) = fixture().await;
+    pool.close().await;
+    let user = AuthUser {
+        id: 1,
+        username: "reader".to_string(),
+        is_admin: false,
+        can_upload: false,
+        can_edit: false,
+        can_download: false,
+        kindle_email: None,
+        display_name: None,
+        has_avatar: false,
+        hidden_formats: Vec::new(),
+        book_detail_scroll_stops: false,
+        stack_series: false,
+        share_stats: true,
+        stats_exclusions: Default::default(),
+        session_id: 1,
+        session_kind: SessionKind::Bearer,
+        impersonator_id: None,
+        session_expires_at: i64::MAX,
+    };
+
+    let res = post_stats_exclusions(user, State(state), Json(ViewFilters::default())).await;
 
     assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
 }

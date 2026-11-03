@@ -325,3 +325,51 @@
     transition: none;
   }
 }
+.stats-excl-control {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem 0.75rem;
+  max-width: min(28rem, 100%);
+}
+.stats-excl-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--ink-1);
+}
+.stats-excl-chip {
+  padding: 2px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  background: var(--bg-2);
+  color: var(--ink-0);
+}
+/* A filter menu opens below the bar and may reach past the card, so no clipping. */
+.shelf-modal-card.stats-excl-dialog {
+  width: min(640px, 100%);
+  max-height: none;
+  overflow: visible;
+}
+.stats-excl-title {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--ink-0);
+}
+.stats-excl-preview {
+  min-height: 5rem;
+  max-height: 14rem;
+  overflow-y: auto;
+}
+.stats-excl-total {
+  margin: 0 0 0.4rem;
+  font-weight: 500;
+  color: var(--ink-0);
+}
+.stats-excl-lines {
+  margin: 0;
+  padding-left: 1.25rem;
+  font-size: 0.85rem;
+  color: var(--ink-1);
+}

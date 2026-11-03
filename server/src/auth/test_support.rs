@@ -57,6 +57,7 @@ async fn insert_user(pool: &SqlitePool, username: &str, is_admin: bool) -> User 
         book_detail_scroll_stops: false,
         stack_series: false,
         share_stats: true,
+        stats_exclusions: Default::default(),
     }
 }
 
@@ -100,6 +101,7 @@ pub async fn create_user_with_password(pool: &SqlitePool, username: &str, passwo
         book_detail_scroll_stops: false,
         stack_series: false,
         share_stats: true,
+        stats_exclusions: Default::default(),
     }
 }
 
@@ -153,6 +155,7 @@ pub fn fake_auth_user(id: i64, session_id: i64) -> AuthUser {
         book_detail_scroll_stops: false,
         stack_series: false,
         share_stats: true,
+        stats_exclusions: Default::default(),
         session_id,
         session_kind: SessionKind::Bearer,
         impersonator_id: None,
