@@ -5,5 +5,6 @@
 mod libraries;
 mod metadata_precedence;
 mod provider_keys;
+mod requests;
 mod roundtrip;
 mod smtp;
