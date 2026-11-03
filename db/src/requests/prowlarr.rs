@@ -35,6 +35,23 @@ pub struct IndexerStatus {
     pub disabled_till: Option<String>,
 }
 
+/// One search result as Prowlarr reported it. No `Debug`: `link` can carry an API key.
+#[derive(Clone)]
+pub struct ProwlarrRelease {
+    pub guid: String,
+    pub title: String,
+    pub size_bytes: Option<i64>,
+    /// Null for sources that have no seeders, such as Usenet.
+    pub seeders: Option<i64>,
+    pub indexer: Option<String>,
+    /// What the download client is handed to fetch the release. Server-side only.
+    pub link: String,
+    /// Newznab category ids; books are 7000 and up.
+    pub categories: Vec<i64>,
+    /// How many files the release holds, when Prowlarr says.
+    pub files: Option<i64>,
+}
+
 impl Prowlarr {
     /// A client for the instance at `base_url`, such as `http://prowlarr:9696`.
     pub fn new(base_url: &str, api_key: &str) -> Result<Self, ConnectionError> {

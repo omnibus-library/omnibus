@@ -14,6 +14,7 @@ use reqwest::StatusCode;
 pub mod clients;
 pub mod paths;
 pub mod prowlarr;
+pub mod rank;
 pub mod store;
 
 /// Why a call to Prowlarr or the download client failed. Every message is safe to show an
