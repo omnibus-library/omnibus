@@ -92,9 +92,9 @@ struct BookDetailView: View {
     /// The bookmark chosen in the sheet, opened from its `onDismiss`, for the
     /// same reason as `pickedAudioFile`.
     @State private var pickedBookmark: Bookmark?
-    /// Admin: the merge and delete sheets, and the receipt a landed merge
-    /// leaves behind — held until dismissed or undone, since the undo handle
-    /// it carries is only good while something keeps it.
+    /// The merge sheet (editors and admins), the delete sheet (admins), and the
+    /// receipt a landed merge leaves behind — held until dismissed or undone,
+    /// since the undo handle it carries is only good while something keeps it.
     @State private var showMerge = false
     @State private var showDelete = false
     @State private var mergeResult: MergeBooksResult?
@@ -539,7 +539,7 @@ struct BookDetailView: View {
 
     /// A native menu: its rows, thick separators and greyed states are the
     /// ones the design draws. Three groups — this book and you, what can be done
-    /// to its record, and the two admin writes.
+    /// to its record, and the library-wide writes (merge: editors, delete: admins).
     private func moreMenu(_ book: Book) -> some View {
         let rows = menuRows(book)
 

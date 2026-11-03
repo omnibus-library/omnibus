@@ -1,7 +1,7 @@
 import type { APIResponse } from "@playwright/test";
 import { BaseRequests } from "./BaseRequests";
 
-/** Book merges, which are library-wide state; needs an admin's context. */
+/** Book merges, which are library-wide state; needs an editor's or admin's context. */
 export class MergeRequests extends BaseRequests {
   /** Returns `{ merge_log_id }`, the handle `postUndo` takes. */
   postMerge(sourceUuid: string, targetUuid: string): Promise<APIResponse> {
