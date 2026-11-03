@@ -1,5 +1,5 @@
 use serde_json::json;
-use wiremock::matchers::{header, method, path};
+use wiremock::matchers::{header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use crate::test_support::closed_port_url;
@@ -144,6 +144,100 @@ mod prowlarr_indexer_status {
             },
         ];
         assert_eq!(statuses, expected);
+    }
+}
+
+mod prowlarr_search {
+    use super::*;
+
+    async fn mount_search(server: &MockServer, response: ResponseTemplate) {
+        Mock::given(method("GET"))
+            .and(path("/api/v1/search"))
+            .and(header("x-api-key", "indexer-key"))
+            .and(query_param("query", "Dracula Bram Stoker"))
+            .and(query_param("categories", "7020"))
+            .and(query_param("type", "search"))
+            .respond_with(response)
+            .mount(server)
+            .await;
+    }
+
+    #[tokio::test]
+    async fn asks_for_the_book_categories_and_reads_each_release() {
+        let server = MockServer::start().await;
+        let body = json!([
+            {"guid": "g1", "title": "Dracula epub", "size": 900000, "seeders": 12, "indexer": "Books",
+             "downloadUrl": "http://prowlarr/1/download?apikey=secret", "categories": [{"id": 7000}, {"id": 7020}], "files": 1},
+            {"guid": "g2", "title": "Dracula pdf", "magnetUrl": "magnet:?xt=urn:btih:abc"},
+        ]);
+        mount_search(&server, ResponseTemplate::new(200).set_body_json(body)).await;
+
+        let found = client_for(&server)
+            .search("Dracula Bram Stoker")
+            .await
+            .unwrap();
+
+        assert_eq!(found.len(), 2);
+        assert_eq!(found[0].title, "Dracula epub");
+        assert_eq!(found[0].size_bytes, Some(900_000));
+        assert_eq!(found[0].seeders, Some(12));
+        assert_eq!(found[0].indexer.as_deref(), Some("Books"));
+        assert_eq!(found[0].link, "http://prowlarr/1/download?apikey=secret");
+        assert_eq!(found[0].categories, [7000, 7020]);
+        assert_eq!(found[0].files, Some(1));
+        assert_eq!(found[1].link, "magnet:?xt=urn:btih:abc");
+    }
+
+    #[tokio::test]
+    async fn leaves_out_a_release_with_no_title_or_no_link() {
+        let server = MockServer::start().await;
+        let body = json!([
+            {"guid": "g1", "downloadUrl": "http://prowlarr/1/download"},
+            {"guid": "g2", "title": "No link"},
+            {"guid": "g3", "title": "Kept", "downloadUrl": "http://prowlarr/3/download"},
+        ]);
+        mount_search(&server, ResponseTemplate::new(200).set_body_json(body)).await;
+
+        let found = client_for(&server)
+            .search("Dracula Bram Stoker")
+            .await
+            .unwrap();
+
+        let titles: Vec<&str> = found.iter().map(|r| r.title.as_str()).collect();
+        assert_eq!(titles, ["Kept"]);
+    }
+
+    #[tokio::test]
+    async fn answers_rate_limited_on_a_429_and_makes_no_call_while_cooling_down() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v1/search"))
+            .respond_with(ResponseTemplate::new(429))
+            .mount(&server)
+            .await;
+        // Its own key: a cooldown is kept per address and key, and a later test can be
+        // handed this server's port.
+        let client = Prowlarr::new(&server.uri(), "key-that-gets-limited").unwrap();
+
+        let first = client.search("Dracula Bram Stoker").await.unwrap_err();
+        let second = client.search("Dracula Bram Stoker").await.unwrap_err();
+
+        assert!(matches!(first, ConnectionError::RateLimited));
+        assert!(matches!(second, ConnectionError::RateLimited));
+        assert_eq!(server.received_requests().await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn reports_a_401_as_a_bad_api_key() {
+        let server = MockServer::start().await;
+        mount_search(&server, ResponseTemplate::new(401)).await;
+
+        let err = client_for(&server)
+            .search("Dracula Bram Stoker")
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, ConnectionError::BadApiKey));
     }
 }
 

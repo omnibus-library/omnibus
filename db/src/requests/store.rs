@@ -6,8 +6,12 @@
 use omnibus_shared::{RequestKind, RequestState, RequestVersion, StuckReason};
 use sqlx::{sqlite::SqliteRow, Row, SqlitePool};
 
+use super::rank::Ranked;
+
 /// A request live for its reader: still searching, waiting on a pick, or picked.
 const LIVE_STATES: &str = "('looking', 'choose', 'chosen')";
+
+const NOW: &str = "strftime('%Y-%m-%dT%H:%M:%fZ', 'now')";
 
 const COLUMNS: &str = "id, book_uuid, user_id, kind, state, stuck_reason, stuck_detail, \
                        chosen_result_id, created_at, updated_at";
@@ -18,6 +22,9 @@ pub enum RequestError {
     /// The reader already has as many live requests as allowed.
     #[error("too many requests in progress")]
     TooManyLive,
+    /// The request is not in a state this change applies to.
+    #[error("the request is not in the right state")]
+    WrongState,
     #[error(transparent)]
     Db(#[from] sqlx::Error),
 }
@@ -43,6 +50,16 @@ pub struct Started {
     pub request: RequestRow,
     /// False when the reader already had a live request and it is returned unchanged.
     pub created: bool,
+}
+
+/// What a search came to.
+pub enum SearchOutcome {
+    /// Every result, kept and dropped, in rank order.
+    Found(Vec<Ranked>),
+    Stuck {
+        reason: StuckReason,
+        detail: Option<String>,
+    },
 }
 
 fn row_to_request(row: &SqliteRow) -> Result<RequestRow, sqlx::Error> {
@@ -172,6 +189,100 @@ pub async fn versions(
             })
         })
         .collect::<Result<Vec<_>, sqlx::Error>>()?)
+}
+
+/// Record how a search ended, but only for a request still `looking`: one that was
+/// restarted, picked or answered meanwhile keeps its state. False when nothing changed.
+pub async fn finish_search(
+    pool: &SqlitePool,
+    id: i64,
+    outcome: SearchOutcome,
+) -> Result<bool, RequestError> {
+    let (state, reason, detail) = match &outcome {
+        SearchOutcome::Found(_) => (RequestState::Choose, None, None),
+        SearchOutcome::Stuck { reason, detail } => (
+            RequestState::Stuck,
+            Some(reason.as_str()),
+            detail.as_deref(),
+        ),
+    };
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+    let moved = sqlx::query(&format!(
+        "UPDATE book_requests SET state = ?, stuck_reason = ?, stuck_detail = ?, updated_at = {NOW}
+         WHERE id = ? AND state = 'looking'"
+    ))
+    .bind(state.as_str())
+    .bind(reason)
+    .bind(detail)
+    .bind(id)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    if moved == 0 {
+        return Ok(false);
+    }
+    if let SearchOutcome::Found(ranked) = &outcome {
+        sqlx::query("DELETE FROM book_request_results WHERE request_id = ?")
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+        for r in ranked {
+            insert_result(&mut tx, id, r).await?;
+        }
+    }
+    tx.commit().await?;
+    Ok(true)
+}
+
+async fn insert_result(
+    tx: &mut sqlx::SqliteConnection,
+    request_id: i64,
+    ranked: &Ranked,
+) -> Result<(), sqlx::Error> {
+    let r = &ranked.release;
+    sqlx::query(
+        "INSERT INTO book_request_results
+         (request_id, guid, title, size_bytes, format, seeders, indexer, download_url, score, best_match, rejected)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(request_id)
+    .bind(&r.guid)
+    .bind(&r.title)
+    .bind(r.size_bytes)
+    .bind(&ranked.format)
+    .bind(r.seeders)
+    .bind(&r.indexer)
+    .bind(&r.link)
+    .bind(ranked.score)
+    .bind(ranked.best_match)
+    .bind(ranked.rejected)
+    .execute(tx)
+    .await?;
+    Ok(())
+}
+
+/// Send a `looking` or `stuck` request back to `looking` and forget what it found.
+/// [`RequestError::WrongState`] for one already waiting on a pick or picked.
+pub async fn restart(pool: &SqlitePool, id: i64) -> Result<(), RequestError> {
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+    let moved = sqlx::query(&format!(
+        "UPDATE book_requests
+         SET state = 'looking', stuck_reason = NULL, stuck_detail = NULL, updated_at = {NOW}
+         WHERE id = ? AND state IN ('looking', 'stuck')"
+    ))
+    .bind(id)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    if moved == 0 {
+        return Err(RequestError::WrongState);
+    }
+    sqlx::query("DELETE FROM book_request_results WHERE request_id = ?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(())
 }
 
 #[cfg(test)]

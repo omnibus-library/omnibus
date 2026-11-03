@@ -15,6 +15,7 @@ pub mod clients;
 pub mod paths;
 pub mod prowlarr;
 pub mod rank;
+pub mod search;
 pub mod store;
 
 /// Why a call to Prowlarr or the download client failed. Every message is safe to show an
@@ -33,6 +34,8 @@ pub enum ConnectionError {
     BadUrl(String),
     #[error("{0}")]
     Rejected(String),
+    #[error("Prowlarr is limiting searches for now")]
+    RateLimited,
 }
 
 impl ConnectionError {

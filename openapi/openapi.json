@@ -6376,6 +6376,55 @@
         }
       }
     },
+    "/api/requests/{id}/retry": {
+      "post": {
+        "tags": [
+          "Requests"
+        ],
+        "summary": "Try a request again",
+        "description": "Searches again for a request that is `stuck` or still `looking`, and puts it back to\n`looking`; poll `GET /api/requests/{id}` as after a start. It counts as a start toward\nthe rate limit. Only the reader who made the request, or an admin, can do this.",
+        "operationId": "retry_book_request",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The request's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The request is looking again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookRequest"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "You aren't signed in."
+          },
+          "403": {
+            "description": "Your account can't make requests, or the request is another reader's."
+          },
+          "404": {
+            "description": "Book requests are off on this server, or there is no such request."
+          },
+          "409": {
+            "description": "The request is past searching: it is waiting on a pick or was picked."
+          },
+          "429": {
+            "description": "You started too many requests lately."
+          }
+        }
+      }
+    },
     "/api/reviews/{uuid}": {
       "get": {
         "tags": [

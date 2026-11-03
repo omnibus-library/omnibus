@@ -360,6 +360,7 @@ fn request_routes() -> OpenApiRouter<AppState> {
             requests::get_book_requests
         ))
         .routes(routes!(requests::get_request))
+        .routes(routes!(requests::post_retry_request))
 }
 
 /// The admin connections for book requests; each answers 404 while the feature is off.

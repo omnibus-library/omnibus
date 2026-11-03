@@ -1,5 +1,6 @@
 use sqlx::SqlitePool;
 
+use super::super::prowlarr::ProwlarrRelease;
 use super::*;
 
 async fn pool() -> SqlitePool {
@@ -136,5 +137,162 @@ mod versions {
             .collect();
 
         assert_eq!(titles, ["high", "low"]);
+    }
+}
+
+fn ranked(title: &str, score: f64, best_match: bool, rejected: bool) -> Ranked {
+    Ranked {
+        release: ProwlarrRelease {
+            guid: title.to_string(),
+            title: title.to_string(),
+            size_bytes: Some(1_000_000),
+            seeders: Some(3),
+            indexer: Some("books".to_string()),
+            link: format!("magnet:?xt=urn:btih:{title}"),
+            categories: vec![7020],
+            files: None,
+        },
+        format: Some("EPUB".to_string()),
+        score,
+        best_match,
+        rejected,
+    }
+}
+
+async fn start_looking(pool: &SqlitePool) -> i64 {
+    let ada = seed_user(pool, "ada").await;
+    start(pool, ada, "book-1", RequestKind::Ebook, 5)
+        .await
+        .unwrap()
+        .request
+        .id
+}
+
+async fn state_of(pool: &SqlitePool, id: i64) -> RequestRow {
+    get(pool, id).await.unwrap().unwrap()
+}
+
+mod finish_search {
+    use super::*;
+
+    #[tokio::test]
+    async fn moves_a_looking_request_to_choose_with_its_versions_best_first() {
+        let pool = pool().await;
+        let id = start_looking(&pool).await;
+        let found = SearchOutcome::Found(vec![
+            ranked("best", 900.0, true, false),
+            ranked("second", 800.0, false, false),
+            ranked("dropped", 0.0, false, true),
+        ]);
+
+        let applied = finish_search(&pool, id, found).await.unwrap();
+
+        assert!(applied);
+        assert_eq!(state_of(&pool, id).await.state, RequestState::Choose);
+        let shown = versions(&pool, id).await.unwrap();
+        let titles: Vec<&str> = shown.iter().map(|v| v.title.as_str()).collect();
+        assert_eq!(titles, ["best", "second"]);
+        assert!(shown[0].best_match);
+        assert!(!shown[1].best_match);
+        let stored: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM book_request_results")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(stored, 3);
+    }
+
+    #[tokio::test]
+    async fn moves_a_looking_request_to_stuck_with_the_reason_and_detail() {
+        let pool = pool().await;
+        let id = start_looking(&pool).await;
+        let stuck = SearchOutcome::Stuck {
+            reason: StuckReason::NotFound,
+            detail: Some("indexer 3 disabled until later".to_string()),
+        };
+
+        finish_search(&pool, id, stuck).await.unwrap();
+
+        let row = state_of(&pool, id).await;
+        assert_eq!(row.state, RequestState::Stuck);
+        assert_eq!(row.stuck_reason, Some(StuckReason::NotFound));
+        assert_eq!(
+            row.stuck_detail.as_deref(),
+            Some("indexer 3 disabled until later")
+        );
+    }
+
+    #[tokio::test]
+    async fn changes_nothing_for_a_request_that_is_no_longer_looking() {
+        let pool = pool().await;
+        let id = start_looking(&pool).await;
+        sqlx::query("UPDATE book_requests SET state = 'chosen' WHERE id = ?")
+            .bind(id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let applied = finish_search(
+            &pool,
+            id,
+            SearchOutcome::Found(vec![ranked("late", 900.0, true, false)]),
+        )
+        .await
+        .unwrap();
+
+        assert!(!applied);
+        assert_eq!(state_of(&pool, id).await.state, RequestState::Chosen);
+        assert!(versions(&pool, id).await.unwrap().is_empty());
+    }
+}
+
+mod restart {
+    use super::*;
+
+    #[tokio::test]
+    async fn returns_a_stuck_request_to_looking_and_clears_what_it_found() {
+        let pool = pool().await;
+        let id = start_looking(&pool).await;
+        let stuck = SearchOutcome::Stuck {
+            reason: StuckReason::SearchFailed,
+            detail: Some("not set up yet".to_string()),
+        };
+        finish_search(&pool, id, stuck).await.unwrap();
+        seed_result(&pool, id, "old", 1.0, 0).await;
+
+        restart(&pool, id).await.unwrap();
+
+        let row = state_of(&pool, id).await;
+        assert_eq!(row.state, RequestState::Looking);
+        assert_eq!(row.stuck_reason, None);
+        assert_eq!(row.stuck_detail, None);
+        assert!(versions(&pool, id).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn restarts_a_request_still_looking() {
+        let pool = pool().await;
+        let id = start_looking(&pool).await;
+
+        restart(&pool, id).await.unwrap();
+
+        assert_eq!(state_of(&pool, id).await.state, RequestState::Looking);
+    }
+
+    #[tokio::test]
+    async fn refuses_a_request_waiting_on_a_pick_or_already_picked() {
+        let pool = pool().await;
+        let id = start_looking(&pool).await;
+        for state in ["choose", "chosen"] {
+            sqlx::query("UPDATE book_requests SET state = ? WHERE id = ?")
+                .bind(state)
+                .bind(id)
+                .execute(&pool)
+                .await
+                .unwrap();
+
+            let result = restart(&pool, id).await;
+
+            assert!(matches!(result, Err(RequestError::WrongState)), "{state}");
+        }
     }
 }

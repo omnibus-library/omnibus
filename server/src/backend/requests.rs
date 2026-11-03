@@ -16,7 +16,10 @@ use axum::{
 };
 use omnibus_db::{
     self as db,
-    requests::store::{self, RequestError, RequestRow},
+    requests::{
+        search::run_search,
+        store::{self, RequestError, RequestRow},
+    },
 };
 use omnibus_shared::{BookRequest, RequestKind, StartRequest};
 
@@ -102,6 +105,16 @@ async fn view(state: &AppState, row: RequestRow, is_admin: bool) -> Result<BookR
     })
 }
 
+/// Look for versions of the request's book in the background, once its row is committed.
+fn spawn_search(state: &AppState, id: i64) {
+    let pool = state.pool().clone();
+    tokio::spawn(async move {
+        if let Err(e) = run_search(&pool, id).await {
+            tracing::error!(error = %e, request = id, "request search failed to record");
+        }
+    });
+}
+
 fn too_many(what: &str) -> Response {
     (StatusCode::TOO_MANY_REQUESTS, what.to_string()).into_response()
 }
@@ -153,6 +166,7 @@ pub(super) async fn post_start_request(
         Err(e) => return internal("start request", e),
     };
     let status = if started.created {
+        spawn_search(&state, started.request.id);
         StatusCode::CREATED
     } else {
         StatusCode::OK
@@ -231,6 +245,61 @@ pub(super) async fn get_request(
         Err(e) => return internal("read request", e),
     };
     match view(&state, row, user.is_admin).await {
+        Ok(request) => Json(request).into_response(),
+        Err(res) => res,
+    }
+}
+
+/// Try a request again
+///
+/// Searches again for a request that is `stuck` or still `looking`, and puts it back to
+/// `looking`; poll `GET /api/requests/{id}` as after a start. It counts as a start toward
+/// the rate limit. Only the reader who made the request, or an admin, can do this.
+#[utoipa::path(
+    post,
+    path = "/api/requests/{id}/retry",
+    tag = "Requests",
+    operation_id = "retry_book_request",
+    params(("id" = i64, Path, description = "The request's id.")),
+    responses(
+        (status = 200, description = "The request is looking again.", body = BookRequest),
+        (status = 401, description = "You aren't signed in."),
+        (status = 403, description = "Your account can't make requests, or the request is another reader's."),
+        (status = 404, description = "Book requests are off on this server, or there is no such request."),
+        (status = 409, description = "The request is past searching: it is waiting on a pick or was picked."),
+        (status = 429, description = "You started too many requests lately."),
+    ),
+)]
+pub(super) async fn post_retry_request(
+    RequestsUser(user): RequestsUser,
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Response {
+    let row = match store::get(state.pool(), id).await {
+        Ok(Some(row)) => row,
+        Ok(None) => return (StatusCode::NOT_FOUND, "request not found").into_response(),
+        Err(e) => return internal("read request", e),
+    };
+    if row.user_id != user.id && !user.is_admin {
+        return (StatusCode::FORBIDDEN, "this isn't your request").into_response();
+    }
+    if !state.request_starts().allow(user.id) {
+        return too_many("you started too many requests; try again in a few minutes");
+    }
+    match store::restart(state.pool(), id).await {
+        Ok(()) => {}
+        Err(RequestError::WrongState) => {
+            return (StatusCode::CONFLICT, "this request can't be searched again").into_response();
+        }
+        Err(e) => return internal("restart request", e),
+    }
+    spawn_search(&state, id);
+    let restarted = match store::get(state.pool(), id).await {
+        Ok(Some(row)) => row,
+        Ok(None) => return (StatusCode::NOT_FOUND, "request not found").into_response(),
+        Err(e) => return internal("read request", e),
+    };
+    match view(&state, restarted, user.is_admin).await {
         Ok(request) => Json(request).into_response(),
         Err(res) => res,
     }
