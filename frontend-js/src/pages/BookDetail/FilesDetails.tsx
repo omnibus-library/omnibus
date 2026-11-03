@@ -6,6 +6,7 @@ import { FormatSwitcher } from "../../components/FormatSwitcher/FormatSwitcher";
 import { ImmersiveGlyph, PencilGlyph } from "../../components/Glyphs/Glyphs";
 import { usePlayback } from "../../playback/PlaybackProvider";
 import { useCurrentUser } from "../../session";
+import { useStartRequest } from "../BookRequest/useStartRequest";
 import type { BookDialog } from "./BookDialogs";
 import { ExportMenu } from "./ExportMenu";
 import { type DetailRow, detailRows } from "./identifiers";
@@ -114,6 +115,25 @@ function SyncRow({ book }: { book: BookDetail }) {
   );
 }
 
+/** The ebook the library lacks, with a button to request it. */
+function EbookSlot({ book }: { book: BookDetail }) {
+  const start = useStartRequest(book.uuid);
+  return (
+    <div className="bp-slot" data-testid="files-ebook-slot">
+      <span className="bp-slot-format">Ebook</span>
+      <span className="bp-slot-note">Not in the library</span>
+      <Button
+        size="sm"
+        data-testid="files-request-ebook"
+        disabled={start.isPending}
+        onClick={() => start.mutate()}
+      >
+        Request
+      </Button>
+    </div>
+  );
+}
+
 /** The book's files with what to do with them, the physical copies, its details, and the curator's actions. */
 export function FilesDetails({
   book,
@@ -123,26 +143,30 @@ export function FilesDetails({
   onOpenDialog: (dialog: BookDialog) => void;
 }) {
   const hasFiles = book.formats.length > 0;
+  const canRequestEbook = useCurrentUser().canRequest && !book.hasEbook;
   return (
     <div className="bp-files-tab">
       <div className="bp-file-column">
-        {hasFiles && (
+        {(hasFiles || canRequestEbook) && (
           <section aria-labelledby="bp-files-title">
             <div className="bp-section-head">
               <h2 id="bp-files-title">Files</h2>
             </div>
             <div className="bp-panel bp-files">
-              <FormatSwitcher
-                uuid={book.uuid}
-                formats={book.formats}
-                files={book.bookFiles}
-                epubSizeBytes={book.epubSizeBytes}
-              />
+              {hasFiles && (
+                <FormatSwitcher
+                  uuid={book.uuid}
+                  formats={book.formats}
+                  files={book.bookFiles}
+                  epubSizeBytes={book.epubSizeBytes}
+                />
+              )}
               {/* Every item sends or downloads a file; a comic-only record has none to offer. */}
               {(book.hasEbook || book.hasAudio || book.hasPdf) && (
                 <ExportMenu book={book} />
               )}
               {book.hasEbook && book.hasAudio && <SyncRow book={book} />}
+              {canRequestEbook && <EbookSlot book={book} />}
             </div>
           </section>
         )}

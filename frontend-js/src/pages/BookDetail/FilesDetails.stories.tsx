@@ -6,20 +6,24 @@ import {
   getGetAlignmentMockHandler200,
   getGetProgressMockHandler200,
 } from "../../api/generated/omnibus.msw";
+import { ToastProvider } from "../../components/Toast/Toast";
 import { nowSecs } from "../../format";
 import {
   failing,
   followHandlers,
   physicalHandlers,
 } from "../../testing/handlers";
+import { requestFake } from "../../testing/requestHandlers";
 import {
   aWireAlignment,
+  aWireAudiobook,
   aWireBook,
   aWireCopy,
   aWireFile,
   aWirePosition,
   aWireProgress,
   aWireWishlist,
+  WIRE_ADA,
 } from "../../testing/wire";
 import { FilesDetails } from "./FilesDetails";
 import "./BookDetail.css";
@@ -42,19 +46,25 @@ function aBook(overrides: Parameters<typeof aWireBook>[0] = {}) {
   );
 }
 
+/** The request routes in use by the story that is running. */
+let requests = requestFake();
+
 const meta = {
   title: "Pages/BookDetail/FilesDetails",
   component: FilesDetails,
   args: { book: aBook(), onOpenDialog: fn() },
   decorators: [
     (Story) => (
-      <div className="bp-root">
-        <Story />
-      </div>
+      <ToastProvider>
+        <div className="bp-root">
+          <Story />
+        </div>
+      </ToastProvider>
     ),
   ],
   beforeEach({ msw }) {
-    msw.use(...physicalHandlers({}));
+    requests = requestFake();
+    msw.use(...requests.handlers, ...physicalHandlers({}));
   },
 } satisfies Meta<typeof FilesDetails>;
 
@@ -151,7 +161,14 @@ export const SavedIsbnReplacesTheFilesOwn: Story = {
   },
 };
 
+const READER_WITHOUT_REQUESTS = {
+  ...WIRE_ADA,
+  is_admin: false,
+  can_request: false,
+};
+
 export const Fileless: Story = {
+  parameters: { user: READER_WITHOUT_REQUESTS },
   args: { book: aBook({ formats: [], book_files: [] }) },
   play: async ({ canvas }) => {
     await expect(
@@ -161,6 +178,76 @@ export const Fileless: Story = {
       canvas.queryByRole("heading", { name: "Files" }),
     ).not.toBeInTheDocument();
     await expect(canvas.getByTestId("details-list")).toBeInTheDocument();
+  },
+};
+
+export const FilelessOffersTheEbookToARequester: Story = {
+  args: { book: aBook({ formats: [], book_files: [] }) },
+  play: async ({ canvas }) => {
+    await expect(
+      canvas.getByRole("heading", { name: "Files" }),
+    ).toBeInTheDocument();
+    await expect(
+      canvas.queryByRole("group", { name: "Available formats" }),
+    ).not.toBeInTheDocument();
+    await expect(canvas.getByTestId("files-ebook-slot")).toHaveTextContent(
+      "EbookNot in the libraryRequest",
+    );
+  },
+};
+
+export const AnAudiobookOnlyBookOffersTheEbookBesideItsFiles: Story = {
+  args: {
+    book: toBookDetail(aWireAudiobook({ unique_identifier: UUID })),
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("format-row-m4b");
+
+    await expect(canvas.getByTestId("files-ebook-slot")).toBeInTheDocument();
+  },
+};
+
+export const NoEbookSlotWhenTheBookHasAnEbook: Story = {
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("format-row-epub");
+
+    await expect(canvas.queryByTestId("files-ebook-slot")).toBeNull();
+  },
+};
+
+export const NoEbookSlotForAReaderWithoutThePermission: Story = {
+  parameters: { user: READER_WITHOUT_REQUESTS },
+  args: { book: toBookDetail(aWireAudiobook({ unique_identifier: UUID })) },
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("format-row-m4b");
+
+    await expect(canvas.queryByTestId("files-ebook-slot")).toBeNull();
+  },
+};
+
+export const RequestStartsAnEbookRequestForTheBook: Story = {
+  args: { book: aBook({ formats: [], book_files: [] }) },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(canvas.getByTestId("files-request-ebook"));
+
+    await waitFor(() =>
+      expect(requests.writes).toEqual([{ kind: "start", uuid: UUID }]),
+    );
+  },
+};
+
+export const ARefusedRequestSaysWhy: Story = {
+  args: { book: aBook({ formats: [], book_files: [] }) },
+  beforeEach({ msw }) {
+    msw.use(failing("post", "/api/books/:uuid/requests", 403));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(canvas.getByTestId("files-request-ebook"));
+
+    await expect(
+      await canvas.findByText("Your account can’t make requests."),
+    ).toBeInTheDocument();
+    await expect(canvas.getByTestId("files-request-ebook")).toBeEnabled();
   },
 };
 

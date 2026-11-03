@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useId, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router";
 import {
   addToWishlist,
@@ -11,10 +11,12 @@ import {
 import { Button } from "../../components/Button/Button";
 import { Cover } from "../../components/Cover/Cover";
 import { ChevronDownGlyph } from "../../components/Glyphs/Glyphs";
+import { MoreMenu } from "../../components/MoreMenu/MoreMenu";
 import { Sheet } from "../../components/Sheet/Sheet";
 import { useToast } from "../../components/Toast/Toast";
 import { findCopyUrl } from "../../findCopy";
 import { useCurrentUser } from "../../session";
+import { useStartRequest } from "../BookRequest/useStartRequest";
 import { refreshAfterWrite } from "./refresh";
 import {
   addedLabel,
@@ -25,8 +27,6 @@ import {
   type Scope,
   wantedByNames,
 } from "./wishlistView";
-
-const REQUEST_REASON = "Requests aren't available yet";
 
 const REQUEST_LABEL = {
   ebook: "Request ebook",
@@ -59,6 +59,8 @@ function Holdings({ holdings }: Pick<WishlistBook, "holdings">) {
   );
 }
 
+type StartRequest = ReturnType<typeof useStartRequest>;
+
 /** Takes the book off your list and offers Undo, unless the book went with its last entry. */
 function useRemove(book: WishlistBook) {
   const client = useQueryClient();
@@ -89,32 +91,44 @@ function useRemove(book: WishlistBook) {
 const messageOf = (error: unknown) =>
   error instanceof Error ? error.message : "Something went wrong.";
 
-/** Request ▾ is on show but not on offer: it stays focusable, says why, and does nothing. */
-function RequestButton() {
-  const reason = useId();
-  // Without a pointer to hover with, a tap is what shows why it can't be used.
-  const [tapped, setTapped] = useState(false);
+/** Request ▾: what can be asked for. An ebook starts a request and opens it; an audiobook can't be asked for yet. */
+function RequestMenu({
+  book,
+  kinds,
+  start,
+}: {
+  book: WishlistBook;
+  kinds: RequestKind[];
+  start: StartRequest;
+}) {
+  const [open, setOpen] = useState(false);
   return (
     <span className="wl-request-wrap">
       <button
         type="button"
         className="btn sm wl-act wl-request"
         data-testid="wishlists-request"
-        aria-disabled="true"
-        aria-describedby={reason}
-        onClick={() => setTapped(!tapped)}
-        onBlur={() => setTapped(false)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        disabled={start.isPending}
+        onClick={() => setOpen(!open)}
       >
         Request
         <ChevronDownGlyph size={10} />
       </button>
-      <span
-        role="tooltip"
-        id={reason}
-        className={tapped ? "wl-tip is-shown" : "wl-tip"}
-      >
-        {REQUEST_REASON}
-      </span>
+      {open && (
+        <MoreMenu
+          label={`Request ${book.title}`}
+          onClose={() => setOpen(false)}
+          items={kinds.map((kind) => ({
+            label: REQUEST_LABEL[kind],
+            testId: `wishlists-request-${kind}`,
+            disabled: kind === "audiobook",
+            note: kind === "audiobook" ? "Not available yet" : undefined,
+            onSelect: () => start.mutate(),
+          }))}
+        />
+      )}
     </span>
   );
 }
@@ -123,10 +137,12 @@ function RequestButton() {
 function RowActions({
   book,
   kinds,
+  start,
   remove,
 }: {
   book: WishlistBook;
   kinds: RequestKind[];
+  start: StartRequest;
   remove: ReturnType<typeof useRemove> | null;
 }) {
   return (
@@ -140,7 +156,9 @@ function RowActions({
       >
         Find a Copy
       </a>
-      {kinds.length > 0 && <RequestButton />}
+      {kinds.length > 0 && (
+        <RequestMenu book={book} kinds={kinds} start={start} />
+      )}
       {remove && (
         <Button
           variant="ghost"
@@ -159,10 +177,11 @@ function RowActions({
 
 type SheetState = "closed" | "open" | "closing";
 
-/** The phone's Get menu for one book: where to find it, what can't be requested yet, and, on your own list, Remove. */
+/** The phone's Get menu for one book: where to find it, what can be requested, and, on your own list, Remove. */
 function GetSheet({
   book,
   kinds,
+  start,
   remove,
   detail,
   line,
@@ -172,6 +191,7 @@ function GetSheet({
 }: {
   book: WishlistBook;
   kinds: RequestKind[];
+  start: StartRequest;
   remove: ReturnType<typeof useRemove> | null;
   detail: string;
   line: string;
@@ -218,9 +238,21 @@ function GetSheet({
           </li>
           {kinds.map((kind) => (
             <li key={kind}>
-              <button type="button" className="wl-sheet-item" disabled>
+              <button
+                type="button"
+                className="wl-sheet-item"
+                disabled={kind === "audiobook" || start.isPending}
+                onClick={() => {
+                  start.mutate();
+                  onDismiss();
+                }}
+              >
                 <span>{REQUEST_LABEL[kind]}</span>
-                <span className="wl-sheet-sub">Not available yet</span>
+                <span className="wl-sheet-sub">
+                  {kind === "audiobook"
+                    ? "Not available yet"
+                    : "Start looking for a version"}
+                </span>
               </button>
             </li>
           ))}
@@ -267,6 +299,7 @@ export function WishlistRow({
   const wanted = scope.kind === "everyone";
   const user = useCurrentUser();
   const kinds = user.canRequest ? requestable(book.holdings) : [];
+  const start = useStartRequest(book.uuid);
   const removeBook = useRemove(book);
   // Only your own list can be edited.
   const remove = scope.kind === "you" ? removeBook : null;
@@ -293,7 +326,7 @@ export function WishlistRow({
         </span>
         {wanted ? names : added}
       </p>
-      <RowActions book={book} kinds={kinds} remove={remove} />
+      <RowActions book={book} kinds={kinds} start={start} remove={remove} />
       <button
         type="button"
         className="btn sm wl-get"
@@ -308,6 +341,7 @@ export function WishlistRow({
         <GetSheet
           book={book}
           kinds={kinds}
+          start={start}
           remove={remove}
           detail={detail}
           line={`${byline({ authors: book.authors, series: null })} · ${
