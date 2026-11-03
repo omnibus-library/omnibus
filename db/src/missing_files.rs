@@ -24,7 +24,7 @@ pub enum MissingFilesError {
 
 /// Hard-delete books whose files have been missing longer than `retention_days`,
 /// plus their regenerable `metadata_overrides` row and cover files. Exempt: books
-/// with user data (a soft-ref row, physical copy, wishlist entry, hand-picked
+/// with user data (a soft-ref row, physical copy, wishlist entry, request, hand-picked
 /// shelf membership), intentionally fileless ones (`is_missing_files_override`),
 /// and ones anchoring a cross-format attachment (`merged_uuids`). Returns the count.
 pub async fn gc_books_missing_files(
@@ -43,6 +43,7 @@ pub async fn gc_books_missing_files(
             AND NOT EXISTS (SELECT 1 FROM physical_copies   pc WHERE pc.book_uuid = b.uuid)
             AND NOT EXISTS (SELECT 1 FROM merged_uuids      m  WHERE m.book_id  = b.id)
             AND NOT EXISTS (SELECT 1 FROM wishlist_entries     WHERE book_uuid = b.uuid)
+            AND NOT EXISTS (SELECT 1 FROM book_requests        WHERE book_uuid = b.uuid)
             AND NOT EXISTS (SELECT 1 FROM shelf_books          WHERE book_uuid = b.uuid)
             AND NOT EXISTS (SELECT 1 FROM reading_progress     WHERE book_uuid = b.uuid)
             AND NOT EXISTS (SELECT 1 FROM bookmarks            WHERE book_uuid = b.uuid)

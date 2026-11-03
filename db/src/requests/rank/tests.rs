@@ -65,6 +65,22 @@ mod drop_rules {
     }
 
     #[test]
+    fn drops_a_release_whose_seeder_count_is_negative() {
+        let mut odd = release("Dracula - Bram Stoker EPUB");
+        odd.seeders = Some(-2);
+
+        assert!(is_dropped(odd));
+    }
+
+    #[test]
+    fn keeps_a_release_that_reports_no_seeders_at_all() {
+        let mut usenet = release("Dracula - Bram Stoker EPUB");
+        usenet.seeders = None;
+
+        assert!(!is_dropped(usenet));
+    }
+
+    #[test]
     fn drops_a_release_below_fifty_kilobytes_but_keeps_one_at_exactly_that_size() {
         let mut tiny = release("Dracula - Bram Stoker EPUB");
         tiny.size_bytes = Some(50 * 1024 - 1);

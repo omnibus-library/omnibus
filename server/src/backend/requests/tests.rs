@@ -44,32 +44,19 @@ async fn seed_request(pool: &SqlitePool, user: i64, book_uuid: &str) -> i64 {
 
 /// A book in the library by `author`: its uuid.
 async fn seed_book_by(pool: &SqlitePool, title: &str, author: &str) -> String {
-    let metadata = omnibus_shared::EbookMetadata {
-        filename: format!("{title}.epub").to_lowercase(),
-        title: Some(title.to_string()),
-        creators: vec![omnibus_shared::Contributor {
-            name: author.to_string(),
-            role: Some("aut".to_string()),
-            file_as: None,
-            id: None,
-        }],
-        ..Default::default()
-    };
-    let book = omnibus_db::ebook::IndexedBook {
-        metadata,
-        cover: None,
-        mtime_epoch: 0,
-        size_bytes: 0,
-        word_count: None,
-    };
-    omnibus_db::replace_books(pool, "/lib", vec![book])
-        .await
-        .unwrap();
-    sqlx::query_scalar("SELECT uuid FROM books WHERE title = ?")
-        .bind(title)
-        .fetch_one(pool)
-        .await
-        .unwrap()
+    omnibus_db::create_fileless_book(
+        pool,
+        omnibus_db::FilelessBook {
+            title: title.to_string(),
+            authors: vec![author.to_string()],
+            isbn: None,
+            pubdate: None,
+            description: None,
+            cover: None,
+        },
+    )
+    .await
+    .unwrap()
 }
 
 /// A Prowlarr that answers every search for Dracula with one good ebook, behind the key `k`.
@@ -126,15 +113,20 @@ fn start_uri(uuid: &str) -> String {
 mod flag_and_permission_gate {
     use super::*;
 
-    fn routes() -> [(&'static str, String, Option<Value>); 5] {
+    fn writes() -> [(&'static str, String, Option<Value>); 3] {
         [
+            ("POST", start_uri("any"), Some(json!({"kind": "ebook"}))),
+            ("POST", "/api/requests/1/retry".to_string(), None),
             (
                 "POST",
                 "/api/requests/1/choose".to_string(),
                 Some(json!({"result_id": 1})),
             ),
-            ("POST", "/api/requests/1/retry".to_string(), None),
-            ("POST", start_uri("any"), Some(json!({"kind": "ebook"}))),
+        ]
+    }
+
+    fn reads() -> [(&'static str, String, Option<Value>); 2] {
+        [
             ("GET", start_uri("any"), None),
             ("GET", "/api/requests/1".to_string(), None),
         ]
@@ -145,7 +137,7 @@ mod flag_and_permission_gate {
         let (app, _, pool) = fixture_book_requests(false).await;
         let admin = admin_token(&pool).await;
 
-        for (method, uri, body) in routes() {
+        for (method, uri, body) in writes().into_iter().chain(reads()) {
             for token in [None, Some(admin.as_str())] {
                 let res = send(&app, method, &uri, token, body.clone()).await;
                 assert_eq!(res.status(), StatusCode::NOT_FOUND, "{method} {uri}");
@@ -154,27 +146,59 @@ mod flag_and_permission_gate {
     }
 
     #[tokio::test]
-    async fn answers_401_to_anonymous_and_403_to_a_reader_without_the_permission() {
-        let (app, _, pool) = fixture_book_requests(true).await;
-        let (_, plain) = reader(&pool, "plain").await;
+    async fn answers_401_to_anonymous_on_every_route_when_on() {
+        let (app, _, _) = fixture_book_requests(true).await;
 
-        for (method, uri, body) in routes() {
-            let anonymous = send(&app, method, &uri, None, body.clone()).await;
-            assert_eq!(anonymous.status(), StatusCode::UNAUTHORIZED, "{uri}");
-            let plain = send(&app, method, &uri, Some(&plain), body).await;
-            assert_eq!(plain.status(), StatusCode::FORBIDDEN, "{uri}");
+        for (method, uri, body) in writes().into_iter().chain(reads()) {
+            let res = send(&app, method, &uri, None, body).await;
+            assert_eq!(res.status(), StatusCode::UNAUTHORIZED, "{uri}");
         }
     }
 
     #[tokio::test]
-    async fn lets_an_admin_and_a_granted_reader_through_when_on() {
+    async fn answers_403_to_a_reader_without_the_permission_on_the_writes() {
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let (_, plain) = reader(&pool, "plain").await;
+
+        for (method, uri, body) in writes() {
+            let res = send(&app, method, &uri, Some(&plain), body).await;
+            assert_eq!(res.status(), StatusCode::FORBIDDEN, "{uri}");
+        }
+    }
+
+    #[tokio::test]
+    async fn lets_a_reader_without_the_permission_read_a_book_s_requests_and_one_request() {
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let (ada, _) = requester(&pool, "ada").await;
+        let (_, plain) = reader(&pool, "plain").await;
+        let uuid = seed_book(&pool, "Dracula").await;
+        let id = seed_request(&pool, ada, &uuid).await;
+
+        let list = send(&app, "GET", &start_uri(&uuid), Some(&plain), None).await;
+        let one = send(
+            &app,
+            "GET",
+            &format!("/api/requests/{id}"),
+            Some(&plain),
+            None,
+        )
+        .await;
+
+        assert_eq!(list.status(), StatusCode::OK);
+        assert_eq!(one.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn lets_an_admin_and_a_granted_reader_start_a_request_when_on() {
         let (app, _, pool) = fixture_book_requests(true).await;
         let admin = admin_token(&pool).await;
         let (_, granted) = requester(&pool, "granted").await;
+        let uuid = seed_book(&pool, "Dracula").await;
 
         for token in [admin, granted] {
-            let res = send(&app, "GET", &start_uri("any"), Some(&token), None).await;
-            assert_eq!(res.status(), StatusCode::OK);
+            let body = Some(json!({"kind": "ebook"}));
+            let res = send(&app, "POST", &start_uri(&uuid), Some(&token), body).await;
+            assert!(res.status().is_success());
         }
     }
 }
@@ -291,18 +315,52 @@ mod post_start_request {
     }
 
     #[tokio::test]
-    async fn answers_429_to_the_eleventh_start_in_ten_minutes() {
-        let (app, _, pool) = fixture_book_requests(true).await;
-        let (_, token) = requester(&pool, "ada").await;
+    async fn answers_429_once_the_reader_has_recorded_ten_starts_in_ten_minutes() {
+        let (app, state, pool) = fixture_book_requests(true).await;
+        let (ada, token) = requester(&pool, "ada").await;
         let uuid = seed_book(&pool, "Dracula").await;
         for _ in 0..10 {
-            let res = start(&app, &uuid, &token, "ebook").await;
-            assert!(res.status().is_success());
+            state.request_starts().record(ada);
         }
 
         let res = start(&app, &uuid, &token, "ebook").await;
 
         assert_eq!(res.status(), StatusCode::TOO_MANY_REQUESTS);
+    }
+
+    #[tokio::test]
+    async fn charges_the_start_cap_only_for_a_request_it_creates() {
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let (ada, token) = requester(&pool, "ada").await;
+        let uuid = seed_book(&pool, "Dracula").await;
+        let other = seed_book(&pool, "Carmilla").await;
+        // Seeded straight into the table, so no search runs and ends it before the starts below.
+        seed_request(&pool, ada, &uuid).await;
+        for _ in 0..11 {
+            let again = start(&app, &uuid, &token, "ebook").await;
+            assert_eq!(again.status(), StatusCode::OK);
+        }
+
+        let second_book = start(&app, &other, &token, "ebook").await;
+
+        assert_eq!(second_book.status(), StatusCode::CREATED);
+        let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM book_requests")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(rows, 2);
+    }
+
+    #[tokio::test]
+    async fn answers_500_when_the_database_fails() {
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let (_, token) = requester(&pool, "ada").await;
+        let uuid = seed_book(&pool, "Dracula").await;
+        pool.close().await;
+
+        let res = start(&app, &uuid, &token, "ebook").await;
+
+        assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
     }
 }
 
@@ -310,15 +368,16 @@ mod start_log {
     use super::*;
 
     #[test]
-    fn admits_ten_starts_then_refuses_until_the_window_passes() {
+    fn has_no_room_after_ten_recorded_starts_until_the_window_passes() {
         let log = StartLog::default();
         let now = Instant::now();
         for _ in 0..10 {
-            assert!(log.allow_at(1, now));
+            assert!(log.has_room_at(1, now));
+            log.record_at(1, now);
         }
 
-        assert!(!log.allow_at(1, now + Duration::from_secs(599)));
-        assert!(log.allow_at(1, now + Duration::from_secs(600)));
+        assert!(!log.has_room_at(1, now + Duration::from_secs(599)));
+        assert!(log.has_room_at(1, now + Duration::from_secs(600)));
     }
 
     #[test]
@@ -326,10 +385,10 @@ mod start_log {
         let log = StartLog::default();
         let now = Instant::now();
         for _ in 0..10 {
-            log.allow_at(1, now);
+            log.record_at(1, now);
         }
 
-        assert!(log.allow_at(2, now));
+        assert!(log.has_room_at(2, now));
     }
 }
 
@@ -597,6 +656,21 @@ mod post_retry_request {
     }
 
     #[tokio::test]
+    async fn charges_nothing_to_the_start_cap_when_the_request_cannot_be_retried() {
+        let (app, state, pool) = fixture_book_requests(true).await;
+        let (ada, token) = requester(&pool, "ada").await;
+        let uuid = seed_book(&pool, "Dracula").await;
+        let id = seed_request(&pool, ada, &uuid).await;
+        set_state(&pool, id, "choose").await;
+        for _ in 0..12 {
+            let res = send(&app, "POST", &retry_uri(id), Some(&token), None).await;
+            assert_eq!(res.status(), StatusCode::CONFLICT);
+        }
+
+        assert!(state.request_starts().has_room(ada));
+    }
+
+    #[tokio::test]
     async fn answers_404_for_an_unknown_request() {
         let (app, _, pool) = fixture_book_requests(true).await;
         let (_, token) = requester(&pool, "ada").await;
@@ -614,7 +688,7 @@ mod post_retry_request {
         let id = seed_request(&pool, ada, &uuid).await;
         set_state(&pool, id, "stuck").await;
         for _ in 0..10 {
-            assert!(state.request_starts().allow(ada));
+            state.request_starts().record(ada);
         }
 
         let res = send(&app, "POST", &retry_uri(id), Some(&token), None).await;

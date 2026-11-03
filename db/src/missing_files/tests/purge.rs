@@ -75,6 +75,28 @@ async fn gc_keeps_book_with_merged_uuid_attachment() {
 }
 
 #[tokio::test]
+async fn gc_keeps_a_ghosted_book_that_has_a_request() {
+    let _covers = CoversTempDir::new("gc_request");
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let uuid = seed_and_make_missing(&pool, "requested.epub").await;
+    backdate_missing_since(&pool, &uuid, 40).await;
+    let reader = crate::test_support::seed_user(&pool, "ada").await;
+    crate::requests::store::start(&pool, reader, &uuid, omnibus_shared::RequestKind::Ebook, 5)
+        .await
+        .unwrap();
+
+    let purged = gc_books_missing_files(&pool, MISSING_FILES_RETENTION_DAYS)
+        .await
+        .unwrap();
+
+    assert_eq!(purged, 0);
+    assert!(
+        book_exists(&pool, &uuid).await,
+        "a book someone requested is kept"
+    );
+}
+
+#[tokio::test]
 async fn gc_keeps_book_with_missing_files_override_set() {
     let _covers = CoversTempDir::new("gc_override_exempt");
     let pool = init_db("sqlite::memory:").await.unwrap();
@@ -195,6 +217,7 @@ async fn user_data_book_uuid_probes_use_the_book_uuid_first_index() {
         ("listening_sessions", "idx_listening_sessions_book_uuid"),
         ("annotations", "idx_annotations_book_uuid"),
         ("wishlist_entries", "idx_wishlist_book"),
+        ("book_requests", "idx_book_requests_book"),
         ("shelf_books", "idx_shelf_books_book_uuid"),
     ];
     for (table, index) in cases {

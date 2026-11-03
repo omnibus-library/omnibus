@@ -1,18 +1,12 @@
 use sqlx::SqlitePool;
 
+use crate::test_support::seed_user;
+
 use super::super::prowlarr::ProwlarrRelease;
 use super::*;
 
 async fn pool() -> SqlitePool {
     crate::pool::init_db("sqlite::memory:").await.unwrap()
-}
-
-async fn seed_user(pool: &SqlitePool, username: &str) -> i64 {
-    sqlx::query_scalar("INSERT INTO users (username, password_hash) VALUES (?, 'x') RETURNING id")
-        .bind(username)
-        .fetch_one(pool)
-        .await
-        .unwrap()
 }
 
 async fn request_count(pool: &SqlitePool) -> i64 {
@@ -185,9 +179,8 @@ mod finish_search {
             ranked("dropped", 0.0, false, true),
         ]);
 
-        let applied = finish_search(&pool, id, found).await.unwrap();
+        finish_search(&pool, id, found).await.unwrap();
 
-        assert!(applied);
         assert_eq!(state_of(&pool, id).await.state, RequestState::Choose);
         let shown = versions(&pool, id).await.unwrap();
         let titles: Vec<&str> = shown.iter().map(|v| v.title.as_str()).collect();
@@ -231,7 +224,7 @@ mod finish_search {
             .await
             .unwrap();
 
-        let applied = finish_search(
+        finish_search(
             &pool,
             id,
             SearchOutcome::Found(vec![ranked("late", 900.0, true, false)]),
@@ -239,7 +232,6 @@ mod finish_search {
         .await
         .unwrap();
 
-        assert!(!applied);
         assert_eq!(state_of(&pool, id).await.state, RequestState::Chosen);
         assert!(versions(&pool, id).await.unwrap().is_empty());
     }
@@ -370,5 +362,20 @@ mod choose {
         let again = choose(&pool, id, kept).await;
 
         assert!(matches!(again, Err(RequestError::WrongState)));
+    }
+}
+
+mod database_failure {
+    use super::*;
+
+    #[tokio::test]
+    async fn start_propagates_a_db_error_when_the_pool_is_closed() {
+        let pool = pool().await;
+        let ada = seed_user(&pool, "ada").await;
+        pool.close().await;
+
+        let result = start(&pool, ada, "book-1", RequestKind::Ebook, 5).await;
+
+        assert!(matches!(result, Err(RequestError::Db(_))));
     }
 }

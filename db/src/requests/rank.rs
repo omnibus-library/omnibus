@@ -136,7 +136,7 @@ fn assess(release: ProwlarrRelease, title: &str, author_tokens: &[String]) -> Ra
         .categories
         .iter()
         .any(|c| BOOK_CATEGORIES.contains(c))
-        || release.seeders == Some(0)
+        || release.seeders.is_some_and(|s| s < 1)
         || release
             .size_bytes
             .is_some_and(|s| !(MIN_SIZE_BYTES..=MAX_SIZE_BYTES).contains(&s))

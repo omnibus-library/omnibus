@@ -3279,7 +3279,7 @@
           "Requests"
         ],
         "summary": "List a book's requests",
-        "description": "Every request made for the book, newest first, whoever made it. A book nobody has\nrequested has an empty list.",
+        "description": "Every request made for the book, newest first, whoever made it, without their versions:\nread one request for those. A book nobody has requested has an empty list. Any signed-in\nreader may read it.",
         "operationId": "list_book_requests",
         "parameters": [
           {
@@ -3294,7 +3294,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The book's requests.",
+            "description": "The book's requests, each with an empty `versions`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3308,9 +3308,6 @@
           },
           "401": {
             "description": "You aren't signed in."
-          },
-          "403": {
-            "description": "Your account can't make requests."
           },
           "404": {
             "description": "Book requests are off on this server."
@@ -6339,7 +6336,7 @@
           "Requests"
         ],
         "summary": "Get a request",
-        "description": "One request and the versions found so far. Any reader who can make requests may read any\nrequest. Only an admin is sent `stuck_detail`.",
+        "description": "One request and the versions found so far. Any signed-in reader may read any request.\nOnly an admin is sent `stuck_detail`.",
         "operationId": "get_book_request",
         "parameters": [
           {
@@ -6366,9 +6363,6 @@
           },
           "401": {
             "description": "You aren't signed in."
-          },
-          "403": {
-            "description": "Your account can't make requests."
           },
           "404": {
             "description": "Book requests are off on this server, or there is no such request."
@@ -10457,8 +10451,9 @@
             "description": "The picked version's id once `state` is `chosen`."
           },
           "created_at": {
-            "type": "string",
-            "description": "ISO 8601 UTC."
+            "type": "integer",
+            "format": "int64",
+            "description": "When the request started, in Unix seconds."
           },
           "id": {
             "type": "integer",
@@ -10489,8 +10484,9 @@
             ]
           },
           "updated_at": {
-            "type": "string",
-            "description": "ISO 8601 UTC."
+            "type": "integer",
+            "format": "int64",
+            "description": "When the request last changed state, in Unix seconds."
           },
           "user_id": {
             "type": "integer",
@@ -10502,7 +10498,7 @@
             "items": {
               "$ref": "#/components/schemas/RequestVersion"
             },
-            "description": "The versions found, best first. Empty until the search has run."
+            "description": "The versions found, best first. Empty until the search has run, and always empty in\na book's list of requests: read one request for its versions."
           }
         }
       },

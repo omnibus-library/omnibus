@@ -150,10 +150,11 @@ pub struct BookRequest {
     pub stuck_detail: Option<String>,
     /// The picked version's id once `state` is `chosen`.
     pub chosen_result_id: Option<i64>,
-    /// ISO 8601 UTC.
-    pub created_at: String,
-    /// ISO 8601 UTC.
-    pub updated_at: String,
-    /// The versions found, best first. Empty until the search has run.
+    /// When the request started, in Unix seconds.
+    pub created_at: i64,
+    /// When the request last changed state, in Unix seconds.
+    pub updated_at: i64,
+    /// The versions found, best first. Empty until the search has run, and always empty in
+    /// a book's list of requests: read one request for its versions.
     pub versions: Vec<RequestVersion>,
 }

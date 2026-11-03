@@ -11,7 +11,7 @@ use super::rank::Ranked;
 /// A request live for its reader: still searching, waiting on a pick, or picked.
 const LIVE_STATES: &str = "('looking', 'choose', 'chosen')";
 
-const NOW: &str = "strftime('%Y-%m-%dT%H:%M:%fZ', 'now')";
+const NOW: &str = "strftime('%s', 'now')";
 
 const COLUMNS: &str = "id, book_uuid, user_id, kind, state, stuck_reason, stuck_detail, \
                        chosen_result_id, created_at, updated_at";
@@ -43,8 +43,10 @@ pub struct RequestRow {
     pub stuck_reason: Option<StuckReason>,
     pub stuck_detail: Option<String>,
     pub chosen_result_id: Option<i64>,
-    pub created_at: String,
-    pub updated_at: String,
+    /// Unix seconds.
+    pub created_at: i64,
+    /// Unix seconds.
+    pub updated_at: i64,
 }
 
 /// The outcome of [`start`].
@@ -195,12 +197,12 @@ pub async fn versions(
 }
 
 /// Record how a search ended, but only for a request still `looking`: one that was
-/// restarted, picked or answered meanwhile keeps its state. False when nothing changed.
+/// restarted, picked or answered meanwhile keeps its state.
 pub async fn finish_search(
     pool: &SqlitePool,
     id: i64,
     outcome: SearchOutcome,
-) -> Result<bool, RequestError> {
+) -> Result<(), RequestError> {
     let (state, reason, detail) = match &outcome {
         SearchOutcome::Found(_) => (RequestState::Choose, None, None),
         SearchOutcome::Stuck { reason, detail } => (
@@ -222,7 +224,7 @@ pub async fn finish_search(
     .await?
     .rows_affected();
     if moved == 0 {
-        return Ok(false);
+        return Ok(());
     }
     if let SearchOutcome::Found(ranked) = &outcome {
         sqlx::query("DELETE FROM book_request_results WHERE request_id = ?")
@@ -234,7 +236,7 @@ pub async fn finish_search(
         }
     }
     tx.commit().await?;
-    Ok(true)
+    Ok(())
 }
 
 async fn insert_result(

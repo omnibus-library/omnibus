@@ -23,6 +23,9 @@ const SEARCH_TIMEOUT: Duration = Duration::from_secs(30);
 /// How long to leave Prowlarr alone after a 429 that names no `Retry-After`.
 const DEFAULT_COOLDOWN: Duration = Duration::from_secs(10 * 60);
 
+/// The longest a `Retry-After` is believed, so a hostile or broken value cannot park searches for good.
+const MAX_COOLDOWN: Duration = Duration::from_secs(24 * 60 * 60);
+
 /// Until when each Prowlarr (address and key) is left alone. A new key starts afresh.
 static COOLDOWNS: LazyLock<Mutex<HashMap<(String, String), Instant>>> =
     LazyLock::new(Default::default);
@@ -184,9 +187,14 @@ impl Prowlarr {
     }
 
     fn cool_down(&self, retry_after: Option<&str>) {
-        let wait = parse_retry_after(retry_after).unwrap_or(DEFAULT_COOLDOWN);
+        let wait = parse_retry_after(retry_after)
+            .unwrap_or(DEFAULT_COOLDOWN)
+            .min(MAX_COOLDOWN);
+        let Some(until) = Instant::now().checked_add(wait) else {
+            return;
+        };
         let mut map = COOLDOWNS.lock().unwrap_or_else(|e| e.into_inner());
-        map.insert(self.cooldown_key(), Instant::now() + wait);
+        map.insert(self.cooldown_key(), until);
     }
 
     async fn get<T: serde::de::DeserializeOwned>(

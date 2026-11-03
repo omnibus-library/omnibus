@@ -217,7 +217,7 @@ mod prowlarr_search {
             .await;
         // Its own key: a cooldown is kept per address and key, and a later test can be
         // handed this server's port.
-        let client = Prowlarr::new(&server.uri(), "key-that-gets-limited").unwrap();
+        let client = Prowlarr::new(&server.uri(), "key-prowlarr-429-cooldown").unwrap();
 
         let first = client.search("Dracula Bram Stoker").await.unwrap_err();
         let second = client.search("Dracula Bram Stoker").await.unwrap_err();
@@ -225,6 +225,25 @@ mod prowlarr_search {
         assert!(matches!(first, ConnectionError::RateLimited));
         assert!(matches!(second, ConnectionError::RateLimited));
         assert_eq!(server.received_requests().await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn answers_rate_limited_without_panicking_on_an_enormous_retry_after() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v1/search"))
+            .respond_with(
+                ResponseTemplate::new(429).insert_header("retry-after", "18446744073709551615"),
+            )
+            .mount(&server)
+            .await;
+        let client = Prowlarr::new(&server.uri(), "key-prowlarr-huge-retry-after").unwrap();
+
+        let first = client.search("Dracula Bram Stoker").await.unwrap_err();
+        let second = client.search("Dracula Bram Stoker").await.unwrap_err();
+
+        assert!(matches!(first, ConnectionError::RateLimited));
+        assert!(matches!(second, ConnectionError::RateLimited));
     }
 
     #[tokio::test]

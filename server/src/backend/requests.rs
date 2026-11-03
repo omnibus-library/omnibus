@@ -33,11 +33,12 @@ const START_WINDOW: Duration = Duration::from_secs(10 * 60);
 /// Requests a reader may have live at once.
 const MAX_LIVE: i64 = 5;
 
-/// A signed-in reader who may request, on a server with book requests on. The flag is
-/// checked first, so with it off even a signed-out caller gets 404.
-pub(super) struct RequestsUser(pub(super) AuthUser);
+/// A signed-in reader on a server with book requests on. The flag is checked first, so with
+/// it off even a signed-out caller gets 404. Every reader may see requests; see
+/// [`RequestsUser`] for who may make them.
+pub(super) struct RequestsViewer(pub(super) AuthUser);
 
-impl FromRequestParts<AppState> for RequestsUser {
+impl FromRequestParts<AppState> for RequestsViewer {
     type Rejection = Response;
 
     async fn from_request_parts(
@@ -47,7 +48,23 @@ impl FromRequestParts<AppState> for RequestsUser {
         if !state.book_requests() {
             return Err(StatusCode::NOT_FOUND.into_response());
         }
-        let user = AuthUser::from_request_parts(parts, state).await?;
+        Ok(RequestsViewer(
+            AuthUser::from_request_parts(parts, state).await?,
+        ))
+    }
+}
+
+/// A [`RequestsViewer`] who may also make requests: an admin, or a reader granted it.
+pub(super) struct RequestsUser(pub(super) AuthUser);
+
+impl FromRequestParts<AppState> for RequestsUser {
+    type Rejection = Response;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        let RequestsViewer(user) = RequestsViewer::from_request_parts(parts, state).await?;
         if !(user.is_admin || user.can_request) {
             return Err((StatusCode::FORBIDDEN, "you can't make requests").into_response());
         }
@@ -61,13 +78,17 @@ impl FromRequestParts<AppState> for RequestsUser {
 pub(super) struct StartLog(Mutex<HashMap<i64, VecDeque<Instant>>>);
 
 impl StartLog {
-    /// Record a start by `user` and say whether they are within [`MAX_STARTS`] per
-    /// [`START_WINDOW`]. A refused start is not recorded.
-    pub(super) fn allow(&self, user: i64) -> bool {
-        self.allow_at(user, Instant::now())
+    /// Whether `user` may start another request: fewer than [`MAX_STARTS`] in [`START_WINDOW`].
+    pub(super) fn has_room(&self, user: i64) -> bool {
+        self.has_room_at(user, Instant::now())
     }
 
-    fn allow_at(&self, user: i64, now: Instant) -> bool {
+    /// Count a start by `user` now.
+    pub(super) fn record(&self, user: i64) {
+        self.record_at(user, Instant::now());
+    }
+
+    fn has_room_at(&self, user: i64, now: Instant) -> bool {
         let mut map = self.0.lock().unwrap_or_else(|e| e.into_inner());
         let starts = map.entry(user).or_default();
         while starts
@@ -76,21 +97,19 @@ impl StartLog {
         {
             starts.pop_front();
         }
-        if starts.len() >= MAX_STARTS {
-            return false;
-        }
-        starts.push_back(now);
-        true
+        starts.len() < MAX_STARTS
+    }
+
+    fn record_at(&self, user: i64, now: Instant) {
+        let mut map = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        map.entry(user).or_default().push_back(now);
     }
 }
 
-/// The wire form of a stored request, with the versions found. The search's technical
-/// detail goes only to an admin.
-async fn view(state: &AppState, row: RequestRow, is_admin: bool) -> Result<BookRequest, Response> {
-    let versions = store::versions(state.pool(), row.id)
-        .await
-        .map_err(|e| internal("read request versions", e))?;
-    Ok(BookRequest {
+/// The wire form of a stored request, with no versions. The search's technical detail goes
+/// only to an admin.
+fn summary(row: RequestRow, is_admin: bool) -> BookRequest {
+    BookRequest {
         id: row.id,
         book_uuid: row.book_uuid,
         user_id: row.user_id,
@@ -101,16 +120,35 @@ async fn view(state: &AppState, row: RequestRow, is_admin: bool) -> Result<BookR
         chosen_result_id: row.chosen_result_id,
         created_at: row.created_at,
         updated_at: row.updated_at,
+        versions: Vec::new(),
+    }
+}
+
+/// [`summary`] plus the versions found.
+async fn view(state: &AppState, row: RequestRow, is_admin: bool) -> Result<BookRequest, Response> {
+    let versions = store::versions(state.pool(), row.id)
+        .await
+        .map_err(|e| internal("read request versions", e))?;
+    Ok(BookRequest {
         versions,
+        ..summary(row, is_admin)
     })
+}
+
+/// Request `id`, or the 404 or 500 to send.
+async fn find(state: &AppState, id: i64) -> Result<RequestRow, Response> {
+    match store::get(state.pool(), id).await {
+        Ok(Some(row)) => Ok(row),
+        Ok(None) => Err((StatusCode::NOT_FOUND, "request not found").into_response()),
+        Err(e) => Err(internal("read request", e)),
+    }
 }
 
 /// Request `id` as the answer to `viewer`: 404 when it is gone.
 async fn answer(state: &AppState, id: i64, viewer: &AuthUser) -> Response {
-    let row = match store::get(state.pool(), id).await {
-        Ok(Some(row)) => row,
-        Ok(None) => return (StatusCode::NOT_FOUND, "request not found").into_response(),
-        Err(e) => return internal("read request", e),
+    let row = match find(state, id).await {
+        Ok(row) => row,
+        Err(res) => return res,
     };
     match view(state, row, viewer.is_admin).await {
         Ok(request) => Json(request).into_response(),
@@ -120,11 +158,7 @@ async fn answer(state: &AppState, id: i64, viewer: &AuthUser) -> Response {
 
 /// Request `id` if it exists and `user` made it or is an admin; else the 404 or 403 to send.
 async fn own_request(state: &AppState, user: &AuthUser, id: i64) -> Result<RequestRow, Response> {
-    let row = match store::get(state.pool(), id).await {
-        Ok(Some(row)) => row,
-        Ok(None) => return Err((StatusCode::NOT_FOUND, "request not found").into_response()),
-        Err(e) => return Err(internal("read request", e)),
-    };
+    let row = find(state, id).await?;
     if row.user_id != user.id && !user.is_admin {
         return Err((StatusCode::FORBIDDEN, "this isn't your request").into_response());
     }
@@ -181,7 +215,7 @@ pub(super) async fn post_start_request(
         Ok(None) => return (StatusCode::NOT_FOUND, "book not found").into_response(),
         Err(e) => return internal("resolve requested book", e),
     };
-    if !state.request_starts().allow(user.id) {
+    if !state.request_starts().has_room(user.id) {
         return too_many("you started too many requests; try again in a few minutes");
     }
     let started = match store::start(state.pool(), user.id, &book_uuid, body.kind, MAX_LIVE).await {
@@ -192,6 +226,7 @@ pub(super) async fn post_start_request(
         Err(e) => return internal("start request", e),
     };
     let status = if started.created {
+        state.request_starts().record(user.id);
         spawn_search(&state, started.request.id);
         StatusCode::CREATED
     } else {
@@ -205,8 +240,9 @@ pub(super) async fn post_start_request(
 
 /// List a book's requests
 ///
-/// Every request made for the book, newest first, whoever made it. A book nobody has
-/// requested has an empty list.
+/// Every request made for the book, newest first, whoever made it, without their versions:
+/// read one request for those. A book nobody has requested has an empty list. Any signed-in
+/// reader may read it.
 #[utoipa::path(
     get,
     path = "/api/books/{uuid}/requests",
@@ -214,14 +250,13 @@ pub(super) async fn post_start_request(
     operation_id = "list_book_requests",
     params(("uuid" = String, Path, description = "The book's uuid.")),
     responses(
-        (status = 200, description = "The book's requests.", body = Vec<BookRequest>),
+        (status = 200, description = "The book's requests, each with an empty `versions`.", body = Vec<BookRequest>),
         (status = 401, description = "You aren't signed in."),
-        (status = 403, description = "Your account can't make requests."),
         (status = 404, description = "Book requests are off on this server."),
     ),
 )]
 pub(super) async fn get_book_requests(
-    RequestsUser(user): RequestsUser,
+    RequestsViewer(viewer): RequestsViewer,
     State(state): State<AppState>,
     Path(uuid): Path<String>,
 ) -> Response {
@@ -229,24 +264,22 @@ pub(super) async fn get_book_requests(
         Ok(found) => found.unwrap_or(uuid),
         Err(e) => return internal("resolve requested book", e),
     };
-    let rows = match store::list_for_book(state.pool(), &book_uuid).await {
-        Ok(rows) => rows,
-        Err(e) => return internal("list requests", e),
-    };
-    let mut requests = Vec::with_capacity(rows.len());
-    for row in rows {
-        match view(&state, row, user.is_admin).await {
-            Ok(request) => requests.push(request),
-            Err(res) => return res,
+    match store::list_for_book(state.pool(), &book_uuid).await {
+        Ok(rows) => {
+            let requests: Vec<BookRequest> = rows
+                .into_iter()
+                .map(|row| summary(row, viewer.is_admin))
+                .collect();
+            Json(requests).into_response()
         }
+        Err(e) => internal("list requests", e),
     }
-    Json(requests).into_response()
 }
 
 /// Get a request
 ///
-/// One request and the versions found so far. Any reader who can make requests may read any
-/// request. Only an admin is sent `stuck_detail`.
+/// One request and the versions found so far. Any signed-in reader may read any request.
+/// Only an admin is sent `stuck_detail`.
 #[utoipa::path(
     get,
     path = "/api/requests/{id}",
@@ -256,12 +289,11 @@ pub(super) async fn get_book_requests(
     responses(
         (status = 200, description = "The request.", body = BookRequest),
         (status = 401, description = "You aren't signed in."),
-        (status = 403, description = "Your account can't make requests."),
         (status = 404, description = "Book requests are off on this server, or there is no such request."),
     ),
 )]
 pub(super) async fn get_request(
-    RequestsUser(user): RequestsUser,
+    RequestsViewer(user): RequestsViewer,
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> Response {
@@ -296,11 +328,11 @@ pub(super) async fn post_retry_request(
     if let Err(res) = own_request(&state, &user, id).await {
         return res;
     }
-    if !state.request_starts().allow(user.id) {
+    if !state.request_starts().has_room(user.id) {
         return too_many("you started too many requests; try again in a few minutes");
     }
     match store::restart(state.pool(), id).await {
-        Ok(()) => {}
+        Ok(()) => state.request_starts().record(user.id),
         Err(RequestError::WrongState) => {
             return (StatusCode::CONFLICT, "this request can't be searched again").into_response();
         }

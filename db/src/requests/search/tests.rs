@@ -48,12 +48,7 @@ async fn looking_request(pool: &SqlitePool) -> i64 {
     )
     .await
     .unwrap();
-    let user: i64 = sqlx::query_scalar(
-        "INSERT INTO users (username, password_hash) VALUES ('ada', 'x') RETURNING id",
-    )
-    .fetch_one(pool)
-    .await
-    .unwrap();
+    let user = crate::test_support::seed_user(pool, "ada").await;
     store::start(pool, user, &uuid, RequestKind::Ebook, 5)
         .await
         .unwrap()
@@ -192,7 +187,7 @@ mod run_search {
             .await;
         // Its own key: a cooldown is kept per address and key, and a later test can be
         // handed this server's port.
-        let pool = pool_with_prowlarr_key(&server.uri(), "key-that-gets-limited").await;
+        let pool = pool_with_prowlarr_key(&server.uri(), "key-search-429-cooldown").await;
         let first = looking_request(&pool).await;
         run_search(&pool, first).await.unwrap();
         store::restart(&pool, first).await.unwrap();

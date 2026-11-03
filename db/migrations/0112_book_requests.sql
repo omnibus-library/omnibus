@@ -13,8 +13,8 @@ CREATE TABLE book_requests (
     chosen_result_id INTEGER,
     client_tag       TEXT,
     progress         REAL,
-    created_at       TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    updated_at       TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    created_at       INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+    updated_at       INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
 );
 CREATE INDEX idx_book_requests_book ON book_requests(book_uuid);
 CREATE INDEX idx_book_requests_user ON book_requests(user_id, state);

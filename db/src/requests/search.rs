@@ -20,8 +20,7 @@ pub async fn run_search(pool: &SqlitePool, id: i64) -> Result<(), RequestError> 
         return Ok(());
     };
     let outcome = search_outcome(pool, &request.book_uuid).await;
-    store::finish_search(pool, id, outcome).await?;
-    Ok(())
+    store::finish_search(pool, id, outcome).await
 }
 
 fn failed(detail: impl Into<String>) -> SearchOutcome {
