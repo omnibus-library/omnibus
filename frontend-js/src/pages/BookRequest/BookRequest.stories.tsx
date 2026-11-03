@@ -514,6 +514,74 @@ export const StoppedMovingNamesItAndTryAgainOffersTheOtherVersions: Story = {
   },
 };
 
+export const ReadyToRead: Story = {
+  beforeEach({ msw }) {
+    msw.use(...seed({ state: "ready", chosen_result_id: 11, progress: 1 }));
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByTestId("request-state")).toHaveTextContent(
+      "Ready to read",
+    );
+    await expect(canvas.getByText("It’s in the library.")).toBeInTheDocument();
+    await expect(canvas.queryByTestId("request-downloading")).toBeNull();
+    await expect(canvas.queryByRole("button")).toBeNull();
+  },
+};
+
+const COULDNT_ADD: Parameters<typeof aWireRequest>[0] = {
+  state: "stuck",
+  stuck_reason: "couldnt_add",
+  chosen_result_id: 11,
+  progress: 1,
+};
+
+export const CouldntAddItNamesItAndOffersTryAgain: Story = {
+  parameters: { user: READER },
+  beforeEach({ msw }) {
+    msw.use(...seed(COULDNT_ADD));
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByTestId("request-state")).toHaveTextContent(
+      "Couldn’t add it",
+    );
+    await expect(canvas.queryByTestId("request-stuck-detail")).toBeNull();
+    await expect(
+      canvas.getByRole("button", { name: "Try again" }),
+    ).toBeEnabled();
+  },
+};
+
+export const CouldntAddItShowsAnAdminWhatWentWrong: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...seed({
+        ...COULDNT_ADD,
+        stuck_detail: "filing the download failed: permission denied",
+      }),
+    );
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByTestId("request-stuck-detail"),
+    ).toHaveTextContent("filing the download failed: permission denied");
+  },
+};
+
+export const TryAgainOnCouldntAddIt: Story = {
+  beforeEach({ msw }) {
+    msw.use(...seed(COULDNT_ADD));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByTestId("request-try-again"));
+
+    await expect(await canvas.findByTestId("request-state")).toHaveTextContent(
+      "On its way",
+    );
+    await expect(canvas.queryByRole("button", { name: "Cancel" })).toBeNull();
+    await expect(fake.writes).toEqual([{ kind: "retry", id: 7 }]);
+  },
+};
+
 export const TheBookLinkGoesBackToTheBookPage: Story = {
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(

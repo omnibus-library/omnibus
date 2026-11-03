@@ -252,7 +252,7 @@ function Actions({
   );
 }
 
-/** Searches again for the request; the one way out of a search that came up empty or never ended. */
+/** Tries the request again: a new search, or only the add to the library after a download that could not be added. */
 function TryAgain({ request }: { request: Request }) {
   const toast = useToast();
   const answer = useAnswer(request.id);
