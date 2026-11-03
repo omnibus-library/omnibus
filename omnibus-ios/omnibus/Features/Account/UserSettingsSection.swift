@@ -1,6 +1,6 @@
 //  UserSettingsSection.swift
 //  The You tab's per-account switches: Stack series, book-detail scroll stops
-//  and sharing stats with the household. Account configuration under rule 08: saved
+//  and sharing stats with the household, then the way in to the stats exclusion filter. Account configuration under rule 08: saved
 //  directly, never queued, disabled offline, and a failed save shows its error
 //  rather than claiming a change that exists nowhere.
 
@@ -95,6 +95,7 @@ struct UserSettingsSection: View {
 
     /// A server that never sent the field can't save it either.
     private var showsShareStats: Bool { app.user?.shareStatsSetting != nil }
+    private var statsExclusions: StatsExclusions? { app.user?.statsExclusionsSetting }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
@@ -121,6 +122,24 @@ struct UserSettingsSection: View {
                             .tint(palette.accentColor)
                             .disabled(share.isDisabled(online: connectivity.isOnline))
                     }
+                }
+
+                if let statsExclusions {
+                    NavigationLink(value: Destination.statsExclusions) {
+                        PlateRow(
+                            label: "Leave out of my stats",
+                            detail: Text(statsExclusions.summary)
+                                .font(.ui(12))
+                                .foregroundStyle(palette.ink3Color)
+                        ) {
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(palette.ink3Color)
+                                .accessibilityHidden(true)
+                        }
+                    }
+                    .buttonStyle(PressableStyle())
+                    .accessibilityIdentifier("user-setting-stats-exclusions")
                 }
             }
         }

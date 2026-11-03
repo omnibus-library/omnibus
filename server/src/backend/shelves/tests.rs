@@ -709,6 +709,7 @@ async fn api_smart_shelves_containing_returns_500_when_the_db_is_unavailable() {
         book_detail_scroll_stops: false,
         stack_series: false,
         share_stats: true,
+        stats_exclusions: Default::default(),
         session_id: 1,
         session_kind: SessionKind::Bearer,
         impersonator_id: None,

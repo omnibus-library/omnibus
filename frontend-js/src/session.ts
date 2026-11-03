@@ -7,6 +7,7 @@ import {
 } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import {
+  type FilterClause,
   fetchMe,
   fetchRegistrationOpen,
   impersonateUser,
@@ -15,6 +16,7 @@ import {
   setHiddenFormats,
   setShareStats,
   setStackSeries,
+  setStatsExclusions,
   stopImpersonating,
   type User,
 } from "./api";
@@ -203,5 +205,14 @@ export function useHiddenFormats() {
     "hiddenFormats",
     setHiddenFormats,
     (user, formats) => ({ ...user, hiddenFormats: formats }),
+  );
+}
+
+/** Saves the whole exclusion filter at once; a refusal puts the old one back. */
+export function useStatsExclusions() {
+  return useSavedPreference<FilterClause[]>(
+    "statsExclusions",
+    setStatsExclusions,
+    (user, clauses) => ({ ...user, statsExclusions: clauses }),
   );
 }

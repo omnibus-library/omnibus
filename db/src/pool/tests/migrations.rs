@@ -511,8 +511,8 @@ async fn migration_0099_turns_share_stats_on_for_every_existing_reader() {
 }
 
 #[tokio::test]
-async fn migration_0111_grants_can_request_to_existing_admins_only() {
-    let pool = pool_before(111).await;
+async fn migration_0112_grants_can_request_to_existing_admins_only() {
+    let pool = pool_before(112).await;
     sqlx::query(
         "INSERT INTO users (id, username, password_hash, is_admin) VALUES (1, 'a', 'h', 1), (2, 'r', 'h', 0)",
     )
@@ -520,7 +520,7 @@ async fn migration_0111_grants_can_request_to_existing_admins_only() {
     .await
     .unwrap();
 
-    apply_migration(&pool, 111).await;
+    apply_migration(&pool, 112).await;
 
     let can_request = |id: i64| {
         sqlx::query_scalar::<_, i64>("SELECT can_request FROM users WHERE id = ?")

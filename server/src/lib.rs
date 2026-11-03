@@ -2,6 +2,10 @@
 //!
 //! A lib crate so the integration tests can import it with `use omnibus::backend`.
 
+// Handlers return `Result<_, axum::response::Response>` on purpose; boxing the
+// 128-byte `Response` on every early return buys nothing.
+#![allow(clippy::result_large_err)]
+
 pub mod auth;
 pub mod backend;
 pub mod http_errors;

@@ -150,6 +150,13 @@ enum AuthService {
         await OfflineStore.shared.cacheDelete(CacheKey.me)
     }
 
+    /// Replace the filter whose matching books the reader's stats leave out.
+    /// Account configuration: direct call, never queued (rule 08 test 1).
+    static func setStatsExclusions(_ body: StatsExclusions) async throws {
+        let _: Empty = try await APIClient.shared.post("/api/account/stats-exclusions", body: body)
+        await OfflineStore.shared.cacheDelete(CacheKey.me)
+    }
+
     // MARK: - Profile
     //
     // A profile is account configuration, so these never go through

@@ -1,7 +1,8 @@
 //! Reading-stats aggregation over the `reading_sessions` /
 //! `listening_sessions` tables plus `journal_entries` / `book_read_status`
-//! for completion; no new query-time schema. This module owns the cache; the
-//! per-scope aggregation bodies it wraps live in the submodules.
+//! for completion, minus the books a reader's exclusion rule leaves out
+//! (`exclusions`). This module owns the cache; the per-scope aggregation bodies
+//! it wraps live in the submodules.
 //!
 //! # Which calendar
 //!
@@ -16,6 +17,8 @@
 //! flies home. A shape-of-a-day distribution needs no ordering, which is why it
 //! can answer a question the day boundaries cannot.
 
+#[macro_use]
+mod exclusions;
 mod book;
 mod builder;
 mod calendar;
@@ -41,6 +44,7 @@ mod tests;
 pub use book::book_insights;
 pub use builder::{chart_series, ChartError};
 pub use composition::{invalidate as invalidate_library_composition, library_composition};
+pub use exclusions::refresh_exclusions;
 pub use goals::{current_year, daily_goals, goal_for_year, set_daily_goal, set_goal, GoalError};
 pub use household::{
     book_household, household_readers, recent_progress_for_viewer, session_log_for_viewer,
@@ -140,6 +144,8 @@ pub async fn user_stats(
     range: StatsRange,
     claimed_offset_minutes: Option<i64>,
 ) -> Result<StatsSummary, StatsError> {
+    // Before the cache read, so a rule or tag change shows at once rather than after the TTL.
+    refresh_exclusions(pool, user_id).await?;
     let offset =
         crate::user_offset::resolve_offset_minutes(pool, user_id, claimed_offset_minutes).await?;
     user_stats_at(pool, user_id, range, offset, now_secs()).await

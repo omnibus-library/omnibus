@@ -73,7 +73,8 @@ export function Modal({
         pressedBackdrop.current = false;
       }}
       onKeyDown={(e) => {
-        if (e.key === "Escape") {
+        // An inner popover that took this Escape has already prevented it.
+        if (e.key === "Escape" && !e.defaultPrevented) {
           e.preventDefault();
           dismiss();
         }
