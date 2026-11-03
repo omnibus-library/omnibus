@@ -47,6 +47,51 @@ export const ClickingTheSavedValueClears: Story = {
   },
 };
 
+// A preview that resized the note reflowed the hero, moving the stars from under a still pointer, forever.
+export const HoverPreviewsKeepTheNoteOneSize: Story = {
+  // Narrow heroes centre their text; the note must still hug its words at the slot's start.
+  decorators: [
+    (Story) => (
+      <div style={{ textAlign: "center" }}>
+        <Story />
+      </div>
+    ),
+  ],
+  play: async ({ canvas, userEvent }) => {
+    const note = canvas.getByTestId("review-stars-meta");
+    // The slot is the box that takes layout space; the note inside it is only as wide as its words.
+    const slot = canvas.getByTestId("review-stars-meta-slot");
+    const size = () => {
+      const { width, height } = slot.getBoundingClientRect();
+      return { width, height };
+    };
+    const expectNoteAtStart = async () => {
+      const box = note.getBoundingClientRect();
+      await expect(box.left).toBe(slot.getBoundingClientRect().left);
+      return box.width;
+    };
+    // Laying out first requests the web font; only then does `ready` wait for it to swap in.
+    size();
+    await document.fonts.ready;
+    const resting = size();
+    // The resting line is shorter than the widest, so a note stretched across the slot shows here.
+    await expect(await expectNoteAtStart()).toBeLessThan(resting.width);
+
+    await userEvent.hover(
+      canvas.getByRole("button", { name: "Rate 3.5 stars" }),
+    );
+    await expect(note).toHaveTextContent("Rate 3.5");
+    await expect(size()).toEqual(resting);
+    await expect(await expectNoteAtStart()).toBeLessThan(resting.width);
+
+    await userEvent.hover(
+      canvas.getByRole("button", { name: "Clear your 3-star rating" }),
+    );
+    await expect(note).toHaveTextContent("Clear your rating");
+    await expect(size()).toEqual(resting);
+  },
+};
+
 export const DisabledStarsTakeNoPick: Story = {
   args: { stars: null, disabled: true, note: "Loading your rating…" },
   play: async ({ args, canvas, userEvent }) => {

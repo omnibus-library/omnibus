@@ -64,19 +64,6 @@ ignore = [
     # Revisit when lopdf moves to a maintained font parser.
     { id = "RUSTSEC-2026-0192", reason = "ttf-parser unmaintained — transitive via lopdf 0.42 / pdf-extract (db::pdf); lopdf 0.42 is required for RUSTSEC-2026-0187, so a downgrade is worse; awaiting an upstream font-parser migration" },
 
-    # ---- zip `extract()` advisories (SUID/SGID bits, symlink targets, perms
-    # applied through symlinks), fixed only in zip >= 9.0.0. `zip 3.0.0` is
-    # reachable in the default build via `epub 2.1.5` (the latest epub, which
-    # pins `zip = "3.0.0"`); our own db/ and server/ deps are on zip 9.
-    # All three hit only `ZipArchive::extract()` / `ZipStreamReader::extract()`,
-    # and neither this repo nor epub calls them (archives are read entry by
-    # entry, never extracted to disk). Triaged 2026-10-17 (issue #2756).
-    # Revisit when epub moves to zip >= 9. Unlike rsa above these entries
-    # match, so they are listed here and on the cargo-audit step in rust.yml.
-    { id = "RUSTSEC-2026-0367", reason = "zip 3.0.0 extract() SUID/SGID bits, pinned by epub 2.1.5 (fixed in zip >= 9.0.0); only ZipArchive::extract()/ZipStreamReader::extract() are affected and nothing here or in epub calls them" },
-    { id = "RUSTSEC-2026-0368", reason = "zip 3.0.0 extract() symlink targets, pinned by epub 2.1.5 (fixed in zip >= 9.0.0); only ZipArchive::extract()/ZipStreamReader::extract() are affected and nothing here or in epub calls them" },
-    { id = "RUSTSEC-2026-0369", reason = "zip 3.0.0 extract() permissions applied through symlinks, pinned by epub 2.1.5 (fixed in zip >= 9.0.0); only ZipArchive::extract()/ZipStreamReader::extract() are affected and nothing here or in epub calls them" },
-
 ]
 
 # NB: RUSTSEC-2026-0381 (webpki-roots distrusted emSign roots) has no entry
@@ -132,14 +119,14 @@ allow = [
 # Per-crate license carve-outs. Prefer this over expanding `allow` when a
 # single crate is the only user of an otherwise-undesirable license.
 [[licenses.exceptions]]
-# `epub` is GPL-3.0, used in `omnibus-db` to parse EPUB metadata. This is a
+# `epub` is GPL-3.0-or-later, used in `omnibus-db` to parse EPUB metadata. This is a
 # direct dependency carried over from before the licenses check was wired up;
 # the rest of the workspace is MIT. Scoping the GPL-3.0 acceptance to this one
 # crate keeps the policy honest — any other GPL crate sneaking in via a future
 # dependency bump still fails the check. Revisit by either porting metadata
 # extraction onto a non-GPL EPUB parser or accepting the copyleft posture
 # explicitly in LICENSE.
-allow = ["GPL-3.0"]
+allow = ["GPL-3.0-or-later"]
 name = "epub"
 
 # ---------------------------------------------------------------------------
@@ -190,11 +177,6 @@ skip = [
     # From metrics-util (→ metrics-exporter-prometheus → axum-prometheus), beside
     # the workspace's newer rand. Collapses when metrics-util bumps rand.
     { name = "rand", version = "0.9.4" },
-
-    # --- zip (epub's pin vs ours) ---
-    # 3.0.0 from `epub` 2.1.5, which asks for `zip = "3.0.0"`; 9.x from
-    # omnibus-db/omnibus directly. Collapses when epub moves to zip 9.
-    { name = "zip", version = "3.0.0" },
 
     # --- windows-sys (four-way split, all windows-target-conditional) ---
     # `cargo deny` resolves the crate graph across every target (like
