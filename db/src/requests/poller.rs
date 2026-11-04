@@ -217,7 +217,7 @@ async fn follow_downloads(
 fn judge(row: &RequestRow, status: Option<&TorrentStatus>, now: i64) -> Verdict {
     let idle_secs = now - row.moved_at.unwrap_or(now);
     let Some(status) = status else {
-        // A link the client fetches on its own can take a while to show up as a download.
+        // qBittorrent 5.x adds asynchronously, so a torrent can take a while to show up.
         let seen = row.progress.is_some();
         return if seen || idle_secs > APPEAR_SECS {
             Verdict::Stopped("the download client no longer has it")

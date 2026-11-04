@@ -1,18 +1,36 @@
 //! qBittorrent through its Web API v2. Each call logs in first and echoes the session
 //! cookie it gets back, so the client holds no session to expire. qBittorrent names that
 //! cookie `SID` or `QBT_SID_<port>` by version and settings, so every `Set-Cookie` pair is
-//! echoed rather than one by name. Share limits are never sent: seeding is the admin's
-//! own policy in qBittorrent.
+//! echoed rather than one by name. A release link is fetched here and uploaded as a file:
+//! qBittorrent may have no route to Prowlarr, and the link carries the API key. Share
+//! limits are never sent: seeding is the admin's own policy in qBittorrent.
 // shortcut: one login per call; cache the cookie if the poller's cadence ever makes it matter.
 
-use reqwest::header::{COOKIE, SET_COOKIE};
-use reqwest::{RequestBuilder, Response, StatusCode};
+use reqwest::header::{COOKIE, LOCATION, SET_COOKIE};
+use reqwest::multipart::{Form, Part};
+use reqwest::{RequestBuilder, Response, StatusCode, Url};
 
 use crate::requests::{check_status, http_client, ConnectionError, REQUEST_TIMEOUT};
 
 use super::{ClientFile, DownloadClient, TorrentStatus};
 
 const SERVICE: &str = "qBittorrent";
+
+/// A torrent file is kilobytes; anything past this is not one.
+pub const MAX_TORRENT_BYTES: usize = 4 * 1024 * 1024;
+
+/// How many redirects a release link may take before it is given up on.
+const MAX_HOPS: usize = 3;
+
+/// What `torrents/add` is given: a magnet as `urls`, or the fetched torrent file.
+enum Release {
+    Magnet(String),
+    File(Vec<u8>),
+}
+
+fn rejected(why: &str) -> ConnectionError {
+    ConnectionError::Rejected(format!("the release link {why}"))
+}
 
 /// A qBittorrent instance and the login to reach it. No `Debug`: it holds the password.
 pub struct Qbittorrent {
@@ -98,6 +116,45 @@ impl Qbittorrent {
         Ok(Some(response))
     }
 
+    /// Resolve `link` to what the client is given, following up to [`MAX_HOPS`] redirects
+    /// ourselves since [`http_client`] follows none. Errors never echo the link: it carries
+    /// the Prowlarr API key.
+    async fn fetch_release(&self, link: &str) -> Result<Release, ConnectionError> {
+        let mut url = Url::parse(link).map_err(|_| rejected("is not a URL"))?;
+        for _ in 0..=MAX_HOPS {
+            if url.scheme() == "magnet" {
+                return Ok(Release::Magnet(url.into()));
+            }
+            let response = self.call(self.http.get(url.clone())).await?;
+            let status = response.status();
+            if status.is_redirection() {
+                let location = response
+                    .headers()
+                    .get(LOCATION)
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(|l| url.join(l).ok())
+                    .ok_or_else(|| rejected("redirected nowhere"))?;
+                url = location;
+                continue;
+            }
+            if !status.is_success() {
+                return Err(rejected(&format!("answered {status}")));
+            }
+            if response.content_length().unwrap_or(0) as usize > MAX_TORRENT_BYTES {
+                return Err(rejected("is too large to be a torrent file"));
+            }
+            let bytes = response
+                .bytes()
+                .await
+                .map_err(|e| ConnectionError::from_transport(&e))?;
+            if bytes.len() > MAX_TORRENT_BYTES {
+                return Err(rejected("is too large to be a torrent file"));
+            }
+            return Ok(Release::File(bytes.to_vec()));
+        }
+        Err(rejected("redirected too many times"))
+    }
+
     async fn status_with(
         &self,
         cookie: &str,
@@ -133,14 +190,33 @@ struct AddOutcome {
 }
 
 impl DownloadClient for Qbittorrent {
-    /// `Ok` means qBittorrent accepted the link; a URL is fetched asynchronously, so the
-    /// torrent may still be pending, and `status` can answer `None` for a while.
+    /// `Ok` means qBittorrent accepted the torrent; 5.x adds asynchronously, so it may
+    /// still be pending, and `status` can answer `None` for a while.
     async fn add(&self, link: &str, category: &str, tag: &str) -> Result<(), ConnectionError> {
+        let release = self.fetch_release(link).await?;
         let cookie = self.login().await?;
-        let form = [("urls", link), ("category", category), ("tags", tag)];
-        let response = self
-            .send(self.post("torrents/add", &cookie).form(&form))
-            .await?;
+        let request = match release {
+            Release::Magnet(magnet) => {
+                let form = [
+                    ("urls", magnet.as_str()),
+                    ("category", category),
+                    ("tags", tag),
+                ];
+                self.post("torrents/add", &cookie).form(&form)
+            }
+            Release::File(bytes) => {
+                let file = Part::bytes(bytes)
+                    .file_name(format!("{tag}.torrent"))
+                    .mime_str("application/x-bittorrent")
+                    .map_err(|e| ConnectionError::from_transport(&e))?;
+                let form = Form::new()
+                    .part("torrents", file)
+                    .text("category", category.to_string())
+                    .text("tags", tag.to_string());
+                self.post("torrents/add", &cookie).multipart(form)
+            }
+        };
+        let response = self.send(request).await?;
         let body = response
             .text()
             .await
@@ -153,7 +229,7 @@ impl DownloadClient for Qbittorrent {
         };
         if refused {
             return Err(ConnectionError::Rejected(format!(
-                "{SERVICE} did not accept the link"
+                "{SERVICE} did not accept the torrent"
             )));
         }
         Ok(())

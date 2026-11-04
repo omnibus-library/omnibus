@@ -1,4 +1,4 @@
-//! The download client the server hands links to and watches. [`DownloadClient`] is the
+//! The download client the server hands releases to and watches. [`DownloadClient`] is the
 //! seam the request pipeline works against; [`client_for`] builds the one the admin chose.
 //! Torrents are found by tag, never by hash, so a restart loses no track of them.
 

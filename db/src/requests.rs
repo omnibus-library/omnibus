@@ -1,5 +1,5 @@
 //! The book-request pipeline's links to the outside world: Prowlarr, the download client
-//! the server hands links to, and the folder mapping that turns its finished files into
+//! the server hands releases to, and the folder mapping that turns its finished files into
 //! local ones.
 //!
 //! The URLs here are the admin's own LAN services (`http://qbittorrent:8080`), so this
@@ -71,6 +71,10 @@ pub fn http_client() -> Result<reqwest::Client, ConnectionError> {
         .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|e| ConnectionError::from_transport(&e))?;
+    // A pooled connection dies with the `#[tokio::test]` runtime that opened it.
+    if cfg!(test) {
+        return Ok(new);
+    }
     Ok(CLIENT.get_or_init(|| new).clone())
 }
 
