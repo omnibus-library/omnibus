@@ -162,7 +162,7 @@ uuid = { version = "1", features = ["v4", "v5"] }
 # choices so we don't pull in OpenSSL. `json` is needed to deserialize the
 # `/search/authors.json` response. This is the only outbound HTTP in the
 # codebase — keep it scoped to the resolver module.
-reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "form", "query"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "form", "multipart", "query"] }
 urlencoding = "2"
 
 # F5.9 library cleanup (#962): regex-based detectors — junk-author tooling

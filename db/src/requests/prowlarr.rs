@@ -64,7 +64,7 @@ pub struct ProwlarrRelease {
     /// Null for sources that have no seeders, such as Usenet.
     pub seeders: Option<i64>,
     pub indexer: Option<String>,
-    /// What the download client is handed to fetch the release. Server-side only.
+    /// A torrent-file URL or magnet; the client fetches the file and uploads it. Server-side only.
     pub link: String,
     /// Newznab category ids; books are 7000 and up.
     pub categories: Vec<i64>,
