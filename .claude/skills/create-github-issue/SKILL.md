@@ -51,7 +51,12 @@ Apply exactly one type label (`enhancement` or `bug`), plus any others that fit.
 
 ## UX changes carry comps
 
-An issue that changes what a user sees (a new screen, moved controls, a changed layout) gets Figma comps before it's filed: build them on that surface's existing page in the Omnibus Figma files (a `Proposal …` section; never an HTML mock), offer more than one when the right layout is unclear, and link them under **Attachments**. The user signs off on the comps in the issue before any code starts.
+An issue that changes what a user sees (a new screen, moved controls, a changed layout) gets Figma comps before it's filed: build them on that surface's existing page in the Omnibus Figma files (a `Proposal …` section; never an HTML mock), offer more than one when the right layout is unclear, and put them under **Attachments**:
+
+- A Figma link to each comp section and chosen frame (`https://www.figma.com/design/<key>/?node-id=27-1241`, with the node ID's colon as a dash).
+- A screenshot of each frame as a GitHub user-attachment image: `<img width="906" height="791" alt="…" src="https://github.com/user-attachments/assets/…" />`. Never a gist or another image host. `gh` can't upload user attachments, so save the frames as PNGs (`figma_capture_screenshot` writes each one to disk), and hand the user the paths to drop into the issue's editor, which writes the tags itself.
+
+The user signs off on the comps in the issue before any code starts. On sign-off, also run the `omnibus-figma` skill's **On acceptance** step in the same turn as the issue update: chosen frames to `Draft`, rejected ones deleted.
 
 ## Body template (required format)
 

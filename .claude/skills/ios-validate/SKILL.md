@@ -1,6 +1,6 @@
 ---
 name: ios-validate
-description: Screenshot tours of the native iOS app (omnibus-ios/) on a simulator of this worktree's own, against a scratch server. Triggers when you need to see an iOS change on screen, show the user pictures of one, or check a screen a unit test can't reach — including while another worktree is using a simulator.
+description: Screenshot tours of the native iOS app (omnibus-ios/) on a simulator of this worktree's own, against a scratch server. Triggers when you need to see an iOS change on screen, show the user pictures of one, or check a screen a unit test can't reach — including while another worktree is using a simulator. Also fires when planning iOS work on a non-macOS host: xcodebuild and the simulator need macOS, so the iOS half goes in the first plan as a hand-off to a mac session.
 ---
 
 # Validate an iOS change on the simulator
