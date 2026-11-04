@@ -160,7 +160,8 @@ export function requestFake(initial: BookRequest[] = []): RequestFake {
         ...found,
         state: "cancelled" as const,
         cancelled_by: found.user_id,
-        cancel_at: NOW + 8,
+        // The clock, not NOW: the Undo toast is timed against it, and NOW ages as the file runs.
+        cancel_at: Math.floor(Date.now() / 1000) + 8,
       };
       requests.set(cancelled.id, cancelled);
       return HttpResponse.json(cancelled);
