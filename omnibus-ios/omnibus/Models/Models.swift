@@ -489,6 +489,8 @@ struct UserSummary: Codable, Hashable, Sendable {
     /// lenient `Bool`, which defaults a missing key to `false` — the
     /// household contract wants a missing key to mean *on*, the opposite.
     var shareStatsSetting: Bool?
+    /// The filter whose matching books the reader's stats leave out; `nil` from a server that predates it.
+    var statsExclusionsSetting: StatsExclusions?
 
     /// The name to show for this user — never render `username` on its own.
     var display: String { displayName ?? username }
@@ -509,6 +511,40 @@ struct UserSummary: Codable, Hashable, Sendable {
         case hiddenFormats = "hidden_formats"
         case stackSeries = "stack_series"
         case shareStatsSetting = "share_stats"
+        case statsExclusionsSetting = "stats_exclusions"
+    }
+}
+
+/// `UserSummary.statsExclusionsSetting` and the body of `POST /api/account/stats-exclusions`.
+struct StatsExclusions: Codable, Hashable, Sendable {
+    var clauses: [FilterClause]
+
+    init(clauses: [FilterClause]) {
+        self.clauses = clauses
+    }
+
+    /// A clause naming a field a newer server added costs that clause, not the whole `/me` read.
+    init(from decoder: Decoder) throws {
+        struct Lossy: Decodable {
+            let clause: FilterClause?
+            init(from decoder: Decoder) { clause = try? FilterClause(from: decoder) }
+        }
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        clauses = try container.decodeIfPresent([Lossy].self, forKey: .clauses)?.compactMap(\.clause) ?? []
+    }
+
+    enum CodingKeys: String, CodingKey { case clauses }
+
+    /// The row's one line: each clause as its field and first value, or that nothing is left out.
+    var summary: String {
+        guard !clauses.isEmpty else { return "Nothing left out." }
+        return clauses.map { clause in
+            // A shelf is an id here, and its name needs a read the You tab hasn't made.
+            let value = clause.field == .shelf
+                ? (clause.values.count == 1 ? "1 shelf" : "\(clause.values.count) shelves")
+                : clause.facetValue(shelves: .failed, viewerId: nil)
+            return "\(clause.field.label): \(value)"
+        }.joined(separator: " · ")
     }
 }
 

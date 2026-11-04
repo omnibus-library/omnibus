@@ -109,10 +109,12 @@ fn sitting_seconds(bucket: ChartBucket, offset_minutes: i64) -> String {
     let k = bucket_expr(bucket, &calendar::local_day("started_at", offset_minutes));
     format!(
         "SELECT {k} AS k, seconds_read AS secs FROM reading_sessions \
-             WHERE user_id = ? AND started_at >= ? \
+             WHERE user_id = ? AND started_at >= ? AND {kept_r} \
          UNION ALL \
          SELECT {k} AS k, seconds_listened AS secs FROM listening_sessions \
-             WHERE user_id = ? AND started_at >= ?"
+             WHERE user_id = ? AND started_at >= ? AND {kept_l}",
+        kept_r = kept!("reading_sessions"),
+        kept_l = kept!("listening_sessions"),
     )
 }
 
@@ -166,9 +168,10 @@ async fn series_rows(
         ChartMeasure::ReadingMinutes => (
             format!(
                 "SELECT {} AS k, SUM(seconds_read) / 60.0 AS total, CAST(COUNT(*) AS REAL) AS n \
-                 FROM reading_sessions WHERE user_id = ? AND started_at >= ? \
+                 FROM reading_sessions WHERE user_id = ? AND started_at >= ? AND {} \
                  GROUP BY k ORDER BY k",
-                bucket_expr(bucket, &calendar::local_day("started_at", offset_minutes))
+                bucket_expr(bucket, &calendar::local_day("started_at", offset_minutes)),
+                kept!("reading_sessions")
             ),
             vec![user_id, start],
         ),
@@ -176,9 +179,10 @@ async fn series_rows(
             format!(
                 "SELECT {} AS k, SUM(seconds_listened) / 60.0 AS total, \
                         CAST(COUNT(*) AS REAL) AS n \
-                 FROM listening_sessions WHERE user_id = ? AND started_at >= ? \
+                 FROM listening_sessions WHERE user_id = ? AND started_at >= ? AND {} \
                  GROUP BY k ORDER BY k",
-                bucket_expr(bucket, &calendar::local_day("started_at", offset_minutes))
+                bucket_expr(bucket, &calendar::local_day("started_at", offset_minutes)),
+                kept!("listening_sessions")
             ),
             vec![user_id, start],
         ),
@@ -390,6 +394,7 @@ pub async fn chart_series(
     if spec.measures.is_empty() {
         return Ok(empty_result(spec, Vec::new()));
     }
+    super::refresh_exclusions(pool, user_id).await?;
     // Resolved once for the whole spec: every measure, the breakdown and the
     // axis have to bucket on one calendar or a series and the axis it is
     // plotted against disagree about which bucket a day belongs to.
