@@ -266,9 +266,14 @@ mod post_start_request {
     #[tokio::test]
     async fn returns_the_live_request_with_200_and_adds_no_row_on_a_second_start() {
         let (app, _, pool) = fixture_book_requests(true).await;
+        // With a Prowlarr to answer, the first start's search lands on `choose`, still live; without
+        // one it parks the request as `stuck` and races the second start into a fresh row.
+        let prowlarr = prowlarr_with_dracula().await;
+        use_prowlarr(&pool, &prowlarr.uri()).await;
         let (_, token) = requester(&pool, "ada").await;
-        let uuid = seed_book(&pool, "Dracula").await;
+        let uuid = seed_book_by(&pool, "Dracula", "Bram Stoker").await;
         let first: BookRequest = body_json(start(&app, &uuid, &token, "ebook").await).await;
+        wait_for_request_state(&pool, first.id, RequestState::Choose).await;
 
         let again = start(&app, &uuid, &token, "ebook").await;
 
