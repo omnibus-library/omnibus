@@ -143,8 +143,9 @@ the signed IPA to confirm the entitlement actually landed. Simulator lanes prove
 none of it — they sign ad-hoc.
 
 **TestFlight release:** the manually-triggered
-`.github/workflows/testflight.yml` (workflow_dispatch, `macos-26` runner —
-Xcode 26 / iOS 26 SDK, which App Store Connect now requires) archives the
+`.github/workflows/testflight.yml` (workflow_dispatch, `xcode-27` runner
+with Xcode 27.2 — the iPhone Duo layouts need the iOS 27.1 SDK or newer, and
+the run fails if the archive doesn't link them) archives the
 Xcode project with manual signing (`xcodebuild archive` +
 `-exportArchive`, bundle `com.omnibus.mobile`) and uploads the `.ipa`
 with `xcrun altool`, stamping the marketing version from the latest `v*`

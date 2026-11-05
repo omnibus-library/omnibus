@@ -53,9 +53,11 @@ jobs:
     name: unit tests (omnibusTests)
     needs: changes
     if: ${{ needs.changes.outputs.ios == 'true' || github.event_name != 'pull_request' }}
-    # omnibus-ios needs the Xcode 26 / iOS 26 SDK, only on macos-26 — same
-    # pinning as testflight.yml's ios job.
-    runs-on: macos-26
+    # The same Xcode as testflight.yml's ios job, so CI compiles the iPhone
+    # Duo code the shipped build carries; Xcode 26 compiles it out.
+    runs-on: xcode-27
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
 
@@ -129,7 +131,9 @@ jobs:
     name: UI tests (omnibusUITests)
     needs: changes
     if: ${{ needs.changes.outputs.ios == 'true' || github.event_name != 'pull_request' }}
-    runs-on: macos-26
+    runs-on: xcode-27
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
 

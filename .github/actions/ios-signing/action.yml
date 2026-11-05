@@ -166,7 +166,7 @@ runs:
         # Install into every dir xcodebuild searches, keyed by UUID as Xcode
         # expects. Xcode 16 moved the search path to ~/Library/Developer/Xcode/
         # UserData and no longer reads the legacy ~/Library/MobileDevice one, so
-        # on the macos-26 image (Xcode 26) only the former resolves
+        # on Xcode 16 and later only the former resolves
         # PROVISIONING_PROFILE_SPECIFIER; write both to stay version-agnostic.
         for INSTALL_DIR in \
           "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles" \
