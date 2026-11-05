@@ -148,7 +148,7 @@ fn progress_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(cross_format::post_cross_format_follow))
 }
 
-/// Admin book merge/unmerge.
+/// Book merge/unmerge.
 fn merge_routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
         .routes(routes!(merge::post_merge_books))

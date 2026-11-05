@@ -4,7 +4,7 @@ import { expect } from "../fixtures/test";
 import { isPostTo } from "../utils/api";
 import { BaseComponent } from "./BaseComponent";
 
-/** An admin's "Merge with…" dialog on a book page, and the toast after it. */
+/** The "Merge with…" dialog on a book page, and the toast after it. */
 export class MergeDialogComponent extends BaseComponent {
   readonly openButton: Locator;
   private readonly filesTab: Locator;

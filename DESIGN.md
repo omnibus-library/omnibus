@@ -259,7 +259,7 @@ Quiet until touched.
 - **Error:** an Ember border (`aria-invalid`), with 0.8rem Ember text below. Labels are Muted Ink at 0.875rem weight 500.
 
 ### Navigation
-- **Top bar:** sticky and frosted, 65px tall (61px on phones), with a serif 25px wordmark on the left. Nav links are mono uppercase pills: Soft Ink at rest, Page White on Shelf on hover, Page White on Raised when active. Links hide below 720px.
+- **Top bar:** sticky and frosted, 65px tall (61px on phones), with a serif 25px wordmark on the left (just the mark below 400px). Nav links are mono uppercase pills: Soft Ink at rest, Page White on Shelf on hover, Page White on Raised when active. Links hide below 720px.
 - **Search trigger:** a 36px pill showing the ⌘K hint.
 
 ### Book Cover

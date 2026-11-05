@@ -1,6 +1,6 @@
 //! Tool implementations, one module per family: reads in [`read`], check-in /
 //! wishlist / physical in [`checkin`], shelf authoring in [`shelves`],
-//! metadata repair in [`metadata`], admin merge/undo in [`merge`], and the
+//! metadata repair in [`metadata`], merge/undo in [`merge`], and the
 //! chapter, content-search and book-image reads in [`content`]. Each is a `#[tool_router]`
 //! impl block combined in `OmnibusMcp::new`, per [`crate::client`]'s allowlist.
 

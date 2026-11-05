@@ -74,6 +74,23 @@ jobs:
       - name: cargo fmt --check
         run: cargo fmt --all --check
 
+  # Names a new migration numbered at or below the base's highest, which
+  # otherwise surfaces later as a duplicate `_sqlx_migrations.version`.
+  migration-numbers:
+    name: migration numbers
+    needs: changes
+    if: ${{ github.event_name == 'pull_request' && needs.changes.outputs.rust == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check new migrations are numbered above the base's
+        env:
+          BASE_REF: origin/${{ github.base_ref }}
+        run: scripts/check-migration-numbers.sh "$BASE_REF"
+
   # `clippy` and `test` fan out into independent matrix jobs with no serial
   # prepass: each variant restores the cargo cache and compiles its own
   # closure in parallel. There is no "build once" job; deps recompile across

@@ -1,6 +1,6 @@
 //  AdminBookService.swift
-//  The two admin writes on book detail — merge and delete-files — and the
-//  cache work each one leaves behind.
+//  The two library-wide writes on book detail — merge (editors and admins)
+//  and delete-files (admins) — and the cache work each one leaves behind.
 //
 //  Both are library-wide (every reader sees the result), so neither passes
 //  rule 08 test 1 and neither ever touches the outbox: every call here goes
