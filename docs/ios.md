@@ -378,10 +378,14 @@ builds the app unchanged and every answer is "none".
   keyboard-down size (`PaneGeometryReader`): read live, a field's keyboard flipped an
   upright iPad to two panes, which rebuilt the field, dropped its focus and flipped it
   back. The player's arrangement, `CoverGrid` and `onFoldSpanChange` still measure live.
-- **Full-screen surfaces.** The player, which no tab bar shows on, takes the side
-  column back: the system reports what really occludes it as `ReservedRegion`s of
-  kind `.occlusion` (the status bar's housing, and the camera inside it), and only
-  those are cleared; the player's top bar and controls keep off both
+- **Full-screen surfaces.** The reader and the player, which no tab bar shows on,
+  take the side column back: the system reports what really occludes it as
+  `ReservedRegion`s of kind `.occlusion` (the status bar's housing, and the camera
+  inside it), and only those are cleared. The reader hands `#stage` its insets
+  (`ReaderScreen.reclaimingSideColumn`, `--rd-inset-*`) and clears the camera alone,
+  keeping its status bar hidden there rather than showing it with the controls, so the
+  page width never changes with them or with the player sheet shown over the reader
+  (`ReaderController.hidesStatusBar`); the player's top bar and controls keep off both
   (`clearsOcclusions`).
 - **Rows across a fold.** `FoldSpan` centres a row on the hinge, the wider side giving
   up its excess, as the system's own split views do. `CoverGrid` lays an even column

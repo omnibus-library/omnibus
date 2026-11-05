@@ -416,16 +416,68 @@ final class ReaderController: NSObject {
     /// Learnt from reports taken with the bar hidden alone; with it showing, another screen's
     /// bar (the audio player's) can raise the top inset and keep the decision up.
     func hidesStatusBar(chromeVisible: Bool) -> Bool {
-        !(chromeVisible && statusBarFitsInTopInset)
+        Self.hidesStatusBar(
+            chromeVisible: chromeVisible,
+            fitsInTopInset: statusBarFitsInTopInset,
+            reclaimingSideColumn: sideColumnEdge != nil
+        )
+    }
+
+    /// The status-bar policy: always hidden while a side column is taken back, whose
+    /// width would otherwise come and go with the chrome; else shown with the chrome
+    /// only where the bar fits in the top inset.
+    nonisolated static func hidesStatusBar(
+        chromeVisible: Bool, fitsInTopInset: Bool, reclaimingSideColumn: Bool
+    ) -> Bool {
+        reclaimingSideColumn || !(chromeVisible && fitsInTopInset)
     }
 
     /// Listens to the window and hinge the stage reports.
     func observe(_ stage: ReaderStageView) {
+        self.stage = stage
+        stage.sideColumnEdge = sideColumnEdge
         stage.onScreenChange = { [weak self] screen, statusBarHidden in
             self?.screen = screen
             if statusBarHidden { self?.statusBarFitsInTopInset = screen.insets.top > 0 }
+            self?.applyStageInsets()
         }
         stage.onFoldChange = { [weak self] folded in self?.isFolded = folded }
+    }
+
+    @ObservationIgnored private weak var stage: ReaderStageView?
+
+    /// The edge an iPhone Duo runs its bars down, which the reader view reads
+    /// from its environment; the stage takes that column back, and the status
+    /// bar stays hidden while it does. Setting it re-reports the screen at once.
+    var sideColumnEdge: UIRectEdge? {
+        didSet { stage?.sideColumnEdge = sideColumnEdge }
+    }
+
+    /// The `#stage` insets the page was last handed; nil while it keeps the safe area's.
+    @ObservationIgnored private var appliedStageInsets: UIEdgeInsets?
+
+    /// Hands the page the insets `screen` cuts its stage from, when they changed.
+    /// The glue's resize watch re-paginates to the stage that results.
+    private func applyStageInsets() {
+        let wanted = screen?.stageInsets
+        guard wanted != appliedStageInsets else { return }
+        appliedStageInsets = wanted
+        run(Self.stageInsetsScript(wanted))
+        // The prose reflows inside an unresized web view, often at the same CFI.
+        pageCurl?.pageChanged()
+    }
+
+    /// The script that sets `--rd-inset-*`, or clears them back to the safe area for nil.
+    nonisolated static func stageInsetsScript(_ insets: UIEdgeInsets?) -> String {
+        guard let insets else {
+            return "['--rd-inset-top','--rd-inset-left','--rd-inset-right']"
+                + ".forEach(function(n){document.documentElement.style.removeProperty(n)})"
+        }
+        return "(function(s){"
+            + "s.setProperty('--rd-inset-top','\(insets.top)px');"
+            + "s.setProperty('--rd-inset-left','\(insets.left)px');"
+            + "s.setProperty('--rd-inset-right','\(insets.right)px')"
+            + "})(document.documentElement.style)"
     }
 
     var settings: ReaderSettings {
@@ -828,6 +880,9 @@ final class ReaderController: NSObject {
         // holding it — a `hostReady` still in flight when the reader tore down
         // would otherwise re-arm the diff base against a page that is gone.
         guard webView != nil, let script = bootScript() else { return }
+        // A fresh page holds no stage insets of its own yet.
+        appliedStageInsets = nil
+        applyStageInsets()
         run(script)
         // `bootScript` baked the settings in force into its options, so the page
         // answering this call is showing exactly these — and a change arriving

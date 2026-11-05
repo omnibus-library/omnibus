@@ -29,12 +29,15 @@
          button row above, the scrubber card below — because that chrome is
          laid over the page rather than docked outside it, and re-paginating
          every time the bars toggle would cost a reflow per tap. */
+      /* The host may set --rd-inset-{top,left,right} where it knows better
+         than the safe area: an iPhone Duo's side column, kept for bars the
+         reader hides, holds nothing then but its camera. */
       #stage {
         position: absolute;
-        top: calc(env(safe-area-inset-top, 0px) + 58px);
+        top: calc(var(--rd-inset-top, env(safe-area-inset-top, 0px)) + 58px);
         bottom: calc(env(safe-area-inset-bottom, 0px) + 58px);
-        left: calc(env(safe-area-inset-left, 0px) + 10px);
-        right: calc(env(safe-area-inset-right, 0px) + 10px);
+        left: calc(var(--rd-inset-left, env(safe-area-inset-left, 0px)) + 10px);
+        right: calc(var(--rd-inset-right, env(safe-area-inset-right, 0px)) + 10px);
       }
       /* epub.js sizes its iframe from the container, so the container has to
          be a definite box — not an auto-height flow element. */

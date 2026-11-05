@@ -23,6 +23,8 @@ struct ReaderView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(AppState.self) private var appState
     @Environment(AudioPlayer.self) private var audio
+    @Environment(\.sideBarEdge) private var sideBarEdge
+    @Environment(\.layoutDirection) private var layoutDirection
 
     /// Opened at a place the book page asked for, which automatic resume must not move.
     @State private var openedAtAskedPlace = false
@@ -199,6 +201,10 @@ struct ReaderView: View {
         // reading theme — white-on-white otherwise. Sheets opt back out below.
         .preferredColorScheme(pageScheme)
         .task { await prepare() }
+        // An iPhone Duo's bar column, which the page takes back; the status bar stays hidden there.
+        .onChange(of: sideBarEdge, initial: true) { _, edge in
+            controller.sideColumnEdge = edge?.rectEdge(in: layoutDirection)
+        }
         // The glue owns tap zones and swipe-to-turn inside the page; a centre
         // tap arrives here as a token rather than us layering a gesture view
         // over the web view and starving it of touches.
@@ -510,16 +516,21 @@ struct ReaderView: View {
             ),
             ink: barInk
         )
+        // Centred over the page, which may have taken back a side column.
+        .offset(x: controller.screen?.stageCentreShift ?? 0)
     }
 
     @ViewBuilder
     private var chrome: some View {
         if chromeVisible {
             VStack {
-                topBar
+                topBar.clearsOcclusions(sensorsOnly: true)
                 Spacer()
-                bottomBar
+                bottomBar.clearsOcclusions(sensorsOnly: true)
             }
+            // Out to the page's own edges where it took back a side column,
+            // clear of the camera alone with the status bar hidden.
+            .reclaimsSideColumn(controller.screen?.stageInsets != nil)
             .transition(.opacity)
             // Glass resolves against the environment's scheme, not the pixels
             // behind it, so app-dark chrome lands as a grey slab on a white

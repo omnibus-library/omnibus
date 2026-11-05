@@ -5,6 +5,7 @@
 import CoreGraphics
 import SwiftUI
 import Testing
+import UIKit
 
 @testable import omnibus
 
@@ -236,4 +237,19 @@ private let laptopFold = Fold(frame: CGRect(x: 0, y: 463, width: 669, height: 25
     // The folded phone on its side, the laptop pose and the inner display held tall stay one column.
     #expect(PaneSplit.spread(size: CGSize(width: 597, height: 466), fold: nil) == nil)
     #expect(PaneSplit.spread(size: CGSize(width: 669, height: 951), fold: laptopFold) == nil)
+}
+
+@Test func sensorsOnlyDropsAHousingThatHoldsTheCamera() {
+    let camera = CGRect(x: 399.67, y: 29.33, width: 37, height: 37)
+    let housing = CGRect(x: 382, y: 0, width: 84, height: 174)
+    let apart = CGRect(x: 0, y: 600, width: 40, height: 40)
+    #expect([camera, housing, apart].sensorsOnly == [camera, apart])
+}
+
+@Test func horizontalEdgeMapsToItsEdgeSetAndToTheScreenEdgeForTheLayoutDirection() {
+    #expect(HorizontalEdge.trailing.edges == .trailing)
+    #expect(HorizontalEdge.leading.edges == .leading)
+    #expect(HorizontalEdge.trailing.rectEdge(in: .leftToRight) == .right)
+    #expect(HorizontalEdge.trailing.rectEdge(in: .rightToLeft) == .left)
+    #expect(HorizontalEdge.leading.rectEdge(in: .leftToRight) == .left)
 }
