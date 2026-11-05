@@ -51,7 +51,9 @@ function RequestRow({
         )}
       </div>
       <div className="rqs-status">
-        <p className="rqs-facts">{requestFacts(listing, viewer.id)}</p>
+        <p className="rqs-facts">
+          {requestFacts(listing, viewer.id)} · {ago(now, request.updatedAt)}
+        </p>
         {swapFacts(listing).map((swap) => (
           <p key={swap.id} className="rqs-swap">
             {swap.text}
@@ -60,7 +62,7 @@ function RequestRow({
       </div>
       <p className="rqs-who">
         <span className="rqs-name">{listing.requesterName}</span>
-        <span className="rqs-when">{ago(now, request.updatedAt)}</span>
+        <span className="rqs-when">{ago(now, request.createdAt)}</span>
       </p>
       <div className="rqs-actions">
         {canActOn(viewer, request) && isCancellable(request) && (

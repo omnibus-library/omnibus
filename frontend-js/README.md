@@ -38,8 +38,8 @@ pages (`/authors/:id`, `/series/:id`, `/shelves/:id`), the three readers
 (`/read`, `/comic`, `/pdf`), the audiobook player (`/listen/:uuid`, `?file_id`
 picks one of a book's files), personal settings (`/settings`), Administration
 (`/admin`, `/admin/cleanup/:kind`), stats (`/stats`), the chart builder
-(`/stats/chart`), the household's wishlists (`/wishlists`) and Not Found are
-the screens, and the top bar carries the user menu, the ⌘K search palette and
+(`/stats/chart`), the household's wishlists (`/wishlists`), every reader's book
+requests (`/requests`) and Not Found are the screens, and the top bar carries the user menu, the ⌘K search palette and
 Add books, a sheet rather than a route. There is no phone tab bar. A bare
 `/search` and `/connect` redirect to the library.
 `/settings` has its five sections (Profile, Preferences, Goals, Devices,
@@ -116,6 +116,13 @@ connected. Add to wishlist searches the library and the providers by title, auth
 ISBN and always adds to your own list; a provider's record that matches a library book is
 added to that book rather than minted as a second one. The page's stories run against the
 stateful fake in `src/testing/wishlistHandlers.ts`.
+Requests (`/requests`) lists every reader's book requests, newest first, in every state,
+with who asked and a filter by title or author; the user menu links it while the server
+has book requests on. Cancel shows only to the reader who asked, or an admin. A book's
+request page (`/books/:uuid/request?id=`) lists the book's other requests below its lane,
+saying only what was recorded (who cancelled it, the version, how far it got, a version
+swapped for another), with Request again on a cancelled one. Both run against the stateful
+fake in `src/testing/requestHandlers.ts`.
 A page that throws renders `RouteError` inside the top bar; anything else that
 throws (the session gate, the shell, a reader) renders it full-screen.
 

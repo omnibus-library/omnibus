@@ -55,7 +55,7 @@ function HistoryRow({
           className="rq-history-facts"
           to={requestPath(request.bookUuid, request.id)}
         >
-          {requestFacts(listing, viewer.id)}
+          {requestFacts(listing, viewer.id)} · {ago(now, request.updatedAt)}
         </Link>
         {swapFacts(listing).map((swap) => (
           <p key={swap.id} className="rq-history-swap">
@@ -63,7 +63,7 @@ function HistoryRow({
           </p>
         ))}
         <p className="rq-history-meta">
-          Requested by {who} · {ago(now, request.updatedAt)}
+          Requested by {who} · {ago(now, request.createdAt)}
         </p>
       </div>
       {request.state === "cancelled" && viewer.canRequest && (

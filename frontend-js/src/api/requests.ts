@@ -93,6 +93,8 @@ export function toBookRequest(wire: BookRequestWire) {
     cancelledBy: (wire.cancelled_by ?? null) as UserId | null,
     note: wire.note ?? null,
     /** Unix seconds. */
+    createdAt: wire.created_at,
+    /** Unix seconds. */
     updatedAt: wire.updated_at,
     versions: wire.versions.map(toVersion),
   };
