@@ -42,11 +42,11 @@ extension ReaderScreen {
         return size.width - stage.left - stage.right - 2 * Self.stageGutter
     }
 
-    /// The safe area with the side bar's column on `edge` given back. The
-    /// reader keeps its status bar hidden whenever it takes the column, so the
-    /// column holds only the sensors among `occlusions` (window coordinates),
-    /// and only they are cleared, by the stage dropping below one that dips into
-    /// its top or by keeping enough of the side for one beside the prose.
+    /// The safe area with the side bar's column on `edge` given back, clearing
+    /// only the sensors among `occlusions` (window coordinates): below one that
+    /// dips into its top, or beside the prose. The reader hides its status bar
+    /// while it takes the column, but a sheet over it may show the bar; the
+    /// reclaim holds then too, so the page keeps its width behind the sheet.
     static func reclaimingSideColumn(
         _ edge: UIRectEdge, safe: UIEdgeInsets, size: CGSize, occlusions: [CGRect]
     ) -> UIEdgeInsets {
