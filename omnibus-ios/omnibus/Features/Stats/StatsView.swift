@@ -69,42 +69,28 @@ struct StatsView: View {
 
     var body: some View {
         NavigationStack(path: $path) {
-            ScrollView {
-                // The masthead (title + picker) is outside every state branch
-                // below, so a refusal or an error for another reader never
-                // takes the way back to your own stats with it.
-                LazyVStack(alignment: .leading, spacing: 30, pinnedViews: [.sectionHeaders]) {
+            // A spread wherever there is room for one: the glance on the
+            // leading page, the period bands on the trailing one, each
+            // scrolling alone so a band header still pins inside the page it
+            // governs. Kept while a reader switch reloads, so the masthead and
+            // its picker aren't rebuilt and neither page loses its place.
+            SpreadPages(spreads: failure != .notSharing) {
+                page {
                     masthead
-                        .padding(.bottom, -Spacing.lg)
-
-                    if failure == .notSharing {
-                        StatsRefusalView { subject = .you }
-                    } else if isLoading && summary == nil {
-                        LoadingView()
-                    } else if let failure, case let .error(message) = failure, summary == nil {
-                        ErrorStateView(message: message) {
-                            Task {
-                                await load()
-                                await loadStandingSummary()
-                                await loadResumePoints()
-                            }
-                        }
-                    } else if let summary {
-                        figures(summary)
-                    }
+                    if let summary { glance(summary) } else { pending }
                 }
-                .padding(.bottom, 40)
+            } trailing: { headerHeight in
+                page {
+                    // Level with the streak beside it, below the masthead.
+                    Color.clear.frame(height: headerHeight)
+                    if let summary { bands(summary) }
+                }
+            } column: {
+                page { column }
             }
-            .scrollIndicators(.hidden)
             .background(ScreenBackground())
             .toolbar(.hidden, for: .navigationBar)
             .topEdgeScrim()
-            .refreshTask {
-                await load(force: true)
-                await loadReaders()
-                await loadStandingSummary()
-                await loadResumePoints()
-            }
             .withDestinations()
         }
         .task {
@@ -161,6 +147,57 @@ struct StatsView: View {
 
     // MARK: - The screen
 
+    /// The whole page as one column: the masthead, then whichever state it is in.
+    /// The masthead is outside every state branch, so a refusal or an error for
+    /// another reader never takes the way back to your own stats with it.
+    @ViewBuilder
+    private var column: some View {
+        masthead
+
+        if failure == .notSharing {
+            StatsRefusalView { subject = .you }
+        } else if let summary {
+            glance(summary)
+            bands(summary)
+        } else {
+            pending
+        }
+    }
+
+    /// What stands in for the figures until they land: loading, or why they didn't.
+    @ViewBuilder
+    private var pending: some View {
+        if isLoading {
+            LoadingView()
+        } else if let failure, case let .error(message) = failure {
+            ErrorStateView(message: message) {
+                Task {
+                    await load()
+                    await loadStandingSummary()
+                    await loadResumePoints()
+                }
+            }
+        }
+    }
+
+    /// One scrolling page of the screen, its bands' headers pinning as they pass.
+    private func page(@ViewBuilder _ content: () -> some View) -> some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 30, pinnedViews: [.sectionHeaders]) {
+                content()
+            }
+            .padding(.bottom, 40)
+        }
+        .scrollIndicators(.hidden)
+        .refreshTask {
+            await load(force: true)
+            await loadReaders()
+            await loadStandingSummary()
+            await loadResumePoints()
+        }
+    }
+
+
     /// The masthead: the subject's own title, and the picker in its trailing
     /// slot whenever there's someone else to switch to.
     private var masthead: some View {
@@ -169,11 +206,13 @@ struct StatsView: View {
                 StatsReaderPicker(subject: $subject, readers: readers)
             }
         }
+        .padding(.bottom, -Spacing.lg)
+        .spreadHeader()
     }
 
-    /// Everything below the masthead once a summary has loaded.
+    /// The standing glance below the masthead: streak, goals, the last four weeks, activity.
     @ViewBuilder
-    private func figures(_ summary: StatsSummary) -> some View {
+    private func glance(_ summary: StatsSummary) -> some View {
         // Off the unwindowed summary — see `standingSummary`. The
         // streak card needs it too: `current_streak_days` is unwindowed
         // but `longest_streak_days` is *not* (`db/src/stats/streak.rs`:
@@ -194,7 +233,11 @@ struct StatsView: View {
                 HeatmapView(days: unwindowed.heatmap, asOf: unwindowed.asOfDay)
             }
         }
+    }
 
+    /// The two bands: what the period control governs, then what it doesn't.
+    @ViewBuilder
+    private func bands(_ summary: StatsSummary) -> some View {
         Section {
             windowed(summary)
         } header: {

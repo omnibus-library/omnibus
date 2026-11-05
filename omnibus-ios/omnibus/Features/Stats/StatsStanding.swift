@@ -362,6 +362,7 @@ struct HeatmapView: View {
             }
             .scrollIndicators(.hidden)
             .defaultScrollAnchor(.trailing)
+            .endsAtSideBar()
 
             legend
                 .screenPadding()

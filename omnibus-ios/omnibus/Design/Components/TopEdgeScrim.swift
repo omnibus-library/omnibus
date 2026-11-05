@@ -16,6 +16,12 @@ struct TopEdgeScrim: View {
     /// clear the Dynamic Island, with room under it for the fade.
     var height: CGFloat = 104
 
+    /// Where the status bar has moved into a side column (iPhone Duo), the
+    /// top edge only needs softening; the full band would frost the masthead.
+    static let sideBarHeight: CGFloat = 16
+
+    @Environment(\.sideBarEdge) private var sideBarEdge
+
     var body: some View {
         Rectangle()
             .fill(.ultraThinMaterial)
@@ -31,9 +37,10 @@ struct TopEdgeScrim: View {
                     endPoint: .bottom
                 )
             )
-            .frame(height: height)
+            .frame(height: sideBarEdge == nil ? height : Self.sideBarHeight)
             .frame(maxHeight: .infinity, alignment: .top)
-            .ignoresSafeArea(edges: .top)
+            // Across an iPhone Duo's side column too, so the band doesn't stop short of it.
+            .ignoresSafeArea(edges: [.top, .horizontal])
             .allowsHitTesting(false)
     }
 }

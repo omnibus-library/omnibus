@@ -16,6 +16,7 @@ struct PlayerView: View {
     @Environment(\.palette) private var theme
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.sideBarEdge) private var sideBarEdge
     private let downloads = DownloadManager.shared
 
     /// The in-flight download of the book currently loaded, if any — the only
@@ -46,6 +47,24 @@ struct PlayerView: View {
     @State private var showBookmarks = false
     @State private var syncedHere = false
     @State private var showCarMode = false
+
+    /// The artwork region's centre, as a share of the whole player.
+    static func bloom(over arrangement: PlayerArrangement) -> UnitPoint {
+        let bounds = arrangement.artwork.union(arrangement.controls)
+        guard bounds.width > 0, bounds.height > 0 else { return UnitPoint(x: 0.5, y: 0.32) }
+        return UnitPoint(
+            x: arrangement.artwork.midX / bounds.width,
+            y: (arrangement.artwork.minY + arrangement.artwork.height * 0.4) / bounds.height
+        )
+    }
+
+    /// The top bar's row: minimize, then the reader and bookmark discs.
+    static let topBarHeight: CGFloat = 40
+    /// Widest the transport and utility rows run: past a phone's width their
+    /// buttons drift apart until they stop reading as one control.
+    static let controlsMaxWidth: CGFloat = 460
+    /// Shortest side-by-side controls pane whose controls centre rather than sit low for the thumb.
+    static let centredControlsHeight: CGFloat = 560
 
     /// Share of the band between the two insets the artwork may take.
     ///
@@ -87,10 +106,128 @@ struct PlayerView: View {
     /// Everything the dismiss drag carries: the wash, the stage, and the two
     /// inset rows, so the whole player travels as one sheet would.
     private var surface: some View {
+        GeometryReader { geometry in
+            let arrangement = PlayerArrangement.resolve(
+                in: CGRect(origin: .zero, size: geometry.size),
+                fold: geometry.activeFold
+            )
+            if arrangement.kind == .stacked {
+                stackedSurface(width: geometry.size.width)
+            } else {
+                arrangedSurface(arrangement)
+            }
+        }
+        // No tab bar ever shows here, so an iPhone Duo's bar column is the
+        // player's too, bar the status bar and camera the top bar keeps off.
+        .reclaimsSideColumn()
+    }
+
+    /// Artwork in one region and controls in the other: a wide screen, or
+    /// either side of a partly folded hinge.
+    private func arrangedSurface(_ arrangement: PlayerArrangement) -> some View {
+        let sideBySide = arrangement.kind == .sideBySide
+        // Side by side, the bar spans both panes as it does upright, so the
+        // way out stays in the corner; above a fold it tops the artwork half.
+        let barClearance = sideBySide ? Self.topBarHeight + Spacing.xs * 2 : 0
+
+        let artwork = VStack(spacing: Spacing.md) {
+            if !sideBySide { topBar.clearsOcclusions() }
+            Spacer(minLength: 0)
+            cover(maxHeight: max(120, (arrangement.artwork.height - barClearance) * 0.66))
+            titles
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, Spacing.screen)
+        .padding(.top, barClearance)
+        .padding(.vertical, Spacing.xs)
+        .frame(width: arrangement.artwork.width, height: arrangement.artwork.height)
+        .contentShape(Rectangle())
+        .gesture(dismissGesture)
+
+        // Beside the artwork on a phone the transport sits low, where the thumb
+        // is; on a tablet-tall screen, or below a fold, the controls centre
+        // level with the artwork rather than leave the half above them empty.
+        // Centred too beside an iPhone Duo's bar column, whose foot holds the
+        // status bar and camera when the phone is on its side.
+        let centred = !sideBySide || arrangement.controls.height >= Self.centredControlsHeight
+            || sideBarEdge != nil
+        let controlPane = VStack(spacing: 0) {
+            Spacer(minLength: Spacing.sm)
+            controls
+                .frame(maxWidth: Self.controlsMaxWidth)
+                .clearsOcclusions()
+            if centred { Spacer(minLength: Spacing.sm) }
+        }
+        .padding(.horizontal, Spacing.screen)
+        .padding(.top, barClearance)
+        .padding(.vertical, Spacing.xs)
+        .frame(width: arrangement.controls.width, height: arrangement.controls.height)
+
+        return ZStack(alignment: .top) {
+            backdrop(bloom: Self.bloom(over: arrangement))
+            if sideBySide {
+                HStack(spacing: 0) {
+                    artwork
+                    Color.clear.frame(width: max(0, arrangement.controls.minX - arrangement.artwork.maxX))
+                    controlPane
+                }
+                topBar
+                    .clearsOcclusions()
+                    .padding(.horizontal, Spacing.screen)
+                    .padding(.vertical, Spacing.xs)
+            } else {
+                VStack(spacing: 0) {
+                    artwork
+                    Color.clear.frame(height: max(0, arrangement.controls.minY - arrangement.artwork.maxY))
+                    controlPane
+                }
+            }
+            statusLayers
+            // Over the artwork's region, which starts at the corner: across the
+            // whole player the banners sat on a low transport, where the stacked
+            // player's inset keeps them clear of it.
+            banners
+                .frame(width: arrangement.artwork.width, height: arrangement.artwork.height)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .background(ScreenBackground())
+    }
+
+    private func stackedSurface(width: CGFloat) -> some View {
         ZStack {
             backdrop
             stage
+            statusLayers
+            banners
+        }
+        // `width`, the surface's own, pins these rows to a definite width.
+        // Without one they inherit an unbounded proposal from the cover stack,
+        // and every `Spacer` / `maxWidth: .infinity` child expands past the
+        // screen edge — which silently pushed the transport ends and the top
+        // bar out of view. `containerRelativeFrame` measured the safe area
+        // instead, which on an iPhone Duo slid both rows off the left edge.
+        .safeAreaInset(edge: .top, spacing: 0) {
+            topBar
+                .clearsOcclusions()
+                .padding(.horizontal, Spacing.screen)
+                .padding(.vertical, Spacing.xs)
+                .frame(width: width)
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            controls
+                .frame(maxWidth: Self.controlsMaxWidth)
+                .padding(.horizontal, Spacing.screen)
+                .padding(.top, Spacing.sm)
+                .padding(.bottom, Spacing.xs)
+                .frame(width: width)
+        }
+        .background(ScreenBackground())
+    }
 
+    /// Loading, buffering and the download in flight, over either arrangement.
+    @ViewBuilder
+    private var statusLayers: some View {
+        ZStack {
             if player.isLoading {
                 LoadingView(label: "Preparing audio")
                     .background(palette.bg0Color.opacity(0.6))
@@ -119,7 +256,14 @@ struct PlayerView: View {
                     Spacer(minLength: 0)
                 }
             }
+        }
+    }
 
+    /// The banner slot: a playback error, else an offer to jump. Each banner
+    /// sits at the foot of the region it is laid over, clear of the transport.
+    @ViewBuilder
+    private var banners: some View {
+        ZStack {
             if let message = player.error {
                 // Takes the banner slot ahead of the offers: an offer to jump
                 // somewhere is noise while nothing is playing.
@@ -146,25 +290,6 @@ struct PlayerView: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        // `containerRelativeFrame` pins these rows to a definite width. Without
-        // it they inherit an unbounded proposal from the cover stack, and every
-        // `Spacer` / `maxWidth: .infinity` child expands past the screen edge —
-        // which is what silently pushed the transport ends and the top bar out
-        // of view.
-        .safeAreaInset(edge: .top, spacing: 0) {
-            topBar
-                .padding(.horizontal, Spacing.screen)
-                .padding(.vertical, Spacing.xs)
-                .containerRelativeFrame(.horizontal)
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            controls
-                .padding(.horizontal, Spacing.screen)
-                .padding(.top, Spacing.sm)
-                .padding(.bottom, Spacing.xs)
-                .containerRelativeFrame(.horizontal)
-        }
-        .background(ScreenBackground())
     }
 
     /// A blurred, saturated wash of the cover behind the controls.
@@ -173,7 +298,10 @@ struct PlayerView: View {
     /// with no cover art used to get a flat black player while the book itself
     /// was drawn in its own colour everywhere else in the app, and a cover that
     /// is mostly dark washed out to the same black.
-    private var backdrop: some View {
+    private var backdrop: some View { backdrop(bloom: UnitPoint(x: 0.5, y: 0.32)) }
+
+    /// `bloom` is where the tone glows from: behind the artwork, wherever it stands.
+    private func backdrop(bloom: UnitPoint) -> some View {
         let tone = CoverIdentity(book).tone
 
         return ZStack {
@@ -185,7 +313,7 @@ struct PlayerView: View {
                     OKLCH(0.24, tone.c * 0.7, tone.h).color.opacity(0.5),
                     .clear,
                 ],
-                center: UnitPoint(x: 0.5, y: 0.32),
+                center: bloom,
                 startRadius: 0,
                 endRadius: 460
             )
@@ -277,7 +405,7 @@ struct PlayerView: View {
 
     private var topBar: some View {
         HStack(spacing: Spacing.md) {
-            circleButton("chevron.down") { dismiss() }
+            circleButton("chevron.down", label: "Minimize player") { dismiss() }
 
             Spacer()
 
@@ -294,14 +422,14 @@ struct PlayerView: View {
             }
 
             if book.hasEbook {
-                circleButton("book") { Presentation.shared.openReader(book) }
+                circleButton("book", label: "Read the ebook") { Presentation.shared.openReader(book) }
             }
-            circleButton("bookmark") { showBookmarks = true }
+            circleButton("bookmark", label: "Bookmarks") { showBookmarks = true }
         }
-        .frame(height: 40)
+        .frame(height: Self.topBarHeight)
     }
 
-    private func circleButton(_ icon: String, action: @escaping () -> Void) -> some View {
+    private func circleButton(_ icon: String, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.system(size: 15, weight: .semibold))
@@ -310,6 +438,7 @@ struct PlayerView: View {
                 .background(Circle().fill(palette.bg2Color))
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(label)
     }
 
     /// Takes the whole `CoverIdentity`, accent included, so the generated plate
@@ -661,6 +790,7 @@ private struct ChapterSheet: View {
 struct MiniPlayerBar: View {
     @Environment(AudioPlayer.self) private var player
     @Environment(\.palette) private var theme
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
 
     /// Toned from the book that is *playing*, not the screen the bar is docked
     /// on — the bar outlives any one screen, and a rail in the library's accent
@@ -674,6 +804,19 @@ struct MiniPlayerBar: View {
     /// app-global full-screen player; the reader passes its own handler so the
     /// book underneath stays open.
     var onExpand: (() -> Void)? = nil
+    /// Drawn in the system tab bar's accessory slot, which lays its own glass
+    /// capsule under it: no rule, material or rail, and the position as a ring
+    /// round the play button instead.
+    var inAccessory = false
+
+    /// Width the cover is pinned to in the accessory's shorter capsule.
+    private static let accessoryCoverWidth: CGFloat = 24
+    /// The docked row's cover and padding on a short screen, a phone on its
+    /// side, where the full bar took a fifth of the height from the page.
+    private static let shortCoverWidth: CGFloat = 26
+    private static let shortRowVerticalPadding: CGFloat = 5
+    /// The ring round the accessory's play button.
+    private static let ringDiameter: CGFloat = 30
 
     /// Height of the hairline progress rail along the top edge.
     private static let progressRailHeight: CGFloat = 2
@@ -700,61 +843,134 @@ struct MiniPlayerBar: View {
 
     var body: some View {
         if let book = player.book {
-            VStack(spacing: 0) {
-                // A hairline of progress along the top edge — the only place
-                // position is visible without opening the player. Whole-book,
-                // deliberately: the player's own bar is chapter-scoped, so this
-                // is where the other half of the picture lives.
-                ProgressBar(
-                    fraction: player.duration > 0 ? player.position / player.duration : 0,
-                    tint: palette.accentColor,
-                    height: Self.progressRailHeight
-                )
+            if inAccessory { accessoryRow(book) } else { dockedBar(book) }
+        }
+    }
 
-                Button {
-                    // The file already playing, so expanding cannot reload it.
-                    if let onExpand {
-                        onExpand()
-                    } else {
-                        Presentation.shared.openPlayer(book, fileID: player.fileID)
-                    }
-                } label: {
-                    HStack(spacing: 11) {
-                        BookCover(identity: CoverIdentity(book), size: .sm, cornerRadius: 4)
-                            .frame(width: Self.coverWidth)
+    private var isShort: Bool { verticalSizeClass == .compact }
 
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(book.displayTitle)
-                                .font(.ui(13.5, weight: .semibold))
-                                .foregroundStyle(palette.ink0Color)
-                                .lineLimit(1)
-                            Text(player.currentChapter?.title ?? book.authorDisplay)
-                                .font(.ui(11))
-                                .foregroundStyle(palette.ink3Color)
-                                .lineLimit(1)
-                        }
+    /// Whole-book progress, which the player's own chapter-scoped bar doesn't show.
+    private var fraction: Double {
+        player.duration > 0 ? min(1, max(0, player.position / player.duration)) : 0
+    }
 
-                        Spacer(minLength: 0)
+    private func expand(_ book: Book) {
+        // The file already playing, so expanding cannot reload it.
+        if let onExpand {
+            onExpand()
+        } else {
+            Presentation.shared.openPlayer(book, fileID: player.fileID)
+        }
+    }
 
-                        control("gobackward.15") { player.skip(-RemoteTransport.backSeconds) }
-                        control(player.isPlayingOrStarting ? "pause.fill" : "play.fill") { player.toggle() }
-                        // The bar had no way out, so `close()` — which is what
-                        // flushes the position and reports the listening
-                        // session — was unreachable and never ran.
-                        control("xmark") { player.close() }
-                            .accessibilityLabel("Stop playback")
-                    }
-                    .padding(.horizontal, Spacing.screen)
-                    .padding(.vertical, Self.buttonRowVerticalPadding)
-                    .contentShape(Rectangle())
+    private func accessoryRow(_ book: Book) -> some View {
+        Button { expand(book) } label: {
+            // A narrow capsule gives up the skip back before the title.
+            ViewThatFits(in: .horizontal) {
+                accessoryContent(book, skips: true)
+                accessoryContent(book, skips: false)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func accessoryContent(_ book: Book, skips: Bool) -> some View {
+        HStack(spacing: 10) {
+            BookCover(identity: CoverIdentity(book), size: .sm, cornerRadius: 3)
+                .frame(width: Self.accessoryCoverWidth)
+
+            VStack(alignment: .leading, spacing: 0) {
+                Text(book.displayTitle)
+                    .font(.ui(13, weight: .semibold))
+                    .foregroundStyle(palette.ink0Color)
+                    .lineLimit(1)
+                Text(player.currentChapter?.title ?? book.authorDisplay)
+                    .font(.ui(10.5))
+                    .foregroundStyle(palette.ink3Color)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 0)
+
+            if skips {
+                control("gobackward.15") { player.skip(-RemoteTransport.backSeconds) }
+            }
+            ringedToggle
+            control("xmark") { player.close() }
+                .accessibilityLabel("Stop playback")
+        }
+        .padding(.leading, 12)
+        .padding(.trailing, 6)
+    }
+
+    /// Play or pause inside a ring that fills with the book.
+    private var ringedToggle: some View {
+        Button { player.toggle() } label: {
+            Image(systemName: player.isPlayingOrStarting ? "pause.fill" : "play.fill")
+                .font(.system(size: 12))
+                .foregroundStyle(palette.ink0Color)
+                .frame(width: Self.ringDiameter, height: Self.ringDiameter)
+                .overlay {
+                    Circle().stroke(palette.ink0Color.opacity(0.16), lineWidth: 2)
+                    Circle()
+                        .trim(from: 0, to: fraction)
+                        .stroke(palette.accentColor, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
                 }
-                .buttonStyle(.plain)
+                .frame(width: 36, height: 36)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(player.isPlayingOrStarting ? "Pause" : "Play")
+    }
+
+    private func dockedBar(_ book: Book) -> some View {
+        VStack(spacing: 0) {
+            // A hairline of progress along the top edge — the only place
+            // position is visible without opening the player. Whole-book,
+            // deliberately: the player's own bar is chapter-scoped, so this
+            // is where the other half of the picture lives.
+            ProgressBar(fraction: fraction, tint: palette.accentColor, height: Self.progressRailHeight)
+                // Edge to edge like the bar's material, past a side column or sensor inset.
+                .ignoresSafeArea(.container, edges: .horizontal)
+
+            Button { expand(book) } label: {
+                HStack(spacing: 11) {
+                    BookCover(identity: CoverIdentity(book), size: .sm, cornerRadius: 4)
+                        .frame(width: isShort ? Self.shortCoverWidth : Self.coverWidth)
+
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(book.displayTitle)
+                            .font(.ui(13.5, weight: .semibold))
+                            .foregroundStyle(palette.ink0Color)
+                            .lineLimit(1)
+                        Text(player.currentChapter?.title ?? book.authorDisplay)
+                            .font(.ui(11))
+                            .foregroundStyle(palette.ink3Color)
+                            .lineLimit(1)
+                    }
+
+                    Spacer(minLength: 0)
+
+                    control("gobackward.15") { player.skip(-RemoteTransport.backSeconds) }
+                    control(player.isPlayingOrStarting ? "pause.fill" : "play.fill") { player.toggle() }
+                    // The bar had no way out, so `close()` — which is what
+                    // flushes the position and reports the listening
+                    // session — was unreachable and never ran.
+                    control("xmark") { player.close() }
+                        .accessibilityLabel("Stop playback")
+                }
+                .padding(.horizontal, Spacing.screen)
+                .padding(.vertical, isShort ? Self.shortRowVerticalPadding : Self.buttonRowVerticalPadding)
+                .contentShape(Rectangle())
             }
-            .background(palette.bg1Color.opacity(0.92))
-            .background(.ultraThinMaterial)
-            .overlay(alignment: .top) {
-                Rectangle().fill(palette.line2.color).frame(height: 0.5)
-            }
+            .buttonStyle(.plain)
+        }
+        .background(palette.bg1Color.opacity(0.92))
+        .background(.ultraThinMaterial)
+        .overlay(alignment: .top) {
+            Rectangle().fill(palette.line2.color).frame(height: 0.5)
         }
     }
 

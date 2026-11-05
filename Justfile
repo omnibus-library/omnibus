@@ -138,6 +138,11 @@ dev-server-down-test:
 dev-react-build-test:
     bash scripts/tests/dev-react-build.test.sh
 
+# Tests that scripts/lib/ios-sim.sh picks a plain iOS runtime beside a
+# device-specific one. Plain bash with a stubbed `xcrun`, like dev-react-build-test.
+ios-sim-test:
+    bash scripts/tests/ios-sim-ensure.test.sh
+
 # Tests for scripts/check-migration-numbers.sh against throwaway git repos.
 # Plain bash, like dev-react-build-test.
 migration-numbers-test:
@@ -151,7 +156,7 @@ migration-numbers:
 # Run every unit/integration suite: the Rust matrix first, then the script
 # suites. Rust leads so a failing script suite can't stop the recipe
 # before the cargo results are in.
-test: test-rust explore-test module-map-test koreader-report-test koreader-plugin-test scratch-server-test koreader-dev-test koreader-home-test dev-server-down-test dev-react-build-test migration-numbers-test
+test: test-rust explore-test module-map-test koreader-report-test koreader-plugin-test scratch-server-test koreader-dev-test koreader-home-test dev-server-down-test dev-react-build-test ios-sim-test migration-numbers-test
 
 # The Rust half of `just test`: every crate via cargo-nextest (the same runner
 # CI uses, so local and CI results match; no doctests in the tree, which is all

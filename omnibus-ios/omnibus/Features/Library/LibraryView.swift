@@ -374,7 +374,9 @@ struct LibraryView: View {
                         AmbientWash(tone: ambientTone)
                             .frame(height: 420)
                             .frame(maxHeight: .infinity, alignment: .top)
-                            .ignoresSafeArea(edges: .top)
+                            // Under the iPhone Duo's side bar too, which would
+                            // otherwise stand as a black strip beside the glow.
+                            .ignoresSafeArea(edges: [.top, .horizontal])
                             // Cross-fades when the book you're reading changes.
                             .animation(Motion.page, value: ambientTone.h)
                     }

@@ -63,10 +63,10 @@ struct ReaderIndicators {
 
 /// The two labels, which stay put whether the buttons are showing or not.
 ///
-/// They sit in the bands `#stage` reserves via `env(safe-area-inset-*)`, so
-/// they never overlap prose, and they take no touches so the page keeps every
-/// gesture. Only the buttons come and go on a centre tap — the position is
-/// quiet enough to live there permanently.
+/// They sit in the bands `#stage` reserves beyond the insets it is cut from
+/// (`--rd-inset-*`, else the safe area), so they never overlap prose, and they
+/// take no touches so the page keeps every gesture. Only the buttons come and
+/// go on a centre tap — the position is quiet enough to live there permanently.
 struct ReaderIndicatorLabels: View {
     let indicators: ReaderIndicators
     let ink: Color

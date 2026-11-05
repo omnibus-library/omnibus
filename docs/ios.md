@@ -186,10 +186,13 @@ submissions daily. A listing that fails aborts the run instead. Its suite
 
 ## The book page
 
-`Features/BookDetail/` draws one layout: the stage (the book standing on a blurred
-wash of its own cover, with your place in it), then Overview, Reviews, Highlights
-and Files under a tab strip that pins below the top bar, and a primary action that
-never scrolls away. The web page's `book_detail_scroll_stops` marquee has no iOS
+`Features/BookDetail/` draws the stage (the book standing on a blurred wash of its
+own cover, with your place in it), then Overview, Reviews, Highlights and Files under
+a tab strip that pins below the top bar, and a primary action that never scrolls
+away. On a page wide enough (any phone on its side, the iPhone Duo opened flat, an
+iPad) the stage and its action take the leading pane and the tabs the trailing one,
+split at the hinge when the Duo is partly folded (`PaneSplit`, see
+[iPhone Duo](#iphone-duo)). The web page's `book_detail_scroll_stops` marquee has no iOS
 counterpart, so the setting has no row in iOS settings; the field stays on the wire
 for the web.
 
@@ -337,6 +340,71 @@ one size while the page rendered another until the next reboot (#2191). A new
 two page-death paths each clear only their own half of that — `prepareForReboot`
 drops `isReady` and leaves the view, `teardown` drops the view and leaves
 `isReady` — so the gate is `hasLivePage`, which asks both, never one alone.
+
+## iPhone Duo
+
+The foldable has a compact outer display, a large inner one with a hinge down its
+middle, and a system that runs bars down the side of the screen in most poses. What
+the app needs to know of that is behind one seam, `Design/DuoLayout.swift`:
+`EnvironmentValues.sideBarEdge` (the edge the system runs its bars down, or nil) and
+`GeometryProxy.activeFold` (where a partly open hinge divides a view). Both wrap iOS
+27.1 SDK APIs behind `#if canImport(UIKit, _version: 9127.0.85)`, so an older SDK
+builds the app unchanged and every answer is "none".
+
+- **Tabs.** `OmnibusTabBar` replaces only a bottom tab bar, the one `.hidden` really
+  hides. Where the system draws its own whatever it is told (down the side, or across
+  the top on iPad, as `tabBarPlacement` reports from inside a tab) that bar is shown
+  instead, from the titles and symbols `MainTabView`'s tabs carry, and the mini player
+  moves into that bar's own slot for it (`tabViewBottomAccessory`), a glass capsule the
+  system places for the bar's shape; a full-width dock took a fifth of a folded phone
+  held sideways. `TopEdgeScrim` shrinks to a soft edge,
+  since the status bar it grounds has moved into that column.
+- **The side column.** It is safe area, so anything that stops at the safe area stands
+  as a black strip beside it. Washes, scrims and bar slabs ignore the horizontal safe
+  area to run under it; sideways rails, which scroll into it, take `endsAtSideBar()`
+  to fade out where it begins (a no-op without a side bar, so a notched iPhone's rails
+  still run edge to edge, and on an edge that stops short of the column, like a chip
+  row's after its label).
+- **Splits.** `PaneSplit` and `PlayerArrangement` are pure geometry: two panes either
+  side of a vertical fold, or a share of a wide view, else one column. The book page
+  and the player use them; the player also puts its artwork above a horizontal fold.
+  Both draw one backdrop across the panes, and the book page's two bars lay no slabs
+  of their own, the page fading out under each (`barEdgeFade`): a slab or a
+  pane-clipped halo ended at the pane's edge as a hard line through the wash.
+  Stats and You, long pages of sections, spread across two pages
+  (`SpreadPages`, on `PaneSplit.spread`) folded like a book or opened flat on their
+  side, each page scrolling alone so Stats' band headers still pin inside the page
+  they govern. The book page and both spreads pick one pane or two from the
+  keyboard-down size (`PaneGeometryReader`): read live, a field's keyboard flipped an
+  upright iPad to two panes, which rebuilt the field, dropped its focus and flipped it
+  back. The player's arrangement, `CoverGrid` and `onFoldSpanChange` still measure live.
+- **Full-screen surfaces.** The reader and the player, which no tab bar shows on,
+  take the side column back: the system reports what really occludes it as
+  `ReservedRegion`s of kind `.occlusion` (the status bar's housing, and the camera
+  inside it), and only those are cleared. The reader hands `#stage` its insets
+  (`ReaderScreen.reclaimingSideColumn`, `--rd-inset-*`) and clears the camera alone,
+  keeping its status bar hidden there rather than showing it with the controls, so the
+  page width never changes with them or with the player sheet shown over the reader
+  (`ReaderController.hidesStatusBar`); the player's top bar and controls keep off both
+  (`clearsOcclusions`).
+- **Rows across a fold.** `FoldSpan` centres a row on the hinge, the wider side giving
+  up its excess, as the system's own split views do. `CoverGrid` lays an even column
+  count either side of it (`FoldGridLayout`), the continue carousel puts one card on
+  each page (a lone card keeps to the leading one), and Search's Browse tiles split
+  two and two, so nothing bends down the middle.
+- **Reader.** Opened flat or held like a book the inner display is wide enough for
+  Two Pages, whose spine lands on the hinge; it already reads the hinge
+  (`ReaderStageView.observeHinge`) to say a spread appears once the phone is unfolded.
+
+Device Hub (Xcode 27's Simulator) is the only thing that changes the simulator's pose
+(Closed, Partially Open, Open and Rotate Right in its toolbar); neither `simctl` nor
+XCTest can fold it or rotate it. With the phone open, XCTest's `XCUIScreen.main` and
+`XCUIApplication.tap()` still address the dark outer display: shoot the largest of
+`XCUIScreen.screens`, and tap elements rather than the app. `simctl io <udid> screenshot`
+needs `--display=primary` (outer) or `--display=primary-1` (inner), and a DEBUG build
+rotates on `omnibus://debug/orientation/<portrait|landscape>` (`App/DebugOrientation.swift`).
+Don't toggle a display with `simctl io … screenConfig power`: it left both screens dark
+until the device was rebooted.
 
 ## Models and offline
 

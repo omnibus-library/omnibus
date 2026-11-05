@@ -206,6 +206,7 @@ struct BookOverviewTab: View {
             }
             .scrollIndicators(.hidden)
             .padding(.horizontal, -16)
+            .endsAtSideBar()
         }
     }
 }
@@ -354,6 +355,7 @@ private struct ChipRow<Chips: View>: View {
             }
             .scrollIndicators(.hidden)
             .padding(.trailing, -16)
+            .endsAtSideBar()
         }
     }
 }
@@ -655,6 +657,7 @@ private struct ReadAlikes: View {
         }
         .scrollIndicators(.hidden)
         .padding(.horizontal, -16)
+        .endsAtSideBar()
     }
 }
 

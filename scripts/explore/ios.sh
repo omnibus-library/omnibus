@@ -102,18 +102,9 @@ case "$cmd" in
     if [ -n "${OMNIBUS_IOS_SIM_UDID:-}" ]; then
       udid="$OMNIBUS_IOS_SIM_UDID"
     else
-      # Newest installed iOS runtime carrying an iPhone. Same picker as
-      # scripts/ios-test.sh and scripts/ios-sim.sh — xcodebuild's destination
-      # matcher silently omits runtimes older than the deployment target, so
-      # resolve a concrete udid ourselves rather than letting it choose.
-      udid="$(xcrun simctl list --json devices available | jq -r '
-        .devices | to_entries
-        | map(select(.key | test("SimRuntime\\.iOS")))
-        | map({ver: (.key | sub(".*iOS-"; "") | gsub("-"; ".")),
-               devs: [.value[] | select(.name | startswith("iPhone"))]})
-        | map(select(.devs | length > 0))
-        | sort_by(.ver | split(".") | map(tonumber))
-        | if length == 0 then empty else last.devs[0].udid end')"
+      # shellcheck source=../lib/ios-sim.sh
+      source "$ROOT/scripts/lib/ios-sim.sh"
+      udid="$(ios_sim_newest_iphone_udid)"
     fi
     [ -n "$udid" ] || {
       echo "no available iPhone simulator — check 'xcrun simctl list devices'" >&2

@@ -29,13 +29,14 @@ struct RootView: View {
         }
         .animation(Motion.glide, value: app.phase)
         .onOpenURL { url in
-            // The DEBUG-only offline switch and screen links share the
-            // `omnibus://` scheme but are not book links, so they are consumed
+            // The DEBUG-only offline switch, screen links and orientation links
+            // share the `omnibus://` scheme but are not book links, so they are consumed
             // before the router — which would otherwise drop them as
             // unparseable and leave an agent with a link that silently did nothing.
             #if DEBUG
             if DebugOffline.handle(url) { return }
             if DebugScreenLink.handle(url) { return }
+            if DebugOrientation.handle(url) { return }
             #endif
             router.receive(url)
         }

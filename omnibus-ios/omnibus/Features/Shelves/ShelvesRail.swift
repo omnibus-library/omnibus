@@ -67,6 +67,7 @@ struct ShelvesRail: View {
                 }
                 .scrollIndicators(.hidden)
                 .scrollTargetBehavior(.viewAligned)
+                .endsAtSideBar()
             }
         }
         .sheet(isPresented: $showCreate) {

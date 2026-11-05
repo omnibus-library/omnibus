@@ -6648,6 +6648,55 @@
         }
       }
     },
+    "/api/requests/{id}/swap": {
+      "post": {
+        "tags": [
+          "Requests"
+        ],
+        "summary": "Pick another version",
+        "description": "Gives up the version that is downloading (or has stopped) for good and goes back to\n`choose` among the other versions found; the download is removed a moment later. The\nrequest carries a `note` saying so, and the version is listed with `rejected` set. With no\nother version left it searches again and is `looking`, which counts as a start toward the\nrate limit. Only a request that is `on_its_way` and not fully downloaded, or stuck on a\nstopped download, can be swapped. Only the reader who made the request, or an admin, can\ndo this.",
+        "operationId": "swap_request_version",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The request's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The request is choosing again (or looking, with nothing else to choose).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookRequest"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "You aren't signed in."
+          },
+          "403": {
+            "description": "Your account can't make requests, or the request is another reader's."
+          },
+          "404": {
+            "description": "Book requests are off on this server, or there is no such request."
+          },
+          "409": {
+            "description": "The request isn't downloading, or its download is complete."
+          },
+          "429": {
+            "description": "It would need a new search and you started too many requests lately."
+          }
+        }
+      }
+    },
     "/api/reviews/{uuid}": {
       "get": {
         "tags": [

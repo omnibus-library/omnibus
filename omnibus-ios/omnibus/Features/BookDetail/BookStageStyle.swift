@@ -87,6 +87,9 @@ struct BookTabStrip: View {
     let selected: BookTab
     /// Whether the strip rides under the top bar, where the ribbon would cover the page.
     var pinned = false
+    /// Whether it lays its own slab under the tabs. Without one the page beneath
+    /// takes a `barEdgeFade`, where a slab would end in a hard edge.
+    var backed = true
     var onPick: (BookTab) -> Void
 
     @Environment(\.palette) private var palette
@@ -126,12 +129,19 @@ struct BookTabStrip: View {
         }
         .padding(.horizontal, Self.inset)
         .background {
-            ZStack {
-                Rectangle().fill(.ultraThinMaterial)
-                palette.bg0Color.opacity(0.78)
+            if backed {
+                ZStack {
+                    Rectangle().fill(.ultraThinMaterial)
+                    palette.bg0Color.opacity(0.78)
+                }
+                // Across an iPhone Duo's side column too, so the slab doesn't stop short of it.
+                .ignoresSafeArea(edges: .horizontal)
             }
         }
-        .overlay(alignment: .bottom) { Hairline() }
+        .overlay(alignment: .bottom) {
+            // Unbacked, the rule sits under the tabs alone rather than meeting the pane's edge.
+            Hairline().padding(.horizontal, backed ? 0 : Self.inset)
+        }
         .overlay(alignment: .bottomLeading) { ribbon }
     }
 
