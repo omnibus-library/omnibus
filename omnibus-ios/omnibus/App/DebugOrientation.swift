@@ -10,13 +10,14 @@ import UIKit
 enum DebugOrientation {
     static let orientationPath = "orientation"
 
-    /// Handle `url` if it is an orientation link. Answers whether it was consumed.
+    /// Handle `url` if it is an orientation link. Answers whether it was consumed;
+    /// one that names no orientation is consumed too, and logged.
     @MainActor
     @discardableResult
     static func handle(_ url: URL) -> Bool {
-        guard let word = orientation(url) else { return false }
-        guard let mask = mask(named: word) else {
-            print("omnibus.debug.orientation: no orientation named \(word)")
+        guard let segments = orientationSegments(url) else { return false }
+        guard let mask = mask(from: segments) else {
+            print("omnibus.debug.orientation: no orientation for \(url)")
             return true
         }
         for scene in UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }) {
@@ -27,15 +28,21 @@ enum DebugOrientation {
         return true
     }
 
-    /// The word after `orientation/`, or nil when `url` is not an orientation link.
-    nonisolated static func orientation(_ url: URL) -> String? {
+    /// The words after `orientation/`, or nil when `url` is not an orientation link.
+    nonisolated static func orientationSegments(_ url: URL) -> [String]? {
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
               components.scheme?.lowercased() == DeepLink.scheme,
               components.host?.lowercased() == DebugOffline.urlHost
         else { return nil }
         let segments = components.path.split(separator: "/").map { $0.lowercased() }
-        guard segments.count == 2, segments[0] == orientationPath else { return nil }
-        return segments[1]
+        guard segments.first == orientationPath else { return nil }
+        return Array(segments.dropFirst())
+    }
+
+    /// The mask a link's words name: exactly one orientation, else nil.
+    nonisolated static func mask(from segments: [String]) -> UIInterfaceOrientationMask? {
+        guard segments.count == 1 else { return nil }
+        return mask(named: segments[0])
     }
 
     nonisolated static func mask(named word: String) -> UIInterfaceOrientationMask? {
