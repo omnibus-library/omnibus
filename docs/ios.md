@@ -385,8 +385,8 @@ builds the app unchanged and every answer is "none".
   (`ReaderScreen.reclaimingSideColumn`, `--rd-inset-*`) and clears the camera alone,
   keeping its status bar hidden there rather than showing it with the controls, so the
   page width never changes with them or with the player sheet shown over the reader
-  (`ReaderController.hidesStatusBar`); the player's top bar, controls and banners keep
-  off both (`clearsOcclusions`).
+  (`ReaderController.hidesStatusBar`); the player's top bar and controls keep off both
+  (`clearsOcclusions`).
 - **Rows across a fold.** `FoldSpan` centres a row on the hinge, the wider side giving
   up its excess, as the system's own split views do. `CoverGrid` lays an even column
   count either side of it (`FoldGridLayout`), the continue carousel puts one card on
