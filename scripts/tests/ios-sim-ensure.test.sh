@@ -37,12 +37,12 @@ chmod +x "$tmp/bin/xcrun"
 
 # shellcheck source=../lib/ios-sim.sh
 source "$repo_root/scripts/lib/ios-sim.sh"
-udid="$(PATH="$tmp/bin:$PATH" ios_sim_ensure omnibus-tests-x 2>/dev/null)"
-
 fail() {
     echo "FAIL: $*" >&2
     exit 1
 }
+udid="$(PATH="$tmp/bin:$PATH" ios_sim_ensure omnibus-tests-x 2>"$tmp/err")" \
+    || fail "ios_sim_ensure failed: $(cat "$tmp/err")"
 [ "$udid" = CREATED ] || fail "expected a new simulator, got '$udid'"
 grep -q "iPhone-18-Pro com.apple.CoreSimulator.SimRuntime.iOS-27-2$" "$tmp/created" \
     || fail "created on the wrong runtime: $(cat "$tmp/created")"

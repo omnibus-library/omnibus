@@ -56,6 +56,8 @@
           pkgs.lsof
           # KOReader's Lua is LuaJIT: the plugin's unit tests (`just koreader-plugin-test`).
           pkgs.luajit
+          # scripts/lib/ios-sim.sh parses `simctl list --json` with it, and `just test` runs its suite.
+          pkgs.jq
           # The stdenv's bash is built without readline; `just koreader`'s prompt (`read -e`) needs it for Tab completion.
           pkgs.bashInteractive
           pkgs.sqlite
