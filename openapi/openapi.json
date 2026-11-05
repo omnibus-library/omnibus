@@ -849,6 +849,127 @@
         }
       }
     },
+    "/api/admin/requests/settings": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Get the request connections",
+        "description": "The Prowlarr and download client settings, with the API key and password masked.\nNeeds an admin account.",
+        "operationId": "get_requests_settings",
+        "responses": {
+          "200": {
+            "description": "The connections.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestsSettingsStatus"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You aren't an admin."
+          },
+          "404": {
+            "description": "Book requests are off on this server."
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Save the request connections",
+        "description": "Sets the Prowlarr and download client connections. Every field replaces the saved\nvalue, except the two secrets, which keep theirs when left out. Needs an admin account.",
+        "operationId": "set_requests_settings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestsSettingsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The connections are saved; the body is what is now set.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestsSettingsStatus"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You aren't an admin."
+          },
+          "404": {
+            "description": "Book requests are off on this server."
+          },
+          "422": {
+            "description": "A URL isn't an `http` or `https` address without a login in it, or a field is over its length limit; the body says which."
+          }
+        }
+      }
+    },
+    "/api/admin/requests/settings/test-client": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Test the download client connection",
+        "description": "Logs in to the download client with the saved address and login and reports whether it\nanswered. It changes nothing. Needs an admin account.",
+        "operationId": "test_download_client_connection",
+        "responses": {
+          "200": {
+            "description": "The download client answered and accepted the login."
+          },
+          "403": {
+            "description": "You aren't an admin."
+          },
+          "404": {
+            "description": "Book requests are off on this server."
+          },
+          "409": {
+            "description": "The download client address isn't set."
+          },
+          "502": {
+            "description": "The download client didn't answer or refused the call; the body says why."
+          }
+        }
+      }
+    },
+    "/api/admin/requests/settings/test-indexer": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Test the Prowlarr connection",
+        "description": "Calls Prowlarr with the saved address and API key and reports whether it answered. It\nchanges nothing. Needs an admin account.",
+        "operationId": "test_prowlarr_connection",
+        "responses": {
+          "200": {
+            "description": "Prowlarr answered and accepted the API key."
+          },
+          "403": {
+            "description": "You aren't an admin."
+          },
+          "404": {
+            "description": "Book requests are off on this server."
+          },
+          "409": {
+            "description": "The Prowlarr address or API key isn't set."
+          },
+          "502": {
+            "description": "Prowlarr didn't answer or refused the call; the body says why."
+          }
+        }
+      }
+    },
     "/api/admin/rewrite-all-epubs": {
       "post": {
         "tags": [
@@ -11836,6 +11957,13 @@
           }
         }
       },
+      "DownloadClientKind": {
+        "type": "string",
+        "description": "Which download client program the server talks to.",
+        "enum": [
+          "qbittorrent"
+        ]
+      },
       "DownloadFormat": {
         "type": "string",
         "description": "Which of a book's two downloads a validator question is about: `epub` for its EPUB,\nCBZ or PDF file, and `audio` for its M4B, M4A or MP3 file.",
@@ -14872,6 +15000,126 @@
         "properties": {
           "name": {
             "type": "string"
+          }
+        }
+      },
+      "RequestsSettingsStatus": {
+        "type": "object",
+        "description": "The Prowlarr and download client connections, with both secrets masked. It never\ncarries the API key or the password itself.",
+        "required": [
+          "prowlarr_api_key_source",
+          "download_client_kind",
+          "download_client_category"
+        ],
+        "properties": {
+          "download_client_category": {
+            "type": "string"
+          },
+          "download_client_kind": {
+            "$ref": "#/components/schemas/DownloadClientKind"
+          },
+          "download_client_password_masked": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A masked preview of the password. Null when no password is set."
+          },
+          "download_client_path_prefix": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "download_client_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "download_client_username": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "download_path_prefix": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "prowlarr_api_key_masked": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A masked preview of the API key, such as `abcd…wxyz`, or `••••` for a key of 8\ncharacters or fewer. Null when no key is set."
+          },
+          "prowlarr_api_key_source": {
+            "type": "string",
+            "description": "Where the API key in effect comes from: `settings` when saved through the API,\n`env` when read from `OMNIBUS_PROWLARR_API_KEY`, or `none`."
+          },
+          "prowlarr_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "RequestsSettingsUpdate": {
+        "type": "object",
+        "description": "The Prowlarr and download client connections. Every field but the two secrets\nreplaces the saved value, and an empty string clears it.",
+        "required": [
+          "prowlarr_url",
+          "download_client_url",
+          "download_client_username",
+          "download_client_category",
+          "download_client_path_prefix",
+          "download_path_prefix"
+        ],
+        "properties": {
+          "download_client_category": {
+            "type": "string",
+            "description": "The category the client files Omnibus downloads under, up to 255 bytes. Empty\nmeans `omnibus`."
+          },
+          "download_client_kind": {
+            "$ref": "#/components/schemas/DownloadClientKind"
+          },
+          "download_client_password": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The download client password, up to 1024 bytes. Null or left out keeps the saved\npassword. An empty string clears it."
+          },
+          "download_client_path_prefix": {
+            "type": "string",
+            "description": "The completed-downloads folder as the download client sees it, up to 4096 bytes."
+          },
+          "download_client_url": {
+            "type": "string",
+            "description": "The download client's web address: an `http` or `https` URL of up to 2048 bytes,\nwithout a username or password in it."
+          },
+          "download_client_username": {
+            "type": "string",
+            "description": "The download client login, up to 255 bytes."
+          },
+          "download_path_prefix": {
+            "type": "string",
+            "description": "The same folder as the Omnibus server sees it, up to 4096 bytes."
+          },
+          "prowlarr_api_key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The Prowlarr API key, up to 1024 bytes. Null or left out keeps the saved key.\nAn empty string clears it."
+          },
+          "prowlarr_url": {
+            "type": "string",
+            "description": "The Prowlarr address, such as `http://prowlarr:9696`: an `http` or `https` URL of\nup to 2048 bytes, without a username or password in it."
           }
         }
       },

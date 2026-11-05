@@ -22,6 +22,13 @@ use crate::ebook::IndexedBook;
 // Filesystem helpers
 // ---------------------------------------------------------------------------
 
+/// A loopback `http://` URL nothing listens on: a port bound, then released.
+pub fn closed_port_url() -> String {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind a free port");
+    let port = listener.local_addr().expect("local addr").port();
+    format!("http://127.0.0.1:{port}")
+}
+
 /// Build an in-memory PNG of a single solid color — a *decodable* image, for
 /// the paths that decode one (accent extraction, avatar downscaling) and so
 /// can't be driven with a magic-bytes stub.
