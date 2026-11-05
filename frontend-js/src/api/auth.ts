@@ -37,6 +37,7 @@ export function toUser(user: UserSummary) {
     canUpload: user.can_upload,
     canEdit: user.can_edit,
     canDownload: user.can_download,
+    canRequest: user.can_request ?? false,
     hasAvatar: user.has_avatar ?? false,
     hiddenFormats: user.hidden_formats ?? [],
     stackSeries: user.stack_series ?? false,

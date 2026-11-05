@@ -1145,7 +1145,7 @@
           "Admin"
         ],
         "summary": "Set a user's permissions",
-        "description": "Replaces all four permission flags. Needs an admin account.",
+        "description": "Replaces all five permission flags. Needs an admin account.",
         "operationId": "admin_set_user_permissions",
         "parameters": [
           {
@@ -8724,6 +8724,7 @@
           "can_upload",
           "can_edit",
           "can_download",
+          "can_request",
           "created_at",
           "locked"
         ],
@@ -8732,6 +8733,9 @@
             "type": "boolean"
           },
           "can_edit": {
+            "type": "boolean"
+          },
+          "can_request": {
             "type": "boolean"
           },
           "can_upload": {
@@ -17325,18 +17329,22 @@
       },
       "UserPermissions": {
         "type": "object",
-        "description": "The four permission flags that say what a user may do. The server stores each flag\nseparately. Most checks let an admin through, but a few read the flag itself, such as\n`can_download` for downloads.",
+        "description": "The five permission flags that say what a user may do. The server stores each flag\nseparately. Most checks let an admin through, but a few read the flag itself, such as\n`can_download` for downloads.",
         "required": [
           "is_admin",
           "can_upload",
           "can_edit",
-          "can_download"
+          "can_download",
+          "can_request"
         ],
         "properties": {
           "can_download": {
             "type": "boolean"
           },
           "can_edit": {
+            "type": "boolean"
+          },
+          "can_request": {
             "type": "boolean"
           },
           "can_upload": {
@@ -17368,6 +17376,10 @@
           },
           "can_edit": {
             "type": "boolean"
+          },
+          "can_request": {
+            "type": "boolean",
+            "description": "Whether the user may request books the library lacks. Admins always may."
           },
           "can_upload": {
             "type": "boolean"

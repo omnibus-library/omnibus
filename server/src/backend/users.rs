@@ -72,7 +72,7 @@ pub(super) async fn post_user(
 
 /// Set a user's permissions
 ///
-/// Replaces all four permission flags. Needs an admin account.
+/// Replaces all five permission flags. Needs an admin account.
 #[utoipa::path(
     patch,
     path = "/api/admin/users/{id}/permissions",

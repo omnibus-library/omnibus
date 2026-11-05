@@ -11,6 +11,7 @@ const NONE = {
   can_upload: false,
   can_edit: false,
   can_download: false,
+  can_request: false,
 };
 
 describe("permissionChips", () => {
@@ -21,6 +22,7 @@ describe("permissionChips", () => {
         can_upload: true,
         can_edit: true,
         can_download: true,
+        can_request: true,
       }),
     ).toEqual(["Admin"]);
   });
@@ -36,14 +38,16 @@ describe("permissionChips", () => {
         can_upload: true,
         can_edit: true,
         can_download: true,
+        can_request: true,
       }),
-    ).toEqual(["Upload", "Edit", "Download"]);
+    ).toEqual(["Upload", "Edit", "Download", "Request"]);
   });
 
   it.each([
     ["can_upload", "Upload"],
     ["can_edit", "Edit"],
     ["can_download", "Download"],
+    ["can_request", "Request"],
   ] as const)("returns %s alone as %s", (flag, chip) => {
     expect(permissionChips({ ...NONE, [flag]: true })).toEqual([chip]);
   });

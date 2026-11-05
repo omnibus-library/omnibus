@@ -8,6 +8,7 @@ import {
   storyClient,
 } from "../../testing/AppHarness";
 import { deferred } from "../../testing/handlers";
+import { WIRE_ADA } from "../../testing/wire";
 import { BOOKS } from "../../testing/wishlistHandlers";
 import { bookQuery } from "../BookDetail/queries";
 import {
@@ -105,6 +106,41 @@ export const RequestIsHiddenWhenBothKindsAreHeld: Story = {
     await expect(
       systemsRed.getByTestId("wishlists-request"),
     ).toBeInTheDocument();
+  },
+};
+
+const READER_WITHOUT_REQUESTS = {
+  ...WIRE_ADA,
+  is_admin: false,
+  can_request: false,
+};
+const READER_WITH_REQUESTS = {
+  ...WIRE_ADA,
+  is_admin: false,
+  can_request: true,
+};
+
+export const RequestIsHiddenFromAReaderWithoutThePermission: Story = {
+  parameters: { path: "/wishlists", user: READER_WITHOUT_REQUESTS },
+  play: async ({ canvas }) => {
+    const row = within(await rowOf(canvas, "Hyperion"));
+
+    await expect(row.getByTestId("wishlists-find-copy")).toBeInTheDocument();
+    await expect(row.queryByTestId("wishlists-request")).toBeNull();
+  },
+};
+
+export const RequestIsShownToAReaderWithThePermission: Story = {
+  parameters: { path: "/wishlists", user: READER_WITH_REQUESTS },
+  play: async ({ canvas }) => {
+    const request = within(await rowOf(canvas, "Hyperion")).getByTestId(
+      "wishlists-request",
+    );
+
+    await expect(request).toHaveAttribute("aria-disabled", "true");
+    await expect(request).toHaveAccessibleDescription(
+      "Requests aren't available yet",
+    );
   },
 };
 
@@ -304,6 +340,22 @@ export const GetSheetOnYourListOffersFindRequestOpenAndRemove: Story = {
     await expect(
       sheet.getByRole("button", { name: "Remove from wishlist" }),
     ).toBeInTheDocument();
+  },
+};
+
+export const GetSheetOffersNoRequestToAReaderWithoutThePermission: Story = {
+  ...PHONE,
+  parameters: { ...PHONE.parameters, user: READER_WITHOUT_REQUESTS },
+  play: async ({ canvas, userEvent }) => {
+    const row = within(await rowOf(canvas, "Hyperion"));
+
+    await userEvent.click(row.getByTestId("wishlists-get"));
+
+    const sheet = within(await canvas.findByTestId("wishlists-get-sheet"));
+    await expect(
+      sheet.getByRole("link", { name: /Find a copy/ }),
+    ).toBeInTheDocument();
+    await expect(sheet.queryByRole("button", { name: /Request/ })).toBeNull();
   },
 };
 

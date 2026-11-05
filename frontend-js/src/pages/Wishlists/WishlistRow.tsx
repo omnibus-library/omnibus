@@ -14,6 +14,7 @@ import { ChevronDownGlyph } from "../../components/Glyphs/Glyphs";
 import { Sheet } from "../../components/Sheet/Sheet";
 import { useToast } from "../../components/Toast/Toast";
 import { findCopyUrl } from "../../findCopy";
+import { useCurrentUser } from "../../session";
 import { refreshAfterWrite } from "./refresh";
 import {
   addedLabel,
@@ -264,7 +265,9 @@ export function WishlistRow({
   const [sheet, setSheet] = useState<SheetState>("closed");
   const detail = `/books/${book.uuid}`;
   const wanted = scope.kind === "everyone";
-  const kinds = requestable(book.holdings);
+  const user = useCurrentUser();
+  const kinds =
+    user.isAdmin || user.canRequest ? requestable(book.holdings) : [];
   const removeBook = useRemove(book);
   // Only your own list can be edited.
   const remove = scope.kind === "you" ? removeBook : null;

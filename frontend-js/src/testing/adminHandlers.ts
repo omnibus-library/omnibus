@@ -276,6 +276,7 @@ export function aWireAdminUser(
     can_upload: true,
     can_edit: false,
     can_download: true,
+    can_request: false,
     kindle_email: null,
     display_name: null,
     created_at: 1_700_000_000,
