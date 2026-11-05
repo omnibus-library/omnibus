@@ -141,6 +141,7 @@ locator half: see [04d](../../rules/04d-playwright-page-objects.md#lint).
 | a mutation's method, URL, body and status | a `contracts/` builder |
 | a payload type or a unique test value | `data/` |
 | data that must be deleted after the test | a `cleanupSet` fixture (`fixtures/lifecycle.ts`) in `dataFixtures.ts`, or `accountFixtures.ts` for account state |
+| a service the suite can't run (Prowlarr) | a loopback `node:http` stand-in in `utils/` (`mockProwlarr.ts`), started and pointed at by a `dataFixtures.ts` fixture that restores the setting after (`prowlarrFor`); the scratch server runs with `OMNIBUS_BOOK_REQUESTS=1`, so the admin may request |
 
 ## 7. Run
 

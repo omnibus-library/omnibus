@@ -91,6 +91,29 @@ mod qbittorrent_test {
         }
     }
 
+    #[tokio::test]
+    async fn accepts_the_empty_204_login_qbittorrent_5_2_answers() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/v2/auth/login"))
+            .respond_with(
+                ResponseTemplate::new(204)
+                    .insert_header("set-cookie", "QBT_SID_8080=abc123; HttpOnly; path=/"),
+            )
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/api/v2/app/version"))
+            .and(header("cookie", "QBT_SID_8080=abc123"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("v5.2.3"))
+            .mount(&server)
+            .await;
+
+        let result = client_for(&server).test().await;
+
+        assert!(result.is_ok(), "{result:?}");
+    }
+
     mod failures {
         use super::*;
 

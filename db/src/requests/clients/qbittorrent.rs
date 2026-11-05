@@ -63,7 +63,8 @@ impl Qbittorrent {
             .await
             .map_err(|e| ConnectionError::from_transport(&e))?;
         // No cookie is fine: an instance that skips auth for this host answers "Ok." without one.
-        (body.trim() == "Ok.")
+        // 5.2 answers 204 with no body; "Fails." is the only refusal that comes with a 2xx.
+        (body.trim() == "Ok." || body.trim().is_empty())
             .then_some(cookie)
             .ok_or(ConnectionError::BadLogin)
     }

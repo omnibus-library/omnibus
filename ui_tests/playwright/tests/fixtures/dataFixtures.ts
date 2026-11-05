@@ -4,6 +4,7 @@ import type { EbooksRequests } from "../apiRequests/EbooksRequests";
 import type { IndexedBook } from "../data/authors";
 import { isAudioFormat } from "../data/bookDetail";
 import type { SeededBookmark } from "../data/bookmarks";
+import { prowlarrUpdate, type RequestsConnections } from "../data/bookRequests";
 import type { EbookDetail, LibraryBook, UploadedEbook } from "../data/ebooks";
 import {
   buildHighlight,
@@ -36,6 +37,11 @@ import {
 } from "../data/shelves";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { withLock } from "../utils/lock";
+import {
+  type MockProwlarr,
+  type MockRelease,
+  startMockProwlarr,
+} from "../utils/mockProwlarr";
 import { fixturesDir } from "../utils/seed";
 import { test as base, expect } from "./accountFixtures";
 import { MERGE_PRIMARY, MERGE_SECONDARY } from "./audiobooks";
@@ -94,6 +100,7 @@ type DataFixtures = {
   scratchLibrary: LibrarySettings;
   savedMetadataKeys: Set<MetadataProvider>;
   createdBookUuids: Set<string>;
+  prowlarrFor: (releases: MockRelease[]) => Promise<MockProwlarr>;
   filedCopies: FiledCopy[];
   seededHighlightIds: Set<number>;
   seededBookmarkIds: Set<number>;
@@ -199,6 +206,30 @@ export const test = base.extend<DataFixtures>({
       (uuid: string) => physicalRequests.deleteBook(uuid),
       (uuid) => `delete ${uuid}`,
     ),
+
+  // Points the server's Prowlarr connection at a mock; both are put back after the test.
+  // A scratch server has no key of its own, so the fixture refuses to overwrite one.
+  prowlarrFor: async ({ bookRequestsRequests }, use) => {
+    const read = await bookRequestsRequests.getConnections();
+    await expect(read).toBeOK();
+    const before: RequestsConnections = await read.json();
+    expect(before.prowlarr_api_key_masked).toBeNull();
+    const started: MockProwlarr[] = [];
+    await use(async (releases) => {
+      const mock = await startMockProwlarr(releases);
+      started.push(mock);
+      const saved = await bookRequestsRequests.putConnections(
+        prowlarrUpdate(before, mock.url),
+      );
+      await expect(saved).toBeOK();
+      return mock;
+    });
+    const restored = await bookRequestsRequests.putConnections(
+      prowlarrUpdate(before, before.prowlarr_url ?? "", ""),
+    );
+    await expect(restored).toBeOK();
+    for (const mock of started) await mock.stop();
+  },
 
   filedCopies: async ({ physicalRequests }, use) => {
     const filed: FiledCopy[] = [];

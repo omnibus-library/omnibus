@@ -33,6 +33,8 @@ const UUID_KEYED_TABLES: &[&str] = &[
     "physical_copies",
     "wishlist_entries",
     "book_export_digests",
+    // Its versions go with it by cascade.
+    "book_requests",
 ];
 
 /// Delete the given `book_files` rows (parts and chapters cascade via their FK)

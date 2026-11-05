@@ -55,6 +55,7 @@ mod progress;
 mod ratings;
 mod react_ui;
 mod read_status;
+mod requests;
 mod requests_admin;
 mod reviews;
 mod routes;
@@ -227,6 +228,8 @@ pub struct AppState {
     /// `/api/admin/requests/*` route answers 404, no download poller runs, and sessions
     /// report no request access.
     book_requests: bool,
+    /// Recent request starts per reader, for the start cap.
+    request_starts: Arc<requests::StartLog>,
 }
 
 impl AppState {
@@ -240,6 +243,7 @@ impl AppState {
             rate_limits: RateLimits::default(),
             public_origins: Arc::default(),
             book_requests: false,
+            request_starts: Arc::default(),
         }
     }
 
@@ -324,6 +328,11 @@ impl AppState {
     /// Whether the book-requests feature is on for this process.
     pub fn book_requests(&self) -> bool {
         self.book_requests
+    }
+
+    /// The log capping how fast each reader may start requests.
+    fn request_starts(&self) -> &requests::StartLog {
+        &self.request_starts
     }
 
     /// Whether the per-IP limiters wired from this state enforce or admit everything.
