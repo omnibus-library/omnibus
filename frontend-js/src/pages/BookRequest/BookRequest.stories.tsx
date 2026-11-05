@@ -26,6 +26,7 @@ const PDF = aWireVersion({
   size_bytes: 9_100_000,
   format: "PDF",
   indexer: "Library Ink",
+  seeders: 1,
 });
 const UNNAMED = aWireVersion({
   id: 13,
@@ -33,6 +34,7 @@ const UNNAMED = aWireVersion({
   size_bytes: null,
   format: null,
   indexer: null,
+  seeders: null,
 });
 
 let fake = requestFake();
@@ -141,6 +143,47 @@ export const ChooseAVersionListsEachVersionWithOneBestMatch: Story = {
     await expect(
       within(versionAt(rows, 0)).getByTestId("request-best-match"),
     ).toHaveTextContent("Best match");
+  },
+};
+
+export const AVersionRowNamesTheReleaseAndItsSource: Story = {
+  beforeEach({ msw }) {
+    msw.use(...seed({ state: "choose", versions: [EPUB, PDF] }));
+  },
+  play: async ({ canvas }) => {
+    const rows = await canvas.findAllByTestId("request-version");
+    const epub = within(versionAt(rows, 0));
+
+    await expect(epub.getByTestId("request-version-name")).toHaveTextContent(
+      "Hyperion - Dan Simmons EPUB",
+    );
+    await expect(epub.getByTestId("request-version-meta")).toHaveTextContent(
+      "Books · EPUB · 2.4 MB · 12 seeders",
+    );
+    await expect(
+      within(versionAt(rows, 1)).getByTestId("request-version-meta"),
+    ).toHaveTextContent("Library Ink · PDF · 9.1 MB · 1 seeder");
+    await expect(
+      epub.getByRole("button", {
+        name: "Choose the EPUB version from Books, 2.4 MB",
+      }),
+    ).toBeVisible();
+  },
+};
+
+export const AVersionRowLeavesOutAnUnnamedSourceAndMissingSeeders: Story = {
+  beforeEach({ msw }) {
+    msw.use(...seed({ state: "choose", versions: [UNNAMED] }));
+  },
+  play: async ({ canvas }) => {
+    const row = within(await canvas.findByTestId("request-version"));
+
+    await expect(row.getByTestId("request-version-name")).toHaveTextContent(
+      "Hyperion by Dan Simmons",
+    );
+    await expect(row.getByTestId("request-version-meta")).toHaveTextContent(
+      "Unknown · Size unknown",
+    );
   },
 };
 
