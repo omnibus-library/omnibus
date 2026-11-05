@@ -45,6 +45,11 @@ struct DebugOrientationTests {
         #expect(mask("omnibus://debug/orientation/landscape/extra") == nil)
     }
 
+    @Test func orientationSegmentsKeepsAnEncodedSlashInsideOneWord() {
+        #expect(segments("omnibus://debug/orientation/landscape%2Fx") == ["landscape/x"])
+        #expect(mask("omnibus://debug/orientation/landscape%2Fx") == nil)
+    }
+
     @Test func orientationSegmentsReturnsNilForAForeignSchemeHostOrPath() {
         #expect(segments("https://debug/orientation/landscape") == nil)
         #expect(segments("omnibus://book/orientation/landscape") == nil)

@@ -41,16 +41,7 @@ final class DebugScreenLink {
 
     /// The path after `screen/`, or nil when `url` is not a screen link.
     nonisolated static func screenSegments(_ url: URL) -> [String]? {
-        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-              components.scheme?.lowercased() == DeepLink.scheme,
-              components.host?.lowercased() == DebugOffline.urlHost
-        else { return nil }
-        // Split the *encoded* path, as `DeepLink` does, so a `%2F` in a tag or
-        // query stays inside its segment instead of becoming another word.
-        let segments = components.percentEncodedPath.split(separator: "/")
-            .map { String($0).removingPercentEncoding ?? String($0) }
-        guard segments.first?.lowercased() == screenPath else { return nil }
-        return Array(segments.dropFirst())
+        DebugLink.segments(url, after: screenPath)
     }
 
     /// A tab name, then one destination per word, each with its argument.
