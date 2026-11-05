@@ -148,8 +148,10 @@ pub struct RequestVersion {
     pub size_bytes: Option<i64>,
     /// `EPUB`, `PDF` or `CBZ`. Null when the name does not say.
     pub format: Option<String>,
-    /// The source the version came from; shown behind Details.
+    /// The source the version came from.
     pub indexer: Option<String>,
+    /// How many peers share it. Null for sources that have none, such as Usenet.
+    pub seeders: Option<i64>,
     /// Whether this is the version Omnibus suggests. At most one version has it.
     pub best_match: bool,
     /// Whether this version was picked and given up. It is shown as one that did not work

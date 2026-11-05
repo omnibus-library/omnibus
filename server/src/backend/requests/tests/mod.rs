@@ -579,6 +579,7 @@ mod search_after_start {
         let found: BookRequest = serde_json::from_str(&text).unwrap();
         assert_eq!(found.versions.len(), 1);
         assert_eq!(found.versions[0].format.as_deref(), Some("EPUB"));
+        assert_eq!(found.versions[0].seeders, Some(12));
         assert!(found.versions[0].best_match);
         for leak in ["apikey", "secret", "download", "magnet"] {
             assert!(!text.contains(leak), "{leak} in {text}");
