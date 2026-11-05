@@ -73,3 +73,17 @@ private let sidewaysHousing = CGRect(x: 594, y: 384, width: 84, height: 82)
     #expect(!set.contains("bottom"))
     #expect(ReaderController.stageInsetsScript(nil).contains("removeProperty"))
 }
+
+@Test func landscapeStageWidthLosesOnlyTheSensorClearanceOnceTheColumnIsTakenBack() {
+    // Tall enough that two columns fit sideways only with the column given back.
+    let tall = CGSize(width: 669, height: 951)
+    let kept = ReaderScreen(size: tall, insets: uprightSafe)
+    let reclaimed = ReaderScreen(
+        size: tall, insets: uprightSafe,
+        stageInsets: UIEdgeInsets(top: 14, left: 0, bottom: 34, right: 0)
+    )
+    #expect(kept.landscapeStageWidth == tall.height - 2 * uprightSafe.right - 2 * ReaderScreen.stageGutter)
+    #expect(reclaimed.landscapeStageWidth == tall.height - 14 - 2 * ReaderScreen.stageGutter)
+    #expect(SpreadFit(screen: kept) == .never)
+    #expect(SpreadFit(screen: reclaimed) == .inLandscape)
+}

@@ -50,11 +50,7 @@ extension ReaderScreen {
     static func reclaimingSideColumn(
         _ edge: UIRectEdge, safe: UIEdgeInsets, size: CGSize, occlusions: [CGRect]
     ) -> UIEdgeInsets {
-        // A region holding another is the hidden status bar's housing; the
-        // sensor inside it is what occludes.
-        let sensors = occlusions.filter { outer in
-            !occlusions.contains { $0 != outer && outer.contains($0) }
-        }
+        let sensors = occlusions.sensorsOnly
         var insets = safe
         let column: CGRect
         switch edge {
@@ -86,10 +82,15 @@ extension ReaderScreen {
     /// The width once the phone is on its side, whichever way it is held now.
     ///
     /// The sensor's inset is `top` upright and lands on both `left` and `right`
-    /// sideways, so the widest of the three is what is lost at each end.
+    /// sideways, so the widest of the three is what is lost at each end. With
+    /// the side column taken back, only the sensor's clearance is lost, at its one end.
     var landscapeStageWidth: CGFloat {
+        let long = max(size.width, size.height)
+        if let stage = stageInsets {
+            return long - max(stage.top, stage.left, stage.right) - 2 * Self.stageGutter
+        }
         let sensor = max(insets.top, insets.left, insets.right)
-        return max(size.width, size.height) - 2 * sensor - 2 * Self.stageGutter
+        return long - 2 * sensor - 2 * Self.stageGutter
     }
 }
 

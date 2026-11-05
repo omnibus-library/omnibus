@@ -449,6 +449,8 @@ final class ReaderController: NSObject {
         guard wanted != appliedStageInsets else { return }
         appliedStageInsets = wanted
         run(Self.stageInsetsScript(wanted))
+        // The prose reflows inside an unresized web view, often at the same CFI.
+        pageCurl?.pageChanged()
     }
 
     /// The script that sets `--rd-inset-*`, or clears them back to the safe area for nil.

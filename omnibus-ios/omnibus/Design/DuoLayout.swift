@@ -5,6 +5,7 @@
 //  without a hinge, every answer is "none" and each layout stays as it was.
 
 import SwiftUI
+import UIKit
 
 /// A hinge dividing a view, in that view's own coordinates.
 struct Fold: Equatable {
@@ -80,10 +81,10 @@ extension View {
     }
 
     /// Lets a full-screen surface, one the tab bar never shows on, run into the
-    /// iPhone Duo's side bar column; its parts near the status bar and camera
-    /// keep clear of them with `clearsOcclusions()`.
-    func reclaimsSideColumn() -> some View {
-        modifier(SideColumnReclaim())
+    /// iPhone Duo's side bar column while `active`; its parts near the status
+    /// bar and camera keep clear of them with `clearsOcclusions()`.
+    func reclaimsSideColumn(_ active: Bool = true) -> some View {
+        modifier(SideColumnReclaim(active: active))
     }
 
     /// Pads this view in from the side bar's edge by however far the system's
@@ -95,10 +96,11 @@ extension View {
 }
 
 private struct SideColumnReclaim: ViewModifier {
+    let active: Bool
     @Environment(\.sideBarEdge) private var sideBarEdge
 
     func body(content: Content) -> some View {
-        content.ignoresSafeArea(.container, edges: sideBarEdge.map { $0 == .trailing ? .trailing : .leading } ?? [])
+        content.ignoresSafeArea(.container, edges: active ? sideBarEdge.map(\.edges) ?? [] : [])
     }
 }
 
@@ -110,7 +112,7 @@ private struct OcclusionClearance: ViewModifier {
     func body(content: Content) -> some View {
         if let edge = sideBarEdge {
             content
-                .padding(edge == .trailing ? .trailing : .leading, clearance)
+                .padding(edge.edges, clearance)
                 // Measured outside the padding, so applying it can't move what it measured.
                 .onGeometryChange(for: CGFloat.self) {
                     $0.occludedDepth(from: edge, sensorsOnly: sensorsOnly)
@@ -145,13 +147,13 @@ private struct SideBarRailEnd: ViewModifier {
                     }
                     .padding(.vertical, -Self.overhang)
                     .padding(edge == .trailing ? .leading : .trailing, -Self.overhang)
-                    .padding(edge == .trailing ? .trailing : .leading, fades ? 0 : -Self.overhang)
+                    .padding(edge.edges, fades ? 0 : -Self.overhang)
                 }
                 .background {
                     // Stretches into the column only from an edge that touches
                     // it, as a chip row's after its label or a pane's at the hinge does not.
                     Color.clear
-                        .ignoresSafeArea(.container, edges: edge == .trailing ? .trailing : .leading)
+                        .ignoresSafeArea(.container, edges: edge.edges)
                         .onGeometryChange(for: Bool.self) { proxy in
                             (edge == .trailing ? proxy.safeAreaInsets.trailing : proxy.safeAreaInsets.leading) > 0
                         } action: { meetsColumn = $0 }
@@ -205,9 +207,7 @@ extension GeometryProxy {
         if #available(iOS 27.1, *) {
             let bounds = CGRect(origin: .zero, size: size)
             let active = reservedRegions(kind: .occlusion).filter(\.isActive).map(\.frame)
-            let regions = sensorsOnly
-                ? active.filter { outer in !active.contains { $0 != outer && outer.contains($0) } }
-                : active
+            let regions = sensorsOnly ? active.sensorsOnly : active
             let depths = regions
                 .filter { $0.intersects(bounds) }
                 .map { edge == .trailing ? bounds.maxX - $0.minX : $0.maxX - bounds.minX }
@@ -227,6 +227,24 @@ extension GeometryProxy {
         }
         #endif
         return nil
+    }
+}
+
+extension Array where Element == CGRect {
+    /// The occlusions that are sensors: a region holding another is the status
+    /// bar's housing round the camera, and gives way to what it holds.
+    var sensorsOnly: [CGRect] {
+        filter { outer in !contains { $0 != outer && outer.contains($0) } }
+    }
+}
+
+extension HorizontalEdge {
+    /// This edge as the set padding and safe-area modifiers take.
+    var edges: Edge.Set { self == .trailing ? .trailing : .leading }
+
+    /// This edge as the screen edge UIKit names it, under `direction`.
+    func rectEdge(in direction: LayoutDirection) -> UIRectEdge {
+        (self == .trailing) == (direction == .leftToRight) ? .right : .left
     }
 }
 

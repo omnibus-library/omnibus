@@ -203,9 +203,7 @@ struct ReaderView: View {
         .task { await prepare() }
         // An iPhone Duo's bar column, which the page takes back while the bars are hidden.
         .onChange(of: sideBarEdge, initial: true) { _, edge in
-            controller.sideColumnEdge = edge.map { edge in
-                (edge == .trailing) == (layoutDirection == .leftToRight) ? .right : .left
-            }
+            controller.sideColumnEdge = edge?.rectEdge(in: layoutDirection)
         }
         // The glue owns tap zones and swipe-to-turn inside the page; a centre
         // tap arrives here as a token rather than us layering a gesture view
@@ -532,19 +530,13 @@ struct ReaderView: View {
             }
             // Out to the page's own edges where it took back a side column,
             // clear of the camera alone with the status bar hidden.
-            .ignoresSafeArea(.container, edges: reclaimedEdges)
+            .reclaimsSideColumn(controller.screen?.stageInsets != nil)
             .transition(.opacity)
             // Glass resolves against the environment's scheme, not the pixels
             // behind it, so app-dark chrome lands as a grey slab on a white
             // page. Same reason `barInk` follows the reading theme.
             .environment(\.colorScheme, pageScheme)
         }
-    }
-
-    /// The side the page took back, which the chrome follows it into.
-    private var reclaimedEdges: Edge.Set {
-        guard controller.screen?.stageInsets != nil, let sideBarEdge else { return [] }
-        return sideBarEdge == .trailing ? .trailing : .leading
     }
 
     /// The scheme the *page* is in, which is what the chrome sits on.
