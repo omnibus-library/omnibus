@@ -66,7 +66,8 @@ extension View {
 
     /// Fades a sideways-scrolling row out where the iPhone Duo's bar column
     /// begins. A scroll view draws into the side safe area, which there is the
-    /// column, so a rail ran on beneath the toolbar. Elsewhere rails run edge to edge.
+    /// column, so a rail ran on beneath the toolbar. Only an edge that meets the
+    /// column fades; elsewhere rails run edge to edge.
     func endsAtSideBar() -> some View {
         modifier(SideBarRailEnd())
     }
@@ -120,9 +121,12 @@ private struct OcclusionClearance: ViewModifier {
     }
 }
 
-/// The mask behind `endsAtSideBar()`: open on every edge but the bar's.
+/// The mask behind `endsAtSideBar()`: open on every edge but the bar's, and on
+/// that one too unless the row reaches the column.
 private struct SideBarRailEnd: ViewModifier {
     @Environment(\.sideBarEdge) private var sideBarEdge
+    /// Whether the row's bar-side edge meets the column, rather than stopping short of it.
+    @State private var meetsColumn = false
 
     /// Long enough to read as a dissolve rather than a cut, short enough not to dim a resting chip.
     static let fade: CGFloat = 14
@@ -131,15 +135,27 @@ private struct SideBarRailEnd: ViewModifier {
 
     func body(content: Content) -> some View {
         if let edge = sideBarEdge {
-            content.mask {
-                HStack(spacing: 0) {
-                    if edge == .leading { ramp(from: .clear, to: .black) }
-                    Rectangle()
-                    if edge == .trailing { ramp(from: .black, to: .clear) }
+            let fades = meetsColumn
+            content
+                .mask {
+                    HStack(spacing: 0) {
+                        if fades && edge == .leading { ramp(from: .clear, to: .black) }
+                        Rectangle()
+                        if fades && edge == .trailing { ramp(from: .black, to: .clear) }
+                    }
+                    .padding(.vertical, -Self.overhang)
+                    .padding(edge == .trailing ? .leading : .trailing, -Self.overhang)
+                    .padding(edge == .trailing ? .trailing : .leading, fades ? 0 : -Self.overhang)
                 }
-                .padding(.vertical, -Self.overhang)
-                .padding(edge == .trailing ? .leading : .trailing, -Self.overhang)
-            }
+                .background {
+                    // Stretches into the column only from an edge that touches
+                    // it, as a chip row's after its label or a pane's at the hinge does not.
+                    Color.clear
+                        .ignoresSafeArea(.container, edges: edge == .trailing ? .trailing : .leading)
+                        .onGeometryChange(for: Bool.self) { proxy in
+                            (edge == .trailing ? proxy.safeAreaInsets.trailing : proxy.safeAreaInsets.leading) > 0
+                        } action: { meetsColumn = $0 }
+                }
         } else {
             content
         }

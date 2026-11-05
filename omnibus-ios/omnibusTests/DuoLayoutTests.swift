@@ -74,8 +74,8 @@ private let laptopFold = Fold(frame: CGRect(x: 0, y: 463, width: 669, height: 25
     let fold = Fold(frame: CGRect(x: 443, y: 0, width: 25, height: 669))
     let layout = try #require(FoldGridLayout.resolve(width: 911, fold: fold, density: .regular))
     #expect(layout.perSide == 3)
-    #expect(layout.leadingInset == 0)
-    #expect(layout.trailingInset == 0)
+    #expect(layout.span.leading == 0)
+    #expect(layout.span.trailing == 0)
     #expect(layout.columns(.regular).count == 6)
     // The gutter after the last leading column is the fold itself.
     #expect(layout.columns(.regular)[2].spacing == 25)
@@ -87,8 +87,8 @@ private let laptopFold = Fold(frame: CGRect(x: 0, y: 463, width: 669, height: 25
     let fold = Fold(frame: CGRect(x: 463, y: 0, width: 25, height: 669))
     let layout = try #require(FoldGridLayout.resolve(width: 835, fold: fold, density: .regular))
     // The trailing side holds 347pt, so the leading one gives up 463 - 347.
-    #expect(layout.leadingInset == 116)
-    #expect(layout.trailingInset == 0)
+    #expect(layout.span.leading == 116)
+    #expect(layout.span.trailing == 0)
 }
 
 @Test func foldGridLayoutIsNilWhenTheFoldMissesTheGrid() {
@@ -124,6 +124,24 @@ private let laptopFold = Fold(frame: CGRect(x: 0, y: 463, width: 669, height: 25
     #expect(ContinueHeroLayout.cardsPerPage(width: 911, count: 3) == 2)
     // A lone card keeps the full width rather than half of it.
     #expect(ContinueHeroLayout.cardsPerPage(width: 911, count: 1) == 1)
+}
+
+@Test func continueHeroKeepsALoneCardToOneSideOfAFold() {
+    #expect(ContinueHeroLayout.cardsPerPage(width: 855, count: 1, folded: true) == 2)
+    // Too narrow for two up, folded or not, it stays one card wide.
+    #expect(ContinueHeroLayout.cardsPerPage(width: 402, count: 1, folded: true) == 1)
+}
+
+@Test func continueHeroPageStartIsAStopPagingCanRestOn() {
+    // Two up, a card at an odd index rests on the page it is part of.
+    #expect(ContinueHeroLayout.pageStart(of: 1, count: 5, perPage: 2) == 0)
+    #expect(ContinueHeroLayout.pageStart(of: 2, count: 5, perPage: 2) == 2)
+    // The scroll ends short of a half-empty last page, on its last two cards.
+    #expect(ContinueHeroLayout.pageStart(of: 4, count: 5, perPage: 2) == 3)
+    #expect(ContinueHeroLayout.pageStart(of: 2, count: 3, perPage: 2) == 1)
+    // A lone card two up, and one up every card, rest where they are.
+    #expect(ContinueHeroLayout.pageStart(of: 0, count: 1, perPage: 2) == 0)
+    #expect(ContinueHeroLayout.pageStart(of: 2, count: 3, perPage: 1) == 2)
 }
 
 @Test func continueHeroPageCountRoundsUpALastHalfPage() {
@@ -163,6 +181,15 @@ private let laptopFold = Fold(frame: CGRect(x: 0, y: 463, width: 669, height: 25
     #expect(short >= 0.5)
     // The inner display, flat or folded: the cover stands whole.
     #expect(BookDetailView.stageCoverScale(paneHeight: 648, underBar: true) == 1)
+}
+
+@Test func stageFadeRaiseEndsTheFadeWhereAStageBetweenTheDiscsRests() {
+    // Below the bar, the fade sits on the bar's edge like the trailing pane's.
+    #expect(BookDetailView.stageFadeRaise(underBar: false) == 0)
+    // Between the discs, the cover rests `stageTop` below the bar row's top; the fade is whole by there.
+    let raise = BookDetailView.stageFadeRaise(underBar: true)
+    let opaqueAt = -(BarEdgeFade.reach + raise) + BarEdgeFade.length
+    #expect(opaqueAt == -BookDetailView.barRow + BookDetailView.stageTop)
 }
 
 @Test func continueHeroDotFollowsThePageTheCarouselEndsOn() {

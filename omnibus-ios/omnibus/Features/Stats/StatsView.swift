@@ -66,35 +66,27 @@ struct StatsView: View {
     /// fire on the first appearance, so without this the reload below doubles
     /// the opening fetch on every launch.
     @State private var hasAppeared = false
-    /// The masthead's height, which the trailing page of a spread starts below.
-    @State private var mastheadHeight: CGFloat = 0
 
     var body: some View {
         NavigationStack(path: $path) {
-            GeometryReader { geometry in
-                // A spread once the figures are in and there is room for one:
-                // the glance on the leading page, the period bands on the
-                // trailing one, each scrolling alone so a band header still
-                // pins inside the page it governs.
-                if failure != .notSharing, let summary,
-                   let split = PaneSplit.spread(size: geometry.size, fold: geometry.activeFold) {
-                    HStack(spacing: 0) {
-                        page {
-                            masthead.padding(.bottom, -Spacing.lg)
-                            glance(summary)
-                        }
-                        .frame(width: split.leading)
-                        Color.clear.frame(width: split.gap)
-                        page {
-                            // Level with the streak beside it, below the masthead.
-                            Color.clear.frame(height: max(0, mastheadHeight - Spacing.lg))
-                            bands(summary)
-                        }
-                        .frame(width: split.trailing)
-                    }
-                } else {
-                    page { column }
+            // A spread wherever there is room for one: the glance on the
+            // leading page, the period bands on the trailing one, each
+            // scrolling alone so a band header still pins inside the page it
+            // governs. Kept while a reader switch reloads, so the masthead and
+            // its picker aren't rebuilt and neither page loses its place.
+            SpreadPages(spreads: failure != .notSharing) {
+                page {
+                    masthead
+                    if let summary { glance(summary) } else { pending }
                 }
+            } trailing: { headerHeight in
+                page {
+                    // Level with the streak beside it, below the masthead.
+                    Color.clear.frame(height: headerHeight)
+                    if let summary { bands(summary) }
+                }
+            } column: {
+                page { column }
             }
             .background(ScreenBackground())
             .toolbar(.hidden, for: .navigationBar)
@@ -161,13 +153,23 @@ struct StatsView: View {
     @ViewBuilder
     private var column: some View {
         masthead
-            .padding(.bottom, -Spacing.lg)
 
         if failure == .notSharing {
             StatsRefusalView { subject = .you }
-        } else if isLoading && summary == nil {
+        } else if let summary {
+            glance(summary)
+            bands(summary)
+        } else {
+            pending
+        }
+    }
+
+    /// What stands in for the figures until they land: loading, or why they didn't.
+    @ViewBuilder
+    private var pending: some View {
+        if isLoading {
             LoadingView()
-        } else if let failure, case let .error(message) = failure, summary == nil {
+        } else if let failure, case let .error(message) = failure {
             ErrorStateView(message: message) {
                 Task {
                     await load()
@@ -175,9 +177,6 @@ struct StatsView: View {
                     await loadResumePoints()
                 }
             }
-        } else if let summary {
-            glance(summary)
-            bands(summary)
         }
     }
 
@@ -207,7 +206,8 @@ struct StatsView: View {
                 StatsReaderPicker(subject: $subject, readers: readers)
             }
         }
-        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { mastheadHeight = $0 }
+        .padding(.bottom, -Spacing.lg)
+        .spreadHeader()
     }
 
     /// The standing glance below the masthead: streak, goals, the last four weeks, activity.

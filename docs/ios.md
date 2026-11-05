@@ -363,7 +363,8 @@ builds the app unchanged and every answer is "none".
   as a black strip beside it. Washes, scrims and bar slabs ignore the horizontal safe
   area to run under it; sideways rails, which scroll into it, take `endsAtSideBar()`
   to fade out where it begins (a no-op without a side bar, so a notched iPhone's rails
-  still run edge to edge).
+  still run edge to edge, and on an edge that stops short of the column, like a chip
+  row's after its label).
 - **Splits.** `PaneSplit` and `PlayerArrangement` are pure geometry: two panes either
   side of a vertical fold, or a share of a wide view, else one column. The book page
   and the player use them; the player also puts its artwork above a horizontal fold.
@@ -371,8 +372,11 @@ builds the app unchanged and every answer is "none".
   of their own, the page fading out under each (`barEdgeFade`): a slab or a
   pane-clipped halo ended at the pane's edge as a hard line through the wash.
   Stats and You, long pages of sections, spread across two pages
-  (`PaneSplit.spread`) folded like a book or opened flat on their side, each page
-  scrolling alone so Stats' band headers still pin inside the page they govern.
+  (`SpreadPages`, on `PaneSplit.spread`) folded like a book or opened flat on their
+  side, each page scrolling alone so Stats' band headers still pin inside the page
+  they govern. Every one-or-two-pane choice reads the keyboard-down size
+  (`PaneGeometryReader`): read live, a field's keyboard flipped an upright iPad to
+  two panes, which rebuilt the field, dropped its focus and flipped it back.
 - **Full-screen surfaces.** The player, which no tab bar shows on, takes the side
   column back: the system reports what really occludes it as `ReservedRegion`s of
   kind `.occlusion` (the status bar's housing, and the camera inside it), and only
@@ -380,7 +384,7 @@ builds the app unchanged and every answer is "none".
 - **Rows across a fold.** `FoldSpan` centres a row on the hinge, the wider side giving
   up its excess, as the system's own split views do. `CoverGrid` lays an even column
   count either side of it (`FoldGridLayout`), the continue carousel puts one card on
-  each page, and Search's Browse tiles split two and two, so nothing bends down the
+  each page (a lone card keeps to the leading one), and Search's Browse tiles split two and two, so nothing bends down the
   middle.
 - **Reader.** Opened flat or held like a book the inner display is wide enough for
   Two Pages, whose spine lands on the hinge; it already reads the hinge

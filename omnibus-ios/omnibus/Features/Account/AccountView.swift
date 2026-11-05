@@ -30,8 +30,6 @@ struct AccountView: View {
     @State private var hiddenFormats: Set<String> = []
     @State private var hiddenSaved = false
     @State private var hiddenError: String?
-    /// The masthead's height, which the trailing page of a spread starts below.
-    @State private var mastheadHeight: CGFloat = 0
     private var downloads = DownloadManager.shared
     private var connectivity = Connectivity.shared
 
@@ -43,27 +41,21 @@ struct AccountView: View {
         @Bindable var app = app
 
         NavigationStack(path: $path) {
-            GeometryReader { geometry in
-                // Folded like a book, or opened flat on its side: the account
-                // and how it reads on the leading page, the library and the
-                // device on the trailing one, so no row is bent across the hinge.
-                if let split = PaneSplit.spread(size: geometry.size, fold: geometry.activeFold) {
-                    HStack(spacing: 0) {
-                        page { personal($app) }
-                            .frame(width: split.leading)
-                        Color.clear.frame(width: split.gap)
-                        page {
-                            // Level with the identity card beside it, below the masthead.
-                            Color.clear.frame(height: mastheadHeight)
-                            housekeeping
-                        }
-                        .frame(width: split.trailing)
-                    }
-                } else {
-                    page {
-                        personal($app)
-                        housekeeping
-                    }
+            // Folded like a book, or opened flat on its side: the account and
+            // how it reads on the leading page, the library and the device on
+            // the trailing one, so no row is bent across the hinge.
+            SpreadPages {
+                page { personal($app) }
+            } trailing: { headerHeight in
+                page {
+                    // Level with the identity card beside it, below the masthead.
+                    Color.clear.frame(height: headerHeight)
+                    housekeeping
+                }
+            } column: {
+                page {
+                    personal($app)
+                    housekeeping
                 }
             }
             .background(ScreenBackground())
@@ -107,7 +99,7 @@ struct AccountView: View {
     @ViewBuilder
     private func personal(_ app: Bindable<AppState>) -> some View {
         Masthead(title: "You")
-            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { mastheadHeight = $0 }
+            .spreadHeader()
 
         identityCard
 
