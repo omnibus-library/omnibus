@@ -100,11 +100,10 @@ export const wishlistQuery = (uuid: BookUuid) =>
 
 /** The reader's wishlist entry for a book with no files, which the page draws as a wish; else `null`. */
 export function useWish(book: BookDetail) {
-  const wish = useQuery({
-    ...wishlistQuery(book.uuid),
-    enabled: book.formats.length === 0,
-  });
-  return wish.data ?? null;
+  const fileless = book.formats.length === 0;
+  const wish = useQuery({ ...wishlistQuery(book.uuid), enabled: fileless });
+  // A disabled query still answers from the cache: an entry read before an import must not outlive the file.
+  return fileless ? (wish.data ?? null) : null;
 }
 
 /** The shelf list, the shelves holding the book by hand and by rule, and whether it is wished: one read, so they agree. */

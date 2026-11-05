@@ -182,8 +182,17 @@ function Chosen({ request }: { request: Request }) {
   );
 }
 
-/** The one bar for a download: a native progress element, labelled, with its percent beside it. Before the client has reported, the bar has no value and no percent. */
+/** The one bar for a download: a native progress element, labelled, with its percent beside it. Before the client has reported, the bar has no value and no percent. Once it is complete, the wait is for the library to take it. */
 function Downloading({ request }: { request: Request }) {
+  if ((request.progress ?? 0) >= 1) {
+    return (
+      <Loading
+        kind="inline"
+        label="Adding it to the library…"
+        testId="request-downloading"
+      />
+    );
+  }
   const percent =
     request.progress === null ? null : progressPercent(request.progress);
   return (
@@ -252,13 +261,23 @@ function Actions({
   );
 }
 
-/** Searches again for the request; the one way out of a search that came up empty or never ended. */
-function TryAgain({ request }: { request: Request }) {
+/** Tries the request again: a new search, or only the add to the library after a download that could not be added. */
+function TryAgain({
+  request,
+  onTried,
+}: {
+  request: Request;
+  /** Runs once the new state is in, when this button is gone. */
+  onTried: () => void;
+}) {
   const toast = useToast();
   const answer = useAnswer(request.id);
   const retry = useMutation({
     mutationFn: () => retryBookRequest(request.id),
-    onSuccess: answer,
+    onSuccess: (tried) => {
+      answer(tried);
+      onTried();
+    },
     onError: (error) => toast(`Couldn’t try again: ${messageOf(error)}`),
   });
   return (
@@ -274,7 +293,15 @@ function TryAgain({ request }: { request: Request }) {
   );
 }
 
-function Stuck({ request, canAct }: { request: Request; canAct: boolean }) {
+function Stuck({
+  request,
+  canAct,
+  onTried,
+}: {
+  request: Request;
+  canAct: boolean;
+  onTried: () => void;
+}) {
   return (
     <div className="rq-stuck">
       {request.stuckDetail && (
@@ -282,7 +309,7 @@ function Stuck({ request, canAct }: { request: Request; canAct: boolean }) {
           {request.stuckDetail}
         </p>
       )}
-      {canAct && <TryAgain request={request} />}
+      {canAct && <TryAgain request={request} onTried={onTried} />}
     </div>
   );
 }
@@ -300,7 +327,15 @@ function useSearchStale(updatedAt: number) {
 }
 
 /** The wait for a search, with a way out once it has run past its timeout. */
-function Looking({ request, canAct }: { request: Request; canAct: boolean }) {
+function Looking({
+  request,
+  canAct,
+  onTried,
+}: {
+  request: Request;
+  canAct: boolean;
+  onTried: () => void;
+}) {
   const stale = useSearchStale(request.updatedAt);
   return (
     <>
@@ -314,7 +349,7 @@ function Looking({ request, canAct }: { request: Request; canAct: boolean }) {
           <p className="rq-note" data-testid="request-still-looking">
             Still looking…
           </p>
-          <TryAgain request={request} />
+          <TryAgain request={request} onTried={onTried} />
         </div>
       )}
     </>
@@ -326,7 +361,8 @@ function Lane({ request }: { request: Request }) {
   const viewer = useCurrentUser();
   // Held here: a cancelled request has no Cancel button left, but its Undo toast still needs this.
   const title = useRef<HTMLHeadingElement>(null);
-  const cancel = useCancel(request.id, () => title.current?.focus());
+  const focusTitle = () => title.current?.focus();
+  const cancel = useCancel(request.id, focusTitle);
   const [focusVersions, setFocusVersions] = useState(false);
   const swap = useSwap(request.id, () => setFocusVersions(true));
   // Anyone may read a request; only its maker, or an admin, may act on it.
@@ -358,7 +394,7 @@ function Lane({ request }: { request: Request }) {
       </div>
       <p className="rq-note">{note}</p>
       {request.state === "looking" && (
-        <Looking request={request} canAct={canAct} />
+        <Looking request={request} canAct={canAct} onTried={focusTitle} />
       )}
       {request.state === "choose" && (
         <Choices
@@ -370,7 +406,9 @@ function Lane({ request }: { request: Request }) {
       )}
       {request.state === "chosen" && <Chosen request={request} />}
       {request.state === "on_its_way" && <Downloading request={request} />}
-      {request.state === "stuck" && <Stuck request={request} canAct={canAct} />}
+      {request.state === "stuck" && (
+        <Stuck request={request} canAct={canAct} onTried={focusTitle} />
+      )}
       {canAct && isCancellable(request) && (
         <Actions request={request} cancel={cancel} swap={swap} />
       )}

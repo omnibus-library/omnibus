@@ -141,7 +141,7 @@ locator half: see [04d](../../rules/04d-playwright-page-objects.md#lint).
 | a mutation's method, URL, body and status | a `contracts/` builder |
 | a payload type or a unique test value | `data/` |
 | data that must be deleted after the test | a `cleanupSet` fixture (`fixtures/lifecycle.ts`) in `dataFixtures.ts`, or `accountFixtures.ts` for account state |
-| a service the suite can't run (Prowlarr) | a loopback `node:http` stand-in in `utils/` (`mockProwlarr.ts`), started and pointed at by a `dataFixtures.ts` fixture that restores the setting after (`prowlarrFor`); the scratch server runs with `OMNIBUS_BOOK_REQUESTS=1`, so the admin may request |
+| a service the suite can't run (Prowlarr, qBittorrent) | a loopback `node:http` stand-in in `utils/` (`mockProwlarr.ts`, `mockQbittorrent.ts`), started and pointed at by a `dataFixtures.ts` fixture that restores the setting after (`prowlarrFor`, `qbittorrentFor`); the scratch server runs with `OMNIBUS_BOOK_REQUESTS=1`, so the admin may request. A configured download client makes the poller act on every picked request, so keep the specs that set one in a serial file, and wait for `waitForWorkerIdle` before an import: it awaits a library scan |
 
 ## 7. Run
 

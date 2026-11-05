@@ -1,5 +1,13 @@
-import { readFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import type { EbooksRequests } from "../apiRequests/EbooksRequests";
 import type { IndexedBook } from "../data/authors";
 import { isAudioFormat } from "../data/bookDetail";
@@ -42,12 +50,22 @@ import {
   type MockRelease,
   startMockProwlarr,
 } from "../utils/mockProwlarr";
-import { fixturesDir } from "../utils/seed";
+import {
+  type MockQbittorrent,
+  startMockQbittorrent,
+} from "../utils/mockQbittorrent";
+import { fixturesDir, waitForWorkerIdle } from "../utils/seed";
 import { test as base, expect } from "./accountFixtures";
 import { MERGE_PRIMARY, MERGE_SECONDARY } from "./audiobooks";
 import { DUAL_FORMAT_BOOK, RESUME_PROMPT_BOOK } from "./dual_format";
 import { FIXTURE_BOOKS } from "./epubs";
 import { cleanupSet, type Owner } from "./lifecycle";
+
+/** A throwaway copy of the fixture library, and the wished-for books to delete from it. */
+export type ImportLibrary = { root: string; books: Set<string> };
+
+/** A file a finished download holds: its name inside the download folder, and its bytes. */
+export type DownloadedFile = { name: string; bytes: Buffer };
 
 /** Registers merges so each is undone, newest first, before the lock frees. */
 export type MergeLock = {
@@ -101,6 +119,8 @@ type DataFixtures = {
   savedMetadataKeys: Set<MetadataProvider>;
   createdBookUuids: Set<string>;
   prowlarrFor: (releases: MockRelease[]) => Promise<MockProwlarr>;
+  qbittorrentFor: (files: DownloadedFile[]) => Promise<MockQbittorrent>;
+  libraryForImports: ImportLibrary;
   filedCopies: FiledCopy[];
   seededHighlightIds: Set<number>;
   seededBookmarkIds: Set<number>;
@@ -229,6 +249,96 @@ export const test = base.extend<DataFixtures>({
     );
     await expect(restored).toBeOK();
     for (const mock of started) await mock.stop();
+  },
+
+  // Writes `files` into a fresh folder and points the download client at a mock that holds
+  // them as a download, with both folder prefixes at that folder. The saved client fields
+  // are put back afterwards; Prowlarr is read fresh then, so its own fixture is not undone.
+  // A scratch server has no client of its own, so the fixture refuses to overwrite one.
+  qbittorrentFor: async ({ bookRequestsRequests }, use) => {
+    const read = await bookRequestsRequests.getConnections();
+    await expect(read).toBeOK();
+    const before: RequestsConnections = await read.json();
+    expect(before.download_client_url).toBeNull();
+    const started: { mock: MockQbittorrent; folder: string }[] = [];
+    await use(async (files) => {
+      const folder = mkdtempSync(join(tmpdir(), "omnibus-e2e-download-"));
+      for (const { name, bytes } of files) {
+        mkdirSync(dirname(join(folder, name)), { recursive: true });
+        writeFileSync(join(folder, name), bytes);
+      }
+      const listed = files.map(({ name, bytes }) => ({
+        name,
+        size: bytes.length,
+      }));
+      const mock = await startMockQbittorrent(folder, listed);
+      started.push({ mock, folder });
+      const current: RequestsConnections = await (
+        await bookRequestsRequests.getConnections()
+      ).json();
+      const saved = await bookRequestsRequests.putConnections({
+        ...prowlarrUpdate(current, current.prowlarr_url ?? "", null),
+        download_client_url: mock.url,
+        download_client_path_prefix: folder,
+        download_path_prefix: folder,
+      });
+      await expect(saved).toBeOK();
+      return mock;
+    });
+    const current: RequestsConnections = await (
+      await bookRequestsRequests.getConnections()
+    ).json();
+    const restored = await bookRequestsRequests.putConnections(
+      prowlarrUpdate(before, current.prowlarr_url ?? "", null),
+    );
+    await expect(restored).toBeOK();
+    for (const { mock, folder } of started) {
+      await mock.stop();
+      rmSync(folder, { recursive: true, force: true });
+    }
+  },
+
+  // Points the server's ebook library at a copy of the fixtures, so an import files its book
+  // there and not in the committed tree. The copy keeps every relative path and timestamp, so
+  // the books already indexed stay the same books. The books a test registers are deleted with
+  // their files first, then the library path is put back; the lock keeps another saving test
+  // from taking the copy for the original.
+  libraryForImports: async (
+    { request, settingsRequests, ebooksRequests },
+    use,
+  ) => {
+    await withLock("library-settings", async () => {
+      const before = await settingsRequests.getSettings();
+      await expect(before, "read the library settings").toBeOK();
+      const original: ServerLibrary = await before.json();
+      const root = mkdtempSync(join(tmpdir(), "omnibus-e2e-library-"));
+      cpSync(fixturesDir(), root, {
+        recursive: true,
+        preserveTimestamps: true,
+      });
+      const moved = await settingsRequests.postSettings({
+        ...original,
+        ebook_library_path: root,
+      });
+      await expect(moved, "point the ebook library at the copy").toBeOK();
+      await waitForWorkerIdle(request);
+      const books = new Set<string>();
+      await use({ root, books });
+      for (const uuid of books) {
+        const manifest = await ebooksRequests.getDeletionManifest(uuid);
+        await expect(manifest).toBeOK();
+        const { files, copies } = await manifest.json();
+        const deleted = await ebooksRequests.postDeleteFiles(uuid, {
+          file_ids: files.map((f: { id: number }) => f.id),
+          copy_ids: copies.map((c: { id: number }) => c.id),
+        });
+        await expect(deleted, `delete ${uuid} with its files`).toBeOK();
+      }
+      const restored = await settingsRequests.postSettings(original);
+      await expect(restored, "restore the library settings").toBeOK();
+      await waitForWorkerIdle(request);
+      rmSync(root, { recursive: true, force: true });
+    });
   },
 
   filedCopies: async ({ physicalRequests }, use) => {

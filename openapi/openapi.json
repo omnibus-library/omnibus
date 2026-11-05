@@ -6556,7 +6556,7 @@
           "Requests"
         ],
         "summary": "Try a request again",
-        "description": "Searches again for a request that is `stuck` or still `looking`, and puts it back to\n`looking`; poll `GET /api/requests/{id}` as after a start. That counts as a start toward\nthe rate limit. A request stuck on a stopped download (`stopped_moving`) instead drops that\ndownload and goes back to `choose` among the other versions, with nothing searched and\nnothing counted. Only the reader who made the request, or an admin, can do this.",
+        "description": "Searches again for a request that is `stuck` or still `looking`, and puts it back to\n`looking`; poll `GET /api/requests/{id}` as after a start. That counts as a start toward\nthe rate limit. A request stuck on a stopped download (`stopped_moving`) instead drops that\ndownload and goes back to `choose` among the other versions, with nothing searched and\nnothing counted. One stuck because its finished download could not be added to the library\n(`couldnt_add`) goes back to `on_its_way` and only the adding is tried again: the download\nis kept, nothing is searched or fetched, and nothing is counted. Only the reader who made\nthe request, or an admin, can do this.",
         "operationId": "retry_book_request",
         "parameters": [
           {
@@ -6572,7 +6572,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The request is looking again, or choosing again after a stopped download.",
+            "description": "The request is looking again, choosing again after a stopped download, or on its way again after a download that could not be added.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6591,10 +6591,10 @@
             "description": "Book requests are off on this server, or there is no such request."
           },
           "409": {
-            "description": "The request is past searching: it is waiting on a pick or was picked."
+            "description": "The request is past searching: it is waiting on a pick or was picked, or its download can't be added again because you asked for the same book since."
           },
           "429": {
-            "description": "You started too many requests lately."
+            "description": "You started too many requests lately, or have too many in progress."
           }
         }
       }
@@ -15541,6 +15541,7 @@
           "choose",
           "chosen",
           "on_its_way",
+          "ready",
           "stuck",
           "cancelled"
         ]
@@ -17563,11 +17564,12 @@
       },
       "StuckReason": {
         "type": "string",
-        "description": "Why a request is stuck. The two search reasons read \"Couldn't find it\" to the requester;\n`stopped_moving` reads \"Stopped moving\".",
+        "description": "Why a request is stuck. The two search reasons read \"Couldn't find it\" to the requester;\n`stopped_moving` reads \"Stopped moving\" and `couldnt_add` reads \"Couldn't add it\".",
         "enum": [
           "not_found",
           "search_failed",
-          "stopped_moving"
+          "stopped_moving",
+          "couldnt_add"
         ]
       },
       "SuggestionCard": {

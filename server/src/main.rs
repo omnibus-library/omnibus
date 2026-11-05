@@ -88,7 +88,7 @@ mod server {
         spawn_session_pruner(pool.clone());
         spawn_periodic_scan(pool.clone(), worker.clone());
         if book_requests {
-            spawn_request_poller(pool.clone(), state.request_kick().clone());
+            spawn_request_poller(pool.clone(), worker.clone(), state.request_kick().clone());
         }
         spawn_annotation_cfi_backfill(pool.clone());
         spawn_annotation_downsync(pool.clone(), worker.clone());
@@ -272,13 +272,15 @@ mod server {
         });
     }
 
-    /// Spawn the book-request poller, which follows downloads in the client. It waits as long
+    /// Spawn the book-request poller, which follows downloads in the client and adds finished ones to the library. It waits as long
     /// as `poll_tick` says, or less when `kick` wakes it; it starts only with book requests on.
-    fn spawn_request_poller(pool: SqlitePool, kick: Arc<tokio::sync::Notify>) {
+    fn spawn_request_poller(pool: SqlitePool, worker: Arc<Worker>, kick: Arc<tokio::sync::Notify>) {
         tokio::spawn(async move {
             let mut failing_since = None;
             loop {
-                let wait = omnibus_db::requests::poller::poll_tick(&pool, &mut failing_since).await;
+                let wait =
+                    omnibus_db::requests::poller::poll_tick(&pool, &worker, &mut failing_since)
+                        .await;
                 tokio::select! {
                     () = tokio::time::sleep(wait) => {}
                     () = kick.notified() => {}

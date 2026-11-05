@@ -41,7 +41,7 @@ fn torrent_info(hash: &str) -> serde_json::Value {
         "hash": hash,
         "progress": 0.5,
         "state": "downloading",
-        "content_path": "/downloads/omnibus/Dune.epub",
+        "save_path": "/downloads/omnibus",
     }])
 }
 
@@ -406,7 +406,7 @@ mod qbittorrent_status {
     use super::*;
 
     #[tokio::test]
-    async fn returns_progress_state_and_content_path_for_the_tagged_torrent() {
+    async fn returns_progress_state_and_folders_for_the_tagged_torrent() {
         let server = signed_in_server().await;
         mount_info(&server, "omnibus-7", torrent_info("h1")).await;
 
@@ -416,7 +416,7 @@ mod qbittorrent_status {
             hash: "h1".into(),
             progress: 0.5,
             state: "downloading".into(),
-            content_path: "/downloads/omnibus/Dune.epub".into(),
+            save_path: "/downloads/omnibus".into(),
         };
         assert_eq!(status, Some(expected));
     }

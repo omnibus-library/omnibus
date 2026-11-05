@@ -63,7 +63,8 @@ export function releasesFor(book: ExternalBookMeta) {
     size,
     seeders,
     indexer,
-    downloadUrl: `http://127.0.0.1:1/download/${book.isbn13}-${format}`,
+    // A magnet: the server fetches a torrent-file link before handing it over.
+    downloadUrl: `magnet:?xt=urn:btih:${book.isbn13}-${format}`,
     categories: [{ id: 7020 }],
   });
   return [

@@ -28,13 +28,14 @@ mod cancel {
     }
 
     #[tokio::test]
-    async fn refuses_a_request_that_is_stuck_cancelled_or_fully_downloaded() {
+    async fn refuses_a_request_that_is_stuck_cancelled_fully_downloaded_or_ready() {
         let pool = pool().await;
         let id = start_looking(&pool).await;
         for (state, progress) in [
             ("stuck", "NULL"),
             ("cancelled", "NULL"),
             ("on_its_way", "1"),
+            ("ready", "1"),
         ] {
             sqlx::query(&format!(
                 "UPDATE book_requests SET state = '{state}', progress = {progress} WHERE id = ?"
@@ -239,6 +240,8 @@ mod swap {
             ("cancelled", "0.4", "NULL"),
             ("stuck", "NULL", "'not_found'"),
             ("on_its_way", "1", "NULL"),
+            ("ready", "1", "NULL"),
+            ("stuck", "1", "'couldnt_add'"),
         ];
         for (state, progress, reason) in cases {
             sqlx::query(&format!(
