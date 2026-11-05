@@ -74,6 +74,19 @@
   gap: 6px;
   margin-left: auto;
 }
+.atrium-add {
+  position: relative;
+}
+.atrium-add .shd-menu {
+  box-shadow:
+    0 18px 40px color-mix(in oklch, black 55%, transparent),
+    0 2px 0 color-mix(in oklch, black 25%, transparent);
+}
+/* The bar's backdrop-filter makes it the scrim's containing block, so the scrim sizes to the viewport itself. */
+.atrium-add .shd-menu-scrim {
+  bottom: auto;
+  height: 100dvh;
+}
 .atrium-topbar .btn,
 .atrium-topbar .btn.sm {
   font-family: var(--mono);

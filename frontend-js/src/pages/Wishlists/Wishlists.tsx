@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { useSearchParams } from "react-router";
+import { useLocation, useSearchParams } from "react-router";
 import {
   ApiError,
   type UserId,
@@ -149,13 +149,25 @@ function useSettledScope(scope: Scope, settled: boolean) {
   return shown;
 }
 
+/** Whether the add search is open; each arrival from the top bar's Add menu (`state.add`) opens it once. */
+function useAddSearch() {
+  const { key, state } = useLocation();
+  const [adding, setAdding] = useState(false);
+  const [opened, setOpened] = useState<string | null>(null);
+  if (state?.add === true && opened !== key) {
+    setOpened(key);
+    setAdding(true);
+  }
+  return [adding, setAdding] as const;
+}
+
 const readerId = (scope: Scope) => (scope.kind === "reader" ? scope.id : null);
 
 /** `/wishlists`: the household's wishlists, one reader's or everyone's, picked by `?user=`. */
 export function Wishlists() {
   const viewer = useCurrentUser();
   const scope = scopeFrom(useSearchParams()[0].get("user"), viewer.id);
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useAddSearch();
   const readers = useQuery(wishlistReadersQuery);
   const books = useQuery(wishlistBooksQuery(wishlistUser(scope)));
   // The title of a reader's list needs their name; the others need nothing.

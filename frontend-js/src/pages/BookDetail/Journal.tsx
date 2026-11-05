@@ -29,7 +29,7 @@ export function Journal({ book, onCompose }: JournalProps) {
         <h2 id={TITLE_ID}>Journal</h2>
       </div>
       <EmptyNote heading="h3" title="No entries yet" testId="journal-empty">
-        The journal begins when you do. Find a copy first — check in when it
+        The journal begins when you do. Find a copy first — add it when it
         arrives.
       </EmptyNote>
     </section>

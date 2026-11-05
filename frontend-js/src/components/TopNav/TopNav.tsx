@@ -1,9 +1,11 @@
 import { useState } from "react";
-import { Link, NavLink } from "react-router";
+import { Link, NavLink, useNavigate } from "react-router";
 import brandMark from "../../assets/omnibus-stoat.png";
 import { AddBookSheet } from "../../pages/AddBooks/AddBookSheet";
 import { useCurrentUser } from "../../session";
-import { Button, ButtonLink } from "../Button/Button";
+import { Button } from "../Button/Button";
+import { BookGlyph, HeartGlyph, UploadGlyph } from "../Glyphs/Glyphs";
+import { MoreMenu, type MoreMenuItem } from "../MoreMenu/MoreMenu";
 import { SearchPaletteTrigger } from "../SearchPalette/SearchPalette";
 import { UserMenu } from "../UserMenu/UserMenu";
 import "./TopNav.css";
@@ -44,18 +46,57 @@ export function TopNav() {
         </div>
         <SearchPaletteTrigger />
         <div className="atrium-actions">
-          <ButtonLink to="/check-in" state={{ fromApp: true }} size="sm">
-            Check in
-          </ButtonLink>
-          {user.canUpload && (
-            <Button variant="primary" size="sm" onClick={() => setAdding(true)}>
-              Add books
-            </Button>
-          )}
+          <AddMenu onUpload={user.canUpload ? () => setAdding(true) : null} />
           <UserMenu />
         </div>
       </nav>
       {adding && <AddBookSheet onClosed={() => setAdding(false)} />}
     </>
+  );
+}
+
+/** The bar's one Add button and its menu of the ways a book comes in; `onUpload` is null for a reader who may not upload. */
+function AddMenu({ onUpload }: { onUpload: (() => void) | null }) {
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
+  const items: MoreMenuItem[] = [
+    ...(onUpload
+      ? [
+          {
+            label: "Upload book files",
+            testId: "add-menu-upload",
+            icon: <UploadGlyph size={15} />,
+            onSelect: onUpload,
+          },
+        ]
+      : []),
+    {
+      label: "Add a copy you own",
+      testId: "add-menu-copy",
+      icon: <BookGlyph size={15} />,
+      onSelect: () => navigate("/check-in", { state: { fromApp: true } }),
+    },
+    {
+      label: "Add to your wishlist",
+      testId: "add-menu-wishlist",
+      icon: <HeartGlyph size={15} />,
+      onSelect: () => navigate("/wishlists", { state: { add: true } }),
+    },
+  ];
+  return (
+    <div className="atrium-add">
+      <Button
+        variant="primary"
+        size="sm"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        Add
+      </Button>
+      {open && (
+        <MoreMenu label="Add" items={items} onClose={() => setOpen(false)} />
+      )}
+    </div>
   );
 }
