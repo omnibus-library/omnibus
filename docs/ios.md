@@ -373,10 +373,12 @@ builds the app unchanged and every answer is "none".
   Stats and You, long pages of sections, spread across two pages
   (`PaneSplit.spread`) folded like a book or opened flat on their side, each page
   scrolling alone so Stats' band headers still pin inside the page they govern.
-- **Full-screen surfaces.** The player, which no tab bar shows on, takes the side
-  column back: the system reports what really occludes it as `ReservedRegion`s of
-  kind `.occlusion` (the status bar's housing, and the camera inside it), and only
-  those are cleared; the player's top bar keeps off both (`clearsOcclusions`).
+- **Full-screen surfaces.** The reader and the player, which no tab bar shows on,
+  take the side column back: the system reports what really occludes it as
+  `ReservedRegion`s of kind `.occlusion` (the status bar's housing, and the camera
+  inside it), and only those are cleared. The reader hands `#stage` its insets
+  (`ReaderScreen.reclaimingSideColumn`, `--rd-inset-*`) and, its status bar hidden,
+  clears the camera alone; the player's top bar keeps off both (`clearsOcclusions`).
 - **Rows across a fold.** `FoldSpan` centres a row on the hinge, the wider side giving
   up its excess, as the system's own split views do. `CoverGrid` lays an even column
   count either side of it (`FoldGridLayout`), the continue carousel puts one card on
