@@ -108,7 +108,7 @@ case "$cmd" in
       # resolve a concrete udid ourselves rather than letting it choose.
       udid="$(xcrun simctl list --json devices available | jq -r '
         .devices | to_entries
-        | map(select(.key | test("SimRuntime\\.iOS")))
+        | map(select(.key | test("SimRuntime\\.iOS-[0-9]+(-[0-9]+)*$")))
         | map({ver: (.key | sub(".*iOS-"; "") | gsub("-"; ".")),
                devs: [.value[] | select(.name | startswith("iPhone"))]})
         | map(select(.devs | length > 0))

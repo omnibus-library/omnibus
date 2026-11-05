@@ -26,12 +26,14 @@ ios_sim_name() {
 # The runtime is resolved here rather than left to xcodebuild: its destination
 # matcher silently omits simulators whose runtime is older than the project's
 # IPHONEOS_DEPLOYMENT_TARGET (they don't even show up as ineligible), so this
-# fails with a message that points at the real cause instead.
+# fails with a message that points at the real cause instead. Only plain
+# `iOS-<major>-<minor>` runtimes count: a device's own runtime (the iPhone
+# Duo's `iOS-27-2-iPhone19-4`) holds one model and has no numeric version.
 ios_sim_ensure() {
   local name="$1" runtime devtype udid
   read -r runtime devtype < <(xcrun simctl list --json devices available | jq -r '
     .devices | to_entries
-    | map(select(.key | test("SimRuntime\\.iOS")))
+    | map(select(.key | test("SimRuntime\\.iOS-[0-9]+(-[0-9]+)*$")))
     | map({key,
            ver: (.key | sub(".*iOS-"; "") | gsub("-"; ".")),
            devs: [.value[] | select(.name | startswith("iPhone"))]})

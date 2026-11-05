@@ -35,7 +35,7 @@ else
   # concrete UDID ourselves and fail with a message naming the real cause.
   udid="$(xcrun simctl list --json devices available | jq -r '
     .devices | to_entries
-    | map(select(.key | test("SimRuntime\\.iOS")))
+    | map(select(.key | test("SimRuntime\\.iOS-[0-9]+(-[0-9]+)*$")))
     | map({ver: (.key | sub(".*iOS-"; "") | gsub("-"; ".")),
            devs: [.value[] | select(.name | startswith("iPhone"))]})
     | map(select(.devs | length > 0))

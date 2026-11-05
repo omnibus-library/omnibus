@@ -44,6 +44,7 @@ A route is `<tab>/<screen>/<screen>…`, opened as `omnibus://debug/screen/<rout
 
 - **State the tour writes stays written.** A setting it flips is still flipped on the next run; start over with `server up --fresh` (about 30 s), then seed again.
 - **Lazy grids** build only the cells near the viewport: `scrollTo(element)` before asserting on or shooting anything below the fold.
+- **Landscape** on a simulator XCTest can't rotate (iPhone Duo): open `omnibus://debug/orientation/landscape` (or `portrait`), parsed by `App/DebugOrientation.swift`. The Duo's pose (closed, open, partly folded) changes only from Device Hub; open, `XCUIScreen.main` is still the dark outer display, so shoot the largest of `XCUIScreen.screens`. And `scripts/ios-validate.sh tour` always creates a non-Duo iPhone, so run `scripts/ios-test.sh ui/<Tour>` with `OMNIBUS_IOS_TEST_SIM_UDID` and the `TEST_RUNNER_` variables `tour()` sets. See the iPhone Duo section of `docs/ios.md`.
 
 ## 4. Run it
 

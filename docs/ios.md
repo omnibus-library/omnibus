@@ -338,6 +338,21 @@ two page-death paths each clear only their own half of that — `prepareForReboo
 drops `isReady` and leaves the view, `teardown` drops the view and leaves
 `isReady` — so the gate is `hasLivePage`, which asks both, never one alone.
 
+## iPhone Duo
+
+The foldable has a compact outer display, a large inner one with a hinge down its
+middle, and a system that runs bars down the side of the screen in most poses.
+
+Device Hub (Xcode 27's Simulator) is the only thing that changes the simulator's pose
+(Closed, Partially Open, Open and Rotate Right in its toolbar); neither `simctl` nor
+XCTest can fold it or rotate it. With the phone open, XCTest's `XCUIScreen.main` and
+`XCUIApplication.tap()` still address the dark outer display: shoot the largest of
+`XCUIScreen.screens`, and tap elements rather than the app. `simctl io <udid> screenshot`
+needs `--display=primary` (outer) or `--display=primary-1` (inner), and a DEBUG build
+rotates on `omnibus://debug/orientation/<portrait|landscape>` (`App/DebugOrientation.swift`).
+Don't toggle a display with `simctl io … screenConfig power`: it left both screens dark
+until the device was rebooted.
+
 ## Models and offline
 
 **The models are hand-mirrored, so they drift silently.** `Models/` restates the

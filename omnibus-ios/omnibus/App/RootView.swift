@@ -36,6 +36,7 @@ struct RootView: View {
             #if DEBUG
             if DebugOffline.handle(url) { return }
             if DebugScreenLink.handle(url) { return }
+            if DebugOrientation.handle(url) { return }
             #endif
             router.receive(url)
         }
