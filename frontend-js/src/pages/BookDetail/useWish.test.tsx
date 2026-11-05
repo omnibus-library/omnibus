@@ -6,7 +6,7 @@ import { toBookDetail } from "../../api";
 import { aWireBook } from "../../testing/wire";
 import { useWish, wishlistQuery } from "./queries";
 
-const ENTRY = { addedAt: 1_760_000_000, source: "scan" };
+const ENTRY = { addedAt: 1_760_000_000, source: "scan" as const };
 
 /** Renders the hook against a cache that already holds the book's wishlist entry, as a page left open across an import does. */
 function renderWish(book: ReturnType<typeof toBookDetail>) {
