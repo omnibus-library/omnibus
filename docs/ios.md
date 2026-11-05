@@ -381,7 +381,7 @@ builds the app unchanged and every answer is "none".
 - **Full-screen surfaces.** The player, which no tab bar shows on, takes the side
   column back: the system reports what really occludes it as `ReservedRegion`s of
   kind `.occlusion` (the status bar's housing, and the camera inside it), and only
-  those are cleared; the player's top bar, controls and banners keep off both
+  those are cleared; the player's top bar and controls keep off both
   (`clearsOcclusions`).
 - **Rows across a fold.** `FoldSpan` centres a row on the hinge, the wider side giving
   up its excess, as the system's own split views do. `CoverGrid` lays an even column
