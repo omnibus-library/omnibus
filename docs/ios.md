@@ -374,18 +374,20 @@ builds the app unchanged and every answer is "none".
   Stats and You, long pages of sections, spread across two pages
   (`SpreadPages`, on `PaneSplit.spread`) folded like a book or opened flat on their
   side, each page scrolling alone so Stats' band headers still pin inside the page
-  they govern. Every one-or-two-pane choice reads the keyboard-down size
-  (`PaneGeometryReader`): read live, a field's keyboard flipped an upright iPad to
-  two panes, which rebuilt the field, dropped its focus and flipped it back.
+  they govern. The book page and both spreads pick one pane or two from the
+  keyboard-down size (`PaneGeometryReader`): read live, a field's keyboard flipped an
+  upright iPad to two panes, which rebuilt the field, dropped its focus and flipped it
+  back. The player's arrangement, `CoverGrid` and `onFoldSpanChange` still measure live.
 - **Full-screen surfaces.** The player, which no tab bar shows on, takes the side
   column back: the system reports what really occludes it as `ReservedRegion`s of
   kind `.occlusion` (the status bar's housing, and the camera inside it), and only
-  those are cleared; the player's top bar keeps off both (`clearsOcclusions`).
+  those are cleared; the player's top bar, controls and banners keep off both
+  (`clearsOcclusions`).
 - **Rows across a fold.** `FoldSpan` centres a row on the hinge, the wider side giving
   up its excess, as the system's own split views do. `CoverGrid` lays an even column
   count either side of it (`FoldGridLayout`), the continue carousel puts one card on
-  each page (a lone card keeps to the leading one), and Search's Browse tiles split two and two, so nothing bends down the
-  middle.
+  each page (a lone card keeps to the leading one), and Search's Browse tiles split
+  two and two, so nothing bends down the middle.
 - **Reader.** Opened flat or held like a book the inner display is wide enough for
   Two Pages, whose spine lands on the hinge; it already reads the hinge
   (`ReaderStageView.observeHinge`) to say a spread appears once the phone is unfolded.
