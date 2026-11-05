@@ -37,7 +37,7 @@ turn up something cosmetic that no assertion would catch.
      rating behind, because the audit reconciles against one.
    - **Set a read status.** The three states are **Unread**, **Reading** and
      **Finished** — there is no "want" here; the wishlist is a separate thing
-     reached through Check in. Move between them and watch the home page.
+     reached through the nav's Add menu. Move between them and watch the home page.
    - **Follow every link the page offers**, and confirm each destination is
      about the thing you clicked. The page can carry all of these; say which
      it had, and journal `nav.follow` for each one you took:

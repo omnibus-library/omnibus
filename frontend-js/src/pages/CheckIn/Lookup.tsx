@@ -108,7 +108,7 @@ export function LookupScreen({
       className="check-in-screen check-in-lookup"
       data-testid="check-in-lookup"
     >
-      <h1>Check in a book</h1>
+      <h1>Add a copy you own</h1>
       <p className="subtitle">
         Enter the ISBN from the back cover, or search by title.
       </p>

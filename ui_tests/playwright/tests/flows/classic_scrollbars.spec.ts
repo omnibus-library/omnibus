@@ -73,8 +73,7 @@ test.describe("always-on scrollbars", () => {
 
         await test.step("check every bar control shows and nothing scrolls sideways", async () => {
           await expect(topNav.navLink("Shelves")).toBeVisible();
-          await expect(topNav.checkInButton).toBeVisible();
-          await expect(topNav.addBooksButton).toBeVisible();
+          await expect(topNav.addButton).toBeVisible();
           expect(await scroll.scrollsSideways()).toBe(false);
         });
       });
@@ -100,8 +99,7 @@ test.describe("always-on scrollbars", () => {
 
         await test.step("check every bar control shows and nothing scrolls sideways", async () => {
           await expect(topNav.homeLink).toBeVisible();
-          await expect(topNav.checkInButton).toBeVisible();
-          await expect(topNav.addBooksButton).toBeVisible();
+          await expect(topNav.addButton).toBeVisible();
           expect(await scroll.scrollsSideways()).toBe(false);
         });
       });

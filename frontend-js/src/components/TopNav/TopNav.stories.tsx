@@ -1,5 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, waitFor } from "storybook/test";
+import { useLocation } from "react-router";
+import { expect, waitFor, within } from "storybook/test";
+import { recentProgressHandler } from "../../testing/handlers";
 import { WIRE_ADA } from "../../testing/wire";
 import { TopNav } from "./TopNav";
 
@@ -11,20 +13,116 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+function Where() {
+  const { pathname, state } = useLocation();
+  return (
+    <output data-testid="where">
+      {pathname} {JSON.stringify(state)}
+    </output>
+  );
+}
+
+const withWhere = () => (
+  <>
+    <TopNav />
+    <Where />
+  </>
+);
+
+const openAddMenu = async (
+  canvas: { getByRole: (r: string, o: { name: string }) => HTMLElement },
+  userEvent: { click: (e: Element) => Promise<void> },
+) => {
+  await userEvent.click(canvas.getByRole("button", { name: "Add" }));
+  return canvas.getByRole("menu", { name: "Add" });
+};
+
 export const SignedIn: Story = {
   play: async ({ canvas }) => {
     await expect(
       canvas.getByRole("button", { name: "Open user menu" }),
     ).toHaveTextContent("AL");
+    await expect(canvas.getByRole("button", { name: "Add" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
     await expect(
-      canvas.getByRole("button", { name: "Add books" }),
-    ).toBeInTheDocument();
+      canvas.queryByRole("link", { name: "Check in" }),
+    ).not.toBeInTheDocument();
   },
 };
 
-export const AddBooksOpensTheAddBookSheet: Story = {
+export const AddMenuOffersThreeWaysToAdd: Story = {
   play: async ({ canvas, userEvent }) => {
-    await userEvent.click(canvas.getByRole("button", { name: "Add books" }));
+    const menu = await openAddMenu(canvas, userEvent);
+
+    await expect(
+      within(menu)
+        .getAllByRole("menuitem")
+        .map((item) => item.textContent),
+    ).toEqual([
+      "Upload book files",
+      "Add a copy you own",
+      "Add to your wishlist",
+    ]);
+    await expect(canvas.getByRole("button", { name: "Add" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+  },
+};
+
+export const AddMenuCarriesThePopoverShadow: Story = {
+  beforeEach({ msw }) {
+    msw.use(recentProgressHandler([]));
+  },
+  play: async ({ canvas, userEvent }) => {
+    const shadow = getComputedStyle(
+      await openAddMenu(canvas, userEvent),
+    ).boxShadow;
+    await userEvent.keyboard("{Escape}");
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Open user menu" }),
+    );
+
+    await expect(shadow).toBe(
+      getComputedStyle(canvas.getByRole("dialog", { name: "User menu" }))
+        .boxShadow,
+    );
+  },
+};
+
+export const AddMenuMovesByArrowsAndClosesOnEscape: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const trigger = canvas.getByRole("button", { name: "Add" });
+    trigger.focus();
+    await userEvent.keyboard("{Enter}");
+    const menu = canvas.getByRole("menu", { name: "Add" });
+    await expect(
+      within(menu).getByRole("menuitem", { name: "Upload book files" }),
+    ).toHaveFocus();
+
+    await userEvent.keyboard("{ArrowDown}");
+    await expect(
+      within(menu).getByRole("menuitem", { name: "Add a copy you own" }),
+    ).toHaveFocus();
+    await userEvent.keyboard("{ArrowUp}{ArrowUp}");
+    await expect(
+      within(menu).getByRole("menuitem", { name: "Add to your wishlist" }),
+    ).toHaveFocus();
+
+    await userEvent.keyboard("{Escape}");
+    await expect(canvas.queryByRole("menu")).not.toBeInTheDocument();
+    await expect(trigger).toHaveFocus();
+  },
+};
+
+export const UploadBookFilesOpensTheAddBookSheet: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const menu = await openAddMenu(canvas, userEvent);
+    await userEvent.click(
+      within(menu).getByRole("menuitem", { name: "Upload book files" }),
+    );
 
     await expect(
       await canvas.findByRole("dialog", { name: "Add a book" }),
@@ -36,12 +134,45 @@ export const AddBooksOpensTheAddBookSheet: Story = {
   },
 };
 
+export const AddACopyYouOwnOpensCheckIn: Story = {
+  render: withWhere,
+  play: async ({ canvas, userEvent }) => {
+    const menu = await openAddMenu(canvas, userEvent);
+    await userEvent.click(
+      within(menu).getByRole("menuitem", { name: "Add a copy you own" }),
+    );
+
+    await expect(canvas.getByTestId("where")).toHaveTextContent(
+      '/check-in {"fromApp":true}',
+    );
+    await expect(canvas.queryByRole("menu")).not.toBeInTheDocument();
+  },
+};
+
+export const AddToYourWishlistOpensTheWishlistSearch: Story = {
+  render: withWhere,
+  play: async ({ canvas, userEvent }) => {
+    const menu = await openAddMenu(canvas, userEvent);
+    await userEvent.click(
+      within(menu).getByRole("menuitem", { name: "Add to your wishlist" }),
+    );
+
+    await expect(canvas.getByTestId("where")).toHaveTextContent(
+      '/wishlists {"add":true}',
+    );
+  },
+};
+
 export const WithoutUploadAccess: Story = {
   parameters: { user: { ...WIRE_ADA, can_upload: false } },
-  play: async ({ canvas }) => {
+  play: async ({ canvas, userEvent }) => {
+    const menu = await openAddMenu(canvas, userEvent);
+
     await expect(
-      canvas.queryByRole("button", { name: "Add books" }),
-    ).not.toBeInTheDocument();
+      within(menu)
+        .getAllByRole("menuitem")
+        .map((item) => item.textContent),
+    ).toEqual(["Add a copy you own", "Add to your wishlist"]);
   },
 };
 

@@ -64,7 +64,7 @@ const NOT_ADMIN = { ...WIRE_ADA, is_admin: false, can_edit: false };
 export const AdminSeesEveryCopyAndItsFiler: Story = {
   play: async ({ canvas }) => {
     const [mine, theirs] = await canvas.findAllByTestId("physical-copy-card");
-    await expect(mine).toHaveTextContent("Checked in 2 days ago by you");
+    await expect(mine).toHaveTextContent("Added 2 days ago by you");
     await expect(mine).toHaveTextContent("ISBN 9781234567897");
     await expect(
       within(mine as HTMLElement).getByTestId("physical-pill"),
@@ -72,7 +72,7 @@ export const AdminSeesEveryCopyAndItsFiler: Story = {
     await expect(
       within(theirs as HTMLElement).getByTestId("physical-pill"),
     ).toHaveAccessibleName("In grace's physical collection");
-    await expect(theirs).toHaveTextContent("Checked in 3 hours ago by grace");
+    await expect(theirs).toHaveTextContent("Added 3 hours ago by grace");
     await expect(theirs).toHaveTextContent("Second printing");
     await expect(
       within(theirs as HTMLElement).getByTestId("copy-edit-note"),
@@ -116,7 +116,7 @@ export const FilerWhoseAccountIsGoneIsLeftOut: Story = {
   play: async ({ canvas }) => {
     await expect(
       await canvas.findByTestId("physical-copy-card"),
-    ).toHaveTextContent(/Checked in 2 days ago$|Checked in 2 days agoISBN/);
+    ).toHaveTextContent(/Added 2 days ago$|Added 2 days agoISBN/);
     await expect(
       canvas.getByTestId("physical-copy-card"),
     ).not.toHaveTextContent(" by ");

@@ -40,7 +40,7 @@ test.describe("check-in overlay", () => {
     await test.step("check the flow floats over the library", async () => {
       await expect(overlay.scrim).toBeVisible();
       await expect(overlay.flowCard).toBeVisible();
-      await expect(overlay.screenHeading).toHaveText("Check in a book");
+      await expect(overlay.screenHeading).toHaveText("Add a copy you own");
       await expect(overlay.scannerPanel).toHaveCount(0);
       await expect(libraryPage.toolbar).toBeVisible();
     });

@@ -19,14 +19,14 @@ export const SECRET_KEYS = {
     noun: "Google Books",
     heading: "Google Books lookup",
     subtitle:
-      "Add a Google Books API key so ISBN check-ins keep resolving past the shared anonymous quota.",
+      "Add a Google Books API key so ISBN lookups keep resolving past the shared anonymous quota.",
     label: "Google Books API key",
     inputId: "google-books-key",
     inputName: "google_books_api_key",
     placeholder: "AIza…",
     testId: "google-books",
     clearConsequence:
-      "ISBN check-ins fall back to the shared anonymous quota, which runs out quickly.",
+      "ISBN lookups fall back to the shared anonymous quota, which runs out quickly.",
   },
 } as const satisfies Record<SecretKeyKind, object>;
 
