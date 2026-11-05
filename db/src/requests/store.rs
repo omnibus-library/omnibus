@@ -213,7 +213,7 @@ pub async fn versions(
     request_id: i64,
 ) -> Result<Vec<RequestVersion>, RequestError> {
     let rows = sqlx::query(
-        "SELECT id, title, size_bytes, format, indexer, best_match, tried FROM book_request_results
+        "SELECT id, title, size_bytes, format, indexer, seeders, best_match, tried FROM book_request_results
          WHERE request_id = ? AND (rejected = 0 OR tried = 1) ORDER BY tried, score DESC, id",
     )
     .bind(request_id)
@@ -228,6 +228,7 @@ pub async fn versions(
                 size_bytes: r.try_get("size_bytes")?,
                 format: r.try_get("format")?,
                 indexer: r.try_get("indexer")?,
+                seeders: r.try_get("seeders")?,
                 best_match: r.try_get::<i64, _>("best_match")? != 0,
                 rejected: r.try_get::<i64, _>("tried")? != 0,
             })

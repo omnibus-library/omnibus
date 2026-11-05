@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { type Ref, useEffect, useId, useRef, useState } from "react";
+import { Fragment, type Ref, useEffect, useId, useRef, useState } from "react";
 import { Link, Navigate, useParams, useSearchParams } from "react-router";
 import {
   type BookUuid,
@@ -30,12 +30,13 @@ import {
   SEARCH_STALE_AFTER_SECS,
   stateView,
   versionFormat,
+  versionSeeders,
   versionSize,
 } from "./requestView";
 import { messageOf, useAnswer, useCancel, useSwap } from "./useRequestActions";
 import "./BookRequest.css";
 
-/** One version found: its format and size, a Best match badge, Details, and Choose. */
+/** One version found: its release name over its source, format, size and seeders, a Best match badge, Details, and Choose. */
 function VersionRow({
   version,
   choosing,
@@ -57,6 +58,12 @@ function VersionRow({
   const detailsId = useId();
   const format = versionFormat(version.format);
   const size = versionSize(version.sizeBytes);
+  const meta = [
+    version.indexer,
+    format,
+    size ?? "Size unknown",
+    versionSeeders(version.seeders),
+  ].filter((part) => part !== null);
   return (
     <li
       ref={rowRef}
@@ -67,8 +74,24 @@ function VersionRow({
       data-rejected={version.rejected}
     >
       <div className="rq-version-main">
-        <span className="rq-format">{format}</span>
-        <span className="rq-size">{size ?? "Size unknown"}</span>
+        <div className="rq-version-text">
+          <span
+            className="rq-version-name"
+            data-testid="request-version-name"
+            title={version.title}
+          >
+            {version.title}
+          </span>
+          <span className="rq-version-meta" data-testid="request-version-meta">
+            {meta.map((part, index) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: the parts are a fixed, ordered list
+              <Fragment key={index}>
+                {index > 0 && <span aria-hidden="true"> · </span>}
+                <span>{part}</span>
+              </Fragment>
+            ))}
+          </span>
+        </div>
         {version.rejected ? (
           <span className="rq-tried" data-testid="request-didnt-work">
             Didn’t work
@@ -96,7 +119,7 @@ function VersionRow({
             variant={version.bestMatch ? "primary" : "default"}
             size="sm"
             data-testid="request-choose"
-            aria-label={`Choose the ${format} version${size ? `, ${size}` : ""}`}
+            aria-label={`Choose the ${format} version${version.indexer ? ` from ${version.indexer}` : ""}${size ? `, ${size}` : ""}`}
             aria-busy={choosing}
             disabled={locked}
             onClick={onChoose}
