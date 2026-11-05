@@ -42,11 +42,11 @@ extension ReaderScreen {
         return size.width - stage.left - stage.right - 2 * Self.stageGutter
     }
 
-    /// The safe area with the side bar's column on `edge` given back, for a
-    /// page whose status bar is hidden: the column then holds only the
-    /// sensors among `occlusions` (window coordinates), so only they are
-    /// cleared, by the stage dropping below one that dips into its top or by
-    /// keeping enough of the side for one beside the prose.
+    /// The safe area with the side bar's column on `edge` given back. The
+    /// reader keeps its status bar hidden whenever it takes the column, so the
+    /// column holds only the sensors among `occlusions` (window coordinates),
+    /// and only they are cleared, by the stage dropping below one that dips into
+    /// its top or by keeping enough of the side for one beside the prose.
     static func reclaimingSideColumn(
         _ edge: UIRectEdge, safe: UIEdgeInsets, size: CGSize, occlusions: [CGRect]
     ) -> UIEdgeInsets {
@@ -81,11 +81,13 @@ extension ReaderScreen {
 
     /// The width once the phone is on its side, whichever way it is held now.
     ///
-    /// The sensor's inset is `top` upright and lands on both `left` and `right`
-    /// sideways, so the widest of the three is what is lost at each end. With
-    /// the side column taken back, only the sensor's clearance is lost, at its one end.
+    /// Already sideways, that is the width now. Upright, the sensor's inset is
+    /// `top` and lands on both `left` and `right` sideways, so the widest of the
+    /// three is lost at each end; with the side column taken back, only the
+    /// sensor's clearance is lost, at its one end.
     var landscapeStageWidth: CGFloat {
-        let long = max(size.width, size.height)
+        if size.width >= size.height { return stageWidth }
+        let long = size.height
         if let stage = stageInsets {
             return long - max(stage.top, stage.left, stage.right) - 2 * Self.stageGutter
         }

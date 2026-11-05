@@ -88,6 +88,17 @@ private let sidewaysHousing = CGRect(x: 594, y: 384, width: 84, height: 82)
     #expect(SpreadFit(screen: reclaimed) == .inLandscape)
 }
 
+@Test func landscapeStageWidthIsTheStageWidthWhenAlreadySidewaysWithTheColumnTakenBack() {
+    // Kept insets at both ends: reading only the widest of them overstated the width.
+    let wide = CGSize(width: 860, height: 600)
+    let reclaimed = ReaderScreen(
+        size: wide, insets: sidewaysSafe,
+        stageInsets: UIEdgeInsets(top: 0, left: 30, bottom: 34, right: 30)
+    )
+    #expect(reclaimed.landscapeStageWidth == reclaimed.stageWidth)
+    #expect(SpreadFit(screen: reclaimed) == .never)
+}
+
 @Test func hidesStatusBarKeepsItHiddenWhileTheSideColumnIsTakenBack() {
     // Even where the bar fits in the top inset, showing it with the chrome would
     // hand the column back and reflow the page on every centre tap.

@@ -147,7 +147,7 @@ private struct SideBarRailEnd: ViewModifier {
                         if fades && edge == .trailing { ramp(from: .black, to: .clear) }
                     }
                     .padding(.vertical, -Self.overhang)
-                    .padding(edge == .trailing ? .leading : .trailing, -Self.overhang)
+                    .padding(edge.opposite.edges, -Self.overhang)
                     .padding(edge.edges, fades ? 0 : -Self.overhang)
                 }
                 .background {
@@ -156,7 +156,7 @@ private struct SideBarRailEnd: ViewModifier {
                     Color.clear
                         .ignoresSafeArea(.container, edges: edge.edges)
                         .onGeometryChange(for: Bool.self) { proxy in
-                            (edge == .trailing ? proxy.safeAreaInsets.trailing : proxy.safeAreaInsets.leading) > 0
+                            edge.inset(of: proxy.safeAreaInsets) > 0
                         } action: { meetsColumn = $0 }
                 }
         } else {
@@ -211,7 +211,7 @@ extension GeometryProxy {
             let regions = sensorsOnly ? active.sensorsOnly : active
             let depths = regions
                 .filter { $0.intersects(bounds) }
-                .map { edge == .trailing ? bounds.maxX - $0.minX : $0.maxX - bounds.minX }
+                .map { edge.depth(of: $0, into: bounds) }
             return max(0, depths.max() ?? 0)
         }
         #endif
@@ -242,6 +242,17 @@ extension Array where Element == CGRect {
 extension HorizontalEdge {
     /// This edge as the set padding and safe-area modifiers take.
     var edges: Edge.Set { self == .trailing ? .trailing : .leading }
+
+    /// The edge across from this one.
+    var opposite: HorizontalEdge { self == .trailing ? .leading : .trailing }
+
+    /// The inset on this edge.
+    func inset(of insets: EdgeInsets) -> CGFloat { self == .trailing ? insets.trailing : insets.leading }
+
+    /// How far in from this edge of `bounds` the region reaches.
+    func depth(of region: CGRect, into bounds: CGRect) -> CGFloat {
+        self == .trailing ? bounds.maxX - region.minX : region.maxX - bounds.minX
+    }
 
     /// This edge as the screen edge UIKit names it, under `direction`.
     func rectEdge(in direction: LayoutDirection) -> UIRectEdge {
