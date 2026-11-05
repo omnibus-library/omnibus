@@ -263,7 +263,7 @@ jobs:
           [ "$fail" -eq 0 ] || exit 1
 
       # Build ExportOptions.plist with PlistBuddy (avoids heredoc-in-YAML
-      # indentation pitfalls). method=app-store-connect is the Xcode 26 name for
+      # indentation pitfalls). method=app-store-connect is the Xcode 15.3+ name for
       # an App Store export.
       - name: Write ExportOptions.plist
         env:
