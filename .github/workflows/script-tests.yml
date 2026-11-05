@@ -50,6 +50,8 @@ on:
       - "scripts/check-migration-numbers.sh"
       - "scripts/tests/check-migration-numbers.test.sh"
       - "scripts/lib/ios-sim.sh"
+      - "scripts/ios-sim.sh"
+      - "scripts/explore/ios.sh"
       - "scripts/tests/ios-sim-ensure.test.sh"
       - ".github/workflows/script-tests.yml"
   pull_request:
@@ -79,6 +81,8 @@ on:
       - "scripts/check-migration-numbers.sh"
       - "scripts/tests/check-migration-numbers.test.sh"
       - "scripts/lib/ios-sim.sh"
+      - "scripts/ios-sim.sh"
+      - "scripts/explore/ios.sh"
       - "scripts/tests/ios-sim-ensure.test.sh"
       - ".github/workflows/script-tests.yml"
 

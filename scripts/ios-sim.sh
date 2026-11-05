@@ -28,19 +28,9 @@ else
     echo "ios-sim.sh: jq is required to auto-pick a simulator (brew install jq), or set OMNIBUS_IOS_SIM_UDID" >&2
     exit 1
   fi
-  # Newest installed iOS runtime that has an iPhone device. Duplicated from
-  # scripts/ios-test.sh (which CI owns) rather than shared — keep in sync.
-  # xcodebuild's destination matcher silently omits simulators whose runtime
-  # is older than the project's IPHONEOS_DEPLOYMENT_TARGET, so pick a
-  # concrete UDID ourselves and fail with a message naming the real cause.
-  udid="$(xcrun simctl list --json devices available | jq -r '
-    .devices | to_entries
-    | map(select(.key | test("SimRuntime\\.iOS-[0-9]+(-[0-9]+)*$")))
-    | map({ver: (.key | sub(".*iOS-"; "") | gsub("-"; ".")),
-           devs: [.value[] | select(.name | startswith("iPhone"))]})
-    | map(select(.devs | length > 0))
-    | sort_by(.ver | split(".") | map(tonumber))
-    | if length == 0 then empty else last.devs[0].udid end')"
+  # shellcheck source=lib/ios-sim.sh
+  source "$repo_root/scripts/lib/ios-sim.sh"
+  udid="$(ios_sim_newest_iphone_udid)"
 fi
 if [ -z "$udid" ]; then
   echo "ios-sim.sh: no available iPhone simulator; if 'xcrun simctl list devices' shows iPhones, their iOS runtime is older than the project's IPHONEOS_DEPLOYMENT_TARGET" >&2
