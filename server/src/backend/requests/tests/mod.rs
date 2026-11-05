@@ -24,6 +24,7 @@ use super::*;
 mod cancel;
 mod choose;
 mod import;
+mod list;
 mod retry;
 mod swap;
 
@@ -134,9 +135,10 @@ mod flag_and_permission_gate {
         ]
     }
 
-    fn reads() -> [(&'static str, String, Option<Value>); 2] {
+    fn reads() -> [(&'static str, String, Option<Value>); 3] {
         [
             ("GET", start_uri("any"), None),
+            ("GET", "/api/requests".to_string(), None),
             ("GET", "/api/requests/1".to_string(), None),
         ]
     }
@@ -514,31 +516,6 @@ mod get_request {
         let res = send(&app, "GET", "/api/requests/999", Some(&token), None).await;
 
         assert_eq!(res.status(), StatusCode::NOT_FOUND);
-    }
-}
-
-mod get_book_requests {
-    use super::*;
-
-    #[tokio::test]
-    async fn lists_every_readers_requests_for_the_book_newest_first() {
-        let (app, _, pool) = fixture_book_requests(true).await;
-        let (ada, ada_token) = requester(&pool, "ada").await;
-        let (grace, _) = requester(&pool, "grace").await;
-        let uuid = seed_book(&pool, "Dracula").await;
-        let other = seed_book(&pool, "Carmilla").await;
-        let first = seed_request(&pool, ada, &uuid).await;
-        let second = seed_request(&pool, grace, &uuid).await;
-        seed_request(&pool, ada, &other).await;
-
-        let res = send(&app, "GET", &start_uri(&uuid), Some(&ada_token), None).await;
-
-        let ids: Vec<i64> = body_json::<Vec<BookRequest>>(res)
-            .await
-            .into_iter()
-            .map(|r| r.id)
-            .collect();
-        assert_eq!(ids, [second, first]);
     }
 }
 

@@ -23,6 +23,10 @@ pub struct UserSummary {
     /// Whether the user may request books the library lacks: false for everyone while the server has book requests off, else admins always may.
     #[serde(default)]
     pub can_request: bool,
+    /// Whether the server has book requests on. Every reader may then see the requests on
+    /// `GET /api/requests`, whatever their `can_request`.
+    #[serde(default)]
+    pub book_requests: bool,
     /// The address Send to Kindle emails books to. Null when the user hasn't set one.
     #[serde(default)]
     pub kindle_email: Option<String>,

@@ -1,15 +1,15 @@
-//! Reader REST handlers for book requests: starting one for a book, reading a book's
-//! requests, and answering the search it runs. Every route answers 404 while the book-requests
-//! flag is off, before the sign-in check, and 403 to a reader without the request permission.
-//! Requests are visible to every reader who may request; only the requester or an admin acts
-//! on one, and only an admin is shown the search's technical detail.
+//! Reader REST handlers for book requests: starting one for a book, listing every reader's
+//! requests or one book's, and answering the search it runs. Every route answers 404 while
+//! the book-requests flag is off, before the sign-in check, and a write answers 403 to a reader
+//! without the request permission. Requests are visible to every signed-in reader; only the
+//! requester or an admin acts on one, and only an admin is shown the search's technical detail.
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use axum::{
-    extract::{FromRequestParts, Path, State},
+    extract::{FromRequestParts, Path, Query, State},
     http::{request::Parts, StatusCode},
     response::{IntoResponse, Response},
     Json,
@@ -18,11 +18,12 @@ use omnibus_db::{
     self as db,
     requests::{
         search::run_search,
-        store::{self, RequestError, RequestRow},
+        store::{self, ListFilter, RequestError, RequestRow},
     },
 };
 use omnibus_shared::{
-    BookRequest, ChooseVersion, RequestKind, RequestState, StartRequest, StuckReason,
+    BookRequest, ChooseVersion, RequestKind, RequestListQuery, RequestListing, RequestState,
+    StartRequest, StuckReason,
 };
 
 use crate::auth::AuthUser;
@@ -252,11 +253,36 @@ pub(super) async fn post_start_request(
     }
 }
 
+/// The wire form of listed requests, each with the versions it picked and gave up.
+fn listings(listed: Vec<store::Listed>, is_admin: bool) -> Vec<RequestListing> {
+    listed
+        .into_iter()
+        .map(|l| RequestListing {
+            request: BookRequest {
+                versions: l.versions,
+                ..summary(l.request, is_admin)
+            },
+            book: l.book,
+            requester_name: l.requester_name,
+            cancelled_by_name: l.cancelled_by_name,
+        })
+        .collect()
+}
+
+/// The requests `filter` matches, as the answer to `viewer`.
+async fn list_answer(state: &AppState, filter: ListFilter<'_>, viewer: &AuthUser) -> Response {
+    match store::list(state.pool(), filter).await {
+        Ok(listed) => Json(listings(listed, viewer.is_admin)).into_response(),
+        Err(e) => internal("list requests", e),
+    }
+}
+
 /// List a book's requests
 ///
-/// Every request made for the book, newest first, whoever made it, without their versions:
-/// read one request for those. A book nobody has requested has an empty list. Any signed-in
-/// reader may read it.
+/// The book's history: every request made for it, newest first, whoever made it, with who
+/// made it and who cancelled it. Each carries only the version it picked and the versions it
+/// gave up; read one request for the rest. A book nobody has requested has an empty list.
+/// Any signed-in reader may read it.
 #[utoipa::path(
     get,
     path = "/api/books/{uuid}/requests",
@@ -264,7 +290,7 @@ pub(super) async fn post_start_request(
     operation_id = "list_book_requests",
     params(("uuid" = String, Path, description = "The book's uuid.")),
     responses(
-        (status = 200, description = "The book's requests, each with an empty `versions`.", body = Vec<BookRequest>),
+        (status = 200, description = "The book's requests.", body = Vec<RequestListing>),
         (status = 401, description = "You aren't signed in."),
         (status = 404, description = "Book requests are off on this server."),
     ),
@@ -278,16 +304,43 @@ pub(super) async fn get_book_requests(
         Ok(found) => found.unwrap_or(uuid),
         Err(e) => return internal("resolve requested book", e),
     };
-    match store::list_for_book(state.pool(), &book_uuid).await {
-        Ok(rows) => {
-            let requests: Vec<BookRequest> = rows
-                .into_iter()
-                .map(|row| summary(row, viewer.is_admin))
-                .collect();
-            Json(requests).into_response()
-        }
-        Err(e) => internal("list requests", e),
-    }
+    let filter = ListFilter {
+        book_uuid: Some(&book_uuid),
+        ..ListFilter::default()
+    };
+    list_answer(&state, filter, &viewer).await
+}
+
+/// List requests
+///
+/// Every reader's requests, newest first, in every state, with who made each and who
+/// cancelled it, narrowed by `state` and `user` when given. Requests are public on the
+/// server, so any signed-in reader may read them. Each carries only the version it picked and
+/// the versions it gave up. At most the newest 500 are returned.
+#[utoipa::path(
+    get,
+    path = "/api/requests",
+    tag = "Requests",
+    operation_id = "list_requests",
+    params(RequestListQuery),
+    responses(
+        (status = 200, description = "The requests.", body = Vec<RequestListing>),
+        (status = 400, description = "`state` isn't a request state, or `user` isn't a number."),
+        (status = 401, description = "You aren't signed in."),
+        (status = 404, description = "Book requests are off on this server."),
+    ),
+)]
+pub(super) async fn get_requests(
+    RequestsViewer(viewer): RequestsViewer,
+    State(state): State<AppState>,
+    Query(query): Query<RequestListQuery>,
+) -> Response {
+    let filter = ListFilter {
+        user_id: query.user,
+        state: query.state,
+        ..ListFilter::default()
+    };
+    list_answer(&state, filter, &viewer).await
 }
 
 /// Get a request

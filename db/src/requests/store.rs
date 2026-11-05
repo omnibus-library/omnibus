@@ -35,6 +35,8 @@ pub enum RequestError {
     NotFound,
     #[error(transparent)]
     Db(#[from] sqlx::Error),
+    #[error(transparent)]
+    Books(#[from] crate::books::BooksError),
 }
 
 /// One request as stored. `stuck_detail` is for admins only; the handler withholds it.
@@ -186,23 +188,6 @@ pub async fn get(pool: &SqlitePool, id: i64) -> Result<Option<RequestRow>, Reque
         .fetch_optional(pool)
         .await?;
     Ok(row.as_ref().map(row_to_request).transpose()?)
-}
-
-/// Every request for the book, newest first.
-pub async fn list_for_book(
-    pool: &SqlitePool,
-    book_uuid: &str,
-) -> Result<Vec<RequestRow>, RequestError> {
-    let rows = sqlx::query(&format!(
-        "SELECT {COLUMNS} FROM book_requests WHERE book_uuid = ? ORDER BY id DESC"
-    ))
-    .bind(book_uuid)
-    .fetch_all(pool)
-    .await?;
-    Ok(rows
-        .iter()
-        .map(row_to_request)
-        .collect::<Result<Vec<_>, sqlx::Error>>()?)
 }
 
 /// The versions worth showing for a request, best first: the ones to choose from, then the
@@ -423,6 +408,7 @@ pub async fn choose(pool: &SqlitePool, id: i64, result_id: i64) -> Result<(), Re
 
 mod change;
 mod download;
+mod list;
 
 pub use change::{cancel, swap, undo_cancel, CANCEL_GRACE_SECS};
 pub use download::{
@@ -430,6 +416,7 @@ pub use download::{
     has_download_work, mark_on_its_way, mark_ready, mark_removal_seen, mark_stuck,
     pending_removals, record_progress, set_import_key, unix_now,
 };
+pub use list::{list, ListFilter, Listed, LIST_LIMIT};
 
 #[cfg(test)]
 mod tests;

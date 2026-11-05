@@ -6,6 +6,7 @@ use super::super::prowlarr::ProwlarrRelease;
 use super::*;
 
 mod change;
+mod list;
 
 const MAX_LIVE: i64 = 5;
 
