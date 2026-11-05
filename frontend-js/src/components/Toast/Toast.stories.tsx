@@ -20,6 +20,14 @@ function Opener({ onUndo }: { onUndo: () => void }) {
       >
         Show with Undo
       </button>
+      <button
+        type="button"
+        onClick={() =>
+          toast("Cancelled", { label: "Undo", onClick: onUndo }, 500)
+        }
+      >
+        Show with Undo for half a second
+      </button>
     </>
   );
 }
@@ -84,6 +92,21 @@ export const AnActionToastStaysUntilDismissed: Story = {
     await waitFor(() =>
       expect(canvas.queryByText("Books merged")).not.toBeInTheDocument(),
     );
+  },
+};
+
+export const AnActionToastWithAStayGoesWhenItEnds: Story = {
+  play: async ({ canvas, userEvent, args }) => {
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Show with Undo for half a second" }),
+    );
+    await canvas.findByText("Cancelled");
+
+    await waitFor(
+      () => expect(canvas.queryByText("Cancelled")).not.toBeInTheDocument(),
+      { timeout: 3000 },
+    );
+    await expect(args.onUndo).not.toHaveBeenCalled();
   },
 };
 

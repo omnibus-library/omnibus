@@ -3,10 +3,14 @@ import { ApiError } from "../../api";
 import {
   holdsAudiobook,
   holdsEbook,
+  isCancellable,
+  isDownloading,
   isSearchStale,
+  progressPercent,
   requestPath,
   startFailure,
   stateView,
+  undoToastMs,
   versionFormat,
   versionSize,
 } from "./requestView";
@@ -16,15 +20,35 @@ describe("stateView", () => {
     ["looking", "Looking"],
     ["choose", "Choose a version"],
     ["chosen", "Version chosen"],
+    ["on_its_way", "On its way"],
     ["stuck", "Couldn’t find it"],
+    ["cancelled", "Cancelled"],
   ] as const)("heads a %s request with %s", (state, heading) => {
     expect(stateView(state).heading).toBe(heading);
   });
 
+  it("heads a request stuck on a stalled download Stopped moving", () => {
+    expect(stateView("stuck", "stopped_moving").heading).toBe("Stopped moving");
+    expect(stateView("stuck", "search_failed").heading).toBe(
+      "Couldn’t find it",
+    );
+  });
+
   it("never uses the downloader's words", () => {
-    for (const state of ["looking", "choose", "chosen", "stuck"] as const) {
-      const { heading, note } = stateView(state);
-      expect(`${heading} ${note}`).not.toMatch(/release|indexer|grab|seed/i);
+    const states = [
+      ["looking", null],
+      ["choose", null],
+      ["chosen", null],
+      ["on_its_way", null],
+      ["stuck", "not_found"],
+      ["stuck", "stopped_moving"],
+      ["cancelled", null],
+    ] as const;
+    for (const [state, reason] of states) {
+      const { heading, note } = stateView(state, reason);
+      expect(`${heading} ${note}`).not.toMatch(
+        /release|torrent|indexer|grab|seed/i,
+      );
     }
   });
 });
@@ -90,5 +114,55 @@ describe("holdsAudiobook", () => {
   it("counts M4B, M4A and MP3 and nothing else", () => {
     expect(holdsAudiobook(["mp3"])).toBe(true);
     expect(holdsAudiobook(["EPUB", "PRINT"])).toBe(false);
+  });
+});
+
+describe("isCancellable", () => {
+  it.each([
+    ["looking", null, true],
+    ["choose", null, true],
+    ["chosen", null, true],
+    ["on_its_way", null, true],
+    ["on_its_way", 0.4, true],
+    ["on_its_way", 1, false],
+    ["stuck", null, false],
+    ["cancelled", null, false],
+  ] as const)("reads a %s request at %s as %s", (state, progress, expected) => {
+    expect(isCancellable({ state, progress })).toBe(expected);
+  });
+});
+
+describe("progressPercent", () => {
+  it("rounds down so a bar never reads done before it is", () => {
+    expect(progressPercent(0.426)).toBe(42);
+    expect(progressPercent(0.999)).toBe(99);
+  });
+
+  it("reads a finished download as 100 and an unread one as 0", () => {
+    expect(progressPercent(1)).toBe(100);
+    expect(progressPercent(null)).toBe(0);
+  });
+});
+
+describe("isDownloading", () => {
+  it.each([
+    ["on_its_way", null, true],
+    ["on_its_way", 0.99, true],
+    ["on_its_way", 1, false],
+    ["chosen", null, false],
+    ["stuck", 0.4, false],
+  ] as const)("reads a %s request at %s as %s", (state, progress, expected) => {
+    expect(isDownloading({ state, progress })).toBe(expected);
+  });
+});
+
+describe("undoToastMs", () => {
+  it("ends a second and a half before the server stops taking the cancel back", () => {
+    expect(undoToastMs(110, 100)).toBe(8500);
+  });
+
+  it("never goes negative once the grace has all but gone", () => {
+    expect(undoToastMs(101, 100)).toBe(0);
+    expect(undoToastMs(90, 100)).toBe(0);
   });
 });

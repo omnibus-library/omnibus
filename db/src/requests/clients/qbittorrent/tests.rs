@@ -259,6 +259,131 @@ mod qbittorrent_add {
         assert!(result.is_ok(), "{result:?}");
     }
 
+    const TORRENT: &[u8] = b"d8:announce3:url4:infod4:name4:Duneee";
+
+    async fn add_ok(server: &MockServer) {
+        Mock::given(method("POST"))
+            .and(path("/api/v2/torrents/add"))
+            .and(header("cookie", "SID=abc123"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("Ok."))
+            .mount(server)
+            .await;
+    }
+
+    async fn mount_release(server: &MockServer, response: ResponseTemplate) -> String {
+        Mock::given(method("GET"))
+            .and(path("/13/download"))
+            .and(query_param("apikey", "secret"))
+            .respond_with(response)
+            .mount(server)
+            .await;
+        format!("{}/13/download?apikey=secret&link=abc", server.uri())
+    }
+
+    #[tokio::test]
+    async fn uploads_the_fetched_torrent_file_with_the_category_and_tag() {
+        let server = signed_in_server().await;
+        add_ok(&server).await;
+        let link = mount_release(&server, ResponseTemplate::new(200).set_body_bytes(TORRENT)).await;
+
+        client_for(&server)
+            .add(&link, "books", "omnibus-7")
+            .await
+            .unwrap();
+
+        let sent = requests_to(&server, "torrents/add").await;
+        let content_type = sent[0].headers["content-type"].to_str().unwrap();
+        assert!(
+            content_type.starts_with("multipart/form-data"),
+            "{content_type}"
+        );
+        let body = String::from_utf8_lossy(&sent[0].body).into_owned();
+        for expected in [
+            "name=\"torrents\"; filename=\"omnibus-7.torrent\"",
+            "application/x-bittorrent",
+            "d8:announce3:url4:infod4:name4:Duneee",
+            "name=\"category\"\r\n\r\nbooks",
+            "name=\"tags\"\r\n\r\nomnibus-7",
+        ] {
+            assert!(body.contains(expected), "missing {expected:?} in {body}");
+        }
+        assert!(!body.contains("name=\"urls\""), "{body}");
+    }
+
+    #[tokio::test]
+    async fn sends_a_magnet_the_link_redirects_to_as_urls() {
+        let server = signed_in_server().await;
+        add_ok(&server).await;
+        let redirect = ResponseTemplate::new(302).insert_header("location", MAGNET);
+        let link = mount_release(&server, redirect).await;
+
+        client_for(&server)
+            .add(&link, "books", "omnibus-7")
+            .await
+            .unwrap();
+
+        let sent = requests_to(&server, "torrents/add").await;
+        let expected = vec![
+            ("category".to_string(), "books".to_string()),
+            ("tags".to_string(), "omnibus-7".to_string()),
+            ("urls".to_string(), MAGNET.to_string()),
+        ];
+        assert_eq!(form_pairs(&sent[0]), expected);
+    }
+
+    #[tokio::test]
+    async fn sends_a_magnet_link_as_urls_without_fetching_anything() {
+        let server = signed_in_server().await;
+        add_ok(&server).await;
+
+        client_for(&server)
+            .add(MAGNET, "books", "omnibus-7")
+            .await
+            .unwrap();
+
+        let all = server.received_requests().await.unwrap();
+        assert!(all.iter().all(|r| r.method == "POST"), "{all:?}");
+        assert_eq!(
+            form_pairs(&requests_to(&server, "torrents/add").await[0])[2].1,
+            MAGNET
+        );
+    }
+
+    #[tokio::test]
+    async fn rejects_a_link_whose_fetch_fails_without_echoing_it() {
+        for status in [404, 500] {
+            let server = signed_in_server().await;
+            add_ok(&server).await;
+            let link = mount_release(&server, ResponseTemplate::new(status)).await;
+
+            let err = client_for(&server)
+                .add(&link, "books", "omnibus-7")
+                .await
+                .unwrap_err();
+
+            assert!(
+                matches!(err, ConnectionError::Rejected(_)),
+                "{status}: {err:?}"
+            );
+            assert!(!err.to_string().contains("secret"), "{err}");
+            assert!(requests_to(&server, "torrents/add").await.is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn rejects_a_torrent_file_larger_than_the_cap() {
+        let server = signed_in_server().await;
+        let big = vec![b'x'; MAX_TORRENT_BYTES + 1];
+        let link = mount_release(&server, ResponseTemplate::new(200).set_body_bytes(big)).await;
+
+        let err = client_for(&server)
+            .add(&link, "books", "omnibus-7")
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, ConnectionError::Rejected(_)), "{err:?}");
+    }
+
     #[tokio::test]
     async fn rejects_a_link_the_client_refuses() {
         let server = signed_in_server().await;

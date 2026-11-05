@@ -1,3 +1,5 @@
+use std::time::{Duration, Instant};
+
 use omnibus_shared::{RequestKind, RequestState, RequestsSettingsUpdate, StuckReason};
 use serde_json::{json, Value};
 use sqlx::SqlitePool;
@@ -9,6 +11,13 @@ use crate::requests::store::{self, RequestRow};
 use crate::test_support::{closed_port_url, EnvVarGuard};
 
 use super::*;
+
+fn patience(budget_ms: u64, first_wait_ms: u64) -> Patience {
+    Patience {
+        budget: Duration::from_millis(budget_ms),
+        first_wait: Duration::from_millis(first_wait_ms),
+    }
+}
 
 async fn pool_with_prowlarr(url: &str) -> SqlitePool {
     pool_with_prowlarr_key(url, "indexer-key").await
@@ -154,7 +163,7 @@ mod run_search {
         let pool = pool_with_prowlarr(&closed_port_url()).await;
         let id = looking_request(&pool).await;
 
-        run_search(&pool, id).await.unwrap();
+        run_search_with(&pool, id, patience(0, 0)).await.unwrap();
 
         let stuck = row(&pool, id).await;
         assert_eq!(stuck.stuck_reason, Some(StuckReason::SearchFailed));
@@ -189,10 +198,10 @@ mod run_search {
         // handed this server's port.
         let pool = pool_with_prowlarr_key(&server.uri(), "key-search-429-cooldown").await;
         let first = looking_request(&pool).await;
-        run_search(&pool, first).await.unwrap();
-        store::restart(&pool, first).await.unwrap();
+        run_search_with(&pool, first, patience(0, 0)).await.unwrap();
+        store::restart(&pool, first, 0).await.unwrap();
 
-        run_search(&pool, first).await.unwrap();
+        run_search_with(&pool, first, patience(0, 0)).await.unwrap();
 
         let stuck = row(&pool, first).await;
         assert_eq!(stuck.stuck_reason, Some(StuckReason::SearchFailed));
@@ -215,5 +224,87 @@ mod run_search {
 
         assert_eq!(row(&pool, id).await.state, RequestState::Chosen);
         assert!(server.received_requests().await.unwrap().is_empty());
+    }
+}
+
+mod retrying {
+    use super::*;
+
+    #[tokio::test]
+    async fn offers_the_versions_when_prowlarr_rate_limits_once_and_then_answers() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v1/search"))
+            .respond_with(ResponseTemplate::new(429).insert_header("retry-after", "1"))
+            .up_to_n_times(1)
+            .mount(&server)
+            .await;
+        mount_search(&server, json!([good_release()])).await;
+        // Its own key: a cooldown is kept per address and key.
+        let pool = pool_with_prowlarr_key(&server.uri(), "indexer-key").await;
+        let id = looking_request(&pool).await;
+
+        run_search_with(&pool, id, patience(10_000, 1_100))
+            .await
+            .unwrap();
+
+        assert_eq!(row(&pool, id).await.state, RequestState::Choose);
+        assert_eq!(server.received_requests().await.unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn gets_stuck_search_failed_once_the_budget_is_spent_on_an_unreachable_prowlarr() {
+        let pool = pool_with_prowlarr(&closed_port_url()).await;
+        let id = looking_request(&pool).await;
+        let began = Instant::now();
+
+        run_search_with(&pool, id, patience(200, 50)).await.unwrap();
+
+        let stuck = row(&pool, id).await;
+        assert_eq!(stuck.state, RequestState::Stuck);
+        assert_eq!(stuck.stuck_reason, Some(StuckReason::SearchFailed));
+        assert!(began.elapsed() >= Duration::from_millis(50));
+    }
+
+    #[tokio::test]
+    async fn gets_stuck_at_once_for_a_rejected_api_key() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v1/search"))
+            .respond_with(ResponseTemplate::new(401))
+            .mount(&server)
+            .await;
+        let pool = pool_with_prowlarr(&server.uri()).await;
+        let id = looking_request(&pool).await;
+
+        run_search_with(&pool, id, patience(10_000, 5_000))
+            .await
+            .unwrap();
+
+        assert_eq!(row(&pool, id).await.state, RequestState::Stuck);
+        assert_eq!(server.received_requests().await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn stops_trying_when_the_request_is_cancelled_while_waiting() {
+        let pool = pool_with_prowlarr(&closed_port_url()).await;
+        let id = looking_request(&pool).await;
+        let cancel = {
+            let pool = pool.clone();
+            tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_millis(30)).await;
+                store::cancel(&pool, id, 1, 0).await.unwrap();
+            })
+        };
+
+        let began = Instant::now();
+
+        run_search_with(&pool, id, patience(10_000, 80))
+            .await
+            .unwrap();
+
+        cancel.await.unwrap();
+        assert_eq!(row(&pool, id).await.state, RequestState::Cancelled);
+        assert!(began.elapsed() < Duration::from_secs(5));
     }
 }

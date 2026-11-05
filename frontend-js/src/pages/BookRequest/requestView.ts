@@ -1,8 +1,16 @@
-import { ApiError, type RequestState } from "../../api";
+import {
+  ApiError,
+  type BookRequest,
+  type RequestState,
+  type StuckReason,
+} from "../../api";
 import { fileSize } from "../../format";
 
 /** What a request's state is called on the page, in Omnibus's words rather than the downloader's. */
-export function stateView(state: RequestState): {
+export function stateView(
+  state: RequestState,
+  stuckReason: StuckReason | null = null,
+): {
   heading: string;
   note: string;
 } {
@@ -19,17 +27,53 @@ export function stateView(state: RequestState): {
       };
     case "chosen":
       return { heading: "Version chosen", note: "We’ll fetch it next." };
-    case "stuck":
+    case "on_its_way":
       return {
-        heading: "Couldn’t find it",
-        note: "Nothing worth showing turned up.",
+        heading: "On its way",
+        note: "Downloading, then adding it to the library.",
       };
+    case "stuck":
+      return stuckReason === "stopped_moving"
+        ? {
+            heading: "Stopped moving",
+            note: "The download stopped making progress.",
+          }
+        : {
+            heading: "Couldn’t find it",
+            note: "Nothing worth showing turned up.",
+          };
+    case "cancelled":
+      return { heading: "Cancelled", note: "This request was cancelled." };
     default: {
       const _exhaustive: never = state;
       return _exhaustive;
     }
   }
 }
+
+/** Whether a request's picked version is still downloading. */
+export const isDownloading = ({
+  state,
+  progress,
+}: Pick<BookRequest, "state" | "progress">) =>
+  state === "on_its_way" && (progress ?? 0) < 1;
+
+/** Whether Cancel is offered: any request still going, until its download is complete. */
+export const isCancellable = (
+  request: Pick<BookRequest, "state" | "progress">,
+) =>
+  request.state === "looking" ||
+  request.state === "choose" ||
+  request.state === "chosen" ||
+  isDownloading(request);
+
+/** A download's progress as a whole percent, rounded down so the bar never reads done early. */
+export const progressPercent = (progress: number | null) =>
+  Math.floor((progress ?? 0) * 100);
+
+/** How long the Undo toast stays: until a second and a half before the server's `cancelAt` (Unix seconds), so Undo is never offered after the grace. */
+export const undoToastMs = (cancelAt: number, now: number) =>
+  Math.max(0, (cancelAt - now - 1.5) * 1000);
 
 /** A request's own page: the book's address with `/request`. */
 export const requestPath = (uuid: string, id: number) =>

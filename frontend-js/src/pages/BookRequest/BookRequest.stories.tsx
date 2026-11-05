@@ -36,6 +36,7 @@ const UNNAMED = aWireVersion({
 });
 
 let fake = requestFake();
+let held = deferred();
 
 /** The version row at `index`. */
 function versionAt(rows: HTMLElement[], index: number) {
@@ -294,6 +295,233 @@ export const AFailedTryAgainTellsYou: Story = {
   },
 };
 
+const DOWNLOADING: Parameters<typeof aWireRequest>[0] = {
+  state: "on_its_way",
+  chosen_result_id: 11,
+  progress: 0.426,
+  versions: [EPUB, PDF],
+};
+
+export const OnItsWayShowsOneProgressBarWithCancelAndPickAnother: Story = {
+  beforeEach({ msw }) {
+    msw.use(...seed(DOWNLOADING));
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByTestId("request-state")).toHaveTextContent(
+      "On its way",
+    );
+    const bar = canvas.getByRole("progressbar", { name: "Download progress" });
+    await expect(bar).toHaveAttribute("value", "42");
+    await expect(canvas.getByTestId("request-percent")).toHaveTextContent(
+      "42%",
+    );
+    await expect(canvas.getByRole("button", { name: "Cancel" })).toBeEnabled();
+    await expect(
+      canvas.getByRole("button", { name: "Pick another" }),
+    ).toBeEnabled();
+  },
+};
+
+export const TheBarFollowsTheDownloadAsItIsPolled: Story = {
+  beforeEach({ msw }) {
+    reads = 0;
+    msw.use(
+      http.get("/api/requests/:id", () => {
+        reads += 1;
+        const progress = reads < 2 ? 0.2 : 0.6;
+        return HttpResponse.json(aWireRequest({ ...DOWNLOADING, progress }));
+      }),
+    );
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByTestId("request-percent"),
+    ).toHaveTextContent("20%");
+
+    await waitFor(
+      () =>
+        expect(canvas.getByTestId("request-percent")).toHaveTextContent("60%"),
+      { timeout: 4000 },
+    );
+  },
+};
+
+export const ABarBeforeTheClientReportsHasNoValueAndNoPercent: Story = {
+  beforeEach({ msw }) {
+    msw.use(...seed({ ...DOWNLOADING, progress: null }));
+  },
+  play: async ({ canvas }) => {
+    const bar = await canvas.findByRole("progressbar", {
+      name: "Download progress",
+    });
+
+    await expect(bar).not.toHaveAttribute("value");
+    await expect(canvas.queryByTestId("request-percent")).toBeNull();
+  },
+};
+
+export const CancelAndPickAnotherLockTogetherWhileOneIsPending: Story = {
+  beforeEach({ msw }) {
+    held = deferred();
+    msw.use(
+      http.post("/api/requests/:id/cancel", async () => {
+        await held.promise;
+        return HttpResponse.json(
+          aWireRequest({ ...DOWNLOADING, state: "cancelled" }),
+        );
+      }),
+      ...seed(DOWNLOADING),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Cancel" }),
+    );
+
+    await waitFor(() =>
+      expect(canvas.getByTestId("request-pick-another")).toHaveAttribute(
+        "aria-disabled",
+        "true",
+      ),
+    );
+    await userEvent.click(canvas.getByTestId("request-pick-another"));
+    await expect(fake.writes).toEqual([]);
+    held.release();
+  },
+};
+
+export const AFinishedDownloadOffersNeitherCancelNorPickAnother: Story = {
+  beforeEach({ msw }) {
+    msw.use(...seed({ ...DOWNLOADING, progress: 1 }));
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByTestId("request-percent"),
+    ).toHaveTextContent("100%");
+
+    await expect(canvas.queryByRole("button", { name: "Cancel" })).toBeNull();
+    await expect(
+      canvas.queryByRole("button", { name: "Pick another" }),
+    ).toBeNull();
+  },
+};
+
+export const CancellingShowsCancelledAtOnceWithAnUndoThatPutsItBack: Story = {
+  beforeEach({ msw }) {
+    msw.use(...seed(DOWNLOADING));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Cancel" }),
+    );
+
+    await waitFor(() =>
+      expect(canvas.getByTestId("request-state")).toHaveTextContent(
+        "Cancelled",
+      ),
+    );
+    await expect(canvas.queryByTestId("request-downloading")).toBeNull();
+    await userEvent.click(await canvas.findByRole("button", { name: "Undo" }));
+    await waitFor(() =>
+      expect(canvas.getByTestId("request-state")).toHaveTextContent(
+        "On its way",
+      ),
+    );
+    await waitFor(() =>
+      expect(canvas.getByRole("heading", { name: "Ebook" })).toHaveFocus(),
+    );
+    await expect(fake.writes).toEqual([
+      { kind: "cancel", id: 7 },
+      { kind: "undo", id: 7 },
+    ]);
+  },
+};
+
+export const AFailedCancelTellsYouAndKeepsTheDownload: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      failing("post", "/api/requests/:id/cancel", 409),
+      ...seed(DOWNLOADING),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Cancel" }),
+    );
+
+    await expect(
+      await canvas.findByText(/Couldn’t cancel/),
+    ).toBeInTheDocument();
+    await expect(canvas.getByTestId("request-state")).toHaveTextContent(
+      "On its way",
+    );
+  },
+};
+
+export const PickAnotherGoesBackToTheVersionsWithThePickedOneMarkedDidntWork: Story =
+  {
+    beforeEach({ msw }) {
+      msw.use(...seed(DOWNLOADING));
+    },
+    play: async ({ canvas, userEvent }) => {
+      await userEvent.click(
+        await canvas.findByRole("button", { name: "Pick another" }),
+      );
+
+      await waitFor(() =>
+        expect(canvas.getByTestId("request-state")).toHaveTextContent(
+          "Choose a version",
+        ),
+      );
+      await expect(canvas.getByTestId("request-note")).toHaveTextContent(
+        "Swapped for another version",
+      );
+      const rows = canvas.getAllByTestId("request-version");
+      await expect(rows).toHaveLength(2);
+      await expect(rows[0]).toHaveFocus();
+      await expect(
+        within(versionAt(rows, 0)).getByText("PDF"),
+      ).toBeInTheDocument();
+      await expect(
+        within(versionAt(rows, 1)).getByTestId("request-didnt-work"),
+      ).toHaveTextContent("Didn’t work");
+      await expect(
+        within(versionAt(rows, 1)).queryByTestId("request-choose"),
+      ).toBeNull();
+      await expect(fake.writes).toEqual([{ kind: "swap", id: 7 }]);
+    },
+  };
+
+const STOPPED: Parameters<typeof aWireRequest>[0] = {
+  state: "stuck",
+  stuck_reason: "stopped_moving",
+  chosen_result_id: 11,
+  versions: [EPUB, PDF],
+};
+
+export const StoppedMovingNamesItAndTryAgainOffersTheOtherVersions: Story = {
+  beforeEach({ msw }) {
+    msw.use(...seed(STOPPED));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await expect(await canvas.findByTestId("request-state")).toHaveTextContent(
+      "Stopped moving",
+    );
+
+    await userEvent.click(canvas.getByRole("button", { name: "Try again" }));
+
+    await waitFor(() =>
+      expect(canvas.getByTestId("request-state")).toHaveTextContent(
+        "Choose a version",
+      ),
+    );
+    await expect(canvas.getAllByTestId("request-version")).toHaveLength(2);
+    await expect(canvas.getByTestId("request-didnt-work")).toBeInTheDocument();
+    await expect(canvas.getAllByTestId("request-choose")).toHaveLength(1);
+    await expect(fake.writes).toEqual([{ kind: "retry", id: 7 }]);
+  },
+};
+
 export const TheBookLinkGoesBackToTheBookPage: Story = {
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(
@@ -383,8 +611,6 @@ export const AdminMayActOnAnotherReadersRequest: Story = {
   },
 };
 
-let held = deferred();
-
 export const ChoosingMarksOnlyTheChosenRowBusy: Story = {
   beforeEach({ msw }) {
     held = deferred();
@@ -440,5 +666,20 @@ export const AnOldUuidInTheAddressMovesToTheBooksCurrentOne: Story = {
     await expect(
       await canvas.findByRole("link", { name: "Back to book" }),
     ).toHaveAttribute("href", `/books/${UUID}`);
+  },
+};
+
+export const AnotherReadersDownloadOffersNoCancelOrPickAnother: Story = {
+  parameters: { user: NOT_THE_MAKER },
+  beforeEach({ msw }) {
+    msw.use(...seed(DOWNLOADING));
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("request-downloading");
+
+    await expect(canvas.queryByRole("button", { name: "Cancel" })).toBeNull();
+    await expect(
+      canvas.queryByRole("button", { name: "Pick another" }),
+    ).toBeNull();
   },
 };

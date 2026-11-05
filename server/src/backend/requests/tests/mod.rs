@@ -21,6 +21,11 @@ use crate::backend::test_support::{
 
 use super::*;
 
+mod cancel;
+mod choose;
+mod retry;
+mod swap;
+
 /// A reader allowed to request: id and bearer token.
 async fn requester(pool: &SqlitePool, name: &str) -> (i64, String) {
     let (id, token) = reader(pool, name).await;
@@ -113,10 +118,13 @@ fn start_uri(uuid: &str) -> String {
 mod flag_and_permission_gate {
     use super::*;
 
-    fn writes() -> [(&'static str, String, Option<Value>); 3] {
+    fn writes() -> [(&'static str, String, Option<Value>); 6] {
         [
             ("POST", start_uri("any"), Some(json!({"kind": "ebook"}))),
             ("POST", "/api/requests/1/retry".to_string(), None),
+            ("POST", "/api/requests/1/swap".to_string(), None),
+            ("POST", "/api/requests/1/cancel".to_string(), None),
+            ("DELETE", "/api/requests/1/cancel".to_string(), None),
             (
                 "POST",
                 "/api/requests/1/choose".to_string(),
@@ -257,9 +265,14 @@ mod post_start_request {
     #[tokio::test]
     async fn returns_the_live_request_with_200_and_adds_no_row_on_a_second_start() {
         let (app, _, pool) = fixture_book_requests(true).await;
+        // With a Prowlarr to answer, the first start's search lands on `choose`, still live; without
+        // one it parks the request as `stuck` and races the second start into a fresh row.
+        let prowlarr = prowlarr_with_dracula().await;
+        use_prowlarr(&pool, &prowlarr.uri()).await;
         let (_, token) = requester(&pool, "ada").await;
-        let uuid = seed_book(&pool, "Dracula").await;
+        let uuid = seed_book_by(&pool, "Dracula", "Bram Stoker").await;
         let first: BookRequest = body_json(start(&app, &uuid, &token, "ebook").await).await;
+        wait_for_request_state(&pool, first.id, RequestState::Choose).await;
 
         let again = start(&app, &uuid, &token, "ebook").await;
 
@@ -462,6 +475,37 @@ mod get_request {
     }
 
     #[tokio::test]
+    async fn carries_the_progress_of_a_request_on_its_way_and_never_its_client_tag() {
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let (ada, token) = requester(&pool, "ada").await;
+        let uuid = seed_book(&pool, "Dracula").await;
+        let id = seed_request(&pool, ada, &uuid).await;
+        sqlx::query(
+            "UPDATE book_requests SET state = 'on_its_way', progress = 0.4,
+             client_tag = 'omnibus-secret' WHERE id = ?",
+        )
+        .bind(id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let res = send(
+            &app,
+            "GET",
+            &format!("/api/requests/{id}"),
+            Some(&token),
+            None,
+        )
+        .await;
+
+        let text = body_text(res).await;
+        let body: BookRequest = serde_json::from_str(&text).unwrap();
+        assert_eq!(body.state, RequestState::OnItsWay);
+        assert_eq!(body.progress, Some(0.4));
+        assert!(!text.contains("omnibus-secret"));
+    }
+
+    #[tokio::test]
     async fn answers_404_for_an_unknown_request() {
         let (app, _, pool) = fixture_book_requests(true).await;
         let (_, token) = requester(&pool, "ada").await;
@@ -572,278 +616,5 @@ mod search_after_start {
         );
         assert_eq!(as_reader.stuck_detail, None);
         assert_eq!(as_admin.stuck_detail.as_deref(), Some("not set up yet"));
-    }
-}
-
-mod post_retry_request {
-    use super::*;
-
-    async fn set_state(pool: &SqlitePool, id: i64, state: &str) {
-        sqlx::query("UPDATE book_requests SET state = ? WHERE id = ?")
-            .bind(state)
-            .bind(id)
-            .execute(pool)
-            .await
-            .unwrap();
-    }
-
-    fn retry_uri(id: i64) -> String {
-        format!("/api/requests/{id}/retry")
-    }
-
-    #[tokio::test]
-    async fn searches_again_from_stuck_and_offers_the_versions() {
-        let (app, _, pool) = fixture_book_requests(true).await;
-        let prowlarr = prowlarr_with_dracula().await;
-        use_prowlarr(&pool, &prowlarr.uri()).await;
-        let (ada, token) = requester(&pool, "ada").await;
-        let uuid = seed_book_by(&pool, "Dracula", "Bram Stoker").await;
-        let id = seed_request(&pool, ada, &uuid).await;
-        set_state(&pool, id, "stuck").await;
-
-        let res = send(&app, "POST", &retry_uri(id), Some(&token), None).await;
-
-        assert_eq!(res.status(), StatusCode::OK);
-        let body: BookRequest = body_json(res).await;
-        assert_eq!(body.state, RequestState::Looking);
-        wait_for_request_state(&pool, id, RequestState::Choose).await;
-    }
-
-    #[tokio::test]
-    async fn searches_again_from_looking() {
-        let (app, _, pool) = fixture_book_requests(true).await;
-        let prowlarr = prowlarr_with_dracula().await;
-        use_prowlarr(&pool, &prowlarr.uri()).await;
-        let (ada, token) = requester(&pool, "ada").await;
-        let uuid = seed_book_by(&pool, "Dracula", "Bram Stoker").await;
-        let id = seed_request(&pool, ada, &uuid).await;
-
-        let res = send(&app, "POST", &retry_uri(id), Some(&token), None).await;
-
-        assert_eq!(res.status(), StatusCode::OK);
-        wait_for_request_state(&pool, id, RequestState::Choose).await;
-    }
-
-    #[tokio::test]
-    async fn answers_409_for_a_request_waiting_on_a_pick() {
-        let (app, _, pool) = fixture_book_requests(true).await;
-        let (ada, token) = requester(&pool, "ada").await;
-        let uuid = seed_book(&pool, "Dracula").await;
-        let id = seed_request(&pool, ada, &uuid).await;
-        set_state(&pool, id, "choose").await;
-
-        let res = send(&app, "POST", &retry_uri(id), Some(&token), None).await;
-
-        assert_eq!(res.status(), StatusCode::CONFLICT);
-    }
-
-    #[tokio::test]
-    async fn answers_403_to_another_reader_and_lets_an_admin_retry() {
-        let _env = EnvVarGuard::set("OMNIBUS_PROWLARR_API_KEY", None);
-        let (app, _, pool) = fixture_book_requests(true).await;
-        let (ada, _) = requester(&pool, "ada").await;
-        let (_, grace) = requester(&pool, "grace").await;
-        let admin = admin_token(&pool).await;
-        let uuid = seed_book(&pool, "Dracula").await;
-        let id = seed_request(&pool, ada, &uuid).await;
-        set_state(&pool, id, "stuck").await;
-
-        let other = send(&app, "POST", &retry_uri(id), Some(&grace), None).await;
-        let admin = send(&app, "POST", &retry_uri(id), Some(&admin), None).await;
-
-        assert_eq!(other.status(), StatusCode::FORBIDDEN);
-        assert_eq!(admin.status(), StatusCode::OK);
-    }
-
-    #[tokio::test]
-    async fn charges_nothing_to_the_start_cap_when_the_request_cannot_be_retried() {
-        let (app, state, pool) = fixture_book_requests(true).await;
-        let (ada, token) = requester(&pool, "ada").await;
-        let uuid = seed_book(&pool, "Dracula").await;
-        let id = seed_request(&pool, ada, &uuid).await;
-        set_state(&pool, id, "choose").await;
-        for _ in 0..12 {
-            let res = send(&app, "POST", &retry_uri(id), Some(&token), None).await;
-            assert_eq!(res.status(), StatusCode::CONFLICT);
-        }
-
-        assert!(state.request_starts().has_room(ada));
-    }
-
-    #[tokio::test]
-    async fn answers_404_for_an_unknown_request() {
-        let (app, _, pool) = fixture_book_requests(true).await;
-        let (_, token) = requester(&pool, "ada").await;
-
-        let res = send(&app, "POST", &retry_uri(999), Some(&token), None).await;
-
-        assert_eq!(res.status(), StatusCode::NOT_FOUND);
-    }
-
-    #[tokio::test]
-    async fn counts_against_the_start_cap() {
-        let (app, state, pool) = fixture_book_requests(true).await;
-        let (ada, token) = requester(&pool, "ada").await;
-        let uuid = seed_book(&pool, "Dracula").await;
-        let id = seed_request(&pool, ada, &uuid).await;
-        set_state(&pool, id, "stuck").await;
-        for _ in 0..10 {
-            state.request_starts().record(ada);
-        }
-
-        let res = send(&app, "POST", &retry_uri(id), Some(&token), None).await;
-
-        assert_eq!(res.status(), StatusCode::TOO_MANY_REQUESTS);
-    }
-}
-
-mod post_choose_version {
-    use super::*;
-
-    fn choose_uri(id: i64) -> String {
-        format!("/api/requests/{id}/choose")
-    }
-
-    /// Put a request in `choose` with a kept version and a dropped one; returns
-    /// `(kept id, dropped id)`.
-    async fn offer_versions(pool: &SqlitePool, request: i64) -> (i64, i64) {
-        sqlx::query("UPDATE book_requests SET state = 'choose' WHERE id = ?")
-            .bind(request)
-            .execute(pool)
-            .await
-            .unwrap();
-        let mut ids = Vec::new();
-        for (title, rejected) in [("kept", 0), ("dropped", 1)] {
-            let id: i64 = sqlx::query_scalar(
-                "INSERT INTO book_request_results (request_id, guid, title, download_url, score, rejected)
-                 VALUES (?, ?, ?, 'magnet:?xt=urn:btih:x', 1.0, ?) RETURNING id",
-            )
-            .bind(request)
-            .bind(title)
-            .bind(title)
-            .bind(rejected)
-            .fetch_one(pool)
-            .await
-            .unwrap();
-            ids.push(id);
-        }
-        (ids[0], ids[1])
-    }
-
-    #[tokio::test]
-    async fn records_the_pick_and_answers_the_chosen_request() {
-        let (app, _, pool) = fixture_book_requests(true).await;
-        let (ada, token) = requester(&pool, "ada").await;
-        let uuid = seed_book(&pool, "Dracula").await;
-        let id = seed_request(&pool, ada, &uuid).await;
-        let (kept, _) = offer_versions(&pool, id).await;
-
-        let res = send(
-            &app,
-            "POST",
-            &choose_uri(id),
-            Some(&token),
-            Some(json!({"result_id": kept})),
-        )
-        .await;
-
-        assert_eq!(res.status(), StatusCode::OK);
-        let body: BookRequest = body_json(res).await;
-        assert_eq!(body.state, RequestState::Chosen);
-        assert_eq!(body.chosen_result_id, Some(kept));
-    }
-
-    #[tokio::test]
-    async fn answers_404_for_a_dropped_version_or_another_requests_version() {
-        let (app, _, pool) = fixture_book_requests(true).await;
-        let (ada, token) = requester(&pool, "ada").await;
-        let first = seed_book(&pool, "Dracula").await;
-        let second = seed_book(&pool, "Carmilla").await;
-        let id = seed_request(&pool, ada, &first).await;
-        let other = seed_request(&pool, ada, &second).await;
-        let (_, dropped) = offer_versions(&pool, id).await;
-        let (theirs, _) = offer_versions(&pool, other).await;
-
-        for result_id in [dropped, theirs] {
-            let body = Some(json!({"result_id": result_id}));
-            let res = send(&app, "POST", &choose_uri(id), Some(&token), body).await;
-            assert_eq!(res.status(), StatusCode::NOT_FOUND, "{result_id}");
-        }
-    }
-
-    #[tokio::test]
-    async fn answers_409_for_a_request_that_is_not_waiting_on_a_pick() {
-        let (app, _, pool) = fixture_book_requests(true).await;
-        let (ada, token) = requester(&pool, "ada").await;
-        let uuid = seed_book(&pool, "Dracula").await;
-        let id = seed_request(&pool, ada, &uuid).await;
-        let (kept, _) = offer_versions(&pool, id).await;
-        sqlx::query("UPDATE book_requests SET state = 'looking' WHERE id = ?")
-            .bind(id)
-            .execute(&pool)
-            .await
-            .unwrap();
-
-        let res = send(
-            &app,
-            "POST",
-            &choose_uri(id),
-            Some(&token),
-            Some(json!({"result_id": kept})),
-        )
-        .await;
-
-        assert_eq!(res.status(), StatusCode::CONFLICT);
-    }
-
-    #[tokio::test]
-    async fn rejects_a_body_that_names_a_link_and_changes_nothing() {
-        let (app, _, pool) = fixture_book_requests(true).await;
-        let (ada, token) = requester(&pool, "ada").await;
-        let uuid = seed_book(&pool, "Dracula").await;
-        let id = seed_request(&pool, ada, &uuid).await;
-        let (kept, _) = offer_versions(&pool, id).await;
-        let body = json!({"result_id": kept, "url": "http://evil.example/book.epub"});
-
-        let res = send(&app, "POST", &choose_uri(id), Some(&token), Some(body)).await;
-
-        assert!(res.status().is_client_error());
-        let row = store::get(&pool, id).await.unwrap().unwrap();
-        assert_eq!(row.state, RequestState::Choose);
-    }
-
-    #[tokio::test]
-    async fn answers_403_to_another_reader_and_lets_an_admin_pick() {
-        let (app, _, pool) = fixture_book_requests(true).await;
-        let (ada, _) = requester(&pool, "ada").await;
-        let (_, grace) = requester(&pool, "grace").await;
-        let admin = admin_token(&pool).await;
-        let uuid = seed_book(&pool, "Dracula").await;
-        let id = seed_request(&pool, ada, &uuid).await;
-        let (kept, _) = offer_versions(&pool, id).await;
-        let body = Some(json!({"result_id": kept}));
-
-        let other = send(&app, "POST", &choose_uri(id), Some(&grace), body.clone()).await;
-        let admin = send(&app, "POST", &choose_uri(id), Some(&admin), body).await;
-
-        assert_eq!(other.status(), StatusCode::FORBIDDEN);
-        assert_eq!(admin.status(), StatusCode::OK);
-    }
-
-    #[tokio::test]
-    async fn answers_404_for_an_unknown_request() {
-        let (app, _, pool) = fixture_book_requests(true).await;
-        let (_, token) = requester(&pool, "ada").await;
-
-        let res = send(
-            &app,
-            "POST",
-            &choose_uri(999),
-            Some(&token),
-            Some(json!({"result_id": 1})),
-        )
-        .await;
-
-        assert_eq!(res.status(), StatusCode::NOT_FOUND);
     }
 }

@@ -230,6 +230,8 @@ pub struct AppState {
     book_requests: bool,
     /// Recent request starts per reader, for the start cap.
     request_starts: Arc<requests::StartLog>,
+    /// Wakes the download poller out of its wait when a request needs it sooner.
+    request_kick: Arc<tokio::sync::Notify>,
 }
 
 impl AppState {
@@ -244,6 +246,7 @@ impl AppState {
             public_origins: Arc::default(),
             book_requests: false,
             request_starts: Arc::default(),
+            request_kick: Arc::default(),
         }
     }
 
@@ -333,6 +336,11 @@ impl AppState {
     /// The log capping how fast each reader may start requests.
     fn request_starts(&self) -> &requests::StartLog {
         &self.request_starts
+    }
+
+    /// Wakes the download poller; a wake with nobody waiting is kept for its next wait.
+    pub fn request_kick(&self) -> &Arc<tokio::sync::Notify> {
+        &self.request_kick
     }
 
     /// Whether the per-IP limiters wired from this state enforce or admit everything.

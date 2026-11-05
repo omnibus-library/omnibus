@@ -11,9 +11,9 @@ import "./Toast.css";
 
 export type ToastAction = { label: string; onClick: () => void };
 
-type Showing = { message: string; action?: ToastAction };
+type Showing = { message: string; action?: ToastAction; stayMs?: number };
 
-type Show = (message: string, action?: ToastAction) => void;
+type Show = (message: string, action?: ToastAction, stayMs?: number) => void;
 
 /** How long a plain toast stays, and how long its fade-out takes before the words go. */
 const STAY_MS = 2600;
@@ -21,7 +21,7 @@ const FADE_MS = 450;
 
 const ToastContext = createContext<Show | null>(null);
 
-/** Shows `message`, replacing any toast on screen; one with an action stays until dismissed or replaced by another with one, and a plain toast waits behind it. */
+/** Shows `message`, replacing any toast on screen; one with an action stays until dismissed or replaced by another with one (or goes after `stayMs`), and a plain toast waits behind it. */
 export function useToast(): Show {
   const show = useContext(ToastContext);
   if (!show) throw new Error("toast used outside ToastProvider");
@@ -39,13 +39,13 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const waiting = useRef<string[]>([]);
   // Where focus was before an action toast took it.
   const returnTo = useRef<HTMLElement | null>(null);
-  const show = useCallback<Show>((message, action) => {
+  const show = useCallback<Show>((message, action, stayMs) => {
     if (!action && pending.current) {
       waiting.current.push(message);
       return;
     }
     pending.current = action !== undefined;
-    setShowing({ message, action });
+    setShowing({ message, action, stayMs });
     setOn(true);
   }, []);
   const dismiss = useCallback(() => {
@@ -63,8 +63,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       }, FADE_MS);
       return () => clearTimeout(gone);
     }
-    if (showing.action) return;
-    const hide = setTimeout(dismiss, STAY_MS);
+    const stay = showing.action ? showing.stayMs : STAY_MS;
+    if (stay === undefined) return;
+    const hide = setTimeout(dismiss, stay);
     return () => clearTimeout(hide);
   }, [showing, on, dismiss]);
   // An action toast takes focus, so its Undo is where the reader is; it gives focus back when it goes.

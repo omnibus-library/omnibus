@@ -6398,6 +6398,99 @@
         }
       }
     },
+    "/api/requests/{id}/cancel": {
+      "post": {
+        "tags": [
+          "Requests"
+        ],
+        "summary": "Cancel a request",
+        "description": "The request reads `cancelled` at once. The download is told to stop a few seconds later\n(see `cancel_at`), so `DELETE /api/requests/{id}/cancel` can take the cancel back until\nthen. Only a request that is searching, waiting on a pick, picked or still downloading can\nbe cancelled. Only the reader who made the request, or an admin, can do this.",
+        "operationId": "cancel_book_request",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The request's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The request is cancelled; undo it until `cancel_at`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookRequest"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "You aren't signed in."
+          },
+          "403": {
+            "description": "Your account can't make requests, or the request is another reader's."
+          },
+          "404": {
+            "description": "Book requests are off on this server, or there is no such request."
+          },
+          "409": {
+            "description": "The request can't be cancelled now: it is stuck, already cancelled or fully downloaded."
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Requests"
+        ],
+        "summary": "Undo a cancel",
+        "description": "Takes a cancel back while its grace lasts (until `cancel_at`), putting the request in the\nstate it was cancelled from; a request cancelled while looking searches again, which counts\nas a start. After the grace the download is stopped and cannot be undone, nor can a cancel\nonce you started another request for the same book. Only the reader who made the request, or\nan admin, can do this.",
+        "operationId": "undo_cancel_book_request",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The request's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The request is back as it was.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookRequest"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "You aren't signed in."
+          },
+          "403": {
+            "description": "Your account can't make requests, or the request is another reader's."
+          },
+          "404": {
+            "description": "Book requests are off on this server, or there is no such request."
+          },
+          "409": {
+            "description": "The request isn't cancelled, the undo grace has ended, or you have started another request for this book."
+          },
+          "429": {
+            "description": "You have too many requests in progress to restore this one."
+          }
+        }
+      }
+    },
     "/api/requests/{id}/choose": {
       "post": {
         "tags": [
@@ -6463,7 +6556,7 @@
           "Requests"
         ],
         "summary": "Try a request again",
-        "description": "Searches again for a request that is `stuck` or still `looking`, and puts it back to\n`looking`; poll `GET /api/requests/{id}` as after a start. It counts as a start toward\nthe rate limit. Only the reader who made the request, or an admin, can do this.",
+        "description": "Searches again for a request that is `stuck` or still `looking`, and puts it back to\n`looking`; poll `GET /api/requests/{id}` as after a start. That counts as a start toward\nthe rate limit. A request stuck on a stopped download (`stopped_moving`) instead drops that\ndownload and goes back to `choose` among the other versions, with nothing searched and\nnothing counted. Only the reader who made the request, or an admin, can do this.",
         "operationId": "retry_book_request",
         "parameters": [
           {
@@ -6479,7 +6572,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The request is looking again.",
+            "description": "The request is looking again, or choosing again after a stopped download.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6502,6 +6595,55 @@
           },
           "429": {
             "description": "You started too many requests lately."
+          }
+        }
+      }
+    },
+    "/api/requests/{id}/swap": {
+      "post": {
+        "tags": [
+          "Requests"
+        ],
+        "summary": "Pick another version",
+        "description": "Gives up the version that is downloading (or has stopped) for good and goes back to\n`choose` among the other versions found; the download is removed a moment later. The\nrequest carries a `note` saying so, and the version is listed with `rejected` set. With no\nother version left it searches again and is `looking`, which counts as a start toward the\nrate limit. Only a request that is `on_its_way` and not fully downloaded, or stuck on a\nstopped download, can be swapped. Only the reader who made the request, or an admin, can\ndo this.",
+        "operationId": "swap_request_version",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The request's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The request is choosing again (or looking, with nothing else to choose).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookRequest"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "You aren't signed in."
+          },
+          "403": {
+            "description": "Your account can't make requests, or the request is another reader's."
+          },
+          "404": {
+            "description": "Book requests are off on this server, or there is no such request."
+          },
+          "409": {
+            "description": "The request isn't downloading, or its download is complete."
+          },
+          "429": {
+            "description": "It would need a new search and you started too many requests lately."
           }
         }
       }
@@ -10470,6 +10612,22 @@
             "type": "string",
             "description": "The requested book's uuid."
           },
+          "cancel_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "While `cancelled`, when the download is told to stop, in Unix seconds; the request can\nbe undone until then. Null once it has stopped, and for a request never cancelled."
+          },
+          "cancelled_by": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The user who cancelled it, once `state` is `cancelled`."
+          },
           "chosen_result_id": {
             "type": [
               "integer",
@@ -10489,6 +10647,21 @@
           },
           "kind": {
             "$ref": "#/components/schemas/RequestKind"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "What Omnibus knows about why it moved on, such as \"Swapped for another version\"."
+          },
+          "progress": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "How much of the download is done, 0 to 1, once `state` is `on_its_way`."
           },
           "state": {
             "$ref": "#/components/schemas/RequestState"
@@ -15367,7 +15540,9 @@
           "looking",
           "choose",
           "chosen",
-          "stuck"
+          "on_its_way",
+          "stuck",
+          "cancelled"
         ]
       },
       "RequestVersion": {
@@ -15376,7 +15551,8 @@
         "required": [
           "id",
           "title",
-          "best_match"
+          "best_match",
+          "rejected"
         ],
         "properties": {
           "best_match": {
@@ -15400,6 +15576,10 @@
               "null"
             ],
             "description": "The source the version came from; shown behind Details."
+          },
+          "rejected": {
+            "type": "boolean",
+            "description": "Whether this version was picked and given up. It is shown as one that did not work\nand cannot be chosen again."
           },
           "size_bytes": {
             "type": [
@@ -17383,10 +17563,11 @@
       },
       "StuckReason": {
         "type": "string",
-        "description": "Why a request is stuck. Both read \"Couldn't find it\" to the requester.",
+        "description": "Why a request is stuck. The two search reasons read \"Couldn't find it\" to the requester;\n`stopped_moving` reads \"Stopped moving\".",
         "enum": [
           "not_found",
-          "search_failed"
+          "search_failed",
+          "stopped_moving"
         ]
       },
       "SuggestionCard": {

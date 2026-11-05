@@ -1,7 +1,10 @@
 //! Runs the search behind a `looking` request: asks Prowlarr for the book's title and first
 //! author, ranks what comes back and records the outcome. A request ends `choose` when
 //! some version survived, else `stuck`; the word the reader sees is the same for both
-//! reasons, but the reason and detail (for admins) differ.
+//! reasons, but the reason and detail (for admins) differ. A Prowlarr that is briefly
+//! unreachable or rate limiting is retried for a while before the request gives up.
+
+use std::time::{Duration, Instant};
 
 use omnibus_shared::{RequestState, StuckReason};
 use sqlx::SqlitePool;
@@ -9,28 +12,96 @@ use sqlx::SqlitePool;
 use super::prowlarr::Prowlarr;
 use super::rank::rank;
 use super::store::{self, RequestError, SearchOutcome};
+use super::ConnectionError;
+
+/// How long a search keeps trying while Prowlarr is unreachable or rate limiting, and how long
+/// it waits after the first failure; each later wait doubles, up to [`MAX_WAIT`].
+#[derive(Debug, Clone, Copy)]
+pub struct Patience {
+    pub budget: Duration,
+    pub first_wait: Duration,
+}
+
+impl Patience {
+    /// What a reader's search gets: ten minutes, starting with five seconds.
+    pub const DEFAULT: Patience = Patience {
+        budget: Duration::from_secs(10 * 60),
+        first_wait: Duration::from_secs(5),
+    };
+}
+
+const MAX_WAIT: Duration = Duration::from_secs(60);
+
+/// What one try at the search came to.
+enum Attempt {
+    Done(SearchOutcome),
+    /// Prowlarr could not be asked just now; holds the outcome if no retry is left.
+    Transient(SearchOutcome),
+}
 
 /// Search for request `id` and record the outcome. Nothing happens for a request that is
 /// gone or no longer `looking`. Meant to run as a spawned task.
 pub async fn run_search(pool: &SqlitePool, id: i64) -> Result<(), RequestError> {
-    let Some(request) = store::get(pool, id)
-        .await?
-        .filter(|r| r.state == RequestState::Looking)
-    else {
+    run_search_with(pool, id, Patience::DEFAULT).await
+}
+
+/// [`run_search`] with the given `patience` for a Prowlarr that cannot be reached. A request
+/// cancelled or answered while the search waits to retry is left alone.
+pub async fn run_search_with(
+    pool: &SqlitePool,
+    id: i64,
+    patience: Patience,
+) -> Result<(), RequestError> {
+    let Some(request) = store::get(pool, id).await?.filter(is_looking) else {
         return Ok(());
     };
-    let outcome = search_outcome(pool, &request.book_uuid).await;
+    let began = Instant::now();
+    let mut wait = patience.first_wait;
+    let outcome = loop {
+        match attempt(pool, &request.book_uuid).await {
+            Attempt::Done(outcome) => break outcome,
+            Attempt::Transient(outcome) if began.elapsed() + wait > patience.budget => {
+                break outcome;
+            }
+            Attempt::Transient(_) => {
+                tokio::time::sleep(wait).await;
+                wait = (wait * 2).min(MAX_WAIT);
+                if !store::get(pool, id).await?.as_ref().is_some_and(is_looking) {
+                    return Ok(());
+                }
+            }
+        }
+    };
     store::finish_search(pool, id, outcome).await
 }
 
-fn failed(detail: impl Into<String>) -> SearchOutcome {
+fn is_looking(r: &store::RequestRow) -> bool {
+    r.state == RequestState::Looking
+}
+
+fn stuck_failed(detail: impl Into<String>) -> SearchOutcome {
     SearchOutcome::Stuck {
         reason: StuckReason::SearchFailed,
         detail: Some(detail.into()),
     }
 }
 
-async fn search_outcome(pool: &SqlitePool, book_uuid: &str) -> SearchOutcome {
+fn failed(detail: impl Into<String>) -> Attempt {
+    Attempt::Done(stuck_failed(detail))
+}
+
+/// A failed call to Prowlarr: retried when it was only unreachable or rate limiting.
+fn search_error(e: ConnectionError) -> Attempt {
+    let outcome = stuck_failed(e.to_string());
+    match e {
+        ConnectionError::Unreachable(_) | ConnectionError::RateLimited => {
+            Attempt::Transient(outcome)
+        }
+        _ => Attempt::Done(outcome),
+    }
+}
+
+async fn attempt(pool: &SqlitePool, book_uuid: &str) -> Attempt {
     let book = match crate::get_book_by_uuid(pool, book_uuid).await {
         Ok(Some(book)) => book,
         Ok(None) => return failed("the book no longer exists"),
@@ -62,16 +133,16 @@ async fn search_outcome(pool: &SqlitePool, book_uuid: &str) -> SearchOutcome {
     let query = format!("{title} {author}");
     let releases = match prowlarr.search(query.trim()).await {
         Ok(releases) => releases,
-        Err(e) => return failed(e.to_string()),
+        Err(e) => return search_error(e),
     };
     let ranked = rank(releases, &title, &author);
     if ranked.iter().all(|r| r.rejected) {
-        return SearchOutcome::Stuck {
+        return Attempt::Done(SearchOutcome::Stuck {
             reason: StuckReason::NotFound,
             detail: failing_indexers(&prowlarr).await,
-        };
+        });
     }
-    SearchOutcome::Found(ranked)
+    Attempt::Done(SearchOutcome::Found(ranked))
 }
 
 /// Which indexers Prowlarr has switched off, when it will say; the likeliest reason an

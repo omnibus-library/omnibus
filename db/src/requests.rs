@@ -1,5 +1,5 @@
 //! The book-request pipeline's links to the outside world: Prowlarr, the download client
-//! the server hands links to, and the folder mapping that turns its finished files into
+//! the server hands releases to, and the folder mapping that turns its finished files into
 //! local ones.
 //!
 //! The URLs here are the admin's own LAN services (`http://qbittorrent:8080`), so this
@@ -13,10 +13,14 @@ use reqwest::StatusCode;
 
 pub mod clients;
 pub mod paths;
+pub mod poller;
 pub mod prowlarr;
 pub mod rank;
 pub mod search;
 pub mod store;
+
+#[cfg(test)]
+mod test_support;
 
 /// Why a call to Prowlarr or the download client failed. Every message is safe to show an
 /// admin: none carries a URL, key or password.
@@ -67,6 +71,10 @@ pub fn http_client() -> Result<reqwest::Client, ConnectionError> {
         .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|e| ConnectionError::from_transport(&e))?;
+    // A pooled connection dies with the `#[tokio::test]` runtime that opened it.
+    if cfg!(test) {
+        return Ok(new);
+    }
     Ok(CLIENT.get_or_init(|| new).clone())
 }
 

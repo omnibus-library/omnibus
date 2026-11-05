@@ -43,8 +43,12 @@ pub enum RequestState {
     Choose,
     /// The reader picked a version.
     Chosen,
-    /// The search came up empty or failed; the reader can try again.
+    /// The chosen version is downloading, then being added to the library.
+    OnItsWay,
+    /// The search came up empty or failed, or the download stopped; the reader can try again.
     Stuck,
+    /// The reader cancelled it.
+    Cancelled,
 }
 
 impl RequestState {
@@ -54,7 +58,9 @@ impl RequestState {
             RequestState::Looking => "looking",
             RequestState::Choose => "choose",
             RequestState::Chosen => "chosen",
+            RequestState::OnItsWay => "on_its_way",
             RequestState::Stuck => "stuck",
+            RequestState::Cancelled => "cancelled",
         }
     }
 
@@ -64,13 +70,16 @@ impl RequestState {
             "looking" => Some(RequestState::Looking),
             "choose" => Some(RequestState::Choose),
             "chosen" => Some(RequestState::Chosen),
+            "on_its_way" => Some(RequestState::OnItsWay),
             "stuck" => Some(RequestState::Stuck),
+            "cancelled" => Some(RequestState::Cancelled),
             _ => None,
         }
     }
 }
 
-/// Why a request is stuck. Both read "Couldn't find it" to the requester.
+/// Why a request is stuck. The two search reasons read "Couldn't find it" to the requester;
+/// `stopped_moving` reads "Stopped moving".
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
@@ -79,6 +88,8 @@ pub enum StuckReason {
     NotFound,
     /// The search could not run, such as Prowlarr being unset or unreachable.
     SearchFailed,
+    /// The download stalled, failed, vanished from the client or the client went unreachable.
+    StoppedMoving,
 }
 
 impl StuckReason {
@@ -87,6 +98,7 @@ impl StuckReason {
         match self {
             StuckReason::NotFound => "not_found",
             StuckReason::SearchFailed => "search_failed",
+            StuckReason::StoppedMoving => "stopped_moving",
         }
     }
 
@@ -95,6 +107,7 @@ impl StuckReason {
         match s {
             "not_found" => Some(StuckReason::NotFound),
             "search_failed" => Some(StuckReason::SearchFailed),
+            "stopped_moving" => Some(StuckReason::StoppedMoving),
             _ => None,
         }
     }
@@ -131,10 +144,13 @@ pub struct RequestVersion {
     pub indexer: Option<String>,
     /// Whether this is the version Omnibus suggests. At most one version has it.
     pub best_match: bool,
+    /// Whether this version was picked and given up. It is shown as one that did not work
+    /// and cannot be chosen again.
+    pub rejected: bool,
 }
 
 /// A request and, once the search has run, the versions it found.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct BookRequest {
     pub id: i64,
@@ -154,6 +170,15 @@ pub struct BookRequest {
     pub created_at: i64,
     /// When the request last changed state, in Unix seconds.
     pub updated_at: i64,
+    /// How much of the download is done, 0 to 1, once `state` is `on_its_way`.
+    pub progress: Option<f64>,
+    /// While `cancelled`, when the download is told to stop, in Unix seconds; the request can
+    /// be undone until then. Null once it has stopped, and for a request never cancelled.
+    pub cancel_at: Option<i64>,
+    /// The user who cancelled it, once `state` is `cancelled`.
+    pub cancelled_by: Option<i64>,
+    /// What Omnibus knows about why it moved on, such as "Swapped for another version".
+    pub note: Option<String>,
     /// The versions found, best first. Empty until the search has run, and always empty in
     /// a book's list of requests: read one request for its versions.
     pub versions: Vec<RequestVersion>,

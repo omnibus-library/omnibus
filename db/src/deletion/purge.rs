@@ -33,8 +33,6 @@ const UUID_KEYED_TABLES: &[&str] = &[
     "physical_copies",
     "wishlist_entries",
     "book_export_digests",
-    // Its versions go with it by cascade.
-    "book_requests",
 ];
 
 /// Delete the given `book_files` rows (parts and chapters cascade via their FK)
@@ -122,6 +120,7 @@ pub(crate) async fn purge_book(
         let sql = format!("DELETE FROM {table} WHERE book_uuid = ?");
         sqlx::query(&sql).bind(uuid).execute(&mut **tx).await?;
     }
+    drop_requests(tx, uuid).await?;
     sqlx::query("DELETE FROM merged_uuids WHERE book_id = ?")
         .bind(book_id)
         .execute(&mut **tx)
@@ -135,6 +134,31 @@ pub(crate) async fn purge_book(
     crate::sync::delete_fts(tx, book_id).await?;
     crate::taxonomy::delete_orphan_taxonomy(tx).await?;
     Ok(images)
+}
+
+/// Delete the book's requests (their versions go by cascade), except those with a download
+/// still in the download client: those are cancelled, due now, and kept for the poller to take
+/// out and forget. They name a uuid that will never resolve, and none counts as live.
+async fn drop_requests(
+    tx: &mut Transaction<'_, sqlx::Sqlite>,
+    uuid: &str,
+) -> Result<(), DeleteError> {
+    sqlx::query(
+        "UPDATE book_requests
+         SET state = 'cancelled', prior_state = NULL, cancel_at = strftime('%s', 'now')
+         WHERE book_uuid = ? AND (client_tag IS NOT NULL OR remove_tag IS NOT NULL)",
+    )
+    .bind(uuid)
+    .execute(&mut **tx)
+    .await?;
+    sqlx::query(
+        "DELETE FROM book_requests
+         WHERE book_uuid = ? AND client_tag IS NULL AND remove_tag IS NULL",
+    )
+    .bind(uuid)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
 }
 
 /// Journal-image file names embedded in this book's journal entries and

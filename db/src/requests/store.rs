@@ -8,13 +8,18 @@ use sqlx::{sqlite::SqliteRow, Row, SqlitePool};
 
 use super::rank::Ranked;
 
-/// A request live for its reader: still searching, waiting on a pick, or picked.
-const LIVE_STATES: &str = "('looking', 'choose', 'chosen')";
+/// A request live for its reader: searching, waiting on a pick, picked or downloading.
+const LIVE_STATES: &str = "('looking', 'choose', 'chosen', 'on_its_way')";
+
+/// A request whose picked version is still downloading. A finished download stays
+/// `on_its_way` with `progress = 1` for the import to pick up.
+const DOWNLOADING: &str = "(state = 'on_its_way' AND (progress IS NULL OR progress < 1))";
 
 const NOW: &str = "strftime('%s', 'now')";
 
 const COLUMNS: &str = "id, book_uuid, user_id, kind, state, stuck_reason, stuck_detail, \
-                       chosen_result_id, created_at, updated_at";
+                       chosen_result_id, client_tag, remove_tag, remove_since, progress, moved_at, cancel_at, cancelled_by, \
+                       prior_state, note, created_at, updated_at";
 
 /// Why a request could not be recorded or changed.
 #[derive(Debug, thiserror::Error)]
@@ -33,7 +38,7 @@ pub enum RequestError {
 }
 
 /// One request as stored. `stuck_detail` is for admins only; the handler withholds it.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct RequestRow {
     pub id: i64,
     pub book_uuid: String,
@@ -43,6 +48,22 @@ pub struct RequestRow {
     pub stuck_reason: Option<StuckReason>,
     pub stuck_detail: Option<String>,
     pub chosen_result_id: Option<i64>,
+    /// The name of the live download in the client; never sent to a reader.
+    pub client_tag: Option<String>,
+    /// A download to take out of the client, and `remove_since` when that began (Unix
+    /// seconds; `None` once the client has shown it).
+    pub remove_tag: Option<String>,
+    pub remove_since: Option<i64>,
+    /// How much of the download is done, 0 to 1.
+    pub progress: Option<f64>,
+    /// When the download last gained bytes, in Unix seconds.
+    pub moved_at: Option<i64>,
+    /// When the client is told to remove the download, in Unix seconds.
+    pub cancel_at: Option<i64>,
+    pub cancelled_by: Option<i64>,
+    /// The state Undo restores while `cancel_at` is ahead.
+    pub prior_state: Option<RequestState>,
+    pub note: Option<String>,
     /// Unix seconds.
     pub created_at: i64,
     /// Unix seconds.
@@ -50,7 +71,7 @@ pub struct RequestRow {
 }
 
 /// The outcome of [`start`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Started {
     pub request: RequestRow,
     /// False when the reader already had a live request and it is returned unchanged.
@@ -74,6 +95,7 @@ fn row_to_request(row: &SqliteRow) -> Result<RequestRow, sqlx::Error> {
     let kind: String = row.try_get("kind")?;
     let state: String = row.try_get("state")?;
     let reason: Option<String> = row.try_get("stuck_reason")?;
+    let prior: Option<String> = row.try_get("prior_state")?;
     Ok(RequestRow {
         id: row.try_get("id")?,
         book_uuid: row.try_get("book_uuid")?,
@@ -85,6 +107,17 @@ fn row_to_request(row: &SqliteRow) -> Result<RequestRow, sqlx::Error> {
             .transpose()?,
         stuck_detail: row.try_get("stuck_detail")?,
         chosen_result_id: row.try_get("chosen_result_id")?,
+        client_tag: row.try_get("client_tag")?,
+        remove_tag: row.try_get("remove_tag")?,
+        remove_since: row.try_get("remove_since")?,
+        progress: row.try_get("progress")?,
+        moved_at: row.try_get("moved_at")?,
+        cancel_at: row.try_get("cancel_at")?,
+        cancelled_by: row.try_get("cancelled_by")?,
+        prior_state: prior
+            .map(|p| RequestState::from_db(&p).ok_or_else(|| corrupt("prior_state", p)))
+            .transpose()?,
+        note: row.try_get("note")?,
         created_at: row.try_get("created_at")?,
         updated_at: row.try_get("updated_at")?,
     })
@@ -168,15 +201,16 @@ pub async fn list_for_book(
         .collect::<Result<Vec<_>, sqlx::Error>>()?)
 }
 
-/// The versions worth showing for a request, best first. Rejected ones are kept in the
-/// table but never returned.
+/// The versions worth showing for a request, best first: the ones to choose from, then the
+/// ones that were picked and given up (`rejected`). Versions the ranking dropped are never
+/// returned.
 pub async fn versions(
     pool: &SqlitePool,
     request_id: i64,
 ) -> Result<Vec<RequestVersion>, RequestError> {
     let rows = sqlx::query(
-        "SELECT id, title, size_bytes, format, indexer, best_match FROM book_request_results
-         WHERE request_id = ? AND rejected = 0 ORDER BY score DESC, id",
+        "SELECT id, title, size_bytes, format, indexer, best_match, tried FROM book_request_results
+         WHERE request_id = ? AND (rejected = 0 OR tried = 1) ORDER BY tried, score DESC, id",
     )
     .bind(request_id)
     .fetch_all(pool)
@@ -191,18 +225,25 @@ pub async fn versions(
                 format: r.try_get("format")?,
                 indexer: r.try_get("indexer")?,
                 best_match: r.try_get::<i64, _>("best_match")? != 0,
+                rejected: r.try_get::<i64, _>("tried")? != 0,
             })
         })
         .collect::<Result<Vec<_>, sqlx::Error>>()?)
 }
 
 /// Record how a search ended, but only for a request still `looking`: one that was
-/// restarted, picked or answered meanwhile keeps its state.
+/// restarted, picked or answered meanwhile keeps its state. Versions given up earlier stay
+/// in the table and are not offered again; a search that finds nothing else ends `not_found`.
 pub async fn finish_search(
     pool: &SqlitePool,
     id: i64,
     outcome: SearchOutcome,
 ) -> Result<(), RequestError> {
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+    let outcome = match outcome {
+        SearchOutcome::Found(ranked) => without_given_up(&mut tx, id, ranked).await?,
+        stuck => stuck,
+    };
     let (state, reason, detail) = match &outcome {
         SearchOutcome::Found(_) => (RequestState::Choose, None, None),
         SearchOutcome::Stuck { reason, detail } => (
@@ -211,7 +252,6 @@ pub async fn finish_search(
             detail.as_deref(),
         ),
     };
-    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     let moved = sqlx::query(&format!(
         "UPDATE book_requests SET state = ?, stuck_reason = ?, stuck_detail = ?, updated_at = {NOW}
          WHERE id = ? AND state = 'looking'"
@@ -227,7 +267,7 @@ pub async fn finish_search(
         return Ok(());
     }
     if let SearchOutcome::Found(ranked) = &outcome {
-        sqlx::query("DELETE FROM book_request_results WHERE request_id = ?")
+        sqlx::query("DELETE FROM book_request_results WHERE request_id = ? AND tried = 0")
             .bind(id)
             .execute(&mut *tx)
             .await?;
@@ -237,6 +277,29 @@ pub async fn finish_search(
     }
     tx.commit().await?;
     Ok(())
+}
+
+/// `ranked` without the releases this request already tried and gave up; `not_found` when none that
+/// was worth showing is left.
+async fn without_given_up(
+    tx: &mut sqlx::SqliteConnection,
+    id: i64,
+    mut ranked: Vec<Ranked>,
+) -> Result<SearchOutcome, sqlx::Error> {
+    let given_up: Vec<String> = sqlx::query_scalar(
+        "SELECT guid FROM book_request_results WHERE request_id = ? AND tried = 1",
+    )
+    .bind(id)
+    .fetch_all(tx)
+    .await?;
+    ranked.retain(|r| !given_up.contains(&r.release.guid));
+    if ranked.iter().all(|r| r.rejected) {
+        return Ok(SearchOutcome::Stuck {
+            reason: StuckReason::NotFound,
+            detail: None,
+        });
+    }
+    Ok(SearchOutcome::Found(ranked))
 }
 
 async fn insert_result(
@@ -266,10 +329,25 @@ async fn insert_result(
     Ok(())
 }
 
-/// Send a `looking` or `stuck` request back to `looking` and forget what it found.
-/// [`RequestError::WrongState`] for one already waiting on a pick or picked.
-pub async fn restart(pool: &SqlitePool, id: i64) -> Result<(), RequestError> {
+/// Send a `looking` or `stuck` request back to `looking` and forget what it found, and say
+/// what it is now in. A request stuck on a stopped download keeps what was found: it goes
+/// back to choosing, as [`swap`] does. [`RequestError::WrongState`] for one already waiting
+/// on a pick or picked.
+pub async fn restart(pool: &SqlitePool, id: i64, now: i64) -> Result<RequestState, RequestError> {
     let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+    let stuck: Option<(String, Option<String>)> =
+        sqlx::query_as("SELECT state, stuck_reason FROM book_requests WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&mut *tx)
+            .await?;
+    let stopped = stuck.is_some_and(|(state, reason)| {
+        state == "stuck" && reason.as_deref() == Some(StuckReason::StoppedMoving.as_str())
+    });
+    if stopped {
+        let row = change::swap_in(&mut tx, id, now, None).await?;
+        tx.commit().await?;
+        return Ok(row.state);
+    }
     let moved = sqlx::query(&format!(
         "UPDATE book_requests
          SET state = 'looking', stuck_reason = NULL, stuck_detail = NULL, updated_at = {NOW}
@@ -287,7 +365,7 @@ pub async fn restart(pool: &SqlitePool, id: i64) -> Result<(), RequestError> {
         .execute(&mut *tx)
         .await?;
     tx.commit().await?;
-    Ok(())
+    Ok(RequestState::Looking)
 }
 
 /// Pick `result_id` for request `id`. The version must be a kept one of this request, and the
@@ -296,7 +374,7 @@ pub async fn restart(pool: &SqlitePool, id: i64) -> Result<(), RequestError> {
 /// checks and the change are one statement, so a double click picks once.
 pub async fn choose(pool: &SqlitePool, id: i64, result_id: i64) -> Result<(), RequestError> {
     let moved = sqlx::query(&format!(
-        "UPDATE book_requests SET state = 'chosen', chosen_result_id = ?1, updated_at = {NOW}
+        "UPDATE book_requests SET state = 'chosen', chosen_result_id = ?1, note = NULL, updated_at = {NOW}
          WHERE id = ?2 AND state = 'choose'
            AND EXISTS (SELECT 1 FROM book_request_results
                        WHERE id = ?1 AND request_id = ?2 AND rejected = 0)"
@@ -314,6 +392,16 @@ pub async fn choose(pool: &SqlitePool, id: i64, result_id: i64) -> Result<(), Re
         _ => Err(RequestError::NotFound),
     }
 }
+
+mod change;
+mod download;
+
+pub use change::{cancel, swap, undo_cancel, CANCEL_GRACE_SECS};
+pub use download::{
+    awaiting_add, begin_download, claim_due_cancels, downloading, finish_removal,
+    has_download_work, mark_on_its_way, mark_removal_seen, mark_stopped, pending_removals,
+    record_progress, unix_now,
+};
 
 #[cfg(test)]
 mod tests;
