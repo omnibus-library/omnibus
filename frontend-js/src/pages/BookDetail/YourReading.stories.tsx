@@ -120,7 +120,9 @@ export const ListsTimePaceLastReadLongestTimeLeftAndRatings: Story = {
   },
   play: async ({ canvas }) => {
     const list = await canvas.findByTestId("bp-stats");
-    await expect(canvas.getByText(/^Reading since /)).toBeInTheDocument();
+    await expect(
+      await canvas.findByText(/^Reading since /),
+    ).toBeInTheDocument();
     await waitFor(() =>
       expect(rowsOf(list)).toEqual([
         ["Time read", "1 h over 3 sessions"],
@@ -251,7 +253,9 @@ export const HouseholdFailureLeavesTheBlockOut: Story = {
     await expect(
       canvas.queryByRole("heading", { name: "Household" }),
     ).not.toBeInTheDocument();
-    await expect(canvas.getByText("Not started yet")).toBeInTheDocument();
+    await expect(
+      await canvas.findByText("Not started yet"),
+    ).toBeInTheDocument();
   },
 };
 

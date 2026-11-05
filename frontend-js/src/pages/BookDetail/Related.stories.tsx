@@ -93,7 +93,14 @@ const LONG_SERIES = aWireSeries({
 });
 
 /** Focuses a card, which spreads the fan as a pointer does, and waits out its 620 ms. */
-const spreadTo = async (canvas: ReturnType<typeof within>, card: number) => {
+type Ctx = Parameters<NonNullable<Story["play"]>>[0];
+
+const spreadTo = async (
+  { canvas, userEvent }: Pick<Ctx, "canvas" | "userEvent">,
+  card: number,
+) => {
+  // The pointer an earlier story left over a card would name that card too.
+  await userEvent.hover(canvas.getByRole("heading", { name: /series$/ }));
   const link = fan(canvas).getAllByRole("link")[card];
   link?.focus();
   await expect(link).toHaveFocus();
@@ -121,10 +128,10 @@ export const ALongSeriesStaysInItsColumn: Story = {
   beforeEach({ msw }) {
     msw.use(getGetSeriesByIdMockHandler200(LONG_SERIES));
   },
-  play: async ({ canvas }) => {
+  play: async ({ canvas, userEvent }) => {
     const list = await canvas.findByTestId("bp-series-fan");
     await expect(overrun(list)).toBeLessThanOrEqual(0);
-    await spreadTo(canvas, 0);
+    await spreadTo({ canvas, userEvent }, 0);
     await expect(overrun(list)).toBeLessThanOrEqual(0);
   },
 };
@@ -133,9 +140,9 @@ export const ACrowdedSpreadNamesOnlyTheFocusedBook: Story = {
   beforeEach({ msw }) {
     msw.use(getGetSeriesByIdMockHandler200(LONG_SERIES));
   },
-  play: async ({ canvas }) => {
+  play: async ({ canvas, userEvent }) => {
     await canvas.findByTestId("bp-series-fan");
-    await spreadTo(canvas, 2);
+    await spreadTo({ canvas, userEvent }, 2);
     await expect(titleOpacities(canvas)).toEqual([
       "0",
       "0",
@@ -151,9 +158,9 @@ export const ACrowdedSpreadNamesOnlyTheFocusedBook: Story = {
 };
 
 export const AShortSeriesSpreadNamesEveryBook: Story = {
-  play: async ({ canvas }) => {
+  play: async ({ canvas, userEvent }) => {
     await canvas.findByTestId("bp-series-fan");
-    await spreadTo(canvas, 0);
+    await spreadTo({ canvas, userEvent }, 0);
     await expect(titleOpacities(canvas)).toEqual(["1", "1", "1"]);
   },
 };

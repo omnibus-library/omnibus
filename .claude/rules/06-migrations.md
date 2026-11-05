@@ -26,7 +26,9 @@ works in production.
    (your dev DB, a teammate's, CI, production) it is frozen — `sqlx`
    checksums each migration and a changed file fails startup with a
    checksum mismatch. That covers a comment-only edit: the checksum is of the
-   whole file. Always fix forward with a new `NNNN_` file.
+   whole file. Always fix forward with a new `NNNN_` file. The same
+   `migration numbers` job fails a PR that edits, renames or deletes a
+   migration `origin/main` already holds, before any smoke test runs.
    `db/migrations.lock` pins every checksum and the `migration_lock` test
    fails on a changed or missing one. After adding a migration run
    `UPDATE_MIGRATION_LOCK=1 cargo test -p omnibus-db migration_lock` and

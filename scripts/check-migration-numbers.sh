@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Fails when a migration this branch adds is numbered at or below the highest
-# migration on its base, which would collide once both land. Names the
-# colliding files and the next free number.
+# migration on its base, which would collide once both land, or when it
+# changes a migration the base already holds, which sqlx's checksum rejects on
+# every database that has run it. Names the offending files.
 #
 # Usage: scripts/check-migration-numbers.sh [base-ref]   (default origin/main)
 set -euo pipefail
@@ -35,5 +36,14 @@ if [ "${#collisions[@]}" -gt 0 ]; then
     printf 'These migrations are numbered at or below %04d, the highest on %s:\n' "$base_max" "$base" >&2
     printf '  %s\n' "${collisions[@]}" >&2
     printf 'Renumber them from %04d, then refresh db/migrations.lock.\n' "$((base_max + 1))" >&2
+    exit 1
+fi
+
+# --no-renames: a renamed file must show up as a deletion of the base's name.
+frozen="$(git diff --name-only --no-renames --diff-filter=MD "$base...HEAD" -- "$dir/*.sql")"
+if [ -n "$frozen" ]; then
+    printf 'These migrations already exist on %s, so every database that ran them rejects the change:\n' "$base" >&2
+    sed 's/^/  /' <<<"$frozen" >&2
+    printf 'Leave them as they are and fix forward in a new %04d_ file.\n' "$((base_max + 1))" >&2
     exit 1
 fi

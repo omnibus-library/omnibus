@@ -16,7 +16,7 @@ RUN set -eux; \
     deb="$(awk '{print $2}' /tmp/koreader.pin)"; \
     ver="${deb#koreader_}"; \
     ver="${ver%%-*}"; \
-    curl -fsSL --proto '=https' --tlsv1.2 \
+    curl -fsSL --proto '=https' --tlsv1.2 --retry 5 --retry-all-errors \
         -o "/tmp/$deb" \
         "https://github.com/koreader/koreader/releases/download/v$ver/$deb"; \
     (cd /tmp && sha256sum -c koreader.pin); \
