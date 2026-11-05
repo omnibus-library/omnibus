@@ -13,7 +13,7 @@ The flake exposes four purpose-built shells so daily cargo work doesn't pay for 
 
 | Shell | Headline tools | When to use |
 |---|---|---|
-| `default` (slim) | rust core (+ `llvm-tools-preview`) + sqlite + openssl + just + zellij + process-compose + stylelint + cargo-llvm-cov + cargo-nextest + luajit + kepubify | Daily `cargo test`/`clippy`/`fmt`, editor, rust-analyzer, `just lint`, `just lint-css`, `just coverage`, `just koreader-plugin-test` — this is what direnv auto-loads via `.envrc` |
+| `default` (slim) | rust core (+ `llvm-tools-preview`) + sqlite + openssl + just + zellij + process-compose + stylelint + cargo-llvm-cov + cargo-nextest + luajit + kepubify + jq | Daily `cargo test`/`clippy`/`fmt`, editor, rust-analyzer, `just lint`, `just lint-css`, `just coverage`, `just koreader-plugin-test`, `just ios-sim-test` — this is what direnv auto-loads via `.envrc` |
 | `web` | default + node + pnpm + ffmpeg | `just dev-up` (it builds the React client), `just react`, the `frontend-js/` checks, anything that drives the Playwright npm project |
 | `e2e` | web + Playwright Chromium bundle | `pnpm exec playwright test`, `just lint-ts`, `just e2e-ci`, the `playwright` pane in the multiplexer, CI's E2E job |
 | `audit` | default + cargo-audit + cargo-deny | Local `cargo audit` / `cargo deny`, mirrors CI's security job |

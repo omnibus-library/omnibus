@@ -7,7 +7,9 @@
 # debug build and unacceptable in a shipped one, so "it's inside #if DEBUG" is
 # not a claim to take on trust — this checks the built binary. The
 # `omnibus://debug/screen/…` links screenshot tours open screens with
-# (omnibus-ios/omnibus/App/DebugScreenLink.swift) are held to the same bar.
+# (omnibus-ios/omnibus/App/DebugScreenLink.swift) and the
+# `omnibus://debug/orientation/…` links that rotate them
+# (omnibus-ios/omnibus/App/DebugOrientation.swift) are held to the same bar.
 #
 # What it can and cannot see: it looks for the string literals those hooks are
 # addressed by, so a `#if DEBUG` block that leaked into Release is caught as
@@ -38,6 +40,7 @@ markers=(
   "--uitest-reset"
   "--uitest-shell"
   "omnibus.debug.screen"
+  "omnibus.debug.orientation"
 )
 
 # A guard that cannot fail is not a guard. If a marker has been renamed in the

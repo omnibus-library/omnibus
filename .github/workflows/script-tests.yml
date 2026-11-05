@@ -15,7 +15,7 @@
 # Deliberately scoped to these suites rather than all of scripts/tests/: the
 # dev-port/dev-serve/with-dev-env bash tests expect a Nix dev shell and a
 # worktree layout that this runner does not have. The scratch-server, Docker
-# entrypoint, dev-server-down, dev-react-build and check-migration-numbers ones are plain bash with stubbed I/O,
+# entrypoint, dev-server-down, dev-react-build, check-migration-numbers and ios-sim ones are plain bash with stubbed I/O,
 # stand-in processes or scratch git repos, so they run here.
 name: Script tests
 
@@ -49,6 +49,10 @@ on:
       - "scripts/tests/dev-react-build.test.sh"
       - "scripts/check-migration-numbers.sh"
       - "scripts/tests/check-migration-numbers.test.sh"
+      - "scripts/lib/ios-sim.sh"
+      - "scripts/ios-sim.sh"
+      - "scripts/explore/ios.sh"
+      - "scripts/tests/ios-sim-ensure.test.sh"
       - ".github/workflows/script-tests.yml"
   pull_request:
     paths:
@@ -76,6 +80,10 @@ on:
       - "scripts/tests/dev-react-build.test.sh"
       - "scripts/check-migration-numbers.sh"
       - "scripts/tests/check-migration-numbers.test.sh"
+      - "scripts/lib/ios-sim.sh"
+      - "scripts/ios-sim.sh"
+      - "scripts/explore/ios.sh"
+      - "scripts/tests/ios-sim-ensure.test.sh"
       - ".github/workflows/script-tests.yml"
 
 permissions:
@@ -190,6 +198,15 @@ jobs:
 
       - name: Run suite
         run: bash scripts/tests/dev-server-down.test.sh
+
+  ios-sim:
+    name: ios-sim.sh
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run suite
+        run: bash scripts/tests/ios-sim-ensure.test.sh
 
   dev-react-build:
     name: dev-port.sh React build
