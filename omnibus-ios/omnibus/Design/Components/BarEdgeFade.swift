@@ -11,7 +11,8 @@ import SwiftUI
 
 extension View {
     /// Fades this scroll view's content out at `edges` of its safe area, where its inset bars begin.
-    func barEdgeFade(_ edges: VerticalEdge.Set) -> some View {
+    /// `topRaise` lifts the top fade that far into its bar's band, for content resting there on purpose.
+    func barEdgeFade(_ edges: VerticalEdge.Set, topRaise: CGFloat = 0) -> some View {
         mask {
             VStack(spacing: 0) {
                 if edges.contains(.top) {
@@ -25,7 +26,7 @@ extension View {
                 }
             }
             // An edge left unfaded reaches far past the safe area, so nothing is cut there.
-            .padding(.top, -(edges.contains(.top) ? BarEdgeFade.reach : BarEdgeFade.overhang))
+            .padding(.top, -(edges.contains(.top) ? BarEdgeFade.reach + topRaise : BarEdgeFade.overhang))
             .padding(.bottom, -(edges.contains(.bottom) ? BarEdgeFade.reach : BarEdgeFade.overhang))
             .padding(.horizontal, -BarEdgeFade.overhang)
         }

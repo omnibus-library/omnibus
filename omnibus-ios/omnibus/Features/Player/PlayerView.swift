@@ -183,6 +183,12 @@ struct PlayerView: View {
                 }
             }
             statusLayers
+            // Over the artwork's region, which starts at the corner: across the
+            // whole player the banners sat on a low transport, where the stacked
+            // player's inset keeps them clear of it.
+            banners
+                .frame(width: arrangement.artwork.width, height: arrangement.artwork.height)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .background(ScreenBackground())
     }
@@ -192,6 +198,7 @@ struct PlayerView: View {
             backdrop
             stage
             statusLayers
+            banners
         }
         // `width`, the surface's own, pins these rows to a definite width.
         // Without one they inherit an unbounded proposal from the cover stack,
@@ -217,7 +224,7 @@ struct PlayerView: View {
         .background(ScreenBackground())
     }
 
-    /// Loading, buffering, the download in flight and the banner slot, over either arrangement.
+    /// Loading, buffering and the download in flight, over either arrangement.
     @ViewBuilder
     private var statusLayers: some View {
         ZStack {
@@ -249,7 +256,14 @@ struct PlayerView: View {
                     Spacer(minLength: 0)
                 }
             }
+        }
+    }
 
+    /// The banner slot: a playback error, else an offer to jump. Each banner
+    /// sits at the foot of the region it is laid over, clear of the transport.
+    @ViewBuilder
+    private var banners: some View {
+        ZStack {
             if let message = player.error {
                 // Takes the banner slot ahead of the offers: an offer to jump
                 // somewhere is noise while nothing is playing.

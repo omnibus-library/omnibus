@@ -21,6 +21,8 @@ struct BookDetailView: View {
     static let actionBar: CGFloat = 62
     /// Scroll id of the tab strip, for bringing a section to the top.
     static let tabsAnchor = "book-tabs"
+    /// Scroll id of the panel's top in the two-pane page, where the tabs have their own pane.
+    static let panelAnchor = "book-panel"
     /// Scroll id of the series section, which the byline's link jumps to.
     static let seriesAnchor = "book-series"
 
@@ -374,24 +376,31 @@ struct BookDetailView: View {
     /// Most of a pane's free height the cover may take, so the title still
     /// shows above the action row on a short page, like a folded Duo on its side.
     static let stageCoverShare: CGFloat = 0.44
-    /// The action row over the foot of the page: its top padding and its button.
-    static let actionRowHeight: CGFloat = 62
+    /// The stage's own top margin, above the cover.
+    static let stageTop: CGFloat = 12
 
     /// The stage cover's scale in a pane `height` tall: whole wherever that leaves the title room.
     static func stageCoverScale(paneHeight: CGFloat, underBar: Bool) -> CGFloat {
-        let free = paneHeight - actionRowHeight - (underBar ? 0 : barRow)
+        let free = paneHeight - actionBar - (underBar ? 0 : barRow)
         return min(1, max(0.5, free * stageCoverShare / StageCover.height))
     }
 
+    /// How far the stage pane's top fade rises into the bar's row: a stage
+    /// standing between the discs fades from just above where its cover rests.
+    static func stageFadeRaise(underBar: Bool) -> CGFloat {
+        underBar ? barRow - stageTop + BarEdgeFade.length - BarEdgeFade.reach : 0
+    }
+
     private func content(_ book: Book) -> some View {
-        GeometryReader { geometry in
+        // The keyboard-down size: a note field's keyboard must not flip the page's layout.
+        PaneGeometryReader { pane, geometry in
             if let split = PaneSplit.resolve(
-                size: geometry.size,
-                fold: geometry.activeFold,
+                size: pane.size,
+                fold: pane.fold,
                 share: Self.stagePaneShare,
                 minimumWidth: Self.twoPaneWidth
             ) {
-                twoPaneContent(book, split: split, height: geometry.size.height)
+                twoPaneContent(book, split: split, height: pane.size.height)
             } else {
                 columnContent(book, geometry: geometry)
             }
@@ -410,12 +419,16 @@ struct BookDetailView: View {
                 // page fades out under its bar instead.
                 ScrollView(.vertical) {
                     // Between the bar's discs only where the pane clears them.
-                    stage(book, proxy: proxy, backdrop: false, underBar: underBar, coverScale: coverScale)
+                    stage(
+                        book, proxy: proxy, backdrop: false, underBar: underBar, coverScale: coverScale,
+                        jumpAnchor: Self.panelAnchor
+                    )
                 }
                 .scrollIndicators(.hidden)
                 // The cover's halo is wider than the pane; clipped, it ended in a straight edge.
+                // The fade's mask runs on past the sides, so it is cut only under the bars.
                 .scrollClipDisabled()
-                .barEdgeFade(.bottom)
+                .barEdgeFade([.top, .bottom], topRaise: Self.stageFadeRaise(underBar: underBar))
                 .safeAreaInset(edge: .top, spacing: 0) {
                     Color.clear.frame(height: Self.barRow)
                 }
@@ -427,6 +440,10 @@ struct BookDetailView: View {
                 ScrollView(.vertical) {
                     panel(book)
                         .frame(maxWidth: .infinity, alignment: .top)
+                        // Where the stage's shortcuts aim: the strip tops this pane, not the stage's.
+                        .background(alignment: .top) {
+                            Color.clear.frame(height: 1).id(Self.panelAnchor)
+                        }
                 }
                 .scrollIndicators(.hidden)
                 .barEdgeFade(.top)
@@ -495,7 +512,7 @@ struct BookDetailView: View {
 
     private func stage(
         _ book: Book, proxy: ScrollViewProxy, backdrop: Bool = true, underBar: Bool = true,
-        coverScale: CGFloat = 1
+        coverScale: CGFloat = 1, jumpAnchor: String = Self.tabsAnchor
     ) -> some View {
         BookStage(
             book: book,
@@ -506,10 +523,10 @@ struct BookDetailView: View {
                 || downloads.isDownloaded(book.uuid, kind: .audio),
             coverScale: coverScale,
             onReview: composeReview,
-            onReviews: { jump(to: .reviews, proxy: proxy) },
+            onReviews: { jump(to: .reviews, anchor: jumpAnchor, proxy: proxy) },
             onSeries: { jumpToSeries(proxy: proxy) }
         )
-        .padding(.top, 12)
+        .padding(.top, Self.stageTop)
         .background {
             // Under the iPhone Duo's side bar too: a wash that stopped at the
             // safe area left the column a black strip beside it.
@@ -564,11 +581,11 @@ struct BookDetailView: View {
         withAnimation(reduceMotion ? nil : Motion.settle) { tab = next }
     }
 
-    /// Bring a tab to the top of the page, under the bar.
-    private func jump(to next: BookTab, proxy: ScrollViewProxy) {
+    /// Bring a tab to the top of the page, under the bar: `anchor` is where its panel starts.
+    private func jump(to next: BookTab, anchor: String, proxy: ScrollViewProxy) {
         pick(next)
         withAnimation(reduceMotion ? nil : Motion.settle) {
-            proxy.scrollTo(Self.tabsAnchor, anchor: .top)
+            proxy.scrollTo(anchor, anchor: .top)
         }
     }
 

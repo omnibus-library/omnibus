@@ -14,7 +14,7 @@ struct CoverGridTests {
     }
 
     @Test func foldColumnsAlignCellsByTheTopOfTheirCoverToo() {
-        let layout = FoldGridLayout(perSide: 3, leadingInset: 0, trailingInset: 0, foldGap: 25)
+        let layout = FoldGridLayout(perSide: 3, span: FoldSpan(leading: 0, trailing: 0, gap: 25))
         for density in CoverGridDensity.allCases {
             #expect(layout.columns(density).allSatisfy { $0.alignment == .top })
         }

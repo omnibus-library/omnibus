@@ -30,7 +30,7 @@ struct ContinueHero: View {
     /// Cards in view at once: two where the screen holds two phone-width
     /// cards (the open iPhone Duo, an iPad), so a lone card never stretches.
     private var perPage: Int {
-        ContinueHeroLayout.cardsPerPage(width: width, count: points.count)
+        ContinueHeroLayout.cardsPerPage(width: width, count: points.count, folded: foldSpan != nil)
     }
 
     /// The fold the two cards sit either side of, when there is one.
@@ -79,7 +79,7 @@ struct ContinueHero: View {
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         .onFoldSpanChange { foldSpan = $0 }
-        .onAppear { selected = selected ?? points.first?.id }
+        .onAppear { selected = pageStart(of: selected ?? points.first?.id) }
         .onChange(of: points.map(\.id)) { _, ids in
             // The rail is rewritten on every position save. Holding the card
             // that's showing — rather than resetting to the front — is what
@@ -88,7 +88,16 @@ struct ContinueHero: View {
             if selected.map(ids.contains) != true {
                 selected = ids.first
             }
+            selected = pageStart(of: selected)
         }
+        // Two up, a card that led no page would scroll to a stop paging never makes.
+        .onChange(of: perPage) { _, _ in selected = pageStart(of: selected) }
+    }
+
+    /// The card leading the page `id` is on, which is where the carousel can rest.
+    private func pageStart(of id: ResumePoint.ID?) -> ResumePoint.ID? {
+        guard let index = points.firstIndex(where: { $0.id == id }) else { return id }
+        return points[ContinueHeroLayout.pageStart(of: index, count: points.count, perPage: perPage)].id
     }
 
     /// Drops the nils `scrollPosition` writes mid-gesture. Left as-is they read
@@ -123,8 +132,9 @@ enum ContinueHeroLayout {
     /// Width the carousel needs before it shows two cards at once.
     static let twoUpWidth: CGFloat = 700
 
-    static func cardsPerPage(width: CGFloat, count: Int) -> Int {
-        width >= twoUpWidth && count > 1 ? 2 : 1
+    /// Two up across a fold even for a lone card, so it keeps to one side of the hinge.
+    static func cardsPerPage(width: CGFloat, count: Int, folded: Bool = false) -> Int {
+        width >= twoUpWidth && (count > 1 || folded) ? 2 : 1
     }
 
     static func pageCount(count: Int, perPage: Int) -> Int {
@@ -136,6 +146,12 @@ enum ContinueHeroLayout {
     static func page(settledAt index: Int, count: Int, perPage: Int) -> Int {
         let pages = pageCount(count: count, perPage: perPage)
         return index >= count - perPage ? max(pages - 1, 0) : index / max(perPage, 1)
+    }
+
+    /// The index of the card leading the page `index` is on: where paging can stop.
+    static func pageStart(of index: Int, count: Int, perPage: Int) -> Int {
+        let page = page(settledAt: index, count: count, perPage: perPage)
+        return min(page * max(perPage, 1), max(count - perPage, 0))
     }
 }
 

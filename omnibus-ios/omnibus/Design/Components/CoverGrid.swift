@@ -58,9 +58,8 @@ enum CoverGridDensity: CaseIterable {
 struct FoldGridLayout: Equatable {
     /// Columns on each side of the fold.
     var perSide: Int
-    var leadingInset: CGFloat
-    var trailingInset: CGFloat
-    var foldGap: CGFloat
+    /// The insets that centre the grid on the fold, and the fold's width.
+    var span: FoldSpan
 
     /// Nil when the fold misses the grid or either side can't hold a column.
     static func resolve(width: CGFloat, fold: Fold, density: CoverGridDensity) -> FoldGridLayout? {
@@ -68,17 +67,12 @@ struct FoldGridLayout: Equatable {
         let side = span.side(of: width)
         let perSide = Int(((side + density.spacing) / (density.minimum + density.spacing)).rounded(.down))
         guard perSide >= 1 else { return nil }
-        return FoldGridLayout(
-            perSide: perSide,
-            leadingInset: span.leading,
-            trailingInset: span.trailing,
-            foldGap: span.gap
-        )
+        return FoldGridLayout(perSide: perSide, span: span)
     }
 
     func columns(_ density: CoverGridDensity) -> [GridItem] {
         (0..<perSide * 2).map { index in
-            GridItem(.flexible(), spacing: index == perSide - 1 ? foldGap : density.spacing, alignment: .top)
+            GridItem(.flexible(), spacing: index == perSide - 1 ? span.gap : density.spacing, alignment: .top)
         }
     }
 }
@@ -107,8 +101,8 @@ struct CoverGrid<Item: Identifiable, Cell: View>: View {
                 cell(item).cascadeIn()
             }
         }
-        .padding(.leading, foldLayout?.leadingInset ?? 0)
-        .padding(.trailing, foldLayout?.trailingInset ?? 0)
+        .padding(.leading, foldLayout?.span.leading ?? 0)
+        .padding(.trailing, foldLayout?.span.trailing ?? 0)
         .cascadeFill()
         // Measured outside the insets, so applying them can't move the fold it measured.
         .onGeometryChange(for: FoldGridLayout?.self) { proxy in
