@@ -1,6 +1,7 @@
 //  DebugLink.swift
-//  The path parser every DEBUG-only `omnibus://debug/<word>/…` link shares, so
-//  the screen and orientation links read their words the same way.
+//  The path parser the DEBUG-only screen and orientation links share.
+//  Both read their `omnibus://debug/<word>/…` words through it, so they split
+//  the path the same way; the offline switch parses its own URL.
 
 #if DEBUG
 import Foundation
