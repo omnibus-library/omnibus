@@ -1,6 +1,6 @@
 //  ReaderSideColumnTests.swift
-//  The reader taking back an iPhone Duo's side bar column while its bars are
-//  hidden, clearing only the camera. The regions are the ones the iPhone Duo
+//  The reader taking back an iPhone Duo's side bar column, its status bar kept
+//  hidden while it does, clearing only the camera. The regions are the ones the iPhone Duo
 //  simulator reports on its outer display: the camera, and the status bar's
 //  housing around it.
 
@@ -86,4 +86,23 @@ private let sidewaysHousing = CGRect(x: 594, y: 384, width: 84, height: 82)
     #expect(reclaimed.landscapeStageWidth == tall.height - 14 - 2 * ReaderScreen.stageGutter)
     #expect(SpreadFit(screen: kept) == .never)
     #expect(SpreadFit(screen: reclaimed) == .inLandscape)
+}
+
+@Test func hidesStatusBarKeepsItHiddenWhileTheSideColumnIsTakenBack() {
+    // Even where the bar fits in the top inset, showing it with the chrome would
+    // hand the column back and reflow the page on every centre tap.
+    for chromeVisible in [true, false] {
+        for fits in [true, false] {
+            #expect(
+                ReaderController.hidesStatusBar(
+                    chromeVisible: chromeVisible, fitsInTopInset: fits, reclaimingSideColumn: true
+                ))
+        }
+    }
+}
+
+@Test func hidesStatusBarFollowsTheChromeOnlyWhereItFitsWithoutASideColumn() {
+    #expect(!ReaderController.hidesStatusBar(chromeVisible: true, fitsInTopInset: true, reclaimingSideColumn: false))
+    #expect(ReaderController.hidesStatusBar(chromeVisible: false, fitsInTopInset: true, reclaimingSideColumn: false))
+    #expect(ReaderController.hidesStatusBar(chromeVisible: true, fitsInTopInset: false, reclaimingSideColumn: false))
 }

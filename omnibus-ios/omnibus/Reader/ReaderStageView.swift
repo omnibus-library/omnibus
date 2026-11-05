@@ -16,7 +16,7 @@ final class ReaderStageView: UIView {
     /// Told whether a hinged phone is folded, as the hinge moves.
     var onFoldChange: ((Bool) -> Void)?
     /// The edge an iPhone Duo runs its bars down, whose column the page takes
-    /// back while the status bar is hidden; nil elsewhere.
+    /// back; nil elsewhere. The reader keeps the status bar hidden while one is set.
     var sideColumnEdge: UIRectEdge? {
         didSet { if sideColumnEdge != oldValue { reportScreen() } }
     }
@@ -72,7 +72,7 @@ final class ReaderStageView: UIView {
         guard let window else { return }
         var screen = ReaderScreen(size: window.bounds.size, insets: window.safeAreaInsets)
         let statusBarHidden = window.windowScene?.statusBarManager?.isStatusBarHidden ?? false
-        screen.stageInsets = reclaimedInsets(in: window, screen: screen, statusBarHidden: statusBarHidden)
+        screen.stageInsets = reclaimedInsets(in: window, screen: screen)
         guard screen != reportedScreen || statusBarHidden != reportedStatusBarHidden else { return }
         reportedScreen = screen
         reportedStatusBarHidden = statusBarHidden
@@ -80,10 +80,13 @@ final class ReaderStageView: UIView {
     }
 
     /// The side column given back, or nil where the stage keeps the safe area.
-    private func reclaimedInsets(in window: UIWindow, screen: ReaderScreen, statusBarHidden: Bool) -> UIEdgeInsets? {
+    ///
+    /// Gated on the reader's policy, not the live bar: a sheet over the reader that
+    /// shows the status bar (the player's) would otherwise reflow the page behind it.
+    private func reclaimedInsets(in window: UIWindow, screen: ReaderScreen) -> UIEdgeInsets? {
         // The occlusion regions are UIKit in the iOS 27.1 SDK, like the hinge.
         #if canImport(UIKit, _version: 9127.0.85)
-        if #available(iOS 27.1, *), statusBarHidden, let edge = sideColumnEdge {
+        if #available(iOS 27.1, *), let edge = sideColumnEdge {
             let occlusions = window.reservedRegions(kind: .occlusion, options: [])
                 .filter(\.isActive)
                 .map(\.frame)

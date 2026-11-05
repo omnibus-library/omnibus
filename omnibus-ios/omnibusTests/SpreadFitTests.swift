@@ -219,6 +219,17 @@ struct ReaderStatusBarTests {
         #expect(controller.hidesStatusBar(chromeVisible: true))
     }
 
+    @Test("a screen whose side column the page takes back keeps the status bar hidden with the chrome")
+    func sideColumnKeepsTheStatusBarHidden() {
+        report(iPhone18Pro.upright, statusBarHidden: true)
+        #expect(!controller.hidesStatusBar(chromeVisible: true))
+
+        controller.sideColumnEdge = .right
+
+        #expect(controller.hidesStatusBar(chromeVisible: true))
+        #expect(controller.hidesStatusBar(chromeVisible: false))
+    }
+
     @Test("a phone turned on its side stops showing the status bar with the chrome")
     func turningSidewaysHidesTheStatusBarAgain() {
         report(iPhone18Pro.upright, statusBarHidden: true)

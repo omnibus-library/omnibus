@@ -416,7 +416,20 @@ final class ReaderController: NSObject {
     /// Learnt from reports taken with the bar hidden alone; with it showing, another screen's
     /// bar (the audio player's) can raise the top inset and keep the decision up.
     func hidesStatusBar(chromeVisible: Bool) -> Bool {
-        !(chromeVisible && statusBarFitsInTopInset)
+        Self.hidesStatusBar(
+            chromeVisible: chromeVisible,
+            fitsInTopInset: statusBarFitsInTopInset,
+            reclaimingSideColumn: sideColumnEdge != nil
+        )
+    }
+
+    /// The status-bar policy: always hidden while a side column is taken back, whose
+    /// width would otherwise come and go with the chrome; else shown with the chrome
+    /// only where the bar fits in the top inset.
+    nonisolated static func hidesStatusBar(
+        chromeVisible: Bool, fitsInTopInset: Bool, reclaimingSideColumn: Bool
+    ) -> Bool {
+        reclaimingSideColumn || !(chromeVisible && fitsInTopInset)
     }
 
     /// Listens to the window and hinge the stage reports.
@@ -434,7 +447,8 @@ final class ReaderController: NSObject {
     @ObservationIgnored private weak var stage: ReaderStageView?
 
     /// The edge an iPhone Duo runs its bars down, which the reader view reads
-    /// from its environment; the stage takes that column back while reading.
+    /// from its environment; the stage takes that column back, and the status
+    /// bar stays hidden while it does. Setting it re-reports the screen at once.
     var sideColumnEdge: UIRectEdge? {
         didSet { stage?.sideColumnEdge = sideColumnEdge }
     }

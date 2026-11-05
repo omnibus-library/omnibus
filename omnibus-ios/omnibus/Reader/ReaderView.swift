@@ -201,7 +201,7 @@ struct ReaderView: View {
         // reading theme — white-on-white otherwise. Sheets opt back out below.
         .preferredColorScheme(pageScheme)
         .task { await prepare() }
-        // An iPhone Duo's bar column, which the page takes back while the bars are hidden.
+        // An iPhone Duo's bar column, which the page takes back; the status bar stays hidden there.
         .onChange(of: sideBarEdge, initial: true) { _, edge in
             controller.sideColumnEdge = edge?.rectEdge(in: layoutDirection)
         }
