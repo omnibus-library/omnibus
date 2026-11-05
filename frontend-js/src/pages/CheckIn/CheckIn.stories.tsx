@@ -104,7 +104,7 @@ export const ShowsMatchingWhileResolving: Story = {
     await expect(resolving).toHaveTextContent(
       "Checking your library, then the web.",
     );
-    await expect(resolved).toEqual([ISBN]);
+    await waitFor(() => expect(resolved).toEqual([ISBN]));
 
     gate.release();
     await canvas.findByTestId("check-in-confirm");

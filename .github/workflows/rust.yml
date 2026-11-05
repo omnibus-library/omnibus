@@ -75,7 +75,9 @@ jobs:
         run: cargo fmt --all --check
 
   # Names a new migration numbered at or below the base's highest, which
-  # otherwise surfaces later as a duplicate `_sqlx_migrations.version`.
+  # otherwise surfaces later as a duplicate `_sqlx_migrations.version`, and
+  # any migration the base already holds that the branch changed, which
+  # otherwise surfaces as a checksum mismatch on every migrated database.
   migration-numbers:
     name: migration numbers
     needs: changes
@@ -86,7 +88,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Check new migrations are numbered above the base's
+      - name: Check new migrations are numbered above the base's and old ones untouched
         env:
           BASE_REF: origin/${{ github.base_ref }}
         run: scripts/check-migration-numbers.sh "$BASE_REF"

@@ -72,6 +72,23 @@ status=0
 "$script" main >/dev/null 2>&1 || status=$?
 check "a branch with no new migrations passes" 0 "$status"
 
+# The branch edits a migration main already holds.
+fresh_repo edited
+echo "-- a comment" >>db/migrations/0002_second.sql
+git add . && git commit -qm edit
+status=0
+output="$("$script" main 2>&1)" || status=$?
+check "a branch editing a migration the base holds fails" 1 "$status"
+check "the failure names the edited file" yes \
+    "$(grep -q 'db/migrations/0002_second.sql' <<<"$output" && echo yes || echo no)"
+
+fresh_repo renamed
+git mv db/migrations/0002_second.sql db/migrations/0002_renamed.sql
+git commit -qm rename
+status=0
+"$script" main >/dev/null 2>&1 || status=$?
+check "a branch renaming a migration the base holds fails" 1 "$status"
+
 echo "---"
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

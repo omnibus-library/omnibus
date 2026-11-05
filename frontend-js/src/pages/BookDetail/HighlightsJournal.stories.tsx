@@ -112,14 +112,14 @@ export const AWishedBookWithNoFileKeepsItsTwoNotesAndOffersNoComposer: Story = {
     );
   },
   play: async ({ canvas }) => {
-    await expect(
-      await canvas.findByTestId("highlights-empty", undefined, {
-        timeout: 3000,
-      }),
-    ).toHaveTextContent("Find a copy first");
-    await expect(canvas.getByTestId("journal-empty")).toHaveTextContent(
-      "Find a copy first",
-    );
+    await waitFor(() => {
+      expect(canvas.getByTestId("highlights-empty")).toHaveTextContent(
+        "Find a copy first",
+      );
+      expect(canvas.getByTestId("journal-empty")).toHaveTextContent(
+        "Find a copy first",
+      );
+    });
     await expect(canvas.queryByTestId("highlights-journal-empty")).toBeNull();
     await expect(
       canvas.queryByRole("button", { name: "New journal entry" }),
