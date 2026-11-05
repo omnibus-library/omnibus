@@ -7,7 +7,7 @@
 | **Surfaces** | web, iOS |
 | **Actions** | `checkin.start`, `checkin.lookup`, `checkin.confirm`, `book.add`, `checkin.remove` |
 
-Record a print copy of a book. The same **Check in** screen that
+Record a print copy of a book. The same check-in screen (**Add a copy you own** on the web) that
 [wishlist](wishlist.md) uses has two other outcomes, and this flow is about
 those: filing a copy against a book you already have digitally, and adding a
 book you own only on paper.
@@ -21,8 +21,8 @@ the baseline corpus.
 
 ## Steps
 
-1. Click **Check in** in the nav. On the web it opens a dialog over the page
-   you are on, not a page of its own; on iOS it is behind the Library
+1. On the web, open the nav's **Add** menu and choose **Add a copy you own**.
+   It opens a dialog over the page you are on, not a page of its own; on iOS it is behind the Library
    masthead's `+` → Add books → Scan a barcode, which on a simulator offers
    ISBN and title fields instead of the camera.
 2. Enter an ISBN, or search by title. **There is no author field** — a title
@@ -31,11 +31,11 @@ the baseline corpus.
    services, and the outcome it offers depends on what it found:
    The web's no-match screen offers three buttons — **"I own it — add to my
    collection"**, **"I already have this book"** and **"Add to my wishlist"**.
-   "Check in this copy" is the *heading of the confirm screen*, not an option.
+   "I own this copy" is the *heading of the confirm screen*, not an option.
    - **Recognition** — the book already carries your copy. The web says
      nothing and navigates straight to it; there is no "In your physical
      collection" screen on this surface. Journal it and pick another book.
-   - **"Check in this copy"** — the confirm screen for a book already in
+   - **"I own this copy"** — the confirm screen for a book already in
      the library (digitally, or as someone's print copy — the subtitle says
      which), reached from a title match or an exact-edition ISBN. An
      **"Is this the book?"** interstitial comes first only when the ISBN you
@@ -56,13 +56,13 @@ the baseline corpus.
      that files the copy against a book already in the library with no new
      row. Say what you find there; the path past its search is uncovered.
    - **On your wishlist** — the book is on your own wishlist. The same
-     "Check in this copy" confirm opens, saying so, and checking the copy in
+     "I own this copy" confirm opens, saying so, and adding the copy
      takes it off your wishlist; the success screen names the book and says
      the entry went.
 4. Confirm. Watch for the confirmation naming the right book.
 5. Open the book's detail page and confirm the physical copy is shown — on
    the web a **Physical copy** card under THE FILES reading "Physical copy /
-   Checked in N minutes ago by you / ISBN …" — another reader's copy names
+   Added N minutes ago by you / ISBN …" — another reader's copy names
    them instead of "you". The phrase "In your physical
    collection" is the *confirmation dialog's* heading and is not visible text
    on this page — it exists only as a `title` on the format badge and an

@@ -32,7 +32,7 @@ test.describe("wishlist check-in", () => {
       await bookDetailPage.assertDisplayed();
       await bookDetailPage.topNav.assertDisplayed();
       await expect(bookDetailPage.titleHeading).toHaveText(wish.title);
-      await expect(bookDetailPage.checkInWhenAcquiredButton).toBeVisible();
+      await expect(bookDetailPage.addCopyLink).toBeVisible();
       await expect(bookDetailPage.physicalCopy.cards).toHaveCount(0);
     });
   });
@@ -53,7 +53,7 @@ test.describe("wishlist check-in", () => {
     });
 
     await test.step("open check-in with the isbn prefilled", async () => {
-      await bookDetailPage.checkInWhenAcquired();
+      await bookDetailPage.addCopy();
       await expect(overlay.root).toBeVisible();
       await expect(overlay.isbnField).toHaveValue(wish.isbn13);
     });
@@ -94,7 +94,7 @@ test.describe("wishlist check-in", () => {
 
     await test.step("check the book page follows the check-in", async () => {
       await overlay.close();
-      await expect(bookDetailPage.checkInWhenAcquiredButton).toHaveCount(0);
+      await expect(bookDetailPage.addCopyLink).toHaveCount(0);
       await bookDetailPage.openTab("Files & Details");
       await expect(bookDetailPage.physicalCopy.cards).toHaveCount(1);
       await expect(bookDetailPage.physicalCopy.cards).toContainText("by you");

@@ -289,9 +289,9 @@ test.describe("add books sheet", () => {
     });
   });
 
-  // The worker's reader may not upload (see `buildReader`), but checking in a
-  // physical copy needs no permission, so Check in stays.
-  test("hide add books from a reader who may not upload", async ({
+  // The worker's reader may not upload (see `buildReader`), but adding a
+  // physical copy needs no permission, so that item stays.
+  test("hide upload from a reader who may not upload", async ({
     readerLibraryPage,
   }) => {
     const { topNav } = readerLibraryPage;
@@ -300,9 +300,13 @@ test.describe("add books sheet", () => {
       await readerLibraryPage.goto();
     });
 
-    await test.step("check the nav offers check-in but not add books", async () => {
-      await expect(topNav.checkInButton).toBeVisible();
-      await expect(topNav.addBooksButton).toHaveCount(0);
+    await test.step("open the add menu", async () => {
+      await topNav.openAddMenu();
+    });
+
+    await test.step("check the menu offers a copy but not upload", async () => {
+      await expect(topNav.addCopyItem).toBeVisible();
+      await expect(topNav.uploadBookFilesItem).toHaveCount(0);
     });
   });
 });

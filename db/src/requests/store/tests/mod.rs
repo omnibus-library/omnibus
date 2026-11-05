@@ -263,6 +263,25 @@ mod finish_search {
     }
 
     #[tokio::test]
+    async fn keeps_each_versions_seeders_and_none_for_a_source_without_them() {
+        let pool = pool().await;
+        let id = start_looking(&pool).await;
+        let mut usenet = ranked("usenet", 800.0, false, false);
+        usenet.release.seeders = None;
+        let found = SearchOutcome::Found(vec![ranked("torrent", 900.0, true, false), usenet]);
+
+        finish_search(&pool, id, found).await.unwrap();
+
+        let seeders: Vec<Option<i64>> = versions(&pool, id)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|v| v.seeders)
+            .collect();
+        assert_eq!(seeders, [Some(3), None]);
+    }
+
+    #[tokio::test]
     async fn moves_a_looking_request_to_stuck_with_the_reason_and_detail() {
         let pool = pool().await;
         let id = start_looking(&pool).await;

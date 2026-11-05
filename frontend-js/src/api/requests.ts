@@ -67,6 +67,8 @@ function toVersion(wire: RequestVersionWire) {
     sizeBytes: wire.size_bytes ?? null,
     format: wire.format ?? null,
     indexer: wire.indexer ?? null,
+    /** Null for a source with none, such as Usenet. */
+    seeders: wire.seeders ?? null,
     bestMatch: wire.best_match,
     /** Picked and given up: shown as one that did not work. */
     rejected: wire.rejected,

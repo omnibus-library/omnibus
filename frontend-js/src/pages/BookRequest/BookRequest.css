@@ -99,14 +99,22 @@
   align-items: center;
   gap: 10px 14px;
 }
-.rq-format {
-  font: 500 12px / 1 var(--mono);
-  letter-spacing: 0.09em;
-  color: var(--ink-0);
+.rq-version-text {
+  display: grid;
+  gap: 4px;
+  flex: 1 1 16rem;
+  min-width: 0;
 }
-.rq-size {
+.rq-version-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-0);
+  font-size: 15px;
+}
+.rq-version-meta {
   color: var(--ink-1);
-  font-size: 14px;
+  font-size: 13px;
 }
 .rq-best {
   padding: 3px 8px;

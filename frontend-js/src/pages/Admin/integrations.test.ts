@@ -24,7 +24,7 @@ describe("clearWarning", () => {
 
   it("names what clearing the Google Books key stops and that it cannot be read back", () => {
     expect(clearWarning("google-books")).toBe(
-      "ISBN check-ins fall back to the shared anonymous quota, which runs out quickly. The key can’t be shown again, so you’ll need the original to put it back.",
+      "ISBN lookups fall back to the shared anonymous quota, which runs out quickly. The key can’t be shown again, so you’ll need the original to put it back.",
     );
   });
 });

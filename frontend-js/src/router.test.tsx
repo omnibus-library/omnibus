@@ -194,7 +194,7 @@ describe("routes", () => {
       expect(
         await screen.findByRole("heading", {
           level: 1,
-          name: "Check in a book",
+          name: "Add a copy you own",
         }),
       ).toBeInTheDocument();
     });
@@ -202,7 +202,7 @@ describe("routes", () => {
     it("draws the library behind the check-in dialog", async () => {
       renderRoute("/check-in");
 
-      await screen.findByRole("dialog", { name: "Check in a book" });
+      await screen.findByRole("dialog", { name: "Add a copy you own" });
       expect(
         await screen.findByRole("heading", { level: 1, name: "Your Library" }),
       ).toBeInTheDocument();
@@ -217,7 +217,7 @@ describe("routes", () => {
 
       await act(() => router.navigate("/check-in"));
 
-      await screen.findByRole("dialog", { name: "Check in a book" });
+      await screen.findByRole("dialog", { name: "Add a copy you own" });
       expect(
         screen.getByRole("heading", { level: 1, name: "Your Library" }),
       ).toBe(heading);
@@ -229,7 +229,7 @@ describe("routes", () => {
       await act(() =>
         router.navigate("/check-in", { state: { fromApp: true } }),
       );
-      await screen.findByRole("dialog", { name: "Check in a book" });
+      await screen.findByRole("dialog", { name: "Add a copy you own" });
 
       await userEvent.keyboard("{Escape}");
 
@@ -242,13 +242,13 @@ describe("routes", () => {
       await screen.findByRole("heading", { level: 1, name: "Your Library" });
       // As the sign-in redirect lands it: a replace, so no entry to go back to.
       await act(() => router.navigate("/check-in", { replace: true }));
-      await screen.findByRole("dialog", { name: "Check in a book" });
+      await screen.findByRole("dialog", { name: "Add a copy you own" });
 
       await userEvent.keyboard("{Escape}");
 
       await waitFor(() =>
         expect(
-          screen.queryByRole("dialog", { name: "Check in a book" }),
+          screen.queryByRole("dialog", { name: "Add a copy you own" }),
         ).not.toBeInTheDocument(),
       );
       expect(router.state.location.pathname).toBe("/");
@@ -256,13 +256,13 @@ describe("routes", () => {
 
     it("closes the check-in dialog onto the library on Escape", async () => {
       const { router } = renderRoute("/check-in");
-      await screen.findByRole("dialog", { name: "Check in a book" });
+      await screen.findByRole("dialog", { name: "Add a copy you own" });
 
       await userEvent.keyboard("{Escape}");
 
       await waitFor(() => expect(router.state.location.pathname).toBe("/"));
       expect(
-        screen.queryByRole("dialog", { name: "Check in a book" }),
+        screen.queryByRole("dialog", { name: "Add a copy you own" }),
       ).not.toBeInTheDocument();
     });
 

@@ -12,11 +12,11 @@ export class CheckInOverlayComponent extends CheckInFlowComponent {
   readonly closeControls: Locator;
 
   constructor(page: Page) {
-    super(page, page.getByRole("dialog", { name: "Check in a book" }));
+    super(page, page.getByRole("dialog", { name: "Add a copy you own" }));
     this.scrim = this.root;
     this.flowCard = page.getByTestId("check-in");
     this.closeButton = this.root.getByRole("button", {
-      name: "Cancel check-in",
+      name: "Cancel adding a copy",
     });
     this.closeControls = this.root.getByRole("button", {
       name: /close|cancel/i,

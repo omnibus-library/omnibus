@@ -94,9 +94,9 @@ your wishlist shelf; without it the entry is journalled but not checked.
   the rail's chip and count stay stale after an add until a full reload
   (#2523). Confirm the entry from its own book page, not from the chip.
 - **Removing an entry navigates away** to the library home.
-- **"Check in when acquired"** is the entry page's most prominent action and
+- **"Add a copy you own"** is the entry page's most prominent action and
   the natural next step for this flow's own framing. It opens the check-in
-  dialog with the entry's ISBN already typed; checking the copy in files it
+  dialog with the entry's ISBN already typed; adding the copy files it
   and takes the book off your wishlist — that is
   [checking_in_a_book](checking_in_a_book.md)'s territory, library-wide, so
   only do it for a book you really own.

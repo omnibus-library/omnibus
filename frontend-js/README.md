@@ -39,8 +39,10 @@ pages (`/authors/:id`, `/series/:id`, `/shelves/:id`), the three readers
 picks one of a book's files), personal settings (`/settings`), Administration
 (`/admin`, `/admin/cleanup/:kind`), stats (`/stats`), the chart builder
 (`/stats/chart`), the household's wishlists (`/wishlists`), every reader's book
-requests (`/requests`) and Not Found are the screens, and the top bar carries the user menu, the ⌘K search palette and
-Add books, a sheet rather than a route. There is no phone tab bar. A bare
+requests (`/requests`) and Not Found are the screens, and the top bar carries
+the user menu, the ⌘K search palette and the Add menu: Upload book files (the
+Add books sheet, not a route), Add a copy you own (`/check-in`) and Add to your
+wishlist (`/wishlists` with its search open). There is no phone tab bar. A bare
 `/search` and `/connect` redirect to the library.
 `/settings` has its five sections (Profile, Preferences, Goals, Devices,
 Sign-in & security) picked by `?section=`; an old slug redirects to its new

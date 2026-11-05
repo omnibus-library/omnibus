@@ -21,6 +21,7 @@ import {
   swapFacts,
   undoToastMs,
   versionFormat,
+  versionSeeders,
   versionSize,
 } from "./requestView";
 
@@ -112,6 +113,20 @@ describe("versionSize", () => {
   it("writes a size in decimal units and leaves a missing one out", () => {
     expect(versionSize(2_400_000)).toBe("2.4 MB");
     expect(versionSize(null)).toBeNull();
+  });
+});
+
+describe("versionSeeders", () => {
+  it.each([
+    [12, "12 seeders"],
+    [1, "1 seeder"],
+    [0, "0 seeders"],
+  ])("counts %i as %s", (seeders, label) => {
+    expect(versionSeeders(seeders)).toBe(label);
+  });
+
+  it("leaves out a source with no seeders", () => {
+    expect(versionSeeders(null)).toBeNull();
   });
 });
 

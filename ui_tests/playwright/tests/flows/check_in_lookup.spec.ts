@@ -19,7 +19,7 @@ test.describe("check-in lookup", () => {
       await checkInPage.assertDisplayed();
       await checkInPage.topNav.assertDisplayed();
       await expect(flow.lookupScreen).toBeVisible();
-      await expect(flow.screenHeading).toHaveText("Check in a book");
+      await expect(flow.screenHeading).toHaveText("Add a copy you own");
       await expect(flow.isbnField).toBeVisible();
       await expect(flow.titleField).toBeVisible();
       await expect(flow.scanBarcodeButton).toBeVisible();

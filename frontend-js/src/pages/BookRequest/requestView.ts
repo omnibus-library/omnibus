@@ -104,6 +104,12 @@ export const versionFormat = (format: string | null) => format ?? "Unknown";
 export const versionSize = (bytes: number | null) =>
   bytes === null ? null : fileSize(bytes);
 
+/** How many peers share a version, or `null` for a source with none, such as Usenet. */
+export const versionSeeders = (seeders: number | null) =>
+  seeders === null
+    ? null
+    : `${seeders} ${seeders === 1 ? "seeder" : "seeders"}`;
+
 /** Why starting a request failed, as a sentence for a toast. */
 export function startFailure(error: unknown): string {
   const status = error instanceof ApiError ? error.status : null;
