@@ -128,7 +128,8 @@ private struct OcclusionClearance: ViewModifier {
 private struct SideBarRailEnd: ViewModifier {
     @Environment(\.sideBarEdge) private var sideBarEdge
     /// Whether the row's bar-side edge meets the column, rather than stopping short of it.
-    @State private var meetsColumn = false
+    /// Starts true so a row's first frame fades, not flashes under the bar until measured.
+    @State private var meetsColumn = true
 
     /// Long enough to read as a dissolve rather than a cut, short enough not to dim a resting chip.
     static let fade: CGFloat = 14

@@ -47,6 +47,8 @@ struct PlayerView: View {
     @State private var showBookmarks = false
     @State private var syncedHere = false
     @State private var showCarMode = false
+    /// Where an arranged player's controls start, in its own space: the foot of the banner slot.
+    @State private var controlsTop: CGFloat?
 
     /// The artwork region's centre, as a share of the whole player.
     static func bloom(over arrangement: PlayerArrangement) -> UnitPoint {
@@ -65,6 +67,8 @@ struct PlayerView: View {
     static let controlsMaxWidth: CGFloat = 460
     /// Shortest side-by-side controls pane whose controls centre rather than sit low for the thumb.
     static let centredControlsHeight: CGFloat = 560
+    /// The arranged player's own coordinate space, which `controlsTop` is measured in.
+    private static let arrangedSpace = "player-arranged"
 
     /// Share of the band between the two insets the artwork may take.
     ///
@@ -156,6 +160,9 @@ struct PlayerView: View {
             controls
                 .frame(maxWidth: Self.controlsMaxWidth)
                 .clearsOcclusions()
+                .onGeometryChange(for: CGFloat.self) {
+                    $0.frame(in: .named(Self.arrangedSpace)).minY
+                } action: { controlsTop = $0 }
             if centred { Spacer(minLength: Spacing.sm) }
         }
         .padding(.horizontal, Spacing.screen)
@@ -183,13 +190,18 @@ struct PlayerView: View {
                 }
             }
             statusLayers
-            // Over the artwork's region, which starts at the corner: across the
-            // whole player the banners sat on a low transport, where the stacked
-            // player's inset keeps them clear of it.
+            // Across the player but ending where the controls start, as the
+            // stacked player's inset does: over the whole player they sat on the
+            // transport, and over the artwork alone they ran under the bar column.
             banners
-                .frame(width: arrangement.artwork.width, height: arrangement.artwork.height)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .clearsOcclusions()
+                .frame(
+                    height: min(controlsTop ?? arrangement.artwork.maxY, arrangement.artwork.maxY),
+                    alignment: .bottom
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
+        .coordinateSpace(.named(Self.arrangedSpace))
         .background(ScreenBackground())
     }
 

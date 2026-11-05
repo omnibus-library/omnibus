@@ -30,13 +30,7 @@ enum DebugOrientation {
 
     /// The words after `orientation/`, or nil when `url` is not an orientation link.
     nonisolated static func orientationSegments(_ url: URL) -> [String]? {
-        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-              components.scheme?.lowercased() == DeepLink.scheme,
-              components.host?.lowercased() == DebugOffline.urlHost
-        else { return nil }
-        let segments = components.path.split(separator: "/").map { $0.lowercased() }
-        guard segments.first == orientationPath else { return nil }
-        return Array(segments.dropFirst())
+        DebugLink.segments(url, after: orientationPath)?.map { $0.lowercased() }
     }
 
     /// The mask a link's words name: exactly one orientation, else nil.
