@@ -154,10 +154,10 @@ jobs:
   ios:
     name: ios (native · com.omnibus.mobile)
     needs: version
-    # omnibus-ios targets iOS 26.4, so it needs the Xcode 26 / iOS 26 SDK on
-    # macos-26. App Store Connect also rejects any upload built with an older
-    # SDK, so macos-14/15 (Xcode 15/16) can't be used.
-    runs-on: macos-26
+    # The iPhone Duo layouts compile only against the iOS 27.1 SDK or newer,
+    # and only the xcode-27 image has one (macos-26 tops out at Xcode 26).
+    # Built with Xcode 26, the app still runs, letterboxed on the Duo.
+    runs-on: xcode-27
     permissions:
       contents: read
       # Granted for the .ipa upload step. Belt-and-braces rather than load-bearing:
@@ -165,6 +165,10 @@ jobs:
       # injected per-job and isn't governed by `permissions:`.
       actions: write
     env:
+      # The image defaults to Xcode 27.1; 27.2 is the Xcode the Duo work was
+      # built and checked with. The archive check below fails the run if
+      # either stops compiling the Duo code in.
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
       # Both resolved and validated by the version job, so the archive and the
       # distribute job look the build up by the same pair.
       BUILD_NUMBER: ${{ needs.version.outputs.build_number }}
@@ -234,6 +238,29 @@ jobs:
             archive \
             MARKETING_VERSION="$MARKETING_VERSION" \
             CURRENT_PROJECT_VERSION="$BUILD_NUMBER"
+
+      # The Duo code sits behind `#if canImport(UIKit, _version:)`, so an SDK
+      # too old for it drops it without an error; iOS then letterboxes the
+      # whole app on the Duo. Build 110 shipped that way with every step
+      # green, so check the archived binary links the Duo APIs.
+      - name: Verify the archive carries the iPhone Duo layouts
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/omnibus.xcarchive/Products/Applications/omnibus.app"
+          pb() { /usr/libexec/PlistBuddy -c "Print :$1" "$APP/Info.plist"; }
+          echo "Archived with $(xcodebuild -version | head -n1) against $(pb DTSDKName)."
+          IMPORTS="$(nm -u "$APP/$(pb CFBundleExecutable)")"
+          fail=0
+          for SYMBOL in toolbarVerticalEdge "_OBJC_CLASS_\$_UIHingeInteraction"; do
+            case "$IMPORTS" in
+              *"$SYMBOL"*)
+                echo "The app links $SYMBOL." ;;
+              *)
+                echo "::error::The app does not link $SYMBOL, so the iPhone Duo layouts were compiled out and the Duo would letterbox it. Build with Xcode 27.1 or newer (DEVELOPER_DIR)."
+                fail=1 ;;
+            esac
+          done
+          [ "$fail" -eq 0 ] || exit 1
 
       # Build ExportOptions.plist with PlistBuddy (avoids heredoc-in-YAML
       # indentation pitfalls). method=app-store-connect is the Xcode 26 name for
