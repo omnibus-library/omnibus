@@ -5,7 +5,8 @@
 //  draw this grid. What has to agree across them — the column sizing, the top
 //  alignment, how the cells fill in — lives here, so it changes in one place.
 //  Each screen still builds its own cell: a link, a press style, a long-press
-//  menu.
+//  menu. Across a partly folded iPhone Duo the columns split evenly either side
+//  of the hinge, so no cover is bent down the middle.
 
 import SwiftUI
 
@@ -16,14 +17,32 @@ enum CoverGridDensity: CaseIterable {
     /// An author's books and search results, which fit a column more.
     case compact
 
+    var minimum: CGFloat {
+        switch self {
+        case .regular: 112
+        case .compact: 104
+        }
+    }
+
+    var maximum: CGFloat {
+        switch self {
+        case .regular: 168
+        case .compact: 150
+        }
+    }
+
+    var spacing: CGFloat {
+        switch self {
+        case .regular: 16
+        case .compact: 14
+        }
+    }
+
     // `.top` keeps cells aligned by their cover art when captions in the same
     // row wrap to different line counts. The default centring pushes the
     // shorter cells down, which reads as a different-sized cover (#1481).
     var columns: [GridItem] {
-        switch self {
-        case .regular: [GridItem(.adaptive(minimum: 112, maximum: 168), spacing: 16, alignment: .top)]
-        case .compact: [GridItem(.adaptive(minimum: 104, maximum: 150), spacing: 14, alignment: .top)]
-        }
+        [GridItem(.adaptive(minimum: minimum, maximum: maximum), spacing: spacing, alignment: .top)]
     }
 
     var rowSpacing: CGFloat {
@@ -34,11 +53,37 @@ enum CoverGridDensity: CaseIterable {
     }
 }
 
+/// Columns that leave a vertical fold in the gutter between the two middle
+/// columns: the same count either side, with the grid centred on the hinge.
+struct FoldGridLayout: Equatable {
+    /// Columns on each side of the fold.
+    var perSide: Int
+    /// The insets that centre the grid on the fold, and the fold's width.
+    var span: FoldSpan
+
+    /// Nil when the fold misses the grid or either side can't hold a column.
+    static func resolve(width: CGFloat, fold: Fold, density: CoverGridDensity) -> FoldGridLayout? {
+        guard let span = FoldSpan.resolve(width: width, fold: fold) else { return nil }
+        let side = span.side(of: width)
+        let perSide = Int(((side + density.spacing) / (density.minimum + density.spacing)).rounded(.down))
+        guard perSide >= 1 else { return nil }
+        return FoldGridLayout(perSide: perSide, span: span)
+    }
+
+    func columns(_ density: CoverGridDensity) -> [GridItem] {
+        (0..<perSide * 2).map { index in
+            GridItem(.flexible(), spacing: index == perSide - 1 ? span.gap : density.spacing, alignment: .top)
+        }
+    }
+}
+
 /// A lazy grid of covers whose first fill ripples in and whose later rows arrive whole.
 struct CoverGrid<Item: Identifiable, Cell: View>: View {
     let items: [Item]
     let density: CoverGridDensity
     let cell: (Item) -> Cell
+
+    @State private var foldLayout: FoldGridLayout?
 
     init(
         _ items: [Item],
@@ -51,11 +96,21 @@ struct CoverGrid<Item: Identifiable, Cell: View>: View {
     }
 
     var body: some View {
-        LazyVGrid(columns: density.columns, spacing: density.rowSpacing) {
+        LazyVGrid(columns: foldLayout?.columns(density) ?? density.columns, spacing: density.rowSpacing) {
             ForEach(items) { item in
                 cell(item).cascadeIn()
             }
         }
+        .padding(.leading, foldLayout?.span.leading ?? 0)
+        .padding(.trailing, foldLayout?.span.trailing ?? 0)
         .cascadeFill()
+        // Measured outside the insets, so applying them can't move the fold it measured.
+        .onGeometryChange(for: FoldGridLayout?.self) { proxy in
+            proxy.activeFold.flatMap {
+                FoldGridLayout.resolve(width: proxy.size.width, fold: $0, density: density)
+            }
+        } action: { layout in
+            foldLayout = layout
+        }
     }
 }

@@ -21,7 +21,26 @@ struct ContinueHero: View {
     @Environment(\.palette) private var palette
     @State private var selected: ResumePoint.ID?
 
+    @State private var width: CGFloat = 0
+    /// Where a partly folded iPhone Duo's hinge crosses the carousel, two up.
+    @State private var foldSpan: FoldSpan?
+
     private var height: CGFloat { 176 }
+
+    /// Cards in view at once: two where the screen holds two phone-width
+    /// cards (the open iPhone Duo, an iPad), so a lone card never stretches.
+    private var perPage: Int {
+        ContinueHeroLayout.cardsPerPage(width: width, count: points.count, folded: foldSpan != nil)
+    }
+
+    /// The fold the two cards sit either side of, when there is one.
+    private var pageFold: FoldSpan? { perPage > 1 ? foldSpan : nil }
+
+    /// Each card's inset within its page: wide enough, across a fold, that
+    /// the gutter between two cards clears the hinge.
+    private var cardInset: CGFloat {
+        max(Spacing.screen, (pageFold?.gap ?? 0) / 2 + Spacing.sm)
+    }
 
     var body: some View {
         VStack(spacing: 10) {
@@ -37,22 +56,30 @@ struct ContinueHero: View {
                             // Padding inside the page, so every page is exactly
                             // the carousel's width and the paging stops land on
                             // a card rather than drifting by the inset.
-                            .padding(.horizontal, Spacing.screen)
-                            .containerRelativeFrame(.horizontal)
+                            .padding(.horizontal, cardInset)
+                            .containerRelativeFrame(.horizontal, count: perPage, span: 1, spacing: 0)
                     }
                 }
                 .scrollTargetLayout()
             }
             .frame(height: height)
+            // A paged card resting under the iPhone Duo's side bar reads as a misaligned page.
+            .clipsSideways()
+            // Two up across a fold, the carousel centres on the hinge so the
+            // gutter between its cards is the fold, one card on each page.
+            .padding(.leading, pageFold?.leading ?? 0)
+            .padding(.trailing, pageFold?.trailing ?? 0)
             .scrollTargetBehavior(.paging)
             .scrollPosition(id: settledCard)
             .scrollIndicators(.hidden)
 
-            if points.count > 1 {
+            if points.count > perPage {
                 dots
             }
         }
-        .onAppear { selected = selected ?? points.first?.id }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+        .onFoldSpanChange { foldSpan = $0 }
+        .onAppear { selected = pageStart(of: selected ?? points.first?.id) }
         .onChange(of: points.map(\.id)) { _, ids in
             // The rail is rewritten on every position save. Holding the card
             // that's showing — rather than resetting to the front — is what
@@ -61,7 +88,16 @@ struct ContinueHero: View {
             if selected.map(ids.contains) != true {
                 selected = ids.first
             }
+            selected = pageStart(of: selected)
         }
+        // Two up, a card that led no page would scroll to a stop paging never makes.
+        .onChange(of: perPage) { _, _ in selected = pageStart(of: selected) }
+    }
+
+    /// The card leading the page `id` is on, which is where the carousel can rest.
+    private func pageStart(of id: ResumePoint.ID?) -> ResumePoint.ID? {
+        guard let index = points.firstIndex(where: { $0.id == id }) else { return id }
+        return points[ContinueHeroLayout.pageStart(of: index, count: points.count, perPage: perPage)].id
     }
 
     /// Drops the nils `scrollPosition` writes mid-gesture. Left as-is they read
@@ -73,9 +109,14 @@ struct ContinueHero: View {
     /// Position indicator, driven by where the carousel actually settled rather
     /// than by a count of its own, so it can't disagree with the card below it.
     private var dots: some View {
-        let index = points.firstIndex { $0.id == selected } ?? 0
+        let index = ContinueHeroLayout.page(
+            settledAt: points.firstIndex { $0.id == selected } ?? 0,
+            count: points.count,
+            perPage: perPage
+        )
+        let pages = ContinueHeroLayout.pageCount(count: points.count, perPage: perPage)
         return HStack(spacing: 6) {
-            ForEach(points.indices, id: \.self) { position in
+            ForEach(0..<pages, id: \.self) { position in
                 Capsule()
                     .fill(position == index ? palette.ink1Color : palette.ink3Color.opacity(0.4))
                     .frame(width: position == index ? 16 : 5, height: 5)
@@ -83,6 +124,34 @@ struct ContinueHero: View {
         }
         .animation(Motion.snap, value: index)
         .accessibilityHidden(true)
+    }
+}
+
+/// How the continue carousel pages across the width it has.
+enum ContinueHeroLayout {
+    /// Width the carousel needs before it shows two cards at once.
+    static let twoUpWidth: CGFloat = 700
+
+    /// Two up across a fold even for a lone card, so it keeps to one side of the hinge.
+    static func cardsPerPage(width: CGFloat, count: Int, folded: Bool = false) -> Int {
+        width >= twoUpWidth && (count > 1 || folded) ? 2 : 1
+    }
+
+    static func pageCount(count: Int, perPage: Int) -> Int {
+        (count + perPage - 1) / max(perPage, 1)
+    }
+
+    /// The page a settled card leads. Two up, the scroll stops short of a
+    /// half-empty last page, so the cards it ends on are the last page's.
+    static func page(settledAt index: Int, count: Int, perPage: Int) -> Int {
+        let pages = pageCount(count: count, perPage: perPage)
+        return index >= count - perPage ? max(pages - 1, 0) : index / max(perPage, 1)
+    }
+
+    /// The index of the card leading the page `index` is on: where paging can stop.
+    static func pageStart(of index: Int, count: Int, perPage: Int) -> Int {
+        let page = page(settledAt: index, count: count, perPage: perPage)
+        return min(page * max(perPage, 1), max(count - perPage, 0))
     }
 }
 

@@ -359,6 +359,8 @@ struct BookStage: View {
     var isOnline = true
     /// Whether this device holds a copy the reader can open with no network.
     var holdsCopy = false
+    /// How large the cover stands: under 1 where a short pane would hide the title.
+    var coverScale: CGFloat = 1
     var onReview: () -> Void = {}
     var onReviews: () -> Void
     var onSeries: () -> Void
@@ -391,6 +393,9 @@ struct BookStage: View {
             ) {
                 burstReplays += 1
             }
+            .scaleEffect(coverScale, anchor: .top)
+            // Scaled, it gives back the height it no longer fills.
+            .padding(.bottom, -(1 - coverScale) * StageCover.height)
 
             if model.isWishlistOnly, let entry = model.wishlistEntry {
                 Text(DetailRead.wishlistLine(source: WishlistCopy.sourceLabel(entry.source)))

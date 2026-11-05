@@ -21,6 +21,8 @@ struct BookDetailView: View {
     static let actionBar: CGFloat = 62
     /// Scroll id of the tab strip, for bringing a section to the top.
     static let tabsAnchor = "book-tabs"
+    /// Scroll id of the panel's top in the two-pane page, where the tabs have their own pane.
+    static let panelAnchor = "book-panel"
     /// Scroll id of the series section, which the byline's link jumps to.
     static let seriesAnchor = "book-series"
 
@@ -364,57 +366,154 @@ struct BookDetailView: View {
         app.user?.canEdit == true || app.user?.isAdmin == true
     }
 
+    /// Narrowest pane the cover can stand in between the bar's two discs.
+    static let stageUnderBarWidth: CGFloat = 300
+    /// Share of a wide page the book's own pane takes beside its tabs.
+    static let stagePaneShare: CGFloat = 0.42
+    /// Narrowest wide page that gets two panes: any phone on its side, the
+    /// iPhone Duo opened flat, an iPad. Upright, the stage is the page's top.
+    static let twoPaneWidth: CGFloat = 560
+    /// Most of a pane's free height the cover may take, so the title still
+    /// shows above the action row on a short page, like a folded Duo on its side.
+    static let stageCoverShare: CGFloat = 0.44
+    /// The stage's own top margin, above the cover.
+    static let stageTop: CGFloat = 12
+
+    /// The stage cover's scale in a pane `height` tall: whole wherever that leaves the title room.
+    static func stageCoverScale(paneHeight: CGFloat, underBar: Bool) -> CGFloat {
+        let free = paneHeight - actionBar - (underBar ? 0 : barRow)
+        return min(1, max(0.5, free * stageCoverShare / StageCover.height))
+    }
+
+    /// How far the stage pane's top fade rises into the bar's row: a stage
+    /// standing between the discs fades from just above where its cover rests.
+    static func stageFadeRaise(underBar: Bool) -> CGFloat {
+        underBar ? barRow - stageTop + BarEdgeFade.length - BarEdgeFade.reach : 0
+    }
+
     private func content(_ book: Book) -> some View {
-        GeometryReader { geometry in
-            ScrollViewReader { proxy in
-                ScrollView(.vertical) {
-                    // Not a lazy stack with pinned views: it re-estimates the
-                    // stage as that scrolls off, and on a page ending about
-                    // there the scroll came to rest with the end under the bar.
-                    VStack(alignment: .leading, spacing: 0) {
-                        stage(book, proxy: proxy)
-                        BookTabStrip(selected: tab, pinned: tabsPinned) { pick($0) }
-                            .visualEffect { content, strip in
-                                let top = strip.frame(in: .scrollView(axis: .vertical)).minY
-                                return content.offset(y: max(0, -top))
-                            }
-                            // Layout ignores the offset above, so minY reads the unpinned position.
-                            .onGeometryChange(for: Bool.self) { strip in
-                                BookTab.tabsPinned(stripTop: strip.frame(in: .scrollView(axis: .vertical)).minY)
-                            } action: { pinned in
-                                withAnimation(reduceMotion ? nil : Motion.snap) { tabsPinned = pinned }
-                            }
-                            .zIndex(1)
-                        panel(book)
-                            // Tall enough that the tabs can stay pinned on the
-                            // shortest panel: a tab change must not drop the
-                            // page out from under the reader.
-                            .frame(
-                                maxWidth: .infinity,
-                                minHeight: geometry.size.height - Self.barRow
-                                    - Self.tabStrip - Self.actionBar + 4,
-                                alignment: .top
-                            )
-                    }
-                }
-                .scrollIndicators(.hidden)
-                .safeAreaInset(edge: .top, spacing: 0) {
-                    Color.clear.frame(height: Self.barRow)
-                }
-                .safeAreaInset(edge: .bottom, spacing: 0) { actionBar(book) }
-                .onScrollGeometryChange(for: Bool.self) { geometry in
-                    let offset = geometry.contentOffset.y + geometry.contentInsets.top
-                    return offset > StageCover.height + 30
-                } action: { _, past in
-                    withAnimation(Motion.snap) { scrolledPast = past }
-                }
+        // The keyboard-down size: a note field's keyboard must not flip the page's layout.
+        PaneGeometryReader { pane, geometry in
+            if let split = PaneSplit.resolve(
+                size: pane.size,
+                fold: pane.fold,
+                share: Self.stagePaneShare,
+                minimumWidth: Self.twoPaneWidth
+            ) {
+                twoPaneContent(book, split: split, height: pane.size.height)
+            } else {
+                columnContent(book, geometry: geometry)
             }
-            .overlay(alignment: .top) { topBar(book) }
-            .overlay(alignment: .bottom) { toastLayer() }
         }
     }
 
-    private func stage(_ book: Book, proxy: ScrollViewProxy) -> some View {
+    /// The book on the leading page and its tabs on the trailing one, split at
+    /// the hinge when the phone is partly folded, like the book it shows.
+    private func twoPaneContent(_ book: Book, split: PaneSplit, height: CGFloat) -> some View {
+        let underBar = split.leading >= Self.stageUnderBarWidth
+        let coverScale = Self.stageCoverScale(paneHeight: height, underBar: underBar)
+        return ScrollViewReader { proxy in
+            HStack(spacing: 0) {
+                // Bars here lay no slab of their own: one would end at the
+                // pane's edge as a hard line through the wash. Each pane's
+                // page fades out under its bar instead.
+                ScrollView(.vertical) {
+                    // Between the bar's discs only where the pane clears them.
+                    stage(
+                        book, proxy: proxy, backdrop: false, underBar: underBar, coverScale: coverScale,
+                        jumpAnchor: Self.panelAnchor
+                    )
+                }
+                .scrollIndicators(.hidden)
+                // The cover's halo is wider than the pane; clipped, it ended in a straight edge.
+                // The fade's mask runs on past the sides, so it is cut only under the bars.
+                .scrollClipDisabled()
+                .barEdgeFade([.top, .bottom], topRaise: Self.stageFadeRaise(underBar: underBar))
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    Color.clear.frame(height: Self.barRow)
+                }
+                .safeAreaInset(edge: .bottom, spacing: 0) { actionBar(book, backed: false) }
+                .frame(width: split.leading)
+
+                Color.clear.frame(width: split.gap)
+
+                ScrollView(.vertical) {
+                    panel(book)
+                        .frame(maxWidth: .infinity, alignment: .top)
+                        // Where the stage's shortcuts aim: the strip tops this pane, not the stage's.
+                        .background(alignment: .top) {
+                            Color.clear.frame(height: 1).id(Self.panelAnchor)
+                        }
+                }
+                .scrollIndicators(.hidden)
+                .barEdgeFade(.top)
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    BookTabStrip(selected: tab, backed: false) { pick($0) }
+                }
+                .padding(.top, Self.barRow)
+                .frame(width: split.trailing)
+            }
+            .background { StageBackdrop(book: book, tab: tab).ignoresSafeArea() }
+        }
+        .overlay(alignment: .top) { topBar(book) }
+        .overlay(alignment: .bottom) { toastLayer() }
+        // The cover never scrolls away here, so the bar never names the book.
+        .onAppear { scrolledPast = false }
+    }
+
+    /// One column: the stage, then the tabs, which pin under the bar.
+    private func columnContent(_ book: Book, geometry: GeometryProxy) -> some View {
+        ScrollViewReader { proxy in
+            ScrollView(.vertical) {
+                // Not a lazy stack with pinned views: it re-estimates the
+                // stage as that scrolls off, and on a page ending about
+                // there the scroll came to rest with the end under the bar.
+                VStack(alignment: .leading, spacing: 0) {
+                    stage(book, proxy: proxy)
+                    BookTabStrip(selected: tab, pinned: tabsPinned) { pick($0) }
+                        .visualEffect { content, strip in
+                            let top = strip.frame(in: .scrollView(axis: .vertical)).minY
+                            return content.offset(y: max(0, -top))
+                        }
+                        // Layout ignores the offset above, so minY reads the unpinned position.
+                        .onGeometryChange(for: Bool.self) { strip in
+                            BookTab.tabsPinned(stripTop: strip.frame(in: .scrollView(axis: .vertical)).minY)
+                        } action: { pinned in
+                            withAnimation(reduceMotion ? nil : Motion.snap) { tabsPinned = pinned }
+                        }
+                        .zIndex(1)
+                    panel(book)
+                        // Tall enough that the tabs can stay pinned on the
+                        // shortest panel: a tab change must not drop the
+                        // page out from under the reader.
+                        .frame(
+                            maxWidth: .infinity,
+                            minHeight: geometry.size.height - Self.barRow
+                                - Self.tabStrip - Self.actionBar + 4,
+                            alignment: .top
+                        )
+                }
+            }
+            .scrollIndicators(.hidden)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                Color.clear.frame(height: Self.barRow)
+            }
+            .safeAreaInset(edge: .bottom, spacing: 0) { actionBar(book) }
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                let offset = geometry.contentOffset.y + geometry.contentInsets.top
+                return offset > StageCover.height + 30
+            } action: { _, past in
+                withAnimation(Motion.snap) { scrolledPast = past }
+            }
+        }
+        .overlay(alignment: .top) { topBar(book) }
+        .overlay(alignment: .bottom) { toastLayer() }
+    }
+
+    private func stage(
+        _ book: Book, proxy: ScrollViewProxy, backdrop: Bool = true, underBar: Bool = true,
+        coverScale: CGFloat = 1, jumpAnchor: String = Self.tabsAnchor
+    ) -> some View {
         BookStage(
             book: book,
             model: model,
@@ -422,19 +521,24 @@ struct BookDetailView: View {
             isOnline: connectivity.isOnline,
             holdsCopy: downloads.isDownloaded(book.uuid, kind: .ebook)
                 || downloads.isDownloaded(book.uuid, kind: .audio),
+            coverScale: coverScale,
             onReview: composeReview,
-            onReviews: { jump(to: .reviews, proxy: proxy) },
+            onReviews: { jump(to: .reviews, anchor: jumpAnchor, proxy: proxy) },
             onSeries: { jumpToSeries(proxy: proxy) }
         )
-        .padding(.top, 12)
-        .background { StageBackdrop(book: book, tab: tab) }
+        .padding(.top, Self.stageTop)
+        .background {
+            // Under the iPhone Duo's side bar too: a wash that stopped at the
+            // safe area left the column a black strip beside it.
+            if backdrop { StageBackdrop(book: book, tab: tab).ignoresSafeArea(edges: .horizontal) }
+        }
         // Where a jump aims: the strip itself is pinned, and a pinned view
         // reports where it is pinned rather than where it belongs in the list.
         .background(alignment: .bottom) {
             Color.clear.frame(height: 1).id(Self.tabsAnchor)
         }
         // The book stands between the bar's two discs rather than under them.
-        .padding(.top, -Self.barRow)
+        .padding(.top, underBar ? -Self.barRow : 0)
     }
 
     private func panel(_ book: Book) -> some View {
@@ -477,11 +581,11 @@ struct BookDetailView: View {
         withAnimation(reduceMotion ? nil : Motion.settle) { tab = next }
     }
 
-    /// Bring a tab to the top of the page, under the bar.
-    private func jump(to next: BookTab, proxy: ScrollViewProxy) {
+    /// Bring a tab to the top of the page, under the bar: `anchor` is where its panel starts.
+    private func jump(to next: BookTab, anchor: String, proxy: ScrollViewProxy) {
         pick(next)
         withAnimation(reduceMotion ? nil : Motion.settle) {
-            proxy.scrollTo(Self.tabsAnchor, anchor: .top)
+            proxy.scrollTo(anchor, anchor: .top)
         }
     }
 
@@ -531,7 +635,7 @@ struct BookDetailView: View {
                 Rectangle().fill(.ultraThinMaterial)
                 palette.bg0Color.opacity(0.78)
             }
-            .ignoresSafeArea(edges: .top)
+            .ignoresSafeArea(edges: [.top, .horizontal])
             .opacity(scrolledPast ? 1 : 0)
             .allowsHitTesting(false)
         }
@@ -709,8 +813,8 @@ struct BookDetailView: View {
     // MARK: - Action bar
 
     /// The persistent action row: the one thing to do next, and the other
-    /// ways into the book beside it.
-    private func actionBar(_ book: Book) -> some View {
+    /// ways into the book beside it. Unbacked, it floats over a `barEdgeFade`.
+    private func actionBar(_ book: Book, backed: Bool = true) -> some View {
         HStack(spacing: 10) {
             if model.isWishlistOnly {
                 Button {
@@ -745,12 +849,14 @@ struct BookDetailView: View {
         .padding(.horizontal, 16)
         .padding(.top, 10)
         .background {
-            ZStack {
-                Rectangle().fill(.ultraThinMaterial)
-                palette.bg0Color.opacity(0.74)
+            if backed {
+                ZStack {
+                    Rectangle().fill(.ultraThinMaterial)
+                    palette.bg0Color.opacity(0.74)
+                }
+                .overlay(alignment: .top) { Hairline() }
+                .ignoresSafeArea(edges: [.bottom, .horizontal])
             }
-            .overlay(alignment: .top) { Hairline() }
-            .ignoresSafeArea(edges: .bottom)
         }
     }
 

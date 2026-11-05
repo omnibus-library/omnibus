@@ -654,7 +654,7 @@ struct MetadataEditView: View {
                 .overlay(alignment: .top) {
                     Rectangle().fill(palette.ink0Color.opacity(0.12)).frame(height: 1)
                 }
-                .ignoresSafeArea(edges: .bottom)
+                .ignoresSafeArea(edges: [.bottom, .horizontal])
         }
     }
 

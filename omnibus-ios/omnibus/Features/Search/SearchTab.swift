@@ -43,29 +43,56 @@ struct BrowseDirectory: View {
     @Environment(\.palette) private var palette
 
     @State private var finished: [FinishedBook] = []
+    @State private var width: CGFloat = 0
+    /// Where a partly folded iPhone Duo's hinge crosses the tiles.
+    @State private var foldSpan: FoldSpan?
     private var invalidations = ReplicaInvalidations.shared
 
-    private let columns = [
-        GridItem(.flexible(), spacing: Spacing.md),
-        GridItem(.flexible(), spacing: Spacing.md),
-    ]
+    /// Width at which the four tiles sit in one row rather than a square.
+    static let oneRowWidth: CGFloat = 560
+
+    private var oneRow: Bool { width >= Self.oneRowWidth }
+
+    /// The fold the row splits at: two tiles on each page, shelves joining the left.
+    private var rowFold: FoldSpan? { oneRow ? foldSpan : nil }
+
+    private var columns: [GridItem] {
+        guard oneRow else { return Array(repeating: GridItem(.flexible(), spacing: Spacing.md), count: 2) }
+        return (0..<4).map { index in
+            let gutter = index == 1 ? rowFold.map { $0.gap + Spacing.md * 2 } : nil
+            return GridItem(.flexible(), spacing: gutter ?? Spacing.md)
+        }
+    }
+
+    private var shelvesTile: some View {
+        tile("Shelves", icon: "square.stack", note: "Your groupings", to: .shelves)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 30) {
             VStack(alignment: .leading, spacing: Spacing.md) {
                 SectionLabel("Browse")
 
-                // The library's own vocabulary as a square; shelves, which are
-                // yours rather than the books', span the row beneath it.
-                LazyVGrid(columns: columns, spacing: Spacing.md) {
-                    tile("Authors", icon: "person.2", note: "Who wrote it", to: .authorsIndex)
-                    tile("Series", icon: "books.vertical", note: "In order", to: .seriesIndex)
-                    tile("Tags", icon: SearchFacet.tag.glyph, note: "By subject", to: .tags)
-                    tile("Genres", icon: SearchFacet.genre.glyph, note: "By kind", to: .genres)
+                // The library's own vocabulary as a square, or a row where the
+                // width allows; shelves, which are yours rather than the
+                // books', span the row beneath it.
+                VStack(spacing: Spacing.md) {
+                    LazyVGrid(columns: columns, spacing: Spacing.md) {
+                        tile("Authors", icon: "person.2", note: "Who wrote it", to: .authorsIndex)
+                        tile("Series", icon: "books.vertical", note: "In order", to: .seriesIndex)
+                        tile("Tags", icon: SearchFacet.tag.glyph, note: "By subject", to: .tags)
+                        tile("Genres", icon: SearchFacet.genre.glyph, note: "By kind", to: .genres)
+                        if rowFold != nil { shelvesTile }
+                    }
+                    if rowFold == nil { shelvesTile }
                 }
-                tile("Shelves", icon: "square.stack", note: "Your groupings", to: .shelves)
+                .padding(.leading, rowFold?.leading ?? 0)
+                .padding(.trailing, rowFold?.trailing ?? 0)
+                // Measured outside the insets, so applying them can't move the fold.
+                .onFoldSpanChange { foldSpan = $0 }
             }
             .screenPadding()
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
 
             if !finished.isEmpty {
                 recentlyFinished
@@ -138,6 +165,7 @@ struct BrowseDirectory: View {
             }
             .scrollIndicators(.hidden)
             .scrollTargetBehavior(.viewAligned)
+            .endsAtSideBar()
         }
     }
 
