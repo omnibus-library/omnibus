@@ -1062,6 +1062,14 @@
   min-height: 0;
   aspect-ratio: 2 / 3;
 }
+/* aspect-ratio gives a skipped tile its exact height; the clip margin keeps shadow and lift; stacks fan wider than any fixed margin; Safari lacks it, so stays unskipped. */
+@supports (overflow-clip-margin: 1px) {
+  .lmq .lib-books .lib-tile:not(.ss-vol, .ss-stack) {
+    content-visibility: auto;
+    aspect-ratio: 2 / 3;
+    overflow-clip-margin: 40px;
+  }
+}
 .lib-loading {
   margin-top: 4px;
   padding-bottom: 40px;

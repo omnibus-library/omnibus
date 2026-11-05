@@ -1,4 +1,4 @@
-//! Wire types for the admin book-merge surface (`/api/books/merge`).
+//! Wire types for the book-merge surface (`/api/books/merge`).
 
 use serde::{Deserialize, Serialize};
 

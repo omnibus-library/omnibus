@@ -17,8 +17,8 @@ import { alignmentQuery } from "./queries";
 import { SyncLine } from "./SyncLine";
 import "./FilesDetails.css";
 
-/** Merge and delete, for admins; each opens the page's dialog. */
-function AdminActions({
+/** Merge for editors and admins, delete for admins; each opens the page's dialog. */
+function CuratorActions({
   book,
   onOpenDialog,
 }: {
@@ -26,12 +26,12 @@ function AdminActions({
   onOpenDialog: (dialog: BookDialog) => void;
 }) {
   const viewer = useCurrentUser();
-  if (!viewer.isAdmin) return null;
   // Merging folds this record's files into another book, so a record with none can't be offered it.
   const hasFiles = book.formats.length > 0;
+  const mayMerge = (viewer.isAdmin || viewer.canEdit) && hasFiles;
   return (
     <>
-      {hasFiles && (
+      {mayMerge && (
         <Button
           size="sm"
           data-testid="merge-with"
@@ -41,14 +41,16 @@ function AdminActions({
         </Button>
       )}
       {/* Delete stays on a fileless record: its dialog is that record's only removal. */}
-      <Button
-        size="sm"
-        className="bp-curator-delete"
-        data-testid="delete-files"
-        onClick={() => onOpenDialog("delete")}
-      >
-        {hasFiles ? "Delete files…" : "Delete record…"}
-      </Button>
+      {viewer.isAdmin && (
+        <Button
+          size="sm"
+          className="bp-curator-delete"
+          data-testid="delete-files"
+          onClick={() => onOpenDialog("delete")}
+        >
+          {hasFiles ? "Delete files…" : "Delete record…"}
+        </Button>
+      )}
     </>
   );
 }
@@ -213,7 +215,7 @@ export function FilesDetails({
             <PencilGlyph size={16} />
             Edit metadata
           </ButtonLink>
-          <AdminActions book={book} onOpenDialog={onOpenDialog} />
+          <CuratorActions book={book} onOpenDialog={onOpenDialog} />
         </div>
       </section>
     </div>

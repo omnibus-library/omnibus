@@ -37,7 +37,7 @@ use utoipa::{
         (name = "Search", description = "Search by title, author and series, or through the text of every book."),
         (name = "Audiobooks", description = "Audiobook playback: the manifest, part files, HLS streams and playback speed."),
         (name = "Covers", description = "Book covers and thumbnails, and changing a book's cover."),
-        (name = "Metadata", description = "Correcting a book's metadata, and looking books up at external providers."),
+        (name = "Metadata", description = "Correcting a book's metadata, merging duplicate books, and looking books up at external providers."),
         (name = "Uploads", description = "Adding your own books and audiobooks to the library."),
         (name = "Progress", description = "Reading and listening positions, reading sessions, and moving between a book's formats."),
         (name = "Annotations", description = "Highlights and bookmarks."),

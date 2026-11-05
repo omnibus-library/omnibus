@@ -26,7 +26,7 @@ export function TopNav() {
   return (
     <>
       <nav className="atrium-topbar" aria-label="Primary">
-        <Link to="/" className="atrium-brand">
+        <Link to="/" className="atrium-brand" aria-label="Omnibus">
           <img className="atrium-brand-mark" src={brandMark} alt="" />
           <div className="atrium-brand-word">Omnibus</div>
         </Link>

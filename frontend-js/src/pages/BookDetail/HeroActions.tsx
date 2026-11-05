@@ -146,7 +146,7 @@ function runtimeLine(book: Detail, audioSeconds: number): string | null {
 /** The More button's id, where focus lands when the editor sheet closes and its opener has gone. */
 export const MORE_BUTTON_ID = "bp-more";
 
-/** The More menu: file the book, edit it, and for admins merge or delete it. */
+/** The More menu: file the book, edit it, merge it (editors and admins) or delete it (admins). */
 function MoreActions({
   book,
   onOpenDialog,
@@ -154,7 +154,7 @@ function MoreActions({
   book: Detail;
   onOpenDialog: (dialog: BookDialog) => void;
 }) {
-  const { isAdmin } = useCurrentUser();
+  const { isAdmin, canEdit } = useCurrentUser();
   const navigate = useNavigate();
   const playback = usePlayback();
   const [open, setOpen] = useState(false);
@@ -207,7 +207,7 @@ function MoreActions({
                 }),
             },
             // Merging folds this record's files into another book, so a record with none can't be offered it.
-            ...(isAdmin && hasFiles
+            ...((isAdmin || canEdit) && hasFiles
               ? [
                   {
                     label: "Merge with…",
