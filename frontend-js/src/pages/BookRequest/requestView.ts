@@ -1,8 +1,12 @@
 import {
   ApiError,
   type BookRequest,
+  type RequestListing,
   type RequestState,
+  type RequestVersion,
   type StuckReason,
+  type User,
+  type UserId,
 } from "../../api";
 import { fileSize } from "../../format";
 
@@ -134,3 +138,55 @@ export const holdsEbook = (formats: readonly string[]) =>
 /** Whether `formats` include an audiobook. */
 export const holdsAudiobook = (formats: readonly string[]) =>
   upper(formats).some((f) => AUDIO_FORMATS.includes(f));
+
+/** Whether `viewer` may act on `request`: an admin, or the reader who made it while they may still request. */
+export const canActOn = (
+  viewer: Pick<User, "id" | "isAdmin" | "canRequest">,
+  request: Pick<BookRequest, "userId">,
+) => viewer.isAdmin || (viewer.canRequest && viewer.id === request.userId);
+
+const versionFacts = (version: RequestVersion) => {
+  const size = versionSize(version.sizeBytes);
+  return [versionFormat(version.format), ...(size ? [size] : [])];
+};
+
+/** What happened to a request, only from what was recorded: "Cancelled by you · EPUB · 2.4 MB · stopped at 40%". */
+export function requestFacts(
+  { request, cancelledByName }: RequestListing,
+  viewer: UserId,
+): string {
+  const canceller =
+    request.cancelledBy === viewer ? "you" : (cancelledByName ?? null);
+  const head =
+    request.state !== "cancelled"
+      ? stateView(request.state, request.stuckReason).heading
+      : canceller
+        ? `Cancelled by ${canceller}`
+        : "Cancelled";
+  const picked = request.versions.find((v) => v.id === request.chosenResultId);
+  const ended = request.state === "cancelled" || request.state === "stuck";
+  return [
+    head,
+    ...(picked ? versionFacts(picked) : []),
+    ...(ended && request.progress !== null
+      ? [`stopped at ${progressPercent(request.progress)}%`]
+      : []),
+  ].join(" · ");
+}
+
+/** One line per version the request gave up for another, keyed by the version's id. */
+export const swapFacts = ({ request }: RequestListing) =>
+  request.versions
+    .filter((v) => v.rejected)
+    .map((v) => ({
+      id: v.id,
+      text: ["Swapped for another version", ...versionFacts(v)].join(" · "),
+    }));
+
+/** Whether a listed request's book matches what was typed into the book filter: its title or an author, in any case. */
+export function matchesBook({ book }: RequestListing, query: string) {
+  const needle = query.trim().toLowerCase();
+  return [book.title, ...book.authors].some((text) =>
+    text.toLowerCase().includes(needle),
+  );
+}

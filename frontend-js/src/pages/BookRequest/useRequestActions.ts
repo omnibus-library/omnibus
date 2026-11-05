@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   bookRequestQuery,
   cancelBookRequest,
+  REQUEST_LISTS_KEY,
   type BookRequest as Request,
   swapRequestVersion,
   undoCancelBookRequest,
@@ -13,11 +14,13 @@ import { undoToastMs } from "./requestView";
 export const messageOf = (error: unknown) =>
   error instanceof Error ? error.message : "Something went wrong.";
 
-/** Replaces the cached request with the server's latest answer to a write, so polling follows the new state. */
+/** Replaces the cached request with the server's latest answer to a write, so polling follows the new state, and has the lists read again. */
 export function useAnswer(id: number) {
   const client = useQueryClient();
-  return (request: Request) =>
+  return (request: Request) => {
     client.setQueryData(bookRequestQuery(id).queryKey, request);
+    client.invalidateQueries({ queryKey: REQUEST_LISTS_KEY });
+  };
 }
 
 /** Drops any poll in flight before a write, so a stale answer cannot flip the lane back. */

@@ -1,15 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { ApiError } from "../../api";
+import { ApiError, toRequestListing, type UserId } from "../../api";
 import {
+  aWireListing,
+  aWireRequest,
+  aWireVersion,
+} from "../../testing/requestHandlers";
+import {
+  canActOn,
   holdsAudiobook,
   holdsEbook,
   isCancellable,
   isDownloading,
   isSearchStale,
+  matchesBook,
   progressPercent,
+  requestFacts,
   requestPath,
   startFailure,
   stateView,
+  swapFacts,
   undoToastMs,
   versionFormat,
   versionSize,
@@ -181,5 +190,124 @@ describe("undoToastMs", () => {
   it("never goes negative once the grace has all but gone", () => {
     expect(undoToastMs(101, 100)).toBe(0);
     expect(undoToastMs(90, 100)).toBe(0);
+  });
+});
+
+const VIEWER = 1 as UserId;
+const EPUB = aWireVersion({ id: 11 });
+const PDF = aWireVersion({ id: 12, format: "PDF", size_bytes: 9_100_000 });
+
+/** A listed request, as the lists draw it. */
+const listing = (
+  request: Parameters<typeof aWireRequest>[0],
+  cancelledByName: string | null = null,
+) =>
+  toRequestListing(
+    aWireListing({
+      request: aWireRequest(request),
+      cancelled_by_name: cancelledByName,
+    }),
+  );
+
+describe("requestFacts", () => {
+  it("records who cancelled it, the version and how far it got", () => {
+    const cancelled = listing(
+      {
+        state: "cancelled",
+        cancelled_by: VIEWER,
+        chosen_result_id: EPUB.id,
+        progress: 0.4,
+        versions: [EPUB],
+      },
+      "Ada Lovelace",
+    );
+
+    expect(requestFacts(cancelled, VIEWER)).toBe(
+      "Cancelled by you · EPUB · 2.4 MB · stopped at 40%",
+    );
+  });
+
+  it("names the reader who cancelled it when that was someone else", () => {
+    const cancelled = listing({ state: "cancelled", cancelled_by: 2 }, "Grace");
+
+    expect(requestFacts(cancelled, VIEWER)).toBe("Cancelled by Grace");
+  });
+
+  it("says only cancelled once the canceller's account is gone", () => {
+    const cancelled = listing({ state: "cancelled", cancelled_by: 9 });
+
+    expect(requestFacts(cancelled, VIEWER)).toBe("Cancelled");
+  });
+
+  it("gives a stuck request its reason and how far its download got", () => {
+    const stuck = listing({
+      state: "stuck",
+      stuck_reason: "stopped_moving",
+      chosen_result_id: PDF.id,
+      progress: 0.25,
+      versions: [PDF],
+    });
+
+    expect(requestFacts(stuck, VIEWER)).toBe(
+      "Stopped moving · PDF · 9.1 MB · stopped at 25%",
+    );
+  });
+
+  it("names a request with no version picked by its state alone", () => {
+    expect(requestFacts(listing({ state: "looking" }), VIEWER)).toBe("Looking");
+  });
+});
+
+describe("swapFacts", () => {
+  it("records each version given up as swapped for another", () => {
+    const swapped = listing({
+      state: "on_its_way",
+      chosen_result_id: EPUB.id,
+      versions: [EPUB, { ...PDF, rejected: true }],
+    });
+
+    expect(swapFacts(swapped)).toEqual([
+      { id: PDF.id, text: "Swapped for another version · PDF · 9.1 MB" },
+    ]);
+  });
+});
+
+describe("canActOn", () => {
+  it.each([
+    [
+      "an admin on another reader's request",
+      true,
+      { id: 2, isAdmin: true, canRequest: true },
+    ],
+    [
+      "the requester who may request",
+      true,
+      { id: 1, isAdmin: false, canRequest: true },
+    ],
+    ["another reader", false, { id: 2, isAdmin: false, canRequest: true }],
+    [
+      "the requester who may no longer request",
+      false,
+      { id: 1, isAdmin: false, canRequest: false },
+    ],
+  ] as const)("lets %s act: %s", (_who, expected, viewer) => {
+    const request = { userId: 1 as UserId };
+
+    expect(canActOn({ ...viewer, id: viewer.id as UserId }, request)).toBe(
+      expected,
+    );
+  });
+});
+
+describe("matchesBook", () => {
+  const hyperion = listing({});
+
+  it.each([
+    ["an empty filter", true, ""],
+    ["part of the title in any case", true, "hyper"],
+    ["an author", true, "simmons"],
+    ["another book", false, "dune"],
+  ])("matches %s: %s", (_case, expected, query) => {
+    expect(matchesBook(hyperion, query)).toBe(expected);
   });
 });

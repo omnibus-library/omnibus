@@ -21,7 +21,9 @@ import { ToastProvider, useToast } from "../../components/Toast/Toast";
 import { nowSecs } from "../../format";
 import { useCurrentUser } from "../../session";
 import { bookQuery } from "../BookDetail/queries";
+import { RequestAgain, RequestHistory } from "./RequestHistory";
 import {
+  canActOn,
   isCancellable,
   isDownloading,
   isSearchStale,
@@ -366,7 +368,7 @@ function Lane({ request }: { request: Request }) {
   const [focusVersions, setFocusVersions] = useState(false);
   const swap = useSwap(request.id, () => setFocusVersions(true));
   // Anyone may read a request; only its maker, or an admin, may act on it.
-  const canAct = viewer.id === request.userId || viewer.isAdmin;
+  const canAct = canActOn(viewer, request);
   const { heading, note } = stateView(request.state, request.stuckReason);
   return (
     <section
@@ -411,6 +413,11 @@ function Lane({ request }: { request: Request }) {
       )}
       {canAct && isCancellable(request) && (
         <Actions request={request} cancel={cancel} swap={swap} />
+      )}
+      {request.state === "cancelled" && viewer.canRequest && (
+        <div className="rq-actions">
+          <RequestAgain uuid={request.bookUuid} />
+        </div>
       )}
     </section>
   );
@@ -461,11 +468,12 @@ function RequestPage({ uuid, id }: { uuid: BookUuid; id: number }) {
         </div>
       </header>
       <Lane key={request.data.id} request={request.data} />
+      <RequestHistory uuid={uuid} shown={id} />
     </div>
   );
 }
 
-/** A book's request page: the book above, one lane per format, ebook only for now. */
+/** A book's request page: the book above, one lane per format, ebook only for now, and the book's other requests below. */
 export function BookRequest() {
   const { uuid: rawUuid } = useParams();
   const [params] = useSearchParams();

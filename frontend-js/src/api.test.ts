@@ -338,6 +338,7 @@ describe("toUser", () => {
       canEdit: true,
       canDownload: true,
       canRequest: true,
+      requestsOn: false,
       hasAvatar: true,
       hiddenFormats: [],
       stackSeries: false,
@@ -352,6 +353,10 @@ describe("toUser", () => {
     const { can_request: _, ...wire } = WIRE_ADA;
 
     expect(toUser(wire).canRequest).toBe(false);
+  });
+
+  it("reads the server's book-requests flag as requestsOn", () => {
+    expect(toUser({ ...WIRE_ADA, book_requests: true }).requestsOn).toBe(true);
   });
 
   it("maps the admin behind an impersonation", () => {

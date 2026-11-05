@@ -2,12 +2,15 @@ import { type HttpHandler, HttpResponse, http } from "msw";
 import {
   type BookRequest,
   ChooseVersion,
+  type EbookMetadata,
+  type RequestListing,
   type RequestVersion,
   StartRequest,
 } from "../api/generated/schemas";
+import { aWireBook } from "./wire";
 
 // A stateful MSW fake of the book-request routes, in the shape the server sends them.
-// A write a story makes shows in the next read; `writes` records them in order.
+// A write a story makes shows in the next read, the lists included; `writes` records them in order.
 
 const NOW = Math.floor(Date.now() / 1000);
 
@@ -51,6 +54,33 @@ export function aWireRequest(
   };
 }
 
+/** The book the fake's requests are for unless told otherwise. */
+export const HYPERION = aWireBook({
+  title: "Hyperion",
+  unique_identifier: "uuid-hyperion",
+  creators: [{ name: "Dan Simmons", role: null, file_as: null, id: 3 }],
+  formats: [],
+});
+
+/** A request as the lists send it: Ada's looking request for Hyperion unless told otherwise. */
+export function aWireListing(
+  overrides: Partial<RequestListing> = {},
+): RequestListing {
+  return {
+    request: aWireRequest(),
+    book: HYPERION,
+    requester_name: "Ada Lovelace",
+    cancelled_by_name: null,
+    ...overrides,
+  };
+}
+
+/** What the lists add to a request: its book and the names of who made and who cancelled it. */
+export type ListingContext = {
+  books?: EbookMetadata[];
+  names?: Record<number, string>;
+};
+
 /** The writes the fake answered, in order. */
 export type RequestWrite =
   | { kind: "start"; uuid: string }
@@ -68,8 +98,28 @@ export type RequestFake = {
 const SWAPPED = "Swapped for another version";
 
 /** The routes over `initial` requests. A start adds a looking request; a retry puts one back to looking, or back to choosing after a stopped download. */
-export function requestFake(initial: BookRequest[] = []): RequestFake {
+export function requestFake(
+  initial: BookRequest[] = [],
+  { books = [HYPERION], names = { 1: "Ada Lovelace" } }: ListingContext = {},
+): RequestFake {
   const requests = new Map(initial.map((r) => [r.id, r]));
+  const listing = (r: BookRequest): RequestListing => ({
+    request: {
+      ...r,
+      versions: r.versions.filter(
+        (v) => v.rejected || v.id === r.chosen_result_id,
+      ),
+    },
+    book:
+      books.find((b) => b.unique_identifier === r.book_uuid) ??
+      aWireBook({ unique_identifier: r.book_uuid }),
+    requester_name: names[r.user_id] ?? `Reader ${r.user_id}`,
+    cancelled_by_name:
+      r.cancelled_by === null || r.cancelled_by === undefined
+        ? null
+        : (names[r.cancelled_by] ?? null),
+  });
+  const newestFirst = () => [...requests.values()].sort((a, b) => b.id - a.id);
   // The state a cancel left, which an undo puts back.
   const before = new Map<number, BookRequest["state"]>();
   const fake: RequestFake = { handlers: [], writes: [] };
@@ -107,6 +157,16 @@ export function requestFake(initial: BookRequest[] = []): RequestFake {
       requests.set(made.id, made);
       return HttpResponse.json(made, { status: 201 });
     }),
+    http.get("/api/requests", () =>
+      HttpResponse.json(newestFirst().map(listing)),
+    ),
+    http.get("/api/books/:uuid/requests", ({ params }) =>
+      HttpResponse.json(
+        newestFirst()
+          .filter((r) => r.book_uuid === params.uuid)
+          .map(listing),
+      ),
+    ),
     http.get("/api/requests/:id", ({ params }) => {
       const found = find(params.id);
       return found ? HttpResponse.json(found) : refuse(404);

@@ -739,3 +739,118 @@ export const AnotherReadersDownloadOffersNoCancelOrPickAnother: Story = {
     ).toBeNull();
   },
 };
+
+// ---- the book's history: its other requests ----
+
+const CANCELLED_EARLIER = aWireRequest({
+  id: 5,
+  state: "cancelled",
+  cancelled_by: 1,
+  chosen_result_id: EPUB.id,
+  progress: 0.4,
+  versions: [EPUB],
+});
+
+const withHistory = (...earlier: Parameters<typeof aWireRequest>[0][]) => {
+  fake = requestFake([aWireRequest(), ...earlier.map(aWireRequest)]);
+  return [bookHandler(BOOK), ...fake.handlers];
+};
+
+export const HistoryRecordsACancelledRequestAndRequestAgainStartsANewOne: Story =
+  {
+    parameters: { user: READER },
+    beforeEach({ msw }) {
+      msw.use(...withHistory(CANCELLED_EARLIER));
+    },
+    play: async ({ canvas, userEvent }) => {
+      const history = within(await canvas.findByTestId("request-history"));
+      // One row: the request on screen is not its own history.
+      const row = await history.findByTestId("request-history-row");
+
+      await expect(row).toHaveTextContent(
+        "Cancelled by you · EPUB · 2.4 MB · stopped at 40%",
+      );
+      await expect(row).toHaveTextContent("Requested by you");
+
+      await userEvent.click(
+        history.getByRole("button", { name: "Request again" }),
+      );
+
+      await waitFor(() =>
+        expect(fake.writes).toEqual([{ kind: "start", uuid: UUID }]),
+      );
+      await waitFor(() =>
+        expect(canvas.getByTestId("request-state")).toHaveTextContent(
+          "Looking",
+        ),
+      );
+    },
+  };
+
+export const HistoryRecordsAVersionSwappedForAnother: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...withHistory({
+        id: 5,
+        state: "stuck",
+        stuck_reason: "stopped_moving",
+        chosen_result_id: EPUB.id,
+        progress: 0.25,
+        versions: [EPUB, { ...PDF, rejected: true }],
+      }),
+    );
+  },
+  play: async ({ canvas }) => {
+    const row = await canvas.findByTestId("request-history-row");
+
+    await expect(row).toHaveTextContent(
+      "Stopped moving · EPUB · 2.4 MB · stopped at 25%",
+    );
+    await expect(row).toHaveTextContent(
+      "Swapped for another version · PDF · 9.1 MB",
+    );
+    await expect(
+      within(row).queryByRole("button", { name: "Request again" }),
+    ).toBeNull();
+  },
+};
+
+export const HistoryOffersNoRequestAgainToAReaderWhoCantRequest: Story = {
+  parameters: { user: { ...READER, can_request: false } },
+  beforeEach({ msw }) {
+    msw.use(...withHistory(CANCELLED_EARLIER));
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("request-history-row");
+
+    await expect(
+      canvas.queryByRole("button", { name: "Request again" }),
+    ).toBeNull();
+  },
+};
+
+export const ABookWithNoOtherRequestShowsNoHistory: Story = {
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("request-looking");
+
+    await waitFor(() =>
+      expect(canvas.queryByTestId("request-history")).toBeNull(),
+    );
+  },
+};
+
+export const ACancelledRequestOffersRequestAgain: Story = {
+  parameters: { user: READER },
+  beforeEach({ msw }) {
+    msw.use(...seed({ state: "cancelled", cancelled_by: 1 }));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Request again" }),
+    );
+
+    await waitFor(() =>
+      expect(fake.writes).toEqual([{ kind: "start", uuid: UUID }]),
+    );
+  },
+};

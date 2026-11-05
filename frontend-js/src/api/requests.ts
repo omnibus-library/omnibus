@@ -1,4 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
+import { toBook } from "./books";
 import type { BookUuid, UserId } from "./core";
 import { ok, send } from "./core";
 import {
@@ -12,10 +13,13 @@ import {
   getTestDownloadClientConnectionUrl,
   getTestProwlarrConnectionUrl,
   getUndoCancelBookRequestUrl,
+  listBookRequests,
+  listRequests,
   setRequestsSettings,
 } from "./generated/omnibus";
 import type {
   BookRequest as BookRequestWire,
+  RequestListing as RequestListingWire,
   RequestsSettingsStatus,
   RequestsSettingsUpdate,
   RequestVersion as RequestVersionWire,
@@ -86,6 +90,7 @@ export function toBookRequest(wire: BookRequestWire) {
     progress: wire.progress ?? null,
     /** Unix seconds; when a cancelled request stops being undoable. */
     cancelAt: wire.cancel_at ?? null,
+    cancelledBy: (wire.cancelled_by ?? null) as UserId | null,
     note: wire.note ?? null,
     /** Unix seconds. */
     updatedAt: wire.updated_at,
@@ -94,6 +99,38 @@ export function toBookRequest(wire: BookRequestWire) {
 }
 
 export type BookRequest = ReturnType<typeof toBookRequest>;
+
+/** A request as the lists draw it; its `versions` are only the one it picked and those it gave up. */
+export function toRequestListing(wire: RequestListingWire) {
+  return {
+    request: toBookRequest(wire.request),
+    book: toBook(wire.book),
+    requesterName: wire.requester_name,
+    /** `null` unless cancelled, or once that account is gone. */
+    cancelledByName: wire.cancelled_by_name ?? null,
+  };
+}
+
+export type RequestListing = ReturnType<typeof toRequestListing>;
+
+/** The prefix of every list of requests, which any write to a request makes stale. */
+export const REQUEST_LISTS_KEY = ["requests", "list"] as const;
+
+/** Every reader's requests, newest first. */
+export const requestsQuery = queryOptions({
+  queryKey: [...REQUEST_LISTS_KEY, "all"],
+  queryFn: async () => ok(await listRequests()).map(toRequestListing),
+});
+
+/** One book's requests, newest first: its history. */
+export const bookRequestsQuery = (uuid: BookUuid) =>
+  queryOptions({
+    queryKey: [...REQUEST_LISTS_KEY, "book", uuid],
+    queryFn: async () =>
+      ok(await listBookRequests(encodeURIComponent(uuid))).map(
+        toRequestListing,
+      ),
+  });
 
 /** How often a request still moving is asked about again. */
 export const REQUEST_POLL_MS = 2000;

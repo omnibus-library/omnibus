@@ -225,3 +225,42 @@
     font-size: 28px;
   }
 }
+
+/* ---- the book's history ---- */
+
+.rq-history {
+  display: grid;
+  list-style: none;
+}
+.rq-history-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-block: 12px;
+  border-top: 1px solid var(--line-2);
+}
+.rq-history-text {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.rq-history-facts {
+  color: var(--ink-0);
+  font-size: 14px;
+  text-decoration: none;
+}
+.rq-history-swap,
+.rq-history-meta {
+  color: var(--ink-2);
+  font-size: 12px;
+}
+.rq-history-facts:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+@media (hover: hover) {
+  .rq-history-facts:hover {
+    color: var(--accent);
+  }
+}

@@ -22,6 +22,7 @@ import { PEOPLE_HREF } from "../../settingsIndex";
 import { Cover } from "../Cover/Cover";
 import {
   BookGlyph,
+  DownloadGlyph,
   HeartGlyph,
   PlayGlyph,
   ServerGlyph,
@@ -276,6 +277,19 @@ function AccountRows({ user, onNavigate }: SectionProps) {
         </span>
         <span className="um-row-label">Wishlists</span>
       </Link>
+      {user.requestsOn && (
+        <Link
+          to="/requests"
+          className="um-row"
+          data-testid="user-menu-requests"
+          onClick={onNavigate}
+        >
+          <span className="um-row-icon">
+            <DownloadGlyph size={16} />
+          </span>
+          <span className="um-row-label">Requests</span>
+        </Link>
+      )}
       <Link to="/settings" className="um-row" onClick={onNavigate}>
         <span className="um-row-icon">
           <SlidersGlyph />

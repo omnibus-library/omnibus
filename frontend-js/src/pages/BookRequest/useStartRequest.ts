@@ -1,6 +1,6 @@
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
-import { type BookUuid, startBookRequest } from "../../api";
+import { type BookUuid, REQUEST_LISTS_KEY, startBookRequest } from "../../api";
 import { useToast } from "../../components/Toast/Toast";
 import { requestPath, startFailure } from "./requestView";
 
@@ -8,9 +8,13 @@ import { requestPath, startFailure } from "./requestView";
 export function useStartRequest(uuid: BookUuid) {
   const navigate = useNavigate();
   const toast = useToast();
+  const client = useQueryClient();
   return useMutation({
     mutationFn: () => startBookRequest(uuid),
-    onSuccess: (request) => navigate(requestPath(uuid, request.id)),
+    onSuccess: (request) => {
+      client.invalidateQueries({ queryKey: REQUEST_LISTS_KEY });
+      navigate(requestPath(uuid, request.id));
+    },
     onError: (error) => toast(startFailure(error)),
   });
 }

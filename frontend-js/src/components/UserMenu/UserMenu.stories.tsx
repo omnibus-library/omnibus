@@ -197,6 +197,46 @@ export const WishlistsLeadsTheAccountRows: Story = {
   },
 };
 
+export const RequestsFollowsWishlistsWhenRequestsAreOn: Story = {
+  parameters: {
+    user: {
+      ...WIRE_ADA,
+      is_admin: false,
+      can_request: false,
+      book_requests: true,
+    },
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Open user menu" }),
+    );
+
+    const requests = canvas.getByRole("link", { name: "Requests" });
+    await expect(requests).toHaveAttribute("href", "/requests");
+    const wishlists = canvas.getByRole("link", { name: "Wishlists" });
+    await expect(
+      wishlists.compareDocumentPosition(requests) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  },
+};
+
+export const NoRequestsEntryWhenRequestsAreOff: Story = {
+  parameters: { user: { ...WIRE_ADA, book_requests: false } },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Open user menu" }),
+    );
+
+    await expect(
+      canvas.getByRole("link", { name: "Wishlists" }),
+    ).toBeInTheDocument();
+    await expect(
+      canvas.queryByRole("link", { name: "Requests" }),
+    ).not.toBeInTheDocument();
+  },
+};
+
 export const Member: Story = {
   parameters: { user: { ...WIRE_ADA, is_admin: false } },
   play: async ({ canvas, userEvent }) => {
