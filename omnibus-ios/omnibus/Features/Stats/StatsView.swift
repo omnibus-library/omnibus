@@ -66,45 +66,39 @@ struct StatsView: View {
     /// fire on the first appearance, so without this the reload below doubles
     /// the opening fetch on every launch.
     @State private var hasAppeared = false
+    /// The masthead's height, which the trailing page of a spread starts below.
+    @State private var mastheadHeight: CGFloat = 0
 
     var body: some View {
         NavigationStack(path: $path) {
-            ScrollView {
-                // The masthead (title + picker) is outside every state branch
-                // below, so a refusal or an error for another reader never
-                // takes the way back to your own stats with it.
-                LazyVStack(alignment: .leading, spacing: 30, pinnedViews: [.sectionHeaders]) {
-                    masthead
-                        .padding(.bottom, -Spacing.lg)
-
-                    if failure == .notSharing {
-                        StatsRefusalView { subject = .you }
-                    } else if isLoading && summary == nil {
-                        LoadingView()
-                    } else if let failure, case let .error(message) = failure, summary == nil {
-                        ErrorStateView(message: message) {
-                            Task {
-                                await load()
-                                await loadStandingSummary()
-                                await loadResumePoints()
-                            }
+            GeometryReader { geometry in
+                // A spread once the figures are in and there is room for one:
+                // the glance on the leading page, the period bands on the
+                // trailing one, each scrolling alone so a band header still
+                // pins inside the page it governs.
+                if failure != .notSharing, let summary,
+                   let split = PaneSplit.spread(size: geometry.size, fold: geometry.activeFold) {
+                    HStack(spacing: 0) {
+                        page {
+                            masthead.padding(.bottom, -Spacing.lg)
+                            glance(summary)
                         }
-                    } else if let summary {
-                        figures(summary)
+                        .frame(width: split.leading)
+                        Color.clear.frame(width: split.gap)
+                        page {
+                            // Level with the streak beside it, below the masthead.
+                            Color.clear.frame(height: max(0, mastheadHeight - Spacing.lg))
+                            bands(summary)
+                        }
+                        .frame(width: split.trailing)
                     }
+                } else {
+                    page { column }
                 }
-                .padding(.bottom, 40)
             }
-            .scrollIndicators(.hidden)
             .background(ScreenBackground())
             .toolbar(.hidden, for: .navigationBar)
             .topEdgeScrim()
-            .refreshTask {
-                await load(force: true)
-                await loadReaders()
-                await loadStandingSummary()
-                await loadResumePoints()
-            }
             .withDestinations()
         }
         .task {
@@ -161,6 +155,50 @@ struct StatsView: View {
 
     // MARK: - The screen
 
+    /// The whole page as one column: the masthead, then whichever state it is in.
+    /// The masthead is outside every state branch, so a refusal or an error for
+    /// another reader never takes the way back to your own stats with it.
+    @ViewBuilder
+    private var column: some View {
+        masthead
+            .padding(.bottom, -Spacing.lg)
+
+        if failure == .notSharing {
+            StatsRefusalView { subject = .you }
+        } else if isLoading && summary == nil {
+            LoadingView()
+        } else if let failure, case let .error(message) = failure, summary == nil {
+            ErrorStateView(message: message) {
+                Task {
+                    await load()
+                    await loadStandingSummary()
+                    await loadResumePoints()
+                }
+            }
+        } else if let summary {
+            glance(summary)
+            bands(summary)
+        }
+    }
+
+    /// One scrolling page of the screen, its bands' headers pinning as they pass.
+    private func page(@ViewBuilder _ content: () -> some View) -> some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 30, pinnedViews: [.sectionHeaders]) {
+                content()
+            }
+            .padding(.bottom, 40)
+        }
+        .scrollIndicators(.hidden)
+        .refreshTask {
+            await load(force: true)
+            await loadReaders()
+            await loadStandingSummary()
+            await loadResumePoints()
+        }
+    }
+
+
     /// The masthead: the subject's own title, and the picker in its trailing
     /// slot whenever there's someone else to switch to.
     private var masthead: some View {
@@ -169,11 +207,12 @@ struct StatsView: View {
                 StatsReaderPicker(subject: $subject, readers: readers)
             }
         }
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { mastheadHeight = $0 }
     }
 
-    /// Everything below the masthead once a summary has loaded.
+    /// The standing glance below the masthead: streak, goals, the last four weeks, activity.
     @ViewBuilder
-    private func figures(_ summary: StatsSummary) -> some View {
+    private func glance(_ summary: StatsSummary) -> some View {
         // Off the unwindowed summary — see `standingSummary`. The
         // streak card needs it too: `current_streak_days` is unwindowed
         // but `longest_streak_days` is *not* (`db/src/stats/streak.rs`:
@@ -194,7 +233,11 @@ struct StatsView: View {
                 HeatmapView(days: unwindowed.heatmap, asOf: unwindowed.asOfDay)
             }
         }
+    }
 
+    /// The two bands: what the period control governs, then what it doesn't.
+    @ViewBuilder
+    private func bands(_ summary: StatsSummary) -> some View {
         Section {
             windowed(summary)
         } header: {

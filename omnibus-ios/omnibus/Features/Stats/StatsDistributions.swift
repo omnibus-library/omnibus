@@ -170,6 +170,7 @@ struct FinishedRail: View {
             }
             .scrollIndicators(.hidden)
             .scrollTargetBehavior(.viewAligned)
+            .endsAtSideBar()
         }
     }
 }

@@ -30,6 +30,8 @@ struct AccountView: View {
     @State private var hiddenFormats: Set<String> = []
     @State private var hiddenSaved = false
     @State private var hiddenError: String?
+    /// The masthead's height, which the trailing page of a spread starts below.
+    @State private var mastheadHeight: CGFloat = 0
     private var downloads = DownloadManager.shared
     private var connectivity = Connectivity.shared
 
@@ -41,26 +43,29 @@ struct AccountView: View {
         @Bindable var app = app
 
         NavigationStack(path: $path) {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 30) {
-                    Masthead(title: "You")
-
-                    identityCard
-
-                    appearance($app)
-                    reading
-                    UserSettingsSection()
-                    library
-                    offline
-                    sendToKindle
-                    hiddenFormatsSection
-                    session
-                    colophon
+            GeometryReader { geometry in
+                // Folded like a book, or opened flat on its side: the account
+                // and how it reads on the leading page, the library and the
+                // device on the trailing one, so no row is bent across the hinge.
+                if let split = PaneSplit.spread(size: geometry.size, fold: geometry.activeFold) {
+                    HStack(spacing: 0) {
+                        page { personal($app) }
+                            .frame(width: split.leading)
+                        Color.clear.frame(width: split.gap)
+                        page {
+                            // Level with the identity card beside it, below the masthead.
+                            Color.clear.frame(height: mastheadHeight)
+                            housekeeping
+                        }
+                        .frame(width: split.trailing)
+                    }
+                } else {
+                    page {
+                        personal($app)
+                        housekeeping
+                    }
                 }
-                .padding(.bottom, 40)
             }
-            .scrollIndicators(.hidden)
-            .scrollDismissesKeyboard(.interactively)
             .background(ScreenBackground())
             .toolbar(.hidden, for: .navigationBar)
             .topEdgeScrim()
@@ -96,6 +101,42 @@ struct AccountView: View {
             hiddenSaved = false
             hiddenError = nil
         }
+    }
+
+    /// The account and how it reads: what a spread puts on its leading page.
+    @ViewBuilder
+    private func personal(_ app: Bindable<AppState>) -> some View {
+        Masthead(title: "You")
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { mastheadHeight = $0 }
+
+        identityCard
+
+        appearance(app)
+        reading
+        UserSettingsSection()
+    }
+
+    /// The library, the device and the session: what a spread puts on its trailing page.
+    @ViewBuilder
+    private var housekeeping: some View {
+        library
+        offline
+        sendToKindle
+        hiddenFormatsSection
+        session
+        colophon
+    }
+
+    /// One scrolling page of the screen.
+    private func page(@ViewBuilder _ content: () -> some View) -> some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 30) {
+                content()
+            }
+            .padding(.bottom, 40)
+        }
+        .scrollIndicators(.hidden)
+        .scrollDismissesKeyboard(.interactively)
     }
 
     // MARK: - Identity
@@ -154,8 +195,11 @@ struct AccountView: View {
                         Haptics.select()
                         withAnimation(Motion.settle) { app.wrappedValue.theme = name }
                     }
+                    // A phone's width of tile, so a wide screen doesn't grow them into panels.
+                    .frame(maxWidth: ThemeSwatch.maxWidth)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -579,6 +623,8 @@ private struct RejectedWritesSheet: View {
 
 /// One theme, shown in its own colours.
 private struct ThemeSwatch: View {
+    static let maxWidth: CGFloat = 96
+
     let name: ThemeName
     let isOn: Bool
     let action: () -> Void

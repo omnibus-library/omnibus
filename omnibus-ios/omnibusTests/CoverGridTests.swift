@@ -12,4 +12,11 @@ struct CoverGridTests {
             #expect(density.columns.allSatisfy { $0.alignment == .top })
         }
     }
+
+    @Test func foldColumnsAlignCellsByTheTopOfTheirCoverToo() {
+        let layout = FoldGridLayout(perSide: 3, leadingInset: 0, trailingInset: 0, foldGap: 25)
+        for density in CoverGridDensity.allCases {
+            #expect(layout.columns(density).allSatisfy { $0.alignment == .top })
+        }
+    }
 }

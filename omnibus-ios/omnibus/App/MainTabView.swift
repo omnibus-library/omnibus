@@ -1,8 +1,9 @@
 //  MainTabView.swift
 //  The signed-in shell: four native tabs, one NavigationStack each (so every
-//  push gets interactive swipe-back for free). The system tab bar is hidden and
-//  replaced by `OmnibusTabBar` in a bottom safe-area inset, with the audiobook
-//  mini player stacked directly above it.
+//  push gets interactive swipe-back for free). On a compact iPhone the system
+//  tab bar is hidden and replaced by `OmnibusTabBar` in a bottom safe-area
+//  inset, with the audiobook mini player stacked directly above it; where the
+//  system draws its own bar regardless (iPad, iPhone Duo) that bar stays.
 
 import SwiftUI
 
@@ -115,31 +116,67 @@ struct MainTabView: View {
         paths[selection].hidesTabBar
     }
 
+    @Environment(\.sideBarEdge) private var sideBarEdge
+    /// Where the system puts its tab bar, as a tab's content reports it.
+    @State private var systemBarPlacement: TabBarPlacement?
+
+    /// Whether the system's tab bar is shown instead of `OmnibusTabBar`:
+    /// wherever the system draws its own regardless of `.hidden` — down the
+    /// side (iPhone Duo) or across the top (iPad) — rather than stacking ours
+    /// on it. Only a bottom bar hides, which is the compact iPhone's.
+    private var usesSystemBar: Bool {
+        sideBarEdge != nil || (systemBarPlacement.map { $0 != .bottomBar } ?? false)
+    }
+
+    /// A tab's root, with the probe for where the bar sits.
+    private func tabRoot(_ root: some View) -> some View {
+        root.background { TabBarPlacementProbe { systemBarPlacement = $0 } }
+    }
+
+    /// The selection the system bar drives, which reports a tap on the open tab as a reselect.
+    private var tabSelection: Binding<AppTab> {
+        Binding(
+            get: { selection },
+            set: { tab in
+                if tab == selection { reselect.fire(tab) } else { selection = tab }
+            }
+        )
+    }
+
     var body: some View {
-        TabView(selection: $selection) {
-            Tab(value: AppTab.library) {
-                LibraryView(addSheetPresented: $addSheetPresented, path: $paths.library)
+        // Titled and iconed for the system's own bar, for where it takes over.
+        TabView(selection: tabSelection) {
+            Tab(AppTab.library.label, systemImage: AppTab.library.icon, value: AppTab.library) {
+                tabRoot(LibraryView(addSheetPresented: $addSheetPresented, path: $paths.library))
             }
-            Tab(value: AppTab.search) {
-                SearchTab(path: $paths.search)
+            Tab(AppTab.search.label, systemImage: AppTab.search.icon, value: AppTab.search) {
+                tabRoot(SearchTab(path: $paths.search))
             }
-            Tab(value: AppTab.stats) {
-                StatsView(path: $paths.stats)
+            Tab(AppTab.stats.label, systemImage: AppTab.stats.icon, value: AppTab.stats) {
+                tabRoot(StatsView(path: $paths.stats))
             }
-            Tab(value: AppTab.you) {
-                AccountView(path: $paths.you)
+            Tab(AppTab.you.label, systemImage: AppTab.you.icon, value: AppTab.you) {
+                tabRoot(AccountView(path: $paths.you))
             }
         }
         // `TabView` keeps tab state and lazy loading; only its chrome is
         // replaced. Hiding the bar and insetting our own is what lets the mini
-        // player sit directly above the tabs as one block.
-        .toolbar(.hidden, for: .tabBar)
+        // player sit directly above the tabs as one block. A side or top bar
+        // stays the system's: that is where every app's tabs live there.
+        .toolbar(usesSystemBar ? .automatic : .hidden, for: .tabBar)
+        .tint(usesSystemBar ? palette.accentColor : nil)
+        // Beside the system's bar the mini player takes the system's slot for
+        // it, a glass capsule placed for that bar's shape: a full-width dock
+        // took a fifth of a folded phone held sideways.
+        .tabViewBottomAccessory(isEnabled: usesSystemBar && player.isActive && !isImmersiveDetail) {
+            MiniPlayerBar(inAccessory: true)
+        }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             // An immersive detail screen owns the bottom edge — its action
             // bar sits where the tabs do — so the whole block steps aside
             // while one is up. Audio keeps playing; the mini player returns
             // with the bar on pop.
-            if !isImmersiveDetail {
+            if !isImmersiveDetail && !usesSystemBar {
                 VStack(spacing: 0) {
                     if player.isActive {
                         MiniPlayerBar()
@@ -227,6 +264,19 @@ struct MainTabView: View {
             get: { Presentation.shared.player },
             set: { Presentation.shared.player = $0 }
         )
+    }
+}
+
+/// Reads `tabBarPlacement`, which is only set inside a tab's content.
+private struct TabBarPlacementProbe: View {
+    let report: (TabBarPlacement?) -> Void
+
+    @Environment(\.tabBarPlacement) private var placement
+
+    var body: some View {
+        Color.clear.onChange(of: placement, initial: true) { _, placement in
+            report(placement)
+        }
     }
 }
 

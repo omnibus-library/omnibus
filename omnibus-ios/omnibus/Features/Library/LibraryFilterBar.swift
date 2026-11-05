@@ -33,6 +33,7 @@ struct LibraryFilterBar: View {
             .screenPadding()
         }
         .scrollIndicators(.hidden)
+        .endsAtSideBar()
         .sheet(item: $openField) { field in
             FilterClauseSheet(initial: FilterClause.opening(field, in: store.clauses), viewerId: viewerId) {
                 store.apply($0)

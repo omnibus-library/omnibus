@@ -1,5 +1,5 @@
 //  OmnibusTabBar.swift
-//  Custom bottom navigation.
+//  Custom bottom navigation, on the compact iPhone where the system bar hides.
 //
 //  Replaces the iOS 26 floating pill bar with a flush, full-width bar in the
 //  Airbnb mould: a hairline rule, outline icons that fill on selection, and a

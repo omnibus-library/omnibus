@@ -361,7 +361,7 @@ struct JournalDrawer: View {
                 .background {
                     palette.bg2Color.opacity(0.4)
                         .overlay(alignment: .top) { Hairline() }
-                        .ignoresSafeArea(edges: .bottom)
+                        .ignoresSafeArea(edges: [.bottom, .horizontal])
                 }
             }
         }

@@ -186,10 +186,13 @@ submissions daily. A listing that fails aborts the run instead. Its suite
 
 ## The book page
 
-`Features/BookDetail/` draws one layout: the stage (the book standing on a blurred
-wash of its own cover, with your place in it), then Overview, Reviews, Highlights
-and Files under a tab strip that pins below the top bar, and a primary action that
-never scrolls away. The web page's `book_detail_scroll_stops` marquee has no iOS
+`Features/BookDetail/` draws the stage (the book standing on a blurred wash of its
+own cover, with your place in it), then Overview, Reviews, Highlights and Files under
+a tab strip that pins below the top bar, and a primary action that never scrolls
+away. On a page wide enough (any phone on its side, the iPhone Duo opened flat, an
+iPad) the stage and its action take the leading pane and the tabs the trailing one,
+split at the hinge when the Duo is partly folded (`PaneSplit`, see
+[iPhone Duo](#iphone-duo)). The web page's `book_detail_scroll_stops` marquee has no iOS
 counterpart, so the setting has no row in iOS settings; the field stays on the wire
 for the web.
 
@@ -341,7 +344,47 @@ drops `isReady` and leaves the view, `teardown` drops the view and leaves
 ## iPhone Duo
 
 The foldable has a compact outer display, a large inner one with a hinge down its
-middle, and a system that runs bars down the side of the screen in most poses.
+middle, and a system that runs bars down the side of the screen in most poses. What
+the app needs to know of that is behind one seam, `Design/DuoLayout.swift`:
+`EnvironmentValues.sideBarEdge` (the edge the system runs its bars down, or nil) and
+`GeometryProxy.activeFold` (where a partly open hinge divides a view). Both wrap iOS
+27.1 SDK APIs behind `#if canImport(UIKit, _version: 9127.0.85)`, so an older SDK
+builds the app unchanged and every answer is "none".
+
+- **Tabs.** `OmnibusTabBar` replaces only a bottom tab bar, the one `.hidden` really
+  hides. Where the system draws its own whatever it is told (down the side, or across
+  the top on iPad, as `tabBarPlacement` reports from inside a tab) that bar is shown
+  instead, from the titles and symbols `MainTabView`'s tabs carry, and the mini player
+  moves into that bar's own slot for it (`tabViewBottomAccessory`), a glass capsule the
+  system places for the bar's shape; a full-width dock took a fifth of a folded phone
+  held sideways. `TopEdgeScrim` shrinks to a soft edge,
+  since the status bar it grounds has moved into that column.
+- **The side column.** It is safe area, so anything that stops at the safe area stands
+  as a black strip beside it. Washes, scrims and bar slabs ignore the horizontal safe
+  area to run under it; sideways rails, which scroll into it, take `endsAtSideBar()`
+  to fade out where it begins (a no-op without a side bar, so a notched iPhone's rails
+  still run edge to edge).
+- **Splits.** `PaneSplit` and `PlayerArrangement` are pure geometry: two panes either
+  side of a vertical fold, or a share of a wide view, else one column. The book page
+  and the player use them; the player also puts its artwork above a horizontal fold.
+  Both draw one backdrop across the panes, and the book page's two bars lay no slabs
+  of their own, the page fading out under each (`barEdgeFade`): a slab or a
+  pane-clipped halo ended at the pane's edge as a hard line through the wash.
+  Stats and You, long pages of sections, spread across two pages
+  (`PaneSplit.spread`) folded like a book or opened flat on their side, each page
+  scrolling alone so Stats' band headers still pin inside the page they govern.
+- **Full-screen surfaces.** The player, which no tab bar shows on, takes the side
+  column back: the system reports what really occludes it as `ReservedRegion`s of
+  kind `.occlusion` (the status bar's housing, and the camera inside it), and only
+  those are cleared; the player's top bar keeps off both (`clearsOcclusions`).
+- **Rows across a fold.** `FoldSpan` centres a row on the hinge, the wider side giving
+  up its excess, as the system's own split views do. `CoverGrid` lays an even column
+  count either side of it (`FoldGridLayout`), the continue carousel puts one card on
+  each page, and Search's Browse tiles split two and two, so nothing bends down the
+  middle.
+- **Reader.** Opened flat or held like a book the inner display is wide enough for
+  Two Pages, whose spine lands on the hinge; it already reads the hinge
+  (`ReaderStageView.observeHinge`) to say a spread appears once the phone is unfolded.
 
 Device Hub (Xcode 27's Simulator) is the only thing that changes the simulator's pose
 (Closed, Partially Open, Open and Rotate Right in its toolbar); neither `simctl` nor
