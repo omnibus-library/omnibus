@@ -398,6 +398,54 @@ async fn backfill_content_fts_prunes_rows_for_books_that_no_longer_exist() {
     );
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn backfill_content_fts_indexes_book_while_another_connection_holds_the_write_lock() {
+    // WAL needs a real file: there a deferred transaction that has read cannot
+    // wait out another writer, and fails with a locked database instead.
+    let tmp = tempfile::tempdir().unwrap();
+    let url = format!(
+        "sqlite://{}?mode=rwc",
+        tmp.path().join("omnibus.db").display()
+    );
+    let dir = make_test_dir("content-write-lock");
+    let lib = dir.to_str().unwrap().to_string();
+    let pool = init_db(&url).await.unwrap();
+    seed_epub_book(&pool, &dir, "alpha.epub", "uuid-a", "Alpha", 100, 200).await;
+    pool.close().await;
+    // Reopen, so no connection has opened the FTS5 table yet, as after a restart.
+    let pool = init_db(&url).await.unwrap();
+
+    let (start_tx, start_rx) = tokio::sync::oneshot::channel::<()>();
+    let (locked_tx, locked_rx) = std::sync::mpsc::channel::<()>();
+    let writer_pool = pool.clone();
+    let writer = tokio::spawn(async move {
+        start_rx.await.unwrap();
+        let mut tx = writer_pool.begin_with("BEGIN IMMEDIATE").await.unwrap();
+        sqlx::query("UPDATE books SET title = title")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        locked_tx.send(()).unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        tx.commit().await.unwrap();
+    });
+
+    // The import's own writes land between the candidate read and the store.
+    let mut start_tx = Some(start_tx);
+    backfill_content_fts(&pool, &lib, |_, _, _| {
+        if let Some(start_tx) = start_tx.take() {
+            start_tx.send(()).unwrap();
+            locked_rx.recv().unwrap();
+        }
+    })
+    .await
+    .unwrap();
+    writer.await.unwrap();
+
+    assert!(!chapter_texts_of(&pool, "uuid-a").await.is_empty());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 // ---------- search ----------
 
 #[tokio::test]

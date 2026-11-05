@@ -462,7 +462,9 @@ async fn replace_book_chapters(
     candidate: &Candidate,
     chapters: &[extract::ChapterText],
 ) -> Result<(), sqlx::Error> {
-    let mut tx = pool.begin().await?;
+    // BEGIN IMMEDIATE: FTS5 reads its config when a connection first opens the
+    // table, so a deferred transaction would hold a stale snapshot (517).
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     sqlx::query("DELETE FROM book_content_chapters WHERE book_uuid = ?")
         .bind(&candidate.book_uuid)
         .execute(&mut *tx)
