@@ -32,11 +32,12 @@ pub async fn app() -> (Router, SqlitePool) {
 async fn insert_user(pool: &SqlitePool, username: &str, is_admin: bool) -> User {
     let admin_flag = if is_admin { 1i64 } else { 0 };
     let id: i64 = sqlx::query_scalar(
-        "INSERT INTO users (username, password_hash, is_admin, can_upload, can_edit, can_download)
-         VALUES (?, '!test-no-password', ?, ?, ?, 1)
+        "INSERT INTO users (username, password_hash, is_admin, can_upload, can_edit, can_download, can_request)
+         VALUES (?, '!test-no-password', ?, ?, ?, 1, ?)
          RETURNING id",
     )
     .bind(username)
+    .bind(admin_flag)
     .bind(admin_flag)
     .bind(admin_flag)
     .bind(admin_flag)
@@ -50,6 +51,7 @@ async fn insert_user(pool: &SqlitePool, username: &str, is_admin: bool) -> User 
         can_upload: is_admin,
         can_edit: is_admin,
         can_download: true,
+        can_request: is_admin,
         kindle_email: None,
         display_name: None,
         has_avatar: false,
@@ -59,6 +61,17 @@ async fn insert_user(pool: &SqlitePool, username: &str, is_admin: bool) -> User 
         share_stats: true,
         stats_exclusions: Default::default(),
     }
+}
+
+/// Overwrite a user's stored `is_admin` and `can_request`, as an admin editing them would.
+pub async fn set_request_flags(pool: &SqlitePool, user_id: i64, is_admin: bool, can_request: bool) {
+    sqlx::query("UPDATE users SET is_admin = ?, can_request = ? WHERE id = ?")
+        .bind(is_admin)
+        .bind(can_request)
+        .bind(user_id)
+        .execute(pool)
+        .await
+        .expect("set request flags");
 }
 
 /// Create a non-admin user.
@@ -108,6 +121,7 @@ pub async fn create_user_with_password(pool: &SqlitePool, username: &str, passwo
         can_upload: false,
         can_edit: false,
         can_download: true,
+        can_request: false,
         kindle_email: None,
         display_name: None,
         has_avatar: false,
@@ -162,6 +176,7 @@ pub fn fake_auth_user(id: i64, session_id: i64) -> AuthUser {
         can_upload: false,
         can_edit: false,
         can_download: true,
+        can_request: false,
         kindle_email: None,
         display_name: None,
         has_avatar: false,

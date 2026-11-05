@@ -29,6 +29,8 @@ import {
   McpStatus,
   MetadataSource,
   RegistrationStatus,
+  type RequestsSettingsStatus,
+  RequestsSettingsUpdate,
   type SessionView,
   SetHardcoverKey,
   Settings,
@@ -276,6 +278,7 @@ export function aWireAdminUser(
     can_upload: true,
     can_edit: false,
     can_download: true,
+    can_request: false,
     kindle_email: null,
     display_name: null,
     created_at: 1_700_000_000,
@@ -522,6 +525,74 @@ export function smtpHandlers(
   ];
 }
 
+/** The request connections as `GET /api/admin/requests/settings` reports them once saved. */
+export function aWireRequestsSettings(
+  overrides: Partial<RequestsSettingsStatus> = {},
+): RequestsSettingsStatus {
+  return {
+    prowlarr_url: "http://prowlarr:9696",
+    prowlarr_api_key_masked: "abcd\u2026wxyz",
+    prowlarr_api_key_source: "settings",
+    download_client_kind: "qbittorrent",
+    download_client_url: "http://qbittorrent:8080",
+    download_client_username: "admin",
+    download_client_password_masked: "\u2022\u2022\u2022\u2022",
+    download_client_category: "omnibus",
+    download_client_path_prefix: "/downloads",
+    download_path_prefix: "/mnt/downloads",
+    ...overrides,
+  };
+}
+
+/** What `requestsHandlers` records of the writes it answers: each saved update, and each connection tested in order. */
+export type RequestsWrites = {
+  saved: RequestsSettingsUpdate[];
+  tests: ("prowlarr" | "client")[];
+};
+
+/**
+ * The `/api/admin/requests/settings` routes over one set of connections: a save
+ * replaces them, and both tests answer success. The handler records every write
+ * in `RequestsWrites`.
+ */
+export function requestsHandlers(
+  initial: RequestsSettingsStatus,
+  { saved = [], tests = [] }: Partial<RequestsWrites> = {},
+) {
+  let current = initial;
+  const masked = "\u2022\u2022\u2022\u2022";
+  return [
+    http.get("/api/admin/requests/settings", () => HttpResponse.json(current)),
+    http.put("/api/admin/requests/settings", async ({ request }) => {
+      const update = RequestsSettingsUpdate.parse(await request.json());
+      saved.push(update);
+      current = aWireRequestsSettings({
+        prowlarr_url: update.prowlarr_url || null,
+        prowlarr_api_key_masked: update.prowlarr_api_key
+          ? masked
+          : current.prowlarr_api_key_masked,
+        download_client_url: update.download_client_url || null,
+        download_client_username: update.download_client_username || null,
+        download_client_password_masked: update.download_client_password
+          ? masked
+          : current.download_client_password_masked,
+        download_client_category: update.download_client_category || "omnibus",
+        download_client_path_prefix: update.download_client_path_prefix || null,
+        download_path_prefix: update.download_path_prefix || null,
+      });
+      return HttpResponse.json(current);
+    }),
+    http.post("/api/admin/requests/settings/test-indexer", () => {
+      tests.push("prowlarr");
+      return new HttpResponse(null, { status: 200 });
+    }),
+    http.post("/api/admin/requests/settings/test-client", () => {
+      tests.push("client");
+      return new HttpResponse(null, { status: 200 });
+    }),
+  ];
+}
+
 /** A server-wide key saved through the API, masked as `GET /api/hardcover-key` reports it. */
 export function aWireKeyStatus(
   overrides: Partial<HardcoverKeyStatus> = {},
@@ -704,6 +775,7 @@ export function adminHandlers() {
       devices: [aWireDevice()],
     }),
     ...smtpHandlers(aWireSmtpStatus()),
+    ...requestsHandlers(aWireRequestsSettings()),
     ...secretKeyHandlers("/api/hardcover-key", aWireKeyStatus()),
     ...secretKeyHandlers("/api/google-books-key", NO_KEY),
     ...ebookConvertHandlers(aWireEbookConvert()),

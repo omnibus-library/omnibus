@@ -9,8 +9,8 @@ import {
   sameSection,
 } from "./settingsIndex";
 
-const labels = (query: string, isAdmin: boolean) =>
-  matchingSettings(query, isAdmin).map((entry) => entry.label);
+const labels = (query: string, isAdmin: boolean, canRequest = false) =>
+  matchingSettings(query, isAdmin, canRequest).map((entry) => entry.label);
 
 /** The parts of a router location `sameSection` reads, for an in-app path. */
 const at = (path: string) => {
@@ -33,6 +33,14 @@ describe("matchingSettings", () => {
 
   it("hides server settings from members", () => {
     expect(labels("smtp", false)).toEqual([]);
+  });
+
+  it("offers the request connections to an admin with request access", () => {
+    expect(labels("prowlarr", true, true)).toEqual(["Book requests"]);
+  });
+
+  it("hides the request connections without request access", () => {
+    expect(labels("prowlarr", true, false)).toEqual([]);
   });
 
   it("returns nothing for a blank query", () => {

@@ -7,7 +7,7 @@ use axum::{
     body::{to_bytes, Body},
     http::{header::AUTHORIZATION, Request, StatusCode},
 };
-use omnibus_shared::AdminUserRow;
+use omnibus_shared::{AdminUserRow, UserSummary};
 use tower::ServiceExt;
 
 use crate::auth::test_support as auth_test_support;
@@ -60,6 +60,7 @@ fn create_body(username: &str, password: &str, is_admin: bool) -> serde_json::Va
             "can_upload": is_admin,
             "can_edit": is_admin,
             "can_download": true,
+            "can_request": false,
         },
     })
 }
@@ -190,7 +191,7 @@ async fn patch_permissions_returns_403_for_non_admin() {
             &format!("/api/admin/users/{}/permissions", bob.id),
             &token,
             Some(serde_json::json!({
-                "is_admin": false, "can_upload": true, "can_edit": true, "can_download": false,
+                "is_admin": false, "can_upload": true, "can_edit": true, "can_download": false, "can_request": false,
             })),
         ))
         .await
@@ -211,7 +212,7 @@ async fn patch_permissions_updates_flags() {
             &format!("/api/admin/users/{}/permissions", bob.id),
             &token,
             Some(serde_json::json!({
-                "is_admin": false, "can_upload": true, "can_edit": true, "can_download": false,
+                "is_admin": false, "can_upload": true, "can_edit": true, "can_download": false, "can_request": false,
             })),
         ))
         .await
@@ -221,6 +222,46 @@ async fn patch_permissions_updates_flags() {
     let rows = list_rows(&app, &token).await;
     let bob_row = rows.iter().find(|u| u.id == bob.id).unwrap();
     assert!(bob_row.can_upload && bob_row.can_edit && !bob_row.can_download);
+}
+
+#[tokio::test]
+async fn patch_permissions_grants_then_revokes_can_request_seen_by_auth_me() {
+    let (app, state, pool) = fixture_book_requests(true).await;
+    let auth_app = crate::auth::auth_router(state);
+    let admin_token = admin_token(&pool, "alice").await;
+    let bob = auth_test_support::create_user(&pool, "bob").await;
+    let bob_token = auth_test_support::bearer_token(&pool, bob.id).await;
+    let me_can_request = || async {
+        let res = auth_app
+            .clone()
+            .oneshot(req("GET", "/api/auth/me", &bob_token, None))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        serde_json::from_slice::<UserSummary>(&bytes)
+            .unwrap()
+            .can_request
+    };
+    let patch = |can_request: bool| {
+        req(
+            "PATCH",
+            &format!("/api/admin/users/{}/permissions", bob.id),
+            &admin_token,
+            Some(serde_json::json!({
+                "is_admin": false, "can_upload": false, "can_edit": false, "can_download": true,
+                "can_request": can_request,
+            })),
+        )
+    };
+
+    assert!(!me_can_request().await);
+    let res = app.clone().oneshot(patch(true)).await.unwrap();
+    assert_eq!(res.status(), StatusCode::NO_CONTENT);
+    assert!(me_can_request().await);
+    let res = app.clone().oneshot(patch(false)).await.unwrap();
+    assert_eq!(res.status(), StatusCode::NO_CONTENT);
+    assert!(!me_can_request().await);
 }
 
 #[tokio::test]
@@ -234,7 +275,7 @@ async fn patch_permissions_returns_409_demoting_last_admin() {
             &format!("/api/admin/users/{}/permissions", admin.id),
             &token,
             Some(serde_json::json!({
-                "is_admin": false, "can_upload": false, "can_edit": false, "can_download": true,
+                "is_admin": false, "can_upload": false, "can_edit": false, "can_download": true, "can_request": false,
             })),
         ))
         .await
@@ -252,7 +293,7 @@ async fn patch_permissions_returns_404_for_unknown_user() {
             "/api/admin/users/9999/permissions",
             &token,
             Some(serde_json::json!({
-                "is_admin": false, "can_upload": false, "can_edit": false, "can_download": true,
+                "is_admin": false, "can_upload": false, "can_edit": false, "can_download": true, "can_request": false,
             })),
         ))
         .await

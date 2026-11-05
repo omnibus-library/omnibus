@@ -97,6 +97,33 @@ export const NewUserStartsWithDownloadOnly: Story = {
     await expect(checkbox(dialog, "Upload books")).not.toBeChecked();
     await expect(checkbox(dialog, "Edit metadata")).not.toBeChecked();
     await expect(checkbox(dialog, "Download")).toBeChecked();
+    await expect(checkbox(dialog, "Request books")).not.toBeChecked();
+  },
+};
+
+export const NewUserOffersNoRequestGrantWhenRequestsAreOff: Story = {
+  parameters: { user: { ...WIRE_ADA, can_request: false } },
+  render: () => <NewUserModal onClose={close} onCreated={done} />,
+  play: async ({ canvas, userEvent }) => {
+    const dialog = await canvas.findByRole("dialog", { name: "New user" });
+    await expect(checkbox(dialog, "Download")).toBeInTheDocument();
+    await expect(
+      within(dialog).queryByRole("checkbox", { name: "Request books" }),
+    ).toBeNull();
+
+    // Promoting then demoting must not leave a grant the admin cannot see.
+    await userEvent.click(checkbox(dialog, "Administrator"));
+    await userEvent.click(checkbox(dialog, "Administrator"));
+    await userEvent.type(within(dialog).getByLabelText("Username"), "carol");
+    await userEvent.type(
+      within(dialog).getByLabelText("Password"),
+      "Abcdefghij1",
+    );
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Create user" }),
+    );
+    await waitFor(() => expect(writes.created).toHaveLength(1));
+    await expect(writes.created[0]?.permissions.can_request).toBe(false);
   },
 };
 
@@ -116,18 +143,24 @@ export const NewUserMeterFollowsThePassword: Story = {
   },
 };
 
-export const AdministratorForcesAndDisablesTheOtherThree: Story = {
+export const AdministratorForcesAndDisablesTheOtherGrants: Story = {
   render: () => <NewUserModal onClose={close} onCreated={done} />,
   play: async ({ canvas, userEvent }) => {
     const dialog = await canvas.findByRole("dialog", { name: "New user" });
     await userEvent.click(checkbox(dialog, "Administrator"));
 
-    for (const name of ["Upload books", "Edit metadata", "Download"]) {
+    const grants = [
+      "Upload books",
+      "Edit metadata",
+      "Download",
+      "Request books",
+    ];
+    for (const name of grants) {
       await expect(checkbox(dialog, name)).toBeChecked();
       await expect(checkbox(dialog, name)).toBeDisabled();
     }
     await userEvent.click(checkbox(dialog, "Administrator"));
-    for (const name of ["Upload books", "Edit metadata", "Download"]) {
+    for (const name of grants) {
       await expect(checkbox(dialog, name)).toBeEnabled();
     }
   },
@@ -190,6 +223,7 @@ export const NewUserSendsWhatWasEntered: Story = {
       "Abcdefghij1",
     );
     await userEvent.click(checkbox(dialog, "Edit metadata"));
+    await userEvent.click(checkbox(dialog, "Request books"));
     await userEvent.click(
       within(dialog).getByRole("button", { name: "Create user" }),
     );
@@ -204,6 +238,7 @@ export const NewUserSendsWhatWasEntered: Story = {
           can_upload: false,
           can_edit: true,
           can_download: true,
+          can_request: true,
         },
       },
     ]);
@@ -312,6 +347,7 @@ export const EditUserStartsFromTheRowsPermissions: Story = {
     await expect(checkbox(dialog, "Upload books")).toBeChecked();
     await expect(checkbox(dialog, "Edit metadata")).not.toBeChecked();
     await expect(checkbox(dialog, "Download")).toBeChecked();
+    await expect(checkbox(dialog, "Request books")).not.toBeChecked();
     await expect(
       within(dialog).getByLabelText("Reset password"),
     ).toHaveAccessibleDescription("Leave blank to keep the current password.");
@@ -341,6 +377,7 @@ export const EditUserSavesPermissionsWithoutAPassword: Story = {
   play: async ({ canvas, userEvent }) => {
     const dialog = await canvas.findByRole("dialog", { name: "Edit alice" });
     await userEvent.click(checkbox(dialog, "Edit metadata"));
+    await userEvent.click(checkbox(dialog, "Request books"));
     await userEvent.click(
       within(dialog).getByRole("button", { name: "Save changes" }),
     );
@@ -354,6 +391,7 @@ export const EditUserSavesPermissionsWithoutAPassword: Story = {
           can_upload: true,
           can_edit: true,
           can_download: true,
+          can_request: true,
         },
       },
     ]);

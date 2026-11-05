@@ -170,6 +170,13 @@ describe("routes", () => {
       ).toHaveAttribute("href", "/");
     });
 
+    it("renders the request page under /books/:uuid/request, apart from the book page", async () => {
+      renderRoute(`/books/${UUID}/request`);
+
+      // With no request id in the address, the request page says so rather than the book page loading.
+      expect(await screen.findByText("Request not found.")).toBeInTheDocument();
+    });
+
     it("renders the player page at /listen/:uuid", async () => {
       renderRoute(`/listen/${UUID}?file_id=2`);
 

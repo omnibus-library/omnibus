@@ -263,7 +263,7 @@ jobs:
           nix develop .#e2e --command bash -c '
             set -euo pipefail
             chmod +x ./target/release/omnibus
-            nohup env PORT=3000 OMNIBUS_REACT_DIR="$PWD/frontend-js/dist" ./target/release/omnibus >server.log 2>&1 &
+            nohup env PORT=3000 OMNIBUS_BOOK_REQUESTS=1 OMNIBUS_REACT_DIR="$PWD/frontend-js/dist" ./target/release/omnibus >server.log 2>&1 &
             disown
             pnpm dlx wait-on -t 60000 http://127.0.0.1:3000/api/_health
           '

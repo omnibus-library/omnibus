@@ -16,6 +16,7 @@ export const EditUserSchema = z.object({
     can_upload: z.boolean(),
     can_edit: z.boolean(),
     can_download: z.boolean(),
+    can_request: z.boolean(),
   }) satisfies z.ZodType<UserPermissions>,
   new_password: z.string().trim(),
 });
@@ -26,6 +27,7 @@ export const permissionsOf = (user: UserPermissions): UserPermissions => ({
   can_upload: user.can_upload,
   can_edit: user.can_edit,
   can_download: user.can_download,
+  can_request: user.can_request,
 });
 
 export const ADMIN_CHIP = "Admin";
@@ -33,13 +35,17 @@ export const ADMIN_CHIP = "Admin";
 /** The chip a row shows when it holds no permission. */
 export const NO_PERMISSIONS = "—";
 
-/** A single "Admin" chip for an administrator, else one per granted capability, or a dash when none. */
-export function permissionChips(user: UserPermissions): string[] {
+/** A single "Admin" chip for an administrator, else one per granted capability, or a dash when none; `requests` is whether book requests are on. */
+export function permissionChips(
+  user: UserPermissions,
+  requests: boolean,
+): string[] {
   if (user.is_admin) return [ADMIN_CHIP];
   const chips = [
     user.can_upload && "Upload",
     user.can_edit && "Edit",
     user.can_download && "Download",
+    requests && user.can_request && "Request",
   ].filter((chip) => chip !== false);
   return chips.length > 0 ? chips : [NO_PERMISSIONS];
 }

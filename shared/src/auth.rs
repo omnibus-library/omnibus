@@ -20,6 +20,9 @@ pub struct UserSummary {
     pub can_upload: bool,
     pub can_edit: bool,
     pub can_download: bool,
+    /// Whether the user may request books the library lacks: false for everyone while the server has book requests off, else admins always may.
+    #[serde(default)]
+    pub can_request: bool,
     /// The address Send to Kindle emails books to. Null when the user hasn't set one.
     #[serde(default)]
     pub kindle_email: Option<String>,
@@ -119,8 +122,8 @@ pub struct BookHouseholdReader {
 }
 
 // There is no role enum: the UI presents `is_admin` as an "Administrator"
-// permission implying the other three, while storage keeps four flags.
-/// The four permission flags that say what a user may do. The server stores each flag
+// permission implying the other four, while storage keeps five flags.
+/// The five permission flags that say what a user may do. The server stores each flag
 /// separately. Most checks let an admin through, but a few read the flag itself, such as
 /// `can_download` for downloads.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -130,6 +133,7 @@ pub struct UserPermissions {
     pub can_upload: bool,
     pub can_edit: bool,
     pub can_download: bool,
+    pub can_request: bool,
 }
 
 // The admin table's projection of a `users` row: `UserSummary` plus the
@@ -145,6 +149,7 @@ pub struct AdminUserRow {
     pub can_upload: bool,
     pub can_edit: bool,
     pub can_download: bool,
+    pub can_request: bool,
     #[serde(default)]
     pub kindle_email: Option<String>,
     /// The name other users see. Null when the user hasn't set one.
@@ -344,6 +349,18 @@ pub struct CreateApiTokenResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // A pre-0111 payload (or a cached `/me` body from one) has no `can_request`,
+    // and must decode to no permission rather than failing.
+    #[test]
+    fn user_summary_deserializes_payload_missing_can_request_as_off() {
+        let v: UserSummary = serde_json::from_str(
+            r#"{"id":1,"username":"alice","is_admin":false,
+                "can_upload":false,"can_edit":false,"can_download":true}"#,
+        )
+        .unwrap();
+        assert!(!v.can_request);
+    }
 
     // Payloads from a pre-0068 server lack `hidden_formats`; the serde
     // default must keep them decoding (old cached `/me` bodies included).

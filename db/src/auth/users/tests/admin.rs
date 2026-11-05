@@ -74,8 +74,21 @@ async fn admin_create_user_sets_permissions_and_bypasses_registration_gate() {
     let row = admin_create_user(&p, "bob", "bunker9-longer-pass", ADMIN)
         .await
         .unwrap();
-    assert!(row.is_admin && row.can_upload && row.can_edit && row.can_download);
     assert!(!row.locked && row.kindle_email.is_none());
+
+    let stored = list_users(&p)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|u| u.id == row.id)
+        .unwrap();
+    assert!(
+        stored.is_admin
+            && stored.can_upload
+            && stored.can_edit
+            && stored.can_download
+            && stored.can_request
+    );
 
     // The new user can actually authenticate.
     crate::auth::verify_login(&p, "bob", "bunker9-longer-pass")
@@ -125,6 +138,7 @@ async fn update_user_permissions_replaces_flags() {
             can_upload: true,
             can_edit: true,
             can_download: false,
+            can_request: true,
         },
     )
     .await
@@ -136,7 +150,7 @@ async fn update_user_permissions_replaces_flags() {
         .into_iter()
         .find(|u| u.id == bob.id)
         .unwrap();
-    assert!(bob_row.can_upload && bob_row.can_edit);
+    assert!(bob_row.can_upload && bob_row.can_edit && bob_row.can_request);
     assert!(!bob_row.can_download && !bob_row.is_admin);
 }
 

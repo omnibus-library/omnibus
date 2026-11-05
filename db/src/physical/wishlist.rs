@@ -116,7 +116,8 @@ pub async fn remove_wishlist_entry(
             AND l.path = ?2
             AND NOT EXISTS (SELECT 1 FROM book_files bf WHERE bf.book_id = b.id)
             AND NOT EXISTS (SELECT 1 FROM physical_copies pc WHERE pc.book_uuid = b.uuid)
-            AND NOT EXISTS (SELECT 1 FROM wishlist_entries we WHERE we.book_uuid = b.uuid)",
+            AND NOT EXISTS (SELECT 1 FROM wishlist_entries we WHERE we.book_uuid = b.uuid)
+            AND NOT EXISTS (SELECT 1 FROM book_requests br WHERE br.book_uuid = b.uuid)",
     )
     .bind(&canonical)
     .bind(PHYSICAL_LIBRARY_PATH)

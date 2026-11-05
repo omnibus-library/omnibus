@@ -27,7 +27,7 @@ import { BusyLabel, Loading } from "../../components/Loading/Loading";
 import { StrengthMeter } from "../../components/StrengthMeter/StrengthMeter";
 import { formatUtcDay } from "../../format";
 import { scorePassword } from "../../password";
-import { endSession, meQuery } from "../../session";
+import { endSession, meQuery, useCurrentUser } from "../../session";
 import { EditUserSchema, NewUserSchema, permissionsOf } from "./users";
 
 const NEW_USER_PERMISSIONS: UserPermissions = {
@@ -35,12 +35,14 @@ const NEW_USER_PERMISSIONS: UserPermissions = {
   can_upload: false,
   can_edit: false,
   can_download: true,
+  can_request: false,
 };
 
 const GRANTS = [
   { flag: "can_upload", label: "Upload books" },
   { flag: "can_edit", label: "Edit metadata" },
   { flag: "can_download", label: "Download" },
+  { flag: "can_request", label: "Request books" },
 ] as const;
 
 function PermissionCheckbox({
@@ -70,7 +72,7 @@ function PermissionCheckbox({
   );
 }
 
-// An administrator can do everything, so ticking Administrator grants the other three and locks them.
+// An administrator can do everything, so ticking Administrator grants the others and locks them.
 function PermissionToggles({
   perms,
   onChange,
@@ -78,6 +80,8 @@ function PermissionToggles({
   perms: UserPermissions;
   onChange: (perms: UserPermissions) => void;
 }) {
+  // The feature's boot flag reaches the client only as the signed-in admin's own `canRequest`.
+  const requests = useCurrentUser().canRequest;
   return (
     <fieldset className="users-perms">
       <legend>Permissions</legend>
@@ -94,21 +98,24 @@ function PermissionToggles({
                   can_upload: true,
                   can_edit: true,
                   can_download: true,
+                  can_request: requests || perms.can_request,
                 }
               : { ...perms, is_admin: false },
           )
         }
       />
-      {GRANTS.map(({ flag, label }) => (
-        <PermissionCheckbox
-          key={flag}
-          label={label}
-          testId={`perm-${flag}`}
-          checked={perms[flag]}
-          disabled={perms.is_admin}
-          onToggle={(checked) => onChange({ ...perms, [flag]: checked })}
-        />
-      ))}
+      {GRANTS.filter(({ flag }) => requests || flag !== "can_request").map(
+        ({ flag, label }) => (
+          <PermissionCheckbox
+            key={flag}
+            label={label}
+            testId={`perm-${flag}`}
+            checked={perms[flag]}
+            disabled={perms.is_admin}
+            onToggle={(checked) => onChange({ ...perms, [flag]: checked })}
+          />
+        ),
+      )}
     </fieldset>
   );
 }

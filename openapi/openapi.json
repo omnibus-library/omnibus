@@ -849,6 +849,127 @@
         }
       }
     },
+    "/api/admin/requests/settings": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Get the request connections",
+        "description": "The Prowlarr and download client settings, with the API key and password masked.\nNeeds an admin account.",
+        "operationId": "get_requests_settings",
+        "responses": {
+          "200": {
+            "description": "The connections.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestsSettingsStatus"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You aren't an admin."
+          },
+          "404": {
+            "description": "Book requests are off on this server."
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Save the request connections",
+        "description": "Sets the Prowlarr and download client connections. Every field replaces the saved\nvalue, except the two secrets, which keep theirs when left out. Needs an admin account.",
+        "operationId": "set_requests_settings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestsSettingsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The connections are saved; the body is what is now set.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestsSettingsStatus"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You aren't an admin."
+          },
+          "404": {
+            "description": "Book requests are off on this server."
+          },
+          "422": {
+            "description": "A URL isn't an `http` or `https` address without a login in it, or a field is over its length limit; the body says which."
+          }
+        }
+      }
+    },
+    "/api/admin/requests/settings/test-client": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Test the download client connection",
+        "description": "Logs in to the download client with the saved address and login and reports whether it\nanswered. It changes nothing. Needs an admin account.",
+        "operationId": "test_download_client_connection",
+        "responses": {
+          "200": {
+            "description": "The download client answered and accepted the login."
+          },
+          "403": {
+            "description": "You aren't an admin."
+          },
+          "404": {
+            "description": "Book requests are off on this server."
+          },
+          "409": {
+            "description": "The download client address isn't set."
+          },
+          "502": {
+            "description": "The download client didn't answer or refused the call; the body says why."
+          }
+        }
+      }
+    },
+    "/api/admin/requests/settings/test-indexer": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Test the Prowlarr connection",
+        "description": "Calls Prowlarr with the saved address and API key and reports whether it answered. It\nchanges nothing. Needs an admin account.",
+        "operationId": "test_prowlarr_connection",
+        "responses": {
+          "200": {
+            "description": "Prowlarr answered and accepted the API key."
+          },
+          "403": {
+            "description": "You aren't an admin."
+          },
+          "404": {
+            "description": "Book requests are off on this server."
+          },
+          "409": {
+            "description": "The Prowlarr address or API key isn't set."
+          },
+          "502": {
+            "description": "Prowlarr didn't answer or refused the call; the body says why."
+          }
+        }
+      }
+    },
     "/api/admin/rewrite-all-epubs": {
       "post": {
         "tags": [
@@ -1145,7 +1266,7 @@
           "Admin"
         ],
         "summary": "Set a user's permissions",
-        "description": "Replaces all four permission flags. Needs an admin account.",
+        "description": "Replaces all five permission flags. Needs an admin account.",
         "operationId": "admin_set_user_permissions",
         "parameters": [
           {
@@ -3176,6 +3297,114 @@
           },
           "404": {
             "description": "No book has that uuid."
+          }
+        }
+      }
+    },
+    "/api/books/{uuid}/requests": {
+      "get": {
+        "tags": [
+          "Requests"
+        ],
+        "summary": "List a book's requests",
+        "description": "Every request made for the book, newest first, whoever made it, without their versions:\nread one request for those. A book nobody has requested has an empty list. Any signed-in\nreader may read it.",
+        "operationId": "list_book_requests",
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "The book's uuid.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The book's requests, each with an empty `versions`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BookRequest"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "You aren't signed in."
+          },
+          "404": {
+            "description": "Book requests are off on this server."
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Requests"
+        ],
+        "summary": "Start a request for a book",
+        "description": "Asks for one digital format of the book and starts looking for versions of it; poll\n`GET /api/requests/{id}` until it leaves `looking`. If you already have a live request for\nthat format of that book, it is returned instead with 200 and nothing new starts.",
+        "operationId": "start_book_request",
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "The book's uuid.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "You already had a live request for this format; here it is.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookRequest"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The request started.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookRequest"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Only `ebook` can be requested yet."
+          },
+          "401": {
+            "description": "You aren't signed in."
+          },
+          "403": {
+            "description": "Your account can't make requests."
+          },
+          "404": {
+            "description": "Book requests are off on this server, or the book doesn't exist."
+          },
+          "429": {
+            "description": "You started too many requests lately, or have too many in progress."
           }
         }
       }
@@ -6129,6 +6358,154 @@
         }
       }
     },
+    "/api/requests/{id}": {
+      "get": {
+        "tags": [
+          "Requests"
+        ],
+        "summary": "Get a request",
+        "description": "One request and the versions found so far. Any signed-in reader may read any request.\nOnly an admin is sent `stuck_detail`.",
+        "operationId": "get_book_request",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The request's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookRequest"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "You aren't signed in."
+          },
+          "404": {
+            "description": "Book requests are off on this server, or there is no such request."
+          }
+        }
+      }
+    },
+    "/api/requests/{id}/choose": {
+      "post": {
+        "tags": [
+          "Requests"
+        ],
+        "summary": "Choose a version",
+        "description": "Picks one of the versions a request found, which ends the choosing. Only a request in\n`choose` takes a pick, and only a version the request offers. The body carries the\nversion's `id` and nothing else. Only the reader who made the request, or an admin, can\npick.",
+        "operationId": "choose_request_version",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The request's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChooseVersion"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The version is picked; the request is now `chosen`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookRequest"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "You aren't signed in."
+          },
+          "403": {
+            "description": "Your account can't make requests, or the request is another reader's."
+          },
+          "404": {
+            "description": "Book requests are off on this server, or there is no such request or version."
+          },
+          "409": {
+            "description": "The request isn't waiting on a pick."
+          },
+          "422": {
+            "description": "The body isn't just a version id."
+          }
+        }
+      }
+    },
+    "/api/requests/{id}/retry": {
+      "post": {
+        "tags": [
+          "Requests"
+        ],
+        "summary": "Try a request again",
+        "description": "Searches again for a request that is `stuck` or still `looking`, and puts it back to\n`looking`; poll `GET /api/requests/{id}` as after a start. It counts as a start toward\nthe rate limit. Only the reader who made the request, or an admin, can do this.",
+        "operationId": "retry_book_request",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The request's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The request is looking again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookRequest"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "You aren't signed in."
+          },
+          "403": {
+            "description": "Your account can't make requests, or the request is another reader's."
+          },
+          "404": {
+            "description": "Book requests are off on this server, or there is no such request."
+          },
+          "409": {
+            "description": "The request is past searching: it is waiting on a pick or was picked."
+          },
+          "429": {
+            "description": "You started too many requests lately."
+          }
+        }
+      }
+    },
     "/api/reviews/{uuid}": {
       "get": {
         "tags": [
@@ -8724,6 +9101,7 @@
           "can_upload",
           "can_edit",
           "can_download",
+          "can_request",
           "created_at",
           "locked"
         ],
@@ -8732,6 +9110,9 @@
             "type": "boolean"
           },
           "can_edit": {
+            "type": "boolean"
+          },
+          "can_request": {
             "type": "boolean"
           },
           "can_upload": {
@@ -10071,6 +10452,84 @@
           }
         }
       },
+      "BookRequest": {
+        "type": "object",
+        "description": "A request and, once the search has run, the versions it found.",
+        "required": [
+          "id",
+          "book_uuid",
+          "user_id",
+          "kind",
+          "state",
+          "created_at",
+          "updated_at",
+          "versions"
+        ],
+        "properties": {
+          "book_uuid": {
+            "type": "string",
+            "description": "The requested book's uuid."
+          },
+          "chosen_result_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The picked version's id once `state` is `chosen`."
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "When the request started, in Unix seconds."
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/RequestKind"
+          },
+          "state": {
+            "$ref": "#/components/schemas/RequestState"
+          },
+          "stuck_detail": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "What the search ran into, in technical words. Only an admin is sent it."
+          },
+          "stuck_reason": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/StuckReason",
+                "description": "Set while `state` is `stuck`."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updated_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "When the request last changed state, in Unix seconds."
+          },
+          "user_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The reader who made the request."
+          },
+          "versions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RequestVersion"
+            },
+            "description": "The versions found, best first. Empty until the search has run, and always empty in\na book's list of requests: read one request for its versions."
+          }
+        }
+      },
       "BookReviews": {
         "type": "object",
         "description": "Everything readers have said about one book.",
@@ -10740,6 +11199,21 @@
             ]
           }
         }
+      },
+      "ChooseVersion": {
+        "type": "object",
+        "description": "The version a reader picks. Only an id: the download link is never taken from the caller.",
+        "required": [
+          "result_id"
+        ],
+        "properties": {
+          "result_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "A version's `id` from the request being answered."
+          }
+        },
+        "additionalProperties": false
       },
       "CleanupAction": {
         "type": "string",
@@ -11831,6 +12305,13 @@
             "type": "string"
           }
         }
+      },
+      "DownloadClientKind": {
+        "type": "string",
+        "description": "Which download client program the server talks to.",
+        "enum": [
+          "qbittorrent"
+        ]
       },
       "DownloadFormat": {
         "type": "string",
@@ -14871,6 +15352,188 @@
           }
         }
       },
+      "RequestKind": {
+        "type": "string",
+        "description": "Which format a request fetches.",
+        "enum": [
+          "ebook",
+          "audiobook"
+        ]
+      },
+      "RequestState": {
+        "type": "string",
+        "description": "Where a request stands.",
+        "enum": [
+          "looking",
+          "choose",
+          "chosen",
+          "stuck"
+        ]
+      },
+      "RequestVersion": {
+        "type": "object",
+        "description": "One version of the book the search found.",
+        "required": [
+          "id",
+          "title",
+          "best_match"
+        ],
+        "properties": {
+          "best_match": {
+            "type": "boolean",
+            "description": "Whether this is the version Omnibus suggests. At most one version has it."
+          },
+          "format": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`EPUB`, `PDF` or `CBZ`. Null when the name does not say."
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "indexer": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The source the version came from; shown behind Details."
+          },
+          "size_bytes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "title": {
+            "type": "string",
+            "description": "The name the version was published under."
+          }
+        }
+      },
+      "RequestsSettingsStatus": {
+        "type": "object",
+        "description": "The Prowlarr and download client connections, with both secrets masked. It never\ncarries the API key or the password itself.",
+        "required": [
+          "prowlarr_api_key_source",
+          "download_client_kind",
+          "download_client_category"
+        ],
+        "properties": {
+          "download_client_category": {
+            "type": "string"
+          },
+          "download_client_kind": {
+            "$ref": "#/components/schemas/DownloadClientKind"
+          },
+          "download_client_password_masked": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A masked preview of the password. Null when no password is set."
+          },
+          "download_client_path_prefix": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "download_client_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "download_client_username": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "download_path_prefix": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "prowlarr_api_key_masked": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A masked preview of the API key, such as `abcd…wxyz`, or `••••` for a key of 8\ncharacters or fewer. Null when no key is set."
+          },
+          "prowlarr_api_key_source": {
+            "type": "string",
+            "description": "Where the API key in effect comes from: `settings` when saved through the API,\n`env` when read from `OMNIBUS_PROWLARR_API_KEY`, or `none`."
+          },
+          "prowlarr_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "RequestsSettingsUpdate": {
+        "type": "object",
+        "description": "The Prowlarr and download client connections. Every field but the two secrets\nreplaces the saved value, and an empty string clears it.",
+        "required": [
+          "prowlarr_url",
+          "download_client_url",
+          "download_client_username",
+          "download_client_category",
+          "download_client_path_prefix",
+          "download_path_prefix"
+        ],
+        "properties": {
+          "download_client_category": {
+            "type": "string",
+            "description": "The category the client files Omnibus downloads under, up to 255 bytes. Empty\nmeans `omnibus`."
+          },
+          "download_client_kind": {
+            "$ref": "#/components/schemas/DownloadClientKind"
+          },
+          "download_client_password": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The download client password, up to 1024 bytes. Null or left out keeps the saved\npassword. An empty string clears it."
+          },
+          "download_client_path_prefix": {
+            "type": "string",
+            "description": "The completed-downloads folder as the download client sees it, up to 4096 bytes."
+          },
+          "download_client_url": {
+            "type": "string",
+            "description": "The download client's web address: an `http` or `https` URL of up to 2048 bytes,\nwithout a username or password in it."
+          },
+          "download_client_username": {
+            "type": "string",
+            "description": "The download client login, up to 255 bytes."
+          },
+          "download_path_prefix": {
+            "type": "string",
+            "description": "The same folder as the Omnibus server sees it, up to 4096 bytes."
+          },
+          "prowlarr_api_key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The Prowlarr API key, up to 1024 bytes. Null or left out keeps the saved key.\nAn empty string clears it."
+          },
+          "prowlarr_url": {
+            "type": "string",
+            "description": "The Prowlarr address, such as `http://prowlarr:9696`: an `http` or `https` URL of\nup to 2048 bytes, without a username or password in it."
+          }
+        }
+      },
       "ResolveMetaRequest": {
         "type": "object",
         "description": "A title-search result to match against the library. The server matches it as it\nwould an ISBN, without asking the providers again.",
@@ -16407,6 +17070,19 @@
           }
         }
       },
+      "StartRequest": {
+        "type": "object",
+        "description": "Starts a request for one format of a book.",
+        "required": [
+          "kind"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/RequestKind",
+            "description": "Only `ebook` can be requested yet."
+          }
+        }
+      },
       "StatsRange": {
         "type": "string",
         "description": "The period reading stats cover. Each calendar period runs from its start to now, in\nyour time zone.",
@@ -16704,6 +17380,14 @@
             "minimum": 0
           }
         }
+      },
+      "StuckReason": {
+        "type": "string",
+        "description": "Why a request is stuck. Both read \"Couldn't find it\" to the requester.",
+        "enum": [
+          "not_found",
+          "search_failed"
+        ]
       },
       "SuggestionCard": {
         "type": "object",
@@ -17325,18 +18009,22 @@
       },
       "UserPermissions": {
         "type": "object",
-        "description": "The four permission flags that say what a user may do. The server stores each flag\nseparately. Most checks let an admin through, but a few read the flag itself, such as\n`can_download` for downloads.",
+        "description": "The five permission flags that say what a user may do. The server stores each flag\nseparately. Most checks let an admin through, but a few read the flag itself, such as\n`can_download` for downloads.",
         "required": [
           "is_admin",
           "can_upload",
           "can_edit",
-          "can_download"
+          "can_download",
+          "can_request"
         ],
         "properties": {
           "can_download": {
             "type": "boolean"
           },
           "can_edit": {
+            "type": "boolean"
+          },
+          "can_request": {
             "type": "boolean"
           },
           "can_upload": {
@@ -17368,6 +18056,10 @@
           },
           "can_edit": {
             "type": "boolean"
+          },
+          "can_request": {
+            "type": "boolean",
+            "description": "Whether the user may request books the library lacks: false for everyone while the server has book requests off, else admins always may."
           },
           "can_upload": {
             "type": "boolean"
@@ -17832,6 +18524,10 @@
     {
       "name": "Physical books",
       "description": "The physical collection: ISBN check-in, copies, and the wishlist."
+    },
+    {
+      "name": "Requests",
+      "description": "Asking for a digital format of a book, and choosing which version found to fetch."
     },
     {
       "name": "Discovery",

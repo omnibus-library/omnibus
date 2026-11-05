@@ -272,6 +272,52 @@ async fn remove_wishlist_entry_keeps_a_book_another_reader_still_wants() {
 }
 
 #[tokio::test]
+async fn remove_wishlist_entry_keeps_a_book_that_has_a_request() {
+    let _covers = CoversTempDir::new("wishlist_requested");
+    let pool = pool().await;
+    let user = seed_user(&pool, "reader").await;
+    let uuid = seed_wished(&pool, user, "Wanted").await;
+    crate::requests::store::start(&pool, user, &uuid, omnibus_shared::RequestKind::Ebook, 5)
+        .await
+        .unwrap();
+
+    let removal = remove_wishlist_entry(&pool, user, &uuid).await.unwrap();
+
+    assert!(!removal.book_deleted);
+    assert_eq!(count(&pool, "SELECT COUNT(*) FROM books").await, 1);
+    assert_eq!(count(&pool, "SELECT COUNT(*) FROM book_requests").await, 1);
+}
+
+#[tokio::test]
+async fn delete_fileless_book_takes_its_requests_and_their_versions_with_it() {
+    let _covers = CoversTempDir::new("wishlist_delete_requested");
+    let pool = pool().await;
+    let user = seed_user(&pool, "reader").await;
+    let uuid = seed_wished(&pool, user, "Wanted").await;
+    let request =
+        crate::requests::store::start(&pool, user, &uuid, omnibus_shared::RequestKind::Ebook, 5)
+            .await
+            .unwrap()
+            .request;
+    sqlx::query(
+        "INSERT INTO book_request_results (request_id, guid, title, download_url, score)
+         VALUES (?, 'g', 'Wanted EPUB', 'magnet:?xt=urn:btih:x', 1.0)",
+    )
+    .bind(request.id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    delete_fileless_book(&pool, &uuid).await.unwrap();
+
+    assert_eq!(count(&pool, "SELECT COUNT(*) FROM book_requests").await, 0);
+    assert_eq!(
+        count(&pool, "SELECT COUNT(*) FROM book_request_results").await,
+        0
+    );
+}
+
+#[tokio::test]
 async fn remove_wishlist_entry_keeps_a_ghosted_library_book() {
     // No file, but a real scan root: the reindex owns that row and its
     // retention, and a reader unwishing it must not delete it out from under.

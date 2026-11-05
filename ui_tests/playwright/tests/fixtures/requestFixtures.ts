@@ -1,6 +1,7 @@
 import { AccountRequests } from "../apiRequests/AccountRequests";
 import { AuthorsRequests } from "../apiRequests/AuthorsRequests";
 import { BookmarksRequests } from "../apiRequests/BookmarksRequests";
+import { BookRequestsRequests } from "../apiRequests/BookRequestsRequests";
 import { CrossFormatRequests } from "../apiRequests/CrossFormatRequests";
 import { EbooksRequests } from "../apiRequests/EbooksRequests";
 import { GoalsRequests } from "../apiRequests/GoalsRequests";
@@ -49,6 +50,7 @@ type RequestFixtures = {
   authorsRequests: AuthorsRequests;
   crossFormatRequests: CrossFormatRequests;
   statsRequests: StatsRequests;
+  bookRequestsRequests: BookRequestsRequests;
 };
 
 /**
@@ -150,6 +152,10 @@ export const test = base.extend<RequestFixtures>({
 
   statsRequests: async ({ request }, use) => {
     await use(new StatsRequests(request));
+  },
+
+  bookRequestsRequests: async ({ request }, use) => {
+    await use(new BookRequestsRequests(request));
   },
 });
 

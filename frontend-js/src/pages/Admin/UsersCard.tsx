@@ -52,6 +52,7 @@ function UserRow({
   onOpen: (kind: "edit" | "delete" | "sessions") => void;
   onImpersonate: () => void;
 }) {
+  const requests = useCurrentUser().canRequest;
   const unlock = useMutation({
     mutationFn: () => unlockUser(user.id),
     onSuccess: onUnlocked,
@@ -64,7 +65,7 @@ function UserRow({
         {isSelf && <span className="users-self-tag"> (you)</span>}
       </td>
       <td>
-        {permissionChips(user).map((chip) => (
+        {permissionChips(user, requests).map((chip) => (
           <span key={chip} className={chipClass(chip)}>
             {chip}
           </span>

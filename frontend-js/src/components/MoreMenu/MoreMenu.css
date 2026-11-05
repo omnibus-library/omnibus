@@ -23,8 +23,12 @@
   padding: 7px 10px;
   cursor: pointer;
 }
+.shelf-menu-item:disabled {
+  color: var(--ink-3);
+  cursor: default;
+}
 @media (hover: hover) {
-  .shelf-menu-item:hover {
+  .shelf-menu-item:hover:not(:disabled) {
     background: var(--bg-2);
     color: var(--ink-0);
   }

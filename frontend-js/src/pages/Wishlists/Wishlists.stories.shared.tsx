@@ -28,6 +28,7 @@ export function Page() {
     <Routes>
       <Route path="/wishlists" element={<Wishlists />} />
       <Route path="/books/:uuid" element={<Where />} />
+      <Route path="/books/:uuid/request" element={<Where />} />
     </Routes>
   );
 }
