@@ -19,7 +19,9 @@ works in production.
    `ls -1 db/migrations | tail -n 1` for the current highest. The number
    is the version
    `_sqlx_migrations` records; renumbering or renaming an applied file
-   breaks the applied-version bookkeeping.
+   breaks the applied-version bookkeeping. `just lint` (and CI's
+   `migration numbers` job) fails when a new file's number is at or below
+   the highest on `origin/main`, naming the next free one.
 2. **Never edit an applied migration.** Once a file has run anywhere
    (your dev DB, a teammate's, CI, production) it is frozen — `sqlx`
    checksums each migration and a changed file fails startup with a

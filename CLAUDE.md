@@ -113,7 +113,7 @@ OMNIBUS_REACT_DIR=frontend-js/dist cargo run -p omnibus
 # Tests & lint — aggregate targets cover the full crate matrix in one go
 just test                                                   # Rust suites (db + server + shared + mcp + mock-kobo), then the script suites
 just test-rust                                              # the Rust suites alone
-just lint                                                   # cargo fmt --check + clippy -D warnings (default members + mcp + mock-kobo) + stylelint
+just lint                                                   # cargo fmt --check + clippy -D warnings (default members + mcp + mock-kobo) + stylelint + migration numbers vs origin/main
 just lint-css                                               # structural CSS lint only (stylelint; catches unclosed rules and duplicate selectors in frontend-js/src and public)
 just lint-ts                                                # Playwright TS: biome check + tsc --noEmit (TypeScript 7), in .#e2e
 just check                                                  # lint then test

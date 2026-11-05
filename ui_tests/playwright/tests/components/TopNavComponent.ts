@@ -15,6 +15,7 @@ export type PreferenceTheme = Theme | "sepia";
 /** The primary navigation bar along the top of every web page. */
 export class TopNavComponent extends BaseComponent {
   readonly root: Locator;
+  readonly homeLink: Locator;
   readonly libraryLink: Locator;
   readonly checkInButton: Locator;
   readonly addBooksButton: Locator;
@@ -40,6 +41,7 @@ export class TopNavComponent extends BaseComponent {
   constructor(page: Page) {
     super(page);
     this.root = page.getByRole("navigation", { name: "Primary" });
+    this.homeLink = this.root.getByRole("link", { name: "Omnibus" });
     this.libraryLink = this.root.getByRole("link", { name: "Library" });
     // A link to `/check-in`, whose dialog opens over the page it came from.
     this.checkInButton = this.root.getByRole("link", {

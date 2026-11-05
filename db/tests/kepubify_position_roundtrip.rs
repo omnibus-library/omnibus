@@ -1,7 +1,7 @@
 //! Round-trips reading positions through a **real** kepubify conversion —
 //! the one span-numbering authority the unit fixtures can only imitate.
-//! Skips (passes trivially) when the binary is absent, so the slim-shell
-//! matrix stays green; run inside `nix develop .#web` to exercise it.
+//! Every dev shell provides kepubify, so a missing binary fails the test
+//! rather than letting a green run skip the round trip.
 
 use omnibus_db::kobo_position::{cfi_to_span, parse_location, span_to_cfi, KoboLoc};
 use omnibus_db::test_support::{build_test_epub, make_test_dir};
@@ -16,15 +16,14 @@ const CHAPTER: &str = r#"<?xml version="1.0" encoding="utf-8"?>
 </body>
 </html>"#;
 
-/// Run kepubify over `src`, producing `out`. `None` when the binary is
-/// unavailable (the test then passes without asserting). Resolves the
-/// binary the same way `kepubify_available` does — `$OMNIBUS_KEPUBIFY_PATH`
-/// first — so the probe and the spawn can't disagree.
-fn kepubify(src: &std::path::Path, out: &std::path::Path) -> Option<()> {
-    if !omnibus_db::kepubify_available() {
-        eprintln!("kepubify unavailable; skipping real-conversion round-trip");
-        return None;
-    }
+/// Run kepubify over `src`, producing `out`. Resolves the binary the same
+/// way `kepubify_available` does — `$OMNIBUS_KEPUBIFY_PATH` first — so the
+/// probe and the spawn can't disagree.
+fn kepubify(src: &std::path::Path, out: &std::path::Path) {
+    assert!(
+        omnibus_db::kepubify_available(),
+        "kepubify not found: run inside `nix develop`, or set OMNIBUS_KEPUBIFY_PATH"
+    );
     let bin = std::env::var("OMNIBUS_KEPUBIFY_PATH").unwrap_or_else(|_| "kepubify".to_string());
     let status = std::process::Command::new(&bin)
         .arg("-o")
@@ -34,7 +33,6 @@ fn kepubify(src: &std::path::Path, out: &std::path::Path) -> Option<()> {
         .status()
         .expect("spawn kepubify");
     assert!(status.success(), "kepubify failed");
-    Some(())
 }
 
 #[test]
@@ -43,9 +41,7 @@ fn positions_round_trip_through_a_real_kepubify_conversion() {
     let source = dir.join("book.epub");
     std::fs::write(&source, build_test_epub(&[("c1.xhtml", CHAPTER)])).unwrap();
     let kepub = dir.join("book.kepub.epub");
-    if kepubify(&source, &kepub).is_none() {
-        return;
-    }
+    kepubify(&source, &kepub);
 
     // Walk kepubify's actual segmentation: every span the converter minted
     // must map to a CFI and back to the same span.

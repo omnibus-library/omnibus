@@ -1,5 +1,6 @@
 //  MergeBookSheet.swift
-//  Admin "Merge with…" on book detail: find the other entry, confirm, merge.
+//  Editor or admin "Merge with…" on book detail: find the other entry,
+//  confirm, merge.
 //  The page's book is always the target — its metadata wins — and the merge
 //  returns the undo handle the parent's toast holds. Port of the web
 //  `MergeDialog` (frontend-js/src/components/MergeDialog/).

@@ -947,12 +947,23 @@ export const MoreMenuOffersTheBooksActions: Story = {
   },
 };
 
-export const MoreMenuLeavesMergeAndDeleteToAdmins: Story = {
-  parameters: { user: { ...WIRE_ADA, is_admin: false } },
+export const MoreMenuOffersAReaderNeitherMergeNorDelete: Story = {
+  parameters: { user: { ...WIRE_ADA, is_admin: false, can_edit: false } },
   play: async ({ canvas, userEvent }) => {
     await expect(await moreItems(canvas, userEvent)).toEqual([
       "Add to shelf",
       "Edit metadata",
+    ]);
+  },
+};
+
+export const MoreMenuOffersAnEditorMergeButNotDelete: Story = {
+  parameters: { user: { ...WIRE_ADA, is_admin: false, can_edit: true } },
+  play: async ({ canvas, userEvent }) => {
+    await expect(await moreItems(canvas, userEvent)).toEqual([
+      "Add to shelf",
+      "Edit metadata",
+      "Merge with…",
     ]);
   },
 };

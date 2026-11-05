@@ -119,6 +119,24 @@ export const Loaded: Story = {
   },
 };
 
+// The grid skips a tile's contents below the fold yet keeps its 2:3 height, so the scrollbar holds still.
+export const OffscreenTilesSkipRendering: Story = {
+  beforeEach({ msw }) {
+    msw.use(libraryHandler(aWireLibrary(120), 120));
+  },
+  play: async ({ canvas }) => {
+    const tile = (
+      await canvas.findAllByRole("link", { name: /^Open details for/ })
+    ).at(-1);
+    await expect(
+      tile?.firstElementChild?.checkVisibility({ contentVisibilityAuto: true }),
+    ).toBe(false);
+    const { width = 0, height = 0 } = tile?.getBoundingClientRect() ?? {};
+    await expect(width).toBeGreaterThan(0);
+    await expect(Math.abs(height - width * 1.5)).toBeLessThan(1);
+  },
+};
+
 export const LoadMoreFails: Story = {
   beforeEach({ msw }) {
     requests.length = 0;
@@ -1057,6 +1075,8 @@ export const StackedSeries: Story = {
     const saga = await canvas.findByRole("button", { name: "Saga, 3 books" });
     await expect(saga).toHaveAttribute("aria-expanded", "false");
     await expect(saga).toHaveTextContent("3 books · Sora Inkwell");
+    // The fan paints past the tile, so a stack is never contained.
+    await expect(getComputedStyle(saga).contentVisibility).toBe("visible");
     await expect(
       canvas.getByRole("button", { name: "Duo, 2 books" }),
     ).toBeInTheDocument();

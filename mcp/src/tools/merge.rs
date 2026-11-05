@@ -1,5 +1,5 @@
 //! The book-merge tool family: merge one book into another and undo a
-//! recorded merge. Both wrap the admin-gated REST endpoints
+//! recorded merge. Both wrap the `can_edit`-gated REST endpoints
 //! (`POST /api/books/merge`, `POST /api/books/merge/undo`) and refuse to
 //! run without an explicit `confirm: true` — a merge deletes a `books` row
 //! library-wide, the strongest write this crate exposes.
@@ -47,15 +47,14 @@ fn unconfirmed(tool: &str, effect: &str, workflow: &str) -> ErrorData {
 }
 
 /// Map a merge-route failure onto a model-actionable error: the routes are
-/// admin-gated (not `can_edit`), so a 403 names the admin requirement, and
-/// the semantic statuses (404 unknown uuid/log id, 409 already undone,
-/// 422 same book) carry the server's own message verbatim.
+/// gated on `can_edit`, so a 403 names that permission, and the semantic
+/// statuses (404 unknown uuid/log id, 409 already undone, 422 same book) carry
+/// the server's own message verbatim.
 fn merge_error(e: ClientError) -> ErrorData {
     match &e {
         ClientError::WriteStatus { status: 403, .. } => ErrorData::invalid_params(
-            "forbidden: merging (and unmerging) books requires an admin account — the \
-             signed-in user is not an admin, and no other permission flag (can_edit \
-             included) grants it"
+            "forbidden: merging (and unmerging) books requires the edit permission \
+             (can_edit) or an admin account — the signed-in user has neither"
                 .to_string(),
             None,
         ),
@@ -71,7 +70,7 @@ fn merge_error(e: ClientError) -> ErrorData {
 #[tool_router(router = merge_tools, vis = "pub(crate)")]
 impl OmnibusMcp {
     #[tool(
-        description = "Merge one book into another (duplicate resolution): the target book absorbs the source's files, formats, identifiers, and every reader's per-book state (progress, ratings, highlights, bookmarks, journals), and the source book's row is DELETED — library-wide, every user sees the result. Admin-only. REFUSES unless confirm: true: first call get_book on both uuids, present both books' titles, authors, and formats to the user, and re-call with confirm: true only after the user approves merging that specific pair. Returns merge_log_id — the handle undo_merge needs to reverse this exact merge — plus the surviving target_uuid."
+        description = "Merge one book into another (duplicate resolution): the target book absorbs the source's files, formats, identifiers, and every reader's per-book state (progress, ratings, highlights, bookmarks, journals), and the source book's row is DELETED — library-wide, every user sees the result. Requires the edit permission (can_edit) or an admin account. REFUSES unless confirm: true: first call get_book on both uuids, present both books' titles, authors, and formats to the user, and re-call with confirm: true only after the user approves merging that specific pair. Returns merge_log_id — the handle undo_merge needs to reverse this exact merge — plus the surviving target_uuid."
     )]
     pub async fn merge_books(
         &self,
@@ -102,7 +101,7 @@ impl OmnibusMcp {
     }
 
     #[tool(
-        description = "Reverse a recorded merge: restores the source book merge_books deleted, using the merge_log_id that merge_books returned as the undo handle. Admin-only, library-wide like the merge itself. REFUSES unless confirm: true: tell the user which merge is being reversed (the merge_log_id and, via get_book on its target_uuid, the book it merged into) and re-call with confirm: true only after they approve. A merge can be undone once — a second undo of the same merge_log_id answers HTTP 409. Returns the restored (source) book's uuid."
+        description = "Reverse a recorded merge: restores the source book merge_books deleted, using the merge_log_id that merge_books returned as the undo handle. Requires the edit permission (can_edit) or an admin account, and is library-wide like the merge itself. REFUSES unless confirm: true: tell the user which merge is being reversed (the merge_log_id and, via get_book on its target_uuid, the book it merged into) and re-call with confirm: true only after they approve. A merge can be undone once — a second undo of the same merge_log_id answers HTTP 409. Returns the restored (source) book's uuid."
     )]
     pub async fn undo_merge(
         &self,
