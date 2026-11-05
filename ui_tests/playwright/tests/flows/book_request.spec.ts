@@ -9,7 +9,8 @@ import { expect, test } from "../fixtures/pageFixtures";
 import { fixturesDir, seedLibrary, waitForWorkerIdle } from "../utils/seed";
 
 // A configured download client makes the poller act on every picked request, so the tests
-// that configure one must not overlap the one that stops at a pick.
+// that configure one must not overlap the one that stops at a pick; and every request starts
+// a search, so the requests page's tests must not land on another test's mock Prowlarr.
 test.describe.configure({ mode: "serial" });
 
 test.describe("book request", () => {
@@ -225,6 +226,109 @@ test.describe("book request", () => {
       await expect(detail).toBeOK();
       const { book_files }: EbookDetail = await detail.json();
       expect(book_files ?? []).toHaveLength(0);
+    });
+  });
+});
+
+test.describe("requests page", () => {
+  test("show the requests page layout", async ({ requestsPage }) => {
+    await test.step("open the requests page", async () => {
+      await requestsPage.goto();
+    });
+
+    await test.step("check the page and its nav", async () => {
+      await requestsPage.assertDisplayed();
+      await requestsPage.topNav.assertDisplayed();
+      await expect(requestsPage.heading).toBeVisible();
+    });
+  });
+
+  test("open the requests page from the user menu", async ({
+    readerLibraryPage,
+    readerRequestsPage,
+  }) => {
+    await test.step("open the user menu from the library", async () => {
+      await readerLibraryPage.goto();
+      await readerLibraryPage.topNav.openUserMenu();
+    });
+
+    await test.step("follow Requests", async () => {
+      await readerLibraryPage.topNav.openRequests();
+      await readerRequestsPage.assertDisplayed();
+    });
+  });
+
+  test("see every reader's requests and cancel your own", async ({
+    adminSession,
+    scanRequests,
+    bookRequestsRequests,
+    createdBookUuids,
+    prowlarrFor,
+    requestsPage,
+    readerRequestsPage,
+    expectMutation,
+  }) => {
+    const book = buildExternalBook();
+    const admin = adminSession.user;
+    let release!: () => void;
+
+    await test.step("start a request that stays looking", async () => {
+      const added = await scanRequests.postWishlistEntry(book);
+      await expect(added).toBeOK();
+      const { book_uuid } = await added.json();
+      createdBookUuids.add(book_uuid);
+      release = (await prowlarrFor(releasesFor(book))).holdSearches();
+      await expect(await bookRequestsRequests.startRequest(book_uuid)).toBeOK();
+    });
+
+    await test.step("see it as another reader, with who asked and no Cancel", async () => {
+      await readerRequestsPage.goto();
+      await readerRequestsPage.filterByBook(book.title);
+      const row = readerRequestsPage.rowsFor(book.title);
+      await expect(row).toHaveCount(1);
+      await expect(row).toContainText(admin.display_name ?? admin.username);
+      await expect(row).toContainText("Looking");
+      await expect(readerRequestsPage.cancelButtons).toHaveCount(0);
+    });
+
+    await test.step("cancel it as the reader who asked", async () => {
+      await requestsPage.goto();
+      await requestsPage.filterByBook(book.title);
+      await expectMutation(bookRequests.cancel(), () =>
+        requestsPage.cancel(book.title),
+      );
+      await expect(requestsPage.rowsFor(book.title)).toContainText(
+        "Cancelled by you",
+      );
+      await expect(requestsPage.cancelFor(book.title)).toHaveCount(0);
+      release();
+    });
+  });
+
+  test("keep a request on the page once its wish is removed", async ({
+    scanRequests,
+    physicalRequests,
+    bookRequestsRequests,
+    createdBookUuids,
+    requestsPage,
+  }) => {
+    const book = buildExternalBook();
+
+    await test.step("request a wished book, then take it off the wishlist", async () => {
+      const added = await scanRequests.postWishlistEntry(book);
+      await expect(added).toBeOK();
+      const { book_uuid } = await added.json();
+      createdBookUuids.add(book_uuid);
+      await expect(await bookRequestsRequests.startRequest(book_uuid)).toBeOK();
+      await expect(
+        await physicalRequests.deleteWishlistEntry(book_uuid),
+      ).toBeOK();
+    });
+
+    await test.step("still find the request on the requests page", async () => {
+      await requestsPage.goto();
+      await requestsPage.filterByBook(book.title);
+      await expect(requestsPage.rowsFor(book.title)).toHaveCount(1);
     });
   });
 });

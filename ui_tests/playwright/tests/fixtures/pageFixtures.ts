@@ -19,6 +19,7 @@ import { MetadataEditPage } from "../pages/MetadataEditPage";
 import { NotFoundPage } from "../pages/NotFoundPage";
 import { PdfReaderPage } from "../pages/PdfReaderPage";
 import { RegisterPage } from "../pages/RegisterPage";
+import { RequestsPage } from "../pages/RequestsPage";
 import { SearchResultsPage } from "../pages/SearchResultsPage";
 import { SeriesIndexPage } from "../pages/SeriesIndexPage";
 import { SeriesPage } from "../pages/SeriesPage";
@@ -51,6 +52,8 @@ type PageFixtures = {
   libraryPage: LibraryPage;
   bookDetailPage: BookDetailPage;
   bookRequestPage: BookRequestPage;
+  requestsPage: RequestsPage;
+  readerRequestsPage: RequestsPage;
   wishlistsPage: WishlistsPage;
   checkInPage: CheckInPage;
   epubReaderPage: EpubReaderPage;
@@ -114,6 +117,14 @@ export const test = base.extend<PageFixtures>({
 
   bookRequestPage: async ({ page }, use) => {
     await use(new BookRequestPage(page));
+  },
+
+  requestsPage: async ({ page }, use) => {
+    await use(new RequestsPage(page));
+  },
+
+  readerRequestsPage: async ({ readerPage }, use) => {
+    await use(new RequestsPage(readerPage));
   },
 
   wishlistsPage: async ({ page }, use) => {
