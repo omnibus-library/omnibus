@@ -130,6 +130,19 @@ export const RequestIsHiddenFromAReaderWithoutThePermission: Story = {
   },
 };
 
+export const RequestIsHiddenFromAnAdminWhenRequestsAreOff: Story = {
+  parameters: {
+    path: "/wishlists",
+    user: { ...WIRE_ADA, can_request: false },
+  },
+  play: async ({ canvas }) => {
+    const row = within(await rowOf(canvas, "Hyperion"));
+
+    await expect(row.getByTestId("wishlists-find-copy")).toBeInTheDocument();
+    await expect(row.queryByTestId("wishlists-request")).toBeNull();
+  },
+};
+
 export const RequestIsShownToAReaderWithThePermission: Story = {
   parameters: { path: "/wishlists", user: READER_WITH_REQUESTS },
   play: async ({ canvas }) => {

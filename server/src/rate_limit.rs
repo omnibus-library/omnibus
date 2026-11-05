@@ -74,7 +74,8 @@ pub fn trust_forwarded_for() -> bool {
     std::env::var("OMNIBUS_TRUST_FORWARDED_FOR").is_ok_and(|v| is_truthy(&v))
 }
 
-fn is_truthy(v: &str) -> bool {
+/// Whether an env var value reads as on: `1`, `true` or `yes`.
+pub fn is_truthy(v: &str) -> bool {
     matches!(v, "1" | "true" | "yes")
 }
 

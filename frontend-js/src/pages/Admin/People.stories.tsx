@@ -152,6 +152,24 @@ export const NamesTheUserInEveryRowAction: Story = {
   },
 };
 
+const REQUESTS_OFF = { ...WIRE_ADA, can_request: false };
+
+export const RequestChipIsHiddenWhenRequestsAreOff: Story = {
+  parameters: { user: REQUESTS_OFF },
+  beforeEach({ msw }) {
+    msw.use(
+      ...usersHandlers(
+        [aWireAdminUser({ id: 20, username: "dora", can_request: true })],
+        {},
+      ),
+    );
+  },
+  play: async ({ canvas }) => {
+    const row = await canvas.findByTestId("user-row-20");
+    await expect(cellsOf(row)[1]).toBe("UploadDownload");
+  },
+};
+
 function Where() {
   return <output data-testid="where">{useLocation().pathname}</output>;
 }

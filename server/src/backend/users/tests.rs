@@ -226,7 +226,7 @@ async fn patch_permissions_updates_flags() {
 
 #[tokio::test]
 async fn patch_permissions_grants_then_revokes_can_request_seen_by_auth_me() {
-    let (app, state, pool) = fixture().await;
+    let (app, state, pool) = fixture_book_requests(true).await;
     let auth_app = crate::auth::auth_router(state);
     let admin_token = admin_token(&pool, "alice").await;
     let bob = auth_test_support::create_user(&pool, "bob").await;

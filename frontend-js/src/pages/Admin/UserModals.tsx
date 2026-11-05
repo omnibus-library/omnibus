@@ -27,7 +27,7 @@ import { BusyLabel, Loading } from "../../components/Loading/Loading";
 import { StrengthMeter } from "../../components/StrengthMeter/StrengthMeter";
 import { formatUtcDay } from "../../format";
 import { scorePassword } from "../../password";
-import { endSession, meQuery } from "../../session";
+import { endSession, meQuery, useCurrentUser } from "../../session";
 import { EditUserSchema, NewUserSchema, permissionsOf } from "./users";
 
 const NEW_USER_PERMISSIONS: UserPermissions = {
@@ -80,6 +80,8 @@ function PermissionToggles({
   perms: UserPermissions;
   onChange: (perms: UserPermissions) => void;
 }) {
+  // The feature's boot flag reaches the client only as the signed-in admin's own `canRequest`.
+  const requests = useCurrentUser().canRequest;
   return (
     <fieldset className="users-perms">
       <legend>Permissions</legend>
@@ -96,22 +98,24 @@ function PermissionToggles({
                   can_upload: true,
                   can_edit: true,
                   can_download: true,
-                  can_request: true,
+                  can_request: requests || perms.can_request,
                 }
               : { ...perms, is_admin: false },
           )
         }
       />
-      {GRANTS.map(({ flag, label }) => (
-        <PermissionCheckbox
-          key={flag}
-          label={label}
-          testId={`perm-${flag}`}
-          checked={perms[flag]}
-          disabled={perms.is_admin}
-          onToggle={(checked) => onChange({ ...perms, [flag]: checked })}
-        />
-      ))}
+      {GRANTS.filter(({ flag }) => requests || flag !== "can_request").map(
+        ({ flag, label }) => (
+          <PermissionCheckbox
+            key={flag}
+            label={label}
+            testId={`perm-${flag}`}
+            checked={perms[flag]}
+            disabled={perms.is_admin}
+            onToggle={(checked) => onChange({ ...perms, [flag]: checked })}
+          />
+        ),
+      )}
     </fieldset>
   );
 }

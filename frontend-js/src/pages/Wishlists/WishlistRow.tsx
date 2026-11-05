@@ -266,8 +266,7 @@ export function WishlistRow({
   const detail = `/books/${book.uuid}`;
   const wanted = scope.kind === "everyone";
   const user = useCurrentUser();
-  const kinds =
-    user.isAdmin || user.canRequest ? requestable(book.holdings) : [];
+  const kinds = user.canRequest ? requestable(book.holdings) : [];
   const removeBook = useRemove(book);
   // Only your own list can be edited.
   const remove = scope.kind === "you" ? removeBook : null;

@@ -113,6 +113,16 @@ pub(crate) async fn fixture_rate_limits_disabled() -> (Router, AppState, sqlx::S
     (app, state, pool)
 }
 
+/// Variant of [`fixture`] built as a boot with `OMNIBUS_BOOK_REQUESTS` set (`true`) or unset.
+pub(crate) async fn fixture_book_requests(enabled: bool) -> (Router, AppState, sqlx::SqlitePool) {
+    let pool = db::init_db("sqlite::memory:")
+        .await
+        .expect("db should initialize");
+    let state = AppState::new(pool.clone()).with_book_requests(enabled);
+    let app = rest_router(state.clone());
+    (app, state, pool)
+}
+
 /// Variant of [`fixture`] that flips the SSRF guard off so the
 /// wiremock-backed `put_author_photo_url` tests can drive the handler
 /// against a server bound to `127.0.0.1`. Production paths

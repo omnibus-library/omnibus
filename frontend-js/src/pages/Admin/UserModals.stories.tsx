@@ -101,6 +101,32 @@ export const NewUserStartsWithDownloadOnly: Story = {
   },
 };
 
+export const NewUserOffersNoRequestGrantWhenRequestsAreOff: Story = {
+  parameters: { user: { ...WIRE_ADA, can_request: false } },
+  render: () => <NewUserModal onClose={close} onCreated={done} />,
+  play: async ({ canvas, userEvent }) => {
+    const dialog = await canvas.findByRole("dialog", { name: "New user" });
+    await expect(checkbox(dialog, "Download")).toBeInTheDocument();
+    await expect(
+      within(dialog).queryByRole("checkbox", { name: "Request books" }),
+    ).toBeNull();
+
+    // Promoting then demoting must not leave a grant the admin cannot see.
+    await userEvent.click(checkbox(dialog, "Administrator"));
+    await userEvent.click(checkbox(dialog, "Administrator"));
+    await userEvent.type(within(dialog).getByLabelText("Username"), "carol");
+    await userEvent.type(
+      within(dialog).getByLabelText("Password"),
+      "Abcdefghij1",
+    );
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Create user" }),
+    );
+    await waitFor(() => expect(writes.created).toHaveLength(1));
+    await expect(writes.created[0]?.permissions.can_request).toBe(false);
+  },
+};
+
 export const NewUserMeterFollowsThePassword: Story = {
   render: () => <NewUserModal onClose={close} onCreated={done} />,
   play: async ({ canvas, userEvent }) => {
