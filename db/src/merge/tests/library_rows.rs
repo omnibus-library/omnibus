@@ -64,6 +64,42 @@ async fn merge_moves_shelf_membership_and_keeps_the_lower_slot_on_a_shared_shelf
 }
 
 #[tokio::test]
+async fn merge_moves_book_requests_onto_the_target_with_their_versions() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    let user = seed_user(&pool).await;
+    let target = seed_ebook(&pool, "A/Dracula.epub", "Dracula", "Bram Stoker").await;
+    let source = seed_audiobook(&pool, "B/Drakula.m4b", "Drakula", "Bram Stoker").await;
+    let request =
+        crate::requests::store::start(&pool, user, &source, omnibus_shared::RequestKind::Ebook, 5)
+            .await
+            .unwrap()
+            .request
+            .id;
+    sqlx::query(
+        "INSERT INTO book_request_results (request_id, guid, title, download_url, score)
+         VALUES (?, 'g', 'Drakula EPUB', 'magnet:?xt=urn:btih:x', 1.0)",
+    )
+    .bind(request)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    merge_books(&pool, &source, &target, Some(user))
+        .await
+        .unwrap();
+
+    let moved = crate::requests::store::get(&pool, request)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(moved.book_uuid, target);
+    let versions = crate::requests::store::versions(&pool, request)
+        .await
+        .unwrap();
+    assert_eq!(versions.len(), 1);
+}
+
+#[tokio::test]
 async fn merge_moves_copies_and_wishlist_entries_and_keeps_the_earlier_wish() {
     let pool = init_db("sqlite::memory:").await.unwrap();
     let user = seed_user(&pool).await;

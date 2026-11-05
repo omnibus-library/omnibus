@@ -11,45 +11,63 @@ const NONE = {
   can_upload: false,
   can_edit: false,
   can_download: false,
+  can_request: false,
 };
 
 describe("permissionChips", () => {
   it("returns only Admin for an administrator", () => {
     expect(
-      permissionChips({
-        is_admin: true,
-        can_upload: true,
-        can_edit: true,
-        can_download: true,
-      }),
+      permissionChips(
+        {
+          is_admin: true,
+          can_upload: true,
+          can_edit: true,
+          can_download: true,
+          can_request: true,
+        },
+        true,
+      ),
     ).toEqual(["Admin"]);
   });
 
   it("returns Admin for an administrator who holds no other flag", () => {
-    expect(permissionChips({ ...NONE, is_admin: true })).toEqual(["Admin"]);
+    expect(permissionChips({ ...NONE, is_admin: true }, true)).toEqual([
+      "Admin",
+    ]);
   });
 
   it("returns each granted capability in the table's order", () => {
     expect(
-      permissionChips({
-        ...NONE,
-        can_upload: true,
-        can_edit: true,
-        can_download: true,
-      }),
-    ).toEqual(["Upload", "Edit", "Download"]);
+      permissionChips(
+        {
+          ...NONE,
+          can_upload: true,
+          can_edit: true,
+          can_download: true,
+          can_request: true,
+        },
+        true,
+      ),
+    ).toEqual(["Upload", "Edit", "Download", "Request"]);
   });
 
   it.each([
     ["can_upload", "Upload"],
     ["can_edit", "Edit"],
     ["can_download", "Download"],
+    ["can_request", "Request"],
   ] as const)("returns %s alone as %s", (flag, chip) => {
-    expect(permissionChips({ ...NONE, [flag]: true })).toEqual([chip]);
+    expect(permissionChips({ ...NONE, [flag]: true }, true)).toEqual([chip]);
   });
 
   it("returns a dash when nothing is granted", () => {
-    expect(permissionChips(NONE)).toEqual(["—"]);
+    expect(permissionChips(NONE, true)).toEqual(["—"]);
+  });
+
+  it("leaves out Request when requests are off", () => {
+    expect(
+      permissionChips({ ...NONE, can_upload: true, can_request: true }, false),
+    ).toEqual(["Upload"]);
   });
 });
 

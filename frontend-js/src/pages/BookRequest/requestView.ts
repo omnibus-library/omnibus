@@ -1,0 +1,78 @@
+import { ApiError, type RequestState } from "../../api";
+import { fileSize } from "../../format";
+
+/** What a request's state is called on the page, in Omnibus's words rather than the downloader's. */
+export function stateView(state: RequestState): {
+  heading: string;
+  note: string;
+} {
+  switch (state) {
+    case "looking":
+      return {
+        heading: "Looking",
+        note: "Searching for versions of this book.",
+      };
+    case "choose":
+      return {
+        heading: "Choose a version",
+        note: "Pick the version you want.",
+      };
+    case "chosen":
+      return { heading: "Version chosen", note: "We’ll fetch it next." };
+    case "stuck":
+      return {
+        heading: "Couldn’t find it",
+        note: "Nothing worth showing turned up.",
+      };
+    default: {
+      const _exhaustive: never = state;
+      return _exhaustive;
+    }
+  }
+}
+
+/** A request's own page: the book's address with `/request`. */
+export const requestPath = (uuid: string, id: number) =>
+  `/books/${uuid}/request?id=${id}`;
+
+/** The format a version is in; one whose name says none is Unknown. */
+export const versionFormat = (format: string | null) => format ?? "Unknown";
+
+/** A version's size, or `null` when the source did not say. */
+export const versionSize = (bytes: number | null) =>
+  bytes === null ? null : fileSize(bytes);
+
+/** Why starting a request failed, as a sentence for a toast. */
+export function startFailure(error: unknown): string {
+  const status = error instanceof ApiError ? error.status : null;
+  switch (status) {
+    case 429:
+      return "You have a lot of requests going. Try again in a few minutes.";
+    case 403:
+      return "Your account can’t make requests.";
+    case 404:
+      return "That book is no longer in the library.";
+    default:
+      return "Couldn’t start the request.";
+  }
+}
+
+/** How long a search may run before its request offers Try again: past the server's 30 s timeout. */
+export const SEARCH_STALE_AFTER_SECS = 60;
+
+/** Whether a search that began at `updatedAt` (Unix seconds) has run past its timeout by `now`. */
+export const isSearchStale = (updatedAt: number, now: number) =>
+  now - updatedAt >= SEARCH_STALE_AFTER_SECS;
+
+const AUDIO_FORMATS = ["M4B", "M4A", "MP3"];
+
+const upper = (formats: readonly string[]) =>
+  formats.map((f) => f.toUpperCase());
+
+/** Whether `formats` include an ebook: print never counts, audio is M4B, M4A or MP3, and any other format is an ebook. */
+export const holdsEbook = (formats: readonly string[]) =>
+  upper(formats).some((f) => f !== "PRINT" && !AUDIO_FORMATS.includes(f));
+
+/** Whether `formats` include an audiobook. */
+export const holdsAudiobook = (formats: readonly string[]) =>
+  upper(formats).some((f) => AUDIO_FORMATS.includes(f));

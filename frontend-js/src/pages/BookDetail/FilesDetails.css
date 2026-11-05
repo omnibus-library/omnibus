@@ -19,6 +19,25 @@
   gap: 16px;
 }
 
+/* A format the library lacks: its name, that it is missing, and the button that asks for it. */
+.bp-slot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+.bp-slot-format {
+  font: 500 12px / 1 var(--mono);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-0);
+}
+.bp-slot-note {
+  flex: 1;
+  color: var(--ink-2);
+  font-size: 14px;
+}
+
 /* One look for every button in the three panels, whichever component draws it. */
 .bp-root .bp-files .btn,
 .bp-root .bp-copies .btn,

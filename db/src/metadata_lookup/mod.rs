@@ -24,7 +24,7 @@ pub use cover::{
 pub use hydrate::hydrate_edition;
 pub use providers::{all_cover_hosts, catalog, cover_hosts, openlibrary_enrich, OlEnrichment};
 pub use query::SearchQuery;
-pub use relevance::{filter_and_rank, score_candidate};
+pub use relevance::{filter_and_rank, score_candidate, score_title_match, MIN_RELEVANCE_SCORE};
 pub use search::{search_all_providers, FANOUT_PROVIDER_LIMIT};
 pub use throttle::ThrottleTracker;
 

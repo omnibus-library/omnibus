@@ -113,6 +113,40 @@ pub(crate) async fn fixture_rate_limits_disabled() -> (Router, AppState, sqlx::S
     (app, state, pool)
 }
 
+/// Variant of [`fixture`] built as a boot with `OMNIBUS_BOOK_REQUESTS` set (`true`) or unset.
+pub(crate) async fn fixture_book_requests(enabled: bool) -> (Router, AppState, sqlx::SqlitePool) {
+    let pool = db::init_db("sqlite::memory:")
+        .await
+        .expect("db should initialize");
+    let state = AppState::new(pool.clone()).with_book_requests(enabled);
+    let app = rest_router(state.clone());
+    (app, state, pool)
+}
+
+/// Wait until request `id` reaches `state`, polling the table for up to ten seconds; the
+/// search runs in a spawned task, so a response alone does not say when it ends.
+pub(crate) async fn wait_for_request_state(
+    pool: &sqlx::SqlitePool,
+    id: i64,
+    state: omnibus_shared::RequestState,
+) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        let row = db::requests::store::get(pool, id)
+            .await
+            .expect("read request");
+        if row.as_ref().is_some_and(|r| r.state == state) {
+            return;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "request {id} never reached {state:?}; it is {:?}",
+            row.map(|r| r.state)
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+}
+
 /// Variant of [`fixture`] that flips the SSRF guard off so the
 /// wiremock-backed `put_author_photo_url` tests can drive the handler
 /// against a server bound to `127.0.0.1`. Production paths

@@ -14,6 +14,7 @@ import { AuthorDetail } from "./pages/AuthorDetail/AuthorDetail";
 import { Authors, AuthorsIndexPane } from "./pages/Authors/Authors";
 import { BookDetail } from "./pages/BookDetail/BookDetail";
 import { BookEdit } from "./pages/BookEdit/BookEdit";
+import { BookRequest } from "./pages/BookRequest/BookRequest";
 import { CheckIn } from "./pages/CheckIn/CheckIn";
 import { Library } from "./pages/Library/Library";
 import { Listen } from "./pages/Listen/Listen";
@@ -112,6 +113,8 @@ export const routes: RouteObject[] = [
                     // The editor is a sheet over the book page, which stays mounted beneath it.
                     children: [{ path: "edit", element: <BookEdit /> }],
                   },
+                  // A page of its own, not a sheet over the book: it is where a request is followed.
+                  { path: "/books/:uuid/request", element: <BookRequest /> },
                   {
                     path: "/authors",
                     element: <Authors />,

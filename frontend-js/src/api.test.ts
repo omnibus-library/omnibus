@@ -337,6 +337,7 @@ describe("toUser", () => {
       canUpload: true,
       canEdit: true,
       canDownload: true,
+      canRequest: true,
       hasAvatar: true,
       hiddenFormats: [],
       stackSeries: false,
@@ -345,6 +346,12 @@ describe("toUser", () => {
       statsExclusions: [],
       impersonation: null,
     });
+  });
+
+  it("reads a session without can_request as no permission", () => {
+    const { can_request: _, ...wire } = WIRE_ADA;
+
+    expect(toUser(wire).canRequest).toBe(false);
   });
 
   it("maps the admin behind an impersonation", () => {

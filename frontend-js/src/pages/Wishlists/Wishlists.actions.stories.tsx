@@ -7,7 +7,9 @@ import {
   seedQueries,
   storyClient,
 } from "../../testing/AppHarness";
-import { deferred } from "../../testing/handlers";
+import { deferred, failing } from "../../testing/handlers";
+import { requestFake } from "../../testing/requestHandlers";
+import { WIRE_ADA } from "../../testing/wire";
 import { BOOKS } from "../../testing/wishlistHandlers";
 import { bookQuery } from "../BookDetail/queries";
 import {
@@ -19,12 +21,16 @@ import {
   titles,
 } from "./Wishlists.stories.shared";
 
+/** The request routes in use by the story that is running. */
+let requests = requestFake();
+
 const meta = {
   title: "Pages/Wishlists/Actions",
   component: Page,
   parameters: { path: "/wishlists" },
   beforeEach({ msw }) {
-    msw.use(...api());
+    requests = requestFake();
+    msw.use(...requests.handlers, ...api());
   },
 } satisfies Meta<typeof Page>;
 
@@ -61,39 +67,92 @@ export const FindACopySearchesTheIsbnWhenTheBookHasOne: Story = {
   },
 };
 
-export const RequestIsDisabledWithItsReason: Story = {
+export const RequestOpensAMenuOfWhatCanBeAskedFor: Story = {
   play: async ({ canvas, userEvent }) => {
     const row = within(await rowOf(canvas, "Hyperion"));
     const request = row.getByTestId("wishlists-request");
+    await expect(request).toHaveAttribute("aria-haspopup", "menu");
+    await expect(request).toHaveAttribute("aria-expanded", "false");
 
+    await userEvent.click(request);
+
+    const menu = within(
+      await canvas.findByRole("menu", { name: "Request Hyperion" }),
+    );
+    await expect(request).toHaveAttribute("aria-expanded", "true");
+    await expect(
+      menu.getByRole("menuitem", { name: "Request ebook" }),
+    ).toBeEnabled();
+    const audiobook = menu.getByRole("menuitem", { name: /Request audiobook/ });
+    await expect(audiobook).toBeDisabled();
+    await expect(audiobook).toHaveTextContent("Not available yet");
+    await expect(requests.writes).toEqual([]);
+  },
+};
+
+export const RequestEbookStartsARequestAndOpensItsPage: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const row = within(await rowOf(canvas, "Hyperion"));
+
+    await userEvent.click(row.getByTestId("wishlists-request"));
+    await userEvent.click(
+      await canvas.findByRole("menuitem", { name: "Request ebook" }),
+    );
+
+    await expect(await canvas.findByTestId("where")).toHaveTextContent(
+      `/books/${BOOKS.hyperion.uuid}/request?id=1`,
+    );
+    await expect(requests.writes).toEqual([
+      { kind: "start", uuid: BOOKS.hyperion.uuid },
+    ]);
+  },
+};
+
+export const ARefusedRequestSaysWhyAndStaysOnTheList: Story = {
+  beforeEach({ msw }) {
+    msw.use(failing("post", "/api/books/:uuid/requests", 429));
+  },
+  play: async ({ canvas, userEvent }) => {
+    const row = within(await rowOf(canvas, "Hyperion"));
+
+    await userEvent.click(row.getByTestId("wishlists-request"));
+    await userEvent.click(
+      await canvas.findByRole("menuitem", { name: "Request ebook" }),
+    );
+
+    await expect(
+      await canvas.findByText(
+        "You have a lot of requests going. Try again in a few minutes.",
+      ),
+    ).toBeInTheDocument();
+    await expect(canvas.queryByTestId("where")).toBeNull();
+    await expect(row.getByTestId("wishlists-request")).toHaveFocus();
+    await expect(row.getByTestId("wishlists-request")).not.toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+  },
+};
+
+export const RequestIsAnUnavailableButtonWhenOnlyAnAudiobookIsLeft: Story = {
+  play: async ({ canvas, userEvent }) => {
+    // An epub is held, so only the audiobook is left to ask for, and that can't be asked for yet.
+    const row = within(await rowOf(canvas, "Project Hail Mary"));
+    const request = row.getByTestId("wishlists-request");
     await expect(request).toHaveAttribute("aria-disabled", "true");
     await expect(request).toHaveAccessibleDescription(
-      "Requests aren't available yet",
+      "Audiobook requests aren’t available yet",
     );
+
     await userEvent.click(request);
 
     await expect(canvas.queryByRole("menu")).not.toBeInTheDocument();
-    await expect(fake.writes).toEqual([]);
-    request.focus();
-    await expect(request).toHaveFocus();
+    await expect(requests.writes).toEqual([]);
   },
 };
 
 /** The browser's own pointer: a story's `userEvent` is synthetic and never sets `:hover`. */
 const realPointer = async () => (await import("vitest/browser")).userEvent;
-
-export const RequestShowsItsTooltipOnHover: Story = {
-  play: async ({ canvas }) => {
-    const row = within(await rowOf(canvas, "Hyperion"));
-    const tip = row.getByRole("tooltip");
-    await expect(getComputedStyle(tip).opacity).toBe("0");
-
-    await (await realPointer()).hover(row.getByTestId("wishlists-request"));
-
-    await waitFor(() => expect(getComputedStyle(tip).opacity).toBe("1"));
-    await expect(tip).toHaveTextContent("Requests aren't available yet");
-  },
-};
 
 export const RequestIsHiddenWhenBothKindsAreHeld: Story = {
   play: async ({ canvas }) => {
@@ -105,6 +164,51 @@ export const RequestIsHiddenWhenBothKindsAreHeld: Story = {
     await expect(
       systemsRed.getByTestId("wishlists-request"),
     ).toBeInTheDocument();
+  },
+};
+
+const READER_WITHOUT_REQUESTS = {
+  ...WIRE_ADA,
+  is_admin: false,
+  can_request: false,
+};
+const READER_WITH_REQUESTS = {
+  ...WIRE_ADA,
+  is_admin: false,
+  can_request: true,
+};
+
+export const RequestIsHiddenFromAReaderWithoutThePermission: Story = {
+  parameters: { path: "/wishlists", user: READER_WITHOUT_REQUESTS },
+  play: async ({ canvas }) => {
+    const row = within(await rowOf(canvas, "Hyperion"));
+
+    await expect(row.getByTestId("wishlists-find-copy")).toBeInTheDocument();
+    await expect(row.queryByTestId("wishlists-request")).toBeNull();
+  },
+};
+
+export const RequestIsHiddenFromAnAdminWhenRequestsAreOff: Story = {
+  parameters: {
+    path: "/wishlists",
+    user: { ...WIRE_ADA, can_request: false },
+  },
+  play: async ({ canvas }) => {
+    const row = within(await rowOf(canvas, "Hyperion"));
+
+    await expect(row.getByTestId("wishlists-find-copy")).toBeInTheDocument();
+    await expect(row.queryByTestId("wishlists-request")).toBeNull();
+  },
+};
+
+export const RequestIsShownToAReaderWithThePermission: Story = {
+  parameters: { path: "/wishlists", user: READER_WITH_REQUESTS },
+  play: async ({ canvas }) => {
+    const request = within(await rowOf(canvas, "Hyperion")).getByTestId(
+      "wishlists-request",
+    );
+
+    await expect(request).toBeEnabled();
   },
 };
 
@@ -293,17 +397,34 @@ export const GetSheetOnYourListOffersFindRequestOpenAndRemove: Story = {
       "https://www.amazon.com/s?k=Hyperion%20Dan%20Simmons",
     );
     await expect(find).toHaveAttribute("target", "_blank");
-    for (const name of ["Request ebook", "Request audiobook"]) {
-      const item = sheet.getByRole("button", { name: new RegExp(name) });
-      await expect(item).toBeDisabled();
-      await expect(item).toHaveTextContent("Not available yet");
-    }
+    await expect(
+      sheet.getByRole("button", { name: /Request ebook/ }),
+    ).toBeEnabled();
+    const audiobook = sheet.getByRole("button", { name: /Request audiobook/ });
+    await expect(audiobook).toBeDisabled();
+    await expect(audiobook).toHaveTextContent("Not available yet");
     await expect(
       sheet.getByRole("link", { name: "Open book page" }),
     ).toHaveAttribute("href", `/books/${BOOKS.hyperion.uuid}`);
     await expect(
       sheet.getByRole("button", { name: "Remove from wishlist" }),
     ).toBeInTheDocument();
+  },
+};
+
+export const GetSheetOffersNoRequestToAReaderWithoutThePermission: Story = {
+  ...PHONE,
+  parameters: { ...PHONE.parameters, user: READER_WITHOUT_REQUESTS },
+  play: async ({ canvas, userEvent }) => {
+    const row = within(await rowOf(canvas, "Hyperion"));
+
+    await userEvent.click(row.getByTestId("wishlists-get"));
+
+    const sheet = within(await canvas.findByTestId("wishlists-get-sheet"));
+    await expect(
+      sheet.getByRole("link", { name: /Find a copy/ }),
+    ).toBeInTheDocument();
+    await expect(sheet.queryByRole("button", { name: /Request/ })).toBeNull();
   },
 };
 
@@ -393,17 +514,21 @@ function bookKey(uuid: string) {
   return bookQuery(parsed).queryKey;
 }
 
-export const TappingRequestShowsWhyItCannotBeUsed: Story = {
+export const RequestEbookInTheGetSheetStartsARequestAndOpensItsPage: Story = {
+  ...PHONE,
   play: async ({ canvas, userEvent }) => {
     const row = within(await rowOf(canvas, "Hyperion"));
-    const tip = row.getByRole("tooltip");
-    await expect(getComputedStyle(tip).opacity).toBe("0");
+    await userEvent.click(row.getByTestId("wishlists-get"));
+    const sheet = within(await canvas.findByTestId("wishlists-get-sheet"));
 
-    await userEvent.click(row.getByTestId("wishlists-request"));
+    await userEvent.click(sheet.getByRole("button", { name: /Request ebook/ }));
 
-    await waitFor(() => expect(getComputedStyle(tip).opacity).toBe("1"));
-    await userEvent.tab();
-    await waitFor(() => expect(getComputedStyle(tip).opacity).toBe("0"));
+    await expect(await canvas.findByTestId("where")).toHaveTextContent(
+      `/books/${BOOKS.hyperion.uuid}/request?id=1`,
+    );
+    await expect(requests.writes).toEqual([
+      { kind: "start", uuid: BOOKS.hyperion.uuid },
+    ]);
   },
 };
 

@@ -31,6 +31,7 @@ fn fake_admin(id: i64) -> AuthUser {
         can_upload: true,
         can_edit: true,
         can_download: true,
+        can_request: false,
         kindle_email: None,
         display_name: None,
         has_avatar: false,

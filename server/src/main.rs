@@ -73,8 +73,14 @@ mod server {
         let rate_limits = rate_limit::RateLimits::at_boot(
             std::env::var_os(rate_limit::DEV_DISABLE_RATE_LIMITS_ENV).as_deref(),
         );
+        let book_requests =
+            std::env::var(backend::BOOK_REQUESTS_ENV).is_ok_and(|v| rate_limit::is_truthy(&v));
+        if book_requests {
+            tracing::info!(target: "omnibus::startup", "{} is set; book requests are on", backend::BOOK_REQUESTS_ENV);
+        }
         let state = backend::AppState::new(pool.clone())
             .with_rate_limits(rate_limits)
+            .with_book_requests(book_requests)
             .with_public_origins(auth::csrf::allowed_origins().unwrap_or_default());
         let worker: Arc<Worker> = state.worker().clone();
 

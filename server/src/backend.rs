@@ -55,6 +55,8 @@ mod progress;
 mod ratings;
 mod react_ui;
 mod read_status;
+mod requests;
+mod requests_admin;
 mod reviews;
 mod routes;
 mod scan;
@@ -80,6 +82,9 @@ pub use process_meta::{
     app_version, build_id, init_app_version, init_build_id, init_repo_root, repo_root,
 };
 pub use react_ui::{react_dir, react_ui_router, REACT_DIR_ENV};
+
+/// The boot env var that turns the book-requests feature on (`1`, `true` or `yes`).
+pub const BOOK_REQUESTS_ENV: &str = "OMNIBUS_BOOK_REQUESTS";
 
 /// Per-IP rate-limit budget for `/api/search/*`, separate from the auth limiter. Each
 /// request runs four FTS5 queries plus joins; the budget still covers a user typing into
@@ -219,6 +224,12 @@ pub struct AppState {
     /// links). CSRF still reads `auth::csrf::allowed_origins()`.
     /// An `Arc` keeps the per-request clone cheap.
     public_origins: Arc<[String]>,
+    /// `OMNIBUS_BOOK_REQUESTS`, read once at boot. Off: every `/api/requests/*` and
+    /// `/api/admin/requests/*` route answers 404, no download poller runs, and sessions
+    /// report no request access.
+    book_requests: bool,
+    /// Recent request starts per reader, for the start cap.
+    request_starts: Arc<requests::StartLog>,
 }
 
 impl AppState {
@@ -231,6 +242,16 @@ impl AppState {
             remote_image_config: Arc::new(db::author_photos::RemoteImageConfig::default()),
             rate_limits: RateLimits::default(),
             public_origins: Arc::default(),
+            book_requests: false,
+            request_starts: Arc::default(),
+        }
+    }
+
+    /// Turn the book-requests feature on or off; `new` defaults to off.
+    pub fn with_book_requests(self, enabled: bool) -> Self {
+        Self {
+            book_requests: enabled,
+            ..self
         }
     }
 
@@ -302,6 +323,16 @@ impl AppState {
     /// SSRF guard config consulted before fetching admin-supplied URLs.
     pub fn remote_image_config(&self) -> &db::author_photos::RemoteImageConfig {
         &self.remote_image_config
+    }
+
+    /// Whether the book-requests feature is on for this process.
+    pub fn book_requests(&self) -> bool {
+        self.book_requests
+    }
+
+    /// The log capping how fast each reader may start requests.
+    fn request_starts(&self) -> &requests::StartLog {
+        &self.request_starts
     }
 
     /// Whether the per-IP limiters wired from this state enforce or admit everything.
