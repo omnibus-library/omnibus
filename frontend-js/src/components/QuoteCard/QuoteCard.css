@@ -21,6 +21,7 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
+  overscroll-behavior: contain;
   padding: 12px 16px 24px;
   display: flex;
   flex-direction: column;
@@ -134,10 +135,9 @@
 }
 /* One scrolling row, edge-faded on the side that has more to reach. */
 .rd-quote-swatches {
-  display: flex;
-  gap: 8px;
-  align-items: center;
   overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-padding-inline: 28px;
   scrollbar-width: none;
   /* Room for the selection ring, which would otherwise clip. */
   padding: 4px;
@@ -161,6 +161,13 @@
     transparent
   );
 }
+/* Wider than the row when it overflows, so its resizing is what tells the row to re-measure. */
+.rd-quote-track {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  width: max-content;
+}
 .rd-quote-thumb {
   flex: 0 0 auto;
   width: 24px;
@@ -174,7 +181,7 @@
   width: 1px;
   height: 22px;
   margin: 0 4px;
-  background: rgba(255, 255, 255, 0.16);
+  background: var(--line-2);
 }
 .rd-quote-swatch {
   flex: 0 0 auto;
@@ -191,18 +198,31 @@
 .rd-quote-swatch.gradient {
   border-radius: 8px;
 }
+/* The selection ring is a halo, so the focus outline stays distinct from it. */
 .rd-quote-swatch.on,
 .rd-quote-custom.on {
+  box-shadow:
+    0 0 0 2px var(--bg-1),
+    0 0 0 4px var(--accent);
+}
+.rd-quote-kind-pill:focus-visible,
+.rd-quote-swatch:focus-visible,
+.rd-quote-stop input:focus-visible,
+.rd-quote-rotate:focus-visible,
+.rd-quote-custom:has(input:focus-visible) {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 .rd-quote-custom-gradient {
   background: linear-gradient(135deg, #e8735a 50%, #2a8c8c 50%);
+}
+.rd-quote-custom-gradient,
+.rd-quote-custom span {
   color: #fff;
   font-size: 16px;
   font-weight: 600;
   line-height: 1;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+  text-shadow: 0 1px 2px color-mix(in oklch, black 55%, transparent);
 }
 .rd-quote-stops {
   display: flex;
@@ -230,7 +250,7 @@
 .rd-quote-stop code {
   font-family: var(--mono);
   font-size: 11px;
-  color: var(--ink-3);
+  color: var(--ink-2);
 }
 .rd-quote-custom {
   position: relative;
@@ -254,11 +274,6 @@
   );
 }
 .rd-quote-custom span {
-  color: #fff;
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 1;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
   pointer-events: none;
 }
 .rd-quote-custom input {

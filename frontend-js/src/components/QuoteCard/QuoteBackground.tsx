@@ -1,5 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { type BookUuid, fetchCoverPalette, thumbUrl } from "../../api";
 import { ChevronDownGlyph, RotateGlyph } from "../Glyphs/Glyphs";
 import { Skeleton } from "../Loading/Loading";
@@ -18,10 +24,11 @@ import {
 type Kind = "solid" | "gradient";
 type Pick = { kind: Kind; id: string };
 
-const KINDS = [
-  ["solid", "Solid"],
-  ["gradient", "Gradient"],
-] as const;
+const KIND_LABEL = {
+  solid: "Solid",
+  gradient: "Gradient",
+} as const satisfies Record<Kind, string>;
+const KINDS = ["solid", "gradient"] as const;
 const CUSTOM_SOLID = "#6b4f8a";
 const CUSTOM_GRADIENT = { from: "#e8735a", to: "#2a8c8c", angle: 135 };
 const ROTATE_STEP = 45;
@@ -47,8 +54,9 @@ function SwatchRow({
   children: ReactNode;
 }) {
   const row = useRef<HTMLDivElement>(null);
+  const track = useRef<HTMLDivElement>(null);
   const [fade, setFade] = useState({ start: false, end: false });
-  const measure = () => {
+  const measure = useCallback(() => {
     const el = row.current;
     if (!el) return;
     const next = {
@@ -58,9 +66,18 @@ function SwatchRow({
     setFade((was) =>
       was.start === next.start && was.end === next.end ? was : next,
     );
-  };
-  // Every render, since the cover pairs arriving change how far the row scrolls.
-  useEffect(measure);
+  }, []);
+  // The track grows when the cover pairs arrive and the row shrinks with the drawer.
+  useEffect(() => {
+    const el = row.current;
+    const inner = track.current;
+    if (!el || !inner) return;
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    observer.observe(inner);
+    return () => observer.disconnect();
+  }, [measure]);
   return (
     // biome-ignore lint/a11y/useSemanticElements: a fieldset brings a border and min-width Atrium never resets
     <div
@@ -72,7 +89,9 @@ function SwatchRow({
       data-fade-end={fade.end}
       onScroll={measure}
     >
-      {children}
+      <div ref={track} className="rd-quote-track">
+        {children}
+      </div>
     </div>
   );
 }
@@ -116,7 +135,8 @@ type QuoteBackgroundProps = {
   uuid: BookUuid;
   /** The book's `oklch(L C H)` accent; null falls back to the house tone. */
   accent: string | null;
-  onChange: (wash: Wash) => void;
+  /** The picked wash; null is Book, which follows the book's accent. */
+  onChange: (wash: Wash | null) => void;
 };
 
 /** The quote card's Background section: its heading, the Solid / Gradient menu and the row of swatches. */
@@ -133,15 +153,17 @@ export function QuoteBackground({
   const palette = useQuery({
     queryKey: ["book", uuid, "coverPalette"],
     queryFn: () => fetchCoverPalette(uuid),
+    // A cover's colours don't change under an open editor.
+    staleTime: Number.POSITIVE_INFINITY,
   });
   const pairs = palette.data ?? [];
-  const choose = (kind: Kind, id: string, wash: Wash) => {
+  const choose = (kind: Kind, id: string, wash: Wash | null) => {
     setPick({ kind, id });
     onChange(wash);
   };
   const chooseKind = (kind: Kind) => {
     if (kind === pick.kind) return;
-    if (kind === "solid") return choose("solid", "book", bookWash(accent));
+    if (kind === "solid") return choose("solid", "book", null);
     const first = pairs[0];
     if (first) return choose("gradient", "cover-0", pairWash(first));
     choose("gradient", GRADIENTS[0].id, GRADIENTS[0]);
@@ -151,7 +173,7 @@ export function QuoteBackground({
     choose("gradient", "custom", customGradientWash(next));
   };
   const on = (id: string) => pick.id === id;
-  const current = KINDS.find(([kind]) => kind === pick.kind)?.[1];
+  const current = KIND_LABEL[pick.kind];
   return (
     <>
       <div className="rd-quote-heading">
@@ -173,8 +195,9 @@ export function QuoteBackground({
               label="Background type"
               radio
               onClose={() => setMenu(false)}
-              items={KINDS.map(([kind, label]) => ({
-                label,
+              checkBesideIcon
+              items={KINDS.map((kind) => ({
+                label: KIND_LABEL[kind],
                 testId: `quote-kind-${kind}`,
                 checked: pick.kind === kind,
                 icon: <span className={`rd-quote-kind-icon ${kind}`} />,
@@ -192,7 +215,7 @@ export function QuoteBackground({
             on={on("book")}
             shape="solid"
             background={bookWash(accent).from}
-            onClick={() => choose("solid", "book", bookWash(accent))}
+            onClick={() => choose("solid", "book", null)}
           />
           {SOLIDS.map((solid) => (
             <Swatch
@@ -213,7 +236,7 @@ export function QuoteBackground({
           >
             <input
               type="color"
-              aria-label="Custom background color"
+              aria-label={`Custom background color${on("custom") ? ", selected" : ""}`}
               value={custom}
               onChange={(event) => {
                 setCustom(event.target.value);

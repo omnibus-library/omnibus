@@ -112,7 +112,7 @@ export function deferred() {
 }
 
 /** The gradient pairs the sample cover (Red Rising) yields, darkest first. */
-export const COVER_PAIRS = [
+const COVER_PAIRS = [
   { from: "#5d1f1c", to: "#c01a1a", ink: "light" },
   { from: "#1e1b1b", to: "#ab2527", ink: "light" },
   { from: "#1e1b1b", to: "#5d1f1c", ink: "light" },

@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, fireEvent, fn, spyOn, waitFor, within } from "storybook/test";
 import { parseBookUuid } from "../../api";
+import { getGetCoverPaletteMockHandler200 } from "../../api/generated/omnibus.msw";
 import { failing, hanging } from "../../testing/handlers";
 import { QuoteCard } from "./QuoteCard";
 import { drawQuoteCanvas } from "./quoteCanvas";
@@ -124,8 +125,28 @@ async function chooseKind(
 const gradients = (canvas: ReturnType<typeof within>) =>
   within(canvas.getByRole("group", { name: "Gradient backgrounds" }));
 
+// The Gradient kind starts on the first cover pair only if the palette is already in.
+let paletteAnswered = false;
+const PAIRS = [
+  { from: "#5d1f1c", to: "#c01a1a", ink: "light" },
+  { from: "#1e1b1b", to: "#ab2527", ink: "light" },
+  { from: "#1e1b1b", to: "#5d1f1c", ink: "light" },
+  { from: "#efe4e6", to: "#d5c2c9", ink: "dark" },
+] as const;
+
 export const BackgroundMenuSwitchesTheRow: Story = {
+  beforeEach({ msw }) {
+    paletteAnswered = false;
+    msw.use(
+      getGetCoverPaletteMockHandler200(() => {
+        paletteAnswered = true;
+        return { pairs: [...PAIRS] };
+      }),
+    );
+  },
   play: async ({ canvas, userEvent }) => {
+    await waitFor(() => expect(paletteAnswered).toBe(true));
+    await new Promise((resolve) => setTimeout(resolve, 100));
     const pill = canvas.getByRole("button", { name: "Solid" });
     await expect(pill).toHaveAttribute("aria-haspopup", "menu");
     await userEvent.click(pill);
@@ -157,6 +178,63 @@ export const BackgroundMenuSwitchesTheRow: Story = {
     await expect(
       canvas.getByRole("menuitemradio", { name: "Gradient" }),
     ).toHaveAttribute("aria-checked", "true");
+  },
+};
+
+export const KindMenuMarksTheCurrentKindWithACheck: Story = {
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(canvas.getByRole("button", { name: "Solid" }));
+
+    await expect(
+      canvas.getByRole("menuitemradio", { name: "Solid" }),
+    ).toHaveTextContent("✓");
+    await expect(
+      canvas.getByRole("menuitemradio", { name: "Gradient" }),
+    ).not.toHaveTextContent("✓");
+  },
+};
+
+// A drawer or modal around the card closes on Escape from its own handler, as ConfirmModal does.
+export const EscapeClosesTheKindMenuNotTheCard: Story = {
+  decorators: [
+    (Story, { args }) => (
+      // biome-ignore lint/a11y/noStaticElementInteractions: stands in for the dialog's Escape handler
+      <div
+        onKeyDown={(event) => {
+          if (event.key === "Escape") args.onClose();
+        }}
+      >
+        <Story />
+      </div>
+    ),
+  ],
+  play: async ({ canvas, userEvent, args }) => {
+    await userEvent.click(canvas.getByRole("button", { name: "Solid" }));
+    await expect(canvas.getByRole("menu")).toBeVisible();
+
+    await userEvent.keyboard("{Escape}");
+
+    await expect(canvas.queryByRole("menu")).not.toBeInTheDocument();
+    await expect(canvas.getByTestId("quote-preview")).toBeInTheDocument();
+    await expect(args.onClose).not.toHaveBeenCalled();
+  },
+};
+
+export const SelectionRingIsNotTheFocusOutline: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const book = canvas.getByRole("button", { name: "Book" });
+    const style = getComputedStyle(book);
+    await expect(book).toHaveAttribute("aria-pressed", "true");
+    await expect(style.outlineStyle).toBe("none");
+    await expect(style.boxShadow).not.toBe("none");
+
+    const paper = canvas.getByRole("button", { name: "Paper" });
+    for (let i = 0; i < 8 && document.activeElement !== paper; i++) {
+      await userEvent.tab();
+    }
+    await expect(paper).toHaveFocus();
+    await expect(getComputedStyle(paper).outlineStyle).toBe("solid");
+    await expect(getComputedStyle(paper).boxShadow).toBe("none");
   },
 };
 

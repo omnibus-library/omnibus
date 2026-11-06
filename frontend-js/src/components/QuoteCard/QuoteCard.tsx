@@ -11,7 +11,7 @@ import {
   paintQuoteCard,
   shareQuoteCard,
 } from "./quoteCanvas";
-import { bookWash } from "./quoteColor";
+import { bookWash, type Wash } from "./quoteColor";
 import {
   collapse,
   FONTS,
@@ -22,13 +22,13 @@ import {
   type SizeKey,
 } from "./quoteStyle";
 
-type ChipsProps = { label: string; className: string; children: ReactNode };
+type ChipsProps = { label: string; children: ReactNode };
 
 // A pressed-button toggle group: the selection rides on `aria-pressed`.
-function Chips({ label, className, children }: ChipsProps) {
+function Chips({ label, children }: ChipsProps) {
   return (
     // biome-ignore lint/a11y/useSemanticElements: a fieldset brings a border and min-width Atrium never resets
-    <div className={className} role="group" aria-label={label}>
+    <div className="rd-quote-chips" role="group" aria-label={label}>
       {children}
     </div>
   );
@@ -76,7 +76,9 @@ export function QuoteCard({
   accent,
   onClose,
 }: QuoteCardProps) {
-  const [wash, setWash] = useState(() => bookWash(accent));
+  // Null is the Book pick, which follows the accent rather than freezing it.
+  const [picked, setPicked] = useState<Wash | null>(null);
+  const wash = useMemo(() => picked ?? bookWash(accent), [picked, accent]);
   const [ratio, setRatio] = useState<Ratio>("1:1");
   const [font, setFont] = useState<FontKey>("serif");
   const [size, setSize] = useState<SizeKey>("m");
@@ -122,6 +124,8 @@ export function QuoteCard({
           ref={preview}
           className="rd-quote-card"
           data-testid="quote-preview"
+          role="img"
+          aria-label={`Quote card preview: ${collapse(text)} — ${[author, subtitle].filter(Boolean).join(", ")}`}
           {...cardSize(ratio)}
         >
           <p data-testid="quote-preview-body">{collapse(text)}</p>
@@ -129,10 +133,10 @@ export function QuoteCard({
           <p>{subtitle}</p>
         </canvas>
         <div className="rd-quote-controls">
-          <QuoteBackground uuid={uuid} accent={accent} onChange={setWash} />
+          <QuoteBackground uuid={uuid} accent={accent} onChange={setPicked} />
           <div className="rd-quote-label">Type</div>
           <div className="rd-quote-type">
-            <Chips label="Font" className="rd-quote-chips">
+            <Chips label="Font">
               {FONTS.map((f) => (
                 <Chip
                   key={f.key}
@@ -144,7 +148,7 @@ export function QuoteCard({
                 </Chip>
               ))}
             </Chips>
-            <Chips label="Text size" className="rd-quote-chips">
+            <Chips label="Text size">
               {SIZES.map((s) => (
                 <Chip
                   key={s.key}
@@ -155,7 +159,7 @@ export function QuoteCard({
                 </Chip>
               ))}
             </Chips>
-            <Chips label="Style" className="rd-quote-chips">
+            <Chips label="Style">
               <Chip
                 on={bold}
                 style={{ fontWeight: 700 }}
@@ -173,7 +177,7 @@ export function QuoteCard({
             </Chips>
           </div>
           <div className="rd-quote-label">Shape</div>
-          <Chips label="Shape" className="rd-quote-chips">
+          <Chips label="Shape">
             {RATIOS.map((r) => (
               <Chip
                 key={r.key}
