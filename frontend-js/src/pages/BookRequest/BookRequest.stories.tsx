@@ -1114,6 +1114,30 @@ export const AnotherReadersLiveRequestGetsALaneOfItsOwn: Story = {
   },
 };
 
+export const AStuckRequestBesideTheFiledOneKeepsItsTryAgain: Story = {
+  parameters: { user: READER },
+  beforeEach({ msw }) {
+    // Grace's search outranks the viewer's stuck one, so the stuck one is no longer the main lane.
+    fake = requestFake(
+      [
+        aWireRequest({ id: 8, state: "stuck", stuck_reason: "not_found" }),
+        aWireRequest({ id: 9, user_id: 2, state: "looking" }),
+      ],
+      { names: GRACE },
+    );
+    msw.use(bookHandler(HYPERION), ...fake.handlers);
+  },
+  play: async ({ canvas }) => {
+    const pane = within(await canvas.findByTestId("requests-pane"));
+    const stuck = within(await pane.findByTestId("request-other-lane-ebook"));
+
+    await expect(
+      await stuck.findByRole("button", { name: "Try again" }),
+    ).toBeEnabled();
+    await expect(pane.queryByTestId("request-history")).toBeNull();
+  },
+};
+
 // ---- the book's history: its other requests ----
 
 const OCT_12 = Date.UTC(2026, 9, 12, 12) / 1000;
@@ -1225,10 +1249,9 @@ export const HistoryRecordsAVersionSwappedForAnother: Story = {
         {},
         {
           id: 5,
-          state: "stuck",
-          stuck_reason: "stopped_moving",
+          state: "ready",
           chosen_result_id: EPUB.id,
-          progress: 0.25,
+          progress: 1,
           versions: [EPUB, { ...PDF, rejected: true }],
         },
       ),
@@ -1237,9 +1260,6 @@ export const HistoryRecordsAVersionSwappedForAnother: Story = {
   play: async ({ canvas }) => {
     const row = await canvas.findByTestId("request-history-row");
 
-    await expect(row).toHaveTextContent(
-      "Stopped moving · EPUB · 2.4 MB · stopped at 25%",
-    );
     await expect(row).toHaveTextContent(
       "Swapped for another version · PDF · 9.1 MB",
     );

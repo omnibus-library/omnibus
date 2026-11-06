@@ -527,17 +527,24 @@ describe("splitBookRequests", () => {
     expect(split.history).toEqual([]);
   });
 
-  it("keeps cancelled and stuck requests in the history", () => {
+  it("keeps a cancelled request in the history", () => {
     const split = splitBookRequests(
-      [
-        listing({ id: 5, state: "cancelled" }),
-        listing({ id: 4, state: "stuck", stuck_reason: "not_found" }),
-      ],
+      [listing({ id: 5, state: "cancelled" })],
       SHOWN,
     );
 
-    expect(ids(split.history)).toEqual([5, 4]);
+    expect(ids(split.history)).toEqual([5]);
     expect(split.lanes).toEqual([]);
+  });
+
+  it("gives a stuck request a lane of its own and leaves it out of the history", () => {
+    const split = splitBookRequests(
+      [listing({ id: 4, state: "stuck", stuck_reason: "not_found" })],
+      SHOWN,
+    );
+
+    expect(ids(split.lanes)).toEqual([4]);
+    expect(split.history).toEqual([]);
   });
 
   it("keeps a request that swapped a version in the history", () => {

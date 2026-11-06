@@ -301,19 +301,20 @@ export function offersRequestAgain(
   );
 }
 
-/** A book's requests besides the one on screen: those still going get a lane of their own, and the history keeps the cancelled and stuck ones and any that swapped a version. */
+/** A book's requests besides the one on screen: those still going, and stuck ones that await a Try again, get a lane of their own; the history keeps the cancelled ones and any that swapped a version. */
 export function splitBookRequests(
   listings: readonly RequestListing[],
   shown: number,
 ) {
   const others = listings.filter((l) => l.request.id !== shown);
   return {
-    lanes: others.filter((l) => isLive(l.request.state)),
+    lanes: others.filter(
+      ({ request }) => isLive(request.state) || request.state === "stuck",
+    ),
     history: others.filter(
       ({ request }) =>
         request.state === "cancelled" ||
-        request.state === "stuck" ||
-        request.versions.some((v) => v.rejected),
+        (request.state !== "stuck" && request.versions.some((v) => v.rejected)),
     ),
   };
 }
