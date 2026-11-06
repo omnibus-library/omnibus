@@ -1,5 +1,6 @@
 //! Reader REST handlers for book requests: starting one for a book, listing every reader's
-//! requests or one book's, and answering the search it runs. Every route answers 404 while
+//! requests or one book's, answering the search it runs, and taking or keeping the cover a
+//! finished download brought. Every route answers 404 while
 //! the book-requests flag is off, before the sign-in check, and a write answers 403 to a reader
 //! without the request permission. Requests are visible to every signed-in reader; only the
 //! requester or an admin acts on one, and only an admin is shown the search's technical detail.

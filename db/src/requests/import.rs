@@ -3,7 +3,9 @@
 //! imports race on a merge: [`files`] picks the book out of the download, [`place`] stages
 //! it inside the library and renames it into the canonical layout named from the wished
 //! book, the worker scans it in, and it is merged into the wished book when the scanner
-//! filed it as a book of its own. The download is only read, never moved or removed.
+//! filed it as a book of its own. The download is only read, never moved or removed. Before
+//! that merge the scanned book's uuid is recorded as the request's cover candidate (see
+//! [`super::cover`]), since the merge leaves its cover file in place.
 
 use std::io;
 use std::path::PathBuf;
