@@ -10,7 +10,7 @@ export type MockQbittorrent = {
   url: string;
   /** The folder its downloads sit in, as it reports them. */
   saveDir: string;
-  /** The tag of each download the server asked it to delete, in order. */
+  /** The info hash of each download the server asked it to delete, in order. */
   deleted: string[];
   /** From now on every download it holds reports as complete. */
   finish(): void;
@@ -28,7 +28,7 @@ async function formOf(req: IncomingMessage): Promise<URLSearchParams> {
 
 /**
  * Starts a loopback qBittorrent that takes any login, holds each download the server adds
- * under its tag, and lists `files` inside `saveDir` for all of them. Downloads report 40%
+ * under its info hash, and lists `files` inside `saveDir` for all of them. Downloads report 40%
  * until `finish()`. It stands in for a service the suite cannot run.
  */
 export async function startMockQbittorrent(
@@ -53,16 +53,18 @@ export async function startMockQbittorrent(
       case "POST /api/v2/auth/login":
         return text("Ok.", { "Set-Cookie": "SID=e2e; path=/" });
       case "POST /api/v2/torrents/add": {
-        const tag = (await formOf(req)).get("tags") ?? "";
-        held.add(tag);
+        const magnet = (await formOf(req)).get("urls") ?? "";
+        const hash = /btih:([0-9a-f]{40})/i.exec(magnet)?.[1]?.toLowerCase();
+        if (!hash) return text("Fails.");
+        held.add(hash);
         return text("Ok.");
       }
       case "GET /api/v2/torrents/info": {
-        const tag = url.searchParams.get("tag") ?? "";
-        if (!held.has(tag)) return send([]);
+        const hash = url.searchParams.get("hashes") ?? "";
+        if (!held.has(hash)) return send([]);
         return send([
           {
-            hash: `hash-${tag}`,
+            hash,
             ...(done ? COMPLETE : DOWNLOADING),
             save_path: saveDir,
           },
@@ -73,9 +75,8 @@ export async function startMockQbittorrent(
       case "POST /api/v2/torrents/delete": {
         const hashes = (await formOf(req)).get("hashes") ?? "";
         for (const hash of hashes.split("|")) {
-          const tag = hash.replace(/^hash-/, "");
-          held.delete(tag);
-          deleted.push(tag);
+          held.delete(hash);
+          deleted.push(hash);
         }
         return text("");
       }

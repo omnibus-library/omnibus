@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { MOCK_PROWLARR_KEY } from "../utils/mockProwlarr";
 import type { ExternalBookMeta } from "./scan";
 
@@ -63,8 +64,8 @@ export function releasesFor(book: ExternalBookMeta) {
     size,
     seeders,
     indexer,
-    // A magnet: the server fetches a torrent-file link before handing it over.
-    downloadUrl: `magnet:?xt=urn:btih:${book.isbn13}-${format}`,
+    // A magnet, whose info hash is how the server finds the download again.
+    downloadUrl: `magnet:?xt=urn:btih:${createHash("sha1").update(`${book.isbn13}-${format}`).digest("hex")}`,
     categories: [{ id: 7020 }],
   });
   return [
