@@ -74,6 +74,22 @@ mod drop_rules {
     }
 
     #[test]
+    fn drops_a_usenet_release() {
+        let mut usenet = release("Dracula - Bram Stoker EPUB");
+        usenet.protocol = Some(ReleaseProtocol::Usenet);
+
+        assert!(is_dropped(usenet));
+    }
+
+    #[test]
+    fn keeps_a_torrent_release() {
+        let mut torrent = release("Dracula - Bram Stoker EPUB");
+        torrent.protocol = Some(ReleaseProtocol::Torrent);
+
+        assert!(!is_dropped(torrent));
+    }
+
+    #[test]
     fn keeps_a_release_that_reports_no_seeders_at_all() {
         let mut usenet = release("Dracula - Bram Stoker EPUB");
         usenet.seeders = None;
