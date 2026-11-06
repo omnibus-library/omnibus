@@ -33,7 +33,9 @@ use super::MergeError;
 /// deleted since leaves the source fileless (no error). Fails with [`MergeError::UndoConflict`]
 /// when a reader re-curated the survivor since, or a later open merge overlaps.
 pub async fn undo_merge(pool: &SqlitePool, merge_log_id: i64) -> Result<String, MergeError> {
-    let mut tx = pool.begin().await?;
+    // BEGIN IMMEDIATE: this reads `merge_log` before it writes, and a deferred
+    // transaction that does so fails with a locked database against another writer.
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
 
     let row: Option<(i64, String, String, Option<i64>)> = sqlx::query_as(
         "SELECT target_book_id, source_uuid, source_metadata, undone_at
