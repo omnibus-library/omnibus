@@ -8,7 +8,10 @@ use super::super::*;
 use super::{assert_fts_invariant, fts_genre_hits, fts_isbn_hits, indexed_with_isbn};
 use crate::pool::init_db;
 use crate::sync::{sync_books, SyncPlan};
-use crate::test_support::{count_rows, indexed, CoversTempDir};
+use crate::test_support::{
+    count_rows, file_db_url, hold_write_lock, indexed, reopen_file_pool, seed_minimal_books,
+    CoversTempDir,
+};
 
 /// One `books_fts` row's plain-text columns, ordered by `rowid`. Used to
 /// diff the batched rebuild's output against the per-book upsert path.
@@ -266,4 +269,20 @@ async fn rebuild_all_fts_fully_repopulates_multi_book_library_after_total_index_
             .await
             .unwrap();
     assert_eq!(tag_hits, 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rebuild_all_fts_repopulates_the_index_while_another_connection_holds_the_write_lock() {
+    let tmp = tempfile::tempdir().unwrap();
+    let url = file_db_url(tmp.path());
+    let pool = init_db(&url).await.unwrap();
+    seed_minimal_books(&pool, 1).await;
+    let pool = reopen_file_pool(pool, &url).await;
+
+    let lock = hold_write_lock(&pool).await;
+    let result = rebuild_all_fts(&pool).await;
+    lock.release().await;
+
+    result.unwrap();
+    assert_eq!(count_rows(&pool, "SELECT COUNT(*) FROM books_fts").await, 1);
 }

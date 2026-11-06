@@ -1034,6 +1034,61 @@ pub async fn set_overrides_by_title(
         .unwrap();
 }
 
+// ---------------------------------------------------------------------------
+// File-backed WAL pool and a contending writer
+// ---------------------------------------------------------------------------
+
+/// How long a [`HeldWriteLock`] outlasts a writer that is waiting on it, well
+/// under the pool's 5s `busy_timeout`.
+const WRITE_LOCK_GRACE: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// `sqlite://` URL of an `omnibus.db` file under `dir`, for the tests that need
+/// WAL (in-memory databases have none).
+pub fn file_db_url(dir: &Path) -> String {
+    format!("sqlite://{}?mode=rwc", dir.join("omnibus.db").display())
+}
+
+/// Close `pool` and open the same file again, so no connection has opened the
+/// FTS5 tables yet, as after a restart.
+pub async fn reopen_file_pool(pool: SqlitePool, url: &str) -> SqlitePool {
+    pool.close().await;
+    crate::pool::init_db(url).await.expect("reopen file pool")
+}
+
+/// A second connection holding `BEGIN IMMEDIATE`, standing in for the write an
+/// import has in flight. A writer that opened a deferred transaction and read
+/// first fails against it with a locked database at once; one that took the
+/// lock up front waits for it.
+pub struct HeldWriteLock {
+    release: tokio::sync::oneshot::Sender<()>,
+    task: tokio::task::JoinHandle<()>,
+}
+
+/// Take the write lock on a pooled connection; it is held when this returns,
+/// until [`HeldWriteLock::release`] or [`WRITE_LOCK_GRACE`], whichever is first.
+pub async fn hold_write_lock(pool: &SqlitePool) -> HeldWriteLock {
+    let tx = pool
+        .begin_with("BEGIN IMMEDIATE")
+        .await
+        .expect("take the write lock");
+    let (release, released) = tokio::sync::oneshot::channel();
+    let task = tokio::spawn(async move {
+        // The grace is the cap on a writer that waits (and passes); one that
+        // fails does so while the lock is held, and ends the hold via release.
+        let _ = tokio::time::timeout(WRITE_LOCK_GRACE, released).await;
+        tx.commit().await.expect("release the write lock");
+    });
+    HeldWriteLock { release, task }
+}
+
+impl HeldWriteLock {
+    /// Release the lock now and wait for the commit.
+    pub async fn release(self) {
+        let _ = self.release.send(());
+        self.task.await.expect("write lock task");
+    }
+}
+
 /// One-scalar COUNT helper for table-shape assertions.
 pub async fn count_rows(pool: &SqlitePool, sql: &str) -> i64 {
     sqlx::query_scalar(sql).fetch_one(pool).await.unwrap()
