@@ -13,12 +13,14 @@ import {
   startFailure,
   stateView,
   undoToastMs,
-  versionFormat,
   versionSize,
   versionSource,
+  versionsFound,
 } from "./requestView";
 
 const NBSP = "\u00a0";
+/** A separator that stays on the line of the part before it. */
+const SEP = `${NBSP}· `;
 
 /** A version as the page draws it, with every field set unless told otherwise. */
 const aVersion = (overrides: Partial<RequestVersion> = {}): RequestVersion => ({
@@ -115,13 +117,6 @@ describe("requestPath", () => {
   });
 });
 
-describe("versionFormat", () => {
-  it("names a format and says when one is unknown", () => {
-    expect(versionFormat("EPUB")).toBe("EPUB");
-    expect(versionFormat(null)).toBe("Format unknown");
-  });
-});
-
 describe("versionSize", () => {
   it("writes a size in decimal units and leaves a missing one out", () => {
     expect(versionSize(2_400_000)).toBe(`2.4${NBSP}MB`);
@@ -132,13 +127,13 @@ describe("versionSize", () => {
 describe("versionSource", () => {
   it("names the source, format, size and seeds", () => {
     expect(versionSource(aVersion())).toBe(
-      `MyAnonamouse · EPUB · 1.8${NBSP}MB · 142${NBSP}seeds`,
+      `MyAnonamouse${SEP}EPUB${SEP}1.8${NBSP}MB${SEP}142${NBSP}seeds`,
     );
   });
 
   it("drops a missing source and missing seeds", () => {
     expect(versionSource(aVersion({ indexer: null, seeders: null }))).toBe(
-      `EPUB · 1.8${NBSP}MB`,
+      `EPUB${SEP}1.8${NBSP}MB`,
     );
   });
 
@@ -150,14 +145,14 @@ describe("versionSource", () => {
       protocol: "usenet",
     });
     expect(versionSource(usenet)).toBe(
-      `NZBgeek · EPUB · 2.1${NBSP}MB · Usenet`,
+      `NZBgeek${SEP}EPUB${SEP}2.1${NBSP}MB${SEP}Usenet`,
     );
   });
 
   it("says when the format and size are unknown", () => {
     expect(
       versionSource(aVersion({ format: null, sizeBytes: null, seeders: null })),
-    ).toBe("MyAnonamouse · Format unknown · Size unknown");
+    ).toBe(`MyAnonamouse${SEP}Format unknown${SEP}Size unknown`);
   });
 
   it.each([
@@ -166,7 +161,7 @@ describe("versionSource", () => {
     [1234, `1,234${NBSP}seeds`],
   ])("writes %i seeders as %s", (seeders, seeds) => {
     expect(versionSource(aVersion({ indexer: null, seeders }))).toBe(
-      `EPUB · 1.8${NBSP}MB · ${seeds}`,
+      `EPUB${SEP}1.8${NBSP}MB${SEP}${seeds}`,
     );
   });
 
@@ -181,11 +176,30 @@ describe("versionSource", () => {
 
 describe("pickedMeta", () => {
   it("names the picked version's size and source", () => {
-    expect(pickedMeta(aVersion())).toBe(`1.8${NBSP}MB · MyAnonamouse`);
+    expect(pickedMeta(aVersion())).toBe(`1.8${NBSP}MB${SEP}MyAnonamouse`);
   });
 
   it("leaves out what the source did not say", () => {
     expect(pickedMeta(aVersion({ sizeBytes: null, indexer: null }))).toBe("");
+  });
+});
+
+describe("versionsFound", () => {
+  it("counts only the versions that can be chosen", () => {
+    const versions = [
+      aVersion({ id: 1, bestMatch: true }),
+      aVersion({ id: 2 }),
+      aVersion({ id: 3, rejected: true }),
+    ];
+    expect(versionsFound(versions)).toBe("2 versions found · Best match first");
+  });
+
+  it("names no best match when no version that can be chosen is one", () => {
+    const versions = [
+      aVersion({ id: 1 }),
+      aVersion({ id: 2, bestMatch: true, rejected: true }),
+    ];
+    expect(versionsFound(versions)).toBe("1 version found");
   });
 });
 
