@@ -214,7 +214,7 @@ async fn delete_book_items_keeps_a_request_with_a_download_cancelled_and_due_and
         [(
             ada,
             "cancelled".to_string(),
-            Some("omnibus-1-1".to_string())
+            Some("c17d23830376ac1478f394337fefbc169a9959ce".to_string())
         )]
     );
     assert_eq!(
