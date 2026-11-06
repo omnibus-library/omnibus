@@ -8,9 +8,11 @@ use omnibus_shared::{
 };
 use sqlx::{sqlite::SqliteRow, Row, SqlitePool};
 
-use super::rank::Ranked;
+use crate::author_photos::RemoteImageConfig;
 use crate::metadata_lookup::provider_cover_image_config;
 use crate::scan::{create_fileless_from_meta, fetch_candidate_cover};
+
+use super::rank::Ranked;
 
 /// A request live for its reader: searching, waiting on a pick, picked or downloading.
 const LIVE_STATES: &str = "('looking', 'choose', 'chosen', 'on_its_way')";
@@ -191,6 +193,19 @@ pub async fn start(
     })
 }
 
+/// How many requests `user_id` has live.
+async fn live_count<'e>(
+    executor: impl sqlx::Executor<'e, Database = sqlx::Sqlite>,
+    user_id: i64,
+) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar(&format!(
+        "SELECT COUNT(*) FROM book_requests WHERE user_id = ? AND state IN {LIVE_STATES}"
+    ))
+    .bind(user_id)
+    .fetch_one(executor)
+    .await
+}
+
 /// Insert a `looking` request on `tx`, refused once the reader holds `max_live`.
 async fn insert_looking(
     tx: &mut sqlx::SqliteConnection,
@@ -199,13 +214,7 @@ async fn insert_looking(
     kind: RequestKind,
     max_live: i64,
 ) -> Result<RequestRow, RequestError> {
-    let live: i64 = sqlx::query_scalar(&format!(
-        "SELECT COUNT(*) FROM book_requests WHERE user_id = ? AND state IN {LIVE_STATES}"
-    ))
-    .bind(user_id)
-    .fetch_one(&mut *tx)
-    .await?;
-    if live >= max_live {
+    if live_count(&mut *tx, user_id).await? >= max_live {
         return Err(RequestError::TooManyLive);
     }
     let row = sqlx::query(&format!(
@@ -221,8 +230,9 @@ async fn insert_looking(
 }
 
 /// Start `user_id`'s request for `kind` of a book the library lacks, made from `meta` as a
-/// file-less book. The cover is fetched first; the live-cap check, the book and the request
-/// share one write transaction, so a refusal leaves no book behind.
+/// file-less book. The cover is fetched first, unless the reader is already at `max_live`; the
+/// live-cap check, the book and the request share one write transaction, so a refusal leaves
+/// no book behind.
 pub async fn start_for_new_book(
     pool: &SqlitePool,
     user_id: i64,
@@ -230,9 +240,34 @@ pub async fn start_for_new_book(
     kind: RequestKind,
     max_live: i64,
 ) -> Result<RequestRow, RequestError> {
-    let cover = fetch_candidate_cover(meta, &provider_cover_image_config(false)).await;
+    start_for_new_book_with(
+        pool,
+        user_id,
+        meta,
+        kind,
+        max_live,
+        &provider_cover_image_config(false),
+    )
+    .await
+}
+
+/// [`start_for_new_book`] with an injectable cover-fetch config, for a test that points the
+/// fetch at a loopback origin.
+pub(crate) async fn start_for_new_book_with(
+    pool: &SqlitePool,
+    user_id: i64,
+    meta: &ExternalBookMeta,
+    kind: RequestKind,
+    max_live: i64,
+    image_config: &RemoteImageConfig,
+) -> Result<RequestRow, RequestError> {
+    // Read-only and early, so a refused reader costs no network fetch or write lock; the
+    // transaction below stays the authoritative check.
+    if live_count(pool, user_id).await? >= max_live {
+        return Err(RequestError::TooManyLive);
+    }
+    let cover = fetch_candidate_cover(meta, image_config).await;
     let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
-    // A refusal drops the transaction, which takes the new book with it.
     let created = create_fileless_from_meta(&mut tx, meta, cover, Some(user_id)).await?;
     let request = insert_looking(&mut tx, user_id, &created.uuid, kind, max_live).await?;
     tx.commit().await?;

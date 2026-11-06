@@ -1,40 +1,22 @@
 //! Starting a request from a provider's record: the book is made with the request, or neither is.
 
-use omnibus_shared::metadata_lookup::MetadataProvider;
+use omnibus_db::test_support::{count_rows, external_meta};
 use omnibus_shared::ExternalBookMeta;
 
 use super::*;
+
+const BOOKS: &str = "SELECT COUNT(*) FROM books";
 
 mod post_start_request_from_meta {
     use super::*;
 
     fn piranesi() -> ExternalBookMeta {
-        ExternalBookMeta {
-            isbn13: "9781635575637".into(),
-            title: "Piranesi".into(),
-            authors: vec!["Susanna Clarke".into()],
-            year: Some("2020".into()),
-            pages: None,
-            publisher: Some("Bloomsbury".into()),
-            description: None,
-            cover_url: None,
-            series: None,
-            first_publish_year: None,
-            format: None,
-            source: MetadataProvider::OpenLibrary,
-        }
+        external_meta("Piranesi")
     }
 
     async fn start(app: &Router, token: &str, kind: &str, meta: &ExternalBookMeta) -> Response {
         let body = json!({"kind": kind, "meta": meta});
         send(app, "POST", "/api/requests", Some(token), Some(body)).await
-    }
-
-    async fn books(pool: &SqlitePool) -> i64 {
-        sqlx::query_scalar("SELECT COUNT(*) FROM books")
-            .fetch_one(pool)
-            .await
-            .unwrap()
     }
 
     #[tokio::test]
@@ -58,6 +40,20 @@ mod post_start_request_from_meta {
     }
 
     #[tokio::test]
+    async fn charges_the_start_to_the_reader_s_start_log() {
+        let (app, state, pool) = fixture_book_requests(true).await;
+        let (ada, token) = requester(&pool, "ada").await;
+        for _ in 0..9 {
+            state.request_starts().record(ada);
+        }
+        assert!(state.request_starts().has_room(ada));
+
+        start(&app, &token, "ebook", &piranesi()).await;
+
+        assert!(!state.request_starts().has_room(ada));
+    }
+
+    #[tokio::test]
     async fn answers_400_for_an_audiobook_and_makes_no_book() {
         let (app, _, pool) = fixture_book_requests(true).await;
         let (_, token) = requester(&pool, "ada").await;
@@ -65,7 +61,7 @@ mod post_start_request_from_meta {
         let res = start(&app, &token, "audiobook", &piranesi()).await;
 
         assert_eq!(res.status(), StatusCode::BAD_REQUEST);
-        assert_eq!(books(&pool).await, 0);
+        assert_eq!(count_rows(&pool, BOOKS).await, 0);
     }
 
     #[tokio::test]
@@ -80,7 +76,7 @@ mod post_start_request_from_meta {
         let res = start(&app, &token, "ebook", &meta).await;
 
         assert_eq!(res.status(), StatusCode::BAD_REQUEST);
-        assert_eq!(books(&pool).await, 0);
+        assert_eq!(count_rows(&pool, BOOKS).await, 0);
     }
 
     #[tokio::test]
@@ -91,12 +87,12 @@ mod post_start_request_from_meta {
             let uuid = seed_book(&pool, &format!("Book {n}")).await;
             seed_request(&pool, ada, &uuid).await;
         }
-        let before = books(&pool).await;
+        let before = count_rows(&pool, BOOKS).await;
 
         let res = start(&app, &token, "ebook", &piranesi()).await;
 
         assert_eq!(res.status(), StatusCode::TOO_MANY_REQUESTS);
-        assert_eq!(books(&pool).await, before);
+        assert_eq!(count_rows(&pool, BOOKS).await, before);
     }
 
     #[tokio::test]
@@ -110,6 +106,17 @@ mod post_start_request_from_meta {
         let res = start(&app, &token, "ebook", &piranesi()).await;
 
         assert_eq!(res.status(), StatusCode::TOO_MANY_REQUESTS);
-        assert_eq!(books(&pool).await, 0);
+        assert_eq!(count_rows(&pool, BOOKS).await, 0);
+    }
+
+    #[tokio::test]
+    async fn answers_500_when_the_database_fails() {
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let (_, token) = requester(&pool, "ada").await;
+        pool.close().await;
+
+        let res = start(&app, &token, "ebook", &piranesi()).await;
+
+        assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
     }
 }

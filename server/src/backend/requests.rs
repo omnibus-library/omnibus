@@ -22,8 +22,8 @@ use omnibus_db::{
     },
 };
 use omnibus_shared::{
-    BookRequest, ChooseVersion, RequestKind, RequestListQuery, RequestListing, RequestState,
-    StartRequest, StartRequestFromMeta, StuckReason,
+    BookRequest, ChooseVersion, RequestListQuery, RequestListing, RequestState, StartRequest,
+    StartRequestFromMeta, StuckReason,
 };
 
 use crate::auth::AuthUser;
@@ -224,8 +224,8 @@ pub(super) async fn post_start_request(
     Path(uuid): Path<String>,
     Json(body): Json<StartRequest>,
 ) -> Response {
-    if body.kind != RequestKind::Ebook {
-        return (StatusCode::BAD_REQUEST, "only ebooks can be requested yet").into_response();
+    if let Err(message) = body.kind.check_requestable() {
+        return (StatusCode::BAD_REQUEST, message).into_response();
     }
     let book_uuid = match db::resolve_canonical_book_uuid(state.pool(), &uuid).await {
         Ok(Some(u)) => u,
@@ -270,6 +270,7 @@ pub(super) async fn post_start_request(
         (status = 400, description = "`kind` isn't `ebook`, or a field of `meta` is over its length cap."),
         (status = 403, description = "Your account can't make requests."),
         (status = 404, description = "Book requests are off on this server."),
+        (status = 429, description = "You started too many requests lately, or have too many in progress."),
     ),
 )]
 pub(super) async fn post_start_request_from_meta(

@@ -6445,6 +6445,9 @@
           },
           "404": {
             "description": "Book requests are off on this server."
+          },
+          "429": {
+            "description": "You started too many requests lately, or have too many in progress."
           }
         }
       }

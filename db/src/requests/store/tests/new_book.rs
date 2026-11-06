@@ -1,33 +1,16 @@
 //! Starting a request on a book the library does not have yet: the book and the request land together or not at all.
 
-use omnibus_shared::metadata_lookup::MetadataProvider;
-use omnibus_shared::ExternalBookMeta;
+use omnibus_shared::scan::ScanOutcome;
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
+
+use crate::metadata_lookup::{MetadataLookupConfig, ProviderKeys};
+use crate::scan::resolve_meta;
+use crate::test_support::{count_rows, external_meta, loopback_cover_config, CoversTempDir};
 
 use super::*;
 
-fn piranesi() -> ExternalBookMeta {
-    ExternalBookMeta {
-        isbn13: "9781635575637".into(),
-        title: "Piranesi".into(),
-        authors: vec!["Susanna Clarke".into()],
-        year: Some("2020".into()),
-        pages: None,
-        publisher: Some("Bloomsbury".into()),
-        description: None,
-        cover_url: None,
-        series: None,
-        first_publish_year: None,
-        format: None,
-        source: MetadataProvider::OpenLibrary,
-    }
-}
-
-async fn book_count(pool: &SqlitePool) -> i64 {
-    sqlx::query_scalar("SELECT COUNT(*) FROM books")
-        .fetch_one(pool)
-        .await
-        .unwrap()
-}
+const BOOKS: &str = "SELECT COUNT(*) FROM books";
 
 mod start_for_new_book {
     use super::*;
@@ -37,9 +20,15 @@ mod start_for_new_book {
         let pool = pool().await;
         let ada = seed_user(&pool, "ada").await;
 
-        let row = start_for_new_book(&pool, ada, &piranesi(), RequestKind::Ebook, MAX_LIVE)
-            .await
-            .unwrap();
+        let row = start_for_new_book(
+            &pool,
+            ada,
+            &external_meta("Piranesi"),
+            RequestKind::Ebook,
+            MAX_LIVE,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(row.user_id, ada);
         assert_eq!(row.state, RequestState::Looking);
@@ -50,6 +39,14 @@ mod start_for_new_book {
         assert_eq!(book.title.as_deref(), Some("Piranesi"));
         assert!(book.formats.is_empty());
         assert_eq!(get(&pool, row.id).await.unwrap(), Some(row));
+        assert_eq!(
+            count_rows(&pool, "SELECT COUNT(*) FROM wishlist_entries").await,
+            0
+        );
+        assert_eq!(
+            count_rows(&pool, "SELECT COUNT(*) FROM physical_copies").await,
+            0
+        );
     }
 
     #[tokio::test]
@@ -60,10 +57,115 @@ mod start_for_new_book {
             .await
             .unwrap();
 
-        let refused = start_for_new_book(&pool, ada, &piranesi(), RequestKind::Ebook, 1).await;
+        let refused = start_for_new_book(
+            &pool,
+            ada,
+            &external_meta("Piranesi"),
+            RequestKind::Ebook,
+            1,
+        )
+        .await;
 
         assert!(matches!(refused, Err(RequestError::TooManyLive)));
-        assert_eq!(book_count(&pool).await, 0);
+        assert_eq!(count_rows(&pool, BOOKS).await, 0);
         assert_eq!(request_count(&pool).await, 1);
+    }
+
+    #[tokio::test]
+    async fn fetches_no_cover_when_the_reader_is_at_the_live_cap() {
+        let pool = pool().await;
+        let _covers = CoversTempDir::new("start_for_new_book_at_cap");
+        let ada = seed_user(&pool, "ada").await;
+        start(&pool, ada, "book-1", RequestKind::Ebook, 1)
+            .await
+            .unwrap();
+        let origin = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/cover.jpg"))
+            .respond_with(ResponseTemplate::new(404))
+            .mount(&origin)
+            .await;
+        let mut meta = external_meta("Piranesi");
+        meta.cover_url = Some(format!("{}/cover.jpg", origin.uri()));
+
+        let refused = start_for_new_book_with(
+            &pool,
+            ada,
+            &meta,
+            RequestKind::Ebook,
+            1,
+            &loopback_cover_config(),
+        )
+        .await;
+
+        assert!(matches!(refused, Err(RequestError::TooManyLive)));
+        assert!(origin.received_requests().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn answers_with_a_db_error_when_the_pool_is_closed() {
+        let pool = pool().await;
+        let ada = seed_user(&pool, "ada").await;
+        pool.close().await;
+
+        let failed = start_for_new_book(
+            &pool,
+            ada,
+            &external_meta("Piranesi"),
+            RequestKind::Ebook,
+            MAX_LIVE,
+        )
+        .await;
+
+        assert!(matches!(failed, Err(RequestError::Db(_))));
+    }
+
+    #[tokio::test]
+    async fn makes_a_book_that_resolve_meta_matches_instead_of_a_second_one() {
+        let pool = pool().await;
+        let ada = seed_user(&pool, "ada").await;
+        let meta = external_meta("Piranesi");
+        let row = start_for_new_book(&pool, ada, &meta, RequestKind::Ebook, MAX_LIVE)
+            .await
+            .unwrap();
+        // No provider is reached: the exact ISBN rung answers first.
+        let offline = MetadataLookupConfig {
+            openlibrary_base: crate::test_support::closed_port_url(),
+            googlebooks_base: crate::test_support::closed_port_url(),
+            hardcover_base: crate::test_support::closed_port_url(),
+            keys: ProviderKeys::default(),
+            throttle: crate::metadata_lookup::ThrottleTracker::fresh(),
+            timeout: std::time::Duration::from_secs(1),
+        };
+
+        let outcome = resolve_meta(&pool, ada, &meta, &offline).await.unwrap();
+
+        match outcome {
+            ScanOutcome::InLibraryUnowned { book } => assert_eq!(book.uuid, row.book_uuid),
+            other => panic!("expected the made book, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn makes_a_book_the_palette_finds() {
+        let pool = pool().await;
+        let _covers = CoversTempDir::new("start_for_new_book_palette");
+        let ada = seed_user(&pool, "ada").await;
+        let row = start_for_new_book(
+            &pool,
+            ada,
+            &external_meta("Piranesi"),
+            RequestKind::Ebook,
+            MAX_LIVE,
+        )
+        .await
+        .unwrap();
+
+        let found = crate::palette::search_palette(&pool, "/lib", "piranesi")
+            .await
+            .unwrap();
+
+        let uuids: Vec<_> = found.books.iter().map(|b| b.uuid.as_str()).collect();
+        assert_eq!(uuids, [row.book_uuid.as_str()]);
     }
 }
