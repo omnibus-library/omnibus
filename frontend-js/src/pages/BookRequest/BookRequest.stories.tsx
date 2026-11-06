@@ -36,6 +36,29 @@ const UNNAMED = aWireVersion({
   indexer: null,
   seeders: null,
 });
+const REVISED = aWireVersion({
+  id: 14,
+  title: "Hyperion - Dan Simmons EPUB [Gollancz, corrected contents v2]",
+  seeders: 37,
+});
+const SCENE = aWireVersion({
+  id: 15,
+  title: "Hyperion.1989.EPUB-BOOKS",
+  size_bytes: 1_600_000,
+  indexer: "Library Ink",
+  seeders: 4,
+});
+const TRIED = aWireVersion({
+  id: 16,
+  title: "Hyperion (1989) [EPUB]",
+  size_bytes: 1_900_000,
+  indexer: "Library Ink",
+  seeders: 0,
+  rejected: true,
+});
+/** Five that can be chosen and one that was tried, in the server's order. */
+const MANY = [EPUB, REVISED, PDF, UNNAMED, SCENE, TRIED];
+const NBSP = "\u00a0";
 
 let fake = requestFake();
 let held = deferred();
@@ -128,21 +151,48 @@ export const LookingBecomesChooseAVersionWhenTheSearchFinishes: Story = {
 
 export const ChooseAVersionListsEachVersionWithOneBestMatch: Story = {
   beforeEach({ msw }) {
-    msw.use(...seed({ state: "choose", versions: [EPUB, PDF, UNNAMED] }));
+    msw.use(...seed({ state: "choose", versions: MANY }));
   },
   play: async ({ canvas }) => {
     const rows = await canvas.findAllByTestId("request-version");
 
-    await expect(rows).toHaveLength(3);
-    await expect(versionAt(rows, 0)).toHaveTextContent("EPUB");
-    await expect(versionAt(rows, 0)).toHaveTextContent("2.4 MB");
-    await expect(versionAt(rows, 1)).toHaveTextContent("PDF");
-    await expect(versionAt(rows, 2)).toHaveTextContent("Unknown");
-    await expect(versionAt(rows, 2)).toHaveTextContent("Size unknown");
+    await expect(rows).toHaveLength(5);
     await expect(canvas.getAllByTestId("request-best-match")).toHaveLength(1);
     await expect(
       within(versionAt(rows, 0)).getByTestId("request-best-match"),
     ).toHaveTextContent("Best match");
+  },
+};
+
+export const TheVersionsFoundAreCountedAboveTheList: Story = {
+  beforeEach({ msw }) {
+    msw.use(...seed({ state: "choose", versions: MANY }));
+  },
+  play: async ({ canvas }) => {
+    const caption = await canvas.findByTestId("request-versions-found");
+
+    await expect(caption.textContent).toBe(
+      "6 versions found · Best match first",
+    );
+  },
+};
+
+export const ShowMoreRevealsTheVersionsPastTheFirstFour: Story = {
+  beforeEach({ msw }) {
+    msw.use(...seed({ state: "choose", versions: MANY }));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await expect(await canvas.findAllByTestId("request-version")).toHaveLength(
+      5,
+    );
+    const more = canvas.getByRole("button", { name: "Show 1 more" });
+    await expect(more).toHaveAttribute("aria-expanded", "false");
+
+    await userEvent.click(more);
+
+    await expect(canvas.getAllByTestId("request-version")).toHaveLength(6);
+    await expect(more).toHaveAttribute("aria-expanded", "true");
+    await expect(more).toHaveFocus();
   },
 };
 
@@ -154,20 +204,34 @@ export const AVersionRowNamesTheReleaseAndItsSource: Story = {
     const rows = await canvas.findAllByTestId("request-version");
     const epub = within(versionAt(rows, 0));
 
-    await expect(epub.getByTestId("request-version-name")).toHaveTextContent(
+    await expect(epub.getByTestId("request-version-name").textContent).toBe(
       "Hyperion - Dan Simmons EPUB",
     );
-    await expect(epub.getByTestId("request-version-meta")).toHaveTextContent(
-      "Books · EPUB · 2.4 MB · 12 seeders",
+    await expect(epub.getByTestId("request-version-meta").textContent).toBe(
+      `Books · EPUB · 2.4${NBSP}MB · 12${NBSP}seeds`,
     );
     await expect(
-      within(versionAt(rows, 1)).getByTestId("request-version-meta"),
-    ).toHaveTextContent("Library Ink · PDF · 9.1 MB · 1 seeder");
-    await expect(
-      epub.getByRole("button", {
-        name: "Choose the EPUB version from Books, 2.4 MB",
-      }),
-    ).toBeVisible();
+      within(versionAt(rows, 1)).getByTestId("request-version-meta")
+        .textContent,
+    ).toBe(`Library Ink · PDF · 9.1${NBSP}MB · 1${NBSP}seed`);
+  },
+};
+
+export const EachChooseButtonIsDescribedByItsOwnVersion: Story = {
+  beforeEach({ msw }) {
+    msw.use(...seed({ state: "choose", versions: [EPUB, REVISED] }));
+  },
+  play: async ({ canvas }) => {
+    const [best, revised] = await canvas.findAllByRole("button", {
+      name: "Choose",
+    });
+
+    await expect(best).toHaveAccessibleDescription(
+      /^Hyperion - Dan Simmons EPUB Books · EPUB · 2\.4\sMB · 12\sseeds Best match$/,
+    );
+    await expect(revised).toHaveAccessibleDescription(
+      /^Hyperion - Dan Simmons EPUB \[Gollancz, corrected contents v2\] Books · EPUB · 2\.4\sMB · 37\sseeds$/,
+    );
   },
 };
 
@@ -178,35 +242,36 @@ export const AVersionRowLeavesOutAnUnnamedSourceAndMissingSeeders: Story = {
   play: async ({ canvas }) => {
     const row = within(await canvas.findByTestId("request-version"));
 
-    await expect(row.getByTestId("request-version-name")).toHaveTextContent(
+    await expect(row.getByTestId("request-version-name").textContent).toBe(
       "Hyperion by Dan Simmons",
     );
-    await expect(row.getByTestId("request-version-meta")).toHaveTextContent(
-      "Unknown · Size unknown",
+    await expect(row.getByTestId("request-version-meta").textContent).toBe(
+      "Format unknown · Size unknown",
     );
   },
 };
 
-export const DetailsRevealWhereAVersionCameFromAndWhatItIsCalled: Story = {
+export const DetailsRevealWhereEachVersionCameFromAndWhatItIsCalled: Story = {
   beforeEach({ msw }) {
-    msw.use(...seed({ state: "choose", versions: [PDF] }));
+    msw.use(...seed({ state: "choose", versions: [EPUB, PDF] }));
   },
   play: async ({ canvas, userEvent }) => {
-    const row = within(await canvas.findByTestId("request-version"));
-    await expect(row.queryByTestId("request-details")).toBeNull();
-    const toggle = row.getByTestId("request-details-toggle");
+    const rows = await canvas.findAllByTestId("request-version");
+    await expect(canvas.queryByTestId("request-details")).toBeNull();
+    const toggle = canvas.getByTestId("request-details-toggle");
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
 
     await userEvent.click(toggle);
 
     await expect(toggle).toHaveAttribute("aria-expanded", "true");
-    const details = row.getByTestId("request-details");
+    await expect(canvas.getAllByTestId("request-details")).toHaveLength(2);
+    const details = within(versionAt(rows, 1)).getByTestId("request-details");
     await expect(details).toHaveTextContent("Library Ink");
     await expect(details).toHaveTextContent(
       "Simmons, Dan - Hyperion (retail).pdf",
     );
     await userEvent.click(toggle);
-    await expect(row.queryByTestId("request-details")).toBeNull();
+    await expect(canvas.queryByTestId("request-details")).toBeNull();
   },
 };
 
@@ -229,7 +294,9 @@ export const ChoosingAVersionSendsItsIdAndConfirmsThePick: Story = {
     await expect(fake.writes).toEqual([
       { kind: "choose", id: 7, resultId: 12 },
     ]);
-    await expect(canvas.getByTestId("request-chosen")).toHaveTextContent("PDF");
+    await expect(canvas.getByTestId("request-chosen")).toHaveTextContent(
+      "Simmons, Dan - Hyperion (retail).pdf",
+    );
     await expect(canvas.getByText("We’ll fetch it next.")).toBeVisible();
     await expect(canvas.queryByTestId("request-choose")).toBeNull();
   },
@@ -263,9 +330,10 @@ export const ChosenShowsThePick: Story = {
     );
   },
   play: async ({ canvas }) => {
-    await expect(await canvas.findByTestId("request-chosen")).toHaveTextContent(
-      "EPUB, 2.4 MB",
-    );
+    const chosen = within(await canvas.findByTestId("request-chosen"));
+
+    await expect(chosen.getByText("Hyperion - Dan Simmons EPUB")).toBeVisible();
+    await expect(chosen.getByText("2.4 MB · Books")).toBeVisible();
     await expect(canvas.getByTestId("request-state")).toHaveTextContent(
       "Version chosen",
     );
@@ -365,6 +433,18 @@ export const OnItsWayShowsOneProgressBarWithCancelAndPickAnother: Story = {
     await expect(
       canvas.getByRole("button", { name: "Pick another" }),
     ).toBeEnabled();
+  },
+};
+
+export const OnItsWayNamesTheVersionDownloading: Story = {
+  beforeEach({ msw }) {
+    msw.use(...seed(DOWNLOADING));
+  },
+  play: async ({ canvas }) => {
+    const chosen = within(await canvas.findByTestId("request-chosen"));
+
+    await expect(chosen.getByText("Hyperion - Dan Simmons EPUB")).toBeVisible();
+    await expect(chosen.getByText("2.4 MB · Books")).toBeVisible();
   },
 };
 
@@ -527,8 +607,8 @@ export const PickAnotherGoesBackToTheVersionsWithThePickedOneMarkedDidntWork: St
       await expect(rows).toHaveLength(2);
       await expect(rows[0]).toHaveFocus();
       await expect(
-        within(versionAt(rows, 0)).getByText("PDF"),
-      ).toBeInTheDocument();
+        within(versionAt(rows, 0)).getByTestId("request-version-name"),
+      ).toHaveTextContent("Simmons, Dan - Hyperion (retail).pdf");
       await expect(
         within(versionAt(rows, 1)).getByTestId("request-didnt-work"),
       ).toHaveTextContent("Didn’t work");
@@ -683,9 +763,7 @@ export const AnotherReadersChoiceCanBeReadButNotMade: Story = {
     );
 
     await expect(canvas.queryByTestId("request-choose")).toBeNull();
-    await expect(canvas.getAllByTestId("request-details-toggle")).toHaveLength(
-      2,
-    );
+    await expect(canvas.getByTestId("request-details-toggle")).toBeVisible();
   },
 };
 

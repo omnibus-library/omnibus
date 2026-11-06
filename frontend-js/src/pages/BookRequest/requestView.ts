@@ -2,9 +2,10 @@ import {
   ApiError,
   type BookRequest,
   type RequestState,
+  type RequestVersion,
   type StuckReason,
 } from "../../api";
-import { fileSize } from "../../format";
+import { fileSize, plural } from "../../format";
 
 function stuckView(reason: StuckReason | null) {
   switch (reason) {
@@ -93,18 +94,47 @@ export const undoToastMs = (cancelAt: number, now: number) =>
 export const requestPath = (uuid: string, id: number) =>
   `/books/${uuid}/request?id=${id}`;
 
-/** The format a version is in; one whose name says none is Unknown. */
-export const versionFormat = (format: string | null) => format ?? "Unknown";
+/** The format a version is in, or Format unknown when its name says none. */
+export const versionFormat = (format: string | null) =>
+  format ?? "Format unknown";
 
-/** A version's size, or `null` when the source did not say. */
+/** A version's size, kept on one line, or `null` when the source did not say. */
 export const versionSize = (bytes: number | null) =>
-  bytes === null ? null : fileSize(bytes);
+  bytes === null ? null : (fileSize(bytes)?.replace(" ", "\u00a0") ?? null);
 
-/** How many peers share a version, or `null` for a source with none, such as Usenet. */
-export const versionSeeders = (seeders: number | null) =>
-  seeders === null
-    ? null
-    : `${seeders} ${seeders === 1 ? "seeder" : "seeders"}`;
+const seeds = (n: number) => `${n.toLocaleString()}\u00a0seed${plural(n)}`;
+
+/** A version's source line: "MyAnonamouse · EPUB · 1.8 MB · 142 seeds"; a missing source or seed count drops out. */
+export const versionSource = (
+  version: Pick<RequestVersion, "indexer" | "format" | "sizeBytes" | "seeders">,
+) =>
+  [
+    version.indexer,
+    versionFormat(version.format),
+    versionSize(version.sizeBytes) ?? "Size unknown",
+    version.seeders === null ? null : seeds(version.seeders),
+  ]
+    .filter((part) => part !== null)
+    .join(" · ");
+
+/** The line under a picked version's name: its size and source, each left out when unknown. */
+export const pickedMeta = (
+  version: Pick<RequestVersion, "indexer" | "sizeBytes">,
+) =>
+  [versionSize(version.sizeBytes), version.indexer]
+    .filter((part) => part !== null)
+    .join(" · ");
+
+/** How many versions that can be chosen show before Show more. */
+const SHOWN_AT_FIRST = 4;
+
+/** The versions shown before Show more: the first four that can be chosen, and every one that was tried. */
+export function firstShown(versions: readonly RequestVersion[]) {
+  const offerable = versions
+    .filter((v) => !v.rejected)
+    .slice(0, SHOWN_AT_FIRST);
+  return versions.filter((v) => v.rejected || offerable.includes(v));
+}
 
 /** Why starting a request failed, as a sentence for a toast. */
 export function startFailure(error: unknown): string {

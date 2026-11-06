@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Fragment, type Ref, useEffect, useId, useRef, useState } from "react";
+import { type Ref, useEffect, useId, useRef, useState } from "react";
 import { Link, Navigate, useParams, useSearchParams } from "react-router";
 import {
   type BookUuid,
@@ -18,29 +18,30 @@ import { BusyLabel, Loading } from "../../components/Loading/Loading";
 import { PageError, PageNotFound } from "../../components/PageState/PageState";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
 import { ToastProvider, useToast } from "../../components/Toast/Toast";
-import { nowSecs } from "../../format";
+import { nowSecs, plural } from "../../format";
 import { useCurrentUser } from "../../session";
 import { bookQuery } from "../BookDetail/queries";
 import {
+  firstShown,
   isCancellable,
   isDownloading,
   isSearchStale,
+  pickedMeta,
   progressPercent,
   requestPath,
   SEARCH_STALE_AFTER_SECS,
   stateView,
-  versionFormat,
-  versionSeeders,
-  versionSize,
+  versionSource,
 } from "./requestView";
 import { messageOf, useAnswer, useCancel, useSwap } from "./useRequestActions";
 import "./BookRequest.css";
 
-/** One version found: its release name over its source, format, size and seeders, a Best match badge, Details, and Choose. */
+/** One version found: its release name, its source line, a Best match or Didn’t work tag, Choose, and the long form when Details is open. */
 function VersionRow({
   version,
   choosing,
   locked,
+  details,
   onChoose,
   rowRef,
 }: {
@@ -49,87 +50,58 @@ function VersionRow({
   choosing: boolean;
   /** Some version is being chosen, so no other can be. */
   locked: boolean;
+  /** Details is open for the lane. */
+  details: boolean;
   /** Absent when the viewer may not pick for this request. */
   onChoose: (() => void) | null;
   /** Lets the page move focus to this row. */
   rowRef?: Ref<HTMLLIElement>;
 }) {
-  const [open, setOpen] = useState(false);
-  const detailsId = useId();
-  const format = versionFormat(version.format);
-  const size = versionSize(version.sizeBytes);
-  const meta = [
-    version.indexer,
-    format,
-    size ?? "Size unknown",
-    versionSeeders(version.seeders),
-  ].filter((part) => part !== null);
+  const textId = useId();
+  const best = version.bestMatch && !version.rejected;
   return (
     <li
       ref={rowRef}
       tabIndex={-1}
       className="rq-version"
       data-testid="request-version"
-      data-best-match={version.bestMatch && !version.rejected}
+      data-best-match={best}
       data-rejected={version.rejected}
     >
-      <div className="rq-version-main">
-        <div className="rq-version-text">
-          <span
-            className="rq-version-name"
-            data-testid="request-version-name"
-            title={version.title}
-          >
-            {version.title}
-          </span>
-          <span className="rq-version-meta" data-testid="request-version-meta">
-            {meta.map((part, index) => (
-              // biome-ignore lint/suspicious/noArrayIndexKey: the parts are a fixed, ordered list
-              <Fragment key={index}>
-                {index > 0 && <span aria-hidden="true"> · </span>}
-                <span>{part}</span>
-              </Fragment>
-            ))}
-          </span>
-        </div>
+      <div id={textId} className="rq-version-text">
+        <p className="rq-version-name" data-testid="request-version-name">
+          {version.title}
+        </p>
+        <p className="rq-version-meta" data-testid="request-version-meta">
+          {versionSource(version)}
+        </p>
         {version.rejected ? (
-          <span className="rq-tried" data-testid="request-didnt-work">
+          <p className="rq-tag" data-testid="request-didnt-work">
             Didn’t work
-          </span>
+          </p>
         ) : (
-          version.bestMatch && (
-            <span className="rq-best" data-testid="request-best-match">
+          best && (
+            <p className="rq-tag" data-testid="request-best-match">
               Best match
-            </span>
+            </p>
           )
         )}
-        <Button
-          variant="ghost"
-          size="sm"
-          className="rq-details-toggle"
-          data-testid="request-details-toggle"
-          aria-expanded={open}
-          aria-controls={detailsId}
-          onClick={() => setOpen(!open)}
-        >
-          Details
-        </Button>
-        {onChoose && !version.rejected && (
-          <Button
-            variant={version.bestMatch ? "primary" : "default"}
-            size="sm"
-            data-testid="request-choose"
-            aria-label={`Choose the ${format} version${version.indexer ? ` from ${version.indexer}` : ""}${size ? `, ${size}` : ""}`}
-            aria-busy={choosing}
-            disabled={locked}
-            onClick={onChoose}
-          >
-            <BusyLabel busy={choosing} label="Choose" busyLabel="Choosing…" />
-          </Button>
-        )}
       </div>
-      {open && (
-        <dl id={detailsId} className="rq-details" data-testid="request-details">
+      {onChoose && !version.rejected && (
+        <Button
+          variant={best ? "primary" : "default"}
+          size="sm"
+          data-testid="request-choose"
+          aria-describedby={textId}
+          aria-busy={choosing}
+          disabled={locked}
+          onClick={onChoose}
+        >
+          <BusyLabel busy={choosing} label="Choose" busyLabel="Choosing…" />
+        </Button>
+      )}
+      {details && (
+        <dl className="rq-details" data-testid="request-details">
           <div>
             <dt>Found through</dt>
             <dd>{version.indexer ?? "Not named"}</dd>
@@ -162,6 +134,9 @@ function Choices({
     first.current?.focus();
     onFocused();
   }, [focusFirst, onFocused]);
+  const listId = useId();
+  const [all, setAll] = useState(false);
+  const [details, setDetails] = useState(false);
   const toast = useToast();
   const answer = useAnswer(request.id);
   const choose = useMutation({
@@ -171,6 +146,9 @@ function Choices({
     onError: (error) =>
       toast(`Couldn’t choose that version: ${messageOf(error)}`),
   });
+  const found = request.versions.length;
+  const shown = all ? request.versions : firstShown(request.versions);
+  const hidden = found - firstShown(request.versions).length;
   return (
     <>
       {request.note && (
@@ -178,30 +156,59 @@ function Choices({
           {request.note}
         </p>
       )}
-      <ul className="rq-versions" aria-label="Versions found">
-        {request.versions.map((version, index) => (
+      <p className="rq-found" data-testid="request-versions-found">
+        {`${found} version${plural(found)} found · Best match first`}
+      </p>
+      <ul id={listId} className="rq-versions" aria-label="Versions found">
+        {shown.map((version, index) => (
           <VersionRow
             key={version.id}
             rowRef={index === 0 ? first : undefined}
             version={version}
             choosing={choose.isPending && choose.variables === version.id}
             locked={choose.isPending}
+            details={details}
             onChoose={canAct ? () => choose.mutate(version.id) : null}
           />
         ))}
       </ul>
+      <div className="rq-version-links">
+        {hidden > 0 && (
+          <Button
+            variant="ghost"
+            size="sm"
+            data-testid="request-show-more"
+            aria-expanded={all}
+            aria-controls={listId}
+            onClick={() => setAll(!all)}
+          >
+            {all ? "Show fewer" : `Show ${hidden} more`}
+          </Button>
+        )}
+        <Button
+          variant="ghost"
+          size="sm"
+          data-testid="request-details-toggle"
+          aria-expanded={details}
+          aria-controls={listId}
+          onClick={() => setDetails(!details)}
+        >
+          Details
+        </Button>
+      </div>
     </>
   );
 }
 
-function Chosen({ request }: { request: Request }) {
+/** The version picked, named as its row named it: the release name over its size and source. */
+function Picked({ request }: { request: Request }) {
   const picked = request.versions.find((v) => v.id === request.chosenResultId);
+  const meta = picked ? pickedMeta(picked) : "";
   return (
-    <p className="rq-chosen" data-testid="request-chosen">
-      {picked
-        ? `${versionFormat(picked.format)}${versionSize(picked.sizeBytes) ? `, ${versionSize(picked.sizeBytes)}` : ""}`
-        : "Your pick"}
-    </p>
+    <div className="rq-picked" data-testid="request-chosen">
+      <p className="rq-version-name">{picked ? picked.title : "Your pick"}</p>
+      {meta && <p className="rq-version-meta">{meta}</p>}
+    </div>
   );
 }
 
@@ -427,7 +434,9 @@ function Lane({ request }: { request: Request }) {
           onFocused={() => setFocusVersions(false)}
         />
       )}
-      {request.state === "chosen" && <Chosen request={request} />}
+      {(request.state === "chosen" || request.state === "on_its_way") && (
+        <Picked request={request} />
+      )}
       {request.state === "on_its_way" && <Downloading request={request} />}
       {request.state === "stuck" && (
         <Stuck request={request} canAct={canAct} onTried={focusTitle} />
