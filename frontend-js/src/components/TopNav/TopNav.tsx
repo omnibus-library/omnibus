@@ -4,7 +4,12 @@ import brandMark from "../../assets/omnibus-stoat.png";
 import { AddBookSheet } from "../../pages/AddBooks/AddBookSheet";
 import { useCurrentUser } from "../../session";
 import { Button } from "../Button/Button";
-import { BookGlyph, HeartGlyph, UploadGlyph } from "../Glyphs/Glyphs";
+import {
+  ChevronDownGlyph,
+  HeartGlyph,
+  ScanGlyph,
+  UploadGlyph,
+} from "../Glyphs/Glyphs";
 import { MoreMenu, type MoreMenuItem } from "../MoreMenu/MoreMenu";
 import { SearchPaletteTrigger } from "../SearchPalette/SearchPalette";
 import { UserMenu } from "../UserMenu/UserMenu";
@@ -64,22 +69,25 @@ function AddMenu({ onUpload }: { onUpload: (() => void) | null }) {
       ? [
           {
             label: "Upload book files",
+            description: "EPUB, PDF, CBZ, M4B or MP3 from this computer",
             testId: "add-menu-upload",
-            icon: <UploadGlyph size={15} />,
+            icon: <UploadGlyph size={20} />,
             onSelect: onUpload,
           },
         ]
       : []),
     {
       label: "Add a copy you own",
+      description: "Scan or type the ISBN of a print book",
       testId: "add-menu-copy",
-      icon: <BookGlyph size={15} />,
+      icon: <ScanGlyph size={20} />,
       onSelect: () => navigate("/check-in", { state: { fromApp: true } }),
     },
     {
       label: "Add to your wishlist",
+      description: "A book you’d like the household to find",
       testId: "add-menu-wishlist",
-      icon: <HeartGlyph size={15} />,
+      icon: <HeartGlyph size={20} />,
       onSelect: () => navigate("/wishlists", { state: { add: true } }),
     },
   ];
@@ -93,6 +101,7 @@ function AddMenu({ onUpload }: { onUpload: (() => void) | null }) {
         onClick={() => setOpen(!open)}
       >
         Add
+        <ChevronDownGlyph size={8} />
       </Button>
       {open && (
         <MoreMenu label="Add" items={items} onClose={() => setOpen(false)} />

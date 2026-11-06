@@ -1,4 +1,10 @@
-import { type KeyboardEvent, type ReactNode, useEffect, useRef } from "react";
+import {
+  type KeyboardEvent,
+  type ReactNode,
+  useEffect,
+  useId,
+  useRef,
+} from "react";
 import "./MoreMenu.css";
 
 export type MoreMenuItem = {
@@ -13,6 +19,8 @@ export type MoreMenuItem = {
   icon?: ReactNode;
   /** Quiet words after the label. */
   note?: string;
+  /** A second line under the label, read as the item's description rather than its name. */
+  description?: string;
 };
 
 const ITEMS = '[role^="menuitem"]:not(:disabled)';
@@ -35,6 +43,7 @@ export function MoreMenu({
   radio?: boolean;
 }) {
   const menu = useRef<HTMLDivElement>(null);
+  const id = useId();
   const gutter = items.some((item) => item.checked !== undefined);
   useEffect(() => {
     const opener = document.activeElement;
@@ -92,6 +101,9 @@ export function MoreMenu({
                   "aria-checked": item.checked,
                 })}
             data-testid={item.testId}
+            aria-describedby={
+              item.description ? `${id}-${item.testId}` : undefined
+            }
             disabled={item.disabled}
             onClick={() => {
               onClose();
@@ -108,7 +120,21 @@ export function MoreMenu({
                 {item.icon}
               </span>
             )}
-            {item.label}
+            {item.description ? (
+              <span className="shd-menu-text">
+                {item.label}
+                {/* Hidden from the name, which would otherwise take every word in the button. */}
+                <span
+                  id={`${id}-${item.testId}`}
+                  className="shd-menu-description"
+                  aria-hidden="true"
+                >
+                  {item.description}
+                </span>
+              </span>
+            ) : (
+              item.label
+            )}
             {item.note && <span className="shd-menu-note">{item.note}</span>}
           </button>
         ))}
