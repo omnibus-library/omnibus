@@ -316,7 +316,7 @@ pub(super) async fn get_book_requests(
 /// Every reader's requests, newest first, in every state, with who made each and who
 /// cancelled it, narrowed by `state` and `user` when given. Requests are public on the
 /// server, so any signed-in reader may read them. Each carries only the version it picked and
-/// the versions it gave up. At most the newest 500 are returned.
+/// the versions it gave up. Every `ready` request is returned, and at most the newest 500 of the rest.
 #[utoipa::path(
     get,
     path = "/api/requests",

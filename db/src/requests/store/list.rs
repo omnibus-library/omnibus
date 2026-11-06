@@ -11,8 +11,8 @@ use crate::helpers::ids_json;
 
 use super::{row_to_request, row_to_version, RequestError, RequestRow};
 
-/// The most requests one list returns.
-// shortcut: no paging, newest 500 only; page it once a server holds more.
+/// The most requests not yet ready that one list returns; every ready request comes besides.
+// shortcut: no paging; every ready request plus the newest 500 others, page it once a server holds more.
 pub const LIST_LIMIT: i64 = 500;
 
 /// Which requests [`list`] returns; a field left `None` matches every request.
@@ -40,11 +40,14 @@ pub struct Listed {
 
 /// Appends the query behind [`list`] to `query`.
 pub fn push_select<'a>(query: &mut QueryBuilder<'a, Sqlite>, filter: ListFilter<'a>) {
+    // Ranked within ready and not ready apart, so a ready request stays however many are newer.
     query.push(
-        "SELECT q.*, b.id AS book_id,
+        "SELECT * FROM (
+         SELECT q.*, b.id AS book_id,
                 COALESCE(u.display_name, u.username) AS requester_name,
                 EXISTS(SELECT 1 FROM user_avatars a WHERE a.user_id = u.id) AS requester_has_avatar,
-                COALESCE(c.display_name, c.username) AS cancelled_by_name
+                COALESCE(c.display_name, c.username) AS cancelled_by_name,
+                ROW_NUMBER() OVER (PARTITION BY q.state = 'ready' ORDER BY q.id DESC) AS nth
            FROM book_requests q
            JOIN books b ON b.uuid = q.book_uuid
            JOIN users u ON u.id = q.user_id
@@ -61,12 +64,14 @@ pub fn push_select<'a>(query: &mut QueryBuilder<'a, Sqlite>, filter: ListFilter<
     if let Some(state) = filter.state {
         query.push(" AND q.state = ").push_bind(state.as_str());
     }
-    query.push(" ORDER BY q.id DESC LIMIT ");
-    query.push_bind(LIST_LIMIT);
+    query
+        .push(") WHERE state = 'ready' OR nth <= ")
+        .push_bind(LIST_LIMIT);
+    query.push(" ORDER BY id DESC");
 }
 
-/// The requests `filter` matches, newest first, at most [`LIST_LIMIT`]. A request whose book
-/// is gone is left out.
+/// The requests `filter` matches, newest first: every ready one, and at most [`LIST_LIMIT`] of
+/// the rest. A request whose book is gone is left out.
 pub async fn list(pool: &SqlitePool, filter: ListFilter<'_>) -> Result<Vec<Listed>, RequestError> {
     let mut query = QueryBuilder::new("");
     push_select(&mut query, filter);

@@ -4,7 +4,7 @@ use sqlx::{QueryBuilder, Row};
 
 use crate::{create_fileless_book, FilelessBook};
 
-use super::super::list::push_select;
+use super::super::list::{push_select, LIST_LIMIT};
 use super::*;
 
 async fn seed_book(pool: &SqlitePool, title: &str) -> String {
@@ -106,6 +106,50 @@ async fn narrows_to_one_state() {
     let listed = list(&pool, filter).await.unwrap();
 
     assert_eq!(ids(&listed), [wanted]);
+}
+
+/// `count` requests of `state` for one reader and book, straight into the table, so `start`'s
+/// live cap doesn't apply.
+async fn seed_many(pool: &SqlitePool, user: i64, book_uuid: &str, state: &str, count: i64) {
+    sqlx::query(
+        "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ?)
+         INSERT INTO book_requests (book_uuid, user_id, kind, state)
+         SELECT ?, ?, 'ebook', ? FROM n",
+    )
+    .bind(count)
+    .bind(book_uuid)
+    .bind(user)
+    .bind(state)
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn returns_every_ready_request_and_caps_the_rest_at_list_limit() {
+    let pool = pool().await;
+    let ada = seed_user(&pool, "ada").await;
+    let dracula = seed_book(&pool, "Dracula").await;
+    seed_many(&pool, ada, &dracula, "ready", 1).await;
+    seed_many(&pool, ada, &dracula, "cancelled", LIST_LIMIT + 1).await;
+
+    let listed = list(&pool, ListFilter::default()).await.unwrap();
+
+    let ready: Vec<&Listed> = listed
+        .iter()
+        .filter(|l| l.request.state == RequestState::Ready)
+        .collect();
+    assert_eq!(ready.len(), 1);
+    assert_eq!(ready[0].request.id, 1);
+    assert_eq!(listed.len() as i64, LIST_LIMIT + 1);
+    let oldest_kept = listed
+        .iter()
+        .map(|l| l.request.id)
+        .filter(|&id| id != 1)
+        .min();
+    assert_eq!(oldest_kept, Some(3));
+    let newest_first = listed.windows(2).all(|w| w[0].request.id > w[1].request.id);
+    assert!(newest_first);
 }
 
 #[tokio::test]
