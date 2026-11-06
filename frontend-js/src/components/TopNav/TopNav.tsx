@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { type RefObject, useRef, useState } from "react";
 import { Link, NavLink, useNavigate } from "react-router";
 import brandMark from "../../assets/omnibus-stoat.png";
 import { AddBookSheet } from "../../pages/AddBooks/AddBookSheet";
@@ -30,6 +30,7 @@ const onWhenActive = ({ isActive }: { isActive: boolean }) =>
 export function TopNav() {
   const user = useCurrentUser();
   const [adding, setAdding] = useState(false);
+  const addButton = useRef<HTMLButtonElement>(null);
   return (
     <>
       <nav className="atrium-topbar" aria-label="Primary">
@@ -51,17 +52,32 @@ export function TopNav() {
         </div>
         <SearchPaletteTrigger />
         <div className="atrium-actions">
-          <AddMenu onUpload={user.canUpload ? () => setAdding(true) : null} />
+          <AddMenu
+            button={addButton}
+            onUpload={user.canUpload ? () => setAdding(true) : null}
+          />
           <UserMenu />
         </div>
       </nav>
-      {adding && <AddBookSheet onClosed={() => setAdding(false)} />}
+      {adding && (
+        // The menu item that opened the sheet is gone by the time it closes.
+        <AddBookSheet
+          fallbackFocus={addButton}
+          onClosed={() => setAdding(false)}
+        />
+      )}
     </>
   );
 }
 
 /** The bar's one Add button and its menu of the ways a book comes in; `onUpload` is null for a reader who may not upload. */
-function AddMenu({ onUpload }: { onUpload: (() => void) | null }) {
+function AddMenu({
+  button,
+  onUpload,
+}: {
+  button: RefObject<HTMLButtonElement | null>;
+  onUpload: (() => void) | null;
+}) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const items: MoreMenuItem[] = [
@@ -94,6 +110,7 @@ function AddMenu({ onUpload }: { onUpload: (() => void) | null }) {
   return (
     <div className="atrium-add">
       <Button
+        ref={button}
         variant="primary"
         size="sm"
         aria-haspopup="menu"

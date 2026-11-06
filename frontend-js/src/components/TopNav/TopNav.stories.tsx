@@ -144,6 +144,24 @@ export const UploadBookFilesOpensTheAddBookSheet: Story = {
   },
 };
 
+export const ClosingTheUploadSheetHandsFocusBackToAdd: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const trigger = canvas.getByRole("button", { name: "Add" });
+    trigger.focus();
+    await userEvent.keyboard("{Enter}");
+    await expect(
+      canvas.getByRole("menuitem", { name: "Upload book files" }),
+    ).toHaveFocus();
+    await userEvent.keyboard("{Enter}");
+    await canvas.findByRole("dialog", { name: "Add a book" });
+
+    await userEvent.keyboard("{Escape}");
+
+    // Focus moves as the sheet's effects clean up, just after it leaves the page.
+    await waitFor(() => expect(trigger).toHaveFocus());
+  },
+};
+
 export const AddACopyYouOwnOpensCheckIn: Story = {
   render: withWhere,
   play: async ({ canvas, userEvent }) => {
