@@ -672,3 +672,62 @@ export const AResultKeepsFocusAndShowsBusyWhileItsStartRuns: Story = {
     );
   },
 };
+
+const ON_A_PHONE = {
+  ...PHONE,
+  parameters: { ...PHONE.parameters, path: "/requests", user: READER },
+};
+
+export const OnAPhoneOpenLandsOnTheBooksFullScreenDetail: Story = {
+  ...ON_A_PHONE,
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByTestId("requests-add"));
+    const sheet = within(await canvas.findByTestId("requests-add-panel"));
+    await userEvent.type(sheet.getByTestId("requests-add-search"), "piranesi");
+
+    await userEvent.click(
+      await sheet.findByRole("button", { name: "Open Piranesi" }),
+    );
+
+    await waitFor(() =>
+      expect(canvas.getByTestId("where")).toHaveTextContent(
+        "/requests?book=uuid-piranesi",
+      ),
+    );
+    await expect(
+      await within(await canvas.findByTestId("request-page")).findByRole(
+        "heading",
+        { name: "Piranesi" },
+      ),
+    ).toBeInTheDocument();
+    await expect(fake.writes).toEqual([]);
+  },
+};
+
+export const OnAPhoneARequestLandsOnTheBooksFullScreenDetail: Story = {
+  ...ON_A_PHONE,
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByTestId("requests-add"));
+    const sheet = within(await canvas.findByTestId("requests-add-panel"));
+    await userEvent.type(sheet.getByTestId("requests-add-search"), "dracula");
+
+    await userEvent.click(
+      await sheet.findByRole("button", { name: "Request Dracula" }),
+    );
+
+    await waitFor(() =>
+      expect(canvas.getByTestId("where")).toHaveTextContent(
+        "/requests?book=uuid-dracula",
+      ),
+    );
+    await expect(
+      await within(await canvas.findByTestId("request-page")).findByRole(
+        "heading",
+        { name: "Dracula" },
+      ),
+    ).toBeInTheDocument();
+    await expect(fake.writes).toEqual([
+      { kind: "start", uuid: "uuid-dracula" },
+    ]);
+  },
+};
