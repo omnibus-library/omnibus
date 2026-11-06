@@ -1,7 +1,10 @@
 //! The requests a list shows: every reader's, or one book's, one reader's or one state's.
 
+use sqlx::{QueryBuilder, Row};
+
 use crate::{create_fileless_book, FilelessBook};
 
+use super::super::list::push_select;
 use super::*;
 
 async fn seed_book(pool: &SqlitePool, title: &str) -> String {
@@ -135,6 +138,7 @@ async fn carries_the_picked_version_and_those_given_up_but_no_other() {
         .execute(&pool)
         .await
         .unwrap();
+    seed_result(&pool, id, "never tried", 700.0, 0).await;
     swap(&pool, id, NOW, None).await.unwrap();
     choose(&pool, id, other).await.unwrap();
 
@@ -146,4 +150,30 @@ async fn carries_the_picked_version_and_those_given_up_but_no_other() {
         .map(|v| (v.id, v.rejected))
         .collect();
     assert_eq!(versions, [(other, false), (picked, true)]);
+}
+
+#[tokio::test]
+async fn finds_one_books_requests_through_its_index() {
+    let pool = pool().await;
+    let filter = ListFilter {
+        book_uuid: Some("book-1"),
+        ..ListFilter::default()
+    };
+    let mut explain = QueryBuilder::new("EXPLAIN QUERY PLAN ");
+    push_select(&mut explain, filter);
+
+    let plan: Vec<String> = explain
+        .build()
+        .fetch_all(&pool)
+        .await
+        .unwrap()
+        .iter()
+        .map(|row| row.get("detail"))
+        .collect();
+
+    assert!(
+        plan.iter()
+            .any(|step| step.contains("USING INDEX idx_book_requests_book")),
+        "{plan:?}"
+    );
 }

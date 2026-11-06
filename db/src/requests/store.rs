@@ -93,6 +93,20 @@ pub enum SearchOutcome {
     },
 }
 
+/// A `book_request_results` row as a version; `rejected` is whether it was picked and given up.
+fn row_to_version(r: &SqliteRow) -> Result<RequestVersion, sqlx::Error> {
+    Ok(RequestVersion {
+        id: r.try_get("id")?,
+        title: r.try_get("title")?,
+        size_bytes: r.try_get("size_bytes")?,
+        format: r.try_get("format")?,
+        indexer: r.try_get("indexer")?,
+        seeders: r.try_get("seeders")?,
+        best_match: r.try_get::<i64, _>("best_match")? != 0,
+        rejected: r.try_get::<i64, _>("tried")? != 0,
+    })
+}
+
 fn row_to_request(row: &SqliteRow) -> Result<RequestRow, sqlx::Error> {
     let corrupt = |column: &str, value: String| {
         sqlx::Error::Decode(format!("book_requests.{column} holds {value:?}").into())
@@ -206,18 +220,7 @@ pub async fn versions(
     .await?;
     Ok(rows
         .iter()
-        .map(|r| {
-            Ok(RequestVersion {
-                id: r.try_get("id")?,
-                title: r.try_get("title")?,
-                size_bytes: r.try_get("size_bytes")?,
-                format: r.try_get("format")?,
-                indexer: r.try_get("indexer")?,
-                seeders: r.try_get("seeders")?,
-                best_match: r.try_get::<i64, _>("best_match")? != 0,
-                rejected: r.try_get::<i64, _>("tried")? != 0,
-            })
-        })
+        .map(row_to_version)
         .collect::<Result<Vec<_>, sqlx::Error>>()?)
 }
 
@@ -417,7 +420,7 @@ pub use download::{
     has_download_work, mark_on_its_way, mark_ready, mark_removal_seen, mark_stuck,
     pending_removals, record_progress, set_import_key, unix_now,
 };
-pub use list::{list, ListFilter, Listed, LIST_LIMIT};
+pub use list::{list, ListFilter, Listed};
 
 #[cfg(test)]
 mod tests;

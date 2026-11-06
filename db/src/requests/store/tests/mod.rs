@@ -714,4 +714,14 @@ mod database_failure {
 
         assert!(matches!(result, Err(RequestError::Db(_))));
     }
+
+    #[tokio::test]
+    async fn list_propagates_a_db_error_when_the_pool_is_closed() {
+        let pool = pool().await;
+        pool.close().await;
+
+        let result = list(&pool, ListFilter::default()).await;
+
+        assert!(matches!(result, Err(RequestError::Db(_))));
+    }
 }
