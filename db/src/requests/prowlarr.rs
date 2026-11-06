@@ -91,7 +91,8 @@ struct RawRelease {
     title: Option<String>,
     size: Option<i64>,
     seeders: Option<i64>,
-    protocol: Option<String>,
+    // Read loosely, so an unexpected shape loses only the protocol, not the whole search.
+    protocol: Option<serde_json::Value>,
     indexer: Option<String>,
     #[serde(rename = "downloadUrl")]
     download_url: Option<String>,
@@ -119,7 +120,11 @@ impl RawRelease {
             title,
             size_bytes: self.size,
             seeders: self.seeders,
-            protocol: self.protocol.as_deref().and_then(ReleaseProtocol::parse),
+            protocol: self
+                .protocol
+                .as_ref()
+                .and_then(serde_json::Value::as_str)
+                .and_then(ReleaseProtocol::parse),
             indexer: self.indexer.filter(|i| !i.is_empty()),
             link,
             categories: self

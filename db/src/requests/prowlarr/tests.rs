@@ -214,6 +214,7 @@ mod prowlarr_search {
             {"guid": "g1", "title": "t1", "protocol": "torrent", "downloadUrl": "http://prowlarr/1/download"},
             {"guid": "g2", "title": "t2", "protocol": "usenet", "downloadUrl": "http://prowlarr/2/download"},
             {"guid": "g3", "title": "t3", "protocol": "unknown", "downloadUrl": "http://prowlarr/3/download"},
+            {"guid": "g4", "title": "t4", "protocol": 1, "downloadUrl": "http://prowlarr/4/download"},
         ]);
         mount_search(&server, ResponseTemplate::new(200).set_body_json(body)).await;
 
@@ -228,6 +229,7 @@ mod prowlarr_search {
             [
                 Some(ReleaseProtocol::Torrent),
                 Some(ReleaseProtocol::Usenet),
+                None,
                 None
             ]
         );
