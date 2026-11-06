@@ -245,7 +245,14 @@ const readFailed = (kind: UploadKind, error: unknown) =>
   `Couldn’t read that ${kind === "ebook" ? "EPUB" : "audiobook"}: ${uploadFailureMessage(error)}`;
 
 /** Adding a book in one modal: pick a file, review it in the edit sheet, add it, then view it or add another. */
-export function AddBookSheet({ onClosed }: { onClosed: () => void }) {
+export function AddBookSheet({
+  onClosed,
+  fallbackFocus,
+}: {
+  onClosed: () => void;
+  /** Where focus lands on close when what opened the sheet is gone. */
+  fallbackFocus?: RefObject<HTMLElement | null>;
+}) {
   const queryClient = useQueryClient();
   const [step, setStep] = useState<Step>(CHOOSE);
   const [progress, setProgress] = useState(0);
@@ -401,6 +408,7 @@ export function AddBookSheet({ onClosed }: { onClosed: () => void }) {
       closing={closing}
       onClosed={onClosed}
       busy={busy}
+      fallbackFocus={fallbackFocus}
     >
       {/* The sheet's buttons and fields are drawn in the book page's terms, which `bp-root` sets. */}
       {/* biome-ignore lint/a11y/noStaticElementInteractions: the drag handlers only refuse a stray drop; the wrapper is no control */}

@@ -235,19 +235,23 @@ function AddPanel({
   add,
   error,
   sheet,
+  asks,
   onClose,
 }: {
   add: Add;
   error: string | null;
   /** In a bottom sheet, which brings its own title and Close. */
   sheet: boolean;
+  /** Counts the Add menu's asks for the search; each one focuses the field again. */
+  asks: number;
   onClose: () => void;
 }) {
   const input = useRef<HTMLInputElement>(null);
   const [text, setText] = useState("");
   const found = useAddSearch(useDebounced(text));
   // A phone's keyboard would cover the sheet the moment it opened.
-  useEffect(() => (sheet ? undefined : input.current?.focus()), [sheet]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new ask is the cue to focus again, on a panel already open
+  useEffect(() => (sheet ? undefined : input.current?.focus()), [sheet, asks]);
   const onAdd = (hit: Hit) => {
     if (found) add.mutate({ hit, via: found.via });
   };
@@ -320,9 +324,12 @@ function AddPanel({
 export function AddToWishlist({
   open,
   onOpenChange,
+  asks,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Counts the top bar's Add menu asking for the search, which focuses its field each time. */
+  asks: number;
 }) {
   const client = useQueryClient();
   const toast = useToast();
@@ -380,7 +387,13 @@ export function AddToWishlist({
     close();
   };
   const panel = (
-    <AddPanel add={add} error={error} sheet={phone} onClose={close} />
+    <AddPanel
+      add={add}
+      error={error}
+      sheet={phone}
+      asks={asks}
+      onClose={close}
+    />
   );
   return (
     <div className="wl-add">
