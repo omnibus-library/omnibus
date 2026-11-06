@@ -1490,8 +1490,9 @@ export const ReadyWithSharperCover: Story = {
     const card = within(await canvas.findByTestId("request-cover-offer"));
 
     await expect(
+      // The pane's lane title is an h3, so the offer's is an h4.
       card.getByRole("heading", {
-        level: 3,
+        level: 4,
         name: "The download has a sharper cover",
       }),
     ).toBeVisible();
@@ -1571,7 +1572,9 @@ export const TakesTheDownloadedCover: Story = {
     );
     await expect(fake.writes).toEqual([{ kind: "take-cover", id: 7 }]);
     await expect(canvas.getByRole("heading", { name: "Ebook" })).toHaveFocus();
-    const [header] = canvas.getAllByTestId("cover");
+    const [header] = within(canvas.getByTestId("requests-pane")).getAllByTestId(
+      "cover",
+    );
     await expect(
       within(header as HTMLElement).getByRole("img"),
     ).toHaveAttribute("src", `/api/thumbs/${UUID}/md?v=1`);
