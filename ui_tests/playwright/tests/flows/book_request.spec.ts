@@ -6,6 +6,7 @@ import type { EbookDetail, LibraryBook } from "../data/ebooks";
 import { buildExternalBook } from "../data/scan";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/pageFixtures";
+import { failing } from "../utils/api";
 import { fixturesDir, seedLibrary, waitForWorkerIdle } from "../utils/seed";
 
 // A configured download client makes the poller act on every picked request, so the tests
@@ -283,24 +284,60 @@ test.describe("requests page", () => {
 
     await test.step("see it as another reader, with who asked and no Cancel", async () => {
       await readerRequestsPage.goto();
-      await readerRequestsPage.filterByBook(book.title);
-      const row = readerRequestsPage.rowsFor(book.title);
-      await expect(row).toHaveCount(1);
-      await expect(row).toContainText(admin.display_name ?? admin.username);
-      await expect(row).toContainText("Looking");
-      await expect(readerRequestsPage.cancelButtons).toHaveCount(0);
+      await expect(
+        readerRequestsPage.itemIn("Looking", book.title),
+      ).toContainText("Ebook · looking");
+      await readerRequestsPage.select(book.title);
+      await expect(readerRequestsPage.paneRequester).toContainText(
+        admin.display_name ?? admin.username,
+      );
+      await expect(readerRequestsPage.paneCancelButton).toHaveCount(0);
     });
 
     await test.step("cancel it as the reader who asked", async () => {
       await requestsPage.goto();
-      await requestsPage.filterByBook(book.title);
-      await expectMutation(bookRequests.cancel(), () =>
-        requestsPage.cancel(book.title),
+      await requestsPage.select(book.title);
+      await expectMutation(bookRequests.cancel(), () => requestsPage.cancel());
+      await expect(requestsPage.paneState).toHaveText("Cancelled");
+      await expect(requestsPage.paneCancelButton).toHaveCount(0);
+      await expect(requestsPage.item(book.title)).toHaveCount(0);
+      release();
+    });
+  });
+
+  test("keep a request going when its cancel fails", async ({
+    scanRequests,
+    bookRequestsRequests,
+    createdBookUuids,
+    prowlarrFor,
+    requestsPage,
+    expectMutation,
+  }) => {
+    const book = buildExternalBook();
+    let release!: () => void;
+
+    await test.step("start a request that stays looking", async () => {
+      const added = await scanRequests.postWishlistEntry(book);
+      await expect(added).toBeOK();
+      const { book_uuid } = await added.json();
+      createdBookUuids.add(book_uuid);
+      release = (await prowlarrFor(releasesFor(book))).holdSearches();
+      await expect(await bookRequestsRequests.startRequest(book_uuid)).toBeOK();
+    });
+
+    await test.step("try to cancel it while the server fails", async () => {
+      await requestsPage.goto();
+      await requestsPage.select(book.title);
+      await requestsPage.forceServerError(bookRequests.cancel());
+      await expectMutation(failing(bookRequests.cancel()), () =>
+        requestsPage.cancel(),
       );
-      await expect(requestsPage.rowsFor(book.title)).toContainText(
-        "Cancelled by you",
-      );
-      await expect(requestsPage.cancelFor(book.title)).toHaveCount(0);
+    });
+
+    await test.step("check it is still looking and the failure is told", async () => {
+      await expect(requestsPage.cancelFailedText).toBeVisible();
+      await expect(requestsPage.paneState).toHaveText("Looking");
+      await expect(requestsPage.itemIn("Looking", book.title)).toBeVisible();
       release();
     });
   });
@@ -327,8 +364,7 @@ test.describe("requests page", () => {
 
     await test.step("still find the request on the requests page", async () => {
       await requestsPage.goto();
-      await requestsPage.filterByBook(book.title);
-      await expect(requestsPage.rowsFor(book.title)).toHaveCount(1);
+      await expect(requestsPage.item(book.title)).toHaveCount(1);
     });
   });
 });

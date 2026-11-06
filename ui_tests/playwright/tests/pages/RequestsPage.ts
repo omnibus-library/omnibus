@@ -2,26 +2,35 @@ import type { Locator, Page } from "@playwright/test";
 import { TopNavComponent } from "../components/TopNavComponent";
 import { BasePage } from "./BasePage";
 
-/** Every reader's book requests at `/requests`. */
+/** Every reader's book requests at `/requests`: one item per book, grouped by where it stands, beside the selected book's request. */
 export class RequestsPage extends BasePage {
-  protected readonly urlPattern = /\/requests$/;
+  // The page names the selected book in the address once it opens.
+  protected readonly urlPattern = /\/requests(\?book=[^&#]+)?$/;
 
   readonly topNav: TopNavComponent;
 
   readonly root: Locator;
   readonly heading: Locator;
-  readonly rows: Locator;
-  readonly bookFilter: Locator;
-  readonly cancelButtons: Locator;
+  readonly items: Locator;
+  /** The selected book's request, beside the list. */
+  readonly pane: Locator;
+  readonly paneState: Locator;
+  /** Who asked for the selected book's request, and when. */
+  readonly paneRequester: Locator;
+  readonly paneCancelButton: Locator;
+  readonly cancelFailedText: Locator;
 
   constructor(page: Page) {
     super(page);
     this.topNav = new TopNavComponent(page);
     this.root = page.getByTestId("requests-page");
     this.heading = page.getByRole("heading", { level: 1, name: "Requests" });
-    this.rows = page.getByTestId("requests-row");
-    this.bookFilter = page.getByRole("searchbox", { name: "Filter by book" });
-    this.cancelButtons = page.getByTestId("requests-cancel");
+    this.items = page.getByTestId("requests-item");
+    this.pane = page.getByTestId("requests-pane");
+    this.paneState = this.pane.getByTestId("request-state").first();
+    this.paneRequester = this.pane.getByTestId("request-requester").first();
+    this.paneCancelButton = this.pane.getByTestId("request-cancel");
+    this.cancelFailedText = page.getByText(/Couldn’t cancel/);
   }
 
   protected get readyLocator(): Locator {
@@ -32,26 +41,27 @@ export class RequestsPage extends BasePage {
     await this.openAndSettle("/requests");
   }
 
-  /** Narrows the list to books whose title or author holds `text`. */
-  async filterByBook(text: string): Promise<void> {
-    await this.bookFilter.fill(text);
-  }
-
-  /** The rows for the book called `title`. */
-  rowsFor(title: string): Locator {
-    return this.rows.filter({
-      has: this.page.getByRole("link", { name: title, exact: true }),
+  /** The item for the book called `title`. */
+  item(title: string): Locator {
+    return this.items.filter({
+      has: this.page.getByText(title, { exact: true }),
     });
   }
 
-  /** The Cancel button on `title`'s only row. */
-  cancelFor(title: string): Locator {
-    return this.page.getByRole("button", {
-      name: `Cancel the request for ${title}`,
-    });
+  /** The item for `title` under the group labelled `group`, such as "Looking". */
+  itemIn(group: string, title: string): Locator {
+    return this.page
+      .getByRole("region", { name: group, exact: true })
+      .getByTestId("requests-item")
+      .filter({ has: this.page.getByText(title, { exact: true }) });
   }
 
-  async cancel(title: string): Promise<void> {
-    await this.cancelFor(title).click();
+  /** Shows `title`'s request in the pane. */
+  async select(title: string): Promise<void> {
+    await this.item(title).click();
+  }
+
+  async cancel(): Promise<void> {
+    await this.paneCancelButton.click();
   }
 }
