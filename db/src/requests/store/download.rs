@@ -91,9 +91,44 @@ pub async fn pick_link(pool: &SqlitePool, id: i64) -> Result<Option<String>, Req
     .await?)
 }
 
-/// Move a picked request to `on_its_way` once its download, with info `hash`, is with the
-/// client; `adopted` is whether the client already held it. `false` when the request is no
-/// longer waiting to be added, such as after a cancel, so the caller still owns the torrent.
+/// Record, before the client is given the release, that request `id` is adding the torrent
+/// with info hash `hash`, so a cancel or a crash from here on still knows Omnibus owns it. A
+/// removal of the same torrent that was waiting is called off. `false` when the request is no
+/// longer waiting to be added.
+pub async fn claim_hash(pool: &SqlitePool, id: i64, hash: &str) -> Result<bool, RequestError> {
+    let claimed = sqlx::query(&format!(
+        "UPDATE book_requests
+         SET client_hash = ?1, client_adopted = 0,
+             remove_since = CASE WHEN remove_hash = ?1 THEN NULL ELSE remove_since END,
+             remove_hash = CASE WHEN remove_hash = ?1 THEN NULL ELSE remove_hash END,
+             updated_at = {NOW}
+         WHERE id = ?2 AND state = 'chosen'"
+    ))
+    .bind(hash)
+    .bind(id)
+    .execute(pool)
+    .await?
+    .rows_affected();
+    Ok(claimed == 1)
+}
+
+/// Give back the claim on `hash` that the client refused to honour.
+pub async fn release_claim(pool: &SqlitePool, id: i64, hash: &str) -> Result<(), RequestError> {
+    sqlx::query(
+        "UPDATE book_requests SET client_hash = NULL
+         WHERE id = ? AND client_hash = ? AND state = 'chosen'",
+    )
+    .bind(id)
+    .bind(hash)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Move a picked request to `on_its_way` once its download, with info hash `hash`, is with the
+/// client; `adopted` is whether the client already held it. A removal of the same torrent that
+/// was waiting is called off. `false` when the request is no longer waiting to be added, such
+/// as after a cancel, which then removes what it owns itself.
 pub async fn mark_on_its_way(
     pool: &SqlitePool,
     id: i64,
@@ -103,9 +138,12 @@ pub async fn mark_on_its_way(
 ) -> Result<bool, RequestError> {
     let moved = sqlx::query(&format!(
         "UPDATE book_requests
-         SET state = 'on_its_way', client_hash = ?, client_adopted = ?, moved_at = ?,
-             expected_done_at = NULL, updated_at = {NOW}
-         WHERE id = ? AND state = 'chosen'"
+         SET state = 'on_its_way', client_hash = ?1, client_adopted = ?2, moved_at = ?3,
+             expected_done_at = NULL,
+             remove_since = CASE WHEN remove_hash = ?1 THEN NULL ELSE remove_since END,
+             remove_hash = CASE WHEN remove_hash = ?1 THEN NULL ELSE remove_hash END,
+             updated_at = {NOW}
+         WHERE id = ?4 AND state = 'chosen'"
     ))
     .bind(hash)
     .bind(adopted)
@@ -115,6 +153,49 @@ pub async fn mark_on_its_way(
     .await?
     .rows_affected();
     Ok(moved == 1)
+}
+
+/// Whether a request other than `except` still holds the torrent `hash` as a download in
+/// progress, so removing it would take the download from that request.
+pub async fn hash_in_use(pool: &SqlitePool, hash: &str, except: i64) -> Result<bool, RequestError> {
+    Ok(sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM book_requests
+         WHERE client_hash = ? AND id != ? AND state IN ('choose', 'chosen', 'on_its_way', 'stuck'))",
+    )
+    .bind(hash)
+    .bind(except)
+    .fetch_one(pool)
+    .await?)
+}
+
+/// Requests whose download an earlier version tagged and has not yet been found by hash.
+pub async fn with_legacy_tag(pool: &SqlitePool) -> Result<Vec<RequestRow>, RequestError> {
+    let rows = sqlx::query(&format!(
+        "SELECT {COLUMNS} FROM book_requests WHERE legacy_tag IS NOT NULL ORDER BY id"
+    ))
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.iter().map(row_to_request).collect::<Result<_, _>>()?)
+}
+
+/// Settle request `id`'s `legacy_tag`: the download it names has info hash `hash` and is one
+/// Omnibus added, or, with `None`, the client no longer has it.
+pub async fn resolve_legacy_tag(
+    pool: &SqlitePool,
+    id: i64,
+    tag: &str,
+    hash: Option<&str>,
+) -> Result<(), RequestError> {
+    sqlx::query(
+        "UPDATE book_requests SET client_hash = ?, client_adopted = 0, legacy_tag = NULL
+         WHERE id = ? AND legacy_tag = ?",
+    )
+    .bind(hash)
+    .bind(id)
+    .bind(tag)
+    .execute(pool)
+    .await?;
+    Ok(())
 }
 
 /// Requests on their way whose download has not finished.
@@ -248,7 +329,7 @@ pub async fn mark_stuck(
 pub async fn has_download_work(pool: &SqlitePool) -> Result<bool, RequestError> {
     Ok(sqlx::query_scalar(&format!(
         "SELECT EXISTS (SELECT 1 FROM book_requests
-         WHERE state = 'chosen' OR cancel_at IS NOT NULL OR remove_hash IS NOT NULL OR {DOWNLOADING})"
+         WHERE state = 'chosen' OR cancel_at IS NOT NULL OR remove_hash IS NOT NULL\n            OR legacy_tag IS NOT NULL OR {DOWNLOADING})"
     ))
     .fetch_one(pool)
     .await?)

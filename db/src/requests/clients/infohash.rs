@@ -10,34 +10,31 @@ use sha1::{Digest, Sha1};
 /// Nesting deeper than this is not a torrent; it also keeps the walk off the stack's end.
 const MAX_DEPTH: usize = 32;
 
-/// Why a release's info hash could not be read.
+/// Why a release's info hash could not be read, as the end of "the release link ...".
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]
-pub enum InfohashError {
-    /// The release is not a magnet or torrent file Omnibus can read.
-    #[error("is not a readable magnet or torrent file ({0})")]
-    Malformed(&'static str),
-    /// A v2-only release has no v1 info hash, which is what the client lists it by.
-    #[error("has no BitTorrent v1 info hash, which Omnibus needs")]
-    NoV1Hash,
-}
+#[error("{0}")]
+pub struct InfohashError(&'static str);
+
+const UNREADABLE: &str = "is not a readable magnet or torrent file";
+const NO_V1: &str = "has no BitTorrent v1 info hash, which Omnibus needs";
 
 /// The lowercase hex info hash of `magnet`.
 pub fn from_magnet(magnet: &str) -> Result<String, InfohashError> {
-    let url = reqwest::Url::parse(magnet).map_err(|_| InfohashError::Malformed("bad magnet"))?;
+    let url = reqwest::Url::parse(magnet).map_err(|_| bad())?;
     let hash = url
         .query_pairs()
         .filter(|(key, _)| key == "xt")
         .find_map(|(_, value)| value.strip_prefix("urn:btih:").map(str::to_string))
-        .ok_or(InfohashError::NoV1Hash)?;
+        .ok_or(InfohashError(NO_V1))?;
     match hash.len() {
         40 if hash.bytes().all(|b| b.is_ascii_hexdigit()) => Ok(hash.to_ascii_lowercase()),
         32 => {
             let bytes = data_encoding::BASE32_NOPAD
                 .decode(hash.to_ascii_uppercase().as_bytes())
-                .map_err(|_| InfohashError::Malformed("bad base32 hash"))?;
-            Ok(hex(&bytes))
+                .map_err(|_| bad())?;
+            Ok(data_encoding::HEXLOWER.encode(&bytes))
         }
-        _ => Err(InfohashError::Malformed("bad hash length")),
+        _ => Err(bad()),
     }
 }
 
@@ -45,55 +42,47 @@ pub fn from_magnet(magnet: &str) -> Result<String, InfohashError> {
 pub fn from_torrent(bytes: &[u8]) -> Result<String, InfohashError> {
     let info = info_span(bytes)?;
     if !dict_has_key(info, b"pieces")? {
-        return Err(InfohashError::NoV1Hash);
+        return Err(InfohashError(NO_V1));
     }
-    Ok(hex(&Sha1::digest(info)))
+    Ok(data_encoding::HEXLOWER.encode(&Sha1::digest(info)))
 }
 
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
-
-fn bad(why: &'static str) -> InfohashError {
-    InfohashError::Malformed(why)
+fn bad() -> InfohashError {
+    InfohashError(UNREADABLE)
 }
 
 /// The end of the bencoded value that starts at `at`.
 fn skip(b: &[u8], at: usize, depth: usize) -> Result<usize, InfohashError> {
     if depth > MAX_DEPTH {
-        return Err(bad("nested too deep"));
+        return Err(bad());
     }
-    match b.get(at).ok_or_else(|| bad("ends early"))? {
+    match b.get(at).ok_or_else(bad)? {
         b'i' => {
             let end = b[at..].iter().position(|&c| c == b'e');
-            end.map(|n| at + n + 1)
-                .ok_or_else(|| bad("unterminated integer"))
+            end.map(|n| at + n + 1).ok_or_else(bad)
         }
         b'l' | b'd' => {
             let mut pos = at + 1;
-            while b.get(pos).ok_or_else(|| bad("unterminated list"))? != &b'e' {
+            while b.get(pos).ok_or_else(bad)? != &b'e' {
                 pos = skip(b, pos, depth + 1)?;
             }
             Ok(pos + 1)
         }
         b'0'..=b'9' => string(b, at).map(|(_, end)| end),
-        _ => Err(bad("unknown value")),
+        _ => Err(bad()),
     }
 }
 
 /// The `len:data` string at `at`: its data and where it ends.
 fn string(b: &[u8], at: usize) -> Result<(&[u8], usize), InfohashError> {
-    let colon = b[at..]
-        .iter()
-        .position(|&c| c == b':')
-        .ok_or_else(|| bad("bad string"))?;
+    let colon = b[at..].iter().position(|&c| c == b':').ok_or_else(bad)?;
     let len: usize = std::str::from_utf8(&b[at..at + colon])
         .ok()
         .and_then(|n| n.parse().ok())
-        .ok_or_else(|| bad("bad string length"))?;
+        .ok_or_else(bad)?;
     let start = at + colon + 1;
     let end = start.checked_add(len).filter(|&e| e <= b.len());
-    let end = end.ok_or_else(|| bad("string runs past the end"))?;
+    let end = end.ok_or_else(bad)?;
     Ok((&b[start..end], end))
 }
 
@@ -104,10 +93,10 @@ fn each_entry(
     mut visit: impl FnMut(&[u8], usize, usize) -> bool,
 ) -> Result<(), InfohashError> {
     if b.get(at) != Some(&b'd') {
-        return Err(bad("not a dictionary"));
+        return Err(bad());
     }
     let mut pos = at + 1;
-    while b.get(pos).ok_or_else(|| bad("unterminated dictionary"))? != &b'e' {
+    while b.get(pos).ok_or_else(bad)? != &b'e' {
         let (key, start) = string(b, pos)?;
         let end = skip(b, start, 1)?;
         if visit(key, start, end) {
@@ -127,7 +116,7 @@ fn info_span(b: &[u8]) -> Result<&[u8], InfohashError> {
         }
         span.is_some()
     })?;
-    span.ok_or_else(|| bad("no info dictionary"))
+    span.ok_or_else(bad)
 }
 
 /// Whether the dictionary `b` has `wanted` among its keys.

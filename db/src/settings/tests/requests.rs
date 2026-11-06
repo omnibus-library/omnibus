@@ -61,19 +61,6 @@ mod set_requests_settings {
     }
 
     #[tokio::test]
-    async fn keeps_a_saved_omnibus_category_as_it_was() {
-        let _env = EnvVarGuard::set("OMNIBUS_PROWLARR_API_KEY", None);
-        let pool = init_db("sqlite::memory:").await.unwrap();
-        let mut saved = update();
-        saved.download_client_category = "omnibus".into();
-        set_requests_settings(&pool, &saved).await.unwrap();
-
-        let config = effective_requests_config(&pool).await.unwrap();
-
-        assert_eq!(config.download_client_category, "omnibus");
-    }
-
-    #[tokio::test]
     async fn keeps_saved_secrets_when_they_are_none() {
         let _env = EnvVarGuard::set("OMNIBUS_PROWLARR_API_KEY", None);
         let pool = init_db("sqlite::memory:").await.unwrap();

@@ -11,7 +11,7 @@ use sqlx::SqlitePool;
 use crate::settings::RequestsConfig;
 use crate::test_support::seed_user;
 
-use super::clients::{infohash, Added, ClientFile, DownloadClient, TorrentStatus};
+use super::clients::{infohash, ClientFile, DownloadClient, Prepared, TorrentStatus};
 use super::store;
 use super::ConnectionError;
 
@@ -83,6 +83,11 @@ pub fn hash(id: i64) -> String {
     format!("{id:040x}")
 }
 
+/// The tag an earlier version gave request `id`'s download, which 0119 keeps as `legacy_tag`.
+pub fn tag(id: i64) -> String {
+    format!("omnibus-{id}-{id}")
+}
+
 /// The magnet a request seeded here picked.
 pub fn magnet(id: i64) -> String {
     format!("magnet:?xt=urn:btih:{}&dn=t", hash(id))
@@ -108,6 +113,7 @@ pub fn requests_config(client_prefix: Option<&str>, local_prefix: Option<&str>) 
 pub enum Call {
     Add { link: String, category: String },
     Status(String),
+    TagLookup(String),
     Files(String),
     Remove { hash: String, delete_files: bool },
 }
@@ -117,6 +123,8 @@ struct Script {
     statuses: HashMap<String, TorrentStatus>,
     files: HashMap<String, Vec<ClientFile>>,
     unreachable: bool,
+    /// `add` leaves the torrent in the client, then fails as a lost answer would.
+    adds_then_fails: bool,
     /// Info hashes whose link `add` refuses.
     refused: Vec<String>,
     calls: Vec<Call>,
@@ -181,6 +189,21 @@ impl StubClient {
         self
     }
 
+    /// A client whose `add` takes the torrent but answers with a failure.
+    pub fn adding_then_failing(self) -> Self {
+        self.script().adds_then_fails = true;
+        self
+    }
+
+    /// The client carries `tag` on the download with info hash `hash`, as one an earlier
+    /// version of Omnibus tagged.
+    pub fn with_tag(self, hash: &str, tag: &str) -> Self {
+        if let Some(status) = self.script().statuses.get_mut(hash) {
+            status.tags = tag.to_string();
+        }
+        self
+    }
+
     /// A client that refuses to add a download with info hash `hash`.
     pub fn refusing(self, hash: &str) -> Self {
         self.script().refused.push(hash.to_string());
@@ -195,6 +218,8 @@ impl StubClient {
             state: state.to_string(),
             save_path: String::new(),
             eta: None,
+            tags: String::new(),
+            added_on: None,
         };
         self.script().statuses.insert(hash.to_string(), status);
     }
@@ -219,21 +244,56 @@ impl StubClient {
 }
 
 impl DownloadClient for StubClient {
-    async fn add(&self, link: &str, category: &str) -> Result<Added, ConnectionError> {
-        self.record(Call::Add {
-            link: link.to_string(),
-            category: category.to_string(),
-        })?;
+    type Release = String;
+
+    async fn prepare(&self, link: &str) -> Result<Prepared<String>, ConnectionError> {
         let hash = infohash::from_magnet(link)
             .map_err(|e| ConnectionError::Rejected(format!("the release link {e}")))?;
-        let script = self.script();
-        if script.refused.contains(&hash) {
+        Ok(Prepared {
+            hash,
+            release: link.to_string(),
+        })
+    }
+
+    async fn add(&self, prepared: Prepared<String>, category: &str) -> Result<(), ConnectionError> {
+        self.record(Call::Add {
+            link: prepared.release,
+            category: category.to_string(),
+        })?;
+        let mut script = self.script();
+        if script.refused.contains(&prepared.hash) {
             return Err(ConnectionError::Rejected(
                 "stub refused the link".to_string(),
             ));
         }
-        let adopted = script.statuses.contains_key(&hash);
-        Ok(Added { hash, adopted })
+        let hash = prepared.hash.clone();
+        script
+            .statuses
+            .entry(hash.clone())
+            .or_insert_with(|| TorrentStatus {
+                hash,
+                progress: 0.0,
+                state: "downloading".to_string(),
+                save_path: String::new(),
+                eta: None,
+                tags: String::new(),
+                added_on: None,
+            });
+        if script.adds_then_fails {
+            return Err(ConnectionError::Unreachable("stub".to_string()));
+        }
+        Ok(())
+    }
+
+    async fn hash_for_tag(&self, tag: &str) -> Result<Option<String>, ConnectionError> {
+        self.record(Call::TagLookup(tag.to_string()))?;
+        let script = self.script();
+        Ok(script
+            .statuses
+            .values()
+            .filter(|t| t.tags.split(',').any(|candidate| candidate.trim() == tag))
+            .max_by_key(|t| t.added_on)
+            .map(|t| t.hash.clone()))
     }
 
     async fn status(&self, hash: &str) -> Result<Option<TorrentStatus>, ConnectionError> {

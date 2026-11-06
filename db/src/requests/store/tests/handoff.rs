@@ -61,60 +61,6 @@ mod mark_on_its_way {
     }
 }
 
-mod migration_0119 {
-
-    /// Version of `0119_book_requests_client_hash.sql`.
-    const VERSION: i64 = 119;
-
-    #[tokio::test]
-    async fn hands_a_download_over_again_and_drops_the_tags_it_cannot_read_as_hashes() {
-        static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
-        let pool = sqlx::sqlite::SqlitePoolOptions::new()
-            .max_connections(1)
-            .connect("sqlite::memory:")
-            .await
-            .unwrap();
-        for m in MIGRATOR.iter().filter(|m| m.version < VERSION) {
-            sqlx::raw_sql(&m.sql).execute(&pool).await.unwrap();
-        }
-        sqlx::raw_sql(
-            "INSERT INTO users (id, username, password_hash) VALUES (1, 'ada', '!x');
-             INSERT INTO book_requests (id, book_uuid, user_id, kind, state, client_tag, remove_tag, remove_since, progress, moved_at)
-             VALUES (1, 'b1', 1, 'ebook', 'on_its_way', 'omnibus-1-1', NULL, NULL, 0.5, 10),
-                    (2, 'b2', 1, 'ebook', 'cancelled', NULL, 'omnibus-2-2', 20, NULL, NULL);",
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-
-        let m = MIGRATOR.iter().find(|m| m.version == VERSION).unwrap();
-        sqlx::raw_sql(&m.sql).execute(&pool).await.unwrap();
-
-        type Row = (
-            i64,
-            String,
-            Option<String>,
-            Option<String>,
-            Option<f64>,
-            i64,
-        );
-        let rows: Vec<Row> = sqlx::query_as(
-            "SELECT id, state, client_hash, remove_hash, progress, client_adopted
-               FROM book_requests ORDER BY id",
-        )
-        .fetch_all(&pool)
-        .await
-        .unwrap();
-        assert_eq!(
-            rows,
-            [
-                (1, "chosen".to_string(), None, None, None, 0),
-                (2, "cancelled".to_string(), None, None, None, 0),
-            ]
-        );
-    }
-}
-
 mod offers_cover {
     use super::*;
 
@@ -151,5 +97,30 @@ mod offers_cover {
 
         assert!(!first.offers_cover);
         assert!(!again.request.offers_cover);
+    }
+
+    #[tokio::test]
+    async fn is_on_again_once_the_book_has_a_physical_copy() {
+        let pool = pool().await;
+        let ada = seed_user(&pool, "ada").await;
+        let bob = seed_user(&pool, "bob").await;
+        let first = start_for_new_book(
+            &pool,
+            ada,
+            &external_meta("Piranesi"),
+            RequestKind::Ebook,
+            MAX_LIVE,
+        )
+        .await
+        .unwrap();
+        crate::add_physical_copy(&pool, &first.book_uuid, None, None, None)
+            .await
+            .unwrap();
+
+        let again = start(&pool, bob, &first.book_uuid, RequestKind::Ebook, MAX_LIVE)
+            .await
+            .unwrap();
+
+        assert!(again.request.offers_cover);
     }
 }

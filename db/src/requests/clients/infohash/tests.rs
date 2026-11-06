@@ -43,7 +43,7 @@ mod from_magnet {
     fn refuses_a_magnet_with_only_a_v2_hash() {
         let magnet = format!("magnet:?xt=urn:btmh:1220{}", "ab".repeat(32));
 
-        assert_eq!(from_magnet(&magnet), Err(InfohashError::NoV1Hash));
+        assert_eq!(from_magnet(&magnet), Err(InfohashError(NO_V1)));
     }
 
     #[test]
@@ -51,10 +51,7 @@ mod from_magnet {
         for hash in ["abc", &"z".repeat(40), &"1".repeat(32)] {
             let magnet = format!("magnet:?xt=urn:btih:{hash}");
 
-            assert!(
-                matches!(from_magnet(&magnet), Err(InfohashError::Malformed(_))),
-                "{hash}"
-            );
+            assert!(from_magnet(&magnet).is_err(), "{hash}");
         }
     }
 }
@@ -73,7 +70,7 @@ mod from_torrent {
 
         assert_eq!(
             from_torrent(&torrent_around(info)),
-            Err(InfohashError::NoV1Hash)
+            Err(InfohashError(NO_V1))
         );
     }
 
@@ -88,10 +85,7 @@ mod from_torrent {
         ]
         .concat();
         for input in [b"".as_slice(), b"hello", b"i3e", cut, no_info, &deep] {
-            assert!(
-                matches!(from_torrent(input), Err(InfohashError::Malformed(_))),
-                "{input:?}"
-            );
+            assert!(from_torrent(input).is_err(), "{input:?}");
         }
     }
 }

@@ -288,7 +288,9 @@ export function RequestsCard() {
           />
         </div>
         <div className="settings-field">
-          <label htmlFor="requests-client-category">Category (optional)</label>
+          <label htmlFor="requests-client-category">
+            qBittorrent category (optional)
+          </label>
           <input
             type="text"
             id="requests-client-category"

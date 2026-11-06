@@ -1,15 +1,24 @@
 -- A download is found in the client by its BitTorrent info hash, not by a tag Omnibus
 -- attached, so `client_tag` and `remove_tag` become `client_hash` and `remove_hash`.
 -- `client_adopted` is 1 when the client already held the torrent, which Omnibus then never
--- deletes.
+-- deletes. `legacy_tag` is a tag from before: the poller asks the client once which
+-- download carries it, stores that download's hash and clears the tag.
 ALTER TABLE book_requests RENAME COLUMN client_tag TO client_hash;
 ALTER TABLE book_requests RENAME COLUMN remove_tag TO remove_hash;
 ALTER TABLE book_requests ADD COLUMN client_adopted INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE book_requests ADD COLUMN legacy_tag TEXT;
 
--- A tag is not a hash, so no download handed over before this can be found again. A request
--- still downloading goes back to waiting for its hand-off, which adopts the torrent if the
--- client has it; a removal still pending is dropped, leaving that torrent in the client.
+UPDATE book_requests SET legacy_tag = client_hash, client_hash = NULL WHERE client_hash IS NOT NULL;
+-- A request still downloading waits to be handed over again, which finds its download by the
+-- tag first; one whose download is complete stays on its way for the import.
 UPDATE book_requests
    SET state = 'chosen', progress = NULL, moved_at = NULL, expected_done_at = NULL
- WHERE state = 'on_its_way' AND client_hash IS NOT NULL;
-UPDATE book_requests SET client_hash = NULL, remove_hash = NULL, remove_since = NULL;
+ WHERE state = 'on_its_way' AND legacy_tag IS NOT NULL AND (progress IS NULL OR progress < 1);
+-- A removal still pending is dropped: its tag cannot be read as a hash, and that torrent stays in the client.
+UPDATE book_requests SET remove_hash = NULL, remove_since = NULL;
+
+-- Until now an empty category meant `omnibus`; an install that has a client set up keeps it.
+INSERT OR REPLACE INTO settings (key, value)
+SELECT 'download_client_category', 'omnibus'
+ WHERE COALESCE((SELECT TRIM(value) FROM settings WHERE key = 'download_client_category'), '') = ''
+   AND COALESCE((SELECT TRIM(value) FROM settings WHERE key = 'download_client_url'), '') <> '';

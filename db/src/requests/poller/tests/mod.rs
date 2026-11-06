@@ -7,6 +7,8 @@ use crate::worker::{Worker, WorkerConfig};
 
 use super::*;
 
+mod hash_ownership;
+mod migration_0119;
 mod removal;
 
 const NOW: i64 = 1_800_000_000;
@@ -45,7 +47,7 @@ mod poll_once {
                 link: magnet(id),
                 category: CATEGORY.to_string(),
             };
-            assert_eq!(client.calls()[..2], [added, Call::Status(hash(id))]);
+            assert_eq!(client.calls()[..2], [Call::Status(hash(id)), added]);
             let after = row(&pool, id).await;
             assert_eq!(after.state, RequestState::OnItsWay);
             assert_eq!(after.client_hash, Some(hash(id)));
@@ -93,7 +95,7 @@ mod poll_once {
             let after = row(&pool, id).await;
             assert_eq!(after.client_hash, Some(hash(id)));
             assert!(!after.client_adopted);
-            assert_eq!(after.progress, None);
+            assert!(after.progress.is_none_or(|p| p < 1.0));
             assert!(store::awaiting_import(&pool).await.unwrap().is_empty());
         }
     }

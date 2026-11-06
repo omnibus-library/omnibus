@@ -24,7 +24,7 @@ const DOWNLOADING: &str = "(state = 'on_its_way' AND (progress IS NULL OR progre
 const NOW: &str = "strftime('%s', 'now')";
 
 const COLUMNS: &str = "id, book_uuid, user_id, kind, state, stuck_reason, stuck_detail, \
-                       chosen_result_id, client_hash, client_adopted, import_key, remove_hash, remove_since, progress, moved_at, expected_done_at, cancel_at, cancelled_by, \
+                       chosen_result_id, client_hash, client_adopted, legacy_tag, import_key, remove_hash, remove_since, progress, moved_at, expected_done_at, cancel_at, cancelled_by, \
                        prior_state, note, offers_cover, cover_candidate, created_at, updated_at";
 
 /// Why a request could not be recorded or changed.
@@ -63,6 +63,8 @@ pub struct RequestRow {
     pub client_hash: Option<String>,
     /// True when the client already held the torrent, so Omnibus never removes it.
     pub client_adopted: bool,
+    /// A tag an earlier version put on the download, until it is found by hash.
+    pub legacy_tag: Option<String>,
     /// The library-relative key of the file a finished download was placed as, once it has
     /// been; a retried import resumes from it.
     pub import_key: Option<String>,
@@ -149,6 +151,7 @@ fn row_to_request(row: &SqliteRow) -> Result<RequestRow, sqlx::Error> {
         chosen_result_id: row.try_get("chosen_result_id")?,
         client_hash: row.try_get("client_hash")?,
         client_adopted: row.try_get::<i64, _>("client_adopted")? != 0,
+        legacy_tag: row.try_get("legacy_tag")?,
         import_key: row.try_get("import_key")?,
         remove_hash: row.try_get("remove_hash")?,
         remove_since: row.try_get("remove_since")?,
@@ -194,9 +197,13 @@ pub async fn start(
             created: false,
         });
     }
-    // A book made for a request keeps its cover whoever asks for it next.
+    // A book made for a request keeps its cover whoever asks next, until it is a real book:
+    // it has gained a file or a physical copy.
     let offers_cover: bool = sqlx::query_scalar(
-        "SELECT NOT EXISTS (SELECT 1 FROM book_requests WHERE book_uuid = ? AND offers_cover = 0)",
+        "SELECT NOT EXISTS (SELECT 1 FROM book_requests WHERE book_uuid = ?1 AND offers_cover = 0)
+             OR EXISTS (SELECT 1 FROM physical_copies WHERE book_uuid = ?1)
+             OR EXISTS (SELECT 1 FROM book_files bf JOIN books b ON b.id = bf.book_id
+                         WHERE b.uuid = ?1)",
     )
     .bind(book_uuid)
     .fetch_one(&mut *tx)
@@ -517,10 +524,10 @@ mod list;
 
 pub use change::{cancel, swap, undo_cancel, CANCEL_GRACE_SECS};
 pub use download::{
-    awaiting_add, awaiting_import, claim_due_cancels, downloading, finish_removal,
-    has_download_work, mark_on_its_way, mark_ready, mark_removal_seen, mark_stuck,
-    pending_removals, pick_link, record_expected_done_at, record_progress, set_import_key,
-    unix_now,
+    awaiting_add, awaiting_import, claim_due_cancels, claim_hash, downloading, finish_removal,
+    has_download_work, hash_in_use, mark_on_its_way, mark_ready, mark_removal_seen, mark_stuck,
+    pending_removals, pick_link, record_expected_done_at, record_progress, release_claim,
+    resolve_legacy_tag, set_import_key, unix_now, with_legacy_tag,
 };
 pub use list::{list, ListFilter, Listed};
 
