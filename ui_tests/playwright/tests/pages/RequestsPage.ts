@@ -14,6 +14,8 @@ export class RequestsPage extends BasePage {
   readonly items: Locator;
   /** The selected book's request, beside the list. */
   readonly pane: Locator;
+  /** The pane's lane for the request its book is filed under, not another reader's beside it. */
+  readonly paneLane: Locator;
   readonly paneState: Locator;
   /** Who asked for the selected book's request, and when. */
   readonly paneRequester: Locator;
@@ -27,9 +29,10 @@ export class RequestsPage extends BasePage {
     this.heading = page.getByRole("heading", { level: 1, name: "Requests" });
     this.items = page.getByTestId("requests-item");
     this.pane = page.getByTestId("requests-pane");
-    this.paneState = this.pane.getByTestId("request-state").first();
-    this.paneRequester = this.pane.getByTestId("request-requester").first();
-    this.paneCancelButton = this.pane.getByTestId("request-cancel");
+    this.paneLane = this.pane.getByTestId("request-lane-ebook");
+    this.paneState = this.paneLane.getByTestId("request-state");
+    this.paneRequester = this.paneLane.getByTestId("request-requester");
+    this.paneCancelButton = this.paneLane.getByTestId("request-cancel");
     this.cancelFailedText = page.getByText(/Couldn’t cancel/);
   }
 
