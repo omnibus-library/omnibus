@@ -411,6 +411,67 @@ export const OnAPhoneTheBookInTheAddressOpensFullScreen: Story = {
   },
 };
 
+let heldRequests = deferred();
+
+export const OnAPhoneADeepLinkWaitsForTheListWithoutDrawingIt: Story = {
+  ...PHONE,
+  parameters: {
+    ...PHONE.parameters,
+    path: "/requests?book=uuid-carmilla",
+    user: READER,
+  },
+  beforeEach({ msw }) {
+    heldRequests = deferred();
+    msw.use(
+      http.get("/api/requests", async () => {
+        await heldRequests.promise;
+        return HttpResponse.json([
+          aWireListing({
+            request: aWireRequest({ id: 4, book_uuid: "uuid-carmilla" }),
+            book: CARMILLA,
+          }),
+        ]);
+      }),
+    );
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByText("Loading…")).toBeInTheDocument();
+    await expect(canvas.queryByTestId("requests-item")).toBeNull();
+    await expect(canvas.queryByText("Gathering the requests")).toBeNull();
+    await expect(
+      canvas.queryByRole("heading", { name: "Requests" }),
+    ).toBeNull();
+
+    heldRequests.release();
+
+    await expect(
+      await canvas.findByRole("heading", { level: 1, name: "Carmilla" }),
+    ).toBeInTheDocument();
+  },
+};
+
+export const NarrowingToAPhoneKeepsTheListWhenThePageChoseTheBook: Story = {
+  parameters: { path: "/requests", user: READER },
+  play: async ({ canvas }) => {
+    // The desktop writes the first book into the address on its own.
+    await waitFor(() =>
+      expect(canvas.getByTestId("where")).toHaveTextContent(
+        "/requests?book=uuid-dracula",
+      ),
+    );
+    await canvas.findByTestId("requests-pane");
+
+    await (await import("vitest/browser")).page.viewport(390, 844);
+
+    // The pane goes once the screen is a phone's.
+    await waitFor(() =>
+      expect(canvas.queryByTestId("requests-pane")).toBeNull(),
+    );
+    await expect(await canvas.findAllByTestId("requests-item")).toHaveLength(3);
+    await expect(canvas.queryByTestId("request-page")).toBeNull();
+  },
+};
+
 export const OnAPhoneABookTheListLacksShowsTheList: Story = {
   ...PHONE,
   parameters: {

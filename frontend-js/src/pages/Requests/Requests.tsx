@@ -1,15 +1,16 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { Link, useSearchParams } from "react-router";
+import { Link, useLocation, useSearchParams } from "react-router";
 import { type RequestListing, requestsQuery, thumbUrl } from "../../api";
 import { Button } from "../../components/Button/Button";
 import { Cover } from "../../components/Cover/Cover";
-import { RowSkeletons } from "../../components/Loading/Loading";
+import { Loading, RowSkeletons } from "../../components/Loading/Loading";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
 import { ToastProvider } from "../../components/Toast/Toast";
 import { useCurrentUser } from "../../session";
 import { PHONE_QUERY, useMediaQuery } from "../../useMediaQuery";
 import { RequestDossier } from "../BookRequest/BookRequest";
+import type { DossierVariant } from "../BookRequest/RequestHistory";
 import { requestPath } from "../BookRequest/requestView";
 import { NotFound } from "../NotFound/NotFound";
 import {
@@ -133,11 +134,18 @@ function selectedListing(
   return items.find((l) => l.book.uuid === wanted) ?? lastChanged ?? items[0];
 }
 
+/** The router state that marks `?book=` as written by the page itself, not chosen by the reader. */
+const AUTO = { auto: true } as const;
+
+const writtenByThePage = (state: unknown) =>
+  typeof state === "object" && state !== null && "auto" in state;
+
 function RequestsPage() {
   const viewer = useCurrentUser();
   const requests = useQuery(requestsQuery);
   const phone = useMediaQuery(PHONE_QUERY);
   const [params, setParams] = useSearchParams();
+  const { state } = useLocation();
   const wanted = params.get("book");
   // Set once a reader picks a book, so its pane takes focus; a first visit leaves focus be.
   const [picked, setPicked] = useState(false);
@@ -150,21 +158,32 @@ function RequestsPage() {
   // Name the first book in the address, so the pane stays on it once it is cancelled.
   useEffect(() => {
     if (!phone && wanted === null && first !== undefined) {
-      setParams({ book: first }, { replace: true });
+      setParams({ book: first }, { replace: true, state: AUTO });
     }
   }, [phone, wanted, first, setParams]);
 
-  // Only the book the address names: the first-book fallback is for the pane beside the list.
-  if (phone && selected && selected.book.uuid === wanted) {
-    return (
-      <RequestDossier
-        key={selected.book.uuid}
-        uuid={selected.book.uuid}
-        id={selected.request.id}
-        variant="page"
-        focusTitle={picked}
-      />
-    );
+  const dossier = (listing: RequestListing, variant: DossierVariant) => (
+    <RequestDossier
+      key={listing.book.uuid}
+      uuid={listing.book.uuid}
+      id={listing.request.id}
+      variant={variant}
+      focusTitle={picked}
+    />
+  );
+
+  // A deep link to a book waits for the list rather than drawing the list first.
+  if (phone && wanted !== null && requests.isPending) {
+    return <Loading kind="page" />;
+  }
+  // Only a book the reader chose: the page's own first-book fallback is for the pane beside the list.
+  if (
+    phone &&
+    selected &&
+    selected.book.uuid === wanted &&
+    !writtenByThePage(state)
+  ) {
+    return dossier(selected, "page");
   }
 
   return (
@@ -208,13 +227,7 @@ function RequestsPage() {
       </div>
       {!phone && selected && (
         <section className="rqs-pane" aria-label="Selected request">
-          <RequestDossier
-            key={selected.book.uuid}
-            uuid={selected.book.uuid}
-            id={selected.request.id}
-            variant="pane"
-            focusTitle={picked}
-          />
+          {dossier(selected, "pane")}
         </section>
       )}
     </div>

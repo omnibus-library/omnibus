@@ -56,7 +56,6 @@ function HistoryRow({
   const now = useNowPast(request.cancelAt);
   const { head, details } = factParts(listing, viewer.id);
   const day = historyDay(request.updatedAt);
-  const facts = (text: string) => <p className="rq-history-facts">{text}</p>;
   return (
     <li
       className="rq-history-row"
@@ -65,9 +64,9 @@ function HistoryRow({
     >
       {phone ? (
         <div className="rq-history-text">
-          {facts(
-            `${kindLabel(request.kind)} ${head.charAt(0).toLowerCase()}${head.slice(1)}${SEP}${day}`,
-          )}
+          <p className="rq-history-facts">
+            {`${kindLabel(request.kind)} ${head.charAt(0).toLowerCase()}${head.slice(1)}${SEP}${day}`}
+          </p>
           {details.length > 0 && (
             <p className="rq-history-swap">{details.join(SEP)}</p>
           )}
@@ -84,7 +83,7 @@ function HistoryRow({
           </span>
           <span className="rq-chip">{kindChip(request.kind)}</span>
           <div className="rq-history-text">
-            {facts([head, ...details].join(" · "))}
+            <p className="rq-history-facts">{[head, ...details].join(" · ")}</p>
             {swapFacts(listing).map((swap) => (
               <p key={swap.id} className="rq-history-swap">
                 {swap.text}

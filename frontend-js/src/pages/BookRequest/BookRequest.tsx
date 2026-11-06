@@ -37,10 +37,10 @@ import {
   RequestHistory,
 } from "./RequestHistory";
 import {
-  cameFrom,
   canActOn,
   downloadPercent,
   firstShown,
+  fromWishlists,
   isCancellable,
   isDownloading,
   isSearchStale,
@@ -715,7 +715,6 @@ export function RequestDossier({
   const split = listed.data && splitBookRequests(listed.data, id);
   const context: LaneContext = { title, listings: listed.data, variant };
   const Title = variant === "page" ? "h1" : "h2";
-  const from = cameFrom(state);
   return (
     <div
       className="rq-page"
@@ -723,7 +722,7 @@ export function RequestDossier({
       data-testid={variant === "page" ? "request-page" : "requests-pane"}
     >
       {variant === "page" && <PageTitle page={`Request ${title}`} />}
-      {from === "wishlists" ? (
+      {fromWishlists(state) ? (
         <Link className="rq-back" to="/wishlists">
           ← Back to Wishlists
         </Link>

@@ -12,11 +12,11 @@ import {
   aWireVersion,
 } from "../../testing/requestHandlers";
 import {
-  cameFrom,
   canActOn,
   downloadPercent,
   factParts,
   firstShown,
+  fromWishlists,
   historyDay,
   holdsAudiobook,
   holdsEbook,
@@ -574,14 +574,14 @@ describe("splitBookRequests", () => {
   });
 });
 
-describe("cameFrom", () => {
+describe("fromWishlists", () => {
   it.each([
-    ["the Requests list", { from: "requests" }, null],
-    ["a wishlist", { from: "wishlists" }, "wishlists"],
-    ["anywhere else", { from: "search" }, null],
-    ["no state", null, null],
+    ["a wishlist", { from: "wishlists" }, true],
+    ["the Requests list", { from: "requests" }, false],
+    ["anywhere else", { from: "search" }, false],
+    ["no state", null, false],
   ])("reads a page opened from %s", (_where, state, expected) => {
-    expect(cameFrom(state)).toBe(expected);
+    expect(fromWishlists(state)).toBe(expected);
   });
 });
 

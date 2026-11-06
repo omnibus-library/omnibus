@@ -327,13 +327,12 @@ export const historyDay = (unixSecs: number, timeZone?: string) =>
     timeZone,
   }).format(unixSecs * 1000);
 
-/** Whether a wishlist opened the page, from the router state its link handed over; `null` for any other way in. */
-export function cameFrom(state: unknown): "wishlists" | null {
-  if (typeof state !== "object" || state === null || !("from" in state)) {
-    return null;
-  }
-  return state.from === "wishlists" ? state.from : null;
-}
+/** Whether a wishlist opened the page, from the router state its link handed over. */
+export const fromWishlists = (state: unknown) =>
+  typeof state === "object" &&
+  state !== null &&
+  "from" in state &&
+  state.from === FROM_WISHLISTS.from;
 
 /** The router state a request started from a wishlist carries. */
 export const FROM_WISHLISTS = { from: "wishlists" } as const;
