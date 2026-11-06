@@ -1,20 +1,40 @@
 import { describe, expect, it } from "vitest";
-import { ApiError } from "../../api";
+import { ApiError, type RequestVersion } from "../../api";
 import {
+  firstShown,
   holdsAudiobook,
   holdsEbook,
   isCancellable,
   isDownloading,
   isSearchStale,
+  pickedMeta,
   progressPercent,
   requestPath,
   startFailure,
   stateView,
   undoToastMs,
-  versionFormat,
-  versionSeeders,
   versionSize,
+  versionSource,
+  versionsFound,
 } from "./requestView";
+
+const NBSP = "\u00a0";
+/** A separator that stays on the line of the part before it. */
+const SEP = `${NBSP}· `;
+
+/** A version as the page draws it, with every field set unless told otherwise. */
+const aVersion = (overrides: Partial<RequestVersion> = {}): RequestVersion => ({
+  id: 1,
+  title: "Piranesi - Susanna Clarke (2020) [Retail EPUB]",
+  sizeBytes: 1_800_000,
+  format: "EPUB",
+  indexer: "MyAnonamouse",
+  seeders: 142,
+  protocol: "torrent",
+  bestMatch: false,
+  rejected: false,
+  ...overrides,
+});
 
 describe("stateView", () => {
   it.each([
@@ -33,6 +53,10 @@ describe("stateView", () => {
     expect(stateView("stuck", "search_failed").heading).toBe(
       "Couldn’t find it",
     );
+  });
+
+  it("gives choose no note, since the versions found carry it", () => {
+    expect(stateView("choose").note).toBeNull();
   });
 
   it("names ready as Ready to read", () => {
@@ -93,31 +117,104 @@ describe("requestPath", () => {
   });
 });
 
-describe("versionFormat", () => {
-  it("names a format and calls an unnamed one Unknown", () => {
-    expect(versionFormat("EPUB")).toBe("EPUB");
-    expect(versionFormat(null)).toBe("Unknown");
-  });
-});
-
 describe("versionSize", () => {
   it("writes a size in decimal units and leaves a missing one out", () => {
-    expect(versionSize(2_400_000)).toBe("2.4 MB");
+    expect(versionSize(2_400_000)).toBe(`2.4${NBSP}MB`);
     expect(versionSize(null)).toBeNull();
   });
 });
 
-describe("versionSeeders", () => {
-  it.each([
-    [12, "12 seeders"],
-    [1, "1 seeder"],
-    [0, "0 seeders"],
-  ])("counts %i as %s", (seeders, label) => {
-    expect(versionSeeders(seeders)).toBe(label);
+describe("versionSource", () => {
+  it("names the source, format, size and seeds", () => {
+    expect(versionSource(aVersion())).toBe(
+      `MyAnonamouse${SEP}EPUB${SEP}1.8${NBSP}MB${SEP}142${NBSP}seeds`,
+    );
   });
 
-  it("leaves out a source with no seeders", () => {
-    expect(versionSeeders(null)).toBeNull();
+  it("drops a missing source and missing seeds", () => {
+    expect(versionSource(aVersion({ indexer: null, seeders: null }))).toBe(
+      `EPUB${SEP}1.8${NBSP}MB`,
+    );
+  });
+
+  it("ends a Usenet version's line with Usenet in place of seeds", () => {
+    const usenet = aVersion({
+      indexer: "NZBgeek",
+      sizeBytes: 2_100_000,
+      seeders: null,
+      protocol: "usenet",
+    });
+    expect(versionSource(usenet)).toBe(
+      `NZBgeek${SEP}EPUB${SEP}2.1${NBSP}MB${SEP}Usenet`,
+    );
+  });
+
+  it("says when the format and size are unknown", () => {
+    expect(
+      versionSource(aVersion({ format: null, sizeBytes: null, seeders: null })),
+    ).toBe(`MyAnonamouse${SEP}Format unknown${SEP}Size unknown`);
+  });
+
+  it.each([
+    [1, `1${NBSP}seed`],
+    [0, `0${NBSP}seeds`],
+    [1234, `1,234${NBSP}seeds`],
+  ])("writes %i seeders as %s", (seeders, seeds) => {
+    expect(versionSource(aVersion({ indexer: null, seeders }))).toBe(
+      `EPUB${SEP}1.8${NBSP}MB${SEP}${seeds}`,
+    );
+  });
+
+  it("uses no downloader word but the seed count", () => {
+    const source = versionSource(aVersion({ indexer: "Books" }));
+    expect(source).toMatch(/seeds$/);
+    expect(source.replace(/[\d,]+\u00a0seeds$/, "")).not.toMatch(
+      /release|torrent|indexer|grab|seed/i,
+    );
+  });
+});
+
+describe("pickedMeta", () => {
+  it("names the picked version's size and source", () => {
+    expect(pickedMeta(aVersion())).toBe(`1.8${NBSP}MB${SEP}MyAnonamouse`);
+  });
+
+  it("leaves out what the source did not say", () => {
+    expect(pickedMeta(aVersion({ sizeBytes: null, indexer: null }))).toBe("");
+  });
+});
+
+describe("versionsFound", () => {
+  it("counts only the versions that can be chosen", () => {
+    const versions = [
+      aVersion({ id: 1, bestMatch: true }),
+      aVersion({ id: 2 }),
+      aVersion({ id: 3, rejected: true }),
+    ];
+    expect(versionsFound(versions)).toBe("2 versions found · Best match first");
+  });
+
+  it("names no best match when no version that can be chosen is one", () => {
+    const versions = [
+      aVersion({ id: 1 }),
+      aVersion({ id: 2, bestMatch: true, rejected: true }),
+    ];
+    expect(versionsFound(versions)).toBe("1 version found");
+  });
+});
+
+describe("firstShown", () => {
+  const offerable = (id: number) => aVersion({ id });
+  const tried = (id: number) => aVersion({ id, rejected: true });
+
+  it("keeps the first four versions that can be chosen and every tried one", () => {
+    const versions = [1, 2, 3, 4, 5, 6].map(offerable).concat(tried(7));
+    expect(firstShown(versions).map((v) => v.id)).toEqual([1, 2, 3, 4, 7]);
+  });
+
+  it("keeps every version when four or fewer can be chosen", () => {
+    const versions = [1, 2, 3, 4].map(offerable).concat(tried(5));
+    expect(firstShown(versions).map((v) => v.id)).toEqual([1, 2, 3, 4, 5]);
   });
 });
 
