@@ -3,10 +3,14 @@
 //! the state rules (one live request per reader, book and format; a version only chosen
 //! while the request waits on the reader) hold in one place.
 
-use omnibus_shared::{ReleaseProtocol, RequestKind, RequestState, RequestVersion, StuckReason};
+use omnibus_shared::{
+    ExternalBookMeta, ReleaseProtocol, RequestKind, RequestState, RequestVersion, StuckReason,
+};
 use sqlx::{sqlite::SqliteRow, Row, SqlitePool};
 
 use super::rank::Ranked;
+use crate::metadata_lookup::provider_cover_image_config;
+use crate::scan::{create_fileless_from_meta, fetch_candidate_cover};
 
 /// A request live for its reader: searching, waiting on a pick, picked or downloading.
 const LIVE_STATES: &str = "('looking', 'choose', 'chosen', 'on_its_way')";
@@ -37,6 +41,9 @@ pub enum RequestError {
     Db(#[from] sqlx::Error),
     #[error(transparent)]
     Books(#[from] crate::books::BooksError),
+    /// Making the book from a provider's record failed.
+    #[error(transparent)]
+    Scan(#[from] crate::scan::ScanError),
 }
 
 /// One request as stored. `stuck_detail` is for admins only; the handler withholds it.
@@ -176,6 +183,22 @@ pub async fn start(
             created: false,
         });
     }
+    let request = insert_looking(&mut tx, user_id, book_uuid, kind, max_live).await?;
+    tx.commit().await?;
+    Ok(Started {
+        request,
+        created: true,
+    })
+}
+
+/// Insert a `looking` request on `tx`, refused once the reader holds `max_live`.
+async fn insert_looking(
+    tx: &mut sqlx::SqliteConnection,
+    user_id: i64,
+    book_uuid: &str,
+    kind: RequestKind,
+    max_live: i64,
+) -> Result<RequestRow, RequestError> {
     let live: i64 = sqlx::query_scalar(&format!(
         "SELECT COUNT(*) FROM book_requests WHERE user_id = ? AND state IN {LIVE_STATES}"
     ))
@@ -194,12 +217,27 @@ pub async fn start(
     .bind(kind.as_str())
     .fetch_one(&mut *tx)
     .await?;
-    let request = row_to_request(&row)?;
+    Ok(row_to_request(&row)?)
+}
+
+/// Start `user_id`'s request for `kind` of a book the library lacks, made from `meta` as a
+/// file-less book. The cover is fetched first; the live-cap check, the book and the request
+/// share one write transaction, so a refusal leaves no book behind.
+pub async fn start_for_new_book(
+    pool: &SqlitePool,
+    user_id: i64,
+    meta: &ExternalBookMeta,
+    kind: RequestKind,
+    max_live: i64,
+) -> Result<RequestRow, RequestError> {
+    let cover = fetch_candidate_cover(meta, &provider_cover_image_config(false)).await;
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+    // A refusal drops the transaction, which takes the new book with it.
+    let created = create_fileless_from_meta(&mut tx, meta, cover, Some(user_id)).await?;
+    let request = insert_looking(&mut tx, user_id, &created.uuid, kind, max_live).await?;
     tx.commit().await?;
-    Ok(Started {
-        request,
-        created: true,
-    })
+    created.settle_cover(pool).await;
+    Ok(request)
 }
 
 /// The request with this id, if any.

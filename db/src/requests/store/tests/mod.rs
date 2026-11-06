@@ -7,6 +7,7 @@ use super::*;
 
 mod change;
 mod list;
+mod new_book;
 
 const MAX_LIVE: i64 = 5;
 
