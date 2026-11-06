@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   bookBase,
+  customSolidWash,
   GRADIENTS,
   gradientInk,
   hexToOklch,
@@ -94,5 +95,15 @@ describe("hexToOklch and oklchToHex", () => {
   it("reads white as full lightness and black as none", () => {
     expect(hexToOklch("#ffffff").l).toBeCloseTo(1, 2);
     expect(hexToOklch("#000000").l).toBeCloseTo(0, 2);
+  });
+});
+
+describe("customSolidWash", () => {
+  it.each([
+    ["white", "#ffffff", 0.24],
+    ["black", "#000000", 0.95],
+    ["a light grey that light ink cannot read on", "#a0a0a0", 0.24],
+  ])("picks the better ink for %s", (_condition, hex, inkLightness) => {
+    expect(hexToOklch(customSolidWash(hex).ink).l).toBeCloseTo(inkLightness, 1);
   });
 });

@@ -2,6 +2,7 @@ import type { Wash } from "./quoteColor";
 import {
   collapse,
   type FontKey,
+  fitPassage,
   passageSize,
   type Ratio,
   type SizeKey,
@@ -45,7 +46,7 @@ const SANS = FACES.sans;
 const DISPLAY = FACES.serif;
 
 /** The card's width in pixels; every other measure is a fraction of it. */
-export const CARD_WIDTH = 1080;
+const CARD_WIDTH = 1080;
 
 const HEIGHTS = {
   "1:1": 1080,
@@ -137,7 +138,6 @@ function paintFooter(ink: Ink, card: CardDrawing, w: number, h: number) {
   const markTracking = w * 0.006;
   const authorPx = w * 0.026;
   const titlePx = w * 0.033;
-  const author = card.author.trim().toUpperCase();
   const ruleH = Math.max(1, w * 0.004);
 
   ctx.font = fontSpec(markPx, SANS.stack, 600, false);
@@ -145,16 +145,21 @@ function paintFooter(ink: Ink, card: CardDrawing, w: number, h: number) {
   const markW = ctx.measureText("OMNIBUS").width;
   setTracking(ctx, 0);
 
+  // Author and title wrap short of the mark, so they never overlap it.
+  const textMax = w - pad * 2 - markW - w * 0.03;
+  ctx.font = fontSpec(authorPx, SANS.stack, 600, false);
+  setTracking(ctx, w * 0.0036);
+  const authorName = card.author.trim().toUpperCase();
+  const author = authorName
+    ? (wrapLines((t) => ctx.measureText(t).width, authorName, textMax, 1)[0] ??
+      "")
+    : "";
+  setTracking(ctx, 0);
+
   ctx.font = fontSpec(titlePx, DISPLAY.stack, 400, true);
   const title = collapse(card.subtitle);
-  // Wrapped short of the mark, so the two never overlap.
   const titleLines = title
-    ? wrapLines(
-        (t) => ctx.measureText(t).width,
-        title,
-        w - pad * 2 - markW - w * 0.03,
-        2,
-      )
+    ? wrapLines((t) => ctx.measureText(t).width, title, textMax, 2)
     : [];
 
   const authorBlock = author ? authorPx * LINE_HEIGHT : 0;
@@ -215,8 +220,7 @@ function paintPassage(
   const { ctx } = ink;
   const pad = w * 0.094;
   const passage = collapse(card.text);
-  const px = passageSize(passage.length, card.size) * w;
-  const advance = px * (LINE_HEIGHT + LINE_GAP);
+  const startPx = passageSize(passage.length, card.size) * w;
   const region = footerTop - w * 0.03 - pad;
 
   // Sized before centring, so the watermark's bottom clears the first line.
@@ -227,17 +231,24 @@ function paintPassage(
   const markInk = mark.actualBoundingBoxAscent + mark.actualBoundingBoxDescent;
   const gap = w * 0.012;
 
-  const maxLines = Math.max(
-    1,
-    Math.floor((region - markInk - gap + px * LINE_GAP) / advance),
-  );
-  ctx.font = passageFont(card, px);
-  const lines = wrapLines(
-    (t) => ctx.measureText(t).width,
+  const { px, lines } = fitPassage(
+    (size) => {
+      ctx.font = passageFont(card, size);
+      return (t) => ctx.measureText(t).width;
+    },
     passage,
     w - pad * 2,
-    maxLines,
+    startPx,
+    (size) =>
+      Math.max(
+        1,
+        Math.floor(
+          (region - markInk - gap + size * LINE_GAP) /
+            (size * (LINE_HEIGHT + LINE_GAP)),
+        ),
+      ),
   );
+  const advance = px * (LINE_HEIGHT + LINE_GAP);
   const group = markInk + gap + lines.length * advance - px * LINE_GAP;
   const top = pad + Math.max(0, (region - group) / 2);
 
@@ -257,15 +268,18 @@ function paintPassage(
 /** Paints the card onto `canvas` at export size; false when the canvas has no 2D context. */
 export function paintQuoteCard(canvas: HTMLCanvasElement, card: CardDrawing) {
   const { width, height } = cardSize(card.ratio);
-  canvas.width = width;
-  canvas.height = height;
+  // A resize clears the canvas, so assign only on a change; the wash covers the rest.
+  if (canvas.width !== width) canvas.width = width;
+  if (canvas.height !== height) canvas.height = height;
   const ctx = canvas.getContext("2d");
   if (!ctx) return false;
+  ctx.save();
   paintWash(ctx, width, height, card.wash);
   const ink = { ctx, color: card.wash.ink };
   ctx.textAlign = "left";
   const footerTop = paintFooter(ink, card, width, height);
   paintPassage(ink, card, width, footerTop);
+  ctx.restore();
   return true;
 }
 
@@ -319,11 +333,14 @@ export async function shareQuoteCard(card: CardDrawing) {
 
 /** Copies the card to the clipboard as a PNG; where that is refused, it downloads instead. */
 export async function copyQuoteCardImage(card: CardDrawing) {
-  const blob = await renderPng(card);
-  if (!blob) return;
+  // The write starts inside the click, with the PNG still rendering, or Safari refuses it.
+  const png = renderPng(card).then(
+    (blob) => blob ?? Promise.reject(new Error("no png")),
+  );
   try {
-    await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+    await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]);
   } catch {
-    download(blob);
+    const blob = await png.catch(() => null);
+    if (blob) download(blob);
   }
 }

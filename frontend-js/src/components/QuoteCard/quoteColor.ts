@@ -1,10 +1,5 @@
-import {
-  contrast,
-  DARK_INK,
-  inkFor,
-  LIGHT_INK,
-  relativeLuminance,
-} from "./quoteStyle";
+import type { CoverPair } from "../../api";
+import { contrast, DARK_INK, LIGHT_INK, relativeLuminance } from "./quoteStyle";
 
 export type Oklch = { l: number; c: number; h: number };
 
@@ -104,9 +99,9 @@ export function bookBase(accent: string | null): Oklch {
 export const bookWash = (accent: string | null): Wash =>
   solidWash(bookBase(accent), true);
 
-/** The wash for a hand-picked solid colour, its ink chosen by luminance. */
+/** The wash for a hand-picked solid colour, its ink the one that reads best on it. */
 export const customSolidWash = (hex: string): Wash =>
-  solidWash(hexToOklch(hex), inkFor(hex) === LIGHT_INK);
+  solidWash(hexToOklch(hex), gradientInk(hex, hex) === LIGHT_INK);
 
 /** The ink with the better worst-case contrast over both gradient stops. */
 export function gradientInk(from: string, to: string): string {
@@ -119,11 +114,7 @@ export function gradientInk(from: string, to: string): string {
 }
 
 /** A server cover pair as a wash. */
-export const pairWash = (pair: {
-  from: string;
-  to: string;
-  ink: "light" | "dark";
-}): Wash => ({
+export const pairWash = (pair: CoverPair): Wash => ({
   from: pair.from,
   to: pair.to,
   ink: pair.ink === "light" ? LIGHT_INK : DARK_INK,

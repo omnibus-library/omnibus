@@ -51,12 +51,6 @@ export function relativeLuminance(hex: string): number | null {
 export const contrast = (a: number, b: number) =>
   (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
 
-/** The light or dark ink that reads on a hand-picked `#rrggbb` background, by relative luminance. */
-export function inkFor(hex: string): string {
-  const luminance = relativeLuminance(hex);
-  return luminance !== null && luminance > 0.42 ? DARK_INK : LIGHT_INK;
-}
-
 // The passage's size as a fraction of the card width, stepped by its length.
 const STEPS = [
   [90, 0.082],
@@ -76,10 +70,30 @@ export function passageSize(chars: number, size: SizeKey): number {
 /** Folds runs of whitespace into single spaces and trims the ends. */
 export const collapse = (text: string) => text.replace(/\s+/g, " ").trim();
 
+// Breaks one token wider than a line by code point, so CJK text and long URLs still wrap.
+function breakToken(
+  measure: (text: string) => number,
+  token: string,
+  maxWidth: number,
+): string[] {
+  const pieces: string[] = [];
+  let piece = "";
+  for (const char of token) {
+    if (piece && measure(piece + char) > maxWidth) {
+      pieces.push(piece);
+      piece = char;
+    } else {
+      piece += char;
+    }
+  }
+  if (piece) pieces.push(piece);
+  return pieces;
+}
+
 /**
  * Greedy word wrap into at most `maxLines` lines no wider than `maxWidth`, measured by
- * `measure`. A passage that runs past the limit ends its last line in an ellipsis that
- * still fits; a word wider than a line takes a line of its own.
+ * `measure`. A token wider than a line breaks by character; a passage that runs past the
+ * limit ends its last line in an ellipsis that still fits.
  */
 export function wrapLines(
   measure: (text: string) => number,
@@ -91,21 +105,55 @@ export function wrapLines(
   let line = "";
   for (const word of text.split(/\s+/)) {
     const next = line ? `${line} ${word}` : word;
-    if (measure(next) > maxWidth && line) {
+    if (measure(next) <= maxWidth || !line) {
+      line = next;
+    } else {
       lines.push(line);
       line = word;
-    } else {
-      line = next;
+    }
+    if (measure(line) > maxWidth) {
+      // Only reached by a lone token (a line of several words fit before this one joined it).
+      const pieces = breakToken(measure, line, maxWidth);
+      line = pieces.pop() ?? "";
+      lines.push(...pieces);
     }
   }
   if (line) lines.push(line);
   if (lines.length <= maxLines) return lines;
 
   const kept = lines.slice(0, maxLines);
-  let last = kept[maxLines - 1] ?? "";
-  while (last && measure(`${last}…`) > maxWidth) {
-    last = last.slice(0, -1).trimEnd();
+  let last = Array.from(kept[maxLines - 1] ?? "");
+  while (last.length > 0 && measure(`${last.join("")}…`) > maxWidth) {
+    last = last.slice(0, -1);
   }
-  kept[maxLines - 1] = `${last}…`;
+  kept[maxLines - 1] = `${last.join("").trimEnd()}…`;
   return kept;
+}
+
+// The smallest a passage shrinks to, as a share of its stepped size, before it is clamped.
+const MIN_PASSAGE_SCALE = 0.55;
+const PASSAGE_SHRINK = 0.92;
+
+/**
+ * Wraps a passage at the largest size from `startPx` down to a floor at which it fits `maxLinesAt`
+ * lines. Only at the floor does it clamp with an ellipsis. `measureAt` gives the measure for a size.
+ */
+export function fitPassage(
+  measureAt: (px: number) => (text: string) => number,
+  text: string,
+  maxWidth: number,
+  startPx: number,
+  maxLinesAt: (px: number) => number,
+): { px: number; lines: string[] } {
+  const floor = startPx * MIN_PASSAGE_SCALE;
+  let px = startPx;
+  for (;;) {
+    const measure = measureAt(px);
+    const max = maxLinesAt(px);
+    const all = wrapLines(measure, text, maxWidth, Number.POSITIVE_INFINITY);
+    if (all.length <= max || px <= floor) {
+      return { px, lines: wrapLines(measure, text, maxWidth, max) };
+    }
+    px = Math.max(floor, px * PASSAGE_SHRINK);
+  }
 }
