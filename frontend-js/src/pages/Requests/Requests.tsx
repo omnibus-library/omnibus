@@ -12,6 +12,7 @@ import { PHONE_QUERY, useMediaQuery } from "../../useMediaQuery";
 import { RequestDossier } from "../BookRequest/BookRequest";
 import { FROM_REQUESTS, requestPath } from "../BookRequest/requestView";
 import { NotFound } from "../NotFound/NotFound";
+import { AddRequest } from "./AddRequest";
 import {
   countsLine,
   groupRequests,
@@ -152,6 +153,10 @@ function RequestsPage() {
     ? selectedListing(groups, listings, wanted)
     : undefined;
   const first = groups[0]?.items[0]?.book.uuid;
+  const select = (uuid: string) => {
+    setParams({ book: uuid });
+    setPicked(true);
+  };
   // Name the first book in the address, so the pane stays on it once it is cancelled.
   useEffect(() => {
     if (!phone && wanted === null && first !== undefined) {
@@ -164,11 +169,16 @@ function RequestsPage() {
       <PageTitle page="Requests" />
       <div className="rqs-list">
         <header className="rqs-head">
-          <h1 className="rqs-heading">Requests</h1>
-          {groups.length > 0 && (
-            <p className="rqs-subline" data-testid="requests-counts">
-              {countsLine(groups)}
-            </p>
+          <div className="rqs-head-text">
+            <h1 className="rqs-heading">Requests</h1>
+            {groups.length > 0 && (
+              <p className="rqs-subline" data-testid="requests-counts">
+                {countsLine(groups)}
+              </p>
+            )}
+          </div>
+          {!requests.isError && (
+            <AddRequest listings={listings} onSelect={select} />
           )}
         </header>
         {listings === undefined ? (

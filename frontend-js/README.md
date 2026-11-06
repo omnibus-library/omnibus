@@ -123,7 +123,10 @@ book stands (Needs you, On its way, Looking, Stuck, Ready; a book whose requests
 cancelled is left out), beside a pane with the selected book's request, picked by `?book=`
 (the first book when it is absent). On a phone the list stands alone and each item opens the
 book's request page, which then offers "‹ Requests" back (a request started from a wishlist
-row offers "← Back to Wishlists" the same way). The user menu links it while the
+row offers "← Back to Wishlists" the same way). Its "+ Request" button, for a reader who may
+request, opens the shared `BookSearch` (the wishlist's add search, lifted into
+`components/BookSearch/`) to start an ebook request on the book found; a request is made
+without a wishlist entry. The user menu links it while the
 server has book requests on; with them off it is Not Found. A book's request page
 (`/books/:uuid/request?id=`) and the pane are one component: the book, a lane for the request
 and for each other one still going (who asked and when, a Looking → Choose a version → On its

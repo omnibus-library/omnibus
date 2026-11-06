@@ -6,7 +6,12 @@ import {
   aWireVersion,
 } from "../../testing/requestHandlers";
 import { aWireBook } from "../../testing/wire";
-import { countsLine, groupRequests, itemLine } from "./requestGroups";
+import {
+  countsLine,
+  groupRequests,
+  itemLine,
+  requestedNotes,
+} from "./requestGroups";
 
 const ADA = { id: 1 as UserId, isAdmin: false, canRequest: true };
 const EPUB = aWireVersion({ id: 11 });
@@ -188,5 +193,55 @@ describe("countsLine", () => {
     ["none waiting", groupsOf("looking"), "1 book"],
   ])("counts %s", (_case, groups, expected) => {
     expect(countsLine(groups)).toBe(expected);
+  });
+});
+
+describe("requestedNotes", () => {
+  it("names a book with an ebook request going in the list's words", () => {
+    const notes = requestedNotes(
+      [
+        listing("yours", { id: 1, state: "choose" }),
+        listing("coming", { id: 2, state: "on_its_way", progress: 0.62 }),
+        listing("looking", { id: 3, state: "looking" }),
+        listing("stuck", {
+          id: 4,
+          state: "stuck",
+          stuck_reason: "not_found",
+        }),
+      ],
+      ADA,
+    );
+
+    expect(Object.fromEntries(notes)).toEqual({
+      yours: "choose a version",
+      coming: "on its way · 62%",
+      looking: "looking",
+      stuck: "stuck · couldn’t find it",
+    });
+  });
+
+  it("leaves out a cancelled or finished request and an audiobook one", () => {
+    const notes = requestedNotes(
+      [
+        listing("cancelled", { id: 1, state: "cancelled" }),
+        listing("ready", { id: 2, state: "ready" }),
+        listing("audio", { id: 3, kind: "audiobook", state: "looking" }),
+      ],
+      ADA,
+    );
+
+    expect([...notes.keys()]).toEqual([]);
+  });
+
+  it("takes the newest of a book's requests going", () => {
+    const notes = requestedNotes(
+      [
+        listing("b", { id: 9, state: "looking" }),
+        listing("b", { id: 8, state: "on_its_way" }),
+      ],
+      ADA,
+    );
+
+    expect(notes.get("b")).toBe("looking");
   });
 });

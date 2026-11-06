@@ -1,7 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
-import { type KeyboardEvent, useEffect, useRef, useState } from "react";
+import {
+  type KeyboardEvent,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   type ExternalBookMeta,
+  type FoundBook,
   parseBookUuid,
   resolveBook,
   type ScanBook,
@@ -30,7 +37,7 @@ import "./BookSearch.css";
 
 /** A search hit the reader may act on: a library book, or a provider's record of one. A lookup by ISBN has already said which library book a record matches, so that record carries the answer (`null` for none). */
 export type Hit =
-  | { kind: "library"; book: ScanBook }
+  | { kind: "library"; book: FoundBook }
   | { kind: "online"; meta: ExternalBookMeta; matched?: ScanBook | null };
 
 export const titleOf = (hit: Hit) =>
@@ -342,7 +349,8 @@ export function BookSearch({
   // The sheet leaves with an exit animation before the owner is told.
   const [closing, setClosing] = useState(false);
   const wasOpen = useRef(open);
-  useEffect(() => {
+  // Before paint, so focus is back on the button the moment the panel is gone.
+  useLayoutEffect(() => {
     if (wasOpen.current && !open) button.current?.focus();
     wasOpen.current = open;
   }, [open]);
