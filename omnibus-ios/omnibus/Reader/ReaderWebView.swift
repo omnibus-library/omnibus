@@ -408,18 +408,20 @@ final class ReaderController: NSObject {
         screen.map { SpreadFit(screen: $0, folded: isFolded) } ?? .now
     }
 
-    /// Whether the page's own top inset held the status bar's room when last read with the
-    /// bar hidden. The page's, not the window's: the two differ on an open iPhone Duo.
-    private var statusBarFitsInTopInset = false
+    /// Whether the page's own top inset holds the status bar's room, and the window size that
+    /// was learnt at; nil until a report with the bar hidden. The page's inset, not the
+    /// window's: the two differ on an open iPhone Duo.
+    private var statusBarFit: (fits: Bool, size: CGSize)?
 
     /// Whether the status bar is hidden: it joins the chrome only where that can't move the page.
     ///
     /// Learnt from reports taken with the bar hidden alone; with it showing, another screen's
-    /// bar (the audio player's) can raise the top inset and keep the decision up.
+    /// bar (the audio player's) can raise the top inset and keep the decision up. A "doesn't
+    /// fit" holds until the window's size changes.
     func hidesStatusBar(chromeVisible: Bool) -> Bool {
         Self.hidesStatusBar(
             chromeVisible: chromeVisible,
-            fitsInTopInset: statusBarFitsInTopInset,
+            fitsInTopInset: statusBarFit?.fits ?? false,
             reclaimingSideColumn: sideColumnEdge != nil
         )
     }
@@ -433,14 +435,30 @@ final class ReaderController: NSObject {
         reclaimingSideColumn || !(chromeVisible && fitsInTopInset)
     }
 
+    /// Whether the bar fits, from a report taken with it hidden: the page's top inset says,
+    /// except that a "doesn't fit" already learnt at this size stands.
+    nonisolated static func statusBarFits(
+        pageTop: CGFloat, size: CGSize, learnt: (fits: Bool, size: CGSize)?
+    ) -> Bool {
+        // The bar can hide before the page's inset drops (an open iPhone Duo leaving the
+        // audio player), and believing that report moves the page; a missing clock is cheaper.
+        if let learnt, !learnt.fits, learnt.size == size { return false }
+        return pageTop > 0
+    }
+
     /// Listens to the window and hinge the stage reports.
     func observe(_ stage: ReaderStageView) {
         self.stage = stage
         stage.sideColumnEdge = sideColumnEdge
         stage.onScreenChange = { [weak self] screen, statusBarHidden, pageTop in
-            self?.screen = screen
-            if statusBarHidden { self?.statusBarFitsInTopInset = pageTop > 0 }
-            self?.applyStageInsets()
+            guard let self else { return }
+            self.screen = screen
+            if statusBarHidden {
+                let fits = Self.statusBarFits(
+                    pageTop: pageTop, size: screen.size, learnt: statusBarFit)
+                statusBarFit = (fits, screen.size)
+            }
+            applyStageInsets()
         }
         stage.onFoldChange = { [weak self] folded in self?.isFolded = folded }
     }

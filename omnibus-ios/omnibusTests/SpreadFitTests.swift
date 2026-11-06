@@ -221,6 +221,25 @@ struct ReaderStatusBarTests {
         #expect(controller.hidesStatusBar(chromeVisible: false))
     }
 
+    @Test("an open iPhone Duo keeps the status bar hidden past a stale report, until its size changes")
+    func openDuoHoldsTheStatusBarHiddenUntilTheSizeChanges() {
+        // Leaving the audio player, the bar can hide before the page's 82pt top inset drops.
+        let open = ReaderScreen(
+            size: CGSize(width: 669, height: 951),
+            insets: UIEdgeInsets(top: 82, left: 0, bottom: 34, right: 0)
+        )
+        report(open, statusBarHidden: true, pageTop: 0)
+
+        report(open, statusBarHidden: true, pageTop: 82)
+
+        #expect(controller.hidesStatusBar(chromeVisible: true))
+
+        let turned = ReaderScreen(size: CGSize(width: 951, height: 669), insets: open.insets)
+        report(turned, statusBarHidden: true, pageTop: 82)
+
+        #expect(!controller.hidesStatusBar(chromeVisible: true))
+    }
+
     @Test("a report taken with the status bar showing updates the screen, not the decision")
     func reportWithTheBarShowingLeavesTheDecisionAlone() {
         report(padMini, statusBarHidden: true)
