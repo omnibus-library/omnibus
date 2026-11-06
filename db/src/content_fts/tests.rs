@@ -422,14 +422,14 @@ async fn backfill_content_fts_indexes_book_while_another_connection_holds_the_wr
         });
     })
     .await;
-    lock.expect("progress callback ran").release().await;
+    lock.expect("progress callback ran").await.unwrap();
 
     result.unwrap();
     assert!(!chapter_texts_of(&pool, "uuid-a").await.is_empty());
 }
 
 #[tokio::test]
-async fn backfill_content_fts_indexes_later_books_when_storing_one_fails() {
+async fn backfill_content_fts_indexes_later_books_then_reports_the_books_it_failed_to_store() {
     let dir = tempfile::tempdir().unwrap();
     let lib = dir.path().to_str().unwrap().to_string();
     let pool = init_db("sqlite::memory:").await.unwrap();
@@ -444,10 +444,11 @@ async fn backfill_content_fts_indexes_later_books_when_storing_one_fails() {
     .await
     .unwrap();
 
-    backfill_content_fts(&pool, &lib, |_, _, _| {})
+    let error = backfill_content_fts(&pool, &lib, |_, _, _| {})
         .await
-        .unwrap();
+        .unwrap_err();
 
+    assert!(error.to_string().contains("1 of 2"), "{error}");
     assert!(chapter_texts_of(&pool, "uuid-a").await.is_empty());
     assert!(!chapter_texts_of(&pool, "uuid-b").await.is_empty());
 }

@@ -281,7 +281,7 @@ async fn rebuild_all_fts_repopulates_the_index_while_another_connection_holds_th
 
     let lock = hold_write_lock(&pool).await;
     let result = rebuild_all_fts(&pool).await;
-    lock.release().await;
+    lock.await.unwrap();
 
     result.unwrap();
     assert_eq!(count_rows(&pool, "SELECT COUNT(*) FROM books_fts").await, 1);
