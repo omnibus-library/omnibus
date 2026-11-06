@@ -63,10 +63,6 @@
   display: flex;
   gap: 8px;
 }
-.bsearch-find .bsearch-field {
-  flex: 1;
-  min-width: 0;
-}
 .bsearch-scan {
   display: grid;
   flex: none;
@@ -84,6 +80,8 @@
   color: var(--accent);
 }
 .bsearch-field {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 10px;

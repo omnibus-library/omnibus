@@ -140,7 +140,6 @@ function Section({
           {hits.map((hit, i) => (
             <Result
               // Providers can return one ISBN twice, and the list is only ever replaced whole.
-              // biome-ignore lint/suspicious/noArrayIndexKey: see above
               key={
                 hit.kind === "library"
                   ? hit.book.uuid
@@ -447,7 +446,6 @@ export function BookSearch({
             data-testid={`${testId}-scrim`}
             onClick={close}
           />
-          {/* biome-ignore lint/a11y/noStaticElementInteractions: Escape bubbles up from the field or a button, which hold the focus */}
           <div
             className="bsearch-panel"
             data-testid={`${testId}-panel`}
