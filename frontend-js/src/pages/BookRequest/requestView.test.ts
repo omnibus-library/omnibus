@@ -28,6 +28,7 @@ const aVersion = (overrides: Partial<RequestVersion> = {}): RequestVersion => ({
   format: "EPUB",
   indexer: "MyAnonamouse",
   seeders: 142,
+  protocol: "torrent",
   bestMatch: false,
   rejected: false,
   ...overrides,
@@ -50,6 +51,10 @@ describe("stateView", () => {
     expect(stateView("stuck", "search_failed").heading).toBe(
       "Couldn’t find it",
     );
+  });
+
+  it("gives choose no note, since the versions found carry it", () => {
+    expect(stateView("choose").note).toBeNull();
   });
 
   it("names ready as Ready to read", () => {
@@ -134,6 +139,18 @@ describe("versionSource", () => {
   it("drops a missing source and missing seeds", () => {
     expect(versionSource(aVersion({ indexer: null, seeders: null }))).toBe(
       `EPUB · 1.8${NBSP}MB`,
+    );
+  });
+
+  it("ends a Usenet version's line with Usenet in place of seeds", () => {
+    const usenet = aVersion({
+      indexer: "NZBgeek",
+      sizeBytes: 2_100_000,
+      seeders: null,
+      protocol: "usenet",
+    });
+    expect(versionSource(usenet)).toBe(
+      `NZBgeek · EPUB · 2.1${NBSP}MB · Usenet`,
     );
   });
 
