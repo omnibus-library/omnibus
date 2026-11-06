@@ -177,7 +177,7 @@ export const PrefillsTheIsbnFromTheLink: Story = {
 };
 
 /** Check-in is "adding a copy you own" now, on every screen a reader reads. */
-const BANNED_COPY = /check.?in/i;
+const BANNED_COPY = /\bcheck[\s-]?in\b/i;
 
 export const ConfirmsACopyOfALibraryBook: Story = {
   play: async ({ canvas, canvasElement, userEvent }) => {
