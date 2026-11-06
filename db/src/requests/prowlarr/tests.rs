@@ -208,6 +208,22 @@ mod prowlarr_search {
     }
 
     #[tokio::test]
+    async fn reads_an_empty_indexer_as_none() {
+        let server = MockServer::start().await;
+        let body = json!([
+            {"guid": "g1", "title": "Dracula epub", "indexer": "", "downloadUrl": "http://prowlarr/1/download"},
+        ]);
+        mount_search(&server, ResponseTemplate::new(200).set_body_json(body)).await;
+
+        let found = client_for(&server)
+            .search("Dracula Bram Stoker")
+            .await
+            .unwrap();
+
+        assert_eq!(found[0].indexer, None);
+    }
+
+    #[tokio::test]
     async fn answers_rate_limited_on_a_429_and_makes_no_call_while_cooling_down() {
         let server = MockServer::start().await;
         Mock::given(method("GET"))

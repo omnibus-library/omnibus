@@ -115,7 +115,7 @@ impl RawRelease {
             title,
             size_bytes: self.size,
             seeders: self.seeders,
-            indexer: self.indexer,
+            indexer: self.indexer.filter(|i| !i.is_empty()),
             link,
             categories: self
                 .categories
