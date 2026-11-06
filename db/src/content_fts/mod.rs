@@ -398,9 +398,9 @@ async fn fetch_candidates(pool: &SqlitePool, library_path: &str) -> anyhow::Resu
 
 /// (Re)index chapter text for every EPUB or PDF book under `library_path` whose
 /// stored snapshot no longer matches the served file, and prune rows whose uuid
-/// no longer resolves to a book. An unreadable file is logged and skipped
-/// (retried next scan); a book whose every chapter is navigation or empty stores
-/// no rows, so it re-extracts each scan. `on_progress(processed, total, item)`.
+/// no longer resolves to a book. An unreadable file, or a store that fails, is
+/// logged and skipped (retried next scan); a book whose every chapter is
+/// navigation or empty stores no rows, so it re-extracts each scan. `on_progress(processed, total, item)`.
 pub async fn backfill_content_fts(
     pool: &SqlitePool,
     library_path: &str,
@@ -446,9 +446,13 @@ pub async fn backfill_content_fts(
             );
             continue;
         };
-        replace_book_chapters(pool, &candidate, &chapters)
-            .await
-            .map_err(|e| anyhow::anyhow!("store content index for {}: {e}", candidate.book_uuid))?;
+        if let Err(error) = replace_book_chapters(pool, &candidate, &chapters).await {
+            tracing::warn!(
+                book_uuid = %candidate.book_uuid,
+                %error,
+                "content index store failed; will retry next scan"
+            );
+        }
     }
     Ok(())
 }
