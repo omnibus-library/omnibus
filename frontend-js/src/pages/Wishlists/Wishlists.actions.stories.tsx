@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { HttpResponse, http } from "msw";
 import { expect, waitFor, within } from "storybook/test";
-import { parseBookUuid, requestsQuery } from "../../api";
+import { bookRequestsQuery, parseBookUuid, requestsQuery } from "../../api";
 import {
   expectInvalidated,
   seedQueries,
@@ -154,6 +154,41 @@ export const RequestEbookOpensRequestsOnceItsListHoldsTheRequest: Story = {
     ]);
   },
 };
+
+let heldHistory = deferred();
+let historyReads = 0;
+
+export const RequestEbookOpensRequestsWithoutWaitingForTheBooksHistory: Story =
+  {
+    beforeEach({ msw }) {
+      heldHistory = deferred();
+      historyReads = 0;
+      msw.use(
+        http.get("/api/books/:uuid/requests", async () => {
+          historyReads += 1;
+          if (historyReads > 1) await heldHistory.promise;
+          return HttpResponse.json([]);
+        }),
+      );
+    },
+    play: async ({ canvas, userEvent }) => {
+      const uuid = parseBookUuid(BOOKS.hyperion.uuid);
+      if (!uuid) throw new Error("a fixture book has no uuid");
+      await storyClient().prefetchQuery(bookRequestsQuery(uuid));
+      const row = within(await rowOf(canvas, "Hyperion"));
+
+      await userEvent.click(row.getByTestId("wishlists-request"));
+      await userEvent.click(
+        await canvas.findByRole("menuitem", { name: "Request ebook" }),
+      );
+
+      // The history is read again once the page is open; the page does not wait for it.
+      await expect(await canvas.findByTestId("where")).toHaveTextContent(
+        `/requests?book=${BOOKS.hyperion.uuid}`,
+      );
+      heldHistory.release();
+    },
+  };
 
 export const ARefusedRequestSaysWhyAndStaysOnTheList: Story = {
   beforeEach({ msw }) {

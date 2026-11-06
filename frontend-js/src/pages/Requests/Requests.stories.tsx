@@ -479,17 +479,17 @@ export const RequestAgainInThePaneStaysOnTheList: Story = {
 };
 
 let held = deferred();
-let duneReads = 0;
+let listReads = 0;
 
-export const RequestAgainStaysBusyUntilTheListsAreReadAgain: Story = {
+export const RequestAgainStaysBusyUntilTheRequestsListIsReadAgain: Story = {
   parameters: { path: "/requests?book=uuid-dune" },
   beforeEach({ msw }) {
     held = deferred();
-    duneReads = 0;
+    listReads = 0;
     msw.use(
-      http.get("/api/books/uuid-dune/requests", async () => {
-        duneReads += 1;
-        if (duneReads > 1) await held.promise;
+      http.get("/api/requests", async () => {
+        listReads += 1;
+        if (listReads > 1) await held.promise;
         return HttpResponse.json([
           aWireListing({
             request: aWireRequest({
@@ -509,7 +509,7 @@ export const RequestAgainStaysBusyUntilTheListsAreReadAgain: Story = {
 
     await userEvent.click(again);
 
-    await waitFor(() => expect(duneReads).toBeGreaterThan(1));
+    await waitFor(() => expect(listReads).toBeGreaterThan(1));
     await expect(again).toHaveAttribute("aria-busy", "true");
     held.release();
   },
