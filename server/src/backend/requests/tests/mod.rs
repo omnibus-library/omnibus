@@ -27,6 +27,7 @@ mod cancel;
 mod choose;
 mod import;
 mod list;
+mod new_book;
 mod retry;
 mod swap;
 
@@ -122,9 +123,16 @@ fn start_uri(uuid: &str) -> String {
 mod flag_and_permission_gate {
     use super::*;
 
-    fn writes() -> [(&'static str, String, Option<Value>); 6] {
+    fn writes() -> [(&'static str, String, Option<Value>); 7] {
         [
             ("POST", start_uri("any"), Some(json!({"kind": "ebook"}))),
+            (
+                "POST",
+                "/api/requests".to_string(),
+                Some(
+                    json!({"kind": "ebook", "meta": {"isbn13": "9781635575637", "title": "Piranesi", "authors": [], "source": "open_library"}}),
+                ),
+            ),
             ("POST", "/api/requests/1/retry".to_string(), None),
             ("POST", "/api/requests/1/swap".to_string(), None),
             ("POST", "/api/requests/1/cancel".to_string(), None),

@@ -9,6 +9,7 @@ import {
   getRequestsSettings,
   getRetryBookRequestUrl,
   getStartBookRequestUrl,
+  getStartRequestFromMetadataUrl,
   getSwapRequestVersionUrl,
   getTestDownloadClientConnectionUrl,
   getTestProwlarrConnectionUrl,
@@ -19,6 +20,7 @@ import {
 } from "./generated/omnibus";
 import type {
   BookRequest as BookRequestWire,
+  ExternalBookMeta,
   RequestListing as RequestListingWire,
   RequestState,
   RequestsSettingsStatus,
@@ -183,6 +185,14 @@ async function answered(res: Response): Promise<BookRequest> {
 export async function startBookRequest(uuid: BookUuid): Promise<BookRequest> {
   const url = getStartBookRequestUrl(encodeURIComponent(uuid));
   return answered(await send(url, "POST", { kind: "ebook" }));
+}
+
+/** Makes a book without files from a provider's record and starts looking for an ebook of it. */
+export async function startRequestFromMeta(
+  meta: ExternalBookMeta,
+): Promise<BookRequest> {
+  const url = getStartRequestFromMetadataUrl();
+  return answered(await send(url, "POST", { kind: "ebook", meta }));
 }
 
 /** Looks again for a request that came up empty. */

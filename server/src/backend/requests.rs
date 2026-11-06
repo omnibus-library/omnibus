@@ -23,7 +23,7 @@ use omnibus_db::{
 };
 use omnibus_shared::{
     BookRequest, ChooseVersion, RequestKind, RequestListQuery, RequestListing, RequestState,
-    StartRequest, StuckReason,
+    StartRequest, StartRequestFromMeta, StuckReason,
 };
 
 use crate::auth::AuthUser;
@@ -250,6 +250,52 @@ pub(super) async fn post_start_request(
     };
     match view(&state, started.request, user.is_admin).await {
         Ok(request) => (status, Json(request)).into_response(),
+        Err(res) => res,
+    }
+}
+
+/// Start a request for a book the library lacks
+///
+/// Makes the book from a provider's record of it, without files, and starts looking for an
+/// ebook of it; poll `GET /api/requests/{id}` until it leaves `looking`. No wishlist entry is
+/// made. To request a book the library already has, use `POST /api/books/{uuid}/requests`.
+#[utoipa::path(
+    post,
+    path = "/api/requests",
+    tag = "Requests",
+    operation_id = "start_request_from_metadata",
+    request_body = StartRequestFromMeta,
+    responses(
+        (status = 201, description = "The book was made and the request started.", body = BookRequest),
+        (status = 400, description = "`kind` isn't `ebook`, or a field of `meta` is over its length cap."),
+        (status = 403, description = "Your account can't make requests."),
+        (status = 404, description = "Book requests are off on this server."),
+    ),
+)]
+pub(super) async fn post_start_request_from_meta(
+    RequestsUser(user): RequestsUser,
+    State(state): State<AppState>,
+    Json(body): Json<StartRequestFromMeta>,
+) -> Response {
+    if let Err(message) = body.validate() {
+        return (StatusCode::BAD_REQUEST, message).into_response();
+    }
+    if !state.request_starts().has_room(user.id) {
+        return too_many("you started too many requests; try again in a few minutes");
+    }
+    let row =
+        match store::start_for_new_book(state.pool(), user.id, &body.meta, body.kind, MAX_LIVE)
+            .await
+        {
+            Ok(row) => row,
+            Err(RequestError::TooManyLive) => {
+                return too_many("you have too many requests in progress");
+            }
+            Err(e) => return internal("start request on a new book", e),
+        };
+    search_again(&state, user.id, row.id);
+    match view(&state, row, user.is_admin).await {
+        Ok(request) => (StatusCode::CREATED, Json(request)).into_response(),
         Err(res) => res,
     }
 }

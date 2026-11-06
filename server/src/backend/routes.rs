@@ -360,7 +360,10 @@ fn request_routes() -> OpenApiRouter<AppState> {
             requests::post_start_request,
             requests::get_book_requests
         ))
-        .routes(routes!(requests::get_requests))
+        .routes(routes!(
+            requests::get_requests,
+            requests::post_start_request_from_meta
+        ))
         .routes(routes!(requests::get_request))
         .routes(routes!(requests::post_retry_request))
         .routes(routes!(requests::post_choose_version))
