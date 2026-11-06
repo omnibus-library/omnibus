@@ -193,6 +193,22 @@ mod swap {
     }
 
     #[tokio::test]
+    async fn forgets_when_the_given_up_download_was_due_to_finish() {
+        let pool = pool().await;
+        let (id, _, _) = on_its_way_with_two_versions(&pool).await;
+        sqlx::query("UPDATE book_requests SET expected_done_at = ? WHERE id = ?")
+            .bind(NOW + 60)
+            .bind(id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        swap(&pool, id, NOW, None).await.unwrap();
+
+        assert_eq!(state_of(&pool, id).await.expected_done_at, None);
+    }
+
+    #[tokio::test]
     async fn looks_again_when_no_other_version_is_left() {
         let pool = pool().await;
         let (id, _, other) = on_its_way_with_two_versions(&pool).await;

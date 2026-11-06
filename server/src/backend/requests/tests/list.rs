@@ -103,6 +103,31 @@ mod get_requests {
     }
 
     #[tokio::test]
+    async fn says_whether_each_requester_has_a_photo() {
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let (ada, ada_token) = requester(&pool, "ada").await;
+        let (grace, _) = requester(&pool, "grace").await;
+        let dracula = seed_book(&pool, "Dracula").await;
+        seed_request(&pool, ada, &dracula).await;
+        seed_request(&pool, grace, &dracula).await;
+        sqlx::query(
+            "INSERT INTO user_avatars (user_id, mime, bytes) VALUES (?, 'image/png', x'00')",
+        )
+        .bind(grace)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let all = listed(&app, "/api/requests", &ada_token).await;
+
+        let photos: Vec<(String, bool)> = all
+            .iter()
+            .map(|l| (l.requester_name.clone(), l.requester_has_avatar))
+            .collect();
+        assert_eq!(photos, [("grace".into(), true), ("ada".into(), false)]);
+    }
+
+    #[tokio::test]
     async fn answers_400_for_an_unknown_state() {
         let (app, _, pool) = fixture_book_requests(true).await;
         let (_, token) = requester(&pool, "ada").await;

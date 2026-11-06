@@ -236,6 +236,8 @@ pub struct RequestListing {
     pub book: crate::EbookMetadata,
     /// The requester's display name, or their username when they have none.
     pub requester_name: String,
+    /// Whether `GET /api/users/{id}/avatar` has the requester's photo to serve.
+    pub requester_has_avatar: bool,
     /// Who cancelled it, named the same way. Null unless it was cancelled, or once that
     /// account is deleted.
     pub cancelled_by_name: Option<String>,

@@ -30,6 +30,8 @@ pub struct Listed {
     pub book: EbookMetadata,
     /// The requester's display name, or their username.
     pub requester_name: String,
+    /// Whether the requester has a photo.
+    pub requester_has_avatar: bool,
     /// The same for whoever cancelled it; `None` unless cancelled, or once that account is gone.
     pub cancelled_by_name: Option<String>,
     /// The version it picked, then those it gave up.
@@ -41,6 +43,7 @@ pub fn push_select<'a>(query: &mut QueryBuilder<'a, Sqlite>, filter: ListFilter<
     query.push(
         "SELECT q.*, b.id AS book_id,
                 COALESCE(u.display_name, u.username) AS requester_name,
+                EXISTS(SELECT 1 FROM user_avatars a WHERE a.user_id = u.id) AS requester_has_avatar,
                 COALESCE(c.display_name, c.username) AS cancelled_by_name
            FROM book_requests q
            JOIN books b ON b.uuid = q.book_uuid
@@ -98,6 +101,7 @@ pub async fn list(pool: &SqlitePool, filter: ListFilter<'_>) -> Result<Vec<Liste
             versions: versions.remove(&request.id).unwrap_or_default(),
             book: book.clone(),
             requester_name: row.try_get("requester_name")?,
+            requester_has_avatar: row.try_get::<i64, _>("requester_has_avatar")? != 0,
             cancelled_by_name: row.try_get("cancelled_by_name")?,
             request,
         });

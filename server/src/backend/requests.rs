@@ -270,6 +270,7 @@ async fn list_answer(state: &AppState, filter: ListFilter<'_>, viewer: &AuthUser
             },
             book: l.book,
             requester_name: l.requester_name,
+            requester_has_avatar: l.requester_has_avatar,
             cancelled_by_name: l.cancelled_by_name,
         })
         .collect();

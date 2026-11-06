@@ -15607,7 +15607,8 @@
         "required": [
           "request",
           "book",
-          "requester_name"
+          "requester_name",
+          "requester_has_avatar"
         ],
         "properties": {
           "book": {
@@ -15623,6 +15624,10 @@
           },
           "request": {
             "$ref": "#/components/schemas/BookRequest"
+          },
+          "requester_has_avatar": {
+            "type": "boolean",
+            "description": "Whether `GET /api/users/{id}/avatar` has the requester's photo to serve."
           },
           "requester_name": {
             "type": "string",

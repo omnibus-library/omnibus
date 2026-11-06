@@ -109,7 +109,7 @@ pub async fn begin_download(
 /// Move a picked request to `on_its_way` once its download is with the client.
 pub async fn mark_on_its_way(pool: &SqlitePool, id: i64, now: i64) -> Result<(), RequestError> {
     sqlx::query(&format!(
-        "UPDATE book_requests SET state = 'on_its_way', moved_at = ?, updated_at = {NOW}
+        "UPDATE book_requests SET state = 'on_its_way', moved_at = ?, expected_done_at = NULL, updated_at = {NOW}
          WHERE id = ? AND state = 'chosen'"
     ))
     .bind(now)
@@ -177,20 +177,23 @@ pub async fn mark_ready(
     Ok(())
 }
 
-/// Record how far request `id`'s download of pick `chosen` is, and when it last gained bytes.
+/// Record a download's risen `progress` at `moved_at` and when the client now expects it to
+/// finish (`None`: it can't tell), for request `id`'s pick `chosen` while it is on its way.
 pub async fn record_progress(
     pool: &SqlitePool,
     id: i64,
     chosen: Option<i64>,
     progress: f64,
     moved_at: i64,
+    expected_done_at: Option<i64>,
 ) -> Result<(), RequestError> {
     sqlx::query(
-        "UPDATE book_requests SET progress = ?, moved_at = ?
+        "UPDATE book_requests SET progress = ?, moved_at = ?, expected_done_at = ?
          WHERE id = ? AND state = 'on_its_way' AND chosen_result_id = ?",
     )
     .bind(progress)
     .bind(moved_at)
+    .bind(expected_done_at)
     .bind(id)
     .bind(chosen)
     .execute(pool)
@@ -229,7 +232,8 @@ pub async fn mark_stuck(
 ) -> Result<(), RequestError> {
     sqlx::query(&format!(
         "UPDATE book_requests
-         SET state = 'stuck', stuck_reason = ?, stuck_detail = ?, updated_at = {NOW}
+         SET state = 'stuck', stuck_reason = ?, stuck_detail = ?, expected_done_at = NULL,
+             updated_at = {NOW}
          WHERE id = ? AND state IN ('chosen', 'on_its_way') AND chosen_result_id = ?"
     ))
     .bind(reason.as_str())
