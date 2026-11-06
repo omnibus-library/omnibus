@@ -131,7 +131,25 @@
 .rq-version-links {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 16px;
+}
+/* Drawn as a text link; the block padding only widens the tap target. */
+.rq-link {
+  padding: 6px 0;
+  margin-block: -6px;
+  border: 0;
+  background: none;
+  font: 400 12px / 1.4 var(--sans);
+  color: var(--ink-1);
+  cursor: pointer;
+}
+.rq-link.quiet {
+  color: var(--ink-2);
+}
+@media (hover: hover) {
+  .rq-link:hover {
+    color: var(--ink-0);
+  }
 }
 .rq-actions .btn[aria-disabled="true"] {
   opacity: 0.55;
@@ -214,6 +232,7 @@
 }
 
 .rq-page .btn:focus-visible,
+.rq-link:focus-visible,
 .rq-back:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;

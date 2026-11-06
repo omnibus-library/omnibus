@@ -45,9 +45,9 @@ Two states can end a request early:
 - **Cancelled**: the user cancelled it (see S7).
 
 A found result is a **version**, never a "copy": "copy" already means a physical book in Omnibus. A version row shows
-its name, then where it came from, its format, size and seeds ("MyAnonamouse · EPUB · 1.8 MB · 142 seeds"), then
-whether it's the best match or didn't work. The best match and the next three show first, with "Show more" for the
-rest; "Details" opens the long form of every row.
+its name, then where it came from, its format, size and seeds ("MyAnonamouse · EPUB · 1.8 MB · 142 seeds", or "Usenet"
+for a source with none), then whether it's the best match or didn't work. The best match and the next three show
+first, with "Show more" for the rest; "Details" opens the long form of every row.
 
 Requesting from the wishlist asks one question (ebook or audiobook), starts the request, and takes the user
 straight to that book's request page, already in "Looking".

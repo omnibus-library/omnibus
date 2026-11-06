@@ -97,7 +97,8 @@ function VersionRow({
           disabled={locked}
           onClick={onChoose}
         >
-          <BusyLabel busy={choosing} label="Choose" busyLabel="Choosing…" />
+          {/* The busy face keeps "Choose", so the button holds the comp's width at rest. */}
+          <BusyLabel busy={choosing} label="Choose" busyLabel="Choose" />
         </Button>
       )}
       {details && (
@@ -174,27 +175,27 @@ function Choices({
       </ul>
       <div className="rq-version-links">
         {hidden > 0 && (
-          <Button
-            variant="ghost"
-            size="sm"
+          <button
+            type="button"
+            className="rq-link"
             data-testid="request-show-more"
             aria-expanded={all}
             aria-controls={listId}
             onClick={() => setAll(!all)}
           >
             {all ? "Show fewer" : `Show ${hidden} more`}
-          </Button>
+          </button>
         )}
-        <Button
-          variant="ghost"
-          size="sm"
+        <button
+          type="button"
+          className="rq-link quiet"
           data-testid="request-details-toggle"
           aria-expanded={details}
           aria-controls={listId}
           onClick={() => setDetails(!details)}
         >
           Details
-        </Button>
+        </button>
       </div>
     </>
   );
@@ -422,7 +423,7 @@ function Lane({ request }: { request: Request }) {
           {heading}
         </p>
       </div>
-      <p className="rq-note">{note}</p>
+      {note && <p className="rq-note">{note}</p>}
       {request.state === "looking" && (
         <Looking request={request} canAct={canAct} onTried={focusTitle} />
       )}

@@ -41,6 +41,14 @@ const REVISED = aWireVersion({
   title: "Hyperion - Dan Simmons EPUB [Gollancz, corrected contents v2]",
   seeders: 37,
 });
+const USENET = aWireVersion({
+  id: 17,
+  title: "Dan Simmons - Hyperion.epub",
+  size_bytes: 2_100_000,
+  indexer: "NZBgeek",
+  seeders: null,
+  protocol: "usenet",
+});
 const SCENE = aWireVersion({
   id: 15,
   title: "Hyperion.1989.EPUB-BOOKS",
@@ -56,8 +64,8 @@ const TRIED = aWireVersion({
   seeders: 0,
   rejected: true,
 });
-/** Five that can be chosen and one that was tried, in the server's order. */
-const MANY = [EPUB, REVISED, PDF, UNNAMED, SCENE, TRIED];
+/** Six that can be chosen and one that was tried, in the server's order. */
+const MANY = [EPUB, REVISED, USENET, SCENE, PDF, UNNAMED, TRIED];
 const NBSP = "\u00a0";
 
 let fake = requestFake();
@@ -172,7 +180,7 @@ export const TheVersionsFoundAreCountedAboveTheList: Story = {
     const caption = await canvas.findByTestId("request-versions-found");
 
     await expect(caption.textContent).toBe(
-      "6 versions found · Best match first",
+      "7 versions found · Best match first",
     );
   },
 };
@@ -185,12 +193,12 @@ export const ShowMoreRevealsTheVersionsPastTheFirstFour: Story = {
     await expect(await canvas.findAllByTestId("request-version")).toHaveLength(
       5,
     );
-    const more = canvas.getByRole("button", { name: "Show 1 more" });
+    const more = canvas.getByRole("button", { name: "Show 2 more" });
     await expect(more).toHaveAttribute("aria-expanded", "false");
 
     await userEvent.click(more);
 
-    await expect(canvas.getAllByTestId("request-version")).toHaveLength(6);
+    await expect(canvas.getAllByTestId("request-version")).toHaveLength(7);
     await expect(more).toHaveAttribute("aria-expanded", "true");
     await expect(more).toHaveFocus();
   },
@@ -214,6 +222,19 @@ export const AVersionRowNamesTheReleaseAndItsSource: Story = {
       within(versionAt(rows, 1)).getByTestId("request-version-meta")
         .textContent,
     ).toBe(`Library Ink · PDF · 9.1${NBSP}MB · 1${NBSP}seed`);
+  },
+};
+
+export const AUsenetVersionSaysUsenetInPlaceOfSeeds: Story = {
+  beforeEach({ msw }) {
+    msw.use(...seed({ state: "choose", versions: [USENET] }));
+  },
+  play: async ({ canvas }) => {
+    const row = within(await canvas.findByTestId("request-version"));
+
+    await expect(row.getByTestId("request-version-meta").textContent).toBe(
+      `NZBgeek · EPUB · 2.1${NBSP}MB · Usenet`,
+    );
   },
 };
 

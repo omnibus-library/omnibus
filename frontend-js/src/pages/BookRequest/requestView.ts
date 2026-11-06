@@ -33,7 +33,8 @@ export function stateView(
   stuckReason: StuckReason | null = null,
 ): {
   heading: string;
-  note: string;
+  /** Absent where the lane's own content says it. */
+  note: string | null;
 } {
   switch (state) {
     case "looking":
@@ -42,10 +43,7 @@ export function stateView(
         note: "Searching for versions of this book.",
       };
     case "choose":
-      return {
-        heading: "Choose a version",
-        note: "Pick the version you want.",
-      };
+      return { heading: "Choose a version", note: null };
     case "chosen":
       return { heading: "Version chosen", note: "We’ll fetch it next." };
     case "on_its_way":
@@ -102,17 +100,30 @@ export const versionFormat = (format: string | null) =>
 export const versionSize = (bytes: number | null) =>
   bytes === null ? null : (fileSize(bytes)?.replace(" ", "\u00a0") ?? null);
 
-const seeds = (n: number) => `${n.toLocaleString()}\u00a0seed${plural(n)}`;
+const seeds = (n: number) =>
+  `${n.toLocaleString("en-US")}\u00a0seed${plural(n)}`;
 
-/** A version's source line: "MyAnonamouse · EPUB · 1.8 MB · 142 seeds"; a missing source or seed count drops out. */
+/** How a version is shared: Usenet, its seeds, or `null` for a torrent whose seeds are unknown. */
+const sharing = ({
+  protocol,
+  seeders,
+}: Pick<RequestVersion, "protocol" | "seeders">) => {
+  if (protocol === "usenet") return "Usenet";
+  return seeders === null ? null : seeds(seeders);
+};
+
+/** A version's source line: "MyAnonamouse · EPUB · 1.8 MB · 142 seeds", or "… · Usenet"; a missing source or seed count drops out. */
 export const versionSource = (
-  version: Pick<RequestVersion, "indexer" | "format" | "sizeBytes" | "seeders">,
+  version: Pick<
+    RequestVersion,
+    "indexer" | "format" | "sizeBytes" | "seeders" | "protocol"
+  >,
 ) =>
   [
     version.indexer,
     versionFormat(version.format),
     versionSize(version.sizeBytes) ?? "Size unknown",
-    version.seeders === null ? null : seeds(version.seeders),
+    sharing(version),
   ]
     .filter((part) => part !== null)
     .join(" · ");
