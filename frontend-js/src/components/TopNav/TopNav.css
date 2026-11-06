@@ -168,7 +168,9 @@
     letter-spacing: 0.04em;
   }
 
+  /* The Add menu hangs from this group's right edge instead of the Add button, so a narrow screen can hold all of it. */
   .atrium-actions {
+    position: relative;
     gap: 6px;
   }
   .atrium-actions .btn.primary.sm {
@@ -176,10 +178,6 @@
   }
   .atrium-actions .btn.sm {
     padding: 0 8px;
-  }
-  /* The menu hangs from the bar's right edge instead of the Add button, so a narrow screen can hold all of it. */
-  .atrium-actions {
-    position: relative;
   }
   .atrium-add {
     position: static;
