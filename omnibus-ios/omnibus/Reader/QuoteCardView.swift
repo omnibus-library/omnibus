@@ -31,46 +31,130 @@ struct QuoteRequest: Identifiable {
     let text: String
 }
 
-/// A card background: a ground tone plus whether its ink is light or dark.
+/// A card background: two stops, the angle between them, and the ink drawn on top.
 struct QuoteStyle: Identifiable {
-    var id: String
-    var base: OKLCH
+    enum Kind: Hashable { case solid, gradient }
+
+    /// What VoiceOver reads on the swatch.
+    var name: String
+    var kind: Kind
+    var from: OKLCH
+    var to: OKLCH
     var lightInk: Bool
+    // Not `ink`: `OKLCH` has its own `opacity(_:)`, which would shadow
+    // `Color`'s in `.foregroundStyle(style.ink.opacity(…))`.
+    var inkTone: OKLCH
+    var angle = 135
+
+    var id: String { "\(kind)-\(name)" }
+
+    var ink: Color { inkTone.color }
+
+    var gradient: LinearGradient {
+        let ends = Self.points(angle)
+        return LinearGradient(colors: [from.color, to.color], startPoint: ends.start, endPoint: ends.end)
+    }
 
     /// A two-stop wash rather than a flat fill — a flat colour behind serif
     /// type reads as a placeholder, and the drift is what gives the card
     /// depth at thumbnail size.
-    var gradient: LinearGradient {
-        LinearGradient(
-            colors: [
-                OKLCH(base.l, base.c, base.h).color,
-                OKLCH(
-                    max(0.06, base.l - (lightInk ? 0.10 : -0.05)),
-                    base.c * 0.85,
-                    base.h + 12
-                ).color,
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
+    static func solid(_ name: String, _ base: OKLCH, lightInk: Bool) -> QuoteStyle {
+        QuoteStyle(
+            name: name,
+            kind: .solid,
+            from: base,
+            to: OKLCH(max(0.06, base.l - (lightInk ? 0.10 : -0.05)), base.c * 0.85, base.h + 12),
+            lightInk: lightInk,
+            inkTone: lightInk ? OKLCH(0.95, 0.012, base.h) : OKLCH(0.24, 0.02, base.h)
         )
     }
 
-    var ink: Color {
-        lightInk ? OKLCH(0.95, 0.012, base.h).color : OKLCH(0.24, 0.02, base.h).color
+    /// A preset or cover pair, drawn as exactly its two stops. `nil` when
+    /// either hex does not parse.
+    static func gradient(_ name: String, from: String, to: String, lightInk: Bool) -> QuoteStyle? {
+        guard let start = OKLCH.parse(cssValue: from), let end = OKLCH.parse(cssValue: to) else { return nil }
+        return QuoteStyle(
+            name: name,
+            kind: .gradient,
+            from: start,
+            to: end,
+            lightInk: lightInk,
+            inkTone: lightInk ? lightHexInk : darkHexInk
+        )
     }
 
     static func book(_ tone: OKLCH) -> QuoteStyle {
-        QuoteStyle(id: "book", base: OKLCH(min(0.46, max(0.28, tone.l)), max(0.05, tone.c), tone.h), lightInk: true)
+        solid("Book", OKLCH(min(0.46, max(0.28, tone.l)), max(0.05, tone.c), tone.h), lightInk: true)
     }
 
-    static let presets: [QuoteStyle] = [
-        QuoteStyle(id: "ink", base: OKLCH(0.19, 0.012, 70), lightInk: true),
-        QuoteStyle(id: "paper", base: OKLCH(0.93, 0.017, 80), lightInk: false),
-        QuoteStyle(id: "moss", base: OKLCH(0.38, 0.075, 155), lightInk: true),
-        QuoteStyle(id: "rose", base: OKLCH(0.44, 0.11, 15), lightInk: true),
-        QuoteStyle(id: "dusk", base: OKLCH(0.36, 0.085, 285), lightInk: true),
-        QuoteStyle(id: "sea", base: OKLCH(0.40, 0.075, 230), lightInk: true),
+    static let solids: [QuoteStyle] = [
+        solid("Ink", OKLCH(0.19, 0.012, 70), lightInk: true),
+        solid("Paper", OKLCH(0.93, 0.017, 80), lightInk: false),
+        solid("Moss", OKLCH(0.38, 0.075, 155), lightInk: true),
+        solid("Rose", OKLCH(0.44, 0.11, 15), lightInk: true),
+        solid("Dusk", OKLCH(0.36, 0.085, 285), lightInk: true),
+        solid("Sea", OKLCH(0.40, 0.075, 230), lightInk: true),
     ]
+
+    static let gradients: [QuoteStyle] = [
+        ("Ember", "#7a1f16", "#a24c16", true),
+        ("Dusk", "#2e2660", "#9a4060", true),
+        ("Lagoon", "#0b4a5a", "#26357f", true),
+        ("Grove", "#183f2a", "#7a5c18", true),
+        ("Dawn", "#f7e1c8", "#eeb0a8", false),
+    ].compactMap { QuoteStyle.gradient($0.0, from: $0.1, to: $0.2, lightInk: $0.3) }
+
+    // The web's `LIGHT_INK` and its dark counterpart.
+    private static let lightHexInk = OKLCH.parse(cssValue: "#f5f0e8") ?? OKLCH(0.95, 0.012, 80)
+    private static let darkHexInk = OKLCH.parse(cssValue: "#221d18") ?? OKLCH(0.24, 0.02, 60)
+
+    /// Whether light ink reads better than dark over every stop: the ink
+    /// whose weakest contrast against any stop is the higher one wins, and a
+    /// tie goes to light.
+    static func prefersLightInk(over stops: [OKLCH], light: OKLCH, dark: OKLCH) -> Bool {
+        func weakest(_ ink: OKLCH) -> Double {
+            stops.map { ink.contrast(with: $0) }.min() ?? 0
+        }
+        return weakest(light) >= weakest(dark)
+    }
+
+    /// The gradient line for a CSS-style angle (0 up, 90 right), in 45° steps.
+    static func points(_ angle: Int) -> (start: UnitPoint, end: UnitPoint) {
+        switch ((angle % 360) + 360) % 360 / 45 {
+        case 0: return (start: .bottom, end: .top)
+        case 1: return (start: .bottomLeading, end: .topTrailing)
+        case 2: return (start: .leading, end: .trailing)
+        case 3: return (start: .topLeading, end: .bottomTrailing)
+        case 4: return (start: .top, end: .bottom)
+        case 5: return (start: .topTrailing, end: .bottomLeading)
+        case 6: return (start: .trailing, end: .leading)
+        default: return (start: .bottomTrailing, end: .topLeading)
+        }
+    }
+}
+
+extension OKLCH {
+    /// WCAG relative luminance of the colour as it lands in sRGB.
+    var luminance: Double {
+        func linear(_ channel: Double) -> Double {
+            channel <= 0.03928 ? channel / 12.92 : pow((channel + 0.055) / 1.055, 2.4)
+        }
+        let (r, g, b) = components
+        return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b)
+    }
+
+    /// WCAG contrast ratio against `other`, from 1 up to 21.
+    func contrast(with other: OKLCH) -> Double {
+        let lighter = max(luminance, other.luminance)
+        let darker = min(luminance, other.luminance)
+        return (lighter + 0.05) / (darker + 0.05)
+    }
+
+    /// Lowercase `#rrggbb`.
+    var hex: String {
+        let (r, g, b) = components
+        return String(format: "#%02x%02x%02x", Int((r * 255).rounded()), Int((g * 255).rounded()), Int((b * 255).rounded()))
+    }
 }
 
 /// Card shapes, named for what they're for.
