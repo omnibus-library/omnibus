@@ -182,6 +182,9 @@ pub struct BookRequest {
     pub updated_at: i64,
     /// How much of the download is done, 0 to 1, once `state` is `on_its_way`.
     pub progress: Option<f64>,
+    /// While `on_its_way`, when the download client expects the download to finish, in Unix
+    /// seconds. Null when it can't tell.
+    pub expected_done_at: Option<i64>,
     /// While `cancelled`, when the download is told to stop, in Unix seconds; the request can
     /// be undone until then. Null once it has stopped, and for a request never cancelled.
     pub cancel_at: Option<i64>,

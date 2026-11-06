@@ -18,7 +18,7 @@ const DOWNLOADING: &str = "(state = 'on_its_way' AND (progress IS NULL OR progre
 const NOW: &str = "strftime('%s', 'now')";
 
 const COLUMNS: &str = "id, book_uuid, user_id, kind, state, stuck_reason, stuck_detail, \
-                       chosen_result_id, client_tag, import_key, remove_tag, remove_since, progress, moved_at, cancel_at, cancelled_by, \
+                       chosen_result_id, client_tag, import_key, remove_tag, remove_since, progress, moved_at, expected_done_at, cancel_at, cancelled_by, \
                        prior_state, note, created_at, updated_at";
 
 /// Why a request could not be recorded or changed.
@@ -63,6 +63,8 @@ pub struct RequestRow {
     pub progress: Option<f64>,
     /// When the download last gained bytes, in Unix seconds.
     pub moved_at: Option<i64>,
+    /// When the client expects the download to finish, in Unix seconds.
+    pub expected_done_at: Option<i64>,
     /// When the client is told to remove the download, in Unix seconds.
     pub cancel_at: Option<i64>,
     pub cancelled_by: Option<i64>,
@@ -132,6 +134,7 @@ fn row_to_request(row: &SqliteRow) -> Result<RequestRow, sqlx::Error> {
         remove_since: row.try_get("remove_since")?,
         progress: row.try_get("progress")?,
         moved_at: row.try_get("moved_at")?,
+        expected_done_at: row.try_get("expected_done_at")?,
         cancel_at: row.try_get("cancel_at")?,
         cancelled_by: row.try_get("cancelled_by")?,
         prior_state: prior
@@ -418,7 +421,7 @@ pub use change::{cancel, swap, undo_cancel, CANCEL_GRACE_SECS};
 pub use download::{
     awaiting_add, awaiting_import, begin_download, claim_due_cancels, downloading, finish_removal,
     has_download_work, mark_on_its_way, mark_ready, mark_removal_seen, mark_stuck,
-    pending_removals, record_progress, set_import_key, unix_now,
+    pending_removals, record_expected_done_at, record_progress, set_import_key, unix_now,
 };
 pub use list::{list, ListFilter, Listed};
 

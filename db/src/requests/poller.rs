@@ -242,10 +242,30 @@ async fn follow_downloads(
         match judge(&row, status.as_ref(), now) {
             Verdict::Wait => {}
             Verdict::Progress(p) => store::record_progress(pool, row.id, pick, p, now).await?,
-            Verdict::Stopped(why) => store::mark_stuck(pool, row.id, pick, STOPPED, why).await?,
+            Verdict::Stopped(why) => {
+                store::mark_stuck(pool, row.id, pick, STOPPED, why).await?;
+                continue;
+            }
+        }
+        if let Some(status) = &status {
+            let done_at = expected_done_at(status, now);
+            if done_at != row.expected_done_at {
+                store::record_expected_done_at(pool, row.id, pick, done_at).await?;
+            }
         }
     }
     Ok(())
+}
+
+/// qBittorrent's `eta` for a download it can't time.
+const NO_ETA: i64 = 8_640_000;
+
+/// When the client expects `status`'s download to finish, from `now`; `None` when it can't say.
+fn expected_done_at(status: &TorrentStatus, now: i64) -> Option<i64> {
+    status
+        .eta
+        .filter(|eta| (0..NO_ETA).contains(eta))
+        .map(|eta| now + eta)
 }
 
 /// What the client's answer for `row`'s download (`None`: it has none) means at `now`.

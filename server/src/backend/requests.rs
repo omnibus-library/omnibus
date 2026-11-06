@@ -122,6 +122,7 @@ fn summary(row: RequestRow, is_admin: bool) -> BookRequest {
         stuck_detail: row.stuck_detail.filter(|_| is_admin),
         chosen_result_id: row.chosen_result_id,
         progress: row.progress,
+        expected_done_at: row.expected_done_at,
         cancel_at: row.cancel_at,
         cancelled_by: row.cancelled_by,
         note: row.note,

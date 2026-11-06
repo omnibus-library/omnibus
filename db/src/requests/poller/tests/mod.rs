@@ -125,6 +125,33 @@ mod poll_once {
         }
 
         #[tokio::test]
+        async fn records_when_the_client_expects_the_download_to_finish() {
+            let pool = pool().await;
+            let id = on_its_way(&pool, "ada", 0.4, NOW - 60).await;
+            let client = StubClient::new()
+                .with_status(&tag(id), 0.55, "downloading")
+                .with_eta(&tag(id), 180);
+
+            tick(&pool, &client, NOW).await;
+
+            assert_eq!(row(&pool, id).await.expected_done_at, Some(NOW + 180));
+        }
+
+        #[tokio::test]
+        async fn forgets_the_finish_time_once_the_client_cannot_tell() {
+            let pool = pool().await;
+            let id = on_its_way(&pool, "ada", 0.4, NOW - 60).await;
+            update(&pool, id, &format!("expected_done_at = {}", NOW + 30)).await;
+            let client = StubClient::new()
+                .with_status(&tag(id), 0.4, "stalledDL")
+                .with_eta(&tag(id), 8_640_000);
+
+            tick(&pool, &client, NOW).await;
+
+            assert_eq!(row(&pool, id).await.expected_done_at, None);
+        }
+
+        #[tokio::test]
         async fn keeps_waiting_while_a_download_with_no_peers_is_inside_the_stall_window() {
             let pool = pool().await;
             let id = on_its_way(&pool, "ada", 0.4, NOW - STALL_SECS).await;

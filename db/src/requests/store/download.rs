@@ -198,6 +198,26 @@ pub async fn record_progress(
     Ok(())
 }
 
+/// Record when the client expects the download of request `id`'s pick `chosen` to finish
+/// (`None`: it can't tell), while it is on its way.
+pub async fn record_expected_done_at(
+    pool: &SqlitePool,
+    id: i64,
+    chosen: Option<i64>,
+    expected_done_at: Option<i64>,
+) -> Result<(), RequestError> {
+    sqlx::query(
+        "UPDATE book_requests SET expected_done_at = ?
+         WHERE id = ? AND state = 'on_its_way' AND chosen_result_id = ?",
+    )
+    .bind(expected_done_at)
+    .bind(id)
+    .bind(chosen)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 /// End a request's pick `chosen`, picked or downloading, as stuck for `reason`. `detail` is
 /// for admins.
 pub async fn mark_stuck(
