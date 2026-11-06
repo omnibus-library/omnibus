@@ -119,3 +119,33 @@ mod offer {
         assert_eq!(offer(&pool, &row).await.unwrap(), None);
     }
 }
+
+mod settle {
+    use super::*;
+
+    #[tokio::test]
+    async fn clears_the_candidate_it_was_given() {
+        let _covers = CoversTempDir::new("cover_settle");
+        let pool = pool().await;
+        let row = ready_request(&pool, (20, 30), Some((40, 60))).await;
+        let candidate = row.cover_candidate.clone().unwrap();
+
+        settle(&pool, row.id, &candidate).await.unwrap();
+
+        let after = store::get(&pool, row.id).await.unwrap().unwrap();
+        assert_eq!(after.cover_candidate, None);
+    }
+
+    #[tokio::test]
+    async fn refuses_with_wrong_state_once_the_candidate_is_gone() {
+        let _covers = CoversTempDir::new("cover_settle_twice");
+        let pool = pool().await;
+        let row = ready_request(&pool, (20, 30), Some((40, 60))).await;
+        let candidate = row.cover_candidate.clone().unwrap();
+        settle(&pool, row.id, &candidate).await.unwrap();
+
+        let again = settle(&pool, row.id, &candidate).await;
+
+        assert!(matches!(again, Err(RequestError::WrongState)));
+    }
+}

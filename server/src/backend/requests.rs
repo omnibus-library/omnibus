@@ -9,6 +9,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use axum::{
+    body::Bytes,
     extract::{FromRequestParts, Path, Query, State},
     http::{request::Parts, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
@@ -23,13 +24,13 @@ use omnibus_db::{
     },
 };
 use omnibus_shared::{
-    BookRequest, ChooseVersion, FileBytes, RequestKind, RequestListQuery, RequestListing, RequestState,
-    StartRequest, StuckReason,
+    BookRequest, ChooseVersion, FileBytes, RequestKind, RequestListQuery, RequestListing,
+    RequestState, StartRequest, StuckReason,
 };
 
 use crate::auth::AuthUser;
 
-use super::{internal, AppState};
+use super::{internal, overrides, AppState};
 
 /// Requests a reader may start (or retry) in [`START_WINDOW`].
 const MAX_STARTS: usize = 10;
@@ -403,6 +404,115 @@ pub(super) async fn get_request_cover(
     match cover::candidate_cover(&row).await {
         Some((mime, bytes)) => super::covers::image_response(&headers, &mime, bytes),
         None => (StatusCode::NOT_FOUND, "no cover on offer").into_response(),
+    }
+}
+
+/// Use the downloaded cover
+///
+/// Makes the cover the finished download brought the book's cover, the way uploading one
+/// does: it shows on every device, and a synced Kobo fetches it on its next sync. Only a
+/// `ready` request whose offer is still on (`cover_offer` in the request) takes it, and the
+/// offer is gone afterwards. Only the reader who made the request, or an admin, can do this.
+#[utoipa::path(
+    post,
+    path = "/api/requests/{id}/cover",
+    tag = "Requests",
+    operation_id = "take_request_cover",
+    params(("id" = i64, Path, description = "The request's id.")),
+    responses(
+        (status = 200, description = "The book has the downloaded cover; the offer is gone.", body = BookRequest),
+        (status = 401, description = "You aren't signed in."),
+        (status = 403, description = "Your account can't make requests, or the request is another reader's."),
+        (status = 404, description = "Book requests are off on this server, or there is no such request."),
+        (status = 409, description = "No cover is on offer: it was taken or kept, or the downloaded one is not sharper."),
+    ),
+)]
+pub(super) async fn post_take_request_cover(
+    RequestsUser(user): RequestsUser,
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Response {
+    let row = match own_request(&state, &user, id).await {
+        Ok(row) => row,
+        Err(res) => return res,
+    };
+    let nothing = || (StatusCode::CONFLICT, "no cover is on offer").into_response();
+    match cover::offer(state.pool(), &row).await {
+        Ok(Some(_)) => {}
+        Ok(None) => return nothing(),
+        Err(e) => return internal("read request cover offer", e),
+    }
+    let (Some(candidate), Some((mime, bytes))) = (
+        row.cover_candidate.clone(),
+        cover::candidate_cover(&row).await,
+    ) else {
+        return nothing();
+    };
+    match cover::settle(state.pool(), id, &candidate).await {
+        Ok(()) => {}
+        Err(RequestError::WrongState) => return nothing(),
+        Err(e) => return internal("settle request cover", e),
+    }
+    if let Err(e) =
+        overrides::persist_cover(&state, &row.book_uuid, user.id, mime, Bytes::from(bytes)).await
+    {
+        // The old cover stands, so the offer must too.
+        if let Err(restore) = cover::record_candidate(state.pool(), id, &candidate).await {
+            tracing::error!(error = %restore, request = id, "restoring a cover offer");
+        }
+        return internal(e.context, e.detail);
+    }
+    match db::resolve_book_id_by_uuid(state.pool(), &row.book_uuid).await {
+        Ok(Some(book_id)) => {
+            let thumbs =
+                tokio::task::spawn_blocking(move || db::thumbs::invalidate_thumbs(book_id));
+            if let Err(e) = thumbs.await {
+                return internal("spawn_blocking(invalidate_thumbs)", e);
+            }
+        }
+        Ok(None) => {}
+        Err(e) => return internal("resolve requested book", e),
+    }
+    answer(&state, id, &user).await
+}
+
+/// Keep the book's cover
+///
+/// Turns the downloaded cover down: the book keeps the cover it has, and the offer is gone
+/// for good. Only the reader who made the request, or an admin, can do this.
+#[utoipa::path(
+    delete,
+    path = "/api/requests/{id}/cover",
+    tag = "Requests",
+    operation_id = "keep_request_cover",
+    params(("id" = i64, Path, description = "The request's id.")),
+    responses(
+        (status = 200, description = "The offer is gone.", body = BookRequest),
+        (status = 401, description = "You aren't signed in."),
+        (status = 403, description = "Your account can't make requests, or the request is another reader's."),
+        (status = 404, description = "Book requests are off on this server, or there is no such request."),
+        (status = 409, description = "No cover is on offer: it was already taken or kept."),
+    ),
+)]
+pub(super) async fn delete_keep_request_cover(
+    RequestsUser(user): RequestsUser,
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Response {
+    let row = match own_request(&state, &user, id).await {
+        Ok(row) => row,
+        Err(res) => return res,
+    };
+    let settled = match &row.cover_candidate {
+        Some(candidate) => cover::settle(state.pool(), id, candidate).await,
+        None => Err(RequestError::WrongState),
+    };
+    match settled {
+        Ok(()) => answer(&state, id, &user).await,
+        Err(RequestError::WrongState) => {
+            (StatusCode::CONFLICT, "no cover is on offer").into_response()
+        }
+        Err(e) => internal("settle request cover", e),
     }
 }
 

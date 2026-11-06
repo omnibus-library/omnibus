@@ -26,6 +26,22 @@ pub async fn record_candidate(
     Ok(())
 }
 
+/// Clear request `id`'s candidate, but only while it is still `candidate`, so of two racing
+/// settles one wins. [`RequestError::WrongState`] when it already was cleared.
+pub async fn settle(pool: &SqlitePool, id: i64, candidate: &str) -> Result<(), RequestError> {
+    let cleared = sqlx::query(
+        "UPDATE book_requests SET cover_candidate = NULL WHERE id = ? AND cover_candidate = ?",
+    )
+    .bind(id)
+    .bind(candidate)
+    .execute(pool)
+    .await?;
+    if cleared.rows_affected() == 0 {
+        return Err(RequestError::WrongState);
+    }
+    Ok(())
+}
+
 /// The candidate's cover as `(mime, bytes)`, or `None` when none is recorded or its file is gone.
 pub async fn candidate_cover(row: &RequestRow) -> Option<(String, Vec<u8>)> {
     let uuid = row.cover_candidate.clone()?;
@@ -40,7 +56,10 @@ pub async fn candidate_cover(row: &RequestRow) -> Option<(String, Vec<u8>)> {
 
 /// The candidate cover and the one the book shows (an uploaded cover first), when the request
 /// is `ready` and the candidate has strictly more pixels.
-pub async fn offer(pool: &SqlitePool, row: &RequestRow) -> Result<Option<CoverOffer>, RequestError> {
+pub async fn offer(
+    pool: &SqlitePool,
+    row: &RequestRow,
+) -> Result<Option<CoverOffer>, RequestError> {
     if row.state != RequestState::Ready {
         return Ok(None);
     }
@@ -61,8 +80,8 @@ pub async fn offer(pool: &SqlitePool, row: &RequestRow) -> Result<Option<CoverOf
     else {
         return Ok(None);
     };
-    let larger = u64::from(width) * u64::from(height)
-        > u64::from(current_width) * u64::from(current_height);
+    let larger =
+        u64::from(width) * u64::from(height) > u64::from(current_width) * u64::from(current_height);
     Ok(larger.then_some(CoverOffer {
         width,
         height,

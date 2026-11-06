@@ -60,7 +60,14 @@ mod get_request {
         let (ada, token) = requester(&pool, "ada").await;
         let (id, _) = ready_with_candidate(&pool, ada, (20, 30), (40, 60)).await;
 
-        let res = send(&app, "GET", &format!("/api/requests/{id}"), Some(&token), None).await;
+        let res = send(
+            &app,
+            "GET",
+            &format!("/api/requests/{id}"),
+            Some(&token),
+            None,
+        )
+        .await;
 
         assert_eq!(res.status(), StatusCode::OK);
         let body: BookRequest = body_json(res).await;
@@ -156,14 +163,215 @@ mod get_request_cover {
         let (app, _, pool) = fixture_book_requests(true).await;
         let (ada, token) = requester(&pool, "ada").await;
         let (id, _) = ready_with_candidate(&pool, ada, (20, 30), (40, 60)).await;
-        let candidate = store::get(&pool, id).await.unwrap().unwrap().cover_candidate;
-        std::fs::remove_file(
-            omnibus_db::covers_dir().join(format!("{}.png", candidate.unwrap())),
-        )
-        .unwrap();
+        let candidate = store::get(&pool, id)
+            .await
+            .unwrap()
+            .unwrap()
+            .cover_candidate;
+        std::fs::remove_file(omnibus_db::covers_dir().join(format!("{}.png", candidate.unwrap())))
+            .unwrap();
 
         let res = send(&app, "GET", &cover_uri(id), Some(&token), None).await;
 
         assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    }
+}
+
+/// The bytes `GET /api/covers/{uuid}` serves `token`.
+async fn served_cover(app: &Router, token: &str, uuid: &str) -> Vec<u8> {
+    let res = send(
+        app,
+        "GET",
+        &format!("/api/covers/{uuid}"),
+        Some(token),
+        None,
+    )
+    .await;
+    assert_eq!(res.status(), StatusCode::OK);
+    to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap()
+        .to_vec()
+}
+
+async fn read_request(app: &Router, token: &str, id: i64) -> BookRequest {
+    let res = send(
+        app,
+        "GET",
+        &format!("/api/requests/{id}"),
+        Some(token),
+        None,
+    )
+    .await;
+    body_json(res).await
+}
+
+mod post_take_request_cover {
+    use super::*;
+
+    #[tokio::test]
+    async fn replaces_the_books_cover_with_the_download_s_and_moves_its_validators() {
+        let _covers = CoversDirGuard::new("request_cover_take");
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let (ada, token) = requester(&pool, "ada").await;
+        let (id, wished) = ready_with_candidate(&pool, ada, (20, 30), (40, 60)).await;
+        sqlx::query("UPDATE books SET last_modified = 1 WHERE uuid = ?")
+            .bind(&wished)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let res = send(&app, "POST", &cover_uri(id), Some(&token), None).await;
+
+        assert_eq!(res.status(), StatusCode::OK);
+        let body: BookRequest = body_json(res).await;
+        assert_eq!(body.cover_offer, None);
+        let taken = solid_color_png(10, 10, 200, 40, 60);
+        assert_eq!(served_cover(&app, &token, &wished).await, taken);
+        let (flagged, modified): (i64, i64) = sqlx::query_as(
+            "SELECT mo.has_cover_override, b.last_modified
+               FROM books b JOIN metadata_overrides mo ON mo.book_uuid = b.uuid
+              WHERE b.uuid = ?",
+        )
+        .bind(&wished)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(flagged, 1);
+        assert!(modified > 1);
+        assert_eq!(read_request(&app, &token, id).await.cover_offer, None);
+    }
+
+    #[tokio::test]
+    async fn lets_an_admin_take_another_readers_offer() {
+        let _covers = CoversDirGuard::new("request_cover_take_admin");
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let (ada, _) = requester(&pool, "ada").await;
+        let admin = admin_token(&pool).await;
+        let (id, _) = ready_with_candidate(&pool, ada, (20, 30), (40, 60)).await;
+
+        let res = send(&app, "POST", &cover_uri(id), Some(&admin), None).await;
+
+        assert_eq!(res.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn refuses_another_reader_and_leaves_the_offer() {
+        let _covers = CoversDirGuard::new("request_cover_take_other");
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let (ada, ada_token) = requester(&pool, "ada").await;
+        let (_, grace) = requester(&pool, "grace").await;
+        let (id, _) = ready_with_candidate(&pool, ada, (20, 30), (40, 60)).await;
+
+        let res = send(&app, "POST", &cover_uri(id), Some(&grace), None).await;
+
+        assert_eq!(res.status(), StatusCode::FORBIDDEN);
+        assert!(read_request(&app, &ada_token, id)
+            .await
+            .cover_offer
+            .is_some());
+    }
+
+    #[tokio::test]
+    async fn answers_404_for_a_request_that_does_not_exist() {
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let (_, token) = requester(&pool, "ada").await;
+
+        let res = send(&app, "POST", &cover_uri(999), Some(&token), None).await;
+
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn answers_409_when_nothing_is_on_offer() {
+        let _covers = CoversDirGuard::new("request_cover_take_409");
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let (ada, token) = requester(&pool, "ada").await;
+        let (taken, _) = ready_with_candidate(&pool, ada, (20, 30), (40, 60)).await;
+        let (kept, _) = ready_with_candidate(&pool, ada, (20, 30), (40, 60)).await;
+        let (stuck, _) = ready_with_candidate(&pool, ada, (20, 30), (40, 60)).await;
+        let (equal, _) = ready_with_candidate(&pool, ada, (20, 30), (30, 20)).await;
+        sqlx::query("UPDATE book_requests SET state = 'stuck' WHERE id = ?")
+            .bind(stuck)
+            .execute(&pool)
+            .await
+            .unwrap();
+        send(&app, "POST", &cover_uri(taken), Some(&token), None).await;
+        send(&app, "DELETE", &cover_uri(kept), Some(&token), None).await;
+
+        for id in [taken, kept, stuck, equal] {
+            let res = send(&app, "POST", &cover_uri(id), Some(&token), None).await;
+            assert_eq!(res.status(), StatusCode::CONFLICT, "request {id}");
+        }
+    }
+
+    #[tokio::test]
+    async fn keeps_the_offer_and_the_old_cover_when_the_new_one_cannot_be_stored() {
+        let _covers = CoversDirGuard::new("request_cover_take_fails");
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let (ada, token) = requester(&pool, "ada").await;
+        let (id, wished) = ready_with_candidate(&pool, ada, (20, 30), (40, 60)).await;
+        // A directory where the override file goes makes the write fail.
+        std::fs::create_dir(omnibus_db::covers_dir().join(format!("override-{wished}.png")))
+            .unwrap();
+
+        let res = send(&app, "POST", &cover_uri(id), Some(&token), None).await;
+
+        assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert!(read_request(&app, &token, id).await.cover_offer.is_some());
+        let old = solid_color_png(10, 10, 200, 20, 30);
+        assert_eq!(served_cover(&app, &token, &wished).await, old);
+    }
+}
+
+mod delete_keep_request_cover {
+    use super::*;
+
+    #[tokio::test]
+    async fn dismisses_the_offer_and_leaves_the_books_cover_alone() {
+        let _covers = CoversDirGuard::new("request_cover_keep");
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let (ada, token) = requester(&pool, "ada").await;
+        let (id, wished) = ready_with_candidate(&pool, ada, (20, 30), (40, 60)).await;
+
+        let res = send(&app, "DELETE", &cover_uri(id), Some(&token), None).await;
+
+        assert_eq!(res.status(), StatusCode::OK);
+        let body: BookRequest = body_json(res).await;
+        assert_eq!(body.cover_offer, None);
+        let old = solid_color_png(10, 10, 200, 20, 30);
+        assert_eq!(served_cover(&app, &token, &wished).await, old);
+        assert_eq!(read_request(&app, &token, id).await.cover_offer, None);
+    }
+
+    #[tokio::test]
+    async fn lets_an_admin_keep_and_refuses_another_reader() {
+        let _covers = CoversDirGuard::new("request_cover_keep_who");
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let (ada, _) = requester(&pool, "ada").await;
+        let (_, grace) = requester(&pool, "grace").await;
+        let admin = admin_token(&pool).await;
+        let (id, _) = ready_with_candidate(&pool, ada, (20, 30), (40, 60)).await;
+
+        let other = send(&app, "DELETE", &cover_uri(id), Some(&grace), None).await;
+        let by_admin = send(&app, "DELETE", &cover_uri(id), Some(&admin), None).await;
+
+        assert_eq!(other.status(), StatusCode::FORBIDDEN);
+        assert_eq!(by_admin.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn answers_409_once_the_offer_is_settled_and_404_for_no_such_request() {
+        let _covers = CoversDirGuard::new("request_cover_keep_409");
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let (ada, token) = requester(&pool, "ada").await;
+        let (id, _) = ready_with_candidate(&pool, ada, (20, 30), (40, 60)).await;
+        send(&app, "DELETE", &cover_uri(id), Some(&token), None).await;
+
+        let again = send(&app, "DELETE", &cover_uri(id), Some(&token), None).await;
+        let missing = send(&app, "DELETE", &cover_uri(999), Some(&token), None).await;
+
+        assert_eq!(again.status(), StatusCode::CONFLICT);
+        assert_eq!(missing.status(), StatusCode::NOT_FOUND);
     }
 }

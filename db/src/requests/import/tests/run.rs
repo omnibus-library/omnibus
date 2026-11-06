@@ -265,7 +265,12 @@ mod import_finished {
         fn epub_with_cover(width: u32, height: u32) -> Vec<u8> {
             let manifest = r#"<item id="cv" href="cover.png" media-type="image/png" properties="cover-image"/>"#;
             let png = solid_color_png(200, 10, 10, width, height);
-            assemble_test_epub(&[("c1.xhtml", "<p>hi</p>")], manifest, "", &[("cover.png", png)])
+            assemble_test_epub(
+                &[("c1.xhtml", "<p>hi</p>")],
+                manifest,
+                "",
+                &[("cover.png", png)],
+            )
         }
 
         /// A wished book whose cover is a 20 x 30 PNG.
@@ -296,11 +301,7 @@ mod import_finished {
             let env = env().await;
             let wished = wish_with_small_cover(&env).await;
             let request = finished_request(&env, &wished, RequestKind::Ebook).await;
-            let client = downloaded(
-                &env,
-                &request,
-                &[("Dune.epub", &epub_with_cover(40, 60))],
-            );
+            let client = downloaded(&env, &request, &[("Dune.epub", &epub_with_cover(40, 60))]);
 
             run(&env, &client).await;
 
@@ -318,11 +319,7 @@ mod import_finished {
             let wished = wish_with_small_cover(&env).await;
             let request = finished_request(&env, &wished, RequestKind::Ebook).await;
             update(&env.pool, request.id, "offers_cover = 0").await;
-            let client = downloaded(
-                &env,
-                &request,
-                &[("Dune.epub", &epub_with_cover(40, 60))],
-            );
+            let client = downloaded(&env, &request, &[("Dune.epub", &epub_with_cover(40, 60))]);
 
             run(&env, &client).await;
 
