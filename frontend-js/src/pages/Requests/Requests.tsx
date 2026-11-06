@@ -1,90 +1,107 @@
 import { useQuery } from "@tanstack/react-query";
-import { useRef, useState } from "react";
-import { Link } from "react-router";
+import { useEffect } from "react";
+import { Link, useSearchParams } from "react-router";
 import { type RequestListing, requestsQuery, thumbUrl } from "../../api";
 import { Button } from "../../components/Button/Button";
 import { Cover } from "../../components/Cover/Cover";
-import { BusyLabel, RowSkeletons } from "../../components/Loading/Loading";
+import { RowSkeletons } from "../../components/Loading/Loading";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
 import { ToastProvider } from "../../components/Toast/Toast";
-import { ago, nowSecs } from "../../format";
 import { useCurrentUser } from "../../session";
+import { useMediaQuery } from "../../useMediaQuery";
+import { RequestDossier } from "../BookRequest/BookRequest";
+import { FROM_REQUESTS, requestPath } from "../BookRequest/requestView";
+import { NotFound } from "../NotFound/NotFound";
 import {
-  canActOn,
-  isCancellable,
-  matchesBook,
-  requestFacts,
-  requestPath,
-  swapFacts,
-} from "../BookRequest/requestView";
-import { useCancel } from "../BookRequest/useRequestActions";
+  countsLine,
+  groupRequests,
+  itemLine,
+  type RequestGroup,
+  type RequestGroupKey,
+} from "./requestGroups";
 import "./Requests.css";
 
-/** One request: its book, where it stands from what was recorded, who asked and when, and Cancel for its maker or an admin. */
-function RequestRow({
+const PHONE = "(max-width: 720px)";
+
+/** The address that selects `uuid`'s book in the list. */
+const selectPath = (uuid: string) =>
+  `/requests?book=${encodeURIComponent(uuid)}`;
+
+/** One book: its cover, title and where it stands, with a dot in its group's colour. On a phone it opens the book's request page; otherwise it selects the book. */
+function Item({
   listing,
-  now,
+  group,
+  selected,
+  phone,
 }: {
   listing: RequestListing;
-  now: number;
+  group: RequestGroupKey;
+  selected: boolean;
+  phone: boolean;
 }) {
-  const viewer = useCurrentUser();
-  const { request, book } = listing;
-  const title = useRef<HTMLAnchorElement>(null);
-  const cancel = useCancel(request.id, () => title.current?.focus());
-  const path = requestPath(book.uuid, request.id);
+  const { book, request } = listing;
   return (
-    <li
-      className="rqs-row"
-      data-testid="requests-row"
-      data-state={request.state}
-    >
-      <Link to={path} className="rqs-cover" tabIndex={-1} aria-hidden="true">
-        <Cover book={book} src={book.hasCover ? thumbUrl(book.uuid) : null} />
+    <li>
+      <Link
+        to={phone ? requestPath(book.uuid, request.id) : selectPath(book.uuid)}
+        state={phone ? FROM_REQUESTS : undefined}
+        className="rqs-item"
+        aria-current={selected ? "true" : undefined}
+        data-testid="requests-item"
+        data-group={group}
+      >
+        <span className="rqs-cover" aria-hidden="true">
+          <Cover book={book} src={book.hasCover ? thumbUrl(book.uuid) : null} />
+        </span>
+        <span className="rqs-item-text">
+          <span className="rqs-item-title">{book.title}</span>
+          <span className="rqs-item-line" data-testid="requests-item-line">
+            {itemLine(listing, group)}
+          </span>
+        </span>
+        <span className="rqs-dot" data-group={group} aria-hidden="true" />
+        {phone && (
+          <span className="rqs-chevron" aria-hidden="true">
+            ›
+          </span>
+        )}
       </Link>
-      <div className="rqs-book">
-        <Link ref={title} to={path} className="rqs-title">
-          {book.title}
-        </Link>
-        {book.authors.length > 0 && (
-          <p className="rqs-author">{book.authors.join(", ")}</p>
-        )}
-      </div>
-      <div className="rqs-status">
-        <p className="rqs-facts">
-          {requestFacts(listing, viewer.id)} · {ago(now, request.updatedAt)}
-        </p>
-        {swapFacts(listing).map((swap) => (
-          <p key={swap.id} className="rqs-swap">
-            {swap.text}
-          </p>
-        ))}
-      </div>
-      <p className="rqs-who">
-        <span className="rqs-name">{listing.requesterName}</span>
-        <span className="rqs-when">{ago(now, request.createdAt)}</span>
-      </p>
-      <div className="rqs-actions">
-        {canActOn(viewer, request) && isCancellable(request) && (
-          <Button
-            variant="ghost"
-            size="sm"
-            data-testid="requests-cancel"
-            aria-label={`Cancel the request for ${book.title}`}
-            aria-busy={cancel.isPending}
-            disabled={cancel.isPending}
-            onClick={() => cancel.mutate()}
-          >
-            <BusyLabel
-              busy={cancel.isPending}
-              label="Cancel"
-              busyLabel="Cancelling…"
-            />
-          </Button>
-        )}
-      </div>
     </li>
   );
+}
+
+function Groups({
+  groups,
+  selected,
+  phone,
+}: {
+  groups: readonly RequestGroup[];
+  selected: string | undefined;
+  phone: boolean;
+}) {
+  return groups.map((group) => (
+    <section
+      key={group.key}
+      className="rqs-group"
+      aria-labelledby={`rqs-group-${group.key}`}
+      data-testid={`requests-group-${group.key}`}
+    >
+      <h2 id={`rqs-group-${group.key}`} className="rqs-group-label">
+        {group.label}
+      </h2>
+      <ul className="rqs-items">
+        {group.items.map((listing) => (
+          <Item
+            key={listing.book.uuid}
+            listing={listing}
+            group={group.key}
+            selected={!phone && listing.book.uuid === selected}
+            phone={phone}
+          />
+        ))}
+      </ul>
+    </section>
+  ));
 }
 
 function Empty() {
@@ -92,87 +109,110 @@ function Empty() {
     <div className="rqs-empty" data-testid="requests-empty">
       <h2 className="rqs-empty-title">No requests yet</h2>
       <p className="rqs-empty-body">
-        When anyone in the household requests a book the library lacks, from
-        their wishlist or the book’s page, it shows up here.
+        A book anyone in the household asks for shows up here.
       </p>
     </div>
   );
 }
 
-function List({ listings }: { listings: readonly RequestListing[] }) {
-  const [filter, setFilter] = useState("");
-  const shown = listings.filter((l) => matchesBook(l, filter));
-  const now = nowSecs();
+/** The selected book's request: the one its item is filed under, or, for a book whose requests were all cancelled while it was selected, the one that changed last. */
+function selectedListing(
+  groups: readonly RequestGroup[],
+  listings: readonly RequestListing[],
+  wanted: string | null,
+) {
+  const items = groups.flatMap((g) => g.items);
+  const lastChanged = listings
+    .filter((l) => l.book.uuid === wanted)
+    .reduce<RequestListing | undefined>(
+      (last, l) =>
+        last === undefined || l.request.updatedAt > last.request.updatedAt
+          ? l
+          : last,
+      undefined,
+    );
+  return items.find((l) => l.book.uuid === wanted) ?? lastChanged ?? items[0];
+}
+
+function RequestsPage() {
+  const viewer = useCurrentUser();
+  const requests = useQuery(requestsQuery);
+  const phone = useMediaQuery(PHONE);
+  const [params, setParams] = useSearchParams();
+  const wanted = params.get("book");
+  const listings = requests.data;
+  const groups = listings ? groupRequests(listings, viewer) : [];
+  const selected = listings
+    ? selectedListing(groups, listings, wanted)
+    : undefined;
+  const first = groups[0]?.items[0]?.book.uuid;
+  // Name the first book in the address, so the pane stays on it once it is cancelled.
+  useEffect(() => {
+    if (!phone && wanted === null && first !== undefined) {
+      setParams({ book: first }, { replace: true });
+    }
+  }, [phone, wanted, first, setParams]);
+
   return (
-    <>
-      <label className="rqs-filter">
-        <input
-          type="search"
-          placeholder="Filter by book"
-          aria-label="Filter by book"
-          value={filter}
-          data-testid="requests-filter"
-          onChange={(e) => setFilter(e.target.value)}
-        />
-      </label>
-      {shown.length === 0 ? (
-        <p className="rqs-no-match" data-testid="requests-no-match">
-          No requests for a book matching “{filter.trim()}”.
-        </p>
-      ) : (
-        <>
-          <div className="rqs-cols" aria-hidden="true">
-            <span>Book</span>
-            <span>Where it stands</span>
-            <span>Requested by</span>
-          </div>
-          <ul className="rqs-list">
-            {shown.map((listing) => (
-              <RequestRow
-                key={listing.request.id}
-                listing={listing}
-                now={now}
-              />
-            ))}
-          </ul>
-        </>
+    <div className="rqs-page" data-testid="requests-page">
+      <PageTitle page="Requests" />
+      <div className="rqs-list">
+        <header className="rqs-head">
+          <h1 className="rqs-heading">Requests</h1>
+          {groups.length > 0 && (
+            <p className="rqs-subline" data-testid="requests-counts">
+              {countsLine(groups)}
+            </p>
+          )}
+        </header>
+        {listings === undefined ? (
+          requests.isPending ? (
+            <>
+              <span className="ld-sr" role="status">
+                Gathering the requests
+              </span>
+              <RowSkeletons count={6} avatar={false} />
+            </>
+          ) : (
+            <div className="rqs-failure">
+              <p role="alert">Couldn’t read the requests.</p>
+              <Button size="sm" onClick={() => requests.refetch()}>
+                Try again
+              </Button>
+            </div>
+          )
+        ) : groups.length === 0 ? (
+          <Empty />
+        ) : (
+          <Groups
+            groups={groups}
+            selected={selected?.book.uuid}
+            phone={phone}
+          />
+        )}
+      </div>
+      {!phone && selected && (
+        <div className="rqs-pane">
+          <RequestDossier
+            key={selected.book.uuid}
+            uuid={selected.book.uuid}
+            id={selected.request.id}
+            variant="pane"
+          />
+        </div>
       )}
-    </>
+    </div>
   );
 }
 
-/** `/requests`: every reader's book requests, newest first, in every state, narrowed by the book filter. */
+/** `/requests`: every reader's book requests, one item per book grouped by where it stands, beside the selected book's request; a phone gets the list alone. */
 export function Requests() {
-  const requests = useQuery(requestsQuery);
+  const { requestsOn } = useCurrentUser();
+  // Off on this server: the route answers as if it were not there, and nothing is asked of it.
+  if (!requestsOn) return <NotFound />;
   return (
     <ToastProvider>
-      <PageTitle page="Requests" />
-      <div className="rqs-page" data-testid="requests-page">
-        <header className="rqs-head">
-          <h1 className="rqs-heading">Requests</h1>
-          <p className="rqs-subline">
-            Everyone’s requests, newest first. Anyone can see them; only the
-            reader who asked, or an admin, can cancel one.
-          </p>
-        </header>
-        {requests.isPending ? (
-          <>
-            <span className="ld-sr" role="status">
-              Gathering the requests
-            </span>
-            <RowSkeletons count={5} avatar={false} />
-          </>
-        ) : requests.isError ? (
-          <div className="rqs-failure">
-            <p role="alert">{requests.error.message}</p>
-            <Button onClick={() => requests.refetch()}>Try again</Button>
-          </div>
-        ) : requests.data.length === 0 ? (
-          <Empty />
-        ) : (
-          <List listings={requests.data} />
-        )}
-      </div>
+      <RequestsPage />
     </ToastProvider>
   );
 }

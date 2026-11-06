@@ -1,8 +1,10 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { Route, Routes } from "react-router";
-import { expect, waitFor } from "storybook/test";
+import { HttpResponse, http } from "msw";
+import { Route, Routes, useLocation } from "react-router";
+import { expect, waitFor, within } from "storybook/test";
 import { failing } from "../../testing/handlers";
 import {
+  aWireListing,
   aWireRequest,
   aWireVersion,
   HYPERION,
@@ -10,21 +12,40 @@ import {
   requestFake,
 } from "../../testing/requestHandlers";
 import { aWireBook, WIRE_ADA } from "../../testing/wire";
+import { BookRequest } from "../BookRequest/BookRequest";
+import { PHONE } from "../Wishlists/Wishlists.stories.shared";
 import { Requests } from "./Requests";
 
-const CARMILLA = aWireBook({
-  title: "Carmilla",
-  unique_identifier: "uuid-carmilla",
-  creators: [{ name: "Sheridan Le Fanu", role: null, file_as: null, id: 4 }],
-  formats: [],
-});
+const bookOf = (title: string, author: string) =>
+  aWireBook({
+    title,
+    unique_identifier: `uuid-${title.toLowerCase()}`,
+    creators: [{ name: author, role: null, file_as: null, id: 4 }],
+    formats: [],
+  });
+
+const CARMILLA = bookOf("Carmilla", "Sheridan Le Fanu");
+const DRACULA = bookOf("Dracula", "Bram Stoker");
+const DUNE = bookOf("Dune", "Frank Herbert");
+const BOOKS = [HYPERION, CARMILLA, DRACULA, DUNE];
 const EPUB = aWireVersion({ id: 11 });
 
 const NAMES = { 1: "Ada Lovelace", 2: "Grace Hopper" };
-const READER = { ...WIRE_ADA, is_admin: false, can_request: true };
+const READER = {
+  ...WIRE_ADA,
+  is_admin: false,
+  can_request: true,
+  book_requests: true,
+};
+const GRACE = { ...READER, id: 2, display_name: "Grace Hopper" };
 
-/** Ada's live request, Grace's live request and Grace's cancelled one, newest first by id. */
+/** Ada's pick to make on Dracula, Grace's download of Carmilla, Ada's search for Hyperion beside Grace's cancelled one, and a cancelled Dune. */
 const HOUSEHOLD = [
+  aWireRequest({
+    id: 2,
+    book_uuid: "uuid-dune",
+    state: "cancelled",
+  }),
   aWireRequest({ id: 3, user_id: 1, state: "looking" }),
   aWireRequest({
     id: 4,
@@ -40,20 +61,50 @@ const HOUSEHOLD = [
     user_id: 2,
     state: "cancelled",
     cancelled_by: 2,
+    updated_at: Date.UTC(2026, 9, 12, 12) / 1000,
     chosen_result_id: EPUB.id,
     progress: 0.1,
+    versions: [EPUB],
+  }),
+  aWireRequest({
+    id: 6,
+    user_id: 1,
+    book_uuid: "uuid-dracula",
+    state: "choose",
     versions: [EPUB],
   }),
 ];
 
 let fake: RequestFake = requestFake();
 
+/** Answers each book's own read. */
+const booksHandler = http.get("/api/ebooks/:uuid", ({ params }) => {
+  const book = BOOKS.find((b) => b.unique_identifier === params.uuid);
+  return book
+    ? HttpResponse.json(book)
+    : new HttpResponse(null, { status: 404 });
+});
+
+/** Where the router is, so a story can see what an item opened. */
+function Where() {
+  const { pathname, search } = useLocation();
+  return (
+    <output data-testid="where">
+      {pathname}
+      {search}
+    </output>
+  );
+}
+
 function Page() {
   return (
-    <Routes>
-      <Route path="/requests" element={<Requests />} />
-      <Route path="/books/:uuid/request" element={<h1>Request page</h1>} />
-    </Routes>
+    <>
+      <Routes>
+        <Route path="/requests" element={<Requests />} />
+        <Route path="/books/:uuid/request" element={<BookRequest />} />
+      </Routes>
+      <Where />
+    </>
   );
 }
 
@@ -63,108 +114,135 @@ const meta = {
   parameters: { path: "/requests", user: READER },
   beforeEach({ msw }) {
     fake = requestFake(HOUSEHOLD, {
-      books: [HYPERION, CARMILLA],
+      books: BOOKS,
       names: NAMES,
     });
-    msw.use(...fake.handlers);
+    msw.use(booksHandler, ...fake.handlers);
   },
 } satisfies Meta<typeof Page>;
 
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const Everyone: Story = {
-  play: async ({ canvas }) => {
-    const rows = await canvas.findAllByTestId("requests-row");
+/** Each group's label and its books' titles, in order. */
+async function groupsOn(canvas: ReturnType<typeof within>) {
+  await canvas.findAllByTestId("requests-item");
+  return canvas
+    .getAllByRole("heading", { level: 2 })
+    .filter((h: HTMLElement) => h.id.startsWith("rqs-group-"))
+    .map((heading: HTMLElement) => {
+      const section = heading.closest("section");
+      if (!section) throw new Error("a group label outside its group");
+      return [
+        heading.textContent,
+        within(section)
+          .getAllByTestId("requests-item")
+          .map(
+            (item: HTMLElement) =>
+              item.querySelector(".rqs-item-title")?.textContent,
+          ),
+      ];
+    });
+}
 
-    await expect(rows.map((r) => r.dataset.state)).toEqual([
-      "cancelled",
-      "on_its_way",
-      "looking",
+export const GroupsEachBookUnderWhereItStands: Story = {
+  play: async ({ canvas }) => {
+    await expect(await groupsOn(canvas)).toEqual([
+      ["Needs you", ["Dracula"]],
+      ["On its way", ["Carmilla"]],
+      ["Looking", ["Hyperion"]],
     ]);
-    const [cancelled, downloading] = rows;
-    await expect(cancelled).toHaveTextContent("Hyperion");
-    await expect(cancelled).toHaveTextContent("Grace Hopper");
-    await expect(cancelled).toHaveTextContent(
-      "Cancelled by Grace Hopper · EPUB · 2.4 MB · stopped at 10%",
+    await expect(canvas.getByTestId("requests-counts")).toHaveTextContent(
+      "3 books · 1 needs you",
     );
-    await expect(downloading).toHaveTextContent("Carmilla");
-    await expect(downloading).toHaveTextContent("On its way");
+    const lines = canvas.getAllByTestId("requests-item-line");
+    await expect(lines.map((line) => line.textContent)).toEqual([
+      "Ebook · choose a version",
+      "Ebook · on its way · 40%",
+      "Ebook · looking",
+    ]);
+  },
+};
+
+export const AnotherReadersPickIsStillLookingToYou: Story = {
+  parameters: { user: GRACE },
+  play: async ({ canvas }) => {
+    await expect(await groupsOn(canvas)).toEqual([
+      ["On its way", ["Carmilla"]],
+      ["Looking", ["Dracula", "Hyperion"]],
+    ]);
+  },
+};
+
+export const TheFirstBookIsSelectedAndNamedInTheAddress: Story = {
+  play: async ({ canvas }) => {
+    const pane = within(await canvas.findByTestId("requests-pane"));
+
     await expect(
-      canvas.getAllByRole("link", { name: "Hyperion" })[0],
-    ).toHaveAttribute("href", "/books/uuid-hyperion/request?id=5");
+      await pane.findByRole("heading", { level: 2, name: "Dracula" }),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(canvas.getByTestId("where")).toHaveTextContent(
+        "/requests?book=uuid-dracula",
+      ),
+    );
+    await expect(
+      canvas.getByRole("link", { name: /Dracula/, current: true }),
+    ).toBeInTheDocument();
   },
 };
 
-export const CancelShowsOnlyOnYourOwnLiveRequest: Story = {
+export const ThePaneNamesWhoAskedForTheSelectedBook: Story = {
+  parameters: { path: "/requests?book=uuid-carmilla" },
   play: async ({ canvas }) => {
-    await canvas.findAllByTestId("requests-row");
+    const pane = within(await canvas.findByTestId("requests-pane"));
 
-    const cancels = canvas.getAllByTestId("requests-cancel");
-    await expect(cancels).toHaveLength(1);
-    await expect(cancels[0]).toHaveAccessibleName(
-      "Cancel the request for Hyperion",
+    await expect(
+      await pane.findByTestId("request-requester"),
+    ).toHaveTextContent("requested by GH Grace Hopper");
+    await expect(pane.getByTestId("request-state")).toHaveTextContent(
+      "On its way",
     );
   },
 };
 
-export const AnAdminCanCancelEveryLiveRequest: Story = {
-  parameters: { user: { ...WIRE_ADA, is_admin: true } },
-  play: async ({ canvas }) => {
-    await canvas.findAllByTestId("requests-row");
-
-    await expect(canvas.getAllByTestId("requests-cancel")).toHaveLength(2);
-  },
-};
-
-export const CancellingFromTheListShowsItCancelledWithUndo: Story = {
+export const SelectingABookShowsItsRequestAndHistory: Story = {
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(
-      await canvas.findByRole("button", {
-        name: "Cancel the request for Hyperion",
-      }),
+      await canvas.findByRole("link", { name: /Hyperion/ }),
     );
 
     await waitFor(() =>
-      expect(
-        canvas.getAllByTestId("requests-row").map((r) => r.dataset.state),
-      ).toEqual(["cancelled", "on_its_way", "cancelled"]),
+      expect(canvas.getByTestId("where")).toHaveTextContent(
+        "/requests?book=uuid-hyperion",
+      ),
     );
+    const pane = within(canvas.getByTestId("requests-pane"));
     await expect(
-      await canvas.findByRole("button", { name: "Undo" }),
+      await pane.findByRole("heading", { level: 2, name: "Hyperion" }),
     ).toBeInTheDocument();
+    await expect(
+      await pane.findByTestId("request-history-row"),
+    ).toHaveTextContent("Cancelled by Grace Hopper · EPUB · 2.4 MB");
+  },
+};
+
+export const CancellingKeepsTheBookInThePaneWithItsUndo: Story = {
+  parameters: { path: "/requests?book=uuid-hyperion" },
+  play: async ({ canvas, userEvent }) => {
+    const pane = within(await canvas.findByTestId("requests-pane"));
+
+    await userEvent.click(await pane.findByRole("button", { name: "Cancel" }));
+
+    await waitFor(() =>
+      expect(canvas.queryByRole("link", { name: /Hyperion/ })).toBeNull(),
+    );
+    await expect(pane.getByTestId("request-state")).toHaveTextContent(
+      "Cancelled",
+    );
+    // The toast's Undo takes the keyboard's focus from the Cancel that is gone.
+    await expect(canvas.getByRole("button", { name: "Undo" })).toHaveFocus();
     await expect(fake.writes).toEqual([{ kind: "cancel", id: 3 }]);
-  },
-};
-
-export const BookFilter: Story = {
-  play: async ({ canvas, userEvent }) => {
-    await canvas.findAllByTestId("requests-row");
-
-    await userEvent.type(
-      canvas.getByRole("searchbox", { name: "Filter by book" }),
-      "fanu",
-    );
-
-    const rows = canvas.getAllByTestId("requests-row");
-    await expect(rows).toHaveLength(1);
-    await expect(rows[0]).toHaveTextContent("Carmilla");
-  },
-};
-
-export const BookFilterWithNoMatchSaysSo: Story = {
-  play: async ({ canvas, userEvent }) => {
-    await canvas.findAllByTestId("requests-row");
-
-    await userEvent.type(
-      canvas.getByRole("searchbox", { name: "Filter by book" }),
-      "Dune",
-    );
-
-    await expect(canvas.queryByTestId("requests-row")).toBeNull();
-    await expect(canvas.getByTestId("requests-no-match")).toHaveTextContent(
-      "No requests for a book matching “Dune”",
-    );
   },
 };
 
@@ -177,9 +255,8 @@ export const Empty: Story = {
     await expect(await canvas.findByTestId("requests-empty")).toHaveTextContent(
       "No requests yet",
     );
-    await expect(
-      canvas.queryByRole("searchbox", { name: "Filter by book" }),
-    ).toBeNull();
+    await expect(canvas.queryByTestId("requests-counts")).toBeNull();
+    await expect(canvas.queryByTestId("requests-pane")).toBeNull();
   },
 };
 
@@ -188,9 +265,93 @@ export const AFailedReadOffersTryAgain: Story = {
     msw.use(failing("get", "/api/requests", 500));
   },
   play: async ({ canvas }) => {
-    await expect(await canvas.findByRole("alert")).toBeInTheDocument();
+    await expect(await canvas.findByRole("alert")).toHaveTextContent(
+      "Couldn’t read the requests.",
+    );
     await expect(
       canvas.getByRole("button", { name: "Try again" }),
     ).toBeInTheDocument();
+  },
+};
+
+let reads = 0;
+
+export const AFailedRereadKeepsTheListShown: Story = {
+  beforeEach({ msw }) {
+    reads = 0;
+    msw.use(
+      http.get("/api/requests", () => {
+        reads += 1;
+        return reads === 1
+          ? HttpResponse.json([
+              aWireListing({ request: aWireRequest({ id: 3 }) }),
+            ])
+          : new HttpResponse("down", { status: 500 });
+      }),
+    );
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("requests-item");
+
+    // A looking request has the list read again every couple of seconds; that read fails.
+    await waitFor(() => expect(reads).toBeGreaterThan(1), { timeout: 5000 });
+    await expect(canvas.getByTestId("requests-item")).toHaveTextContent(
+      "Hyperion",
+    );
+    await expect(
+      within(canvas.getByTestId("requests-page")).queryByText(
+        "Couldn’t read the requests.",
+      ),
+    ).toBeNull();
+  },
+};
+
+let asked = 0;
+
+export const OffOnThisServerItIsNotFound: Story = {
+  parameters: { user: { ...READER, book_requests: false } },
+  beforeEach({ msw }) {
+    asked = 0;
+    msw.use(
+      http.get("/api/requests", () => {
+        asked += 1;
+        return HttpResponse.json([]);
+      }),
+    );
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByRole("heading", { name: "Page not found" }),
+    ).toBeInTheDocument();
+    await expect(asked).toBe(0);
+  },
+};
+
+export const OnAPhoneEachBookOpensItsRequestPageWithAWayBack: Story = {
+  ...PHONE,
+  parameters: { ...PHONE.parameters, path: "/requests", user: READER },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("link", { name: /Hyperion/ }),
+    );
+
+    await waitFor(() =>
+      expect(canvas.getByTestId("where")).toHaveTextContent(
+        "/books/uuid-hyperion/request?id=3",
+      ),
+    );
+    await expect(
+      await canvas.findByRole("link", { name: "‹ Requests" }),
+    ).toHaveAttribute("href", "/requests");
+  },
+};
+
+export const OnAPhoneTheListStandsAlone: Story = {
+  ...PHONE,
+  parameters: { ...PHONE.parameters, path: "/requests", user: READER },
+  play: async ({ canvas }) => {
+    await canvas.findAllByTestId("requests-item");
+
+    await expect(canvas.queryByTestId("requests-pane")).toBeNull();
   },
 };

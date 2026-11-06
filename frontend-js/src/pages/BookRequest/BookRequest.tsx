@@ -1,13 +1,21 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Fragment, type Ref, useEffect, useId, useRef, useState } from "react";
-import { Link, Navigate, useParams, useSearchParams } from "react-router";
+import {
+  Link,
+  Navigate,
+  useLocation,
+  useParams,
+  useSearchParams,
+} from "react-router";
 import {
   type BookUuid,
   bookRequestQuery,
+  bookRequestsQuery,
   chooseRequestVersion,
   parseBookUuid,
   positiveInt,
   type BookRequest as Request,
+  type RequestListing,
   type RequestVersion,
   retryBookRequest,
   thumbUrl,
@@ -18,23 +26,30 @@ import { BusyLabel, Loading } from "../../components/Loading/Loading";
 import { PageError, PageNotFound } from "../../components/PageState/PageState";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
 import { ToastProvider, useToast } from "../../components/Toast/Toast";
-import { nowSecs } from "../../format";
+import { UserAvatar } from "../../components/UserAvatar/UserAvatar";
+import { nowSecs, recency } from "../../format";
 import { useCurrentUser } from "../../session";
 import { bookQuery } from "../BookDetail/queries";
 import { RequestAgain, RequestHistory } from "./RequestHistory";
 import {
+  cameFromRequests,
   canActOn,
   isCancellable,
   isDownloading,
   isSearchStale,
+  kindChip,
+  kindLabel,
+  offersRequestAgain,
   progressPercent,
   requestPath,
   SEARCH_STALE_AFTER_SECS,
+  splitBookRequests,
   stateView,
   versionFormat,
   versionSeeders,
   versionSize,
 } from "./requestView";
+import { useNowPast } from "./useNowPast";
 import { messageOf, useAnswer, useCancel, useSwap } from "./useRequestActions";
 import "./BookRequest.css";
 
@@ -237,21 +252,25 @@ function Downloading({ request }: { request: Request }) {
   );
 }
 
-/** Cancel while a request is still going, and Pick another while its version downloads; one at a time. */
+/** Cancel while a request is still going, and Choose another while its version downloads; one at a time. */
 function Actions({
   request,
   cancel,
   swap,
+  cancelLabel,
 }: {
   request: Request;
   cancel: ReturnType<typeof useCancel>;
   swap: ReturnType<typeof useSwap>;
+  /** Names whose request it is when the viewer is an admin acting on another reader's. */
+  cancelLabel: string | undefined;
 }) {
   const busy = cancel.isPending || swap.isPending;
   return (
     <div className="rq-actions">
       {isDownloading(request) && (
         <Button
+          variant="ghost"
           data-testid="request-pick-another"
           // aria-disabled, not disabled: a control that disables itself drops the keyboard's focus.
           aria-disabled={busy}
@@ -262,14 +281,15 @@ function Actions({
         >
           <BusyLabel
             busy={swap.isPending}
-            label="Pick another"
-            busyLabel="Picking…"
+            label="Choose another"
+            busyLabel="Choosing…"
           />
         </Button>
       )}
       <Button
         variant="ghost"
         data-testid="request-cancel"
+        aria-label={cancelLabel}
         aria-disabled={busy}
         aria-busy={cancel.isPending}
         onClick={() => {
@@ -300,8 +320,9 @@ function TryAgain({
   const retry = useMutation({
     mutationFn: () => retryBookRequest(request.id),
     onSuccess: (tried) => {
-      answer(tried);
+      const refreshed = answer(tried);
       onTried();
+      return refreshed;
     },
     onError: (error) => toast(`Couldn’t try again: ${messageOf(error)}`),
   });
@@ -340,16 +361,8 @@ function Stuck({
 }
 
 /** Whether a search that began at `updatedAt` should have ended by now; re-checked when it would turn so. */
-function useSearchStale(updatedAt: number) {
-  const [now, setNow] = useState(nowSecs);
-  useEffect(() => {
-    const wait = updatedAt + SEARCH_STALE_AFTER_SECS - nowSecs();
-    if (wait <= 0) return;
-    const timer = setTimeout(() => setNow(nowSecs()), (wait + 1) * 1000);
-    return () => clearTimeout(timer);
-  }, [updatedAt]);
-  return isSearchStale(updatedAt, now);
-}
+const useSearchStale = (updatedAt: number) =>
+  isSearchStale(updatedAt, useNowPast(updatedAt + SEARCH_STALE_AFTER_SECS));
 
 /** The wait for a search, with a way out once it has run past its timeout. */
 function Looking({
@@ -381,42 +394,80 @@ function Looking({
   );
 }
 
-/** The ebook lane: what became of the request, in the state's own words. */
-function Lane({ request }: { request: Request }) {
+/** Who made a request and how long ago: "requested by (AL) Ada Lovelace · 2h ago". */
+function Requester({ request, name }: { request: Request; name: string }) {
   const viewer = useCurrentUser();
+  const mine = request.userId === viewer.id;
+  return (
+    <p className="rq-requester" data-testid="request-requester">
+      <span>· requested by</span>{" "}
+      <UserAvatar
+        user={{ id: request.userId, name, hasAvatar: false }}
+        className="rq-avatar"
+        photoClassName="rq-avatar-photo"
+      />{" "}
+      <span className="rq-requester-name">{mine ? "You" : name}</span>{" "}
+      <span>· {recency(nowSecs(), request.createdAt)}</span>
+    </p>
+  );
+}
+
+/** A request's lane: its format, who asked, and what became of it in the state's own words. */
+function Lane({
+  request,
+  context,
+}: {
+  request: Request;
+  context: LaneContext;
+}) {
+  const viewer = useCurrentUser();
+  const titleId = useId();
   // Held here: a cancelled request has no Cancel button left, but its Undo toast still needs this.
   const title = useRef<HTMLHeadingElement>(null);
   const focusTitle = () => title.current?.focus();
   const cancel = useCancel(request.id, focusTitle);
   const [focusVersions, setFocusVersions] = useState(false);
   const swap = useSwap(request.id, () => setFocusVersions(true));
+  const now = useNowPast(request.cancelAt);
   // Anyone may read a request; only its maker, or an admin, may act on it.
   const canAct = canActOn(viewer, request);
+  const name = context.listings.find(
+    (l) => l.request.id === request.id,
+  )?.requesterName;
+  const cancelLabel =
+    request.userId === viewer.id
+      ? undefined
+      : `Cancel ${name ?? "another reader"}’s request for ${context.title}`;
+  const actions = canAct && isCancellable(request) && (
+    <Actions
+      request={request}
+      cancel={cancel}
+      swap={swap}
+      cancelLabel={cancelLabel}
+    />
+  );
   const { heading, note } = stateView(request.state, request.stuckReason);
   return (
     <section
       className="rq-panel rq-lane"
-      aria-labelledby="rq-lane-title"
-      data-testid="request-lane-ebook"
+      aria-labelledby={titleId}
+      data-testid={`request-lane-${request.kind}`}
     >
       <div className="rq-lane-head">
-        <h2
-          ref={title}
-          tabIndex={-1}
-          id="rq-lane-title"
-          className="rq-lane-title"
-        >
-          Ebook
+        <span className="rq-chip">{kindChip(request.kind)}</span>
+        <h2 ref={title} tabIndex={-1} id={titleId} className="rq-lane-title">
+          {kindLabel(request.kind)}
         </h2>
-        <p
-          className="rq-state"
-          role="status"
-          data-testid="request-state"
-          data-state={request.state}
-        >
-          {heading}
-        </p>
+        {name !== undefined && <Requester request={request} name={name} />}
       </div>
+      <p
+        className="rq-state"
+        role="status"
+        data-testid="request-state"
+        data-state={request.state}
+      >
+        {heading}
+      </p>
       <p className="rq-note">{note}</p>
       {request.state === "looking" && (
         <Looking request={request} canAct={canAct} onTried={focusTitle} />
@@ -430,29 +481,75 @@ function Lane({ request }: { request: Request }) {
         />
       )}
       {request.state === "chosen" && <Chosen request={request} />}
-      {request.state === "on_its_way" && <Downloading request={request} />}
+      {request.state === "on_its_way" ? (
+        <div className="rq-download">
+          <div className="rq-download-main">
+            <Chosen request={request} />
+            <Downloading request={request} />
+          </div>
+          {actions}
+        </div>
+      ) : (
+        actions
+      )}
       {request.state === "stuck" && (
         <Stuck request={request} canAct={canAct} onTried={focusTitle} />
       )}
-      {canAct && isCancellable(request) && (
-        <Actions request={request} cancel={cancel} swap={swap} />
-      )}
-      {request.state === "cancelled" && viewer.canRequest && (
+      {offersRequestAgain(request, viewer, context.requests, now) && (
         <div className="rq-actions">
-          <RequestAgain uuid={request.bookUuid} />
+          <RequestAgain uuid={request.bookUuid} stay={context.stay} />
         </div>
       )}
     </section>
   );
 }
 
-function RequestPage({ uuid, id }: { uuid: BookUuid; id: number }) {
+/** What a lane needs to know about the rest of the book's requests. */
+type LaneContext = {
+  /** The book's title, for an admin's Cancel label. */
+  title: string;
+  /** The book's requests as listed, for who made each; empty until read. */
+  listings: readonly RequestListing[];
+  /** The same requests, for whether Request again would only return one already going. */
+  requests: readonly Request[];
+  /** Request again stays on the page rather than opening the new request. */
+  stay: boolean;
+};
+
+/** Another reader's request still going for the book, in a lane of its own. */
+function OtherLane({ id, context }: { id: number; context: LaneContext }) {
+  const request = useQuery(bookRequestQuery(id));
+  if (request.data === undefined) {
+    return request.isPending ? (
+      <Loading kind="section" label="Reading this request…" />
+    ) : null;
+  }
+  return <Lane request={request.data} context={context} />;
+}
+
+/** Where a book's requests are shown: on its own page, or in the Requests list's pane. */
+export type DossierVariant = "page" | "pane";
+
+/** A book's requests: the book above, a lane for the request asked for and each other one still going, and the book's history below. Shared by the book's request page and the Requests list's detail pane. */
+export function RequestDossier({
+  uuid,
+  id,
+  variant,
+}: {
+  uuid: BookUuid;
+  id: number;
+  variant: DossierVariant;
+}) {
   const book = useQuery(bookQuery(uuid));
   const request = useQuery(bookRequestQuery(id));
+  const listed = useQuery(bookRequestsQuery(uuid));
+  const { state } = useLocation();
   const back = `/books/${uuid}`;
   // A failed background poll keeps showing what was last read.
   if (book.data === undefined || request.data === undefined) {
-    if (book.isPending || request.isPending) return <Loading kind="page" />;
+    if (book.isPending || request.isPending) {
+      return <Loading kind={variant === "page" ? "page" : "section"} />;
+    }
     return (
       <PageError
         message={messageOf(book.error ?? request.error)}
@@ -467,9 +564,26 @@ function RequestPage({ uuid, id }: { uuid: BookUuid; id: number }) {
     return <Navigate replace to={requestPath(request.data.bookUuid, id)} />;
   }
   const { title, authors } = book.data;
+  const listings = listed.data ?? [];
+  const context: LaneContext = {
+    title,
+    listings,
+    requests: listings.map((l) => l.request),
+    stay: variant === "pane",
+  };
+  const Title = variant === "page" ? "h1" : "h2";
   return (
-    <div className="rq-page" data-testid="request-page">
-      <PageTitle page={`Request ${title}`} />
+    <div
+      className="rq-page"
+      data-variant={variant}
+      data-testid={variant === "page" ? "request-page" : "requests-pane"}
+    >
+      {variant === "page" && <PageTitle page={`Request ${title}`} />}
+      {variant === "page" && cameFromRequests(state) && (
+        <Link className="rq-back" to="/requests">
+          ‹ Requests
+        </Link>
+      )}
       <header className="rq-head">
         <div className="rq-cover">
           <Cover
@@ -478,25 +592,31 @@ function RequestPage({ uuid, id }: { uuid: BookUuid; id: number }) {
           />
         </div>
         <div className="rq-head-text">
-          <p className="rq-eyebrow">Request</p>
-          <h1 className="rq-title" data-testid="request-title">
+          <Title className="rq-title" data-testid="request-title">
             {title}
-          </h1>
+          </Title>
           {authors.length > 0 && (
             <p className="rq-author">{authors.join(", ")}</p>
           )}
-          <Link className="rq-back" to={back}>
-            Back to book
-          </Link>
         </div>
+        <Link className="rq-open" to={back}>
+          Open book page
+        </Link>
       </header>
-      <Lane key={request.data.id} request={request.data} />
-      <RequestHistory uuid={uuid} shown={id} />
+      <Lane key={request.data.id} request={request.data} context={context} />
+      {splitBookRequests(listings, id).lanes.map((other) => (
+        <OtherLane
+          key={other.request.id}
+          id={other.request.id}
+          context={context}
+        />
+      ))}
+      <RequestHistory uuid={uuid} shown={id} stay={context.stay} />
     </div>
   );
 }
 
-/** A book's request page: the book above, one lane per format, ebook only for now, and the book's other requests below. */
+/** A book's request page: the request named by `?id=`, with the book's other requests. */
 export function BookRequest() {
   const { uuid: rawUuid } = useParams();
   const [params] = useSearchParams();
@@ -507,7 +627,7 @@ export function BookRequest() {
   }
   return (
     <ToastProvider>
-      <RequestPage uuid={uuid} id={id} />
+      <RequestDossier uuid={uuid} id={id} variant="page" />
     </ToastProvider>
   );
 }

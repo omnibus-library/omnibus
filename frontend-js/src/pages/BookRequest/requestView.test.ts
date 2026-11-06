@@ -7,15 +7,17 @@ import {
 } from "../../testing/requestHandlers";
 import {
   canActOn,
+  historyDay,
   holdsAudiobook,
   holdsEbook,
   isCancellable,
   isDownloading,
   isSearchStale,
-  matchesBook,
+  offersRequestAgain,
   progressPercent,
   requestFacts,
   requestPath,
+  splitBookRequests,
   startFailure,
   stateView,
   swapFacts,
@@ -179,6 +181,10 @@ describe("progressPercent", () => {
     expect(progressPercent(0.999)).toBe(99);
   });
 
+  it("reads a whole percent through floating-point noise", () => {
+    expect(progressPercent(0.29)).toBe(29);
+  });
+
   it("reads a finished download as 100 and an unread one as 0", () => {
     expect(progressPercent(1)).toBe(100);
     expect(progressPercent(null)).toBe(0);
@@ -268,6 +274,20 @@ describe("requestFacts", () => {
     );
   });
 
+  it("leaves out where a download stopped once it had finished", () => {
+    const unfiled = listing({
+      state: "stuck",
+      stuck_reason: "couldnt_add",
+      chosen_result_id: EPUB.id,
+      progress: 1,
+      versions: [EPUB],
+    });
+
+    expect(requestFacts(unfiled, VIEWER)).toBe(
+      "Couldn’t add it · EPUB · 2.4 MB",
+    );
+  });
+
   it("names a request with no version picked by its state alone", () => {
     expect(requestFacts(listing({ state: "looking" }), VIEWER)).toBe("Looking");
   });
@@ -314,15 +334,131 @@ describe("canActOn", () => {
   });
 });
 
-describe("matchesBook", () => {
-  const hyperion = listing({});
+describe("offersRequestAgain", () => {
+  const NOW = 1_000;
+  const ADA = { id: VIEWER, canRequest: true };
+  const cancelled = {
+    kind: "ebook",
+    state: "cancelled",
+    cancelAt: null,
+  } as const;
+
+  it("offers it on a cancelled request once its undo has run out", () => {
+    expect(offersRequestAgain(cancelled, ADA, [], NOW)).toBe(true);
+  });
 
   it.each([
-    ["an empty filter", true, ""],
-    ["part of the title in any case", true, "hyper"],
-    ["an author", true, "simmons"],
-    ["another book", false, "dune"],
-  ])("matches %s: %s", (_case, expected, query) => {
-    expect(matchesBook(hyperion, query)).toBe(expected);
+    ["still open", false, NOW + 1],
+    ["ending now", true, NOW],
+  ])("with the undo %s offers it: %s", (_when, expected, cancelAt) => {
+    const graced = { ...cancelled, cancelAt };
+
+    expect(offersRequestAgain(graced, ADA, [], NOW)).toBe(expected);
+  });
+
+  it("holds it back while the viewer has the book's format requested already", () => {
+    const live = {
+      userId: VIEWER,
+      kind: "ebook",
+      state: "on_its_way",
+    } as const;
+
+    expect(offersRequestAgain(cancelled, ADA, [live], NOW)).toBe(false);
+  });
+
+  it("offers it beside another reader's live request", () => {
+    const theirs = {
+      userId: 2 as UserId,
+      kind: "ebook",
+      state: "looking",
+    } as const;
+
+    expect(offersRequestAgain(cancelled, ADA, [theirs], NOW)).toBe(true);
+  });
+
+  it("offers it beside the viewer's live request for the other format", () => {
+    const audio = {
+      userId: VIEWER,
+      kind: "audiobook",
+      state: "looking",
+    } as const;
+
+    expect(offersRequestAgain(cancelled, ADA, [audio], NOW)).toBe(true);
+  });
+
+  it("holds it back from a reader who can't request", () => {
+    const viewer = { ...ADA, canRequest: false };
+
+    expect(offersRequestAgain(cancelled, viewer, [], NOW)).toBe(false);
+  });
+
+  it("holds it back on a request that wasn't cancelled", () => {
+    const stuck = { ...cancelled, state: "stuck" } as const;
+
+    expect(offersRequestAgain(stuck, ADA, [], NOW)).toBe(false);
+  });
+});
+
+describe("splitBookRequests", () => {
+  const SHOWN = 7;
+  const ids = (found: readonly { request: { id: number } }[]) =>
+    found.map((l) => l.request.id);
+
+  it("gives another reader's live request a lane of its own", () => {
+    const split = splitBookRequests(
+      [listing({ id: 8, user_id: 2, state: "choose" }), listing({ id: SHOWN })],
+      SHOWN,
+    );
+
+    expect(ids(split.lanes)).toEqual([8]);
+    expect(split.history).toEqual([]);
+  });
+
+  it("keeps cancelled and stuck requests in the history", () => {
+    const split = splitBookRequests(
+      [
+        listing({ id: 5, state: "cancelled" }),
+        listing({ id: 4, state: "stuck", stuck_reason: "not_found" }),
+      ],
+      SHOWN,
+    );
+
+    expect(ids(split.history)).toEqual([5, 4]);
+    expect(split.lanes).toEqual([]);
+  });
+
+  it("keeps a request that swapped a version in the history", () => {
+    const swapped = listing({
+      id: 3,
+      state: "ready",
+      chosen_result_id: EPUB.id,
+      versions: [EPUB, { ...PDF, rejected: true }],
+    });
+
+    expect(ids(splitBookRequests([swapped], SHOWN).history)).toEqual([3]);
+  });
+
+  it("leaves a ready request with nothing swapped out of the history", () => {
+    const ready = listing({ id: 3, state: "ready" });
+
+    expect(splitBookRequests([ready], SHOWN).history).toEqual([]);
+  });
+
+  it("never lists the request on screen", () => {
+    const shown = listing({ id: SHOWN, state: "cancelled" });
+
+    expect(splitBookRequests([shown], SHOWN)).toEqual({
+      lanes: [],
+      history: [],
+    });
+  });
+});
+
+describe("historyDay", () => {
+  it("names the day on the reader's calendar without the year", () => {
+    const lateOnOct12Utc = Date.UTC(2026, 9, 12, 23) / 1000;
+
+    expect(historyDay(lateOnOct12Utc, "UTC")).toBe("Oct 12");
+    expect(historyDay(lateOnOct12Utc, "Pacific/Kiritimati")).toBe("Oct 13");
   });
 });

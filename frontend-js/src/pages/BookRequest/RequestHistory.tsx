@@ -3,26 +3,43 @@ import { Link } from "react-router";
 import {
   type BookUuid,
   bookRequestsQuery,
+  type BookRequest as Request,
   type RequestListing,
-  type User,
 } from "../../api";
 import { Button } from "../../components/Button/Button";
 import { BusyLabel, Loading } from "../../components/Loading/Loading";
-import { ago, nowSecs } from "../../format";
 import { useCurrentUser } from "../../session";
-import { requestFacts, requestPath, swapFacts } from "./requestView";
+import {
+  historyDay,
+  kindChip,
+  offersRequestAgain,
+  requestFacts,
+  requestPath,
+  splitBookRequests,
+  swapFacts,
+} from "./requestView";
+import { useNowPast } from "./useNowPast";
 import { useStartRequest } from "./useStartRequest";
 
-/** Starts a new request for the book, for the viewer, and opens it in Looking. */
-export function RequestAgain({ uuid }: { uuid: BookUuid }) {
-  const start = useStartRequest(uuid);
+/** Starts a new request for the book, for the viewer, and opens it in Looking; with `stay`, the page stays put. */
+export function RequestAgain({
+  uuid,
+  stay,
+}: {
+  uuid: BookUuid;
+  stay: boolean;
+}) {
+  const start = useStartRequest(uuid, stay);
   return (
     <Button
       size="sm"
       data-testid="request-again"
-      disabled={start.isPending}
+      // aria-disabled, not disabled: a control that disables itself drops the keyboard's focus.
+      aria-disabled={start.isPending}
       aria-busy={start.isPending}
-      onClick={() => start.mutate()}
+      onClick={() => {
+        if (!start.isPending) start.mutate();
+      }}
     >
       <BusyLabel
         busy={start.isPending}
@@ -35,75 +52,86 @@ export function RequestAgain({ uuid }: { uuid: BookUuid }) {
 
 function HistoryRow({
   listing,
-  viewer,
-  now,
+  requests,
+  stay,
 }: {
   listing: RequestListing;
-  viewer: User;
-  now: number;
+  /** Every request for the book, for whether Request again would only return one going. */
+  requests: readonly Request[];
+  stay: boolean;
 }) {
+  const viewer = useCurrentUser();
   const { request } = listing;
-  const who = request.userId === viewer.id ? "you" : listing.requesterName;
+  const now = useNowPast(request.cancelAt);
   return (
     <li
       className="rq-history-row"
       data-testid="request-history-row"
       data-state={request.state}
     >
+      <span className="rq-history-day" data-testid="request-history-day">
+        {historyDay(request.updatedAt)}
+      </span>
+      <span className="rq-chip">{kindChip(request.kind)}</span>
       <div className="rq-history-text">
         <Link
           className="rq-history-facts"
           to={requestPath(request.bookUuid, request.id)}
         >
-          {requestFacts(listing, viewer.id)} · {ago(now, request.updatedAt)}
+          {requestFacts(listing, viewer.id)}
         </Link>
         {swapFacts(listing).map((swap) => (
           <p key={swap.id} className="rq-history-swap">
             {swap.text}
           </p>
         ))}
-        <p className="rq-history-meta">
-          Requested by {who} · {ago(now, request.createdAt)}
-        </p>
       </div>
-      {request.state === "cancelled" && viewer.canRequest && (
-        <RequestAgain uuid={request.bookUuid} />
+      {offersRequestAgain(request, viewer, requests, now) && (
+        <RequestAgain uuid={request.bookUuid} stay={stay} />
       )}
     </li>
   );
 }
 
-/** The book's other requests, newest first, each saying only what was recorded; nothing when it has none. */
+/** The book's past requests, newest first, each saying only what was recorded; nothing when it has none. */
 export function RequestHistory({
   uuid,
   shown,
+  stay,
 }: {
   uuid: BookUuid;
   /** The request on screen, which is not its own history. */
   shown: number;
+  /** Request again stays on the page rather than opening the new request. */
+  stay: boolean;
 }) {
-  const viewer = useCurrentUser();
   const history = useQuery(bookRequestsQuery(uuid));
-  if (history.isPending) {
-    return <Loading kind="section" label="Reading this book’s history…" />;
-  }
-  if (history.isError) {
+  // A failed background read keeps showing what was last read.
+  if (history.data === undefined) {
+    if (history.isPending) {
+      return <Loading kind="section" label="Reading this book’s history…" />;
+    }
     return (
-      <p role="alert" className="rq-note">
-        Couldn’t read this book’s request history.
-      </p>
+      <div className="rq-history-failed">
+        <p role="alert" className="rq-note">
+          Couldn’t read this book’s request history.
+        </p>
+        <Button size="sm" onClick={() => history.refetch()}>
+          Try again
+        </Button>
+      </div>
     );
   }
-  const past = history.data.filter((l) => l.request.id !== shown);
+  const past = splitBookRequests(history.data, shown).history;
   if (past.length === 0) return null;
-  const now = nowSecs();
+  const requests = history.data.map((l) => l.request);
   return (
     <section
-      className="rq-panel"
+      className="rq-history-block"
       aria-labelledby="rq-history-title"
       data-testid="request-history"
     >
-      <h2 id="rq-history-title" className="rq-lane-title">
+      <h2 id="rq-history-title" className="rq-label">
         History
       </h2>
       <ul className="rq-history">
@@ -111,8 +139,8 @@ export function RequestHistory({
           <HistoryRow
             key={listing.request.id}
             listing={listing}
-            viewer={viewer}
-            now={now}
+            requests={requests}
+            stay={stay}
           />
         ))}
       </ul>

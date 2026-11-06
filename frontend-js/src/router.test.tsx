@@ -15,6 +15,7 @@ import {
   describe,
   expect,
   it,
+  onTestFinished,
   vi,
 } from "vitest";
 import { toUser, type User } from "./api";
@@ -116,12 +117,28 @@ describe("routes", () => {
       ["/shelves/9", "Opening the shelf"],
       ["/stats?user=2", "Tallying your reading"],
       ["/wishlists?user=all", "Gathering the wishlists"],
-      ["/requests", "Gathering the requests"],
     ])("renders %s as its loading page, not a stub", async (path, label) => {
       renderRoute(path);
 
       expect(await screen.findByText(label)).toBeInTheDocument();
       expect(screen.queryByText("Not ported yet")).not.toBeInTheDocument();
+    });
+
+    it("renders /requests as its loading page while requests are on", async () => {
+      // jsdom has no matchMedia; a wide screen asks for nothing it needs.
+      vi.stubGlobal("matchMedia", () => ({
+        matches: false,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      }));
+      onTestFinished(() => {
+        vi.unstubAllGlobals();
+      });
+      renderRoute("/requests", toUser({ ...WIRE_ADA, book_requests: true }));
+
+      expect(
+        await screen.findByText("Gathering the requests"),
+      ).toBeInTheDocument();
     });
 
     it("renders /stats/chart as the chart builder, not a stub", async () => {

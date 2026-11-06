@@ -1,6 +1,8 @@
 import {
   ApiError,
   type BookRequest,
+  isMoving,
+  type RequestKind,
   type RequestListing,
   type RequestState,
   type RequestVersion,
@@ -87,7 +89,8 @@ export const isCancellable = (
 
 /** A download's progress as a whole percent, rounded down so the bar never reads done early. */
 export const progressPercent = (progress: number | null) =>
-  Math.floor((progress ?? 0) * 100);
+  // Rounded to a hundredth of a percent first, so 0.29 * 100 = 28.999… still reads 29.
+  Math.floor(Math.round((progress ?? 0) * 1e4) / 100);
 
 /** How long the Undo toast stays: until a second and a half before the server's `cancelAt` (Unix seconds), so Undo is never offered after the grace. */
 export const undoToastMs = (cancelAt: number, now: number) =>
@@ -171,10 +174,12 @@ export function requestFacts(
         : "Cancelled";
   const picked = request.versions.find((v) => v.id === request.chosenResultId);
   const ended = request.state === "cancelled" || request.state === "stuck";
+  const stoppedShort =
+    ended && request.progress !== null && request.progress < 1;
   return [
     head,
     ...(picked ? versionFacts(picked) : []),
-    ...(ended && request.progress !== null
+    ...(stoppedShort
       ? [`stopped at ${progressPercent(request.progress)}%`]
       : []),
   ].join(" · ");
@@ -189,10 +194,78 @@ export const swapFacts = ({ request }: RequestListing) =>
       text: ["Swapped for another version", ...versionFacts(v)].join(" · "),
     }));
 
-/** Whether a listed request's book matches what was typed into the book filter: its title or an author, in any case. */
-export function matchesBook({ book }: RequestListing, query: string) {
-  const needle = query.trim().toLowerCase();
-  return [book.title, ...book.authors].some((text) =>
-    text.toLowerCase().includes(needle),
+/** What a request's format is called: "Ebook" or "Audiobook". */
+export function kindLabel(kind: RequestKind): string {
+  switch (kind) {
+    case "ebook":
+      return "Ebook";
+    case "audiobook":
+      return "Audiobook";
+    default: {
+      const _exhaustive: never = kind;
+      return _exhaustive;
+    }
+  }
+}
+
+/** The file format a request's chip names. */
+export const kindChip = (kind: RequestKind) =>
+  kind === "ebook" ? "EPUB" : "M4B";
+
+/** Whether Request again is offered on `request`: a cancelled one whose undo has run out (`now` in Unix seconds), to a reader who may request and has no request of that format going for the book already, since starting one would only return it. */
+export function offersRequestAgain(
+  request: Pick<BookRequest, "kind" | "state" | "cancelAt">,
+  viewer: Pick<User, "id" | "canRequest">,
+  bookRequests: readonly Pick<BookRequest, "userId" | "kind" | "state">[],
+  now: number,
+): boolean {
+  const undoOpen = request.cancelAt !== null && now < request.cancelAt;
+  const alreadyGoing = bookRequests.some(
+    (r) => r.userId === viewer.id && r.kind === request.kind && isLive(r.state),
+  );
+  return (
+    request.state === "cancelled" &&
+    viewer.canRequest &&
+    !undoOpen &&
+    !alreadyGoing
   );
 }
+
+/** Whether a request is still going for its reader: looking, choosing, picked or downloading. */
+export const isLive = (state: RequestState) =>
+  state === "choose" || isMoving(state);
+
+/** A book's requests besides the one on screen: those still going get a lane of their own, and the history keeps the cancelled and stuck ones and any that swapped a version. */
+export function splitBookRequests(
+  listings: readonly RequestListing[],
+  shown: number,
+) {
+  const others = listings.filter((l) => l.request.id !== shown);
+  return {
+    lanes: others.filter((l) => isLive(l.request.state)),
+    history: others.filter(
+      ({ request }) =>
+        request.state === "cancelled" ||
+        request.state === "stuck" ||
+        request.versions.some((v) => v.rejected),
+    ),
+  };
+}
+
+/** A history row's day, "Oct 12", on the reader's calendar unless `timeZone` names another. */
+export const historyDay = (unixSecs: number, timeZone?: string) =>
+  new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone,
+  }).format(unixSecs * 1000);
+
+/** Whether the page was opened from the Requests list, which hands this router state over. */
+export const cameFromRequests = (state: unknown) =>
+  typeof state === "object" &&
+  state !== null &&
+  "from" in state &&
+  state.from === "requests";
+
+/** The router state a link from the Requests list carries. */
+export const FROM_REQUESTS = { from: "requests" } as const;

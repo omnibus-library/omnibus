@@ -76,11 +76,19 @@ export function aWireListing(
   };
 }
 
-/** What the lists add to a request: its book and the names of who made and who cancelled it. */
+/** What the lists add to a request: its book and the names of who made and who cancelled it; and who is signed in, for a start. */
 export type ListingContext = {
   books?: EbookMetadata[];
   names?: Record<number, string>;
+  viewer?: number;
 };
+
+const LIVE: readonly BookRequest["state"][] = [
+  "looking",
+  "choose",
+  "chosen",
+  "on_its_way",
+];
 
 /** The writes the fake answered, in order. */
 export type RequestWrite =
@@ -98,10 +106,14 @@ export type RequestFake = {
 
 const SWAPPED = "Swapped for another version";
 
-/** The routes over `initial` requests. A start adds a looking request; a retry puts one back to looking, or back to choosing after a stopped download. */
+/** The routes over `initial` requests. A start adds a looking request for `viewer`, or returns theirs already going for the book as the server does; a retry puts one back to looking, or back to choosing after a stopped download. */
 export function requestFake(
   initial: BookRequest[] = [],
-  { books = [HYPERION], names = { 1: "Ada Lovelace" } }: ListingContext = {},
+  {
+    books = [HYPERION],
+    names = { 1: "Ada Lovelace" },
+    viewer = 1,
+  }: ListingContext = {},
 ): RequestFake {
   const requests = new Map(initial.map((r) => [r.id, r]));
   const listing = (r: BookRequest): RequestListing => ({
@@ -151,9 +163,18 @@ export function requestFake(
       StartRequest.parse(await request.json());
       const uuid = String(params.uuid);
       fake.writes.push({ kind: "start", uuid });
+      const going = [...requests.values()].find(
+        (r) =>
+          r.user_id === viewer &&
+          r.book_uuid === uuid &&
+          r.kind === "ebook" &&
+          LIVE.includes(r.state),
+      );
+      if (going) return HttpResponse.json(going);
       const made = aWireRequest({
         id: Math.max(0, ...requests.keys()) + 1,
         book_uuid: uuid,
+        user_id: viewer,
       });
       requests.set(made.id, made);
       return HttpResponse.json(made, { status: 201 });
@@ -221,6 +242,7 @@ export function requestFake(
         ...found,
         state: "cancelled" as const,
         cancelled_by: found.user_id,
+        updated_at: Math.floor(Date.now() / 1000),
         // The clock, not NOW: the Undo toast is timed against it, and NOW ages as the file runs.
         cancel_at: Math.floor(Date.now() / 1000) + 8,
       };
