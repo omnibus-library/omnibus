@@ -80,13 +80,12 @@
 
 .rq-found {
   font: 400 10.5px / 1 var(--mono);
-  letter-spacing: 0.09em;
   text-transform: uppercase;
   color: var(--ink-3);
 }
 .rq-versions {
   display: grid;
-  gap: 10px;
+  gap: 16px;
   list-style: none;
 }
 .rq-version {
@@ -117,16 +116,12 @@
 }
 .rq-tag {
   font: 400 9px / 1.2 var(--mono);
-  letter-spacing: 0.09em;
   text-transform: uppercase;
   color: var(--accent);
 }
-/* Dimmed through colour, not opacity, so its text keeps a readable contrast. */
-.rq-version[data-rejected="true"] .rq-version-name {
+/* Dimmed through colour, not opacity, and no further than --ink-2, so it stays readable. */
+.rq-version[data-rejected="true"] :is(.rq-version-name, .rq-tag) {
   color: var(--ink-2);
-}
-.rq-version[data-rejected="true"] :is(.rq-version-meta, .rq-tag) {
-  color: var(--ink-3);
 }
 .rq-version-links {
   display: flex;
@@ -151,7 +146,7 @@
     color: var(--ink-0);
   }
 }
-.rq-actions .btn[aria-disabled="true"] {
+.rq-page .btn[aria-disabled="true"] {
   opacity: 0.55;
   cursor: default;
 }
@@ -208,6 +203,10 @@
   font: 500 12px / 1 var(--mono);
   color: var(--ink-1);
 }
+/* Lines a small ghost button's label up with the text links above it. */
+.rq-flush {
+  margin-inline-start: -10px;
+}
 .rq-actions {
   display: flex;
   flex-wrap: wrap;
@@ -238,6 +237,11 @@
   outline-offset: 2px;
 }
 
+@media (max-width: 720px) {
+  .rq-versions {
+    gap: 12px;
+  }
+}
 @media (max-width: 640px) {
   .rq-head {
     align-items: flex-start;

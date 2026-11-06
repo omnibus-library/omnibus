@@ -18,7 +18,7 @@ import { BusyLabel, Loading } from "../../components/Loading/Loading";
 import { PageError, PageNotFound } from "../../components/PageState/PageState";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
 import { ToastProvider, useToast } from "../../components/Toast/Toast";
-import { nowSecs, plural } from "../../format";
+import { nowSecs } from "../../format";
 import { useCurrentUser } from "../../session";
 import { bookQuery } from "../BookDetail/queries";
 import {
@@ -32,6 +32,7 @@ import {
   SEARCH_STALE_AFTER_SECS,
   stateView,
   versionSource,
+  versionsFound,
 } from "./requestView";
 import { messageOf, useAnswer, useCancel, useSwap } from "./useRequestActions";
 import "./BookRequest.css";
@@ -94,11 +95,13 @@ function VersionRow({
           data-testid="request-choose"
           aria-describedby={textId}
           aria-busy={choosing}
-          disabled={locked}
-          onClick={onChoose}
+          // aria-disabled, not disabled: a control that disables itself drops the keyboard's focus.
+          aria-disabled={locked}
+          onClick={() => {
+            if (!locked) onChoose();
+          }}
         >
-          {/* The busy face keeps "Choose", so the button holds the comp's width at rest. */}
-          <BusyLabel busy={choosing} label="Choose" busyLabel="Choose" />
+          <BusyLabel busy={choosing} label="Choose" busyLabel="Choosing…" />
         </Button>
       )}
       {details && (
@@ -147,9 +150,9 @@ function Choices({
     onError: (error) =>
       toast(`Couldn’t choose that version: ${messageOf(error)}`),
   });
-  const found = request.versions.length;
-  const shown = all ? request.versions : firstShown(request.versions);
-  const hidden = found - firstShown(request.versions).length;
+  const collapsed = firstShown(request.versions);
+  const shown = all ? request.versions : collapsed;
+  const hidden = request.versions.length - collapsed.length;
   return (
     <>
       {request.note && (
@@ -158,7 +161,7 @@ function Choices({
         </p>
       )}
       <p className="rq-found" data-testid="request-versions-found">
-        {`${found} version${plural(found)} found · Best match first`}
+        {versionsFound(request.versions)}
       </p>
       <ul id={listId} className="rq-versions" aria-label="Versions found">
         {shown.map((version, index) => (
@@ -254,6 +257,8 @@ function Actions({
   swap: ReturnType<typeof useSwap>;
 }) {
   const busy = cancel.isPending || swap.isPending;
+  // Under the versions, Cancel sits with the text links as the comp's smaller "Cancel request".
+  const choosing = request.state === "choose";
   return (
     <div className="rq-actions">
       {isDownloading(request) && (
@@ -275,6 +280,8 @@ function Actions({
       )}
       <Button
         variant="ghost"
+        size={choosing ? "sm" : "md"}
+        className={choosing ? "rq-flush" : undefined}
         data-testid="request-cancel"
         aria-disabled={busy}
         aria-busy={cancel.isPending}
@@ -284,7 +291,7 @@ function Actions({
       >
         <BusyLabel
           busy={cancel.isPending}
-          label="Cancel"
+          label={choosing ? "Cancel request" : "Cancel"}
           busyLabel="Cancelling…"
         />
       </Button>

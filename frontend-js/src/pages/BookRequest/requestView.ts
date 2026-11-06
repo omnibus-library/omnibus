@@ -92,13 +92,12 @@ export const undoToastMs = (cancelAt: number, now: number) =>
 export const requestPath = (uuid: string, id: number) =>
   `/books/${uuid}/request?id=${id}`;
 
-/** The format a version is in, or Format unknown when its name says none. */
-export const versionFormat = (format: string | null) =>
-  format ?? "Format unknown";
-
 /** A version's size, kept on one line, or `null` when the source did not say. */
 export const versionSize = (bytes: number | null) =>
   bytes === null ? null : (fileSize(bytes)?.replace(" ", "\u00a0") ?? null);
+
+// Non-breaking before the dot, so a line never starts with a separator.
+const SEP = "\u00a0· ";
 
 const seeds = (n: number) =>
   `${n.toLocaleString("en-US")}\u00a0seed${plural(n)}`;
@@ -121,12 +120,12 @@ export const versionSource = (
 ) =>
   [
     version.indexer,
-    versionFormat(version.format),
+    version.format ?? "Format unknown",
     versionSize(version.sizeBytes) ?? "Size unknown",
     sharing(version),
   ]
     .filter((part) => part !== null)
-    .join(" · ");
+    .join(SEP);
 
 /** The line under a picked version's name: its size and source, each left out when unknown. */
 export const pickedMeta = (
@@ -134,7 +133,16 @@ export const pickedMeta = (
 ) =>
   [versionSize(version.sizeBytes), version.indexer]
     .filter((part) => part !== null)
-    .join(" · ");
+    .join(SEP);
+
+/** The caption over the versions: how many can be chosen, and that the best match leads when one does. */
+export function versionsFound(versions: readonly RequestVersion[]) {
+  const choosable = versions.filter((v) => !v.rejected);
+  const count = `${choosable.length} version${plural(choosable.length)} found`;
+  return choosable.some((v) => v.bestMatch)
+    ? `${count} · Best match first`
+    : count;
+}
 
 /** How many versions that can be chosen show before Show more. */
 const SHOWN_AT_FIRST = 4;
