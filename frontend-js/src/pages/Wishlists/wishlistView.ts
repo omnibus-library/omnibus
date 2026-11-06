@@ -1,9 +1,5 @@
 import {
-  type ExternalBookMeta,
-  PROVIDERS,
   parseUserId,
-  type ScanBook,
-  type ScanOutcome,
   type UserId,
   type WishlistBook,
   type WishlistReader,

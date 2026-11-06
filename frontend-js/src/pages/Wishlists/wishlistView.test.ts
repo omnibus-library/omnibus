@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ScanOutcome, UserId, WishlistReader } from "../../api";
-import { anExternalBook, aScanBook } from "../../testing/scanHandlers";
+import type { UserId, WishlistReader } from "../../api";
 import {
   addedLabel,
   byline,
