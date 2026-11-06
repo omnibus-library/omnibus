@@ -27,7 +27,7 @@ async fn on_its_way(pool: &SqlitePool, user: i64) -> (i64, i64) {
     }
     sqlx::query(
         "UPDATE book_requests SET state = 'on_its_way', chosen_result_id = ?, progress = 0.3,
-         client_tag = 'omnibus-1' WHERE id = ?",
+         client_hash = 'omnibus-1' WHERE id = ?",
     )
     .bind(ids[0])
     .bind(id)

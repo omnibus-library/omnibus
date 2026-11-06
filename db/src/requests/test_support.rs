@@ -11,7 +11,7 @@ use sqlx::SqlitePool;
 use crate::settings::RequestsConfig;
 use crate::test_support::seed_user;
 
-use super::clients::{ClientFile, DownloadClient, TorrentStatus};
+use super::clients::{infohash, Added, ClientFile, DownloadClient, TorrentStatus};
 use super::store;
 use super::ConnectionError;
 
@@ -38,9 +38,10 @@ pub async fn seed_picked(
 pub async fn pick(pool: &SqlitePool, id: i64, state: &str) {
     let result: i64 = sqlx::query_scalar(
         "INSERT INTO book_request_results (request_id, guid, title, download_url, score)
-         VALUES (?, 'g', 't', 'magnet:?xt=urn:btih:abc', 1.0) RETURNING id",
+         VALUES (?, 'g', 't', ?, 1.0) RETURNING id",
     )
     .bind(id)
+    .bind(magnet(id))
     .fetch_one(pool)
     .await
     .unwrap();
@@ -70,17 +71,21 @@ pub async fn update(pool: &SqlitePool, id: i64, set: &str) {
 pub async fn on_its_way(pool: &SqlitePool, name: &str, progress: f64, moved_at: i64) -> i64 {
     let id = seed(pool, name, "on_its_way").await;
     let set = format!(
-        "client_tag = '{}', progress = {progress}, moved_at = {moved_at}",
-        tag(id)
+        "client_hash = '{}', progress = {progress}, moved_at = {moved_at}",
+        hash(id)
     );
     update(pool, id, &set).await;
     id
 }
 
-/// The tag of request `id`'s pick, as the poller names it. Every request seeded here holds
-/// one version, whose id equals the request's.
-pub fn tag(id: i64) -> String {
-    format!("omnibus-{id}-{id}")
+/// The info hash of request `id`'s pick: every request seeded here links a magnet of its own.
+pub fn hash(id: i64) -> String {
+    format!("{id:040x}")
+}
+
+/// The magnet a request seeded here picked.
+pub fn magnet(id: i64) -> String {
+    format!("magnet:?xt=urn:btih:{}&dn=t", hash(id))
 }
 
 /// Connection settings with no services set up and the two download folders as given.
@@ -101,17 +106,10 @@ pub fn requests_config(client_prefix: Option<&str>, local_prefix: Option<&str>) 
 /// One call the pipeline made to the client.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Call {
-    Add {
-        link: String,
-        category: String,
-        tag: String,
-    },
+    Add { link: String, category: String },
     Status(String),
     Files(String),
-    Remove {
-        tag: String,
-        delete_files: bool,
-    },
+    Remove { hash: String, delete_files: bool },
 }
 
 #[derive(Default)]
@@ -119,7 +117,7 @@ struct Script {
     statuses: HashMap<String, TorrentStatus>,
     files: HashMap<String, Vec<ClientFile>>,
     unreachable: bool,
-    /// Tags whose link `add` refuses.
+    /// Info hashes whose link `add` refuses.
     refused: Vec<String>,
     calls: Vec<Call>,
 }
@@ -141,26 +139,26 @@ impl StubClient {
         stub
     }
 
-    /// Give the download marked `tag` this `progress` and client `state` word.
-    pub fn with_status(self, tag: &str, progress: f64, state: &str) -> Self {
-        self.appears(tag, progress, state);
+    /// Give the download with info hash `hash` this `progress` and client `state` word.
+    pub fn with_status(self, hash: &str, progress: f64, state: &str) -> Self {
+        self.appears(hash, progress, state);
         self
     }
 
-    /// The client expects the download marked `tag` to take `eta` more seconds.
-    pub fn with_eta(self, tag: &str, eta: i64) -> Self {
-        if let Some(status) = self.script().statuses.get_mut(tag) {
+    /// The client expects the download with info hash `hash` to take `eta` more seconds.
+    pub fn with_eta(self, hash: &str, eta: i64) -> Self {
+        if let Some(status) = self.script().statuses.get_mut(hash) {
             status.eta = Some(eta);
         }
         self
     }
 
-    /// Give the download marked `tag` finished, saved in `save_path` and holding `files`
+    /// Give the download with info hash `hash` finished, saved in `save_path` and holding `files`
     /// (name and size).
-    pub fn with_files(self, tag: &str, save_path: &str, files: &[(&str, u64)]) -> Self {
-        self.appears(tag, 1.0, "stalledUP");
+    pub fn with_files(self, hash: &str, save_path: &str, files: &[(&str, u64)]) -> Self {
+        self.appears(hash, 1.0, "stalledUP");
         let mut script = self.script();
-        if let Some(status) = script.statuses.get_mut(tag) {
+        if let Some(status) = script.statuses.get_mut(hash) {
             status.save_path = save_path.to_string();
         }
         let listed = files
@@ -170,36 +168,35 @@ impl StubClient {
                 size: *size,
             })
             .collect();
-        script.files.insert(tag.to_string(), listed);
+        script.files.insert(hash.to_string(), listed);
         drop(script);
         self
     }
 
-    /// The client reports the download marked `tag` in `state`, keeping the rest of its status.
-    pub fn with_state(self, tag: &str, state: &str) -> Self {
-        if let Some(status) = self.script().statuses.get_mut(tag) {
+    /// The client reports the download with info hash `hash` in `state`, keeping the rest of its status.
+    pub fn with_state(self, hash: &str, state: &str) -> Self {
+        if let Some(status) = self.script().statuses.get_mut(hash) {
             status.state = state.to_string();
         }
         self
     }
 
-    /// A client that refuses to add a download marked `tag`.
-    pub fn refusing(self, tag: &str) -> Self {
-        self.script().refused.push(tag.to_string());
+    /// A client that refuses to add a download with info hash `hash`.
+    pub fn refusing(self, hash: &str) -> Self {
+        self.script().refused.push(hash.to_string());
         self
     }
 
-    /// The client starts showing the download marked `tag`, as a link it fetched at last.
-    pub fn appears(&self, tag: &str, progress: f64, state: &str) {
+    /// The client starts showing the download with info hash `hash`, as a link it fetched at last.
+    pub fn appears(&self, hash: &str, progress: f64, state: &str) {
         let status = TorrentStatus {
-            hash: format!("hash-{tag}"),
+            hash: hash.to_string(),
             progress,
             state: state.to_string(),
             save_path: String::new(),
             eta: None,
-            added_on: None,
         };
-        self.script().statuses.insert(tag.to_string(), status);
+        self.script().statuses.insert(hash.to_string(), status);
     }
 
     /// Every call made so far, oldest first.
@@ -222,45 +219,39 @@ impl StubClient {
 }
 
 impl DownloadClient for StubClient {
-    async fn add(&self, link: &str, category: &str, tag: &str) -> Result<(), ConnectionError> {
+    async fn add(&self, link: &str, category: &str) -> Result<Added, ConnectionError> {
         self.record(Call::Add {
             link: link.to_string(),
             category: category.to_string(),
-            tag: tag.to_string(),
         })?;
-        if self.script().refused.iter().any(|t| t == tag) {
+        let hash = infohash::from_magnet(link)
+            .map_err(|e| ConnectionError::Rejected(format!("the release link {e}")))?;
+        let script = self.script();
+        if script.refused.contains(&hash) {
             return Err(ConnectionError::Rejected(
                 "stub refused the link".to_string(),
             ));
         }
-        Ok(())
+        let adopted = script.statuses.contains_key(&hash);
+        Ok(Added { hash, adopted })
     }
 
-    async fn status(
-        &self,
-        tag: &str,
-        _not_before: i64,
-    ) -> Result<Option<TorrentStatus>, ConnectionError> {
-        self.record(Call::Status(tag.to_string()))?;
-        Ok(self.script().statuses.get(tag).cloned())
+    async fn status(&self, hash: &str) -> Result<Option<TorrentStatus>, ConnectionError> {
+        self.record(Call::Status(hash.to_string()))?;
+        Ok(self.script().statuses.get(hash).cloned())
     }
 
-    async fn files(&self, tag: &str, _not_before: i64) -> Result<Vec<ClientFile>, ConnectionError> {
-        self.record(Call::Files(tag.to_string()))?;
-        Ok(self.script().files.get(tag).cloned().unwrap_or_default())
+    async fn files(&self, hash: &str) -> Result<Vec<ClientFile>, ConnectionError> {
+        self.record(Call::Files(hash.to_string()))?;
+        Ok(self.script().files.get(hash).cloned().unwrap_or_default())
     }
 
-    async fn remove(
-        &self,
-        tag: &str,
-        _not_before: i64,
-        delete_files: bool,
-    ) -> Result<(), ConnectionError> {
+    async fn remove(&self, hash: &str, delete_files: bool) -> Result<(), ConnectionError> {
         self.record(Call::Remove {
-            tag: tag.to_string(),
+            hash: hash.to_string(),
             delete_files,
         })?;
-        self.script().statuses.remove(tag);
+        self.script().statuses.remove(hash);
         Ok(())
     }
 

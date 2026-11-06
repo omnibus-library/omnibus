@@ -3,13 +3,17 @@
 
 use super::*;
 
+/// The info hash of the second version `add_version` gives a request.
+const SECOND_HASH: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
 /// A second version for request `id`, as the search would have found it; returns its id.
 async fn add_version(pool: &SqlitePool, id: i64) -> i64 {
     sqlx::query_scalar(
         "INSERT INTO book_request_results (request_id, guid, title, download_url, score)
-         VALUES (?, 'g2', 't2', 'magnet:?xt=urn:btih:def', 0.5) RETURNING id",
+         VALUES (?, 'g2', 't2', ?, 0.5) RETURNING id",
     )
     .bind(id)
+    .bind(format!("magnet:?xt=urn:btih:{SECOND_HASH}"))
     .fetch_one(pool)
     .await
     .unwrap()
@@ -33,7 +37,7 @@ mod cancelled_downloads {
     async fn waits_out_the_undo_grace_before_touching_the_download() {
         let pool = pool().await;
         let id = cancelled_with_download(&pool, "ada", NOW + 1).await;
-        let client = StubClient::new().with_status(&tag(id), 0.4, "downloading");
+        let client = StubClient::new().with_status(&hash(id), 0.4, "downloading");
 
         let busy = tick(&pool, &client, NOW).await;
 
@@ -45,21 +49,21 @@ mod cancelled_downloads {
     async fn removes_the_download_and_its_files_once_after_the_grace_and_then_forgets_it() {
         let pool = pool().await;
         let id = cancelled_with_download(&pool, "ada", NOW).await;
-        let client = StubClient::new().with_status(&tag(id), 0.4, "downloading");
+        let client = StubClient::new().with_status(&hash(id), 0.4, "downloading");
 
         tick(&pool, &client, NOW).await;
         tick(&pool, &client, NOW + 5).await;
 
         let remove = Call::Remove {
-            tag: tag(id),
+            hash: hash(id),
             delete_files: true,
         };
-        let status = Call::Status(tag(id));
+        let status = Call::Status(hash(id));
         assert_eq!(client.calls(), [status.clone(), remove, status]);
         let after = row(&pool, id).await;
         assert_eq!(after.state, RequestState::Cancelled);
         assert_eq!(
-            (after.client_tag, after.remove_tag, after.cancel_at),
+            (after.client_hash, after.remove_hash, after.cancel_at),
             (None, None, None)
         );
     }
@@ -87,15 +91,58 @@ mod cancelled_downloads {
             &format!("state = 'cancelled', cancel_at = {NOW}"),
         )
         .await;
-        let client = StubClient::new().with_status(&tag(id), 0.4, "downloading");
+        let client = StubClient::new().with_status(&hash(id), 0.4, "downloading");
 
         tick(&pool, &client, NOW).await;
 
         let remove = Call::Remove {
-            tag: tag(id),
+            hash: hash(id),
             delete_files: true,
         };
         assert!(client.calls().contains(&remove));
+    }
+}
+
+mod adopted_downloads {
+    use super::*;
+
+    #[tokio::test]
+    async fn never_removes_a_torrent_the_client_already_held_when_the_request_is_cancelled() {
+        let pool = pool().await;
+        let id = on_its_way(&pool, "ada", 0.4, NOW - 60).await;
+        update(&pool, id, "client_adopted = 1").await;
+        store::cancel(&pool, id, 1, NOW).await.unwrap();
+        let client = StubClient::new().with_status(&hash(id), 0.4, "downloading");
+
+        tick(&pool, &client, NOW + 10).await;
+        tick(&pool, &client, NOW + 20).await;
+
+        assert!(!client
+            .calls()
+            .iter()
+            .any(|c| matches!(c, Call::Remove { .. })));
+        assert!(client.status(&hash(id)).await.unwrap().is_some());
+        let after = row(&pool, id).await;
+        assert_eq!(after.state, RequestState::Cancelled);
+        assert_eq!((after.client_hash, after.remove_hash), (None, None));
+    }
+
+    #[tokio::test]
+    async fn never_removes_a_torrent_the_client_already_held_when_its_version_is_swapped() {
+        let pool = pool().await;
+        let id = on_its_way(&pool, "ada", 0.4, NOW - 60).await;
+        update(&pool, id, "client_adopted = 1").await;
+        let client = StubClient::new().with_status(&hash(id), 0.4, "downloading");
+
+        store::swap(&pool, id, NOW, None).await.unwrap();
+        tick(&pool, &client, NOW + 1).await;
+
+        assert!(!client
+            .calls()
+            .iter()
+            .any(|c| matches!(c, Call::Remove { .. })));
+        let after = row(&pool, id).await;
+        assert_eq!((after.remove_hash, after.client_adopted), (None, false));
     }
 }
 
@@ -113,7 +160,7 @@ mod undo_and_the_end_of_the_grace {
     async fn removes_nothing_when_the_undo_came_in_time_and_the_old_deadline_passes() {
         let pool = pool().await;
         let id = cancel_and_undo_in_time(&pool).await;
-        let client = StubClient::new().with_status(&tag(id), 0.4, "downloading");
+        let client = StubClient::new().with_status(&hash(id), 0.4, "downloading");
 
         tick(&pool, &client, NOW + 10).await;
         tick(&pool, &client, NOW + 60).await;
@@ -130,7 +177,7 @@ mod undo_and_the_end_of_the_grace {
         let pool = pool().await;
         let id = on_its_way(&pool, "ada", 0.4, NOW - 60).await;
         store::cancel(&pool, id, 1, NOW).await.unwrap();
-        let client = StubClient::new().with_status(&tag(id), 0.4, "downloading");
+        let client = StubClient::new().with_status(&hash(id), 0.4, "downloading");
 
         tick(&pool, &client, NOW + 10).await;
         let late = store::undo_cancel(&pool, id, NOW + 9, 5).await;
@@ -148,39 +195,34 @@ mod swapped_downloads {
     use super::*;
 
     #[tokio::test]
-    async fn removes_a_job_that_shows_up_after_a_swap_and_adds_the_new_pick_under_its_own_tag() {
+    async fn removes_a_job_that_shows_up_after_a_swap_and_adds_the_new_pick_under_its_own_hash() {
         let pool = pool().await;
         let id = seed(&pool, "ada", "chosen").await;
         let second = add_version(&pool, id).await;
         let client = StubClient::new();
         tick(&pool, &client, NOW).await;
-        let first_tag = row(&pool, id).await.client_tag.unwrap();
         store::swap(&pool, id, NOW + 1, Some("Swapped for another version"))
             .await
             .unwrap();
         store::choose(&pool, id, second).await.unwrap();
 
         tick(&pool, &client, NOW + 2).await;
-        client.appears(&first_tag, 0.1, "downloading");
+        client.appears(&hash(id), 0.1, "downloading");
         tick(&pool, &client, NOW + 3).await;
         tick(&pool, &client, NOW + 4).await;
 
         let calls = client.calls();
-        let after = row(&pool, id).await;
-        let new_tag = after.client_tag.clone().unwrap();
-        assert_ne!(new_tag, first_tag);
         assert!(calls.contains(&Call::Remove {
-            tag: first_tag,
+            hash: hash(id),
             delete_files: true
         }));
-        assert!(calls
-            .iter()
-            .any(|c| matches!(c, Call::Add { tag, .. } if *tag == new_tag)));
         assert!(!calls.contains(&Call::Remove {
-            tag: new_tag.clone(),
+            hash: SECOND_HASH.to_string(),
             delete_files: true
         }));
-        assert_eq!(after.remove_tag, None);
+        let after = row(&pool, id).await;
+        assert_eq!(after.client_hash.as_deref(), Some(SECOND_HASH));
+        assert_eq!(after.remove_hash, None);
     }
 
     #[tokio::test]
@@ -191,10 +233,10 @@ mod swapped_downloads {
         let client = StubClient::new();
 
         tick(&pool, &client, NOW + 599).await;
-        let kept = row(&pool, id).await.remove_tag;
+        let kept = row(&pool, id).await.remove_hash;
         tick(&pool, &client, NOW + 601).await;
 
-        assert_eq!(kept, Some(tag(id)));
-        assert_eq!(row(&pool, id).await.remove_tag, None);
+        assert_eq!(kept, Some(hash(id)));
+        assert_eq!(row(&pool, id).await.remove_hash, None);
     }
 }

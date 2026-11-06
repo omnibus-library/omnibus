@@ -19,7 +19,7 @@ async fn couldnt_add(pool: &SqlitePool, user: i64) -> i64 {
         "UPDATE book_requests
          SET state = 'stuck', stuck_reason = 'couldnt_add', chosen_result_id = ?,
              stuck_detail = 'filing the download failed: /srv/library is read-only',
-             client_tag = 'omnibus-1', progress = 1, import_key = 'bram-stoker/dracula/dracula.epub'
+             client_hash = 'omnibus-1', progress = 1, import_key = 'bram-stoker/dracula/dracula.epub'
          WHERE id = ?",
     )
     .bind(result)
@@ -64,7 +64,7 @@ mod post_retry_request_when_couldnt_add {
             .unwrap();
         assert_eq!(results, 1);
         let kept = store::get(&pool, id).await.unwrap().unwrap();
-        assert_eq!(kept.client_tag.as_deref(), Some("omnibus-1"));
+        assert_eq!(kept.client_hash.as_deref(), Some("omnibus-1"));
         assert_eq!(
             kept.import_key.as_deref(),
             Some("bram-stoker/dracula/dracula.epub")

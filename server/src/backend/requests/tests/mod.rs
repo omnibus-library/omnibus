@@ -492,14 +492,14 @@ mod get_request {
     }
 
     #[tokio::test]
-    async fn carries_the_progress_of_a_request_on_its_way_and_never_its_client_tag() {
+    async fn carries_the_progress_of_a_request_on_its_way_and_never_its_client_hash() {
         let (app, _, pool) = fixture_book_requests(true).await;
         let (ada, token) = requester(&pool, "ada").await;
         let uuid = seed_book(&pool, "Dracula").await;
         let id = seed_request(&pool, ada, &uuid).await;
         sqlx::query(
             "UPDATE book_requests SET state = 'on_its_way', progress = 0.4,
-             client_tag = 'omnibus-secret' WHERE id = ?",
+             client_hash = 'omnibus-secret' WHERE id = ?",
         )
         .bind(id)
         .execute(&pool)

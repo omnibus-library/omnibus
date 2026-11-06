@@ -2,7 +2,8 @@
 //! claims the cancels whose grace ended and takes out what is on the removal list, then adds
 //! what was picked, then reads every unfinished download; a tick then adds the finished ones
 //! to the library. All request state lives in the table, so a restart picks up where it
-//! stopped. The client is asked by tag, never by hash, and its answers are judged by [`judge`].
+//! stopped. A download is found in the client by its info hash alone, and the client's answers are
+//! judged by [`judge`].
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -173,7 +174,7 @@ fn refused_one(e: &ConnectionError) -> bool {
 }
 
 /// Take each download on the removal list out of the client, files and all. A job the client
-/// has not shown yet may still be being fetched, so its tag stays until it has been seen and
+/// has not shown yet may still be being fetched, so its hash stays until it has been seen and
 /// removed, or [`APPEAR_SECS`] have passed without it.
 async fn remove_pending(
     pool: &SqlitePool,
@@ -181,12 +182,12 @@ async fn remove_pending(
     now: i64,
 ) -> Result<(), PassError> {
     for row in store::pending_removals(pool).await? {
-        let Some(tag) = row.remove_tag.as_deref() else {
+        let Some(hash) = row.remove_hash.as_deref() else {
             continue;
         };
-        if client.status(tag, row.created_at).await?.is_some() {
-            store::mark_removal_seen(pool, row.id, tag).await?;
-            match client.remove(tag, row.created_at, true).await {
+        if client.status(hash).await?.is_some() {
+            store::mark_removal_seen(pool, row.id, hash).await?;
+            match client.remove(hash, true).await {
                 Err(e) if refused_one(&e) => tracing::warn!(error = %e, "remove a download"),
                 other => other?,
             }
@@ -194,14 +195,15 @@ async fn remove_pending(
             .remove_since
             .is_none_or(|since| now - since > APPEAR_SECS)
         {
-            store::finish_removal(pool, row.id, tag).await?;
+            store::finish_removal(pool, row.id, hash).await?;
         }
     }
     Ok(())
 }
 
-/// Start the download of every picked version the client does not already have. A link the
-/// client refuses stops that request alone.
+/// Hand every picked version to the client, which adopts a torrent it already has. A link the
+/// client refuses stops that request alone. A torrent Omnibus added for a request that was
+/// cancelled meanwhile is taken out again; one the client already held is left alone.
 async fn add_picked(
     pool: &SqlitePool,
     client: &impl DownloadClient,
@@ -209,21 +211,24 @@ async fn add_picked(
     now: i64,
 ) -> Result<(), PassError> {
     for row in store::awaiting_add(pool).await? {
-        let Some((tag, link)) = store::begin_download(pool, row.id).await? else {
+        let Some(link) = store::pick_link(pool, row.id).await? else {
             continue;
         };
-        if client.status(&tag, row.created_at).await?.is_none() {
-            match client.add(&link, category, &tag).await {
-                Ok(()) => {}
-                Err(e) if refused_one(&e) => {
-                    let why = e.to_string();
-                    store::mark_stuck(pool, row.id, row.chosen_result_id, STOPPED, &why).await?;
-                    continue;
-                }
-                Err(e) => return Err(e.into()),
+        let added = match client.add(&link, category).await {
+            Ok(added) => added,
+            Err(e) if refused_one(&e) => {
+                let why = e.to_string();
+                store::mark_stuck(pool, row.id, row.chosen_result_id, STOPPED, &why).await?;
+                continue;
+            }
+            Err(e) => return Err(e.into()),
+        };
+        let kept = store::mark_on_its_way(pool, row.id, &added.hash, added.adopted, now).await?;
+        if !kept && !added.adopted {
+            if let Err(e) = client.remove(&added.hash, true).await {
+                tracing::warn!(error = %e, "remove a download of a cancelled request");
             }
         }
-        store::mark_on_its_way(pool, row.id, now).await?;
     }
     Ok(())
 }
@@ -234,10 +239,10 @@ async fn follow_downloads(
     now: i64,
 ) -> Result<(), PassError> {
     for row in store::downloading(pool).await? {
-        let Some(tag) = row.client_tag.as_deref() else {
+        let Some(hash) = row.client_hash.as_deref() else {
             continue;
         };
-        let status = client.status(tag, row.created_at).await?;
+        let status = client.status(hash).await?;
         let pick = row.chosen_result_id;
         let done_at = status.as_ref().and_then(|s| expected_done_at(s, now));
         match judge(&row, status.as_ref(), now) {

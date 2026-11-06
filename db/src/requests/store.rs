@@ -24,7 +24,7 @@ const DOWNLOADING: &str = "(state = 'on_its_way' AND (progress IS NULL OR progre
 const NOW: &str = "strftime('%s', 'now')";
 
 const COLUMNS: &str = "id, book_uuid, user_id, kind, state, stuck_reason, stuck_detail, \
-                       chosen_result_id, client_tag, import_key, remove_tag, remove_since, progress, moved_at, expected_done_at, cancel_at, cancelled_by, \
+                       chosen_result_id, client_hash, client_adopted, import_key, remove_hash, remove_since, progress, moved_at, expected_done_at, cancel_at, cancelled_by, \
                        prior_state, note, offers_cover, cover_candidate, created_at, updated_at";
 
 /// Why a request could not be recorded or changed.
@@ -59,14 +59,16 @@ pub struct RequestRow {
     pub stuck_reason: Option<StuckReason>,
     pub stuck_detail: Option<String>,
     pub chosen_result_id: Option<i64>,
-    /// The name of the live download in the client; never sent to a reader.
-    pub client_tag: Option<String>,
+    /// The info hash of the live download in the client; never sent to a reader.
+    pub client_hash: Option<String>,
+    /// True when the client already held the torrent, so Omnibus never removes it.
+    pub client_adopted: bool,
     /// The library-relative key of the file a finished download was placed as, once it has
     /// been; a retried import resumes from it.
     pub import_key: Option<String>,
     /// A download to take out of the client, and `remove_since` when that began (Unix
     /// seconds; `None` once the client has shown it).
-    pub remove_tag: Option<String>,
+    pub remove_hash: Option<String>,
     pub remove_since: Option<i64>,
     /// How much of the download is done, 0 to 1.
     pub progress: Option<f64>,
@@ -145,9 +147,10 @@ fn row_to_request(row: &SqliteRow) -> Result<RequestRow, sqlx::Error> {
             .transpose()?,
         stuck_detail: row.try_get("stuck_detail")?,
         chosen_result_id: row.try_get("chosen_result_id")?,
-        client_tag: row.try_get("client_tag")?,
+        client_hash: row.try_get("client_hash")?,
+        client_adopted: row.try_get::<i64, _>("client_adopted")? != 0,
         import_key: row.try_get("import_key")?,
-        remove_tag: row.try_get("remove_tag")?,
+        remove_hash: row.try_get("remove_hash")?,
         remove_since: row.try_get("remove_since")?,
         progress: row.try_get("progress")?,
         moved_at: row.try_get("moved_at")?,
@@ -514,9 +517,10 @@ mod list;
 
 pub use change::{cancel, swap, undo_cancel, CANCEL_GRACE_SECS};
 pub use download::{
-    awaiting_add, awaiting_import, begin_download, claim_due_cancels, downloading, finish_removal,
+    awaiting_add, awaiting_import, claim_due_cancels, downloading, finish_removal,
     has_download_work, mark_on_its_way, mark_ready, mark_removal_seen, mark_stuck,
-    pending_removals, record_expected_done_at, record_progress, set_import_key, unix_now,
+    pending_removals, pick_link, record_expected_done_at, record_progress, set_import_key,
+    unix_now,
 };
 pub use list::{list, ListFilter, Listed};
 

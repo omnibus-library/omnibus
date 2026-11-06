@@ -3,7 +3,9 @@
 //! cookie `SID` or `QBT_SID_<port>` by version and settings, so every `Set-Cookie` pair is
 //! echoed rather than one by name. A release link is fetched here and uploaded as a file:
 //! qBittorrent may have no route to Prowlarr, and the link carries the API key. Share
-//! limits are never sent: seeding is the admin's own policy in qBittorrent.
+//! limits are never sent: seeding is the admin's own policy in qBittorrent. A torrent is
+//! addressed by its info hash alone (`hashes=`); nothing is tagged, and a category is sent
+//! only when one is set.
 // shortcut: one login per call; cache the cookie if the poller's cadence ever makes it matter.
 
 use reqwest::header::{COOKIE, LOCATION, SET_COOKIE};
@@ -12,16 +14,13 @@ use reqwest::{RequestBuilder, Response, StatusCode, Url};
 
 use crate::requests::{check_status, http_client, ConnectionError, REQUEST_TIMEOUT};
 
-use super::{ClientFile, DownloadClient, TorrentStatus};
+use super::infohash;
+use super::{Added, ClientFile, DownloadClient, TorrentStatus};
 
 const SERVICE: &str = "qBittorrent";
 
 /// A torrent file is kilobytes; anything past this is not one.
 pub const MAX_TORRENT_BYTES: usize = 4 * 1024 * 1024;
-
-/// How far apart the clocks of this server and the client's host may run: a download added
-/// this many seconds before its request was made still counts as the request's.
-const CLOCK_SKEW_SECS: i64 = 10;
 
 /// How many redirects a release link may take before it is given up on.
 const MAX_HOPS: usize = 3;
@@ -159,29 +158,21 @@ impl Qbittorrent {
         Err(rejected("redirected too many times"))
     }
 
+    /// The download with info hash `hash`. The client is asked for that hash alone; the
+    /// check on the answer is for a client that ignores the filter.
     async fn status_with(
         &self,
         cookie: &str,
-        tag: &str,
-        not_before: i64,
+        hash: &str,
     ) -> Result<Option<TorrentStatus>, ConnectionError> {
         let response = self
-            .send(self.get("torrents/info", cookie).query(&[("tag", tag)]))
+            .send(self.get("torrents/info", cookie).query(&[("hashes", hash)]))
             .await?;
         let found: Vec<TorrentStatus> = response
             .json()
             .await
             .map_err(|e| ConnectionError::from_transport(&e))?;
-        // One added before the request existed is some other download that carries a tag it
-        // should not. Of several that remain (the link was added twice), the newest is the
-        // one the latest hand-off made; taking whichever the client lists first could be either.
-        Ok(found
-            .into_iter()
-            .filter(|t| {
-                t.added_on
-                    .is_none_or(|at| at >= not_before - CLOCK_SKEW_SECS)
-            })
-            .max_by_key(|t| t.added_on))
+        Ok(found.into_iter().find(|t| t.hash == hash))
     }
 }
 
@@ -204,29 +195,40 @@ struct AddOutcome {
 }
 
 impl DownloadClient for Qbittorrent {
-    /// `Ok` means qBittorrent accepted the torrent; 5.x adds asynchronously, so it may
-    /// still be pending, and `status` can answer `None` for a while.
-    async fn add(&self, link: &str, category: &str, tag: &str) -> Result<(), ConnectionError> {
+    /// `Ok` means qBittorrent has the torrent or accepted it; 5.x adds asynchronously, so it
+    /// may still be pending, and `status` can answer `None` for a while.
+    async fn add(&self, link: &str, category: &str) -> Result<Added, ConnectionError> {
         let release = self.fetch_release(link).await?;
+        let hash = match &release {
+            Release::Magnet(magnet) => infohash::from_magnet(magnet),
+            Release::File(bytes) => infohash::from_torrent(bytes),
+        }
+        .map_err(|e| rejected(&e.to_string()))?;
         let cookie = self.login().await?;
+        let adopt = Added {
+            hash: hash.clone(),
+            adopted: true,
+        };
+        if self.status_with(&cookie, &hash).await?.is_some() {
+            return Ok(adopt);
+        }
         let request = match release {
             Release::Magnet(magnet) => {
-                let form = [
-                    ("urls", magnet.as_str()),
-                    ("category", category),
-                    ("tags", tag),
-                ];
+                let mut form = vec![("urls", magnet.as_str())];
+                if !category.is_empty() {
+                    form.push(("category", category));
+                }
                 self.post("torrents/add", &cookie).form(&form)
             }
             Release::File(bytes) => {
                 let file = Part::bytes(bytes)
-                    .file_name(format!("{tag}.torrent"))
+                    .file_name(format!("{hash}.torrent"))
                     .mime_str("application/x-bittorrent")
                     .map_err(|e| ConnectionError::from_transport(&e))?;
-                let form = Form::new()
-                    .part("torrents", file)
-                    .text("category", category.to_string())
-                    .text("tags", tag.to_string());
+                let mut form = Form::new().part("torrents", file);
+                if !category.is_empty() {
+                    form = form.text("category", category.to_string());
+                }
                 self.post("torrents/add", &cookie).multipart(form)
             }
         };
@@ -241,26 +243,29 @@ impl DownloadClient for Qbittorrent {
         } else {
             body.trim() == "Fails."
         };
-        if refused {
-            return Err(ConnectionError::Rejected(format!(
-                "{SERVICE} did not accept the torrent"
-            )));
+        if !refused {
+            return Ok(Added {
+                adopted: false,
+                ..adopt
+            });
         }
-        Ok(())
+        // A client says no to a torrent it already holds, such as one added a moment ago.
+        if self.status_with(&cookie, &hash).await?.is_some() {
+            return Ok(adopt);
+        }
+        Err(ConnectionError::Rejected(format!(
+            "{SERVICE} did not accept the torrent"
+        )))
     }
 
-    async fn status(
-        &self,
-        tag: &str,
-        not_before: i64,
-    ) -> Result<Option<TorrentStatus>, ConnectionError> {
+    async fn status(&self, hash: &str) -> Result<Option<TorrentStatus>, ConnectionError> {
         let cookie = self.login().await?;
-        self.status_with(&cookie, tag, not_before).await
+        self.status_with(&cookie, hash).await
     }
 
-    async fn files(&self, tag: &str, not_before: i64) -> Result<Vec<ClientFile>, ConnectionError> {
+    async fn files(&self, hash: &str) -> Result<Vec<ClientFile>, ConnectionError> {
         let cookie = self.login().await?;
-        let Some(torrent) = self.status_with(&cookie, tag, not_before).await? else {
+        let Some(torrent) = self.status_with(&cookie, hash).await? else {
             return Ok(Vec::new());
         };
         let request = self
@@ -275,14 +280,9 @@ impl DownloadClient for Qbittorrent {
             .map_err(|e| ConnectionError::from_transport(&e))
     }
 
-    async fn remove(
-        &self,
-        tag: &str,
-        not_before: i64,
-        delete_files: bool,
-    ) -> Result<(), ConnectionError> {
+    async fn remove(&self, hash: &str, delete_files: bool) -> Result<(), ConnectionError> {
         let cookie = self.login().await?;
-        let Some(torrent) = self.status_with(&cookie, tag, not_before).await? else {
+        let Some(torrent) = self.status_with(&cookie, hash).await? else {
             return Ok(());
         };
         let form = [

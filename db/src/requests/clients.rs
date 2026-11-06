@@ -1,9 +1,8 @@
 //! The download client the server hands releases to and watches. [`DownloadClient`] is the
 //! seam the request pipeline works against; [`client_for`] builds the one the admin chose.
-//! Torrents are found by tag, never by hash, so a restart loses no track of them. A tag is
-//! `omnibus-<uuid>`, minted once per hand-off and stored with the request, so it is unique
-//! beyond this database; a download the client says it added before the request existed
-//! is never the request's.
+//! A download is found by its BitTorrent info hash, which Omnibus reads from the release
+//! before the client is given it and stores with the request, so a restart loses no track of
+//! it and no other download can be mistaken for it. Nothing is tagged.
 
 use std::future::Future;
 
@@ -13,6 +12,7 @@ use crate::settings::RequestsConfig;
 
 use super::ConnectionError;
 
+pub mod infohash;
 pub mod qbittorrent;
 
 pub use qbittorrent::Qbittorrent;
@@ -31,9 +31,6 @@ pub struct TorrentStatus {
     /// 8640000 when it can't tell.
     #[serde(default)]
     pub eta: Option<i64>,
-    /// When the client added the download, in Unix seconds, when it says.
-    #[serde(default)]
-    pub added_on: Option<i64>,
 }
 
 /// One file inside a download.
@@ -44,38 +41,44 @@ pub struct ClientFile {
     pub size: u64,
 }
 
+/// Where a hand-off left a release: its info hash, and whether the client already had it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Added {
+    /// The lowercase hex info hash the client lists the download by.
+    pub hash: String,
+    /// True when the client already held this torrent, so Omnibus did not add it and must
+    /// never delete it.
+    pub adopted: bool,
+}
+
 /// The few things the request pipeline asks of a download client. Every method fails
 /// with a [`ConnectionError`] the admin can read.
 pub trait DownloadClient {
-    /// Start downloading `link` under `category`, marked with `tag`.
+    /// Start downloading `link`, under `category` unless it is empty. A torrent the client
+    /// already has is adopted: it is the same content.
     fn add(
         &self,
         link: &str,
         category: &str,
-        tag: &str,
-    ) -> impl Future<Output = Result<(), ConnectionError>> + Send;
+    ) -> impl Future<Output = Result<Added, ConnectionError>> + Send;
 
-    /// The download marked `tag`, or `None` when the client has none. One the client added
-    /// before `not_before` (Unix seconds) is not it: the request did not exist yet.
+    /// The download with info hash `hash`, or `None` when the client has none.
     fn status(
         &self,
-        tag: &str,
-        not_before: i64,
+        hash: &str,
     ) -> impl Future<Output = Result<Option<TorrentStatus>, ConnectionError>> + Send;
 
-    /// The files of the download [`Self::status`] finds for `tag`; empty when there is none.
+    /// The files of the download with info hash `hash`; empty when the client has none.
     fn files(
         &self,
-        tag: &str,
-        not_before: i64,
+        hash: &str,
     ) -> impl Future<Output = Result<Vec<ClientFile>, ConnectionError>> + Send;
 
-    /// Remove the download [`Self::status`] finds for `tag`, and its files when
-    /// `delete_files`. A download that is already gone is not an error.
+    /// Remove the download with info hash `hash`, and its files when `delete_files`. A
+    /// download that is already gone is not an error.
     fn remove(
         &self,
-        tag: &str,
-        not_before: i64,
+        hash: &str,
         delete_files: bool,
     ) -> impl Future<Output = Result<(), ConnectionError>> + Send;
 
