@@ -6602,6 +6602,49 @@
         }
       }
     },
+    "/api/requests/{id}/cover": {
+      "get": {
+        "tags": [
+          "Requests"
+        ],
+        "summary": "Get a request's downloaded cover",
+        "description": "The cover that came with the request's finished download, offered as a replacement for the\nbook's own: the image as stored, validated by its `ETag`. It is there until the offer is\ntaken or kept (`POST` or `DELETE` on this path). Any signed-in reader may read it.",
+        "operationId": "get_request_cover",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The request's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The cover image.",
+            "content": {
+              "image/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileBytes"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "The cover is unchanged since the `ETag` sent in `If-None-Match`."
+          },
+          "401": {
+            "description": "You aren't signed in."
+          },
+          "404": {
+            "description": "Book requests are off on this server, there is no such request, or it has no cover on offer."
+          }
+        }
+      }
+    },
     "/api/requests/{id}/retry": {
       "post": {
         "tags": [

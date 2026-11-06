@@ -362,6 +362,7 @@ fn request_routes() -> OpenApiRouter<AppState> {
         ))
         .routes(routes!(requests::get_requests))
         .routes(routes!(requests::get_request))
+        .routes(routes!(requests::get_request_cover))
         .routes(routes!(requests::post_retry_request))
         .routes(routes!(requests::post_choose_version))
         .routes(routes!(requests::post_swap_request))

@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 use axum::{
     extract::{FromRequestParts, Path, Query, State},
-    http::{request::Parts, StatusCode},
+    http::{request::Parts, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
@@ -23,7 +23,7 @@ use omnibus_db::{
     },
 };
 use omnibus_shared::{
-    BookRequest, ChooseVersion, RequestKind, RequestListQuery, RequestListing, RequestState,
+    BookRequest, ChooseVersion, FileBytes, RequestKind, RequestListQuery, RequestListing, RequestState,
     StartRequest, StuckReason,
 };
 
@@ -370,6 +370,40 @@ pub(super) async fn get_request(
     Path(id): Path<i64>,
 ) -> Response {
     answer(&state, id, &user).await
+}
+
+/// Get a request's downloaded cover
+///
+/// The cover that came with the request's finished download, offered as a replacement for the
+/// book's own: the image as stored, validated by its `ETag`. It is there until the offer is
+/// taken or kept (`POST` or `DELETE` on this path). Any signed-in reader may read it.
+#[utoipa::path(
+    get,
+    path = "/api/requests/{id}/cover",
+    tag = "Requests",
+    operation_id = "get_request_cover",
+    params(("id" = i64, Path, description = "The request's id.")),
+    responses(
+        (status = 200, description = "The cover image.", body = FileBytes, content_type = "image/*"),
+        (status = 304, description = "The cover is unchanged since the `ETag` sent in `If-None-Match`."),
+        (status = 401, description = "You aren't signed in."),
+        (status = 404, description = "Book requests are off on this server, there is no such request, or it has no cover on offer."),
+    ),
+)]
+pub(super) async fn get_request_cover(
+    RequestsViewer(_): RequestsViewer,
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    headers: HeaderMap,
+) -> Response {
+    let row = match find(&state, id).await {
+        Ok(row) => row,
+        Err(res) => return res,
+    };
+    match cover::candidate_cover(&row).await {
+        Some((mime, bytes)) => super::covers::image_response(&headers, &mime, bytes),
+        None => (StatusCode::NOT_FOUND, "no cover on offer").into_response(),
+    }
 }
 
 /// Try a request again

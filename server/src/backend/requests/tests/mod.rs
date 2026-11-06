@@ -138,11 +138,12 @@ mod flag_and_permission_gate {
         ]
     }
 
-    fn reads() -> [(&'static str, String, Option<Value>); 3] {
+    fn reads() -> [(&'static str, String, Option<Value>); 4] {
         [
             ("GET", start_uri("any"), None),
             ("GET", "/api/requests".to_string(), None),
             ("GET", "/api/requests/1".to_string(), None),
+            ("GET", "/api/requests/1/cover".to_string(), None),
         ]
     }
 
