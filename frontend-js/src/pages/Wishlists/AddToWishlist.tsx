@@ -26,7 +26,7 @@ import { Loading } from "../../components/Loading/Loading";
 import { Sheet } from "../../components/Sheet/Sheet";
 import { useToast } from "../../components/Toast/Toast";
 import { useDebounced } from "../../useDebounced";
-import { useMediaQuery } from "../../useMediaQuery";
+import { PHONE_QUERY, useMediaQuery } from "../../useMediaQuery";
 import {
   cleanIsbn,
   type FoundVia,
@@ -37,7 +37,6 @@ import { refreshAfterWrite } from "./refresh";
 import { existingBook, isbnResults, onlineHeading } from "./wishlistView";
 
 /** The widths where the panel is a bottom sheet; `Sheet.css` turns its own dialog into one at the same line. */
-const PHONE = "(max-width: 720px)";
 
 /** A search hit the reader may add: a library book, or a provider's record of one. A lookup by ISBN has already said which library book a record matches, so that record carries the answer (`null` for none). */
 type Hit =
@@ -334,7 +333,7 @@ export function AddToWishlist({
   const client = useQueryClient();
   const toast = useToast();
   const button = useRef<HTMLButtonElement>(null);
-  const phone = useMediaQuery(PHONE);
+  const phone = useMediaQuery(PHONE_QUERY);
   // The sheet leaves with an exit animation before the owner is told.
   const [closing, setClosing] = useState(false);
   const [error, setError] = useState<string | null>(null);

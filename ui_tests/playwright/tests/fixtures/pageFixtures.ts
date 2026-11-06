@@ -5,7 +5,6 @@ import { AdminPage } from "../pages/AdminPage";
 import { AuthorPage } from "../pages/AuthorPage";
 import { AuthorsIndexPage } from "../pages/AuthorsIndexPage";
 import { BookDetailPage } from "../pages/BookDetailPage";
-import { BookRequestPage } from "../pages/BookRequestPage";
 import { ChartBuilderPage } from "../pages/ChartBuilderPage";
 import { CheckInPage } from "../pages/CheckInPage";
 import { CleanupReviewPage } from "../pages/CleanupReviewPage";
@@ -19,6 +18,7 @@ import { MetadataEditPage } from "../pages/MetadataEditPage";
 import { NotFoundPage } from "../pages/NotFoundPage";
 import { PdfReaderPage } from "../pages/PdfReaderPage";
 import { RegisterPage } from "../pages/RegisterPage";
+import { RequestsPage } from "../pages/RequestsPage";
 import { SearchResultsPage } from "../pages/SearchResultsPage";
 import { SeriesIndexPage } from "../pages/SeriesIndexPage";
 import { SeriesPage } from "../pages/SeriesPage";
@@ -50,7 +50,8 @@ type PageFixtures = {
   secondReaderExpectMutation: ExpectMutation;
   libraryPage: LibraryPage;
   bookDetailPage: BookDetailPage;
-  bookRequestPage: BookRequestPage;
+  requestsPage: RequestsPage;
+  readerRequestsPage: RequestsPage;
   wishlistsPage: WishlistsPage;
   checkInPage: CheckInPage;
   epubReaderPage: EpubReaderPage;
@@ -112,8 +113,12 @@ export const test = base.extend<PageFixtures>({
     await use(new BookDetailPage(page));
   },
 
-  bookRequestPage: async ({ page }, use) => {
-    await use(new BookRequestPage(page));
+  requestsPage: async ({ page }, use) => {
+    await use(new RequestsPage(page));
+  },
+
+  readerRequestsPage: async ({ readerPage }, use) => {
+    await use(new RequestsPage(readerPage));
   },
 
   wishlistsPage: async ({ page }, use) => {

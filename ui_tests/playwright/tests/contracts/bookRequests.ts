@@ -5,6 +5,7 @@ import { type ExpectMutationOptions, post } from "../utils/api";
 export const bookRequestUrls = {
   start: /\/api\/books\/[^/]+\/requests$/,
   choose: /\/api\/requests\/\d+\/choose$/,
+  cancel: /\/api\/requests\/\d+\/cancel$/,
 };
 
 /** The request each book-request action must send, for `expectMutation`. */
@@ -17,4 +18,6 @@ export const bookRequests = {
     post(bookRequestUrls.choose, {
       result_id: expect.any(Number),
     }),
+
+  cancel: (): ExpectMutationOptions => post(bookRequestUrls.cancel),
 };

@@ -53,6 +53,8 @@ impl AuthUser {
             can_edit: self.can_edit,
             can_download: self.can_download,
             can_request: self.can_request,
+            // The boot flag isn't on the session; `/api/auth/me` fills it in.
+            book_requests: false,
             kindle_email: self.kindle_email.clone(),
             display_name: self.display_name.clone(),
             has_avatar: self.has_avatar,

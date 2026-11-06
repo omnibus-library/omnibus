@@ -38,6 +38,8 @@ export function toUser(user: UserSummary) {
     canEdit: user.can_edit,
     canDownload: user.can_download,
     canRequest: user.can_request ?? false,
+    /** The server has book requests on, so every reader may see them. */
+    requestsOn: user.book_requests ?? false,
     hasAvatar: user.has_avatar ?? false,
     hiddenFormats: user.hidden_formats ?? [],
     stackSeries: user.stack_series ?? false,

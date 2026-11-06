@@ -6,10 +6,12 @@ import type { EbookDetail, LibraryBook } from "../data/ebooks";
 import { buildExternalBook } from "../data/scan";
 import { FIXTURE_BOOKS } from "../fixtures/epubs";
 import { expect, test } from "../fixtures/pageFixtures";
+import { failing } from "../utils/api";
 import { fixturesDir, seedLibrary, waitForWorkerIdle } from "../utils/seed";
 
 // A configured download client makes the poller act on every picked request, so the tests
-// that configure one must not overlap the one that stops at a pick.
+// that configure one must not overlap the one that stops at a pick; and every request starts
+// a search, so the requests page's tests must not land on another test's mock Prowlarr.
 test.describe.configure({ mode: "serial" });
 
 test.describe("book request", () => {
@@ -24,7 +26,7 @@ test.describe("book request", () => {
     createdBookUuids,
     prowlarrFor,
     wishlistsPage,
-    bookRequestPage,
+    requestsPage,
     expectMutation,
   }) => {
     const book = buildExternalBook();
@@ -49,47 +51,45 @@ test.describe("book request", () => {
       await expectMutation(bookRequests.start(), () =>
         wishlistsPage.requestEbook(book.title),
       );
-      await bookRequestPage.assertDisplayed();
-      await expect(bookRequestPage.titleHeading).toHaveText(book.title);
+      await requestsPage.assertDisplayed();
+      await expect(requestsPage.paneTitle).toHaveText(book.title);
     });
 
     await test.step("see the request looking while the search runs", async () => {
-      await expect(bookRequestPage.state).toHaveText("Looking");
-      await expect(bookRequestPage.looking).toBeAttached();
-      await expect(bookRequestPage.versions).toHaveCount(0);
+      await expect(requestsPage.paneState).toHaveText("Looking");
+      await expect(requestsPage.looking).toBeAttached();
+      await expect(requestsPage.versions).toHaveCount(0);
     });
 
     await test.step("see the versions once the search finishes", async () => {
       release();
-      await expect(bookRequestPage.state).toHaveText("Choose a version", {
+      await expect(requestsPage.paneState).toHaveText("Choose a version", {
         timeout: 10_000,
       });
-      await expect(bookRequestPage.versions).toHaveCount(2);
-      await expect(bookRequestPage.bestMatchBadges).toHaveCount(1);
+      await expect(requestsPage.versions).toHaveCount(2);
+      await expect(requestsPage.bestMatchBadges).toHaveCount(1);
       await expect(
-        bookRequestPage.bestMatchOf(bookRequestPage.version("EPUB")),
+        requestsPage.bestMatchOf(requestsPage.version("EPUB")),
       ).toBeVisible();
       expect(findings.searches).toEqual([`${book.title} ${author}`]);
     });
 
     await test.step("read where a version came from", async () => {
-      const pdf = bookRequestPage.version("PDF");
-      await bookRequestPage.showDetails();
-      await expect(bookRequestPage.detailsOf(pdf)).toContainText(
+      const pdf = requestsPage.version("PDF");
+      await requestsPage.showDetails();
+      await expect(requestsPage.detailsOf(pdf)).toContainText(
         "E2E Library Ink",
       );
-      await expect(bookRequestPage.detailsOf(pdf)).not.toContainText(
-        "127.0.0.1",
-      );
+      await expect(requestsPage.detailsOf(pdf)).not.toContainText("127.0.0.1");
     });
 
     await test.step("choose the best match", async () => {
       await expectMutation(bookRequests.choose(), () =>
-        bookRequestPage.choose(bookRequestPage.version("EPUB")),
+        requestsPage.choose(requestsPage.version("EPUB")),
       );
-      await expect(bookRequestPage.state).toHaveText("Version chosen");
-      await expect(bookRequestPage.chosen).toContainText("EPUB");
-      await expect(bookRequestPage.versions).toHaveCount(0);
+      await expect(requestsPage.paneState).toHaveText("Version chosen");
+      await expect(requestsPage.chosen).toContainText("EPUB");
+      await expect(requestsPage.versions).toHaveCount(0);
     });
   });
   test("a requested ebook reaches Ready to read on the wished book", async ({
@@ -99,7 +99,7 @@ test.describe("book request", () => {
     prowlarrFor,
     qbittorrentFor,
     wishlistsPage,
-    bookRequestPage,
+    requestsPage,
     expectMutation,
   }) => {
     test.setTimeout(180_000);
@@ -127,27 +127,27 @@ test.describe("book request", () => {
       await expectMutation(bookRequests.start(), () =>
         wishlistsPage.requestEbook(book.title),
       );
-      await expect(bookRequestPage.versions).toHaveCount(2, {
+      await expect(requestsPage.versions).toHaveCount(2, {
         timeout: 10_000,
       });
       await expectMutation(bookRequests.choose(), () =>
-        bookRequestPage.choose(bookRequestPage.version("EPUB")),
+        requestsPage.choose(requestsPage.version("EPUB")),
       );
     });
 
     await test.step("see it on its way", async () => {
-      await expect(bookRequestPage.state).toHaveText("On its way", {
+      await expect(requestsPage.paneState).toHaveText("On its way", {
         timeout: 15_000,
       });
-      await expect(bookRequestPage.percent).toHaveText("40%");
+      await expect(requestsPage.percent).toHaveText("40%");
     });
 
     await test.step("see it ready to read once the download is done", async () => {
       client.finish();
-      await expect(bookRequestPage.state).toHaveText("Ready to read", {
+      await expect(requestsPage.paneState).toHaveText("Ready to read", {
         timeout: 90_000,
       });
-      await expect(bookRequestPage.cancel).toHaveCount(0);
+      await expect(requestsPage.paneCancelButton).toHaveCount(0);
     });
 
     await test.step("find the EPUB on the book that was wished for, once", async () => {
@@ -180,7 +180,7 @@ test.describe("book request", () => {
     prowlarrFor,
     qbittorrentFor,
     wishlistsPage,
-    bookRequestPage,
+    requestsPage,
     expectMutation,
   }) => {
     test.setTimeout(180_000);
@@ -204,20 +204,20 @@ test.describe("book request", () => {
       await expectMutation(bookRequests.start(), () =>
         wishlistsPage.requestEbook(book.title),
       );
-      await expect(bookRequestPage.versions).toHaveCount(2, {
+      await expect(requestsPage.versions).toHaveCount(2, {
         timeout: 10_000,
       });
       await expectMutation(bookRequests.choose(), () =>
-        bookRequestPage.choose(bookRequestPage.version("EPUB")),
+        requestsPage.choose(requestsPage.version("EPUB")),
       );
     });
 
     await test.step("see Couldn't add it, with a way to try again", async () => {
-      await expect(bookRequestPage.state).toHaveText("Couldn’t add it", {
+      await expect(requestsPage.paneState).toHaveText("Couldn’t add it", {
         timeout: 90_000,
       });
-      await expect(bookRequestPage.tryAgain).toBeVisible();
-      await expect(bookRequestPage.stuckDetail).toContainText("no ebook file");
+      await expect(requestsPage.tryAgain).toBeVisible();
+      await expect(requestsPage.stuckDetail).toContainText("no ebook file");
     });
 
     await test.step("find no file on the book", async () => {
@@ -225,6 +225,144 @@ test.describe("book request", () => {
       await expect(detail).toBeOK();
       const { book_files }: EbookDetail = await detail.json();
       expect(book_files ?? []).toHaveLength(0);
+    });
+  });
+});
+
+test.describe("requests page", () => {
+  test("show the requests page layout", async ({ requestsPage }) => {
+    await test.step("open the requests page", async () => {
+      await requestsPage.goto();
+    });
+
+    await test.step("check the page and its nav", async () => {
+      await requestsPage.assertDisplayed();
+      await requestsPage.topNav.assertDisplayed();
+      await expect(requestsPage.heading).toBeVisible();
+    });
+  });
+
+  test("open the requests page from the user menu", async ({
+    readerLibraryPage,
+    readerRequestsPage,
+  }) => {
+    await test.step("open the user menu from the library", async () => {
+      await readerLibraryPage.goto();
+      await readerLibraryPage.topNav.openUserMenu();
+    });
+
+    await test.step("follow Requests", async () => {
+      await readerLibraryPage.topNav.openRequests();
+      await readerRequestsPage.assertDisplayed();
+    });
+  });
+
+  test("see every reader's requests and cancel your own", async ({
+    adminSession,
+    scanRequests,
+    bookRequestsRequests,
+    createdBookUuids,
+    prowlarrFor,
+    requestsPage,
+    readerRequestsPage,
+    expectMutation,
+  }) => {
+    const book = buildExternalBook();
+    const admin = adminSession.user;
+    let release!: () => void;
+
+    await test.step("start a request that stays looking", async () => {
+      const added = await scanRequests.postWishlistEntry(book);
+      await expect(added).toBeOK();
+      const { book_uuid } = await added.json();
+      createdBookUuids.add(book_uuid);
+      release = (await prowlarrFor(releasesFor(book))).holdSearches();
+      await expect(await bookRequestsRequests.startRequest(book_uuid)).toBeOK();
+    });
+
+    await test.step("see it as another reader, with who asked and no Cancel", async () => {
+      await readerRequestsPage.goto();
+      await expect(
+        readerRequestsPage.itemIn("Looking", book.title),
+      ).toContainText("Ebook · looking");
+      await readerRequestsPage.select(book.title);
+      await expect(readerRequestsPage.paneRequester).toContainText(
+        admin.display_name ?? admin.username,
+      );
+      await expect(readerRequestsPage.paneCancelButton).toHaveCount(0);
+    });
+
+    await test.step("cancel it as the reader who asked", async () => {
+      await requestsPage.goto();
+      await requestsPage.select(book.title);
+      await expectMutation(bookRequests.cancel(), () => requestsPage.cancel());
+      await expect(requestsPage.paneState).toHaveText("Cancelled");
+      await expect(requestsPage.paneCancelButton).toHaveCount(0);
+      await expect(requestsPage.item(book.title)).toHaveCount(0);
+      release();
+    });
+  });
+
+  test("keep a request going when its cancel fails", async ({
+    scanRequests,
+    bookRequestsRequests,
+    createdBookUuids,
+    prowlarrFor,
+    requestsPage,
+    expectMutation,
+  }) => {
+    const book = buildExternalBook();
+    let release!: () => void;
+
+    await test.step("start a request that stays looking", async () => {
+      const added = await scanRequests.postWishlistEntry(book);
+      await expect(added).toBeOK();
+      const { book_uuid } = await added.json();
+      createdBookUuids.add(book_uuid);
+      release = (await prowlarrFor(releasesFor(book))).holdSearches();
+      await expect(await bookRequestsRequests.startRequest(book_uuid)).toBeOK();
+    });
+
+    await test.step("try to cancel it while the server fails", async () => {
+      await requestsPage.goto();
+      await requestsPage.select(book.title);
+      await requestsPage.forceServerError(bookRequests.cancel());
+      await expectMutation(failing(bookRequests.cancel()), () =>
+        requestsPage.cancel(),
+      );
+    });
+
+    await test.step("check it is still looking and the failure is told", async () => {
+      await expect(requestsPage.cancelFailedText).toBeVisible();
+      await expect(requestsPage.paneState).toHaveText("Looking");
+      await expect(requestsPage.itemIn("Looking", book.title)).toBeVisible();
+      release();
+    });
+  });
+
+  test("keep a request on the page once its wish is removed", async ({
+    scanRequests,
+    physicalRequests,
+    bookRequestsRequests,
+    createdBookUuids,
+    requestsPage,
+  }) => {
+    const book = buildExternalBook();
+
+    await test.step("request a wished book, then take it off the wishlist", async () => {
+      const added = await scanRequests.postWishlistEntry(book);
+      await expect(added).toBeOK();
+      const { book_uuid } = await added.json();
+      createdBookUuids.add(book_uuid);
+      await expect(await bookRequestsRequests.startRequest(book_uuid)).toBeOK();
+      await expect(
+        await physicalRequests.deleteWishlistEntry(book_uuid),
+      ).toBeOK();
+    });
+
+    await test.step("still find the request on the requests page", async () => {
+      await requestsPage.goto();
+      await expect(requestsPage.item(book.title)).toHaveCount(1);
     });
   });
 });

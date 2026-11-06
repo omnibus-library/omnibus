@@ -136,6 +136,11 @@ export class TopNavComponent extends BaseComponent {
     await this.settingsLink.click();
   }
 
+  /** Follows the open user menu's Requests link. */
+  async openRequests(): Promise<void> {
+    await this.userMenuLink("Requests").click();
+  }
+
   async openAdministration(): Promise<void> {
     await this.adminLink.click();
   }

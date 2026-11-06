@@ -148,6 +148,7 @@ pub(super) async fn swap_in(
              remove_tag = client_tag,
              remove_since = CASE WHEN client_tag IS NULL THEN NULL ELSE ?2 END,
              client_tag = NULL, chosen_result_id = NULL, progress = NULL, moved_at = NULL,
+             expected_done_at = NULL,
              stuck_reason = NULL, stuck_detail = NULL, note = ?3, updated_at = {NOW}
          WHERE id = ?1 RETURNING {COLUMNS}"
     ))

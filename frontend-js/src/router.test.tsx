@@ -15,6 +15,7 @@ import {
   describe,
   expect,
   it,
+  onTestFinished,
   vi,
 } from "vitest";
 import { toUser, type User } from "./api";
@@ -123,6 +124,23 @@ describe("routes", () => {
       expect(screen.queryByText("Not ported yet")).not.toBeInTheDocument();
     });
 
+    it("renders /requests as its loading page while requests are on", async () => {
+      // jsdom has no matchMedia; a wide screen asks for nothing it needs.
+      vi.stubGlobal("matchMedia", () => ({
+        matches: false,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      }));
+      onTestFinished(() => {
+        vi.unstubAllGlobals();
+      });
+      renderRoute("/requests", toUser({ ...WIRE_ADA, book_requests: true }));
+
+      expect(
+        await screen.findByText("Gathering the requests"),
+      ).toBeInTheDocument();
+    });
+
     it("renders /stats/chart as the chart builder, not a stub", async () => {
       renderRoute("/stats/chart");
 
@@ -168,13 +186,6 @@ describe("routes", () => {
       expect(
         screen.getByRole("link", { name: "Back to library" }),
       ).toHaveAttribute("href", "/");
-    });
-
-    it("renders the request page under /books/:uuid/request, apart from the book page", async () => {
-      renderRoute(`/books/${UUID}/request`);
-
-      // With no request id in the address, the request page says so rather than the book page loading.
-      expect(await screen.findByText("Request not found.")).toBeInTheDocument();
     });
 
     it("renders the player page at /listen/:uuid", async () => {
@@ -635,6 +646,14 @@ describe("routes", () => {
 
   it("renders not found for a path nothing lives at", async () => {
     renderRoute("/no/such/page");
+
+    expect(
+      await screen.findByRole("heading", { name: "Page not found" }),
+    ).toBeInTheDocument();
+  });
+
+  it("renders not found at /books/:uuid/request, which is gone", async () => {
+    renderRoute(`/books/${UUID}/request`);
 
     expect(
       await screen.findByRole("heading", { name: "Page not found" }),

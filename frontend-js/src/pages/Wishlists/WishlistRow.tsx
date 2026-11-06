@@ -17,6 +17,7 @@ import { Sheet } from "../../components/Sheet/Sheet";
 import { useToast } from "../../components/Toast/Toast";
 import { findCopyUrl } from "../../findCopy";
 import { useCurrentUser } from "../../session";
+import { FROM_WISHLISTS } from "../BookRequest/requestView";
 import { useStartRequest } from "../BookRequest/useStartRequest";
 import { refreshAfterWrite } from "./refresh";
 import {
@@ -340,7 +341,7 @@ export function WishlistRow({
   const wanted = scope.kind === "everyone";
   const user = useCurrentUser();
   const kinds = user.canRequest ? requestable(book.holdings) : [];
-  const start = useStartRequest(book.uuid);
+  const start = useStartRequest(book.uuid, { from: FROM_WISHLISTS });
   const removeBook = useRemove(book);
   // Only your own list can be edited.
   const remove = scope.kind === "you" ? removeBook : null;

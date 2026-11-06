@@ -3307,7 +3307,7 @@
           "Requests"
         ],
         "summary": "List a book's requests",
-        "description": "Every request made for the book, newest first, whoever made it, without their versions:\nread one request for those. A book nobody has requested has an empty list. Any signed-in\nreader may read it.",
+        "description": "The book's history: every request made for it, newest first, whoever made it, with who\nmade it and who cancelled it. Each carries only the version it picked and the versions it\ngave up; read one request for the rest. A book nobody has requested has an empty list.\nAny signed-in reader may read it.",
         "operationId": "list_book_requests",
         "parameters": [
           {
@@ -3322,13 +3322,13 @@
         ],
         "responses": {
           "200": {
-            "description": "The book's requests, each with an empty `versions`.",
+            "description": "The book's requests.",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/BookRequest"
+                    "$ref": "#/components/schemas/RequestListing"
                   }
                 }
               }
@@ -6354,6 +6354,58 @@
           },
           "409": {
             "description": "No ebook library path is set."
+          }
+        }
+      }
+    },
+    "/api/requests": {
+      "get": {
+        "tags": [
+          "Requests"
+        ],
+        "summary": "List requests",
+        "description": "Every reader's requests, newest first, in every state, with who made each and who\ncancelled it, narrowed by `state` and `user` when given. Requests are public on the\nserver, so any signed-in reader may read them. Each carries only the version it picked and\nthe versions it gave up. Every `ready` request is returned, and at most the newest 500 of the rest.",
+        "operationId": "list_requests",
+        "parameters": [
+          {
+            "name": "state",
+            "in": "query",
+            "description": "Only requests in this state.",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/RequestState"
+            }
+          },
+          {
+            "name": "user",
+            "in": "query",
+            "description": "Only requests this reader made, by user id.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The requests.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RequestListing"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`state` isn't a request state, or `user` isn't a number."
+          },
+          "404": {
+            "description": "Book requests are off on this server."
           }
         }
       }
@@ -10641,6 +10693,14 @@
             "format": "int64",
             "description": "When the request started, in Unix seconds."
           },
+          "expected_done_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "While `on_its_way`, when the download client expects the download to finish, in Unix\nseconds. Null when it can't tell."
+          },
           "id": {
             "type": "integer",
             "format": "int64"
@@ -10699,7 +10759,7 @@
             "items": {
               "$ref": "#/components/schemas/RequestVersion"
             },
-            "description": "The versions found, best first. Empty until the search has run, and always empty in\na book's list of requests: read one request for its versions."
+            "description": "The versions found, best first. Empty until the search has run. In a list of\nrequests, only the version picked and then those given up: read one request for the rest."
           }
         }
       },
@@ -15541,6 +15601,40 @@
           "audiobook"
         ]
       },
+      "RequestListing": {
+        "type": "object",
+        "description": "A request as a list shows it: its book, who made it and who cancelled it.",
+        "required": [
+          "request",
+          "book",
+          "requester_name",
+          "requester_has_avatar"
+        ],
+        "properties": {
+          "book": {
+            "$ref": "#/components/schemas/EbookMetadata",
+            "description": "The requested book, without its description."
+          },
+          "cancelled_by_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Who cancelled it, named the same way. Null unless it was cancelled, or once that\naccount is deleted."
+          },
+          "request": {
+            "$ref": "#/components/schemas/BookRequest"
+          },
+          "requester_has_avatar": {
+            "type": "boolean",
+            "description": "Whether `GET /api/users/{id}/avatar` has the requester's photo to serve."
+          },
+          "requester_name": {
+            "type": "string",
+            "description": "The requester's display name, or their username when they have none."
+          }
+        }
+      },
       "RequestState": {
         "type": "string",
         "description": "Where a request stands.",
@@ -18260,6 +18354,10 @@
           "book_detail_scroll_stops": {
             "type": "boolean",
             "description": "Whether a book's detail page stops at each section as the user scrolls. False,\nthe default, scrolls the page in one piece."
+          },
+          "book_requests": {
+            "type": "boolean",
+            "description": "Whether the server has book requests on. Every reader may then see the requests on\n`GET /api/requests`, whatever their `can_request`."
           },
           "can_download": {
             "type": "boolean"

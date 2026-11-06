@@ -14,13 +14,13 @@ import { AuthorDetail } from "./pages/AuthorDetail/AuthorDetail";
 import { Authors, AuthorsIndexPane } from "./pages/Authors/Authors";
 import { BookDetail } from "./pages/BookDetail/BookDetail";
 import { BookEdit } from "./pages/BookEdit/BookEdit";
-import { BookRequest } from "./pages/BookRequest/BookRequest";
 import { CheckIn } from "./pages/CheckIn/CheckIn";
 import { Library } from "./pages/Library/Library";
 import { Listen } from "./pages/Listen/Listen";
 import { Login } from "./pages/Login/Login";
 import { NotFound } from "./pages/NotFound/NotFound";
 import { Register } from "./pages/Register/Register";
+import { Requests } from "./pages/Requests/Requests";
 import { Search } from "./pages/Search/Search";
 import { Series, SeriesIndexPane } from "./pages/Series/Series";
 import { SeriesDetail } from "./pages/SeriesDetail/SeriesDetail";
@@ -113,8 +113,6 @@ export const routes: RouteObject[] = [
                     // The editor is a sheet over the book page, which stays mounted beneath it.
                     children: [{ path: "edit", element: <BookEdit /> }],
                   },
-                  // A page of its own, not a sheet over the book: it is where a request is followed.
-                  { path: "/books/:uuid/request", element: <BookRequest /> },
                   {
                     path: "/authors",
                     element: <Authors />,
@@ -134,6 +132,7 @@ export const routes: RouteObject[] = [
                   { path: "/stats", element: <Stats /> },
                   { path: "/stats/chart", element: <StatsChart /> },
                   { path: "/wishlists", element: <Wishlists /> },
+                  { path: "/requests", element: <Requests /> },
                   { path: "/shelves", element: <Shelves /> },
                   { path: "/shelves/:id", element: <ShelfDetail /> },
                   // Web search is the palette; only /search/:query is a page.

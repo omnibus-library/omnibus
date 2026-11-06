@@ -42,6 +42,7 @@ fn torrent_info(hash: &str) -> serde_json::Value {
         "progress": 0.5,
         "state": "downloading",
         "save_path": "/downloads/omnibus",
+        "eta": 180,
     }])
 }
 
@@ -417,6 +418,7 @@ mod qbittorrent_status {
             progress: 0.5,
             state: "downloading".into(),
             save_path: "/downloads/omnibus".into(),
+            eta: Some(180),
         };
         assert_eq!(status, Some(expected));
     }

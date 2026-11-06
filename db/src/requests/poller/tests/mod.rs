@@ -54,6 +54,20 @@ mod poll_once {
         }
 
         #[tokio::test]
+        async fn starts_a_download_with_no_finish_time_from_an_earlier_one() {
+            let pool = pool().await;
+            let id = seed(&pool, "ada", "chosen").await;
+            update(&pool, id, &format!("expected_done_at = {}", NOW + 30)).await;
+            let client = StubClient::new();
+
+            tick(&pool, &client, NOW).await;
+
+            let after = row(&pool, id).await;
+            assert_eq!(after.state, RequestState::OnItsWay);
+            assert_eq!(after.expected_done_at, None);
+        }
+
+        #[tokio::test]
         async fn adds_nothing_when_the_client_already_has_the_download() {
             let pool = pool().await;
             let id = seed(&pool, "ada", "chosen").await;
@@ -122,6 +136,62 @@ mod poll_once {
             let after = row(&pool, id).await;
             assert_eq!(after.progress, Some(0.55));
             assert_eq!(after.moved_at, Some(NOW));
+        }
+
+        #[tokio::test]
+        async fn records_when_the_client_expects_the_download_to_finish() {
+            let pool = pool().await;
+            let id = on_its_way(&pool, "ada", 0.4, NOW - 60).await;
+            let client = StubClient::new()
+                .with_status(&tag(id), 0.55, "downloading")
+                .with_eta(&tag(id), 180);
+
+            tick(&pool, &client, NOW).await;
+
+            assert_eq!(row(&pool, id).await.expected_done_at, Some(NOW + 180));
+        }
+
+        #[tokio::test]
+        async fn forgets_the_finish_time_once_the_client_cannot_tell() {
+            let pool = pool().await;
+            let id = on_its_way(&pool, "ada", 0.4, NOW - 60).await;
+            update(&pool, id, &format!("expected_done_at = {}", NOW + 30)).await;
+            let client = StubClient::new()
+                .with_status(&tag(id), 0.4, "stalledDL")
+                .with_eta(&tag(id), 8_640_000);
+
+            tick(&pool, &client, NOW).await;
+
+            assert_eq!(row(&pool, id).await.expected_done_at, None);
+        }
+
+        #[tokio::test]
+        async fn records_no_finish_time_once_the_download_is_complete() {
+            let pool = pool().await;
+            let id = on_its_way(&pool, "ada", 0.9, NOW - 60).await;
+            update(&pool, id, &format!("expected_done_at = {}", NOW + 30)).await;
+            // A seeding torrent's eta is how long it seeds, not how long it downloads.
+            let client = StubClient::new()
+                .with_status(&tag(id), 1.0, "uploading")
+                .with_eta(&tag(id), 500);
+
+            tick(&pool, &client, NOW).await;
+
+            assert_eq!(row(&pool, id).await.expected_done_at, None);
+        }
+
+        #[tokio::test]
+        async fn forgets_the_finish_time_of_a_download_it_stops() {
+            let pool = pool().await;
+            let id = on_its_way(&pool, "ada", 0.4, NOW - STALL_SECS - 1).await;
+            update(&pool, id, &format!("expected_done_at = {}", NOW + 30)).await;
+            let client = StubClient::new().with_status(&tag(id), 0.4, "stalledDL");
+
+            tick(&pool, &client, NOW).await;
+
+            let after = row(&pool, id).await;
+            assert_eq!(after.state, RequestState::Stuck);
+            assert_eq!(after.expected_done_at, None);
         }
 
         #[tokio::test]

@@ -245,23 +245,13 @@
   text-transform: uppercase;
 }
 
-/* ---- row actions: a slot that is always laid out, shown on hover or focus ---- */
+/* ---- row actions: a slot that is always laid out and shown ---- */
 
 .wl-actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
-  opacity: 0;
-  transition: opacity 0.12s;
-}
-.wl-row:focus-within .wl-actions {
-  opacity: 1;
-}
-@media (hover: none) {
-  .wl-actions {
-    opacity: 1;
-  }
 }
 .wl-get {
   display: none;
@@ -297,7 +287,6 @@
   opacity: 1;
 }
 @media (prefers-reduced-motion: reduce) {
-  .wl-actions,
   .wl-tip {
     transition: none;
   }
@@ -348,9 +337,6 @@
   }
   .wl-row:hover {
     background: var(--bg-1);
-  }
-  .wl-row:hover .wl-actions {
-    opacity: 1;
   }
   .wl-request-wrap:hover .wl-tip {
     opacity: 1;
