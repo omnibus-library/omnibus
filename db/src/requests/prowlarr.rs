@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
+use omnibus_shared::ReleaseProtocol;
 use reqwest::StatusCode;
 use serde::Deserialize;
 
@@ -63,6 +64,8 @@ pub struct ProwlarrRelease {
     pub size_bytes: Option<i64>,
     /// Null for sources that have no seeders, such as Usenet.
     pub seeders: Option<i64>,
+    /// Null when Prowlarr names none it knows.
+    pub protocol: Option<ReleaseProtocol>,
     pub indexer: Option<String>,
     /// A torrent-file URL or magnet; the client fetches the file and uploads it. Server-side only.
     pub link: String,
@@ -88,6 +91,8 @@ struct RawRelease {
     title: Option<String>,
     size: Option<i64>,
     seeders: Option<i64>,
+    // Read loosely, so an unexpected shape loses only the protocol, not the whole search.
+    protocol: Option<serde_json::Value>,
     indexer: Option<String>,
     #[serde(rename = "downloadUrl")]
     download_url: Option<String>,
@@ -115,7 +120,12 @@ impl RawRelease {
             title,
             size_bytes: self.size,
             seeders: self.seeders,
-            indexer: self.indexer,
+            protocol: self
+                .protocol
+                .as_ref()
+                .and_then(serde_json::Value::as_str)
+                .and_then(ReleaseProtocol::parse),
+            indexer: self.indexer.filter(|i| !i.is_empty()),
             link,
             categories: self
                 .categories
