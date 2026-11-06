@@ -8,6 +8,7 @@
 //  does it, can only ever approximate the preview.
 
 import SwiftUI
+import UIKit
 
 extension String {
     /// One space per run of whitespace, ends trimmed.
@@ -104,6 +105,29 @@ struct QuoteStyle: Identifiable {
         ("Dawn", "#f7e1c8", "#eeb0a8", false),
     ].compactMap { QuoteStyle.gradient($0.0, from: $0.1, to: $0.2, lightInk: $0.3) }
 
+    /// A picked colour as a solid; its ink follows the ground's contrast.
+    static func customSolid(_ base: OKLCH) -> QuoteStyle {
+        let lightInk = prefersLightInk(
+            over: [base],
+            light: OKLCH(0.95, 0.012, base.h),
+            dark: OKLCH(0.24, 0.02, base.h)
+        )
+        return solid("Custom colour", base, lightInk: lightInk)
+    }
+
+    static func customGradient(from: OKLCH, to: OKLCH, angle: Int) -> QuoteStyle {
+        let lightInk = prefersLightInk(over: [from, to], light: lightHexInk, dark: darkHexInk)
+        return QuoteStyle(
+            name: "Custom gradient",
+            kind: .gradient,
+            from: from,
+            to: to,
+            lightInk: lightInk,
+            inkTone: lightInk ? lightHexInk : darkHexInk,
+            angle: angle
+        )
+    }
+
     // The web's `LIGHT_INK` and its dark counterpart.
     private static let lightHexInk = OKLCH.parse(cssValue: "#f5f0e8") ?? OKLCH(0.95, 0.012, 80)
     private static let darkHexInk = OKLCH.parse(cssValue: "#221d18") ?? OKLCH(0.24, 0.02, 60)
@@ -148,6 +172,15 @@ extension OKLCH {
         let lighter = max(luminance, other.luminance)
         let darker = min(luminance, other.luminance)
         return (lighter + 0.05) / (darker + 0.05)
+    }
+
+    /// A `ColorPicker` result. It can be extended-range or P3, so each channel
+    /// is clamped into sRGB first.
+    static func from(_ color: Color) -> OKLCH {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        _ = UIColor(color).getRed(&r, green: &g, blue: &b, alpha: &a)
+        func clamped(_ channel: CGFloat) -> Double { Double(min(1, max(0, channel))) }
+        return fromSRGB(r: clamped(r), g: clamped(g), b: clamped(b))
     }
 
     /// Lowercase `#rrggbb`.

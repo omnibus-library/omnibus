@@ -219,3 +219,40 @@ struct QuoteDirectionTests {
         #expect(QuoteStyle.points(495).end == QuoteStyle.points(135).end)
     }
 }
+
+@Suite("Quote card custom backgrounds")
+struct QuoteCustomStyleTests {
+    @Test("a pale custom colour takes dark ink")
+    func customSolidTakesDarkInkOnAPaleColour() {
+        let style = QuoteStyle.customSolid(OKLCH(0.93, 0.017, 80))
+        #expect(style.name == "Custom colour")
+        #expect(style.kind == .solid)
+        #expect(!style.lightInk)
+        #expect(isClose(style.inkTone.l, 0.24))
+    }
+
+    @Test("a deep custom colour takes light ink and the usual drift")
+    func customSolidTakesLightInkOnADeepColour() {
+        let style = QuoteStyle.customSolid(OKLCH(0.19, 0.012, 70))
+        #expect(style.lightInk)
+        #expect(isClose(style.inkTone.l, 0.95))
+        #expect(isClose(style.to.l, 0.09))
+    }
+
+    @Test("a custom gradient keeps its stops and angle and picks ink by worst-case contrast")
+    func customGradientKeepsStopsAngleAndInk() {
+        let style = QuoteStyle.customGradient(from: oklch("#f7e1c8"), to: oklch("#eeb0a8"), angle: 225)
+        #expect(style.name == "Custom gradient")
+        #expect(style.kind == .gradient)
+        #expect(style.from.hex == "#f7e1c8")
+        #expect(style.to.hex == "#eeb0a8")
+        #expect(style.angle == 225)
+        #expect(!style.lightInk)
+        #expect(style.inkTone.hex == "#221d18")
+    }
+
+    @Test("a picked sRGB colour converts to its hex")
+    func oklchFromColorReadsSRGB() {
+        #expect(OKLCH.from(Color(.sRGB, red: 1, green: 0, blue: 0)).hex == "#ff0000")
+    }
+}

@@ -4,6 +4,12 @@
 import SwiftUI
 import UIKit
 
+/// The seed colours of the custom swatches: a coral to teal split.
+private enum CustomSeed {
+    static let coral = Color(.sRGB, red: 232.0 / 255, green: 115.0 / 255, blue: 90.0 / 255)
+    static let teal = Color(.sRGB, red: 42.0 / 255, green: 157.0 / 255, blue: 143.0 / 255)
+}
+
 /// Picking how a passage should look, and sending it somewhere.
 struct QuoteCardSheet: View {
     let quote: String
@@ -19,6 +25,10 @@ struct QuoteCardSheet: View {
     @State private var rendering = false
     @State private var moreBefore = false
     @State private var moreAfter = false
+    @State private var customColor = CustomSeed.coral
+    @State private var customFrom = CustomSeed.coral
+    @State private var customTo = CustomSeed.teal
+    @State private var customAngle = 135
 
     /// The book's own colour first — a card in the tone of its cover is the
     /// one that reads as *this* book rather than as a template.
@@ -28,9 +38,16 @@ struct QuoteCardSheet: View {
 
     private var gradients: [QuoteStyle] { QuoteStyle.gradients }
 
+    private var customSolid: QuoteStyle { .customSolid(OKLCH.from(customColor)) }
+
+    private var customGradient: QuoteStyle {
+        .customGradient(from: OKLCH.from(customFrom), to: OKLCH.from(customTo), angle: customAngle)
+    }
+
     private var style: QuoteStyle {
         guard let styleID else { return bookStyle }
-        return (solids + gradients).first(where: { $0.id == styleID }) ?? bookStyle
+        let all = solids + gradients + [customSolid, customGradient]
+        return all.first(where: { $0.id == styleID }) ?? bookStyle
     }
 
     private var author: String? { book.creators.first?.name }
@@ -89,6 +106,9 @@ struct QuoteCardSheet: View {
                 Spacer(minLength: 0)
             }
             swatchRow
+            if style.id == customGradient.id {
+                gradientEditor
+            }
 
             SectionLabel("Type")
             PillSelector(options: QuoteFace.allCases, label: \.label, selection: $type.face)
@@ -148,6 +168,11 @@ struct QuoteCardSheet: View {
                 ForEach(style.kind == .solid ? solids : gradients) { option in
                     swatch(option)
                 }
+                if style.kind == .solid {
+                    customColorSwatch
+                } else {
+                    customGradientSwatch
+                }
             }
         }
         .scrollIndicators(.hidden)
@@ -192,36 +217,140 @@ struct QuoteCardSheet: View {
             Haptics.select()
             withAnimation(Motion.snap) { styleID = option.id }
         } label: {
-            ZStack {
-                switch option.kind {
-                case .solid:
-                    Circle()
-                        .fill(option.from.color)
-                        .frame(width: 28, height: 28)
-                        .overlay(Circle().strokeBorder(.white.opacity(0.18), lineWidth: 1))
-                    if isOn {
-                        Circle().strokeBorder(palette.accentColor, lineWidth: 2)
-                    }
-                case .gradient:
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(option.gradient)
-                        .frame(width: 28, height: 28)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .strokeBorder(.white.opacity(0.18), lineWidth: 1)
-                        )
-                    if isOn {
-                        RoundedRectangle(cornerRadius: 11, style: .continuous)
-                            .strokeBorder(palette.accentColor, lineWidth: 2)
-                    }
-                }
+            if option.kind == .solid {
+                swatchFace(.solid, fill: option.from.color, isOn: isOn)
+            } else {
+                swatchFace(.gradient, fill: option.gradient, isOn: isOn)
             }
-            .frame(width: 36, height: 36)
-            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(option.name)
         .accessibilityAddTraits(isOn ? [.isSelected, .isButton] : .isButton)
+    }
+
+    /// Solids are circles and gradients rounded squares, so a reader can tell
+    /// the two apart by shape. The ring sits inside the 36pt cell, clear of the
+    /// row's clipping.
+    private func swatchFace<Fill: ShapeStyle>(
+        _ kind: QuoteStyle.Kind, fill: Fill, isOn: Bool
+    ) -> some View {
+        ZStack {
+            switch kind {
+            case .solid:
+                Circle()
+                    .fill(fill)
+                    .frame(width: 28, height: 28)
+                    .overlay(Circle().strokeBorder(.white.opacity(0.18), lineWidth: 1))
+                if isOn {
+                    Circle().strokeBorder(palette.accentColor, lineWidth: 2)
+                }
+            case .gradient:
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(fill)
+                    .frame(width: 28, height: 28)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .strokeBorder(.white.opacity(0.18), lineWidth: 1)
+                    )
+                if isOn {
+                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        .strokeBorder(palette.accentColor, lineWidth: 2)
+                }
+            }
+        }
+        .frame(width: 36, height: 36)
+        .contentShape(Rectangle())
+    }
+
+    private var plusMark: some View {
+        Image(systemName: "plus")
+            .font(.system(size: 11, weight: .bold))
+            .foregroundStyle(.white)
+            .shadow(color: .black.opacity(0.5), radius: 1)
+            .allowsHitTesting(false)
+    }
+
+    /// SwiftUI cannot open a `ColorPicker` from a button of our own, so its
+    /// system well is the swatch.
+    private var customColorSwatch: some View {
+        let isOn = style.id == customSolid.id
+
+        return ColorPicker("Custom colour", selection: $customColor, supportsOpacity: false)
+            .labelsHidden()
+            .frame(width: 36, height: 36)
+            .overlay { plusMark }
+            .overlay {
+                if isOn {
+                    Circle().strokeBorder(palette.accentColor, lineWidth: 2)
+                        .allowsHitTesting(false)
+                }
+            }
+            .onChange(of: customColor) { _, _ in
+                styleID = customSolid.id
+            }
+            .accessibilityAddTraits(isOn ? .isSelected : [])
+    }
+
+    private var customGradientSwatch: some View {
+        let isOn = style.id == customGradient.id
+        let split = LinearGradient(
+            stops: [
+                .init(color: CustomSeed.coral, location: 0),
+                .init(color: CustomSeed.coral, location: 0.5),
+                .init(color: CustomSeed.teal, location: 0.5),
+                .init(color: CustomSeed.teal, location: 1),
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+
+        return Button {
+            guard !isOn else { return }
+            Haptics.select()
+            withAnimation(Motion.snap) { styleID = customGradient.id }
+        } label: {
+            swatchFace(.gradient, fill: split, isOn: isOn)
+                .overlay { plusMark }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Custom gradient")
+        .accessibilityAddTraits(isOn ? [.isSelected, .isButton] : .isButton)
+    }
+
+    private var gradientEditor: some View {
+        HStack(spacing: Spacing.lg) {
+            stopWell("From", selection: $customFrom)
+            stopWell("To", selection: $customTo)
+            Spacer(minLength: 0)
+            Button {
+                Haptics.select()
+                withAnimation(Motion.snap) { customAngle = (customAngle + 45) % 360 }
+            } label: {
+                Label("\(customAngle)°", systemImage: "arrow.clockwise")
+                    .font(.ui(13, weight: .medium))
+                    .foregroundStyle(palette.ink1Color)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Capsule().fill(palette.bg2Color))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Direction")
+            .accessibilityValue("\(customAngle) degrees")
+        }
+    }
+
+    private func stopWell(_ title: String, selection: Binding<Color>) -> some View {
+        ColorPicker(selection: selection, supportsOpacity: false) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.ui(12, weight: .medium))
+                    .foregroundStyle(palette.ink2Color)
+                Text(OKLCH.from(selection.wrappedValue).hex)
+                    .font(.monoUI(12))
+                    .foregroundStyle(palette.ink0Color)
+            }
+        }
+        .fixedSize()
     }
 
     private func toggleChip(_ label: String, systemImage: String, isOn: Binding<Bool>) -> some View {
