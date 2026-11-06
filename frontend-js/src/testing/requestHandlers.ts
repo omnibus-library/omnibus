@@ -45,6 +45,7 @@ export function aWireRequest(
     stuck_detail: null,
     chosen_result_id: null,
     progress: null,
+    expected_done_at: null,
     cancel_at: null,
     cancelled_by: null,
     note: null,

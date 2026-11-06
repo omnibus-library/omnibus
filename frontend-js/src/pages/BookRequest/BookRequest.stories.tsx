@@ -34,6 +34,9 @@ const UNNAMED = aWireVersion({
 });
 
 let fake = requestFake();
+
+/** No book on anyone's wishlist, unless a story says otherwise. */
+const NOBODY_WISHES = http.get("/api/wishlists", () => HttpResponse.json([]));
 let held = deferred();
 
 /** The version row at `index`. */
@@ -74,7 +77,7 @@ const meta = {
   parameters: { path: `/books/${UUID}/request?id=7` },
   beforeEach({ msw }) {
     fake = requestFake([aWireRequest()]);
-    msw.use(bookHandler(HYPERION), ...fake.handlers);
+    msw.use(bookHandler(HYPERION), ...fake.handlers, NOBODY_WISHES);
   },
 } satisfies Meta<typeof Page>;
 
@@ -240,7 +243,9 @@ export const ChoosingAVersionSendsItsIdAndConfirmsThePick: Story = {
       { kind: "choose", id: 7, resultId: 12 },
     ]);
     await expect(canvas.getByTestId("request-chosen")).toHaveTextContent("PDF");
-    await expect(canvas.getByText("We’ll fetch it next.")).toBeVisible();
+    await expect(
+      canvas.getByRole("listitem", { current: "step" }),
+    ).toHaveTextContent("On its way");
     await expect(canvas.queryByTestId("request-choose")).toBeNull();
   },
 };
@@ -589,7 +594,9 @@ export const ReadyToRead: Story = {
     await expect(await canvas.findByTestId("request-state")).toHaveTextContent(
       "Ready to read",
     );
-    await expect(canvas.getByText("It’s in the library.")).toBeInTheDocument();
+    await expect(
+      canvas.getAllByRole("listitem").map((step) => step.dataset.status),
+    ).toEqual(["done", "done", "done", "done"]);
     await expect(canvas.queryByTestId("request-downloading")).toBeNull();
     await expect(canvas.queryByRole("button")).toBeNull();
   },
@@ -792,6 +799,124 @@ export const AnotherReadersDownloadOffersNoCancelOrChooseAnother: Story = {
     await expect(
       canvas.queryByRole("button", { name: "Choose another" }),
     ).toBeNull();
+  },
+};
+
+// ---- the stepper, the download card, the byline ----
+
+export const TheStepperMarksWhereTheRequestStands: Story = {
+  beforeEach({ msw }) {
+    msw.use(...seed({ state: "choose", versions: [EPUB, PDF] }));
+  },
+  play: async ({ canvas }) => {
+    const steps = within(
+      await canvas.findByRole("list", { name: "Progress of this request" }),
+    ).getAllByRole("listitem");
+
+    await expect(steps.map((step) => step.textContent)).toEqual([
+      "Looking · 2 found",
+      "Choose a version",
+      "On its way",
+      "Ready",
+    ]);
+    await expect(steps.map((step) => step.dataset.status)).toEqual([
+      "done",
+      "current",
+      "todo",
+      "todo",
+    ]);
+    await expect(steps[1]).toHaveAttribute("aria-current", "step");
+  },
+};
+
+export const ALaneWaitingOnYourPickIsMarked: Story = {
+  beforeEach({ msw }) {
+    msw.use(...seed({ state: "choose", versions: [EPUB] }));
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByTestId("request-lane-ebook"),
+    ).toHaveAttribute("data-needs-you", "true");
+  },
+};
+
+export const AnotherReadersPickIsNotMarkedAsYours: Story = {
+  parameters: { user: NOT_THE_MAKER },
+  beforeEach({ msw }) {
+    msw.use(...seed({ state: "choose", versions: [EPUB] }));
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByTestId("request-lane-ebook"),
+    ).toHaveAttribute("data-needs-you", "false");
+  },
+};
+
+export const ADownloadShowsTheReleaseItsSourceAndTimeLeft: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...seed({
+        ...DOWNLOADING,
+        expected_done_at: Math.floor(Date.now() / 1000) + 180,
+      }),
+    );
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByTestId("request-picked-name"),
+    ).toHaveTextContent(EPUB.title);
+    await expect(canvas.getByTestId("request-download-meta")).toHaveTextContent(
+      "2.4 MB · Books · about 3 min left",
+    );
+  },
+};
+
+export const ADownloadWithNoTimeFromTheClientLeavesItOut: Story = {
+  beforeEach({ msw }) {
+    msw.use(...seed(DOWNLOADING));
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByTestId("request-download-meta"),
+    ).toHaveTextContent(/^2\.4 MB · Books$/);
+  },
+};
+
+export const TheBylineNamesWhoseWishlistsHoldTheBook: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      http.get("/api/wishlists", () =>
+        HttpResponse.json([
+          {
+            book: HYPERION,
+            added_at: 0,
+            wanted_by: [
+              { id: 2, name: "Jordan" },
+              { id: 3, name: "Riley" },
+            ],
+            holdings: [],
+          },
+        ]),
+      ),
+    );
+  },
+  play: async ({ canvas }) => {
+    await waitFor(() =>
+      expect(canvas.getByTestId("request-byline")).toHaveTextContent(
+        "Dan Simmons · On Jordan’s and Riley’s wishlists",
+      ),
+    );
+  },
+};
+
+export const TheBylineIsTheAuthorAloneWhenNobodyWishesForIt: Story = {
+  beforeEach({ msw }) {
+    msw.use(http.get("/api/wishlists", () => HttpResponse.json([])));
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByTestId("request-byline")).toHaveTextContent(
+      /^Dan Simmons$/,
+    );
   },
 };
 

@@ -117,7 +117,11 @@ const meta = {
       books: BOOKS,
       names: NAMES,
     });
-    msw.use(booksHandler, ...fake.handlers);
+    msw.use(
+      booksHandler,
+      ...fake.handlers,
+      http.get("/api/wishlists", () => HttpResponse.json([])),
+    );
   },
 } satisfies Meta<typeof Page>;
 

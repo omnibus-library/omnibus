@@ -10,7 +10,7 @@ import {
   type User,
   type UserId,
 } from "../../api";
-import { fileSize } from "../../format";
+import { fileSize, plural } from "../../format";
 
 function stuckView(reason: StuckReason | null) {
   switch (reason) {
@@ -269,3 +269,85 @@ export const cameFromRequests = (state: unknown) =>
 
 /** The router state a link from the Requests list carries. */
 export const FROM_REQUESTS = { from: "requests" } as const;
+
+/** One step of a lane's stepper: done, the one it is on, or still to come. */
+export type RequestStep = {
+  label: string;
+  status: "done" | "current" | "todo";
+  /** The download's percent, on the On its way step while it runs. */
+  percent: number | null;
+};
+
+/** The step each state is on; ready has passed them all. */
+const STEP_OF = {
+  looking: 0,
+  choose: 1,
+  chosen: 2,
+  on_its_way: 2,
+  ready: 4,
+} as const;
+
+/** A lane's stepper, Looking → Choose a version → On its way → Ready, labelled by how far the request got; `null` for a stuck or cancelled one, which says so in words instead. */
+export function stepsFor(
+  request: Pick<BookRequest, "state" | "progress" | "versions">,
+): RequestStep[] | null {
+  if (request.state === "stuck" || request.state === "cancelled") return null;
+  const at = STEP_OF[request.state];
+  const status = (step: number): RequestStep["status"] =>
+    step < at ? "done" : step === at ? "current" : "todo";
+  const found = request.versions.length;
+  const downloading =
+    request.state === "on_its_way" &&
+    request.progress !== null &&
+    request.progress < 1;
+  return [
+    {
+      label: at > 0 && found > 0 ? `Looking · ${found} found` : "Looking",
+      status: status(0),
+      percent: null,
+    },
+    {
+      label: at > 1 ? "Chose a version" : "Choose a version",
+      status: status(1),
+      percent: null,
+    },
+    {
+      label: "On its way",
+      status: status(2),
+      percent: downloading ? progressPercent(request.progress) : null,
+    },
+    { label: "Ready", status: status(3), percent: null },
+  ];
+}
+
+/** How long a download has left from `now` to `expectedDoneAt` (Unix seconds), roughly; `null` when the client can't tell. */
+export function timeLeft(
+  expectedDoneAt: number | null,
+  now: number,
+): string | null {
+  if (expectedDoneAt === null) return null;
+  const secs = expectedDoneAt - now;
+  if (secs < 60) return "less than a minute left";
+  const minutes = Math.round(secs / 60);
+  if (minutes < 60) return `about ${minutes} min left`;
+  const hours = Math.round(secs / 3600);
+  return `about ${hours} hour${plural(hours)} left`;
+}
+
+/** A picked version's size and source, "3.1 MB · MyAnonamouse", leaving out what is unknown. */
+export const pickedMeta = (version: RequestVersion) =>
+  [versionSize(version.sizeBytes), version.indexer]
+    .filter((part) => part !== null)
+    .join(" · ");
+
+/** Who wants the book, "On Jordan’s and Riley’s wishlists", with the viewer as "your"; `null` when nobody does. */
+export function wishersLine(
+  wanters: readonly { id: UserId; name: string }[],
+  viewer: UserId,
+): string | null {
+  const owners = wanters.map((w) => (w.id === viewer ? "your" : `${w.name}’s`));
+  const last = owners.pop();
+  if (last === undefined) return null;
+  if (owners.length === 0) return `On ${last} wishlist`;
+  return `On ${owners.join(", ")} and ${last} wishlists`;
+}

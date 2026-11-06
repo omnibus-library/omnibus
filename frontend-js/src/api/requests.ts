@@ -92,6 +92,8 @@ export function toBookRequest(wire: BookRequestWire) {
     chosenResultId: wire.chosen_result_id ?? null,
     /** 0 to 1 while the download runs. */
     progress: wire.progress ?? null,
+    /** Unix seconds; when the download client expects the download to finish. */
+    expectedDoneAt: wire.expected_done_at ?? null,
     /** Unix seconds; when a cancelled request stops being undoable. */
     cancelAt: wire.cancel_at ?? null,
     cancelledBy: (wire.cancelled_by ?? null) as UserId | null,

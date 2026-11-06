@@ -1,5 +1,13 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Fragment, type Ref, useEffect, useId, useRef, useState } from "react";
+import {
+  Fragment,
+  type ReactNode,
+  type Ref,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
 import {
   Link,
   Navigate,
@@ -19,6 +27,7 @@ import {
   type RequestVersion,
   retryBookRequest,
   thumbUrl,
+  wishlistBooksQuery,
 } from "../../api";
 import { Button } from "../../components/Button/Button";
 import { Cover } from "../../components/Cover/Cover";
@@ -40,14 +49,19 @@ import {
   kindChip,
   kindLabel,
   offersRequestAgain,
+  pickedMeta,
   progressPercent,
+  type RequestStep,
   requestPath,
   SEARCH_STALE_AFTER_SECS,
   splitBookRequests,
   stateView,
+  stepsFor,
+  timeLeft,
   versionFormat,
   versionSeeders,
   versionSize,
+  wishersLine,
 } from "./requestView";
 import { useNowPast } from "./useNowPast";
 import { messageOf, useAnswer, useCancel, useSwap } from "./useRequestActions";
@@ -222,7 +236,7 @@ function Chosen({ request }: { request: Request }) {
   );
 }
 
-/** The one bar for a download: a native progress element, labelled, with its percent beside it. Before the client has reported, the bar has no value and no percent. Once it is complete, the wait is for the library to take it. */
+/** The one bar for a download: a native progress element, labelled; its percent is on the lane's stepper. Before the client has reported, the bar has no value. Once it is complete, the wait is for the library to take it. */
 function Downloading({ request }: { request: Request }) {
   if ((request.progress ?? 0) >= 1) {
     return (
@@ -243,12 +257,66 @@ function Downloading({ request }: { request: Request }) {
         value={percent ?? undefined}
         max={100}
       />
-      {percent !== null && (
-        <span className="rq-percent" data-testid="request-percent">
-          {percent}%
-        </span>
-      )}
     </div>
+  );
+}
+
+/** A download in its own card: the release, its bar and what is known of it, with Choose another and Cancel beside. */
+function Download({
+  request,
+  actions,
+}: {
+  request: Request;
+  actions: ReactNode;
+}) {
+  const picked = request.versions.find((v) => v.id === request.chosenResultId);
+  const now = useNowPast(request.expectedDoneAt);
+  const meta = [
+    picked ? pickedMeta(picked) : "",
+    timeLeft(request.expectedDoneAt, now),
+  ].filter((part) => part);
+  return (
+    <div className="rq-download">
+      <div className="rq-download-main">
+        <p className="rq-download-name" data-testid="request-picked-name">
+          {picked?.title ?? "Your pick"}
+        </p>
+        <Downloading request={request} />
+        {meta.length > 0 && (
+          <p className="rq-download-meta" data-testid="request-download-meta">
+            {meta.join(" · ")}
+          </p>
+        )}
+      </div>
+      {actions}
+    </div>
+  );
+}
+
+/** Where a request stands as steps: Looking, Choose a version, On its way, Ready. */
+function Steps({ steps }: { steps: readonly RequestStep[] }) {
+  return (
+    <ol className="rq-steps" aria-label="Progress of this request">
+      {steps.map((step) => (
+        <li
+          key={step.label}
+          className="rq-step"
+          data-status={step.status}
+          aria-current={step.status === "current" ? "step" : undefined}
+        >
+          <span className="rq-step-dot" aria-hidden="true" />
+          <span>
+            {step.label}
+            {step.percent !== null && (
+              <>
+                {" · "}
+                <span data-testid="request-percent">{step.percent}%</span>
+              </>
+            )}
+          </span>
+        </li>
+      ))}
+    </ol>
   );
 }
 
@@ -271,6 +339,7 @@ function Actions({
       {isDownloading(request) && (
         <Button
           variant="ghost"
+          size="sm"
           data-testid="request-pick-another"
           // aria-disabled, not disabled: a control that disables itself drops the keyboard's focus.
           aria-disabled={busy}
@@ -288,6 +357,7 @@ function Actions({
       )}
       <Button
         variant="ghost"
+        size="sm"
         data-testid="request-cancel"
         aria-label={cancelLabel}
         aria-disabled={busy}
@@ -447,10 +517,12 @@ function Lane({
     />
   );
   const { heading, note } = stateView(request.state, request.stuckReason);
+  const steps = stepsFor(request);
   return (
     <section
       className="rq-panel rq-lane"
       aria-labelledby={titleId}
+      data-needs-you={request.state === "choose" && canAct}
       data-testid={`request-lane-${request.kind}`}
     >
       <div className="rq-lane-head">
@@ -460,15 +532,16 @@ function Lane({
         </h2>
         {name !== undefined && <Requester request={request} name={name} />}
       </div>
+      {/* The stepper shows where it stands; the words stay for a screen reader to announce. */}
       <p
-        className="rq-state"
+        className={steps ? "rq-state ld-sr" : "rq-state"}
         role="status"
         data-testid="request-state"
         data-state={request.state}
       >
         {heading}
       </p>
-      <p className="rq-note">{note}</p>
+      {steps ? <Steps steps={steps} /> : <p className="rq-note">{note}</p>}
       {request.state === "looking" && (
         <Looking request={request} canAct={canAct} onTried={focusTitle} />
       )}
@@ -482,13 +555,7 @@ function Lane({
       )}
       {request.state === "chosen" && <Chosen request={request} />}
       {request.state === "on_its_way" ? (
-        <div className="rq-download">
-          <div className="rq-download-main">
-            <Chosen request={request} />
-            <Downloading request={request} />
-          </div>
-          {actions}
-        </div>
+        <Download request={request} actions={actions} />
       ) : (
         actions
       )}
@@ -543,6 +610,9 @@ export function RequestDossier({
   const book = useQuery(bookQuery(uuid));
   const request = useQuery(bookRequestQuery(id));
   const listed = useQuery(bookRequestsQuery(uuid));
+  // shortcut: the merged list holds the newest 1000 wished books; a book past them reads as unwished.
+  const wishlists = useQuery(wishlistBooksQuery("all"));
+  const viewer = useCurrentUser();
   const { state } = useLocation();
   const back = `/books/${uuid}`;
   // A failed background poll keeps showing what was last read.
@@ -564,6 +634,8 @@ export function RequestDossier({
     return <Navigate replace to={requestPath(request.data.bookUuid, id)} />;
   }
   const { title, authors } = book.data;
+  const wanted = wishlists.data?.find((w) => w.uuid === uuid)?.wantedBy ?? [];
+  const wishers = wishersLine(wanted, viewer.id);
   const listings = listed.data ?? [];
   const context: LaneContext = {
     title,
@@ -595,8 +667,14 @@ export function RequestDossier({
           <Title className="rq-title" data-testid="request-title">
             {title}
           </Title>
-          {authors.length > 0 && (
-            <p className="rq-author">{authors.join(", ")}</p>
+          {(authors.length > 0 || wishers) && (
+            <p className="rq-author" data-testid="request-byline">
+              {authors.length > 0 && <span>{authors.join(", ")}</span>}
+              {authors.length > 0 && wishers && (
+                <span className="rq-byline-sep"> · </span>
+              )}
+              {wishers && <span className="rq-wishers">{wishers}</span>}
+            </p>
           )}
         </div>
         <Link className="rq-open" to={back}>

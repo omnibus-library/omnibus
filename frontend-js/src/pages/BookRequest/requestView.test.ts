@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { ApiError, toRequestListing, type UserId } from "../../api";
+import {
+  ApiError,
+  toBookRequest,
+  toRequestListing,
+  type UserId,
+} from "../../api";
 import {
   aWireListing,
   aWireRequest,
@@ -14,17 +19,21 @@ import {
   isDownloading,
   isSearchStale,
   offersRequestAgain,
+  pickedMeta,
   progressPercent,
   requestFacts,
   requestPath,
   splitBookRequests,
   startFailure,
   stateView,
+  stepsFor,
   swapFacts,
+  timeLeft,
   undoToastMs,
   versionFormat,
   versionSeeders,
   versionSize,
+  wishersLine,
 } from "./requestView";
 
 describe("stateView", () => {
@@ -460,5 +469,130 @@ describe("historyDay", () => {
 
     expect(historyDay(lateOnOct12Utc, "UTC")).toBe("Oct 12");
     expect(historyDay(lateOnOct12Utc, "Pacific/Kiritimati")).toBe("Oct 13");
+  });
+});
+
+describe("stepsFor", () => {
+  const steps = (request: Parameters<typeof aWireRequest>[0]) =>
+    stepsFor(toBookRequest(aWireRequest(request)));
+
+  it("makes Looking the current step of a search", () => {
+    expect(steps({ state: "looking" })).toEqual([
+      { label: "Looking", status: "current", percent: null },
+      { label: "Choose a version", status: "todo", percent: null },
+      { label: "On its way", status: "todo", percent: null },
+      { label: "Ready", status: "todo", percent: null },
+    ]);
+  });
+
+  it("counts what the search found once the reader is choosing", () => {
+    expect(steps({ state: "choose", versions: [EPUB, PDF] })).toEqual([
+      { label: "Looking · 2 found", status: "done", percent: null },
+      { label: "Choose a version", status: "current", percent: null },
+      { label: "On its way", status: "todo", percent: null },
+      { label: "Ready", status: "todo", percent: null },
+    ]);
+  });
+
+  it("names the pick made and carries the download's percent", () => {
+    const downloading = steps({
+      state: "on_its_way",
+      chosen_result_id: EPUB.id,
+      progress: 0.62,
+      versions: [EPUB],
+    });
+
+    expect(downloading?.slice(1, 3)).toEqual([
+      { label: "Chose a version", status: "done", percent: null },
+      { label: "On its way", status: "current", percent: 62 },
+    ]);
+  });
+
+  it("leaves the percent off a picked version not yet started", () => {
+    expect(steps({ state: "chosen", versions: [EPUB] })?.[2]).toEqual({
+      label: "On its way",
+      status: "current",
+      percent: null,
+    });
+  });
+
+  it("marks every step done once the book is ready", () => {
+    const ready = steps({ state: "ready", versions: [EPUB] });
+
+    expect(ready?.map((step) => step.status)).toEqual([
+      "done",
+      "done",
+      "done",
+      "done",
+    ]);
+  });
+
+  it.each(["stuck", "cancelled"] as const)(
+    "has no steps for a %s request",
+    (state) => {
+      expect(steps({ state })).toBeNull();
+    },
+  );
+});
+
+describe("timeLeft", () => {
+  const NOW = 1_000;
+
+  it.each([
+    [59, "less than a minute left"],
+    [60, "about 1 min left"],
+    [150, "about 3 min left"],
+    [3599, "about 1 hour left"],
+    [7200, "about 2 hours left"],
+  ])("reads %s seconds to go as %s", (secs, expected) => {
+    expect(timeLeft(NOW + secs, NOW)).toBe(expected);
+  });
+
+  it("says nothing when the client can't tell", () => {
+    expect(timeLeft(null, NOW)).toBeNull();
+  });
+});
+
+/** A version as the page holds it. */
+function parsedVersion(overrides: Parameters<typeof aWireVersion>[0]) {
+  const [version] = toBookRequest(
+    aWireRequest({ versions: [aWireVersion(overrides)] }),
+  ).versions;
+  if (!version) throw new Error("no version parsed");
+  return version;
+}
+
+describe("pickedMeta", () => {
+  it("joins the version's size and source", () => {
+    expect(pickedMeta(parsedVersion({ indexer: "MyAnonamouse" }))).toBe(
+      "2.4 MB · MyAnonamouse",
+    );
+  });
+
+  it("leaves out what the source did not say", () => {
+    expect(pickedMeta(parsedVersion({ size_bytes: null, indexer: null }))).toBe(
+      "",
+    );
+  });
+});
+
+describe("wishersLine", () => {
+  const wanter = (id: number, name: string) => ({ id: id as UserId, name });
+
+  it.each([
+    ["nobody", [], null],
+    ["one reader", [wanter(2, "Jordan")], "On Jordan’s wishlist"],
+    [
+      "two readers",
+      [wanter(2, "Jordan"), wanter(3, "Riley")],
+      "On Jordan’s and Riley’s wishlists",
+    ],
+    [
+      "three readers, the viewer among them",
+      [wanter(2, "Jordan"), wanter(1, "Ada"), wanter(3, "Riley")],
+      "On Jordan’s, your and Riley’s wishlists",
+    ],
+  ])("reads %s", (_who, wanters, expected) => {
+    expect(wishersLine(wanters, VIEWER)).toBe(expected);
   });
 });
