@@ -7,6 +7,7 @@ import {
   type RequestListing,
   type RequestVersion,
   StartRequest,
+  StartRequestFromMeta,
 } from "../api/generated/schemas";
 import { svg } from "./handlers";
 import { aWireBook } from "./wire";
@@ -92,6 +93,7 @@ export type ListingContext = {
 /** The writes the fake answered, in order. */
 export type RequestWrite =
   | { kind: "start"; uuid: string }
+  | { kind: "startFromMeta"; title: string }
   | { kind: "retry"; id: number }
   | { kind: "cancel"; id: number }
   | { kind: "undo"; id: number }
@@ -107,7 +109,7 @@ export type RequestFake = {
 
 const SWAPPED = "Swapped for another version";
 
-/** The routes over `initial` requests. A start adds a looking request for `viewer`, or returns theirs already going for the book as the server does; a retry puts one back to looking, or back to choosing after a stopped download. */
+/** The routes over `initial` requests. A start adds a looking request for `viewer`, or returns theirs already going for the book as the server does; a start from a provider's record also adds its book; a retry puts one back to looking, or back to choosing after a stopped download. */
 export function requestFake(
   initial: BookRequest[] = [],
   {
@@ -117,6 +119,8 @@ export function requestFake(
   }: ListingContext = {},
 ): RequestFake {
   const requests = new Map(initial.map((r) => [r.id, r]));
+  // A request started from a provider's record adds its book here.
+  const library = [...books];
   const listing = (r: BookRequest): RequestListing => ({
     request: {
       ...r,
@@ -125,7 +129,7 @@ export function requestFake(
       ),
     },
     book:
-      books.find((b) => b.unique_identifier === r.book_uuid) ??
+      library.find((b) => b.unique_identifier === r.book_uuid) ??
       aWireBook({ unique_identifier: r.book_uuid }),
     requester_name: names[r.user_id] ?? `Reader ${r.user_id}`,
     requester_has_avatar: false,
@@ -178,6 +182,28 @@ export function requestFake(
         book_uuid: uuid,
         user_id: viewer,
       });
+      requests.set(made.id, made);
+      return HttpResponse.json(made, { status: 201 });
+    }),
+    http.post("/api/requests", async ({ request }) => {
+      const { meta } = StartRequestFromMeta.parse(await request.json());
+      fake.writes.push({ kind: "startFromMeta", title: meta.title });
+      const id = Math.max(0, ...requests.keys()) + 1;
+      const uuid = `uuid-new-${id}`;
+      library.push(
+        aWireBook({
+          title: meta.title,
+          unique_identifier: uuid,
+          creators: meta.authors.map((name, i) => ({
+            name,
+            role: null,
+            file_as: null,
+            id: 100 + i,
+          })),
+          formats: [],
+        }),
+      );
+      const made = aWireRequest({ id, book_uuid: uuid, user_id: viewer });
       requests.set(made.id, made);
       return HttpResponse.json(made, { status: 201 });
     }),

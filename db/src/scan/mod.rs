@@ -13,3 +13,4 @@ mod tests;
 pub use resolve::{
     add_physical_only, check_in_copy, resolve_meta, resolve_scan, wishlist_add, ScanError,
 };
+pub(crate) use resolve::{create_fileless_from_meta, fetch_candidate_cover};

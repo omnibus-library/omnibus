@@ -56,7 +56,7 @@ mod cancel {
         let pool = pool().await;
         let id = start_looking(&pool).await;
         sqlx::query(
-            "UPDATE book_requests SET state = 'choose', remove_tag = 'omnibus-1-1' WHERE id = ?",
+            "UPDATE book_requests SET state = 'choose', remove_hash = 'omnibus-1-1' WHERE id = ?",
         )
         .bind(id)
         .execute(&pool)
@@ -67,7 +67,7 @@ mod cancel {
 
         let row = state_of(&pool, id).await;
         assert_eq!(row.state, RequestState::Cancelled);
-        assert_eq!(row.remove_tag.as_deref(), Some("omnibus-1-1"));
+        assert_eq!(row.remove_hash.as_deref(), Some("omnibus-1-1"));
     }
 
     #[tokio::test]
@@ -179,8 +179,8 @@ mod swap {
         assert_eq!(row.state, RequestState::Choose);
         assert_eq!(row.chosen_result_id, None);
         assert_eq!(row.progress, None);
-        assert_eq!(row.client_tag, None);
-        assert_eq!(row.remove_tag.as_deref(), Some("omnibus-1"));
+        assert_eq!(row.client_hash, None);
+        assert_eq!(row.remove_hash.as_deref(), Some("omnibus-1"));
         assert_eq!(row.remove_since, Some(NOW));
         assert_eq!(row.note.as_deref(), Some("Swapped for another version"));
         let shown: Vec<(i64, bool)> = versions(&pool, id)
@@ -292,7 +292,7 @@ mod swap {
     async fn refuses_while_an_earlier_download_is_still_being_removed() {
         let pool = pool().await;
         let (id, _, _) = on_its_way_with_two_versions(&pool).await;
-        sqlx::query("UPDATE book_requests SET remove_tag = 'omnibus-1-0' WHERE id = ?")
+        sqlx::query("UPDATE book_requests SET remove_hash = 'omnibus-1-0' WHERE id = ?")
             .bind(id)
             .execute(&pool)
             .await

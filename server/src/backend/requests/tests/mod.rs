@@ -28,6 +28,7 @@ mod choose;
 mod cover;
 mod import;
 mod list;
+mod new_book;
 mod retry;
 mod swap;
 
@@ -123,9 +124,16 @@ fn start_uri(uuid: &str) -> String {
 mod flag_and_permission_gate {
     use super::*;
 
-    fn writes() -> [(&'static str, String, Option<Value>); 8] {
+    fn writes() -> [(&'static str, String, Option<Value>); 9] {
         [
             ("POST", start_uri("any"), Some(json!({"kind": "ebook"}))),
+            (
+                "POST",
+                "/api/requests".to_string(),
+                Some(
+                    json!({"kind": "ebook", "meta": {"isbn13": "9781635575637", "title": "Piranesi", "authors": [], "source": "open_library"}}),
+                ),
+            ),
             ("POST", "/api/requests/1/retry".to_string(), None),
             ("POST", "/api/requests/1/swap".to_string(), None),
             ("POST", "/api/requests/1/cancel".to_string(), None),
@@ -484,14 +492,14 @@ mod get_request {
     }
 
     #[tokio::test]
-    async fn carries_the_progress_of_a_request_on_its_way_and_never_its_client_tag() {
+    async fn carries_the_progress_of_a_request_on_its_way_and_never_its_client_hash() {
         let (app, _, pool) = fixture_book_requests(true).await;
         let (ada, token) = requester(&pool, "ada").await;
         let uuid = seed_book(&pool, "Dracula").await;
         let id = seed_request(&pool, ada, &uuid).await;
         sqlx::query(
             "UPDATE book_requests SET state = 'on_its_way', progress = 0.4,
-             client_tag = 'omnibus-secret' WHERE id = ?",
+             client_hash = 'omnibus-secret' WHERE id = ?",
         )
         .bind(id)
         .execute(&pool)

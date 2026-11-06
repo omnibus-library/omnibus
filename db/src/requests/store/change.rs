@@ -127,7 +127,7 @@ pub(super) async fn swap_in(
 ) -> Result<RequestRow, RequestError> {
     let picked: Option<Option<i64>> = sqlx::query_scalar(&format!(
         "SELECT chosen_result_id FROM book_requests
-         WHERE id = ? AND remove_tag IS NULL
+         WHERE id = ? AND remove_hash IS NULL
            AND ({DOWNLOADING} OR (state = 'stuck' AND stuck_reason = 'stopped_moving'))"
     ))
     .bind(id)
@@ -145,9 +145,9 @@ pub(super) async fn swap_in(
          SET state = CASE WHEN EXISTS (SELECT 1 FROM book_request_results
                                        WHERE request_id = ?1 AND rejected = 0)
                           THEN 'choose' ELSE 'looking' END,
-             remove_tag = client_tag,
-             remove_since = CASE WHEN client_tag IS NULL THEN NULL ELSE ?2 END,
-             client_tag = NULL, chosen_result_id = NULL, progress = NULL, moved_at = NULL,
+             remove_hash = CASE WHEN client_adopted = 0 THEN client_hash END,
+             remove_since = CASE WHEN client_hash IS NULL OR client_adopted = 1 THEN NULL ELSE ?2 END,
+             client_hash = NULL, client_adopted = 0, chosen_result_id = NULL, progress = NULL, moved_at = NULL,
              expected_done_at = NULL,
              stuck_reason = NULL, stuck_detail = NULL, note = ?3, updated_at = {NOW}
          WHERE id = ?1 RETURNING {COLUMNS}"

@@ -4,6 +4,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::metadata_lookup::ExternalBookMeta;
+
 /// Which format a request fetches.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
@@ -19,6 +21,15 @@ impl RequestKind {
         match self {
             RequestKind::Ebook => "ebook",
             RequestKind::Audiobook => "audiobook",
+        }
+    }
+
+    /// Whether a request can start for this kind: only `ebook` can yet. The error is the
+    /// message for a 400.
+    pub fn check_requestable(self) -> Result<(), &'static str> {
+        match self {
+            RequestKind::Ebook => Ok(()),
+            RequestKind::Audiobook => Err("only ebooks can be requested yet"),
         }
     }
 
@@ -157,6 +168,26 @@ pub struct StartRequest {
     pub kind: RequestKind,
 }
 
+/// Starts a request for one format of a book the library doesn't have yet, made from a
+/// provider's record of it. The book is created without files; no wishlist entry is made.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct StartRequestFromMeta {
+    /// Only `ebook` can be requested yet.
+    pub kind: RequestKind,
+    /// The provider's record, as a metadata search returned it.
+    pub meta: ExternalBookMeta,
+}
+
+impl StartRequestFromMeta {
+    /// Why the request can't start, as a message for a 400: not an ebook, or a field of
+    /// `meta` over its cap.
+    pub fn validate(&self) -> Result<(), String> {
+        self.kind.check_requestable()?;
+        self.meta.validate()
+    }
+}
+
 /// The version a reader picks. Only an id: the download link is never taken from the caller.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
@@ -269,27 +300,4 @@ pub struct RequestListQuery {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn request_state_and_stuck_reason_round_trip_their_tokens() {
-        assert_eq!(RequestState::from_db("ready"), Some(RequestState::Ready));
-        assert_eq!(RequestState::Ready.as_str(), "ready");
-        assert_eq!(
-            StuckReason::from_db("couldnt_add"),
-            Some(StuckReason::CouldntAdd)
-        );
-        assert_eq!(StuckReason::CouldntAdd.as_str(), "couldnt_add");
-    }
-
-    #[test]
-    fn release_protocol_round_trips_its_tokens_and_knows_no_other() {
-        assert_eq!(
-            ReleaseProtocol::parse("usenet"),
-            Some(ReleaseProtocol::Usenet)
-        );
-        assert_eq!(ReleaseProtocol::Torrent.as_str(), "torrent");
-        assert_eq!(ReleaseProtocol::parse("unknown"), None);
-    }
-}
+mod tests;

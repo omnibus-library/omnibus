@@ -3,8 +3,14 @@
 //! the state rules (one live request per reader, book and format; a version only chosen
 //! while the request waits on the reader) hold in one place.
 
-use omnibus_shared::{ReleaseProtocol, RequestKind, RequestState, RequestVersion, StuckReason};
+use omnibus_shared::{
+    ExternalBookMeta, ReleaseProtocol, RequestKind, RequestState, RequestVersion, StuckReason,
+};
 use sqlx::{sqlite::SqliteRow, Row, SqlitePool};
+
+use crate::author_photos::RemoteImageConfig;
+use crate::metadata_lookup::provider_cover_image_config;
+use crate::scan::{create_fileless_from_meta, fetch_candidate_cover};
 
 use super::rank::Ranked;
 
@@ -18,7 +24,7 @@ const DOWNLOADING: &str = "(state = 'on_its_way' AND (progress IS NULL OR progre
 const NOW: &str = "strftime('%s', 'now')";
 
 const COLUMNS: &str = "id, book_uuid, user_id, kind, state, stuck_reason, stuck_detail, \
-                       chosen_result_id, client_tag, import_key, remove_tag, remove_since, progress, moved_at, expected_done_at, cancel_at, cancelled_by, \
+                       chosen_result_id, client_hash, client_adopted, legacy_tag, import_key, remove_hash, remove_since, progress, moved_at, expected_done_at, cancel_at, cancelled_by, \
                        prior_state, note, offers_cover, cover_candidate, created_at, updated_at";
 
 /// Why a request could not be recorded or changed.
@@ -37,6 +43,9 @@ pub enum RequestError {
     Db(#[from] sqlx::Error),
     #[error(transparent)]
     Books(#[from] crate::books::BooksError),
+    /// Making the book from a provider's record failed.
+    #[error(transparent)]
+    Scan(#[from] crate::scan::ScanError),
 }
 
 /// One request as stored. `stuck_detail` is for admins only; the handler withholds it.
@@ -50,14 +59,18 @@ pub struct RequestRow {
     pub stuck_reason: Option<StuckReason>,
     pub stuck_detail: Option<String>,
     pub chosen_result_id: Option<i64>,
-    /// The name of the live download in the client; never sent to a reader.
-    pub client_tag: Option<String>,
+    /// The info hash of the live download in the client; never sent to a reader.
+    pub client_hash: Option<String>,
+    /// True when the client already held the torrent, so Omnibus never removes it.
+    pub client_adopted: bool,
+    /// A tag an earlier version put on the download, until it is found by hash.
+    pub legacy_tag: Option<String>,
     /// The library-relative key of the file a finished download was placed as, once it has
     /// been; a retried import resumes from it.
     pub import_key: Option<String>,
     /// A download to take out of the client, and `remove_since` when that began (Unix
     /// seconds; `None` once the client has shown it).
-    pub remove_tag: Option<String>,
+    pub remove_hash: Option<String>,
     pub remove_since: Option<i64>,
     /// How much of the download is done, 0 to 1.
     pub progress: Option<f64>,
@@ -136,9 +149,11 @@ fn row_to_request(row: &SqliteRow) -> Result<RequestRow, sqlx::Error> {
             .transpose()?,
         stuck_detail: row.try_get("stuck_detail")?,
         chosen_result_id: row.try_get("chosen_result_id")?,
-        client_tag: row.try_get("client_tag")?,
+        client_hash: row.try_get("client_hash")?,
+        client_adopted: row.try_get::<i64, _>("client_adopted")? != 0,
+        legacy_tag: row.try_get("legacy_tag")?,
         import_key: row.try_get("import_key")?,
-        remove_tag: row.try_get("remove_tag")?,
+        remove_hash: row.try_get("remove_hash")?,
         remove_since: row.try_get("remove_since")?,
         progress: row.try_get("progress")?,
         moved_at: row.try_get("moved_at")?,
@@ -182,30 +197,109 @@ pub async fn start(
             created: false,
         });
     }
-    let live: i64 = sqlx::query_scalar(&format!(
-        "SELECT COUNT(*) FROM book_requests WHERE user_id = ? AND state IN {LIVE_STATES}"
-    ))
-    .bind(user_id)
-    .fetch_one(&mut *tx)
-    .await?;
-    if live >= max_live {
-        return Err(RequestError::TooManyLive);
-    }
-    let row = sqlx::query(&format!(
-        "INSERT INTO book_requests (book_uuid, user_id, kind, state)
-         VALUES (?, ?, ?, 'looking') RETURNING {COLUMNS}"
-    ))
+    // A book made for a request keeps its cover whoever asks next, until it is a real book:
+    // it has gained a file or a physical copy.
+    let offers_cover: bool = sqlx::query_scalar(
+        "SELECT NOT EXISTS (SELECT 1 FROM book_requests WHERE book_uuid = ?1 AND offers_cover = 0)
+             OR EXISTS (SELECT 1 FROM physical_copies WHERE book_uuid = ?1)
+             OR EXISTS (SELECT 1 FROM book_files bf JOIN books b ON b.id = bf.book_id
+                         WHERE b.uuid = ?1)",
+    )
     .bind(book_uuid)
-    .bind(user_id)
-    .bind(kind.as_str())
     .fetch_one(&mut *tx)
     .await?;
-    let request = row_to_request(&row)?;
+    let request = insert_looking(&mut tx, user_id, book_uuid, kind, max_live, offers_cover).await?;
     tx.commit().await?;
     Ok(Started {
         request,
         created: true,
     })
+}
+
+/// How many requests `user_id` has live.
+async fn live_count<'e>(
+    executor: impl sqlx::Executor<'e, Database = sqlx::Sqlite>,
+    user_id: i64,
+) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar(&format!(
+        "SELECT COUNT(*) FROM book_requests WHERE user_id = ? AND state IN {LIVE_STATES}"
+    ))
+    .bind(user_id)
+    .fetch_one(executor)
+    .await
+}
+
+/// Insert a `looking` request on `tx`, refused once the reader holds `max_live`. `offers_cover`
+/// is whether a download's sharper cover may be offered for the book; a book made for the
+/// request has no cover of its own worth replacing.
+async fn insert_looking(
+    tx: &mut sqlx::SqliteConnection,
+    user_id: i64,
+    book_uuid: &str,
+    kind: RequestKind,
+    max_live: i64,
+    offers_cover: bool,
+) -> Result<RequestRow, RequestError> {
+    if live_count(&mut *tx, user_id).await? >= max_live {
+        return Err(RequestError::TooManyLive);
+    }
+    let row = sqlx::query(&format!(
+        "INSERT INTO book_requests (book_uuid, user_id, kind, state, offers_cover)
+         VALUES (?, ?, ?, 'looking', ?) RETURNING {COLUMNS}"
+    ))
+    .bind(book_uuid)
+    .bind(user_id)
+    .bind(kind.as_str())
+    .bind(offers_cover)
+    .fetch_one(&mut *tx)
+    .await?;
+    Ok(row_to_request(&row)?)
+}
+
+/// Start `user_id`'s request for `kind` of a book the library lacks, made from `meta` as a
+/// file-less book. The cover is fetched first, unless the reader is already at `max_live`; the
+/// live-cap check, the book and the request share one write transaction, so a refusal leaves
+/// no book behind.
+pub async fn start_for_new_book(
+    pool: &SqlitePool,
+    user_id: i64,
+    meta: &ExternalBookMeta,
+    kind: RequestKind,
+    max_live: i64,
+) -> Result<RequestRow, RequestError> {
+    start_for_new_book_with(
+        pool,
+        user_id,
+        meta,
+        kind,
+        max_live,
+        &provider_cover_image_config(false),
+    )
+    .await
+}
+
+/// [`start_for_new_book`] with an injectable cover-fetch config, for a test that points the
+/// fetch at a loopback origin.
+pub(crate) async fn start_for_new_book_with(
+    pool: &SqlitePool,
+    user_id: i64,
+    meta: &ExternalBookMeta,
+    kind: RequestKind,
+    max_live: i64,
+    image_config: &RemoteImageConfig,
+) -> Result<RequestRow, RequestError> {
+    // Read-only and early, so a refused reader costs no network fetch or write lock; the
+    // transaction below stays the authoritative check.
+    if live_count(pool, user_id).await? >= max_live {
+        return Err(RequestError::TooManyLive);
+    }
+    let cover = fetch_candidate_cover(meta, image_config).await;
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+    let created = create_fileless_from_meta(&mut tx, meta, cover, Some(user_id)).await?;
+    let request = insert_looking(&mut tx, user_id, &created.uuid, kind, max_live, false).await?;
+    tx.commit().await?;
+    created.settle_cover(pool).await;
+    Ok(request)
 }
 
 /// The request with this id, if any.
@@ -430,9 +524,10 @@ mod list;
 
 pub use change::{cancel, swap, undo_cancel, CANCEL_GRACE_SECS};
 pub use download::{
-    awaiting_add, awaiting_import, begin_download, claim_due_cancels, downloading, finish_removal,
-    has_download_work, mark_on_its_way, mark_ready, mark_removal_seen, mark_stuck,
-    pending_removals, record_expected_done_at, record_progress, set_import_key, unix_now,
+    awaiting_add, awaiting_import, claim_due_cancels, claim_hash, downloading, finish_removal,
+    has_download_work, hash_in_use, mark_on_its_way, mark_ready, mark_removal_seen, mark_stuck,
+    pending_removals, pick_link, record_expected_done_at, record_progress, release_claim,
+    resolve_legacy_tag, set_import_key, unix_now, with_legacy_tag,
 };
 pub use list::{list, ListFilter, Listed};
 

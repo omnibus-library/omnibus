@@ -137,3 +137,22 @@ export function countsLine(groups: readonly RequestGroup[]): string {
     needs === 0 ? "" : ` · ${needs} ${needs === 1 ? "needs" : "need"} you`;
   return `${bookCount(books)}${waiting}`;
 }
+
+/** Each book with an ebook request going (finished and cancelled ones don't count), by uuid, where its newest one stands in the list's words. `listings` come newest first. */
+export function requestedNotes(
+  listings: readonly RequestListing[],
+  viewer: Viewer,
+): Map<string, string> {
+  const notes = new Map<string, string>();
+  for (const listing of listings) {
+    const { request, book } = listing;
+    const group = groupOf(request, viewer);
+    if (request.kind !== "ebook" || group === null || group === "ready") {
+      continue;
+    }
+    if (!notes.has(book.uuid)) {
+      notes.set(book.uuid, whereItStands(listing, group, false));
+    }
+  }
+  return notes;
+}

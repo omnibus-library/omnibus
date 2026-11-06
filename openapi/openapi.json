@@ -6408,6 +6408,48 @@
             "description": "Book requests are off on this server."
           }
         }
+      },
+      "post": {
+        "tags": [
+          "Requests"
+        ],
+        "summary": "Start a request for a book the library lacks",
+        "description": "Makes the book from a provider's record of it, without files, and starts looking for an\nebook of it; poll `GET /api/requests/{id}` until it leaves `looking`. No wishlist entry is\nmade. To request a book the library already has, use `POST /api/books/{uuid}/requests`.",
+        "operationId": "start_request_from_metadata",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartRequestFromMeta"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "The book was made and the request started.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookRequest"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`kind` isn't `ebook`, or a field of `meta` is over its length cap."
+          },
+          "403": {
+            "description": "Your account can't make requests."
+          },
+          "404": {
+            "description": "Book requests are off on this server."
+          },
+          "429": {
+            "description": "You started too many requests lately, or have too many in progress."
+          }
+        }
       }
     },
     "/api/requests/{id}": {
@@ -13200,7 +13242,7 @@
       },
       "ExternalBookMeta": {
         "type": "object",
-        "description": "Book metadata from an external provider. Only `isbn13`, `title` and `source` are\nalways set, and providers differ on the rest. `cover_url` points at the provider's\nimage, which the server downloads only when it creates a book or wishlist entry from\nthis metadata.",
+        "description": "Book metadata from an external provider. Only `isbn13`, `title` and `source` are\nalways set, and providers differ on the rest. `cover_url` points at the provider's\nimage, which the server downloads only when it creates a book from this metadata, for a\nwishlist entry, a physical copy or a request.",
         "required": [
           "isbn13",
           "title",
@@ -15900,7 +15942,8 @@
         ],
         "properties": {
           "download_client_category": {
-            "type": "string"
+            "type": "string",
+            "description": "The category downloads are filed under; empty when none is sent."
           },
           "download_client_kind": {
             "$ref": "#/components/schemas/DownloadClientKind"
@@ -15969,7 +16012,7 @@
         "properties": {
           "download_client_category": {
             "type": "string",
-            "description": "The category the client files Omnibus downloads under, up to 255 bytes. Empty\nmeans `omnibus`."
+            "description": "The category the client files Omnibus downloads under, up to 255 bytes. Empty\nsends no category, so the client's own defaults apply."
           },
           "download_client_kind": {
             "$ref": "#/components/schemas/DownloadClientKind"
@@ -17556,6 +17599,24 @@
           "kind": {
             "$ref": "#/components/schemas/RequestKind",
             "description": "Only `ebook` can be requested yet."
+          }
+        }
+      },
+      "StartRequestFromMeta": {
+        "type": "object",
+        "description": "Starts a request for one format of a book the library doesn't have yet, made from a\nprovider's record of it. The book is created without files; no wishlist entry is made.",
+        "required": [
+          "kind",
+          "meta"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/RequestKind",
+            "description": "Only `ebook` can be requested yet."
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ExternalBookMeta",
+            "description": "The provider's record, as a metadata search returned it."
           }
         }
       },

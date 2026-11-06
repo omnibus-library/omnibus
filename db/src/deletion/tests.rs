@@ -183,13 +183,16 @@ async fn delete_book_items_keeps_a_request_with_a_download_cancelled_and_due_and
     let file = seed_file(&pool, book, "/lib", "a", "a", "EPUB").await;
     let ada = seed_user(&pool, "ada").await;
     let grace = seed_user(&pool, "grace").await;
-    for (user, tag) in [(ada, Some("omnibus-1-1")), (grace, None)] {
+    for (user, hash) in [
+        (ada, Some("c17d23830376ac1478f394337fefbc169a9959ce")),
+        (grace, None),
+    ] {
         sqlx::query(
-            "INSERT INTO book_requests (book_uuid, user_id, kind, state, client_tag)
+            "INSERT INTO book_requests (book_uuid, user_id, kind, state, client_hash)
              VALUES ('uuid-a', ?, 'ebook', 'on_its_way', ?)",
         )
         .bind(user)
-        .bind(tag)
+        .bind(hash)
         .execute(&pool)
         .await
         .unwrap();
@@ -200,7 +203,7 @@ async fn delete_book_items_keeps_a_request_with_a_download_cancelled_and_due_and
         .unwrap();
 
     let kept: Vec<(i64, String, Option<String>)> = sqlx::query_as(
-        "SELECT user_id, state, client_tag FROM book_requests
+        "SELECT user_id, state, client_hash FROM book_requests
          WHERE cancel_at IS NOT NULL AND cancel_at <= strftime('%s', 'now')",
     )
     .fetch_all(&pool)
@@ -211,7 +214,7 @@ async fn delete_book_items_keeps_a_request_with_a_download_cancelled_and_due_and
         [(
             ada,
             "cancelled".to_string(),
-            Some("omnibus-1-1".to_string())
+            Some("c17d23830376ac1478f394337fefbc169a9959ce".to_string())
         )]
     );
     assert_eq!(

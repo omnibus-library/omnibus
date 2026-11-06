@@ -275,7 +275,7 @@ pub(crate) async fn wishlist_add_with(
 /// Library needs). Non-fatal — a missing cover must not fail the check-in — but
 /// logged: a cover the reader watched render on the check-in card and then lost
 /// is otherwise invisible to the operator.
-async fn fetch_candidate_cover(
+pub(crate) async fn fetch_candidate_cover(
     meta: &ExternalBookMeta,
     image_config: &RemoteImageConfig,
 ) -> Option<FilelessCover> {
@@ -293,7 +293,7 @@ async fn fetch_candidate_cover(
 /// edition year, else the work's first publication), its series and index from
 /// the series statement, and its page count as a `print_pages` override authored
 /// by `filed_by` (no filer, no override). The ISBN is re-canonicalized.
-async fn create_fileless_from_meta(
+pub(crate) async fn create_fileless_from_meta(
     tx: &mut Transaction<'_, sqlx::Sqlite>,
     meta: &ExternalBookMeta,
     cover: Option<FilelessCover>,

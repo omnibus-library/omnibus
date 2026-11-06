@@ -16,9 +16,6 @@ pub const REQUESTS_PATH_MAX_LEN: usize = 4096;
 /// Maximum byte length of the Prowlarr API key or the download client password.
 pub const REQUESTS_SECRET_MAX_LEN: usize = 1024;
 
-/// The category new downloads are filed under when none is set.
-pub const DEFAULT_DOWNLOAD_CATEGORY: &str = "omnibus";
-
 /// Which download client program the server talks to.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
@@ -73,7 +70,7 @@ pub struct RequestsSettingsUpdate {
     #[serde(default)]
     pub download_client_password: Option<String>,
     /// The category the client files Omnibus downloads under, up to 255 bytes. Empty
-    /// means `omnibus`.
+    /// sends no category, so the client's own defaults apply.
     pub download_client_category: String,
     /// The completed-downloads folder as the download client sees it, up to 4096 bytes.
     pub download_client_path_prefix: String,
@@ -98,6 +95,7 @@ pub struct RequestsSettingsStatus {
     pub download_client_username: Option<String>,
     /// A masked preview of the password. Null when no password is set.
     pub download_client_password_masked: Option<String>,
+    /// The category downloads are filed under; empty when none is sent.
     pub download_client_category: String,
     pub download_client_path_prefix: Option<String>,
     pub download_path_prefix: Option<String>,

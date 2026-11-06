@@ -106,8 +106,8 @@ pub struct SetGoogleBooksKey {
 
 /// Book metadata from an external provider. Only `isbn13`, `title` and `source` are
 /// always set, and providers differ on the rest. `cover_url` points at the provider's
-/// image, which the server downloads only when it creates a book or wishlist entry from
-/// this metadata.
+/// image, which the server downloads only when it creates a book from this metadata, for a
+/// wishlist entry, a physical copy or a request.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]

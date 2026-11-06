@@ -54,6 +54,8 @@ until Omnibus has a Usenet download client.
 Requesting from the wishlist asks one question (ebook or audiobook), starts the request, and takes the user
 straight to that book on the Requests page, already in "Looking".
 
+A request can also start from the Requests page's search ("+ Request"): it finds a library book or a provider's record of one the library lacks, and starts an ebook request without making a wishlist entry.
+
 ## Objectives
 
 1. The ability to track physical copies of your own books

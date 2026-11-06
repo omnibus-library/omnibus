@@ -1,6 +1,6 @@
 //! The book-request connections: the round trip with both secrets masked, a `None`
 //! secret keeping the saved one and `""` clearing it, the Prowlarr key's env fallback,
-//! the category and kind defaults, and validation rejecting a bad write whole.
+//! the kind default, an empty category meaning none,, and validation rejecting a bad write whole.
 
 use super::super::*;
 use crate::pool::init_db;
@@ -44,6 +44,20 @@ mod set_requests_settings {
             download_path_prefix: Some("/mnt/completed".into()),
         };
         assert_eq!(status, expected);
+    }
+
+    #[tokio::test]
+    async fn keeps_an_empty_category_empty_rather_than_falling_back_to_a_default() {
+        let _env = EnvVarGuard::set("OMNIBUS_PROWLARR_API_KEY", None);
+        let pool = init_db("sqlite::memory:").await.unwrap();
+        set_requests_settings(&pool, &update()).await.unwrap();
+        let mut next = update();
+        next.download_client_category = String::new();
+
+        set_requests_settings(&pool, &next).await.unwrap();
+
+        let config = effective_requests_config(&pool).await.unwrap();
+        assert_eq!(config.download_client_category, "");
     }
 
     #[tokio::test]
@@ -191,13 +205,13 @@ mod requests_settings_status {
     use super::*;
 
     #[tokio::test]
-    async fn defaults_the_category_and_kind_when_nothing_is_saved() {
+    async fn defaults_the_kind_and_no_category_when_nothing_is_saved() {
         let _env = EnvVarGuard::set("OMNIBUS_PROWLARR_API_KEY", None);
         let pool = init_db("sqlite::memory:").await.unwrap();
 
         let status = requests_settings_status(&pool).await.unwrap();
 
-        assert_eq!(status.download_client_category, "omnibus");
+        assert_eq!(status.download_client_category, "");
         assert_eq!(status.download_client_kind, DownloadClientKind::Qbittorrent);
         assert_eq!(status.prowlarr_url, None);
     }

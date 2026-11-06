@@ -5,8 +5,8 @@
 //! fallback, the download client password does not.
 
 use omnibus_shared::{
-    DownloadClientKind, RequestsSettingsStatus, RequestsSettingsUpdate, DEFAULT_DOWNLOAD_CATEGORY,
-    REQUESTS_FIELD_MAX_LEN, REQUESTS_PATH_MAX_LEN, REQUESTS_SECRET_MAX_LEN, REQUESTS_URL_MAX_LEN,
+    DownloadClientKind, RequestsSettingsStatus, RequestsSettingsUpdate, REQUESTS_FIELD_MAX_LEN,
+    REQUESTS_PATH_MAX_LEN, REQUESTS_SECRET_MAX_LEN, REQUESTS_URL_MAX_LEN,
 };
 use sqlx::SqlitePool;
 
@@ -183,7 +183,7 @@ pub async fn effective_requests_config(pool: &SqlitePool) -> Result<RequestsConf
         download_client_password: stored_password(pool).await?,
         download_client_category: get_setting(pool, CLIENT_CATEGORY_KEY)
             .await?
-            .unwrap_or_else(|| DEFAULT_DOWNLOAD_CATEGORY.to_string()),
+            .unwrap_or_default(),
         download_client_path_prefix: get_setting(pool, CLIENT_PATH_PREFIX_KEY).await?,
         download_path_prefix: get_setting(pool, DOWNLOAD_PATH_PREFIX_KEY).await?,
     })

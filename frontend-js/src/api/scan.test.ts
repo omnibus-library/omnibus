@@ -34,4 +34,11 @@ describe("scanBookFromHit", () => {
       false,
     );
   });
+
+  it("keeps the hit's formats and year for a caller that wants them", () => {
+    const found = scanBookFromHit({ ...HIT, formats: ["EPUB"], year: "2020" });
+
+    expect(found.formats).toEqual(["EPUB"]);
+    expect(found.year).toBe("2020");
+  });
 });

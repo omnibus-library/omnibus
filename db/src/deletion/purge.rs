@@ -146,14 +146,14 @@ async fn drop_requests(
     sqlx::query(
         "UPDATE book_requests
          SET state = 'cancelled', prior_state = NULL, cancel_at = strftime('%s', 'now')
-         WHERE book_uuid = ? AND (client_tag IS NOT NULL OR remove_tag IS NOT NULL)",
+         WHERE book_uuid = ? AND (client_hash IS NOT NULL OR remove_hash IS NOT NULL)",
     )
     .bind(uuid)
     .execute(&mut **tx)
     .await?;
     sqlx::query(
         "DELETE FROM book_requests
-         WHERE book_uuid = ? AND client_tag IS NULL AND remove_tag IS NULL",
+         WHERE book_uuid = ? AND client_hash IS NULL AND remove_hash IS NULL",
     )
     .bind(uuid)
     .execute(&mut **tx)

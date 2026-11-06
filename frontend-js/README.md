@@ -122,7 +122,9 @@ Requests (`/requests`) lists every reader's requests one item per book, grouped 
 book stands (Needs you, On its way, Looking, Stuck, Ready; a book whose requests were all
 cancelled is left out), beside a pane with the selected book's request. `/requests?book=<uuid>`
 is the only address of a book's request, and the first book is selected when `?book=` is
-absent. On a phone the list stands alone and each item opens that address full screen, which
+absent. Its "+ Request" button, for a reader who may request, opens the shared `BookSearch` (the
+wishlist's add search, lifted into `components/BookSearch/`) to start an ebook request on the
+book found, with no wishlist entry made. On a phone the list stands alone and each item opens that address full screen, which
 offers "‹ Requests" back (a request started from a wishlist row offers "← Back to Wishlists"
 instead, at every width). The user menu links it while the server has book requests on; with
 them off it is Not Found. The pane and the phone's full-screen detail are one component: the
