@@ -125,8 +125,10 @@ cancelled is left out), beside a pane with the selected book's request, picked b
 book's request page, which then offers "‹ Requests" back. The user menu links it while the
 server has book requests on; with them off it is Not Found. A book's request page
 (`/books/:uuid/request?id=`) and the pane are one component: the book, a lane for the request
-and for each other one still going (who asked and when, Cancel and Choose another beside a
-download, shown only to the reader who asked or an admin), then the book's history of
+and for each other one still going (who asked and when, a Looking → Choose a version → On its
+way → Ready stepper, a download's release, size, source and time left, with Cancel and Choose
+another beside it, shown only to the reader who asked or an admin; the byline names whose
+wishlists hold the book), then the book's history of
 cancelled and stuck requests and swapped versions, saying only what was recorded, with
 Request again on a cancelled one once its Undo has run out and while the reader has no other
 request going for the book. Both run against the stateful fake in
