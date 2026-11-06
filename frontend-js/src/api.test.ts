@@ -5,6 +5,8 @@ import {
   type FilterClause,
   fetchReadStatus,
   filterParam,
+  listPollMs,
+  REQUEST_POLL_MS,
   toBookDetail,
   toBookPage,
   toPalette,
@@ -468,5 +470,33 @@ describe("filterParam", () => {
 
   it("sends nothing for no clauses", () => {
     expect(filterParam([])).toBeUndefined();
+  });
+});
+
+describe("listPollMs", () => {
+  it.each([
+    ["looking", REQUEST_POLL_MS],
+    ["chosen", REQUEST_POLL_MS],
+    ["on_its_way", REQUEST_POLL_MS],
+    ["choose", false],
+    ["stuck", false],
+  ] as const)(
+    "polls a list whose one request is %s every %s ms",
+    (state, expected) => {
+      expect(listPollMs([{ request: { state } }])).toBe(expected);
+    },
+  );
+
+  it("polls while any one listed request is still moving", () => {
+    const listed = [
+      { request: { state: "ready" } },
+      { request: { state: "looking" } },
+    ] as const;
+
+    expect(listPollMs(listed)).toBe(REQUEST_POLL_MS);
+  });
+
+  it("waits on a list not yet read", () => {
+    expect(listPollMs(undefined)).toBe(false);
   });
 });

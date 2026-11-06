@@ -20,6 +20,7 @@ import {
 import type {
   BookRequest as BookRequestWire,
   RequestListing as RequestListingWire,
+  RequestState,
   RequestsSettingsStatus,
   RequestsSettingsUpdate,
   RequestVersion as RequestVersionWire,
@@ -27,6 +28,7 @@ import type {
 import { BookRequest as BookRequestSchema } from "./generated/schemas";
 
 export type {
+  RequestKind,
   RequestState,
   RequestsSettingsStatus,
   RequestsSettingsUpdate,
@@ -120,10 +122,24 @@ export type RequestListing = ReturnType<typeof toRequestListing>;
 /** The prefix of every list of requests, which any write to a request makes stale. */
 export const REQUEST_LISTS_KEY = ["requests", "list"] as const;
 
-/** Every reader's requests, newest first. */
+/** How often a request still moving is asked about again. */
+export const REQUEST_POLL_MS = 2000;
+
+/** Whether a request is moving without the reader: searching, picked or downloading. */
+export const isMoving = (state: RequestState) =>
+  state === "looking" || state === "chosen" || state === "on_its_way";
+
+/** How often a list is read again: every couple of seconds while any request in it is moving. */
+export const listPollMs = (
+  listings: readonly { request: { state: RequestState } }[] | undefined,
+) =>
+  listings?.some((l) => isMoving(l.request.state)) ? REQUEST_POLL_MS : false;
+
+/** Every reader's requests, newest first; read again while any is moving. */
 export const requestsQuery = queryOptions({
   queryKey: [...REQUEST_LISTS_KEY, "all"],
   queryFn: async () => ok(await listRequests()).map(toRequestListing),
+  refetchInterval: (query) => listPollMs(query.state.data),
 });
 
 /** One book's requests, newest first: its history. */
@@ -136,9 +152,6 @@ export const bookRequestsQuery = (uuid: BookUuid) =>
       ),
   });
 
-/** How often a request still moving is asked about again. */
-export const REQUEST_POLL_MS = 2000;
-
 /** One request; while it is looking, picked or downloading, it is read again every couple of seconds. */
 export const bookRequestQuery = (id: number) =>
   queryOptions({
@@ -146,9 +159,7 @@ export const bookRequestQuery = (id: number) =>
     queryFn: async () => toBookRequest(ok(await getBookRequest(id))),
     refetchInterval: (query) => {
       const state = query.state.data?.state;
-      const moving =
-        state === "looking" || state === "chosen" || state === "on_its_way";
-      return moving ? REQUEST_POLL_MS : false;
+      return state && isMoving(state) ? REQUEST_POLL_MS : false;
     },
   });
 
