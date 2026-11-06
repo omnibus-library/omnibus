@@ -11,8 +11,8 @@ import {
   requestFake,
 } from "../../testing/requestHandlers";
 import { WIRE_ADA } from "../../testing/wire";
+import { Requests } from "../Requests/Requests";
 import { PHONE } from "../Wishlists/Wishlists.stories.shared";
-import { BookRequest } from "./BookRequest";
 
 const UUID = HYPERION.unique_identifier;
 
@@ -94,7 +94,7 @@ function Page() {
   return (
     <>
       <Routes>
-        <Route path="/books/:uuid/request" element={<BookRequest />} />
+        <Route path="/requests" element={<Requests />} />
         <Route path="/books/:uuid" element={<h1>Book page</h1>} />
       </Routes>
       <Where />
@@ -102,12 +102,14 @@ function Page() {
   );
 }
 
-const READER = { ...WIRE_ADA, is_admin: false, can_request: true };
+// `book_requests` is on, or `Requests` answers Not Found.
+const ADA = { ...WIRE_ADA, book_requests: true };
+const READER = { ...ADA, is_admin: false, can_request: true };
 
 const meta = {
   title: "Pages/BookRequest",
   component: Page,
-  parameters: { path: `/books/${UUID}/request?id=7` },
+  parameters: { path: `/requests?book=${UUID}`, user: ADA },
   beforeEach({ msw }) {
     fake = requestFake([aWireRequest()]);
     msw.use(bookHandler(HYPERION), ...fake.handlers, NOBODY_WISHES);
@@ -126,7 +128,7 @@ const seed = (request: Parameters<typeof aWireRequest>[0]) => {
 export const Looking: Story = {
   play: async ({ canvas }) => {
     await expect(
-      await canvas.findByRole("heading", { level: 1, name: "Hyperion" }),
+      await canvas.findByRole("heading", { level: 2, name: "Hyperion" }),
     ).toBeInTheDocument();
     await expect(canvas.getByText("Dan Simmons")).toBeInTheDocument();
     await expect(canvas.getByTestId("request-state")).toHaveTextContent(
@@ -471,7 +473,7 @@ export const TryAgainSearchesAgainAndReturnsToLooking: Story = {
       "Looking",
     );
     await expect(
-      canvas.getByRole("heading", { level: 2, name: "Ebook" }),
+      canvas.getByRole("heading", { level: 3, name: "Ebook" }),
     ).toHaveFocus();
     await expect(fake.writes).toEqual([{ kind: "retry", id: 7 }]);
   },
@@ -743,11 +745,12 @@ export const ReadyToRead: Story = {
     await expect(await canvas.findByTestId("request-state")).toHaveTextContent(
       "Ready to read",
     );
+    const pane = within(canvas.getByTestId("requests-pane"));
     await expect(
-      canvas.getAllByRole("listitem").map((step) => step.dataset.status),
+      pane.getAllByRole("listitem").map((step) => step.dataset.status),
     ).toEqual(["done", "done", "done", "done"]);
     await expect(canvas.queryByTestId("request-downloading")).toBeNull();
-    await expect(canvas.queryByRole("button")).toBeNull();
+    await expect(pane.queryByRole("button")).toBeNull();
   },
 };
 
@@ -802,7 +805,9 @@ export const OpenBookPageGoesToTheBookPage: Story = {
 };
 
 export const AnUnknownRequestShowsTheErrorWithAWayBack: Story = {
-  parameters: { path: `/books/${UUID}/request?id=99` },
+  beforeEach({ msw }) {
+    msw.use(failing("get", "/api/requests/:id", 404));
+  },
   play: async ({ canvas }) => {
     await expect(await canvas.findByRole("alert")).toBeInTheDocument();
     await expect(
@@ -812,7 +817,7 @@ export const AnUnknownRequestShowsTheErrorWithAWayBack: Story = {
 };
 
 const OLD = Math.floor(Date.now() / 1000) - 120;
-const NOT_THE_MAKER = { ...WIRE_ADA, id: 2, is_admin: false };
+const NOT_THE_MAKER = { ...ADA, id: 2, is_admin: false };
 
 export const ALongRunningSearchOffersTryAgain: Story = {
   beforeEach({ msw }) {
@@ -1049,7 +1054,7 @@ export const TheBylineIsTheAuthorAloneWhenNobodyWishesForIt: Story = {
 const GRACE = { 1: "Ada Lovelace", 2: "Grace Hopper" };
 
 export const TheLaneNamesWhoAskedAndWhen: Story = {
-  parameters: { user: { ...WIRE_ADA, id: 3 } },
+  parameters: { user: { ...ADA, id: 3 } },
   beforeEach({ msw }) {
     fake = requestFake([aWireRequest({ user_id: 2 })], { names: GRACE });
     msw.use(bookHandler(HYPERION), ...fake.handlers);
@@ -1084,10 +1089,12 @@ export const AnAdminsCancelNamesWhoseRequestItIs: Story = {
 };
 
 export const AnotherReadersLiveRequestGetsALaneOfItsOwn: Story = {
+  // Both look the same to a reader, so the book is filed under the newest: yours.
+  parameters: { user: READER },
   beforeEach({ msw }) {
     fake = requestFake(
       [
-        aWireRequest(),
+        aWireRequest({ id: 9 }),
         aWireRequest({ id: 8, user_id: 2, state: "choose", versions: [EPUB] }),
       ],
       { names: GRACE },
@@ -1165,9 +1172,10 @@ export const RequestAgainFromHistoryStartsANewRequestInLooking: Story = {
     );
 
     await waitFor(() =>
-      expect(canvas.getByTestId("where")).toHaveTextContent(
-        `/requests?book=${UUID}`,
-      ),
+      expect(canvas.getByTestId("request-state")).toHaveTextContent("Looking"),
+    );
+    await expect(canvas.getByTestId("where")).toHaveTextContent(
+      `/requests?book=${UUID}`,
     );
     await expect(fake.writes).toEqual([{ kind: "start", uuid: UUID }]);
   },

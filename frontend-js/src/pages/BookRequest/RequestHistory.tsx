@@ -16,18 +16,12 @@ import {
 import { useNowPast } from "./useNowPast";
 import { useStartRequest } from "./useStartRequest";
 
-/** Where a book's requests are shown: on its own page, or in the Requests list's pane. */
+/** Where a book's requests are shown: full screen on a phone, or in the Requests list's pane. */
 export type DossierVariant = "page" | "pane";
 
-/** Starts a new request for the book, for the viewer, and opens it in Looking; with `stay`, the page stays put. */
-export function RequestAgain({
-  uuid,
-  stay,
-}: {
-  uuid: BookUuid;
-  stay: boolean;
-}) {
-  const start = useStartRequest(uuid, { stay });
+/** Starts a new request for the book, for the viewer; the page stays put while its lists are read again. */
+export function RequestAgain({ uuid }: { uuid: BookUuid }) {
+  const start = useStartRequest(uuid, { stay: true });
   return (
     <Button
       size="sm"
@@ -51,12 +45,10 @@ export function RequestAgain({
 function HistoryRow({
   listing,
   listings,
-  variant,
 }: {
   listing: RequestListing;
   /** Every request for the book, for whether Request again would only return one going. */
   listings: readonly RequestListing[];
-  variant: DossierVariant;
 }) {
   const viewer = useCurrentUser();
   const phone = useMediaQuery(PHONE_QUERY);
@@ -106,7 +98,7 @@ function HistoryRow({
         viewer,
         listings.map((l) => l.request),
         now,
-      ) && <RequestAgain uuid={request.bookUuid} stay={variant === "pane"} />}
+      ) && <RequestAgain uuid={request.bookUuid} />}
     </li>
   );
 }
@@ -156,7 +148,6 @@ export function RequestHistory({
             key={listing.request.id}
             listing={listing}
             listings={listed.data}
-            variant={variant}
           />
         ))}
       </ul>

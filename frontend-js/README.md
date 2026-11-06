@@ -120,16 +120,16 @@ added to that book rather than minted as a second one. The page's stories run ag
 stateful fake in `src/testing/wishlistHandlers.ts`.
 Requests (`/requests`) lists every reader's requests one item per book, grouped by where the
 book stands (Needs you, On its way, Looking, Stuck, Ready; a book whose requests were all
-cancelled is left out), beside a pane with the selected book's request, picked by `?book=`
-(the first book when it is absent). On a phone the list stands alone and each item opens the
-book's request page, which then offers "‹ Requests" back (a request started from a wishlist
-row offers "← Back to Wishlists" the same way). The user menu links it while the
-server has book requests on; with them off it is Not Found. A book's request page
-(`/books/:uuid/request?id=`) and the pane are one component: the book, a lane for the request
-and for each other one still going (who asked and when, a Looking → Choose a version → On its
-way → Ready stepper, a download's release, size, source and time left, with Cancel and Choose
-another beside it, shown only to the reader who asked or an admin; the byline names whose
-wishlists hold the book), then the book's history of
+cancelled is left out), beside a pane with the selected book's request. `/requests?book=<uuid>`
+is the only address of a book's request, and the first book is selected when `?book=` is
+absent. On a phone the list stands alone and each item opens that address full screen, which
+offers "‹ Requests" back (a request started from a wishlist row offers "← Back to Wishlists"
+instead, at every width). The user menu links it while the server has book requests on; with
+them off it is Not Found. The pane and the phone's full-screen detail are one component: the
+book, a lane for the request filed under it and for each other one still going (who asked and
+when, a Looking → Choose a version → On its way → Ready stepper, a download's release, size,
+source and time left, with Cancel and Choose another beside it, shown only to the reader who
+asked or an admin; the byline names whose wishlists hold the book), then the book's history of
 cancelled and stuck requests and swapped versions, saying only what was recorded, with
 Request again on a cancelled one once its Undo has run out and while the reader has no other
 request going for the book. Both run against the stateful fake in
