@@ -10,7 +10,6 @@ import { ToastProvider } from "../../components/Toast/Toast";
 import { useCurrentUser } from "../../session";
 import { PHONE_QUERY, useMediaQuery } from "../../useMediaQuery";
 import { RequestDossier } from "../BookRequest/BookRequest";
-import { FROM_REQUESTS, requestPath } from "../BookRequest/requestView";
 import { NotFound } from "../NotFound/NotFound";
 import {
   countsLine,
@@ -25,7 +24,7 @@ import "./Requests.css";
 const selectPath = (uuid: string) =>
   `/requests?book=${encodeURIComponent(uuid)}`;
 
-/** One book: its cover, title and where it stands, with a dot in its group's colour. On a phone it opens the book's request page; otherwise it selects the book. */
+/** One book: its cover, title and where it stands, with a dot in its group's colour. It links to the book's address, which selects it beside the list or, on a phone, opens it full screen. */
 function Item({
   listing,
   group,
@@ -39,13 +38,12 @@ function Item({
   phone: boolean;
   onSelect: () => void;
 }) {
-  const { book, request } = listing;
+  const { book } = listing;
   return (
     <li>
       <Link
-        to={phone ? requestPath(book.uuid, request.id) : selectPath(book.uuid)}
-        state={phone ? FROM_REQUESTS : undefined}
-        onClick={phone ? undefined : onSelect}
+        to={selectPath(book.uuid)}
+        onClick={onSelect}
         className="rqs-item"
         aria-current={selected ? "true" : undefined}
         data-testid="requests-item"
@@ -159,6 +157,19 @@ function RequestsPage() {
     }
   }, [phone, wanted, first, setParams]);
 
+  // Only the book the address names: the first-book fallback is for the pane beside the list.
+  if (phone && selected && selected.book.uuid === wanted) {
+    return (
+      <RequestDossier
+        key={selected.book.uuid}
+        uuid={selected.book.uuid}
+        id={selected.request.id}
+        variant="page"
+        focusTitle={picked}
+      />
+    );
+  }
+
   return (
     <div className="rqs-page" data-testid="requests-page">
       <PageTitle page="Requests" />
@@ -213,7 +224,7 @@ function RequestsPage() {
   );
 }
 
-/** `/requests`: every reader's book requests, one item per book grouped by where it stands, beside the selected book's request; a phone gets the list alone. */
+/** `/requests`: every reader's book requests, one item per book grouped by where it stands, beside the selected book's request; on a phone, the list alone, or the book `?book=` names full screen. */
 export function Requests() {
   const { requestsOn } = useCurrentUser();
   // Off on this server: the route answers as if it were not there, and nothing is asked of it.

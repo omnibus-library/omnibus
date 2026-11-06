@@ -739,15 +739,16 @@ export function RequestDossier({
       data-testid={variant === "page" ? "request-page" : "requests-pane"}
     >
       {variant === "page" && <PageTitle page={`Request ${title}`} />}
-      {from === "requests" && (
-        <Link className="rq-back" to="/requests">
-          ‹ Requests
-        </Link>
-      )}
-      {from === "wishlists" && (
+      {from === "wishlists" ? (
         <Link className="rq-back" to="/wishlists">
           ← Back to Wishlists
         </Link>
+      ) : (
+        variant === "page" && (
+          <Link className="rq-back" to="/requests">
+            ‹ Requests
+          </Link>
+        )
       )}
       <header className="rq-head">
         <div className="rq-cover">
