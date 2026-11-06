@@ -9,8 +9,8 @@ use crate::books::list_indexed_rows_for_formats;
 use crate::indexer::diff_library;
 use crate::pool::init_db;
 use crate::test_support::{
-    count_rows as count, indexed_audiobook, seed_synced_audiobook as seed_audiobook,
-    seed_synced_ebook as seed_ebook,
+    count_rows as count, file_db_url, hold_write_lock, indexed_audiobook, reopen_file_pool,
+    seed_synced_audiobook as seed_audiobook, seed_synced_ebook as seed_ebook,
 };
 
 #[tokio::test]
@@ -253,4 +253,22 @@ async fn undo_merge_restores_more_author_links_than_one_chunk() {
         .await
         .unwrap();
     assert_eq!(usize::try_from(linked).unwrap(), total);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn undo_merge_restores_source_while_another_connection_holds_the_write_lock() {
+    let tmp = tempfile::tempdir().unwrap();
+    let url = file_db_url(tmp.path());
+    let pool = init_db(&url).await.unwrap();
+    let target = seed_ebook(&pool, "A/Dracula.epub", "Dracula", "Bram Stoker").await;
+    let source = seed_audiobook(&pool, "B/Drakula.m4b", "Drakula", "Bram Stoker").await;
+    let out = merge_books(&pool, &source, &target, None).await.unwrap();
+    let pool = reopen_file_pool(pool, &url).await;
+
+    let lock = hold_write_lock(&pool).await;
+    let result = undo_merge(&pool, out.merge_log_id).await;
+    lock.await.unwrap();
+
+    assert_eq!(result.unwrap(), source);
+    assert_eq!(count(&pool, "SELECT COUNT(*) FROM books").await, 2);
 }

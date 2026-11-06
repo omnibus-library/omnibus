@@ -27,7 +27,9 @@ pub(crate) async fn rebuild_fts_for_book(
     let Some(merged) = crate::books::get_book(pool, book_id).await? else {
         return Ok(());
     };
-    let mut tx = pool.begin().await?;
+    // BEGIN IMMEDIATE: a deferred transaction that reads before it writes fails
+    // with a locked database when another writer is in flight.
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     rebuild_fts_row_tx(&mut tx, book_id, &merged).await?;
     tx.commit().await?;
     Ok(())
@@ -97,7 +99,8 @@ pub(crate) async fn rebuild_fts_for_books_batch(
     if rows.is_empty() {
         return Ok(());
     }
-    let mut tx = pool.begin().await?;
+    // BEGIN IMMEDIATE, as in `rebuild_fts_for_book`.
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     for (book_id, merged) in &rows {
         rebuild_fts_row_tx(&mut tx, *book_id, merged).await?;
     }
