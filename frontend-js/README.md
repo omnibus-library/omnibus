@@ -118,13 +118,19 @@ connected. Add to wishlist searches the library and the providers by title, auth
 ISBN and always adds to your own list; a provider's record that matches a library book is
 added to that book rather than minted as a second one. The page's stories run against the
 stateful fake in `src/testing/wishlistHandlers.ts`.
-Requests (`/requests`) lists every reader's book requests, newest first, in every state,
-with who asked and a filter by title or author; the user menu links it while the server
-has book requests on. Cancel shows only to the reader who asked, or an admin. A book's
-request page (`/books/:uuid/request?id=`) lists the book's other requests below its lane,
-saying only what was recorded (who cancelled it, the version, how far it got, a version
-swapped for another), with Request again on a cancelled one. Both run against the stateful
-fake in `src/testing/requestHandlers.ts`.
+Requests (`/requests`) lists every reader's requests one item per book, grouped by where the
+book stands (Needs you, On its way, Looking, Stuck, Ready; a book whose requests were all
+cancelled is left out), beside a pane with the selected book's request, picked by `?book=`
+(the first book when it is absent). On a phone the list stands alone and each item opens the
+book's request page, which then offers "‹ Requests" back. The user menu links it while the
+server has book requests on; with them off it is Not Found. A book's request page
+(`/books/:uuid/request?id=`) and the pane are one component: the book, a lane for the request
+and for each other one still going (who asked and when, Cancel and Choose another beside a
+download, shown only to the reader who asked or an admin), then the book's history of
+cancelled and stuck requests and swapped versions, saying only what was recorded, with
+Request again on a cancelled one once its Undo has run out and while the reader has no other
+request going for the book. Both run against the stateful fake in
+`src/testing/requestHandlers.ts`.
 A page that throws renders `RouteError` inside the top bar; anything else that
 throws (the session gate, the shell, a reader) renders it full-screen.
 
@@ -244,7 +250,8 @@ shell provides it.
   schema, the rules a field is refused by and the override diff), `dirty`,
   `editionFields` and `fetch`, the View Transition helper `viewTransition`, `uploads`,
   check-in's `checkInFlow` and `scan`, `findCopy`, the wishlists' `wishlistView` (scope, headings,
-  holdings badges, what each row can request and the add panel's lookup results), the
+  holdings badges, what each row can request and the add panel's lookup results), the book
+  requests' `requestView` and the Requests list's `requestGroups`, the
   scanner's `scanStatus` and `loadScanner`, the discovery pages' `browseOrder`, `bookStates`, `authorsOrder`,
   `authorProgress`, `seriesOrder`, `seriesProgress`, `shelvesIndex`, the shelf rules' `rules`, the picker's
   `picker`, the shelf page's `shelfAccess` and `narrow`, the readers' `pager`,
