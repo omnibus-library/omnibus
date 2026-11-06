@@ -8,44 +8,28 @@ export const RATIOS = [
 
 export type Ratio = (typeof RATIOS)[number]["key"];
 
-/** The typefaces the editor offers: the token the canvas draws with, the chip label, and the preview's CSS stack. */
+/** The typefaces the editor offers: the token the canvas draws with, the chip label, and the chip's own CSS stack. */
 export const FONTS = [
   { key: "serif", label: "Serif", css: "var(--serif)" },
   { key: "sans", label: "Sans", css: "var(--sans)" },
   { key: "mono", label: "Mono", css: "var(--mono)" },
 ] as const;
 
-/** The text sizes: the token, the chip label, the factor on the passage's stepped size, and the preview's CSS size. */
+/** The text sizes: the token, the chip label, and the factor on the passage's stepped size. */
 export const SIZES = [
-  { key: "s", label: "S", scale: 0.85, css: "18px" },
-  { key: "m", label: "M", scale: 1, css: "22px" },
-  { key: "l", label: "L", scale: 1.18, css: "27px" },
+  { key: "s", label: "S", scale: 0.85 },
+  { key: "m", label: "M", scale: 1 },
+  { key: "l", label: "L", scale: 1.18 },
 ] as const;
 
 export type FontKey = (typeof FONTS)[number]["key"];
 export type SizeKey = (typeof SIZES)[number]["key"];
-
-/** The fixed background swatches, each with the ink that reads on it. */
-export const PRESETS = [
-  { bg: "#161412", ink: "#ece6dc" },
-  { bg: "#f0ece2", ink: "#2a2520" },
-  { bg: "rgb(34,197,94)", ink: "#0a2912" },
-  { bg: "rgb(244,63,94)", ink: "#2a0810" },
-] as const;
 
 /** The ink on the book's accent and on a fresh card. */
 export const LIGHT_INK = "#f5f0e8";
 
 /** The ink on a pale background. */
 export const DARK_INK = "#221d18";
-
-/** The preview's CSS font stack for a typeface token; an unknown token reads as serif. */
-export const fontCss = (key: string) =>
-  (FONTS.find((f) => f.key === key) ?? FONTS[0]).css;
-
-/** The preview's CSS font size for a size token; an unknown token reads as medium. */
-export const sizeCss = (key: string) =>
-  (SIZES.find((s) => s.key === key) ?? SIZES[1]).css;
 
 // sRGB channel to linear light.
 const linear = (channel: number) => {

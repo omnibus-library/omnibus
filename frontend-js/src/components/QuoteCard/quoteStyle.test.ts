@@ -1,12 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  collapse,
-  fontCss,
-  inkFor,
-  passageSize,
-  sizeCss,
-  wrapLines,
-} from "./quoteStyle";
+import { collapse, inkFor, passageSize, wrapLines } from "./quoteStyle";
 
 describe("inkFor", () => {
   it.each([
@@ -26,28 +19,6 @@ describe("inkFor", () => {
     ["empty", ""],
   ])("falls back to the light ink for %s", (_condition, hex) => {
     expect(inkFor(hex)).toBe("#f5f0e8");
-  });
-});
-
-describe("fontCss", () => {
-  it.each([
-    ["serif", "var(--serif)"],
-    ["sans", "var(--sans)"],
-    ["mono", "var(--mono)"],
-    ["cursive", "var(--serif)"],
-  ])("maps %s to %s", (key, css) => {
-    expect(fontCss(key)).toBe(css);
-  });
-});
-
-describe("sizeCss", () => {
-  it.each([
-    ["s", "18px"],
-    ["m", "22px"],
-    ["l", "27px"],
-    ["xl", "22px"],
-  ])("maps %s to %s", (key, css) => {
-    expect(sizeCss(key)).toBe(css);
   });
 });
 
