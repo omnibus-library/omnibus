@@ -147,11 +147,11 @@ mod start_for_new_book {
     }
 
     #[tokio::test]
-    async fn makes_a_book_the_palette_finds() {
+    async fn makes_a_book_the_palette_hides_like_a_wishlist_only_one() {
         let pool = pool().await;
         let _covers = CoversTempDir::new("start_for_new_book_palette");
         let ada = seed_user(&pool, "ada").await;
-        let row = start_for_new_book(
+        start_for_new_book(
             &pool,
             ada,
             &external_meta("Piranesi"),
@@ -165,7 +165,7 @@ mod start_for_new_book {
             .await
             .unwrap();
 
-        let uuids: Vec<_> = found.books.iter().map(|b| b.uuid.as_str()).collect();
-        assert_eq!(uuids, [row.book_uuid.as_str()]);
+        assert!(found.books.is_empty(), "books arm: {found:?}");
+        assert!(found.authors.is_empty(), "authors arm: {found:?}");
     }
 }

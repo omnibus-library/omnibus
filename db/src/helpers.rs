@@ -52,15 +52,14 @@ pub(crate) fn ids_json(ids: &[i64]) -> String {
 }
 
 /// SQL fragment for "search may surface this book": it sits under a configured
-/// scan root, holds a physical copy, or has a request. A fileless book with
-/// none of those (a wishlist entry) stays hidden. Every search path shares this definition so
+/// scan root, or holds a physical copy. A fileless book with *no* copy (a
+/// wishlist entry) stays hidden. Every search path shares this definition so
 /// the palette and `/api/search` cannot drift. `book` / `root` / `paths_param`
 /// name the call site's aliases and the placeholder bound to [`library_paths_json`].
 pub(crate) fn visible_book_sql(book: &str, root: &str, paths_param: &str) -> String {
     format!(
         "({root}.path IN (SELECT value FROM json_each({paths_param})) \
-          OR EXISTS (SELECT 1 FROM physical_copies pc WHERE pc.book_uuid = {book}.uuid) \
-          OR EXISTS (SELECT 1 FROM book_requests br WHERE br.book_uuid = {book}.uuid))"
+          OR EXISTS (SELECT 1 FROM physical_copies pc WHERE pc.book_uuid = {book}.uuid))"
     )
 }
 
