@@ -176,11 +176,17 @@ export const PrefillsTheIsbnFromTheLink: Story = {
   },
 };
 
+/** Check-in is "adding a copy you own" now, on every screen a reader reads. */
+const BANNED_COPY = /check.?in/i;
+
 export const ConfirmsACopyOfALibraryBook: Story = {
-  play: async ({ canvas, userEvent }) => {
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    await canvas.findByTestId("check-in-lookup");
+    await expect(canvasElement.textContent).not.toMatch(BANNED_COPY);
     await lookUp({ canvas, userEvent });
 
     const confirm = await canvas.findByTestId("check-in-confirm");
+    await expect(canvasElement.textContent).not.toMatch(BANNED_COPY);
     await expect(confirm).toHaveTextContent("I own this copy");
     await expect(confirm).toHaveTextContent(
       "You already have this one digitally — this adds your print copy.",
@@ -196,6 +202,7 @@ export const ConfirmsACopyOfALibraryBook: Story = {
     await userEvent.click(canvas.getByTestId("check-in-confirm-submit"));
 
     const done = await canvas.findByTestId("check-in-success");
+    await expect(canvasElement.textContent).not.toMatch(BANNED_COPY);
     await expect(done).toHaveTextContent("In your physical collection");
     await expect(done).toHaveTextContent("The Salt Road");
     await expect(canvas.getByTestId("check-in-view-book")).toHaveAttribute(
