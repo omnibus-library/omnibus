@@ -21,6 +21,11 @@ export class RequestsPage extends BasePage {
   readonly paneRequester: Locator;
   readonly paneCancelButton: Locator;
   readonly cancelFailedText: Locator;
+  /** The header's Request button, which opens the search for a book to request. */
+  readonly addButton: Locator;
+  /** The search's field, once its panel is open. */
+  readonly addSearchField: Locator;
+  readonly addPanel: Locator;
 
   constructor(page: Page) {
     super(page);
@@ -34,6 +39,11 @@ export class RequestsPage extends BasePage {
     this.paneRequester = this.paneLane.getByTestId("request-requester");
     this.paneCancelButton = this.paneLane.getByTestId("request-cancel");
     this.cancelFailedText = page.getByText(/Couldn’t cancel/);
+    this.addButton = page.getByTestId("requests-add");
+    this.addPanel = page.getByTestId("requests-add-panel");
+    this.addSearchField = this.addPanel.getByRole("searchbox", {
+      name: "Title, author or ISBN",
+    });
   }
 
   protected get readyLocator(): Locator {
@@ -62,6 +72,15 @@ export class RequestsPage extends BasePage {
   /** Shows `title`'s request in the pane. */
   async select(title: string): Promise<void> {
     await this.item(title).click();
+  }
+
+  /** Searches the header's Request panel for `title` and starts an ebook request on the library book it finds. */
+  async requestFromSearch(title: string): Promise<void> {
+    await this.addButton.click();
+    await this.addSearchField.fill(title);
+    await this.addPanel
+      .getByRole("button", { name: `Request ${title}`, exact: true })
+      .click();
   }
 
   async cancel(): Promise<void> {

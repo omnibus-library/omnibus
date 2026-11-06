@@ -305,6 +305,43 @@ test.describe("requests page", () => {
     });
   });
 
+  test("start a request from the requests page", async ({
+    scanRequests,
+    createdBookUuids,
+    prowlarrFor,
+    requestsPage,
+    expectMutation,
+  }) => {
+    const book = buildExternalBook();
+    let uuid = "";
+    let release!: () => void;
+
+    await test.step("have a library book with no ebook and a search that holds", async () => {
+      const added = await scanRequests.postPhysicalOnly(book);
+      await expect(added).toBeOK();
+      uuid = (await added.json()).book_uuid;
+      createdBookUuids.add(uuid);
+      release = (await prowlarrFor(releasesFor(book))).holdSearches();
+    });
+
+    await test.step("search for it and request it", async () => {
+      await requestsPage.goto();
+      await expectMutation(bookRequests.start(), () =>
+        requestsPage.requestFromSearch(book.title),
+      );
+    });
+
+    await test.step("see its request selected and looking", async () => {
+      await expect(requestsPage.page).toHaveURL(
+        new RegExp(`/requests\\?book=${uuid}$`),
+      );
+      await expect(requestsPage.addPanel).toBeHidden();
+      await expect(requestsPage.itemIn("Looking", book.title)).toBeVisible();
+      await expect(requestsPage.paneState).toHaveText("Looking");
+      release();
+    });
+  });
+
   test("keep a request going when its cancel fails", async ({
     scanRequests,
     bookRequestsRequests,
