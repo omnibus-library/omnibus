@@ -222,8 +222,12 @@ export function QuoteCard({
           <div className="rd-quote-label">Aspect</div>
           <Chips label="Aspect ratio" className="rd-quote-ratios">
             {RATIOS.map((r) => (
-              <Chip key={r} on={ratio === r} onClick={() => setRatio(r)}>
-                {r}
+              <Chip
+                key={r.key}
+                on={ratio === r.key}
+                onClick={() => setRatio(r.key)}
+              >
+                {r.key}
               </Chip>
             ))}
           </Chips>
