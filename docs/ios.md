@@ -396,6 +396,9 @@ builds the app unchanged and every answer is "none".
 - **Reader.** Opened flat or held like a book the inner display is wide enough for
   Two Pages, whose spine lands on the hinge; it already reads the hinge
   (`ReaderStageView.observeHinge`) to say a spread appears once the phone is unfolded.
+  Opened, the window keeps an 82pt top inset with the status bar hidden while the
+  reader's own view gets none, so showing the bar would move the page down; the
+  reader judges the bar's room from its own view and keeps it hidden there.
 
 Device Hub (Xcode 27's Simulator) is the only thing that changes the simulator's pose
 (Closed, Partially Open, Open and Rotate Right in its toolbar); neither `simctl` nor

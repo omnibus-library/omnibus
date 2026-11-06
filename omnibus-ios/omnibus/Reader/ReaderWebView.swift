@@ -408,7 +408,8 @@ final class ReaderController: NSObject {
         screen.map { SpreadFit(screen: $0, folded: isFolded) } ?? .now
     }
 
-    /// Whether a sensor housing held the status bar's room when last read with the bar hidden.
+    /// Whether the page's own top inset held the status bar's room when last read with the
+    /// bar hidden. The page's, not the window's: the two differ on an open iPhone Duo.
     private var statusBarFitsInTopInset = false
 
     /// Whether the status bar is hidden: it joins the chrome only where that can't move the page.
@@ -436,9 +437,9 @@ final class ReaderController: NSObject {
     func observe(_ stage: ReaderStageView) {
         self.stage = stage
         stage.sideColumnEdge = sideColumnEdge
-        stage.onScreenChange = { [weak self] screen, statusBarHidden in
+        stage.onScreenChange = { [weak self] screen, statusBarHidden, pageTop in
             self?.screen = screen
-            if statusBarHidden { self?.statusBarFitsInTopInset = screen.insets.top > 0 }
+            if statusBarHidden { self?.statusBarFitsInTopInset = pageTop > 0 }
             self?.applyStageInsets()
         }
         stage.onFoldChange = { [weak self] folded in self?.isFolded = folded }

@@ -179,8 +179,9 @@ struct ReaderStatusBarTests {
         controller.observe(stage)
     }
 
-    private func report(_ screen: ReaderScreen, statusBarHidden: Bool) {
-        stage.onScreenChange?(screen, statusBarHidden)
+    /// The page's own top inset matches the window's unless `pageTop` says otherwise.
+    private func report(_ screen: ReaderScreen, statusBarHidden: Bool, pageTop: CGFloat? = nil) {
+        stage.onScreenChange?(screen, statusBarHidden, pageTop ?? screen.insets.top)
     }
 
     @Test("a controller keeps the status bar hidden until it has been told what screen it is on")
@@ -202,6 +203,21 @@ struct ReaderStatusBarTests {
         report(iPhone18Pro.upright, statusBarHidden: true)
 
         #expect(!controller.hidesStatusBar(chromeVisible: true))
+        #expect(controller.hidesStatusBar(chromeVisible: false))
+    }
+
+    @Test("an open iPhone Duo, whose window keeps a top inset its page doesn't get, keeps the status bar hidden")
+    func openDuoKeepsTheStatusBarHidden() {
+        // Measured on the simulator: the window holds 82pt either way, the page 0pt
+        // under a hidden bar and 82pt under a shown one, so showing it moved the page.
+        let open = ReaderScreen(
+            size: CGSize(width: 669, height: 951),
+            insets: UIEdgeInsets(top: 82, left: 0, bottom: 34, right: 0)
+        )
+
+        report(open, statusBarHidden: true, pageTop: 0)
+
+        #expect(controller.hidesStatusBar(chromeVisible: true))
         #expect(controller.hidesStatusBar(chromeVisible: false))
     }
 

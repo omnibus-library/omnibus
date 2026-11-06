@@ -50,7 +50,7 @@ struct ReaderStageScreenTests {
     func stageReportsTheWindowNotItsBounds() async throws {
         var reports: [ReaderScreen] = []
         let rig = try await StageRig.show { stage in
-            stage.onScreenChange = { screen, _ in reports.append(screen) }
+            stage.onScreenChange = { screen, _, _ in reports.append(screen) }
         }
         defer { rig.close() }
 
@@ -58,11 +58,22 @@ struct ReaderStageScreenTests {
         #expect(reports.first?.insets == rig.window.safeAreaInsets)
     }
 
+    @Test("a stage reports its own top inset as the page's, which the web view lays out from")
+    func stageReportsItsOwnTopInsetForThePage() async throws {
+        var pageTops: [CGFloat] = []
+        let rig = try await StageRig.show { stage in
+            stage.onScreenChange = { _, _, pageTop in pageTops.append(pageTop) }
+        }
+        defer { rig.close() }
+
+        #expect(pageTops.last == rig.stage.safeAreaInsets.top)
+    }
+
     @Test("a stage that resizes inside an unchanged window reports nothing more")
     func stageStaysQuietWhenOnlyItResizes() async throws {
         var reports: [ReaderScreen] = []
         let rig = try await StageRig.show { stage in
-            stage.onScreenChange = { screen, _ in reports.append(screen) }
+            stage.onScreenChange = { screen, _, _ in reports.append(screen) }
         }
         defer { rig.close() }
 
@@ -77,7 +88,7 @@ struct ReaderStageScreenTests {
     func stageReportsAgainWhenTheWindowChanges() async throws {
         var reports: [ReaderScreen] = []
         let rig = try await StageRig.show { stage in
-            stage.onScreenChange = { screen, _ in reports.append(screen) }
+            stage.onScreenChange = { screen, _, _ in reports.append(screen) }
         }
         defer { rig.close() }
 
