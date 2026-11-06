@@ -152,8 +152,10 @@ pub(crate) async fn delete_fts(
 /// Idempotent; two DML statements in a single transaction, so the index is never
 /// observed empty mid-rebuild, and orphan rows are swept by the leading `DELETE`.
 pub async fn rebuild_all_fts(pool: &SqlitePool) -> anyhow::Result<()> {
+    // BEGIN IMMEDIATE: a deferred transaction that reads before it writes fails
+    // with a locked database when another writer is in flight.
     let mut tx = pool
-        .begin()
+        .begin_with("BEGIN IMMEDIATE")
         .await
         .context("rebuild_all_fts: begin transaction")?;
     sqlx::query("DELETE FROM books_fts")
