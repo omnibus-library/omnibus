@@ -202,6 +202,23 @@ export function UploadGlyph({ size = 28 }: GlyphProps) {
   );
 }
 
+/** A barcode inside a viewfinder's corners, for scanning a print book's ISBN. */
+export function ScanGlyph({ size = 15 }: GlyphProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      {...stroked}
+      strokeWidth={1.7}
+      aria-hidden="true"
+    >
+      <path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2" />
+      <path d="M8 8v8M12 8v8M16 8v8" />
+    </svg>
+  );
+}
+
 /** Two stacked sheets, for a copy. */
 export function CopyGlyph({ size = 15 }: GlyphProps) {
   return (
