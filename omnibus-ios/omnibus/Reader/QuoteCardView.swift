@@ -108,6 +108,62 @@ enum QuoteRatio: String, CaseIterable, Identifiable {
     }
 }
 
+/// The typeface the passage is set in.
+enum QuoteFace: String, CaseIterable {
+    case serif, sans, mono
+
+    var label: String {
+        switch self {
+        case .serif: "Serif"
+        case .sans: "Sans"
+        case .mono: "Mono"
+        }
+    }
+}
+
+/// How large the passage is set, as a multiple of its length-stepped size.
+enum QuoteSize: String, CaseIterable {
+    case s, m, l
+
+    var label: String { rawValue.uppercased() }
+
+    var scale: CGFloat {
+        switch self {
+        case .s: 0.85
+        case .m: 1.0
+        case .l: 1.18
+        }
+    }
+}
+
+/// Everything about the passage's type that a reader can change.
+struct QuoteType: Equatable {
+    var face = QuoteFace.serif
+    var size = QuoteSize.m
+    var bold = false
+    var italic = false
+
+    /// The passage face at `size` points. Only Cormorant's Regular, SemiBold
+    /// and Italic cuts and Instrument Sans's Regular and SemiBold are bundled,
+    /// so the combinations without a real cut are synthesised.
+    func font(_ size: CGFloat) -> Font {
+        switch face {
+        case .serif:
+            if italic {
+                let base = Font.displayItalic(size)
+                return bold ? base.bold() : base
+            }
+            return .display(size, weight: bold ? .semibold : .regular)
+        case .sans:
+            let base = Font.ui(size, weight: bold ? .semibold : .regular)
+            return italic ? base.italic() : base
+        case .mono:
+            let base = Font.system(size: size, weight: bold ? .bold : .regular, design: .monospaced)
+            return italic ? base.italic() : base
+        }
+    }
+}
+
 // MARK: - The card
 
 /// The card itself. Draws identically at any width — every dimension below is
@@ -118,25 +174,14 @@ struct QuoteCard: View {
     let author: String?
     let style: QuoteStyle
     let ratio: QuoteRatio
+    let type: QuoteType
     let width: CGFloat
 
     private var height: CGFloat { width / ratio.value }
     private var pad: CGFloat { width * 0.094 }
 
-    /// Long passages step down rather than shrink to fit: a card whose type
-    /// scales continuously with length has no typographic identity, and the
-    /// steps keep every card recognisably the same object.
     private var quoteSize: CGFloat {
-        let count = quote.count
-        let scale: CGFloat
-        switch count {
-        case ..<90: scale = 0.082
-        case ..<180: scale = 0.066
-        case ..<320: scale = 0.052
-        case ..<520: scale = 0.042
-        default: scale = 0.034
-        }
-        return width * scale
+        Self.passageSize(characters: quote.count, width: width, size: type.size)
     }
 
     private var text: String { quote.collapsingWhitespace }
@@ -148,24 +193,23 @@ struct QuoteCard: View {
             VStack(alignment: .leading, spacing: 0) {
                 Spacer(minLength: 0)
 
+                // Takes its own layout space, so it moves with the passage and
+                // can never sit on top of the first line.
+                Text("\u{201C}")
+                    .font(type.font(width * 0.30))
+                    .foregroundStyle(style.ink.opacity(0.13))
+                    .fixedSize()
+                    .frame(height: width * 0.16, alignment: .topLeading)
+                    .offset(x: -width * 0.035)
+                    .accessibilityHidden(true)
+
                 Text(text)
-                    .font(.display(quoteSize))
+                    .font(type.font(quoteSize))
                     .foregroundStyle(style.ink)
                     .lineSpacing(quoteSize * 0.34)
                     .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .layoutPriority(1)
                     .minimumScaleFactor(0.55)
-                    // An oversized opening quote, tucked behind the first
-                    // line. Anchored to the text rather than to the card, so
-                    // it stays with the passage on a tall story card instead
-                    // of stranding itself at the top edge.
-                    .background(alignment: .topLeading) {
-                        Text("\u{201C}")
-                            .font(.display(width * 0.30))
-                            .foregroundStyle(style.ink.opacity(0.13))
-                            .fixedSize()
-                            .offset(x: -width * 0.035, y: -width * 0.135)
-                    }
 
                 Spacer(minLength: 0)
 
@@ -198,5 +242,22 @@ struct QuoteCard: View {
         }
         .frame(width: width, height: height)
         .clipped()
+    }
+}
+
+extension QuoteCard {
+    /// Long passages step down rather than shrink to fit: a card whose type
+    /// scales continuously with length has no typographic identity, and the
+    /// steps keep every card recognisably the same object.
+    nonisolated static func passageSize(characters: Int, width: CGFloat, size: QuoteSize) -> CGFloat {
+        let step: CGFloat
+        switch characters {
+        case ..<90: step = 0.082
+        case ..<180: step = 0.066
+        case ..<320: step = 0.052
+        case ..<520: step = 0.042
+        default: step = 0.034
+        }
+        return width * step * size.scale
     }
 }

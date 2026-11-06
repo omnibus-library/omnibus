@@ -14,6 +14,7 @@ struct QuoteCardSheet: View {
 
     @State private var styleID: String = "book"
     @State private var ratio: QuoteRatio = .square
+    @State private var type = QuoteType()
     @State private var rendering = false
 
     /// The book's own colour first — a card in the tone of its cover is the
@@ -61,6 +62,7 @@ struct QuoteCardSheet: View {
                 author: author,
                 style: style,
                 ratio: ratio,
+                type: type,
                 width: geometry.size.width
             )
             .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
@@ -104,6 +106,14 @@ struct QuoteCardSheet: View {
                 Spacer(minLength: 0)
             }
 
+            SectionLabel("Type")
+            PillSelector(options: QuoteFace.allCases, label: \.label, selection: $type.face)
+            HStack(spacing: Spacing.sm) {
+                PillSelector(options: QuoteSize.allCases, label: \.label, selection: $type.size)
+                toggleChip("Bold", systemImage: "bold", isOn: $type.bold)
+                toggleChip("Italic", systemImage: "italic", isOn: $type.italic)
+            }
+
             SectionLabel("Shape")
             PillSelector(
                 options: QuoteRatio.allCases,
@@ -112,6 +122,17 @@ struct QuoteCardSheet: View {
                 detail: { $0.detail }
             )
         }
+    }
+
+    private func toggleChip(_ label: String, systemImage: String, isOn: Binding<Bool>) -> some View {
+        Button {
+            Haptics.select()
+            withAnimation(Motion.snap) { isOn.wrappedValue.toggle() }
+        } label: {
+            Chip(label: label, isOn: isOn.wrappedValue, systemImage: systemImage)
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isOn.wrappedValue ? [.isSelected, .isButton] : .isButton)
     }
 
     private var actions: some View {
@@ -158,6 +179,7 @@ struct QuoteCardSheet: View {
                 author: author,
                 style: style,
                 ratio: ratio,
+                type: type,
                 width: 1080
             )
         )
