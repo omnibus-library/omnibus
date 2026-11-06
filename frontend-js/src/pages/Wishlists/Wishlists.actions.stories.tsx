@@ -8,7 +8,6 @@ import {
   storyClient,
 } from "../../testing/AppHarness";
 import { deferred, failing } from "../../testing/handlers";
-import { realPointer } from "../../testing/pointer";
 import { requestFake } from "../../testing/requestHandlers";
 import { WIRE_ADA } from "../../testing/wire";
 import { BOOKS } from "../../testing/wishlistHandlers";
@@ -210,28 +209,17 @@ export const RequestIsShownToAReaderWithThePermission: Story = {
   },
 };
 
-export const ActionsStayLaidOutAndShowOnHoverOrFocus: Story = {
+export const ActionsStayLaidOutAndShowWithoutHover: Story = {
   play: async ({ canvas }) => {
     const hyperion = within(await rowOf(canvas, "Hyperion"));
     const redRising = within(await rowOf(canvas, "Red Rising"));
     const slot = (row: typeof hyperion) =>
       row.getByTestId("wishlists-find-copy").parentElement as HTMLElement;
-    await expect(getComputedStyle(slot(hyperion)).opacity).toBe("0");
+    await expect(getComputedStyle(slot(hyperion)).opacity).toBe("1");
+    await expect(getComputedStyle(slot(redRising)).opacity).toBe("1");
     // Red Rising has one button fewer, and its slot is the same width.
     await expect(slot(redRising).getBoundingClientRect().width).toBe(
       slot(hyperion).getBoundingClientRect().width,
-    );
-
-    const pointer = await realPointer();
-    await pointer.hover(hyperion.getByTestId("wishlists-title"));
-    await waitFor(() =>
-      expect(getComputedStyle(slot(hyperion)).opacity).toBe("1"),
-    );
-    await pointer.unhover(hyperion.getByTestId("wishlists-title"));
-
-    redRising.getByTestId("wishlists-find-copy").focus();
-    await waitFor(() =>
-      expect(getComputedStyle(slot(redRising)).opacity).toBe("1"),
     );
   },
 };

@@ -111,7 +111,7 @@ book, picked by `?user=` (`all`, or a reader's id; anything else is your own). A
 the left, or a menu under the title on a phone, lists everyone and each reader with their
 count. Every signed-in reader sees every list, whether or not that reader shares their
 stats. A row shows the library's holdings of the book (`EPUB ×3`, `PRINT`) and, on a wide
-screen, Find a Copy and Request on hover, with Remove and its Undo on your own list only
+screen, Find a Copy and Request, with Remove and its Undo on your own list only
 (a book that existed only to be wanted leaves with its last entry, so that removal has no
 Undo); a phone gets one Get sheet instead. Request stays disabled until Shelfarr is
 connected. Add to wishlist searches the library and the providers by title, author or

@@ -49,11 +49,10 @@ export class WishlistsPage extends BasePage {
   }
 
   async openRequestMenu(title: string): Promise<void> {
-    await this.row(title).hover();
     await this.requestButton(title).click();
   }
 
-  /** Starts an ebook request for `title`. The page it opens is the request page. */
+  /** Starts an ebook request for `title`. It opens the book on the Requests page. */
   async requestEbook(title: string): Promise<void> {
     await this.openRequestMenu(title);
     await this.requestEbookItem.click();
