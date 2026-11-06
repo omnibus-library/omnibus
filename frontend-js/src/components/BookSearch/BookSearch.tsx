@@ -28,9 +28,10 @@ import {
 } from "../../pages/Wishlists/wishlistView";
 import { useDebounced } from "../../useDebounced";
 import { PHONE_QUERY, useMediaQuery } from "../../useMediaQuery";
+import { BarcodeScanner } from "../BarcodeScanner/BarcodeScanner";
 import { Button } from "../Button/Button";
 import { Cover } from "../Cover/Cover";
-import { PlusGlyph, SearchGlyph, XGlyph } from "../Glyphs/Glyphs";
+import { PlusGlyph, ScanGlyph, SearchGlyph, XGlyph } from "../Glyphs/Glyphs";
 import { Loading } from "../Loading/Loading";
 import { Sheet } from "../Sheet/Sheet";
 import "./BookSearch.css";
@@ -228,6 +229,7 @@ type PanelProps = {
   busy: boolean;
   error: string | null;
   offer: (hit: Hit) => Offer;
+  scan: boolean;
   /** In a bottom sheet, which brings its own title and Close. */
   sheet: boolean;
   asks: number;
@@ -241,12 +243,14 @@ function Panel({
   busy,
   error,
   offer,
+  scan,
   sheet,
   asks,
   onClose,
 }: PanelProps) {
   const input = useRef<HTMLInputElement>(null);
   const [text, setText] = useState("");
+  const [scanning, setScanning] = useState(false);
   const found = useBookSearch(useDebounced(text));
   const hint = `${testId}-hint`;
   // A phone's keyboard would cover the sheet the moment it opened.
@@ -267,20 +271,34 @@ function Panel({
           </button>
         </header>
       )}
-      <label className="bsearch-field">
-        <SearchGlyph size={16} />
-        <input
-          ref={input}
-          type="search"
-          className="bsearch-search"
-          data-testid={`${testId}-search`}
-          aria-label="Title, author or ISBN"
-          aria-describedby={hint}
-          autoComplete="off"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-        />
-      </label>
+      <div className="bsearch-find">
+        <label className="bsearch-field">
+          <SearchGlyph size={16} />
+          <input
+            ref={input}
+            type="search"
+            className="bsearch-search"
+            data-testid={`${testId}-search`}
+            aria-label="Title, author or ISBN"
+            aria-describedby={hint}
+            autoComplete="off"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+          />
+        </label>
+        {scan && sheet && (
+          <button
+            type="button"
+            className="bsearch-scan"
+            data-testid={`${testId}-scan`}
+            aria-label="Scan a barcode"
+            aria-pressed={scanning}
+            onClick={() => setScanning(!scanning)}
+          >
+            <ScanGlyph size={18} />
+          </button>
+        )}
+      </div>
       <p id={hint} className="bsearch-hint">
         {copy.hint}
       </p>
@@ -293,7 +311,16 @@ function Panel({
           {error}
         </p>
       )}
-      {found && (
+      {scanning && (
+        <BarcodeScanner
+          onDetect={(isbn) => {
+            setText(isbn);
+            setScanning(false);
+          }}
+          onManual={() => setScanning(false)}
+        />
+      )}
+      {found && !scanning && (
         <>
           <Section
             heading="In your library"
@@ -331,6 +358,7 @@ export function BookSearch({
   busy,
   error,
   offer,
+  scan = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -343,6 +371,8 @@ export function BookSearch({
   busy: boolean;
   error: string | null;
   offer: (hit: Hit) => Offer;
+  /** On a phone, a button beside the field that reads a barcode into it. */
+  scan?: boolean;
 }) {
   const button = useRef<HTMLButtonElement>(null);
   const phone = useMediaQuery(PHONE_QUERY);
@@ -375,6 +405,7 @@ export function BookSearch({
       busy={busy}
       error={error}
       offer={offer}
+      scan={scan}
       sheet={phone}
       asks={asks}
       onClose={close}

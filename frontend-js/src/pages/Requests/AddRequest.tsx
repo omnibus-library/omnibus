@@ -139,8 +139,11 @@ export function AddRequest({
         button: "Request",
         name: "Request a book",
         title: "Request a book",
-        hint: "Title, author or ISBN. Starts an ebook request.",
+        hint: phone
+          ? "Title, author or ISBN. The scan button reads the barcode on the back cover. Starts an ebook request."
+          : "Title, author or ISBN. Starts an ebook request.",
       }}
+      scan
       busy={start.isPending || record.isPending}
       error={error}
       offer={offer}

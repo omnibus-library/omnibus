@@ -18,6 +18,7 @@ import {
   WIRE_ADA,
 } from "../../testing/wire";
 import { BookRequest } from "../BookRequest/BookRequest";
+import { PHONE } from "../Wishlists/Wishlists.stories.shared";
 import { Requests } from "./Requests";
 
 // Starting a request from the page's search: the library's books are the palette's, the providers' are a list of records.
@@ -455,5 +456,102 @@ export const AnIsbnLookupsRecordTakesTheMatchedBooksOffer: Story = {
     ).toBeInTheDocument();
     await expect(online.queryByRole("button", { name: /^Request/ })).toBeNull();
     await expect(fake.writes).toEqual([]);
+  },
+};
+
+/** A stand-in for the vendored glue, which would open a real camera; `then` plays its callbacks once started. */
+function fakeCamera(then: () => void) {
+  window.OmnibusScanner = {
+    async start() {
+      then();
+    },
+    stop() {},
+    setTorch() {},
+  };
+  return () => {
+    delete window.OmnibusScanner;
+  };
+}
+
+const ready = () => window.__omnibusOnScanStatus?.("ready");
+
+export const OnAPhoneThePlusOpensASheetWithItsScanButton: Story = {
+  ...PHONE,
+  parameters: { ...PHONE.parameters, path: "/requests", user: READER },
+  play: async ({ canvas, userEvent }) => {
+    const button = await canvas.findByTestId("requests-add");
+    await expect(button).toHaveAccessibleName("Request a book");
+    await expect(within(button).getByText("Request")).not.toBeVisible();
+
+    await userEvent.click(button);
+
+    const sheet = within(await canvas.findByTestId("requests-add-panel"));
+    await expect(
+      await canvas.findByRole("dialog", { name: "Request a book" }),
+    ).toHaveAttribute("aria-modal", "true");
+    await expect(
+      sheet.getByText(
+        "Title, author or ISBN. The scan button reads the barcode on the back cover. Starts an ebook request.",
+      ),
+    ).toBeInTheDocument();
+    await expect(sheet.getByTestId("requests-add-scan")).toHaveAccessibleName(
+      "Scan a barcode",
+    );
+  },
+};
+
+export const OnADesktopTheSearchHasNoScanButton: Story = {
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByTestId("requests-add"));
+
+    await canvas.findByTestId("requests-add-panel");
+
+    await expect(canvas.queryByTestId("requests-add-scan")).toBeNull();
+  },
+};
+
+export const AScannedIsbnFillsTheFieldAndHidesTheScanner: Story = {
+  ...PHONE,
+  parameters: { ...PHONE.parameters, path: "/requests", user: READER },
+  beforeEach: () =>
+    fakeCamera(() => {
+      ready();
+      window.__omnibusOnScanResult?.("9781635575637");
+    }),
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByTestId("requests-add"));
+    const sheet = within(await canvas.findByTestId("requests-add-panel"));
+
+    await userEvent.click(sheet.getByTestId("requests-add-scan"));
+
+    await waitFor(() =>
+      expect(sheet.getByTestId("requests-add-search")).toHaveValue(
+        "9781635575637",
+      ),
+    );
+    await expect(sheet.queryByTestId("barcode-scanner")).toBeNull();
+    // The scanned ISBN takes the lookup, which found the library's Piranesi.
+    await expect(
+      await within(await sheet.findByTestId("requests-add-library")).findByRole(
+        "button",
+        { name: "Open Piranesi" },
+      ),
+    ).toBeInTheDocument();
+  },
+};
+
+export const TheScannersWayOutToTypingHidesIt: Story = {
+  ...PHONE,
+  parameters: { ...PHONE.parameters, path: "/requests", user: READER },
+  beforeEach: () => fakeCamera(ready),
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByTestId("requests-add"));
+    const sheet = within(await canvas.findByTestId("requests-add-panel"));
+    await userEvent.click(sheet.getByTestId("requests-add-scan"));
+    await sheet.findByTestId("barcode-scanner");
+
+    await userEvent.click(sheet.getByTestId("barcode-scanner-manual"));
+
+    await expect(sheet.queryByTestId("barcode-scanner")).toBeNull();
   },
 };
