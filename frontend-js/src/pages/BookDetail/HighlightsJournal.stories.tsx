@@ -111,7 +111,7 @@ export const AWishedBookWithNoFileKeepsItsTwoNotesAndOffersNoComposer: Story = {
       ...journalHandlers([], ADA),
     );
   },
-  play: async ({ canvas }) => {
+  play: async ({ canvas, canvasElement }) => {
     await waitFor(() => {
       expect(canvas.getByTestId("highlights-empty")).toHaveTextContent(
         "Find a copy first",
@@ -120,6 +120,8 @@ export const AWishedBookWithNoFileKeepsItsTwoNotesAndOffersNoComposer: Story = {
         "Find a copy first",
       );
     });
+    // Check-in is "adding a copy you own" now, everywhere a reader reads it.
+    await expect(canvasElement.textContent).not.toMatch(/check.?in/i);
     await expect(canvas.queryByTestId("highlights-journal-empty")).toBeNull();
     await expect(
       canvas.queryByRole("button", { name: "New journal entry" }),

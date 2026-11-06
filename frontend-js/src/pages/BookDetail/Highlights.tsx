@@ -178,8 +178,8 @@ export function Highlights({ book }: { book: BookDetail }) {
         title="No highlights yet"
         testId="highlights-empty"
       >
-        Highlight while you read to keep lines here. Find a copy first — check
-        in when it arrives.
+        Highlight while you read to keep lines here. Find a copy first — add it
+        when it arrives.
       </EmptyNote>
     </section>
   ) : (
