@@ -188,13 +188,6 @@ describe("routes", () => {
       ).toHaveAttribute("href", "/");
     });
 
-    it("renders the request page under /books/:uuid/request, apart from the book page", async () => {
-      renderRoute(`/books/${UUID}/request`);
-
-      // With no request id in the address, the request page says so rather than the book page loading.
-      expect(await screen.findByText("Request not found.")).toBeInTheDocument();
-    });
-
     it("renders the player page at /listen/:uuid", async () => {
       renderRoute(`/listen/${UUID}?file_id=2`);
 
@@ -653,6 +646,14 @@ describe("routes", () => {
 
   it("renders not found for a path nothing lives at", async () => {
     renderRoute("/no/such/page");
+
+    expect(
+      await screen.findByRole("heading", { name: "Page not found" }),
+    ).toBeInTheDocument();
+  });
+
+  it("renders not found at /books/:uuid/request, which is gone", async () => {
+    renderRoute(`/books/${UUID}/request`);
 
     expect(
       await screen.findByRole("heading", { name: "Page not found" }),

@@ -1,36 +1,27 @@
 import type { UseQueryResult } from "@tanstack/react-query";
-import { Link } from "react-router";
 import type { BookUuid, RequestListing } from "../../api";
 import { Button } from "../../components/Button/Button";
 import { BusyLabel, Loading } from "../../components/Loading/Loading";
 import { useCurrentUser } from "../../session";
 import { PHONE_QUERY, useMediaQuery } from "../../useMediaQuery";
 import {
-  FROM_REQUESTS,
   factParts,
   historyDay,
   kindChip,
   kindLabel,
   offersRequestAgain,
-  requestPath,
   SEP,
   swapFacts,
 } from "./requestView";
 import { useNowPast } from "./useNowPast";
 import { useStartRequest } from "./useStartRequest";
 
-/** Where a book's requests are shown: on its own page, or in the Requests list's pane. */
+/** Where a book's requests are shown: full screen on a phone, or in the Requests list's pane. */
 export type DossierVariant = "page" | "pane";
 
-/** Starts a new request for the book, for the viewer, and opens it in Looking; with `stay`, the page stays put. */
-export function RequestAgain({
-  uuid,
-  stay,
-}: {
-  uuid: BookUuid;
-  stay: boolean;
-}) {
-  const start = useStartRequest(uuid, { stay });
+/** Starts a new request for the book, for the viewer; the page stays put while its lists are read again. */
+export function RequestAgain({ uuid }: { uuid: BookUuid }) {
+  const start = useStartRequest(uuid, { stay: true });
   return (
     <Button
       size="sm"
@@ -54,12 +45,10 @@ export function RequestAgain({
 function HistoryRow({
   listing,
   listings,
-  variant,
 }: {
   listing: RequestListing;
   /** Every request for the book, for whether Request again would only return one going. */
   listings: readonly RequestListing[];
-  variant: DossierVariant;
 }) {
   const viewer = useCurrentUser();
   const phone = useMediaQuery(PHONE_QUERY);
@@ -67,15 +56,6 @@ function HistoryRow({
   const now = useNowPast(request.cancelAt);
   const { head, details } = factParts(listing, viewer.id);
   const day = historyDay(request.updatedAt);
-  const link = (text: string) => (
-    <Link
-      className="rq-history-facts"
-      to={requestPath(request.bookUuid, request.id)}
-      state={variant === "pane" ? FROM_REQUESTS : undefined}
-    >
-      {text}
-    </Link>
-  );
   return (
     <li
       className="rq-history-row"
@@ -84,9 +64,9 @@ function HistoryRow({
     >
       {phone ? (
         <div className="rq-history-text">
-          {link(
-            `${kindLabel(request.kind)} ${head.charAt(0).toLowerCase()}${head.slice(1)}${SEP}${day}`,
-          )}
+          <p className="rq-history-facts">
+            {`${kindLabel(request.kind)} ${head.charAt(0).toLowerCase()}${head.slice(1)}${SEP}${day}`}
+          </p>
           {details.length > 0 && (
             <p className="rq-history-swap">{details.join(SEP)}</p>
           )}
@@ -103,7 +83,7 @@ function HistoryRow({
           </span>
           <span className="rq-chip">{kindChip(request.kind)}</span>
           <div className="rq-history-text">
-            {link([head, ...details].join(" · "))}
+            <p className="rq-history-facts">{[head, ...details].join(" · ")}</p>
             {swapFacts(listing).map((swap) => (
               <p key={swap.id} className="rq-history-swap">
                 {swap.text}
@@ -117,7 +97,7 @@ function HistoryRow({
         viewer,
         listings.map((l) => l.request),
         now,
-      ) && <RequestAgain uuid={request.bookUuid} stay={variant === "pane"} />}
+      ) && <RequestAgain uuid={request.bookUuid} />}
     </li>
   );
 }
@@ -167,7 +147,6 @@ export function RequestHistory({
             key={listing.request.id}
             listing={listing}
             listings={listed.data}
-            variant={variant}
           />
         ))}
       </ul>

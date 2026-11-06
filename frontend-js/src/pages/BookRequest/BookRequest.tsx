@@ -7,21 +7,13 @@ import {
   useRef,
   useState,
 } from "react";
-import {
-  Link,
-  Navigate,
-  useLocation,
-  useParams,
-  useSearchParams,
-} from "react-router";
+import { Link, useLocation } from "react-router";
 import {
   type Book,
   type BookUuid,
   bookRequestQuery,
   bookRequestsQuery,
   chooseRequestVersion,
-  parseBookUuid,
-  positiveInt,
   type BookRequest as Request,
   type RequestListing,
   type RequestVersion,
@@ -34,7 +26,7 @@ import { Cover } from "../../components/Cover/Cover";
 import { BusyLabel, Loading } from "../../components/Loading/Loading";
 import { PageError, PageNotFound } from "../../components/PageState/PageState";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
-import { ToastProvider, useToast } from "../../components/Toast/Toast";
+import { useToast } from "../../components/Toast/Toast";
 import { UserAvatar } from "../../components/UserAvatar/UserAvatar";
 import { nowSecs, recency } from "../../format";
 import { useCurrentUser } from "../../session";
@@ -47,10 +39,10 @@ import {
   RequestHistory,
 } from "./RequestHistory";
 import {
-  cameFrom,
   canActOn,
   downloadPercent,
   firstShown,
+  fromWishlists,
   isCancellable,
   isDownloading,
   isSearchStale,
@@ -62,7 +54,6 @@ import {
   pickedVersion,
   progressPercent,
   type RequestStep,
-  requestPath,
   SEARCH_STALE_AFTER_SECS,
   SEP,
   splitBookRequests,
@@ -684,10 +675,7 @@ function Lane({
           now,
         ) && (
           <div className="rq-actions">
-            <RequestAgain
-              uuid={request.bookUuid}
-              stay={context.variant === "pane"}
-            />
+            <RequestAgain uuid={request.bookUuid} />
           </div>
         )}
     </section>
@@ -714,7 +702,7 @@ function OtherLane({ id, context }: { id: number; context: LaneContext }) {
   return <Lane request={request.data} context={context} main={false} />;
 }
 
-/** A book's requests: the book above, a lane for the request asked for and each other one still going, and the book's history below. Shared by the book's request page and the Requests list's detail pane; `focusTitle` moves focus to the book's title once it shows. */
+/** A book's requests: the book above, a lane for the request asked for and each other one still going, and the book's history below. It is the Requests list's detail pane and, on a phone, the full-screen page; `focusTitle` moves focus to the book's title once it shows. */
 export function RequestDossier({
   uuid,
   id,
@@ -753,10 +741,6 @@ export function RequestDossier({
     );
   }
   if (book.data === null) return <PageNotFound subject="Book" />;
-  // The address named the book by an old uuid; the request knows the current one.
-  if (request.data.bookUuid !== uuid) {
-    return <Navigate replace to={requestPath(request.data.bookUuid, id)} />;
-  }
   const { title, authors } = book.data;
   // Unknown until the wishlists answer: the clause stays out rather than claiming nobody.
   const wanted = wishlists.data?.find((w) => w.uuid === uuid)?.wantedBy;
@@ -768,7 +752,6 @@ export function RequestDossier({
     variant,
   };
   const Title = variant === "page" ? "h1" : "h2";
-  const from = variant === "page" ? cameFrom(state) : null;
   return (
     <div
       className="rq-page"
@@ -776,15 +759,16 @@ export function RequestDossier({
       data-testid={variant === "page" ? "request-page" : "requests-pane"}
     >
       {variant === "page" && <PageTitle page={`Request ${title}`} />}
-      {from === "requests" && (
-        <Link className="rq-back" to="/requests">
-          ‹ Requests
-        </Link>
-      )}
-      {from === "wishlists" && (
+      {fromWishlists(state) ? (
         <Link className="rq-back" to="/wishlists">
           ← Back to Wishlists
         </Link>
+      ) : (
+        variant === "page" && (
+          <Link className="rq-back" to="/requests">
+            ‹ Requests
+          </Link>
+        )
       )}
       <header className="rq-head">
         <div className="rq-cover">
@@ -835,21 +819,5 @@ export function RequestDossier({
         variant={variant}
       />
     </div>
-  );
-}
-
-/** A book's request page: the request named by `?id=`, with the book's other requests. */
-export function BookRequest() {
-  const { uuid: rawUuid } = useParams();
-  const [params] = useSearchParams();
-  const uuid = parseBookUuid(rawUuid);
-  const id = positiveInt(params.get("id"));
-  if (!uuid || id === null) {
-    return <PageNotFound subject="Request" />;
-  }
-  return (
-    <ToastProvider>
-      <RequestDossier uuid={uuid} id={id} variant="page" />
-    </ToastProvider>
   );
 }

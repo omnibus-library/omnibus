@@ -6364,7 +6364,7 @@
           "Requests"
         ],
         "summary": "List requests",
-        "description": "Every reader's requests, newest first, in every state, with who made each and who\ncancelled it, narrowed by `state` and `user` when given. Requests are public on the\nserver, so any signed-in reader may read them. Each carries only the version it picked and\nthe versions it gave up. At most the newest 500 are returned.",
+        "description": "Every reader's requests, newest first, in every state, with who made each and who\ncancelled it, narrowed by `state` and `user` when given. Requests are public on the\nserver, so any signed-in reader may read them. Each carries only the version it picked and\nthe versions it gave up. Every `ready` request is returned, and at most the newest 500 of the rest.",
         "operationId": "list_requests",
         "parameters": [
           {

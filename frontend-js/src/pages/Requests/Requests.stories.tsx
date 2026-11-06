@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { HttpResponse, http } from "msw";
-import { Route, Routes, useLocation } from "react-router";
+import { Link, Route, Routes, useLocation } from "react-router";
 import { expect, waitFor, within } from "storybook/test";
 import { deferred, failing } from "../../testing/handlers";
 import {
@@ -12,7 +12,7 @@ import {
   requestFake,
 } from "../../testing/requestHandlers";
 import { aWireBook, WIRE_ADA } from "../../testing/wire";
-import { BookRequest } from "../BookRequest/BookRequest";
+import { FROM_WISHLISTS } from "../BookRequest/requestView";
 import { PHONE } from "../Wishlists/Wishlists.stories.shared";
 import { Requests } from "./Requests";
 
@@ -101,7 +101,14 @@ function Page() {
     <>
       <Routes>
         <Route path="/requests" element={<Requests />} />
-        <Route path="/books/:uuid/request" element={<BookRequest />} />
+        <Route
+          path="/start"
+          element={
+            <Link to="/requests?book=uuid-hyperion" state={FROM_WISHLISTS}>
+              Request Hyperion
+            </Link>
+          }
+        />
       </Routes>
       <Where />
     </>
@@ -337,7 +344,32 @@ export const OffOnThisServerItIsNotFound: Story = {
   },
 };
 
-export const OnAPhoneEachBookOpensItsRequestPageWithAWayBack: Story = {
+export const ARequestStartedFromAWishlistOffersTheWayBackInThePane: Story = {
+  parameters: { path: "/start" },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("link", { name: "Request Hyperion" }),
+    );
+
+    const pane = within(await canvas.findByTestId("requests-pane"));
+    await expect(
+      await pane.findByRole("link", { name: "← Back to Wishlists" }),
+    ).toHaveAttribute("href", "/wishlists");
+
+    await userEvent.click(await canvas.findByRole("link", { name: /Dracula/ }));
+
+    // Selecting another book swaps the pane for a new one.
+    const next = within(await canvas.findByTestId("requests-pane"));
+    await expect(
+      await next.findByRole("heading", { level: 2, name: "Dracula" }),
+    ).toBeInTheDocument();
+    await expect(
+      next.queryByRole("link", { name: "← Back to Wishlists" }),
+    ).toBeNull();
+  },
+};
+
+export const OnAPhoneEachBookOpensItsRequestAtItsAddressWithAWayBack: Story = {
   ...PHONE,
   parameters: { ...PHONE.parameters, path: "/requests", user: READER },
   play: async ({ canvas, userEvent }) => {
@@ -347,12 +379,124 @@ export const OnAPhoneEachBookOpensItsRequestPageWithAWayBack: Story = {
 
     await waitFor(() =>
       expect(canvas.getByTestId("where")).toHaveTextContent(
-        "/books/uuid-hyperion/request?id=3",
+        "/requests?book=uuid-hyperion",
       ),
     );
     await expect(
-      await canvas.findByRole("link", { name: "‹ Requests" }),
-    ).toHaveAttribute("href", "/requests");
+      await canvas.findByRole("heading", { level: 1, name: "Hyperion" }),
+    ).toBeInTheDocument();
+    await expect(canvas.queryByTestId("requests-item")).toBeNull();
+    const back = await canvas.findByRole("link", { name: "‹ Requests" });
+    await expect(back).toHaveAttribute("href", "/requests");
+
+    await userEvent.click(back);
+
+    await expect(await canvas.findAllByTestId("requests-item")).toHaveLength(3);
+  },
+};
+
+export const OnAPhoneTheBookInTheAddressOpensFullScreen: Story = {
+  ...PHONE,
+  parameters: {
+    ...PHONE.parameters,
+    path: "/requests?book=uuid-carmilla",
+    user: READER,
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByRole("heading", { level: 1, name: "Carmilla" }),
+    ).toBeInTheDocument();
+    await expect(canvas.getByTestId("request-page")).toBeInTheDocument();
+    await expect(canvas.queryByTestId("requests-item")).toBeNull();
+  },
+};
+
+let heldRequests = deferred();
+
+export const OnAPhoneADeepLinkWaitsForTheListWithoutDrawingIt: Story = {
+  ...PHONE,
+  parameters: {
+    ...PHONE.parameters,
+    path: "/requests?book=uuid-carmilla",
+    user: READER,
+  },
+  beforeEach({ msw }) {
+    heldRequests = deferred();
+    msw.use(
+      http.get("/api/requests", async () => {
+        await heldRequests.promise;
+        return HttpResponse.json([
+          aWireListing({
+            request: aWireRequest({ id: 4, book_uuid: "uuid-carmilla" }),
+            book: CARMILLA,
+          }),
+        ]);
+      }),
+    );
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByText("Loading…")).toBeInTheDocument();
+    await expect(canvas.queryByTestId("requests-item")).toBeNull();
+    await expect(canvas.queryByText("Gathering the requests")).toBeNull();
+    await expect(
+      canvas.queryByRole("heading", { name: "Requests" }),
+    ).toBeNull();
+
+    heldRequests.release();
+
+    await expect(
+      await canvas.findByRole("heading", { level: 1, name: "Carmilla" }),
+    ).toBeInTheDocument();
+  },
+};
+
+export const NarrowingToAPhoneKeepsTheListWhenThePageChoseTheBook: Story = {
+  parameters: { path: "/requests", user: READER },
+  play: async ({ canvas }) => {
+    // The desktop writes the first book into the address on its own.
+    await waitFor(() =>
+      expect(canvas.getByTestId("where")).toHaveTextContent(
+        "/requests?book=uuid-dracula",
+      ),
+    );
+    await canvas.findByTestId("requests-pane");
+
+    await (await import("vitest/browser")).page.viewport(390, 844);
+
+    // The pane goes once the screen is a phone's.
+    await waitFor(() =>
+      expect(canvas.queryByTestId("requests-pane")).toBeNull(),
+    );
+    await expect(await canvas.findAllByTestId("requests-item")).toHaveLength(3);
+    await expect(canvas.queryByTestId("request-page")).toBeNull();
+  },
+};
+
+export const OnAPhoneABookTheListLacksShowsTheList: Story = {
+  ...PHONE,
+  parameters: {
+    ...PHONE.parameters,
+    path: "/requests?book=uuid-nope",
+    user: READER,
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findAllByTestId("requests-item")).toHaveLength(3);
+    await expect(canvas.queryByTestId("request-page")).toBeNull();
+  },
+};
+
+export const OnAPhoneABookOpenedFromAWishlistOffersTheWayBackThere: Story = {
+  ...PHONE,
+  parameters: { ...PHONE.parameters, path: "/start", user: READER },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("link", { name: "Request Hyperion" }),
+    );
+
+    await expect(
+      await canvas.findByRole("link", { name: "← Back to Wishlists" }),
+    ).toHaveAttribute("href", "/wishlists");
+    await expect(canvas.queryByRole("link", { name: "‹ Requests" })).toBeNull();
   },
 };
 
@@ -396,17 +540,17 @@ export const RequestAgainInThePaneStaysOnTheList: Story = {
 };
 
 let held = deferred();
-let duneReads = 0;
+let listReads = 0;
 
-export const RequestAgainStaysBusyUntilTheListsAreReadAgain: Story = {
+export const RequestAgainStaysBusyUntilTheRequestsListIsReadAgain: Story = {
   parameters: { path: "/requests?book=uuid-dune" },
   beforeEach({ msw }) {
     held = deferred();
-    duneReads = 0;
+    listReads = 0;
     msw.use(
-      http.get("/api/books/uuid-dune/requests", async () => {
-        duneReads += 1;
-        if (duneReads > 1) await held.promise;
+      http.get("/api/requests", async () => {
+        listReads += 1;
+        if (listReads > 1) await held.promise;
         return HttpResponse.json([
           aWireListing({
             request: aWireRequest({
@@ -426,7 +570,7 @@ export const RequestAgainStaysBusyUntilTheListsAreReadAgain: Story = {
 
     await userEvent.click(again);
 
-    await waitFor(() => expect(duneReads).toBeGreaterThan(1));
+    await waitFor(() => expect(listReads).toBeGreaterThan(1));
     await expect(again).toHaveAttribute("aria-busy", "true");
     held.release();
   },
