@@ -6404,9 +6404,6 @@
           "400": {
             "description": "`state` isn't a request state, or `user` isn't a number."
           },
-          "401": {
-            "description": "You aren't signed in."
-          },
           "404": {
             "description": "Book requests are off on this server."
           }

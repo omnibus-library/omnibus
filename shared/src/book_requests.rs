@@ -214,10 +214,8 @@ pub struct RequestListing {
 #[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
 pub struct RequestListQuery {
     /// Only requests in this state.
-    #[serde(default)]
     pub state: Option<RequestState>,
     /// Only requests this reader made, by user id.
-    #[serde(default)]
     pub user: Option<i64>,
 }
 

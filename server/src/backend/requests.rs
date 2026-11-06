@@ -253,28 +253,26 @@ pub(super) async fn post_start_request(
     }
 }
 
-/// The wire form of listed requests, each with the versions it picked and gave up.
-fn listings(listed: Vec<store::Listed>, is_admin: bool) -> Vec<RequestListing> {
-    listed
+/// The requests `filter` matches, as the answer to `viewer`, each with the versions it picked
+/// and gave up.
+async fn list_answer(state: &AppState, filter: ListFilter<'_>, viewer: &AuthUser) -> Response {
+    let listed = match store::list(state.pool(), filter).await {
+        Ok(listed) => listed,
+        Err(e) => return internal("list requests", e),
+    };
+    let listings: Vec<RequestListing> = listed
         .into_iter()
         .map(|l| RequestListing {
             request: BookRequest {
                 versions: l.versions,
-                ..summary(l.request, is_admin)
+                ..summary(l.request, viewer.is_admin)
             },
             book: l.book,
             requester_name: l.requester_name,
             cancelled_by_name: l.cancelled_by_name,
         })
-        .collect()
-}
-
-/// The requests `filter` matches, as the answer to `viewer`.
-async fn list_answer(state: &AppState, filter: ListFilter<'_>, viewer: &AuthUser) -> Response {
-    match store::list(state.pool(), filter).await {
-        Ok(listed) => Json(listings(listed, viewer.is_admin)).into_response(),
-        Err(e) => internal("list requests", e),
-    }
+        .collect();
+    Json(listings).into_response()
 }
 
 /// List a book's requests
@@ -326,7 +324,6 @@ pub(super) async fn get_book_requests(
     responses(
         (status = 200, description = "The requests.", body = Vec<RequestListing>),
         (status = 400, description = "`state` isn't a request state, or `user` isn't a number."),
-        (status = 401, description = "You aren't signed in."),
         (status = 404, description = "Book requests are off on this server."),
     ),
 )]

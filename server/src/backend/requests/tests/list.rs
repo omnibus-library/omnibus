@@ -44,10 +44,12 @@ mod get_requests {
         let carmilla = seed_book(&pool, "Carmilla").await;
         let wanted = seed_request(&pool, ada, &dracula).await;
         seed_request(&pool, ada, &carmilla).await;
-        seed_request(&pool, grace, &dracula).await;
-        store::cancel(&pool, wanted, ada, store::unix_now())
-            .await
-            .unwrap();
+        let graces = seed_request(&pool, grace, &dracula).await;
+        for (id, by) in [(wanted, ada), (graces, grace)] {
+            store::cancel(&pool, id, by, store::unix_now())
+                .await
+                .unwrap();
+        }
 
         let uri = format!("/api/requests?user={ada}&state=cancelled");
         let found = listed(&app, &uri, &ada_token).await;
@@ -72,6 +74,32 @@ mod get_requests {
 
         let all = listed(&app, "/api/requests", &ada_token).await;
         assert_eq!(ids(&all), [id]);
+    }
+
+    #[tokio::test]
+    async fn sends_a_stuck_requests_detail_to_an_admin_but_not_to_a_reader() {
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let (ada, ada_token) = requester(&pool, "ada").await;
+        let admin = admin_token(&pool).await;
+        let dracula = seed_book(&pool, "Dracula").await;
+        let id = seed_request(&pool, ada, &dracula).await;
+        sqlx::query(
+            "UPDATE book_requests SET state = 'stuck', stuck_reason = 'search_failed',
+             stuck_detail = 'prowlarr refused the connection' WHERE id = ?",
+        )
+        .bind(id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let as_reader = listed(&app, "/api/requests", &ada_token).await;
+        let as_admin = listed(&app, "/api/requests", &admin).await;
+
+        assert_eq!(as_reader[0].request.stuck_detail, None);
+        assert_eq!(
+            as_admin[0].request.stuck_detail.as_deref(),
+            Some("prowlarr refused the connection")
+        );
     }
 
     #[tokio::test]
