@@ -11,6 +11,7 @@ import {
   type FoundBook,
   parseBookUuid,
   resolveBook,
+  resolveMeta,
   type ScanBook,
   searchLibraryBooks,
   searchProviders,
@@ -21,19 +22,15 @@ import {
   type FoundVia,
   isbnRejection,
 } from "../../pages/CheckIn/checkInFlow";
-import {
-  existingBook,
-  isbnResults,
-  onlineHeading,
-} from "../../pages/Wishlists/wishlistView";
 import { useDebounced } from "../../useDebounced";
 import { PHONE_QUERY, useMediaQuery } from "../../useMediaQuery";
 import { BarcodeScanner } from "../BarcodeScanner/BarcodeScanner";
 import { Button } from "../Button/Button";
 import { Cover } from "../Cover/Cover";
 import { PlusGlyph, ScanGlyph, SearchGlyph, XGlyph } from "../Glyphs/Glyphs";
-import { Loading } from "../Loading/Loading";
+import { BusyLabel, Loading } from "../Loading/Loading";
 import { Sheet } from "../Sheet/Sheet";
+import { existingBook, isbnResults, onlineHeading } from "./bookSearchView";
 import "./BookSearch.css";
 
 /** A search hit the reader may act on: a library book, or a provider's record of one. A lookup by ISBN has already said which library book a record matches, so that record carries the answer (`null` for none). */
@@ -44,10 +41,24 @@ export type Hit =
 export const titleOf = (hit: Hit) =>
   hit.kind === "library" ? hit.book.title : hit.meta.title;
 
-/** What one result says and offers; no `action`, no button. `note` replaces the line after its authors. */
+export type OnlineHit = Extract<Hit, { kind: "online" }>;
+
+/** The library book a provider's record stands for: the one an ISBN lookup already matched, or else the one resolving it finds. `null` when the library has none. */
+export async function matchOf(hit: OnlineHit): Promise<ScanBook | null> {
+  return hit.matched === undefined
+    ? existingBook(await resolveMeta(hit.meta))
+    : hit.matched;
+}
+
+/** What one result says and offers; no `action`, no button. `note` replaces the line after its authors. `busyLabel` is the button's face while its action runs. */
 export type Offer = {
   note?: string;
-  action: { label: string; name: string; run: (via: FoundVia) => void } | null;
+  action: {
+    label: string;
+    busyLabel: string;
+    name: string;
+    run: (via: FoundVia) => void;
+  } | null;
 };
 
 function Result({
@@ -78,6 +89,12 @@ function Result({
       ? ""
       : [hit.meta.publisher, hit.meta.year].filter(Boolean).join(" · "));
   const { action } = offer;
+  const [clicked, setClicked] = useState(false);
+  // Nothing is running any more once the panel is free again.
+  useEffect(() => {
+    if (!disabled) setClicked(false);
+  }, [disabled]);
+  const working = clicked && disabled;
   return (
     <li className="bsearch-result" data-testid={`${testId}-result`}>
       <div className="bsearch-cover">
@@ -90,14 +107,24 @@ function Result({
         </p>
       </div>
       {action && (
+        // `aria-disabled`, not `disabled`: a disabled button drops the keyboard's focus.
         <Button
           size="sm"
           className="bsearch-go"
-          disabled={disabled}
+          aria-disabled={disabled || undefined}
+          aria-busy={working || undefined}
           aria-label={action.name}
-          onClick={() => action.run(via)}
+          onClick={() => {
+            if (disabled) return;
+            setClicked(true);
+            action.run(via);
+          }}
         >
-          {action.label}
+          <BusyLabel
+            busy={working}
+            label={action.label}
+            busyLabel={action.busyLabel}
+          />
         </Button>
       )}
     </li>

@@ -182,7 +182,7 @@ async function answered(res: Response): Promise<BookRequest> {
 }
 
 /** Starts looking for an ebook of the book, or returns the request already going. */
-export async function startBookRequest(uuid: BookUuid): Promise<BookRequest> {
+export async function startBookRequest(uuid: string): Promise<BookRequest> {
   const url = getStartBookRequestUrl(encodeURIComponent(uuid));
   return answered(await send(url, "POST", { kind: "ebook" }));
 }

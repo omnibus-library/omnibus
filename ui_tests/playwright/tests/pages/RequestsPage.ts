@@ -26,6 +26,7 @@ export class RequestsPage extends BasePage {
   /** The search's field, once its panel is open. */
   readonly addSearchField: Locator;
   readonly addPanel: Locator;
+  readonly startFailedText: Locator;
 
   constructor(page: Page) {
     super(page);
@@ -41,6 +42,7 @@ export class RequestsPage extends BasePage {
     this.cancelFailedText = page.getByText(/Couldn’t cancel/);
     this.addButton = page.getByTestId("requests-add");
     this.addPanel = page.getByTestId("requests-add-panel");
+    this.startFailedText = page.getByText("Couldn’t start the request.");
     this.addSearchField = this.addPanel.getByRole("searchbox", {
       name: "Title, author or ISBN",
     });
@@ -72,6 +74,11 @@ export class RequestsPage extends BasePage {
   /** Shows `title`'s request in the pane. */
   async select(title: string): Promise<void> {
     await this.item(title).click();
+  }
+
+  /** Checks the page is showing `uuid`'s book, as its address says. */
+  async assertSelected(uuid: string): Promise<void> {
+    await this.assertDisplayedAt(new RegExp(`/requests\\?book=${uuid}$`));
   }
 
   /** Searches the header's Request panel for `title` and starts an ebook request on the library book it finds. */

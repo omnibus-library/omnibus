@@ -145,14 +145,30 @@
   border-radius: var(--r-md);
 }
 .bsearch .bsearch-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   margin: 0;
   font-size: 14px;
   color: var(--ink-0);
 }
 .bsearch .bsearch-byline {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   margin: 0;
   font-size: 12px;
   color: var(--ink-2);
+}
+.bsearch-go[aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: default;
+}
+.bsearch-text {
+  min-width: 0;
+}
+.bsearch-button[aria-expanded="true"] {
+  border-color: var(--accent);
 }
 .bsearch-cover .cover .ct {
   font-size: 6px;
@@ -167,6 +183,7 @@
   }
 }
 
+.bsearch .btn:focus-visible,
 .bsearch-close:focus-visible,
 .bsearch-scan:focus-visible,
 .bsearch-field:focus-within {

@@ -389,7 +389,7 @@ export const AddIsDisabledWhileItsRequestIsPending: Story = {
 
     await userEvent.click(add);
 
-    await waitFor(() => expect(add).toBeDisabled());
+    await waitFor(() => expect(add).toHaveAttribute("aria-disabled", "true"));
     // Nothing closes the panel while the add is in flight.
     await userEvent.keyboard("{Escape}");
     await userEvent.click(canvas.getByTestId("wishlists-add-scrim"));

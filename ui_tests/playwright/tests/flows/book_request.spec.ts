@@ -332,13 +332,40 @@ test.describe("requests page", () => {
     });
 
     await test.step("see its request selected and looking", async () => {
-      await expect(requestsPage.page).toHaveURL(
-        new RegExp(`/requests\\?book=${uuid}$`),
-      );
+      await requestsPage.assertSelected(uuid);
       await expect(requestsPage.addPanel).toBeHidden();
       await expect(requestsPage.itemIn("Looking", book.title)).toBeVisible();
       await expect(requestsPage.paneState).toHaveText("Looking");
       release();
+    });
+  });
+
+  test("keep the search open when starting a request fails", async ({
+    scanRequests,
+    createdBookUuids,
+    requestsPage,
+    expectMutation,
+  }) => {
+    const book = buildExternalBook();
+
+    await test.step("have a library book with no ebook", async () => {
+      const added = await scanRequests.postPhysicalOnly(book);
+      await expect(added).toBeOK();
+      createdBookUuids.add((await added.json()).book_uuid);
+    });
+
+    await test.step("try to request it while the server fails", async () => {
+      await requestsPage.goto();
+      await requestsPage.forceServerError(bookRequests.start());
+      await expectMutation(failing(bookRequests.start()), () =>
+        requestsPage.requestFromSearch(book.title),
+      );
+    });
+
+    await test.step("check the failure is told and nothing was started", async () => {
+      await expect(requestsPage.startFailedText).toBeVisible();
+      await expect(requestsPage.addPanel).toBeVisible();
+      await expect(requestsPage.item(book.title)).toHaveCount(0);
     });
   });
 

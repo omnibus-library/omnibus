@@ -2,8 +2,11 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { HttpResponse, http } from "msw";
 import { Route, Routes, useLocation } from "react-router";
 import { expect, waitFor, within } from "storybook/test";
-import { ResolveMetaRequest } from "../../api/generated/schemas";
-import { failing, hanging } from "../../testing/handlers";
+import {
+  ResolveMetaRequest,
+  ResolveRequest,
+} from "../../api/generated/schemas";
+import { deferred, failing, hanging } from "../../testing/handlers";
 import {
   aWireRequest,
   aWireVersion,
@@ -133,6 +136,20 @@ const SAME_WORK: Record<string, ReturnType<typeof aScanBook>> = {
   }),
 };
 
+/** A book an earlier request from a provider's record made: no file, no copy, only the request. */
+const MADE_UUID = "uuid-made";
+const MADE = {
+  ...bookOf("Jonathan Strange & Mr Norrell", "Susanna Clarke"),
+  unique_identifier: MADE_UUID,
+};
+const MADE_SCAN = aScanBook({
+  uuid: MADE_UUID,
+  title: "Jonathan Strange & Mr Norrell",
+  authors: ["Susanna Clarke"],
+  has_files: false,
+  has_physical: false,
+});
+
 /** Ada's pick to make on Piranesi, and a search already going for Dune. */
 const GOING = [
   aWireRequest({
@@ -175,13 +192,15 @@ const libraryHandlers = [
         : { kind: "not_in_library", online: meta },
     );
   }),
-  http.post("/api/scan/resolve", () =>
-    HttpResponse.json({
+  http.post("/api/scan/resolve", async ({ request }) => {
+    const { isbn } = ResolveRequest.parse(await request.json());
+    const made = isbn === RECORDS[0]?.isbn13;
+    return HttpResponse.json({
       kind: "close_match",
-      book: SAME_WORK.Piranesi,
-      scanned: RECORDS[3],
-    }),
-  ),
+      book: made ? MADE_SCAN : SAME_WORK.Piranesi,
+      scanned: made ? RECORDS[0] : RECORDS[3],
+    });
+  }),
   http.post("/api/scan/wishlist", async () => {
     wishlistWrites += 1;
     return HttpResponse.json({ book_uuid: "never" });
@@ -553,5 +572,105 @@ export const TheScannersWayOutToTypingHidesIt: Story = {
     await userEvent.click(sheet.getByTestId("barcode-scanner-manual"));
 
     await expect(sheet.queryByTestId("barcode-scanner")).toBeNull();
+  },
+};
+
+export const ARecordMatchingABookMadeForARequestOffersOpen: Story = {
+  beforeEach({ msw }) {
+    fake = requestFake(
+      [...GOING, aWireRequest({ id: 9, user_id: 1, book_uuid: MADE_UUID })],
+      { books: [...BOOKS, MADE] },
+    );
+    msw.use(...fake.handlers);
+  },
+  play: async ({ canvas, userEvent }) => {
+    const panel = await search(canvas, userEvent, "9781408844175");
+
+    const online = within(await panel.findByTestId("requests-add-online"));
+
+    await expect(
+      await online.findByRole("button", {
+        name: "Open Jonathan Strange & Mr Norrell",
+      }),
+    ).toBeInTheDocument();
+    await expect(online.queryByRole("button", { name: /^Request/ })).toBeNull();
+  },
+};
+
+let reads = 0;
+
+export const ARefreshThatFailsKeepsTheRequestButtonMounted: Story = {
+  beforeEach({ msw }) {
+    reads = 0;
+    msw.use(
+      http.get("/api/requests", () => {
+        reads += 1;
+        return reads === 1
+          ? HttpResponse.json([
+              {
+                request: GOING[0],
+                book: PIRANESI,
+                requester_name: "Ada Lovelace",
+                requester_has_avatar: false,
+                cancelled_by_name: null,
+              },
+            ])
+          : new HttpResponse("down", { status: 500 });
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    const panel = await search(canvas, userEvent, "dracula");
+
+    await userEvent.click(
+      await panel.findByRole("button", { name: "Request Dracula" }),
+    );
+
+    // The start's own refresh fails, and the page still takes the reader to the new request.
+    await waitFor(() => expect(reads).toBeGreaterThan(1));
+    await waitFor(() =>
+      expect(canvas.getByTestId("where")).toHaveTextContent(
+        "/requests?book=uuid-dracula",
+      ),
+    );
+    await expect(canvas.getByTestId("requests-add")).toBeInTheDocument();
+  },
+};
+
+let held = deferred();
+
+export const AResultKeepsFocusAndShowsBusyWhileItsStartRuns: Story = {
+  beforeEach({ msw }) {
+    held = deferred();
+    msw.use(
+      http.post("/api/books/:uuid/requests", async () => {
+        await held.promise;
+        return new HttpResponse("failed with 429", { status: 429 });
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    const panel = await search(canvas, userEvent, "dracula");
+    const request = await panel.findByRole("button", {
+      name: "Request Dracula",
+    });
+    request.focus();
+
+    await userEvent.keyboard("{Enter}");
+
+    await waitFor(() => expect(request).toHaveAttribute("aria-busy", "true"));
+    await expect(request).toHaveFocus();
+    await expect(request).not.toBeDisabled();
+    // Nothing closes the panel while the start runs.
+    await userEvent.keyboard("{Escape}");
+    await expect(canvas.getByTestId("requests-add-panel")).toBeInTheDocument();
+
+    held.release();
+
+    await waitFor(() => expect(request).not.toHaveAttribute("aria-busy"));
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(canvas.queryByTestId("requests-add-panel")).toBeNull(),
+    );
   },
 };

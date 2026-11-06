@@ -5,29 +5,25 @@ import {
   fetchWishlist,
   parseBookUuid,
   removeFromWishlist,
-  resolveMeta,
   type ScanBook,
   wishlistScanned,
 } from "../../api";
 import {
   BookSearch,
   type Hit,
+  matchOf,
   type Offer,
   titleOf,
 } from "../../components/BookSearch/BookSearch";
 import { useToast } from "../../components/Toast/Toast";
 import { type FoundVia, wishlistSource } from "../CheckIn/checkInFlow";
 import { refreshAfterWrite } from "./refresh";
-import { existingBook } from "./wishlistView";
 
 /** The write for a hit: a provider's record that matches a library book goes against that book, and only one that matches none is made into a new one. */
 async function requestFor(hit: Hit, via: FoundVia) {
   const source = wishlistSource[via];
   if (hit.kind === "library") return { book_uuid: hit.book.uuid, source };
-  const found =
-    hit.matched === undefined
-      ? existingBook(await resolveMeta(hit.meta))
-      : hit.matched;
+  const found = await matchOf(hit);
   return found ? { book_uuid: found.uuid, source } : { meta: hit.meta, source };
 }
 
@@ -98,6 +94,7 @@ export function AddToWishlist({
     note: hit.kind === "library" ? libraryNote(hit.book) : undefined,
     action: {
       label: "Add",
+      busyLabel: "Adding…",
       name: `Add ${titleOf(hit)}`,
       run: (via) => add.mutate({ hit, via }),
     },

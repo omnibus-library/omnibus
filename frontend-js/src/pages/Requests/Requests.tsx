@@ -177,7 +177,8 @@ function RequestsPage() {
               </p>
             )}
           </div>
-          {!requests.isError && (
+          {/* Only a failed first read hides it: a failed refresh keeps the lists, and a start in flight. */}
+          {(!requests.isError || listings !== undefined) && (
             <AddRequest listings={listings} onSelect={select} />
           )}
         </header>
