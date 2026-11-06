@@ -231,7 +231,7 @@ export function ConfirmScreen({
 }: ConfirmProps) {
   return (
     <div className="check-in-screen" data-testid="check-in-confirm">
-      <h1>Check in this copy</h1>
+      <h1>I own this copy</h1>
       <p className="subtitle">
         {confirmSubtitle(book, wishlisted, anotherWish, viewerId)}
       </p>
@@ -259,8 +259,8 @@ export function ConfirmScreen({
         >
           <BusyLabel
             busy={busy && !wishing}
-            label="Check in"
-            busyLabel="Checking in…"
+            label="Add my copy"
+            busyLabel="Adding…"
           />
         </Button>
         {offersWishlistEntry(book, wishlisted) && (
@@ -358,7 +358,7 @@ export function CloseMatchScreen({
       </ul>
       <p className="check-in-why">
         Print and digital editions carry different ISBNs, so we ask before
-        checking a copy in against the wrong book.
+        adding a copy to the wrong book.
       </p>
       <div className="settings-actions">
         <Button
@@ -517,13 +517,13 @@ export function SuccessScreen({
       <p className="subtitle">{title}</p>
       {offWishlist && (
         <p className="check-in-why" data-testid="check-in-off-wishlist">
-          Checked in and taken off your wishlist.
+          Added and taken off your wishlist.
         </p>
       )}
       {bookUuid === null && (
         <p className="check-in-why">
           Wishlisted books have no files — they'll appear on your wishlist shelf
-          until someone checks a copy in.
+          until someone adds a copy.
         </p>
       )}
       <div className="settings-actions">
@@ -540,7 +540,7 @@ export function SuccessScreen({
           data-testid="check-in-scan-another"
           onClick={onRestart}
         >
-          Check in another
+          Add another
         </Button>
       </div>
     </div>

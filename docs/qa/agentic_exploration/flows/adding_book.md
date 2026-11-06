@@ -26,7 +26,7 @@ whose upload permission has been turned off runs this flow to meet the
   Add-to-library button.
 - The **fail** is a screen that lets you upload anyway.
 - **A hidden entry point is not a failure to reach the refusal.** Neither
-  width offers you an upload: the desktop nav has no Add books item, and the
+  width offers you an upload: the nav's Add menu has no Upload book files item, and the
   phone-width tab bar's sheet keeps only its check-in rows. Reach the refusal
   by opening `/add-books` directly; say which routes exist.
 - Skip the corpus requirement and the file-chooser caveat below — you upload
@@ -65,8 +65,9 @@ goes in through the front door* in [start.md](../start.md).
 
 ## Steps
 
-1. Click **Add books** in the nav. Do not type a path — there is no `/add`, and
-   guessing one lands you on a page that is not part of the app.
+1. Open the nav's **Add** menu and choose **Upload book files**. Do not type a
+   path — there is no `/add`, and guessing one lands you on a page that is not
+   part of the app.
 2. Choose a file from the corpus, by dropping it on the drop zone or through
    the file chooser. There is no upload-type choice: the extension decides
    which ingest a pick goes to, and an audiobook's `.mp3` parts go in

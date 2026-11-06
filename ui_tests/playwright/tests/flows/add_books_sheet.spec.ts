@@ -121,10 +121,11 @@ test.describe("add-books sheet (phone viewport)", () => {
       await expect(addBooksSheet.uploadOffer).toHaveCount(0);
     });
 
-    await test.step("check the desktop nav leaves out add books", async () => {
+    await test.step("check the desktop add menu leaves out upload", async () => {
       await readerLibraryPage.resizeViewport({ width: 1280, height: 800 });
-      await expect(topNav.checkInButton).toBeVisible();
-      await expect(topNav.addBooksButton).toHaveCount(0);
+      await topNav.openAddMenu();
+      await expect(topNav.addCopyItem).toBeVisible();
+      await expect(topNav.uploadBookFilesItem).toHaveCount(0);
     });
   });
 

@@ -213,7 +213,7 @@ export const GoogleBooksCarriesItsOwnCopy: Story = {
     ).toBeInTheDocument();
     await expect(
       canvas.getByText(
-        "Add a Google Books API key so ISBN check-ins keep resolving past the shared anonymous quota.",
+        "Add a Google Books API key so ISBN lookups keep resolving past the shared anonymous quota.",
       ),
     ).toBeInTheDocument();
     const input = canvas.getByLabelText("Google Books API key");

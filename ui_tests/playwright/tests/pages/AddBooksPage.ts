@@ -7,7 +7,7 @@ import { BasePage } from "./BasePage";
 type PickedFiles = Parameters<Locator["setInputFiles"]>[0];
 
 /**
- * The Add a book sheet the top nav's Add books opens over the library: one
+ * The Add a book sheet the top nav's Upload book files opens over the library: one
  * picker, then a review in the edit sheet's form per pick.
  */
 export class AddBooksPage extends BasePage {
@@ -47,10 +47,10 @@ export class AddBooksPage extends BasePage {
     return this.heading;
   }
 
-  /** Opens the library, then the sheet from the top nav's Add books. */
+  /** Opens the library, then the sheet from the top nav's Upload book files. */
   async goto(): Promise<void> {
     await this.page.goto("/");
-    await this.topNav.addBooksButton.click();
+    await this.topNav.openUploadBookFiles();
     await this.heading.waitFor();
     await this.page.waitForLoadState("networkidle");
   }

@@ -12,6 +12,8 @@ export class WishlistsPage extends BasePage {
   readonly rows: Locator;
   /** The Request menu's ebook item, once a row's menu is open. */
   readonly requestEbookItem: Locator;
+  /** The add search's field, once its panel is open. */
+  readonly addSearchField: Locator;
 
   constructor(page: Page) {
     super(page);
@@ -21,6 +23,9 @@ export class WishlistsPage extends BasePage {
     this.requestEbookItem = page.getByRole("menuitem", {
       name: "Request ebook",
     });
+    this.addSearchField = page
+      .getByTestId("wishlists-add-panel")
+      .getByRole("searchbox", { name: "Title, author or ISBN" });
   }
 
   protected get readyLocator(): Locator {

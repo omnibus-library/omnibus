@@ -76,7 +76,7 @@ export function WishlistCtas({ book }: { book: BookDetail }) {
           state={{ fromApp: true }}
           data-testid="wishlist-check-in"
         >
-          Check in when acquired
+          Add a copy you own
         </ButtonLink>
         <Button
           variant="ghost"
@@ -281,7 +281,7 @@ function CopyRow({
             data-testid="physical-pill"
             aria-label={collection}
           />
-          {filer ? `Checked in ${when} by ${filer}` : `Checked in ${when}`}
+          {filer ? `Added ${when} by ${filer}` : `Added ${when}`}
           {copy.isbn && (
             <>
               <br />

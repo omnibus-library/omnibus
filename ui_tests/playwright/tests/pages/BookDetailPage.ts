@@ -90,7 +90,7 @@ export class BookDetailPage extends BasePage {
   readonly immersiveReadButton: Locator;
   readonly syncImmersiveLink: Locator;
   readonly noFilesMessage: Locator;
-  readonly checkInWhenAcquiredButton: Locator;
+  readonly addCopyLink: Locator;
   readonly physicalPill: Locator;
   readonly editMetadataLink: Locator;
   readonly progressRuler: Locator;
@@ -166,9 +166,8 @@ export class BookDetailPage extends BasePage {
     });
     this.syncImmersiveLink = page.getByTestId("sync-immersive");
     this.noFilesMessage = page.getByTestId("no-files-disclaimer");
-    this.checkInWhenAcquiredButton = page.getByRole("link", {
-      name: "Check in when acquired",
-    });
+    // A test id, since a spec asserts it absent.
+    this.addCopyLink = page.getByTestId("wishlist-check-in");
     this.physicalPill = page.getByTestId("physical-pill");
     this.editMetadataLink = page.getByTestId("edit-metadata");
     this.progressRuler = page.getByRole("progressbar", {
@@ -310,8 +309,8 @@ export class BookDetailPage extends BasePage {
     await this.startReadingPdfButton.click();
   }
 
-  async checkInWhenAcquired(): Promise<void> {
-    await this.checkInWhenAcquiredButton.click();
+  async addCopy(): Promise<void> {
+    await this.addCopyLink.click();
   }
 
   async openAuthor(name: string): Promise<void> {
