@@ -23,9 +23,7 @@ pub fn extract_accent(bytes: &[u8]) -> Option<String> {
         add_to_bucket(&mut buckets, to_unit_rgb(px));
     }
 
-    let best = buckets
-        .iter()
-        .max_by(|a, b| a.w.partial_cmp(&b.w).unwrap_or(std::cmp::Ordering::Equal))?;
+    let best = buckets.iter().max_by(|a, b| a.w.total_cmp(&b.w))?;
     if best.w == 0.0 {
         return None;
     }
@@ -60,7 +58,7 @@ pub fn extract_cover_palette(bytes: &[u8]) -> Vec<CoverPair> {
     }
 
     let mut ranked: Vec<&AccentBucket> = buckets.iter().filter(|b| b.w > 0.0).collect();
-    ranked.sort_by(|a, b| b.w.partial_cmp(&a.w).unwrap_or(std::cmp::Ordering::Equal));
+    ranked.sort_by(|a, b| b.w.total_cmp(&a.w));
     let total = small.pixels().len() as f32;
     let mut colors: Vec<[f32; 3]> = ranked.iter().take(3).map(|b| b.mean()).collect();
     colors.extend([dark, light].iter().filter_map(|n| n.mean_if_over(total)));
@@ -165,14 +163,7 @@ impl Neutral {
 
 /// WCAG relative luminance of non-linear sRGB in [0, 1].
 fn relative_luminance([r, g, b]: [f32; 3]) -> f32 {
-    let lin = |v: f32| {
-        if v <= 0.04045 {
-            v / 12.92
-        } else {
-            ((v + 0.055) / 1.055).powf(2.4)
-        }
-    };
-    0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+    0.2126 * linearize(r) + 0.7152 * linearize(g) + 0.0722 * linearize(b)
 }
 
 /// WCAG contrast ratio between two relative luminances.
@@ -195,7 +186,9 @@ fn to_hex([r, g, b]: [f32; 3]) -> String {
 /// Pair two stops (`from` darker) with whichever ink holds the better worst-case
 /// contrast over both; `None` when even that falls short of [`MIN_INK_CONTRAST`].
 fn pair_with_ink(from: [f32; 3], to: [f32; 3]) -> Option<CoverPair> {
-    let stops = [relative_luminance(from), relative_luminance(to)];
+    // Measure the colours as emitted, so the 4.5:1 holds for the hex a client reads.
+    let (low, high) = (to_hex(from), to_hex(to));
+    let stops = [&low, &high].map(|hex| relative_luminance(hex_to_unit(hex)));
     let worst = |ink: &str| {
         let lum = relative_luminance(hex_to_unit(ink));
         stops
@@ -209,23 +202,25 @@ fn pair_with_ink(from: [f32; 3], to: [f32; 3]) -> Option<CoverPair> {
     } else {
         (CoverInk::Dark, dark)
     };
-    (best >= MIN_INK_CONTRAST).then(|| CoverPair {
-        from: to_hex(from),
-        to: to_hex(to),
+    (best >= MIN_INK_CONTRAST).then_some(CoverPair {
+        from: low,
+        to: high,
         ink,
     })
+}
+
+/// sRGB channel in [0, 1] to linear light.
+fn linearize(v: f32) -> f32 {
+    if v <= 0.04045 {
+        v / 12.92
+    } else {
+        ((v + 0.055) / 1.055).powf(2.4)
+    }
 }
 
 /// Convert non-linear sRGB in [0, 1] to OKLCH. Matrix from Björn Ottosson,
 /// <https://bottosson.github.io/posts/oklab/>. Returns `(L, C, H°)`.
 fn rgb_to_oklch(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
-    fn linearize(v: f32) -> f32 {
-        if v <= 0.04045 {
-            v / 12.92
-        } else {
-            ((v + 0.055) / 1.055).powf(2.4)
-        }
-    }
     // OKLab matrix coefficients (Björn Ottosson). Truncated to f32 precision
     // — clippy's `excessive_precision` lint flags the full 10-digit form,
     // and the extra digits don't survive `f32` round-off anyway.

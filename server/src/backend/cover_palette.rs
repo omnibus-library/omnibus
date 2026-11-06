@@ -12,8 +12,9 @@ use axum::{
 use omnibus_db::{self as db};
 use omnibus_shared::CoverPalette;
 
-use super::{internal, AppState};
 use crate::auth::AuthUser;
+
+use super::{internal, AppState};
 
 /// Get a cover's gradient pairs
 ///

@@ -33,15 +33,7 @@ pub fn closed_port_url() -> String {
 /// the paths that decode one (accent extraction, avatar downscaling) and so
 /// can't be driven with a magic-bytes stub.
 pub fn solid_color_png(r: u8, g: u8, b: u8, w: u32, h: u32) -> Vec<u8> {
-    let img = image::RgbImage::from_pixel(w, h, image::Rgb([r, g, b]));
-    let mut bytes = Vec::new();
-    image::DynamicImage::ImageRgb8(img)
-        .write_to(
-            &mut std::io::Cursor::new(&mut bytes),
-            image::ImageFormat::Png,
-        )
-        .expect("png encode");
-    bytes
+    striped_png(&[[r, g, b]], w, h)
 }
 
 /// Build an in-memory PNG of equal horizontal bands, one per colour, top to bottom — a

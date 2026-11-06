@@ -4,9 +4,10 @@ use omnibus_db::test_support::striped_png;
 use omnibus_shared::CoverPalette;
 use tower::ServiceExt;
 
-use super::*;
 use crate::auth::test_support as auth_test_support;
 use crate::backend::test_support::*;
+
+use super::*;
 
 const PALETTE_PATH: &str = "cover/palette";
 

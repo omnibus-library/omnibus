@@ -180,7 +180,8 @@ fn extract_cover_palette_drops_a_pair_neither_ink_can_read_on() {
 fn extract_cover_palette_returns_at_most_four_pairs() {
     let bytes = striped_png(&[NEAR_BLACK, RED, BLUE, GREEN, WHITE, CREAM], 64, 96);
 
-    assert!(extract_cover_palette(&bytes).len() <= 4);
+    // Five colours make four neighbours; red → white is the one no ink reads on.
+    assert_eq!(extract_cover_palette(&bytes).len(), 3);
 }
 
 #[test]
