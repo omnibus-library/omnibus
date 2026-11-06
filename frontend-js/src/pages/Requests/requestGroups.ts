@@ -2,8 +2,8 @@ import type { BookRequest, RequestListing, User } from "../../api";
 import { bookCount } from "../../format";
 import {
   canActOn,
+  downloadPercent,
   kindLabel,
-  progressPercent,
   stateView,
 } from "../BookRequest/requestView";
 
@@ -85,22 +85,33 @@ export function groupRequests(
   })).filter((group) => group.items.length > 0);
 }
 
-function whereItStands({ request }: RequestListing, group: RequestGroupKey) {
+/** Where a request stands, after its format. A phone drops the group's own word, so a download reads "62%" and a stuck one its reason alone. */
+function whereItStands(
+  { request }: RequestListing,
+  group: RequestGroupKey,
+  phone: boolean,
+) {
   switch (request.state) {
     case "choose":
       return group === "needs_you" ? "choose a version" : "choosing a version";
     case "looking":
-      return "looking";
+      return phone ? "looking for a version" : "looking";
     case "chosen":
       return "on its way";
-    case "on_its_way":
-      return request.progress === null
-        ? "on its way"
-        : `on its way · ${progressPercent(request.progress)}%`;
-    case "stuck":
-      return `stuck · ${stateView("stuck", request.stuckReason).heading.toLowerCase()}`;
+    case "on_its_way": {
+      const percent = downloadPercent(request);
+      if (percent === null) return "on its way";
+      return phone ? `${percent}%` : `on its way · ${percent}%`;
+    }
+    case "stuck": {
+      const reason = stateView(
+        "stuck",
+        request.stuckReason,
+      ).heading.toLowerCase();
+      return phone ? reason : `stuck · ${reason}`;
+    }
     case "ready":
-      return "ready";
+      return request.kind === "audiobook" ? "ready to listen" : "ready to read";
     case "cancelled":
       return "cancelled";
     default: {
@@ -110,9 +121,13 @@ function whereItStands({ request }: RequestListing, group: RequestGroupKey) {
   }
 }
 
-/** An item's second line: its format, then where it stands, "Ebook · on its way · 62%". */
-export const itemLine = (listing: RequestListing, group: RequestGroupKey) =>
-  `${kindLabel(listing.request.kind)} · ${whereItStands(listing, group)}`;
+/** An item's second line: its format, then where it stands, "Ebook · on its way · 62%" ("Ebook · 62%" on a phone). */
+export const itemLine = (
+  listing: RequestListing,
+  group: RequestGroupKey,
+  phone: boolean,
+) =>
+  `${kindLabel(listing.request.kind)} · ${whereItStands(listing, group, phone)}`;
 
 /** The line under the heading: "7 books · 1 needs you", the second half only when one does. */
 export function countsLine(groups: readonly RequestGroup[]): string {

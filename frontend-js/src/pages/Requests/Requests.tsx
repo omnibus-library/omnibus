@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { type RequestListing, requestsQuery, thumbUrl } from "../../api";
 import { Button } from "../../components/Button/Button";
@@ -8,7 +8,7 @@ import { RowSkeletons } from "../../components/Loading/Loading";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
 import { ToastProvider } from "../../components/Toast/Toast";
 import { useCurrentUser } from "../../session";
-import { useMediaQuery } from "../../useMediaQuery";
+import { PHONE_QUERY, useMediaQuery } from "../../useMediaQuery";
 import { RequestDossier } from "../BookRequest/BookRequest";
 import { FROM_REQUESTS, requestPath } from "../BookRequest/requestView";
 import { NotFound } from "../NotFound/NotFound";
@@ -21,8 +21,6 @@ import {
 } from "./requestGroups";
 import "./Requests.css";
 
-const PHONE = "(max-width: 720px)";
-
 /** The address that selects `uuid`'s book in the list. */
 const selectPath = (uuid: string) =>
   `/requests?book=${encodeURIComponent(uuid)}`;
@@ -33,11 +31,13 @@ function Item({
   group,
   selected,
   phone,
+  onSelect,
 }: {
   listing: RequestListing;
   group: RequestGroupKey;
   selected: boolean;
   phone: boolean;
+  onSelect: () => void;
 }) {
   const { book, request } = listing;
   return (
@@ -45,6 +45,7 @@ function Item({
       <Link
         to={phone ? requestPath(book.uuid, request.id) : selectPath(book.uuid)}
         state={phone ? FROM_REQUESTS : undefined}
+        onClick={phone ? undefined : onSelect}
         className="rqs-item"
         aria-current={selected ? "true" : undefined}
         data-testid="requests-item"
@@ -56,7 +57,7 @@ function Item({
         <span className="rqs-item-text">
           <span className="rqs-item-title">{book.title}</span>
           <span className="rqs-item-line" data-testid="requests-item-line">
-            {itemLine(listing, group)}
+            {itemLine(listing, group, phone)}
           </span>
         </span>
         <span className="rqs-dot" data-group={group} aria-hidden="true" />
@@ -74,10 +75,12 @@ function Groups({
   groups,
   selected,
   phone,
+  onSelect,
 }: {
   groups: readonly RequestGroup[];
   selected: string | undefined;
   phone: boolean;
+  onSelect: () => void;
 }) {
   return groups.map((group) => (
     <section
@@ -97,6 +100,7 @@ function Groups({
             group={group.key}
             selected={!phone && listing.book.uuid === selected}
             phone={phone}
+            onSelect={onSelect}
           />
         ))}
       </ul>
@@ -137,9 +141,11 @@ function selectedListing(
 function RequestsPage() {
   const viewer = useCurrentUser();
   const requests = useQuery(requestsQuery);
-  const phone = useMediaQuery(PHONE);
+  const phone = useMediaQuery(PHONE_QUERY);
   const [params, setParams] = useSearchParams();
   const wanted = params.get("book");
+  // Set once a reader picks a book, so its pane takes focus; a first visit leaves focus be.
+  const [picked, setPicked] = useState(false);
   const listings = requests.data;
   const groups = listings ? groupRequests(listings, viewer) : [];
   const selected = listings
@@ -188,18 +194,20 @@ function RequestsPage() {
             groups={groups}
             selected={selected?.book.uuid}
             phone={phone}
+            onSelect={() => setPicked(true)}
           />
         )}
       </div>
       {!phone && selected && (
-        <div className="rqs-pane">
+        <section className="rqs-pane" aria-label="Selected request">
           <RequestDossier
             key={selected.book.uuid}
             uuid={selected.book.uuid}
             id={selected.request.id}
             variant="pane"
+            focusTitle={picked}
           />
-        </div>
+        </section>
       )}
     </div>
   );

@@ -19,6 +19,12 @@
   font-size: 14px;
   text-decoration: none;
 }
+/* Both links get a hit area at least 24px tall without moving their text. */
+.rq-page :is(.rq-back, .rq-open) {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+}
 .rq-head {
   display: flex;
   gap: 22px;
@@ -46,8 +52,6 @@
 }
 .rq-page .rq-open {
   flex: none;
-  align-self: flex-start;
-  margin-top: 14px;
   color: var(--ink-1);
   font-size: 14px;
   text-decoration: none;
@@ -139,7 +143,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  color: var(--ink-3);
+  color: var(--ink-2);
 }
 .rq-step + .rq-step::before {
   content: "";
@@ -389,8 +393,11 @@
   .rq-page .rq-open {
     grid-column: 2;
     justify-self: start;
-    margin-top: 0;
     color: var(--accent);
+  }
+  /* Avatar, name and when stay on one line, so none starts with a separator. */
+  .rq-requester {
+    white-space: nowrap;
   }
   .rq-version {
     padding: 10px 12px;
@@ -457,4 +464,10 @@
   display: grid;
   justify-items: start;
   gap: 10px;
+}
+
+/* A phone heads a download's card with its format and size. */
+.rq-download-heading {
+  font-size: 15px;
+  color: var(--ink-0);
 }

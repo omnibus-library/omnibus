@@ -115,6 +115,7 @@ export function toRequestListing(wire: RequestListingWire) {
     request: toBookRequest(wire.request),
     book: toBook(wire.book),
     requesterName: wire.requester_name,
+    requesterHasAvatar: wire.requester_has_avatar,
     /** `null` unless cancelled, or once that account is gone. */
     cancelledByName: wire.cancelled_by_name ?? null,
   };
@@ -132,17 +133,24 @@ export const REQUEST_POLL_MS = 2000;
 export const isMoving = (state: RequestState) =>
   state === "looking" || state === "chosen" || state === "on_its_way";
 
-/** How often a list is read again: every couple of seconds while any request in it is moving. */
+/** Whether a request is still going for its reader: looking, choosing, picked or downloading. */
+export const isLive = (state: RequestState) =>
+  state === "choose" || isMoving(state);
+
+/** How often a list is read again: every `every` ms while any request in it is moving. */
 export const listPollMs = (
   listings: readonly { request: { state: RequestState } }[] | undefined,
-) =>
-  listings?.some((l) => isMoving(l.request.state)) ? REQUEST_POLL_MS : false;
+  every = REQUEST_POLL_MS,
+) => (listings?.some((l) => isMoving(l.request.state)) ? every : false);
+
+/** How often the household's list is read again; the pane's own request polls faster. */
+const HOUSEHOLD_POLL_MS = 10_000;
 
 /** Every reader's requests, newest first; read again while any is moving. */
 export const requestsQuery = queryOptions({
   queryKey: [...REQUEST_LISTS_KEY, "all"],
   queryFn: async () => ok(await listRequests()).map(toRequestListing),
-  refetchInterval: (query) => listPollMs(query.state.data),
+  refetchInterval: (query) => listPollMs(query.state.data, HOUSEHOLD_POLL_MS),
 });
 
 /** One book's requests, newest first: its history. */
@@ -153,6 +161,7 @@ export const bookRequestsQuery = (uuid: BookUuid) =>
       ok(await listBookRequests(encodeURIComponent(uuid))).map(
         toRequestListing,
       ),
+    refetchInterval: (query) => listPollMs(query.state.data),
   });
 
 /** One request; while it is looking, picked or downloading, it is read again every couple of seconds. */

@@ -496,6 +496,12 @@ describe("listPollMs", () => {
     expect(listPollMs(listed)).toBe(REQUEST_POLL_MS);
   });
 
+  it("polls at the interval asked for", () => {
+    expect(listPollMs([{ request: { state: "looking" } }], 10_000)).toBe(
+      10_000,
+    );
+  });
+
   it("waits on a list not yet read", () => {
     expect(listPollMs(undefined)).toBe(false);
   });

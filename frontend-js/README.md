@@ -122,7 +122,8 @@ Requests (`/requests`) lists every reader's requests one item per book, grouped 
 book stands (Needs you, On its way, Looking, Stuck, Ready; a book whose requests were all
 cancelled is left out), beside a pane with the selected book's request, picked by `?book=`
 (the first book when it is absent). On a phone the list stands alone and each item opens the
-book's request page, which then offers "‹ Requests" back. The user menu links it while the
+book's request page, which then offers "‹ Requests" back (a request started from a wishlist
+row offers "← Back to Wishlists" the same way). The user menu links it while the
 server has book requests on; with them off it is Not Found. A book's request page
 (`/books/:uuid/request?id=`) and the pane are one component: the book, a lane for the request
 and for each other one still going (who asked and when, a Looking → Choose a version → On its

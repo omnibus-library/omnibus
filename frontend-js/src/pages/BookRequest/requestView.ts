@@ -1,7 +1,7 @@
 import {
   ApiError,
   type BookRequest,
-  isMoving,
+  isLive,
   type RequestKind,
   type RequestListing,
   type RequestState,
@@ -80,15 +80,29 @@ export const isDownloading = ({
 export const isCancellable = (
   request: Pick<BookRequest, "state" | "progress">,
 ) =>
-  request.state === "looking" ||
-  request.state === "choose" ||
-  request.state === "chosen" ||
-  isDownloading(request);
+  request.state === "on_its_way"
+    ? isDownloading(request)
+    : isLive(request.state);
 
-/** A download's progress as a whole percent, rounded down so the bar never reads done early. */
-export const progressPercent = (progress: number | null) =>
+/** A download's progress as a whole percent, rounded down and held under 100 until it is done, so the bar never reads done early. */
+export function progressPercent(progress: number | null) {
   // Rounded to a hundredth of a percent first, so 0.29 * 100 = 28.999… still reads 29.
-  Math.floor(Math.round((progress ?? 0) * 1e4) / 100);
+  const percent = Math.floor(Math.round((progress ?? 0) * 1e4) / 100);
+  return progress !== null && progress < 1 ? Math.min(percent, 99) : percent;
+}
+
+/** The percent a download shows while it runs; `null` before the client reports, once it is complete, or for any other state. */
+export const downloadPercent = (
+  request: Pick<BookRequest, "state" | "progress">,
+) =>
+  isDownloading(request) && request.progress !== null
+    ? progressPercent(request.progress)
+    : null;
+
+/** The version a request picked, if any. */
+export const pickedVersion = (
+  request: Pick<BookRequest, "versions" | "chosenResultId">,
+) => request.versions.find((v) => v.id === request.chosenResultId);
 
 /** How long the Undo toast stays: until a second and a half before the server's `cancelAt` (Unix seconds), so Undo is never offered after the grace. */
 export const undoToastMs = (cancelAt: number, now: number) =>
@@ -207,11 +221,11 @@ const versionFacts = (version: RequestVersion) => {
   return [version.format ?? "Unknown", ...(size ? [size] : [])];
 };
 
-/** What happened to a request, only from what was recorded: "Cancelled by you · EPUB · 2.4 MB · stopped at 40%". */
-export function requestFacts(
+/** What happened to a request, only from what was recorded: its `head` ("Cancelled by you") and the `details` after it (the version and how far it got). */
+export function factParts(
   { request, cancelledByName }: RequestListing,
   viewer: UserId,
-): string {
+): { head: string; details: string[] } {
   const canceller =
     request.cancelledBy === viewer ? "you" : (cancelledByName ?? null);
   const head =
@@ -220,17 +234,25 @@ export function requestFacts(
       : canceller
         ? `Cancelled by ${canceller}`
         : "Cancelled";
-  const picked = request.versions.find((v) => v.id === request.chosenResultId);
+  const picked = pickedVersion(request);
   const ended = request.state === "cancelled" || request.state === "stuck";
   const stoppedShort =
     ended && request.progress !== null && request.progress < 1;
-  return [
+  return {
     head,
-    ...(picked ? versionFacts(picked) : []),
-    ...(stoppedShort
-      ? [`stopped at ${progressPercent(request.progress)}%`]
-      : []),
-  ].join(" · ");
+    details: [
+      ...(picked ? versionFacts(picked) : []),
+      ...(stoppedShort
+        ? [`stopped at ${progressPercent(request.progress)}%`]
+        : []),
+    ],
+  };
+}
+
+/** What happened to a request in one line: "Cancelled by you · EPUB · 2.4 MB · stopped at 40%". */
+export function requestFacts(listing: RequestListing, viewer: UserId): string {
+  const { head, details } = factParts(listing, viewer);
+  return [head, ...details].join(" · ");
 }
 
 /** One line per version the request gave up for another, keyed by the version's id. */
@@ -279,10 +301,6 @@ export function offersRequestAgain(
   );
 }
 
-/** Whether a request is still going for its reader: looking, choosing, picked or downloading. */
-export const isLive = (state: RequestState) =>
-  state === "choose" || isMoving(state);
-
 /** A book's requests besides the one on screen: those still going get a lane of their own, and the history keeps the cancelled and stuck ones and any that swapped a version. */
 export function splitBookRequests(
   listings: readonly RequestListing[],
@@ -308,15 +326,21 @@ export const historyDay = (unixSecs: number, timeZone?: string) =>
     timeZone,
   }).format(unixSecs * 1000);
 
-/** Whether the page was opened from the Requests list, which hands this router state over. */
-export const cameFromRequests = (state: unknown) =>
-  typeof state === "object" &&
-  state !== null &&
-  "from" in state &&
-  state.from === "requests";
+/** Which list opened the page, from the router state its link handed over; `null` for any other way in. */
+export function cameFrom(state: unknown): "requests" | "wishlists" | null {
+  if (typeof state !== "object" || state === null || !("from" in state)) {
+    return null;
+  }
+  return state.from === "requests" || state.from === "wishlists"
+    ? state.from
+    : null;
+}
 
 /** The router state a link from the Requests list carries. */
 export const FROM_REQUESTS = { from: "requests" } as const;
+
+/** The router state a request started from a wishlist carries. */
+export const FROM_WISHLISTS = { from: "wishlists" } as const;
 
 /** One step of a lane's stepper: done, the one it is on, or still to come. */
 export type RequestStep = {
@@ -344,10 +368,6 @@ export function stepsFor(
   const status = (step: number): RequestStep["status"] =>
     step < at ? "done" : step === at ? "current" : "todo";
   const found = request.versions.length;
-  const downloading =
-    request.state === "on_its_way" &&
-    request.progress !== null &&
-    request.progress < 1;
   return [
     {
       label: at > 0 && found > 0 ? `Looking · ${found} found` : "Looking",
@@ -362,19 +382,23 @@ export function stepsFor(
     {
       label: "On its way",
       status: status(2),
-      percent: downloading ? progressPercent(request.progress) : null,
+      percent: downloadPercent(request),
     },
     { label: "Ready", status: status(3), percent: null },
   ];
 }
 
-/** How long a download has left from `now` to `expectedDoneAt` (Unix seconds), roughly; `null` when the client can't tell. */
+/** How long a download has left at `now` (Unix seconds), roughly; `null` when the client can't tell, the time has come, or the download is complete. */
 export function timeLeft(
-  expectedDoneAt: number | null,
+  {
+    expectedDoneAt,
+    progress,
+  }: Pick<BookRequest, "expectedDoneAt" | "progress">,
   now: number,
 ): string | null {
-  if (expectedDoneAt === null) return null;
+  if (expectedDoneAt === null || (progress ?? 0) >= 1) return null;
   const secs = expectedDoneAt - now;
+  if (secs <= 0) return null;
   if (secs < 60) return "less than a minute left";
   const minutes = Math.round(secs / 60);
   if (minutes < 60) return `about ${minutes} min left`;

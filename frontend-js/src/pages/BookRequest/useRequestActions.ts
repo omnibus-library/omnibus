@@ -61,8 +61,11 @@ export function useCancel(id: number, refocus: () => void) {
     },
     onError: (error) => {
       toast(`Couldn’t cancel: ${messageOf(error)}`);
-      // The refusal may mean the request moved on meanwhile, so the lists read it again.
-      return client.invalidateQueries({ queryKey: REQUEST_LISTS_KEY });
+      // The refusal may mean the request moved on meanwhile, so it and the lists are read again.
+      return Promise.all([
+        client.invalidateQueries({ queryKey: bookRequestQuery(id).queryKey }),
+        client.invalidateQueries({ queryKey: REQUEST_LISTS_KEY }),
+      ]);
     },
   });
 }
@@ -79,6 +82,6 @@ export function useSwap(id: number, onSwapped: () => void) {
       onSwapped();
       return answer(swapped);
     },
-    onError: (error) => toast(`Couldn’t pick another: ${messageOf(error)}`),
+    onError: (error) => toast(`Couldn’t choose another: ${messageOf(error)}`),
   });
 }

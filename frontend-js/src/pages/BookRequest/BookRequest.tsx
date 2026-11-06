@@ -37,11 +37,17 @@ import { ToastProvider, useToast } from "../../components/Toast/Toast";
 import { UserAvatar } from "../../components/UserAvatar/UserAvatar";
 import { nowSecs, recency } from "../../format";
 import { useCurrentUser } from "../../session";
+import { PHONE_QUERY, useMediaQuery } from "../../useMediaQuery";
 import { bookQuery } from "../BookDetail/queries";
-import { RequestAgain, RequestHistory } from "./RequestHistory";
 import {
-  cameFromRequests,
+  type DossierVariant,
+  RequestAgain,
+  RequestHistory,
+} from "./RequestHistory";
+import {
+  cameFrom,
   canActOn,
+  downloadPercent,
   firstShown,
   isCancellable,
   isDownloading,
@@ -50,6 +56,7 @@ import {
   kindLabel,
   offersRequestAgain,
   pickedMeta,
+  pickedVersion,
   progressPercent,
   type RequestStep,
   requestPath,
@@ -58,13 +65,14 @@ import {
   splitBookRequests,
   stateView,
   stepsFor,
-  timeLeft,
+  versionSize,
   versionSource,
   versionsFound,
   wishersLine,
 } from "./requestView";
 import { useNowPast } from "./useNowPast";
 import { messageOf, useAnswer, useCancel, useSwap } from "./useRequestActions";
+import { useTimeLeft } from "./useTimeLeft";
 import "./BookRequest.css";
 
 /** One version found: its release name, its source line, a Best match or Didn’t work tag, Choose, and the long form when Details is open. */
@@ -244,7 +252,7 @@ function Picked({
   children?: ReactNode;
   extra?: string | null;
 }) {
-  const picked = request.versions.find((v) => v.id === request.chosenResultId);
+  const picked = pickedVersion(request);
   const meta = [picked ? pickedMeta(picked) : "", extra ?? ""]
     .filter((part) => part)
     .join(SEP);
@@ -284,7 +292,7 @@ function Downloading({ request }: { request: Request }) {
   );
 }
 
-/** A download in its own card: the pick, its bar and its time left, with Choose another and Cancel beside. */
+/** A download in its own card: the pick, its bar and its time left, with Choose another and Cancel beside. A phone heads the card with the format and size, dims the release name, ends on the percent and time left, and sets the buttons below. */
 function Download({
   request,
   actions,
@@ -292,19 +300,52 @@ function Download({
   request: Request;
   actions: ReactNode;
 }) {
-  const now = useNowPast(request.expectedDoneAt);
+  const phone = useMediaQuery(PHONE_QUERY);
+  const left = useTimeLeft(request);
+  if (!phone) {
+    return (
+      <div className="rq-download">
+        <Picked request={request} extra={left}>
+          <Downloading request={request} />
+        </Picked>
+        {actions}
+      </div>
+    );
+  }
+  const picked = pickedVersion(request);
+  const percent = downloadPercent(request);
+  const heading = picked
+    ? [picked.format, versionSize(picked.sizeBytes)]
+        .filter((part) => part !== null)
+        .join(SEP)
+    : "Your pick";
   return (
-    <div className="rq-download">
-      <Picked request={request} extra={timeLeft(request.expectedDoneAt, now)}>
-        <Downloading request={request} />
-      </Picked>
+    <>
+      <div className="rq-download" data-testid="request-chosen">
+        <div className="rq-picked">
+          <p className="rq-download-heading">{heading}</p>
+          {picked && <p className="rq-version-meta">{picked.title}</p>}
+          <Downloading request={request} />
+          {(percent !== null || left) && (
+            <p className="rq-version-meta">
+              {percent !== null && (
+                <span data-testid="request-percent">{percent}%</span>
+              )}
+              {percent !== null && left && SEP}
+              {left}
+            </p>
+          )}
+        </div>
+      </div>
       {actions}
-    </div>
+    </>
   );
 }
 
 /** Where a request stands as steps: Looking, Choose a version, On its way, Ready. */
 function Steps({ steps }: { steps: readonly RequestStep[] }) {
+  // A phone shows the download's percent in its card instead.
+  const phone = useMediaQuery(PHONE_QUERY);
   return (
     <ol className="rq-steps" aria-label="Progress of this request">
       {steps.map((step) => (
@@ -317,7 +358,7 @@ function Steps({ steps }: { steps: readonly RequestStep[] }) {
           <span className="rq-step-dot" aria-hidden="true" />
           <span>
             {step.label}
-            {step.percent !== null && (
+            {step.percent !== null && !phone && (
               <>
                 {" · "}
                 <span data-testid="request-percent">{step.percent}%</span>
@@ -477,19 +518,33 @@ function Looking({
   );
 }
 
-/** Who made a request and how long ago: "requested by (AL) Ada Lovelace · 2h ago". */
-function Requester({ request, name }: { request: Request; name: string }) {
+/** Who made a request and how long ago: "requested by (AL) Ada Lovelace · 2h ago"; a phone drops "requested by". */
+function Requester({
+  request,
+  listing,
+}: {
+  request: Request;
+  listing: RequestListing;
+}) {
   const viewer = useCurrentUser();
+  const phone = useMediaQuery(PHONE_QUERY);
   const mine = request.userId === viewer.id;
+  const user = {
+    id: request.userId,
+    name: listing.requesterName,
+    hasAvatar: listing.requesterHasAvatar,
+  };
   return (
     <p className="rq-requester" data-testid="request-requester">
-      <span>· requested by</span>{" "}
+      {!phone && <span>· requested by</span>}{" "}
       <UserAvatar
-        user={{ id: request.userId, name, hasAvatar: false }}
+        user={user}
         className="rq-avatar"
         photoClassName="rq-avatar-photo"
       />{" "}
-      <span className="rq-requester-name">{mine ? "You" : name}</span>{" "}
+      <span className="rq-requester-name">
+        {mine ? "You" : listing.requesterName}
+      </span>{" "}
       <span>· {recency(nowSecs(), request.createdAt)}</span>
     </p>
   );
@@ -499,9 +554,12 @@ function Requester({ request, name }: { request: Request; name: string }) {
 function Lane({
   request,
   context,
+  main,
 }: {
   request: Request;
   context: LaneContext;
+  /** The request the page or pane is for, rather than another one still going for the book. */
+  main: boolean;
 }) {
   const viewer = useCurrentUser();
   const titleId = useId();
@@ -514,14 +572,14 @@ function Lane({
   const now = useNowPast(request.cancelAt);
   // Anyone may read a request; only its maker, or an admin, may act on it.
   const canAct = canActOn(viewer, request);
-  const name = context.listings.find(
-    (l) => l.request.id === request.id,
-  )?.requesterName;
-  const cancelLabel =
-    request.userId === viewer.id
-      ? undefined
-      : `Cancel ${name ?? "another reader"}’s request for ${context.title}`;
-  const actions = canAct && isCancellable(request) && (
+  const listing = context.listings?.find((l) => l.request.id === request.id);
+  const mine = request.userId === viewer.id;
+  // Another reader's Cancel names whose request it is, so it waits for the list that says.
+  const cancelLabel = mine
+    ? undefined
+    : listing &&
+      `Cancel ${listing.requesterName}’s request for ${context.title}`;
+  const actions = canAct && isCancellable(request) && (mine || cancelLabel) && (
     <Actions
       request={request}
       cancel={cancel}
@@ -529,6 +587,7 @@ function Lane({
       cancelLabel={cancelLabel}
     />
   );
+  const Heading = context.variant === "pane" ? "h3" : "h2";
   const { heading, note } = stateView(request.state, request.stuckReason);
   const steps = stepsFor(request);
   return (
@@ -536,14 +595,19 @@ function Lane({
       className="rq-panel rq-lane"
       aria-labelledby={titleId}
       data-needs-you={request.state === "choose" && canAct}
-      data-testid={`request-lane-${request.kind}`}
+      data-testid={`${main ? "request-lane" : "request-other-lane"}-${request.kind}`}
     >
       <div className="rq-lane-head">
         <span className="rq-chip">{kindChip(request.kind)}</span>
-        <h2 ref={title} tabIndex={-1} id={titleId} className="rq-lane-title">
+        <Heading
+          ref={title}
+          tabIndex={-1}
+          id={titleId}
+          className="rq-lane-title"
+        >
           {kindLabel(request.kind)}
-        </h2>
-        {name !== undefined && <Requester request={request} name={name} />}
+        </Heading>
+        {listing && <Requester request={request} listing={listing} />}
       </div>
       {/* The stepper shows where it stands; the words stay for a screen reader to announce. */}
       <p
@@ -579,11 +643,20 @@ function Lane({
       {request.state === "stuck" && (
         <Stuck request={request} canAct={canAct} onTried={focusTitle} />
       )}
-      {offersRequestAgain(request, viewer, context.requests, now) && (
-        <div className="rq-actions">
-          <RequestAgain uuid={request.bookUuid} stay={context.stay} />
-        </div>
-      )}
+      {context.listings &&
+        offersRequestAgain(
+          request,
+          viewer,
+          context.listings.map((l) => l.request),
+          now,
+        ) && (
+          <div className="rq-actions">
+            <RequestAgain
+              uuid={request.bookUuid}
+              stay={context.variant === "pane"}
+            />
+          </div>
+        )}
     </section>
   );
 }
@@ -592,12 +665,9 @@ function Lane({
 type LaneContext = {
   /** The book's title, for an admin's Cancel label. */
   title: string;
-  /** The book's requests as listed, for who made each; empty until read. */
-  listings: readonly RequestListing[];
-  /** The same requests, for whether Request again would only return one already going. */
-  requests: readonly Request[];
-  /** Request again stays on the page rather than opening the new request. */
-  stay: boolean;
+  /** The book's requests as listed, for who made each and whether Request again would only return one going; `undefined` until read. */
+  listings: readonly RequestListing[] | undefined;
+  variant: DossierVariant;
 };
 
 /** Another reader's request still going for the book, in a lane of its own. */
@@ -608,21 +678,20 @@ function OtherLane({ id, context }: { id: number; context: LaneContext }) {
       <Loading kind="section" label="Reading this request…" />
     ) : null;
   }
-  return <Lane request={request.data} context={context} />;
+  return <Lane request={request.data} context={context} main={false} />;
 }
 
-/** Where a book's requests are shown: on its own page, or in the Requests list's pane. */
-export type DossierVariant = "page" | "pane";
-
-/** A book's requests: the book above, a lane for the request asked for and each other one still going, and the book's history below. Shared by the book's request page and the Requests list's detail pane. */
+/** A book's requests: the book above, a lane for the request asked for and each other one still going, and the book's history below. Shared by the book's request page and the Requests list's detail pane; `focusTitle` moves focus to the book's title once it shows. */
 export function RequestDossier({
   uuid,
   id,
   variant,
+  focusTitle = false,
 }: {
   uuid: BookUuid;
   id: number;
   variant: DossierVariant;
+  focusTitle?: boolean;
 }) {
   const book = useQuery(bookQuery(uuid));
   const request = useQuery(bookRequestQuery(id));
@@ -631,6 +700,11 @@ export function RequestDossier({
   const wishlists = useQuery(wishlistBooksQuery("all"));
   const viewer = useCurrentUser();
   const { state } = useLocation();
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const shown = book.data !== undefined && request.data !== undefined;
+  useEffect(() => {
+    if (focusTitle && shown) titleRef.current?.focus();
+  }, [focusTitle, shown]);
   const back = `/books/${uuid}`;
   // A failed background poll keeps showing what was last read.
   if (book.data === undefined || request.data === undefined) {
@@ -651,16 +725,13 @@ export function RequestDossier({
     return <Navigate replace to={requestPath(request.data.bookUuid, id)} />;
   }
   const { title, authors } = book.data;
-  const wanted = wishlists.data?.find((w) => w.uuid === uuid)?.wantedBy ?? [];
-  const wishers = wishersLine(wanted, viewer.id);
-  const listings = listed.data ?? [];
-  const context: LaneContext = {
-    title,
-    listings,
-    requests: listings.map((l) => l.request),
-    stay: variant === "pane",
-  };
+  // Unknown until the wishlists answer: the clause stays out rather than claiming nobody.
+  const wanted = wishlists.data?.find((w) => w.uuid === uuid)?.wantedBy;
+  const wishers = wanted ? wishersLine(wanted, viewer.id) : null;
+  const split = listed.data && splitBookRequests(listed.data, id);
+  const context: LaneContext = { title, listings: listed.data, variant };
   const Title = variant === "page" ? "h1" : "h2";
+  const from = variant === "page" ? cameFrom(state) : null;
   return (
     <div
       className="rq-page"
@@ -668,9 +739,14 @@ export function RequestDossier({
       data-testid={variant === "page" ? "request-page" : "requests-pane"}
     >
       {variant === "page" && <PageTitle page={`Request ${title}`} />}
-      {variant === "page" && cameFromRequests(state) && (
+      {from === "requests" && (
         <Link className="rq-back" to="/requests">
           ‹ Requests
+        </Link>
+      )}
+      {from === "wishlists" && (
+        <Link className="rq-back" to="/wishlists">
+          ← Back to Wishlists
         </Link>
       )}
       <header className="rq-head">
@@ -681,7 +757,12 @@ export function RequestDossier({
           />
         </div>
         <div className="rq-head-text">
-          <Title className="rq-title" data-testid="request-title">
+          <Title
+            ref={titleRef}
+            tabIndex={-1}
+            className="rq-title"
+            data-testid="request-title"
+          >
             {title}
           </Title>
           {(authors.length > 0 || wishers) && (
@@ -698,15 +779,24 @@ export function RequestDossier({
           Open book page
         </Link>
       </header>
-      <Lane key={request.data.id} request={request.data} context={context} />
-      {splitBookRequests(listings, id).lanes.map((other) => (
+      <Lane
+        key={request.data.id}
+        request={request.data}
+        context={context}
+        main
+      />
+      {split?.lanes.map((other) => (
         <OtherLane
           key={other.request.id}
           id={other.request.id}
           context={context}
         />
       ))}
-      <RequestHistory uuid={uuid} shown={id} stay={context.stay} />
+      <RequestHistory
+        listed={listed}
+        history={split?.history}
+        variant={variant}
+      />
     </div>
   );
 }

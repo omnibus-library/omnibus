@@ -11,6 +11,7 @@ import {
   requestFake,
 } from "../../testing/requestHandlers";
 import { WIRE_ADA } from "../../testing/wire";
+import { PHONE } from "../Wishlists/Wishlists.stories.shared";
 import { BookRequest } from "./BookRequest";
 
 const UUID = HYPERION.unique_identifier;
@@ -1112,7 +1113,8 @@ export const AnotherReadersLiveRequestGetsALaneOfItsOwn: Story = {
     await waitFor(() =>
       expect(canvas.getAllByTestId("request-state")).toHaveLength(2),
     );
-    const [mine, theirs] = canvas.getAllByTestId("request-lane-ebook");
+    const mine = canvas.getByTestId("request-lane-ebook");
+    const theirs = canvas.getByTestId("request-other-lane-ebook");
 
     await expect(mine).toHaveTextContent("Looking");
     await expect(theirs).toHaveTextContent("Grace Hopper");
@@ -1279,16 +1281,64 @@ export const ABookWithNoOtherRequestShowsNoHistory: Story = {
   },
 };
 
+let historyTries = 0;
+
 export const AFailedHistoryReadOffersTryAgain: Story = {
   beforeEach({ msw }) {
-    msw.use(failing("get", "/api/books/:uuid/requests", 500));
+    historyTries = 0;
+    msw.use(
+      http.get("/api/books/:uuid/requests", () => {
+        historyTries += 1;
+        return historyTries === 1
+          ? new HttpResponse("down", { status: 500 })
+          : HttpResponse.json([
+              aWireListing({ request: aWireRequest() }),
+              aWireListing({ request: CANCELLED_EARLIER }),
+            ]);
+      }),
+    );
   },
-  play: async ({ canvas }) => {
+  play: async ({ canvas, userEvent }) => {
     await expect(await canvas.findByRole("alert")).toHaveTextContent(
       "Couldn’t read this book’s request history.",
     );
+
+    await userEvent.click(canvas.getByRole("button", { name: "Try again" }));
+
     await expect(
-      canvas.getByRole("button", { name: "Try again" }),
+      await canvas.findByTestId("request-history-row"),
+    ).toHaveTextContent("Cancelled by you");
+    await expect(canvas.queryByRole("alert")).toBeNull();
+  },
+};
+
+export const AnAdminsCancelWaitsForWhoseRequestItIs: Story = {
+  beforeEach({ msw }) {
+    held = deferred();
+    fake = requestFake([aWireRequest({ user_id: 2 })], { names: GRACE });
+    msw.use(
+      http.get("/api/books/:uuid/requests", async () => {
+        await held.promise;
+        return HttpResponse.json([
+          aWireListing({
+            request: aWireRequest({ user_id: 2 }),
+            requester_name: "Grace Hopper",
+          }),
+        ]);
+      }),
+      bookHandler(HYPERION),
+      ...fake.handlers,
+    );
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("request-looking");
+
+    await expect(canvas.queryByTestId("request-cancel")).toBeNull();
+    held.release();
+    await expect(
+      await canvas.findByRole("button", {
+        name: "Cancel Grace Hopper’s request for Hyperion",
+      }),
     ).toBeInTheDocument();
   },
 };
@@ -1338,5 +1388,36 @@ export const ACancelledRequestOffersRequestAgain: Story = {
     await waitFor(() =>
       expect(fake.writes).toEqual([{ kind: "start", uuid: UUID }]),
     );
+  },
+};
+
+export const OnAPhoneTheDownloadAndHistoryReadAsTheCompSays: Story = {
+  ...PHONE,
+  parameters: { ...PHONE.parameters, user: READER },
+  beforeEach({ msw }) {
+    msw.use(
+      ...withHistory(
+        {
+          ...DOWNLOADING,
+          expected_done_at: Math.floor(Date.now() / 1000) + 180,
+        },
+        CANCELLED_EARLIER,
+      ),
+    );
+  },
+  play: async ({ canvas }) => {
+    const card = await canvas.findByTestId("request-chosen");
+    await expect(within(card).getByText("EPUB · 2.4 MB")).toBeVisible();
+    await expect(card).toHaveTextContent("42% · about 3 min left");
+    await expect(
+      canvas.getByRole("listitem", { current: "step" }),
+    ).toHaveTextContent(/^On its way$/);
+    await expect(canvas.getByTestId("request-requester")).toHaveTextContent(
+      /^AL You · just now$/,
+    );
+
+    const row = await canvas.findByTestId("request-history-row");
+    await expect(row).toHaveTextContent("Ebook cancelled by you · Oct 12");
+    await expect(row).toHaveTextContent("EPUB · 2.4 MB · stopped at 40%");
   },
 };

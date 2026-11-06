@@ -135,10 +135,39 @@ describe("itemLine", () => {
       { state: "stuck", stuck_reason: "stopped_moving" },
       "Ebook · stuck · stopped moving",
     ],
-    ["ready", { state: "ready" }, "Ebook · ready"],
+    ["ready", { state: "ready" }, "Ebook · ready to read"],
+    [
+      "ready",
+      { state: "ready", kind: "audiobook" },
+      "Audiobook · ready to listen",
+    ],
     ["looking", { state: "looking", kind: "audiobook" }, "Audiobook · looking"],
   ] as const)("reads a %s %o as %s", (group, request, expected) => {
-    expect(itemLine(listing("b", request), group)).toBe(expected);
+    expect(itemLine(listing("b", request), group, false)).toBe(expected);
+  });
+
+  describe("on a phone", () => {
+    it.each([
+      [
+        "on_its_way",
+        { state: "on_its_way", progress: 0.62, chosen_result_id: EPUB.id },
+        "Ebook · 62%",
+      ],
+      ["on_its_way", { state: "on_its_way" }, "Ebook · on its way"],
+      [
+        "stuck",
+        { state: "stuck", stuck_reason: "not_found" },
+        "Ebook · couldn’t find it",
+      ],
+      [
+        "looking",
+        { state: "looking", kind: "audiobook" },
+        "Audiobook · looking for a version",
+      ],
+      ["needs_you", { state: "choose" }, "Ebook · choose a version"],
+    ] as const)("reads a %s %o as %s", (group, request, expected) => {
+      expect(itemLine(listing("b", request), group, true)).toBe(expected);
+    });
   });
 });
 

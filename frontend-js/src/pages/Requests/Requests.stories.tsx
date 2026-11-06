@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { HttpResponse, http } from "msw";
 import { Route, Routes, useLocation } from "react-router";
 import { expect, waitFor, within } from "storybook/test";
-import { failing } from "../../testing/handlers";
+import { deferred, failing } from "../../testing/handlers";
 import {
   aWireListing,
   aWireRequest,
@@ -294,11 +294,17 @@ export const AFailedRereadKeepsTheListShown: Story = {
       }),
     );
   },
-  play: async ({ canvas }) => {
+  play: async ({ canvas, userEvent }) => {
     await canvas.findByTestId("requests-item");
 
-    // A looking request has the list read again every couple of seconds; that read fails.
-    await waitFor(() => expect(reads).toBeGreaterThan(1), { timeout: 5000 });
+    // A cancel has the list read again; that read fails.
+    await userEvent.click(
+      await within(await canvas.findByTestId("requests-pane")).findByRole(
+        "button",
+        { name: "Cancel" },
+      ),
+    );
+    await waitFor(() => expect(reads).toBeGreaterThan(1));
     await expect(canvas.getByTestId("requests-item")).toHaveTextContent(
       "Hyperion",
     );
@@ -357,5 +363,71 @@ export const OnAPhoneTheListStandsAlone: Story = {
     await canvas.findAllByTestId("requests-item");
 
     await expect(canvas.queryByTestId("requests-pane")).toBeNull();
+    // A phone drops the group's own word from each line.
+    await expect(
+      canvas.getAllByTestId("requests-item-line").map((l) => l.textContent),
+    ).toEqual([
+      "Ebook · choose a version",
+      "Ebook · 40%",
+      "Ebook · looking for a version",
+    ]);
+  },
+};
+
+export const RequestAgainInThePaneStaysOnTheList: Story = {
+  parameters: { path: "/requests?book=uuid-dune" },
+  play: async ({ canvas, userEvent }) => {
+    const pane = within(await canvas.findByTestId("requests-pane"));
+
+    await userEvent.click(
+      await pane.findByRole("button", { name: "Request again" }),
+    );
+
+    await waitFor(() =>
+      expect(fake.writes).toEqual([{ kind: "start", uuid: "uuid-dune" }]),
+    );
+    await expect(
+      await canvas.findByRole("link", { name: /Dune/ }),
+    ).toBeInTheDocument();
+    await expect(canvas.getByTestId("where")).toHaveTextContent(
+      "/requests?book=uuid-dune",
+    );
+  },
+};
+
+let held = deferred();
+let duneReads = 0;
+
+export const RequestAgainStaysBusyUntilTheListsAreReadAgain: Story = {
+  parameters: { path: "/requests?book=uuid-dune" },
+  beforeEach({ msw }) {
+    held = deferred();
+    duneReads = 0;
+    msw.use(
+      http.get("/api/books/uuid-dune/requests", async () => {
+        duneReads += 1;
+        if (duneReads > 1) await held.promise;
+        return HttpResponse.json([
+          aWireListing({
+            request: aWireRequest({
+              id: 2,
+              book_uuid: "uuid-dune",
+              state: "cancelled",
+            }),
+            book: DUNE,
+          }),
+        ]);
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    const pane = within(await canvas.findByTestId("requests-pane"));
+    const again = await pane.findByRole("button", { name: "Request again" });
+
+    await userEvent.click(again);
+
+    await waitFor(() => expect(duneReads).toBeGreaterThan(1));
+    await expect(again).toHaveAttribute("aria-busy", "true");
+    held.release();
   },
 };

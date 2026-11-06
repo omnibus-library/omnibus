@@ -117,8 +117,14 @@
   color: var(--ink-3);
 }
 
+/* Stays in view under the top bar while the list scrolls past it. */
 .rqs-pane {
+  position: sticky;
+  top: var(--rqs-nav-h);
+  align-self: start;
+  max-height: calc(100dvh - var(--rqs-nav-h));
   min-width: 0;
+  overflow-y: auto;
 }
 
 .rqs-failure {

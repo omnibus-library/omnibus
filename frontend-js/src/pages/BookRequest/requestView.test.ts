@@ -12,7 +12,10 @@ import {
   aWireVersion,
 } from "../../testing/requestHandlers";
 import {
+  cameFrom,
   canActOn,
+  downloadPercent,
+  factParts,
   firstShown,
   historyDay,
   holdsAudiobook,
@@ -285,6 +288,10 @@ describe("progressPercent", () => {
   it("rounds down so a bar never reads done before it is", () => {
     expect(progressPercent(0.426)).toBe(42);
     expect(progressPercent(0.999)).toBe(99);
+  });
+
+  it("never reads 100 while any of the download is left", () => {
+    expect(progressPercent(0.99996)).toBe(99);
   });
 
   it("reads a whole percent through floating-point noise", () => {
@@ -560,6 +567,17 @@ describe("splitBookRequests", () => {
   });
 });
 
+describe("cameFrom", () => {
+  it.each([
+    ["the Requests list", { from: "requests" }, "requests"],
+    ["a wishlist", { from: "wishlists" }, "wishlists"],
+    ["anywhere else", { from: "search" }, null],
+    ["no state", null, null],
+  ])("reads a page opened from %s", (_where, state, expected) => {
+    expect(cameFrom(state)).toBe(expected);
+  });
+});
+
 describe("historyDay", () => {
   it("names the day on the reader's calendar without the year", () => {
     const lateOnOct12Utc = Date.UTC(2026, 9, 12, 23) / 1000;
@@ -634,19 +652,60 @@ describe("stepsFor", () => {
 
 describe("timeLeft", () => {
   const NOW = 1_000;
+  const at = (secs: number, progress = 0.5) => ({
+    expectedDoneAt: NOW + secs,
+    progress,
+  });
 
   it.each([
+    [1, "less than a minute left"],
     [59, "less than a minute left"],
     [60, "about 1 min left"],
     [150, "about 3 min left"],
     [3599, "about 1 hour left"],
     [7200, "about 2 hours left"],
   ])("reads %s seconds to go as %s", (secs, expected) => {
-    expect(timeLeft(NOW + secs, NOW)).toBe(expected);
+    expect(timeLeft(at(secs), NOW)).toBe(expected);
   });
 
-  it("says nothing when the client can't tell", () => {
-    expect(timeLeft(null, NOW)).toBeNull();
+  it.each([
+    ["the client can't tell", { expectedDoneAt: null, progress: 0.5 }],
+    ["the time has come", at(0)],
+    ["the time has passed", at(-30)],
+    ["the download is complete", at(120, 1)],
+  ])("says nothing once %s", (_when, request) => {
+    expect(timeLeft(request, NOW)).toBeNull();
+  });
+});
+
+describe("downloadPercent", () => {
+  it.each([
+    ["a download under way", { state: "on_its_way", progress: 0.62 }, 62],
+    ["one not yet reported", { state: "on_its_way", progress: null }, null],
+    ["a complete one", { state: "on_its_way", progress: 1 }, null],
+    ["a stuck one", { state: "stuck", progress: 0.4 }, null],
+  ] as const)("shows %s as %s", (_case, request, expected) => {
+    expect(downloadPercent(request)).toBe(expected);
+  });
+});
+
+describe("factParts", () => {
+  it("splits what happened from the version and how far it got", () => {
+    const cancelled = listing(
+      {
+        state: "cancelled",
+        cancelled_by: VIEWER,
+        chosen_result_id: EPUB.id,
+        progress: 0.4,
+        versions: [EPUB],
+      },
+      "Ada Lovelace",
+    );
+
+    expect(factParts(cancelled, VIEWER)).toEqual({
+      head: "Cancelled by you",
+      details: ["EPUB", "2.4\u00a0MB", "stopped at 40%"],
+    });
   });
 });
 

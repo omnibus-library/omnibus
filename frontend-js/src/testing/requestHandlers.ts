@@ -1,4 +1,5 @@
 import { type HttpHandler, HttpResponse, http } from "msw";
+import { isLive } from "../api";
 import {
   type BookRequest,
   ChooseVersion,
@@ -73,6 +74,7 @@ export function aWireListing(
     request: aWireRequest(),
     book: HYPERION,
     requester_name: "Ada Lovelace",
+    requester_has_avatar: false,
     cancelled_by_name: null,
     ...overrides,
   };
@@ -84,13 +86,6 @@ export type ListingContext = {
   names?: Record<number, string>;
   viewer?: number;
 };
-
-const LIVE: readonly BookRequest["state"][] = [
-  "looking",
-  "choose",
-  "chosen",
-  "on_its_way",
-];
 
 /** The writes the fake answered, in order. */
 export type RequestWrite =
@@ -129,6 +124,7 @@ export function requestFake(
       books.find((b) => b.unique_identifier === r.book_uuid) ??
       aWireBook({ unique_identifier: r.book_uuid }),
     requester_name: names[r.user_id] ?? `Reader ${r.user_id}`,
+    requester_has_avatar: false,
     cancelled_by_name:
       r.cancelled_by === null || r.cancelled_by === undefined
         ? null
@@ -170,7 +166,7 @@ export function requestFake(
           r.user_id === viewer &&
           r.book_uuid === uuid &&
           r.kind === "ebook" &&
-          LIVE.includes(r.state),
+          isLive(r.state),
       );
       if (going) return HttpResponse.json(going);
       const made = aWireRequest({
