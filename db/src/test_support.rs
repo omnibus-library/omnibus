@@ -44,6 +44,24 @@ pub fn solid_color_png(r: u8, g: u8, b: u8, w: u32, h: u32) -> Vec<u8> {
     bytes
 }
 
+/// Build an in-memory PNG of equal horizontal bands, one per colour, top to bottom — a
+/// *decodable* multi-colour cover.
+pub fn striped_png(stripes: &[[u8; 3]], w: u32, h: u32) -> Vec<u8> {
+    let band = (h / stripes.len() as u32).max(1);
+    let img = image::RgbImage::from_fn(w, h, |_, y| {
+        let i = ((y / band) as usize).min(stripes.len() - 1);
+        image::Rgb(stripes[i])
+    });
+    let mut bytes = Vec::new();
+    image::DynamicImage::ImageRgb8(img)
+        .write_to(
+            &mut std::io::Cursor::new(&mut bytes),
+            image::ImageFormat::Png,
+        )
+        .expect("png encode");
+    bytes
+}
+
 /// Build a unique temp directory per test invocation. Rust runs unit
 /// tests in parallel by default, so a fixed path under `temp_dir()`
 /// would collide between tests (and between repeated runs).
