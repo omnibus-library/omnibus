@@ -9,6 +9,7 @@ import {
   StartRequest,
   StartRequestFromMeta,
 } from "../api/generated/schemas";
+import { svg } from "./handlers";
 import { aWireBook } from "./wire";
 
 // A stateful MSW fake of the book-request routes, in the shape the server sends them.
@@ -54,6 +55,7 @@ export function aWireRequest(
     note: null,
     created_at: NOW,
     updated_at: NOW,
+    cover_offer: null,
     versions: [],
     ...overrides,
   };
@@ -96,7 +98,9 @@ export type RequestWrite =
   | { kind: "cancel"; id: number }
   | { kind: "undo"; id: number }
   | { kind: "swap"; id: number }
-  | { kind: "choose"; id: number; resultId: number };
+  | { kind: "choose"; id: number; resultId: number }
+  | { kind: "take-cover"; id: number }
+  | { kind: "keep-cover"; id: number };
 
 export type RequestFake = {
   handlers: HttpHandler[];
@@ -296,6 +300,23 @@ export function requestFake(
       fake.writes.push({ kind: "swap", id: found.id });
       return HttpResponse.json(giveUpPick(found));
     }),
+  );
+  /** A cover write answers the request with its offer gone, or refuses when none is on. */
+  const settleCover =
+    (kind: "take-cover" | "keep-cover") =>
+    ({ params }: { params: Record<string, unknown> }) => {
+      const found = find(params.id);
+      if (!found) return refuse(404);
+      if (!found.cover_offer) return refuse(409);
+      fake.writes.push({ kind, id: found.id });
+      const settled = { ...found, cover_offer: null };
+      requests.set(settled.id, settled);
+      return HttpResponse.json(settled);
+    };
+  fake.handlers.push(
+    http.get("/api/requests/:id/cover", svg),
+    http.post("/api/requests/:id/cover", settleCover("take-cover")),
+    http.delete("/api/requests/:id/cover", settleCover("keep-cover")),
   );
   return fake;
 }

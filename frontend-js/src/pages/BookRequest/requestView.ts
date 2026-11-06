@@ -108,9 +108,9 @@ export const pickedVersion = (
 export const undoToastMs = (cancelAt: number, now: number) =>
   Math.max(0, (cancelAt - now - 1.5) * 1000);
 
-/** A request's own page: the book's address with `/request`. */
-export const requestPath = (uuid: string, id: number) =>
-  `/books/${uuid}/request?id=${id}`;
+/** A book's request: the Requests page with the book selected. */
+export const requestPath = (uuid: string) =>
+  `/requests?book=${encodeURIComponent(uuid)}`;
 
 /** A version's size, kept on one line, or `null` when the source did not say. */
 export const versionSize = (bytes: number | null) =>
@@ -155,6 +155,14 @@ export const pickedMeta = (
     .filter((part) => part !== null)
     .join(SEP);
 
+/** The heading a phone gives a picked version: its format and size, each left out when unknown. */
+export const pickedHeading = (
+  version: Pick<RequestVersion, "format" | "sizeBytes">,
+) =>
+  [version.format, versionSize(version.sizeBytes)]
+    .filter((part) => part !== null)
+    .join(SEP);
+
 /** The caption over the versions: how many can be chosen, and that the best match leads when one does. */
 export function versionsFound(versions: readonly RequestVersion[]) {
   const choosable = versions.filter((v) => !v.rejected);
@@ -174,6 +182,18 @@ export function firstShown(versions: readonly RequestVersion[]) {
     .slice(0, SHOWN_AT_FIRST);
   return versions.filter((v) => v.rejected || offerable.includes(v));
 }
+
+/** A size's "×", with a non-breaking space either side so a size never splits across lines. */
+const TIMES = "\u00a0×\u00a0";
+
+/** The cover offer's sizes in pixels, as the card says them; it never says where the existing cover came from. */
+export const coverSizesLine = ({
+  width,
+  height,
+  currentWidth,
+  currentHeight,
+}: NonNullable<BookRequest["coverOffer"]>) =>
+  `Its cover is ${width}${TIMES}${height}. The existing one is ${currentWidth}${TIMES}${currentHeight}.`;
 
 /** Why starting a request failed, as a sentence for a toast. */
 export function startFailure(error: unknown): string {
@@ -301,19 +321,20 @@ export function offersRequestAgain(
   );
 }
 
-/** A book's requests besides the one on screen: those still going get a lane of their own, and the history keeps the cancelled and stuck ones and any that swapped a version. */
+/** A book's requests besides the one on screen: those still going, and stuck ones that await a Try again, get a lane of their own; the history keeps the cancelled ones and any that swapped a version. */
 export function splitBookRequests(
   listings: readonly RequestListing[],
   shown: number,
 ) {
   const others = listings.filter((l) => l.request.id !== shown);
   return {
-    lanes: others.filter((l) => isLive(l.request.state)),
+    lanes: others.filter(
+      ({ request }) => isLive(request.state) || request.state === "stuck",
+    ),
     history: others.filter(
       ({ request }) =>
         request.state === "cancelled" ||
-        request.state === "stuck" ||
-        request.versions.some((v) => v.rejected),
+        (request.state !== "stuck" && request.versions.some((v) => v.rejected)),
     ),
   };
 }
@@ -326,18 +347,12 @@ export const historyDay = (unixSecs: number, timeZone?: string) =>
     timeZone,
   }).format(unixSecs * 1000);
 
-/** Which list opened the page, from the router state its link handed over; `null` for any other way in. */
-export function cameFrom(state: unknown): "requests" | "wishlists" | null {
-  if (typeof state !== "object" || state === null || !("from" in state)) {
-    return null;
-  }
-  return state.from === "requests" || state.from === "wishlists"
-    ? state.from
-    : null;
-}
-
-/** The router state a link from the Requests list carries. */
-export const FROM_REQUESTS = { from: "requests" } as const;
+/** Whether a wishlist opened the page, from the router state its link handed over. */
+export const fromWishlists = (state: unknown) =>
+  typeof state === "object" &&
+  state !== null &&
+  "from" in state &&
+  state.from === FROM_WISHLISTS.from;
 
 /** The router state a request started from a wishlist carries. */
 export const FROM_WISHLISTS = { from: "wishlists" } as const;

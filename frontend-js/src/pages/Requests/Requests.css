@@ -174,7 +174,7 @@
   font-size: 14px;
 }
 
-/* A phone shows the list alone; each item opens its book's request page. */
+/* A phone shows the list alone; each item opens its book full screen at /requests?book=. */
 @media (max-width: 720px) {
   .rqs-page {
     grid-template-columns: minmax(0, 1fr);

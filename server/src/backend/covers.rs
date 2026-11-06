@@ -52,39 +52,37 @@ pub(super) async fn get_cover(
         Err(e) => return internal("resolve_book_id_by_uuid", e),
     };
     match db::get_cover(&state.pool, id).await {
-        Ok(Some((mime, bytes))) => {
-            let etag = content_etag(&bytes);
-            if if_none_match_hits(&headers, &etag) {
-                tracing::debug!(uuid, book_id = id, "cover: not modified (304)");
-                return not_modified(&etag);
-            }
-            tracing::debug!(
-                uuid,
-                book_id = id,
-                mime,
-                bytes = bytes.len(),
-                "cover: serving"
-            );
-            (
-                [
-                    (header::CONTENT_TYPE, mime.as_str()),
-                    (header::CACHE_CONTROL, MEDIA_CACHE_CONTROL),
-                    (header::ETAG, etag.as_str()),
-                    (header::VARY, MEDIA_VARY),
-                    // Prevent browsers from MIME-sniffing a cover into an
-                    // executable type (e.g. an SVG disguised as JPEG).
-                    (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
-                ],
-                bytes,
-            )
-                .into_response()
-        }
+        Ok(Some((mime, bytes))) => image_response(&headers, &mime, bytes),
         Ok(None) => {
             tracing::warn!(uuid, book_id = id, "cover: no cover image on record (404)");
             axum::http::StatusCode::NOT_FOUND.into_response()
         }
         Err(error) => internal("read cover", error),
     }
+}
+
+/// A cover image as the `200` that carries its content `ETag`, or the `304` when the request's
+/// `If-None-Match` already has it.
+pub(super) fn image_response(headers: &HeaderMap, mime: &str, bytes: Vec<u8>) -> Response {
+    let etag = content_etag(&bytes);
+    if if_none_match_hits(headers, &etag) {
+        tracing::debug!("cover: not modified (304)");
+        return not_modified(&etag);
+    }
+    tracing::debug!(mime, bytes = bytes.len(), "cover: serving");
+    (
+        [
+            (header::CONTENT_TYPE, mime),
+            (header::CACHE_CONTROL, MEDIA_CACHE_CONTROL),
+            (header::ETAG, etag.as_str()),
+            (header::VARY, MEDIA_VARY),
+            // Prevent browsers from MIME-sniffing a cover into an
+            // executable type (e.g. an SVG disguised as JPEG).
+            (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+        ],
+        bytes,
+    )
+        .into_response()
 }
 
 /// `Cache-Control` for the stand-in cover the thumb miss path serves while the

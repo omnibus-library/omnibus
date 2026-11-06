@@ -253,9 +253,23 @@ pub struct BookRequest {
     pub cancelled_by: Option<i64>,
     /// What Omnibus knows about why it moved on, such as "Swapped for another version".
     pub note: Option<String>,
+    /// A sharper cover the finished download brought, until it is taken or kept. Only on a
+    /// single request's read; null in lists.
+    pub cover_offer: Option<CoverOffer>,
     /// The versions found, best first. Empty until the search has run. In a list of
     /// requests, only the version picked and then those given up: read one request for the rest.
     pub versions: Vec<RequestVersion>,
+}
+
+/// A cover a finished download brought that has more pixels than the book's own, with both
+/// sizes in pixels. `GET /api/requests/{id}/cover` serves the offered one.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct CoverOffer {
+    pub width: u32,
+    pub height: u32,
+    pub current_width: u32,
+    pub current_height: u32,
 }
 
 /// A request as a list shows it: its book, who made it and who cancelled it.

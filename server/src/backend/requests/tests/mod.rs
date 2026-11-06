@@ -25,6 +25,7 @@ use super::*;
 
 mod cancel;
 mod choose;
+mod cover;
 mod import;
 mod list;
 mod new_book;
@@ -123,7 +124,7 @@ fn start_uri(uuid: &str) -> String {
 mod flag_and_permission_gate {
     use super::*;
 
-    fn writes() -> [(&'static str, String, Option<Value>); 7] {
+    fn writes() -> [(&'static str, String, Option<Value>); 9] {
         [
             ("POST", start_uri("any"), Some(json!({"kind": "ebook"}))),
             (
@@ -137,6 +138,8 @@ mod flag_and_permission_gate {
             ("POST", "/api/requests/1/swap".to_string(), None),
             ("POST", "/api/requests/1/cancel".to_string(), None),
             ("DELETE", "/api/requests/1/cancel".to_string(), None),
+            ("POST", "/api/requests/1/cover".to_string(), None),
+            ("DELETE", "/api/requests/1/cover".to_string(), None),
             (
                 "POST",
                 "/api/requests/1/choose".to_string(),
@@ -145,11 +148,12 @@ mod flag_and_permission_gate {
         ]
     }
 
-    fn reads() -> [(&'static str, String, Option<Value>); 3] {
+    fn reads() -> [(&'static str, String, Option<Value>); 4] {
         [
             ("GET", start_uri("any"), None),
             ("GET", "/api/requests".to_string(), None),
             ("GET", "/api/requests/1".to_string(), None),
+            ("GET", "/api/requests/1/cover".to_string(), None),
         ]
     }
 

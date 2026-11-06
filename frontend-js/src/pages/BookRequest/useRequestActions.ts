@@ -1,14 +1,18 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
+  type BookUuid,
   bookRequestQuery,
   cancelBookRequest,
+  keepRequestCover,
   REQUEST_LISTS_KEY,
   type BookRequest as Request,
   swapRequestVersion,
+  takeRequestCover,
   undoCancelBookRequest,
 } from "../../api";
 import { useToast } from "../../components/Toast/Toast";
 import { nowSecs } from "../../format";
+import { bookQuery } from "../BookDetail/queries";
 import { undoToastMs } from "./requestView";
 
 export const messageOf = (error: unknown) =>
@@ -30,12 +34,22 @@ function useHoldPolls(id: number) {
     client.cancelQueries({ queryKey: bookRequestQuery(id).queryKey });
 }
 
+/** Reads the request and the lists again, as after a refusal that may mean the request moved on meanwhile. */
+export function useReread(id: number) {
+  const client = useQueryClient();
+  return () =>
+    Promise.all([
+      client.invalidateQueries({ queryKey: bookRequestQuery(id).queryKey }),
+      client.invalidateQueries({ queryKey: REQUEST_LISTS_KEY }),
+    ]);
+}
+
 /** Cancel with an Undo toast for as long as the server will take it back; `refocus` runs once the cancel, or its Undo, is in and the button pressed is gone. */
 export function useCancel(id: number, refocus: () => void) {
   const toast = useToast();
-  const client = useQueryClient();
   const answer = useAnswer(id);
   const hold = useHoldPolls(id);
+  const reread = useReread(id);
   const undo = useMutation({
     mutationFn: () => undoCancelBookRequest(id),
     onMutate: hold,
@@ -61,11 +75,7 @@ export function useCancel(id: number, refocus: () => void) {
     },
     onError: (error) => {
       toast(`Couldn’t cancel: ${messageOf(error)}`);
-      // The refusal may mean the request moved on meanwhile, so it and the lists are read again.
-      return Promise.all([
-        client.invalidateQueries({ queryKey: bookRequestQuery(id).queryKey }),
-        client.invalidateQueries({ queryKey: REQUEST_LISTS_KEY }),
-      ]);
+      return reread();
     },
   });
 }
@@ -83,5 +93,47 @@ export function useSwap(id: number, onSwapped: () => void) {
       return answer(swapped);
     },
     onError: (error) => toast(`Couldn’t choose another: ${messageOf(error)}`),
+  });
+}
+
+/** Makes the downloaded cover the book's own; `onDone` runs once the offer is gone, when its card is. */
+export function useTakeCover(id: number, uuid: BookUuid, onDone: () => void) {
+  const toast = useToast();
+  const client = useQueryClient();
+  const answer = useAnswer(id);
+  const hold = useHoldPolls(id);
+  const reread = useReread(id);
+  return useMutation({
+    mutationFn: () => takeRequestCover(id, uuid),
+    onMutate: hold,
+    onSuccess: (taken) => {
+      onDone();
+      client.invalidateQueries({ queryKey: bookQuery(uuid).queryKey });
+      return answer(taken);
+    },
+    onError: (error) => {
+      toast(`Couldn’t use that cover: ${messageOf(error)}`);
+      return reread();
+    },
+  });
+}
+
+/** Turns the downloaded cover down; `onDone` runs once the offer is gone, when its card is. */
+export function useKeepCover(id: number, onDone: () => void) {
+  const toast = useToast();
+  const answer = useAnswer(id);
+  const hold = useHoldPolls(id);
+  const reread = useReread(id);
+  return useMutation({
+    mutationFn: () => keepRequestCover(id),
+    onMutate: hold,
+    onSuccess: (kept) => {
+      onDone();
+      return answer(kept);
+    },
+    onError: (error) => {
+      toast(`Couldn’t keep this one: ${messageOf(error)}`);
+      return reread();
+    },
   });
 }

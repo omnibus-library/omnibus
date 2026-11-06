@@ -7,20 +7,13 @@ import {
   useRef,
   useState,
 } from "react";
+import { Link, useLocation } from "react-router";
 import {
-  Link,
-  Navigate,
-  useLocation,
-  useParams,
-  useSearchParams,
-} from "react-router";
-import {
+  type Book,
   type BookUuid,
   bookRequestQuery,
   bookRequestsQuery,
   chooseRequestVersion,
-  parseBookUuid,
-  positiveInt,
   type BookRequest as Request,
   type RequestListing,
   type RequestVersion,
@@ -33,39 +26,39 @@ import { Cover } from "../../components/Cover/Cover";
 import { BusyLabel, Loading } from "../../components/Loading/Loading";
 import { PageError, PageNotFound } from "../../components/PageState/PageState";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
-import { ToastProvider, useToast } from "../../components/Toast/Toast";
+import { useToast } from "../../components/Toast/Toast";
 import { UserAvatar } from "../../components/UserAvatar/UserAvatar";
 import { nowSecs, recency } from "../../format";
 import { useCurrentUser } from "../../session";
 import { PHONE_QUERY, useMediaQuery } from "../../useMediaQuery";
 import { bookQuery } from "../BookDetail/queries";
+import { CoverOffer } from "./CoverOffer";
 import {
   type DossierVariant,
   RequestAgain,
   RequestHistory,
 } from "./RequestHistory";
 import {
-  cameFrom,
   canActOn,
   downloadPercent,
   firstShown,
+  fromWishlists,
   isCancellable,
   isDownloading,
   isSearchStale,
   kindChip,
   kindLabel,
   offersRequestAgain,
+  pickedHeading,
   pickedMeta,
   pickedVersion,
   progressPercent,
   type RequestStep,
-  requestPath,
   SEARCH_STALE_AFTER_SECS,
   SEP,
   splitBookRequests,
   stateView,
   stepsFor,
-  versionSize,
   versionSource,
   versionsFound,
   wishersLine,
@@ -314,11 +307,7 @@ function Download({
   }
   const picked = pickedVersion(request);
   const percent = downloadPercent(request);
-  const heading = picked
-    ? [picked.format, versionSize(picked.sizeBytes)]
-        .filter((part) => part !== null)
-        .join(SEP)
-    : "Your pick";
+  const heading = picked ? pickedHeading(picked) : "Your pick";
   return (
     <>
       <div className="rq-download" data-testid="request-chosen">
@@ -339,6 +328,31 @@ function Download({
       </div>
       {actions}
     </>
+  );
+}
+
+/** The version a ready request added, as a download's card shows its pick, with when it was added where the time left was; a phone heads it with the format and size. */
+function Added({ request }: { request: Request }) {
+  const phone = useMediaQuery(PHONE_QUERY);
+  const picked = pickedVersion(request);
+  if (!picked) return null;
+  const added = `added ${recency(nowSecs(), request.updatedAt)}`;
+  if (!phone) {
+    return (
+      <div className="rq-download">
+        <Picked request={request} extra={added} />
+      </div>
+    );
+  }
+  const meta = [picked.indexer, added].filter((part) => part).join(SEP);
+  return (
+    <div className="rq-download" data-testid="request-chosen">
+      <div className="rq-picked">
+        <p className="rq-download-heading">{pickedHeading(picked)}</p>
+        <p className="rq-version-meta">{picked.title}</p>
+        <p className="rq-version-meta">{meta}</p>
+      </div>
+    </div>
   );
 }
 
@@ -578,7 +592,7 @@ function Lane({
   const cancelLabel = mine
     ? undefined
     : listing &&
-      `Cancel ${listing.requesterName}’s request for ${context.title}`;
+      `Cancel ${listing.requesterName}’s request for ${context.book.title}`;
   const actions = canAct && isCancellable(request) && (mine || cancelLabel) && (
     <Actions
       request={request}
@@ -635,6 +649,16 @@ function Lane({
         />
       )}
       {request.state === "chosen" && <Picked request={request} />}
+      {request.state === "ready" && <Added request={request} />}
+      {request.state === "ready" && canAct && request.coverOffer && (
+        <CoverOffer
+          request={request}
+          offer={request.coverOffer}
+          book={context.book}
+          variant={context.variant}
+          onDone={focusTitle}
+        />
+      )}
       {request.state === "on_its_way" ? (
         <Download request={request} actions={actions} />
       ) : (
@@ -651,10 +675,7 @@ function Lane({
           now,
         ) && (
           <div className="rq-actions">
-            <RequestAgain
-              uuid={request.bookUuid}
-              stay={context.variant === "pane"}
-            />
+            <RequestAgain uuid={request.bookUuid} />
           </div>
         )}
     </section>
@@ -663,8 +684,8 @@ function Lane({
 
 /** What a lane needs to know about the rest of the book's requests. */
 type LaneContext = {
-  /** The book's title, for an admin's Cancel label. */
-  title: string;
+  /** The book: its title names an admin's Cancel, and its look stands in for its covers. */
+  book: Book;
   /** The book's requests as listed, for who made each and whether Request again would only return one going; `undefined` until read. */
   listings: readonly RequestListing[] | undefined;
   variant: DossierVariant;
@@ -681,7 +702,7 @@ function OtherLane({ id, context }: { id: number; context: LaneContext }) {
   return <Lane request={request.data} context={context} main={false} />;
 }
 
-/** A book's requests: the book above, a lane for the request asked for and each other one still going, and the book's history below. Shared by the book's request page and the Requests list's detail pane; `focusTitle` moves focus to the book's title once it shows. */
+/** A book's requests: the book above, a lane for the request asked for and each other one still going, and the book's history below. It is the Requests list's detail pane and, on a phone, the full-screen page; `focusTitle` moves focus to the book's title once it shows. */
 export function RequestDossier({
   uuid,
   id,
@@ -720,18 +741,17 @@ export function RequestDossier({
     );
   }
   if (book.data === null) return <PageNotFound subject="Book" />;
-  // The address named the book by an old uuid; the request knows the current one.
-  if (request.data.bookUuid !== uuid) {
-    return <Navigate replace to={requestPath(request.data.bookUuid, id)} />;
-  }
   const { title, authors } = book.data;
   // Unknown until the wishlists answer: the clause stays out rather than claiming nobody.
   const wanted = wishlists.data?.find((w) => w.uuid === uuid)?.wantedBy;
   const wishers = wanted ? wishersLine(wanted, viewer.id) : null;
   const split = listed.data && splitBookRequests(listed.data, id);
-  const context: LaneContext = { title, listings: listed.data, variant };
+  const context: LaneContext = {
+    book: book.data,
+    listings: listed.data,
+    variant,
+  };
   const Title = variant === "page" ? "h1" : "h2";
-  const from = variant === "page" ? cameFrom(state) : null;
   return (
     <div
       className="rq-page"
@@ -739,15 +759,16 @@ export function RequestDossier({
       data-testid={variant === "page" ? "request-page" : "requests-pane"}
     >
       {variant === "page" && <PageTitle page={`Request ${title}`} />}
-      {from === "requests" && (
-        <Link className="rq-back" to="/requests">
-          ‹ Requests
-        </Link>
-      )}
-      {from === "wishlists" && (
+      {fromWishlists(state) ? (
         <Link className="rq-back" to="/wishlists">
           ← Back to Wishlists
         </Link>
+      ) : (
+        variant === "page" && (
+          <Link className="rq-back" to="/requests">
+            ‹ Requests
+          </Link>
+        )
       )}
       <header className="rq-head">
         <div className="rq-cover">
@@ -798,21 +819,5 @@ export function RequestDossier({
         variant={variant}
       />
     </div>
-  );
-}
-
-/** A book's request page: the request named by `?id=`, with the book's other requests. */
-export function BookRequest() {
-  const { uuid: rawUuid } = useParams();
-  const [params] = useSearchParams();
-  const uuid = parseBookUuid(rawUuid);
-  const id = positiveInt(params.get("id"));
-  if (!uuid || id === null) {
-    return <PageNotFound subject="Request" />;
-  }
-  return (
-    <ToastProvider>
-      <RequestDossier uuid={uuid} id={id} variant="page" />
-    </ToastProvider>
   );
 }

@@ -20,7 +20,6 @@ import {
   aWirePaletteBook,
   WIRE_ADA,
 } from "../../testing/wire";
-import { BookRequest } from "../BookRequest/BookRequest";
 import { PHONE } from "../Wishlists/Wishlists.stories.shared";
 import { Requests } from "./Requests";
 
@@ -223,7 +222,6 @@ function Page() {
     <>
       <Routes>
         <Route path="/requests" element={<Requests />} />
-        <Route path="/books/:uuid/request" element={<BookRequest />} />
       </Routes>
       <Where />
     </>

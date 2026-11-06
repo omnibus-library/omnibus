@@ -365,6 +365,11 @@ fn request_routes() -> OpenApiRouter<AppState> {
             requests::post_start_request_from_meta
         ))
         .routes(routes!(requests::get_request))
+        .routes(routes!(requests::get_request_cover))
+        .routes(routes!(
+            requests::post_take_request_cover,
+            requests::delete_keep_request_cover
+        ))
         .routes(routes!(requests::post_retry_request))
         .routes(routes!(requests::post_choose_version))
         .routes(routes!(requests::post_swap_request))

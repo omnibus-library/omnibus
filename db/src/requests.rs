@@ -12,6 +12,7 @@ use std::time::Duration;
 use reqwest::StatusCode;
 
 pub mod clients;
+pub mod cover;
 pub mod import;
 pub mod paths;
 pub mod poller;

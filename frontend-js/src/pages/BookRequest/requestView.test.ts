@@ -12,11 +12,12 @@ import {
   aWireVersion,
 } from "../../testing/requestHandlers";
 import {
-  cameFrom,
   canActOn,
+  coverSizesLine,
   downloadPercent,
   factParts,
   firstShown,
+  fromWishlists,
   historyDay,
   holdsAudiobook,
   holdsEbook,
@@ -135,8 +136,8 @@ describe("startFailure", () => {
 });
 
 describe("requestPath", () => {
-  it("is the book's own address with /request and the request's id", () => {
-    expect(requestPath("abc-123", 7)).toBe("/books/abc-123/request?id=7");
+  it("is the Requests page's address for the book, escaped", () => {
+    expect(requestPath("abc 123")).toBe("/requests?book=abc%20123");
   });
 });
 
@@ -527,17 +528,24 @@ describe("splitBookRequests", () => {
     expect(split.history).toEqual([]);
   });
 
-  it("keeps cancelled and stuck requests in the history", () => {
+  it("keeps a cancelled request in the history", () => {
     const split = splitBookRequests(
-      [
-        listing({ id: 5, state: "cancelled" }),
-        listing({ id: 4, state: "stuck", stuck_reason: "not_found" }),
-      ],
+      [listing({ id: 5, state: "cancelled" })],
       SHOWN,
     );
 
-    expect(ids(split.history)).toEqual([5, 4]);
+    expect(ids(split.history)).toEqual([5]);
     expect(split.lanes).toEqual([]);
+  });
+
+  it("gives a stuck request a lane of its own and leaves it out of the history", () => {
+    const split = splitBookRequests(
+      [listing({ id: 4, state: "stuck", stuck_reason: "not_found" })],
+      SHOWN,
+    );
+
+    expect(ids(split.lanes)).toEqual([4]);
+    expect(split.history).toEqual([]);
   });
 
   it("keeps a request that swapped a version in the history", () => {
@@ -567,14 +575,14 @@ describe("splitBookRequests", () => {
   });
 });
 
-describe("cameFrom", () => {
+describe("fromWishlists", () => {
   it.each([
-    ["the Requests list", { from: "requests" }, "requests"],
-    ["a wishlist", { from: "wishlists" }, "wishlists"],
-    ["anywhere else", { from: "search" }, null],
-    ["no state", null, null],
+    ["a wishlist", { from: "wishlists" }, true],
+    ["the Requests list", { from: "requests" }, false],
+    ["anywhere else", { from: "search" }, false],
+    ["no state", null, false],
   ])("reads a page opened from %s", (_where, state, expected) => {
-    expect(cameFrom(state)).toBe(expected);
+    expect(fromWishlists(state)).toBe(expected);
   });
 });
 
@@ -727,5 +735,20 @@ describe("wishersLine", () => {
     ],
   ])("reads %s", (_who, wanters, expected) => {
     expect(wishersLine(wanters, VIEWER)).toBe(expected);
+  });
+});
+
+describe("coverSizesLine", () => {
+  it("names both sizes without saying where the existing cover came from", () => {
+    const offer = {
+      width: 1600,
+      height: 2400,
+      currentWidth: 128,
+      currentHeight: 196,
+    };
+
+    expect(coverSizesLine(offer)).toBe(
+      "Its cover is 1600\u00a0×\u00a02400. The existing one is 128\u00a0×\u00a0196.",
+    );
   });
 });
