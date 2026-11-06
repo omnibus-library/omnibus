@@ -17,6 +17,7 @@ use crate::settings::RequestsConfig;
 use crate::worker::{Task, TaskOutcome, Worker};
 
 use super::clients::DownloadClient;
+use super::cover;
 use super::paths::PathMapError;
 use super::store::{self, RequestError, RequestRow};
 use super::ConnectionError;
@@ -111,7 +112,7 @@ async fn import_one(
             None => return Ok(Step::Later),
         },
     };
-    scan_and_merge(pool, worker, &root, &key, &wished).await?;
+    scan_and_merge(pool, worker, row, &root, &key, &wished).await?;
     Ok(Step::Added)
 }
 
@@ -202,6 +203,7 @@ async fn file_into_library(
 async fn scan_and_merge(
     pool: &SqlitePool,
     worker: &Arc<Worker>,
+    row: &RequestRow,
     root: &str,
     key: &str,
     wished: &Wished,
@@ -234,6 +236,10 @@ async fn scan_and_merge(
         return Err(ImportError::Cannot(format!(
             "the library scan filed the download on another book, \"{title}\""
         )));
+    }
+    if row.offers_cover {
+        // The merge leaves the source's cover file in place, so this uuid still serves it.
+        cover::record_candidate(pool, row.id, &found).await?;
     }
     merge_books(pool, &found, &wished.uuid, None).await?;
     Ok(())
