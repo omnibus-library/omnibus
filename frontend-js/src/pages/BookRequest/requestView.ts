@@ -175,6 +175,15 @@ export function firstShown(versions: readonly RequestVersion[]) {
   return versions.filter((v) => v.rejected || offerable.includes(v));
 }
 
+/** The cover offer's sizes in pixels, as the card says them; it never says where the existing cover came from. */
+export const coverSizesLine = ({
+  width,
+  height,
+  currentWidth,
+  currentHeight,
+}: NonNullable<BookRequest["coverOffer"]>) =>
+  `Its cover is ${width} × ${height}. The existing one is ${currentWidth} × ${currentHeight}.`;
+
 /** Why starting a request failed, as a sentence for a toast. */
 export function startFailure(error: unknown): string {
   const status = error instanceof ApiError ? error.status : null;

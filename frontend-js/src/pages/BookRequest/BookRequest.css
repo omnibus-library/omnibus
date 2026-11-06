@@ -337,6 +337,48 @@
   min-width: 0;
 }
 
+/* ---- the downloaded cover on offer: the book's own beside the download's, then the choice ---- */
+
+.rq-cover-offer {
+  gap: 16px 24px;
+}
+.rq-offer-covers {
+  display: flex;
+  flex: none;
+  gap: 20px;
+}
+.rq-offer-figure {
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  margin: 0;
+}
+.rq-offer-cover {
+  width: 64px;
+}
+.rq-offer-figure figcaption {
+  font-size: 12px;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.rq-offer-text {
+  display: grid;
+  flex: 1 1 14rem;
+  gap: 4px;
+  min-width: 0;
+}
+.rq-offer-heading {
+  font-size: 14px;
+  color: var(--ink-0);
+}
+.rq-offer-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  margin-inline-start: auto;
+}
+
 /* ---- the picked version, and stuck ---- */
 
 .rq-picked {
@@ -470,6 +512,29 @@
 .rq-download-heading {
   font-size: 15px;
   color: var(--ink-0);
+}
+
+/* A phone stacks the offer: the covers, the words, then Use above Keep, each the card's full width. */
+@media (max-width: 720px) {
+  .rq-cover-offer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .rq-offer-covers {
+    align-self: flex-start;
+  }
+  /* The row's basis would read as a height in a column. */
+  .rq-offer-text {
+    flex: none;
+  }
+  .rq-offer-actions {
+    flex-direction: column;
+    align-items: stretch;
+    margin-inline-start: 0;
+  }
+  .rq-offer-actions .btn {
+    justify-content: center;
+  }
 }
 
 /* A phone keeps Request again on the right of a history row's two lines. */

@@ -15,6 +15,7 @@ import {
   useSearchParams,
 } from "react-router";
 import {
+  type Book,
   type BookUuid,
   bookRequestQuery,
   bookRequestsQuery,
@@ -39,6 +40,7 @@ import { nowSecs, recency } from "../../format";
 import { useCurrentUser } from "../../session";
 import { PHONE_QUERY, useMediaQuery } from "../../useMediaQuery";
 import { bookQuery } from "../BookDetail/queries";
+import { Ready } from "./Ready";
 import {
   type DossierVariant,
   RequestAgain,
@@ -578,7 +580,7 @@ function Lane({
   const cancelLabel = mine
     ? undefined
     : listing &&
-      `Cancel ${listing.requesterName}’s request for ${context.title}`;
+      `Cancel ${listing.requesterName}’s request for ${context.book.title}`;
   const actions = canAct && isCancellable(request) && (mine || cancelLabel) && (
     <Actions
       request={request}
@@ -635,6 +637,14 @@ function Lane({
         />
       )}
       {request.state === "chosen" && <Picked request={request} />}
+      {request.state === "ready" && (
+        <Ready
+          request={request}
+          canAct={canAct}
+          book={context.book}
+          onSettled={focusTitle}
+        />
+      )}
       {request.state === "on_its_way" ? (
         <Download request={request} actions={actions} />
       ) : (
@@ -663,8 +673,8 @@ function Lane({
 
 /** What a lane needs to know about the rest of the book's requests. */
 type LaneContext = {
-  /** The book's title, for an admin's Cancel label. */
-  title: string;
+  /** The book: its title names an admin's Cancel, and its look stands in for its covers. */
+  book: Book;
   /** The book's requests as listed, for who made each and whether Request again would only return one going; `undefined` until read. */
   listings: readonly RequestListing[] | undefined;
   variant: DossierVariant;
@@ -729,7 +739,11 @@ export function RequestDossier({
   const wanted = wishlists.data?.find((w) => w.uuid === uuid)?.wantedBy;
   const wishers = wanted ? wishersLine(wanted, viewer.id) : null;
   const split = listed.data && splitBookRequests(listed.data, id);
-  const context: LaneContext = { title, listings: listed.data, variant };
+  const context: LaneContext = {
+    book: book.data,
+    listings: listed.data,
+    variant,
+  };
   const Title = variant === "page" ? "h1" : "h2";
   const from = variant === "page" ? cameFrom(state) : null;
   return (

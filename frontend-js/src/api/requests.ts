@@ -1,15 +1,17 @@
 import { queryOptions } from "@tanstack/react-query";
 import { toBook } from "./books";
 import type { BookUuid, UserId } from "./core";
-import { ok, send } from "./core";
+import { bumpCoverBust, ok, send } from "./core";
 import {
   getBookRequest,
   getCancelBookRequestUrl,
   getChooseRequestVersionUrl,
+  getKeepRequestCoverUrl,
   getRequestsSettings,
   getRetryBookRequestUrl,
   getStartBookRequestUrl,
   getSwapRequestVersionUrl,
+  getTakeRequestCoverUrl,
   getTestDownloadClientConnectionUrl,
   getTestProwlarrConnectionUrl,
   getUndoCancelBookRequestUrl,
@@ -221,4 +223,22 @@ export async function undoCancelBookRequest(id: number): Promise<BookRequest> {
 /** Gives up the version that is downloading and goes back to choosing among the others. */
 export async function swapRequestVersion(id: number): Promise<BookRequest> {
   return answered(await send(getSwapRequestVersionUrl(id), "POST"));
+}
+
+/** Where the cover a request's download brought is served; the generated client leaves image routes out. */
+export const requestCoverUrl = (id: number) => `/api/requests/${id}/cover`;
+
+/** Makes the downloaded cover the book's own; every cover URL built after it skips the cached image. */
+export async function takeRequestCover(
+  id: number,
+  uuid: BookUuid,
+): Promise<BookRequest> {
+  const taken = await answered(await send(getTakeRequestCoverUrl(id), "POST"));
+  bumpCoverBust(uuid);
+  return taken;
+}
+
+/** Turns the downloaded cover down for good. */
+export async function keepRequestCover(id: number): Promise<BookRequest> {
+  return answered(await send(getKeepRequestCoverUrl(id), "DELETE"));
 }
