@@ -25,6 +25,7 @@ use super::*;
 
 mod cancel;
 mod choose;
+mod cover;
 mod import;
 mod list;
 mod retry;

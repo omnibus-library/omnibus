@@ -17,6 +17,7 @@ use axum::{
 use omnibus_db::{
     self as db,
     requests::{
+        cover,
         search::run_search,
         store::{self, ListFilter, RequestError, RequestRow},
     },
@@ -128,17 +129,22 @@ fn summary(row: RequestRow, is_admin: bool) -> BookRequest {
         note: row.note,
         created_at: row.created_at,
         updated_at: row.updated_at,
+        cover_offer: None,
         versions: Vec::new(),
     }
 }
 
-/// [`summary`] plus the versions found.
+/// [`summary`] plus the versions found and the cover on offer.
 async fn view(state: &AppState, row: RequestRow, is_admin: bool) -> Result<BookRequest, Response> {
     let versions = store::versions(state.pool(), row.id)
         .await
         .map_err(|e| internal("read request versions", e))?;
+    let cover_offer = cover::offer(state.pool(), &row)
+        .await
+        .map_err(|e| internal("read request cover offer", e))?;
     Ok(BookRequest {
         versions,
+        cover_offer,
         ..summary(row, is_admin)
     })
 }

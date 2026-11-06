@@ -10688,6 +10688,17 @@
             "format": "int64",
             "description": "The picked version's id once `state` is `chosen`."
           },
+          "cover_offer": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/CoverOffer",
+                "description": "A sharper cover the finished download brought, until it is taken or kept. Only on a\nsingle request's read; null in lists."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "created_at": {
             "type": "integer",
             "format": "int64",
@@ -11914,6 +11925,38 @@
           "url": {
             "type": "string",
             "description": "The image to fetch, up to 2,048 bytes long. Only `https` URLs on public addresses\nare fetched."
+          }
+        }
+      },
+      "CoverOffer": {
+        "type": "object",
+        "description": "A cover a finished download brought that has more pixels than the book's own, with both\nsizes in pixels. `GET /api/requests/{id}/cover` serves the offered one.",
+        "required": [
+          "width",
+          "height",
+          "current_width",
+          "current_height"
+        ],
+        "properties": {
+          "current_height": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "current_width": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "height": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "width": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
           }
         }
       },

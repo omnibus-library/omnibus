@@ -103,6 +103,15 @@ export function toBookRequest(wire: BookRequestWire) {
     createdAt: wire.created_at,
     /** Unix seconds. */
     updatedAt: wire.updated_at,
+    /** The download's cover, in pixels beside the current one; set only on a single request's read. */
+    coverOffer: wire.cover_offer
+      ? {
+          width: wire.cover_offer.width,
+          height: wire.cover_offer.height,
+          currentWidth: wire.cover_offer.current_width,
+          currentHeight: wire.cover_offer.current_height,
+        }
+      : null,
     versions: wire.versions.map(toVersion),
   };
 }

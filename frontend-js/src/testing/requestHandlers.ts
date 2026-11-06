@@ -53,6 +53,7 @@ export function aWireRequest(
     note: null,
     created_at: NOW,
     updated_at: NOW,
+    cover_offer: null,
     versions: [],
     ...overrides,
   };
