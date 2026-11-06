@@ -19,6 +19,10 @@ const SERVICE: &str = "qBittorrent";
 /// A torrent file is kilobytes; anything past this is not one.
 pub const MAX_TORRENT_BYTES: usize = 4 * 1024 * 1024;
 
+/// How far apart the clocks of this server and the client's host may run: a download added
+/// this many seconds before its request was made still counts as the request's.
+const CLOCK_SKEW_SECS: i64 = 10;
+
 /// How many redirects a release link may take before it is given up on.
 const MAX_HOPS: usize = 3;
 
@@ -159,6 +163,7 @@ impl Qbittorrent {
         &self,
         cookie: &str,
         tag: &str,
+        not_before: i64,
     ) -> Result<Option<TorrentStatus>, ConnectionError> {
         let response = self
             .send(self.get("torrents/info", cookie).query(&[("tag", tag)]))
@@ -167,7 +172,16 @@ impl Qbittorrent {
             .json()
             .await
             .map_err(|e| ConnectionError::from_transport(&e))?;
-        Ok(found.into_iter().next())
+        // One added before the request existed is some other download that carries a tag it
+        // should not. Of several that remain (the link was added twice), the newest is the
+        // one the latest hand-off made; taking whichever the client lists first could be either.
+        Ok(found
+            .into_iter()
+            .filter(|t| {
+                t.added_on
+                    .is_none_or(|at| at >= not_before - CLOCK_SKEW_SECS)
+            })
+            .max_by_key(|t| t.added_on))
     }
 }
 
@@ -235,14 +249,18 @@ impl DownloadClient for Qbittorrent {
         Ok(())
     }
 
-    async fn status(&self, tag: &str) -> Result<Option<TorrentStatus>, ConnectionError> {
+    async fn status(
+        &self,
+        tag: &str,
+        not_before: i64,
+    ) -> Result<Option<TorrentStatus>, ConnectionError> {
         let cookie = self.login().await?;
-        self.status_with(&cookie, tag).await
+        self.status_with(&cookie, tag, not_before).await
     }
 
-    async fn files(&self, tag: &str) -> Result<Vec<ClientFile>, ConnectionError> {
+    async fn files(&self, tag: &str, not_before: i64) -> Result<Vec<ClientFile>, ConnectionError> {
         let cookie = self.login().await?;
-        let Some(torrent) = self.status_with(&cookie, tag).await? else {
+        let Some(torrent) = self.status_with(&cookie, tag, not_before).await? else {
             return Ok(Vec::new());
         };
         let request = self
@@ -257,9 +275,14 @@ impl DownloadClient for Qbittorrent {
             .map_err(|e| ConnectionError::from_transport(&e))
     }
 
-    async fn remove(&self, tag: &str, delete_files: bool) -> Result<(), ConnectionError> {
+    async fn remove(
+        &self,
+        tag: &str,
+        not_before: i64,
+        delete_files: bool,
+    ) -> Result<(), ConnectionError> {
         let cookie = self.login().await?;
-        let Some(torrent) = self.status_with(&cookie, tag).await? else {
+        let Some(torrent) = self.status_with(&cookie, tag, not_before).await? else {
             return Ok(());
         };
         let form = [

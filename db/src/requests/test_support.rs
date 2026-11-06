@@ -197,6 +197,7 @@ impl StubClient {
             state: state.to_string(),
             save_path: String::new(),
             eta: None,
+            added_on: None,
         };
         self.script().statuses.insert(tag.to_string(), status);
     }
@@ -235,17 +236,26 @@ impl DownloadClient for StubClient {
         Ok(())
     }
 
-    async fn status(&self, tag: &str) -> Result<Option<TorrentStatus>, ConnectionError> {
+    async fn status(
+        &self,
+        tag: &str,
+        _not_before: i64,
+    ) -> Result<Option<TorrentStatus>, ConnectionError> {
         self.record(Call::Status(tag.to_string()))?;
         Ok(self.script().statuses.get(tag).cloned())
     }
 
-    async fn files(&self, tag: &str) -> Result<Vec<ClientFile>, ConnectionError> {
+    async fn files(&self, tag: &str, _not_before: i64) -> Result<Vec<ClientFile>, ConnectionError> {
         self.record(Call::Files(tag.to_string()))?;
         Ok(self.script().files.get(tag).cloned().unwrap_or_default())
     }
 
-    async fn remove(&self, tag: &str, delete_files: bool) -> Result<(), ConnectionError> {
+    async fn remove(
+        &self,
+        tag: &str,
+        _not_before: i64,
+        delete_files: bool,
+    ) -> Result<(), ConnectionError> {
         self.record(Call::Remove {
             tag: tag.to_string(),
             delete_files,

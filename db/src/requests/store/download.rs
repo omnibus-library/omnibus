@@ -6,6 +6,8 @@
 use omnibus_shared::StuckReason;
 use sqlx::SqlitePool;
 
+use crate::helpers::mint_uuid;
+
 use super::{row_to_request, RequestError, RequestRow, COLUMNS, DOWNLOADING, NOW};
 
 /// The Unix time now, as the writes below take it.
@@ -77,21 +79,23 @@ pub async fn awaiting_add(pool: &SqlitePool) -> Result<Vec<RequestRow>, RequestE
     Ok(rows.iter().map(row_to_request).collect::<Result<_, _>>()?)
 }
 
-/// Mark request `id`'s picked version with its own tag, `omnibus-<request>-<version>`, then
-/// return `(tag, link)` for the client. The tag is written before the client is called, so a
-/// cancel that lands meanwhile still finds the download to remove; it is unique to the pick,
-/// so a download left from an earlier pick is never mistaken for this one. `None` once the
-/// request is no longer waiting to be added. The link can carry an indexer key: hand it to the
+/// Mark request `id`'s picked version with a tag of its own, `omnibus-<uuid>`, then return
+/// `(tag, link)` for the client. The tag is minted once per pick and written before the client
+/// is called, so a cancel that lands meanwhile still finds the download to remove, and a
+/// retry of the hand-off keeps it. It is unique beyond this database, so a download left
+/// from an earlier pick, or from a database this one replaced, is never mistaken for this one.
+/// `None` once the request is no longer waiting to be added. The link can carry an indexer key: hand it to the
 /// client and nowhere else.
 pub async fn begin_download(
     pool: &SqlitePool,
     id: i64,
 ) -> Result<Option<(String, String)>, RequestError> {
     let row: Option<(String, i64)> = sqlx::query_as(
-        "UPDATE book_requests SET client_tag = 'omnibus-' || id || '-' || chosen_result_id
+        "UPDATE book_requests SET client_tag = COALESCE(client_tag, ?)
          WHERE id = ? AND state = 'chosen' AND chosen_result_id IS NOT NULL
          RETURNING client_tag, chosen_result_id",
     )
+    .bind(format!("omnibus-{}", mint_uuid()))
     .bind(id)
     .fetch_optional(pool)
     .await?;

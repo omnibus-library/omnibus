@@ -191,7 +191,14 @@ pub async fn start(
             created: false,
         });
     }
-    let request = insert_looking(&mut tx, user_id, book_uuid, kind, max_live, true).await?;
+    // A book made for a request keeps its cover whoever asks for it next.
+    let offers_cover: bool = sqlx::query_scalar(
+        "SELECT NOT EXISTS (SELECT 1 FROM book_requests WHERE book_uuid = ? AND offers_cover = 0)",
+    )
+    .bind(book_uuid)
+    .fetch_one(&mut *tx)
+    .await?;
+    let request = insert_looking(&mut tx, user_id, book_uuid, kind, max_live, offers_cover).await?;
     tx.commit().await?;
     Ok(Started {
         request,

@@ -154,20 +154,23 @@ mod swapped_downloads {
         let second = add_version(&pool, id).await;
         let client = StubClient::new();
         tick(&pool, &client, NOW).await;
+        let first_tag = row(&pool, id).await.client_tag.unwrap();
         store::swap(&pool, id, NOW + 1, Some("Swapped for another version"))
             .await
             .unwrap();
         store::choose(&pool, id, second).await.unwrap();
 
         tick(&pool, &client, NOW + 2).await;
-        client.appears(&tag(id), 0.1, "downloading");
+        client.appears(&first_tag, 0.1, "downloading");
         tick(&pool, &client, NOW + 3).await;
         tick(&pool, &client, NOW + 4).await;
 
         let calls = client.calls();
-        let new_tag = format!("omnibus-{id}-{second}");
+        let after = row(&pool, id).await;
+        let new_tag = after.client_tag.clone().unwrap();
+        assert_ne!(new_tag, first_tag);
         assert!(calls.contains(&Call::Remove {
-            tag: tag(id),
+            tag: first_tag,
             delete_files: true
         }));
         assert!(calls
@@ -177,8 +180,6 @@ mod swapped_downloads {
             tag: new_tag.clone(),
             delete_files: true
         }));
-        let after = row(&pool, id).await;
-        assert_eq!(after.client_tag, Some(new_tag));
         assert_eq!(after.remove_tag, None);
     }
 

@@ -184,9 +184,9 @@ async fn remove_pending(
         let Some(tag) = row.remove_tag.as_deref() else {
             continue;
         };
-        if client.status(tag).await?.is_some() {
+        if client.status(tag, row.created_at).await?.is_some() {
             store::mark_removal_seen(pool, row.id, tag).await?;
-            match client.remove(tag, true).await {
+            match client.remove(tag, row.created_at, true).await {
                 Err(e) if refused_one(&e) => tracing::warn!(error = %e, "remove a download"),
                 other => other?,
             }
@@ -212,7 +212,7 @@ async fn add_picked(
         let Some((tag, link)) = store::begin_download(pool, row.id).await? else {
             continue;
         };
-        if client.status(&tag).await?.is_none() {
+        if client.status(&tag, row.created_at).await?.is_none() {
             match client.add(&link, category, &tag).await {
                 Ok(()) => {}
                 Err(e) if refused_one(&e) => {
@@ -237,7 +237,7 @@ async fn follow_downloads(
         let Some(tag) = row.client_tag.as_deref() else {
             continue;
         };
-        let status = client.status(tag).await?;
+        let status = client.status(tag, row.created_at).await?;
         let pick = row.chosen_result_id;
         let done_at = status.as_ref().and_then(|s| expected_done_at(s, now));
         match judge(&row, status.as_ref(), now) {

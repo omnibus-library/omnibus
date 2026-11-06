@@ -36,6 +36,18 @@ fn client_for(server: &MockServer) -> Qbittorrent {
     Qbittorrent::new(&server.uri(), "admin", "hunter2").unwrap()
 }
 
+/// A torrent the client reports as added at `added_on` (Unix seconds).
+fn torrent_added(hash: &str, added_on: i64) -> serde_json::Value {
+    json!({
+        "hash": hash,
+        "progress": 1.0,
+        "state": "stalledUP",
+        "save_path": "/downloads/omnibus",
+        "eta": 8640000,
+        "added_on": added_on,
+    })
+}
+
 fn torrent_info(hash: &str) -> serde_json::Value {
     json!([{
         "hash": hash,
@@ -411,7 +423,7 @@ mod qbittorrent_status {
         let server = signed_in_server().await;
         mount_info(&server, "omnibus-7", torrent_info("h1")).await;
 
-        let status = client_for(&server).status("omnibus-7").await.unwrap();
+        let status = client_for(&server).status("omnibus-7", 0).await.unwrap();
 
         let expected = TorrentStatus {
             hash: "h1".into(),
@@ -419,6 +431,7 @@ mod qbittorrent_status {
             state: "downloading".into(),
             save_path: "/downloads/omnibus".into(),
             eta: Some(180),
+            added_on: None,
         };
         assert_eq!(status, Some(expected));
     }
@@ -428,9 +441,75 @@ mod qbittorrent_status {
         let server = signed_in_server().await;
         mount_info(&server, "omnibus-7", json!([])).await;
 
-        let status = client_for(&server).status("omnibus-7").await.unwrap();
+        let status = client_for(&server).status("omnibus-7", 0).await.unwrap();
 
         assert_eq!(status, None);
+    }
+}
+
+mod qbittorrent_handoff {
+    use super::*;
+
+    const TAG: &str = "omnibus-2d7c0b1e-3f0a-4c55-9a11-0e5f6f6c1a01";
+    /// When the request that owns `TAG` was made.
+    const SINCE: i64 = 10_000;
+
+    #[tokio::test]
+    async fn status_ignores_a_torrent_added_before_the_request_existed() {
+        let server = signed_in_server().await;
+        mount_info(&server, TAG, json!([torrent_added("old", SINCE - 3600)])).await;
+
+        let status = client_for(&server).status(TAG, SINCE).await.unwrap();
+
+        assert_eq!(status, None);
+    }
+
+    #[tokio::test]
+    async fn status_takes_a_torrent_added_within_the_clock_skew_of_the_request() {
+        let server = signed_in_server().await;
+        mount_info(&server, TAG, json!([torrent_added("mine", SINCE - 5)])).await;
+
+        let status = client_for(&server).status(TAG, SINCE).await.unwrap();
+
+        assert_eq!(status.map(|s| s.hash), Some("mine".to_string()));
+    }
+
+    #[tokio::test]
+    async fn status_takes_the_newest_of_two_torrents_carrying_the_tag() {
+        let server = signed_in_server().await;
+        let both = json!([
+            torrent_added("older", SINCE + 10),
+            torrent_added("newer", SINCE + 60),
+        ]);
+        mount_info(&server, TAG, both).await;
+
+        let status = client_for(&server).status(TAG, SINCE).await.unwrap();
+
+        assert_eq!(status.map(|s| s.hash), Some("newer".to_string()));
+    }
+
+    #[tokio::test]
+    async fn status_skips_the_stale_one_of_two_torrents_carrying_the_tag() {
+        let server = signed_in_server().await;
+        let both = json!([
+            torrent_added("mine", SINCE + 10),
+            torrent_added("stale", SINCE - 3600),
+        ]);
+        mount_info(&server, TAG, both).await;
+
+        let status = client_for(&server).status(TAG, SINCE).await.unwrap();
+
+        assert_eq!(status.map(|s| s.hash), Some("mine".to_string()));
+    }
+
+    #[tokio::test]
+    async fn remove_leaves_a_torrent_added_before_the_request_existed() {
+        let server = signed_in_server().await;
+        mount_info(&server, TAG, json!([torrent_added("old", SINCE - 3600)])).await;
+
+        client_for(&server).remove(TAG, SINCE, true).await.unwrap();
+
+        assert!(requests_to(&server, "torrents/delete").await.is_empty());
     }
 }
 
@@ -452,7 +531,7 @@ mod qbittorrent_files {
             .mount(&server)
             .await;
 
-        let files = client_for(&server).files("omnibus-7").await.unwrap();
+        let files = client_for(&server).files("omnibus-7", 0).await.unwrap();
 
         let expected = vec![
             ClientFile {
@@ -477,7 +556,7 @@ mod qbittorrent_files {
             .mount(&server)
             .await;
 
-        client_for(&server).files("omnibus-7").await.unwrap();
+        client_for(&server).files("omnibus-7", 0).await.unwrap();
 
         assert_eq!(requests_to(&server, "auth/login").await.len(), 1);
     }
@@ -492,7 +571,7 @@ mod qbittorrent_files {
             .mount(&server)
             .await;
 
-        let files = client_for(&server).files("omnibus-7").await.unwrap();
+        let files = client_for(&server).files("omnibus-7", 0).await.unwrap();
 
         assert_eq!(files, Vec::new());
     }
@@ -519,7 +598,7 @@ mod qbittorrent_remove {
             let server = deleting_server().await;
 
             client_for(&server)
-                .remove("omnibus-7", delete_files)
+                .remove("omnibus-7", 0, delete_files)
                 .await
                 .unwrap();
 
@@ -542,7 +621,7 @@ mod qbittorrent_remove {
             .mount(&server)
             .await;
 
-        let result = client_for(&server).remove("omnibus-7", true).await;
+        let result = client_for(&server).remove("omnibus-7", 0, true).await;
 
         assert!(result.is_ok(), "{result:?}");
     }
@@ -552,7 +631,10 @@ mod qbittorrent_remove {
         let server = signed_in_server().await;
         mount_info(&server, "omnibus-7", json!([])).await;
 
-        client_for(&server).remove("omnibus-7", true).await.unwrap();
+        client_for(&server)
+            .remove("omnibus-7", 0, true)
+            .await
+            .unwrap();
 
         assert!(requests_to(&server, "torrents/delete").await.is_empty());
     }

@@ -6,6 +6,7 @@ use super::super::prowlarr::ProwlarrRelease;
 use super::*;
 
 mod change;
+mod handoff;
 mod list;
 mod new_book;
 

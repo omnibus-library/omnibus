@@ -1,6 +1,9 @@
 //! The download client the server hands releases to and watches. [`DownloadClient`] is the
 //! seam the request pipeline works against; [`client_for`] builds the one the admin chose.
-//! Torrents are found by tag, never by hash, so a restart loses no track of them.
+//! Torrents are found by tag, never by hash, so a restart loses no track of them. A tag is
+//! `omnibus-<uuid>`, minted once per hand-off and stored with the request, so it is unique
+//! beyond this database; a download the client says it added before the request existed
+//! is never the request's.
 
 use std::future::Future;
 
@@ -28,6 +31,9 @@ pub struct TorrentStatus {
     /// 8640000 when it can't tell.
     #[serde(default)]
     pub eta: Option<i64>,
+    /// When the client added the download, in Unix seconds, when it says.
+    #[serde(default)]
+    pub added_on: Option<i64>,
 }
 
 /// One file inside a download.
@@ -49,23 +55,27 @@ pub trait DownloadClient {
         tag: &str,
     ) -> impl Future<Output = Result<(), ConnectionError>> + Send;
 
-    /// The download marked `tag`, or `None` when the client has none.
+    /// The download marked `tag`, or `None` when the client has none. One the client added
+    /// before `not_before` (Unix seconds) is not it: the request did not exist yet.
     fn status(
         &self,
         tag: &str,
+        not_before: i64,
     ) -> impl Future<Output = Result<Option<TorrentStatus>, ConnectionError>> + Send;
 
-    /// The files of the download marked `tag`; empty when the client has none.
+    /// The files of the download [`Self::status`] finds for `tag`; empty when there is none.
     fn files(
         &self,
         tag: &str,
+        not_before: i64,
     ) -> impl Future<Output = Result<Vec<ClientFile>, ConnectionError>> + Send;
 
-    /// Remove the download marked `tag`, and its files when `delete_files`. A download
-    /// that is already gone is not an error.
+    /// Remove the download [`Self::status`] finds for `tag`, and its files when
+    /// `delete_files`. A download that is already gone is not an error.
     fn remove(
         &self,
         tag: &str,
+        not_before: i64,
         delete_files: bool,
     ) -> impl Future<Output = Result<(), ConnectionError>> + Send;
 

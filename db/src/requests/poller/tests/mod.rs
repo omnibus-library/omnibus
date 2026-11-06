@@ -41,15 +41,15 @@ mod poll_once {
 
             tick(&pool, &client, NOW).await;
 
+            let after = row(&pool, id).await;
+            let tag = after.client_tag.clone().unwrap();
             let added = Call::Add {
                 link: "magnet:?xt=urn:btih:abc".to_string(),
                 category: CATEGORY.to_string(),
-                tag: tag(id),
+                tag: tag.clone(),
             };
-            assert_eq!(client.calls()[..2], [Call::Status(tag(id)), added]);
-            let after = row(&pool, id).await;
+            assert_eq!(client.calls()[..2], [Call::Status(tag), added]);
             assert_eq!(after.state, RequestState::OnItsWay);
-            assert_eq!(after.client_tag, Some(tag(id)));
             assert_eq!(after.moved_at, Some(NOW));
         }
 
@@ -71,6 +71,8 @@ mod poll_once {
         async fn adds_nothing_when_the_client_already_has_the_download() {
             let pool = pool().await;
             let id = seed(&pool, "ada", "chosen").await;
+            // Handed over before a restart: the tag is stored, the client already shows it.
+            update(&pool, id, &format!("client_tag = '{}'", tag(id))).await;
             let client = StubClient::new().with_status(&tag(id), 0.2, "downloading");
 
             tick(&pool, &client, NOW).await;
@@ -87,6 +89,7 @@ mod poll_once {
         async fn stops_only_the_request_whose_link_is_refused_and_follows_the_others() {
             let pool = pool().await;
             let refused = seed(&pool, "ada", "chosen").await;
+            update(&pool, refused, &format!("client_tag = '{}'", tag(refused))).await;
             let healthy = on_its_way(&pool, "grace", 0.2, NOW - 60).await;
             let client = StubClient::new().refusing(&tag(refused)).with_status(
                 &tag(healthy),
