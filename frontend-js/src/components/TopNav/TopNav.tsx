@@ -4,12 +4,7 @@ import brandMark from "../../assets/omnibus-stoat.png";
 import { AddBookSheet } from "../../pages/AddBooks/AddBookSheet";
 import { useCurrentUser } from "../../session";
 import { Button } from "../Button/Button";
-import {
-  ChevronDownGlyph,
-  HeartGlyph,
-  ScanGlyph,
-  UploadGlyph,
-} from "../Glyphs/Glyphs";
+import { HeartGlyph, ScanGlyph, UploadGlyph } from "../Glyphs/Glyphs";
 import { MoreMenu, type MoreMenuItem } from "../MoreMenu/MoreMenu";
 import { SearchPaletteTrigger } from "../SearchPalette/SearchPalette";
 import { UserMenu } from "../UserMenu/UserMenu";
@@ -85,7 +80,7 @@ function AddMenu({
       ? [
           {
             label: "Upload book files",
-            description: "EPUB, PDF, CBZ, M4B or MP3 from this computer",
+            description: "EPUB, PDF, M4B or MP3 from this computer",
             testId: "add-menu-upload",
             icon: <UploadGlyph size={20} />,
             onSelect: onUpload,
@@ -103,7 +98,7 @@ function AddMenu({
       label: "Add to your wishlist",
       description: "A book you’d like the household to find",
       testId: "add-menu-wishlist",
-      icon: <HeartGlyph size={20} />,
+      icon: <HeartGlyph size={20} strokeWidth={1.7} />,
       onSelect: () => navigate("/wishlists", { state: { add: true } }),
     },
   ];
@@ -118,7 +113,7 @@ function AddMenu({
         onClick={() => setOpen(!open)}
       >
         Add
-        <ChevronDownGlyph size={8} />
+        <span aria-hidden="true">▾</span>
       </Button>
       {open && (
         <MoreMenu label="Add" items={items} onClose={() => setOpen(false)} />

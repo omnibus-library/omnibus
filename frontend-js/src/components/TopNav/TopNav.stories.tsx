@@ -2,6 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useLocation } from "react-router";
 import { expect, waitFor, within } from "storybook/test";
 import { recentProgressHandler } from "../../testing/handlers";
+import { realPointer } from "../../testing/pointer";
 import { WIRE_ADA } from "../../testing/wire";
 import { TopNav } from "./TopNav";
 
@@ -67,7 +68,7 @@ export const AddMenuOffersThreeWaysToAdd: Story = {
     ]);
     await expect(within(menu).getAllByRole("menuitem")).toEqual(items);
     await expect(items[0]).toHaveAccessibleDescription(
-      "EPUB, PDF, CBZ, M4B or MP3 from this computer",
+      "EPUB, PDF, M4B or MP3 from this computer",
     );
     await expect(items[1]).toHaveAccessibleDescription(
       "Scan or type the ISBN of a print book",
@@ -161,9 +162,6 @@ export const ClosingTheUploadSheetHandsFocusBackToAdd: Story = {
     await waitFor(() => expect(trigger).toHaveFocus());
   },
 };
-
-/** The browser's own pointer: a story's `userEvent` dispatches straight to its target, past any overlay. */
-const realPointer = async () => (await import("vitest/browser")).userEvent;
 
 export const AddMenuClosesOnAClickBelowTheBar: Story = {
   render: () => (
@@ -306,8 +304,14 @@ export const FitsAWindowJustAboveThePhoneBreakpoint = fitsAWindowOf(769);
 
 export const FitsAWindowJustAboveTheSearchCollapse = fitsAWindowOf(1009);
 
-export const AddMenuFitsAPhone: Story = {
-  ...windowOf(390),
+// The decorator pads 24px a side; a phone's bar runs edge to edge, so the story cancels the padding.
+const menuFitsAPhoneOf = (width: number): Story => ({
+  ...windowOf(width),
+  render: () => (
+    <div style={{ margin: "0 -24px" }}>
+      <TopNav />
+    </div>
+  ),
   play: async ({ canvas, userEvent }) => {
     await document.fonts.ready;
     const menu = await openAddMenu(canvas, userEvent);
@@ -319,4 +323,9 @@ export const AddMenuFitsAPhone: Story = {
       document.documentElement.clientWidth,
     );
   },
-};
+});
+
+export const AddMenuFitsAPhone = menuFitsAPhoneOf(390);
+
+// Narrower than the menu's 334px plus its gutters, so the width cap is what keeps it on screen.
+export const AddMenuFitsTheNarrowestPhone = menuFitsAPhoneOf(320);
