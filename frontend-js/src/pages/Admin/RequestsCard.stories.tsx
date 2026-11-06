@@ -97,8 +97,10 @@ export const ShowsSavedConnections: Story = {
       "placeholder",
       "•••• (unchanged)",
     );
-    await expect(canvas.getByLabelText("Download category")).toHaveValue(
-      "omnibus",
+    const category = canvas.getByLabelText("Category (optional)");
+    await expect(category).toHaveValue("omnibus");
+    await expect(category).toHaveAccessibleDescription(
+      "Files Omnibus downloads under this qBittorrent category. Leave empty to use qBittorrent’s defaults.",
     );
     await expect(
       canvas.getByLabelText("Completed folder, as qBittorrent sees it"),

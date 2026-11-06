@@ -576,7 +576,7 @@ export function requestsHandlers(
         download_client_password_masked: update.download_client_password
           ? masked
           : current.download_client_password_masked,
-        download_client_category: update.download_client_category || "omnibus",
+        download_client_category: update.download_client_category,
         download_client_path_prefix: update.download_client_path_prefix || null,
         download_path_prefix: update.download_path_prefix || null,
       });

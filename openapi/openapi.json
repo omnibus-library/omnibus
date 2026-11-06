@@ -15942,7 +15942,8 @@
         ],
         "properties": {
           "download_client_category": {
-            "type": "string"
+            "type": "string",
+            "description": "The category downloads are filed under; empty when none is sent."
           },
           "download_client_kind": {
             "$ref": "#/components/schemas/DownloadClientKind"
@@ -16011,7 +16012,7 @@
         "properties": {
           "download_client_category": {
             "type": "string",
-            "description": "The category the client files Omnibus downloads under, up to 255 bytes. Empty\nmeans `omnibus`."
+            "description": "The category the client files Omnibus downloads under, up to 255 bytes. Empty\nsends no category, so the client's own defaults apply."
           },
           "download_client_kind": {
             "$ref": "#/components/schemas/DownloadClientKind"
