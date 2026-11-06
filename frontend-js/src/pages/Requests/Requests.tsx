@@ -10,6 +10,7 @@ import { ToastProvider } from "../../components/Toast/Toast";
 import { useCurrentUser } from "../../session";
 import { PHONE_QUERY, useMediaQuery } from "../../useMediaQuery";
 import { RequestDossier } from "../BookRequest/BookRequest";
+import { requestPath } from "../BookRequest/requestView";
 import { NotFound } from "../NotFound/NotFound";
 import {
   countsLine,
@@ -19,10 +20,6 @@ import {
   type RequestGroupKey,
 } from "./requestGroups";
 import "./Requests.css";
-
-/** The address that selects `uuid`'s book in the list. */
-const selectPath = (uuid: string) =>
-  `/requests?book=${encodeURIComponent(uuid)}`;
 
 /** One book: its cover, title and where it stands, with a dot in its group's colour. It links to the book's address, which selects it beside the list or, on a phone, opens it full screen. */
 function Item({
@@ -42,7 +39,7 @@ function Item({
   return (
     <li>
       <Link
-        to={selectPath(book.uuid)}
+        to={requestPath(book.uuid)}
         onClick={onSelect}
         className="rqs-item"
         aria-current={selected ? "true" : undefined}

@@ -922,21 +922,6 @@ export const ChoosingMarksOnlyTheChosenRowBusy: Story = {
   },
 };
 
-export const AnOldUuidInTheAddressMovesToTheBooksCurrentOne: Story = {
-  parameters: { path: "/books/old-uuid/request?id=7" },
-  beforeEach({ msw }) {
-    msw.use(
-      http.get("/api/ebooks/:uuid", () => HttpResponse.json(HYPERION)),
-      ...seed({}),
-    );
-  },
-  play: async ({ canvas }) => {
-    await expect(
-      await canvas.findByRole("link", { name: "Open book page" }),
-    ).toHaveAttribute("href", `/books/${UUID}`);
-  },
-};
-
 export const AnotherReadersDownloadOffersNoCancelOrChooseAnother: Story = {
   parameters: { user: NOT_THE_MAKER },
   beforeEach({ msw }) {
@@ -1162,6 +1147,8 @@ export const HistoryRecordsACancelledRequestOnTheDayItEnded: Story = {
     await expect(
       within(row).getByTestId("request-history-day"),
     ).toHaveTextContent("Oct 12");
+    // The row names the book already on screen, so it links nowhere.
+    await expect(within(row).queryByRole("link")).toBeNull();
   },
 };
 
@@ -1179,11 +1166,8 @@ export const RequestAgainFromHistoryStartsANewRequestInLooking: Story = {
 
     await waitFor(() =>
       expect(canvas.getByTestId("where")).toHaveTextContent(
-        `/books/${UUID}/request?id=8`,
+        `/requests?book=${UUID}`,
       ),
-    );
-    await waitFor(() =>
-      expect(canvas.getByTestId("request-state")).toHaveTextContent("Looking"),
     );
     await expect(fake.writes).toEqual([{ kind: "start", uuid: UUID }]);
   },

@@ -344,6 +344,31 @@ export const OffOnThisServerItIsNotFound: Story = {
   },
 };
 
+export const ARequestStartedFromAWishlistOffersTheWayBackInThePane: Story = {
+  parameters: { path: "/start" },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("link", { name: "Request Hyperion" }),
+    );
+
+    const pane = within(await canvas.findByTestId("requests-pane"));
+    await expect(
+      await pane.findByRole("link", { name: "← Back to Wishlists" }),
+    ).toHaveAttribute("href", "/wishlists");
+
+    await userEvent.click(await canvas.findByRole("link", { name: /Dracula/ }));
+
+    // Selecting another book swaps the pane for a new one.
+    const next = within(await canvas.findByTestId("requests-pane"));
+    await expect(
+      await next.findByRole("heading", { level: 2, name: "Dracula" }),
+    ).toBeInTheDocument();
+    await expect(
+      next.queryByRole("link", { name: "← Back to Wishlists" }),
+    ).toBeNull();
+  },
+};
+
 export const OnAPhoneEachBookOpensItsRequestAtItsAddressWithAWayBack: Story = {
   ...PHONE,
   parameters: { ...PHONE.parameters, path: "/requests", user: READER },

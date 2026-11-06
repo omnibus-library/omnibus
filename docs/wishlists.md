@@ -51,7 +51,7 @@ first, with "Show more" for the rest; "Details" opens the long form of every row
 until Omnibus has a Usenet download client.
 
 Requesting from the wishlist asks one question (ebook or audiobook), starts the request, and takes the user
-straight to that book's request page, already in "Looking".
+straight to that book on the Requests page, already in "Looking".
 
 ## Objectives
 

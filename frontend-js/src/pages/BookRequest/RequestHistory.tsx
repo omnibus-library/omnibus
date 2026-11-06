@@ -1,18 +1,15 @@
 import type { UseQueryResult } from "@tanstack/react-query";
-import { Link } from "react-router";
 import type { BookUuid, RequestListing } from "../../api";
 import { Button } from "../../components/Button/Button";
 import { BusyLabel, Loading } from "../../components/Loading/Loading";
 import { useCurrentUser } from "../../session";
 import { PHONE_QUERY, useMediaQuery } from "../../useMediaQuery";
 import {
-  FROM_REQUESTS,
   factParts,
   historyDay,
   kindChip,
   kindLabel,
   offersRequestAgain,
-  requestPath,
   SEP,
   swapFacts,
 } from "./requestView";
@@ -67,15 +64,7 @@ function HistoryRow({
   const now = useNowPast(request.cancelAt);
   const { head, details } = factParts(listing, viewer.id);
   const day = historyDay(request.updatedAt);
-  const link = (text: string) => (
-    <Link
-      className="rq-history-facts"
-      to={requestPath(request.bookUuid, request.id)}
-      state={variant === "pane" ? FROM_REQUESTS : undefined}
-    >
-      {text}
-    </Link>
-  );
+  const facts = (text: string) => <p className="rq-history-facts">{text}</p>;
   return (
     <li
       className="rq-history-row"
@@ -84,7 +73,7 @@ function HistoryRow({
     >
       {phone ? (
         <div className="rq-history-text">
-          {link(
+          {facts(
             `${kindLabel(request.kind)} ${head.charAt(0).toLowerCase()}${head.slice(1)}${SEP}${day}`,
           )}
           {details.length > 0 && (
@@ -103,7 +92,7 @@ function HistoryRow({
           </span>
           <span className="rq-chip">{kindChip(request.kind)}</span>
           <div className="rq-history-text">
-            {link([head, ...details].join(" · "))}
+            {facts([head, ...details].join(" · "))}
             {swapFacts(listing).map((swap) => (
               <p key={swap.id} className="rq-history-swap">
                 {swap.text}

@@ -1,14 +1,18 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { HttpResponse, http } from "msw";
 import { expect, waitFor, within } from "storybook/test";
-import { parseBookUuid } from "../../api";
+import { parseBookUuid, requestsQuery } from "../../api";
 import {
   expectInvalidated,
   seedQueries,
   storyClient,
 } from "../../testing/AppHarness";
 import { deferred, failing } from "../../testing/handlers";
-import { requestFake } from "../../testing/requestHandlers";
+import {
+  aWireListing,
+  aWireRequest,
+  requestFake,
+} from "../../testing/requestHandlers";
 import { WIRE_ADA } from "../../testing/wire";
 import { BOOKS } from "../../testing/wishlistHandlers";
 import { bookQuery } from "../BookDetail/queries";
@@ -100,10 +104,53 @@ export const RequestEbookStartsARequestAndOpensItsPage: Story = {
     );
 
     await expect(await canvas.findByTestId("where")).toHaveTextContent(
-      `/books/${BOOKS.hyperion.uuid}/request?id=1`,
+      `/requests?book=${BOOKS.hyperion.uuid}`,
     );
     await expect(requests.writes).toEqual([
       { kind: "start", uuid: BOOKS.hyperion.uuid },
+    ]);
+  },
+};
+
+let heldList = deferred();
+let listReads = 0;
+
+export const RequestEbookOpensRequestsOnceItsListHoldsTheRequest: Story = {
+  beforeEach({ msw }) {
+    heldList = deferred();
+    listReads = 0;
+    // The first read is the cached list from before; the second is the one the start waits for.
+    msw.use(
+      http.get("/api/requests", async () => {
+        listReads += 1;
+        if (listReads === 1) return HttpResponse.json([]);
+        await heldList.promise;
+        return HttpResponse.json([
+          aWireListing({
+            request: aWireRequest({ id: 1, book_uuid: BOOKS.hyperion.uuid }),
+          }),
+        ]);
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await storyClient().prefetchQuery(requestsQuery);
+    const row = within(await rowOf(canvas, "Hyperion"));
+
+    await userEvent.click(row.getByTestId("wishlists-request"));
+    await userEvent.click(
+      await canvas.findByRole("menuitem", { name: "Request ebook" }),
+    );
+
+    await waitFor(() => expect(listReads).toBe(2));
+    await expect(canvas.queryByTestId("where")).toBeNull();
+    heldList.release();
+    await expect(await canvas.findByTestId("where")).toHaveTextContent(
+      `/requests?book=${BOOKS.hyperion.uuid}`,
+    );
+    const listed = storyClient().getQueryData(requestsQuery.queryKey);
+    await expect(listed?.map((l) => l.request.bookUuid)).toEqual([
+      BOOKS.hyperion.uuid,
     ]);
   },
 };
@@ -510,7 +557,7 @@ export const RequestEbookInTheGetSheetStartsARequestAndOpensItsPage: Story = {
     await userEvent.click(sheet.getByRole("button", { name: /Request ebook/ }));
 
     await expect(await canvas.findByTestId("where")).toHaveTextContent(
-      `/books/${BOOKS.hyperion.uuid}/request?id=1`,
+      `/requests?book=${BOOKS.hyperion.uuid}`,
     );
     await expect(requests.writes).toEqual([
       { kind: "start", uuid: BOOKS.hyperion.uuid },

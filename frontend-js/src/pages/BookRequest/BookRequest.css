@@ -445,20 +445,10 @@
 .rq-page .rq-history-facts {
   color: var(--ink-1);
   font-size: 13px;
-  text-decoration: none;
 }
 .rq-history-swap {
   color: var(--ink-2);
   font-size: 12px;
-}
-.rq-history-facts:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-@media (hover: hover) {
-  .rq-page .rq-history-facts:hover {
-    color: var(--ink-0);
-  }
 }
 .rq-history-failed {
   display: grid;

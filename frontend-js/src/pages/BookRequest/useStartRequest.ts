@@ -4,7 +4,7 @@ import { type BookUuid, REQUEST_LISTS_KEY, startBookRequest } from "../../api";
 import { useToast } from "../../components/Toast/Toast";
 import { requestPath, startFailure } from "./requestView";
 
-/** Starts an ebook request for the book and opens its request page, handing it `from` as router state, or says why it could not; with `stay`, the page stays where it is and only its lists are read again. */
+/** Starts an ebook request for the book, reads the request lists again, then opens the book's request on the Requests page, handing it `from` as router state; with `stay`, the page stays where it is. Says why on a refusal. */
 export function useStartRequest(
   uuid: BookUuid,
   { stay = false, from }: { stay?: boolean; from?: unknown } = {},
@@ -14,12 +14,13 @@ export function useStartRequest(
   const client = useQueryClient();
   return useMutation({
     mutationFn: () => startBookRequest(uuid),
-    onSuccess: (request) => {
-      const refreshed = client.invalidateQueries({
+    // Awaited even when it fails to read: the request exists, so the page opens regardless.
+    onSuccess: async () => {
+      await client.invalidateQueries({
         queryKey: REQUEST_LISTS_KEY,
+        refetchType: "all",
       });
-      if (stay) return refreshed;
-      navigate(requestPath(uuid, request.id), { state: from });
+      if (!stay) navigate(requestPath(uuid), { state: from });
     },
     onError: (error) => toast(startFailure(error)),
   });

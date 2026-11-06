@@ -135,8 +135,8 @@ describe("startFailure", () => {
 });
 
 describe("requestPath", () => {
-  it("is the book's own address with /request and the request's id", () => {
-    expect(requestPath("abc-123", 7)).toBe("/books/abc-123/request?id=7");
+  it("is the Requests page's address for the book, escaped", () => {
+    expect(requestPath("abc 123")).toBe("/requests?book=abc%20123");
   });
 });
 
@@ -569,7 +569,7 @@ describe("splitBookRequests", () => {
 
 describe("cameFrom", () => {
   it.each([
-    ["the Requests list", { from: "requests" }, "requests"],
+    ["the Requests list", { from: "requests" }, null],
     ["a wishlist", { from: "wishlists" }, "wishlists"],
     ["anywhere else", { from: "search" }, null],
     ["no state", null, null],

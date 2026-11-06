@@ -7,13 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
-import {
-  Link,
-  Navigate,
-  useLocation,
-  useParams,
-  useSearchParams,
-} from "react-router";
+import { Link, useLocation, useParams, useSearchParams } from "react-router";
 import {
   type BookUuid,
   bookRequestQuery,
@@ -59,7 +53,6 @@ import {
   pickedVersion,
   progressPercent,
   type RequestStep,
-  requestPath,
   SEARCH_STALE_AFTER_SECS,
   SEP,
   splitBookRequests,
@@ -720,10 +713,6 @@ export function RequestDossier({
     );
   }
   if (book.data === null) return <PageNotFound subject="Book" />;
-  // The address named the book by an old uuid; the request knows the current one.
-  if (request.data.bookUuid !== uuid) {
-    return <Navigate replace to={requestPath(request.data.bookUuid, id)} />;
-  }
   const { title, authors } = book.data;
   // Unknown until the wishlists answer: the clause stays out rather than claiming nobody.
   const wanted = wishlists.data?.find((w) => w.uuid === uuid)?.wantedBy;
@@ -731,7 +720,7 @@ export function RequestDossier({
   const split = listed.data && splitBookRequests(listed.data, id);
   const context: LaneContext = { title, listings: listed.data, variant };
   const Title = variant === "page" ? "h1" : "h2";
-  const from = variant === "page" ? cameFrom(state) : null;
+  const from = cameFrom(state);
   return (
     <div
       className="rq-page"
