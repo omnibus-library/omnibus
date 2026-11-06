@@ -9,6 +9,7 @@ import {
 } from "react";
 import { Link, useLocation } from "react-router";
 import {
+  type Book,
   type BookUuid,
   bookRequestQuery,
   bookRequestsQuery,
@@ -31,6 +32,7 @@ import { nowSecs, recency } from "../../format";
 import { useCurrentUser } from "../../session";
 import { PHONE_QUERY, useMediaQuery } from "../../useMediaQuery";
 import { bookQuery } from "../BookDetail/queries";
+import { CoverOffer } from "./CoverOffer";
 import {
   type DossierVariant,
   RequestAgain,
@@ -47,6 +49,7 @@ import {
   kindChip,
   kindLabel,
   offersRequestAgain,
+  pickedHeading,
   pickedMeta,
   pickedVersion,
   progressPercent,
@@ -56,7 +59,6 @@ import {
   splitBookRequests,
   stateView,
   stepsFor,
-  versionSize,
   versionSource,
   versionsFound,
   wishersLine,
@@ -305,11 +307,7 @@ function Download({
   }
   const picked = pickedVersion(request);
   const percent = downloadPercent(request);
-  const heading = picked
-    ? [picked.format, versionSize(picked.sizeBytes)]
-        .filter((part) => part !== null)
-        .join(SEP)
-    : "Your pick";
+  const heading = picked ? pickedHeading(picked) : "Your pick";
   return (
     <>
       <div className="rq-download" data-testid="request-chosen">
@@ -330,6 +328,31 @@ function Download({
       </div>
       {actions}
     </>
+  );
+}
+
+/** The version a ready request added, as a download's card shows its pick, with when it was added where the time left was; a phone heads it with the format and size. */
+function Added({ request }: { request: Request }) {
+  const phone = useMediaQuery(PHONE_QUERY);
+  const picked = pickedVersion(request);
+  if (!picked) return null;
+  const added = `added ${recency(nowSecs(), request.updatedAt)}`;
+  if (!phone) {
+    return (
+      <div className="rq-download">
+        <Picked request={request} extra={added} />
+      </div>
+    );
+  }
+  const meta = [picked.indexer, added].filter((part) => part).join(SEP);
+  return (
+    <div className="rq-download" data-testid="request-chosen">
+      <div className="rq-picked">
+        <p className="rq-download-heading">{pickedHeading(picked)}</p>
+        <p className="rq-version-meta">{picked.title}</p>
+        <p className="rq-version-meta">{meta}</p>
+      </div>
+    </div>
   );
 }
 
@@ -569,7 +592,7 @@ function Lane({
   const cancelLabel = mine
     ? undefined
     : listing &&
-      `Cancel ${listing.requesterName}’s request for ${context.title}`;
+      `Cancel ${listing.requesterName}’s request for ${context.book.title}`;
   const actions = canAct && isCancellable(request) && (mine || cancelLabel) && (
     <Actions
       request={request}
@@ -626,6 +649,16 @@ function Lane({
         />
       )}
       {request.state === "chosen" && <Picked request={request} />}
+      {request.state === "ready" && <Added request={request} />}
+      {request.state === "ready" && canAct && request.coverOffer && (
+        <CoverOffer
+          request={request}
+          offer={request.coverOffer}
+          book={context.book}
+          variant={context.variant}
+          onDone={focusTitle}
+        />
+      )}
       {request.state === "on_its_way" ? (
         <Download request={request} actions={actions} />
       ) : (
@@ -651,8 +684,8 @@ function Lane({
 
 /** What a lane needs to know about the rest of the book's requests. */
 type LaneContext = {
-  /** The book's title, for an admin's Cancel label. */
-  title: string;
+  /** The book: its title names an admin's Cancel, and its look stands in for its covers. */
+  book: Book;
   /** The book's requests as listed, for who made each and whether Request again would only return one going; `undefined` until read. */
   listings: readonly RequestListing[] | undefined;
   variant: DossierVariant;
@@ -713,7 +746,11 @@ export function RequestDossier({
   const wanted = wishlists.data?.find((w) => w.uuid === uuid)?.wantedBy;
   const wishers = wanted ? wishersLine(wanted, viewer.id) : null;
   const split = listed.data && splitBookRequests(listed.data, id);
-  const context: LaneContext = { title, listings: listed.data, variant };
+  const context: LaneContext = {
+    book: book.data,
+    listings: listed.data,
+    variant,
+  };
   const Title = variant === "page" ? "h1" : "h2";
   return (
     <div

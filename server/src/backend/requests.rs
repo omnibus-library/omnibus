@@ -1,5 +1,6 @@
 //! Reader REST handlers for book requests: starting one for a book, listing every reader's
-//! requests or one book's, and answering the search it runs. Every route answers 404 while
+//! requests or one book's, answering the search it runs, and taking or keeping the cover a
+//! finished download brought. Every route answers 404 while
 //! the book-requests flag is off, before the sign-in check, and a write answers 403 to a reader
 //! without the request permission. Requests are visible to every signed-in reader; only the
 //! requester or an admin acts on one, and only an admin is shown the search's technical detail.
@@ -9,26 +10,28 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use axum::{
+    body::Bytes,
     extract::{FromRequestParts, Path, Query, State},
-    http::{request::Parts, StatusCode},
+    http::{request::Parts, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
 use omnibus_db::{
     self as db,
     requests::{
+        cover,
         search::run_search,
         store::{self, ListFilter, RequestError, RequestRow},
     },
 };
 use omnibus_shared::{
-    BookRequest, ChooseVersion, RequestKind, RequestListQuery, RequestListing, RequestState,
-    StartRequest, StuckReason,
+    BookRequest, ChooseVersion, FileBytes, RequestKind, RequestListQuery, RequestListing,
+    RequestState, StartRequest, StuckReason,
 };
 
 use crate::auth::AuthUser;
 
-use super::{internal, AppState};
+use super::{internal, overrides, AppState};
 
 /// Requests a reader may start (or retry) in [`START_WINDOW`].
 const MAX_STARTS: usize = 10;
@@ -128,18 +131,38 @@ fn summary(row: RequestRow, is_admin: bool) -> BookRequest {
         note: row.note,
         created_at: row.created_at,
         updated_at: row.updated_at,
+        cover_offer: None,
         versions: Vec::new(),
     }
 }
 
-/// [`summary`] plus the versions found.
-async fn view(state: &AppState, row: RequestRow, is_admin: bool) -> Result<BookRequest, Response> {
+/// Whether `user` may act on `row`: an admin, or the reader who made it while they may still
+/// request. Only they are offered its downloaded cover.
+fn may_act(user: &AuthUser, row: &RequestRow) -> bool {
+    user.is_admin || (user.can_request && user.id == row.user_id)
+}
+
+/// [`summary`] plus the versions found and, to whoever may act on it, the cover on offer.
+async fn view(
+    state: &AppState,
+    row: RequestRow,
+    viewer: &AuthUser,
+) -> Result<BookRequest, Response> {
     let versions = store::versions(state.pool(), row.id)
         .await
         .map_err(|e| internal("read request versions", e))?;
+    let cover_offer = if may_act(viewer, &row) {
+        cover::offer(state.pool(), &row)
+            .await
+            .map_err(|e| internal("read request cover offer", e))?
+            .map(|offer| offer.sizes)
+    } else {
+        None
+    };
     Ok(BookRequest {
         versions,
-        ..summary(row, is_admin)
+        cover_offer,
+        ..summary(row, viewer.is_admin)
     })
 }
 
@@ -158,7 +181,7 @@ async fn answer(state: &AppState, id: i64, viewer: &AuthUser) -> Response {
         Ok(row) => row,
         Err(res) => return res,
     };
-    match view(state, row, viewer.is_admin).await {
+    match view(state, row, viewer).await {
         Ok(request) => Json(request).into_response(),
         Err(res) => res,
     }
@@ -248,7 +271,7 @@ pub(super) async fn post_start_request(
     } else {
         StatusCode::OK
     };
-    match view(&state, started.request, user.is_admin).await {
+    match view(&state, started.request, &user).await {
         Ok(request) => (status, Json(request)).into_response(),
         Err(res) => res,
     }
@@ -364,6 +387,152 @@ pub(super) async fn get_request(
     Path(id): Path<i64>,
 ) -> Response {
     answer(&state, id, &user).await
+}
+
+/// Get a request's downloaded cover
+///
+/// The cover that came with the request's finished download, offered as a replacement for the
+/// book's own: the image as stored, validated by its `ETag`. It is there while `cover_offer` is
+/// on the request, until the offer is taken or kept (`POST` or `DELETE` on this path). Only the
+/// reader who made the request, or an admin, is offered it.
+#[utoipa::path(
+    get,
+    path = "/api/requests/{id}/cover",
+    tag = "Requests",
+    operation_id = "get_request_cover",
+    params(("id" = i64, Path, description = "The request's id.")),
+    responses(
+        (status = 200, description = "The cover image.", body = FileBytes, content_type = "image/*"),
+        (status = 304, description = "The cover is unchanged since the `ETag` sent in `If-None-Match`."),
+        (status = 401, description = "You aren't signed in."),
+        (status = 404, description = "Book requests are off on this server, there is no such request, or it has no cover on offer to you."),
+    ),
+)]
+pub(super) async fn get_request_cover(
+    RequestsViewer(user): RequestsViewer,
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    headers: HeaderMap,
+) -> Response {
+    let row = match find(&state, id).await {
+        Ok(row) => row,
+        Err(res) => return res,
+    };
+    let offered = if may_act(&user, &row) {
+        cover::offer(state.pool(), &row).await
+    } else {
+        Ok(None)
+    };
+    match offered {
+        Ok(Some(offer)) => super::covers::image_response(&headers, &offer.mime, offer.bytes),
+        Ok(None) => (StatusCode::NOT_FOUND, "no cover on offer").into_response(),
+        Err(e) => internal("read request cover offer", e),
+    }
+}
+
+/// Use the downloaded cover
+///
+/// Makes the cover the finished download brought the book's cover, the way uploading one
+/// does: it shows on every device, and a synced Kobo fetches it on its next sync. Only a
+/// `ready` request whose offer is still on (`cover_offer` in the request) takes it, and the
+/// offer is gone afterwards. Only the reader who made the request, or an admin, can do this.
+#[utoipa::path(
+    post,
+    path = "/api/requests/{id}/cover",
+    tag = "Requests",
+    operation_id = "take_request_cover",
+    params(("id" = i64, Path, description = "The request's id.")),
+    responses(
+        (status = 200, description = "The book has the downloaded cover; the offer is gone.", body = BookRequest),
+        (status = 401, description = "You aren't signed in."),
+        (status = 403, description = "Your account can't make requests, or the request is another reader's."),
+        (status = 404, description = "Book requests are off on this server, or there is no such request."),
+        (status = 409, description = "No cover is on offer: it was taken or kept, or the downloaded one is not sharper."),
+    ),
+)]
+pub(super) async fn post_take_request_cover(
+    RequestsUser(user): RequestsUser,
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Response {
+    let row = match own_request(&state, &user, id).await {
+        Ok(row) => row,
+        Err(res) => return res,
+    };
+    let nothing = || (StatusCode::CONFLICT, "no cover is on offer").into_response();
+    let offer = match cover::offer(state.pool(), &row).await {
+        Ok(Some(offer)) => offer,
+        Ok(None) => return nothing(),
+        Err(e) => return internal("read request cover offer", e),
+    };
+    let Some(candidate) = row.cover_candidate.as_deref() else {
+        return nothing();
+    };
+    match cover::settle(state.pool(), id, candidate).await {
+        Ok(()) => {}
+        Err(RequestError::WrongState) => return nothing(),
+        Err(e) => return internal("settle request cover", e),
+    }
+    let (mime, bytes) = (offer.mime, Bytes::from(offer.bytes));
+    if let Err(e) = overrides::persist_cover(&state, &row.book_uuid, user.id, mime, bytes).await {
+        // The old cover stands, so the offer must too.
+        if let Err(restore) = cover::reopen(state.pool(), id, candidate).await {
+            tracing::error!(error = %restore, request = id, "restoring a cover offer");
+        }
+        return internal(e.context, e.detail);
+    }
+    cover::discard(id).await;
+    // The cover is stored; a stale thumbnail is only logged, not undone.
+    let book_id = offer.book_id;
+    if let Err(e) =
+        tokio::task::spawn_blocking(move || db::thumbs::invalidate_thumbs(book_id)).await
+    {
+        tracing::error!(error = %e, request = id, "invalidating thumbs after taking a cover");
+    }
+    answer(&state, id, &user).await
+}
+
+/// Keep the book's cover
+///
+/// Turns the downloaded cover down: the book keeps the cover it has, and the offer is gone
+/// for good. Only the reader who made the request, or an admin, can do this.
+#[utoipa::path(
+    delete,
+    path = "/api/requests/{id}/cover",
+    tag = "Requests",
+    operation_id = "keep_request_cover",
+    params(("id" = i64, Path, description = "The request's id.")),
+    responses(
+        (status = 200, description = "The offer is gone.", body = BookRequest),
+        (status = 401, description = "You aren't signed in."),
+        (status = 403, description = "Your account can't make requests, or the request is another reader's."),
+        (status = 404, description = "Book requests are off on this server, or there is no such request."),
+        (status = 409, description = "No cover is on offer: it was already taken or kept."),
+    ),
+)]
+pub(super) async fn delete_keep_request_cover(
+    RequestsUser(user): RequestsUser,
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Response {
+    let row = match own_request(&state, &user, id).await {
+        Ok(row) => row,
+        Err(res) => return res,
+    };
+    let settled = match &row.cover_candidate {
+        Some(candidate) => cover::settle(state.pool(), id, candidate).await,
+        None => Err(RequestError::WrongState),
+    };
+    match settled {
+        Ok(()) => {
+            cover::discard(id).await;
+            answer(&state, id, &user).await
+        }
+        Err(RequestError::WrongState) => {
+            (StatusCode::CONFLICT, "no cover is on offer").into_response()
+        }
+        Err(e) => internal("settle request cover", e),
+    }
 }
 
 /// Try a request again

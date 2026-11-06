@@ -2,6 +2,9 @@
 //! (`server::backend`), kept in `omnibus-shared` so the sniff has a single
 //! source of truth. Pure byte inspection with no `image`-crate dependency.
 
+/// Largest image any cover or photo pipeline accepts.
+pub const MAX_IMAGE_BYTES: usize = 10 * 1024 * 1024;
+
 /// Detect image format from magic bytes. Returns the canonical MIME type for
 /// accepted raster formats (JPEG, PNG, GIF, WebP). Returns `None` for
 /// unrecognised or dangerous formats (SVG, arbitrary binaries).

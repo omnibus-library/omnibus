@@ -118,7 +118,7 @@ pub use error_ring::*;
 pub use file_bytes::*;
 pub use health::*;
 pub use highlight::*;
-pub use image_format::detect_image_format;
+pub use image_format::{detect_image_format, MAX_IMAGE_BYTES};
 pub use isbn::*;
 pub use journal::*;
 pub use kobo::*;
