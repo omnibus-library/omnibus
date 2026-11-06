@@ -9,6 +9,7 @@ fn release(title: &str) -> ProwlarrRelease {
         title: title.to_string(),
         size_bytes: Some(1_000_000),
         seeders: Some(10),
+        protocol: None,
         indexer: Some("books".to_string()),
         link: "magnet:?xt=urn:btih:abc".to_string(),
         categories: vec![7020],
