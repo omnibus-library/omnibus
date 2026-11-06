@@ -221,7 +221,7 @@ export const SelectingABookShowsItsRequestAndHistory: Story = {
         "/requests?book=uuid-hyperion",
       ),
     );
-    const pane = within(canvas.getByTestId("requests-pane"));
+    const pane = within(await canvas.findByTestId("requests-pane"));
     await expect(
       await pane.findByRole("heading", { level: 2, name: "Hyperion" }),
     ).toBeInTheDocument();
