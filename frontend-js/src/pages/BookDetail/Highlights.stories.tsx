@@ -341,7 +341,7 @@ export const SaveImageOpensTheQuoteCardEditor: Story = {
     await expect(
       within(dialog).getByTestId("quote-preview-body"),
     ).toHaveTextContent(
-      "“A station at the edge of the map hears something answer.”",
+      /^A station at the edge of the map hears something answer\.$/,
     );
     await expect(
       within(dialog).getByText("Susanna Clarke"),

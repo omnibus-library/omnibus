@@ -28,6 +28,7 @@ mod authors;
 mod bookmarks;
 mod cleanup;
 mod conditional;
+mod cover_palette;
 mod covers;
 mod cross_format;
 mod deletion;

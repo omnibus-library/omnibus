@@ -1,3 +1,4 @@
+import type { BookUuid } from "../../api";
 import { QuoteCard } from "../../components/QuoteCard/QuoteCard";
 import { Scrim } from "./DrawerShell";
 
@@ -6,7 +7,8 @@ type QuotePanelProps = {
   author: string;
   /** The book's title. */
   subtitle: string;
-  accent: string;
+  uuid: BookUuid;
+  accent: string | null;
   onClose: () => void;
 };
 
@@ -15,6 +17,7 @@ export function QuotePanel({
   text,
   author,
   subtitle,
+  uuid,
   accent,
   onClose,
 }: QuotePanelProps) {
@@ -30,6 +33,7 @@ export function QuotePanel({
           text={text}
           author={author}
           subtitle={subtitle}
+          uuid={uuid}
           accent={accent}
           onClose={onClose}
         />
