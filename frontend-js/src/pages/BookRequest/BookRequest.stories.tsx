@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { HttpResponse, http } from "msw";
-import { Route, Routes, useLocation } from "react-router";
+import { Link, Route, Routes, useLocation } from "react-router";
 import { expect, waitFor, within } from "storybook/test";
 import { bookHandler, deferred, failing } from "../../testing/handlers";
 import {
@@ -13,6 +13,7 @@ import {
 import { WIRE_ADA } from "../../testing/wire";
 import { Requests } from "../Requests/Requests";
 import { PHONE } from "../Wishlists/Wishlists.stories.shared";
+import { FROM_WISHLISTS } from "./requestView";
 
 const UUID = HYPERION.unique_identifier;
 
@@ -95,6 +96,14 @@ function Page() {
     <>
       <Routes>
         <Route path="/requests" element={<Requests />} />
+        <Route
+          path="/start"
+          element={
+            <Link to={`/requests?book=${UUID}`} state={FROM_WISHLISTS}>
+              Request from a wishlist
+            </Link>
+          }
+        />
         <Route path="/books/:uuid" element={<h1>Book page</h1>} />
       </Routes>
       <Where />
@@ -1184,12 +1193,26 @@ export const HistoryRecordsACancelledRequestOnTheDayItEnded: Story = {
 };
 
 export const RequestAgainFromHistoryStartsANewRequestInLooking: Story = {
-  parameters: { user: READER },
+  parameters: { user: READER, path: "/start" },
   beforeEach({ msw }) {
     msw.use(...withHistory(CANCELLED_NOW, CANCELLED_EARLIER));
   },
   play: async ({ canvas, userEvent }) => {
-    const history = within(await canvas.findByTestId("request-history"));
+    await userEvent.click(
+      await canvas.findByRole("link", { name: "Request from a wishlist" }),
+    );
+    const pane = await canvas.findByTestId("requests-pane");
+    const history = within(await within(pane).findByTestId("request-history"));
+    // The dossier's own loader is the pane blanking between the old request and the new.
+    let blanked = false;
+    const watch = new MutationObserver((records) => {
+      for (const { addedNodes } of records) {
+        for (const node of addedNodes) {
+          if (node.textContent?.includes("Loading…")) blanked = true;
+        }
+      }
+    });
+    watch.observe(pane, { childList: true, subtree: true });
 
     await userEvent.click(
       await history.findByRole("button", { name: "Request again" }),
@@ -1198,6 +1221,12 @@ export const RequestAgainFromHistoryStartsANewRequestInLooking: Story = {
     await waitFor(() =>
       expect(canvas.getByTestId("request-state")).toHaveTextContent("Looking"),
     );
+    watch.disconnect();
+    await expect(blanked).toBe(false);
+    // The page stayed put, so the way back to the wishlist it came from is still there.
+    await expect(
+      canvas.getByRole("link", { name: "← Back to Wishlists" }),
+    ).toBeInTheDocument();
     await expect(canvas.getByTestId("where")).toHaveTextContent(
       `/requests?book=${UUID}`,
     );
