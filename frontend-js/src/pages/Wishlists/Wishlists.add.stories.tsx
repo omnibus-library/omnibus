@@ -74,7 +74,7 @@ const addFromTheMenu = async (
 const resultTitles = (section: ReturnType<typeof within>) =>
   section
     .queryAllByTestId("wishlists-add-result")
-    .map((r: HTMLElement) => r.querySelector(".wl-add-title")?.textContent);
+    .map((r: HTMLElement) => r.querySelector(".bsearch-title")?.textContent);
 
 export const OpensFocusedWithItsHint: Story = {
   play: async ({ canvas, userEvent }) => {
