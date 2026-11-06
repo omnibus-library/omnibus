@@ -2,6 +2,7 @@
 //  The quote card's shapes, type, backgrounds and cover palette — the parts
 //  of the editor that are decisions rather than drawing.
 
+import Foundation
 import SwiftUI
 import Testing
 
@@ -254,5 +255,54 @@ struct QuoteCustomStyleTests {
     @Test("a picked sRGB colour converts to its hex")
     func oklchFromColorReadsSRGB() {
         #expect(OKLCH.from(Color(.sRGB, red: 1, green: 0, blue: 0)).hex == "#ff0000")
+    }
+}
+
+@Suite("Quote card cover palette")
+struct CoverPaletteTests {
+    private func decodeStyles(from json: String) throws -> [QuoteStyle] {
+        try JSONDecoder().decode(CoverPalette.self, from: Data(json.utf8)).styles
+    }
+
+    @Test("the server's pairs become Cover 1 to 4 in order, with dark ink only where asked")
+    func stylesFollowTheServersPairs() throws {
+        let styles = try decodeStyles(from: """
+        {"pairs":[
+          {"from":"#5d1f1c","to":"#c01a1a","ink":"light"},
+          {"from":"#1e1b1b","to":"#ab2527","ink":"light"},
+          {"from":"#1e1b1b","to":"#5d1f1c","ink":"light"},
+          {"from":"#efe4e6","to":"#d5c2c9","ink":"dark"}
+        ]}
+        """)
+        #expect(styles.map(\.name) == ["Cover 1", "Cover 2", "Cover 3", "Cover 4"])
+        #expect(styles.first?.from.hex == "#5d1f1c")
+        #expect(styles.map(\.lightInk) == [true, true, true, false])
+        #expect(styles.allSatisfy { $0.kind == .gradient })
+    }
+
+    @Test("no pairs gives no swatches")
+    func stylesAreEmptyForNoPairs() throws {
+        let styles = try decodeStyles(from: "{\"pairs\":[]}")
+        #expect(styles.isEmpty)
+    }
+
+    @Test("a pair with an unreadable hex is dropped and the rest renumber")
+    func stylesDropAPairWithABadHex() throws {
+        let styles = try decodeStyles(from: """
+        {"pairs":[
+          {"from":"nope","to":"#c01a1a","ink":"light"},
+          {"from":"#1e1b1b","to":"#ab2527","ink":"light"}
+        ]}
+        """)
+        #expect(styles.map(\.name) == ["Cover 1"])
+        #expect(styles.first?.from.hex == "#1e1b1b")
+    }
+
+    @Test("an ink other than dark is light")
+    func stylesTreatAnyOtherInkAsLight() throws {
+        let styles = try decodeStyles(from: """
+        {"pairs":[{"from":"#1e1b1b","to":"#ab2527","ink":"mystery"}]}
+        """)
+        #expect(styles.first?.lightInk == true)
     }
 }

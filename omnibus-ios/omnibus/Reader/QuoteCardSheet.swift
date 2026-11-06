@@ -29,6 +29,7 @@ struct QuoteCardSheet: View {
     @State private var customFrom = CustomSeed.coral
     @State private var customTo = CustomSeed.teal
     @State private var customAngle = 135
+    @State private var coverPairs: [QuoteStyle] = []
 
     /// The book's own colour first — a card in the tone of its cover is the
     /// one that reads as *this* book rather than as a template.
@@ -36,7 +37,7 @@ struct QuoteCardSheet: View {
 
     private var solids: [QuoteStyle] { [bookStyle] + QuoteStyle.solids }
 
-    private var gradients: [QuoteStyle] { QuoteStyle.gradients }
+    private var gradients: [QuoteStyle] { coverPairs + QuoteStyle.gradients }
 
     private var customSolid: QuoteStyle { .customSolid(OKLCH.from(customColor)) }
 
@@ -75,6 +76,11 @@ struct QuoteCardSheet: View {
             }
         }
         .tint(palette.accentColor)
+        .task {
+            guard book.coverURL != nil else { return }
+            let fetched: CoverPalette? = try? await APIClient.shared.get("/api/books/\(book.uuid)/cover/palette")
+            coverPairs = fetched?.styles ?? []
+        }
     }
 
     private var preview: some View {
@@ -165,12 +171,13 @@ struct QuoteCardSheet: View {
                 BookCover(identity: CoverIdentity(book), size: .sm, cornerRadius: 3)
                     .frame(width: 24, height: 36)
                     .accessibilityHidden(true)
-                ForEach(style.kind == .solid ? solids : gradients) { option in
-                    swatch(option)
-                }
                 if style.kind == .solid {
+                    ForEach(solids) { swatch($0) }
                     customColorSwatch
                 } else {
+                    ForEach(coverPairs) { swatch($0) }
+                    if !coverPairs.isEmpty { divider }
+                    ForEach(QuoteStyle.gradients) { swatch($0) }
                     customGradientSwatch
                 }
             }
@@ -260,6 +267,14 @@ struct QuoteCardSheet: View {
         }
         .frame(width: 36, height: 36)
         .contentShape(Rectangle())
+    }
+
+    private var divider: some View {
+        Rectangle()
+            .fill(.white.opacity(0.16))
+            .frame(width: 1, height: 22)
+            .frame(width: 9, height: 36)
+            .accessibilityHidden(true)
     }
 
     private var plusMark: some View {

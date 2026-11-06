@@ -281,6 +281,30 @@ struct QuoteType: Equatable {
     }
 }
 
+/// The colour pairs the server pulls from a book's cover. The endpoint is
+/// optional: an older server answers 404 and the Gradient row goes without.
+struct CoverPalette: Decodable, Sendable {
+    struct Pair: Decodable, Sendable {
+        var from: String
+        var to: String
+        var ink: String
+    }
+
+    var pairs: [Pair]
+
+    /// One gradient swatch per readable pair, numbered over the pairs kept.
+    var styles: [QuoteStyle] {
+        var styles: [QuoteStyle] = []
+        for pair in pairs {
+            let name = "Cover \(styles.count + 1)"
+            if let style = QuoteStyle.gradient(name, from: pair.from, to: pair.to, lightInk: pair.ink != "dark") {
+                styles.append(style)
+            }
+        }
+        return styles
+    }
+}
+
 // MARK: - The card
 
 /// The card itself. Draws identically at any width — every dimension below is
