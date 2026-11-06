@@ -18,6 +18,10 @@ use sqlx::SqlitePool;
 
 use crate::ebook::IndexedBook;
 
+mod wal;
+
+pub use wal::{file_db_url, hold_write_lock, reopen_file_pool};
+
 // ---------------------------------------------------------------------------
 // Filesystem helpers
 // ---------------------------------------------------------------------------
