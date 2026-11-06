@@ -1496,6 +1496,14 @@ export const ReadyWithSharperCover: Story = {
         name: "The download has a sharper cover",
       }),
     ).toBeVisible();
+    // A heading, but drawn as a small sans line like the picked version's name, not a display title.
+    const drawn = getComputedStyle(card.getByRole("heading", { level: 4 }));
+    await expect(drawn.fontSize).toBe("14px");
+    await expect(drawn.fontFamily).toBe(
+      getComputedStyle(
+        canvas.getByTestId("request-chosen").firstElementChild as Element,
+      ).fontFamily,
+    );
     await expect(card.getByTestId("request-cover-sizes")).toHaveTextContent(
       "Its cover is 1600 × 2400. The existing one is 128 × 196.",
     );

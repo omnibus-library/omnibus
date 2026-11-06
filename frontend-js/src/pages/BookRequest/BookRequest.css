@@ -367,8 +367,11 @@
   gap: 4px;
   min-width: 0;
 }
-.rq-offer-heading {
-  font-size: 14px;
+/* Scoped under the page to outrank `.atrium h3, h4`; drawn as the picked version's name is. */
+.rq-page .rq-offer-heading {
+  padding: 0;
+  font: 500 14px / 1.35 var(--sans);
+  letter-spacing: normal;
   color: var(--ink-0);
 }
 .rq-offer-actions {
