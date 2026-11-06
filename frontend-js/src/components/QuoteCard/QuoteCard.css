@@ -98,13 +98,83 @@
   color: var(--ink-3);
   margin: 16px 0 8px;
 }
+.rd-quote-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 16px 0 8px;
+}
+.rd-quote-heading .rd-quote-label {
+  margin: 0;
+}
+.rd-quote-kind-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line-2);
+  background: var(--bg-2);
+  color: var(--ink-1);
+  font-size: 12px;
+  cursor: pointer;
+}
+.rd-quote-kind-icon {
+  display: block;
+  width: 12px;
+  height: 12px;
+  background: var(--ink-3);
+}
+.rd-quote-kind-icon.solid {
+  border-radius: 50%;
+}
+.rd-quote-kind-icon.gradient {
+  border-radius: 4px;
+}
+/* One scrolling row, edge-faded on the side that has more to reach. */
 .rd-quote-swatches {
   display: flex;
   gap: 8px;
   align-items: center;
+  overflow-x: auto;
+  scrollbar-width: none;
   /* Room for the selection ring, which would otherwise clip. */
   padding: 4px;
   margin: -4px;
+}
+.rd-quote-swatches::-webkit-scrollbar {
+  display: none;
+}
+.rd-quote-swatches[data-fade-end="true"] {
+  mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
+}
+.rd-quote-swatches[data-fade-start="true"] {
+  mask-image: linear-gradient(90deg, transparent, #000 28px);
+}
+.rd-quote-swatches[data-fade-start="true"][data-fade-end="true"] {
+  mask-image: linear-gradient(
+    90deg,
+    transparent,
+    #000 28px,
+    #000 calc(100% - 28px),
+    transparent
+  );
+}
+.rd-quote-thumb {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 36px;
+  object-fit: cover;
+  border-radius: 2px 4px 4px 2px;
+  box-shadow: 0 0 0 1px var(--line-2);
+}
+.rd-quote-divider {
+  flex: 0 0 auto;
+  width: 1px;
+  height: 22px;
+  margin: 0 4px;
+  background: rgba(255, 255, 255, 0.16);
 }
 .rd-quote-swatch {
   flex: 0 0 auto;
@@ -118,10 +188,49 @@
 .rd-quote-custom.solid {
   border-radius: 50%;
 }
+.rd-quote-swatch.gradient {
+  border-radius: 8px;
+}
 .rd-quote-swatch.on,
 .rd-quote-custom.on {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+.rd-quote-custom-gradient {
+  background: linear-gradient(135deg, #e8735a 50%, #2a8c8c 50%);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+}
+.rd-quote-stops {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+.rd-quote-stop {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.rd-quote-stop input {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: none;
+  cursor: pointer;
+}
+.rd-quote-stop code {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-3);
 }
 .rd-quote-custom {
   position: relative;

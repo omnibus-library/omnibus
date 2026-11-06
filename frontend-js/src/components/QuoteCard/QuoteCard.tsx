@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import type { BookUuid } from "../../api";
 import { CopyGlyph, DownloadGlyph } from "../Glyphs/Glyphs";
 import "./QuoteCard.css";
 import { QuoteBackground } from "./QuoteBackground";
@@ -59,6 +60,8 @@ type QuoteCardProps = {
   author: string;
   /** The book's title, under the author. */
   subtitle: string;
+  /** The book the passage is from, whose cover offers gradients. */
+  uuid: BookUuid;
   /** The book's `oklch(L C H)` accent; null falls back to the house tone. */
   accent: string | null;
   onClose: () => void;
@@ -69,6 +72,7 @@ export function QuoteCard({
   text,
   author,
   subtitle,
+  uuid,
   accent,
   onClose,
 }: QuoteCardProps) {
@@ -125,7 +129,7 @@ export function QuoteCard({
           <p>{subtitle}</p>
         </canvas>
         <div className="rd-quote-controls">
-          <QuoteBackground accent={accent} onChange={setWash} />
+          <QuoteBackground uuid={uuid} accent={accent} onChange={setWash} />
           <div className="rd-quote-label">Type</div>
           <div className="rd-quote-type">
             <Chips label="Font" className="rd-quote-chips">

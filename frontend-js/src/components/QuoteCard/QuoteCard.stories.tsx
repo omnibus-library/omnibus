@@ -1,8 +1,14 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, fireEvent, fn, spyOn, waitFor } from "storybook/test";
+import { expect, fireEvent, fn, spyOn, waitFor, within } from "storybook/test";
+import { parseBookUuid } from "../../api";
+import { failing, hanging } from "../../testing/handlers";
 import { QuoteCard } from "./QuoteCard";
 import { drawQuoteCanvas } from "./quoteCanvas";
 import { hexToOklch } from "./quoteColor";
+
+const UUID = parseBookUuid("ec8495e8-0ce8-4cb1-8c1d-b646b0a717e0");
+if (!UUID) throw new Error("fixture uuid");
+const PALETTE = "/api/books/:uuid/cover/palette";
 
 const meta = {
   title: "Components/QuoteCard",
@@ -11,6 +17,7 @@ const meta = {
     text: "The Beauty of the House is immeasurable",
     author: "Susanna Clarke",
     subtitle: "Piranesi",
+    uuid: UUID,
     accent: "oklch(0.40 0.08 150)",
     onClose: fn(),
   },
@@ -99,6 +106,153 @@ export const SolidSwatches: Story = {
         "false",
       );
     }
+  },
+};
+
+// Opens the Background menu and chooses a kind.
+async function chooseKind(
+  canvas: ReturnType<typeof within>,
+  userEvent: { click: (el: Element) => Promise<void> },
+  kind: "Solid" | "Gradient",
+) {
+  await userEvent.click(
+    canvas.getByRole("button", { name: /^(Solid|Gradient)$/ }),
+  );
+  await userEvent.click(canvas.getByRole("menuitemradio", { name: kind }));
+}
+
+const gradients = (canvas: ReturnType<typeof within>) =>
+  within(canvas.getByRole("group", { name: "Gradient backgrounds" }));
+
+export const BackgroundMenuSwitchesTheRow: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const pill = canvas.getByRole("button", { name: "Solid" });
+    await expect(pill).toHaveAttribute("aria-haspopup", "menu");
+    await userEvent.click(pill);
+    await expect(
+      canvas.getByRole("menuitemradio", { name: "Solid" }),
+    ).toHaveAttribute("aria-checked", "true");
+    await userEvent.click(
+      canvas.getByRole("menuitemradio", { name: "Gradient" }),
+    );
+
+    await expect(
+      canvas.getByRole("button", { name: "Gradient" }),
+    ).toBeVisible();
+    const row = gradients(canvas);
+    await expect(
+      await row.findAllByRole("button", { name: /^Cover gradient \d$/ }),
+    ).toHaveLength(4);
+    await expect(
+      canvas.getByTestId("quote-gradient-divider"),
+    ).toBeInTheDocument();
+    for (const name of ["Ember", "Dusk", "Lagoon", "Grove", "Dawn"]) {
+      await expect(row.getByRole("button", { name })).toBeVisible();
+    }
+    await expect(
+      row.getByRole("button", pressed("Cover gradient 1")),
+    ).toBeVisible();
+
+    await userEvent.click(canvas.getByRole("button", { name: "Gradient" }));
+    await expect(
+      canvas.getByRole("menuitemradio", { name: "Gradient" }),
+    ).toHaveAttribute("aria-checked", "true");
+  },
+};
+
+export const GradientPresetRepaints: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const preview = canvas.getByTestId("quote-preview") as HTMLCanvasElement;
+    await chooseKind(canvas, userEvent, "Gradient");
+
+    await userEvent.click(
+      gradients(canvas).getByRole("button", { name: "Dawn" }),
+    );
+
+    await expect(
+      gradients(canvas).getByRole("button", pressed("Dawn")),
+    ).toBeVisible();
+    await waitFor(() =>
+      expect(near(pixel(preview, 2, 2), [0xf7, 0xe1, 0xc8])).toBe(true),
+    );
+  },
+};
+
+export const CoverPairsAbsentOnError: Story = {
+  beforeEach({ msw }) {
+    msw.use(failing("get", PALETTE, 404));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await chooseKind(canvas, userEvent, "Gradient");
+
+    await waitFor(() =>
+      expect(
+        canvas.queryByTestId("quote-cover-pending"),
+      ).not.toBeInTheDocument(),
+    );
+    await expect(
+      canvas.queryAllByRole("button", { name: /^Cover gradient/ }),
+    ).toHaveLength(0);
+    await expect(
+      canvas.queryByTestId("quote-gradient-divider"),
+    ).not.toBeInTheDocument();
+    // With no cover pair to start on, the Gradient kind starts on Ember.
+    await expect(
+      gradients(canvas).getByRole("button", pressed("Ember")),
+    ).toBeVisible();
+  },
+};
+
+export const CoverPairsWaitWithASkeleton: Story = {
+  beforeEach({ msw }) {
+    msw.use(hanging(PALETTE));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await chooseKind(canvas, userEvent, "Gradient");
+
+    await expect(canvas.getByTestId("quote-cover-pending")).toBeInTheDocument();
+    await expect(
+      canvas.queryAllByRole("button", { name: /^Cover gradient/ }),
+    ).toHaveLength(0);
+    await expect(
+      canvas.queryByTestId("quote-gradient-divider"),
+    ).not.toBeInTheDocument();
+  },
+};
+
+export const CustomGradient: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const preview = canvas.getByTestId("quote-preview") as HTMLCanvasElement;
+    await chooseKind(canvas, userEvent, "Gradient");
+
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Custom gradient" }),
+    );
+
+    await expect(canvas.getByLabelText("From")).toHaveValue("#e8735a");
+    await expect(canvas.getByLabelText("To")).toHaveValue("#2a8c8c");
+    await expect(canvas.getByText("#e8735a")).toBeVisible();
+    await expect(canvas.getByText("#2a8c8c")).toBeVisible();
+    fireEvent.change(canvas.getByLabelText("From"), {
+      target: { value: "#000000" },
+    });
+    fireEvent.change(canvas.getByLabelText("To"), {
+      target: { value: "#ffffff" },
+    });
+    // Corner to corner at 135°, the far top corner sits mid-way between the stops.
+    await waitFor(() =>
+      expect(near(pixel(preview, 2, 2), [0, 0, 0], 3)).toBe(true),
+    );
+    await waitFor(() =>
+      expect(near(pixel(preview, 1077, 2), [128, 128, 128], 6)).toBe(true),
+    );
+
+    await userEvent.click(canvas.getByRole("button", { name: /Rotate/ }));
+
+    // A quarter-turn on, the gradient runs top to bottom and the top edge is all the first stop.
+    await waitFor(() =>
+      expect(near(pixel(preview, 1077, 2), [0, 0, 0], 3)).toBe(true),
+    );
   },
 };
 

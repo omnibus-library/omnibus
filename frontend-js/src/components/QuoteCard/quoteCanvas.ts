@@ -59,7 +59,7 @@ export const cardSize = (ratio: Ratio) =>
   ({ width: CARD_WIDTH, height: HEIGHTS[ratio] }) as const;
 
 const FILENAME = "omnibus-quote.png";
-const GRADIENT_ANGLE = 135;
+const DEFAULT_ANGLE = 135;
 // The face's natural line height, and the extra the passage adds between its lines.
 const LINE_HEIGHT = 1.2;
 const LINE_GAP = 0.34;
@@ -98,7 +98,7 @@ function paintWash(
   wash: Wash,
 ) {
   // CSS's gradient line: through the centre, long enough that the corners take the end stops.
-  const angle = (GRADIENT_ANGLE * Math.PI) / 180;
+  const angle = ((wash.angle ?? DEFAULT_ANGLE) * Math.PI) / 180;
   const [dx, dy] = [Math.sin(angle), -Math.cos(angle)];
   const half = (Math.abs(w * dx) + Math.abs(h * dy)) / 2;
   const gradient = ctx.createLinearGradient(

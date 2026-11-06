@@ -8,8 +8,8 @@ import {
 
 export type Oklch = { l: number; c: number; h: number };
 
-/** What the canvas paints: two stops corner to corner (top-left to bottom-right) and the ink, each `#rrggbb`. */
-export type Wash = { from: string; to: string; ink: string };
+/** What the canvas paints: two `#rrggbb` stops and the ink, at `angle` degrees (CSS's: 135 runs top-left to bottom-right; the default). */
+export type Wash = { from: string; to: string; ink: string; angle?: number };
 
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 const toDegrees = (rad: number) => (rad * 180) / Math.PI;
