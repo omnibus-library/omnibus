@@ -3,51 +3,40 @@
 
 use axum::body::to_bytes;
 use axum::http::header;
-use omnibus_db::test_support::solid_color_png;
+use omnibus_db::test_support::{book_with_png_cover, solid_color_png};
 use omnibus_shared::{CoverOffer, RequestListing};
 
 use crate::backend::test_support::CoversDirGuard;
 
 use super::*;
 
-/// A library book with a cover of `size` pixels: its uuid.
-async fn book_with_cover(pool: &SqlitePool, title: &str, size: (u32, u32)) -> String {
-    omnibus_db::create_fileless_book(
-        pool,
-        omnibus_db::FilelessBook {
-            title: title.to_string(),
-            authors: vec!["Bram Stoker".to_string()],
-            isbn: None,
-            pubdate: None,
-            description: None,
-            cover: Some(omnibus_db::FilelessCover {
-                mime: "image/png".to_string(),
-                bytes: solid_color_png(10, 10, 200, size.0, size.1),
-            }),
-        },
-    )
-    .await
-    .unwrap()
-}
-
 /// A ready request of `user`'s for a book with a `current`-sized cover, whose download brought
-/// a `candidate`-sized one: the request's id and the book's uuid.
+/// a `candidate`-sized one kept as the request's file: the request's id and the book's uuid.
 async fn ready_with_candidate(
     pool: &SqlitePool,
     user: i64,
     current: (u32, u32),
     candidate: (u32, u32),
 ) -> (i64, String) {
-    let wished = book_with_cover(pool, "Dracula", current).await;
-    let downloaded = book_with_cover(pool, "Dracula (download)", candidate).await;
+    let wished = book_with_png_cover(pool, "Dracula", "Bram Stoker", Some(current)).await;
     let id = seed_request(pool, user, &wished).await;
+    let name = format!("request-{id}");
+    let png = solid_color_png(10, 10, 200, candidate.0, candidate.1);
+    std::fs::write(omnibus_db::covers_dir().join(format!("{name}.png")), png).unwrap();
     sqlx::query("UPDATE book_requests SET state = 'ready', cover_candidate = ? WHERE id = ?")
-        .bind(&downloaded)
+        .bind(name)
         .bind(id)
         .execute(pool)
         .await
         .unwrap();
     (id, wished)
+}
+
+/// Whether request `id`'s candidate file is still on disk.
+fn candidate_file_exists(id: i64) -> bool {
+    omnibus_db::covers_dir()
+        .join(format!("request-{id}.png"))
+        .exists()
 }
 
 mod get_request {
@@ -81,6 +70,22 @@ mod get_request {
     }
 
     #[tokio::test]
+    async fn leaves_the_offer_out_for_a_reader_who_cannot_act_on_the_request() {
+        let _covers = CoversDirGuard::new("request_cover_offer_hidden");
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let (ada, _) = requester(&pool, "ada").await;
+        let (_, grace) = requester(&pool, "grace").await;
+        let (_, plain) = reader(&pool, "plain").await;
+        let admin = admin_token(&pool).await;
+        let (id, _) = ready_with_candidate(&pool, ada, (20, 30), (40, 60)).await;
+
+        for token in [&grace, &plain] {
+            assert_eq!(read_request(&app, token, id).await.cover_offer, None);
+        }
+        assert!(read_request(&app, &admin, id).await.cover_offer.is_some());
+    }
+
+    #[tokio::test]
     async fn leaves_the_offer_out_of_both_lists() {
         let _covers = CoversDirGuard::new("request_cover_offer_lists");
         let (app, _, pool) = fixture_book_requests(true).await;
@@ -104,14 +109,13 @@ mod get_request_cover {
     use super::*;
 
     #[tokio::test]
-    async fn serves_the_candidate_with_its_validators_to_any_signed_in_reader() {
+    async fn serves_the_candidate_with_its_validators_to_the_requester() {
         let _covers = CoversDirGuard::new("request_cover_serve");
         let (app, _, pool) = fixture_book_requests(true).await;
-        let (ada, _) = requester(&pool, "ada").await;
-        let (_, plain) = reader(&pool, "plain").await;
+        let (ada, token) = requester(&pool, "ada").await;
         let (id, _) = ready_with_candidate(&pool, ada, (20, 30), (40, 60)).await;
 
-        let res = send(&app, "GET", &cover_uri(id), Some(&plain), None).await;
+        let res = send(&app, "GET", &cover_uri(id), Some(&token), None).await;
 
         assert_eq!(res.status(), StatusCode::OK);
         let headers = res.headers().clone();
@@ -121,6 +125,24 @@ mod get_request_cover {
         assert!(headers.contains_key(header::ETAG));
         let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
         assert_eq!(&bytes[..], solid_color_png(10, 10, 200, 40, 60));
+    }
+
+    #[tokio::test]
+    async fn answers_404_to_a_reader_the_offer_is_not_for_and_serves_an_admin() {
+        let _covers = CoversDirGuard::new("request_cover_serve_who");
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let (ada, _) = requester(&pool, "ada").await;
+        let (_, grace) = requester(&pool, "grace").await;
+        let (_, plain) = reader(&pool, "plain").await;
+        let admin = admin_token(&pool).await;
+        let (id, _) = ready_with_candidate(&pool, ada, (20, 30), (40, 60)).await;
+
+        for token in [&grace, &plain] {
+            let res = send(&app, "GET", &cover_uri(id), Some(token), None).await;
+            assert_eq!(res.status(), StatusCode::NOT_FOUND);
+        }
+        let res = send(&app, "GET", &cover_uri(id), Some(&admin), None).await;
+        assert_eq!(res.status(), StatusCode::OK);
     }
 
     #[tokio::test]
@@ -155,6 +177,29 @@ mod get_request_cover {
         let res = send(&app, "GET", &cover_uri(id), Some(&token), None).await;
 
         assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn answers_404_when_the_download_cover_is_not_larger() {
+        let _covers = CoversDirGuard::new("request_cover_not_larger");
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let (ada, token) = requester(&pool, "ada").await;
+        let (id, _) = ready_with_candidate(&pool, ada, (20, 30), (30, 20)).await;
+
+        let res = send(&app, "GET", &cover_uri(id), Some(&token), None).await;
+
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn answers_500_when_the_database_fails() {
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let (_, token) = requester(&pool, "ada").await;
+        pool.close().await;
+
+        let res = send(&app, "GET", &cover_uri(1), Some(&token), None).await;
+
+        assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
     }
 
     #[tokio::test]
@@ -239,6 +284,7 @@ mod post_take_request_cover {
         .unwrap();
         assert_eq!(flagged, 1);
         assert!(modified > 1);
+        assert!(!candidate_file_exists(id));
         assert_eq!(read_request(&app, &token, id).await.cover_offer, None);
     }
 
@@ -318,6 +364,7 @@ mod post_take_request_cover {
         let res = send(&app, "POST", &cover_uri(id), Some(&token), None).await;
 
         assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert!(candidate_file_exists(id));
         assert!(read_request(&app, &token, id).await.cover_offer.is_some());
         let old = solid_color_png(10, 10, 200, 20, 30);
         assert_eq!(served_cover(&app, &token, &wished).await, old);
@@ -339,9 +386,21 @@ mod delete_keep_request_cover {
         assert_eq!(res.status(), StatusCode::OK);
         let body: BookRequest = body_json(res).await;
         assert_eq!(body.cover_offer, None);
+        assert!(!candidate_file_exists(id));
         let old = solid_color_png(10, 10, 200, 20, 30);
         assert_eq!(served_cover(&app, &token, &wished).await, old);
         assert_eq!(read_request(&app, &token, id).await.cover_offer, None);
+    }
+
+    #[tokio::test]
+    async fn answers_500_when_the_database_fails() {
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let (_, token) = requester(&pool, "ada").await;
+        pool.close().await;
+
+        let res = send(&app, "DELETE", &cover_uri(1), Some(&token), None).await;
+
+        assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
     }
 
     #[tokio::test]

@@ -52,16 +52,7 @@ pub(super) async fn get_cover(
         Err(e) => return internal("resolve_book_id_by_uuid", e),
     };
     match db::get_cover(&state.pool, id).await {
-        Ok(Some((mime, bytes))) => {
-            tracing::debug!(
-                uuid,
-                book_id = id,
-                mime,
-                bytes = bytes.len(),
-                "cover: serving"
-            );
-            image_response(&headers, &mime, bytes)
-        }
+        Ok(Some((mime, bytes))) => image_response(&headers, &mime, bytes),
         Ok(None) => {
             tracing::warn!(uuid, book_id = id, "cover: no cover image on record (404)");
             axum::http::StatusCode::NOT_FOUND.into_response()
@@ -75,8 +66,10 @@ pub(super) async fn get_cover(
 pub(super) fn image_response(headers: &HeaderMap, mime: &str, bytes: Vec<u8>) -> Response {
     let etag = content_etag(&bytes);
     if if_none_match_hits(headers, &etag) {
+        tracing::debug!("cover: not modified (304)");
         return not_modified(&etag);
     }
+    tracing::debug!(mime, bytes = bytes.len(), "cover: serving");
     (
         [
             (header::CONTENT_TYPE, mime),

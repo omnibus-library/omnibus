@@ -8,12 +8,9 @@
 use axum::body::Bytes;
 use axum::extract::multipart::Field;
 use axum::response::{IntoResponse, Response};
-use omnibus_shared::detect_image_format;
+use omnibus_shared::{detect_image_format, MAX_IMAGE_BYTES};
 
 use super::internal;
-
-/// Largest image any of the three pipelines accepts.
-pub(super) const MAX_IMAGE_BYTES: usize = 10 * 1024 * 1024;
 
 /// Why an image field was refused. Typed so a handler with its own error
 /// enum (the upload commit) can carry it, while the two cover/photo

@@ -6608,7 +6608,7 @@
           "Requests"
         ],
         "summary": "Get a request's downloaded cover",
-        "description": "The cover that came with the request's finished download, offered as a replacement for the\nbook's own: the image as stored, validated by its `ETag`. It is there until the offer is\ntaken or kept (`POST` or `DELETE` on this path). Any signed-in reader may read it.",
+        "description": "The cover that came with the request's finished download, offered as a replacement for the\nbook's own: the image as stored, validated by its `ETag`. It is there while `cover_offer` is\non the request, until the offer is taken or kept (`POST` or `DELETE` on this path). Only the\nreader who made the request, or an admin, is offered it.",
         "operationId": "get_request_cover",
         "parameters": [
           {
@@ -6640,7 +6640,7 @@
             "description": "You aren't signed in."
           },
           "404": {
-            "description": "Book requests are off on this server, there is no such request, or it has no cover on offer."
+            "description": "Book requests are off on this server, there is no such request, or it has no cover on offer to you."
           }
         }
       },

@@ -136,18 +136,33 @@ fn summary(row: RequestRow, is_admin: bool) -> BookRequest {
     }
 }
 
-/// [`summary`] plus the versions found and the cover on offer.
-async fn view(state: &AppState, row: RequestRow, is_admin: bool) -> Result<BookRequest, Response> {
+/// Whether `user` may act on `row`: an admin, or the reader who made it while they may still
+/// request. Only they are offered its downloaded cover.
+fn may_act(user: &AuthUser, row: &RequestRow) -> bool {
+    user.is_admin || (user.can_request && user.id == row.user_id)
+}
+
+/// [`summary`] plus the versions found and, to whoever may act on it, the cover on offer.
+async fn view(
+    state: &AppState,
+    row: RequestRow,
+    viewer: &AuthUser,
+) -> Result<BookRequest, Response> {
     let versions = store::versions(state.pool(), row.id)
         .await
         .map_err(|e| internal("read request versions", e))?;
-    let cover_offer = cover::offer(state.pool(), &row)
-        .await
-        .map_err(|e| internal("read request cover offer", e))?;
+    let cover_offer = if may_act(viewer, &row) {
+        cover::offer(state.pool(), &row)
+            .await
+            .map_err(|e| internal("read request cover offer", e))?
+            .map(|offer| offer.sizes)
+    } else {
+        None
+    };
     Ok(BookRequest {
         versions,
         cover_offer,
-        ..summary(row, is_admin)
+        ..summary(row, viewer.is_admin)
     })
 }
 
@@ -166,7 +181,7 @@ async fn answer(state: &AppState, id: i64, viewer: &AuthUser) -> Response {
         Ok(row) => row,
         Err(res) => return res,
     };
-    match view(state, row, viewer.is_admin).await {
+    match view(state, row, viewer).await {
         Ok(request) => Json(request).into_response(),
         Err(res) => res,
     }
@@ -256,7 +271,7 @@ pub(super) async fn post_start_request(
     } else {
         StatusCode::OK
     };
-    match view(&state, started.request, user.is_admin).await {
+    match view(&state, started.request, &user).await {
         Ok(request) => (status, Json(request)).into_response(),
         Err(res) => res,
     }
@@ -377,8 +392,9 @@ pub(super) async fn get_request(
 /// Get a request's downloaded cover
 ///
 /// The cover that came with the request's finished download, offered as a replacement for the
-/// book's own: the image as stored, validated by its `ETag`. It is there until the offer is
-/// taken or kept (`POST` or `DELETE` on this path). Any signed-in reader may read it.
+/// book's own: the image as stored, validated by its `ETag`. It is there while `cover_offer` is
+/// on the request, until the offer is taken or kept (`POST` or `DELETE` on this path). Only the
+/// reader who made the request, or an admin, is offered it.
 #[utoipa::path(
     get,
     path = "/api/requests/{id}/cover",
@@ -389,11 +405,11 @@ pub(super) async fn get_request(
         (status = 200, description = "The cover image.", body = FileBytes, content_type = "image/*"),
         (status = 304, description = "The cover is unchanged since the `ETag` sent in `If-None-Match`."),
         (status = 401, description = "You aren't signed in."),
-        (status = 404, description = "Book requests are off on this server, there is no such request, or it has no cover on offer."),
+        (status = 404, description = "Book requests are off on this server, there is no such request, or it has no cover on offer to you."),
     ),
 )]
 pub(super) async fn get_request_cover(
-    RequestsViewer(_): RequestsViewer,
+    RequestsViewer(user): RequestsViewer,
     State(state): State<AppState>,
     Path(id): Path<i64>,
     headers: HeaderMap,
@@ -402,9 +418,15 @@ pub(super) async fn get_request_cover(
         Ok(row) => row,
         Err(res) => return res,
     };
-    match cover::candidate_cover(&row).await {
-        Some((mime, bytes)) => super::covers::image_response(&headers, &mime, bytes),
-        None => (StatusCode::NOT_FOUND, "no cover on offer").into_response(),
+    let offered = if may_act(&user, &row) {
+        cover::offer(state.pool(), &row).await
+    } else {
+        Ok(None)
+    };
+    match offered {
+        Ok(Some(offer)) => super::covers::image_response(&headers, &offer.mime, offer.bytes),
+        Ok(None) => (StatusCode::NOT_FOUND, "no cover on offer").into_response(),
+        Err(e) => internal("read request cover offer", e),
     }
 }
 
@@ -438,41 +460,34 @@ pub(super) async fn post_take_request_cover(
         Err(res) => return res,
     };
     let nothing = || (StatusCode::CONFLICT, "no cover is on offer").into_response();
-    match cover::offer(state.pool(), &row).await {
-        Ok(Some(_)) => {}
+    let offer = match cover::offer(state.pool(), &row).await {
+        Ok(Some(offer)) => offer,
         Ok(None) => return nothing(),
         Err(e) => return internal("read request cover offer", e),
-    }
-    let (Some(candidate), Some((mime, bytes))) = (
-        row.cover_candidate.clone(),
-        cover::candidate_cover(&row).await,
-    ) else {
+    };
+    let Some(candidate) = row.cover_candidate.as_deref() else {
         return nothing();
     };
-    match cover::settle(state.pool(), id, &candidate).await {
+    match cover::settle(state.pool(), id, candidate).await {
         Ok(()) => {}
         Err(RequestError::WrongState) => return nothing(),
         Err(e) => return internal("settle request cover", e),
     }
-    if let Err(e) =
-        overrides::persist_cover(&state, &row.book_uuid, user.id, mime, Bytes::from(bytes)).await
-    {
+    let (mime, bytes) = (offer.mime, Bytes::from(offer.bytes));
+    if let Err(e) = overrides::persist_cover(&state, &row.book_uuid, user.id, mime, bytes).await {
         // The old cover stands, so the offer must too.
-        if let Err(restore) = cover::record_candidate(state.pool(), id, &candidate).await {
+        if let Err(restore) = cover::reopen(state.pool(), id, candidate).await {
             tracing::error!(error = %restore, request = id, "restoring a cover offer");
         }
         return internal(e.context, e.detail);
     }
-    match db::resolve_book_id_by_uuid(state.pool(), &row.book_uuid).await {
-        Ok(Some(book_id)) => {
-            let thumbs =
-                tokio::task::spawn_blocking(move || db::thumbs::invalidate_thumbs(book_id));
-            if let Err(e) = thumbs.await {
-                return internal("spawn_blocking(invalidate_thumbs)", e);
-            }
-        }
-        Ok(None) => {}
-        Err(e) => return internal("resolve requested book", e),
+    cover::discard(id).await;
+    // The cover is stored; a stale thumbnail is only logged, not undone.
+    let book_id = offer.book_id;
+    if let Err(e) =
+        tokio::task::spawn_blocking(move || db::thumbs::invalidate_thumbs(book_id)).await
+    {
+        tracing::error!(error = %e, request = id, "invalidating thumbs after taking a cover");
     }
     answer(&state, id, &user).await
 }
@@ -509,7 +524,10 @@ pub(super) async fn delete_keep_request_cover(
         None => Err(RequestError::WrongState),
     };
     match settled {
-        Ok(()) => answer(&state, id, &user).await,
+        Ok(()) => {
+            cover::discard(id).await;
+            answer(&state, id, &user).await
+        }
         Err(RequestError::WrongState) => {
             (StatusCode::CONFLICT, "no cover is on offer").into_response()
         }

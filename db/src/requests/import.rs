@@ -3,9 +3,8 @@
 //! imports race on a merge: [`files`] picks the book out of the download, [`place`] stages
 //! it inside the library and renames it into the canonical layout named from the wished
 //! book, the worker scans it in, and it is merged into the wished book when the scanner
-//! filed it as a book of its own. The download is only read, never moved or removed. Before
-//! that merge the scanned book's uuid is recorded as the request's cover candidate (see
-//! [`super::cover`]), since the merge leaves its cover file in place.
+//! filed it as a book of its own. The download is only read, never moved or removed. Its cover
+//! is kept as the request's candidate (see [`super::cover`]) whichever way the scan filed it.
 
 use std::io;
 use std::path::PathBuf;
@@ -226,6 +225,7 @@ async fn scan_and_merge(
         .map_err(read)?
         .ok_or_else(|| cannot("the library scan did not surface the file"))?;
     if found == wished.uuid {
+        keep_cover(pool, row, root, key, wished).await;
         return Ok(());
     }
     let book = crate::get_book_by_uuid(pool, &found)
@@ -239,12 +239,22 @@ async fn scan_and_merge(
             "the library scan filed the download on another book, \"{title}\""
         )));
     }
-    if row.offers_cover {
-        // The merge leaves the source's cover file in place, so this uuid still serves it.
-        cover::record_candidate(pool, row.id, &found).await?;
-    }
+    // Before the merge, which may give the wished book the download's cover.
+    keep_cover(pool, row, root, key, wished).await;
     merge_books(pool, &found, &wished.uuid, None).await?;
     Ok(())
+}
+
+/// Keep the placed download's cover as the request's candidate, unless the request offers
+/// none. A cosmetic extra, so a failure is logged and the import goes on.
+async fn keep_cover(pool: &SqlitePool, row: &RequestRow, root: &str, key: &str, wished: &Wished) {
+    if !row.offers_cover {
+        return;
+    }
+    let epub = PathBuf::from(root).join(key);
+    if let Err(e) = cover::record_candidate(pool, row.id, &epub, &wished.uuid).await {
+        tracing::warn!(error = %e, request = row.id, "keeping a download's cover");
+    }
 }
 
 #[cfg(test)]

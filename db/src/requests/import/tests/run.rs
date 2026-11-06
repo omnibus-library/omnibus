@@ -12,13 +12,13 @@ use crate::requests::poller::tick_with;
 use crate::requests::store::{self, RequestRow};
 use crate::requests::test_support::{requests_config, seed_picked, tag, update, Call, StubClient};
 use crate::test_support::{
-    assemble_test_epub, build_stored_zip, build_test_epub, build_test_pdf, count_rows, seed_user,
+    book_with_png_cover, build_stored_zip, build_test_epub, build_test_pdf, count_rows, seed_user,
     solid_color_png, CoversTempDir, TestPdf,
 };
 use crate::worker::{Task, Worker, WorkerConfig};
 use crate::{
     add_wishlist_entry, create_fileless_book, get_book_by_uuid, get_book_files, set_settings,
-    FilelessBook, FilelessCover,
+    FilelessBook,
 };
 
 use super::super::import_finished;
@@ -262,69 +262,109 @@ mod import_finished {
     mod cover_candidate {
         use super::*;
 
-        fn epub_with_cover(width: u32, height: u32) -> Vec<u8> {
-            let manifest = r#"<item id="cv" href="cover.png" media-type="image/png" properties="cover-image"/>"#;
-            let png = solid_color_png(200, 10, 10, width, height);
-            assemble_test_epub(
-                &[("c1.xhtml", "<p>hi</p>")],
-                manifest,
-                "",
-                &[("cover.png", png)],
-            )
+        /// An EPUB titled `title` by `author` (so the scan files it on the book of that name)
+        /// whose declared cover, when given, is a `width` x `height` PNG.
+        fn epub_with_cover(title: &str, author: &str, cover: Option<(u32, u32)>) -> Vec<u8> {
+            let container: &[u8] = br#"<?xml version="1.0"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles><rootfile full-path="content.opf" media-type="application/oebps-package+xml"/></rootfiles>
+</container>"#;
+            let item = cover.map_or("", |_| {
+                r#"<item id="cv" href="cover.png" media-type="image/png" properties="cover-image"/>"#
+            });
+            let opf = format!(
+                r#"<?xml version="1.0"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:identifier id="id">{title}-by-{author}</dc:identifier>
+    <dc:title>{title}</dc:title><dc:creator>{author}</dc:creator>
+  </metadata>
+  <manifest><item id="c1" href="c1.xhtml" media-type="application/xhtml+xml"/>{item}</manifest>
+  <spine><itemref idref="c1"/></spine>
+</package>"#
+            );
+            let png = cover.map(|(w, h)| solid_color_png(200, 10, 10, w, h));
+            let mut entries = vec![
+                ("mimetype", b"application/epub+zip".as_slice()),
+                ("META-INF/container.xml", container),
+                ("content.opf", opf.as_bytes()),
+                ("c1.xhtml", b"<p>hi</p>".as_slice()),
+            ];
+            if let Some(png) = &png {
+                entries.push(("cover.png", png.as_slice()));
+            }
+            build_stored_zip(&entries)
         }
 
-        /// A wished book whose cover is a 20 x 30 PNG.
-        async fn wish_with_small_cover(env: &Env) -> String {
-            let book = FilelessBook {
-                title: "Dune".to_string(),
-                authors: vec!["Frank Herbert".to_string()],
-                isbn: None,
-                pubdate: None,
-                description: None,
-                cover: Some(FilelessCover {
-                    mime: "image/png".to_string(),
-                    bytes: solid_color_png(10, 10, 200, 20, 30),
-                }),
-            };
-            create_fileless_book(&env.pool, book).await.unwrap()
-        }
-
-        async fn cover_size(uuid: &str) -> (u32, u32) {
-            let (_, bytes) = crate::covers::find_cover_file(uuid).unwrap();
+        async fn cover_size(stem: &str) -> (u32, u32) {
+            let (_, bytes) = crate::covers::find_cover_file(stem).unwrap();
             let img = image::load_from_memory(&bytes).unwrap();
             (img.width(), img.height())
         }
 
+        /// A request for a book with a 20 x 30 cover, whose download is `epub`: its id and the
+        /// book's uuid once `run` has imported it.
+        async fn import(env: &Env, epub: &[u8], offers_cover: bool) -> (RequestRow, String) {
+            let wished =
+                book_with_png_cover(&env.pool, "Dune", "Frank Herbert", Some((20, 30))).await;
+            let request = finished_request(env, &wished, RequestKind::Ebook).await;
+            if !offers_cover {
+                update(&env.pool, request.id, "offers_cover = 0").await;
+            }
+            let client = downloaded(env, &request, &[("Dune.epub", epub)]);
+            run(env, &client).await;
+            assert_ready(env, request.id).await;
+            (row(env, request.id).await, wished)
+        }
+
         #[tokio::test]
-        async fn keeps_the_downloaded_cover_on_disk_beside_the_wished_ones() {
-            let _covers = CoversTempDir::new("import_cover_candidate");
+        async fn keeps_a_larger_cover_when_the_scan_files_the_download_on_the_wished_book() {
+            let _covers = CoversTempDir::new("import_cover_attach");
             let env = env().await;
-            let wished = wish_with_small_cover(&env).await;
-            let request = finished_request(&env, &wished, RequestKind::Ebook).await;
-            let client = downloaded(&env, &request, &[("Dune.epub", &epub_with_cover(40, 60))]);
+            let epub = epub_with_cover("Dune", "Frank Herbert", Some((40, 60)));
 
-            run(&env, &client).await;
+            let (after, wished) = import(&env, &epub, true).await;
 
-            assert_ready(&env, request.id).await;
-            let candidate = row(&env, request.id).await.cover_candidate.unwrap();
-            assert_ne!(candidate, wished);
+            assert_eq!(count(&env, "merge_log").await, 0);
+            let candidate = after.cover_candidate.unwrap();
             assert_eq!(cover_size(&candidate).await, (40, 60));
             assert_eq!(cover_size(&wished).await, (20, 30));
+        }
+
+        #[tokio::test]
+        async fn keeps_a_larger_cover_when_the_download_is_merged_into_the_wished_book() {
+            let _covers = CoversTempDir::new("import_cover_merge");
+            let env = env().await;
+            let epub = epub_with_cover("Dune (retail)", "Someone Else", Some((40, 60)));
+
+            let (after, wished) = import(&env, &epub, true).await;
+
+            assert_eq!(count(&env, "merge_log").await, 1);
+            let candidate = after.cover_candidate.unwrap();
+            assert_eq!(cover_size(&candidate).await, (40, 60));
+            assert_eq!(cover_size(&wished).await, (20, 30));
+        }
+
+        #[tokio::test]
+        async fn records_nothing_when_the_download_has_no_cover() {
+            let _covers = CoversTempDir::new("import_cover_none");
+            let env = env().await;
+            let epub = epub_with_cover("Dune", "Frank Herbert", None);
+
+            let (after, _) = import(&env, &epub, true).await;
+
+            assert_eq!(after.cover_candidate, None);
         }
 
         #[tokio::test]
         async fn records_nothing_when_the_request_does_not_offer_the_cover() {
             let _covers = CoversTempDir::new("import_cover_not_offered");
             let env = env().await;
-            let wished = wish_with_small_cover(&env).await;
-            let request = finished_request(&env, &wished, RequestKind::Ebook).await;
-            update(&env.pool, request.id, "offers_cover = 0").await;
-            let client = downloaded(&env, &request, &[("Dune.epub", &epub_with_cover(40, 60))]);
+            let epub = epub_with_cover("Dune", "Frank Herbert", Some((40, 60)));
 
-            run(&env, &client).await;
+            let (after, _) = import(&env, &epub, false).await;
 
-            assert_ready(&env, request.id).await;
-            assert_eq!(row(&env, request.id).await.cover_candidate, None);
+            assert_eq!(after.cover_candidate, None);
         }
     }
 
