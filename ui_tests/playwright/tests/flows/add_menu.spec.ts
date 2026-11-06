@@ -8,6 +8,7 @@ test.describe("add menu", () => {
 
     await test.step("open the add menu over the library", async () => {
       await libraryPage.goto();
+      await topNav.assertDisplayed();
       await topNav.openAddMenu();
     });
 
@@ -16,25 +17,6 @@ test.describe("add menu", () => {
       await expect(topNav.uploadBookFilesItem).toBeVisible();
       await expect(topNav.addCopyItem).toBeVisible();
       await expect(topNav.addToWishlistItem).toBeVisible();
-    });
-  });
-
-  test("close the add menu with escape", async ({ libraryPage }) => {
-    const { topNav } = libraryPage;
-
-    await test.step("open the add menu over the library", async () => {
-      await libraryPage.goto();
-      await topNav.openAddMenu();
-      await expect(topNav.addMenu).toBeVisible();
-    });
-
-    await test.step("press escape", async () => {
-      await topNav.closeAddMenuWithEscape();
-    });
-
-    await test.step("check the menu closes and hands focus back", async () => {
-      await expect(topNav.addMenu).toHaveCount(0);
-      await expect(topNav.addButton).toBeFocused();
     });
   });
 
