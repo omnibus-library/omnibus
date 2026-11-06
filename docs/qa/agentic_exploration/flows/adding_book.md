@@ -65,8 +65,9 @@ goes in through the front door* in [start.md](../start.md).
 
 ## Steps
 
-1. Click **Add books** in the nav. Do not type a path — there is no `/add`, and
-   guessing one lands you on a page that is not part of the app.
+1. Open the nav's **Add** menu and choose **Upload book files**. Do not type a
+   path — there is no `/add`, and guessing one lands you on a page that is not
+   part of the app.
 2. Choose a file from the corpus, by dropping it on the drop zone or through
    the file chooser. There is no upload-type choice: the extension decides
    which ingest a pick goes to, and an audiobook's `.mp3` parts go in

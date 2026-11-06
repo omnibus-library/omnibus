@@ -162,6 +162,29 @@ export const ClosingTheUploadSheetHandsFocusBackToAdd: Story = {
   },
 };
 
+/** The browser's own pointer: a story's `userEvent` dispatches straight to its target, past any overlay. */
+const realPointer = async () => (await import("vitest/browser")).userEvent;
+
+export const AddMenuClosesOnAClickBelowTheBar: Story = {
+  render: () => (
+    <>
+      <TopNav />
+      <p style={{ marginTop: 200 }}>The page below the bar</p>
+    </>
+  ),
+  play: async ({ canvas, userEvent }) => {
+    await openAddMenu(canvas, userEvent);
+
+    // `force` skips the check that nothing covers the text: the covering scrim is what is under test.
+    await (await realPointer()).click(
+      canvas.getByText("The page below the bar"),
+      { force: true },
+    );
+
+    await waitFor(() => expect(canvas.queryByRole("menu")).toBeNull());
+  },
+};
+
 export const AddACopyYouOwnOpensCheckIn: Story = {
   render: withWhere,
   play: async ({ canvas, userEvent }) => {
