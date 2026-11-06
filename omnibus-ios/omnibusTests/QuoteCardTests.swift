@@ -8,6 +8,14 @@ import Testing
 
 @testable import omnibus
 
+private func oklch(_ hex: String) -> OKLCH {
+    OKLCH.parse(cssValue: hex)!
+}
+
+private func isClose(_ a: Double, _ b: Double) -> Bool {
+    abs(a - b) < 0.001
+}
+
 @Suite("Quote card shapes")
 struct QuoteRatioTests {
     @Test("the shapes come in the order the editor shows them")
@@ -57,14 +65,6 @@ struct QuoteTypeTests {
         #expect(!type.bold)
         #expect(!type.italic)
     }
-}
-
-private func oklch(_ hex: String) -> OKLCH {
-    OKLCH.parse(cssValue: hex)!
-}
-
-private func isClose(_ a: Double, _ b: Double) -> Bool {
-    abs(a - b) < 0.001
 }
 
 @Suite("Quote card backgrounds")
@@ -145,7 +145,7 @@ struct QuoteStyleTests {
 
     @Test("a gradient with an unreadable stop is not made")
     func gradientIsNilForABadHex() {
-        #expect(QuoteStyle.gradient("Bad", from: "#7a1f16", to: "nope", lightInk: true) == nil)
+        #expect(QuoteStyle.gradient("Bad", from: "#7a1f16", to: "nope", lightInk: true)?.name == nil)
     }
 
     @Test("every swatch has its own id, even when a solid and a gradient share a name")

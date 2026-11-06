@@ -41,13 +41,14 @@ struct QuoteStyle: Identifiable {
     var kind: Kind
     var from: OKLCH
     var to: OKLCH
-    var lightInk: Bool
     // Not `ink`: `OKLCH` has its own `opacity(_:)`, which would shadow
     // `Color`'s in `.foregroundStyle(style.ink.opacity(…))`.
     var inkTone: OKLCH
     var angle = 135
 
     var id: String { "\(kind)-\(name)" }
+
+    var lightInk: Bool { inkTone.l > 0.5 }
 
     var ink: Color { inkTone.color }
 
@@ -65,7 +66,6 @@ struct QuoteStyle: Identifiable {
             kind: .solid,
             from: base,
             to: OKLCH(max(0.06, base.l - (lightInk ? 0.10 : -0.05)), base.c * 0.85, base.h + 12),
-            lightInk: lightInk,
             inkTone: lightInk ? OKLCH(0.95, 0.012, base.h) : OKLCH(0.24, 0.02, base.h)
         )
     }
@@ -79,7 +79,6 @@ struct QuoteStyle: Identifiable {
             kind: .gradient,
             from: start,
             to: end,
-            lightInk: lightInk,
             inkTone: lightInk ? lightHexInk : darkHexInk
         )
     }
@@ -122,15 +121,14 @@ struct QuoteStyle: Identifiable {
             kind: .gradient,
             from: from,
             to: to,
-            lightInk: lightInk,
             inkTone: lightInk ? lightHexInk : darkHexInk,
             angle: angle
         )
     }
 
     // The web's `LIGHT_INK` and its dark counterpart.
-    private static let lightHexInk = OKLCH.parse(cssValue: "#f5f0e8") ?? OKLCH(0.95, 0.012, 80)
-    private static let darkHexInk = OKLCH.parse(cssValue: "#221d18") ?? OKLCH(0.24, 0.02, 60)
+    private static let lightHexInk = OKLCH.fromSRGB(r: 0xf5 / 255.0, g: 0xf0 / 255.0, b: 0xe8 / 255.0)
+    private static let darkHexInk = OKLCH.fromSRGB(r: 0x22 / 255.0, g: 0x1d / 255.0, b: 0x18 / 255.0)
 
     /// Whether light ink reads better than dark over every stop: the ink
     /// whose weakest contrast against any stop is the higher one wins, and a
@@ -229,13 +227,7 @@ enum QuoteRatio: String, CaseIterable, Identifiable {
 enum QuoteFace: String, CaseIterable {
     case serif, sans, mono
 
-    var label: String {
-        switch self {
-        case .serif: "Serif"
-        case .sans: "Sans"
-        case .mono: "Mono"
-        }
-    }
+    var label: String { rawValue.capitalized }
 }
 
 /// How large the passage is set, as a multiple of its length-stepped size.
@@ -365,11 +357,13 @@ struct QuoteCard: View {
                         .tracking(width * 0.0036)
                         .foregroundStyle(style.ink.opacity(0.75))
                         .padding(.bottom, width * 0.012)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 Text(title)
                     .font(.displayItalic(width * 0.033))
                     .foregroundStyle(style.ink.opacity(0.62))
                     .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .padding(pad)
 

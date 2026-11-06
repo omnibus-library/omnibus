@@ -22,9 +22,9 @@ struct QuoteCardSheet: View {
     @State private var styleID: String?
     @State private var ratio: QuoteRatio = .square
     @State private var type = QuoteType()
-    @State private var rendering = false
     @State private var moreBefore = false
-    @State private var moreAfter = false
+    // Both rows overflow on every iPhone, and the scroll callback may not fire before the first scroll.
+    @State private var moreAfter = true
     @State private var customColor = CustomSeed.coral
     @State private var customFrom = CustomSeed.coral
     @State private var customTo = CustomSeed.teal
@@ -283,6 +283,7 @@ struct QuoteCardSheet: View {
             .foregroundStyle(.white)
             .shadow(color: .black.opacity(0.5), radius: 1)
             .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 
     /// SwiftUI cannot open a `ColorPicker` from a button of our own, so its
@@ -303,6 +304,8 @@ struct QuoteCardSheet: View {
             .onChange(of: customColor) { _, _ in
                 styleID = customSolid.id
             }
+            // Re-picking the same colour changes nothing, so a tap selects it too.
+            .simultaneousGesture(TapGesture().onEnded { styleID = customSolid.id })
             .accessibilityAddTraits(isOn ? .isSelected : [])
     }
 
@@ -388,7 +391,6 @@ struct QuoteCardSheet: View {
                 Label("Share", systemImage: "square.and.arrow.up")
             }
             .buttonStyle(FilledButtonStyle())
-            .disabled(rendering)
 
             Button {
                 Haptics.success()
@@ -399,13 +401,10 @@ struct QuoteCardSheet: View {
                 Label("Copy image", systemImage: "doc.on.doc")
             }
             .buttonStyle(FilledButtonStyle(prominent: false))
-            .disabled(rendering)
         }
     }
 
     private func share() {
-        rendering = true
-        defer { rendering = false }
         guard let image = render() else { return }
         ShareSheet.present(items: [image])
     }
