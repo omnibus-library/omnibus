@@ -394,8 +394,24 @@ async fn rebuild_fts_for_book_writes_the_row_while_another_connection_holds_the_
 
     let lock = hold_write_lock(&pool).await;
     let result = rebuild_fts_for_book(&pool, "uuid-1").await;
-    lock.release().await;
+    lock.await.unwrap();
 
     result.unwrap();
     assert_eq!(count_rows(&pool, "SELECT COUNT(*) FROM books_fts").await, 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rebuild_fts_for_books_batch_writes_rows_while_another_connection_holds_the_write_lock() {
+    let tmp = tempfile::tempdir().unwrap();
+    let url = file_db_url(tmp.path());
+    let pool = init_db(&url).await.unwrap();
+    seed_minimal_books(&pool, 2).await;
+    let pool = reopen_file_pool(pool, &url).await;
+
+    let lock = hold_write_lock(&pool).await;
+    let result = rebuild_fts_for_books_batch(&pool, &["uuid-1".into(), "uuid-2".into()]).await;
+    lock.await.unwrap();
+
+    result.unwrap();
+    assert_eq!(count_rows(&pool, "SELECT COUNT(*) FROM books_fts").await, 2);
 }
