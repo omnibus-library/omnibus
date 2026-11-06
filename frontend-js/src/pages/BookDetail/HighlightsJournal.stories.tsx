@@ -121,7 +121,7 @@ export const AWishedBookWithNoFileKeepsItsTwoNotesAndOffersNoComposer: Story = {
       );
     });
     // Check-in is "adding a copy you own" now, everywhere a reader reads it.
-    await expect(canvasElement.textContent).not.toMatch(/check.?in/i);
+    await expect(canvasElement.textContent).not.toMatch(/\bcheck[\s-]?in\b/i);
     await expect(canvas.queryByTestId("highlights-journal-empty")).toBeNull();
     await expect(
       canvas.queryByRole("button", { name: "New journal entry" }),

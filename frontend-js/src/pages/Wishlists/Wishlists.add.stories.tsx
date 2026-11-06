@@ -4,6 +4,7 @@ import { useNavigate } from "react-router";
 import { expect, waitFor, within } from "storybook/test";
 import { TopNav } from "../../components/TopNav/TopNav";
 import { deferred, hanging } from "../../testing/handlers";
+import { realPointer } from "../../testing/pointer";
 import { BOOKS } from "../../testing/wishlistHandlers";
 import {
   api,
@@ -155,7 +156,9 @@ export const TheAddMenuFocusesTheSearchAlreadyOpen: Story = {
     ).getByTestId("wishlists-add-search");
     await waitFor(() => expect(field).toHaveFocus());
 
-    await addFromTheMenu(canvas, userEvent);
+    // From the keyboard: the open search's scrim covers the page from a pointer.
+    canvas.getByRole("button", { name: "Add" }).focus();
+    await userEvent.keyboard("{Enter}{End}{Enter}");
 
     await waitFor(() => expect(field).toHaveFocus());
   },
@@ -512,9 +515,6 @@ export const PhoneSheetClosesOnEscape: Story = {
     await expect(button).toHaveFocus();
   },
 };
-
-/** The browser's own pointer: a story's `userEvent` dispatches straight to its target, past any overlay. */
-const realPointer = async () => (await import("vitest/browser")).userEvent;
 
 export const AnOutsideClickClosesTheDesktopPopover: Story = {
   play: async ({ canvas, userEvent }) => {
