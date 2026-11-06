@@ -471,3 +471,13 @@
   font-size: 15px;
   color: var(--ink-0);
 }
+
+/* A phone keeps Request again on the right of a history row's two lines. */
+@media (max-width: 720px) {
+  .rq-history-row {
+    flex-wrap: nowrap;
+  }
+  .rq-history-text {
+    flex: 1 1 auto;
+  }
+}
