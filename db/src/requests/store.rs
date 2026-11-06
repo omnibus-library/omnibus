@@ -191,7 +191,7 @@ pub async fn start(
             created: false,
         });
     }
-    let request = insert_looking(&mut tx, user_id, book_uuid, kind, max_live).await?;
+    let request = insert_looking(&mut tx, user_id, book_uuid, kind, max_live, true).await?;
     tx.commit().await?;
     Ok(Started {
         request,
@@ -212,24 +212,28 @@ async fn live_count<'e>(
     .await
 }
 
-/// Insert a `looking` request on `tx`, refused once the reader holds `max_live`.
+/// Insert a `looking` request on `tx`, refused once the reader holds `max_live`. `offers_cover`
+/// is whether a download's sharper cover may be offered for the book; a book made for the
+/// request has no cover of its own worth replacing.
 async fn insert_looking(
     tx: &mut sqlx::SqliteConnection,
     user_id: i64,
     book_uuid: &str,
     kind: RequestKind,
     max_live: i64,
+    offers_cover: bool,
 ) -> Result<RequestRow, RequestError> {
     if live_count(&mut *tx, user_id).await? >= max_live {
         return Err(RequestError::TooManyLive);
     }
     let row = sqlx::query(&format!(
-        "INSERT INTO book_requests (book_uuid, user_id, kind, state)
-         VALUES (?, ?, ?, 'looking') RETURNING {COLUMNS}"
+        "INSERT INTO book_requests (book_uuid, user_id, kind, state, offers_cover)
+         VALUES (?, ?, ?, 'looking', ?) RETURNING {COLUMNS}"
     ))
     .bind(book_uuid)
     .bind(user_id)
     .bind(kind.as_str())
+    .bind(offers_cover)
     .fetch_one(&mut *tx)
     .await?;
     Ok(row_to_request(&row)?)
@@ -275,7 +279,7 @@ pub(crate) async fn start_for_new_book_with(
     let cover = fetch_candidate_cover(meta, image_config).await;
     let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     let created = create_fileless_from_meta(&mut tx, meta, cover, Some(user_id)).await?;
-    let request = insert_looking(&mut tx, user_id, &created.uuid, kind, max_live).await?;
+    let request = insert_looking(&mut tx, user_id, &created.uuid, kind, max_live, false).await?;
     tx.commit().await?;
     created.settle_cover(pool).await;
     Ok(request)

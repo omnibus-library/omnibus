@@ -7,13 +7,17 @@ use std::sync::Arc;
 
 use omnibus_shared::{RequestKind, RequestState, Settings, StuckReason, WishlistSource};
 use sqlx::SqlitePool;
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use crate::requests::poller::tick_with;
 use crate::requests::store::{self, RequestRow};
-use crate::requests::test_support::{requests_config, seed_picked, tag, update, Call, StubClient};
+use crate::requests::test_support::{
+    pick, requests_config, seed_picked, tag, update, Call, StubClient,
+};
 use crate::test_support::{
-    book_with_png_cover, build_stored_zip, build_test_epub, build_test_pdf, count_rows, seed_user,
-    solid_color_png, CoversTempDir, TestPdf,
+    book_with_png_cover, build_stored_zip, build_test_epub, build_test_pdf, count_rows,
+    external_meta, loopback_cover_config, seed_user, solid_color_png, CoversTempDir, TestPdf,
 };
 use crate::worker::{Task, Worker, WorkerConfig};
 use crate::{
@@ -354,6 +358,47 @@ mod import_finished {
             let (after, _) = import(&env, &epub, true).await;
 
             assert_eq!(after.cover_candidate, None);
+        }
+
+        #[tokio::test]
+        async fn records_nothing_for_a_request_made_from_a_providers_record() {
+            let _covers = CoversTempDir::new("import_cover_made_for_request");
+            let env = env().await;
+            let origin = MockServer::start().await;
+            Mock::given(method("GET"))
+                .and(path("/cover.png"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .insert_header("content-type", "image/png")
+                        .set_body_bytes(solid_color_png(200, 10, 10, 20, 30)),
+                )
+                .mount(&origin)
+                .await;
+            let mut meta = external_meta("Dune");
+            meta.authors = vec!["Frank Herbert".into()];
+            meta.cover_url = Some(format!("{}/cover.png", origin.uri()));
+            let ada = seed_user(&env.pool, "ada").await;
+            let made = store::start_for_new_book_with(
+                &env.pool,
+                ada,
+                &meta,
+                RequestKind::Ebook,
+                5,
+                &loopback_cover_config(),
+            )
+            .await
+            .unwrap();
+            pick(&env.pool, made.id, "on_its_way").await;
+            let set = format!("client_tag = '{}', progress = 1.0", tag(made.id));
+            update(&env.pool, made.id, &set).await;
+            let request = row(&env, made.id).await;
+            let epub = epub_with_cover("Dune", "Frank Herbert", Some((40, 60)));
+            let client = downloaded(&env, &request, &[("Dune.epub", &epub)]);
+
+            run(&env, &client).await;
+
+            assert_ready(&env, made.id).await;
+            assert_eq!(row(&env, made.id).await.cover_candidate, None);
         }
 
         #[tokio::test]

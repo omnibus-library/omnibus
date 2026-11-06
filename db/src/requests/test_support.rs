@@ -30,6 +30,12 @@ pub async fn seed_picked(
         .unwrap()
         .request
         .id;
+    pick(pool, id, state).await;
+    id
+}
+
+/// Give request `id` a result it picked, and put it in `state`.
+pub async fn pick(pool: &SqlitePool, id: i64, state: &str) {
     let result: i64 = sqlx::query_scalar(
         "INSERT INTO book_request_results (request_id, guid, title, download_url, score)
          VALUES (?, 'g', 't', 'magnet:?xt=urn:btih:abc', 1.0) RETURNING id",
@@ -44,7 +50,6 @@ pub async fn seed_picked(
         &format!("state = '{state}', chosen_result_id = {result}"),
     )
     .await;
-    id
 }
 
 /// A reader named `name` with an ebook request in `state` for a book of the same name, and a

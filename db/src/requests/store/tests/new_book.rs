@@ -50,6 +50,24 @@ mod start_for_new_book {
     }
 
     #[tokio::test]
+    async fn marks_the_request_as_not_offering_a_cover() {
+        let pool = pool().await;
+        let ada = seed_user(&pool, "ada").await;
+
+        let row = start_for_new_book(
+            &pool,
+            ada,
+            &external_meta("Piranesi"),
+            RequestKind::Ebook,
+            MAX_LIVE,
+        )
+        .await
+        .unwrap();
+
+        assert!(!row.offers_cover);
+    }
+
+    #[tokio::test]
     async fn makes_no_book_when_the_reader_is_at_the_live_cap() {
         let pool = pool().await;
         let ada = seed_user(&pool, "ada").await;
