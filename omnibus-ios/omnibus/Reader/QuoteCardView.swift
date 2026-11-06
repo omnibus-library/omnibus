@@ -75,14 +75,15 @@ struct QuoteStyle: Identifiable {
 
 /// Card shapes, named for what they're for.
 enum QuoteRatio: String, CaseIterable, Identifiable {
-    case square, portrait, story
+    case square, post, portrait, story
 
     var id: String { rawValue }
 
     var value: CGFloat {
         switch self {
         case .square: 1
-        case .portrait: 4.0 / 5.0
+        case .post: 4.0 / 5.0
+        case .portrait: 3.0 / 4.0
         case .story: 9.0 / 16.0
         }
     }
@@ -90,8 +91,19 @@ enum QuoteRatio: String, CaseIterable, Identifiable {
     var label: String {
         switch self {
         case .square: "Square"
-        case .portrait: "Post"
+        case .post: "Post"
+        case .portrait: "Portrait"
         case .story: "Story"
+        }
+    }
+
+    /// The ratio itself, drawn under the name.
+    var detail: String {
+        switch self {
+        case .square: "1:1"
+        case .post: "4:5"
+        case .portrait: "3:4"
+        case .story: "9:16"
         }
     }
 }

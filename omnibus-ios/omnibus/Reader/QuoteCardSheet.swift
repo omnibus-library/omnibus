@@ -108,7 +108,8 @@ struct QuoteCardSheet: View {
             PillSelector(
                 options: QuoteRatio.allCases,
                 label: \.label,
-                selection: $ratio
+                selection: $ratio,
+                detail: { $0.detail }
             )
         }
     }
