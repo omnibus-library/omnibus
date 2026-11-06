@@ -1,20 +1,37 @@
 import { describe, expect, it } from "vitest";
-import { ApiError } from "../../api";
+import { ApiError, type RequestVersion } from "../../api";
 import {
+  firstShown,
   holdsAudiobook,
   holdsEbook,
   isCancellable,
   isDownloading,
   isSearchStale,
+  pickedMeta,
   progressPercent,
   requestPath,
   startFailure,
   stateView,
   undoToastMs,
   versionFormat,
-  versionSeeders,
   versionSize,
+  versionSource,
 } from "./requestView";
+
+const NBSP = "\u00a0";
+
+/** A version as the page draws it, with every field set unless told otherwise. */
+const aVersion = (overrides: Partial<RequestVersion> = {}): RequestVersion => ({
+  id: 1,
+  title: "Piranesi - Susanna Clarke (2020) [Retail EPUB]",
+  sizeBytes: 1_800_000,
+  format: "EPUB",
+  indexer: "MyAnonamouse",
+  seeders: 142,
+  bestMatch: false,
+  rejected: false,
+  ...overrides,
+});
 
 describe("stateView", () => {
   it.each([
@@ -94,30 +111,79 @@ describe("requestPath", () => {
 });
 
 describe("versionFormat", () => {
-  it("names a format and calls an unnamed one Unknown", () => {
+  it("names a format and says when one is unknown", () => {
     expect(versionFormat("EPUB")).toBe("EPUB");
-    expect(versionFormat(null)).toBe("Unknown");
+    expect(versionFormat(null)).toBe("Format unknown");
   });
 });
 
 describe("versionSize", () => {
   it("writes a size in decimal units and leaves a missing one out", () => {
-    expect(versionSize(2_400_000)).toBe("2.4 MB");
+    expect(versionSize(2_400_000)).toBe(`2.4${NBSP}MB`);
     expect(versionSize(null)).toBeNull();
   });
 });
 
-describe("versionSeeders", () => {
-  it.each([
-    [12, "12 seeders"],
-    [1, "1 seeder"],
-    [0, "0 seeders"],
-  ])("counts %i as %s", (seeders, label) => {
-    expect(versionSeeders(seeders)).toBe(label);
+describe("versionSource", () => {
+  it("names the source, format, size and seeds", () => {
+    expect(versionSource(aVersion())).toBe(
+      `MyAnonamouse · EPUB · 1.8${NBSP}MB · 142${NBSP}seeds`,
+    );
   });
 
-  it("leaves out a source with no seeders", () => {
-    expect(versionSeeders(null)).toBeNull();
+  it("drops a missing source and missing seeds", () => {
+    expect(versionSource(aVersion({ indexer: null, seeders: null }))).toBe(
+      `EPUB · 1.8${NBSP}MB`,
+    );
+  });
+
+  it("says when the format and size are unknown", () => {
+    expect(
+      versionSource(aVersion({ format: null, sizeBytes: null, seeders: null })),
+    ).toBe("MyAnonamouse · Format unknown · Size unknown");
+  });
+
+  it.each([
+    [1, `1${NBSP}seed`],
+    [0, `0${NBSP}seeds`],
+    [1234, `1,234${NBSP}seeds`],
+  ])("writes %i seeders as %s", (seeders, seeds) => {
+    expect(versionSource(aVersion({ indexer: null, seeders }))).toBe(
+      `EPUB · 1.8${NBSP}MB · ${seeds}`,
+    );
+  });
+
+  it("uses no downloader word but the seed count", () => {
+    const source = versionSource(aVersion({ indexer: "Books" }));
+    expect(source).toMatch(/seeds$/);
+    expect(source.replace(/[\d,]+\u00a0seeds$/, "")).not.toMatch(
+      /release|torrent|indexer|grab|seed/i,
+    );
+  });
+});
+
+describe("pickedMeta", () => {
+  it("names the picked version's size and source", () => {
+    expect(pickedMeta(aVersion())).toBe(`1.8${NBSP}MB · MyAnonamouse`);
+  });
+
+  it("leaves out what the source did not say", () => {
+    expect(pickedMeta(aVersion({ sizeBytes: null, indexer: null }))).toBe("");
+  });
+});
+
+describe("firstShown", () => {
+  const offerable = (id: number) => aVersion({ id });
+  const tried = (id: number) => aVersion({ id, rejected: true });
+
+  it("keeps the first four versions that can be chosen and every tried one", () => {
+    const versions = [1, 2, 3, 4, 5, 6].map(offerable).concat(tried(7));
+    expect(firstShown(versions).map((v) => v.id)).toEqual([1, 2, 3, 4, 7]);
+  });
+
+  it("keeps every version when four or fewer can be chosen", () => {
+    const versions = [1, 2, 3, 4].map(offerable).concat(tried(5));
+    expect(firstShown(versions).map((v) => v.id)).toEqual([1, 2, 3, 4, 5]);
   });
 });
 
