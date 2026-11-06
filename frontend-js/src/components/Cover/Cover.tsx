@@ -8,10 +8,14 @@ type CoverProps = {
   src: string | null;
   srcSet?: string;
   sizes?: string;
+  /** The image's accessible name, where "Cover of <title>" would not tell two covers apart. */
+  alt?: string;
+  /** Runs when the image fails to load. */
+  onError?: () => void;
 };
 
 /** A book cover, or the typeset plate when there is no image or it fails. */
-export function Cover({ book, src, srcSet, sizes }: CoverProps) {
+export function Cover({ book, src, srcSet, sizes, alt, onError }: CoverProps) {
   // Keyed by address, so a new src gets its own chance to load.
   const [brokenSrc, setBrokenSrc] = useState<string | null>(null);
   const shown = src !== null && src !== brokenSrc;
@@ -29,9 +33,12 @@ export function Cover({ book, src, srcSet, sizes }: CoverProps) {
             src={src}
             srcSet={srcSet}
             sizes={sizes}
-            alt={`Cover of ${book.title}`}
+            alt={alt ?? `Cover of ${book.title}`}
             loading="lazy"
-            onError={() => setBrokenSrc(src)}
+            onError={() => {
+              setBrokenSrc(src);
+              onError?.();
+            }}
           />
         ) : (
           <>

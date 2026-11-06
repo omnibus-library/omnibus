@@ -374,6 +374,7 @@
 .rq-offer-actions {
   display: flex;
   flex: none;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
   margin-inline-start: auto;
@@ -384,6 +385,10 @@
 .rq-picked {
   display: grid;
   gap: 4px;
+}
+/* A release name has no spaces to break at. */
+.rq-picked .rq-version-meta {
+  overflow-wrap: anywhere;
 }
 .rq-stuck {
   display: grid;

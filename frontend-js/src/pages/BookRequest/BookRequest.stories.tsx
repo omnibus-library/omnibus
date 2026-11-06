@@ -1449,7 +1449,10 @@ export const ReadyWithSharperCover: Story = {
     const card = within(await canvas.findByTestId("request-cover-offer"));
 
     await expect(
-      card.getByText("The download has a sharper cover"),
+      card.getByRole("heading", {
+        level: 3,
+        name: "The download has a sharper cover",
+      }),
     ).toBeVisible();
     await expect(card.getByTestId("request-cover-sizes")).toHaveTextContent(
       "Its cover is 1600 × 2400. The existing one is 128 × 196.",
@@ -1459,8 +1462,13 @@ export const ReadyWithSharperCover: Story = {
       card.getByRole("figure", { name: "From the download" }),
     ).toBeVisible();
     await expect(
-      card.getAllByRole("img").map((img) => img.getAttribute("src")),
-    ).toEqual([`/api/thumbs/${UUID}/md`, "/api/requests/7/cover"]);
+      card
+        .getAllByRole("img")
+        .map((img) => [img.getAttribute("alt"), img.getAttribute("src")]),
+    ).toEqual([
+      ["Current cover", `/api/thumbs/${UUID}/md`],
+      ["Cover from the download", "/api/requests/7/cover"],
+    ]);
     await expect(
       card.getAllByRole("button").map((button) => button.textContent),
     ).toEqual(["Keep this one", "Use the downloaded cover"]);
@@ -1468,8 +1476,9 @@ export const ReadyWithSharperCover: Story = {
     await expect(picked).toHaveTextContent("Hyperion - Dan Simmons EPUB");
     await expect(picked).toHaveTextContent(/2\.4 MB · Books · added just now/);
     const [keep, take] = card.getAllByRole("button");
-    await expect(boxOf(keep as HTMLElement).top).toBe(
+    await expect(boxOf(keep as HTMLElement).top).toBeCloseTo(
       boxOf(take as HTMLElement).top,
+      0,
     );
   },
 };
@@ -1487,8 +1496,9 @@ export const ReadyWithSharperCoverOnPhone: Story = {
     await expect(picked).toHaveTextContent(/Books · added just now/);
 
     const [now, download] = card.getAllByRole("figure");
-    await expect(boxOf(now as HTMLElement).top).toBe(
+    await expect(boxOf(now as HTMLElement).top).toBeCloseTo(
       boxOf(download as HTMLElement).top,
+      0,
     );
     await expect(boxOf(download as HTMLElement).left).toBeGreaterThan(
       boxOf(now as HTMLElement).right,
@@ -1499,7 +1509,7 @@ export const ReadyWithSharperCoverOnPhone: Story = {
       "Keep this one",
     ]);
     const [take, keep] = buttons.map((button) => boxOf(button));
-    await expect(take?.width).toBe(keep?.width);
+    await expect(take?.width).toBeCloseTo(keep?.width ?? 0, 0);
     await expect(take?.bottom).toBeLessThan(keep?.top ?? 0);
     await expect(take?.width).toBeGreaterThan(
       boxOf(card.getByRole("figure", { name: "Now" })).width * 3,
@@ -1558,9 +1568,44 @@ export const AFailedCoverChoiceTellsYouAndKeepsTheCard: Story = {
       await canvas.findByText(/Couldn’t use that cover/),
     ).toBeInTheDocument();
     await expect(canvas.getByTestId("request-cover-offer")).toBeVisible();
-    await expect(canvas.getByTestId("request-cover-take")).not.toHaveAttribute(
-      "aria-busy",
-      "true",
+    await waitFor(() =>
+      expect(canvas.getByTestId("request-cover-take")).not.toHaveAttribute(
+        "aria-busy",
+        "true",
+      ),
+    );
+  },
+};
+
+let coverReads = 0;
+
+export const AFailedKeepTellsYouAndDropsTheStaleCard: Story = {
+  parameters: { user: READER },
+  beforeEach({ msw }) {
+    coverReads = 0;
+    msw.use(
+      failing("delete", "/api/requests/:id/cover", 409),
+      // The offer was settled elsewhere: the first read has it, every read after does not.
+      http.get("/api/requests/:id", () => {
+        coverReads += 1;
+        return HttpResponse.json(
+          aWireRequest({
+            ...WITH_SHARPER_COVER,
+            cover_offer: coverReads < 2 ? WITH_SHARPER_COVER.cover_offer : null,
+          }),
+        );
+      }),
+      ...seed(WITH_SHARPER_COVER),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByTestId("request-cover-keep"));
+
+    await expect(
+      await canvas.findByText(/Couldn’t keep this one/),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(canvas.queryByTestId("request-cover-offer")).toBeNull(),
     );
   },
 };

@@ -741,7 +741,7 @@ describe("coverSizesLine", () => {
     };
 
     expect(coverSizesLine(offer)).toBe(
-      "Its cover is 1600 × 2400. The existing one is 128 × 196.",
+      "Its cover is 1600\u00a0×\u00a02400. The existing one is 128\u00a0×\u00a0196.",
     );
   });
 });

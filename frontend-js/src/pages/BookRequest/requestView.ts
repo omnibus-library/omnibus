@@ -155,6 +155,14 @@ export const pickedMeta = (
     .filter((part) => part !== null)
     .join(SEP);
 
+/** The heading a phone gives a picked version: its format and size, each left out when unknown. */
+export const pickedHeading = (
+  version: Pick<RequestVersion, "format" | "sizeBytes">,
+) =>
+  [version.format, versionSize(version.sizeBytes)]
+    .filter((part) => part !== null)
+    .join(SEP);
+
 /** The caption over the versions: how many can be chosen, and that the best match leads when one does. */
 export function versionsFound(versions: readonly RequestVersion[]) {
   const choosable = versions.filter((v) => !v.rejected);
@@ -175,6 +183,9 @@ export function firstShown(versions: readonly RequestVersion[]) {
   return versions.filter((v) => v.rejected || offerable.includes(v));
 }
 
+/** A size's "×", with a non-breaking space either side so a size never splits across lines. */
+const TIMES = "\u00a0×\u00a0";
+
 /** The cover offer's sizes in pixels, as the card says them; it never says where the existing cover came from. */
 export const coverSizesLine = ({
   width,
@@ -182,7 +193,7 @@ export const coverSizesLine = ({
   currentWidth,
   currentHeight,
 }: NonNullable<BookRequest["coverOffer"]>) =>
-  `Its cover is ${width} × ${height}. The existing one is ${currentWidth} × ${currentHeight}.`;
+  `Its cover is ${width}${TIMES}${height}. The existing one is ${currentWidth}${TIMES}${currentHeight}.`;
 
 /** Why starting a request failed, as a sentence for a toast. */
 export function startFailure(error: unknown): string {

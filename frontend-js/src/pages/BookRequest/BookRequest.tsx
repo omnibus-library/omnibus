@@ -40,7 +40,7 @@ import { nowSecs, recency } from "../../format";
 import { useCurrentUser } from "../../session";
 import { PHONE_QUERY, useMediaQuery } from "../../useMediaQuery";
 import { bookQuery } from "../BookDetail/queries";
-import { Ready } from "./Ready";
+import { CoverOffer } from "./CoverOffer";
 import {
   type DossierVariant,
   RequestAgain,
@@ -57,6 +57,7 @@ import {
   kindChip,
   kindLabel,
   offersRequestAgain,
+  pickedHeading,
   pickedMeta,
   pickedVersion,
   progressPercent,
@@ -67,7 +68,6 @@ import {
   splitBookRequests,
   stateView,
   stepsFor,
-  versionSize,
   versionSource,
   versionsFound,
   wishersLine,
@@ -316,11 +316,7 @@ function Download({
   }
   const picked = pickedVersion(request);
   const percent = downloadPercent(request);
-  const heading = picked
-    ? [picked.format, versionSize(picked.sizeBytes)]
-        .filter((part) => part !== null)
-        .join(SEP)
-    : "Your pick";
+  const heading = picked ? pickedHeading(picked) : "Your pick";
   return (
     <>
       <div className="rq-download" data-testid="request-chosen">
@@ -341,6 +337,31 @@ function Download({
       </div>
       {actions}
     </>
+  );
+}
+
+/** The version a ready request added, as a download's card shows its pick, with when it was added where the time left was; a phone heads it with the format and size. */
+function Added({ request }: { request: Request }) {
+  const phone = useMediaQuery(PHONE_QUERY);
+  const picked = pickedVersion(request);
+  if (!picked) return null;
+  const added = `added ${recency(nowSecs(), request.updatedAt)}`;
+  if (!phone) {
+    return (
+      <div className="rq-download">
+        <Picked request={request} extra={added} />
+      </div>
+    );
+  }
+  const meta = [picked.indexer, added].filter((part) => part).join(SEP);
+  return (
+    <div className="rq-download" data-testid="request-chosen">
+      <div className="rq-picked">
+        <p className="rq-download-heading">{pickedHeading(picked)}</p>
+        <p className="rq-version-meta">{picked.title}</p>
+        <p className="rq-version-meta">{meta}</p>
+      </div>
+    </div>
   );
 }
 
@@ -637,12 +658,14 @@ function Lane({
         />
       )}
       {request.state === "chosen" && <Picked request={request} />}
-      {request.state === "ready" && (
-        <Ready
+      {request.state === "ready" && <Added request={request} />}
+      {request.state === "ready" && canAct && request.coverOffer && (
+        <CoverOffer
           request={request}
-          canAct={canAct}
+          offer={request.coverOffer}
           book={context.book}
-          onSettled={focusTitle}
+          variant={context.variant}
+          onDone={focusTitle}
         />
       )}
       {request.state === "on_its_way" ? (

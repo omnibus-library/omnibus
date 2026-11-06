@@ -1,37 +1,37 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useId } from "react";
 import {
   type Book,
-  keepRequestCover,
   type BookRequest as Request,
   requestCoverUrl,
-  takeRequestCover,
   thumbUrl,
 } from "../../api";
 import { Button } from "../../components/Button/Button";
 import { Cover } from "../../components/Cover/Cover";
 import { BusyLabel } from "../../components/Loading/Loading";
-import { useToast } from "../../components/Toast/Toast";
 import { PHONE_QUERY, useMediaQuery } from "../../useMediaQuery";
-import { bookQuery } from "../BookDetail/queries";
+import type { DossierVariant } from "./RequestHistory";
 import { coverSizesLine } from "./requestView";
-import { messageOf, useAnswer } from "./useRequestActions";
+import { useKeepCover, useReread, useTakeCover } from "./useRequestActions";
 
-/** A cover and its caption, as one labelled figure. */
+/** A cover and its caption, as one labelled figure; `onError` runs when the image cannot load. */
 function Figure({
   book,
   src,
+  alt,
   caption,
+  onError,
 }: {
   book: Book;
   src: string;
+  alt: string;
   caption: string;
+  onError?: () => void;
 }) {
   const captionId = useId();
   return (
     <figure className="rq-offer-figure" aria-labelledby={captionId}>
       <div className="rq-offer-cover">
-        <Cover book={book} src={src} />
+        <Cover book={book} src={src} alt={alt} onError={onError} />
       </div>
       <figcaption id={captionId}>{caption}</figcaption>
     </figure>
@@ -43,37 +43,23 @@ export function CoverOffer({
   request,
   offer,
   book,
+  variant,
   onDone,
 }: {
   request: Request;
   offer: NonNullable<Request["coverOffer"]>;
   book: Book;
+  variant: DossierVariant;
   onDone: () => void;
 }) {
   const phone = useMediaQuery(PHONE_QUERY);
-  const toast = useToast();
-  const client = useQueryClient();
-  const answer = useAnswer(request.id);
+  const take = useTakeCover(request.id, request.bookUuid, onDone);
+  const keep = useKeepCover(request.id, onDone);
+  // A download cover that cannot be fetched means the offer is gone, so the request says so.
+  const reread = useReread(request.id);
   const headingId = useId();
-  const take = useMutation({
-    mutationFn: () => takeRequestCover(request.id, request.bookUuid),
-    onSuccess: (taken) => {
-      onDone();
-      client.invalidateQueries({
-        queryKey: bookQuery(request.bookUuid).queryKey,
-      });
-      return answer(taken);
-    },
-    onError: (error) => toast(`Couldn’t use that cover: ${messageOf(error)}`),
-  });
-  const keep = useMutation({
-    mutationFn: () => keepRequestCover(request.id),
-    onSuccess: (kept) => {
-      onDone();
-      return answer(kept);
-    },
-    onError: (error) => toast(`Couldn’t keep this one: ${messageOf(error)}`),
-  });
+  // One level under the lane's own title.
+  const Heading = variant === "pane" ? "h4" : "h3";
   const busy = take.isPending || keep.isPending;
   const size = phone ? "md" : "sm";
   // aria-disabled, not disabled: a control that disables itself drops the keyboard's focus.
@@ -120,17 +106,25 @@ export function CoverOffer({
       data-testid="request-cover-offer"
     >
       <div className="rq-offer-covers">
-        <Figure book={book} src={thumbUrl(request.bookUuid)} caption="Now" />
+        <Figure
+          book={book}
+          src={thumbUrl(request.bookUuid)}
+          alt="Current cover"
+          caption="Now"
+        />
+        {/* shortcut: the full-size download fetched for a 64px figure; upgrade when candidates go through the thumbs pipeline. */}
         <Figure
           book={book}
           src={requestCoverUrl(request.id)}
+          alt="Cover from the download"
           caption="From the download"
+          onError={() => void reread()}
         />
       </div>
       <div className="rq-offer-text">
-        <p id={headingId} className="rq-offer-heading">
+        <Heading id={headingId} className="rq-offer-heading">
           The download has a sharper cover
-        </p>
+        </Heading>
         <p className="rq-version-meta" data-testid="request-cover-sizes">
           {coverSizesLine(offer)}
         </p>
