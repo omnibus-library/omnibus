@@ -80,8 +80,8 @@ test.describe("always-on scrollbars", () => {
     });
   }
 
-  // 320 is the narrowest phone, 360 the common Android width, 399 and 400 either side of the wordmark breakpoint.
-  for (const width of [320, 360, 399, 400]) {
+  // 299 and 300 sit either side of the wordmark breakpoint, 320 is the narrowest phone, 360 the common Android width.
+  for (const width of [299, 300, 320, 360]) {
     test.describe(`${width} wide`, () => {
       test.use({ viewport: { width, height: 600 } });
 

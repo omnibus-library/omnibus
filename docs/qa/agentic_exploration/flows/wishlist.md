@@ -7,11 +7,13 @@
 | **Surfaces** | web, iOS |
 | **Actions** | `checkin.start`, `checkin.lookup`, `wishlist.add`, `wishlist.remove` |
 
-A wishlist entry is a book you do not have. It is reached through **checking in
-a book**, not through a button on a library page — the app looks the book up on
-the web first, and the wishlist is one of the outcomes it offers. The other
-outcomes — filing a print copy — are
-[checking_in_a_book](checking_in_a_book.md); this flow takes the wishlist
+A wishlist entry is a book you do not have. On the web it is reached through
+the nav's **Add** menu → **Add to your wishlist**, which opens the wishlist
+page with its search ready; the app looks the book up on the web as well as in
+the library. The alternate path is **checking in a book** (Add → **Add a copy
+you own**), where the wishlist is one of the outcomes the lookup offers — on
+iOS that is the only path. The other check-in outcomes — filing a print copy —
+are [checking_in_a_book](checking_in_a_book.md); this flow takes the wishlist
 path only.
 
 That lookup is the interesting part. It goes out to real external services, so
@@ -20,7 +22,9 @@ fail.
 
 ## Steps
 
-1. Start checking in a book.
+1. On the web, open the nav's **Add** menu and choose **Add to your
+   wishlist**; now and then take the alternate path, **Add a copy you own**.
+   On iOS, start checking in a book.
 2. Identify a book you do **not** already have. Either enter an ISBN or search
    by title. **There is no author field** — the search takes a title only, and
    adding the author to it measurably degrades the results, so do not. Prefer a

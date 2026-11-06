@@ -29,7 +29,8 @@ wishlist and hope that someone gets it for you out of the kindness of their hear
 
 ## Request States
 
-Omnibus uses its own words for a request, never the downloader's ("release", "indexer", "grab", "seeds").
+Omnibus uses its own words for a request, never the downloader's ("release", "indexer", "grab", "seeds"). The
+one exception is a version row's seed count ("142 seeds"), which says how likely a version is to finish.
 
 1. **Looking**: Omnibus is searching for versions of the book. A new request starts here.
 2. **Choose a version**: versions were found and the user picks one. This is the only state that needs the user.
@@ -43,8 +44,11 @@ Two states can end a request early:
   and a "Try again" button.
 - **Cancelled**: the user cancelled it (see S7).
 
-A found result is a **version**, never a "copy": "copy" already means a physical book in Omnibus. A version shows
-its format, size and whether it's the best match; where it came from is behind a "Details" toggle.
+A found result is a **version**, never a "copy": "copy" already means a physical book in Omnibus. A version row shows
+its name, then where it came from, its format, size and seeds ("MyAnonamouse · EPUB · 1.8 MB · 142 seeds", or "Usenet"
+for a source with none), then whether it's the best match or didn't work. The best match and the next three show
+first, with "Show more" for the rest; "Details" opens the long form of every row. Usenet versions are left out
+until Omnibus has a Usenet download client.
 
 Requesting from the wishlist asks one question (ebook or audiobook), starts the request, and takes the user
 straight to that book's request page, already in "Looking".

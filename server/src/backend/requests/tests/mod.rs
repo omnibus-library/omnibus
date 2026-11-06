@@ -6,7 +6,9 @@ use std::time::{Duration, Instant};
 use axum::{http::StatusCode, Router};
 use omnibus_db::requests::store;
 use omnibus_db::test_support::EnvVarGuard;
-use omnibus_shared::{BookRequest, RequestKind, RequestState, RequestsSettingsUpdate};
+use omnibus_shared::{
+    BookRequest, ReleaseProtocol, RequestKind, RequestState, RequestsSettingsUpdate,
+};
 use serde_json::{json, Value};
 use sqlx::SqlitePool;
 use tower::ServiceExt;
@@ -70,7 +72,7 @@ async fn seed_book_by(pool: &SqlitePool, title: &str, author: &str) -> String {
 async fn prowlarr_with_dracula() -> MockServer {
     let server = MockServer::start().await;
     let release = json!([{
-        "guid": "g1", "title": "Dracula - Bram Stoker EPUB", "size": 900000, "seeders": 12,
+        "guid": "g1", "title": "Dracula - Bram Stoker EPUB", "size": 900000, "seeders": 12, "protocol": "torrent",
         "indexer": "Books", "downloadUrl": "http://prowlarr/1/download?apikey=secret",
         "categories": [{"id": 7020}],
     }]);
@@ -557,6 +559,7 @@ mod search_after_start {
         assert_eq!(found.versions.len(), 1);
         assert_eq!(found.versions[0].format.as_deref(), Some("EPUB"));
         assert_eq!(found.versions[0].seeders, Some(12));
+        assert_eq!(found.versions[0].protocol, Some(ReleaseProtocol::Torrent));
         assert!(found.versions[0].best_match);
         for leak in ["apikey", "secret", "download", "magnet"] {
             assert!(!text.contains(leak), "{leak} in {text}");

@@ -111,7 +111,7 @@ async fn kept_versions(
     request_ids: &[i64],
 ) -> Result<HashMap<i64, Vec<RequestVersion>>, RequestError> {
     let rows = sqlx::query(
-        "SELECT r.request_id, r.id, r.title, r.size_bytes, r.format, r.indexer, r.seeders, r.best_match,
+        "SELECT r.request_id, r.id, r.title, r.size_bytes, r.format, r.indexer, r.seeders, r.protocol, r.best_match,
                 r.tried
            FROM book_request_results r
            JOIN book_requests q ON q.id = r.request_id

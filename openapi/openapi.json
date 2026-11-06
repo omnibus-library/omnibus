@@ -15573,6 +15573,14 @@
           }
         }
       },
+      "ReleaseProtocol": {
+        "type": "string",
+        "description": "How a version is fetched, as Prowlarr names it.",
+        "enum": [
+          "torrent",
+          "usenet"
+        ]
+      },
       "RenameApiTokenRequest": {
         "type": "object",
         "description": "A new name for an API token, 1 to 100 characters.",
@@ -15666,6 +15674,17 @@
               "null"
             ],
             "description": "The source the version came from."
+          },
+          "protocol": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ReleaseProtocol",
+                "description": "How it is fetched. Null when the source did not say."
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "rejected": {
             "type": "boolean",

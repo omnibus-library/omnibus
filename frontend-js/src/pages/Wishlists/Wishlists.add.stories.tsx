@@ -1,8 +1,10 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { HttpResponse, http } from "msw";
+import { useNavigate } from "react-router";
 import { expect, waitFor, within } from "storybook/test";
 import { TopNav } from "../../components/TopNav/TopNav";
 import { deferred, hanging } from "../../testing/handlers";
+import { realPointer } from "../../testing/pointer";
 import { BOOKS } from "../../testing/wishlistHandlers";
 import {
   api,
@@ -47,6 +49,16 @@ const withTopNav = () => (
     <Page />
   </>
 );
+
+/** The browser's Back button, which a story's memory router has no other way to press. */
+function Back() {
+  const navigate = useNavigate();
+  return (
+    <button type="button" onClick={() => navigate(-1)}>
+      Back
+    </button>
+  );
+}
 
 /** Chooses Add to your wishlist from the top bar's Add menu. */
 const addFromTheMenu = async (
@@ -108,6 +120,47 @@ export const TheSearchTheAddMenuOpenedStaysClosedOnceClosed: Story = {
     await waitFor(() =>
       expect(canvas.queryByTestId("wishlists-add-panel")).toBeNull(),
     );
+  },
+};
+
+export const TheSearchTheAddMenuOpenedStaysClosedOnComingBack: Story = {
+  render: () => (
+    <>
+      <TopNav />
+      <Back />
+      <Page />
+    </>
+  ),
+  play: async ({ canvas, userEvent }) => {
+    await addFromTheMenu(canvas, userEvent);
+    await canvas.findByTestId("wishlists-add-panel");
+    await userEvent.keyboard("{Escape}");
+    await userEvent.click(canvas.getByRole("link", { name: "Library" }));
+    await waitFor(() =>
+      expect(canvas.queryByTestId("wishlists-page")).toBeNull(),
+    );
+
+    await userEvent.click(canvas.getByRole("button", { name: "Back" }));
+
+    await canvas.findByTestId("wishlists-add");
+    await expect(canvas.queryByTestId("wishlists-add-panel")).toBeNull();
+  },
+};
+
+export const TheAddMenuFocusesTheSearchAlreadyOpen: Story = {
+  render: withTopNav,
+  play: async ({ canvas, userEvent }) => {
+    await addFromTheMenu(canvas, userEvent);
+    const field = within(
+      await canvas.findByTestId("wishlists-add-panel"),
+    ).getByTestId("wishlists-add-search");
+    await waitFor(() => expect(field).toHaveFocus());
+
+    // From the keyboard: the open search's scrim covers the page from a pointer.
+    canvas.getByRole("button", { name: "Add" }).focus();
+    await userEvent.keyboard("{Enter}{End}{Enter}");
+
+    await waitFor(() => expect(field).toHaveFocus());
   },
 };
 
@@ -462,9 +515,6 @@ export const PhoneSheetClosesOnEscape: Story = {
     await expect(button).toHaveFocus();
   },
 };
-
-/** The browser's own pointer: a story's `userEvent` dispatches straight to its target, past any overlay. */
-const realPointer = async () => (await import("vitest/browser")).userEvent;
 
 export const AnOutsideClickClosesTheDesktopPopover: Story = {
   play: async ({ canvas, userEvent }) => {

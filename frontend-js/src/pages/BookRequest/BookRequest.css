@@ -190,61 +190,73 @@
 
 /* ---- the versions found ---- */
 
+.rq-found {
+  font: 400 10.5px / 1 var(--mono);
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
 .rq-versions {
   display: grid;
-  gap: 10px;
+  gap: 16px;
   list-style: none;
 }
 .rq-version {
   display: grid;
-  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px 16px;
   padding: 12px 14px;
+  border: 1px solid color-mix(in oklch, var(--line) 50%, transparent);
   border-radius: var(--r-md);
-  background: var(--bg-2);
 }
 .rq-version[data-best-match="true"] {
-  outline: 1px solid var(--accent);
-}
-.rq-version-main {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px 14px;
+  border-color: color-mix(in oklch, var(--accent) 50%, transparent);
+  background: var(--bg-2);
 }
 .rq-version-text {
   display: grid;
   gap: 4px;
-  flex: 1 1 16rem;
-  min-width: 0;
 }
 .rq-version-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font: 500 14px / 1.35 var(--sans);
   color: var(--ink-0);
-  font-size: 15px;
+  overflow-wrap: anywhere;
 }
 .rq-version-meta {
-  color: var(--ink-1);
-  font-size: 13px;
-}
-.rq-best {
-  padding: 3px 8px;
-  border-radius: var(--r-sm);
-  background: var(--accent-soft);
-  color: var(--accent);
-  font: 500 10.5px / 1 var(--mono);
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-.rq-tried {
+  font-size: 12px;
   color: var(--ink-2);
-  font: 500 10.5px / 1 var(--mono);
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
 }
-.rq-version[data-rejected="true"] {
-  opacity: 0.6;
+.rq-tag {
+  font: 400 9px / 1.2 var(--mono);
+  text-transform: uppercase;
+  color: var(--accent);
+}
+/* Dimmed through colour, not opacity, and no further than --ink-2, so it stays readable. */
+.rq-version[data-rejected="true"] :is(.rq-version-name, .rq-tag) {
+  color: var(--ink-2);
+}
+.rq-version-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+/* Drawn as a text link; the block padding only widens the tap target. */
+.rq-link {
+  padding: 6px 0;
+  margin-block: -6px;
+  border: 0;
+  background: none;
+  font: 400 12px / 1.4 var(--sans);
+  color: var(--ink-1);
+  cursor: pointer;
+}
+.rq-link.quiet {
+  color: var(--ink-2);
+}
+@media (hover: hover) {
+  .rq-link:hover {
+    color: var(--ink-0);
+  }
 }
 .rq-page .btn[aria-disabled="true"] {
   opacity: 0.55;
@@ -255,10 +267,8 @@
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
-.rq-details-toggle {
-  margin-inline-start: auto;
-}
 .rq-details {
+  grid-column: 1 / -1;
   display: grid;
   gap: 6px;
   font-size: 13px;
@@ -299,6 +309,10 @@
 .rq-bar::-moz-progress-bar {
   background: var(--accent);
 }
+/* Lines a small ghost button's label up with the text links above it. */
+.rq-flush {
+  margin-inline-start: -10px;
+}
 .rq-actions {
   display: flex;
   flex-wrap: wrap;
@@ -314,29 +328,16 @@
   border-radius: var(--r-md);
   background: var(--bg-2);
 }
-.rq-download-main {
-  display: grid;
+.rq-download .rq-picked {
   flex: 1 1 18rem;
-  gap: 8px;
   min-width: 0;
 }
-.rq-download-name {
-  overflow: hidden;
-  font-size: 13px;
-  color: var(--ink-0);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.rq-download-meta {
-  font-size: 12px;
-  color: var(--ink-2);
-}
 
-/* ---- chosen and stuck ---- */
+/* ---- the picked version, and stuck ---- */
 
-.rq-chosen {
-  font-size: 15px;
-  color: var(--ink-0);
+.rq-picked {
+  display: grid;
+  gap: 4px;
 }
 .rq-stuck {
   display: grid;
@@ -350,12 +351,18 @@
 }
 
 .rq-page .btn:focus-visible,
+.rq-link:focus-visible,
 .rq-back:focus-visible,
 .rq-open:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
+@media (max-width: 720px) {
+  .rq-versions {
+    gap: 12px;
+  }
+}
 /* A phone sets Open book page under the byline, beside the cover. */
 @media (max-width: 640px) {
   .rq-head {
@@ -384,6 +391,9 @@
     justify-self: start;
     margin-top: 0;
     color: var(--accent);
+  }
+  .rq-version {
+    padding: 10px 12px;
   }
 }
 

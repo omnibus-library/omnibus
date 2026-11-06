@@ -38,7 +38,8 @@ export function stateView(
   stuckReason: StuckReason | null = null,
 ): {
   heading: string;
-  note: string;
+  /** Absent where the lane's own content says it. */
+  note: string | null;
 } {
   switch (state) {
     case "looking":
@@ -47,10 +48,7 @@ export function stateView(
         note: "Searching for versions of this book.",
       };
     case "choose":
-      return {
-        heading: "Choose a version",
-        note: "Pick the version you want.",
-      };
+      return { heading: "Choose a version", note: null };
     case "chosen":
       return { heading: "Version chosen", note: "We’ll fetch it next." };
     case "on_its_way":
@@ -100,18 +98,68 @@ export const undoToastMs = (cancelAt: number, now: number) =>
 export const requestPath = (uuid: string, id: number) =>
   `/books/${uuid}/request?id=${id}`;
 
-/** The format a version is in; one whose name says none is Unknown. */
-export const versionFormat = (format: string | null) => format ?? "Unknown";
-
-/** A version's size, or `null` when the source did not say. */
+/** A version's size, kept on one line, or `null` when the source did not say. */
 export const versionSize = (bytes: number | null) =>
-  bytes === null ? null : fileSize(bytes);
+  bytes === null ? null : (fileSize(bytes)?.replace(" ", "\u00a0") ?? null);
 
-/** How many peers share a version, or `null` for a source with none, such as Usenet. */
-export const versionSeeders = (seeders: number | null) =>
-  seeders === null
-    ? null
-    : `${seeders} ${seeders === 1 ? "seeder" : "seeders"}`;
+/** Joins the parts of a line; non-breaking before the dot, so a line never starts with a separator. */
+export const SEP = "\u00a0· ";
+
+const seeds = (n: number) =>
+  `${n.toLocaleString("en-US")}\u00a0seed${plural(n)}`;
+
+/** How a version is shared: Usenet, its seeds, or `null` for a torrent whose seeds are unknown. */
+const sharing = ({
+  protocol,
+  seeders,
+}: Pick<RequestVersion, "protocol" | "seeders">) => {
+  if (protocol === "usenet") return "Usenet";
+  return seeders === null ? null : seeds(seeders);
+};
+
+/** A version's source line: "MyAnonamouse · EPUB · 1.8 MB · 142 seeds", or "… · Usenet"; a missing source or seed count drops out. */
+export const versionSource = (
+  version: Pick<
+    RequestVersion,
+    "indexer" | "format" | "sizeBytes" | "seeders" | "protocol"
+  >,
+) =>
+  [
+    version.indexer,
+    version.format ?? "Format unknown",
+    versionSize(version.sizeBytes) ?? "Size unknown",
+    sharing(version),
+  ]
+    .filter((part) => part !== null)
+    .join(SEP);
+
+/** The line under a picked version's name: its size and source, each left out when unknown. */
+export const pickedMeta = (
+  version: Pick<RequestVersion, "indexer" | "sizeBytes">,
+) =>
+  [versionSize(version.sizeBytes), version.indexer]
+    .filter((part) => part !== null)
+    .join(SEP);
+
+/** The caption over the versions: how many can be chosen, and that the best match leads when one does. */
+export function versionsFound(versions: readonly RequestVersion[]) {
+  const choosable = versions.filter((v) => !v.rejected);
+  const count = `${choosable.length} version${plural(choosable.length)} found`;
+  return choosable.some((v) => v.bestMatch)
+    ? `${count} · Best match first`
+    : count;
+}
+
+/** How many versions that can be chosen show before Show more. */
+const SHOWN_AT_FIRST = 4;
+
+/** The versions shown before Show more: the first four that can be chosen, and every one that was tried. */
+export function firstShown(versions: readonly RequestVersion[]) {
+  const offerable = versions
+    .filter((v) => !v.rejected)
+    .slice(0, SHOWN_AT_FIRST);
+  return versions.filter((v) => v.rejected || offerable.includes(v));
+}
 
 /** Why starting a request failed, as a sentence for a toast. */
 export function startFailure(error: unknown): string {
@@ -156,7 +204,7 @@ export const canActOn = (
 
 const versionFacts = (version: RequestVersion) => {
   const size = versionSize(version.sizeBytes);
-  return [versionFormat(version.format), ...(size ? [size] : [])];
+  return [version.format ?? "Unknown", ...(size ? [size] : [])];
 };
 
 /** What happened to a request, only from what was recorded: "Cancelled by you · EPUB · 2.4 MB · stopped at 40%". */
@@ -333,12 +381,6 @@ export function timeLeft(
   const hours = Math.round(secs / 3600);
   return `about ${hours} hour${plural(hours)} left`;
 }
-
-/** A picked version's size and source, "3.1 MB · MyAnonamouse", leaving out what is unknown. */
-export const pickedMeta = (version: RequestVersion) =>
-  [versionSize(version.sizeBytes), version.indexer]
-    .filter((part) => part !== null)
-    .join(" · ");
 
 /** Who wants the book, "On Jordan’s and Riley’s wishlists", with the viewer as "your"; `null` when nobody does. */
 export function wishersLine(

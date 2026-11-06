@@ -1,6 +1,5 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
-  Fragment,
   type ReactNode,
   type Ref,
   useEffect,
@@ -43,6 +42,7 @@ import { RequestAgain, RequestHistory } from "./RequestHistory";
 import {
   cameFromRequests,
   canActOn,
+  firstShown,
   isCancellable,
   isDownloading,
   isSearchStale,
@@ -54,24 +54,25 @@ import {
   type RequestStep,
   requestPath,
   SEARCH_STALE_AFTER_SECS,
+  SEP,
   splitBookRequests,
   stateView,
   stepsFor,
   timeLeft,
-  versionFormat,
-  versionSeeders,
-  versionSize,
+  versionSource,
+  versionsFound,
   wishersLine,
 } from "./requestView";
 import { useNowPast } from "./useNowPast";
 import { messageOf, useAnswer, useCancel, useSwap } from "./useRequestActions";
 import "./BookRequest.css";
 
-/** One version found: its release name over its source, format, size and seeders, a Best match badge, Details, and Choose. */
+/** One version found: its release name, its source line, a Best match or Didn’t work tag, Choose, and the long form when Details is open. */
 function VersionRow({
   version,
   choosing,
   locked,
+  details,
   onChoose,
   rowRef,
 }: {
@@ -80,87 +81,61 @@ function VersionRow({
   choosing: boolean;
   /** Some version is being chosen, so no other can be. */
   locked: boolean;
+  /** Details is open for the lane. */
+  details: boolean;
   /** Absent when the viewer may not pick for this request. */
   onChoose: (() => void) | null;
   /** Lets the page move focus to this row. */
   rowRef?: Ref<HTMLLIElement>;
 }) {
-  const [open, setOpen] = useState(false);
-  const detailsId = useId();
-  const format = versionFormat(version.format);
-  const size = versionSize(version.sizeBytes);
-  const meta = [
-    version.indexer,
-    format,
-    size ?? "Size unknown",
-    versionSeeders(version.seeders),
-  ].filter((part) => part !== null);
+  const textId = useId();
+  const best = version.bestMatch && !version.rejected;
   return (
     <li
       ref={rowRef}
       tabIndex={-1}
       className="rq-version"
       data-testid="request-version"
-      data-best-match={version.bestMatch && !version.rejected}
+      data-best-match={best}
       data-rejected={version.rejected}
     >
-      <div className="rq-version-main">
-        <div className="rq-version-text">
-          <span
-            className="rq-version-name"
-            data-testid="request-version-name"
-            title={version.title}
-          >
-            {version.title}
-          </span>
-          <span className="rq-version-meta" data-testid="request-version-meta">
-            {meta.map((part, index) => (
-              // biome-ignore lint/suspicious/noArrayIndexKey: the parts are a fixed, ordered list
-              <Fragment key={index}>
-                {index > 0 && <span aria-hidden="true"> · </span>}
-                <span>{part}</span>
-              </Fragment>
-            ))}
-          </span>
-        </div>
+      <div id={textId} className="rq-version-text">
+        <p className="rq-version-name" data-testid="request-version-name">
+          {version.title}
+        </p>
+        <p className="rq-version-meta" data-testid="request-version-meta">
+          {versionSource(version)}
+        </p>
         {version.rejected ? (
-          <span className="rq-tried" data-testid="request-didnt-work">
+          <p className="rq-tag" data-testid="request-didnt-work">
             Didn’t work
-          </span>
+          </p>
         ) : (
-          version.bestMatch && (
-            <span className="rq-best" data-testid="request-best-match">
+          best && (
+            <p className="rq-tag" data-testid="request-best-match">
               Best match
-            </span>
+            </p>
           )
         )}
-        <Button
-          variant="ghost"
-          size="sm"
-          className="rq-details-toggle"
-          data-testid="request-details-toggle"
-          aria-expanded={open}
-          aria-controls={detailsId}
-          onClick={() => setOpen(!open)}
-        >
-          Details
-        </Button>
-        {onChoose && !version.rejected && (
-          <Button
-            variant={version.bestMatch ? "primary" : "default"}
-            size="sm"
-            data-testid="request-choose"
-            aria-label={`Choose the ${format} version${version.indexer ? ` from ${version.indexer}` : ""}${size ? `, ${size}` : ""}`}
-            aria-busy={choosing}
-            disabled={locked}
-            onClick={onChoose}
-          >
-            <BusyLabel busy={choosing} label="Choose" busyLabel="Choosing…" />
-          </Button>
-        )}
       </div>
-      {open && (
-        <dl id={detailsId} className="rq-details" data-testid="request-details">
+      {onChoose && !version.rejected && (
+        <Button
+          variant={best ? "primary" : "default"}
+          size="sm"
+          data-testid="request-choose"
+          aria-describedby={textId}
+          aria-busy={choosing}
+          // aria-disabled, not disabled: a control that disables itself drops the keyboard's focus.
+          aria-disabled={locked}
+          onClick={() => {
+            if (!locked) onChoose();
+          }}
+        >
+          <BusyLabel busy={choosing} label="Choose" busyLabel="Choosing…" />
+        </Button>
+      )}
+      {details && (
+        <dl className="rq-details" data-testid="request-details">
           <div>
             <dt>Found through</dt>
             <dd>{version.indexer ?? "Not named"}</dd>
@@ -193,6 +168,9 @@ function Choices({
     first.current?.focus();
     onFocused();
   }, [focusFirst, onFocused]);
+  const listId = useId();
+  const [all, setAll] = useState(false);
+  const [details, setDetails] = useState(false);
   const toast = useToast();
   const answer = useAnswer(request.id);
   const choose = useMutation({
@@ -202,6 +180,9 @@ function Choices({
     onError: (error) =>
       toast(`Couldn’t choose that version: ${messageOf(error)}`),
   });
+  const collapsed = firstShown(request.versions);
+  const shown = all ? request.versions : collapsed;
+  const hidden = request.versions.length - collapsed.length;
   return (
     <>
       {request.note && (
@@ -209,30 +190,72 @@ function Choices({
           {request.note}
         </p>
       )}
-      <ul className="rq-versions" aria-label="Versions found">
-        {request.versions.map((version, index) => (
+      <p className="rq-found" data-testid="request-versions-found">
+        {versionsFound(request.versions)}
+      </p>
+      <ul id={listId} className="rq-versions" aria-label="Versions found">
+        {shown.map((version, index) => (
           <VersionRow
             key={version.id}
             rowRef={index === 0 ? first : undefined}
             version={version}
             choosing={choose.isPending && choose.variables === version.id}
             locked={choose.isPending}
+            details={details}
             onChoose={canAct ? () => choose.mutate(version.id) : null}
           />
         ))}
       </ul>
+      <div className="rq-version-links">
+        {hidden > 0 && (
+          <button
+            type="button"
+            className="rq-link"
+            data-testid="request-show-more"
+            aria-expanded={all}
+            aria-controls={listId}
+            onClick={() => setAll(!all)}
+          >
+            {all ? "Show fewer" : `Show ${hidden} more`}
+          </button>
+        )}
+        <button
+          type="button"
+          className="rq-link quiet"
+          data-testid="request-details-toggle"
+          aria-expanded={details}
+          aria-controls={listId}
+          onClick={() => setDetails(!details)}
+        >
+          Details
+        </button>
+      </div>
     </>
   );
 }
 
-function Chosen({ request }: { request: Request }) {
+/** The version picked, named as its row named it: the release name over its size and source, with `children` (a download's bar) between, and `extra` (its time left) after the source. */
+function Picked({
+  request,
+  children,
+  extra,
+}: {
+  request: Request;
+  children?: ReactNode;
+  extra?: string | null;
+}) {
   const picked = request.versions.find((v) => v.id === request.chosenResultId);
+  const meta = [picked ? pickedMeta(picked) : "", extra ?? ""]
+    .filter((part) => part)
+    .join(SEP);
   return (
-    <p className="rq-chosen" data-testid="request-chosen">
-      {picked
-        ? `${versionFormat(picked.format)}${versionSize(picked.sizeBytes) ? `, ${versionSize(picked.sizeBytes)}` : ""}`
-        : "Your pick"}
-    </p>
+    <div className="rq-picked" data-testid="request-chosen">
+      <p className="rq-version-name" title={picked?.title}>
+        {picked ? picked.title : "Your pick"}
+      </p>
+      {children}
+      {meta && <p className="rq-version-meta">{meta}</p>}
+    </div>
   );
 }
 
@@ -261,7 +284,7 @@ function Downloading({ request }: { request: Request }) {
   );
 }
 
-/** A download in its own card: the release, its bar and what is known of it, with Choose another and Cancel beside. */
+/** A download in its own card: the pick, its bar and its time left, with Choose another and Cancel beside. */
 function Download({
   request,
   actions,
@@ -269,25 +292,12 @@ function Download({
   request: Request;
   actions: ReactNode;
 }) {
-  const picked = request.versions.find((v) => v.id === request.chosenResultId);
   const now = useNowPast(request.expectedDoneAt);
-  const meta = [
-    picked ? pickedMeta(picked) : "",
-    timeLeft(request.expectedDoneAt, now),
-  ].filter((part) => part);
   return (
     <div className="rq-download">
-      <div className="rq-download-main">
-        <p className="rq-download-name" data-testid="request-picked-name">
-          {picked?.title ?? "Your pick"}
-        </p>
+      <Picked request={request} extra={timeLeft(request.expectedDoneAt, now)}>
         <Downloading request={request} />
-        {meta.length > 0 && (
-          <p className="rq-download-meta" data-testid="request-download-meta">
-            {meta.join(" · ")}
-          </p>
-        )}
-      </div>
+      </Picked>
       {actions}
     </div>
   );
@@ -334,6 +344,8 @@ function Actions({
   cancelLabel: string | undefined;
 }) {
   const busy = cancel.isPending || swap.isPending;
+  // Under the versions, Cancel sits with the text links as the comp's smaller "Cancel request".
+  const choosing = request.state === "choose";
   return (
     <div className="rq-actions">
       {isDownloading(request) && (
@@ -358,6 +370,7 @@ function Actions({
       <Button
         variant="ghost"
         size="sm"
+        className={choosing ? "rq-flush" : undefined}
         data-testid="request-cancel"
         aria-label={cancelLabel}
         aria-disabled={busy}
@@ -368,7 +381,7 @@ function Actions({
       >
         <BusyLabel
           busy={cancel.isPending}
-          label="Cancel"
+          label={choosing ? "Cancel request" : "Cancel"}
           busyLabel="Cancelling…"
         />
       </Button>
@@ -541,7 +554,11 @@ function Lane({
       >
         {heading}
       </p>
-      {steps ? <Steps steps={steps} /> : <p className="rq-note">{note}</p>}
+      {steps ? (
+        <Steps steps={steps} />
+      ) : (
+        note && <p className="rq-note">{note}</p>
+      )}
       {request.state === "looking" && (
         <Looking request={request} canAct={canAct} onTried={focusTitle} />
       )}
@@ -553,7 +570,7 @@ function Lane({
           onFocused={() => setFocusVersions(false)}
         />
       )}
-      {request.state === "chosen" && <Chosen request={request} />}
+      {request.state === "chosen" && <Picked request={request} />}
       {request.state === "on_its_way" ? (
         <Download request={request} actions={actions} />
       ) : (

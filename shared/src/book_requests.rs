@@ -121,6 +121,34 @@ impl StuckReason {
     }
 }
 
+/// How a version is fetched, as Prowlarr names it.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum ReleaseProtocol {
+    Torrent,
+    Usenet,
+}
+
+impl ReleaseProtocol {
+    /// The stored token, matching the table's CHECK constraint.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ReleaseProtocol::Torrent => "torrent",
+            ReleaseProtocol::Usenet => "usenet",
+        }
+    }
+
+    /// Parse a stored or Prowlarr token; `None` for any other, such as Prowlarr's `unknown`.
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "torrent" => Some(ReleaseProtocol::Torrent),
+            "usenet" => Some(ReleaseProtocol::Usenet),
+            _ => None,
+        }
+    }
+}
+
 /// Starts a request for one format of a book.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
@@ -152,6 +180,8 @@ pub struct RequestVersion {
     pub indexer: Option<String>,
     /// How many peers share it. Null for sources that have none, such as Usenet.
     pub seeders: Option<i64>,
+    /// How it is fetched. Null when the source did not say.
+    pub protocol: Option<ReleaseProtocol>,
     /// Whether this is the version Omnibus suggests. At most one version has it.
     pub best_match: bool,
     /// Whether this version was picked and given up. It is shown as one that did not work
@@ -235,5 +265,15 @@ mod tests {
             Some(StuckReason::CouldntAdd)
         );
         assert_eq!(StuckReason::CouldntAdd.as_str(), "couldnt_add");
+    }
+
+    #[test]
+    fn release_protocol_round_trips_its_tokens_and_knows_no_other() {
+        assert_eq!(
+            ReleaseProtocol::parse("usenet"),
+            Some(ReleaseProtocol::Usenet)
+        );
+        assert_eq!(ReleaseProtocol::Torrent.as_str(), "torrent");
+        assert_eq!(ReleaseProtocol::parse("unknown"), None);
     }
 }

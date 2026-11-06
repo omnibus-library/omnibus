@@ -66,6 +66,16 @@
   display: inline-flex;
   flex: none;
 }
+.shd-menu-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.shd-menu-description {
+  color: var(--ink-2);
+  font-size: 12px;
+  font-weight: 400;
+}
 .shd-menu-note {
   margin-left: auto;
   padding-left: 16px;

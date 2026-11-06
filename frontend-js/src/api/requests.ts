@@ -71,6 +71,7 @@ function toVersion(wire: RequestVersionWire) {
     indexer: wire.indexer ?? null,
     /** Null for a source with none, such as Usenet. */
     seeders: wire.seeders ?? null,
+    protocol: wire.protocol ?? null,
     bestMatch: wire.best_match,
     /** Picked and given up: shown as one that did not work. */
     rejected: wire.rejected,

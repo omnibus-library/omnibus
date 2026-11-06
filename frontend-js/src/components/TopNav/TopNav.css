@@ -78,9 +78,30 @@
   position: relative;
 }
 .atrium-add .shd-menu {
+  top: calc(100% + 8px);
+  right: -3px;
+  width: 334px;
+  gap: 2px;
+  padding: 6px;
+  border-color: var(--line);
+  border-radius: 14px;
   box-shadow:
     0 18px 40px color-mix(in oklch, black 55%, transparent),
     0 2px 0 color-mix(in oklch, black 25%, transparent);
+}
+/* No right padding: the comp lets the longest description run to the item's edge rather than wrap. */
+.atrium-add .shd-menu-item {
+  min-height: 54px;
+  gap: 12px;
+  padding: 10px 0 10px 12px;
+  border-radius: 10px;
+  color: var(--ink-0);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 18px;
+}
+.atrium-add .shd-menu-description {
+  line-height: 14px;
 }
 /* The bar's backdrop-filter makes it the scrim's containing block, so the scrim sizes to the viewport itself. */
 .atrium-add .shd-menu-scrim {
@@ -94,6 +115,11 @@
   letter-spacing: 0.07em;
   text-transform: uppercase;
   white-space: nowrap;
+}
+/* With the 1px border, the label sits 11px in, as in the comp. */
+.atrium-add .btn.sm {
+  gap: 5px;
+  padding: 0 10px;
 }
 /* The five-link bar needs ~917px with the full search trigger, so it condenses below 960px. */
 @media (max-width: 960px) {
@@ -140,7 +166,9 @@
     letter-spacing: 0.04em;
   }
 
+  /* The Add menu hangs from this group's right edge instead of the Add button, so a narrow screen can hold all of it. */
   .atrium-actions {
+    position: relative;
     gap: 6px;
   }
   .atrium-actions .btn.primary.sm {
@@ -149,9 +177,20 @@
   .atrium-actions .btn.sm {
     padding: 0 8px;
   }
+  .atrium-add {
+    position: static;
+  }
+  .atrium-add .shd-menu {
+    right: 0;
+    width: min(334px, 100vw - 32px);
+  }
+  /* A capped menu wraps its descriptions, which must keep clear of the highlight's edge. */
+  .atrium-add .shd-menu-item {
+    padding-right: 12px;
+  }
 }
-/* An admin's phone bar needs ~364px with the wordmark, plus up to 15px for a classic scrollbar. */
-@media (max-width: 399px) {
+/* An admin's phone bar needs ~279px with the wordmark, plus up to 15px for a classic scrollbar. */
+@media (max-width: 299px) {
   .atrium-brand-word {
     display: none;
   }

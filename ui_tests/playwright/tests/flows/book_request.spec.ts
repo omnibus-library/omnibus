@@ -76,7 +76,7 @@ test.describe("book request", () => {
 
     await test.step("read where a version came from", async () => {
       const pdf = bookRequestPage.version("PDF");
-      await bookRequestPage.showDetails(pdf);
+      await bookRequestPage.showDetails();
       await expect(bookRequestPage.detailsOf(pdf)).toContainText(
         "E2E Library Ink",
       );

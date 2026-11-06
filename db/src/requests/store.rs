@@ -3,7 +3,7 @@
 //! the state rules (one live request per reader, book and format; a version only chosen
 //! while the request waits on the reader) hold in one place.
 
-use omnibus_shared::{RequestKind, RequestState, RequestVersion, StuckReason};
+use omnibus_shared::{ReleaseProtocol, RequestKind, RequestState, RequestVersion, StuckReason};
 use sqlx::{sqlite::SqliteRow, Row, SqlitePool};
 
 use super::rank::Ranked;
@@ -104,6 +104,10 @@ fn row_to_version(r: &SqliteRow) -> Result<RequestVersion, sqlx::Error> {
         format: r.try_get("format")?,
         indexer: r.try_get("indexer")?,
         seeders: r.try_get("seeders")?,
+        protocol: r
+            .try_get::<Option<String>, _>("protocol")?
+            .as_deref()
+            .and_then(ReleaseProtocol::parse),
         best_match: r.try_get::<i64, _>("best_match")? != 0,
         rejected: r.try_get::<i64, _>("tried")? != 0,
     })
@@ -215,7 +219,7 @@ pub async fn versions(
     request_id: i64,
 ) -> Result<Vec<RequestVersion>, RequestError> {
     let rows = sqlx::query(
-        "SELECT id, title, size_bytes, format, indexer, seeders, best_match, tried FROM book_request_results
+        "SELECT id, title, size_bytes, format, indexer, seeders, protocol, best_match, tried FROM book_request_results
          WHERE request_id = ? AND (rejected = 0 OR tried = 1) ORDER BY tried, score DESC, id",
     )
     .bind(request_id)
@@ -306,8 +310,8 @@ async fn insert_result(
     let r = &ranked.release;
     sqlx::query(
         "INSERT INTO book_request_results
-         (request_id, guid, title, size_bytes, format, seeders, indexer, download_url, score, best_match, rejected)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         (request_id, guid, title, size_bytes, format, seeders, protocol, indexer, download_url, score, best_match, rejected)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(request_id)
     .bind(&r.guid)
@@ -315,6 +319,7 @@ async fn insert_result(
     .bind(r.size_bytes)
     .bind(&ranked.format)
     .bind(r.seeders)
+    .bind(r.protocol.map(ReleaseProtocol::as_str))
     .bind(&r.indexer)
     .bind(&r.link)
     .bind(ranked.score)

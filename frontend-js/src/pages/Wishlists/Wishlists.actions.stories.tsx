@@ -8,6 +8,7 @@ import {
   storyClient,
 } from "../../testing/AppHarness";
 import { deferred, failing } from "../../testing/handlers";
+import { realPointer } from "../../testing/pointer";
 import { requestFake } from "../../testing/requestHandlers";
 import { WIRE_ADA } from "../../testing/wire";
 import { BOOKS } from "../../testing/wishlistHandlers";
@@ -150,9 +151,6 @@ export const RequestIsAnUnavailableButtonWhenOnlyAnAudiobookIsLeft: Story = {
     await expect(requests.writes).toEqual([]);
   },
 };
-
-/** The browser's own pointer: a story's `userEvent` is synthetic and never sets `:hover`. */
-const realPointer = async () => (await import("vitest/browser")).userEvent;
 
 export const RequestIsHiddenWhenBothKindsAreHeld: Story = {
   play: async ({ canvas }) => {

@@ -51,11 +51,15 @@ export class TopNavComponent extends BaseComponent {
       exact: true,
     });
     this.addMenu = this.root.getByRole("menu", { name: "Add" });
-    // Test ids, since a spec asserts the upload item absent.
+    // A test id, since a spec asserts the upload item absent.
     this.uploadBookFilesItem = this.addMenu.getByTestId("add-menu-upload");
     // Opens `/check-in`, whose dialog opens over the page it came from.
-    this.addCopyItem = this.addMenu.getByTestId("add-menu-copy");
-    this.addToWishlistItem = this.addMenu.getByTestId("add-menu-wishlist");
+    this.addCopyItem = this.addMenu.getByRole("menuitem", {
+      name: "Add a copy you own",
+    });
+    this.addToWishlistItem = this.addMenu.getByRole("menuitem", {
+      name: "Add to your wishlist",
+    });
     this.userMenuButton = this.root.getByTestId("user-menu-trigger");
     this.userMenuPanel = page.getByTestId("user-menu-panel");
     this.searchButton = page.getByTestId("search-trigger");
@@ -86,10 +90,6 @@ export class TopNavComponent extends BaseComponent {
 
   async openAddMenu(): Promise<void> {
     await this.addButton.click();
-  }
-
-  async closeAddMenuWithEscape(): Promise<void> {
-    await this.addMenu.press("Escape");
   }
 
   async openCheckIn(): Promise<void> {

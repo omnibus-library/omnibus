@@ -45,10 +45,13 @@ export class BookRequestPage extends BasePage {
     return this.root;
   }
 
-  /** The version row in `format`, such as `EPUB`. */
+  /** The version row in `format`, such as `EPUB`, read from its source line. */
   version(format: string): Locator {
+    const escaped = format.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     return this.versions.filter({
-      has: this.page.getByText(format, { exact: true }),
+      has: this.page
+        .getByTestId("request-version-meta")
+        .filter({ hasText: new RegExp(`(^|\\s·\\s)${escaped}\\s·\\s`) }),
     });
   }
 
@@ -57,8 +60,9 @@ export class BookRequestPage extends BasePage {
     return version.getByTestId("request-best-match");
   }
 
-  async showDetails(version: Locator): Promise<void> {
-    await version.getByTestId("request-details-toggle").click();
+  /** Opens Details for the lane, which shows every version's long form. */
+  async showDetails(): Promise<void> {
+    await this.lane.getByRole("button", { name: "Details" }).click();
   }
 
   detailsOf(version: Locator): Locator {
