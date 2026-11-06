@@ -2,6 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { HttpResponse, http } from "msw";
 import { Route, Routes, useLocation } from "react-router";
 import { expect, waitFor, within } from "storybook/test";
+import { ResolveMetaRequest } from "../../api/generated/schemas";
 import { failing, hanging } from "../../testing/handlers";
 import {
   aWireRequest,
@@ -9,6 +10,7 @@ import {
   type RequestFake,
   requestFake,
 } from "../../testing/requestHandlers";
+import { anExternalBook, aScanBook } from "../../testing/scanHandlers";
 import {
   aWireBook,
   aWirePalette,
@@ -70,6 +72,66 @@ const READER = {
   book_requests: true,
 };
 
+/** What the providers know: a book the library lacks, and the library's Dracula, Dune and Piranesi under other editions. */
+const RECORDS = [
+  anExternalBook({
+    isbn13: "9781408844175",
+    title: "Jonathan Strange & Mr Norrell",
+    authors: ["Susanna Clarke"],
+    year: "2004",
+    publisher: "Bloomsbury",
+    series: null,
+  }),
+  anExternalBook({
+    isbn13: "9780141439846",
+    title: "Dracula (Penguin Classics)",
+    authors: ["Bram Stoker"],
+    year: "2003",
+    publisher: "Penguin",
+    series: null,
+  }),
+  anExternalBook({
+    isbn13: "9780441172719",
+    title: "Dune (Ace)",
+    authors: ["Frank Herbert"],
+    year: "1990",
+    publisher: "Ace",
+    series: null,
+  }),
+  anExternalBook({
+    isbn13: "9781635575637",
+    title: "Piranesi (Bloomsbury)",
+    authors: ["Susanna Clarke"],
+    year: "2021",
+    publisher: "Bloomsbury",
+    series: null,
+  }),
+];
+
+/** The library book a record is another edition of, by the word its title starts with. */
+const SAME_WORK: Record<string, ReturnType<typeof aScanBook>> = {
+  Dracula: aScanBook({
+    uuid: "uuid-dracula",
+    title: "Dracula",
+    authors: ["Bram Stoker"],
+    has_files: false,
+    has_physical: true,
+  }),
+  Dune: aScanBook({
+    uuid: "uuid-dune",
+    title: "Dune",
+    authors: ["Frank Herbert"],
+    has_files: true,
+  }),
+  Piranesi: aScanBook({
+    uuid: "uuid-piranesi",
+    title: "Piranesi",
+    authors: ["Susanna Clarke"],
+    has_files: false,
+    has_physical: true,
+  }),
+};
+
 /** Ada's pick to make on Piranesi, and a search already going for Dune. */
 const GOING = [
   aWireRequest({
@@ -83,20 +145,46 @@ const GOING = [
 ];
 
 let fake: RequestFake = requestFake();
+let wishlistWrites = 0;
 
 const libraryHandlers = [
   http.get("/api/ebooks/:uuid", ({ params }) => {
-    const book = BOOKS.find((b) => b.unique_identifier === params.uuid);
-    return book
-      ? HttpResponse.json(book)
-      : new HttpResponse(null, { status: 404 });
+    const book =
+      BOOKS.find((b) => b.unique_identifier === params.uuid) ??
+      // The book a request made from a record has just created.
+      aWireBook({
+        title: "Jonathan Strange & Mr Norrell",
+        unique_identifier: String(params.uuid),
+        formats: [],
+      });
+    return HttpResponse.json(book);
   }),
   http.get("/api/search/palette", ({ request }) => {
     const q = (new URL(request.url).searchParams.get("q") ?? "").toLowerCase();
     const books = LIBRARY.filter((b) => b.title.toLowerCase().includes(q));
     return HttpResponse.json(aWirePalette({ books }));
   }),
-  http.post("/api/scan/search", () => HttpResponse.json({ results: [] })),
+  http.post("/api/scan/search", () => HttpResponse.json({ results: RECORDS })),
+  http.post("/api/scan/resolve-meta", async ({ request }) => {
+    const { meta } = ResolveMetaRequest.parse(await request.json());
+    const book = SAME_WORK[meta.title.split(" ")[0] ?? ""];
+    return HttpResponse.json(
+      book
+        ? { kind: "close_match", book, scanned: meta }
+        : { kind: "not_in_library", online: meta },
+    );
+  }),
+  http.post("/api/scan/resolve", () =>
+    HttpResponse.json({
+      kind: "close_match",
+      book: SAME_WORK.Piranesi,
+      scanned: RECORDS[3],
+    }),
+  ),
+  http.post("/api/scan/wishlist", async () => {
+    wishlistWrites += 1;
+    return HttpResponse.json({ book_uuid: "never" });
+  }),
   http.get("/api/wishlists", () => HttpResponse.json([])),
 ];
 
@@ -127,6 +215,7 @@ const meta = {
   component: Page,
   parameters: { path: "/requests", user: READER },
   beforeEach({ msw }) {
+    wishlistWrites = 0;
     fake = requestFake(GOING, { books: BOOKS });
     msw.use(...libraryHandlers, ...fake.handlers);
   },
@@ -257,5 +346,114 @@ export const AFailedStartSaysWhyAndKeepsTheSearchOpen: Story = {
     await expect(
       panel.getByRole("button", { name: "Request Dracula" }),
     ).toBeEnabled();
+  },
+};
+
+/** The provider section's result for `title`, and its Request button. */
+async function recordFor(panel: Canvas, title: string) {
+  const online = within(await panel.findByTestId("requests-add-online"));
+  const result = await online.findByRole("button", {
+    name: `Request ${title}`,
+  });
+  return { online, result };
+}
+
+export const ARecordTheLibraryLacksBecomesABookAndItsRequest: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const panel = await search(canvas, userEvent, "clarke");
+    const { online, result } = await recordFor(
+      panel,
+      "Jonathan Strange & Mr Norrell",
+    );
+    await expect(
+      online.getAllByTestId("requests-add-result")[0],
+    ).toHaveTextContent("Susanna Clarke · Bloomsbury · 2004");
+
+    await userEvent.click(result);
+
+    await waitFor(() =>
+      expect(canvas.getByTestId("where")).toHaveTextContent(
+        /\/requests\?book=uuid-new-/,
+      ),
+    );
+    await expect(fake.writes).toEqual([
+      { kind: "startFromMeta", title: "Jonathan Strange & Mr Norrell" },
+    ]);
+    await expect(wishlistWrites).toBe(0);
+    await expect(
+      await canvas.findByRole("link", {
+        name: /Jonathan Strange & Mr Norrell/,
+        current: true,
+      }),
+    ).toBeInTheDocument();
+  },
+};
+
+export const ARecordOfALibraryBookStartsOnThatBook: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const panel = await search(canvas, userEvent, "dracula");
+    const { result } = await recordFor(panel, "Dracula (Penguin Classics)");
+
+    await userEvent.click(result);
+
+    await waitFor(() =>
+      expect(canvas.getByTestId("where")).toHaveTextContent(
+        "/requests?book=uuid-dracula",
+      ),
+    );
+    await expect(fake.writes).toEqual([
+      { kind: "start", uuid: "uuid-dracula" },
+    ]);
+    await expect(wishlistWrites).toBe(0);
+  },
+};
+
+export const ARecordOfABookWithARequestGoingSelectsItWithoutAWrite: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const panel = await search(canvas, userEvent, "piranesi");
+    const { result } = await recordFor(panel, "Piranesi (Bloomsbury)");
+
+    await userEvent.click(result);
+
+    await waitFor(() =>
+      expect(canvas.getByTestId("where")).toHaveTextContent(
+        "/requests?book=uuid-piranesi",
+      ),
+    );
+    await expect(fake.writes).toEqual([]);
+  },
+};
+
+export const ARecordOfABookWithItsEbookSaysSoAndStaysOpen: Story = {
+  beforeEach({ msw }) {
+    // Dune's search has ended, so only its ebook is in the way.
+    fake = requestFake([], { books: BOOKS });
+    msw.use(...fake.handlers);
+  },
+  play: async ({ canvas, userEvent }) => {
+    const panel = await search(canvas, userEvent, "dune");
+    const { result } = await recordFor(panel, "Dune (Ace)");
+
+    await userEvent.click(result);
+
+    await expect(await panel.findByRole("alert")).toHaveTextContent(
+      "Dune (Ace) is already in the library.",
+    );
+    await expect(canvas.getByTestId("requests-add-panel")).toBeInTheDocument();
+    await expect(fake.writes).toEqual([]);
+  },
+};
+
+export const AnIsbnLookupsRecordTakesTheMatchedBooksOffer: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const panel = await search(canvas, userEvent, "9781635575637");
+
+    const online = within(await panel.findByTestId("requests-add-online"));
+
+    await expect(
+      await online.findByRole("button", { name: "Open Piranesi" }),
+    ).toBeInTheDocument();
+    await expect(online.queryByRole("button", { name: /^Request/ })).toBeNull();
+    await expect(fake.writes).toEqual([]);
   },
 };
