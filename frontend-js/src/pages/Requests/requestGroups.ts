@@ -156,7 +156,11 @@ export function requestedNotes(
   for (const listing of listings) {
     const { request, book } = listing;
     const group = groupOf(request, viewer);
-    if (request.kind !== "ebook" || group === null || group === "ready") {
+    if (
+      request.kind !== "ebook" ||
+      group === "ready" ||
+      group === "cancelled"
+    ) {
       continue;
     }
     if (!notes.has(book.uuid)) {

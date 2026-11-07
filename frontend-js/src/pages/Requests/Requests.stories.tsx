@@ -291,7 +291,8 @@ export const AGroupFoldsFromTheKeyboard: Story = {
   play: async ({ canvas, userEvent }) => {
     const header = await canvas.findByRole("button", { name: "Needs you 1" });
 
-    await userEvent.tab();
+    // Other controls (the Request button) come first in the tab order.
+    header.focus();
     await expect(header).toHaveFocus();
     await userEvent.keyboard("{Enter}");
     await expect(canvas.queryByRole("link", { name: /Dracula/ })).toBeNull();
