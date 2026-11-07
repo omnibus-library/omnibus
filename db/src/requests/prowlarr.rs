@@ -12,7 +12,7 @@ use reqwest::StatusCode;
 use serde::Deserialize;
 
 use crate::metadata_lookup::throttle::parse_retry_after;
-use crate::settings::RequestsConfig;
+use crate::settings::{is_plain_http_url, RequestsConfig};
 
 use super::{check_status, http_client, ConnectionError, REQUEST_TIMEOUT};
 
@@ -66,6 +66,8 @@ pub struct ProwlarrRelease {
     pub seeders: Option<i64>,
     /// Null when Prowlarr names none it knows.
     pub protocol: Option<ReleaseProtocol>,
+    /// The source's web page for the release; `None` when it gave none or one not safe to show.
+    pub info_url: Option<String>,
     pub indexer: Option<String>,
     /// A torrent-file URL or magnet; the client fetches the file and uploads it. Server-side only.
     pub link: String,
@@ -94,6 +96,8 @@ struct RawRelease {
     // Read loosely, so an unexpected shape loses only the protocol, not the whole search.
     protocol: Option<serde_json::Value>,
     indexer: Option<String>,
+    #[serde(rename = "infoUrl")]
+    info_url: Option<String>,
     #[serde(rename = "downloadUrl")]
     download_url: Option<String>,
     #[serde(rename = "magnetUrl")]
@@ -107,9 +111,26 @@ struct RawCategory {
     id: i64,
 }
 
+/// Query parameters that carry a login, in lower case.
+const KEY_PARAMS: [&str; 3] = ["apikey", "passkey", "api_key"];
+
+/// `page` when it is a plain web address that is neither on `prowlarr_base`'s host nor carries a key.
+fn shown_page(page: Option<String>, prowlarr_base: &str) -> Option<String> {
+    let page = page.filter(|p| is_plain_http_url(p))?;
+    let url = reqwest::Url::parse(&page).ok()?;
+    let own_host = reqwest::Url::parse(prowlarr_base).ok().is_some_and(|b| {
+        b.host_str().map(str::to_lowercase) == url.host_str().map(str::to_lowercase)
+    });
+    let keyed = url
+        .query_pairs()
+        .any(|(k, _)| KEY_PARAMS.contains(&k.to_lowercase().as_str()));
+    (!own_host && !keyed).then_some(page)
+}
+
 impl RawRelease {
-    /// The release, or `None` when it has no title or nothing to fetch it with.
-    fn into_release(self) -> Option<ProwlarrRelease> {
+    /// The release, or `None` when it has no title or nothing to fetch it with. Its page is
+    /// kept only when [`shown_page`] allows it.
+    fn into_release(self, prowlarr_base: &str) -> Option<ProwlarrRelease> {
         let link = self
             .download_url
             .or(self.magnet_url)
@@ -125,6 +146,7 @@ impl RawRelease {
                 .as_ref()
                 .and_then(serde_json::Value::as_str)
                 .and_then(ReleaseProtocol::parse),
+            info_url: shown_page(self.info_url, prowlarr_base),
             indexer: self.indexer.filter(|i| !i.is_empty()),
             link,
             categories: self
@@ -190,7 +212,7 @@ impl Prowlarr {
         let raw: Vec<RawRelease> = self.get_with("search", &params, timeout).await?;
         Ok(raw
             .into_iter()
-            .filter_map(RawRelease::into_release)
+            .filter_map(|r| r.into_release(&self.base))
             .collect())
     }
 

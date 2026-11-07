@@ -15896,6 +15896,13 @@
             ],
             "description": "The source the version came from."
           },
+          "info_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The source's web page for this version, an http or https address. Null when the source gave none."
+          },
           "protocol": {
             "oneOf": [
               {

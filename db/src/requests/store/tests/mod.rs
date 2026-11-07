@@ -171,6 +171,7 @@ fn ranked(title: &str, score: f64, best_match: bool, rejected: bool) -> Ranked {
             size_bytes: Some(1_000_000),
             seeders: Some(3),
             protocol: None,
+            info_url: None,
             indexer: Some("books".to_string()),
             link: format!("magnet:?xt=urn:btih:{title}"),
             categories: vec![7020],
@@ -282,6 +283,28 @@ mod finish_search {
             .map(|v| v.seeders)
             .collect();
         assert_eq!(seeders, [Some(3), None]);
+    }
+
+    #[tokio::test]
+    async fn keeps_each_versions_page_and_none_where_prowlarr_gave_none() {
+        let pool = pool().await;
+        let id = start_looking(&pool).await;
+        let mut linked = ranked("linked", 800.0, false, false);
+        linked.release.info_url = Some("https://tracker.example/t/1".to_string());
+        let found = SearchOutcome::Found(vec![ranked("plain", 900.0, true, false), linked]);
+
+        finish_search(&pool, id, found).await.unwrap();
+
+        let pages: Vec<Option<String>> = versions(&pool, id)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|v| v.info_url)
+            .collect();
+        assert_eq!(
+            pages,
+            [None, Some("https://tracker.example/t/1".to_string())]
+        );
     }
 
     #[tokio::test]

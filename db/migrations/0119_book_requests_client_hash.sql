@@ -8,6 +8,10 @@ ALTER TABLE book_requests RENAME COLUMN remove_tag TO remove_hash;
 ALTER TABLE book_requests ADD COLUMN client_adopted INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE book_requests ADD COLUMN legacy_tag TEXT;
 
+-- The source's page for a found version, as Prowlarr's `infoUrl` names it. Null for versions
+-- found before it, and where the source gave none or an address that is not a web page.
+ALTER TABLE book_request_results ADD COLUMN info_url TEXT;
+
 UPDATE book_requests SET legacy_tag = client_hash, client_hash = NULL WHERE client_hash IS NOT NULL;
 -- A request still downloading waits to be handed over again, which finds its download by the
 -- tag first; one whose download is complete stays on its way for the import.

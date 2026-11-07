@@ -63,18 +63,22 @@ fn check_len(label: &str, v: &str, max: usize) -> Result<(), SettingsError> {
     Ok(())
 }
 
+/// An `http(s)` URL with a host and no embedded login.
+pub fn is_plain_http_url(v: &str) -> bool {
+    reqwest::Url::parse(v).is_ok_and(|u| {
+        matches!(u.scheme(), "http" | "https")
+            && u.host_str().is_some()
+            && u.username().is_empty()
+            && u.password().is_none()
+    })
+}
+
 /// A blank URL is allowed (it clears the field); anything else must be an `http(s)` URL
 /// with a host and no embedded login. The message never echoes the value.
 fn check_url(label: &str, v: &str) -> Result<(), SettingsError> {
     let Some(v) = field(v) else { return Ok(()) };
     check_len(label, v, REQUESTS_URL_MAX_LEN)?;
-    let plain_http = reqwest::Url::parse(v).is_ok_and(|u| {
-        matches!(u.scheme(), "http" | "https")
-            && u.host_str().is_some()
-            && u.username().is_empty()
-            && u.password().is_none()
-    });
-    if !plain_http {
+    if !is_plain_http_url(v) {
         return Err(SettingsError::Validation(format!(
             "{label} must be an http(s) URL without a username or password"
         )));

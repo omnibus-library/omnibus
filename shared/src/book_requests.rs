@@ -213,6 +213,8 @@ pub struct RequestVersion {
     pub seeders: Option<i64>,
     /// How it is fetched. Null when the source did not say.
     pub protocol: Option<ReleaseProtocol>,
+    /// The source's web page for this version, an http or https address. Null when the source gave none.
+    pub info_url: Option<String>,
     /// Whether this is the version Omnibus suggests. At most one version has it.
     pub best_match: bool,
     /// Whether this version was picked and given up. It is shown as one that did not work

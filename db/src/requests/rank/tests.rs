@@ -10,6 +10,7 @@ fn release(title: &str) -> ProwlarrRelease {
         size_bytes: Some(1_000_000),
         seeders: Some(10),
         protocol: None,
+        info_url: None,
         indexer: Some("books".to_string()),
         link: "magnet:?xt=urn:btih:abc".to_string(),
         categories: vec![7020],
