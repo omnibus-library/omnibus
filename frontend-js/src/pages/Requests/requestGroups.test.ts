@@ -213,6 +213,7 @@ describe("countsLine", () => {
     ],
     ["two waiting", groupsOf("choose", "choose"), "2 books · 2 need you"],
     ["none waiting", groupsOf("looking"), "1 book"],
+    ["only cancelled books", groupsOf("cancelled"), "0 books"],
     ["a cancelled book beside one", groupsOf("looking", "cancelled"), "1 book"],
   ])("counts %s", (_case, groups, expected) => {
     expect(countsLine(groups)).toBe(expected);

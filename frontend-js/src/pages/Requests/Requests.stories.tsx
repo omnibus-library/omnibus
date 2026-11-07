@@ -313,16 +313,30 @@ export const AFoldIsRememberedOnTheDevice: Story = {
   },
 };
 
+export const AFoldKeepsWhatAnotherTabSaved: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const header = await canvas.findByRole("button", { name: "Looking 1" });
+    localStorage.setItem(FOLDS_KEY, '{"on_its_way":true}');
+
+    await userEvent.click(header);
+
+    await expect(JSON.parse(localStorage.getItem(FOLDS_KEY) ?? "")).toEqual({
+      on_its_way: true,
+      looking: true,
+    });
+  },
+};
+
 export const AFoldedGroupStaysFoldedOnReturn: Story = {
   beforeEach() {
-    localStorage.setItem(FOLDS_KEY, '{"on_its_way":true}');
+    localStorage.setItem(FOLDS_KEY, '{"on_its_way":true,"cancelled":false}');
   },
   play: async ({ canvas }) => {
     await expect(await groupsOn(canvas)).toEqual([
       ["Needs you", "1", ["Dracula"]],
       ["On its way", "1", []],
       ["Looking", "1", ["Hyperion"]],
-      ["Cancelled", "1", []],
+      ["Cancelled", "1", ["Dune"]],
     ]);
   },
 };
@@ -670,6 +684,8 @@ export const RequestAgainStaysBusyUntilTheRequestsListIsReadAgain: Story = {
   play: async ({ canvas, userEvent }) => {
     const pane = within(await canvas.findByTestId("requests-pane"));
     const again = await pane.findByRole("button", { name: "Request again" });
+    // A list of cancelled books alone is not the empty page.
+    await expect(canvas.queryByTestId("requests-empty")).toBeNull();
 
     await userEvent.click(again);
 

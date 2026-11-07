@@ -85,7 +85,8 @@ function Groups({
 }) {
   const [folds, setFolds] = useState(loadRequestFolds);
   const toggle = (key: RequestGroupKey, folded: boolean) => {
-    const next = { ...folds, [key]: !folded };
+    // Storage wins for the other groups, so a second tab's folds survive this write.
+    const next = { ...folds, ...loadRequestFolds(), [key]: !folded };
     setFolds(next);
     saveRequestFolds(next);
   };
