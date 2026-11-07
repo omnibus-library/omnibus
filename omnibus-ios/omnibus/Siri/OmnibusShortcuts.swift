@@ -3,7 +3,8 @@
 //
 //  Every phrase has to name the app. A phrase naming a book only matches the
 //  books `BookEntityQuery.suggestedEntities` offers, so
-//  `updateAppShortcutParameters()` runs whenever the library is re-indexed.
+//  `updateAppShortcutParameters()` runs whenever the library is re-indexed
+//  and whenever the Continue rail's books change.
 
 import AppIntents
 
@@ -67,5 +68,22 @@ struct OmnibusShortcuts: AppShortcutsProvider {
             shortTitle: "Get My Review",
             systemImageName: "star.bubble"
         )
+    }
+}
+
+/// Re-offers the phrase parameters when the Continue rail's books change, so a
+/// book just started is nameable without waiting for a Spotlight pass.
+actor ShortcutParameters {
+    static let shared = ShortcutParameters()
+
+    /// The rail's books when the parameters were last offered; `nil` until then.
+    private var offered: Set<String>?
+
+    /// The cached rail now holds `points`.
+    func railChanged(_ points: [ResumePoint]) async {
+        let books = Set(points.map(\.book.uuid))
+        guard books != offered else { return }
+        offered = books
+        await MainActor.run { OmnibusShortcuts.updateAppShortcutParameters() }
     }
 }

@@ -18,6 +18,10 @@ actor LibrarySpotlight {
     /// Books read from the mirror and handed to Spotlight per batch.
     private static let batchSize = 500
 
+    /// Meta key holding the ids the last completed pass indexed, so the next
+    /// one removes only the books that left the mirror.
+    private static let indexedKey = "spotlight_indexed_books"
+
     private var pass: Task<Void, Never>?
 
     /// Re-index the whole mirror, or clear the index when signed out.
@@ -34,33 +38,71 @@ actor LibrarySpotlight {
         await mine.value
     }
 
+    /// Upserts every mirrored book, then drops the ones the last pass indexed
+    /// that are gone, so Spotlight never goes empty while a pass runs.
     private static func runPass() async {
         let index = CSSearchableIndex.default()
         do {
-            try await index.deleteAppEntities(ofType: BookEntity.self)
-            guard await APIClient.shared.hasToken() else { return await updateShortcuts() }
-            var offset = 0
-            while true {
-                let payloads = await OfflineStore.shared.bookPayloads(
-                    whereClause: "", orderClause: "title", bindings: [],
-                    limit: batchSize, offset: offset
-                )
-                let entities = payloads
-                    .compactMap { try? JSONDecoder().decode(Book.self, from: $0) }
-                    .map(BookEntity.init)
-                // Checked per batch: a sign-out can land inside a long pass.
-                guard await APIClient.shared.hasToken() else {
-                    try await index.deleteAppEntities(ofType: BookEntity.self)
-                    break
-                }
-                if !entities.isEmpty { try await index.indexAppEntities(entities) }
-                guard payloads.count == batchSize else { break }
-                offset += batchSize
+            guard await APIClient.shared.hasToken() else { return try await clear(index) }
+            // With no record of the last pass, nothing says what is stale.
+            let previous: Set<String>
+            if let known = await indexedIDs() {
+                previous = known
+            } else {
+                try await clear(index)
+                previous = []
             }
+            try await indexMirror(into: index, removingStale: previous)
         } catch {
             spotlightLog.error("Spotlight pass failed: \(error.localizedDescription, privacy: .public)")
         }
         await updateShortcuts()
+    }
+
+    private static func indexMirror(
+        into index: CSSearchableIndex, removingStale previous: Set<String>
+    ) async throws {
+        var indexed = Set<String>()
+        var offset = 0
+        do {
+            while true {
+                let batch = await LibraryIndex.shared.allBooks(limit: batchSize, offset: offset)
+                // Checked per batch: a sign-out can land inside a long pass.
+                guard await APIClient.shared.hasToken() else { return try await clear(index) }
+                if !batch.books.isEmpty {
+                    try await index.indexAppEntities(batch.books.map(BookEntity.init))
+                }
+                indexed.formUnion(batch.books.map(\.uuid))
+                guard batch.rows == batchSize else { break }
+                offset += batchSize
+            }
+        } catch {
+            // A failed pass still left these in the index; the next one must know.
+            await storeIndexedIDs(previous.union(indexed))
+            throw error
+        }
+        let stale = previous.subtracting(indexed)
+        if !stale.isEmpty {
+            try await index.deleteAppEntities(identifiedBy: Array(stale), ofType: BookEntity.self)
+        }
+        await storeIndexedIDs(indexed)
+    }
+
+    private static func clear(_ index: CSSearchableIndex) async throws {
+        try await index.deleteAppEntities(ofType: BookEntity.self)
+        await OfflineStore.shared.metaPut(indexedKey, "[]")
+    }
+
+    private static func indexedIDs() async -> Set<String>? {
+        guard let raw = await OfflineStore.shared.metaGet(indexedKey),
+              let ids = try? JSONDecoder().decode([String].self, from: Data(raw.utf8))
+        else { return nil }
+        return Set(ids)
+    }
+
+    private static func storeIndexedIDs(_ ids: Set<String>) async {
+        guard let data = try? JSONEncoder().encode(ids.sorted()) else { return }
+        await OfflineStore.shared.metaPut(indexedKey, String(decoding: data, as: UTF8.self))
     }
 
     @MainActor

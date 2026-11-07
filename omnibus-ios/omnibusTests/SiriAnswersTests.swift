@@ -132,6 +132,61 @@ private func review(
     #expect(SiriAnswers.searchCandidates(for: " Dune ") == ["Dune"])
 }
 
+@Test func searchCandidatesTryEachDroppedSuffixSoATitleEndingInBookSurvives() {
+    #expect(SiriAnswers.searchCandidates(for: "The Jungle Book audiobook")
+        == ["The Jungle Book audiobook", "The Jungle Book", "The Jungle"])
+}
+
+// MARK: - Your reviews
+
+@Test func aReviewIsListedForStarsOrTextButNotForNotesAlone() {
+    #expect(review(stars: 3).isListed)
+    #expect(review(body: "Words").isListed)
+    #expect(!review(notes: "private").isListed)
+    #expect(!review(body: "  ", notes: "private").isListed)
+}
+
+@Test func replacingAReviewKeepsTheListNewestFirst() {
+    let list = [review(uuid: "c", stars: 4, updatedAt: 300), review(uuid: "a", stars: 2, updatedAt: 100)]
+    let moved = list.replacingReview(of: "a", with: review(uuid: "a", stars: 5, updatedAt: 400))
+    #expect(moved.map(\.bookUUID) == ["a", "c"])
+    let added = list.replacingReview(of: "b", with: review(uuid: "b", body: "Hm", updatedAt: 200))
+    #expect(added.map(\.bookUUID) == ["c", "b", "a"])
+}
+
+@Test func replacingAReviewWithNothingOrNotesAloneDropsIt() {
+    let list = [review(uuid: "a", stars: 4, updatedAt: 300), review(uuid: "b", stars: 2, updatedAt: 100)]
+    #expect(list.replacingReview(of: "a", with: nil).map(\.bookUUID) == ["b"])
+    let notesOnly = review(uuid: "b", notes: "private", updatedAt: 100)
+    #expect(list.replacingReview(of: "b", with: notesOnly).map(\.bookUUID) == ["a"])
+}
+
+@Test func aLocalReviewWritePatchesTheCachedListOfYourReviews() async throws {
+    let (store, file) = await scratchStore(filePrefix: "my-reviews")
+    defer { try? FileManager.default.removeItem(atPath: file) }
+    let older = review(uuid: "old", body: "Fine.", updatedAt: 100)
+    await store.cachePut(CacheKey.myReviews, try JSONEncoder().encode([older]))
+
+    await UserDataService.mutateLocalReviews("new", in: store) {
+        $0 = $0.applying(.stars(4), uuid: "new", now: 200)
+    }
+    var held = try JSONDecoder().decode([Review].self, from: try #require(await store.cacheGet(CacheKey.myReviews)))
+    #expect(held.map(\.bookUUID) == ["new", "old"])
+
+    await UserDataService.mutateLocalReviews("old", in: store) { $0 = $0.deletingMine() }
+    held = try JSONDecoder().decode([Review].self, from: try #require(await store.cacheGet(CacheKey.myReviews)))
+    #expect(held.map(\.bookUUID) == ["new"])
+}
+
+@Test func aLocalReviewWriteLeavesAnUncachedListOfYourReviewsAlone() async throws {
+    let (store, file) = await scratchStore(filePrefix: "my-reviews")
+    defer { try? FileManager.default.removeItem(atPath: file) }
+    await UserDataService.mutateLocalReviews("new", in: store) {
+        $0 = $0.applying(.stars(4), uuid: "new", now: 200)
+    }
+    #expect(await store.cacheGet(CacheKey.myReviews) == nil)
+}
+
 // MARK: - Entity and cache scope
 
 @Test func bookEntityCarriesTheDisplayNamesAndDropsABlankSeries() {
@@ -146,4 +201,17 @@ private func review(
 @Test func aQueuedReviewHoldsTheLatestReviewsListOnTheReplica() {
     #expect(OutboxScope.isBlocked(CacheKey.myReviews, by: [OpKind.review("book-1")]))
     #expect(!OutboxScope.isBlocked(CacheKey.myReviews, by: [OpKind.progress("book-1", .epub)]))
+    #expect(OutboxScope.isBlocked(CacheKey.myReviews, by: [OpKind.rating("book-1")]))
+}
+
+@Test func positionPrefersTheContinueCardElseTheNewestRecord() {
+    let dune = book(uuid: "dune", title: "Dune")
+    let behind = ProgressRecord(bookUUID: "dune", format: .epub, updatedAt: 100, clientUpdatedAt: 100)
+    var ahead = ProgressRecord(bookUUID: "dune", format: .epub, updatedAt: 200, clientUpdatedAt: 200)
+    ahead.progressPercent = 80
+    let picked = SiriLibrary.position(in: dune, rail: [], records: [behind, ahead, nil])
+    #expect(picked?.record.progressPercent == 80)
+    let card = point(dune, percent: 10)
+    #expect(SiriLibrary.position(in: dune, rail: [card], records: [ahead])?.record.progressPercent == 10)
+    #expect(SiriLibrary.position(in: dune, rail: nil, records: [nil, nil]) == nil)
 }

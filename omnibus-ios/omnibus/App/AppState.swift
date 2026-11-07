@@ -280,6 +280,9 @@ final class AppState {
             await LibraryIndex.shared.sync(force: true)
             await WidgetSnapshotWriter.shared.refresh()
         }
+        // Sign-out emptied Spotlight, and the pass above refills it only if
+        // it completes; a mirror kept from before the sign-out is indexable now.
+        Task { await LibrarySpotlight.shared.refresh() }
     }
 
     /// Sign out, pushing anything still queued first.

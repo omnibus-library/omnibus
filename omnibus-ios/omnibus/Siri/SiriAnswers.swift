@@ -61,23 +61,24 @@ enum SiriAnswers {
     }
 
     /// The readings of a spoken request to search the library with, strictest
-    /// first: as said, without a trailing "audiobook" or "book", then the part
-    /// before " by ", since the mirror matches a title or an author, not both.
+    /// first: as said, then each trailing "audiobook" or "book" dropped in
+    /// turn — each its own reading, since "book" can be the title's last word
+    /// — then the part before " by " of each, since the mirror matches a title
+    /// or an author, not both.
     static func searchCandidates(for spoken: String) -> [String] {
+        var forms = [spoken.trimmingCharacters(in: .whitespacesAndNewlines)]
+        for suffix in [" audiobook", " audio book", " book"]
+        where forms[forms.count - 1].lowercased().hasSuffix(suffix) {
+            forms.append(String(forms[forms.count - 1].dropLast(suffix.count)))
+        }
+        let titles = forms.compactMap { form in
+            form.range(of: " by ", options: [.caseInsensitive, .backwards])
+                .map { String(form[..<$0.lowerBound]) }
+        }
         var candidates: [String] = []
-        func add(_ text: String) {
+        for text in forms + titles {
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty, !candidates.contains(trimmed) { candidates.append(trimmed) }
-        }
-        add(spoken)
-        var stripped = spoken.trimmingCharacters(in: .whitespacesAndNewlines)
-        for suffix in [" audiobook", " audio book", " book"]
-        where stripped.lowercased().hasSuffix(suffix) {
-            stripped = String(stripped.dropLast(suffix.count))
-        }
-        add(stripped)
-        if let range = stripped.range(of: " by ", options: [.caseInsensitive, .backwards]) {
-            add(String(stripped[..<range.lowerBound]))
         }
         return candidates
     }

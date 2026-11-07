@@ -139,7 +139,12 @@ enum UserDataService {
         fetch: @escaping @Sendable () async throws -> [ResumePoint]
     ) -> AsyncThrowingStream<CacheRead<[ResumePoint]>, Error> {
         switch subject {
-        case .you: Cache.live(CacheKey.recentProgress, fetch: fetch)
+        case .you:
+            Cache.live(CacheKey.recentProgress) {
+                let points = try await fetch()
+                await ShortcutParameters.shared.railChanged(points)
+                return points
+            }
         case .reader: Cache.uncached(fetch: fetch)
         }
     }
@@ -211,6 +216,7 @@ enum UserDataService {
             : await bookForResume(record.bookUUID)
         if let spliced = splice(record, book: book, into: points) {
             await Cache.write(CacheKey.recentProgress, spliced)
+            await ShortcutParameters.shared.railChanged(spliced)
         }
         // A listening position moves the audiobook list too.
         guard record.format == .audio else { return }
@@ -363,15 +369,25 @@ enum UserDataService {
     /// drop the other's field. Starts from `.empty` when nothing is cached
     /// yet, as the journal and highlight lists start from `[]`: a write made
     /// before the first read must still be in the replica after a relaunch.
+    ///
+    /// Your cached reviews list follows, since a queued write holds it on the
+    /// replica too; with no list cached there is nothing to patch.
     static func mutateLocalReviews(
         _ uuid: String, in store: OfflineStore = .shared,
         _ mutate: @escaping @Sendable (inout BookReviews) -> Void
     ) async {
-        await store.cacheUpdate(CacheKey.reviews(uuid)) { data in
+        let stored = await store.cacheUpdate(CacheKey.reviews(uuid)) { data in
             var reviews = data.flatMap { try? JSONDecoder().decode(BookReviews.self, from: $0) }
                 ?? .empty
             mutate(&reviews)
             return try? JSONEncoder().encode(reviews)
+        }
+        guard let stored, let reviews = try? JSONDecoder().decode(BookReviews.self, from: stored)
+        else { return }
+        await store.cacheUpdate(CacheKey.myReviews) { data in
+            guard let data, let list = try? JSONDecoder().decode([Review].self, from: data)
+            else { return nil }
+            return try? JSONEncoder().encode(list.replacingReview(of: uuid, with: reviews.mine))
         }
     }
 

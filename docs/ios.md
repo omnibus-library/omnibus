@@ -73,9 +73,11 @@ book, resume or play an audiobook, open a book, and your review as text.
 - **Locked phone:** playback intents are `.alwaysAllowed` (the car);
   everything that reads reading state is `.requiresAuthentication`.
 - **Spotlight** (`LibrarySpotlight`) indexes book details only, re-indexed
-  after each completed mirror sync and cleared on sign-out, unauthorized and
+  on sign-in and after each completed mirror sync — upserting, then removing
+  only books that left the mirror — and cleared on sign-out, unauthorized and
   server change. It also refreshes the App Shortcut parameters, which is how a
-  phrase naming a book learns titles.
+  phrase naming a book learns titles; a change to the Continue rail's books
+  refreshes them too, without a Spotlight pass.
 - **iOS 27's audio schema** (`AudiobookSchema.swift`) is what lets AI Siri
   play an audiobook by name: an audiobook entity, an `IntentValueQuery` over
   `AudioSearch`, and a `playAudio` intent. The books domain doesn't reach

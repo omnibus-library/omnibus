@@ -54,10 +54,12 @@ enum SiriLibrary {
         }
     }
 
-    /// Books matching a spoken title, trying looser readings of it until one hits.
-    static func search(spoken: String, limit: Int) async -> [Book] {
+    /// Books matching a spoken title, trying looser readings of it until one
+    /// hits. `formats` holds every reading to those formats, so a reading that
+    /// matches only other formats doesn't stop the looser ones.
+    static func search(spoken: String, limit: Int, formats: [String] = []) async -> [Book] {
         for candidate in SiriAnswers.searchCandidates(for: spoken) {
-            let books = await LibraryIndex.shared.search(candidate, limit: limit)
+            let books = await LibraryIndex.shared.search(candidate, limit: limit, formats: formats)
             if !books.isEmpty { return books }
         }
         return []
@@ -70,19 +72,32 @@ enum SiriLibrary {
         return await LibraryService.firstBook(uuid: uuid)
     }
 
-    /// Where the reader is in a book, whichever format they used last. A
-    /// Continue card wins: the server fills in the duration and percent there.
-    static func position(in book: Book, rail: [ResumePoint]?) async -> ResumePoint? {
+    /// Where the reader is in a book and whether they finished it, every read
+    /// at once so a slow server costs one deadline rather than four.
+    static func progress(in book: Book) async -> (point: ResumePoint?, finished: Bool) {
+        async let rail = currentlyReading()
+        async let epub = record(uuid: book.uuid, format: .epub)
+        async let audio = record(uuid: book.uuid, format: .audio)
+        async let finished = isFinished(uuid: book.uuid)
+        let point = position(in: book, rail: await rail, records: [await epub, await audio])
+        return (point, await finished)
+    }
+
+    /// Whichever format the reader used last. A Continue card wins: the server
+    /// fills in the duration and percent there.
+    static func position(
+        in book: Book, rail: [ResumePoint]?, records: [ProgressRecord?]
+    ) -> ResumePoint? {
         if let point = rail?.first(where: { $0.book.uuid == book.uuid }) { return point }
-        var newest: ProgressRecord?
-        for format in [ProgressFormat.epub, .audio] {
-            newest = PositionSync.newest(newest, await record(uuid: book.uuid, format: format))
-        }
+        let newest = records.reduce(ProgressRecord?.none, PositionSync.newest)
         return newest.map { ResumePoint(record: $0, book: book) }
     }
 
+    /// The newer of this device's position and the server's, as the player
+    /// opens on: another device may have read further. A server row naming
+    /// no place doesn't override one this device holds.
     private static func record(uuid: String, format: ProgressFormat) async -> ProgressRecord? {
-        if let local = await UserDataService.localProgress(uuid: uuid, format: format) { return local }
+        let local = await UserDataService.localProgress(uuid: uuid, format: format)
         let fetched: ProgressRecord?? = await Cache.settled(
             CacheKey.progress(uuid, format), within: PositionSync.openDeadline
         ) {
@@ -91,24 +106,39 @@ enum SiriLibrary {
             )
             return progress?.record(for: format)
         }
-        return fetched ?? nil
+        guard let server = fetched ?? nil else { return local }
+        guard let local, PositionSync.carriesPosition(server) else { return local ?? server }
+        return PositionSync.newest(local, server)
     }
 
-    /// Your review of one book.
+    /// Whether the book is marked finished, the cached status past the deadline.
+    private static func isFinished(uuid: String) async -> Bool {
+        let read = Task { await UserDataService.storedReadStatus(uuid: uuid) }
+        if let status = await firstResult(of: read, within: PositionSync.openDeadline) {
+            return status == .finished
+        }
+        let cached: ReadStatusRecord? = await Cache.cachedOnly(CacheKey.readStatus(uuid))
+        return cached?.status == .finished
+    }
+
+    /// Your review of one book; notes alone are no review.
     static func review(of uuid: String) async -> SiriLookup<Review> {
+        // Guarded as the book page reads it: an answer from before a local
+        // write must not store the old review back.
         let reviews: BookReviews? = await Cache.settled(
-            CacheKey.reviews(uuid), within: PositionSync.openDeadline
+            CacheKey.reviews(uuid), within: PositionSync.openDeadline, guardsWrites: true
         ) {
             try await APIClient.shared.get("/api/reviews/\(uuid)")
         }
         guard let reviews else { return .unknown }
-        return reviews.mine.map(SiriLookup.found) ?? .none
+        return reviews.mine.flatMap { $0.isListed ? SiriLookup.found($0) : nil } ?? .none
     }
 
     /// The review you most recently wrote, across every book.
     static func latestReview() async -> SiriLookup<Review> {
+        // Guarded: a local review write patches this list too.
         let reviews: [Review]? = await Cache.settled(
-            CacheKey.myReviews, within: PositionSync.openDeadline
+            CacheKey.myReviews, within: PositionSync.openDeadline, guardsWrites: true
         ) {
             try await APIClient.shared.get(
                 "/api/reviews/mine", query: ["limit": String(reviewWindow)]

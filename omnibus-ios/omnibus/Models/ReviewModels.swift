@@ -246,6 +246,24 @@ extension Review {
     }
 }
 
+extension Review {
+    /// Whether this is a review `GET /api/reviews/mine` lists: stars or text.
+    /// Private notes alone are not.
+    var isListed: Bool { stars != nil || bodyMd?.nilIfBlank != nil }
+}
+
+extension [Review] {
+    /// Your reviews list, newest first, once `uuid`'s review is `review`: in
+    /// its place by `updatedAt`, or gone when it is deleted or notes alone.
+    func replacingReview(of uuid: String, with review: Review?) -> [Review] {
+        var next = filter { $0.bookUUID != uuid }
+        guard let review, review.isListed else { return next }
+        let slot = next.firstIndex { $0.updatedAt <= review.updatedAt } ?? next.endIndex
+        next.insert(review, at: slot)
+        return next
+    }
+}
+
 extension PatchField where Value == String {
     /// What the server stores for this field once it is sent: the text, or
     /// `nil` for a clear or for blank text.

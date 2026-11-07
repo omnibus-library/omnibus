@@ -128,7 +128,9 @@ actor LibraryIndex {
             Key.completedAt, String(Int64(Date().timeIntervalSince1970))
         )
         await pruneOrphanedDownloads()
-        await LibrarySpotlight.shared.refresh()
+        // Not awaited: pull-to-refresh and the widget refresh wait on `sync`,
+        // and a whole-library index pass is nothing they need.
+        Task { await LibrarySpotlight.shared.refresh() }
     }
 
     /// Drop downloads for books the library no longer has.
@@ -375,16 +377,30 @@ actor LibraryIndex {
         return try? JSONDecoder().decode(Book.self, from: payload)
     }
 
+    /// Every mirrored book in title order, a batch at a time, for a pass over
+    /// the whole mirror. `rows` counts what was read, decodable or not, so the
+    /// pass knows whether more remain.
+    func allBooks(limit: Int, offset: Int) async -> (books: [Book], rows: Int) {
+        let payloads = await OfflineStore.shared.bookPayloads(
+            whereClause: "", orderClause: Self.order(sort: .title, direction: .asc), bindings: [],
+            limit: limit, offset: offset
+        )
+        return (Self.decode(payloads), payloads.count)
+    }
+
     /// Books whose title, author, series, subjects, or publisher contain
-    /// `query`. Ordered by where the match landed — a title hit is what the
-    /// reader meant far more often than a subject hit.
-    func search(_ query: String, limit: Int = 50) async -> [Book] {
+    /// `query`, held to `formats` when any are named. Ordered by where the
+    /// match landed — a title hit is what the reader meant far more often
+    /// than a subject hit.
+    func search(_ query: String, limit: Int = 50, formats: [String] = []) async -> [Book] {
         let needle = query.trimmingCharacters(in: .whitespaces).lowercased()
         guard !needle.isEmpty else { return [] }
         let pattern = "%\(Self.escapeLike(needle))%"
+        let (formatClause, formatBindings) = Self.predicate(for: LibraryFilter(formats: formats))
 
         let payloads = await OfflineStore.shared.bookPayloads(
-            whereClause: "search_text LIKE ? ESCAPE '\\'",
+            whereClause: "search_text LIKE ? ESCAPE '\\'"
+                + (formatClause.isEmpty ? "" : " AND \(formatClause)"),
             orderClause: """
                 CASE
                     WHEN title = ? THEN 0
@@ -395,8 +411,8 @@ actor LibraryIndex {
                 END,
                 title
                 """,
-            bindings: [
-                pattern, needle, "\(Self.escapeLike(needle))%", pattern, pattern,
+            bindings: [pattern] + formatBindings + [
+                needle, "\(Self.escapeLike(needle))%", pattern, pattern,
             ],
             limit: limit,
             offset: 0

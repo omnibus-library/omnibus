@@ -61,10 +61,10 @@ extension AudiobookEntityQuery: IntentValueQuery {
         guard await SiriLibrary.readiness() == .ready else { return [] }
         switch audioSearch.criteria {
         case let .searchQuery(query):
-            return await SiriLibrary.search(spoken: query, limit: Self.matchLimit * 3)
-                .filter(\.hasAudiobook)
-                .prefix(Self.matchLimit)
-                .map(AudiobookEntity.init)
+            return await SiriLibrary.search(
+                spoken: query, limit: Self.matchLimit, formats: Book.audioFormats.sorted()
+            )
+            .map(AudiobookEntity.init)
         case .unspecified:
             // "Play an audiobook": the one listened to last.
             return await UserDataService.settledRecentAudio().prefix(1).map { AudiobookEntity($0.book) }
@@ -95,12 +95,7 @@ struct PlayAudioIntent: AudioPlaybackIntent {
     @MainActor
     func perform() async throws -> some IntentResult {
         guard case let .audiobook(entity) = audioEntity else { return .result() }
-        try await SiriLibrary.requireReady()
-        guard let found = await SiriLibrary.book(uuid: entity.id) else { throw SiriError.bookNotFound }
-        guard DownloadManager.shared.canOpen(found, kind: .audio) else {
-            throw SiriError.notPlayable(title: found.displayTitle)
-        }
-        await AudioPlayer.shared.load(book: found)
+        try await SiriPlayback.play(uuid: entity.id)
         return .result()
     }
 }

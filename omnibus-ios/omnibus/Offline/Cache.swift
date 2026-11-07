@@ -132,7 +132,7 @@ enum OutboxScope {
             // queued one before upgrading. It moves the same rows a review's
             // stars do.
             return key == CacheKey.rating(uuid)
-                || key == CacheKey.reviews(uuid)
+                || key == CacheKey.reviews(uuid) || key == CacheKey.myReviews
                 || key.hasPrefix("stats:")
         }
         if let uuid = suffix(of: kind, after: "read_status:") {
@@ -457,10 +457,11 @@ enum Cache {
     /// export — never for anything that paints.
     static func settled<T: Codable & Sendable>(
         _ key: String,
+        guardsWrites: Bool = false,
         fetch: @escaping @Sendable () async throws -> T
     ) async throws -> T {
         var latest: T?
-        for try await read in live(key, fetch: fetch) { latest = read.value }
+        for try await read in live(key, guardsWrites: guardsWrites, fetch: fetch) { latest = read.value }
         guard let latest else { throw APIError.offline }
         return latest
     }
@@ -469,14 +470,15 @@ enum Cache {
     /// it while someone waits: the settled answer if it lands in time, else the
     /// replica — on any failure too, not only an offline one, so a server
     /// mid-deploy can't hide what the device holds. Only with no replica does
-    /// it wait the read out; `nil` when that fails too.
+    /// it wait the read out; `nil` when that fails too. `guardsWrites`: see `live`.
     static func settled<T: Codable & Sendable>(
         _ key: String,
         within deadline: Duration,
+        guardsWrites: Bool = false,
         fetch: @escaping @Sendable () async throws -> T
     ) async -> T? {
         // Not cancelled on the deadline: the read goes on to refresh the replica.
-        let answer = Task { try? await settled(key, fetch: fetch) }
+        let answer = Task { try? await settled(key, guardsWrites: guardsWrites, fetch: fetch) }
         if let settled = await firstResult(of: answer, within: deadline) { return settled }
         if let replica: T = await read(key) { return replica }
         return await answer.value

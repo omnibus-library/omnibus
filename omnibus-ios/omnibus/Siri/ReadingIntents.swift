@@ -40,8 +40,7 @@ struct BookProgressIntent: AppIntent {
     func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
         try await SiriLibrary.requireReady()
         guard let found = await SiriLibrary.book(uuid: book.id) else { throw SiriError.bookNotFound }
-        let point = await SiriLibrary.position(in: found, rail: await SiriLibrary.currentlyReading())
-        let finished = await UserDataService.storedReadStatus(uuid: found.uuid) == .finished
+        let (point, finished) = await SiriLibrary.progress(in: found)
         let answer = SiriAnswers.progress(title: found.displayTitle, point: point, finished: finished)
         return .result(value: answer, dialog: IntentDialog(stringLiteral: answer))
     }

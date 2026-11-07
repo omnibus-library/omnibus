@@ -41,13 +41,25 @@ struct PlayAudiobookIntent: AudioPlaybackIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        try await SiriLibrary.requireReady()
-        guard let found = await SiriLibrary.book(uuid: book.id) else { throw SiriError.bookNotFound }
-        guard found.hasAudiobook else { throw SiriError.noAudiobook(title: found.displayTitle) }
-        guard DownloadManager.shared.canOpen(found, kind: .audio) else {
-            throw SiriError.notPlayable(title: found.displayTitle)
-        }
-        await AudioPlayer.shared.load(book: found)
+        try await SiriPlayback.play(uuid: book.id)
         return .result()
+    }
+}
+
+/// The play behind both ways of asking for an audiobook by name.
+enum SiriPlayback {
+    /// Load the book's audiobook and start it, or throw why it didn't start.
+    @MainActor
+    static func play(uuid: String) async throws {
+        try await SiriLibrary.requireReady()
+        guard let found = await SiriLibrary.book(uuid: uuid) else { throw SiriError.bookNotFound }
+        guard found.hasAudiobook else { throw SiriError.noAudiobook(title: found.displayTitle) }
+        let notPlayable = SiriError.notPlayable(title: found.displayTitle)
+        guard DownloadManager.shared.canOpen(found, kind: .audio) else { throw notPlayable }
+        let player = AudioPlayer.shared
+        await player.load(book: found)
+        // `load` keeps a failure in `error` rather than throwing it, and a
+        // newer load may have taken the player over meanwhile.
+        guard player.book?.uuid == found.uuid, player.error == nil else { throw notPlayable }
     }
 }
