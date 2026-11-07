@@ -47,6 +47,7 @@ const DISCOVERY_KEY = "omnibus.discovery_prefs";
 const PREFS_PREFIX = "omnibus.view_prefs::";
 const LAST_LIBRARY_KEY = "omnibus.view_prefs.last_library";
 const SHELF_KEY = "omnibus.landing_shelf";
+const REQUEST_FOLDS_KEY = "omnibus.requests_folds";
 
 export function read(key: string): string | null {
   try {
@@ -201,6 +202,18 @@ export function saveDiscoverySort<K extends keyof DiscoveryPrefs>(
     DISCOVERY_KEY,
     JSON.stringify({ ...loadDiscoveryPrefs(), [field]: value }),
   );
+}
+
+const RequestFolds = z.record(z.string(), z.boolean());
+
+/** The Requests groups the reader folded (true) or unfolded (false), by group key; anything unreadable is none. */
+export function loadRequestFolds(): Record<string, boolean> {
+  const parsed = RequestFolds.safeParse(readJson(REQUEST_FOLDS_KEY));
+  return parsed.success ? parsed.data : {};
+}
+
+export function saveRequestFolds(folds: Record<string, boolean>) {
+  write(REQUEST_FOLDS_KEY, JSON.stringify(folds));
 }
 
 const Handoff = z.object({ clauses: z.array(FilterClauseSchema) });

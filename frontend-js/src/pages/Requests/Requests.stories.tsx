@@ -16,6 +16,8 @@ import { FROM_WISHLISTS } from "../BookRequest/requestView";
 import { PHONE } from "../Wishlists/Wishlists.stories.shared";
 import { Requests } from "./Requests";
 
+const FOLDS_KEY = "omnibus.requests_folds";
+
 const bookOf = (title: string, author: string) =>
   aWireBook({
     title,
@@ -120,6 +122,8 @@ const meta = {
   component: Page,
   parameters: { path: "/requests", user: READER },
   beforeEach({ msw }) {
+    // Storybook's browser project keeps localStorage between stories.
+    localStorage.removeItem(FOLDS_KEY);
     fake = requestFake(HOUSEHOLD, {
       books: BOOKS,
       names: NAMES,
@@ -135,33 +139,30 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** Each group's label and its books' titles, in order. */
+/** Each group's label, its count and its books' titles, in order; a folded group lists none. */
 async function groupsOn(canvas: ReturnType<typeof within>) {
-  await canvas.findAllByTestId("requests-item");
+  await canvas.findAllByTestId("requests-group-looking");
   return canvas
-    .getAllByRole("heading", { level: 2 })
-    .filter((h: HTMLElement) => h.id.startsWith("rqs-group-"))
-    .map((heading: HTMLElement) => {
-      const section = heading.closest("section");
-      if (!section) throw new Error("a group label outside its group");
-      return [
-        heading.textContent,
-        within(section)
-          .getAllByTestId("requests-item")
-          .map(
-            (item: HTMLElement) =>
-              item.querySelector(".rqs-item-title")?.textContent,
-          ),
-      ];
-    });
+    .getAllByTestId(/^requests-group-/)
+    .map((section: HTMLElement) => [
+      section.querySelector('[id^="rqs-group-"]')?.textContent,
+      section.querySelector(".rqs-group-count")?.textContent,
+      within(section)
+        .queryAllByTestId("requests-item")
+        .map(
+          (item: HTMLElement) =>
+            item.querySelector(".rqs-item-title")?.textContent,
+        ),
+    ]);
 }
 
 export const GroupsEachBookUnderWhereItStands: Story = {
   play: async ({ canvas }) => {
     await expect(await groupsOn(canvas)).toEqual([
-      ["Needs you", ["Dracula"]],
-      ["On its way", ["Carmilla"]],
-      ["Looking", ["Hyperion"]],
+      ["Needs you", "1", ["Dracula"]],
+      ["On its way", "1", ["Carmilla"]],
+      ["Looking", "1", ["Hyperion"]],
+      ["Cancelled", "1", []],
     ]);
     await expect(canvas.getByTestId("requests-counts")).toHaveTextContent(
       "3 books · 1 needs you",
@@ -179,8 +180,9 @@ export const AnotherReadersPickIsStillLookingToYou: Story = {
   parameters: { user: GRACE },
   play: async ({ canvas }) => {
     await expect(await groupsOn(canvas)).toEqual([
-      ["On its way", ["Carmilla"]],
-      ["Looking", ["Dracula", "Hyperion"]],
+      ["On its way", "1", ["Carmilla"]],
+      ["Looking", "2", ["Dracula", "Hyperion"]],
+      ["Cancelled", "1", []],
     ]);
   },
 };
@@ -254,6 +256,118 @@ export const CancellingKeepsTheBookInThePaneWithItsUndo: Story = {
     // The toast's Undo takes the keyboard's focus from the Cancel that is gone.
     await expect(canvas.getByRole("button", { name: "Undo" })).toHaveFocus();
     await expect(fake.writes).toEqual([{ kind: "cancel", id: 3 }]);
+    // Grace's older cancelled request is not the one the pane moves to.
+    await expect(pane.getByTestId("request-requester")).toHaveTextContent(
+      "requested by AL You",
+    );
+  },
+};
+
+export const EachGroupFoldsAndUnfoldsOnClick: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const header = await canvas.findByRole("button", { name: "Looking 1" });
+    await expect(header).toHaveAttribute("aria-expanded", "true");
+    await expect(canvas.getByRole("link", { name: /Hyperion/ })).toBeVisible();
+
+    await userEvent.click(header);
+
+    await expect(header).toHaveAttribute("aria-expanded", "false");
+    await expect(canvas.queryByRole("link", { name: /Hyperion/ })).toBeNull();
+    await expect(header).toHaveTextContent("Looking 1");
+    await expect(
+      canvas.getByTestId("requests-group-looking"),
+    ).toHaveAccessibleName("Looking");
+
+    await userEvent.click(header);
+
+    await expect(header).toHaveAttribute("aria-expanded", "true");
+    await expect(
+      await canvas.findByRole("link", { name: /Hyperion/ }),
+    ).toBeInTheDocument();
+  },
+};
+
+export const AGroupFoldsFromTheKeyboard: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const header = await canvas.findByRole("button", { name: "Needs you 1" });
+
+    await userEvent.tab();
+    await expect(header).toHaveFocus();
+    await userEvent.keyboard("{Enter}");
+    await expect(canvas.queryByRole("link", { name: /Dracula/ })).toBeNull();
+
+    await userEvent.keyboard(" ");
+    await expect(
+      await canvas.findByRole("link", { name: /Dracula/ }),
+    ).toBeInTheDocument();
+  },
+};
+
+export const AFoldIsRememberedOnTheDevice: Story = {
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Looking 1" }),
+    );
+
+    await expect(localStorage.getItem(FOLDS_KEY)).toBe('{"looking":true}');
+  },
+};
+
+export const AFoldKeepsWhatAnotherTabSaved: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const header = await canvas.findByRole("button", { name: "Looking 1" });
+    localStorage.setItem(FOLDS_KEY, '{"on_its_way":true}');
+
+    await userEvent.click(header);
+
+    await expect(JSON.parse(localStorage.getItem(FOLDS_KEY) ?? "")).toEqual({
+      on_its_way: true,
+      looking: true,
+    });
+  },
+};
+
+export const AFoldedGroupStaysFoldedOnReturn: Story = {
+  beforeEach() {
+    localStorage.setItem(FOLDS_KEY, '{"on_its_way":true,"cancelled":false}');
+  },
+  play: async ({ canvas }) => {
+    await expect(await groupsOn(canvas)).toEqual([
+      ["Needs you", "1", ["Dracula"]],
+      ["On its way", "1", []],
+      ["Looking", "1", ["Hyperion"]],
+      ["Cancelled", "1", ["Dune"]],
+    ]);
+  },
+};
+
+export const CancelledStartsFoldedAndOpensToABookWithRequestAgain: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const header = await canvas.findByRole("button", { name: "Cancelled 1" });
+    await expect(header).toHaveAttribute("aria-expanded", "false");
+    await expect(canvas.queryByRole("link", { name: /Dune/ })).toBeNull();
+
+    await userEvent.click(header);
+
+    const dune = await canvas.findByRole("link", { name: /Dune/ });
+    await expect(dune).toHaveTextContent("Ebook · cancelled");
+    await expect(dune.querySelector(".rqs-dot")).toHaveAttribute(
+      "data-group",
+      "cancelled",
+    );
+    await expect(localStorage.getItem(FOLDS_KEY)).toBe('{"cancelled":false}');
+
+    await userEvent.click(dune);
+
+    await waitFor(() =>
+      expect(canvas.getByTestId("where")).toHaveTextContent(
+        "/requests?book=uuid-dune",
+      ),
+    );
+    const pane = within(await canvas.findByTestId("requests-pane"));
+    await expect(
+      await pane.findByRole("button", { name: "Request again" }),
+    ).toBeInTheDocument();
   },
 };
 
@@ -507,6 +621,9 @@ export const OnAPhoneTheListStandsAlone: Story = {
     await canvas.findAllByTestId("requests-item");
 
     await expect(canvas.queryByTestId("requests-pane")).toBeNull();
+    await expect(
+      canvas.getByRole("button", { name: "Looking 1" }),
+    ).toBeInTheDocument();
     // A phone drops the group's own word from each line.
     await expect(
       canvas.getAllByTestId("requests-item-line").map((l) => l.textContent),
@@ -567,6 +684,8 @@ export const RequestAgainStaysBusyUntilTheRequestsListIsReadAgain: Story = {
   play: async ({ canvas, userEvent }) => {
     const pane = within(await canvas.findByTestId("requests-pane"));
     const again = await pane.findByRole("button", { name: "Request again" });
+    // A list of cancelled books alone is not the empty page.
+    await expect(canvas.queryByTestId("requests-empty")).toBeNull();
 
     await userEvent.click(again);
 
