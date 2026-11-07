@@ -25,9 +25,6 @@ enum SiriLookup<Value> {
 }
 
 enum SiriLibrary {
-    /// How many of your reviews the latest-review read considers.
-    static let reviewWindow = 20
-
     static func readiness() async -> SiriReadiness {
         await Startup.prepare()
         guard ServerURLStore.load() != nil, await APIClient.shared.hasToken() else { return .signedOut }
@@ -47,11 +44,7 @@ enum SiriLibrary {
     /// The Continue rail: the server's if it answers promptly, else the replica's.
     /// `nil` when neither has an answer.
     static func currentlyReading() async -> [ResumePoint]? {
-        await Cache.settled(CacheKey.recentProgress, within: PositionSync.openDeadline) {
-            try await APIClient.shared.get(
-                "/api/progress/recent", query: UserDataService.recentProgressQuery(userID: nil)
-            )
-        }
+        await UserDataService.settledRecentProgress()
     }
 
     /// Books matching a spoken title, trying looser readings of it until one
@@ -128,10 +121,11 @@ enum SiriLibrary {
 
     /// Your review of one book; notes alone are no review.
     static func review(of uuid: String) async -> SiriLookup<Review> {
-        // Guarded as the book page reads it: an answer from before a local
-        // write must not store the old review back.
+        // Guarded and followed as the book page reads it: an answer from
+        // before a local write must not store the old review back.
         let reviews: BookReviews? = await Cache.settled(
-            CacheKey.reviews(uuid), within: PositionSync.openDeadline, guardsWrites: true
+            CacheKey.reviews(uuid), within: PositionSync.openDeadline, guardsWrites: true,
+            adopted: UserDataService.reviewsAdopted(uuid)
         ) {
             try await APIClient.shared.get("/api/reviews/\(uuid)")
         }
@@ -146,7 +140,7 @@ enum SiriLibrary {
             CacheKey.myReviews, within: PositionSync.openDeadline, guardsWrites: true
         ) {
             try await APIClient.shared.get(
-                "/api/reviews/mine", query: ["limit": String(reviewWindow)]
+                "/api/reviews/mine", query: ["limit": String(CacheKey.myReviewsLimit)]
             )
         }
         guard let reviews else { return .unknown }

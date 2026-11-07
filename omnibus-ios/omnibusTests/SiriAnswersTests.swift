@@ -182,9 +182,9 @@ private func review(
     let list = (1...3).map { review(uuid: "b\($0)", stars: 3, updatedAt: Int64(100 * $0)) }.reversed()
     let added = Array(list).replacingReview(of: "new", with: review(uuid: "new", stars: 5, updatedAt: 400), limit: 3)
     #expect(added.map(\.bookUUID) == ["new", "b3", "b2"])
-    let full = (0..<SiriLibrary.reviewWindow).map { review(uuid: "r\($0)", stars: 4, updatedAt: 1000 - Int64($0)) }
+    let full = (0..<CacheKey.myReviewsLimit).map { review(uuid: "r\($0)", stars: 4, updatedAt: 1000 - Int64($0)) }
     #expect(full.replacingReview(of: "new", with: review(uuid: "new", stars: 1, updatedAt: 2000)).count
-        == SiriLibrary.reviewWindow)
+        == CacheKey.myReviewsLimit)
 }
 
 @Test func theServersReviewsReplaceARefusedWriteInTheListOfYourReviews() async throws {
@@ -197,15 +197,65 @@ private func review(
     }
 
     // The server refused the write, so its page for the book holds no review of yours.
-    await UserDataService.patchMyReviews("refused", from: .empty, in: store)
+    await store.cachePut(CacheKey.reviews("refused"), try JSONEncoder().encode(BookReviews.empty))
+    await UserDataService.patchMyReviews("refused", in: store)
     var held = try JSONDecoder().decode([Review].self, from: try #require(await store.cacheGet(CacheKey.myReviews)))
     #expect(held.map(\.bookUUID) == ["kept"])
 
     // Or it kept an older review the write would have replaced.
     let older = BookReviews(mine: review(uuid: "kept", stars: 2, updatedAt: 50), others: [], summary: nil)
-    await UserDataService.patchMyReviews("kept", from: older, in: store)
+    await store.cachePut(CacheKey.reviews("kept"), try JSONEncoder().encode(older))
+    await UserDataService.patchMyReviews("kept", in: store)
     held = try JSONDecoder().decode([Review].self, from: try #require(await store.cacheGet(CacheKey.myReviews)))
     #expect(held.map(\.stars) == [2])
+}
+
+@Test func aLateRefreshKeepsTheNewerTapInTheListOfYourReviews() async throws {
+    let (store, file) = await scratchStore(filePrefix: "my-reviews")
+    defer { try? FileManager.default.removeItem(atPath: file) }
+    await store.cachePut(CacheKey.myReviews, try JSONEncoder().encode([review(uuid: "other", stars: 1)]))
+
+    // The first tap's refresh stores the server's three stars...
+    let server = BookReviews(mine: review(uuid: "dune", stars: 3, updatedAt: 200), others: [], summary: nil)
+    await store.cachePut(CacheKey.reviews("dune"), try JSONEncoder().encode(server))
+    // ...then a second tap writes five before that refresh patches the list.
+    await UserDataService.mutateLocalReviews("dune", in: store) {
+        $0 = $0.applying(.stars(5), uuid: "dune", now: 300)
+    }
+    await UserDataService.reviewsAdopted("dune", in: store)(server)
+
+    let held = try JSONDecoder().decode([Review].self, from: try #require(await store.cacheGet(CacheKey.myReviews)))
+    #expect(held.first { $0.bookUUID == "dune" }?.stars == 5)
+}
+
+@Test func aGuardedReadOfABooksReviewsDropsARefusedWriteFromTheListOfYourReviews() async throws {
+    let (store, file) = await scratchStore(filePrefix: "my-reviews")
+    defer { try? FileManager.default.removeItem(atPath: file) }
+    await store.cachePut(CacheKey.myReviews, try JSONEncoder().encode([review(uuid: "kept", stars: 2)]))
+    await UserDataService.mutateLocalReviews("refused", in: store) {
+        $0 = $0.applying(.stars(4), uuid: "refused", now: 200)
+    }
+    let key = CacheKey.reviews("refused")
+    let cached = await store.cacheGet(key)
+
+    // The book page's read, not a write's refresh: the server holds no review of yours.
+    let reads = AsyncThrowingStream<CacheRead<BookReviews>, Error> { continuation in
+        Task {
+            do {
+                try await Cache.revalidateGuarded(
+                    key, cachedData: cached, store: store,
+                    adopted: UserDataService.reviewsAdopted("refused", in: store),
+                    fetch: { BookReviews.empty }, into: continuation
+                )
+            } catch {
+                continuation.finish(throwing: error)
+            }
+        }
+    }
+    for try await _ in reads {}
+
+    let held = try JSONDecoder().decode([Review].self, from: try #require(await store.cacheGet(CacheKey.myReviews)))
+    #expect(held.map(\.bookUUID) == ["kept"])
 }
 
 @Test func aLocalReviewWriteLeavesAnUncachedListOfYourReviewsAlone() async throws {
@@ -259,6 +309,19 @@ private func review(
     let settled = LibrarySpotlight.settle(previous: ["a", "b", "c"], indexed: ["b", "c", "d"], completed: true)
     #expect(settled.stale == ["a"])
     #expect(settled.recorded == ["b", "c", "d"])
+}
+
+@Test func swappingOrPublishingTheMirrorMovesItsGenerationButStagingDoesNot() async throws {
+    let (store, path) = try await scratchMirror([book(uuid: "a")], filePrefix: "mirror-generation")
+    defer { try? FileManager.default.removeItem(atPath: path) }
+    let before = await store.mirrorGeneration
+    let row = LibraryIndex.row(for: book(uuid: "b"), payload: try JSONEncoder().encode(book(uuid: "b")))
+    await store.appendStagedBooks([row])
+    #expect(await store.mirrorGeneration == before)
+    await store.publishPartialStaging()
+    #expect(await store.mirrorGeneration == before + 1)
+    await store.promoteCompletedStaging()
+    #expect(await store.mirrorGeneration == before + 2)
 }
 
 @Test func aFailedSpotlightPassDropsNothingAndRemembersEveryIndexedBook() {

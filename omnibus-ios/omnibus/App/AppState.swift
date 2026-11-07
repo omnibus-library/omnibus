@@ -279,7 +279,8 @@ final class AppState {
         //
         // Sign-out emptied Spotlight, and a completed pass refills it. One that
         // doesn't complete still leaves a mirror kept from before the sign-out
-        // to index — after the pass, so it doesn't page the mirror mid-swap.
+        // to index. Another sync may still be running and swap the mirror
+        // under that pass, which then removes nothing from Spotlight.
         Task {
             let completed = await LibraryIndex.shared.sync(force: true)
             await WidgetSnapshotWriter.shared.refresh()

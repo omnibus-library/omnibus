@@ -64,6 +64,8 @@ actor LibrarySpotlight {
     ) async throws {
         var indexed = Set<String>()
         var offset = 0
+        // A swap mid-pass shifts the OFFSET pages, so rows go unseen.
+        let mirror = await OfflineStore.shared.mirrorGeneration
         do {
             while true {
                 let batch = await LibraryIndex.shared.allBooks(limit: batchSize, offset: offset)
@@ -80,7 +82,9 @@ actor LibrarySpotlight {
             await storeIndexedIDs(settle(previous: previous, indexed: indexed, completed: false).recorded)
             throw error
         }
-        let settled = settle(previous: previous, indexed: indexed, completed: true)
+        // The sync that moved the mirror refreshes Spotlight again itself.
+        let unmoved = await OfflineStore.shared.mirrorGeneration == mirror
+        let settled = settle(previous: previous, indexed: indexed, completed: unmoved)
         if !settled.stale.isEmpty {
             try await index.deleteAppEntities(identifiedBy: settled.stale.sorted(), ofType: BookEntity.self)
         }
@@ -89,8 +93,8 @@ actor LibrarySpotlight {
 
     /// What a pass that indexed `indexed` over a last pass's `previous`
     /// leaves: the ids to drop from Spotlight, and the ids to record as in it.
-    /// Only a completed pass knows what left the mirror; a failed one still
-    /// left both sets in the index, and the next pass must know.
+    /// Only a pass that completed over one mirror knows what left it; any
+    /// other still left both sets in the index, and the next pass must know.
     static func settle(
         previous: Set<String>, indexed: Set<String>, completed: Bool
     ) -> (stale: Set<String>, recorded: Set<String>) {

@@ -53,6 +53,8 @@ enum CacheKey {
     static func reviews(_ uuid: String) -> String { "reviews:\(uuid)" }
     /// `GET /api/reviews/mine`: your own reviews across books, newest first.
     static let myReviews = "my_reviews"
+    /// How many reviews that list holds: its `?limit=`, and where a local write trims it.
+    static let myReviewsLimit = 20
     static func readStatus(_ uuid: String) -> String { "read_status:\(uuid)" }
     static func stats(_ range: StatsRange) -> String { "stats:\(range.rawValue)" }
     /// `GET /api/library-size`. Unkeyed: the answer is library-wide, so there
@@ -223,11 +225,15 @@ enum Cache {
     /// repeats the replica, so a last answer still not fresh means the server's
     /// never landed. For a caller that acts on that; others would only churn.
     /// It doesn't apply with `guardsWrites`.
+    ///
+    /// `adopted` runs once the server's answer is stored, whether or not anyone
+    /// still reads the stream — for a key whose answer other state follows.
     static func live<T: Codable & Sendable>(
         _ key: String,
         storing: (@Sendable (T) -> T)? = nil,
         guardsWrites: Bool = false,
         confirmsAnswer: Bool = false,
+        adopted: (@Sendable (T) async -> Void)? = nil,
         fetch: @escaping @Sendable () async throws -> T
     ) -> AsyncThrowingStream<CacheRead<T>, Error> {
         AsyncThrowingStream { continuation in
@@ -254,7 +260,7 @@ enum Cache {
                     if guardsWrites {
                         try await revalidateGuarded(
                             key, cachedData: cachedData, storing: storing,
-                            store: .shared, fetch: fetch, into: continuation
+                            store: .shared, adopted: adopted, fetch: fetch, into: continuation
                         )
                         return
                     }
@@ -283,7 +289,10 @@ enum Cache {
                     // replica is written either way.
                     let freshData = try? encoder.encode(fresh)
                     let storedData = storing.map { try? encoder.encode($0(fresh)) } ?? freshData
-                    if let storedData { await OfflineStore.shared.cachePut(key, storedData) }
+                    if let storedData {
+                        await OfflineStore.shared.cachePut(key, storedData)
+                        await adopted?(fresh)
+                    }
                     guard !Task.isCancelled else {
                         continuation.finish()
                         return
@@ -331,6 +340,7 @@ enum Cache {
         cachedData: Data?,
         storing: (@Sendable (T) -> T)? = nil,
         store: OfflineStore,
+        adopted: (@Sendable (T) async -> Void)? = nil,
         fetch: @Sendable () async throws -> T,
         into continuation: AsyncThrowingStream<CacheRead<T>, Error>.Continuation
     ) async throws {
@@ -352,6 +362,7 @@ enum Cache {
             var outcome = GuardedPut.stored
             if !queued, let storedData {
                 outcome = await store.cachePut(key, storedData, ifGeneration: generation)
+                if outcome == .stored { await adopted?(fresh) }
             }
             if queued || outcome == .moved {
                 guard !Task.isCancelled else { break }
@@ -458,10 +469,12 @@ enum Cache {
     static func settled<T: Codable & Sendable>(
         _ key: String,
         guardsWrites: Bool = false,
+        adopted: (@Sendable (T) async -> Void)? = nil,
         fetch: @escaping @Sendable () async throws -> T
     ) async throws -> T {
         var latest: T?
-        for try await read in live(key, guardsWrites: guardsWrites, fetch: fetch) { latest = read.value }
+        let reads = live(key, guardsWrites: guardsWrites, adopted: adopted, fetch: fetch)
+        for try await read in reads { latest = read.value }
         guard let latest else { throw APIError.offline }
         return latest
     }
@@ -470,15 +483,16 @@ enum Cache {
     /// it while someone waits: the settled answer if it lands in time, else the
     /// replica — on any failure too, not only an offline one, so a server
     /// mid-deploy can't hide what the device holds. Only with no replica does
-    /// it wait the read out; `nil` when that fails too. `guardsWrites`: see `live`.
+    /// it wait the read out; `nil` when that fails too. `guardsWrites`, `adopted`: see `live`.
     static func settled<T: Codable & Sendable>(
         _ key: String,
         within deadline: Duration,
         guardsWrites: Bool = false,
+        adopted: (@Sendable (T) async -> Void)? = nil,
         fetch: @escaping @Sendable () async throws -> T
     ) async -> T? {
         // Not cancelled on the deadline: the read goes on to refresh the replica.
-        let answer = Task { try? await settled(key, guardsWrites: guardsWrites, fetch: fetch) }
+        let answer = Task { try? await settled(key, guardsWrites: guardsWrites, adopted: adopted, fetch: fetch) }
         if let settled = await firstResult(of: answer, within: deadline) { return settled }
         if let replica: T = await read(key) { return replica }
         return await answer.value

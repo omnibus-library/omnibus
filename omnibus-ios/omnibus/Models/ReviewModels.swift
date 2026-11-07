@@ -257,7 +257,7 @@ extension [Review] {
     /// its place by `updatedAt`, or gone when it is deleted or notes alone.
     /// Held to the newest `limit`, as many as the server's list carries.
     func replacingReview(
-        of uuid: String, with review: Review?, limit: Int = SiriLibrary.reviewWindow
+        of uuid: String, with review: Review?, limit: Int = CacheKey.myReviewsLimit
     ) -> [Review] {
         var next = filter { $0.bookUUID != uuid }
         guard let review, review.isListed else { return next }

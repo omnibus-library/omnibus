@@ -57,13 +57,12 @@ enum SiriPlayback {
         let notPlayable = SiriError.notPlayable(title: found.displayTitle)
         guard DownloadManager.shared.canOpen(found, kind: .audio) else { throw notPlayable }
         let player = AudioPlayer.shared
-        let generation = player.loadGeneration
         await player.load(book: found)
         // A newer load may have taken the player over meanwhile.
         guard player.book?.uuid == found.uuid else { throw notPlayable }
-        // `load` keeps a failure in `error` rather than throwing it. Reusing the
-        // loaded item leaves the generation alone and `error` as an earlier
-        // failure left it, which says nothing about this resume.
-        guard player.loadGeneration == generation || player.error == nil else { throw notPlayable }
+        // `load` keeps a failure in `error` rather than throwing it, and a
+        // reused item keeps an earlier one: whether audio is on its way is
+        // the answer, for a fresh load and a reuse alike.
+        guard player.isPlayingOrStarting else { throw notPlayable }
     }
 }
