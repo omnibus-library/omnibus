@@ -150,6 +150,9 @@ mod prowlarr_indexer_status {
 mod prowlarr_search {
     use super::*;
 
+    /// Test time is production time divided by this, so a wait of 40 s is 400 ms here.
+    const SCALE: u32 = 100;
+
     async fn mount_search(server: &MockServer, response: ResponseTemplate) {
         Mock::given(method("GET"))
             .and(path("/api/v1/search"))
@@ -186,6 +189,26 @@ mod prowlarr_search {
         assert_eq!(found[0].categories, [7000, 7020]);
         assert_eq!(found[0].files, Some(1));
         assert_eq!(found[1].link, "magnet:?xt=urn:btih:abc");
+    }
+
+    #[tokio::test]
+    async fn search_reads_results_that_arrive_later_than_the_old_thirty_second_timeout() {
+        let server = MockServer::start().await;
+        let body = json!([
+            {"guid": "g1", "title": "Dracula epub", "downloadUrl": "http://prowlarr/1/download"},
+        ]);
+        let slow = ResponseTemplate::new(200)
+            .set_body_json(body)
+            .set_delay(Duration::from_secs(40) / SCALE);
+        mount_search(&server, slow).await;
+
+        let found = client_for(&server)
+            .search_within("Dracula Bram Stoker", SEARCH_TIMEOUT / SCALE)
+            .await
+            .unwrap();
+
+        let titles: Vec<&str> = found.iter().map(|r| r.title.as_str()).collect();
+        assert_eq!(titles, ["Dracula epub"]);
     }
 
     #[tokio::test]

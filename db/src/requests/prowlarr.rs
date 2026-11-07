@@ -18,8 +18,8 @@ use super::{check_status, http_client, ConnectionError, REQUEST_TIMEOUT};
 
 const SERVICE: &str = "Prowlarr";
 
-/// A search fans out to every indexer, so it gets longer than a status call.
-const SEARCH_TIMEOUT: Duration = Duration::from_secs(30);
+/// Prowlarr answers a search when its slowest indexer does, and 15-40 s is normal.
+const SEARCH_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// How long to leave Prowlarr alone after a 429 that names no `Retry-After`.
 const DEFAULT_COOLDOWN: Duration = Duration::from_secs(10 * 60);
@@ -175,11 +175,19 @@ impl Prowlarr {
     /// Search the book categories for `query`, such as `Dracula Bram Stoker`. Results with
     /// no title or no link to fetch them by are left out.
     pub async fn search(&self, query: &str) -> Result<Vec<ProwlarrRelease>, ConnectionError> {
+        self.search_within(query, SEARCH_TIMEOUT).await
+    }
+
+    async fn search_within(
+        &self,
+        query: &str,
+        timeout: Duration,
+    ) -> Result<Vec<ProwlarrRelease>, ConnectionError> {
         if self.cooling_down() {
             return Err(ConnectionError::RateLimited);
         }
         let params = [("query", query), ("categories", "7020"), ("type", "search")];
-        let raw: Vec<RawRelease> = self.get_with("search", &params, SEARCH_TIMEOUT).await?;
+        let raw: Vec<RawRelease> = self.get_with("search", &params, timeout).await?;
         Ok(raw
             .into_iter()
             .filter_map(RawRelease::into_release)
