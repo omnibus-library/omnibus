@@ -258,8 +258,9 @@ final class AppState {
         phase = .needsServer
         // The Home Screen is outside the app's sandbox, so a snapshot left
         // behind here keeps showing the previous server's books — titles and
-        // cover art — to whoever picks the phone up next.
+        // cover art — to whoever picks the phone up next. Spotlight likewise.
         await WidgetSnapshotWriter.shared.refresh()
+        await LibrarySpotlight.shared.refresh()
     }
 
     func signedIn(_ user: UserSummary) {
@@ -297,6 +298,7 @@ final class AppState {
         phase = .needsLogin
         // Same reason as `changeServer`: the widget survives the sign-out.
         await WidgetSnapshotWriter.shared.refresh()
+        await LibrarySpotlight.shared.refresh()
     }
 
     private func handleUnauthorized() {
@@ -307,7 +309,10 @@ final class AppState {
         // publishes the signed-out card. Without it the Home Screen keeps the
         // revoked session's titles and cover art until some *other* hook
         // happens to fire.
-        Task { await WidgetSnapshotWriter.shared.refresh() }
+        Task {
+            await WidgetSnapshotWriter.shared.refresh()
+            await LibrarySpotlight.shared.refresh()
+        }
     }
 }
 

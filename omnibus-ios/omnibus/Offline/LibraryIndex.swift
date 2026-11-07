@@ -128,6 +128,7 @@ actor LibraryIndex {
             Key.completedAt, String(Int64(Date().timeIntervalSince1970))
         )
         await pruneOrphanedDownloads()
+        await LibrarySpotlight.shared.refresh()
     }
 
     /// Drop downloads for books the library no longer has.

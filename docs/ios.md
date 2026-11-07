@@ -7,7 +7,7 @@ surface as the web client.
 
 Each Swift file opens with a header comment saying what it is for; print the
 file map from those headers with `just modules omnibus-ios/omnibus`. This page
-covers what no single file can: the second target, CarPlay, the release
+covers what no single file can: the second target, Siri, CarPlay, the release
 pipeline, the book page, and the reader's design.
 
 ## Widgets
@@ -54,6 +54,34 @@ background-refresh and book-close hooks), plus on every `bootstrap` exit path â€
 including the ones that end at the connect or login screen, since a widget
 outlives a sign-out and would otherwise keep showing the previous account's
 books.
+
+## Siri and Shortcuts
+
+`omnibus/Siri/` holds the App Intents that let Siri, the Shortcuts app and
+Spotlight reach the library. Siri can't call the MCP server, so these intents
+are the voice route to the same reads: what's in progress, progress in one
+book, resume or play an audiobook, open a book, and your review as text.
+
+- **In the main app, not an extension.** The token and the replica live in the
+  app's sandbox; an extension would need both moved to the App Group. An
+  intent can launch the app in the background with no window, so `SiriLibrary`
+  opens the store itself and never assumes `bootstrap` ran.
+- **Replica first, gated on a session.** Reads go through `Cache.settled`, so
+  they answer offline. The replica outlives a sign-out, so every answer checks
+  for a token first; offline with nothing cached is "can't reach your server",
+  never "nothing in progress".
+- **Locked phone:** playback intents are `.alwaysAllowed` (the car);
+  everything that reads reading state is `.requiresAuthentication`.
+- **Spotlight** (`LibrarySpotlight`) indexes book details only, re-indexed
+  after each completed mirror sync and cleared on sign-out, unauthorized and
+  server change. It also refreshes the App Shortcut parameters, which is how a
+  phrase naming a book learns titles.
+- **iOS 27's audio schema** (`AudiobookSchema.swift`) is what lets AI Siri
+  play an audiobook by name: an audiobook entity, an `IntentValueQuery` over
+  `AudioSearch`, and a `playAudio` intent. The books domain doesn't reach
+  Siri, so ebooks stay on the plain intents.
+- Free-form Siri AI questions and handing a review to Messages wait on Apple's
+  developer preview reaching the App Store.
 
 ## CarPlay
 

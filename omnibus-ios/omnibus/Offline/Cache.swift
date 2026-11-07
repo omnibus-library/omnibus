@@ -51,6 +51,8 @@ enum CacheKey {
     static func ratingsOthers(_ uuid: String) -> String { "ratings_others:\(uuid)" }
     /// `GET /api/reviews/{uuid}`: your review, notes included, and everyone else's.
     static func reviews(_ uuid: String) -> String { "reviews:\(uuid)" }
+    /// `GET /api/reviews/mine`: your own reviews across books, newest first.
+    static let myReviews = "my_reviews"
     static func readStatus(_ uuid: String) -> String { "read_status:\(uuid)" }
     static func stats(_ range: StatsRange) -> String { "stats:\(range.rawValue)" }
     /// `GET /api/library-size`. Unkeyed: the answer is library-wide, so there
@@ -122,7 +124,8 @@ enum OutboxScope {
         if let uuid = suffix(of: kind, after: "review:") {
             // Stars feed the stats summary's average and histogram, and a
             // book's reviews carry the household summary the stars move.
-            return key == CacheKey.reviews(uuid) || key.hasPrefix("stats:")
+            return key == CacheKey.reviews(uuid) || key == CacheKey.myReviews
+                || key.hasPrefix("stats:")
         }
         if let uuid = suffix(of: kind, after: "rating:") {
             // The pre-review stars write, still replayed for a device that

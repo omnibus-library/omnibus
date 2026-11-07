@@ -1595,6 +1595,18 @@ final class AudioPlayer {
         loadOwed(retrying: nil)
     }
 
+    /// Resume for a voice request: the book already loaded, else the most
+    /// recent audiobook if it can play right now. Answers the book it started.
+    func resumeLatest() async -> Book? {
+        if let book {
+            play()
+            return book
+        }
+        guard let target = await resumeTarget(failed: nil) else { return nil }
+        await load(book: target.book, fileID: target.fileID, known: target.known)
+        return target.book
+    }
+
     /// Load what a play with no player to start owes: `failed` again, else
     /// the most recent audiobook.
     ///
