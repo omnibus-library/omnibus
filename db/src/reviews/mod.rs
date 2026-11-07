@@ -128,9 +128,9 @@ pub async fn get_review(
     load_own(pool, user_id, &canonical).await
 }
 
-/// The reader's own reviews that have stars or text, newest stars or text change first, at
-/// most `limit` of them. A notes-only review, or one of a book no longer in the library, is
-/// skipped.
+/// The reader's own reviews that have stars or text, newest change to the public part —
+/// stars, text, spoiler flag — first, at most `limit` of them. A notes-only review, or one
+/// of a book no longer in the library, is skipped.
 pub async fn list_own_reviews(
     pool: &SqlitePool,
     user_id: i64,

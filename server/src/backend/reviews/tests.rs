@@ -336,14 +336,14 @@ async fn api_list_my_reviews_returns_your_reviews_newest_first_up_to_the_limit()
     let (app, _state, pool) = fixture().await;
     let (_, a) = seed_book_with_uuid(&pool, "/lib", "Book A").await;
     let (_, b) = seed_book_with_uuid(&pool, "/lib-b", "Book B").await;
-    let (_, token) = reader(&pool, "alice").await;
+    let (user, token) = reader(&pool, "alice").await;
     for (uuid, body) in [(&a, "First"), (&b, "Second")] {
         app.clone()
             .oneshot(patch(uuid, &token, serde_json::json!({ "body_md": body })))
             .await
             .unwrap();
     }
-    set_review_updated_at(&pool, &a, 1).await;
+    set_review_updated_at(&pool, user, &a, 1).await;
 
     let res = app
         .clone()

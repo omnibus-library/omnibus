@@ -717,8 +717,8 @@ async fn list_own_reviews_returns_only_the_readers_rated_or_written_reviews_newe
     update_review(&pool, other, &a, &text("Theirs"))
         .await
         .unwrap();
-    set_review_updated_at(&pool, &a, 100).await;
-    set_review_updated_at(&pool, &b, 200).await;
+    set_review_updated_at(&pool, user, &a, 100).await;
+    set_review_updated_at(&pool, user, &b, 200).await;
 
     let reviews = list_own_reviews(&pool, user, 10).await.unwrap();
 

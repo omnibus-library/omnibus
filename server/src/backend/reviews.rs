@@ -22,8 +22,8 @@ const MY_REVIEWS_LIMIT_CAP: i64 = 100;
 
 /// List your reviews
 ///
-/// Your own reviews with stars or text, private notes included, ordered by when their stars
-/// or text last changed, newest first. A review holding only private notes isn't listed, nor
+/// Your own reviews with stars or text, private notes included, ordered by when their stars,
+/// text or spoiler flag last changed, newest first. A review holding only private notes isn't listed, nor
 /// is one of a book no longer in the library.
 #[utoipa::path(
     get,
@@ -31,7 +31,7 @@ const MY_REVIEWS_LIMIT_CAP: i64 = 100;
     tag = "Reviews",
     params(MyReviewsQuery),
     responses(
-        (status = 200, description = "Your reviews, newest stars or text change first.", body = Vec<Review>),
+        (status = 200, description = "Your reviews, newest stars, text or spoiler flag change first.", body = Vec<Review>),
         (status = 400, description = "`limit` isn't a whole number."),
     ),
 )]
