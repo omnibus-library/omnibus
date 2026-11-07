@@ -205,6 +205,8 @@ private let laptopFold = Fold(frame: CGRect(x: 0, y: 463, width: 669, height: 25
     ) == 0)
     // An iPhone SE on its side: no inset anywhere, but its corners are square.
     #expect(BookDetailView.cornerClearance(insets: EdgeInsets(), sideBar: nil) == 0)
+    // The Duo closed on its side: the bars run down a side and no status bar shows, so no edge is inset.
+    #expect(BookDetailView.cornerClearance(insets: EdgeInsets(), sideBar: .trailing) == drop)
     // A side bar under a top inset: the status bar's inset already guards both corners.
     #expect(BookDetailView.cornerClearance(
         insets: EdgeInsets(top: 24, leading: 0, bottom: 20, trailing: 64), sideBar: .trailing
