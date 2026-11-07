@@ -48,7 +48,10 @@ struct SideRail<Content: View>: View {
         ScrollView(.horizontal) { content }
             .defaultScrollAnchor(anchor)
             .scrollIndicators(.hidden)
-            .padding(outsetEdges, -outset)
+            // Inside the outset, so the fade measures the row at its full
+            // reach: outside, it saw a frame stopping short of the column and
+            // let the row run on beneath the bar.
             .endsAtSideBar()
+            .padding(outsetEdges, -outset)
     }
 }
