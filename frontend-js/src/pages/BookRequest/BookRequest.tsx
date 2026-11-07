@@ -54,6 +54,7 @@ import {
   pickedVersion,
   progressPercent,
   type RequestStep,
+  SEARCH_SLOW_AFTER_SECS,
   SEARCH_STALE_AFTER_SECS,
   SEP,
   splitBookRequests,
@@ -502,6 +503,12 @@ function Stuck({
 const useSearchStale = (updatedAt: number) =>
   isSearchStale(updatedAt, useNowPast(updatedAt + SEARCH_STALE_AFTER_SECS));
 
+/** Whether a search that began at `updatedAt` has run long enough to say it is still going; re-checked when it would turn so. */
+const useSearchSlow = (updatedAt: number) => {
+  const deadline = updatedAt + SEARCH_SLOW_AFTER_SECS;
+  return useNowPast(deadline) >= deadline;
+};
+
 /** The wait for a search, with a way out once it has run past its timeout. */
 function Looking({
   request,
@@ -512,12 +519,13 @@ function Looking({
   canAct: boolean;
   onTried: () => void;
 }) {
+  const slow = useSearchSlow(request.updatedAt);
   const stale = useSearchStale(request.updatedAt);
   return (
     <>
       <Loading
         kind="section"
-        label="Looking for versions…"
+        label={slow ? "Still asking the indexers…" : "Looking for versions…"}
         testId="request-looking"
       />
       {stale && canAct && (

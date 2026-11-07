@@ -243,9 +243,9 @@ describe("firstShown", () => {
 });
 
 describe("isSearchStale", () => {
-  it("turns true at sixty seconds and not a second before", () => {
-    expect(isSearchStale(1000, 1059)).toBe(false);
-    expect(isSearchStale(1000, 1060)).toBe(true);
+  it("turns true at a hundred and fifty seconds and not a second before", () => {
+    expect(isSearchStale(1000, 1149)).toBe(false);
+    expect(isSearchStale(1000, 1150)).toBe(true);
   });
 });
 

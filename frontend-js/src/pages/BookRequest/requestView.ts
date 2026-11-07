@@ -210,8 +210,11 @@ export function startFailure(error: unknown): string {
   }
 }
 
-/** How long a search may run before its request offers Try again: past the server's 30 s timeout. */
-export const SEARCH_STALE_AFTER_SECS = 60;
+/** How long a search runs before its lane says it is still asking the indexers. */
+export const SEARCH_SLOW_AFTER_SECS = 20;
+
+/** How long a search may run before its request offers Try again: past the server's 120 s timeout. */
+export const SEARCH_STALE_AFTER_SECS = 150;
 
 /** Whether a search that began at `updatedAt` (Unix seconds) has run past its timeout by `now`. */
 export const isSearchStale = (updatedAt: number, now: number) =>

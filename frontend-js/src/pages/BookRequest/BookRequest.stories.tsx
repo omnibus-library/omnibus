@@ -13,7 +13,11 @@ import {
 import { WIRE_ADA } from "../../testing/wire";
 import { Requests } from "../Requests/Requests";
 import { PHONE } from "../Wishlists/Wishlists.stories.shared";
-import { FROM_WISHLISTS } from "./requestView";
+import {
+  FROM_WISHLISTS,
+  SEARCH_SLOW_AFTER_SECS,
+  SEARCH_STALE_AFTER_SECS,
+} from "./requestView";
 
 const UUID = HYPERION.unique_identifier;
 
@@ -135,6 +139,10 @@ const seed = (request: Parameters<typeof aWireRequest>[0]) => {
 };
 
 export const Looking: Story = {
+  beforeEach({ msw }) {
+    // The clock, not NOW: the lane turns "still asking" 20 s after updated_at, and NOW ages as the file runs.
+    msw.use(...seed({ updated_at: Math.floor(Date.now() / 1000) }));
+  },
   play: async ({ canvas }) => {
     await expect(
       await canvas.findByRole("heading", { level: 2, name: "Hyperion" }),
@@ -147,6 +155,35 @@ export const Looking: Story = {
     await expect(waiting).toHaveAttribute("role", "status");
     await expect(waiting).toHaveTextContent("Looking for versions");
     await expect(canvas.queryByTestId("request-version")).toBeNull();
+  },
+};
+
+export const ASlowSearchSaysItIsStillAskingTheIndexers: Story = {
+  beforeEach({ msw }) {
+    const realNow = Date.now;
+    // A whole second, so updated_at lands one second short of slow; a hand-set clock because Storybook's spy recurses through Date.now.
+    const frozen = Math.floor(realNow() / 1000) * 1000;
+    msw.use(
+      ...seed({ updated_at: frozen / 1000 - (SEARCH_SLOW_AFTER_SECS - 1) }),
+    );
+    Date.now = () => frozen;
+    return () => {
+      Date.now = realNow;
+    };
+  },
+  play: async ({ canvas }) => {
+    const waiting = await canvas.findByTestId("request-looking");
+    await expect(waiting).toHaveTextContent("Looking for versions…");
+
+    const frozen = Date.now();
+    Date.now = () => frozen + 2000;
+
+    // The timer fires about two seconds later in real time and reads the moved clock.
+    await waitFor(
+      () => expect(waiting).toHaveTextContent("Still asking the indexers…"),
+      { timeout: 4000 },
+    );
+    await expect(canvas.queryByTestId("request-try-again")).toBeNull();
   },
 };
 
@@ -825,7 +862,7 @@ export const AnUnknownRequestShowsTheErrorWithAWayBack: Story = {
   },
 };
 
-const OLD = Math.floor(Date.now() / 1000) - 120;
+const OLD = Math.floor(Date.now() / 1000) - SEARCH_STALE_AFTER_SECS - 5;
 const NOT_THE_MAKER = { ...ADA, id: 2, is_admin: false };
 
 export const ALongRunningSearchOffersTryAgain: Story = {
