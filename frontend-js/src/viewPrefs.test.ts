@@ -8,6 +8,7 @@ import {
   lastLibrary,
   loadDiscoveryPrefs,
   loadPrefs,
+  loadRequestFolds,
   loadShelfSelection,
   type Prefs,
   reconcile,
@@ -301,5 +302,26 @@ describe("handoffClauses", () => {
     ["a clause the filter would refuse", { clauses: [{ field: "nope" }] }],
   ])("returns null for %s", (_condition, state) => {
     expect(handoffClauses(state)).toBeNull();
+  });
+});
+
+describe("loadRequestFolds", () => {
+  it("reads the stored map of folded groups", () => {
+    localStorage.setItem(
+      "omnibus.requests_folds",
+      '{"looking":true,"cancelled":false}',
+    );
+
+    expect(loadRequestFolds()).toEqual({ looking: true, cancelled: false });
+  });
+
+  it.each([
+    ["nothing stored", null],
+    ["unparsable JSON", "{"],
+    ["a map of something else", '{"looking":"yes"}'],
+  ])("reads %s as no folds", (_case, stored) => {
+    if (stored !== null) localStorage.setItem("omnibus.requests_folds", stored);
+
+    expect(loadRequestFolds()).toEqual({});
   });
 });

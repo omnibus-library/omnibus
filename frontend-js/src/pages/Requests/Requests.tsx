@@ -4,11 +4,16 @@ import { Link, useLocation, useSearchParams } from "react-router";
 import { type RequestListing, requestsQuery, thumbUrl } from "../../api";
 import { Button } from "../../components/Button/Button";
 import { Cover } from "../../components/Cover/Cover";
+import {
+  ChevronDownGlyph,
+  ChevronRightGlyph,
+} from "../../components/Glyphs/Glyphs";
 import { Loading, RowSkeletons } from "../../components/Loading/Loading";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
 import { ToastProvider } from "../../components/Toast/Toast";
 import { useCurrentUser } from "../../session";
 import { PHONE_QUERY, useMediaQuery } from "../../useMediaQuery";
+import { loadRequestFolds, saveRequestFolds } from "../../viewPrefs";
 import { RequestDossier } from "../BookRequest/BookRequest";
 import type { DossierVariant } from "../BookRequest/RequestHistory";
 import { requestPath } from "../BookRequest/requestView";
@@ -78,30 +83,50 @@ function Groups({
   phone: boolean;
   onSelect: () => void;
 }) {
-  return groups.map((group) => (
-    <section
-      key={group.key}
-      className="rqs-group"
-      aria-labelledby={`rqs-group-${group.key}`}
-      data-testid={`requests-group-${group.key}`}
-    >
-      <h2 id={`rqs-group-${group.key}`} className="rqs-group-label">
-        {group.label}
-      </h2>
-      <ul className="rqs-items">
-        {group.items.map((listing) => (
-          <Item
-            key={listing.book.uuid}
-            listing={listing}
-            group={group.key}
-            selected={!phone && listing.book.uuid === selected}
-            phone={phone}
-            onSelect={onSelect}
-          />
-        ))}
-      </ul>
-    </section>
-  ));
+  const [folds, setFolds] = useState(loadRequestFolds);
+  const toggle = (key: RequestGroupKey, folded: boolean) => {
+    const next = { ...folds, [key]: !folded };
+    setFolds(next);
+    saveRequestFolds(next);
+  };
+  return groups.map((group) => {
+    const folded = folds[group.key] ?? false;
+    return (
+      <section
+        key={group.key}
+        className="rqs-group"
+        aria-labelledby={`rqs-group-${group.key}`}
+        data-testid={`requests-group-${group.key}`}
+      >
+        <h2 className="rqs-group-label">
+          <button
+            type="button"
+            className="rqs-group-toggle"
+            aria-expanded={!folded}
+            aria-controls={`rqs-items-${group.key}`}
+            onClick={() => toggle(group.key, folded)}
+          >
+            {folded ? <ChevronRightGlyph /> : <ChevronDownGlyph />}
+            <span id={`rqs-group-${group.key}`}>{group.label}</span>{" "}
+            <span className="rqs-group-count">{group.items.length}</span>
+          </button>
+        </h2>
+        <ul id={`rqs-items-${group.key}`} className="rqs-items" hidden={folded}>
+          {!folded &&
+            group.items.map((listing) => (
+              <Item
+                key={listing.book.uuid}
+                listing={listing}
+                group={group.key}
+                selected={!phone && listing.book.uuid === selected}
+                phone={phone}
+                onSelect={onSelect}
+              />
+            ))}
+        </ul>
+      </section>
+    );
+  });
 }
 
 function Empty() {
