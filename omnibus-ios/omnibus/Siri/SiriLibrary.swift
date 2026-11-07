@@ -94,8 +94,7 @@ enum SiriLibrary {
     }
 
     /// The newer of this device's position and the server's, as the player
-    /// opens on: another device may have read further. A server row naming
-    /// no place doesn't override one this device holds.
+    /// opens on: another device may have read further.
     private static func record(uuid: String, format: ProgressFormat) async -> ProgressRecord? {
         let local = await UserDataService.localProgress(uuid: uuid, format: format)
         let fetched: ProgressRecord?? = await Cache.settled(
@@ -106,19 +105,25 @@ enum SiriLibrary {
             )
             return progress?.record(for: format)
         }
-        guard let server = fetched ?? nil else { return local }
+        return merged(local: local, server: fetched ?? nil)
+    }
+
+    /// The newer of `local` and `server`. A server row naming no place doesn't
+    /// override one this device holds.
+    static func merged(local: ProgressRecord?, server: ProgressRecord?) -> ProgressRecord? {
+        guard let server else { return local }
         guard let local, PositionSync.carriesPosition(server) else { return local ?? server }
         return PositionSync.newest(local, server)
     }
 
     /// Whether the book is marked finished, the cached status past the deadline.
     private static func isFinished(uuid: String) async -> Bool {
-        let read = Task { await UserDataService.storedReadStatus(uuid: uuid) }
-        if let status = await firstResult(of: read, within: PositionSync.openDeadline) {
-            return status == .finished
+        let record: ReadStatusRecord? = await Cache.settled(
+            CacheKey.readStatus(uuid), within: PositionSync.openDeadline
+        ) {
+            try await UserDataService.fetchReadStatus(uuid: uuid)
         }
-        let cached: ReadStatusRecord? = await Cache.cachedOnly(CacheKey.readStatus(uuid))
-        return cached?.status == .finished
+        return record?.status == .finished
     }
 
     /// Your review of one book; notes alone are no review.

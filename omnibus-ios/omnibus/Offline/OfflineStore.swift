@@ -1452,13 +1452,14 @@ actor OfflineStore {
     /// `CacheKey` can mint against `isUserScoped` so the next one can't slip
     /// through the same gap.
     ///
-    /// `reviews:` holds the reader's private notes beside what every reader
-    /// can see.
+    /// `reviews:` and `my_reviews` hold the reader's private notes beside what
+    /// every reader can see.
     static let userScopedPrefixes = [
         "me", "progress:", "recent_progress", "recent_audio", "rate:", "highlights:",
         "bookmarks:", "journals:", "rating:", "ratings_others:", "shelves", "shelf:",
         "shelf_page:", "shelf_previews", "stats:", "reader_cfi:", "audio_pos:",
         "audio_rate:", "read_status:", "shelves_with:", "syncprompt:", "reviews:",
+        "my_reviews",
     ]
 
     /// Whether the account-switch wipe removes `key`: a user-scoped prefix, or

@@ -79,7 +79,7 @@ actor ShortcutParameters {
     /// The rail's books when the parameters were last offered; `nil` until then.
     private var offered: Set<String>?
 
-    /// The cached rail now holds `points`.
+    /// The cached rail now holds `points`; call it only once they are stored.
     func railChanged(_ points: [ResumePoint]) async {
         let books = Set(points.map(\.book.uuid))
         guard books != offered else { return }

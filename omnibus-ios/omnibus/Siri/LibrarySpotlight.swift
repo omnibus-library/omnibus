@@ -77,15 +77,26 @@ actor LibrarySpotlight {
                 offset += batchSize
             }
         } catch {
-            // A failed pass still left these in the index; the next one must know.
-            await storeIndexedIDs(previous.union(indexed))
+            await storeIndexedIDs(settle(previous: previous, indexed: indexed, completed: false).recorded)
             throw error
         }
-        let stale = previous.subtracting(indexed)
-        if !stale.isEmpty {
-            try await index.deleteAppEntities(identifiedBy: Array(stale), ofType: BookEntity.self)
+        let settled = settle(previous: previous, indexed: indexed, completed: true)
+        if !settled.stale.isEmpty {
+            try await index.deleteAppEntities(identifiedBy: settled.stale.sorted(), ofType: BookEntity.self)
         }
-        await storeIndexedIDs(indexed)
+        await storeIndexedIDs(settled.recorded)
+    }
+
+    /// What a pass that indexed `indexed` over a last pass's `previous`
+    /// leaves: the ids to drop from Spotlight, and the ids to record as in it.
+    /// Only a completed pass knows what left the mirror; a failed one still
+    /// left both sets in the index, and the next pass must know.
+    static func settle(
+        previous: Set<String>, indexed: Set<String>, completed: Bool
+    ) -> (stale: Set<String>, recorded: Set<String>) {
+        completed
+            ? (previous.subtracting(indexed), indexed)
+            : ([], previous.union(indexed))
     }
 
     private static func clear(_ index: CSSearchableIndex) async throws {

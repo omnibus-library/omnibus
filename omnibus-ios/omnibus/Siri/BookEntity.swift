@@ -67,9 +67,12 @@ struct BookEntityQuery: EntityStringQuery {
         return await SiriLibrary.search(spoken: string, limit: Self.matchLimit).map(BookEntity.init)
     }
 
-    /// The Continue rail: what someone is most likely to name.
+    /// The Continue rail: what someone is most likely to name. The replica's
+    /// only: a rail change re-offers it once stored, and asking the server
+    /// here would race that store.
     func suggestedEntities() async throws -> [BookEntity] {
         guard await SiriLibrary.readiness() == .ready else { return [] }
-        return (await SiriLibrary.currentlyReading() ?? []).map { BookEntity($0.book) }
+        let rail: [ResumePoint]? = await Cache.cachedOnly(CacheKey.recentProgress)
+        return (rail ?? []).map { BookEntity($0.book) }
     }
 }

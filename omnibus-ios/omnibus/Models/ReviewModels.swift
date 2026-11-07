@@ -255,12 +255,15 @@ extension Review {
 extension [Review] {
     /// Your reviews list, newest first, once `uuid`'s review is `review`: in
     /// its place by `updatedAt`, or gone when it is deleted or notes alone.
-    func replacingReview(of uuid: String, with review: Review?) -> [Review] {
+    /// Held to the newest `limit`, as many as the server's list carries.
+    func replacingReview(
+        of uuid: String, with review: Review?, limit: Int = SiriLibrary.reviewWindow
+    ) -> [Review] {
         var next = filter { $0.bookUUID != uuid }
         guard let review, review.isListed else { return next }
         let slot = next.firstIndex { $0.updatedAt <= review.updatedAt } ?? next.endIndex
         next.insert(review, at: slot)
-        return next
+        return Array(next.prefix(limit))
     }
 }
 

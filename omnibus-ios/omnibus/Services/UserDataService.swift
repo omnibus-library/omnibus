@@ -139,13 +139,30 @@ enum UserDataService {
         fetch: @escaping @Sendable () async throws -> [ResumePoint]
     ) -> AsyncThrowingStream<CacheRead<[ResumePoint]>, Error> {
         switch subject {
-        case .you:
-            Cache.live(CacheKey.recentProgress) {
-                let points = try await fetch()
-                await ShortcutParameters.shared.railChanged(points)
-                return points
-            }
+        case .you: offeringRail(Cache.live(CacheKey.recentProgress, fetch: fetch))
         case .reader: Cache.uncached(fetch: fetch)
+        }
+    }
+
+    /// `reads` passed through, each rail re-offered to Siri once it goes out:
+    /// by then the replica holds it, and the replica is what Siri's
+    /// suggestions read back.
+    private static func offeringRail(
+        _ reads: AsyncThrowingStream<CacheRead<[ResumePoint]>, Error>
+    ) -> AsyncThrowingStream<CacheRead<[ResumePoint]>, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    for try await read in reads {
+                        continuation.yield(read)
+                        await ShortcutParameters.shared.railChanged(read.value)
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
         }
     }
 
@@ -361,7 +378,11 @@ enum UserDataService {
               await canAdoptServerState(for: key),
               let data = try? JSONEncoder().encode(fresh)
         else { return }
-        await OfflineStore.shared.cachePut(key, data, ifGeneration: generation)
+        guard await OfflineStore.shared.cachePut(key, data, ifGeneration: generation) == .stored
+        else { return }
+        // The list patched the write in too, and a refused write lives on
+        // there unless the server's answer replaces it.
+        await patchMyReviews(uuid, from: fresh)
     }
 
     /// Apply a change to the cached reviews in one store step, so a stars tap
@@ -384,6 +405,14 @@ enum UserDataService {
         }
         guard let stored, let reviews = try? JSONDecoder().decode(BookReviews.self, from: stored)
         else { return }
+        await patchMyReviews(uuid, from: reviews, in: store)
+    }
+
+    /// Put `reviews.mine` in its place in your cached reviews list, a local
+    /// write's or the server's. With no list cached there is nothing to patch.
+    static func patchMyReviews(
+        _ uuid: String, from reviews: BookReviews, in store: OfflineStore = .shared
+    ) async {
         await store.cacheUpdate(CacheKey.myReviews) { data in
             guard let data, let list = try? JSONDecoder().decode([Review].self, from: data)
             else { return nil }
@@ -403,12 +432,13 @@ enum UserDataService {
     static func readStatus(
         uuid: String
     ) -> AsyncThrowingStream<CacheRead<ReadStatusRecord>, Error> {
-        Cache.live(CacheKey.readStatus(uuid)) {
-            let record: ReadStatusRecord? = try await APIClient.shared.get(
-                "/api/read-status/\(uuid)"
-            )
-            return record ?? .unmarked(uuid: uuid)
-        }
+        Cache.live(CacheKey.readStatus(uuid)) { try await fetchReadStatus(uuid: uuid) }
+    }
+
+    /// The server's status for a book, unmarked when it holds none.
+    static func fetchReadStatus(uuid: String) async throws -> ReadStatusRecord {
+        let record: ReadStatusRecord? = try await APIClient.shared.get("/api/read-status/\(uuid)")
+        return record ?? .unmarked(uuid: uuid)
     }
 
     /// The stored status the readers' auto transitions decide against.

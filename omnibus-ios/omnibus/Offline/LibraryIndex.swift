@@ -82,10 +82,12 @@ actor LibraryIndex {
     ///
     /// Safe to call on every foreground — it no-ops while one pass is running
     /// and while the last completed one is recent. `force` is for the
-    /// pull-to-refresh path, where the reader has explicitly asked.
-    func sync(force: Bool = false) async {
-        guard !syncing else { return }
-        if !force, await recentlySynced() { return }
+    /// pull-to-refresh path, where the reader has explicitly asked. Answers
+    /// whether this call completed a pass, which also refreshes Spotlight.
+    @discardableResult
+    func sync(force: Bool = false) async -> Bool {
+        guard !syncing else { return false }
+        if !force, await recentlySynced() { return false }
         syncing = true
         defer { syncing = false }
 
@@ -99,7 +101,7 @@ actor LibraryIndex {
                 // Unreachable, or the server gave up part-way. Keep what this
                 // pass has fetched — it resumes from `cursor` next time.
                 await handleInterruption()
-                return
+                return false
             }
 
             await OfflineStore.shared.appendStagedBooks(Self.rows(for: page.value.books))
@@ -119,7 +121,7 @@ actor LibraryIndex {
         // bound would be dropped from the mirror on each sync.
         guard exhausted else {
             await handleInterruption()
-            return
+            return false
         }
 
         await OfflineStore.shared.promoteCompletedStaging()
@@ -131,6 +133,7 @@ actor LibraryIndex {
         // Not awaited: pull-to-refresh and the widget refresh wait on `sync`,
         // and a whole-library index pass is nothing they need.
         Task { await LibrarySpotlight.shared.refresh() }
+        return true
     }
 
     /// Drop downloads for books the library no longer has.
@@ -382,7 +385,9 @@ actor LibraryIndex {
     /// pass knows whether more remain.
     func allBooks(limit: Int, offset: Int) async -> (books: [Book], rows: Int) {
         let payloads = await OfflineStore.shared.bookPayloads(
-            whereClause: "", orderClause: Self.order(sort: .title, direction: .asc), bindings: [],
+            // uuid breaks title ties, so offset paging neither skips nor repeats a row.
+            whereClause: "", orderClause: Self.order(sort: .title, direction: .asc) + ", uuid ASC",
+            bindings: [],
             limit: limit, offset: offset
         )
         return (Self.decode(payloads), payloads.count)
@@ -393,12 +398,19 @@ actor LibraryIndex {
     /// match landed — a title hit is what the reader meant far more often
     /// than a subject hit.
     func search(_ query: String, limit: Int = 50, formats: [String] = []) async -> [Book] {
+        await Self.search(query, in: .shared, limit: limit, formats: formats)
+    }
+
+    /// `search` against `store`, which the suite injects.
+    static func search(
+        _ query: String, in store: OfflineStore, limit: Int = 50, formats: [String] = []
+    ) async -> [Book] {
         let needle = query.trimmingCharacters(in: .whitespaces).lowercased()
         guard !needle.isEmpty else { return [] }
         let pattern = "%\(Self.escapeLike(needle))%"
         let (formatClause, formatBindings) = Self.predicate(for: LibraryFilter(formats: formats))
 
-        let payloads = await OfflineStore.shared.bookPayloads(
+        let payloads = await store.bookPayloads(
             whereClause: "search_text LIKE ? ESCAPE '\\'"
                 + (formatClause.isEmpty ? "" : " AND \(formatClause)"),
             orderClause: """

@@ -178,6 +178,36 @@ private func review(
     #expect(held.map(\.bookUUID) == ["new"])
 }
 
+@Test func replacingAReviewKeepsOnlyTheNewestWindowOfReviews() {
+    let list = (1...3).map { review(uuid: "b\($0)", stars: 3, updatedAt: Int64(100 * $0)) }.reversed()
+    let added = Array(list).replacingReview(of: "new", with: review(uuid: "new", stars: 5, updatedAt: 400), limit: 3)
+    #expect(added.map(\.bookUUID) == ["new", "b3", "b2"])
+    let full = (0..<SiriLibrary.reviewWindow).map { review(uuid: "r\($0)", stars: 4, updatedAt: 1000 - Int64($0)) }
+    #expect(full.replacingReview(of: "new", with: review(uuid: "new", stars: 1, updatedAt: 2000)).count
+        == SiriLibrary.reviewWindow)
+}
+
+@Test func theServersReviewsReplaceARefusedWriteInTheListOfYourReviews() async throws {
+    let (store, file) = await scratchStore(filePrefix: "my-reviews")
+    defer { try? FileManager.default.removeItem(atPath: file) }
+    let kept = review(uuid: "kept", body: "Fine.", updatedAt: 100)
+    await store.cachePut(CacheKey.myReviews, try JSONEncoder().encode([kept]))
+    await UserDataService.mutateLocalReviews("refused", in: store) {
+        $0 = $0.applying(.stars(4), uuid: "refused", now: 200)
+    }
+
+    // The server refused the write, so its page for the book holds no review of yours.
+    await UserDataService.patchMyReviews("refused", from: .empty, in: store)
+    var held = try JSONDecoder().decode([Review].self, from: try #require(await store.cacheGet(CacheKey.myReviews)))
+    #expect(held.map(\.bookUUID) == ["kept"])
+
+    // Or it kept an older review the write would have replaced.
+    let older = BookReviews(mine: review(uuid: "kept", stars: 2, updatedAt: 50), others: [], summary: nil)
+    await UserDataService.patchMyReviews("kept", from: older, in: store)
+    held = try JSONDecoder().decode([Review].self, from: try #require(await store.cacheGet(CacheKey.myReviews)))
+    #expect(held.map(\.stars) == [2])
+}
+
 @Test func aLocalReviewWriteLeavesAnUncachedListOfYourReviewsAlone() async throws {
     let (store, file) = await scratchStore(filePrefix: "my-reviews")
     defer { try? FileManager.default.removeItem(atPath: file) }
@@ -202,6 +232,60 @@ private func review(
     #expect(OutboxScope.isBlocked(CacheKey.myReviews, by: [OpKind.review("book-1")]))
     #expect(!OutboxScope.isBlocked(CacheKey.myReviews, by: [OpKind.progress("book-1", .epub)]))
     #expect(OutboxScope.isBlocked(CacheKey.myReviews, by: [OpKind.rating("book-1")]))
+}
+
+@Test func mergedPositionTakesTheNewerOfThisDevicesAndTheServers() {
+    var local = ProgressRecord(bookUUID: "dune", format: .epub, updatedAt: 100, clientUpdatedAt: 100)
+    local.progressPercent = 30
+    var ahead = ProgressRecord(bookUUID: "dune", format: .epub, updatedAt: 200, clientUpdatedAt: 200)
+    ahead.progressPercent = 60
+    var behind = ProgressRecord(bookUUID: "dune", format: .epub, updatedAt: 50, clientUpdatedAt: 50)
+    behind.progressPercent = 10
+    #expect(SiriLibrary.merged(local: local, server: ahead)?.progressPercent == 60)
+    #expect(SiriLibrary.merged(local: local, server: behind)?.progressPercent == 30)
+    #expect(SiriLibrary.merged(local: nil, server: ahead)?.progressPercent == 60)
+    #expect(SiriLibrary.merged(local: local, server: nil)?.progressPercent == 30)
+}
+
+@Test func mergedPositionKeepsThisDevicesPlaceOverANewerServerRowNamingNone() {
+    var local = ProgressRecord(bookUUID: "dune", format: .epub, updatedAt: 100, clientUpdatedAt: 100)
+    local.progressPercent = 30
+    let empty = ProgressRecord(bookUUID: "dune", format: .epub, updatedAt: 200, clientUpdatedAt: 200)
+    #expect(SiriLibrary.merged(local: local, server: empty)?.progressPercent == 30)
+    #expect(SiriLibrary.merged(local: nil, server: empty)?.updatedAt == 200)
+}
+
+@Test func aCompletedSpotlightPassDropsOnlyTheBooksThatLeftTheMirror() {
+    let settled = LibrarySpotlight.settle(previous: ["a", "b", "c"], indexed: ["b", "c", "d"], completed: true)
+    #expect(settled.stale == ["a"])
+    #expect(settled.recorded == ["b", "c", "d"])
+}
+
+@Test func aFailedSpotlightPassDropsNothingAndRemembersEveryIndexedBook() {
+    let settled = LibrarySpotlight.settle(previous: ["a", "b"], indexed: ["c"], completed: false)
+    #expect(settled.stale.isEmpty)
+    #expect(settled.recorded == ["a", "b", "c"])
+}
+
+@Test func searchHoldsEveryMatchToTheNamedFormats() async throws {
+    let library = [
+        book(uuid: "hobbit-e", title: "The Hobbit", formats: ["epub"]),
+        book(uuid: "hobbit-a", title: "The Hobbit Read Aloud", formats: ["m4b"]),
+        book(uuid: "hobbit-both", title: "The Hobbit Illustrated", formats: ["epub", "m4b"]),
+        book(uuid: "dune", title: "Dune", formats: ["m4b"]),
+    ]
+    let (store, path) = try await scratchMirror(library, filePrefix: "siri-search")
+    defer { try? FileManager.default.removeItem(atPath: path) }
+
+    let audio = await LibraryIndex.search("hobbit", in: store, formats: ["m4b"])
+    #expect(Set(audio.map(\.uuid)) == ["hobbit-a", "hobbit-both"])
+    // The format bindings sit between the match and the ranking ones: an exact
+    // title still ranks first with a filter on.
+    let exact = await LibraryIndex.search("the hobbit", in: store, formats: ["epub"])
+    #expect(exact.map(\.uuid).first == "hobbit-e")
+    #expect(Set(exact.map(\.uuid)) == ["hobbit-e", "hobbit-both"])
+    let unfiltered = await LibraryIndex.search("hobbit", in: store)
+    #expect(unfiltered.count == 3)
 }
 
 @Test func positionPrefersTheContinueCardElseTheNewestRecord() {

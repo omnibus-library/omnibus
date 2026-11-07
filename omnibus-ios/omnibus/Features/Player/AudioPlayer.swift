@@ -206,7 +206,8 @@ final class AudioPlayer {
     /// seeks. `teardown()` separately zeroes the count itself — without that,
     /// a seek abandoned mid-flight would leave it permanently elevated, since
     /// this guard is precisely what stops that seek from ever decrementing it.
-    private var loadGeneration = 0
+    /// Readable so a caller can tell a fresh load from a reuse of the loaded item.
+    private(set) var loadGeneration = 0
 
     /// Chapter geometry for the book that's open. Rebuilt once per load — every
     /// lookup on it runs off a half-second time observer, so it can't afford to

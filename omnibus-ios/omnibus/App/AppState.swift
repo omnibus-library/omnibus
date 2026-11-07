@@ -276,13 +276,15 @@ final class AppState {
         // anything has been written and publishes the "No books yet" card to an
         // account with a full library — where it would sit until the next
         // foreground.
+        //
+        // Sign-out emptied Spotlight, and a completed pass refills it. One that
+        // doesn't complete still leaves a mirror kept from before the sign-out
+        // to index — after the pass, so it doesn't page the mirror mid-swap.
         Task {
-            await LibraryIndex.shared.sync(force: true)
+            let completed = await LibraryIndex.shared.sync(force: true)
             await WidgetSnapshotWriter.shared.refresh()
+            if !completed { await LibrarySpotlight.shared.refresh() }
         }
-        // Sign-out emptied Spotlight, and the pass above refills it only if
-        // it completes; a mirror kept from before the sign-out is indexable now.
-        Task { await LibrarySpotlight.shared.refresh() }
     }
 
     /// Sign out, pushing anything still queued first.
