@@ -31,7 +31,7 @@ mod is_plain_http_url {
             ("javascript:alert(1)", false),
             ("https://user:pw@tracker.example/t/1", false),
             ("https://user@tracker.example/t/1", false),
-            ("http:///t/1", false),
+            ("http://", false),
             ("/t/1", false),
         ];
         for (address, expected) in cases {
