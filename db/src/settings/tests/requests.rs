@@ -20,6 +20,26 @@ fn update() -> RequestsSettingsUpdate {
     }
 }
 
+mod is_plain_http_url {
+    use super::*;
+
+    #[test]
+    fn accepts_only_an_http_or_https_address_with_a_host_and_no_login() {
+        let cases = [
+            ("http://tracker.example/t/1", true),
+            ("https://tracker.example/t/1", true),
+            ("javascript:alert(1)", false),
+            ("https://user:pw@tracker.example/t/1", false),
+            ("https://user@tracker.example/t/1", false),
+            ("http:///t/1", false),
+            ("/t/1", false),
+        ];
+        for (address, expected) in cases {
+            assert_eq!(is_plain_http_url(address), expected, "{address}");
+        }
+    }
+}
+
 mod set_requests_settings {
     use super::*;
 

@@ -111,26 +111,43 @@ struct RawCategory {
     id: i64,
 }
 
-/// Query parameters that carry a login, in lower case.
-const KEY_PARAMS: [&str; 3] = ["apikey", "passkey", "api_key"];
+/// Parameter names that carry a login, in lower case.
+const KEY_PARAMS: [&str; 7] = [
+    "apikey",
+    "passkey",
+    "api_key",
+    "authkey",
+    "torrent_pass",
+    "rsskey",
+    "token",
+];
 
-/// `page` when it is a plain web address that is neither on `prowlarr_base`'s host nor carries a key.
-fn shown_page(page: Option<String>, prowlarr_base: &str) -> Option<String> {
+/// Whether the query or fragment of `url` holds a login parameter, `;` counting as a separator too.
+// shortcut: keys carried in the URL path aren't detected, widen if an indexer is seen doing it
+fn carries_a_key(url: &reqwest::Url) -> bool {
+    [url.query(), url.fragment()]
+        .into_iter()
+        .flatten()
+        .flat_map(|part| part.split(['&', ';']))
+        .any(|pair| {
+            let name = pair.split('=').next().unwrap_or_default();
+            let name = urlencoding::decode(name).unwrap_or_default().to_lowercase();
+            KEY_PARAMS.contains(&name.as_str())
+        })
+}
+
+/// `page` when it is a plain web address that is neither on `prowlarr_host` nor carries a key.
+fn shown_page(page: Option<String>, prowlarr_host: Option<&str>) -> Option<String> {
     let page = page.filter(|p| is_plain_http_url(p))?;
     let url = reqwest::Url::parse(&page).ok()?;
-    let own_host = reqwest::Url::parse(prowlarr_base).ok().is_some_and(|b| {
-        b.host_str().map(str::to_lowercase) == url.host_str().map(str::to_lowercase)
-    });
-    let keyed = url
-        .query_pairs()
-        .any(|(k, _)| KEY_PARAMS.contains(&k.to_lowercase().as_str()));
-    (!own_host && !keyed).then_some(page)
+    let own_host = prowlarr_host.is_some() && url.host_str() == prowlarr_host;
+    (!own_host && !carries_a_key(&url)).then_some(page)
 }
 
 impl RawRelease {
     /// The release, or `None` when it has no title or nothing to fetch it with. Its page is
     /// kept only when [`shown_page`] allows it.
-    fn into_release(self, prowlarr_base: &str) -> Option<ProwlarrRelease> {
+    fn into_release(self, prowlarr_host: Option<&str>) -> Option<ProwlarrRelease> {
         let link = self
             .download_url
             .or(self.magnet_url)
@@ -146,7 +163,7 @@ impl RawRelease {
                 .as_ref()
                 .and_then(serde_json::Value::as_str)
                 .and_then(ReleaseProtocol::parse),
-            info_url: shown_page(self.info_url, prowlarr_base),
+            info_url: shown_page(self.info_url, prowlarr_host),
             indexer: self.indexer.filter(|i| !i.is_empty()),
             link,
             categories: self
@@ -210,9 +227,11 @@ impl Prowlarr {
         }
         let params = [("query", query), ("categories", "7020"), ("type", "search")];
         let raw: Vec<RawRelease> = self.get_with("search", &params, timeout).await?;
+        let own_host = reqwest::Url::parse(&self.base).ok();
+        let own_host = own_host.as_ref().and_then(|u| u.host_str());
         Ok(raw
             .into_iter()
-            .filter_map(|r| r.into_release(&self.base))
+            .filter_map(|r| r.into_release(own_host))
             .collect())
     }
 

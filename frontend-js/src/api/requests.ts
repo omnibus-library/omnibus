@@ -1,7 +1,7 @@
 import { queryOptions } from "@tanstack/react-query";
 import { toBook } from "./books";
 import type { BookUuid, UserId } from "./core";
-import { bumpCoverBust, ok, send } from "./core";
+import { bumpCoverBust, isHttpUrl, ok, send } from "./core";
 import {
   getBookRequest,
   getCancelBookRequestUrl,
@@ -68,13 +68,7 @@ export async function testDownloadClient() {
 
 /** The address when it is an http(s) page, else null, so a stored value can never become a `javascript:` link. */
 function webPage(address: string | null | undefined) {
-  if (!address) return null;
-  try {
-    const { protocol } = new URL(address);
-    return protocol === "http:" || protocol === "https:" ? address : null;
-  } catch {
-    return null;
-  }
+  return address && isHttpUrl(address) ? address : null;
 }
 
 function toVersion(wire: RequestVersionWire) {

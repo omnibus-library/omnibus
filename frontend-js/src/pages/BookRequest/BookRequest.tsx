@@ -117,7 +117,11 @@ function VersionRow({
               <span className="sr-only">
                 , opens the source’s page in a new tab
               </span>
-              <ExternalGlyph />
+              {/* The word joiner keeps the arrow on the name's last line. */}
+              <span className="rq-version-arrow" aria-hidden="true">
+                {"\u2060"}
+                <ExternalGlyph />
+              </span>
             </a>
           ) : (
             <span id={nameId}>{version.title}</span>

@@ -298,6 +298,9 @@ mod prowlarr_search {
             {"guid": "g3", "title": "t3", "downloadUrl": "http://prowlarr/3/download", "infoUrl": "https://tracker.example/t?PassKey=k"},
             {"guid": "g4", "title": "t4", "downloadUrl": "http://prowlarr/4/download", "infoUrl": "https://tracker.example/t?api_key=k"},
             {"guid": "g5", "title": "t5", "downloadUrl": "http://prowlarr/5/download", "infoUrl": "https://tracker.example/t?id=5"},
+            {"guid": "g6", "title": "t6", "downloadUrl": "http://prowlarr/6/download", "infoUrl": "https://tracker.example/t?id=6;apikey=k"},
+            {"guid": "g7", "title": "t7", "downloadUrl": "http://prowlarr/7/download", "infoUrl": "https://tracker.example/t?id=7#apikey=k"},
+            {"guid": "g8", "title": "t8", "downloadUrl": "http://prowlarr/8/download", "infoUrl": "https://tracker.example/t?id=8&authkey=k"},
         ]);
         mount_search(&server, ResponseTemplate::new(200).set_body_json(body)).await;
 
@@ -314,7 +317,10 @@ mod prowlarr_search {
                 None,
                 None,
                 None,
-                Some("https://tracker.example/t?id=5")
+                Some("https://tracker.example/t?id=5"),
+                None,
+                None,
+                None
             ]
         );
     }

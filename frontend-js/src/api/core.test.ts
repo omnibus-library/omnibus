@@ -6,6 +6,7 @@ import {
   bumpAvatarBust,
   bumpCoverBust,
   coverUrl,
+  isHttpUrl,
   parseUserId,
   replaceQueryData,
   resetImageBusts,
@@ -134,4 +135,18 @@ describe("utcOffsetMinutes", () => {
       expect(utcOffsetMinutes()).toBe(want);
     },
   );
+});
+
+describe("isHttpUrl", () => {
+  it.each([
+    ["http://prowlarr:9696", true],
+    ["https://tracker.example/t/1", true],
+    ["", true],
+    ["javascript:alert(1)", false],
+    ["data:text/html,hi", false],
+    ["not a url", false],
+    ["https://", false],
+  ])("reads %j as %s", (address, expected) => {
+    expect(isHttpUrl(address)).toBe(expected);
+  });
 });

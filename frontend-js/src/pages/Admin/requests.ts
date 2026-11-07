@@ -1,15 +1,9 @@
 import { z } from "zod";
-import type { RequestsSettingsStatus, RequestsSettingsUpdate } from "../../api";
-
-const isHttpUrl = (url: string) => {
-  if (url === "") return true;
-  try {
-    const { protocol, hostname } = new URL(url);
-    return (protocol === "http:" || protocol === "https:") && hostname !== "";
-  } catch {
-    return false;
-  }
-};
+import {
+  isHttpUrl,
+  type RequestsSettingsStatus,
+  type RequestsSettingsUpdate,
+} from "../../api";
 
 const address = z
   .string()
