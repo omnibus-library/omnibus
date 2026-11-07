@@ -54,6 +54,7 @@ struct BookDetailView: View {
     @Environment(AppState.self) private var app
     @Environment(AudioPlayer.self) private var player
     @Environment(\.bookZoomNamespace) private var bookZoom
+    @Environment(\.sideBarEdge) private var sideBarEdge
     @State private var model = BookDetailModel()
     @State private var tab: BookTab = .overview
     /// Which side the next panel comes in from.
@@ -383,11 +384,13 @@ struct BookDetailView: View {
     static let barTop: CGFloat = 1
 
     /// How far the page drops so the bar's discs clear a rounded display
-    /// corner that no inset keeps them off, as on the iPhone Duo opened flat:
-    /// as far down as in from the side. Zero wherever an inset guards each top corner.
-    static func cornerClearance(insets: EdgeInsets) -> CGFloat {
+    /// corner that no inset keeps them off, as on the iPhone Duo with its bars
+    /// down a side: as far down as in from the side. Zero wherever an inset
+    /// guards each top corner, or the bars lie across the top: a bare corner
+    /// there is square, as on an iPhone SE on its side.
+    static func cornerClearance(insets: EdgeInsets, sideBar: HorizontalEdge?) -> CGFloat {
         let bareCorner = insets.top == 0 && (insets.leading == 0 || insets.trailing == 0)
-        return bareCorner ? barSide - barTop : 0
+        return sideBar != nil && bareCorner ? barSide - barTop : 0
     }
 
     /// The stage cover's scale in a pane `height` tall: whole wherever that leaves the title room.
@@ -405,6 +408,7 @@ struct BookDetailView: View {
     private func content(_ book: Book) -> some View {
         // The keyboard-down size: a note field's keyboard must not flip the page's layout.
         PaneGeometryReader { pane, geometry in
+            let clearance = Self.cornerClearance(insets: geometry.safeAreaInsets, sideBar: sideBarEdge)
             Group {
                 if let split = PaneSplit.resolve(
                     size: pane.size,
@@ -412,13 +416,13 @@ struct BookDetailView: View {
                     share: Self.stagePaneShare,
                     minimumWidth: Self.twoPaneWidth
                 ) {
-                    twoPaneContent(book, split: split, height: pane.size.height)
+                    twoPaneContent(book, split: split, height: pane.size.height - clearance)
                 } else {
-                    columnContent(book, geometry: geometry)
+                    columnContent(book, height: geometry.size.height - clearance)
                 }
             }
             // Safe area rather than padding, so the backdrop and bar slab still reach the top edge.
-            .safeAreaPadding(.top, Self.cornerClearance(insets: geometry.safeAreaInsets))
+            .safeAreaPadding(.top, clearance)
         }
     }
 
@@ -477,7 +481,7 @@ struct BookDetailView: View {
     }
 
     /// One column: the stage, then the tabs, which pin under the bar.
-    private func columnContent(_ book: Book, geometry: GeometryProxy) -> some View {
+    private func columnContent(_ book: Book, height: CGFloat) -> some View {
         ScrollViewReader { proxy in
             ScrollView(.vertical) {
                 // Not a lazy stack with pinned views: it re-estimates the
@@ -503,7 +507,7 @@ struct BookDetailView: View {
                         // page out from under the reader.
                         .frame(
                             maxWidth: .infinity,
-                            minHeight: geometry.size.height - Self.barRow
+                            minHeight: height - Self.barRow
                                 - Self.tabStrip - Self.actionBar + 4,
                             alignment: .top
                         )

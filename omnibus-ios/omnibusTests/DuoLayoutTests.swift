@@ -185,14 +185,26 @@ private let laptopFold = Fold(frame: CGRect(x: 0, y: 463, width: 669, height: 25
     #expect(BookDetailView.stageCoverScale(paneHeight: 648, underBar: true) == 1)
 }
 
-@Test func cornerClearanceDropsTheBarOnlyWhereATopCornerIsBare() {
+@Test func cornerClearanceDropsTheBarOnlyWhereATopCornerIsBareBesideASideBar() {
     let drop = BookDetailView.barSide - BookDetailView.barTop
     // The open Duo flat: the status bar is in the trailing column, leaving the leading corner bare.
-    #expect(BookDetailView.cornerClearance(insets: EdgeInsets(top: 0, leading: 0, bottom: 20, trailing: 64)) == drop)
+    #expect(BookDetailView.cornerClearance(
+        insets: EdgeInsets(top: 0, leading: 0, bottom: 20, trailing: 64), sideBar: .trailing
+    ) == drop)
+    // The same with the column on the leading edge: the trailing corner is bare.
+    #expect(BookDetailView.cornerClearance(
+        insets: EdgeInsets(top: 0, leading: 64, bottom: 20, trailing: 0), sideBar: .leading
+    ) == drop)
     // An upright iPhone or an iPad: the status bar's inset guards both corners.
-    #expect(BookDetailView.cornerClearance(insets: EdgeInsets(top: 62, leading: 0, bottom: 34, trailing: 0)) == 0)
+    #expect(BookDetailView.cornerClearance(
+        insets: EdgeInsets(top: 62, leading: 0, bottom: 34, trailing: 0), sideBar: nil
+    ) == 0)
     // A notched iPhone on its side: the sensor insets guard both corners.
-    #expect(BookDetailView.cornerClearance(insets: EdgeInsets(top: 0, leading: 62, bottom: 21, trailing: 62)) == 0)
+    #expect(BookDetailView.cornerClearance(
+        insets: EdgeInsets(top: 0, leading: 62, bottom: 21, trailing: 62), sideBar: nil
+    ) == 0)
+    // An iPhone SE on its side: no inset anywhere, but its corners are square.
+    #expect(BookDetailView.cornerClearance(insets: EdgeInsets(), sideBar: nil) == 0)
 }
 
 @Test func stageFadeRaiseEndsTheFadeWhereAStageBetweenTheDiscsRests() {
