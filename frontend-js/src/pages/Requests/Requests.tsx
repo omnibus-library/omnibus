@@ -1,5 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import {
+  type RefObject,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { Link, useLocation, useSearchParams } from "react-router";
 import { type RequestListing, requestsQuery, thumbUrl } from "../../api";
 import { Button } from "../../components/Button/Button";
@@ -32,12 +38,14 @@ function Item({
   listing,
   group,
   selected,
+  rowRef,
   phone,
   onSelect,
 }: {
   listing: RequestListing;
   group: RequestGroupKey;
   selected: boolean;
+  rowRef?: RefObject<HTMLAnchorElement | null>;
   phone: boolean;
   onSelect: () => void;
 }) {
@@ -45,6 +53,7 @@ function Item({
   return (
     <li>
       <Link
+        ref={rowRef}
         to={requestPath(book.uuid)}
         onClick={onSelect}
         className="rqs-item"
@@ -84,14 +93,40 @@ function Groups({
   onSelect: () => void;
 }) {
   const [folds, setFolds] = useState(loadRequestFolds);
+  // Groups opened for this visit by the selected book moving into them; never stored.
+  const [opened, setOpened] = useState<readonly RequestGroupKey[]>([]);
+  const isFolded = (key: RequestGroupKey) =>
+    !opened.includes(key) && (folds[key] ?? key === "cancelled");
   const toggle = (key: RequestGroupKey, folded: boolean) => {
     // Storage wins for the other groups, so a second tab's folds survive this write.
     const next = { ...folds, ...loadRequestFolds(), [key]: !folded };
     setFolds(next);
+    setOpened(opened.filter((k) => k !== key));
     saveRequestFolds(next);
   };
+  // A selected book that moves to a folded group opens it, so its row doesn't vanish (a cancel files it under Cancelled).
+  const selectedGroup = groups.find((g) =>
+    g.items.some((l) => l.book.uuid === selected),
+  )?.key;
+  const was = useRef<{ book?: string; group?: RequestGroupKey }>({});
+  const row = useRef<HTMLAnchorElement>(null);
+  useLayoutEffect(() => {
+    const before = was.current;
+    was.current = { book: selected, group: selectedGroup };
+    const moved =
+      before.book === selected &&
+      before.group !== undefined &&
+      before.group !== selectedGroup;
+    if (moved && selectedGroup && isFolded(selectedGroup)) {
+      setOpened([...opened, selectedGroup]);
+    }
+  });
+  // Cancelled is last, so its row may sit below the fold of a long list.
+  useEffect(() => {
+    if (opened.length > 0) row.current?.scrollIntoView({ block: "nearest" });
+  }, [opened]);
   return groups.map((group) => {
-    const folded = folds[group.key] ?? group.key === "cancelled";
+    const folded = isFolded(group.key);
     return (
       <section
         key={group.key}
@@ -119,7 +154,8 @@ function Groups({
                 key={listing.book.uuid}
                 listing={listing}
                 group={group.key}
-                selected={!phone && listing.book.uuid === selected}
+                selected={listing.book.uuid === selected}
+                rowRef={listing.book.uuid === selected ? row : undefined}
                 phone={phone}
                 onSelect={onSelect}
               />
@@ -233,7 +269,7 @@ function RequestsPage() {
         ) : (
           <Groups
             groups={groups}
-            selected={selected?.book.uuid}
+            selected={phone ? undefined : selected?.book.uuid}
             phone={phone}
             onSelect={() => setPicked(true)}
           />

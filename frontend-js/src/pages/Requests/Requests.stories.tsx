@@ -113,6 +113,8 @@ function Page() {
         />
       </Routes>
       <Where />
+      <Link to="/start">Leave Requests</Link>
+      <Link to="/requests?book=uuid-dune">Back to the cancelled book</Link>
     </>
   );
 }
@@ -247,8 +249,9 @@ export const CancellingKeepsTheBookInThePaneWithItsUndo: Story = {
 
     await userEvent.click(await pane.findByRole("button", { name: "Cancel" }));
 
+    // Hyperion was Looking's only book, so the group goes with it.
     await waitFor(() =>
-      expect(canvas.queryByRole("link", { name: /Hyperion/ })).toBeNull(),
+      expect(canvas.queryByTestId("requests-group-looking")).toBeNull(),
     );
     await expect(pane.getByTestId("request-state")).toHaveTextContent(
       "Cancelled",
@@ -368,6 +371,92 @@ export const CancelledStartsFoldedAndOpensToABookWithRequestAgain: Story = {
     await expect(
       await pane.findByRole("button", { name: "Request again" }),
     ).toBeInTheDocument();
+  },
+};
+
+/** The Hyperion link filed under the group `key`. */
+const hyperionIn = async (canvas: ReturnType<typeof within>, key: string) =>
+  within(await canvas.findByTestId(`requests-group-${key}`)).findByRole(
+    "link",
+    { name: /Hyperion/, current: true },
+  );
+
+export const CancellingTheSelectedBookOpensCancelledToItsRow: Story = {
+  parameters: { path: "/requests?book=uuid-hyperion" },
+  play: async ({ canvas, userEvent }) => {
+    const pane = within(await canvas.findByTestId("requests-pane"));
+    await expect(
+      await canvas.findByRole("button", { name: "Cancelled 1" }),
+    ).toHaveAttribute("aria-expanded", "false");
+
+    await userEvent.click(await pane.findByRole("button", { name: "Cancel" }));
+
+    await expect(await hyperionIn(canvas, "cancelled")).toBeVisible();
+    await expect(
+      canvas.getByRole("button", { name: "Cancelled 2" }),
+    ).toHaveAttribute("aria-expanded", "true");
+    // Opened for this visit only: nothing is stored, so a return finds it folded.
+    await expect(localStorage.getItem(FOLDS_KEY)).toBeNull();
+
+    await userEvent.click(canvas.getByRole("link", { name: "Leave Requests" }));
+    await userEvent.click(
+      await canvas.findByRole("link", { name: "Request Hyperion" }),
+    );
+
+    await expect(
+      await canvas.findByRole("button", { name: "Cancelled 2" }),
+    ).toHaveAttribute("aria-expanded", "false");
+  },
+};
+
+export const UndoingACancelMovesTheBookBackToItsOpenGroup: Story = {
+  parameters: { path: "/requests?book=uuid-hyperion" },
+  play: async ({ canvas, userEvent }) => {
+    const pane = within(await canvas.findByTestId("requests-pane"));
+    await userEvent.click(await pane.findByRole("button", { name: "Cancel" }));
+    await hyperionIn(canvas, "cancelled");
+
+    await userEvent.click(await canvas.findByRole("button", { name: "Undo" }));
+
+    await expect(await hyperionIn(canvas, "looking")).toBeVisible();
+  },
+};
+
+export const ADeepLinkToACancelledBookLeavesCancelledFolded: Story = {
+  parameters: { path: "/requests?book=uuid-dune" },
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("requests-pane");
+
+    await expect(
+      canvas.getByRole("button", { name: "Cancelled 1" }),
+    ).toHaveAttribute("aria-expanded", "false");
+    await expect(canvas.queryByRole("link", { name: /Dune/ })).toBeNull();
+  },
+};
+
+export const PickingABookDoesNotOpenItsFoldedGroup: Story = {
+  parameters: { path: "/requests?book=uuid-dune" },
+  play: async ({ canvas, userEvent }) => {
+    const cancelled = await canvas.findByRole("button", {
+      name: "Cancelled 1",
+    });
+    await userEvent.click(await canvas.findByRole("link", { name: /Dracula/ }));
+    await waitFor(() =>
+      expect(canvas.getByTestId("where")).toHaveTextContent(
+        "/requests?book=uuid-dracula",
+      ),
+    );
+
+    await userEvent.click(
+      canvas.getByRole("link", { name: "Back to the cancelled book" }),
+    );
+
+    await waitFor(() =>
+      expect(canvas.getByTestId("where")).toHaveTextContent(
+        "/requests?book=uuid-dune",
+      ),
+    );
+    await expect(cancelled).toHaveAttribute("aria-expanded", "false");
   },
 };
 
