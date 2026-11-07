@@ -298,6 +298,7 @@ test.describe("requests page", () => {
     await test.step("cancel it as the reader who asked", async () => {
       await requestsPage.goto();
       await requestsPage.select(book.title);
+      await expect(requestsPage.openGroupToggle("Cancelled")).toHaveCount(0);
       await expectMutation(bookRequests.cancel(), () => requestsPage.cancel());
       await expect(requestsPage.paneState).toHaveText("Cancelled");
       await expect(requestsPage.paneCancelButton).toHaveCount(0);
@@ -305,8 +306,7 @@ test.describe("requests page", () => {
       release();
     });
 
-    await test.step("find it under Cancelled, which starts folded", async () => {
-      await requestsPage.toggleGroup("Cancelled");
+    await test.step("find it under Cancelled, opened to show it", async () => {
       await expect(requestsPage.itemIn("Cancelled", book.title)).toContainText(
         "Ebook · cancelled",
       );
