@@ -79,14 +79,6 @@ export class RequestsPage extends BasePage {
       .filter({ has: this.page.getByText(title, { exact: true }) });
   }
 
-  /** Folds or unfolds the group labelled `group`. */
-  async toggleGroup(group: string): Promise<void> {
-    await this.page
-      .getByRole("region", { name: group, exact: true })
-      .getByRole("button")
-      .click();
-  }
-
   /** Shows `title`'s request in the pane. */
   async select(title: string): Promise<void> {
     await this.item(title).click();

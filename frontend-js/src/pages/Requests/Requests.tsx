@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router";
 import { type RequestListing, requestsQuery, thumbUrl } from "../../api";
 import { Button } from "../../components/Button/Button";
@@ -90,8 +90,25 @@ function Groups({
     setFolds(next);
     saveRequestFolds(next);
   };
+  const isFolded = (key: RequestGroupKey) => folds[key] ?? key === "cancelled";
+  // A selected book that moves to a folded group opens it, so its row doesn't vanish (a cancel files it under Cancelled).
+  const selectedGroup = groups.find((g) =>
+    g.items.some((l) => l.book.uuid === selected),
+  )?.key;
+  const was = useRef<{ book?: string; group?: RequestGroupKey }>({});
+  useEffect(() => {
+    const before = was.current;
+    was.current = { book: selected, group: selectedGroup };
+    const moved =
+      before.book === selected &&
+      before.group !== undefined &&
+      before.group !== selectedGroup;
+    if (!phone && moved && selectedGroup && isFolded(selectedGroup)) {
+      toggle(selectedGroup, true);
+    }
+  });
   return groups.map((group) => {
-    const folded = folds[group.key] ?? group.key === "cancelled";
+    const folded = isFolded(group.key);
     return (
       <section
         key={group.key}

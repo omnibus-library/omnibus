@@ -247,8 +247,9 @@ export const CancellingKeepsTheBookInThePaneWithItsUndo: Story = {
 
     await userEvent.click(await pane.findByRole("button", { name: "Cancel" }));
 
+    // Hyperion was Looking's only book, so the group goes with it.
     await waitFor(() =>
-      expect(canvas.queryByRole("link", { name: /Hyperion/ })).toBeNull(),
+      expect(canvas.queryByTestId("requests-group-looking")).toBeNull(),
     );
     await expect(pane.getByTestId("request-state")).toHaveTextContent(
       "Cancelled",
@@ -368,6 +369,56 @@ export const CancelledStartsFoldedAndOpensToABookWithRequestAgain: Story = {
     await expect(
       await pane.findByRole("button", { name: "Request again" }),
     ).toBeInTheDocument();
+  },
+};
+
+/** The Hyperion link filed under the group `key`. */
+const hyperionIn = async (canvas: ReturnType<typeof within>, key: string) =>
+  within(await canvas.findByTestId(`requests-group-${key}`)).findByRole(
+    "link",
+    { name: /Hyperion/, current: true },
+  );
+
+export const CancellingTheSelectedBookOpensCancelledToItsRow: Story = {
+  parameters: { path: "/requests?book=uuid-hyperion" },
+  play: async ({ canvas, userEvent }) => {
+    const pane = within(await canvas.findByTestId("requests-pane"));
+    await expect(
+      await canvas.findByRole("button", { name: "Cancelled 1" }),
+    ).toHaveAttribute("aria-expanded", "false");
+
+    await userEvent.click(await pane.findByRole("button", { name: "Cancel" }));
+
+    await expect(await hyperionIn(canvas, "cancelled")).toBeVisible();
+    await expect(
+      canvas.getByRole("button", { name: "Cancelled 2" }),
+    ).toHaveAttribute("aria-expanded", "true");
+    await expect(localStorage.getItem(FOLDS_KEY)).toBe('{"cancelled":false}');
+  },
+};
+
+export const UndoingACancelMovesTheBookBackToItsOpenGroup: Story = {
+  parameters: { path: "/requests?book=uuid-hyperion" },
+  play: async ({ canvas, userEvent }) => {
+    const pane = within(await canvas.findByTestId("requests-pane"));
+    await userEvent.click(await pane.findByRole("button", { name: "Cancel" }));
+    await hyperionIn(canvas, "cancelled");
+
+    await userEvent.click(await canvas.findByRole("button", { name: "Undo" }));
+
+    await expect(await hyperionIn(canvas, "looking")).toBeVisible();
+  },
+};
+
+export const ADeepLinkToACancelledBookLeavesCancelledFolded: Story = {
+  parameters: { path: "/requests?book=uuid-dune" },
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("requests-pane");
+
+    await expect(
+      canvas.getByRole("button", { name: "Cancelled 1" }),
+    ).toHaveAttribute("aria-expanded", "false");
+    await expect(canvas.queryByRole("link", { name: /Dune/ })).toBeNull();
   },
 };
 

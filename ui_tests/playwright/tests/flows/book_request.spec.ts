@@ -302,8 +302,7 @@ test.describe("requests page", () => {
       release();
     });
 
-    await test.step("find it under Cancelled, which starts folded", async () => {
-      await requestsPage.toggleGroup("Cancelled");
+    await test.step("find it under Cancelled, opened to show it", async () => {
       await expect(requestsPage.itemIn("Cancelled", book.title)).toContainText(
         "Ebook · cancelled",
       );
