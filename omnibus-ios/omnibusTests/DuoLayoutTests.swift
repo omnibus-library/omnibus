@@ -185,6 +185,16 @@ private let laptopFold = Fold(frame: CGRect(x: 0, y: 463, width: 669, height: 25
     #expect(BookDetailView.stageCoverScale(paneHeight: 648, underBar: true) == 1)
 }
 
+@Test func cornerClearanceDropsTheBarOnlyWhereATopCornerIsBare() {
+    let drop = BookDetailView.barSide - BookDetailView.barTop
+    // The open Duo flat: the status bar is in the trailing column, leaving the leading corner bare.
+    #expect(BookDetailView.cornerClearance(insets: EdgeInsets(top: 0, leading: 0, bottom: 20, trailing: 64)) == drop)
+    // An upright iPhone or an iPad: the status bar's inset guards both corners.
+    #expect(BookDetailView.cornerClearance(insets: EdgeInsets(top: 62, leading: 0, bottom: 34, trailing: 0)) == 0)
+    // A notched iPhone on its side: the sensor insets guard both corners.
+    #expect(BookDetailView.cornerClearance(insets: EdgeInsets(top: 0, leading: 62, bottom: 21, trailing: 62)) == 0)
+}
+
 @Test func stageFadeRaiseEndsTheFadeWhereAStageBetweenTheDiscsRests() {
     // Below the bar, the fade sits on the bar's edge like the trailing pane's.
     #expect(BookDetailView.stageFadeRaise(underBar: false) == 0)

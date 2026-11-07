@@ -378,6 +378,17 @@ struct BookDetailView: View {
     static let stageCoverShare: CGFloat = 0.44
     /// The stage's own top margin, above the cover.
     static let stageTop: CGFloat = 12
+    /// The bar's margins: in from the sides, and down from the inset above it.
+    static let barSide: CGFloat = 16
+    static let barTop: CGFloat = 1
+
+    /// How far the page drops so the bar's discs clear a rounded display
+    /// corner that no inset keeps them off, as on the iPhone Duo opened flat:
+    /// as far down as in from the side. Zero wherever an inset guards each top corner.
+    static func cornerClearance(insets: EdgeInsets) -> CGFloat {
+        let bareCorner = insets.top == 0 && (insets.leading == 0 || insets.trailing == 0)
+        return bareCorner ? barSide - barTop : 0
+    }
 
     /// The stage cover's scale in a pane `height` tall: whole wherever that leaves the title room.
     static func stageCoverScale(paneHeight: CGFloat, underBar: Bool) -> CGFloat {
@@ -394,16 +405,20 @@ struct BookDetailView: View {
     private func content(_ book: Book) -> some View {
         // The keyboard-down size: a note field's keyboard must not flip the page's layout.
         PaneGeometryReader { pane, geometry in
-            if let split = PaneSplit.resolve(
-                size: pane.size,
-                fold: pane.fold,
-                share: Self.stagePaneShare,
-                minimumWidth: Self.twoPaneWidth
-            ) {
-                twoPaneContent(book, split: split, height: pane.size.height)
-            } else {
-                columnContent(book, geometry: geometry)
+            Group {
+                if let split = PaneSplit.resolve(
+                    size: pane.size,
+                    fold: pane.fold,
+                    share: Self.stagePaneShare,
+                    minimumWidth: Self.twoPaneWidth
+                ) {
+                    twoPaneContent(book, split: split, height: pane.size.height)
+                } else {
+                    columnContent(book, geometry: geometry)
+                }
             }
+            // Safe area rather than padding, so the backdrop and bar slab still reach the top edge.
+            .safeAreaPadding(.top, Self.cornerClearance(insets: geometry.safeAreaInsets))
         }
     }
 
@@ -625,8 +640,8 @@ struct BookDetailView: View {
 
             moreMenu(book)
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 1)
+        .padding(.horizontal, Self.barSide)
+        .padding(.top, Self.barTop)
         .frame(height: Self.barRow, alignment: .top)
         .slabBackground(bleeding: .top) {
             ZStack {
