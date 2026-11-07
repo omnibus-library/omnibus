@@ -29,7 +29,7 @@ export const GROUP_LABELS: Record<RequestGroupKey, string> = {
   cancelled: "Cancelled",
 };
 
-type Viewer = Pick<User, "id" | "isAdmin" | "canRequest">;
+type Viewer = Pick<User, "id" | "isAdmin" | "canStartRequests">;
 
 /** The group a request files its book under. */
 function groupOf(request: BookRequest, viewer: Viewer): RequestGroupKey {

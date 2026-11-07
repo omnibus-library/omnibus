@@ -71,7 +71,8 @@ const LIBRARY = [
 const READER = {
   ...WIRE_ADA,
   is_admin: false,
-  can_request: true,
+  can_start_requests: true,
+  can_choose_request_versions: true,
   book_requests: true,
 };
 
@@ -324,7 +325,13 @@ export const ABookWithItsEbookOffersNothing: Story = {
 };
 
 export const AReaderWhoCantRequestSeesNoButton: Story = {
-  parameters: { user: { ...READER, can_request: false } },
+  parameters: {
+    user: {
+      ...READER,
+      can_start_requests: false,
+      can_choose_request_versions: false,
+    },
+  },
   play: async ({ canvas }) => {
     await canvas.findAllByTestId("requests-item");
 

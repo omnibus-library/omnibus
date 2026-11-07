@@ -243,9 +243,10 @@ export const holdsAudiobook = (formats: readonly string[]) =>
 
 /** Whether `viewer` may act on `request`: an admin, or the reader who made it while they may still request. */
 export const canActOn = (
-  viewer: Pick<User, "id" | "isAdmin" | "canRequest">,
+  viewer: Pick<User, "id" | "isAdmin" | "canStartRequests">,
   request: Pick<BookRequest, "userId">,
-) => viewer.isAdmin || (viewer.canRequest && viewer.id === request.userId);
+) =>
+  viewer.isAdmin || (viewer.canStartRequests && viewer.id === request.userId);
 
 const versionFacts = (version: RequestVersion) => {
   const size = versionSize(version.sizeBytes);
@@ -316,7 +317,7 @@ export const kindChip = (kind: RequestKind) =>
 /** Whether Request again is offered on `request`: a cancelled one whose undo has run out (`now` in Unix seconds), to a reader who may request and has no request of that format going for the book already, since starting one would only return it. */
 export function offersRequestAgain(
   request: Pick<BookRequest, "kind" | "state" | "cancelAt">,
-  viewer: Pick<User, "id" | "canRequest">,
+  viewer: Pick<User, "id" | "canStartRequests">,
   bookRequests: readonly Pick<BookRequest, "userId" | "kind" | "state">[],
   now: number,
 ): boolean {
@@ -326,7 +327,7 @@ export function offersRequestAgain(
   );
   return (
     request.state === "cancelled" &&
-    viewer.canRequest &&
+    viewer.canStartRequests &&
     !undoOpen &&
     !alreadyGoing
   );

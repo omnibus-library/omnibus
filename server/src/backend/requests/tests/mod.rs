@@ -32,10 +32,10 @@ mod new_book;
 mod retry;
 mod swap;
 
-/// A reader allowed to request: id and bearer token.
+/// A reader allowed to ask for books and pick their versions: id and bearer token.
 async fn requester(pool: &SqlitePool, name: &str) -> (i64, String) {
     let (id, token) = reader(pool, name).await;
-    auth_test_support::set_request_flags(pool, id, false, true).await;
+    auth_test_support::set_request_flags(pool, id, false, true, true).await;
     (id, token)
 }
 

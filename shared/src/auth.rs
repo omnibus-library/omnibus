@@ -20,11 +20,14 @@ pub struct UserSummary {
     pub can_upload: bool,
     pub can_edit: bool,
     pub can_download: bool,
-    /// Whether the user may request books the library lacks: false for everyone while the server has book requests off, else admins always may.
+    /// Whether the user may ask for a book the library lacks: false for everyone while the server has book requests off, else admins always may.
     #[serde(default)]
-    pub can_request: bool,
+    pub can_start_requests: bool,
+    /// Whether the user may pick the version of any reader's request: false for everyone while the server has book requests off, else admins always may.
+    #[serde(default)]
+    pub can_choose_request_versions: bool,
     /// Whether the server has book requests on. Every reader may then see the requests on
-    /// `GET /api/requests`, whatever their `can_request`.
+    /// `GET /api/requests`, whatever their `can_start_requests`.
     #[serde(default)]
     pub book_requests: bool,
     /// The address Send to Kindle emails books to. Null when the user hasn't set one.
@@ -137,7 +140,8 @@ pub struct UserPermissions {
     pub can_upload: bool,
     pub can_edit: bool,
     pub can_download: bool,
-    pub can_request: bool,
+    pub can_start_requests: bool,
+    pub can_choose_request_versions: bool,
 }
 
 // The admin table's projection of a `users` row: `UserSummary` plus the
@@ -153,7 +157,8 @@ pub struct AdminUserRow {
     pub can_upload: bool,
     pub can_edit: bool,
     pub can_download: bool,
-    pub can_request: bool,
+    pub can_start_requests: bool,
+    pub can_choose_request_versions: bool,
     #[serde(default)]
     pub kindle_email: Option<String>,
     /// The name other users see. Null when the user hasn't set one.
@@ -354,16 +359,16 @@ pub struct CreateApiTokenResponse {
 mod tests {
     use super::*;
 
-    // A pre-0111 payload (or a cached `/me` body from one) has no `can_request`,
-    // and must decode to no permission rather than failing.
+    // A payload from before the request permissions (or a cached `/me` body from one) has
+    // neither flag, and must decode to no permission rather than failing.
     #[test]
-    fn user_summary_deserializes_payload_missing_can_request_as_off() {
+    fn user_summary_deserializes_payload_missing_request_permissions_as_off() {
         let v: UserSummary = serde_json::from_str(
             r#"{"id":1,"username":"alice","is_admin":false,
                 "can_upload":false,"can_edit":false,"can_download":true}"#,
         )
         .unwrap();
-        assert!(!v.can_request);
+        assert!(!v.can_start_requests && !v.can_choose_request_versions);
     }
 
     // Payloads from a pre-0068 server lack `hidden_formats`; the serde

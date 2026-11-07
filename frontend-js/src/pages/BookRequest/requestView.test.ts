@@ -438,18 +438,22 @@ describe("canActOn", () => {
     [
       "an admin on another reader's request",
       true,
-      { id: 2, isAdmin: true, canRequest: true },
+      { id: 2, isAdmin: true, canStartRequests: true },
     ],
     [
       "the requester who may request",
       true,
-      { id: 1, isAdmin: false, canRequest: true },
+      { id: 1, isAdmin: false, canStartRequests: true },
     ],
-    ["another reader", false, { id: 2, isAdmin: false, canRequest: true }],
+    [
+      "another reader",
+      false,
+      { id: 2, isAdmin: false, canStartRequests: true },
+    ],
     [
       "the requester who may no longer request",
       false,
-      { id: 1, isAdmin: false, canRequest: false },
+      { id: 1, isAdmin: false, canStartRequests: false },
     ],
   ] as const)("lets %s act: %s", (_who, expected, viewer) => {
     const request = { userId: 1 as UserId };
@@ -462,7 +466,7 @@ describe("canActOn", () => {
 
 describe("offersRequestAgain", () => {
   const NOW = 1_000;
-  const ADA = { id: VIEWER, canRequest: true };
+  const ADA = { id: VIEWER, canStartRequests: true };
   const cancelled = {
     kind: "ebook",
     state: "cancelled",
@@ -513,7 +517,7 @@ describe("offersRequestAgain", () => {
   });
 
   it("holds it back from a reader who can't request", () => {
-    const viewer = { ...ADA, canRequest: false };
+    const viewer = { ...ADA, canStartRequests: false };
 
     expect(offersRequestAgain(cancelled, viewer, [], NOW)).toBe(false);
   });

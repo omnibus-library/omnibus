@@ -187,7 +187,13 @@ export const ShowsTheIntegrationCardsInOrder: Story = {
 
 export const HidesTheRequestsCardWithoutRequestAccess: Story = {
   args: { path: "/admin?section=integrations" },
-  parameters: { user: { ...WIRE_ADA, can_request: false } },
+  parameters: {
+    user: {
+      ...WIRE_ADA,
+      can_start_requests: false,
+      can_choose_request_versions: false,
+    },
+  },
   play: async ({ canvas }) => {
     await canvas.findByRole("heading", {
       level: 3,

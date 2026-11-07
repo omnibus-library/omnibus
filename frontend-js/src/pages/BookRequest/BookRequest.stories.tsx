@@ -117,7 +117,7 @@ function Page() {
 
 // `book_requests` is on, or `Requests` answers Not Found.
 const ADA = { ...WIRE_ADA, book_requests: true };
-const READER = { ...ADA, is_admin: false, can_request: true };
+const READER = { ...ADA, is_admin: false, can_start_requests: true };
 
 const meta = {
   title: "Pages/BookRequest",
@@ -1388,7 +1388,13 @@ export const HistoryRecordsAVersionSwappedForAnother: Story = {
 };
 
 export const HistoryOffersNoRequestAgainToAReaderWhoCantRequest: Story = {
-  parameters: { user: { ...READER, can_request: false } },
+  parameters: {
+    user: {
+      ...READER,
+      can_start_requests: false,
+      can_choose_request_versions: false,
+    },
+  },
   beforeEach({ msw }) {
     msw.use(...withHistory(CANCELLED_NOW, CANCELLED_EARLIER));
   },

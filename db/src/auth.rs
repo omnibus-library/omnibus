@@ -112,7 +112,10 @@ pub struct User {
     pub can_upload: bool,
     pub can_edit: bool,
     pub can_download: bool,
-    pub can_request: bool,
+    /// May ask for a book the library lacks.
+    pub can_start_requests: bool,
+    /// May pick the version of any reader's request.
+    pub can_choose_request_versions: bool,
     /// Send-to-Kindle destination, or `None` when unconfigured.
     pub kindle_email: Option<String>,
     /// Presentation name shown to other users, or `None` to fall back to
@@ -214,7 +217,8 @@ pub(crate) fn build_user_from_joined_row(row: &sqlx::sqlite::SqliteRow) -> User 
         can_upload: row.get::<i64, _>("can_upload") != 0,
         can_edit: row.get::<i64, _>("can_edit") != 0,
         can_download: row.get::<i64, _>("can_download") != 0,
-        can_request: row.get::<i64, _>("can_request") != 0,
+        can_start_requests: row.get::<i64, _>("can_start_requests") != 0,
+        can_choose_request_versions: row.get::<i64, _>("can_choose_request_versions") != 0,
         kindle_email: row.get("kindle_email"),
         display_name: row.get("display_name"),
         has_avatar: row.get::<i64, _>("has_avatar") != 0,
@@ -234,7 +238,8 @@ pub(crate) fn row_to_user(row: &sqlx::sqlite::SqliteRow) -> User {
         can_upload: row.get::<i64, _>("can_upload") != 0,
         can_edit: row.get::<i64, _>("can_edit") != 0,
         can_download: row.get::<i64, _>("can_download") != 0,
-        can_request: row.get::<i64, _>("can_request") != 0,
+        can_start_requests: row.get::<i64, _>("can_start_requests") != 0,
+        can_choose_request_versions: row.get::<i64, _>("can_choose_request_versions") != 0,
         kindle_email: row.get("kindle_email"),
         display_name: row.get("display_name"),
         has_avatar: row.get::<i64, _>("has_avatar") != 0,

@@ -87,7 +87,8 @@ async fn admin_create_user_sets_permissions_and_bypasses_registration_gate() {
             && stored.can_upload
             && stored.can_edit
             && stored.can_download
-            && stored.can_request
+            && stored.can_start_requests
+            && stored.can_choose_request_versions
     );
 
     // The new user can actually authenticate.
@@ -138,7 +139,8 @@ async fn update_user_permissions_replaces_flags() {
             can_upload: true,
             can_edit: true,
             can_download: false,
-            can_request: true,
+            can_start_requests: true,
+            can_choose_request_versions: false,
         },
     )
     .await
@@ -150,8 +152,8 @@ async fn update_user_permissions_replaces_flags() {
         .into_iter()
         .find(|u| u.id == bob.id)
         .unwrap();
-    assert!(bob_row.can_upload && bob_row.can_edit && bob_row.can_request);
-    assert!(!bob_row.can_download && !bob_row.is_admin);
+    assert!(bob_row.can_upload && bob_row.can_edit && bob_row.can_start_requests);
+    assert!(!bob_row.can_download && !bob_row.is_admin && !bob_row.can_choose_request_versions);
 }
 
 #[tokio::test]

@@ -93,7 +93,7 @@ export function AddRequest({
     },
     onError: (_, hit) => setError(`Couldn’t look up ${hit.meta.title}.`),
   });
-  if (!viewer.canRequest) return null;
+  if (!viewer.canStartRequests) return null;
   // Whether anything is already requested is unknown until the lists answer.
   if (listings === undefined) {
     return (

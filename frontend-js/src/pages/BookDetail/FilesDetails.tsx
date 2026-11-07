@@ -156,7 +156,7 @@ export function FilesDetails({
   const hasFiles = book.formats.length > 0;
   // Any ebook format counts as held, not only an EPUB.
   const canRequestEbook =
-    useCurrentUser().canRequest && !holdsEbook(book.formats);
+    useCurrentUser().canStartRequests && !holdsEbook(book.formats);
   return (
     <div className="bp-files-tab">
       <div className="bp-file-column">

@@ -13,7 +13,7 @@ import {
   requestedNotes,
 } from "./requestGroups";
 
-const ADA = { id: 1 as UserId, isAdmin: false, canRequest: true };
+const ADA = { id: 1 as UserId, isAdmin: false, canStartRequests: true };
 const EPUB = aWireVersion({ id: 11 });
 
 /** A listed request for the book `uuid`. */
@@ -74,7 +74,7 @@ describe("groupRequests", () => {
     });
 
     it("lists any pick still to make as needing an admin", () => {
-      const admin = { id: 9 as UserId, isAdmin: true, canRequest: true };
+      const admin = { id: 9 as UserId, isAdmin: true, canStartRequests: true };
       const theirs = listing("b", { user_id: 2, state: "choose" });
 
       expect(shape(groupRequests([theirs], admin))).toEqual([

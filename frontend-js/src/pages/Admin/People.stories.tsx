@@ -152,14 +152,25 @@ export const NamesTheUserInEveryRowAction: Story = {
   },
 };
 
-const REQUESTS_OFF = { ...WIRE_ADA, can_request: false };
+const REQUESTS_OFF = {
+  ...WIRE_ADA,
+  can_start_requests: false,
+  can_choose_request_versions: false,
+};
 
 export const RequestChipIsHiddenWhenRequestsAreOff: Story = {
   parameters: { user: REQUESTS_OFF },
   beforeEach({ msw }) {
     msw.use(
       ...usersHandlers(
-        [aWireAdminUser({ id: 20, username: "dora", can_request: true })],
+        [
+          aWireAdminUser({
+            id: 20,
+            username: "dora",
+            can_start_requests: true,
+            can_choose_request_versions: true,
+          }),
+        ],
         {},
       ),
     );

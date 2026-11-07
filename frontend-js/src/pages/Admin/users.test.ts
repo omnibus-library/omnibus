@@ -11,7 +11,8 @@ const NONE = {
   can_upload: false,
   can_edit: false,
   can_download: false,
-  can_request: false,
+  can_start_requests: false,
+  can_choose_request_versions: false,
 };
 
 describe("permissionChips", () => {
@@ -23,7 +24,8 @@ describe("permissionChips", () => {
           can_upload: true,
           can_edit: true,
           can_download: true,
-          can_request: true,
+          can_start_requests: true,
+          can_choose_request_versions: true,
         },
         true,
       ),
@@ -44,7 +46,8 @@ describe("permissionChips", () => {
           can_upload: true,
           can_edit: true,
           can_download: true,
-          can_request: true,
+          can_start_requests: true,
+          can_choose_request_versions: true,
         },
         true,
       ),
@@ -55,7 +58,7 @@ describe("permissionChips", () => {
     ["can_upload", "Upload"],
     ["can_edit", "Edit"],
     ["can_download", "Download"],
-    ["can_request", "Request"],
+    ["can_start_requests", "Request"],
   ] as const)("returns %s alone as %s", (flag, chip) => {
     expect(permissionChips({ ...NONE, [flag]: true }, true)).toEqual([chip]);
   });
@@ -66,7 +69,10 @@ describe("permissionChips", () => {
 
   it("leaves out Request when requests are off", () => {
     expect(
-      permissionChips({ ...NONE, can_upload: true, can_request: true }, false),
+      permissionChips(
+        { ...NONE, can_upload: true, can_start_requests: true },
+        false,
+      ),
     ).toEqual(["Upload"]);
   });
 });

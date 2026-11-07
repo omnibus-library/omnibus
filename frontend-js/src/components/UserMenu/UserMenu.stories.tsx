@@ -202,7 +202,8 @@ export const RequestsFollowsWishlistsWhenRequestsAreOn: Story = {
     user: {
       ...WIRE_ADA,
       is_admin: false,
-      can_request: false,
+      can_start_requests: false,
+      can_choose_request_versions: false,
       book_requests: true,
     },
   },

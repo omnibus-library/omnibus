@@ -71,7 +71,7 @@ impl FromRequestParts<AppState> for RequestsUser {
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
         let RequestsViewer(user) = RequestsViewer::from_request_parts(parts, state).await?;
-        if !(user.is_admin || user.can_request) {
+        if !(user.is_admin || user.can_start_requests) {
             return Err((StatusCode::FORBIDDEN, "you can't make requests").into_response());
         }
         Ok(RequestsUser(user))
@@ -139,7 +139,7 @@ fn summary(row: RequestRow, is_admin: bool) -> BookRequest {
 /// Whether `user` may act on `row`: an admin, or the reader who made it while they may still
 /// request. Only they are offered its downloaded cover.
 fn may_act(user: &AuthUser, row: &RequestRow) -> bool {
-    user.is_admin || (user.can_request && user.id == row.user_id)
+    user.is_admin || (user.can_start_requests && user.id == row.user_id)
 }
 
 /// [`summary`] plus the versions found and, to whoever may act on it, the cover on offer.

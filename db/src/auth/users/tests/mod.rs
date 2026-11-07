@@ -14,7 +14,8 @@ const READER: UserPermissions = UserPermissions {
     can_upload: false,
     can_edit: false,
     can_download: true,
-    can_request: false,
+    can_start_requests: false,
+    can_choose_request_versions: false,
 };
 
 const ADMIN: UserPermissions = UserPermissions {
@@ -22,5 +23,6 @@ const ADMIN: UserPermissions = UserPermissions {
     can_upload: true,
     can_edit: true,
     can_download: true,
-    can_request: true,
+    can_start_requests: true,
+    can_choose_request_versions: true,
 };

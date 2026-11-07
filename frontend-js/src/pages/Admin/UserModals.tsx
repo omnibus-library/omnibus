@@ -35,14 +35,15 @@ const NEW_USER_PERMISSIONS: UserPermissions = {
   can_upload: false,
   can_edit: false,
   can_download: true,
-  can_request: false,
+  can_start_requests: false,
+  can_choose_request_versions: false,
 };
 
 const GRANTS = [
   { flag: "can_upload", label: "Upload books" },
   { flag: "can_edit", label: "Edit metadata" },
   { flag: "can_download", label: "Download" },
-  { flag: "can_request", label: "Request books" },
+  { flag: "can_start_requests", label: "Request books" },
 ] as const;
 
 function PermissionCheckbox({
@@ -80,8 +81,8 @@ function PermissionToggles({
   perms: UserPermissions;
   onChange: (perms: UserPermissions) => void;
 }) {
-  // An admin holds `canRequest` exactly while the server has book requests on.
-  const requests = useCurrentUser().canRequest;
+  // An admin holds `canStartRequests` exactly while the server has book requests on.
+  const requests = useCurrentUser().canStartRequests;
   return (
     <fieldset className="users-perms">
       <legend>Permissions</legend>
@@ -98,24 +99,26 @@ function PermissionToggles({
                   can_upload: true,
                   can_edit: true,
                   can_download: true,
-                  can_request: requests || perms.can_request,
+                  can_start_requests: requests || perms.can_start_requests,
+                  can_choose_request_versions:
+                    requests || perms.can_choose_request_versions,
                 }
               : { ...perms, is_admin: false },
           )
         }
       />
-      {GRANTS.filter(({ flag }) => requests || flag !== "can_request").map(
-        ({ flag, label }) => (
-          <PermissionCheckbox
-            key={flag}
-            label={label}
-            testId={`perm-${flag}`}
-            checked={perms[flag]}
-            disabled={perms.is_admin}
-            onToggle={(checked) => onChange({ ...perms, [flag]: checked })}
-          />
-        ),
-      )}
+      {GRANTS.filter(
+        ({ flag }) => requests || flag !== "can_start_requests",
+      ).map(({ flag, label }) => (
+        <PermissionCheckbox
+          key={flag}
+          label={label}
+          testId={`perm-${flag}`}
+          checked={perms[flag]}
+          disabled={perms.is_admin}
+          onToggle={(checked) => onChange({ ...perms, [flag]: checked })}
+        />
+      ))}
     </fieldset>
   );
 }

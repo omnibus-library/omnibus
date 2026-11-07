@@ -9468,18 +9468,22 @@
           "can_upload",
           "can_edit",
           "can_download",
-          "can_request",
+          "can_start_requests",
+          "can_choose_request_versions",
           "created_at",
           "locked"
         ],
         "properties": {
+          "can_choose_request_versions": {
+            "type": "boolean"
+          },
           "can_download": {
             "type": "boolean"
           },
           "can_edit": {
             "type": "boolean"
           },
-          "can_request": {
+          "can_start_requests": {
             "type": "boolean"
           },
           "can_upload": {
@@ -18561,16 +18565,20 @@
           "can_upload",
           "can_edit",
           "can_download",
-          "can_request"
+          "can_start_requests",
+          "can_choose_request_versions"
         ],
         "properties": {
+          "can_choose_request_versions": {
+            "type": "boolean"
+          },
           "can_download": {
             "type": "boolean"
           },
           "can_edit": {
             "type": "boolean"
           },
-          "can_request": {
+          "can_start_requests": {
             "type": "boolean"
           },
           "can_upload": {
@@ -18599,7 +18607,11 @@
           },
           "book_requests": {
             "type": "boolean",
-            "description": "Whether the server has book requests on. Every reader may then see the requests on\n`GET /api/requests`, whatever their `can_request`."
+            "description": "Whether the server has book requests on. Every reader may then see the requests on\n`GET /api/requests`, whatever their `can_start_requests`."
+          },
+          "can_choose_request_versions": {
+            "type": "boolean",
+            "description": "Whether the user may pick the version of any reader's request: false for everyone while the server has book requests off, else admins always may."
           },
           "can_download": {
             "type": "boolean"
@@ -18607,9 +18619,9 @@
           "can_edit": {
             "type": "boolean"
           },
-          "can_request": {
+          "can_start_requests": {
             "type": "boolean",
-            "description": "Whether the user may request books the library lacks: false for everyone while the server has book requests off, else admins always may."
+            "description": "Whether the user may ask for a book the library lacks: false for everyone while the server has book requests off, else admins always may."
           },
           "can_upload": {
             "type": "boolean"

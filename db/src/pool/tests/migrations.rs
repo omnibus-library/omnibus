@@ -531,6 +531,31 @@ async fn migration_0112_grants_can_request_to_existing_admins_only() {
     assert_eq!(can_request(2).await.unwrap(), 0, "a reader may not");
 }
 
+#[tokio::test]
+async fn migration_0119_splits_can_request_into_asking_and_choosing_for_whoever_held_it() {
+    let pool = pool_before(119).await;
+    sqlx::query(
+        "INSERT INTO users (id, username, password_hash, is_admin, can_request) VALUES \
+         (1, 'admin', 'h', 1, 0), (2, 'asker', 'h', 0, 1), (3, 'plain', 'h', 0, 0)",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    apply_migration(&pool, 119).await;
+
+    let flags = |id: i64| {
+        sqlx::query_as::<_, (i64, i64)>(
+            "SELECT can_start_requests, can_choose_request_versions FROM users WHERE id = ?",
+        )
+        .bind(id)
+        .fetch_one(&pool)
+    };
+    assert_eq!(flags(1).await.unwrap(), (1, 1), "an admin holds both");
+    assert_eq!(flags(2).await.unwrap(), (1, 1), "who could request keeps both");
+    assert_eq!(flags(3).await.unwrap(), (0, 0), "who could not holds neither");
+}
+
 /// A pool just below `version` holding user 1 and the Kobo `old-token`.
 async fn pool_before_with_old_device(version: i64) -> SqlitePool {
     let pool = pool_before(version).await;

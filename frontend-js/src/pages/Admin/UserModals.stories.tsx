@@ -102,7 +102,13 @@ export const NewUserStartsWithDownloadOnly: Story = {
 };
 
 export const NewUserOffersNoRequestGrantWhenRequestsAreOff: Story = {
-  parameters: { user: { ...WIRE_ADA, can_request: false } },
+  parameters: {
+    user: {
+      ...WIRE_ADA,
+      can_start_requests: false,
+      can_choose_request_versions: false,
+    },
+  },
   render: () => <NewUserModal onClose={close} onCreated={done} />,
   play: async ({ canvas, userEvent }) => {
     const dialog = await canvas.findByRole("dialog", { name: "New user" });
@@ -123,7 +129,7 @@ export const NewUserOffersNoRequestGrantWhenRequestsAreOff: Story = {
       within(dialog).getByRole("button", { name: "Create user" }),
     );
     await waitFor(() => expect(writes.created).toHaveLength(1));
-    await expect(writes.created[0]?.permissions.can_request).toBe(false);
+    await expect(writes.created[0]?.permissions.can_start_requests).toBe(false);
   },
 };
 
@@ -238,7 +244,8 @@ export const NewUserSendsWhatWasEntered: Story = {
           can_upload: false,
           can_edit: true,
           can_download: true,
-          can_request: true,
+          can_start_requests: true,
+          can_choose_request_versions: true,
         },
       },
     ]);
@@ -391,7 +398,8 @@ export const EditUserSavesPermissionsWithoutAPassword: Story = {
           can_upload: true,
           can_edit: true,
           can_download: true,
-          can_request: true,
+          can_start_requests: true,
+          can_choose_request_versions: true,
         },
       },
     ]);

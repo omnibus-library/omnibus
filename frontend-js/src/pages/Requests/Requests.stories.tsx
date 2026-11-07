@@ -36,7 +36,8 @@ const NAMES = { 1: "Ada Lovelace", 2: "Grace Hopper" };
 const READER = {
   ...WIRE_ADA,
   is_admin: false,
-  can_request: true,
+  can_start_requests: true,
+  can_choose_request_versions: true,
   book_requests: true,
 };
 const GRACE = { ...READER, id: 2, display_name: "Grace Hopper" };

@@ -10,7 +10,8 @@ export type NewUser = Credentials & {
     can_upload: boolean;
     can_edit: boolean;
     can_download: boolean;
-    can_request: boolean;
+    can_start_requests: boolean;
+    can_choose_request_versions: boolean;
   };
 };
 
@@ -24,7 +25,8 @@ export function buildReader(): NewUser {
       can_upload: false,
       can_edit: false,
       can_download: true,
-      can_request: false,
+      can_start_requests: false,
+      can_choose_request_versions: false,
     },
   };
 }

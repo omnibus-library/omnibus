@@ -24,7 +24,8 @@ pub async fn second_user(p: &SqlitePool, name: &str, is_admin: bool) -> User {
             can_upload: false,
             can_edit: false,
             can_download: true,
-            can_request: false,
+            can_start_requests: false,
+            can_choose_request_versions: false,
         },
     )
     .await

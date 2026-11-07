@@ -26,3 +26,9 @@ INSERT OR REPLACE INTO settings (key, value)
 SELECT 'download_client_category', 'omnibus'
  WHERE COALESCE((SELECT TRIM(value) FROM settings WHERE key = 'download_client_category'), '') = ''
    AND COALESCE((SELECT TRIM(value) FROM settings WHERE key = 'download_client_url'), '') <> '';
+
+-- Asking for a book and picking its version become two permissions; whoever could request keeps both.
+ALTER TABLE users RENAME COLUMN can_request TO can_start_requests;
+ALTER TABLE users ADD COLUMN can_choose_request_versions INTEGER NOT NULL DEFAULT 0;
+UPDATE users SET can_start_requests = 1 WHERE is_admin = 1;
+UPDATE users SET can_choose_request_versions = can_start_requests;

@@ -16,7 +16,8 @@ async fn first_user_is_admin_and_disables_registration() {
     assert!(u.can_upload);
     assert!(u.can_edit);
     assert!(u.can_download);
-    assert!(u.can_request);
+    assert!(u.can_start_requests);
+    assert!(u.can_choose_request_versions);
     assert!(!registration_enabled(&p).await.unwrap());
 }
 
@@ -36,7 +37,8 @@ async fn second_user_needs_registration_enabled() {
     assert!(!bob.can_upload);
     assert!(!bob.can_edit);
     assert!(bob.can_download);
-    assert!(!bob.can_request);
+    assert!(!bob.can_start_requests);
+    assert!(!bob.can_choose_request_versions);
 }
 
 #[tokio::test]
