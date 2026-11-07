@@ -153,7 +153,7 @@ export const Looking: Story = {
     );
     const waiting = canvas.getByTestId("request-looking");
     await expect(waiting).toHaveAttribute("role", "status");
-    await expect(waiting).toHaveTextContent("Looking for versions");
+    await expect(waiting).toHaveTextContent("Looking for versions…");
     await expect(canvas.queryByTestId("request-version")).toBeNull();
   },
 };
@@ -180,7 +180,7 @@ export const ASlowSearchSaysItIsStillAskingTheIndexers: Story = {
 
     // The timer fires about two seconds later in real time and reads the moved clock.
     await waitFor(
-      () => expect(waiting).toHaveTextContent("Still asking the indexers…"),
+      () => expect(waiting).toHaveTextContent("Still searching for versions…"),
       { timeout: 4000 },
     );
     await expect(canvas.queryByTestId("request-try-again")).toBeNull();

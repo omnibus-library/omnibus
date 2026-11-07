@@ -23,7 +23,10 @@ import {
   holdsEbook,
   isCancellable,
   isDownloading,
+  isSearchSlow,
   isSearchStale,
+  LOOKING_LABEL,
+  LOOKING_SLOW_LABEL,
   offersRequestAgain,
   pickedMeta,
   progressPercent,
@@ -109,12 +112,13 @@ describe("stateView", () => {
       ["stuck", "couldnt_add"],
       ["cancelled", null],
     ] as const;
+    const words = /release|torrent|indexer|grab|seed/i;
     for (const [state, reason] of states) {
       const { heading, note } = stateView(state, reason);
-      expect(`${heading} ${note}`).not.toMatch(
-        /release|torrent|indexer|grab|seed/i,
-      );
+      expect(`${heading} ${note}`).not.toMatch(words);
     }
+    expect(LOOKING_LABEL).not.toMatch(words);
+    expect(LOOKING_SLOW_LABEL).not.toMatch(words);
   });
 });
 
@@ -239,6 +243,13 @@ describe("firstShown", () => {
   it("keeps every version when four or fewer can be chosen", () => {
     const versions = [1, 2, 3, 4].map(offerable).concat(tried(5));
     expect(firstShown(versions).map((v) => v.id)).toEqual([1, 2, 3, 4, 5]);
+  });
+});
+
+describe("isSearchSlow", () => {
+  it("turns true at twenty seconds and not a second before", () => {
+    expect(isSearchSlow(1000, 1019)).toBe(false);
+    expect(isSearchSlow(1000, 1020)).toBe(true);
   });
 });
 

@@ -210,11 +210,19 @@ export function startFailure(error: unknown): string {
   }
 }
 
-/** How long a search runs before its lane says it is still asking the indexers. */
+/** What the lane says while a search runs, and once it has run long enough to say it is still going. */
+export const LOOKING_LABEL = "Looking for versions…";
+export const LOOKING_SLOW_LABEL = "Still searching for versions…";
+
+/** How long a search runs before its lane says it is still going. */
 export const SEARCH_SLOW_AFTER_SECS = 20;
 
-/** How long a search may run before its request offers Try again: past the server's 120 s timeout. */
+/** How long a search may run before its request offers Try again: past the first attempt's 120 s timeout. */
 export const SEARCH_STALE_AFTER_SECS = 150;
+
+/** Whether a search that began at `updatedAt` (Unix seconds) has run long enough by `now` to say it is still going. */
+export const isSearchSlow = (updatedAt: number, now: number) =>
+  now - updatedAt >= SEARCH_SLOW_AFTER_SECS;
 
 /** Whether a search that began at `updatedAt` (Unix seconds) has run past its timeout by `now`. */
 export const isSearchStale = (updatedAt: number, now: number) =>
