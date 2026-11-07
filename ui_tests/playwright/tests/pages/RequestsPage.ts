@@ -137,6 +137,11 @@ export class RequestsPage extends BasePage {
     return version.getByTestId("request-best-match");
   }
 
+  /** The link that opens `version`'s source page. */
+  pageLinkOf(version: Locator): Locator {
+    return version.getByRole("link");
+  }
+
   async choose(version: Locator): Promise<void> {
     await version.getByTestId("request-choose").click();
   }

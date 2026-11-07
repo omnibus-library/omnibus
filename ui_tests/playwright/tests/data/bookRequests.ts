@@ -64,6 +64,7 @@ export function releasesFor(book: ExternalBookMeta) {
     size,
     seeders,
     indexer,
+    infoUrl: `https://e2e-library.example/details/${book.isbn13}-${format}`,
     // A magnet, whose info hash is how the server finds the download again.
     downloadUrl: `magnet:?xt=urn:btih:${createHash("sha1").update(`${book.isbn13}-${format}`).digest("hex")}`,
     categories: [{ id: 7020 }],

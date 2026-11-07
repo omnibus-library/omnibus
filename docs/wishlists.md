@@ -48,7 +48,7 @@ Two states can end a request early:
 A found result is a **version**, never a "copy": "copy" already means a physical book in Omnibus. A version row shows
 its name, then where it came from, its format, size and seeds ("MyAnonamouse · EPUB · 1.8 MB · 142 seeds", or "Usenet"
 for a source with none), then whether it's the best match or didn't work. The best match and the next three show
-first, with "Show more" for the rest. Usenet versions are left out
+first, with "Show more" for the rest. A version's name opens its source's page in a new tab, when the source gives one. Usenet versions are left out
 until Omnibus has a Usenet download client.
 
 Requesting from the wishlist asks one question (ebook or audiobook), starts the request, and takes the user

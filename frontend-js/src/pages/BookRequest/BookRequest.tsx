@@ -23,6 +23,7 @@ import {
 } from "../../api";
 import { Button } from "../../components/Button/Button";
 import { Cover } from "../../components/Cover/Cover";
+import { ExternalGlyph } from "../../components/Glyphs/Glyphs";
 import { BusyLabel, Loading } from "../../components/Loading/Loading";
 import { PageError, PageNotFound } from "../../components/PageState/PageState";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
@@ -90,7 +91,9 @@ function VersionRow({
   /** Lets the page move focus to this row. */
   rowRef?: Ref<HTMLLIElement>;
 }) {
-  const textId = useId();
+  const nameId = useId();
+  const metaId = useId();
+  const bestId = useId();
   const best = version.bestMatch && !version.rejected;
   return (
     <li
@@ -101,11 +104,30 @@ function VersionRow({
       data-best-match={best}
       data-rejected={version.rejected}
     >
-      <div id={textId} className="rq-version-text">
+      <div className="rq-version-text">
         <p className="rq-version-name" data-testid="request-version-name">
-          {version.title}
+          {version.infoUrl ? (
+            <a
+              className="rq-version-link"
+              href={version.infoUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <span id={nameId}>{version.title}</span>
+              <span className="sr-only">
+                , opens the source’s page in a new tab
+              </span>
+              <ExternalGlyph />
+            </a>
+          ) : (
+            <span id={nameId}>{version.title}</span>
+          )}
         </p>
-        <p className="rq-version-meta" data-testid="request-version-meta">
+        <p
+          id={metaId}
+          className="rq-version-meta"
+          data-testid="request-version-meta"
+        >
           {versionSource(version)}
         </p>
         {version.rejected ? (
@@ -114,7 +136,7 @@ function VersionRow({
           </p>
         ) : (
           best && (
-            <p className="rq-tag" data-testid="request-best-match">
+            <p id={bestId} className="rq-tag" data-testid="request-best-match">
               Best match
             </p>
           )
@@ -125,7 +147,7 @@ function VersionRow({
           variant={best ? "primary" : "default"}
           size="sm"
           data-testid="request-choose"
-          aria-describedby={textId}
+          aria-describedby={`${nameId} ${metaId}${best ? ` ${bestId}` : ""}`}
           aria-busy={choosing}
           // aria-disabled, not disabled: a control that disables itself drops the keyboard's focus.
           aria-disabled={locked}

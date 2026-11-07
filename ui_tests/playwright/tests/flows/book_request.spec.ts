@@ -78,6 +78,12 @@ test.describe("book request", () => {
       const pdf = requestsPage.version("PDF");
       await expect(pdf).toContainText("E2E Library Ink");
       await expect(pdf).not.toContainText("127.0.0.1");
+      const page = requestsPage.pageLinkOf(pdf);
+      await expect(page).toHaveAttribute(
+        "href",
+        `https://e2e-library.example/details/${book.isbn13}-PDF`,
+      );
+      await expect(page).toHaveAttribute("target", "_blank");
     });
 
     await test.step("choose the best match", async () => {

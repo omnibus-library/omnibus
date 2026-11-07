@@ -308,9 +308,86 @@ export const AUsenetVersionSaysUsenetInPlaceOfSeeds: Story = {
   },
 };
 
+const PAGE = "https://tracker.example/t/11";
+
+export const AVersionsNameOpensItsSourcesPageInANewTab: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...seed({ state: "choose", versions: [{ ...EPUB, info_url: PAGE }] }),
+    );
+  },
+  play: async ({ canvas }) => {
+    const link = await canvas.findByRole("link", {
+      name: /^Hyperion - Dan Simmons EPUB.*opens the source’s page in a new tab$/,
+    });
+
+    await expect(link).toHaveAttribute("href", PAGE);
+    await expect(link).toHaveAttribute("target", "_blank");
+    await expect(link).toHaveAttribute("rel", "noopener noreferrer");
+  },
+};
+
+export const ATriedVersionsNameOpensItsPageToo: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...seed({
+        state: "choose",
+        versions: [EPUB, { ...TRIED, info_url: PAGE }],
+      }),
+    );
+  },
+  play: async ({ canvas }) => {
+    const rows = await canvas.findAllByTestId("request-version");
+
+    await expect(within(versionAt(rows, 1)).getByRole("link")).toHaveAttribute(
+      "href",
+      PAGE,
+    );
+    await expect(within(versionAt(rows, 0)).queryByRole("link")).toBeNull();
+  },
+};
+
+export const AVersionWithNoPageKeepsAPlainName: Story = {
+  beforeEach({ msw }) {
+    msw.use(...seed({ state: "choose", versions: [EPUB] }));
+  },
+  play: async ({ canvas }) => {
+    const row = within(await canvas.findByTestId("request-version"));
+
+    await expect(row.queryByRole("link")).toBeNull();
+    await expect(row.getByTestId("request-version-name").textContent).toBe(
+      EPUB.title,
+    );
+  },
+};
+
+export const AVersionWhosePageIsNotAWebAddressKeepsAPlainName: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...seed({
+        state: "choose",
+        versions: [{ ...EPUB, info_url: "javascript:alert(1)" }],
+      }),
+    );
+  },
+  play: async ({ canvas }) => {
+    const row = within(await canvas.findByTestId("request-version"));
+
+    await expect(row.queryByRole("link")).toBeNull();
+    await expect(row.getByTestId("request-version-name").textContent).toBe(
+      EPUB.title,
+    );
+  },
+};
+
 export const EachChooseButtonIsDescribedByItsOwnVersion: Story = {
   beforeEach({ msw }) {
-    msw.use(...seed({ state: "choose", versions: [EPUB, REVISED] }));
+    msw.use(
+      ...seed({
+        state: "choose",
+        versions: [{ ...EPUB, info_url: PAGE }, REVISED],
+      }),
+    );
   },
   play: async ({ canvas }) => {
     const [best, revised] = await canvas.findAllByRole("button", {

@@ -58,6 +58,7 @@ const aVersion = (overrides: Partial<RequestVersion> = {}): RequestVersion => ({
   indexer: "MyAnonamouse",
   seeders: 142,
   protocol: "torrent",
+  infoUrl: null,
   bestMatch: false,
   rejected: false,
   ...overrides,

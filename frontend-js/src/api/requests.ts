@@ -66,6 +66,17 @@ export async function testDownloadClient() {
 
 // A reader's book requests. Every query key starts with "requests".
 
+/** The address when it is an http(s) page, else null, so a stored value can never become a `javascript:` link. */
+function webPage(address: string | null | undefined) {
+  if (!address) return null;
+  try {
+    const { protocol } = new URL(address);
+    return protocol === "http:" || protocol === "https:" ? address : null;
+  } catch {
+    return null;
+  }
+}
+
 function toVersion(wire: RequestVersionWire) {
   return {
     id: wire.id,
@@ -76,6 +87,8 @@ function toVersion(wire: RequestVersionWire) {
     /** Null for a source with none, such as Usenet. */
     seeders: wire.seeders ?? null,
     protocol: wire.protocol ?? null,
+    /** The source's web page for the version; null when it gave none. */
+    infoUrl: webPage(wire.info_url),
     bestMatch: wire.best_match,
     /** Picked and given up: shown as one that did not work. */
     rejected: wire.rejected,
