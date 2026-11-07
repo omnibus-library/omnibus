@@ -298,8 +298,15 @@ test.describe("requests page", () => {
       await expectMutation(bookRequests.cancel(), () => requestsPage.cancel());
       await expect(requestsPage.paneState).toHaveText("Cancelled");
       await expect(requestsPage.paneCancelButton).toHaveCount(0);
-      await expect(requestsPage.item(book.title)).toHaveCount(0);
+      await expect(requestsPage.itemIn("Looking", book.title)).toHaveCount(0);
       release();
+    });
+
+    await test.step("find it under Cancelled, which starts folded", async () => {
+      await requestsPage.toggleGroup("Cancelled");
+      await expect(requestsPage.itemIn("Cancelled", book.title)).toContainText(
+        "Ebook · cancelled",
+      );
     });
   });
 

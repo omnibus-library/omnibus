@@ -4,11 +4,16 @@ import { Link, useLocation, useSearchParams } from "react-router";
 import { type RequestListing, requestsQuery, thumbUrl } from "../../api";
 import { Button } from "../../components/Button/Button";
 import { Cover } from "../../components/Cover/Cover";
+import {
+  ChevronDownGlyph,
+  ChevronRightGlyph,
+} from "../../components/Glyphs/Glyphs";
 import { Loading, RowSkeletons } from "../../components/Loading/Loading";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
 import { ToastProvider } from "../../components/Toast/Toast";
 import { useCurrentUser } from "../../session";
 import { PHONE_QUERY, useMediaQuery } from "../../useMediaQuery";
+import { loadRequestFolds, saveRequestFolds } from "../../viewPrefs";
 import { RequestDossier } from "../BookRequest/BookRequest";
 import type { DossierVariant } from "../BookRequest/RequestHistory";
 import { requestPath } from "../BookRequest/requestView";
@@ -79,30 +84,51 @@ function Groups({
   phone: boolean;
   onSelect: () => void;
 }) {
-  return groups.map((group) => (
-    <section
-      key={group.key}
-      className="rqs-group"
-      aria-labelledby={`rqs-group-${group.key}`}
-      data-testid={`requests-group-${group.key}`}
-    >
-      <h2 id={`rqs-group-${group.key}`} className="rqs-group-label">
-        {group.label}
-      </h2>
-      <ul className="rqs-items">
-        {group.items.map((listing) => (
-          <Item
-            key={listing.book.uuid}
-            listing={listing}
-            group={group.key}
-            selected={!phone && listing.book.uuid === selected}
-            phone={phone}
-            onSelect={onSelect}
-          />
-        ))}
-      </ul>
-    </section>
-  ));
+  const [folds, setFolds] = useState(loadRequestFolds);
+  const toggle = (key: RequestGroupKey, folded: boolean) => {
+    // Storage wins for the other groups, so a second tab's folds survive this write.
+    const next = { ...folds, ...loadRequestFolds(), [key]: !folded };
+    setFolds(next);
+    saveRequestFolds(next);
+  };
+  return groups.map((group) => {
+    const folded = folds[group.key] ?? group.key === "cancelled";
+    return (
+      <section
+        key={group.key}
+        className="rqs-group"
+        aria-labelledby={`rqs-group-${group.key}`}
+        data-testid={`requests-group-${group.key}`}
+      >
+        <h2 className="rqs-group-label">
+          <button
+            type="button"
+            className="rqs-group-toggle"
+            aria-expanded={!folded}
+            aria-controls={`rqs-items-${group.key}`}
+            onClick={() => toggle(group.key, folded)}
+          >
+            {folded ? <ChevronRightGlyph /> : <ChevronDownGlyph />}
+            <span id={`rqs-group-${group.key}`}>{group.label}</span>{" "}
+            <span className="rqs-group-count">{group.items.length}</span>
+          </button>
+        </h2>
+        <ul id={`rqs-items-${group.key}`} className="rqs-items" hidden={folded}>
+          {!folded &&
+            group.items.map((listing) => (
+              <Item
+                key={listing.book.uuid}
+                listing={listing}
+                group={group.key}
+                selected={!phone && listing.book.uuid === selected}
+                phone={phone}
+                onSelect={onSelect}
+              />
+            ))}
+        </ul>
+      </section>
+    );
+  });
 }
 
 function Empty() {
@@ -116,23 +142,13 @@ function Empty() {
   );
 }
 
-/** The selected book's request: the one its item is filed under, or, for a book whose requests were all cancelled while it was selected, the one that changed last. */
+/** The selected book's request: the one its item is filed under, or the first book's. */
 function selectedListing(
   groups: readonly RequestGroup[],
-  listings: readonly RequestListing[],
   wanted: string | null,
 ) {
   const items = groups.flatMap((g) => g.items);
-  const lastChanged = listings
-    .filter((l) => l.book.uuid === wanted)
-    .reduce<RequestListing | undefined>(
-      (last, l) =>
-        last === undefined || l.request.updatedAt > last.request.updatedAt
-          ? l
-          : last,
-      undefined,
-    );
-  return items.find((l) => l.book.uuid === wanted) ?? lastChanged ?? items[0];
+  return items.find((l) => l.book.uuid === wanted) ?? items[0];
 }
 
 /** The router state that marks `?book=` as written by the page itself, not chosen by the reader. */
@@ -152,9 +168,7 @@ function RequestsPage() {
   const [picked, setPicked] = useState(false);
   const listings = requests.data;
   const groups = listings ? groupRequests(listings, viewer) : [];
-  const selected = listings
-    ? selectedListing(groups, listings, wanted)
-    : undefined;
+  const selected = listings ? selectedListing(groups, wanted) : undefined;
   const first = groups[0]?.items[0]?.book.uuid;
   const select = (uuid: string) => {
     setParams({ book: uuid });

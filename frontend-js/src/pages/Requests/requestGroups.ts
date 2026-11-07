@@ -14,6 +14,7 @@ export const GROUP_ORDER = [
   "looking",
   "stuck",
   "ready",
+  "cancelled",
 ] as const;
 
 export type RequestGroupKey = (typeof GROUP_ORDER)[number];
@@ -25,12 +26,13 @@ export const GROUP_LABELS: Record<RequestGroupKey, string> = {
   looking: "Looking",
   stuck: "Stuck",
   ready: "Ready",
+  cancelled: "Cancelled",
 };
 
 type Viewer = Pick<User, "id" | "isAdmin" | "canRequest">;
 
-/** The group a request files its book under; `null` for a cancelled one, which only the book's history keeps. */
-function groupOf(request: BookRequest, viewer: Viewer): RequestGroupKey | null {
+/** The group a request files its book under. */
+function groupOf(request: BookRequest, viewer: Viewer): RequestGroupKey {
   switch (request.state) {
     case "choose":
       return canActOn(viewer, request) ? "needs_you" : "looking";
@@ -44,7 +46,7 @@ function groupOf(request: BookRequest, viewer: Viewer): RequestGroupKey | null {
     case "ready":
       return "ready";
     case "cancelled":
-      return null;
+      return "cancelled";
     default: {
       const _exhaustive: never = request.state;
       return _exhaustive;
@@ -59,7 +61,7 @@ export type RequestGroup = {
   items: RequestListing[];
 };
 
-/** The Requests list: one item per book, filed under its most urgent request (the newest of equals), in `GROUP_ORDER`, empty groups left out. `listings` come newest first. */
+/** The Requests list: one item per book, filed under its most urgent request (the newest of equals; the last cancelled among cancelled ones), in `GROUP_ORDER`, empty groups left out. `listings` come newest first. */
 export function groupRequests(
   listings: readonly RequestListing[],
   viewer: Viewer,
@@ -70,10 +72,15 @@ export function groupRequests(
   >();
   for (const listing of listings) {
     const key = groupOf(listing.request, viewer);
-    if (key === null) continue;
     const rank = GROUP_ORDER.indexOf(key);
     const held = filed.get(listing.book.uuid);
-    if (!held || rank < held.rank) {
+    if (
+      !held ||
+      rank < held.rank ||
+      (key === "cancelled" &&
+        rank === held.rank &&
+        listing.request.updatedAt > held.listing.request.updatedAt)
+    ) {
       filed.set(listing.book.uuid, { rank, key, listing });
     }
   }
@@ -129,9 +136,11 @@ export const itemLine = (
 ) =>
   `${kindLabel(listing.request.kind)} · ${whereItStands(listing, group, phone)}`;
 
-/** The line under the heading: "7 books · 1 needs you", the second half only when one does. */
+/** The line under the heading: "7 books · 1 needs you", the second half only when one does; cancelled books are not counted. */
 export function countsLine(groups: readonly RequestGroup[]): string {
-  const books = groups.reduce((n, g) => n + g.items.length, 0);
+  const books = groups
+    .filter((g) => g.key !== "cancelled")
+    .reduce((n, g) => n + g.items.length, 0);
   const needs = groups.find((g) => g.key === "needs_you")?.items.length ?? 0;
   const waiting =
     needs === 0 ? "" : ` · ${needs} ${needs === 1 ? "needs" : "need"} you`;
