@@ -66,7 +66,7 @@ extension View {
     }
 
     /// Fades a sideways-scrolling row out where the iPhone Duo's bar column
-    /// begins. A scroll view draws into the side safe area, which there is the
+    /// begins; rails get it from `SideRail` rather than calling this. A scroll view draws into the side safe area, which there is the
     /// column, so a rail ran on beneath the toolbar. Only an edge that meets the
     /// column fades; elsewhere rails run edge to edge.
     func endsAtSideBar() -> some View {
@@ -125,7 +125,7 @@ private struct OcclusionClearance: ViewModifier {
 
 /// The mask behind `endsAtSideBar()`: open on every edge but the bar's, and on
 /// that one too unless the row reaches the column.
-private struct SideBarRailEnd: ViewModifier {
+struct SideBarRailEnd: ViewModifier {
     @Environment(\.sideBarEdge) private var sideBarEdge
     /// Whether the row's bar-side edge meets the column, rather than stopping short of it.
     /// Starts true so a row's first frame fades, not flashes under the bar until measured.
@@ -136,9 +136,14 @@ private struct SideBarRailEnd: ViewModifier {
     /// How far the mask reaches past the row: room for shadows and the open edge.
     static let overhang: CGFloat = 400
 
+    /// The end of a rail that fades: the bar's, once the rail reaches its column.
+    static func fadingEnd(sideBar: HorizontalEdge?, meetsColumn: Bool) -> HorizontalEdge? {
+        meetsColumn ? sideBar : nil
+    }
+
     func body(content: Content) -> some View {
         if let edge = sideBarEdge {
-            let fades = meetsColumn
+            let fades = Self.fadingEnd(sideBar: edge, meetsColumn: meetsColumn) != nil
             content
                 .mask {
                     HStack(spacing: 0) {

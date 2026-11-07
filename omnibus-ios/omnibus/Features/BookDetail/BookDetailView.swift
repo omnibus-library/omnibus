@@ -527,10 +527,8 @@ struct BookDetailView: View {
             onSeries: { jumpToSeries(proxy: proxy) }
         )
         .padding(.top, Self.stageTop)
-        .background {
-            // Under the iPhone Duo's side bar too: a wash that stopped at the
-            // safe area left the column a black strip beside it.
-            if backdrop { StageBackdrop(book: book, tab: tab).ignoresSafeArea(edges: .horizontal) }
+        .slabBackground {
+            if backdrop { StageBackdrop(book: book, tab: tab) }
         }
         // Where a jump aims: the strip itself is pinned, and a pinned view
         // reports where it is pinned rather than where it belongs in the list.
@@ -630,12 +628,11 @@ struct BookDetailView: View {
         .padding(.horizontal, 16)
         .padding(.top, 1)
         .frame(height: Self.barRow, alignment: .top)
-        .background {
+        .slabBackground(bleeding: .top) {
             ZStack {
                 Rectangle().fill(.ultraThinMaterial)
                 palette.bg0Color.opacity(0.78)
             }
-            .ignoresSafeArea(edges: [.top, .horizontal])
             .opacity(scrolledPast ? 1 : 0)
             .allowsHitTesting(false)
         }
@@ -848,14 +845,13 @@ struct BookDetailView: View {
         }
         .padding(.horizontal, 16)
         .padding(.top, 10)
-        .background {
+        .slabBackground(bleeding: .bottom) {
             if backed {
                 ZStack {
                     Rectangle().fill(.ultraThinMaterial)
                     palette.bg0Color.opacity(0.74)
                 }
                 .overlay(alignment: .top) { Hairline() }
-                .ignoresSafeArea(edges: [.bottom, .horizontal])
             }
         }
     }

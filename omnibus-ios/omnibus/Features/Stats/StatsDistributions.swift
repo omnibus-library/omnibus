@@ -135,7 +135,7 @@ struct FinishedRail: View {
             StatsSectionLabel("Recently finished")
                 .screenPadding()
 
-            ScrollView(.horizontal) {
+            SideRail {
                 HStack(alignment: .top, spacing: 14) {
                     ForEach(books) { finished in
                         NavigationLink(value: Destination.book(uuid: finished.bookUUID)) {
@@ -168,9 +168,7 @@ struct FinishedRail: View {
                 .screenPadding()
                 .scrollTargetLayout()
             }
-            .scrollIndicators(.hidden)
             .scrollTargetBehavior(.viewAligned)
-            .endsAtSideBar()
         }
     }
 }

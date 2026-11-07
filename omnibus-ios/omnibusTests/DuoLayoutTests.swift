@@ -1,6 +1,7 @@
 //  DuoLayoutTests.swift
-//  The foldable-iPhone geometry: how a fold splits a view, and where the player
-//  puts its artwork and controls for every shape of screen it can be given.
+//  The foldable-iPhone geometry: how a fold splits a view, where the player
+//  puts its artwork and controls for every shape of screen it can be given,
+//  and how slabs and rails meet the side bar column.
 
 import CoreGraphics
 import SwiftUI
@@ -252,4 +253,18 @@ private let laptopFold = Fold(frame: CGRect(x: 0, y: 463, width: 669, height: 25
     #expect(HorizontalEdge.trailing.rectEdge(in: .leftToRight) == .right)
     #expect(HorizontalEdge.trailing.rectEdge(in: .rightToLeft) == .left)
     #expect(HorizontalEdge.leading.rectEdge(in: .leftToRight) == .left)
+}
+
+@Test func bleedEdgesAlwaysTakeInBothSidesForTheDuoSideColumn() {
+    #expect(Bleed.edges([]) == .horizontal)
+    #expect(Bleed.edges(.top) == [.top, .horizontal])
+    #expect(Bleed.edges(.bottom) == [.bottom, .horizontal])
+    #expect(Bleed.edges(.vertical) == .all)
+}
+
+@Test func sideBarRailEndFadesTheBarsEndOnlyOnceTheRailReachesTheColumn() {
+    #expect(SideBarRailEnd.fadingEnd(sideBar: .trailing, meetsColumn: true) == .trailing)
+    #expect(SideBarRailEnd.fadingEnd(sideBar: .leading, meetsColumn: true) == .leading)
+    #expect(SideBarRailEnd.fadingEnd(sideBar: .trailing, meetsColumn: false) == nil)
+    #expect(SideBarRailEnd.fadingEnd(sideBar: nil, meetsColumn: true) == nil)
 }
