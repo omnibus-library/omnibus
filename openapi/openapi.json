@@ -6654,7 +6654,7 @@
           "Reviews"
         ],
         "summary": "List your reviews",
-        "description": "Your own reviews with stars or text, private notes included, most recently changed first.\nA review holding only private notes isn't listed, nor is one of a book no longer in the\nlibrary.",
+        "description": "Your own reviews with stars or text, private notes included, ordered by when their stars\nor text last changed, newest first. A review holding only private notes isn't listed, nor\nis one of a book no longer in the library.",
         "operationId": "list_my_reviews",
         "parameters": [
           {
@@ -6670,7 +6670,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Your reviews, most recently changed first.",
+            "description": "Your reviews, newest stars or text change first.",
             "content": {
               "application/json": {
                 "schema": {

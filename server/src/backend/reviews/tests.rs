@@ -1,5 +1,6 @@
 //! Tests for the book review REST handlers.
 use axum::http::StatusCode;
+use omnibus_db::test_support::set_review_updated_at;
 use omnibus_shared::{BookReviews, Review};
 use tower::ServiceExt;
 
@@ -334,7 +335,7 @@ async fn api_list_my_reviews_requires_auth() {
 async fn api_list_my_reviews_returns_your_reviews_newest_first_up_to_the_limit() {
     let (app, _state, pool) = fixture().await;
     let (_, a) = seed_book_with_uuid(&pool, "/lib", "Book A").await;
-    let (_, b) = seed_book_with_uuid(&pool, "/lib", "Book B").await;
+    let (_, b) = seed_book_with_uuid(&pool, "/lib-b", "Book B").await;
     let (_, token) = reader(&pool, "alice").await;
     for (uuid, body) in [(&a, "First"), (&b, "Second")] {
         app.clone()
@@ -342,11 +343,7 @@ async fn api_list_my_reviews_returns_your_reviews_newest_first_up_to_the_limit()
             .await
             .unwrap();
     }
-    sqlx::query("UPDATE reviews SET updated_at = 1 WHERE book_uuid = ?")
-        .bind(&a)
-        .execute(&pool)
-        .await
-        .unwrap();
+    set_review_updated_at(&pool, &a, 1).await;
 
     let res = app
         .clone()

@@ -9,7 +9,9 @@ use omnibus_shared::ReviewPatch;
 use super::*;
 use crate::init_db;
 use crate::journal_images::{self, journal_images_dir};
-use crate::test_support::{count_rows, seed_synced_ebook, seed_user, EnvVarGuard};
+use crate::test_support::{
+    count_rows, seed_synced_ebook, seed_user, set_review_updated_at, EnvVarGuard,
+};
 
 async fn setup() -> (SqlitePool, i64, String) {
     let pool = init_db("sqlite::memory:").await.unwrap();
@@ -699,15 +701,6 @@ async fn delete_review_drops_the_cached_stats_summary() {
     assert_eq!(avg_stars(&pool, user).await, None);
 }
 
-async fn set_updated_at(pool: &SqlitePool, uuid: &str, ts: i64) {
-    sqlx::query("UPDATE reviews SET updated_at = ? WHERE book_uuid = ?")
-        .bind(ts)
-        .bind(uuid)
-        .execute(pool)
-        .await
-        .unwrap();
-}
-
 #[tokio::test]
 async fn list_own_reviews_returns_only_the_readers_rated_or_written_reviews_newest_first() {
     let (pool, user, a) = setup().await;
@@ -724,8 +717,8 @@ async fn list_own_reviews_returns_only_the_readers_rated_or_written_reviews_newe
     update_review(&pool, other, &a, &text("Theirs"))
         .await
         .unwrap();
-    set_updated_at(&pool, &a, 100).await;
-    set_updated_at(&pool, &b, 200).await;
+    set_review_updated_at(&pool, &a, 100).await;
+    set_review_updated_at(&pool, &b, 200).await;
 
     let reviews = list_own_reviews(&pool, user, 10).await.unwrap();
 
