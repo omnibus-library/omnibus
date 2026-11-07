@@ -38,6 +38,7 @@ extension View {
 struct SideRail<Content: View>: View {
     /// The sides the rail reaches past its container by `outset`, for a rail
     /// whose parent pads its content in but whose cards should scroll to the edge.
+    /// The rail pads its content back in by the same amount, so the two can't drift.
     var outset: CGFloat = 0
     var outsetEdges: Edge.Set = .horizontal
     /// Which part of the row shows first, for one that opens on its newest end.
@@ -45,7 +46,7 @@ struct SideRail<Content: View>: View {
     @ViewBuilder var content: Content
 
     var body: some View {
-        ScrollView(.horizontal) { content }
+        ScrollView(.horizontal) { content.padding(outsetEdges, outset) }
             .defaultScrollAnchor(anchor)
             .scrollIndicators(.hidden)
             // Inside the outset, so the fade measures the row at its full

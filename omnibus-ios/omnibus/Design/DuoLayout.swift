@@ -66,9 +66,10 @@ extension View {
     }
 
     /// Fades a sideways-scrolling row out where the iPhone Duo's bar column
-    /// begins; rails get it from `SideRail` rather than calling this. A scroll view draws into the side safe area, which there is the
-    /// column, so a rail ran on beneath the toolbar. Only an edge that meets the
-    /// column fades; elsewhere rails run edge to edge.
+    /// begins; rails get it from `SideRail` rather than calling this. A scroll
+    /// view draws into the side safe area, which there is the column, so a rail
+    /// ran on beneath the toolbar. Only an edge that meets the column fades;
+    /// elsewhere rails run edge to edge.
     func endsAtSideBar() -> some View {
         modifier(SideBarRailEnd())
     }
@@ -143,17 +144,17 @@ struct SideBarRailEnd: ViewModifier {
 
     func body(content: Content) -> some View {
         if let edge = sideBarEdge {
-            let fades = Self.fadingEnd(sideBar: edge, meetsColumn: meetsColumn) != nil
+            let end = Self.fadingEnd(sideBar: edge, meetsColumn: meetsColumn)
             content
                 .mask {
                     HStack(spacing: 0) {
-                        if fades && edge == .leading { ramp(from: .clear, to: .black) }
+                        if end == .leading { ramp(from: .clear, to: .black) }
                         Rectangle()
-                        if fades && edge == .trailing { ramp(from: .black, to: .clear) }
+                        if end == .trailing { ramp(from: .black, to: .clear) }
                     }
                     .padding(.vertical, -Self.overhang)
                     .padding(edge.opposite.edges, -Self.overhang)
-                    .padding(edge.edges, fades ? 0 : -Self.overhang)
+                    .padding(edge.edges, end == nil ? -Self.overhang : 0)
                 }
                 .background {
                     // Stretches into the column only from an edge that touches

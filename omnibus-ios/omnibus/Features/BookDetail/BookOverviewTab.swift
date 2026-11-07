@@ -201,7 +201,6 @@ struct BookOverviewTab: View {
                         .buttonStyle(PressableStyle())
                     }
                 }
-                .padding(.horizontal, 16)
                 .padding(.bottom, 6)
             }
         }
@@ -348,7 +347,6 @@ private struct ChipRow<Chips: View>: View {
                 .frame(width: 64, alignment: .leading)
             SideRail(outset: 16, outsetEdges: .trailing) {
                 HStack(spacing: 8) { chips() }
-                    .padding(.trailing, 16)
             }
         }
     }
@@ -433,7 +431,7 @@ private struct SeriesFan: View {
             GeometryReader { geometry in
                 let width = geometry.size.width
 
-                ScrollView(.horizontal) {
+                SideRail(outset: 16) {
                     ZStack(alignment: .topLeading) {
                         ForEach(Array(members.enumerated()), id: \.element.id) { index, member in
                             card(member, index: index, width: width)
@@ -445,13 +443,10 @@ private struct SeriesFan: View {
                         height: spread ? SeriesFanLayout.spreadHeight : SeriesFanLayout.gatheredHeight,
                         alignment: .topLeading
                     )
-                    .padding(.horizontal, 16)
                     .padding(.top, 14)
                 }
                 .scrollDisabled(!spread)
-                .scrollIndicators(.hidden)
                 .scrollClipDisabled()
-                .padding(.horizontal, -16)
             }
             .frame(height: (spread ? SeriesFanLayout.spreadHeight : SeriesFanLayout.gatheredHeight) + 14)
             .padding(.top, 6)
@@ -646,7 +641,6 @@ private struct ReadAlikes: View {
                     .accessibilityHint("Opens on Hardcover")
                 }
             }
-            .padding(.horizontal, 16)
             .padding(.bottom, 6)
         }
     }
