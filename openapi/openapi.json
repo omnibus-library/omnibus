@@ -6648,6 +6648,46 @@
         }
       }
     },
+    "/api/reviews/mine": {
+      "get": {
+        "tags": [
+          "Reviews"
+        ],
+        "summary": "List your reviews",
+        "description": "Your own reviews with stars or text, private notes included, most recently changed first.\nA review holding only private notes isn't listed, nor is one of a book no longer in the\nlibrary.",
+        "operationId": "list_my_reviews",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "How many reviews to return, from 1 to 100. Defaults to 20; a value outside the range is\nmoved to the nearest end.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Your reviews, most recently changed first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Review"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`limit` isn't a whole number."
+          }
+        }
+      }
+    },
     "/api/reviews/{uuid}": {
       "get": {
         "tags": [
