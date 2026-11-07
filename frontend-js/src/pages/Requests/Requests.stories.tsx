@@ -162,6 +162,7 @@ export const GroupsEachBookUnderWhereItStands: Story = {
       ["Needs you", "1", ["Dracula"]],
       ["On its way", "1", ["Carmilla"]],
       ["Looking", "1", ["Hyperion"]],
+      ["Cancelled", "1", []],
     ]);
     await expect(canvas.getByTestId("requests-counts")).toHaveTextContent(
       "3 books · 1 needs you",
@@ -181,6 +182,7 @@ export const AnotherReadersPickIsStillLookingToYou: Story = {
     await expect(await groupsOn(canvas)).toEqual([
       ["On its way", "1", ["Carmilla"]],
       ["Looking", "2", ["Dracula", "Hyperion"]],
+      ["Cancelled", "1", []],
     ]);
   },
 };
@@ -254,6 +256,10 @@ export const CancellingKeepsTheBookInThePaneWithItsUndo: Story = {
     // The toast's Undo takes the keyboard's focus from the Cancel that is gone.
     await expect(canvas.getByRole("button", { name: "Undo" })).toHaveFocus();
     await expect(fake.writes).toEqual([{ kind: "cancel", id: 3 }]);
+    // Grace's older cancelled request is not the one the pane moves to.
+    await expect(pane.getByTestId("request-requester")).toHaveTextContent(
+      "requested by AL You",
+    );
   },
 };
 
@@ -316,7 +322,38 @@ export const AFoldedGroupStaysFoldedOnReturn: Story = {
       ["Needs you", "1", ["Dracula"]],
       ["On its way", "1", []],
       ["Looking", "1", ["Hyperion"]],
+      ["Cancelled", "1", []],
     ]);
+  },
+};
+
+export const CancelledStartsFoldedAndOpensToABookWithRequestAgain: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const header = await canvas.findByRole("button", { name: "Cancelled 1" });
+    await expect(header).toHaveAttribute("aria-expanded", "false");
+    await expect(canvas.queryByRole("link", { name: /Dune/ })).toBeNull();
+
+    await userEvent.click(header);
+
+    const dune = await canvas.findByRole("link", { name: /Dune/ });
+    await expect(dune).toHaveTextContent("Ebook · cancelled");
+    await expect(dune.querySelector(".rqs-dot")).toHaveAttribute(
+      "data-group",
+      "cancelled",
+    );
+    await expect(localStorage.getItem(FOLDS_KEY)).toBe('{"cancelled":false}');
+
+    await userEvent.click(dune);
+
+    await waitFor(() =>
+      expect(canvas.getByTestId("where")).toHaveTextContent(
+        "/requests?book=uuid-dune",
+      ),
+    );
+    const pane = within(await canvas.findByTestId("requests-pane"));
+    await expect(
+      await pane.findByRole("button", { name: "Request again" }),
+    ).toBeInTheDocument();
   },
 };
 

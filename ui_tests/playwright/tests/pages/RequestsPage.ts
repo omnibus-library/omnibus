@@ -79,6 +79,18 @@ export class RequestsPage extends BasePage {
       .filter({ has: this.page.getByText(title, { exact: true }) });
   }
 
+  /** The fold button in the header of the group labelled `group`. */
+  groupToggle(group: string): Locator {
+    return this.page
+      .getByRole("region", { name: group, exact: true })
+      .getByRole("button");
+  }
+
+  /** Folds or unfolds the group labelled `group`. */
+  async toggleGroup(group: string): Promise<void> {
+    await this.groupToggle(group).click();
+  }
+
   /** Shows `title`'s request in the pane. */
   async select(title: string): Promise<void> {
     await this.item(title).click();

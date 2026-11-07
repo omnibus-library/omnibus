@@ -90,7 +90,7 @@ function Groups({
     saveRequestFolds(next);
   };
   return groups.map((group) => {
-    const folded = folds[group.key] ?? false;
+    const folded = folds[group.key] ?? group.key === "cancelled";
     return (
       <section
         key={group.key}
@@ -140,23 +140,13 @@ function Empty() {
   );
 }
 
-/** The selected book's request: the one its item is filed under, or, for a book whose requests were all cancelled while it was selected, the one that changed last. */
+/** The selected book's request: the one its item is filed under, or the first book's. */
 function selectedListing(
   groups: readonly RequestGroup[],
-  listings: readonly RequestListing[],
   wanted: string | null,
 ) {
   const items = groups.flatMap((g) => g.items);
-  const lastChanged = listings
-    .filter((l) => l.book.uuid === wanted)
-    .reduce<RequestListing | undefined>(
-      (last, l) =>
-        last === undefined || l.request.updatedAt > last.request.updatedAt
-          ? l
-          : last,
-      undefined,
-    );
-  return items.find((l) => l.book.uuid === wanted) ?? lastChanged ?? items[0];
+  return items.find((l) => l.book.uuid === wanted) ?? items[0];
 }
 
 /** The router state that marks `?book=` as written by the page itself, not chosen by the reader. */
@@ -176,9 +166,7 @@ function RequestsPage() {
   const [picked, setPicked] = useState(false);
   const listings = requests.data;
   const groups = listings ? groupRequests(listings, viewer) : [];
-  const selected = listings
-    ? selectedListing(groups, listings, wanted)
-    : undefined;
+  const selected = listings ? selectedListing(groups, wanted) : undefined;
   const first = groups[0]?.items[0]?.book.uuid;
   // Name the first book in the address, so the pane stays on it once it is cancelled.
   useEffect(() => {

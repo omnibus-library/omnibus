@@ -119,8 +119,9 @@ ISBN and always adds to your own list; a provider's record that matches a librar
 added to that book rather than minted as a second one. The page's stories run against the
 stateful fake in `src/testing/wishlistHandlers.ts`.
 Requests (`/requests`) lists every reader's requests one item per book, grouped by where the
-book stands (Needs you, On its way, Looking, Stuck, Ready; a book whose requests were all
-cancelled is left out), beside a pane with the selected book's request. `/requests?book=<uuid>`
+book stands (Needs you, On its way, Looking, Stuck, Ready, Cancelled), beside a pane with the
+selected book's request. Each group header folds, and the fold is remembered on the device;
+Cancelled starts folded and is left out of the count under the title. `/requests?book=<uuid>`
 is the only address of a book's request, and the first book is selected when `?book=` is
 absent. On a phone the list stands alone and each item opens that address full screen, which
 offers "‹ Requests" back (a request started from a wishlist row offers "← Back to Wishlists"

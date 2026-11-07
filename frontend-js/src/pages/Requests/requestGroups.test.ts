@@ -29,9 +29,10 @@ const shape = (groups: ReturnType<typeof groupRequests>) =>
 
 describe("groupRequests", () => {
   describe("grouping", () => {
-    it("orders the groups needs you, on its way, looking, stuck, then ready", () => {
+    it("orders the groups needs you, on its way, looking, stuck, ready, then cancelled", () => {
       const groups = groupRequests(
         [
+          listing("gone", { id: 0, state: "cancelled" }),
           listing("ready", { id: 1, state: "ready" }),
           listing("stuck", {
             id: 2,
@@ -51,6 +52,7 @@ describe("groupRequests", () => {
         ["looking", ["looking"]],
         ["stuck", ["stuck"]],
         ["ready", ["ready"]],
+        ["cancelled", ["gone"]],
       ]);
     });
 
@@ -75,17 +77,41 @@ describe("groupRequests", () => {
       ]);
     });
 
-    it("leaves out a book whose every request was cancelled", () => {
+    it("files a book whose every request was cancelled under cancelled", () => {
       const groups = groupRequests(
         [listing("gone", { state: "cancelled" })],
         ADA,
       );
 
-      expect(groups).toEqual([]);
+      expect(shape(groups)).toEqual([["cancelled", ["gone"]]]);
     });
   });
 
   describe("one item per book", () => {
+    it("files a book under its live request when a newer one was cancelled", () => {
+      const groups = groupRequests(
+        [
+          listing("b", { id: 4, state: "cancelled" }),
+          listing("b", { id: 3, state: "stuck", stuck_reason: "not_found" }),
+        ],
+        ADA,
+      );
+
+      expect(shape(groups)).toEqual([["stuck", ["b"]]]);
+    });
+
+    it("files an all-cancelled book under the request cancelled last", () => {
+      const groups = groupRequests(
+        [
+          listing("b", { id: 5, state: "cancelled", updated_at: 1000 }),
+          listing("b", { id: 3, state: "cancelled", updated_at: 2000 }),
+        ],
+        ADA,
+      );
+
+      expect(groups[0]?.items[0]?.request.id).toBe(3);
+    });
+
     it("files a book under its most urgent request", () => {
       const groups = groupRequests(
         [
@@ -142,6 +168,7 @@ describe("itemLine", () => {
       "Audiobook · ready to listen",
     ],
     ["looking", { state: "looking", kind: "audiobook" }, "Audiobook · looking"],
+    ["cancelled", { state: "cancelled" }, "Ebook · cancelled"],
   ] as const)("reads a %s %o as %s", (group, request, expected) => {
     expect(itemLine(listing("b", request), group, false)).toBe(expected);
   });
@@ -172,7 +199,7 @@ describe("itemLine", () => {
 });
 
 describe("countsLine", () => {
-  const groupsOf = (...states: ("choose" | "looking")[]) =>
+  const groupsOf = (...states: ("choose" | "looking" | "cancelled")[]) =>
     groupRequests(
       states.map((state, i) => listing(`b${i}`, { id: i + 1, state })),
       ADA,
@@ -186,6 +213,7 @@ describe("countsLine", () => {
     ],
     ["two waiting", groupsOf("choose", "choose"), "2 books · 2 need you"],
     ["none waiting", groupsOf("looking"), "1 book"],
+    ["a cancelled book beside one", groupsOf("looking", "cancelled"), "1 book"],
   ])("counts %s", (_case, groups, expected) => {
     expect(countsLine(groups)).toBe(expected);
   });

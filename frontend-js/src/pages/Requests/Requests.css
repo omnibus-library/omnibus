@@ -132,6 +132,9 @@
 .rqs-dot[data-group="ready"] {
   background: var(--ok);
 }
+.rqs-dot[data-group="cancelled"] {
+  background: var(--ink-3);
+}
 .rqs-chevron {
   flex: none;
   font-size: 20px;
