@@ -361,11 +361,12 @@ builds the app unchanged and every answer is "none".
   held sideways. `TopEdgeScrim` shrinks to a soft edge,
   since the status bar it grounds has moved into that column.
 - **The side column.** It is safe area, so anything that stops at the safe area stands
-  as a black strip beside it. Washes, scrims and bar slabs ignore the horizontal safe
-  area to run under it; sideways rails, which scroll into it, take `endsAtSideBar()`
-  to fade out where it begins (a no-op without a side bar, so a notched iPhone's rails
-  still run edge to edge, and on an edge that stops short of the column, like a chip
-  row's after its label).
+  as a black strip beside it. Washes, scrims and bar slabs are built from `fullBleed`
+  or `slabBackground` (`Design/Components/SideColumnSurfaces.swift`), which always run
+  under both sides; sideways rails are a `SideRail`, which fades out where the column
+  begins (a no-op without a side bar, so a notched iPhone's rails still run edge to
+  edge, and on an edge that stops short of the column, like a chip row's after its
+  label). A screen never writes the side-column code itself.
 - **Splits.** `PaneSplit` and `PlayerArrangement` are pure geometry: two panes either
   side of a vertical fold, or a share of a wide view, else one column. The book page
   and the player use them; the player also puts its artwork above a horizontal fold.
