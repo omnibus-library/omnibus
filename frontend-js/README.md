@@ -121,7 +121,7 @@ stateful fake in `src/testing/wishlistHandlers.ts`.
 Requests (`/requests`) lists every reader's requests one item per book, grouped by where the
 book stands (Needs you, On its way, Looking, Stuck, Ready, Cancelled), beside a pane with the
 selected book's request. Each group header folds, and the fold is remembered on the device;
-Cancelled starts folded and is left out of the count under the title; a selected book that moves into a folded group (a cancel files it under Cancelled) opens that group. `/requests?book=<uuid>`
+Cancelled starts folded and is left out of the count under the title; a selected book that moves into a folded group (a cancel files it under Cancelled) opens that group for the visit, without storing it. `/requests?book=<uuid>`
 is the only address of a book's request, and the first book is selected when `?book=` is
 absent. On a phone the list stands alone and each item opens that address full screen, which
 offers "‹ Requests" back (a request started from a wishlist row offers "← Back to Wishlists"

@@ -295,6 +295,7 @@ test.describe("requests page", () => {
     await test.step("cancel it as the reader who asked", async () => {
       await requestsPage.goto();
       await requestsPage.select(book.title);
+      await expect(requestsPage.openGroupToggle("Cancelled")).toHaveCount(0);
       await expectMutation(bookRequests.cancel(), () => requestsPage.cancel());
       await expect(requestsPage.paneState).toHaveText("Cancelled");
       await expect(requestsPage.paneCancelButton).toHaveCount(0);

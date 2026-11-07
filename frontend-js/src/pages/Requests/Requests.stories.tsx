@@ -113,6 +113,8 @@ function Page() {
         />
       </Routes>
       <Where />
+      <Link to="/start">Leave Requests</Link>
+      <Link to="/requests?book=uuid-dune">Back to the cancelled book</Link>
     </>
   );
 }
@@ -393,7 +395,17 @@ export const CancellingTheSelectedBookOpensCancelledToItsRow: Story = {
     await expect(
       canvas.getByRole("button", { name: "Cancelled 2" }),
     ).toHaveAttribute("aria-expanded", "true");
-    await expect(localStorage.getItem(FOLDS_KEY)).toBe('{"cancelled":false}');
+    // Opened for this visit only: nothing is stored, so a return finds it folded.
+    await expect(localStorage.getItem(FOLDS_KEY)).toBeNull();
+
+    await userEvent.click(canvas.getByRole("link", { name: "Leave Requests" }));
+    await userEvent.click(
+      await canvas.findByRole("link", { name: "Request Hyperion" }),
+    );
+
+    await expect(
+      await canvas.findByRole("button", { name: "Cancelled 2" }),
+    ).toHaveAttribute("aria-expanded", "false");
   },
 };
 
@@ -419,6 +431,32 @@ export const ADeepLinkToACancelledBookLeavesCancelledFolded: Story = {
       canvas.getByRole("button", { name: "Cancelled 1" }),
     ).toHaveAttribute("aria-expanded", "false");
     await expect(canvas.queryByRole("link", { name: /Dune/ })).toBeNull();
+  },
+};
+
+export const PickingABookDoesNotOpenItsFoldedGroup: Story = {
+  parameters: { path: "/requests?book=uuid-dune" },
+  play: async ({ canvas, userEvent }) => {
+    const cancelled = await canvas.findByRole("button", {
+      name: "Cancelled 1",
+    });
+    await userEvent.click(await canvas.findByRole("link", { name: /Dracula/ }));
+    await waitFor(() =>
+      expect(canvas.getByTestId("where")).toHaveTextContent(
+        "/requests?book=uuid-dracula",
+      ),
+    );
+
+    await userEvent.click(
+      canvas.getByRole("link", { name: "Back to the cancelled book" }),
+    );
+
+    await waitFor(() =>
+      expect(canvas.getByTestId("where")).toHaveTextContent(
+        "/requests?book=uuid-dune",
+      ),
+    );
+    await expect(cancelled).toHaveAttribute("aria-expanded", "false");
   },
 };
 
