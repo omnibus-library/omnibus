@@ -74,13 +74,10 @@ test.describe("book request", () => {
       expect(findings.searches).toEqual([`${book.title} ${author}`]);
     });
 
-    await test.step("read where a version came from", async () => {
+    await test.step("see where a version came from", async () => {
       const pdf = requestsPage.version("PDF");
-      await requestsPage.showDetails();
-      await expect(requestsPage.detailsOf(pdf)).toContainText(
-        "E2E Library Ink",
-      );
-      await expect(requestsPage.detailsOf(pdf)).not.toContainText("127.0.0.1");
+      await expect(pdf).toContainText("E2E Library Ink");
+      await expect(pdf).not.toContainText("127.0.0.1");
     });
 
     await test.step("choose the best match", async () => {

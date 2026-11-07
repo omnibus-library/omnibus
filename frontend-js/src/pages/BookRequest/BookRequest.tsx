@@ -72,12 +72,11 @@ import { messageOf, useAnswer, useCancel, useSwap } from "./useRequestActions";
 import { useTimeLeft } from "./useTimeLeft";
 import "./BookRequest.css";
 
-/** One version found: its release name, its source line, a Best match or Didn’t work tag, Choose, and the long form when Details is open. */
+/** One version found: its name, its source line, a Best match or Didn’t work tag, and Choose. */
 function VersionRow({
   version,
   choosing,
   locked,
-  details,
   onChoose,
   rowRef,
 }: {
@@ -86,8 +85,6 @@ function VersionRow({
   choosing: boolean;
   /** Some version is being chosen, so no other can be. */
   locked: boolean;
-  /** Details is open for the lane. */
-  details: boolean;
   /** Absent when the viewer may not pick for this request. */
   onChoose: (() => void) | null;
   /** Lets the page move focus to this row. */
@@ -139,18 +136,6 @@ function VersionRow({
           <BusyLabel busy={choosing} label="Choose" busyLabel="Choosing…" />
         </Button>
       )}
-      {details && (
-        <dl className="rq-details" data-testid="request-details">
-          <div>
-            <dt>Found through</dt>
-            <dd>{version.indexer ?? "Not named"}</dd>
-          </div>
-          <div>
-            <dt>Name</dt>
-            <dd>{version.title}</dd>
-          </div>
-        </dl>
-      )}
     </li>
   );
 }
@@ -175,7 +160,6 @@ function Choices({
   }, [focusFirst, onFocused]);
   const listId = useId();
   const [all, setAll] = useState(false);
-  const [details, setDetails] = useState(false);
   const toast = useToast();
   const answer = useAnswer(request.id);
   const choose = useMutation({
@@ -206,13 +190,12 @@ function Choices({
             version={version}
             choosing={choose.isPending && choose.variables === version.id}
             locked={choose.isPending}
-            details={details}
             onChoose={canAct ? () => choose.mutate(version.id) : null}
           />
         ))}
       </ul>
-      <div className="rq-version-links">
-        {hidden > 0 && (
+      {hidden > 0 && (
+        <div className="rq-version-links">
           <button
             type="button"
             className="rq-link"
@@ -223,18 +206,8 @@ function Choices({
           >
             {all ? "Show fewer" : `Show ${hidden} more`}
           </button>
-        )}
-        <button
-          type="button"
-          className="rq-link quiet"
-          data-testid="request-details-toggle"
-          aria-expanded={details}
-          aria-controls={listId}
-          onClick={() => setDetails(!details)}
-        >
-          Details
-        </button>
-      </div>
+        </div>
+      )}
     </>
   );
 }

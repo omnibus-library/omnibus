@@ -137,15 +137,6 @@ export class RequestsPage extends BasePage {
     return version.getByTestId("request-best-match");
   }
 
-  /** Opens Details for the lane, which shows every version's long form. */
-  async showDetails(): Promise<void> {
-    await this.paneLane.getByRole("button", { name: "Details" }).click();
-  }
-
-  detailsOf(version: Locator): Locator {
-    return version.getByTestId("request-details");
-  }
-
   async choose(version: Locator): Promise<void> {
     await version.getByTestId("request-choose").click();
   }

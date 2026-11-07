@@ -254,9 +254,6 @@
   color: var(--ink-1);
   cursor: pointer;
 }
-.rq-link.quiet {
-  color: var(--ink-2);
-}
 @media (hover: hover) {
   .rq-link:hover {
     color: var(--ink-0);
@@ -271,23 +268,6 @@
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
-.rq-details {
-  grid-column: 1 / -1;
-  display: grid;
-  gap: 6px;
-  font-size: 13px;
-  color: var(--ink-1);
-}
-.rq-details dt {
-  font: 500 10.5px / 1 var(--mono);
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--ink-3);
-}
-.rq-details dd {
-  overflow-wrap: anywhere;
-}
-
 /* ---- on its way ---- */
 
 .rq-progress {

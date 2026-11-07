@@ -342,30 +342,6 @@ export const AVersionRowLeavesOutAnUnnamedSourceAndMissingSeeders: Story = {
   },
 };
 
-export const DetailsRevealWhereEachVersionCameFromAndWhatItIsCalled: Story = {
-  beforeEach({ msw }) {
-    msw.use(...seed({ state: "choose", versions: [EPUB, PDF] }));
-  },
-  play: async ({ canvas, userEvent }) => {
-    const rows = await canvas.findAllByTestId("request-version");
-    await expect(canvas.queryByTestId("request-details")).toBeNull();
-    const toggle = canvas.getByTestId("request-details-toggle");
-    await expect(toggle).toHaveAttribute("aria-expanded", "false");
-
-    await userEvent.click(toggle);
-
-    await expect(toggle).toHaveAttribute("aria-expanded", "true");
-    await expect(canvas.getAllByTestId("request-details")).toHaveLength(2);
-    const details = within(versionAt(rows, 1)).getByTestId("request-details");
-    await expect(details).toHaveTextContent("Library Ink");
-    await expect(details).toHaveTextContent(
-      "Simmons, Dan - Hyperion (retail).pdf",
-    );
-    await userEvent.click(toggle);
-    await expect(canvas.queryByTestId("request-details")).toBeNull();
-  },
-};
-
 export const ChoosingAVersionSendsItsIdAndConfirmsThePick: Story = {
   beforeEach({ msw }) {
     msw.use(...seed({ state: "choose", versions: [EPUB, PDF] }));
@@ -902,7 +878,6 @@ export const AnotherReadersChoiceCanBeReadButNotMade: Story = {
     );
 
     await expect(canvas.queryByTestId("request-choose")).toBeNull();
-    await expect(canvas.getByTestId("request-details-toggle")).toBeVisible();
   },
 };
 
