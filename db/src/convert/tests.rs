@@ -579,3 +579,31 @@ async fn convert_file_returns_timeout_when_the_job_exceeds_the_configured_watchd
 
     assert!(matches!(err, ConvertError::Timeout(1)), "got {err:?}");
 }
+
+#[tokio::test]
+async fn convert_file_falls_back_to_stdout_when_a_failed_run_wrote_nothing_to_stderr() {
+    let pool = crate::pool::init_db("sqlite::memory:").await.unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let script = dir.path().join("ebook-convert");
+    let body = "#!/bin/sh\n\
+         if [ \"$1\" = \"--version\" ]; then echo 'ebook-convert 0-fake'; exit 0; fi\n\
+         echo 'only-on-stdout: could not read the book'\n\
+         exit 1\n";
+    std::fs::write(&script, body).unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let _env = EnvVarGuard::set_os("OMNIBUS_EBOOK_CONVERT_PATH", Some(script.as_os_str()));
+
+    let message = convert_file(
+        &pool,
+        &dir.path().join("in.azw3"),
+        &dir.path().join("out.epub"),
+    )
+    .await
+    .unwrap_err()
+    .to_string();
+
+    assert!(
+        message.contains("only-on-stdout: could not read the book"),
+        "got {message}"
+    );
+}

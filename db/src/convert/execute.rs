@@ -21,7 +21,7 @@ use crate::settings::effective_ebook_convert_path;
 /// generous for a large book on a loaded host.
 const DEFAULT_TIMEOUT_SECS: u64 = 600;
 
-/// How much of a failed run's stderr the error keeps: the tail, where Calibre puts the
+/// How much of a failed run's output the error keeps: the tail, where Calibre puts the
 /// actual error after its progress noise.
 const STDERR_TAIL_BYTES: usize = 4096;
 
@@ -151,6 +151,12 @@ async fn probe_runnable(bin: &str) -> bool {
     }
 }
 
+/// The last [`STDERR_TAIL_BYTES`] of `output` as trimmed text.
+fn tail_text(output: &[u8]) -> String {
+    let tail = &output[output.len().saturating_sub(STDERR_TAIL_BYTES)..];
+    String::from_utf8_lossy(tail).trim().to_string()
+}
+
 /// Run `<bin> <src> <out>` under a wall-clock timeout
 /// (`OMNIBUS_CONVERT_TIMEOUT_SECS`, default [`DEFAULT_TIMEOUT_SECS`]), and
 /// bail on a non-zero exit carrying the captured stderr.
@@ -177,10 +183,13 @@ async fn run_ebook_convert(bin: &str, src: &Path, out: &Path) -> Result<(), Conv
     match tokio::time::timeout(Duration::from_secs(timeout_secs), child.wait_with_output()).await {
         Ok(Ok(output)) if output.status.success() => Ok(()),
         Ok(Ok(output)) => {
-            let tail = &output.stderr[output.stderr.len().saturating_sub(STDERR_TAIL_BYTES)..];
-            let stderr = String::from_utf8_lossy(tail).trim().to_string();
+            // A failure Calibre only logs (it prints progress to stdout) has an empty stderr.
+            let cause = match tail_text(&output.stderr) {
+                empty if empty.is_empty() => tail_text(&output.stdout),
+                stderr => stderr,
+            };
             Err(ConvertError::Failed(anyhow::anyhow!(
-                "ebook-convert exited with {}: {stderr}",
+                "ebook-convert exited with {}: {cause}",
                 output.status
             )))
         }
