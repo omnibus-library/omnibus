@@ -4,6 +4,7 @@ import {
   type BookRequest,
   ChooseVersion,
   type EbookMetadata,
+  type RequestKind,
   type RequestListing,
   type RequestVersion,
   StartRequest,
@@ -105,11 +106,13 @@ export type RequestWrite =
 export type RequestFake = {
   handlers: HttpHandler[];
   writes: RequestWrite[];
+  /** The kind each start asked for, in order. */
+  started: RequestKind[];
 };
 
 const SWAPPED = "Swapped for another version";
 
-/** The routes over `initial` requests. A start adds a looking request for `viewer`, or returns theirs already going for the book as the server does; a start from a provider's record also adds its book; a retry puts one back to looking, or back to choosing after a stopped download. */
+/** The routes over `initial` requests. A start adds a looking request of the body's kind for `viewer`, or returns theirs already going for the book as the server does; a start from a provider's record also adds its book; a retry puts one back to looking, or back to choosing after a stopped download. */
 export function requestFake(
   initial: BookRequest[] = [],
   {
@@ -141,7 +144,7 @@ export function requestFake(
   const newestFirst = () => [...requests.values()].sort((a, b) => b.id - a.id);
   // The state a cancel left, which an undo puts back.
   const before = new Map<number, BookRequest["state"]>();
-  const fake: RequestFake = { handlers: [], writes: [] };
+  const fake: RequestFake = { handlers: [], writes: [], started: [] };
   const find = (raw: unknown) => requests.get(Number(raw));
   const refuse = (status: number) => new HttpResponse("refused", { status });
   /** Drops the picked version and goes back to choosing among the rest. */
@@ -166,14 +169,15 @@ export function requestFake(
   };
   fake.handlers = [
     http.post("/api/books/:uuid/requests", async ({ params, request }) => {
-      StartRequest.parse(await request.json());
+      const { kind } = StartRequest.parse(await request.json());
       const uuid = String(params.uuid);
       fake.writes.push({ kind: "start", uuid });
+      fake.started.push(kind);
       const going = [...requests.values()].find(
         (r) =>
           r.user_id === viewer &&
           r.book_uuid === uuid &&
-          r.kind === "ebook" &&
+          r.kind === kind &&
           isLive(r.state),
       );
       if (going) return HttpResponse.json(going);
@@ -181,6 +185,7 @@ export function requestFake(
         id: Math.max(0, ...requests.keys()) + 1,
         book_uuid: uuid,
         user_id: viewer,
+        kind,
       });
       requests.set(made.id, made);
       return HttpResponse.json(made, { status: 201 });

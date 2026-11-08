@@ -23,6 +23,7 @@ import {
 import type {
   BookRequest as BookRequestWire,
   ExternalBookMeta,
+  RequestKind,
   RequestListing as RequestListingWire,
   RequestState,
   RequestsSettingsStatus,
@@ -199,10 +200,13 @@ async function answered(res: Response): Promise<BookRequest> {
   return toBookRequest(BookRequestSchema.parse(await res.json()));
 }
 
-/** Starts looking for an ebook of the book, or returns the request already going. */
-export async function startBookRequest(uuid: string): Promise<BookRequest> {
+/** Starts looking for a `kind` of the book, or returns the request already going. */
+export async function startBookRequest(
+  uuid: string,
+  kind: RequestKind,
+): Promise<BookRequest> {
   const url = getStartBookRequestUrl(encodeURIComponent(uuid));
-  return answered(await send(url, "POST", { kind: "ebook" }));
+  return answered(await send(url, "POST", { kind }));
 }
 
 /** Makes a book without files from a provider's record and starts looking for an ebook of it. */

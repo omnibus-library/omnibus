@@ -700,7 +700,7 @@ function Lane({
           now,
         ) && (
           <div className="rq-actions">
-            <RequestAgain uuid={request.bookUuid} />
+            <RequestAgain uuid={request.bookUuid} kind={request.kind} />
           </div>
         )}
     </section>

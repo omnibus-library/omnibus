@@ -58,7 +58,7 @@ export function AddRequest({
     mutationFn: (target: Target) =>
       "meta" in target
         ? startRequestFromMeta(target.meta)
-        : startBookRequest(target.uuid),
+        : startBookRequest(target.uuid, "ebook"),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: REQUEST_LISTS_KEY });
       // The panel stays busy until the page's own list has the new request.

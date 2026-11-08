@@ -1,13 +1,17 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
-import type { BookDetail } from "../../api";
+import type { BookDetail, RequestKind } from "../../api";
 import { Button, ButtonLink } from "../../components/Button/Button";
 import { FormatSwitcher } from "../../components/FormatSwitcher/FormatSwitcher";
 import { ImmersiveGlyph, PencilGlyph } from "../../components/Glyphs/Glyphs";
 import { BusyLabel } from "../../components/Loading/Loading";
 import { usePlayback } from "../../playback/PlaybackProvider";
 import { useCurrentUser } from "../../session";
-import { holdsEbook } from "../BookRequest/requestView";
+import {
+  holdsAudiobook,
+  holdsEbook,
+  kindLabel,
+} from "../BookRequest/requestView";
 import { useStartRequest } from "../BookRequest/useStartRequest";
 import type { BookDialog } from "./BookDialogs";
 import { ExportMenu } from "./ExportMenu";
@@ -119,20 +123,20 @@ function SyncRow({ book }: { book: BookDetail }) {
   );
 }
 
-/** The ebook the library lacks, with a button to request it. */
-function EbookSlot({ book }: { book: BookDetail }) {
+/** A format the library lacks, with a button to request it. */
+function RequestSlot({ book, kind }: { book: BookDetail; kind: RequestKind }) {
   const start = useStartRequest(book.uuid);
   return (
-    <div className="bp-slot" data-testid="files-ebook-slot">
-      <span className="bp-slot-format">Ebook</span>
+    <div className="bp-slot" data-testid={`files-${kind}-slot`}>
+      <span className="bp-slot-format">{kindLabel(kind)}</span>
       <span className="bp-slot-note">Not in the library</span>
       <Button
         size="sm"
-        data-testid="files-request-ebook"
+        data-testid={`files-request-${kind}`}
         aria-disabled={start.isPending}
         aria-busy={start.isPending}
         onClick={() => {
-          if (!start.isPending) start.mutate();
+          if (!start.isPending) start.mutate(kind);
         }}
       >
         <BusyLabel
@@ -154,13 +158,14 @@ export function FilesDetails({
   onOpenDialog: (dialog: BookDialog) => void;
 }) {
   const hasFiles = book.formats.length > 0;
+  const mayRequest = useCurrentUser().canStartRequests;
   // Any ebook format counts as held, not only an EPUB.
-  const canRequestEbook =
-    useCurrentUser().canStartRequests && !holdsEbook(book.formats);
+  const canRequestEbook = mayRequest && !holdsEbook(book.formats);
+  const canRequestAudiobook = mayRequest && !holdsAudiobook(book.formats);
   return (
     <div className="bp-files-tab">
       <div className="bp-file-column">
-        {(hasFiles || canRequestEbook) && (
+        {(hasFiles || canRequestEbook || canRequestAudiobook) && (
           <section aria-labelledby="bp-files-title">
             <div className="bp-section-head">
               <h2 id="bp-files-title">Files</h2>
@@ -179,7 +184,10 @@ export function FilesDetails({
                 <ExportMenu book={book} />
               )}
               {book.hasEbook && book.hasAudio && <SyncRow book={book} />}
-              {canRequestEbook && <EbookSlot book={book} />}
+              {canRequestEbook && <RequestSlot book={book} kind="ebook" />}
+              {canRequestAudiobook && (
+                <RequestSlot book={book} kind="audiobook" />
+              )}
             </div>
           </section>
         )}

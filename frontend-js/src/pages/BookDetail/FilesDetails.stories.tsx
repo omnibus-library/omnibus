@@ -241,6 +241,35 @@ export const NoEbookSlotForAReaderWithoutThePermission: Story = {
   },
 };
 
+export const AnEbookOnlyBookOffersTheAudiobook: Story = {
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("format-row-epub");
+
+    await expect(canvas.getByTestId("files-audiobook-slot")).toHaveTextContent(
+      "AudiobookNot in the libraryRequest",
+    );
+    await expect(canvas.queryByTestId("files-ebook-slot")).toBeNull();
+  },
+};
+
+export const NoAudiobookSlotWhenTheBookHoldsOne: Story = {
+  args: { book: toBookDetail(aWireAudiobook({ unique_identifier: UUID })) },
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("format-row-m4b");
+
+    await expect(canvas.queryByTestId("files-audiobook-slot")).toBeNull();
+  },
+};
+
+export const NoAudiobookSlotForAReaderWithoutThePermission: Story = {
+  parameters: { user: READER_WITHOUT_REQUESTS },
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("format-row-epub");
+
+    await expect(canvas.queryByTestId("files-audiobook-slot")).toBeNull();
+  },
+};
+
 /** Where the router is, to see what a request opened. */
 function Where() {
   const { pathname, search } = useLocation();
@@ -268,6 +297,27 @@ export const RequestStartsAnEbookRequestForTheBook: Story = {
     await waitFor(() =>
       expect(requests.writes).toEqual([{ kind: "start", uuid: UUID }]),
     );
+    await waitFor(() =>
+      expect(canvas.getByTestId("where")).toHaveTextContent(
+        `/requests?book=${UUID}`,
+      ),
+    );
+  },
+};
+
+export const RequestStartsAnAudiobookRequestForTheBook: Story = {
+  decorators: [
+    (Story) => (
+      <>
+        <Story />
+        <Where />
+      </>
+    ),
+  ],
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByTestId("files-request-audiobook"));
+
+    await waitFor(() => expect(requests.started).toEqual(["audiobook"]));
     await waitFor(() =>
       expect(canvas.getByTestId("where")).toHaveTextContent(
         `/requests?book=${UUID}`,

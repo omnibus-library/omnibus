@@ -5,13 +5,14 @@ import {
   type BookUuid,
   bookRequestQuery,
   REQUEST_LISTS_KEY,
+  type RequestKind,
   requestsQuery,
   startBookRequest,
 } from "../../api";
 import { useToast } from "../../components/Toast/Toast";
 import { requestPath, startFailure } from "./requestView";
 
-/** Starts an ebook request for the book, reads the Requests list again, then opens the book's request on the Requests page, handing it `from` as router state, unless the reader has moved on; with `stay`, the page stays where it is. Says why on a refusal. */
+/** Starts a request of the kind `mutate` is given for the book, reads the Requests list again, then opens the book's request on the Requests page, handing it `from` as router state, unless the reader has moved on; with `stay`, the page stays where it is. Says why on a refusal. */
 export function useStartRequest(
   uuid: BookUuid,
   { stay = false, from }: { stay?: boolean; from?: unknown } = {},
@@ -23,7 +24,7 @@ export function useStartRequest(
   const here = useRef(key);
   here.current = key;
   return useMutation({
-    mutationFn: () => startBookRequest(uuid),
+    mutationFn: (kind: RequestKind) => startBookRequest(uuid, kind),
     // The place the click happened, to tell whether the reader has left by the time it answers.
     onMutate: () => key,
     onSuccess: async (request, _vars, clickedAt) => {
