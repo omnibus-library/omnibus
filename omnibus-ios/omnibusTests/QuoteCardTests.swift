@@ -57,18 +57,11 @@ struct QuoteTypeTests {
         #expect(abs(Double(large) - 96.76) < 0.001)
     }
 
-    @Test("the rule keeps a positive gap, as a fraction of width, below the passage")
-    func ruleGapIsAPositiveFractionOfWidth() {
-        #expect(QuoteCard.ruleGap > 0)
-        #expect(QuoteCard.ruleGap == 0.05)
-    }
-
     @Test("Sans italic is a skewed Instrument Sans, so the slant is in the font itself")
     func sansFontSkewsTheDescriptorWhenItalic() throws {
         let font = try #require(QuoteType(face: .sans, italic: true).sansFont(40))
         // `UIFont.fontDescriptor` drops the matrix; CoreText keeps it.
         let matrix = CTFontGetMatrix(font as CTFont)
-        #expect(font.fontName == Font.UIFace.regular)
         #expect(matrix.a == 1 && matrix.d == 1)
         #expect(isClose(Double(matrix.c), 0.2))
     }

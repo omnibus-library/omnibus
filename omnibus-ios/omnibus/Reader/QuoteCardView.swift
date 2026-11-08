@@ -254,8 +254,8 @@ struct QuoteType: Equatable {
 
     /// The passage face at `size` points. Only Cormorant's Regular, SemiBold
     /// and Italic cuts and Instrument Sans's Regular and SemiBold are bundled,
-    /// so the rest are synthesised. Sans italic is skewed inside the font, so
-    /// it survives `ImageRenderer`, which drops `Font.italic()` on a custom face.
+    /// so the rest are synthesised. Sans italic is skewed inside the font: no
+    /// Instrument Sans italic is bundled, so `Font.italic()` has no cut to pick.
     func font(_ size: CGFloat) -> Font {
         switch face {
         case .serif:
@@ -275,7 +275,7 @@ struct QuoteType: Equatable {
 }
 
 extension QuoteType {
-    /// The `.sans` passage face; italic is a skewed descriptor since no Instrument Sans italic is bundled.
+    /// The `.sans` passage face.
     func sansFont(_ size: CGFloat) -> UIFont? {
         let name = Font.UIFace.name(for: bold ? .semibold : .regular)
         // The descriptor initialiser substitutes a system font for an unknown name.
