@@ -79,8 +79,8 @@ above the routes, so playback continues as the reader moves between pages.
 Add books inspects an EPUB, PDF or
 audiobook with upload progress, reviews it on the same form, and files it. A
 413 (or a connection the server drops mid-send) reads as "larger than this
-server accepts": the cap is the server's `OMNIBUS_MAX_UPLOAD_BYTES`, which no
-route reports, so the page cannot refuse a big file before sending it. Check-in
+server accepts": the cap, when the operator sets one with the server's
+`OMNIBUS_MAX_UPLOAD_BYTES`, is one no route reports, so the page cannot refuse a big file before sending it. Check-in
 takes an ISBN typed, scanned or found by title, and files a copy or a wishlist
 entry; the camera never opens until "Scan a barcode" is pressed.
 The readers are lazy chunks that mount the vendored epub.js and PDF.js glue from a

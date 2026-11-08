@@ -743,3 +743,18 @@ async fn audiobook_commit_that_fails_to_index_keeps_nothing_and_its_retry_lands_
         "the retry reuses the intended folder rather than numbering a sibling"
     );
 }
+
+#[tokio::test]
+async fn audiobook_commit_rejects_oversized_title_field_with_413_before_full_buffering() {
+    let (app, _state, pool) = fixture().await;
+    let admin = auth_test_support::create_admin(&pool, "admin").await;
+    let token = auth_test_support::bearer_token(&pool, admin.id).await;
+
+    let oversized_title = "a".repeat(MAX_TEXT_FIELD_BYTES + 1);
+    let (ct, body) = multipart_body(&[("title", None, oversized_title.as_bytes())]);
+    let res = app
+        .oneshot(post_multipart("/api/uploads/audiobooks", &token, &ct, body))
+        .await
+        .expect("request should succeed");
+    assert_eq!(res.status(), StatusCode::PAYLOAD_TOO_LARGE);
+}

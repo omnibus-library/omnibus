@@ -23,8 +23,8 @@ use tokio::io::AsyncWriteExt as _;
 
 use super::review::{self, CommitExtras, LegacyFields};
 use super::{
-    discard_placed, discard_placed_blocking, max_upload_bytes, norm,
-    reindex_and_resolve_uploaded_uuid, require_upload, UploadError,
+    discard_placed, discard_placed_blocking, max_upload_bytes, norm, read_text_field_capped,
+    reindex_and_resolve_uploaded_uuid, require_upload, UploadError, MAX_TEXT_FIELD_BYTES,
 };
 use crate::auth::AuthUser;
 use crate::backend::AppState;
@@ -209,10 +209,23 @@ async fn parse_audiobook_multipart(
                             tmp,
                         });
                     }
-                    "title" => form.legacy.title = field.text().await.ok(),
-                    "author" => form.legacy.author = field.text().await.ok(),
-                    "series" => form.legacy.series = field.text().await.ok(),
-                    "series_index" => form.legacy.series_index = field.text().await.ok(),
+                    "title" => {
+                        form.legacy.title =
+                            read_text_field_capped(field, "title", MAX_TEXT_FIELD_BYTES).await?
+                    }
+                    "author" => {
+                        form.legacy.author =
+                            read_text_field_capped(field, "author", MAX_TEXT_FIELD_BYTES).await?
+                    }
+                    "series" => {
+                        form.legacy.series =
+                            read_text_field_capped(field, "series", MAX_TEXT_FIELD_BYTES).await?
+                    }
+                    "series_index" => {
+                        form.legacy.series_index =
+                            read_text_field_capped(field, "series_index", MAX_TEXT_FIELD_BYTES)
+                                .await?
+                    }
                     other => {
                         review::take_extra_field(&mut form.extras, other, field).await?;
                     }
