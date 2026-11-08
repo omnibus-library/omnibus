@@ -78,13 +78,13 @@ pub async fn set_request_flags(
         "UPDATE users SET is_admin = ?, can_start_requests = ?, can_choose_request_versions = ?
          WHERE id = ?",
     )
-        .bind(is_admin)
-        .bind(can_start_requests)
-        .bind(can_choose_request_versions)
-        .bind(user_id)
-        .execute(pool)
-        .await
-        .expect("set request flags");
+    .bind(is_admin)
+    .bind(can_start_requests)
+    .bind(can_choose_request_versions)
+    .bind(user_id)
+    .execute(pool)
+    .await
+    .expect("set request flags");
 }
 
 /// Create a non-admin user.

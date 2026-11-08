@@ -552,8 +552,16 @@ async fn migration_0119_splits_can_request_into_asking_and_choosing_for_whoever_
         .fetch_one(&pool)
     };
     assert_eq!(flags(1).await.unwrap(), (1, 1), "an admin holds both");
-    assert_eq!(flags(2).await.unwrap(), (1, 1), "who could request keeps both");
-    assert_eq!(flags(3).await.unwrap(), (0, 0), "who could not holds neither");
+    assert_eq!(
+        flags(2).await.unwrap(),
+        (1, 1),
+        "who could request keeps both"
+    );
+    assert_eq!(
+        flags(3).await.unwrap(),
+        (0, 0),
+        "who could not holds neither"
+    );
 }
 
 /// A pool just below `version` holding user 1 and the Kobo `old-token`.
