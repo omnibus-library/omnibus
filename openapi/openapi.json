@@ -6542,7 +6542,7 @@
           "Requests"
         ],
         "summary": "Undo a cancel",
-        "description": "Takes a cancel back while its grace lasts (until `cancel_at`), putting the request in the\nstate it was cancelled from; a request cancelled while looking searches again, which counts\nas a start. After the grace the download is stopped and cannot be undone, nor can a cancel\nonce you started another request for the same book. Only the reader who made the request, a\nreader who can pick versions, or an admin, can do this.",
+        "description": "Takes a cancel back while its grace lasts (until `cancel_at`), putting the request in the\nstate it was cancelled from; a request cancelled while looking searches again, which counts\nas a start. After the grace the download is stopped and cannot be undone, nor can a cancel\nonce you started another request for the same book. Only a reader who can pick versions, an\nadmin, or the reader who made the request while they can ask for books, can do this.",
         "operationId": "undo_cancel_book_request",
         "parameters": [
           {
@@ -6571,7 +6571,7 @@
             "description": "You aren't signed in."
           },
           "403": {
-            "description": "The request is another reader's and your account can't pick versions."
+            "description": "Your account can't ask for books or pick versions, or the request is another reader's and it can't pick versions."
           },
           "404": {
             "description": "Book requests are off on this server, or there is no such request."
@@ -6580,7 +6580,7 @@
             "description": "The request isn't cancelled, the undo grace has ended, or you have started another request for this book."
           },
           "429": {
-            "description": "You have too many requests in progress to restore this one."
+            "description": "You started too many requests lately, or have too many in progress to restore this one."
           }
         }
       }

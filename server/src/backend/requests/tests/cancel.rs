@@ -82,33 +82,22 @@ mod post_cancel_request {
     }
 
     #[tokio::test]
-    async fn lets_a_chooser_cancel_another_readers_request() {
+    async fn lets_a_chooser_and_an_admin_cancel_another_readers_request() {
         let (app, _, pool) = fixture_book_requests(true).await;
         let (ada, _) = requester(&pool, "ada").await;
-        let (picker, token) = chooser(&pool, "picker").await;
-        let uuid = seed_book(&pool, "Dracula").await;
-        let id = seed_request(&pool, ada, &uuid).await;
-
-        let res = send(&app, "POST", &cancel_uri(id), Some(&token), None).await;
-
-        assert_eq!(res.status(), StatusCode::OK);
-        let row = store::get(&pool, id).await.unwrap().unwrap();
-        assert_eq!(row.cancelled_by, Some(picker));
-    }
-
-    #[tokio::test]
-    async fn lets_an_admin_cancel_another_readers_request() {
-        let (app, _, pool) = fixture_book_requests(true).await;
-        let (ada, _) = requester(&pool, "ada").await;
+        let (_, picker) = chooser(&pool, "picker").await;
         let admin = admin_token(&pool).await;
-        let uuid = seed_book(&pool, "Dracula").await;
-        let id = seed_request(&pool, ada, &uuid).await;
 
-        let res = send(&app, "POST", &cancel_uri(id), Some(&admin), None).await;
+        for (n, token) in [picker, admin].iter().enumerate() {
+            let uuid = seed_book(&pool, &format!("Dracula {n}")).await;
+            let id = seed_request(&pool, ada, &uuid).await;
 
-        assert_eq!(res.status(), StatusCode::OK);
-        let row = store::get(&pool, id).await.unwrap().unwrap();
-        assert_ne!(row.cancelled_by, Some(ada));
+            let res = send(&app, "POST", &cancel_uri(id), Some(token), None).await;
+
+            assert_eq!(res.status(), StatusCode::OK);
+            let row = store::get(&pool, id).await.unwrap().unwrap();
+            assert!(row.cancelled_by.is_some_and(|by| by != ada), "token {n}");
+        }
     }
 
     #[tokio::test]
@@ -189,7 +178,7 @@ mod delete_cancel_request {
     }
 
     #[tokio::test]
-    async fn lets_a_reader_who_can_neither_ask_nor_pick_undo_their_own_cancel() {
+    async fn answers_403_to_a_reader_who_can_neither_ask_nor_pick_undoing_their_own_cancel() {
         let (app, _, pool) = fixture_book_requests(true).await;
         let (plain, token) = reader(&pool, "plain").await;
         let uuid = seed_book(&pool, "Dracula").await;
@@ -198,7 +187,41 @@ mod delete_cancel_request {
 
         let res = send(&app, "DELETE", &cancel_uri(id), Some(&token), None).await;
 
+        assert_eq!(res.status(), StatusCode::FORBIDDEN);
+        let row = store::get(&pool, id).await.unwrap().unwrap();
+        assert_eq!(row.state, RequestState::Cancelled);
+    }
+
+    #[tokio::test]
+    async fn lets_a_reader_who_can_ask_undo_their_own_cancel() {
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let (ada, token) = asker(&pool, "ada").await;
+        let uuid = seed_book(&pool, "Dracula").await;
+        let id = seed_request(&pool, ada, &uuid).await;
+        set_state(&pool, id, "on_its_way").await;
+        send(&app, "POST", &cancel_uri(id), Some(&token), None).await;
+
+        let res = send(&app, "DELETE", &cancel_uri(id), Some(&token), None).await;
+
         assert_eq!(res.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn answers_429_and_leaves_it_cancelled_when_the_reader_started_too_many_lately() {
+        let (app, state, pool) = fixture_book_requests(true).await;
+        let (ada, token) = requester(&pool, "ada").await;
+        let uuid = seed_book(&pool, "Dracula").await;
+        let id = seed_request(&pool, ada, &uuid).await;
+        send(&app, "POST", &cancel_uri(id), Some(&token), None).await;
+        for _ in 0..10 {
+            state.request_starts().record(ada);
+        }
+
+        let res = send(&app, "DELETE", &cancel_uri(id), Some(&token), None).await;
+
+        assert_eq!(res.status(), StatusCode::TOO_MANY_REQUESTS);
+        let row = store::get(&pool, id).await.unwrap().unwrap();
+        assert_eq!(row.state, RequestState::Cancelled);
     }
 
     #[tokio::test]

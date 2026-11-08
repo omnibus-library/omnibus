@@ -36,7 +36,8 @@ use super::{internal, overrides, AppState};
 mod access;
 
 use access::{
-    cancellable_request, chooser_request, find, may_choose, RequestsUser, RequestsViewer,
+    cancellable_request, chooser_request, find, may_choose, restorable_request, RequestsUser,
+    RequestsViewer,
 };
 
 /// Requests a reader may start (or retry) in [`START_WINDOW`].
@@ -726,8 +727,8 @@ pub(super) async fn post_cancel_request(
 /// Takes a cancel back while its grace lasts (until `cancel_at`), putting the request in the
 /// state it was cancelled from; a request cancelled while looking searches again, which counts
 /// as a start. After the grace the download is stopped and cannot be undone, nor can a cancel
-/// once you started another request for the same book. Only the reader who made the request, a
-/// reader who can pick versions, or an admin, can do this.
+/// once you started another request for the same book. Only a reader who can pick versions, an
+/// admin, or the reader who made the request while they can ask for books, can do this.
 #[utoipa::path(
     delete,
     path = "/api/requests/{id}/cancel",
@@ -737,10 +738,10 @@ pub(super) async fn post_cancel_request(
     responses(
         (status = 200, description = "The request is back as it was.", body = BookRequest),
         (status = 401, description = "You aren't signed in."),
-        (status = 403, description = "The request is another reader's and your account can't pick versions."),
+        (status = 403, description = "Your account can't ask for books or pick versions, or the request is another reader's and it can't pick versions."),
         (status = 404, description = "Book requests are off on this server, or there is no such request."),
         (status = 409, description = "The request isn't cancelled, the undo grace has ended, or you have started another request for this book."),
-        (status = 429, description = "You have too many requests in progress to restore this one."),
+        (status = 429, description = "You started too many requests lately, or have too many in progress to restore this one."),
     ),
 )]
 pub(super) async fn delete_cancel_request(
@@ -748,8 +749,12 @@ pub(super) async fn delete_cancel_request(
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> Response {
-    if let Err(res) = cancellable_request(&state, &user, id).await {
+    if let Err(res) = restorable_request(&state, &user, id).await {
         return res;
+    }
+    // Undoing a cancel starts the request again, so it counts like a start.
+    if !state.request_starts().has_room(user.id) {
+        return too_many("you started too many requests; try again in a few minutes");
     }
     match store::undo_cancel(state.pool(), id, store::unix_now(), MAX_LIVE).await {
         Ok(restored) => {

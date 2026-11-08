@@ -91,3 +91,16 @@ pub async fn cancellable_request(
     }
     Ok(row)
 }
+
+/// [`cancellable_request`] for undoing a cancel, which starts the request again: the 403 goes to
+/// a reader who may neither ask for books nor pick versions, before the request is looked up.
+pub async fn restorable_request(
+    state: &AppState,
+    user: &AuthUser,
+    id: i64,
+) -> Result<RequestRow, Response> {
+    if !(may_choose(user) || user.can_start_requests) {
+        return Err((StatusCode::FORBIDDEN, "you can't ask for books").into_response());
+    }
+    cancellable_request(state, user, id).await
+}
