@@ -119,12 +119,10 @@ export function ChipInput({
           list={listId}
           value={draft}
           onChange={(e) => {
-            const inputType =
-              "inputType" in e.nativeEvent ? e.nativeEvent.inputType : "";
-            // A datalist pick is a replacement, but some browsers send one with no inputType at all.
+            // A pick from the datalist arrives as a replacement, not as typing.
             const fromList =
-              inputType === "insertReplacementText" ||
-              (!inputType && offered.some((s) => s.name === e.target.value));
+              "inputType" in e.nativeEvent &&
+              e.nativeEvent.inputType === "insertReplacementText";
             if (fromList) add(e.target.value);
             else setDraft(e.target.value);
           }}

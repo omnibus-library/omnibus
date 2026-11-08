@@ -85,20 +85,6 @@ export const AddFromSuggestion: Story = {
   },
 };
 
-export const AddFromSuggestionWithNoInputType: Story = {
-  play: async ({ canvas, args }) => {
-    const input = canvas.getByRole("combobox", { name: "Add tags" });
-
-    await fireEvent.input(input, { target: { value: "Space opera" } });
-
-    await expect(args.onChange).toHaveBeenLastCalledWith([
-      "cozy",
-      "Space opera",
-    ]);
-    await expect(input).toHaveValue("");
-  },
-};
-
 export const SuggestionsNameTheirValue: Story = {
   play: async () => {
     await expect(offered("label")).toEqual(["Space opera · 12 books"]);
