@@ -623,6 +623,26 @@ mod import_finished {
         }
 
         #[tokio::test]
+        async fn when_a_usenet_jobs_folder_is_outside_the_clients_prefix() {
+            let env = env().await;
+            let wished = wish(&env, "Dune", "Frank Herbert").await;
+            let request = finished_request(&env, &wished, RequestKind::Ebook).await;
+            let hash = request.client_hash.clone().unwrap();
+            let client = StubClient::new().with_files(&hash, "/elsewhere/job", &[]);
+            let config = RequestsConfig {
+                download_client_kind: DownloadClientKind::Sabnzbd,
+                ..requests_config(Some("/downloads"), env.dl.to_str())
+            };
+
+            import_finished(&env.pool, &client, &env.worker, &config)
+                .await
+                .unwrap();
+
+            let detail = couldnt_add_detail(&env, request.id).await;
+            assert!(detail.contains("not visible"), "{detail}");
+        }
+
+        #[tokio::test]
         async fn with_no_ebook_library() {
             let env = env().await;
             use_library(&env, None).await;
