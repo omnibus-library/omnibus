@@ -278,6 +278,8 @@ extension QuoteType {
     /// The `.sans` passage face; italic is a skewed descriptor since no Instrument Sans italic is bundled.
     func sansFont(_ size: CGFloat) -> UIFont? {
         let name = Font.UIFace.name(for: bold ? .semibold : .regular)
+        // The descriptor initialiser substitutes a system font for an unknown name.
+        guard UIFont(name: name, size: size) != nil else { return nil }
         // Glyph space is y-up, so a positive `c` leans right (~11°).
         let skew = italic ? CGAffineTransform(a: 1, b: 0, c: 0.2, d: 1, tx: 0, ty: 0) : .identity
         return UIFont(descriptor: UIFontDescriptor(name: name, matrix: skew), size: size)
