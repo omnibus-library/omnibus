@@ -44,6 +44,10 @@ async fn pool_with_prowlarr_key(url: &str, key: &str) -> SqlitePool {
 
 /// A `looking` ebook request for a fileless "Dracula" by Bram Stoker.
 async fn looking_request(pool: &SqlitePool) -> i64 {
+    looking_request_of(pool, RequestKind::Ebook).await
+}
+
+async fn looking_request_of(pool: &SqlitePool, kind: RequestKind) -> i64 {
     let uuid = crate::physical::create_fileless_book(
         pool,
         FilelessBook {
@@ -58,7 +62,7 @@ async fn looking_request(pool: &SqlitePool) -> i64 {
     .await
     .unwrap();
     let user = crate::test_support::seed_user(pool, "ada").await;
-    store::start(pool, user, &uuid, RequestKind::Ebook, 5)
+    store::start(pool, user, &uuid, kind, 5)
         .await
         .unwrap()
         .request
@@ -123,6 +127,32 @@ mod run_search {
                 .await
                 .unwrap();
         assert_eq!(dropped, 1);
+    }
+
+    #[tokio::test]
+    async fn searches_the_audiobook_category_and_ranks_audio_for_an_audiobook_request() {
+        let server = MockServer::start().await;
+        let m4b = json!({
+            "guid": "g1", "title": "Dracula - Bram Stoker M4B", "size": 310_000_000, "seeders": 12,
+            "indexer": "Audio", "downloadUrl": "http://prowlarr/1/download",
+            "categories": [{"id": 3030}],
+        });
+        Mock::given(method("GET"))
+            .and(path("/api/v1/search"))
+            .and(query_param("categories", "3030"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!([m4b])))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let pool = pool_with_prowlarr(&server.uri()).await;
+        let id = looking_request_of(&pool, RequestKind::Audiobook).await;
+
+        run_search(&pool, id).await.unwrap();
+
+        assert_eq!(row(&pool, id).await.state, RequestState::Choose);
+        let shown = store::versions(&pool, id).await.unwrap();
+        assert_eq!(shown.len(), 1);
+        assert_eq!(shown[0].format.as_deref(), Some("M4B"));
     }
 
     #[tokio::test]

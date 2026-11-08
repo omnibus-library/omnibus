@@ -19,7 +19,7 @@ fn release(title: &str) -> ProwlarrRelease {
 }
 
 fn ranked(releases: Vec<ProwlarrRelease>) -> Vec<Ranked> {
-    rank(releases, TITLE, AUTHOR)
+    rank(releases, TITLE, AUTHOR, RequestKind::Ebook)
 }
 
 fn kept_titles(releases: Vec<ProwlarrRelease>) -> Vec<String> {
@@ -147,6 +147,7 @@ mod drop_rules {
             vec![release("Dracula - Stoker, Bram EPUB")],
             TITLE,
             "Stoker, Bram",
+            RequestKind::Ebook,
         );
 
         assert!(!all[0].rejected);
@@ -308,5 +309,118 @@ mod format_label {
 
         assert_eq!(all[0].format.as_deref(), Some("EPUB"));
         assert_eq!(all[1].format, None);
+    }
+}
+
+mod audio_profile {
+    use super::*;
+
+    const MIB: i64 = 1024 * 1024;
+
+    fn audio(title: &str) -> ProwlarrRelease {
+        let mut r = release(title);
+        r.categories = vec![3030];
+        r.size_bytes = Some(300 * MIB);
+        r
+    }
+
+    fn ranked_audio(releases: Vec<ProwlarrRelease>) -> Vec<Ranked> {
+        rank(releases, TITLE, AUTHOR, RequestKind::Audiobook)
+    }
+
+    fn audio_titles(releases: Vec<ProwlarrRelease>) -> Vec<String> {
+        ranked_audio(releases)
+            .into_iter()
+            .filter(|r| !r.rejected)
+            .map(|r| r.release.title)
+            .collect()
+    }
+
+    fn is_audio_dropped(release: ProwlarrRelease) -> bool {
+        ranked_audio(vec![release])[0].rejected
+    }
+
+    #[test]
+    fn drops_a_release_outside_category_3030() {
+        let mut ebook = audio("Dracula - Bram Stoker M4B");
+        ebook.categories = vec![7020];
+        let mut music = audio("Dracula - Bram Stoker M4B");
+        music.categories = vec![3010];
+
+        assert!(is_audio_dropped(ebook));
+        assert!(is_audio_dropped(music));
+        assert!(!is_audio_dropped(audio("Dracula - Bram Stoker M4B")));
+    }
+
+    #[test]
+    fn drops_a_release_below_twenty_mebibytes_but_keeps_one_at_exactly_that_size() {
+        let mut small = audio("Dracula - Bram Stoker M4B");
+        small.size_bytes = Some(20 * MIB - 1);
+        let mut least = audio("Dracula - Bram Stoker M4B");
+        least.size_bytes = Some(20 * MIB);
+
+        assert!(is_audio_dropped(small));
+        assert!(!is_audio_dropped(least));
+    }
+
+    #[test]
+    fn keeps_a_two_gibibyte_release() {
+        let mut long = audio("Dracula - Bram Stoker M4B");
+        long.size_bytes = Some(2 * 1024 * MIB);
+
+        assert!(!is_audio_dropped(long));
+    }
+
+    #[test]
+    fn orders_formats_m4b_then_m4a_then_mp3() {
+        let order = audio_titles(vec![
+            audio("Dracula - Bram Stoker MP3"),
+            audio("Dracula - Bram Stoker M4A"),
+            audio("Dracula - Bram Stoker M4B"),
+        ]);
+
+        assert_eq!(
+            order,
+            [
+                "Dracula - Bram Stoker M4B",
+                "Dracula - Bram Stoker M4A",
+                "Dracula - Bram Stoker MP3",
+            ]
+        );
+    }
+
+    #[test]
+    fn names_the_audio_format_in_capitals() {
+        let all = ranked_audio(vec![
+            audio("Dracula - Bram Stoker m4b"),
+            audio("Dracula - Bram Stoker m4a"),
+            audio("Dracula - Bram Stoker mp3"),
+        ]);
+
+        let formats: Vec<_> = all.iter().map(|r| r.format.as_deref()).collect();
+        assert_eq!(formats, [Some("M4B"), Some("M4A"), Some("MP3")]);
+    }
+
+    #[test]
+    fn puts_a_single_file_m4b_above_an_mp3_folder() {
+        let mut single = audio("Dracula - Bram Stoker M4B");
+        single.files = Some(1);
+        let mut folder = audio("Dracula - Bram Stoker MP3");
+        folder.files = Some(30);
+
+        let order = audio_titles(vec![folder, single]);
+
+        assert_eq!(order[0], "Dracula - Bram Stoker M4B");
+    }
+
+    #[test]
+    fn does_not_penalise_an_audio_release_with_many_files() {
+        let mut folder = audio("Dracula - Bram Stoker MP3");
+        folder.files = Some(30);
+        let single = audio("Dracula - Bram Stoker");
+
+        let order = audio_titles(vec![single, folder]);
+
+        assert_eq!(order[0], "Dracula - Bram Stoker MP3");
     }
 }

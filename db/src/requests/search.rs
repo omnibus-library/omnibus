@@ -6,7 +6,7 @@
 
 use std::time::{Duration, Instant};
 
-use omnibus_shared::{RequestState, StuckReason};
+use omnibus_shared::{RequestKind, RequestState, StuckReason};
 use sqlx::SqlitePool;
 
 use super::prowlarr::Prowlarr;
@@ -59,7 +59,7 @@ pub async fn run_search_with(
     let began = Instant::now();
     let mut wait = patience.first_wait;
     let outcome = loop {
-        match attempt(pool, &request.book_uuid).await {
+        match attempt(pool, &request.book_uuid, request.kind).await {
             Attempt::Done(outcome) => break outcome,
             Attempt::Transient(outcome) if began.elapsed() + wait > patience.budget => {
                 break outcome;
@@ -102,7 +102,7 @@ fn search_error(e: ConnectionError) -> Attempt {
     }
 }
 
-async fn attempt(pool: &SqlitePool, book_uuid: &str) -> Attempt {
+async fn attempt(pool: &SqlitePool, book_uuid: &str, kind: RequestKind) -> Attempt {
     let book = match crate::get_book_by_uuid(pool, book_uuid).await {
         Ok(Some(book)) => book,
         Ok(None) => return failed("the book no longer exists"),
@@ -132,11 +132,11 @@ async fn attempt(pool: &SqlitePool, book_uuid: &str) -> Attempt {
         Err(e) => return failed(e.to_string()),
     };
     let query = format!("{title} {author}");
-    let releases = match prowlarr.search(query.trim()).await {
+    let releases = match prowlarr.search(query.trim(), kind).await {
         Ok(releases) => releases,
         Err(e) => return search_error(e),
     };
-    let ranked = rank(releases, &title, &author);
+    let ranked = rank(releases, &title, &author, kind);
     if ranked.iter().all(|r| r.rejected) {
         return Attempt::Done(SearchOutcome::Stuck {
             reason: StuckReason::NotFound,
