@@ -98,6 +98,30 @@ async fn admin_create_user_sets_permissions_and_bypasses_registration_gate() {
 }
 
 #[tokio::test]
+async fn admin_create_user_stores_picking_versions_without_asking_for_books() {
+    let p = pool().await;
+    create_user(&p, "alice", "hunter2-real-long").await.unwrap();
+    let perms = UserPermissions {
+        can_start_requests: false,
+        can_choose_request_versions: true,
+        ..READER
+    };
+
+    let row = admin_create_user(&p, "bob", "bunker9-longer-pass", perms)
+        .await
+        .unwrap();
+
+    assert!(!row.can_start_requests && row.can_choose_request_versions);
+    let stored = list_users(&p)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|u| u.id == row.id)
+        .unwrap();
+    assert!(!stored.can_start_requests && stored.can_choose_request_versions);
+}
+
+#[tokio::test]
 async fn admin_create_user_rejects_duplicate_username_nocase() {
     let p = pool().await;
     create_user(&p, "Alice", "hunter2-real-long").await.unwrap();

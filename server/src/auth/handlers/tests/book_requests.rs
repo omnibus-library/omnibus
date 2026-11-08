@@ -159,4 +159,43 @@ mod post_login {
         let user = json_of::<LoginResponse>(res).await.user;
         assert!(user.can_start_requests && user.can_choose_request_versions);
     }
+
+    #[tokio::test]
+    async fn reports_exactly_the_stored_request_permissions_of_a_reader_when_on() {
+        let (_, state, pool) = fixture_book_requests(true).await;
+        let user = auth_test_support::create_user_with_password(&pool, "reader", PASSWORD).await;
+        auth_test_support::set_request_flags(&pool, user.id, false, false, true).await;
+
+        let res = crate::auth::auth_router(state)
+            .oneshot(json_req(
+                "/api/auth/login",
+                "POST",
+                serde_json::json!({"username": "reader", "password": PASSWORD, "client_kind": "ios"}),
+            ))
+            .await
+            .unwrap();
+
+        let user = json_of::<LoginResponse>(res).await.user;
+        assert!(!user.can_start_requests);
+        assert!(user.can_choose_request_versions);
+    }
+
+    #[tokio::test]
+    async fn reports_no_request_permission_for_an_admin_when_the_flag_is_off() {
+        let (_, state, pool) = fixture_book_requests(false).await;
+        let user = auth_test_support::create_user_with_password(&pool, "reader", PASSWORD).await;
+        auth_test_support::set_request_flags(&pool, user.id, true, true, true).await;
+
+        let res = crate::auth::auth_router(state)
+            .oneshot(json_req(
+                "/api/auth/login",
+                "POST",
+                serde_json::json!({"username": "reader", "password": PASSWORD, "client_kind": "ios"}),
+            ))
+            .await
+            .unwrap();
+
+        let user = json_of::<LoginResponse>(res).await.user;
+        assert!(!user.can_start_requests && !user.can_choose_request_versions);
+    }
 }

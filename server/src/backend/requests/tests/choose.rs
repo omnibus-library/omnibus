@@ -155,47 +155,30 @@ mod post_choose_version {
     }
 
     #[tokio::test]
-    async fn lets_a_chooser_pick_for_another_reader() {
+    async fn lets_a_chooser_and_an_admin_pick_for_another_reader() {
         let (app, _, pool) = fixture_book_requests(true).await;
         let (ada, _) = asker(&pool, "ada").await;
         let (_, picker) = chooser(&pool, "picker").await;
-        let uuid = seed_book(&pool, "Dracula").await;
-        let id = seed_request(&pool, ada, &uuid).await;
-        let (kept, _) = offer_versions(&pool, id).await;
-
-        let res = send(
-            &app,
-            "POST",
-            &choose_uri(id),
-            Some(&picker),
-            Some(json!({"result_id": kept})),
-        )
-        .await;
-
-        assert_eq!(res.status(), StatusCode::OK);
-        let row = store::get(&pool, id).await.unwrap().unwrap();
-        assert_eq!(row.state, RequestState::Chosen);
-    }
-
-    #[tokio::test]
-    async fn lets_an_admin_pick_for_another_reader() {
-        let (app, _, pool) = fixture_book_requests(true).await;
-        let (ada, _) = asker(&pool, "ada").await;
         let admin = admin_token(&pool).await;
-        let uuid = seed_book(&pool, "Dracula").await;
-        let id = seed_request(&pool, ada, &uuid).await;
-        let (kept, _) = offer_versions(&pool, id).await;
 
-        let res = send(
-            &app,
-            "POST",
-            &choose_uri(id),
-            Some(&admin),
-            Some(json!({"result_id": kept})),
-        )
-        .await;
+        for (n, token) in [picker, admin].iter().enumerate() {
+            let uuid = seed_book(&pool, &format!("Dracula {n}")).await;
+            let id = seed_request(&pool, ada, &uuid).await;
+            let (kept, _) = offer_versions(&pool, id).await;
 
-        assert_eq!(res.status(), StatusCode::OK);
+            let res = send(
+                &app,
+                "POST",
+                &choose_uri(id),
+                Some(token),
+                Some(json!({"result_id": kept})),
+            )
+            .await;
+
+            assert_eq!(res.status(), StatusCode::OK, "token {n}");
+            let row = store::get(&pool, id).await.unwrap().unwrap();
+            assert_eq!(row.state, RequestState::Chosen, "token {n}");
+        }
     }
 
     #[tokio::test]

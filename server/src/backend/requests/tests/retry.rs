@@ -80,33 +80,22 @@ mod post_retry_request {
     }
 
     #[tokio::test]
-    async fn lets_a_chooser_retry_another_readers_request() {
+    async fn lets_a_chooser_and_an_admin_retry_another_readers_request() {
         let _env = EnvVarGuard::set("OMNIBUS_PROWLARR_API_KEY", None);
         let (app, _, pool) = fixture_book_requests(true).await;
         let (ada, _) = asker(&pool, "ada").await;
         let (_, picker) = chooser(&pool, "picker").await;
-        let uuid = seed_book(&pool, "Dracula").await;
-        let id = seed_request(&pool, ada, &uuid).await;
-        set_state(&pool, id, "stuck").await;
-
-        let res = send(&app, "POST", &retry_uri(id), Some(&picker), None).await;
-
-        assert_eq!(res.status(), StatusCode::OK);
-    }
-
-    #[tokio::test]
-    async fn lets_an_admin_retry_another_readers_request() {
-        let _env = EnvVarGuard::set("OMNIBUS_PROWLARR_API_KEY", None);
-        let (app, _, pool) = fixture_book_requests(true).await;
-        let (ada, _) = asker(&pool, "ada").await;
         let admin = admin_token(&pool).await;
-        let uuid = seed_book(&pool, "Dracula").await;
-        let id = seed_request(&pool, ada, &uuid).await;
-        set_state(&pool, id, "stuck").await;
 
-        let res = send(&app, "POST", &retry_uri(id), Some(&admin), None).await;
+        for (n, token) in [picker, admin].iter().enumerate() {
+            let uuid = seed_book(&pool, &format!("Dracula {n}")).await;
+            let id = seed_request(&pool, ada, &uuid).await;
+            set_state(&pool, id, "stuck").await;
 
-        assert_eq!(res.status(), StatusCode::OK);
+            let res = send(&app, "POST", &retry_uri(id), Some(token), None).await;
+
+            assert_eq!(res.status(), StatusCode::OK, "token {n}");
+        }
     }
 
     #[tokio::test]
