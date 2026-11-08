@@ -1,9 +1,10 @@
-import type { BookDetail, Highlight } from "../../api";
+import type { BookDetail, BookUuid, Highlight } from "../../api";
 import type { AnnotationTarget } from "./annotations";
 import { NoteComposer } from "./NoteComposer";
 import { QuotePanel } from "./QuotePanel";
 
 type AnnotationTargetsProps = {
+  uuid: BookUuid;
   target: AnnotationTarget | null;
   book: Pick<BookDetail, "title" | "authors" | "accent"> | null | undefined;
   onSave: (highlight: Highlight, draft: string) => void;
@@ -12,6 +13,7 @@ type AnnotationTargetsProps = {
 
 /** The quote card or note composer for the passage a row action picked; nothing while there is no target. */
 export function AnnotationTargets({
+  uuid,
   target,
   book,
   onSave,
@@ -23,7 +25,8 @@ export function AnnotationTargets({
         text={target.highlight.text ?? ""}
         author={book?.authors[0] ?? ""}
         subtitle={book?.title ?? ""}
-        accent={book?.accent ?? "#3a3027"}
+        uuid={uuid}
+        accent={book?.accent ?? null}
         onClose={onClose}
       />
     );
