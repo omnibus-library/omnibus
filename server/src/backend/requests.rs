@@ -178,7 +178,6 @@ fn too_many(what: &str) -> Response {
     responses(
         (status = 201, description = "The request started.", body = BookRequest),
         (status = 200, description = "You already had a live request for this format; here it is.", body = BookRequest),
-        (status = 400, description = "Only `ebook` can be requested yet."),
         (status = 401, description = "You aren't signed in."),
         (status = 403, description = "Your account can't ask for books."),
         (status = 404, description = "Book requests are off on this server, or the book doesn't exist."),
@@ -191,9 +190,6 @@ pub(super) async fn post_start_request(
     Path(uuid): Path<String>,
     Json(body): Json<StartRequest>,
 ) -> Response {
-    if let Err(message) = body.kind.check_requestable() {
-        return (StatusCode::BAD_REQUEST, message).into_response();
-    }
     let book_uuid = match db::resolve_canonical_book_uuid(state.pool(), &uuid).await {
         Ok(Some(u)) => u,
         Ok(None) => return (StatusCode::NOT_FOUND, "book not found").into_response(),
@@ -223,9 +219,9 @@ pub(super) async fn post_start_request(
 
 /// Start a request for a book the library lacks
 ///
-/// Makes the book from a provider's record of it, without files, and starts looking for an
-/// ebook of it; poll `GET /api/requests/{id}` until it leaves `looking`. No wishlist entry is
-/// made. To request a book the library already has, use `POST /api/books/{uuid}/requests`.
+/// Makes the book from a provider's record of it, without files, and starts looking for the
+/// format you asked for; poll `GET /api/requests/{id}` until it leaves `looking`. No wishlist
+/// entry is made. To request a book the library already has, use `POST /api/books/{uuid}/requests`.
 #[utoipa::path(
     post,
     path = "/api/requests",
@@ -234,7 +230,7 @@ pub(super) async fn post_start_request(
     request_body = StartRequestFromMeta,
     responses(
         (status = 201, description = "The book was made and the request started.", body = BookRequest),
-        (status = 400, description = "`kind` isn't `ebook`, or a field of `meta` is over its length cap."),
+        (status = 400, description = "A field of `meta` is over its length cap."),
         (status = 403, description = "Your account can't ask for books."),
         (status = 404, description = "Book requests are off on this server."),
         (status = 429, description = "You started too many requests lately, or have too many in progress."),

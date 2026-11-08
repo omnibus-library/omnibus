@@ -24,15 +24,6 @@ impl RequestKind {
         }
     }
 
-    /// Whether a request can start for this kind: only `ebook` can yet. The error is the
-    /// message for a 400.
-    pub fn check_requestable(self) -> Result<(), &'static str> {
-        match self {
-            RequestKind::Ebook => Ok(()),
-            RequestKind::Audiobook => Err("only ebooks can be requested yet"),
-        }
-    }
-
     /// Parse a stored token; `None` for an unrecognized value.
     pub fn from_db(s: &str) -> Option<Self> {
         match s {
@@ -164,7 +155,7 @@ impl ReleaseProtocol {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct StartRequest {
-    /// Only `ebook` can be requested yet.
+    /// Which format to fetch.
     pub kind: RequestKind,
 }
 
@@ -173,17 +164,15 @@ pub struct StartRequest {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct StartRequestFromMeta {
-    /// Only `ebook` can be requested yet.
+    /// Which format to fetch.
     pub kind: RequestKind,
     /// The provider's record, as a metadata search returned it.
     pub meta: ExternalBookMeta,
 }
 
 impl StartRequestFromMeta {
-    /// Why the request can't start, as a message for a 400: not an ebook, or a field of
-    /// `meta` over its cap.
+    /// Why the request can't start, as a message for a 400: a field of `meta` over its cap.
     pub fn validate(&self) -> Result<(), String> {
-        self.kind.check_requestable()?;
         self.meta.validate()
     }
 }
@@ -205,7 +194,8 @@ pub struct RequestVersion {
     /// The name the version was published under.
     pub title: String,
     pub size_bytes: Option<i64>,
-    /// `EPUB`, `PDF` or `CBZ`. Null when the name does not say.
+    /// `EPUB`, `PDF` or `CBZ` for an ebook; `M4B`, `M4A` or `MP3` for an audiobook. Null when
+    /// the name does not say.
     pub format: Option<String>,
     /// The source the version came from.
     pub indexer: Option<String>,

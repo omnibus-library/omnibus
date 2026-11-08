@@ -357,19 +357,20 @@ mod post_start_request {
     }
 
     #[tokio::test]
-    async fn answers_400_for_an_audiobook_and_writes_nothing() {
+    async fn starts_an_audiobook_request_beside_a_live_ebook_one() {
         let (app, _, pool) = fixture_book_requests(true).await;
         let (_, token) = requester(&pool, "ada").await;
         let uuid = seed_book(&pool, "Dracula").await;
+        start(&app, &uuid, &token, "ebook").await;
 
         let res = start(&app, &uuid, &token, "audiobook").await;
 
-        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
-        let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM book_requests")
-            .fetch_one(&pool)
+        assert_eq!(res.status(), StatusCode::CREATED);
+        let kinds: Vec<String> = sqlx::query_scalar("SELECT kind FROM book_requests ORDER BY id")
+            .fetch_all(&pool)
             .await
             .unwrap();
-        assert_eq!(rows, 0);
+        assert_eq!(kinds, ["ebook", "audiobook"]);
     }
 
     #[tokio::test]
