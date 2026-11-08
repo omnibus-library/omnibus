@@ -66,6 +66,18 @@ mod place_blocking {
     }
 
     #[test]
+    fn fails_and_creates_nothing_when_the_library_folder_is_missing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (src, _) = download_and_library(tmp.path());
+        let absent = tmp.path().join("not-mounted");
+
+        let err = place_blocking(&absent, 7, &src, "Frank Herbert", "Dune", "epub");
+
+        assert!(err.is_err());
+        assert!(!absent.exists());
+    }
+
+    #[test]
     fn never_touches_the_source_file() {
         let tmp = tempfile::tempdir().unwrap();
         let (src, root) = download_and_library(tmp.path());
@@ -129,19 +141,32 @@ mod place_folder_blocking {
     }
 
     #[test]
-    fn fails_when_two_parts_would_take_the_same_name() {
+    fn numbers_a_part_whose_name_collides_after_the_slug_is_cut_short() {
         let tmp = tempfile::tempdir().unwrap();
+        let long = "a".repeat(80);
         let parts = vec![
-            write(tmp.path(), "dl/a b.mp3", MP3_BYTES),
-            write(tmp.path(), "dl/a-b.mp3", MP3_BYTES),
+            write(tmp.path(), &format!("dl/{long}-001.mp3"), MP3_BYTES),
+            write(tmp.path(), &format!("dl/{long}-002.mp3"), MP3_BYTES),
         ];
         let root = tmp.path().join("library");
         fs::create_dir_all(&root).unwrap();
 
-        let err = place_folder_blocking(&root, 7, &parts, "Frank Herbert", "Dune");
+        let placed = place_folder_blocking(&root, 7, &parts, "Frank Herbert", "Dune").unwrap();
+
+        assert!(placed.join(format!("{long}.mp3")).is_file());
+        assert!(placed.join(format!("{long}-2.mp3")).is_file());
+    }
+
+    #[test]
+    fn fails_and_creates_nothing_when_the_library_folder_is_missing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (parts, _) = two_discs(tmp.path());
+        let absent = tmp.path().join("not-mounted");
+
+        let err = place_folder_blocking(&absent, 7, &parts, "Frank Herbert", "Dune");
 
         assert!(err.is_err());
-        assert!(!root.join("frank-herbert").exists());
+        assert!(!absent.exists());
     }
 
     #[test]

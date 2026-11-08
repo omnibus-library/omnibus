@@ -44,6 +44,8 @@ const UNREADABLE_FORMATS: &[&str] = &[
 ];
 /// What makes a result usable for one kind of request.
 struct Profile {
+    /// The one Newznab category a search asks Prowlarr for.
+    search_category: &'static str,
     categories: std::ops::Range<i64>,
     sizes: std::ops::RangeInclusive<i64>,
     /// Best first; a format earns [`FORMAT_STEP`] per place from the end.
@@ -53,6 +55,7 @@ struct Profile {
 }
 
 static EBOOK: Profile = Profile {
+    search_category: "7020",
     categories: BOOK_CATEGORIES,
     sizes: MIN_SIZE_BYTES..=MAX_SIZE_BYTES,
     formats: EBOOK_EXTENSIONS,
@@ -63,10 +66,12 @@ static EBOOK: Profile = Profile {
 /// Audiobooks are Newznab 3030 alone; 3000's other children are music and video. A folder of
 /// MP3s is the normal shape, so many files cost nothing.
 static AUDIOBOOK: Profile = Profile {
+    search_category: "3030",
     categories: 3030..3031,
     sizes: MIN_AUDIO_SIZE_BYTES..=i64::MAX,
     formats: AUDIOBOOK_EXTENSIONS,
-    unreadable: &[],
+    // A release naming only these ends "no audiobook file to add", so it is dropped here.
+    unreadable: &["flac", "ogg", "opus", "wma", "aax"],
     multi_file_penalty: 0.0,
 };
 
@@ -138,6 +143,11 @@ fn format_of(tokens: &[String], profile: &Profile) -> Format {
         }
         None => Format::Unnamed,
     }
+}
+
+/// The category Prowlarr is searched in for `kind`.
+pub fn search_category(kind: RequestKind) -> &'static str {
+    profile(kind).search_category
 }
 
 /// Drop what cannot be the book or cannot be used, then order what is left best first.

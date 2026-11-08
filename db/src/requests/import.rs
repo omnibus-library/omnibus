@@ -106,7 +106,7 @@ async fn import_one(
     let wished = wished_book(pool, &row.book_uuid).await?;
     // A retry finds its file or folder already filed, and goes straight to the scan.
     let key = match &row.import_key {
-        Some(key) if PathBuf::from(&root).join(key).exists() => key.clone(),
+        Some(key) if is_placed(&root, key).await => key.clone(),
         _ => match file_into_library(pool, client, config, row, &root, &wished).await? {
             Some(key) => key,
             None => return Ok(Step::Later),
@@ -134,6 +134,22 @@ async fn library_root(pool: &SqlitePool, kind: RequestKind) -> Result<String, Im
     };
     path.filter(|p| !p.is_empty())
         .ok_or_else(|| cannot(missing))
+}
+
+/// Whether `key` under `root` is already filed: a file, or a folder holding something. An
+/// empty folder is what a failed placement can leave, and has nothing to scan.
+async fn is_placed(root: &str, key: &str) -> bool {
+    let path = Path::new(root).join(key);
+    let Ok(meta) = tokio::fs::metadata(&path).await else {
+        return false;
+    };
+    if meta.is_file() {
+        return true;
+    }
+    match tokio::fs::read_dir(&path).await {
+        Ok(mut entries) => matches!(entries.next_entry().await, Ok(Some(_))),
+        Err(_) => false,
+    }
 }
 
 /// The requested book, under its surviving uuid, with the author and title files are named by.
@@ -182,12 +198,13 @@ async fn file_into_library(
     let (config, root_path) = (config.clone(), PathBuf::from(root));
     let (id, kind) = (row.id, row.kind);
     let (author, title) = (wished.author.clone(), wished.title.clone());
-    let placed = tokio::task::spawn_blocking(move || -> Result<PathBuf, ImportError> {
-        let found = files::resolve(&status, &listed, &config, kind)?;
-        place_download(kind, &found, &root_path, id, &author, &title)
-    })
-    .await
-    .map_err(|e| io::Error::other(e.to_string()))??;
+    let (placed, is_folder) =
+        tokio::task::spawn_blocking(move || -> Result<(PathBuf, bool), ImportError> {
+            let found = files::resolve(&status, &listed, &config, kind)?;
+            place_download(kind, &found, &root_path, id, &author, &title)
+        })
+        .await
+        .map_err(|e| io::Error::other(e.to_string()))??;
     let key = placed
         .strip_prefix(root)
         .map_err(|e| io::Error::other(e.to_string()))?
@@ -195,7 +212,7 @@ async fn file_into_library(
         .into_owned();
     if let Err(e) = store::set_import_key(pool, row.id, row.chosen_result_id, &key).await {
         // Unrecorded, a retry would file a second copy beside this one.
-        let _ = match placed.is_dir() {
+        let _ = match is_folder {
             true => tokio::fs::remove_dir_all(&placed).await,
             false => tokio::fs::remove_file(&placed).await,
         };
@@ -205,7 +222,7 @@ async fn file_into_library(
 }
 
 /// File what `kind` imports out of the `found` files of the download, and return where it
-/// landed: the file, or for several MP3s their folder. Blocking.
+/// landed, and whether that is a folder (several MP3s) rather than a file. Blocking.
 fn place_download(
     kind: RequestKind,
     found: &[PathBuf],
@@ -213,22 +230,21 @@ fn place_download(
     request_id: i64,
     author: &str,
     title: &str,
-) -> Result<PathBuf, ImportError> {
-    let placed = match kind {
+) -> Result<(PathBuf, bool), ImportError> {
+    let file = |src: &Path, ext| place::place_blocking(root, request_id, src, author, title, ext);
+    Ok(match kind {
         RequestKind::Ebook => {
             let (src, ext) = files::pick(found)?;
-            place::place_blocking(root, request_id, &src, author, title, ext)?
+            (file(&src, ext)?, false)
         }
         RequestKind::Audiobook => match files::pick_audio(found)? {
-            files::AudioPick::Single(src, ext) => {
-                place::place_blocking(root, request_id, &src, author, title, ext)?
-            }
-            files::AudioPick::Parts(parts) => {
-                place::place_folder_blocking(root, request_id, &parts, author, title)?
-            }
+            files::AudioPick::Single(src, ext) => (file(&src, ext)?, false),
+            files::AudioPick::Parts(parts) => (
+                place::place_folder_blocking(root, request_id, &parts, author, title)?,
+                true,
+            ),
         },
-    };
-    Ok(placed)
+    })
 }
 
 /// Scan the library so the file becomes a book, then fold that book into the wished one

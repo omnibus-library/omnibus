@@ -237,9 +237,9 @@ mod pick_audio {
     }
 
     #[test]
-    fn takes_a_container_over_mp3s_when_a_release_carries_both() {
+    fn takes_a_container_over_mp3s_when_it_is_at_least_as_large() {
         let tmp = tempfile::tempdir().unwrap();
-        let m4b = write(tmp.path(), "Dune.m4b", M4B_BYTES);
+        let m4b = write(tmp.path(), "Dune.m4b", &[M4B_BYTES, &[b'x'; 4096]].concat());
         let mp3 = write(tmp.path(), "01.mp3", MP3_BYTES);
 
         let picked = pick_audio(&[mp3, m4b.clone()]).unwrap();
@@ -248,14 +248,55 @@ mod pick_audio {
     }
 
     #[test]
-    fn takes_every_confirmed_mp3_when_there_is_no_container() {
+    fn takes_the_mp3s_when_a_small_container_is_only_a_sample() {
         let tmp = tempfile::tempdir().unwrap();
-        let one = write(tmp.path(), "CD1/01.mp3", MP3_BYTES);
-        let two = write(tmp.path(), "CD2/01.mp3", b"ID3 other bytes");
+        let sample = write(tmp.path(), "sample.m4a", M4B_BYTES);
+        let chapters: Vec<_> = (1..=3)
+            .map(|n| {
+                write(
+                    tmp.path(),
+                    &format!("{n:02}.mp3"),
+                    &[MP3_BYTES, &[b'x'; 4096]].concat(),
+                )
+            })
+            .collect();
+
+        let picked = pick_audio(&[
+            sample,
+            chapters[0].clone(),
+            chapters[1].clone(),
+            chapters[2].clone(),
+        ])
+        .unwrap();
+
+        assert!(matches!(picked, AudioPick::Parts(parts) if parts == chapters));
+    }
+
+    #[test]
+    fn takes_every_confirmed_mp3_of_one_folder_when_there_is_no_container() {
+        let tmp = tempfile::tempdir().unwrap();
+        let one = write(tmp.path(), "Dune/01.mp3", MP3_BYTES);
+        let two = write(tmp.path(), "Dune/02.mp3", b"ID3 other bytes");
 
         let picked = pick_audio(&[one.clone(), two.clone()]).unwrap();
 
         assert!(matches!(picked, AudioPick::Parts(parts) if parts == [one, two]));
+    }
+
+    #[test]
+    fn refuses_mp3s_spread_over_several_folders() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = vec![
+            write(tmp.path(), "CD1/01.mp3", MP3_BYTES),
+            write(tmp.path(), "CD2/01.mp3", MP3_BYTES),
+        ];
+
+        let err = pick_audio(&paths).unwrap_err();
+
+        assert!(
+            matches!(&err, ImportError::Cannot(why) if why == "this version is split across several folders"),
+            "{err}"
+        );
     }
 
     #[test]

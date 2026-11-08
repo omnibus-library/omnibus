@@ -117,10 +117,7 @@ mod import_finished {
             let client = downloaded(
                 &env,
                 &request,
-                &[
-                    ("Dune/CD1/chapter01.mp3", &one),
-                    ("Dune/CD2/chapter02.mp3", &two),
-                ],
+                &[("Dune/chapter01.mp3", &one), ("Dune/chapter02.mp3", &two)],
             );
 
             run(&env, &client).await;
@@ -131,7 +128,7 @@ mod import_finished {
                 .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
                 .collect();
             parts.sort();
-            assert_eq!(parts, ["cd1-chapter01.mp3", "cd2-chapter02.mp3"]);
+            assert_eq!(parts, ["chapter01.mp3", "chapter02.mp3"]);
             let files = files_by_format(&env.pool, &wished).await;
             assert_eq!(files.len(), 1);
             assert_eq!(files[0].0, "MP3");
@@ -168,6 +165,27 @@ mod import_finished {
                 1
             );
             assert_eq!(files_of(&env, &wished).await, 1);
+        }
+    }
+
+    mod empty_key {
+        use super::*;
+
+        #[tokio::test]
+        async fn files_the_download_again_when_the_import_key_names_an_empty_folder() {
+            let env = env().await;
+            let audio = with_audio_library(&env).await;
+            let wished = wish(&env, "Dune", "Frank Herbert").await;
+            let request = finished_request(&env, &wished, RequestKind::Audiobook).await;
+            fs::create_dir_all(audio.join("frank-herbert/dune")).unwrap();
+            update(&env.pool, request.id, "import_key = 'frank-herbert/dune'").await;
+            let part = fixture_mp3("grace_hopper_series/the_compiled_tales/chapter01.mp3");
+            let client = downloaded(&env, &request, &[("Dune/01.mp3", &part)]);
+
+            run(&env, &client).await;
+
+            assert_ready(&env, request.id).await;
+            assert!(audio.join("frank-herbert/dune/01.mp3").is_file());
         }
     }
 

@@ -3,6 +3,7 @@
 //! [`pick`] keeps the one ebook whose bytes really are an EPUB or PDF, where [`pick_audio`]
 //! keeps the one M4B or the MP3s whose bytes really are audio.
 
+use std::collections::HashSet;
 use std::fs::File;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
@@ -89,10 +90,10 @@ pub enum AudioPick {
     Parts(Vec<PathBuf>),
 }
 
-/// The audiobook to add: the M4B, else the M4A, over any MP3s; else every MP3. Only a file
-/// whose extension and opening bytes agree counts. Several files of the best container
-/// format are refused, because each would be a book of its own. Reads each candidate's first
-/// bytes, so it is blocking.
+/// The audiobook to add: a lone M4B (else M4A) at least as large as the release's MP3s, else
+/// the MP3s of one folder. Several containers of the best format, or MP3s in several folders,
+/// are refused, because each would be a book of its own or play interleaved. Only a file whose
+/// extension and opening bytes agree counts. Reads each candidate's first bytes, so it is blocking.
 pub fn pick_audio(paths: &[PathBuf]) -> Result<AudioPick, ImportError> {
     let mut confirmed: Vec<(PathBuf, &'static str)> = Vec::new();
     for path in paths {
@@ -100,10 +101,39 @@ pub fn pick_audio(paths: &[PathBuf]) -> Result<AudioPick, ImportError> {
             confirmed.push((path.clone(), extension));
         }
     }
+    let mp3s: Vec<PathBuf> = confirmed
+        .iter()
+        .filter(|(_, ext)| *ext == "mp3")
+        .map(|(path, _)| path.clone())
+        .collect();
+    if let Some((path, ext)) = lone_container(&confirmed)? {
+        if mp3s.is_empty() || path.metadata()?.len() >= total_size(&mp3s)? {
+            return Ok(AudioPick::Single(path, ext));
+        }
+    }
+    if mp3s.is_empty() {
+        return Err(ImportError::Cannot(
+            "the download has no audiobook file to add".into(),
+        ));
+    }
+    let folders: HashSet<_> = mp3s.iter().map(|path| path.parent()).collect();
+    if folders.len() > 1 {
+        return Err(ImportError::Cannot(
+            "this version is split across several folders".into(),
+        ));
+    }
+    Ok(AudioPick::Parts(mp3s))
+}
+
+/// The one M4B, else the one M4A, of the confirmed files; several of the first format that
+/// has any are refused.
+fn lone_container(
+    confirmed: &[(PathBuf, &'static str)],
+) -> Result<Option<(PathBuf, &'static str)>, ImportError> {
     for container in ["m4b", "m4a"] {
         let mut of_format = confirmed.iter().filter(|(_, ext)| *ext == container);
         match (of_format.next(), of_format.next()) {
-            (Some((path, ext)), None) => return Ok(AudioPick::Single(path.clone(), ext)),
+            (Some((path, ext)), None) => return Ok(Some((path.clone(), ext))),
             (Some(_), Some(_)) => {
                 return Err(ImportError::Cannot(format!(
                     "this version is split into several {} files",
@@ -113,13 +143,11 @@ pub fn pick_audio(paths: &[PathBuf]) -> Result<AudioPick, ImportError> {
             _ => {}
         }
     }
-    let parts: Vec<PathBuf> = confirmed.into_iter().map(|(path, _)| path).collect();
-    if parts.is_empty() {
-        return Err(ImportError::Cannot(
-            "the download has no audiobook file to add".into(),
-        ));
-    }
-    Ok(AudioPick::Parts(parts))
+    Ok(None)
+}
+
+fn total_size(paths: &[PathBuf]) -> io::Result<u64> {
+    paths.iter().map(|p| Ok(p.metadata()?.len())).sum()
 }
 
 /// `epub` or `pdf` when `path`'s extension names it, in any case.

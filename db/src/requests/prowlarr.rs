@@ -230,10 +230,7 @@ impl Prowlarr {
         if self.cooling_down() {
             return Err(ConnectionError::RateLimited);
         }
-        let category = match kind {
-            RequestKind::Ebook => "7020",
-            RequestKind::Audiobook => "3030",
-        };
+        let category = super::rank::search_category(kind);
         let params = [
             ("query", query),
             ("categories", category),

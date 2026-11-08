@@ -5,12 +5,13 @@
 //! on every exit, so nothing half-copied is ever left to be indexed. The download itself is
 //! only read.
 
+use std::collections::HashSet;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
 use crate::library_layout::{
-    allocate_canonical_dir, allocate_canonical_path, sanitize_part_filename,
+    allocate_canonical_dir, allocate_canonical_path, dedupe_part_name, sanitize_part_filename,
 };
 
 /// The folder under the library root that holds an import in progress.
@@ -20,9 +21,22 @@ fn staging_dir(root: &Path, request_id: i64) -> PathBuf {
     root.join(STAGING_DIR).join(request_id.to_string())
 }
 
+/// Fail unless `root` is a folder that exists, so an unmounted library is never filled on the
+/// disk beneath its mount point.
+fn require_root(root: &Path) -> io::Result<()> {
+    if root.is_dir() {
+        return Ok(());
+    }
+    Err(io::Error::new(
+        io::ErrorKind::NotFound,
+        "the library folder is missing",
+    ))
+}
+
 /// Put `src` into the library under `root` as `ext`, named from the book's `author` and
 /// `title`, and return where it landed. A fresh staging folder is made for `request_id`
-/// first, and removed whatever happens. `src` is never changed or moved. Blocking.
+/// first, and removed whatever happens. `src` is never changed or moved. Fails when `root` is
+/// not an existing folder. Blocking.
 pub fn place_blocking(
     root: &Path,
     request_id: i64,
@@ -31,6 +45,7 @@ pub fn place_blocking(
     title: &str,
     ext: &str,
 ) -> io::Result<PathBuf> {
+    require_root(root)?;
     discard_staging(root, request_id)?;
     let placed = stage_and_rename(root, request_id, src, author, title, ext);
     if let Err(e) = discard_staging(root, request_id) {
@@ -62,7 +77,7 @@ fn stage_and_rename(
 
 /// Put `parts` into one new canonical folder under `root`, named from the book's `author`
 /// and `title`, and return the folder. Each part is named for its path below the parts'
-/// common parent (`CD1/01.mp3` becomes `cd1-01.mp3`); two parts that come to one name fail.
+/// common parent (`CD1/01.mp3` becomes `cd1-01.mp3`); two that come to one name are numbered.
 /// Staged and cleaned up as [`place_blocking`] does. Blocking.
 pub fn place_folder_blocking(
     root: &Path,
@@ -71,6 +86,7 @@ pub fn place_folder_blocking(
     author: &str,
     title: &str,
 ) -> io::Result<PathBuf> {
+    require_root(root)?;
     discard_staging(root, request_id)?;
     let placed = stage_folder_and_rename(root, request_id, parts, author, title);
     if let Err(e) = discard_staging(root, request_id) {
@@ -89,16 +105,13 @@ fn stage_folder_and_rename(
     let staging = staging_dir(root, request_id).join("book");
     fs::create_dir_all(&staging)?;
     let below = common_parent(parts);
+    let mut used = HashSet::new();
     for part in parts {
-        let name = part_name(part.strip_prefix(&below).unwrap_or(part));
-        let staged = staging.join(name);
-        if staged.exists() {
-            return Err(io::Error::new(
-                io::ErrorKind::AlreadyExists,
-                format!("two parts would both be filed as {}", staged.display()),
-            ));
-        }
-        link_or_copy(part, &staged)?;
+        let name = dedupe_part_name(
+            part_name(part.strip_prefix(&below).unwrap_or(part)),
+            &mut used,
+        );
+        link_or_copy(part, &staging.join(name))?;
     }
     let dest = allocate_canonical_dir(root, author, title)?;
     if let Some(author_dir) = dest.parent() {

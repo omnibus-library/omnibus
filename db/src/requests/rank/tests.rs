@@ -372,6 +372,17 @@ mod audio_profile {
     }
 
     #[test]
+    fn drops_a_release_that_names_only_a_format_omnibus_cannot_play() {
+        assert!(is_audio_dropped(audio("Dracula - Bram Stoker [FLAC]")));
+        assert!(is_audio_dropped(audio("Dracula - Bram Stoker AAX")));
+    }
+
+    #[test]
+    fn keeps_a_release_that_names_the_codec_beside_a_playable_format() {
+        assert!(!is_audio_dropped(audio("Dracula - Bram Stoker M4B AAC")));
+    }
+
+    #[test]
     fn orders_formats_m4b_then_m4a_then_mp3() {
         let order = audio_titles(vec![
             audio("Dracula - Bram Stoker MP3"),

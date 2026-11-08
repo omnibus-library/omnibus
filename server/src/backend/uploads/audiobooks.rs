@@ -538,7 +538,7 @@ fn copy_parts(folder: &Path, files: &[AudioUpload]) -> std::io::Result<()> {
     std::fs::create_dir_all(folder)?;
     let mut used: HashSet<String> = HashSet::new();
     for file in files {
-        let name = dedupe_part_name(
+        let name = library_layout::dedupe_part_name(
             library_layout::sanitize_part_filename(&file.filename),
             &mut used,
         );
@@ -552,25 +552,4 @@ fn relative_scan_key(root: &Path, dest: &Path) -> String {
     dest.strip_prefix(root)
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_default()
-}
-
-/// Ensure a part filename is unique within its folder by inserting a numeric
-/// suffix (`name.mp3` → `name-2.mp3`) before the extension on collision.
-fn dedupe_part_name(name: String, used: &mut HashSet<String>) -> String {
-    if used.insert(name.clone()) {
-        return name;
-    }
-    let path = Path::new(&name);
-    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or(&name);
-    let ext = path.extension().and_then(|s| s.to_str());
-    for n in 2..=9999 {
-        let candidate = match ext {
-            Some(ext) => format!("{stem}-{n}.{ext}"),
-            None => format!("{stem}-{n}"),
-        };
-        if used.insert(candidate.clone()) {
-            return candidate;
-        }
-    }
-    name
 }

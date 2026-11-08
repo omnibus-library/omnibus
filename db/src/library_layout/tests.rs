@@ -496,3 +496,14 @@ fn sanitize_part_empty_name_falls_back() {
 fn sanitize_part_no_extension_yields_bare_slug() {
     assert_eq!(sanitize_part_filename("weird name"), "weird-name");
 }
+
+#[test]
+fn dedupe_part_name_keeps_a_new_name_and_numbers_a_repeat_before_the_extension() {
+    let mut used = HashSet::new();
+
+    let first = dedupe_part_name("ch.mp3".into(), &mut used);
+    let second = dedupe_part_name("ch.mp3".into(), &mut used);
+    let third = dedupe_part_name("ch.mp3".into(), &mut used);
+
+    assert_eq!([first, second, third], ["ch.mp3", "ch-2.mp3", "ch-3.mp3"]);
+}
