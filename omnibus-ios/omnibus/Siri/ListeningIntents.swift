@@ -60,9 +60,19 @@ enum SiriPlayback {
         await player.load(book: found)
         // A newer load may have taken the player over meanwhile.
         guard player.book?.uuid == found.uuid else { throw notPlayable }
-        // `load` keeps a failure in `error` rather than throwing it, and a
-        // reused item keeps an earlier one: whether audio is on its way is
-        // the answer, for a fresh load and a reuse alike.
-        guard player.isPlayingOrStarting else { throw notPlayable }
+        let started = didStart(
+            audioOwed: player.isPlayingOrStarting || player.startHeldByCall,
+            failed: player.error != nil
+        )
+        guard started else { throw notPlayable }
+    }
+
+    /// Whether a play Siri asked for went through. Audio on its way — now,
+    /// after the load, or once a call ends — is a start, and so is a load the
+    /// listener paused meanwhile. `load` keeps a failure in `error` rather
+    /// than throwing, and a reused item may keep an earlier one, so an error
+    /// counts only when no audio is owed.
+    static func didStart(audioOwed: Bool, failed: Bool) -> Bool {
+        audioOwed || !failed
     }
 }

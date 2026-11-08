@@ -54,6 +54,8 @@ final class AudioPlayer {
     /// What a play/pause control draws and does: playing, or a start still owed
     /// that a press takes back. `isPlaying` alone says whether there is audio.
     var isPlayingOrStarting: Bool { pendingStarts.togglePauses(isPlaying: isPlaying) }
+    /// Whether a call's end is holding a start this player owes.
+    var startHeldByCall: Bool { pendingStarts.afterInterruption }
     /// Whether a load is still awaiting its item and opening position.
     var isLoading: Bool { loadingGeneration != nil }
     /// The generation of the load in flight. Not a flag: a load superseded by

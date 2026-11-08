@@ -267,6 +267,20 @@ private func review(
     #expect(await store.cacheGet(CacheKey.myReviews) == nil)
 }
 
+// MARK: - Playback
+
+@Test func didStartCountsAStartACallIsHoldingOrAListenerPaused() {
+    #expect(SiriPlayback.didStart(audioOwed: true, failed: false))
+    // A call holds the start, and an earlier error lingers on a reused item.
+    #expect(SiriPlayback.didStart(audioOwed: true, failed: true))
+    // Loaded fine, then paused by the listener before it started.
+    #expect(SiriPlayback.didStart(audioOwed: false, failed: false))
+}
+
+@Test func didStartRefusesALoadThatFailedWithNothingOwed() {
+    #expect(!SiriPlayback.didStart(audioOwed: false, failed: true))
+}
+
 // MARK: - Entity and cache scope
 
 @Test func bookEntityCarriesTheDisplayNamesAndDropsABlankSeries() {
