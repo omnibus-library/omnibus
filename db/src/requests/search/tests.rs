@@ -39,7 +39,15 @@ async fn pool_with_prowlarr_key(url: &str, key: &str) -> SqlitePool {
     crate::settings::set_requests_settings(&pool, &update)
         .await
         .unwrap();
+    set_converter(&pool, "/nonexistent/omnibus-ebook-convert-probe").await;
     pool
+}
+
+/// Point the effective `ebook-convert` at `path`, overriding any env var or `$PATH` entry.
+async fn set_converter(pool: &SqlitePool, path: &str) {
+    crate::set_ebook_convert_path(pool, Some(path))
+        .await
+        .unwrap();
 }
 
 /// A `looking` ebook request for a fileless "Dracula" by Bram Stoker.
@@ -123,6 +131,63 @@ mod run_search {
                 .await
                 .unwrap();
         assert_eq!(dropped, 1);
+    }
+
+    fn azw3_release() -> Value {
+        json!({
+            "guid": "g3", "title": "Dracula - Bram Stoker AZW3", "size": 900000, "seeders": 9,
+            "indexer": "Books", "downloadUrl": "http://prowlarr/3/download", "categories": [{"id": 7020}],
+        })
+    }
+
+    #[tokio::test]
+    async fn offers_an_azw3_version_when_ebook_convert_runs() {
+        let server = MockServer::start().await;
+        mount_search(&server, json!([azw3_release()])).await;
+        let pool = pool_with_prowlarr(&server.uri()).await;
+        // `env --version` exits 0, standing in for a working Calibre.
+        set_converter(&pool, "env").await;
+        let id = looking_request(&pool).await;
+
+        run_search(&pool, id).await.unwrap();
+
+        assert_eq!(row(&pool, id).await.state, RequestState::Choose);
+        let shown = store::versions(&pool, id).await.unwrap();
+        assert_eq!(shown.len(), 1);
+        assert_eq!(shown[0].format.as_deref(), Some("AZW3"));
+    }
+
+    #[tokio::test]
+    async fn drops_an_azw3_version_when_ebook_convert_does_not_run() {
+        let server = MockServer::start().await;
+        mount_search(&server, json!([azw3_release()])).await;
+        let pool = pool_with_prowlarr(&server.uri()).await;
+        let id = looking_request(&pool).await;
+
+        run_search(&pool, id).await.unwrap();
+
+        let current = row(&pool, id).await;
+        assert_eq!(current.state, RequestState::Stuck);
+        assert_eq!(current.stuck_reason, Some(StuckReason::NotFound));
+    }
+
+    #[tokio::test]
+    async fn drops_an_azw3_version_when_the_converter_setting_cannot_be_read() {
+        let server = MockServer::start().await;
+        mount_search(&server, json!([azw3_release(), good_release()])).await;
+        let pool = pool_with_prowlarr(&server.uri()).await;
+        // A blob does not decode as the setting's text, so the status read fails.
+        sqlx::query("UPDATE settings SET value = x'ff' WHERE key = 'ebook_convert_path'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let id = looking_request(&pool).await;
+
+        run_search(&pool, id).await.unwrap();
+
+        let shown = store::versions(&pool, id).await.unwrap();
+        assert_eq!(shown.len(), 1);
+        assert_eq!(shown[0].format.as_deref(), Some("EPUB"));
     }
 
     #[tokio::test]
