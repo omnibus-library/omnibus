@@ -916,7 +916,17 @@ export const AnUnknownRequestShowsTheErrorWithAWayBack: Story = {
 };
 
 const OLD = Math.floor(Date.now() / 1000) - SEARCH_STALE_AFTER_SECS - 5;
-const NOT_THE_MAKER = { ...ADA, id: 2, is_admin: false };
+/** The maker of the stories' request, who can ask for books but not pick their versions. */
+const ASKER = { ...READER, can_choose_request_versions: false };
+/** Another reader who can pick versions but not ask for books. */
+const CHOOSER = { ...READER, id: 2, can_start_requests: false };
+/** Another reader who can neither ask nor pick. */
+const NOT_THE_MAKER = {
+  ...ADA,
+  id: 2,
+  is_admin: false,
+  can_choose_request_versions: false,
+};
 
 export const ALongRunningSearchOffersTryAgain: Story = {
   beforeEach({ msw }) {
@@ -1039,6 +1049,129 @@ export const AnotherReadersDownloadOffersNoCancelOrChooseAnother: Story = {
     ).toBeNull();
   },
 };
+
+export const AReaderWhoCannotPickSeesTheVersionsAndWaits: Story = {
+  parameters: { user: ASKER },
+  beforeEach({ msw }) {
+    msw.use(...seed({ state: "choose", versions: [EPUB, PDF] }));
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findAllByTestId("request-version")).toHaveLength(
+      2,
+    );
+
+    await expect(canvas.queryByTestId("request-choose")).toBeNull();
+    await expect(
+      canvas.getByTestId("request-waiting-for-chooser"),
+    ).toHaveTextContent("Waiting for someone who can pick versions.");
+    await expect(
+      canvas.getByRole("button", { name: "Cancel request" }),
+    ).toBeVisible();
+    await expect(canvas.getByTestId("request-lane-ebook")).toHaveAttribute(
+      "data-needs-you",
+      "false",
+    );
+  },
+};
+
+export const AReaderWhoCanPickDoesNotWait: Story = {
+  beforeEach({ msw }) {
+    msw.use(...seed({ state: "choose", versions: [EPUB] }));
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("request-choose");
+
+    await expect(
+      canvas.queryByTestId("request-waiting-for-chooser"),
+    ).toBeNull();
+  },
+};
+
+export const AReaderWhoCannotPickGetsNoTryAgainOnAStuckRequest: Story = {
+  parameters: { user: ASKER },
+  beforeEach({ msw }) {
+    msw.use(...seed(STUCK));
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("request-stuck-detail");
+
+    await expect(canvas.queryByTestId("request-try-again")).toBeNull();
+  },
+};
+
+export const AReaderWhoCannotPickGetsNoTryAgainOnALongSearch: Story = {
+  parameters: { user: ASKER },
+  beforeEach({ msw }) {
+    msw.use(...seed({ updated_at: OLD }));
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("request-looking");
+
+    await expect(canvas.queryByTestId("request-try-again")).toBeNull();
+    await expect(canvas.queryByTestId("request-still-looking")).toBeNull();
+  },
+};
+
+export const AReaderWhoCannotPickCancelsTheirDownloadButCannotChooseAnother: Story =
+  {
+    parameters: { user: ASKER },
+    beforeEach({ msw }) {
+      msw.use(...seed(DOWNLOADING));
+    },
+    play: async ({ canvas }) => {
+      await canvas.findByTestId("request-downloading");
+
+      await expect(
+        canvas.getByRole("button", { name: "Cancel" }),
+      ).toBeVisible();
+      await expect(
+        canvas.queryByRole("button", { name: "Choose another" }),
+      ).toBeNull();
+    },
+  };
+
+export const AReaderWhoCanPickChoosesForAnotherReader: Story = {
+  parameters: { user: CHOOSER },
+  beforeEach({ msw }) {
+    msw.use(...seed({ state: "choose", versions: [EPUB, PDF] }));
+  },
+  play: async ({ canvas, userEvent }) => {
+    const rows = await canvas.findAllByTestId("request-version");
+
+    await userEvent.click(
+      within(versionAt(rows, 1)).getByTestId("request-choose"),
+    );
+
+    await waitFor(() =>
+      expect(fake.writes).toEqual([{ kind: "choose", id: 7, resultId: 12 }]),
+    );
+    await expect(canvas.getByTestId("request-lane-ebook")).toHaveAttribute(
+      "data-needs-you",
+      "false",
+    );
+  },
+};
+
+export const AReaderWhoCanPickCancelsAndChoosesAnotherOnAnotherReadersDownload: Story =
+  {
+    parameters: { user: CHOOSER },
+    beforeEach({ msw }) {
+      fake = requestFake([aWireRequest({ ...DOWNLOADING, user_id: 1 })], {
+        names: GRACE,
+      });
+      msw.use(bookHandler(HYPERION), ...fake.handlers);
+    },
+    play: async ({ canvas }) => {
+      await expect(
+        await canvas.findByRole("button", {
+          name: "Cancel Ada Lovelace’s request for Hyperion",
+        }),
+      ).toBeVisible();
+      await expect(
+        canvas.getByRole("button", { name: "Choose another" }),
+      ).toBeVisible();
+    },
+  };
 
 // ---- the stepper, the download card, the byline ----
 
@@ -1187,8 +1320,8 @@ export const AnAdminsCancelNamesWhoseRequestItIs: Story = {
 };
 
 export const AnotherReadersLiveRequestGetsALaneOfItsOwn: Story = {
-  // Both look the same to a reader, so the book is filed under the newest: yours.
-  parameters: { user: READER },
+  // Both look the same to a reader who can't pick versions, so the book is filed under the newest: yours.
+  parameters: { user: ASKER },
   beforeEach({ msw }) {
     fake = requestFake(
       [
@@ -1388,13 +1521,7 @@ export const HistoryRecordsAVersionSwappedForAnother: Story = {
 };
 
 export const HistoryOffersNoRequestAgainToAReaderWhoCantRequest: Story = {
-  parameters: {
-    user: {
-      ...READER,
-      can_start_requests: false,
-      can_choose_request_versions: false,
-    },
-  },
+  parameters: { user: { ...READER, can_start_requests: false } },
   beforeEach({ msw }) {
     msw.use(...withHistory(CANCELLED_NOW, CANCELLED_EARLIER));
   },
@@ -1754,6 +1881,31 @@ export const AFailedKeepTellsYouAndDropsTheStaleCard: Story = {
     await waitFor(() =>
       expect(canvas.queryByTestId("request-cover-offer")).toBeNull(),
     );
+  },
+};
+
+export const HidesTheCoverOfferFromTheRequesterWhoCannotPickVersions: Story = {
+  parameters: { user: ASKER },
+  beforeEach({ msw }) {
+    msw.use(...seed(WITH_SHARPER_COVER));
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByTestId("request-state")).toHaveTextContent(
+      "Ready to read",
+    );
+    await expect(canvas.queryByTestId("request-cover-offer")).toBeNull();
+  },
+};
+
+export const OffersTheCoverToAReaderWhoCanPickOnAnotherReadersRequest: Story = {
+  parameters: { user: CHOOSER },
+  beforeEach({ msw }) {
+    msw.use(...seed(WITH_SHARPER_COVER));
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByTestId("request-cover-offer"),
+    ).toBeVisible();
   },
 };
 

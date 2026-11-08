@@ -13,7 +13,10 @@ import {
   requestedNotes,
 } from "./requestGroups";
 
-const ADA = { id: 1 as UserId, isAdmin: false, canStartRequests: true };
+/** A reader who can pick versions. */
+const ADA = { canChooseRequestVersions: true };
+/** A reader who can ask for books but not pick their versions. */
+const ASKER = { canChooseRequestVersions: false };
 const EPUB = aWireVersion({ id: 11 });
 
 /** A listed request for the book `uuid`. */
@@ -67,18 +70,21 @@ describe("groupRequests", () => {
       expect(shape(groups)).toEqual([["on_its_way", ["b"]]]);
     });
 
-    it("lists another reader's pick still to make as looking", () => {
-      const theirs = listing("b", { user_id: 2, state: "choose" });
+    it("lists any reader's pick still to make as looking to a reader who can't pick versions, their own included", () => {
+      const mine = listing("mine", { id: 1, user_id: 1, state: "choose" });
+      const theirs = listing("theirs", { id: 2, user_id: 2, state: "choose" });
 
-      expect(shape(groupRequests([theirs], ADA))).toEqual([["looking", ["b"]]]);
+      expect(shape(groupRequests([mine, theirs], ASKER))).toEqual([
+        ["looking", ["mine", "theirs"]],
+      ]);
     });
 
-    it("lists any pick still to make as needing an admin", () => {
-      const admin = { id: 9 as UserId, isAdmin: true, canStartRequests: true };
-      const theirs = listing("b", { user_id: 2, state: "choose" });
+    it("lists any reader's pick still to make as needing a reader who can pick versions", () => {
+      const mine = listing("mine", { id: 1, user_id: 1, state: "choose" });
+      const theirs = listing("theirs", { id: 2, user_id: 2, state: "choose" });
 
-      expect(shape(groupRequests([theirs], admin))).toEqual([
-        ["needs_you", ["b"]],
+      expect(shape(groupRequests([mine, theirs], ADA))).toEqual([
+        ["needs_you", ["mine", "theirs"]],
       ]);
     });
 

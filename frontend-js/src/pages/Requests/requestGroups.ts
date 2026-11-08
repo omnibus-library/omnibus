@@ -1,7 +1,6 @@
 import type { BookRequest, RequestListing, User } from "../../api";
 import { bookCount } from "../../format";
 import {
-  canActOn,
   downloadPercent,
   kindLabel,
   stateView,
@@ -29,13 +28,13 @@ export const GROUP_LABELS: Record<RequestGroupKey, string> = {
   cancelled: "Cancelled",
 };
 
-type Viewer = Pick<User, "id" | "isAdmin" | "canStartRequests">;
+type Viewer = Pick<User, "canChooseRequestVersions">;
 
 /** The group a request files its book under. */
 function groupOf(request: BookRequest, viewer: Viewer): RequestGroupKey {
   switch (request.state) {
     case "choose":
-      return canActOn(viewer, request) ? "needs_you" : "looking";
+      return viewer.canChooseRequestVersions ? "needs_you" : "looking";
     case "looking":
       return "looking";
     case "chosen":

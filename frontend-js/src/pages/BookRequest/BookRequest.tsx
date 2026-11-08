@@ -40,7 +40,7 @@ import {
   RequestHistory,
 } from "./RequestHistory";
 import {
-  canActOn,
+  canCancel,
   downloadPercent,
   firstShown,
   fromWishlists,
@@ -86,7 +86,7 @@ function VersionRow({
   choosing: boolean;
   /** Some version is being chosen, so no other can be. */
   locked: boolean;
-  /** Absent when the viewer may not pick for this request. */
+  /** Absent when the viewer may not pick versions. */
   onChoose: (() => void) | null;
   /** Lets the page move focus to this row. */
   rowRef?: Ref<HTMLLIElement>;
@@ -168,12 +168,13 @@ function VersionRow({
 
 function Choices({
   request,
-  canAct,
+  canChoose,
   focusFirst,
   onFocused,
 }: {
   request: Request;
-  canAct: boolean;
+  /** The viewer can pick versions; any other waits on someone who can. */
+  canChoose: boolean;
   /** Move focus to the first version, once, as the lane arrives after a swap. */
   focusFirst: boolean;
   onFocused: () => void;
@@ -208,6 +209,11 @@ function Choices({
       <p className="rq-found" data-testid="request-versions-found">
         {versionsFound(request.versions)}
       </p>
+      {!canChoose && (
+        <p className="rq-note" data-testid="request-waiting-for-chooser">
+          Waiting for someone who can pick versions.
+        </p>
+      )}
       <ul id={listId} className="rq-versions" aria-label="Versions found">
         {shown.map((version, index) => (
           <VersionRow
@@ -216,7 +222,7 @@ function Choices({
             version={version}
             choosing={choose.isPending && choose.variables === version.id}
             locked={choose.isPending}
-            onChoose={canAct ? () => choose.mutate(version.id) : null}
+            onChoose={canChoose ? () => choose.mutate(version.id) : null}
           />
         ))}
       </ul>
@@ -388,17 +394,19 @@ function Steps({ steps }: { steps: readonly RequestStep[] }) {
   );
 }
 
-/** Cancel while a request is still going, and Choose another while its version downloads; one at a time. */
+/** Cancel while a request is still going, and Choose another while its version downloads and the viewer can pick versions; one at a time. */
 function Actions({
   request,
   cancel,
   swap,
+  canSwap,
   cancelLabel,
 }: {
   request: Request;
   cancel: ReturnType<typeof useCancel>;
   swap: ReturnType<typeof useSwap>;
-  /** Names whose request it is when the viewer is an admin acting on another reader's. */
+  canSwap: boolean;
+  /** Names whose request it is when the viewer is cancelling another reader's. */
   cancelLabel: string | undefined;
 }) {
   const busy = cancel.isPending || swap.isPending;
@@ -406,7 +414,7 @@ function Actions({
   const choosing = request.state === "choose";
   return (
     <div className="rq-actions">
-      {isDownloading(request) && (
+      {canSwap && isDownloading(request) && (
         <Button
           variant="ghost"
           size="sm"
@@ -482,11 +490,11 @@ function TryAgain({
 
 function Stuck({
   request,
-  canAct,
+  canChoose,
   onTried,
 }: {
   request: Request;
-  canAct: boolean;
+  canChoose: boolean;
   onTried: () => void;
 }) {
   return (
@@ -496,7 +504,7 @@ function Stuck({
           {request.stuckDetail}
         </p>
       )}
-      {canAct && <TryAgain request={request} onTried={onTried} />}
+      {canChoose && <TryAgain request={request} onTried={onTried} />}
     </div>
   );
 }
@@ -512,11 +520,11 @@ const useSearchSlow = (updatedAt: number) =>
 /** The wait for a search, with a way out once it has run past its timeout. */
 function Looking({
   request,
-  canAct,
+  canChoose,
   onTried,
 }: {
   request: Request;
-  canAct: boolean;
+  canChoose: boolean;
   onTried: () => void;
 }) {
   const slow = useSearchSlow(request.updatedAt);
@@ -528,7 +536,7 @@ function Looking({
         label={slow ? LOOKING_SLOW_LABEL : LOOKING_LABEL}
         testId="request-looking"
       />
-      {stale && canAct && (
+      {stale && canChoose && (
         <div className="rq-stuck">
           <p className="rq-note" data-testid="request-still-looking">
             Still looking…
@@ -592,8 +600,8 @@ function Lane({
   const [focusVersions, setFocusVersions] = useState(false);
   const swap = useSwap(request.id, () => setFocusVersions(true));
   const now = useNowPast(request.cancelAt);
-  // Anyone may read a request; only its maker, or an admin, may act on it.
-  const canAct = canActOn(viewer, request);
+  // Anyone may read a request; picking versions is a permission of its own, and its maker may always cancel.
+  const canChoose = viewer.canChooseRequestVersions;
   const listing = context.listings?.find((l) => l.request.id === request.id);
   const mine = request.userId === viewer.id;
   // Another reader's Cancel names whose request it is, so it waits for the list that says.
@@ -601,14 +609,17 @@ function Lane({
     ? undefined
     : listing &&
       `Cancel ${listing.requesterName}’s request for ${context.book.title}`;
-  const actions = canAct && isCancellable(request) && (mine || cancelLabel) && (
-    <Actions
-      request={request}
-      cancel={cancel}
-      swap={swap}
-      cancelLabel={cancelLabel}
-    />
-  );
+  const actions = canCancel(viewer, request) &&
+    isCancellable(request) &&
+    (mine || cancelLabel) && (
+      <Actions
+        request={request}
+        cancel={cancel}
+        swap={swap}
+        canSwap={canChoose}
+        cancelLabel={cancelLabel}
+      />
+    );
   const Heading = context.variant === "pane" ? "h3" : "h2";
   const { heading, note } = stateView(request.state, request.stuckReason);
   const steps = stepsFor(request);
@@ -616,7 +627,7 @@ function Lane({
     <section
       className="rq-panel rq-lane"
       aria-labelledby={titleId}
-      data-needs-you={request.state === "choose" && canAct}
+      data-needs-you={request.state === "choose" && canChoose}
       data-testid={`${main ? "request-lane" : "request-other-lane"}-${request.kind}`}
     >
       <div className="rq-lane-head">
@@ -646,19 +657,19 @@ function Lane({
         note && <p className="rq-note">{note}</p>
       )}
       {request.state === "looking" && (
-        <Looking request={request} canAct={canAct} onTried={focusTitle} />
+        <Looking request={request} canChoose={canChoose} onTried={focusTitle} />
       )}
       {request.state === "choose" && (
         <Choices
           request={request}
-          canAct={canAct}
+          canChoose={canChoose}
           focusFirst={focusVersions}
           onFocused={() => setFocusVersions(false)}
         />
       )}
       {request.state === "chosen" && <Picked request={request} />}
       {request.state === "ready" && <Added request={request} />}
-      {request.state === "ready" && canAct && request.coverOffer && (
+      {request.state === "ready" && canChoose && request.coverOffer && (
         <CoverOffer
           request={request}
           offer={request.coverOffer}
@@ -673,7 +684,7 @@ function Lane({
         actions
       )}
       {request.state === "stuck" && (
-        <Stuck request={request} canAct={canAct} onTried={focusTitle} />
+        <Stuck request={request} canChoose={canChoose} onTried={focusTitle} />
       )}
       {context.listings &&
         offersRequestAgain(
@@ -692,7 +703,7 @@ function Lane({
 
 /** What a lane needs to know about the rest of the book's requests. */
 type LaneContext = {
-  /** The book: its title names an admin's Cancel, and its look stands in for its covers. */
+  /** The book: its title names a Cancel on another reader's request, and its look stands in for its covers. */
   book: Book;
   /** The book's requests as listed, for who made each and whether Request again would only return one going; `undefined` until read. */
   listings: readonly RequestListing[] | undefined;

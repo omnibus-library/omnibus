@@ -12,7 +12,7 @@ import {
   aWireVersion,
 } from "../../testing/requestHandlers";
 import {
-  canActOn,
+  canCancel,
   coverSizesLine,
   downloadPercent,
   factParts,
@@ -433,32 +433,27 @@ describe("swapFacts", () => {
   });
 });
 
-describe("canActOn", () => {
+describe("canCancel", () => {
   it.each([
     [
-      "an admin on another reader's request",
+      "a reader who can pick versions, on another reader's request",
       true,
-      { id: 2, isAdmin: true, canStartRequests: true },
+      { id: 2, canChooseRequestVersions: true },
     ],
     [
-      "the requester who may request",
+      "the requester who can't pick versions",
       true,
-      { id: 1, isAdmin: false, canStartRequests: true },
+      { id: 1, canChooseRequestVersions: false },
     ],
     [
-      "another reader",
+      "another reader who can't pick versions",
       false,
-      { id: 2, isAdmin: false, canStartRequests: true },
+      { id: 2, canChooseRequestVersions: false },
     ],
-    [
-      "the requester who may no longer request",
-      false,
-      { id: 1, isAdmin: false, canStartRequests: false },
-    ],
-  ] as const)("lets %s act: %s", (_who, expected, viewer) => {
+  ] as const)("lets %s cancel: %s", (_who, expected, viewer) => {
     const request = { userId: 1 as UserId };
 
-    expect(canActOn({ ...viewer, id: viewer.id as UserId }, request)).toBe(
+    expect(canCancel({ ...viewer, id: viewer.id as UserId }, request)).toBe(
       expected,
     );
   });

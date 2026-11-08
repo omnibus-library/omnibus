@@ -241,12 +241,11 @@ export const holdsEbook = (formats: readonly string[]) =>
 export const holdsAudiobook = (formats: readonly string[]) =>
   upper(formats).some((f) => AUDIO_FORMATS.includes(f));
 
-/** Whether `viewer` may act on `request`: an admin, or the reader who made it while they may still request. */
-export const canActOn = (
-  viewer: Pick<User, "id" | "isAdmin" | "canStartRequests">,
+/** Whether `viewer` may cancel `request`: anyone who can pick versions, or the reader who made it. */
+export const canCancel = (
+  viewer: Pick<User, "id" | "canChooseRequestVersions">,
   request: Pick<BookRequest, "userId">,
-) =>
-  viewer.isAdmin || (viewer.canStartRequests && viewer.id === request.userId);
+) => viewer.canChooseRequestVersions || viewer.id === request.userId;
 
 const versionFacts = (version: RequestVersion) => {
   const size = versionSize(version.sizeBytes);

@@ -179,12 +179,24 @@ export const GroupsEachBookUnderWhereItStands: Story = {
   },
 };
 
-export const AnotherReadersPickIsStillLookingToYou: Story = {
-  parameters: { user: GRACE },
+export const AnyPickIsStillLookingToAReaderWhoCannotPickVersions: Story = {
+  parameters: { user: { ...GRACE, can_choose_request_versions: false } },
   play: async ({ canvas }) => {
     await expect(await groupsOn(canvas)).toEqual([
       ["On its way", "1", ["Carmilla"]],
       ["Looking", "2", ["Dracula", "Hyperion"]],
+      ["Cancelled", "1", []],
+    ]);
+  },
+};
+
+export const AnotherReadersPickNeedsAReaderWhoCanPickVersions: Story = {
+  parameters: { user: GRACE },
+  play: async ({ canvas }) => {
+    await expect(await groupsOn(canvas)).toEqual([
+      ["Needs you", "1", ["Dracula"]],
+      ["On its way", "1", ["Carmilla"]],
+      ["Looking", "1", ["Hyperion"]],
       ["Cancelled", "1", []],
     ]);
   },
