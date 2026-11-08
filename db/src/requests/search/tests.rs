@@ -181,6 +181,7 @@ mod run_search {
             .execute(&pool)
             .await
             .unwrap();
+        assert!(crate::ebook_convert_status(&pool).await.is_err());
         let id = looking_request(&pool).await;
 
         run_search(&pool, id).await.unwrap();
