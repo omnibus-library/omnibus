@@ -8,7 +8,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use omnibus_shared::StuckReason;
+use omnibus_shared::{ReleaseProtocol, StuckReason};
 use sqlx::SqlitePool;
 
 use crate::settings::RequestsConfig;
@@ -253,12 +253,22 @@ async fn add_picked(
             Err(e) => return Err(e.into()),
         };
         let hash = prepared.hash.clone();
-        if client.status(&hash).await?.is_some() {
-            // Ours when this request recorded it, or called it off a moment ago.
-            let ours = (row.client_hash.as_deref() == Some(hash.as_str()) && !row.client_adopted)
-                || row.remove_hash.as_deref() == Some(hash.as_str());
-            store::mark_on_its_way(pool, row.id, &hash, !ours, now).await?;
-            continue;
+        match client.status(&hash).await? {
+            // A usenet job that failed would stop this request again at once; clear it to retry.
+            Some(found)
+                if client.protocol() == ReleaseProtocol::Usenet && found.state == "error" =>
+            {
+                client.remove(&hash, true).await?;
+            }
+            Some(_) => {
+                // Ours when this request recorded it, or called it off a moment ago.
+                let ours = (row.client_hash.as_deref() == Some(hash.as_str())
+                    && !row.client_adopted)
+                    || row.remove_hash.as_deref() == Some(hash.as_str());
+                store::mark_on_its_way(pool, row.id, &hash, !ours, now).await?;
+                continue;
+            }
+            None => {}
         }
         if !store::claim_hash(pool, row.id, &hash).await? {
             continue;

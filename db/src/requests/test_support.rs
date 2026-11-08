@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use omnibus_shared::{DownloadClientKind, RequestKind};
+use omnibus_shared::{DownloadClientKind, ReleaseProtocol, RequestKind};
 use sqlx::SqlitePool;
 
 use crate::settings::RequestsConfig;
@@ -127,6 +127,8 @@ struct Script {
     adds_then_fails: bool,
     /// Info hashes whose link `add` refuses.
     refused: Vec<String>,
+    /// The protocol the client reports; a torrent client's when `None`.
+    protocol: Option<ReleaseProtocol>,
     calls: Vec<Call>,
 }
 
@@ -201,6 +203,12 @@ impl StubClient {
         if let Some(status) = self.script().statuses.get_mut(hash) {
             status.tags = tag.to_string();
         }
+        self
+    }
+
+    /// A client that downloads `protocol` releases.
+    pub fn with_protocol(self, protocol: ReleaseProtocol) -> Self {
+        self.script().protocol = Some(protocol);
         self
     }
 
@@ -294,6 +302,10 @@ impl DownloadClient for StubClient {
             .filter(|t| t.tags.split(',').any(|candidate| candidate.trim() == tag))
             .max_by_key(|t| t.added_on)
             .map(|t| t.hash.clone()))
+    }
+
+    fn protocol(&self) -> ReleaseProtocol {
+        self.script().protocol.unwrap_or(ReleaseProtocol::Torrent)
     }
 
     async fn status(&self, hash: &str) -> Result<Option<TorrentStatus>, ConnectionError> {
