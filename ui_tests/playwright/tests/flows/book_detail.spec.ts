@@ -993,7 +993,7 @@ test.describe("book detail page", () => {
       });
     });
 
-    // The controls restyle the preview in place and send no request.
+    // The preview is a canvas, so the controls show as pressed state and canvas size, and send no request.
     test("restyle the quote card preview", async ({
       bookDetailPage,
       request,
@@ -1010,38 +1010,71 @@ test.describe("book detail page", () => {
         await expect(quoteCardModal.root).toBeVisible();
       });
 
-      await test.step("pick the sans font", async () => {
-        await expect(quoteCardModal.preview).toHaveCSS(
+      // The chips draw in their own faces, so they carry the Atrium font check.
+      await test.step("check the font chips use the Atrium faces", async () => {
+        await expect(quoteCardModal.fontButton("Serif")).toHaveCSS(
           "font-family",
           /Cormorant Garamond/,
         );
-        await quoteCardModal.chooseFont("Sans");
-        await expect(quoteCardModal.preview).toHaveCSS(
+        await expect(quoteCardModal.fontButton("Sans")).toHaveCSS(
           "font-family",
           /Instrument Sans/,
         );
       });
 
+      await test.step("pick the sans font", async () => {
+        await expect(quoteCardModal.fontButton("Serif")).toHaveAttribute(
+          "aria-pressed",
+          "true",
+        );
+        await quoteCardModal.chooseFont("Sans");
+        await expect(quoteCardModal.fontButton("Sans")).toHaveAttribute(
+          "aria-pressed",
+          "true",
+        );
+      });
+
       await test.step("toggle italic and bold", async () => {
-        await expect(quoteCardModal.previewBody).toHaveCSS(
-          "font-style",
-          "italic",
+        await expect(quoteCardModal.styleButton("Italic")).toHaveAttribute(
+          "aria-pressed",
+          "false",
         );
         await quoteCardModal.toggleStyle("Italic");
-        await expect(quoteCardModal.previewBody).toHaveCSS(
-          "font-style",
-          "normal",
+        await expect(quoteCardModal.styleButton("Italic")).toHaveAttribute(
+          "aria-pressed",
+          "true",
         );
         await quoteCardModal.toggleStyle("Bold");
-        await expect(quoteCardModal.previewBody).toHaveCSS(
-          "font-weight",
-          "700",
+        await expect(quoteCardModal.styleButton("Bold")).toHaveAttribute(
+          "aria-pressed",
+          "true",
         );
       });
 
       await test.step("pick the large size", async () => {
         await quoteCardModal.chooseSize("L");
-        await expect(quoteCardModal.previewBody).toHaveCSS("font-size", "27px");
+        await expect(quoteCardModal.sizeButton("L")).toHaveAttribute(
+          "aria-pressed",
+          "true",
+        );
+      });
+
+      await test.step("pick the story shape", async () => {
+        await expect(quoteCardModal.preview).toHaveAttribute("height", "1080");
+        await quoteCardModal.chooseShape("Story 9:16");
+        await expect(quoteCardModal.preview).toHaveAttribute("height", "1920");
+      });
+
+      await test.step("pick the paper background", async () => {
+        await expect(quoteCardModal.solidSwatch("Book")).toHaveAttribute(
+          "aria-pressed",
+          "true",
+        );
+        await quoteCardModal.chooseSolid("Paper");
+        await expect(quoteCardModal.solidSwatch("Paper")).toHaveAttribute(
+          "aria-pressed",
+          "true",
+        );
       });
     });
 
