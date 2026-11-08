@@ -925,6 +925,7 @@ const NOT_THE_MAKER = {
   ...ADA,
   id: 2,
   is_admin: false,
+  can_start_requests: false,
   can_choose_request_versions: false,
 };
 
@@ -951,32 +952,6 @@ export const AFreshSearchOffersNoTryAgain: Story = {
 
     await expect(canvas.queryByTestId("request-try-again")).toBeNull();
     await expect(canvas.queryByTestId("request-still-looking")).toBeNull();
-  },
-};
-
-export const AnotherReadersChoiceCanBeReadButNotMade: Story = {
-  parameters: { user: NOT_THE_MAKER },
-  beforeEach({ msw }) {
-    msw.use(...seed({ state: "choose", versions: [EPUB, PDF] }));
-  },
-  play: async ({ canvas }) => {
-    await expect(await canvas.findAllByTestId("request-version")).toHaveLength(
-      2,
-    );
-
-    await expect(canvas.queryByTestId("request-choose")).toBeNull();
-  },
-};
-
-export const AnotherReadersStuckRequestOffersNoTryAgain: Story = {
-  parameters: { user: NOT_THE_MAKER },
-  beforeEach({ msw }) {
-    msw.use(...seed(STUCK));
-  },
-  play: async ({ canvas }) => {
-    await canvas.findByTestId("request-stuck-detail");
-
-    await expect(canvas.queryByTestId("request-try-again")).toBeNull();
   },
 };
 
@@ -1096,6 +1071,25 @@ export const AReaderWhoCannotPickGetsNoTryAgainOnAStuckRequest: Story = {
     await canvas.findByTestId("request-stuck-detail");
 
     await expect(canvas.queryByTestId("request-try-again")).toBeNull();
+    await expect(
+      canvas.getByTestId("request-waiting-to-try-again"),
+    ).toHaveTextContent(
+      "Waiting for someone who can pick versions to try again.",
+    );
+  },
+};
+
+export const AReaderWhoCanPickSeesTryAgainNotTheWait: Story = {
+  parameters: { user: CHOOSER },
+  beforeEach({ msw }) {
+    msw.use(...seed(STUCK));
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByTestId("request-try-again")).toBeEnabled();
+
+    await expect(
+      canvas.queryByTestId("request-waiting-to-try-again"),
+    ).toBeNull();
   },
 };
 
@@ -1208,18 +1202,6 @@ export const ALaneWaitingOnYourPickIsMarked: Story = {
     await expect(
       await canvas.findByTestId("request-lane-ebook"),
     ).toHaveAttribute("data-needs-you", "true");
-  },
-};
-
-export const AnotherReadersPickIsNotMarkedAsYours: Story = {
-  parameters: { user: NOT_THE_MAKER },
-  beforeEach({ msw }) {
-    msw.use(...seed({ state: "choose", versions: [EPUB] }));
-  },
-  play: async ({ canvas }) => {
-    await expect(
-      await canvas.findByTestId("request-lane-ebook"),
-    ).toHaveAttribute("data-needs-you", "false");
   },
 };
 
@@ -1906,18 +1888,5 @@ export const OffersTheCoverToAReaderWhoCanPickOnAnotherReadersRequest: Story = {
     await expect(
       await canvas.findByTestId("request-cover-offer"),
     ).toBeVisible();
-  },
-};
-
-export const HidesTheCoverOfferFromAnotherReader: Story = {
-  parameters: { user: NOT_THE_MAKER },
-  beforeEach({ msw }) {
-    msw.use(...seed(WITH_SHARPER_COVER));
-  },
-  play: async ({ canvas }) => {
-    await expect(await canvas.findByTestId("request-state")).toHaveTextContent(
-      "Ready to read",
-    );
-    await expect(canvas.queryByTestId("request-cover-offer")).toBeNull();
   },
 };

@@ -504,7 +504,13 @@ function Stuck({
           {request.stuckDetail}
         </p>
       )}
-      {canChoose && <TryAgain request={request} onTried={onTried} />}
+      {canChoose ? (
+        <TryAgain request={request} onTried={onTried} />
+      ) : (
+        <p className="rq-note" data-testid="request-waiting-to-try-again">
+          Waiting for someone who can pick versions to try again.
+        </p>
+      )}
     </div>
   );
 }

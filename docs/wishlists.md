@@ -45,7 +45,8 @@ one exception is a version row's seed count ("142 seeds"), which says how likely
 Two states can end a request early:
 
 - **Stuck**: something went wrong, with a plain reason ("Couldn't find it", "Stopped moving", "Couldn't add it")
-  and a "Try again" button.
+  and, for readers who can pick versions, a "Try again" button; anyone else sees "Waiting for someone who can pick
+  versions to try again."
 - **Cancelled**: the user cancelled it (see S7).
 
 A found result is a **version**, never a "copy": "copy" already means a physical book in Omnibus. A version row shows

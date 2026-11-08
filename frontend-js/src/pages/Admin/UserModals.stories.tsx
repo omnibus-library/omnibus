@@ -103,6 +103,9 @@ export const NewUserStartsWithDownloadOnly: Story = {
     await expect(checkbox(dialog, "Download")).toBeChecked();
     await expect(checkbox(dialog, "Ask for books")).not.toBeChecked();
     await expect(checkbox(dialog, "Pick versions")).not.toBeChecked();
+    await expect(checkbox(dialog, "Pick versions")).toHaveAccessibleDescription(
+      "Choose, retry or cancel any reader’s request.",
+    );
     await expect(
       within(dialog).queryByRole("checkbox", { name: "Request books" }),
     ).toBeNull();
