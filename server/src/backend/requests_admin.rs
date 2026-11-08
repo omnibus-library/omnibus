@@ -132,15 +132,15 @@ pub(super) async fn post_test_indexer(
 
 /// Test the download client connection
 ///
-/// Logs in to the download client with the saved address and login and reports whether it
-/// answered. It changes nothing. Needs an admin account.
+/// Calls the download client with the saved address and login, or API key, and reports
+/// whether it answered and accepted them. It changes nothing. Needs an admin account.
 #[utoipa::path(
     post,
     path = "/api/admin/requests/settings/test-client",
     tag = "Admin",
     operation_id = "test_download_client_connection",
     responses(
-        (status = 200, description = "The download client answered and accepted the login."),
+        (status = 200, description = "The download client answered and accepted the login or API key."),
         (status = 403, description = "You aren't an admin."),
         (status = 404, description = "Book requests are off on this server."),
         (status = 409, description = "The download client address isn't set."),

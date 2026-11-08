@@ -28,6 +28,8 @@ pub enum DownloadClientKind {
     Qbittorrent,
     /// Transmission, through its JSON RPC.
     Transmission,
+    /// SABnzbd, through its API. Its API key goes in the password field.
+    Sabnzbd,
 }
 
 impl DownloadClientKind {
@@ -36,6 +38,7 @@ impl DownloadClientKind {
         match self {
             DownloadClientKind::Qbittorrent => "qbittorrent",
             DownloadClientKind::Transmission => "transmission",
+            DownloadClientKind::Sabnzbd => "sabnzbd",
         }
     }
 
@@ -45,6 +48,7 @@ impl DownloadClientKind {
         match s {
             "qbittorrent" => DownloadClientKind::Qbittorrent,
             "transmission" => DownloadClientKind::Transmission,
+            "sabnzbd" => DownloadClientKind::Sabnzbd,
             _ => DownloadClientKind::default(),
         }
     }
@@ -55,6 +59,7 @@ impl DownloadClientKind {
             DownloadClientKind::Qbittorrent | DownloadClientKind::Transmission => {
                 ReleaseProtocol::Torrent
             }
+            DownloadClientKind::Sabnzbd => ReleaseProtocol::Usenet,
         }
     }
 }
@@ -78,10 +83,10 @@ pub struct RequestsSettingsUpdate {
     /// The download client's web address: an `http` or `https` URL of up to 2048 bytes,
     /// without a username or password in it.
     pub download_client_url: String,
-    /// The download client login, up to 255 bytes.
+    /// The download client login, up to 255 bytes. SABnzbd has none and ignores it.
     pub download_client_username: String,
-    /// The download client password, up to 1024 bytes. Null or left out keeps the saved
-    /// password. An empty string clears it.
+    /// The download client password, up to 1024 bytes; for SABnzbd, its API key. Null or
+    /// left out keeps the saved password. An empty string clears it.
     #[serde(default)]
     pub download_client_password: Option<String>,
     /// The category the client files Omnibus downloads under, up to 255 bytes. Empty
@@ -108,7 +113,7 @@ pub struct RequestsSettingsStatus {
     pub download_client_kind: DownloadClientKind,
     pub download_client_url: Option<String>,
     pub download_client_username: Option<String>,
-    /// A masked preview of the password. Null when no password is set.
+    /// A masked preview of the password, or of SABnzbd's API key. Null when none is set.
     pub download_client_password_masked: Option<String>,
     /// The category downloads are filed under; empty when none is sent.
     pub download_client_category: String,

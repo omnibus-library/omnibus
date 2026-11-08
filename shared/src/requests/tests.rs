@@ -20,4 +20,12 @@ mod download_client_kind_protocol {
             ReleaseProtocol::Torrent
         );
     }
+
+    #[test]
+    fn sabnzbd_fetches_usenet() {
+        assert_eq!(
+            DownloadClientKind::Sabnzbd.protocol(),
+            ReleaseProtocol::Usenet
+        );
+    }
 }

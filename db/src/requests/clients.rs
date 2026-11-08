@@ -11,14 +11,18 @@ use omnibus_shared::DownloadClientKind;
 use crate::settings::RequestsConfig;
 
 use super::ConnectionError;
+use usenet::JobFolders;
 
 pub mod infohash;
 pub mod qbittorrent;
 pub mod release;
+pub mod sabnzbd;
 pub mod transmission;
+pub mod usenet;
 
 pub use qbittorrent::Qbittorrent;
 pub use release::Release;
+pub use sabnzbd::Sabnzbd;
 pub use transmission::Transmission;
 
 /// How far along one download is. Every client reports in qBittorrent's vocabulary, so the
@@ -118,6 +122,7 @@ pub trait DownloadClient {
 pub enum AnyClient {
     Qbittorrent(Qbittorrent),
     Transmission(Transmission),
+    Sabnzbd(Sabnzbd),
 }
 
 /// Run `$call` on whichever client `$any` holds.
@@ -126,6 +131,7 @@ macro_rules! on_client {
         match $any {
             AnyClient::Qbittorrent($client) => $call,
             AnyClient::Transmission($client) => $call,
+            AnyClient::Sabnzbd($client) => $call,
         }
     };
 }
@@ -188,5 +194,12 @@ pub fn client_for(config: &RequestsConfig) -> Result<AnyClient, ConnectionError>
         DownloadClientKind::Transmission => {
             Transmission::new(url, username, password).map(AnyClient::Transmission)
         }
+        // SABnzbd's API key sits in the password slot; it has no login.
+        DownloadClientKind::Sabnzbd => Sabnzbd::new(url, password).map(|client| {
+            AnyClient::Sabnzbd(client.with_folders(JobFolders::new(
+                config.download_client_path_prefix.as_deref(),
+                config.download_path_prefix.as_deref(),
+            )))
+        }),
     }
 }
