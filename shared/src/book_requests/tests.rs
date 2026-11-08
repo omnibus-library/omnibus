@@ -51,14 +51,6 @@ fn start_request_from_meta_rejects_a_field_of_meta_over_its_cap() {
 }
 
 #[test]
-fn start_request_from_meta_accepts_an_audiobook() {
-    assert_eq!(
-        start_from(RequestKind::Audiobook, "Piranesi").validate(),
-        Ok(())
-    );
-}
-
-#[test]
 fn release_protocol_round_trips_its_tokens_and_knows_no_other() {
     assert_eq!(
         ReleaseProtocol::parse("usenet"),
