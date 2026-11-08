@@ -6,6 +6,8 @@
 //! title match outweighs any format, and format outweighs language, retail, seeders and
 //! size, in that order. Only a strong top result is badged the best match.
 
+use omnibus_shared::ReleaseProtocol;
+
 use crate::ebook::EBOOK_EXTENSIONS;
 use crate::metadata_lookup::{score_title_match, MIN_RELEVANCE_SCORE};
 use crate::normalize::{normalize_author, normalize_title};
@@ -137,6 +139,8 @@ fn assess(release: ProwlarrRelease, title: &str, author_tokens: &[String]) -> Ra
         .iter()
         .any(|c| BOOK_CATEGORIES.contains(c))
         || release.seeders.is_some_and(|s| s < 1)
+        // shortcut: no Usenet download client until #3021; offer Usenet versions once one exists
+        || release.protocol == Some(ReleaseProtocol::Usenet)
         || release
             .size_bytes
             .is_some_and(|s| !(MIN_SIZE_BYTES..=MAX_SIZE_BYTES).contains(&s))

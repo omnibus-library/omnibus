@@ -21,6 +21,8 @@ export function aWireVersion(
     size_bytes: 2_400_000,
     format: "EPUB",
     indexer: "Books",
+    seeders: 12,
+    protocol: "torrent",
     best_match: false,
     rejected: false,
     ...overrides,

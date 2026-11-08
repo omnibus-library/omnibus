@@ -15636,6 +15636,14 @@
           }
         }
       },
+      "ReleaseProtocol": {
+        "type": "string",
+        "description": "How a version is fetched, as Prowlarr names it.",
+        "enum": [
+          "torrent",
+          "usenet"
+        ]
+      },
       "RenameApiTokenRequest": {
         "type": "object",
         "description": "A new name for an API token, 1 to 100 characters.",
@@ -15699,11 +15707,30 @@
               "string",
               "null"
             ],
-            "description": "The source the version came from; shown behind Details."
+            "description": "The source the version came from."
+          },
+          "protocol": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ReleaseProtocol",
+                "description": "How it is fetched. Null when the source did not say."
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "rejected": {
             "type": "boolean",
             "description": "Whether this version was picked and given up. It is shown as one that did not work\nand cannot be chosen again."
+          },
+          "seeders": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "How many peers share it. Null for sources that have none, such as Usenet."
           },
           "size_bytes": {
             "type": [

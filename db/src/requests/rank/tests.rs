@@ -9,6 +9,7 @@ fn release(title: &str) -> ProwlarrRelease {
         title: title.to_string(),
         size_bytes: Some(1_000_000),
         seeders: Some(10),
+        protocol: None,
         indexer: Some("books".to_string()),
         link: "magnet:?xt=urn:btih:abc".to_string(),
         categories: vec![7020],
@@ -70,6 +71,22 @@ mod drop_rules {
         odd.seeders = Some(-2);
 
         assert!(is_dropped(odd));
+    }
+
+    #[test]
+    fn drops_a_usenet_release() {
+        let mut usenet = release("Dracula - Bram Stoker EPUB");
+        usenet.protocol = Some(ReleaseProtocol::Usenet);
+
+        assert!(is_dropped(usenet));
+    }
+
+    #[test]
+    fn keeps_a_torrent_release() {
+        let mut torrent = release("Dracula - Bram Stoker EPUB");
+        torrent.protocol = Some(ReleaseProtocol::Torrent);
+
+        assert!(!is_dropped(torrent));
     }
 
     #[test]

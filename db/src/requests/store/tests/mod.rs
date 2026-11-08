@@ -167,6 +167,7 @@ fn ranked(title: &str, score: f64, best_match: bool, rejected: bool) -> Ranked {
             title: title.to_string(),
             size_bytes: Some(1_000_000),
             seeders: Some(3),
+            protocol: None,
             indexer: Some("books".to_string()),
             link: format!("magnet:?xt=urn:btih:{title}"),
             categories: vec![7020],
@@ -259,6 +260,44 @@ mod finish_search {
             .await
             .unwrap();
         assert_eq!(stored, 3);
+    }
+
+    #[tokio::test]
+    async fn keeps_each_versions_seeders_and_none_for_a_source_without_them() {
+        let pool = pool().await;
+        let id = start_looking(&pool).await;
+        let mut usenet = ranked("usenet", 800.0, false, false);
+        usenet.release.seeders = None;
+        let found = SearchOutcome::Found(vec![ranked("torrent", 900.0, true, false), usenet]);
+
+        finish_search(&pool, id, found).await.unwrap();
+
+        let seeders: Vec<Option<i64>> = versions(&pool, id)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|v| v.seeders)
+            .collect();
+        assert_eq!(seeders, [Some(3), None]);
+    }
+
+    #[tokio::test]
+    async fn keeps_each_versions_protocol_and_none_where_prowlarr_named_none() {
+        let pool = pool().await;
+        let id = start_looking(&pool).await;
+        let mut usenet = ranked("usenet", 800.0, false, false);
+        usenet.release.protocol = Some(ReleaseProtocol::Usenet);
+        let found = SearchOutcome::Found(vec![ranked("torrent", 900.0, true, false), usenet]);
+
+        finish_search(&pool, id, found).await.unwrap();
+
+        let protocols: Vec<Option<ReleaseProtocol>> = versions(&pool, id)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|v| v.protocol)
+            .collect();
+        assert_eq!(protocols, [None, Some(ReleaseProtocol::Usenet)]);
     }
 
     #[tokio::test]
