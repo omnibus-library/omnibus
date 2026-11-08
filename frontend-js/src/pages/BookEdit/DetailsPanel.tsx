@@ -83,7 +83,12 @@ export function DetailsPanel({
       />
       <datalist id={seriesList}>
         {pools.series.map((s) => (
-          <option key={s.name} value={s.name} label={bookCount(s.count)} />
+          <option
+            key={s.name}
+            value={s.name}
+            // Firefox and Safari draw only the label, so it names the value too.
+            label={`${s.name} · ${bookCount(s.count)}`}
+          />
         ))}
       </datalist>
       <MeField

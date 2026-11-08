@@ -95,10 +95,12 @@ export function ChipInput({
           list={listId}
           value={draft}
           onChange={(e) => {
-            // A pick from the datalist arrives as a replacement, not as typing.
+            const how =
+              "inputType" in e.nativeEvent ? e.nativeEvent.inputType : "";
+            // Chrome marks a datalist pick as a replacement; Firefox gives it no inputType.
             const picked =
-              "inputType" in e.nativeEvent &&
-              e.nativeEvent.inputType === "insertReplacementText";
+              how === "insertReplacementText" ||
+              (!how && offered.some((s) => s.name === e.target.value));
             if (picked) add(e.target.value);
             else setDraft(e.target.value);
           }}
@@ -113,7 +115,12 @@ export function ChipInput({
         />
         <datalist id={listId}>
           {offered.map((s) => (
-            <option key={s.name} value={s.name} label={bookCount(s.count)} />
+            <option
+              key={s.name}
+              value={s.name}
+              // Firefox and Safari draw only the label, so it names the value too.
+              label={`${s.name} · ${bookCount(s.count)}`}
+            />
           ))}
         </datalist>
       </div>
