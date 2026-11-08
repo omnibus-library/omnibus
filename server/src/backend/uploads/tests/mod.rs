@@ -1,11 +1,12 @@
 //! Integration tests for the "add your own books" upload endpoints: split by
-//! format into the sibling modules below, plus the routes' time limits. The
-//! multipart request and fixture file helpers they share live here; the
-//! commit happy paths run a real worker scan so the indexer inserts the book
-//! before the override is layered on top.
+//! format into the sibling modules below, plus the routes' size and time
+//! limits. The multipart request and fixture file helpers they share live
+//! here; the commit happy paths run a real worker scan so the indexer inserts
+//! the book before the override is layered on top.
 
 mod audiobook;
 mod ebook;
+mod limit;
 mod placement;
 mod review;
 mod timeouts;

@@ -99,8 +99,8 @@ More optional settings: [`.env.example`](../.env.example).
 - Terminate TLS in nginx, Caddy or Traefik. Proxy to port 3000.
 - Set `OMNIBUS_PUBLIC_ORIGIN` to your `https://` address.
 - Set `OMNIBUS_SECURE_COOKIES` to `1`, or remove it.
-- Let large uploads through. A big audiobook can take minutes to send, and the server then scans it into the library before it answers. Allow request bodies up to `OMNIBUS_MAX_UPLOAD_BYTES` (1 GiB by default) and don't time the transfer out:
-  - nginx: raise `client_max_body_size` (1 MB by default) and `proxy_read_timeout` (60 s).
+- Let large uploads through. A big audiobook can take minutes to send, and the server then scans it into the library before it answers. The server sets no size cap unless you set `OMNIBUS_MAX_UPLOAD_BYTES`, so let request bodies through and don't time the transfer out:
+  - nginx: set `client_max_body_size 0` (the default is 1 MB; `0` disables the check) and raise `proxy_read_timeout` (60 s).
   - Traefik: raise the entrypoint's `transport.respondingTimeouts.readTimeout` (60 s by default in v3).
   - Caddy: the defaults already allow it.
 - Optional: `OMNIBUS_TRUST_FORWARDED_FOR: "1"` so rate limiting sees real client IPs. Only if your proxy strips incoming `X-Forwarded-For`.

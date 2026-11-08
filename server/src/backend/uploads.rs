@@ -32,9 +32,9 @@ use self::review::{CommitExtras, LegacyFields};
 use super::AppState;
 use crate::auth::AuthUser;
 
-/// Default upload size cap (1 GiB) when `OMNIBUS_MAX_UPLOAD_BYTES` is unset or
-/// unparseable. Generous so it survives the future large-audiobook case.
-pub const DEFAULT_MAX_UPLOAD_BYTES: usize = 1024 * 1024 * 1024;
+/// No upload size cap: what applies when `OMNIBUS_MAX_UPLOAD_BYTES` is unset
+/// or unparseable. Uploads stream to disk, so a big audiobook isn't held in memory.
+pub const DEFAULT_MAX_UPLOAD_BYTES: usize = usize::MAX;
 
 /// Longest an upload's body may go without delivering a byte. These routes
 /// are exempt from [`super::REQUEST_TIMEOUT`], so this is what cuts off a
@@ -48,9 +48,9 @@ pub const UPLOAD_BODY_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 /// for the rest) while still bounding memory ahead of that later validation.
 const MAX_TEXT_FIELD_BYTES: usize = 8 * 1024;
 
-/// Resolve the configured upload size cap from `OMNIBUS_MAX_UPLOAD_BYTES`,
-/// falling back to [`DEFAULT_MAX_UPLOAD_BYTES`]. Read at router-build time for
-/// the body limit and again per-request as a defense-in-depth backstop.
+/// Resolve the optional upload size cap from `OMNIBUS_MAX_UPLOAD_BYTES`,
+/// falling back to [`DEFAULT_MAX_UPLOAD_BYTES`] (no cap). Read at router-build
+/// time for the body limit and again per-request as a defense-in-depth backstop.
 pub fn max_upload_bytes() -> usize {
     std::env::var("OMNIBUS_MAX_UPLOAD_BYTES")
         .ok()
