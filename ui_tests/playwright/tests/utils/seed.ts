@@ -1,5 +1,18 @@
 import { resolve } from "node:path";
-import { type APIRequestContext, expect } from "@playwright/test";
+import { type APIRequestContext, expect, test } from "@playwright/test";
+import { withLock } from "./lock";
+
+/** The lock every save of the server-wide library paths holds, a test that moves them for its whole length included. */
+export const LIBRARY_LOCK = "library-settings";
+
+/** Extra time a hook or test gets to queue behind other tests that hold the library lock. */
+const LIBRARY_LOCK_WAIT_MS = 180_000;
+
+/** Runs `fn` under the library lock, with the wait for it not counted against the caller's own timeout. */
+function withLibraryLock<T>(fn: () => Promise<T>): Promise<T> {
+  test.setTimeout(test.info().timeout + LIBRARY_LOCK_WAIT_MS);
+  return withLock(LIBRARY_LOCK, fn);
+}
 
 /**
  * Absolute path to the committed EPUB fixtures (`<repo>/test_data/epubs`).
@@ -40,21 +53,27 @@ export async function seedLibrary(
   expectedCount: number,
   audiobookLibraryPath: string | null = null,
 ): Promise<void> {
-  // When no explicit audiobook path is passed, preserve whatever the
-  // server already has so parallel specs don't wipe each other's data.
-  if (audiobookLibraryPath === null) {
-    const current = await request.get("/api/settings");
-    if (current.status() === 200) {
-      const body = (await current.json()) as {
-        audiobook_library_path?: string | null;
-      };
-      audiobookLibraryPath = body.audiobook_library_path ?? null;
+  // The library paths are server-wide, so the read-modify-write and the wait for the
+  // rescans hold the lock a test that moves the libraries holds for its whole length.
+  // Never call this from inside such a test: the lock is not re-entrant.
+  await withLibraryLock(async () => {
+    // When no explicit audiobook path is passed, preserve whatever the
+    // server already has so parallel specs don't wipe each other's data.
+    if (audiobookLibraryPath === null) {
+      const current = await request.get("/api/settings");
+      if (current.status() === 200) {
+        const body = (await current.json()) as {
+          audiobook_library_path?: string | null;
+        };
+        audiobookLibraryPath = body.audiobook_library_path ?? null;
+      }
     }
-  }
 
-  await saveLibraryPaths(request, ebookLibraryPath, audiobookLibraryPath);
+    await saveLibraryPaths(request, ebookLibraryPath, audiobookLibraryPath);
 
-  await pollForBookCount(request, expectedCount);
+    await pollForBookCount(request, expectedCount);
+    await waitForWorkerIdle(request);
+  });
 }
 
 /**
@@ -94,19 +113,23 @@ export async function seedAudiobookLibrary(
   audiobookLibraryPath: string,
   expectedCount: number,
 ): Promise<void> {
-  const current = await request.get("/api/settings");
-  const currentSettings =
-    current.status() === 200
-      ? ((await current.json()) as { ebook_library_path?: string | null })
-      : {};
+  // Locked as `seedLibrary` is, and for the same reason.
+  await withLibraryLock(async () => {
+    const current = await request.get("/api/settings");
+    const currentSettings =
+      current.status() === 200
+        ? ((await current.json()) as { ebook_library_path?: string | null })
+        : {};
 
-  await saveLibraryPaths(
-    request,
-    currentSettings.ebook_library_path ?? null,
-    audiobookLibraryPath,
-  );
+    await saveLibraryPaths(
+      request,
+      currentSettings.ebook_library_path ?? null,
+      audiobookLibraryPath,
+    );
 
-  await pollForBookCount(request, expectedCount);
+    await pollForBookCount(request, expectedCount);
+    await waitForWorkerIdle(request);
+  });
 }
 
 /** Saves both library paths, then rescans both: the save alone rescans only the ebooks. */

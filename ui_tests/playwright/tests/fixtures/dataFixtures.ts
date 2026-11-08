@@ -57,6 +57,7 @@ import {
 import {
   audiobookFixturesDir,
   fixturesDir,
+  LIBRARY_LOCK,
   waitForWorkerIdle,
 } from "../utils/seed";
 import { test as base, expect } from "./accountFixtures";
@@ -207,7 +208,7 @@ export const test = base.extend<DataFixtures>({
   // of the shared library until they are put back. The lock keeps two saving
   // tests from taking each other's scratch paths for the original.
   scratchLibrary: async ({ settingsRequests }, use) => {
-    await withLock("library-settings", async () => {
+    await withLock(LIBRARY_LOCK, async () => {
       const before = await settingsRequests.getSettings();
       await expect(before, "read the library settings").toBeOK();
       const original: ServerLibrary = await before.json();
@@ -317,7 +318,7 @@ export const test = base.extend<DataFixtures>({
     { request, settingsRequests, ebooksRequests, audiobookImports },
     use,
   ) => {
-    await withLock("library-settings", async () => {
+    await withLock(LIBRARY_LOCK, async () => {
       const before = await settingsRequests.getSettings();
       await expect(before, "read the library settings").toBeOK();
       const original: ServerLibrary = await before.json();
