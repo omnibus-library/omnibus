@@ -1,9 +1,9 @@
 //! Puts a downloaded file, or a folder of audiobook parts, into the library in one step the
 //! scanner can never see half of. The files are linked (or copied) into a staging folder
 //! inside the library root, so they are on the same filesystem, then renamed to their
-//! canonical place. Staging is a dot folder,
-//! which every library walk skips, and it is cleared on every exit, so nothing
-//! half-copied is ever left to be indexed. The download itself is only read.
+//! canonical place. Staging is a dot folder, which every library walk skips, and it is cleared
+//! on every exit, so nothing half-copied is ever left to be indexed. The download itself is
+//! only read.
 
 use std::fs;
 use std::io;

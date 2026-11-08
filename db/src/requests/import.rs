@@ -4,8 +4,9 @@
 //! for an ebook request, an M4B or a folder of MP3s for an audiobook one), [`place`] stages
 //! it inside that kind's library and renames it into the canonical layout named from the
 //! wished book, the worker scans it in, and it is merged into the wished book when the
-//! scanner filed it as a book of its own. The download is only read, never moved or removed. Its cover
-//! is kept as the request's candidate (see [`super::cover`]) whichever way the scan filed it.
+//! scanner filed it as a book of its own. The download is only read, never moved or removed.
+//! Its cover is kept as the request's candidate (see [`super::cover`]) whichever way the scan
+//! filed it.
 
 use std::io;
 use std::path::{Path, PathBuf};
