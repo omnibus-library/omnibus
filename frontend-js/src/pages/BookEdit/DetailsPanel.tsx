@@ -3,8 +3,10 @@ import { useId } from "react";
 import { Controller, type UseFormReturn } from "react-hook-form";
 import { type MetaForm, nameCountsQuery } from "../../api";
 import { Button } from "../../components/Button/Button";
-import { ChipInput } from "../../components/ChipInput/ChipInput";
-import { bookCount } from "../../format";
+import {
+  ChipInput,
+  SuggestionList,
+} from "../../components/ChipInput/ChipInput";
 import type { DirtyLabel } from "./dirty";
 import { MeArea, MeField, MeLabel } from "./MetaFields";
 
@@ -81,16 +83,7 @@ export function DetailsPanel({
         error={errors.series?.message}
         input={{ ...register("series"), list: seriesList }}
       />
-      <datalist id={seriesList}>
-        {pools.series.map((s) => (
-          <option
-            key={s.name}
-            value={s.name}
-            // Firefox and Safari draw only the label, so it names the value too.
-            label={`${s.name} · ${bookCount(s.count)}`}
-          />
-        ))}
-      </datalist>
+      <SuggestionList id={seriesList} suggestions={pools.series} />
       <MeField
         label="Number in series"
         placeholder="—"

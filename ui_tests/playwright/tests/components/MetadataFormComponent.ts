@@ -1,7 +1,7 @@
 import type { Locator, Page } from "@playwright/test";
 import { BaseComponent } from "./BaseComponent";
 
-/** One option a field's datalist offers: the name, and its book count. */
+/** One option a field's datalist offers: the name, and the name with its book count. */
 export type Suggestion = { value: string; label: string };
 
 /**

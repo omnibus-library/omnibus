@@ -8,11 +8,35 @@ const MAX_SUGGESTIONS = 50;
 
 const sameName = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
+type Suggestion = { name: string; count: number };
+
+/** A native datalist of names, each with its book count. */
+export function SuggestionList({
+  id,
+  suggestions,
+}: {
+  id: string;
+  suggestions: Suggestion[];
+}) {
+  return (
+    <datalist id={id}>
+      {suggestions.map((s) => (
+        <option
+          key={s.name}
+          value={s.name}
+          // Firefox and Safari draw only the label, so it names the value too.
+          label={`${s.name} · ${bookCount(s.count)}`}
+        />
+      ))}
+    </datalist>
+  );
+}
+
 type ChipInputProps = {
   label: string;
   values: string[];
   onChange: (values: string[]) => void;
-  suggestions: { name: string; count: number }[];
+  suggestions: Suggestion[];
   placeholder: string;
   /** Names a chip's remove button with its value: "Remove tag" gives "Remove tag cozy". */
   removeLabel: string;
@@ -95,13 +119,13 @@ export function ChipInput({
           list={listId}
           value={draft}
           onChange={(e) => {
-            const how =
+            const inputType =
               "inputType" in e.nativeEvent ? e.nativeEvent.inputType : "";
-            // Chrome marks a datalist pick as a replacement; Firefox gives it no inputType.
-            const picked =
-              how === "insertReplacementText" ||
-              (!how && offered.some((s) => s.name === e.target.value));
-            if (picked) add(e.target.value);
+            // A datalist pick is a replacement, but some browsers send one with no inputType at all.
+            const fromList =
+              inputType === "insertReplacementText" ||
+              (!inputType && offered.some((s) => s.name === e.target.value));
+            if (fromList) add(e.target.value);
             else setDraft(e.target.value);
           }}
           onKeyDown={(e) => {
@@ -113,16 +137,7 @@ export function ChipInput({
             }
           }}
         />
-        <datalist id={listId}>
-          {offered.map((s) => (
-            <option
-              key={s.name}
-              value={s.name}
-              // Firefox and Safari draw only the label, so it names the value too.
-              label={`${s.name} · ${bookCount(s.count)}`}
-            />
-          ))}
-        </datalist>
+        <SuggestionList id={listId} suggestions={offered} />
       </div>
     </div>
   );

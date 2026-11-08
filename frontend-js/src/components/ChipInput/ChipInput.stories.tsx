@@ -8,9 +8,9 @@ const MANY = Array.from({ length: 200 }, (_, i) => ({
   count: 1,
 }));
 
-const offered = () =>
+const offered = (attribute: "value" | "label" = "value") =>
   [...document.querySelectorAll("datalist option")].map((o) =>
-    o.getAttribute("value"),
+    o.getAttribute(attribute),
   );
 
 // Holds the chips the way a form would, and still reports each change.
@@ -85,11 +85,10 @@ export const AddFromSuggestion: Story = {
   },
 };
 
-export const AddFromSuggestionWithoutReplacementType: Story = {
+export const AddFromSuggestionWithNoInputType: Story = {
   play: async ({ canvas, args }) => {
     const input = canvas.getByRole("combobox", { name: "Add tags" });
 
-    // Firefox reports a datalist pick with no inputType.
     await fireEvent.input(input, { target: { value: "Space opera" } });
 
     await expect(args.onChange).toHaveBeenLastCalledWith([
@@ -102,11 +101,7 @@ export const AddFromSuggestionWithoutReplacementType: Story = {
 
 export const SuggestionsNameTheirValue: Story = {
   play: async () => {
-    const labels = [...document.querySelectorAll("datalist option")].map((o) =>
-      o.getAttribute("label"),
-    );
-    // Firefox and Safari draw only the label, so it carries the name too.
-    await expect(labels).toEqual(["Space opera · 12 books"]);
+    await expect(offered("label")).toEqual(["Space opera · 12 books"]);
   },
 };
 
