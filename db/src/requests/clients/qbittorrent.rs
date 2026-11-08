@@ -163,6 +163,10 @@ impl DownloadClient for Qbittorrent {
         prepared: Prepared<Release>,
         category: &str,
     ) -> Result<(), ConnectionError> {
+        // Refused before the login: a release this client cannot take needs no session.
+        if matches!(prepared.release, Release::Nzb(_)) {
+            return Err(not_torrent());
+        }
         let cookie = self.login().await?;
         let request = match prepared.release {
             Release::Magnet(magnet) => {
