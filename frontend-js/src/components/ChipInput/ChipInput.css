@@ -59,6 +59,19 @@
   display: flex;
   align-items: center;
 }
+/* Firefox opens a datalist from the input's right edge, so the caret marks it and lets clicks through. */
+.chip-editor-caret {
+  display: flex;
+  margin: 0 12px 0 -26px;
+  color: var(--ink-2);
+  pointer-events: none;
+}
+.chip-editor-input-wrap:has(.chip-editor-caret) > input {
+  padding-right: 32px;
+}
+.chip-editor-input-wrap > input::-webkit-calendar-picker-indicator {
+  display: none;
+}
 
 .me-avatar {
   display: inline-flex;

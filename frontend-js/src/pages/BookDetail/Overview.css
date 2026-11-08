@@ -248,8 +248,8 @@
   cursor: pointer;
 }
 .bp-facts-list .me-tag-input {
-  /* border-box: the 14px padding and 1px border each side sit on top of the text's 11ch */
-  width: calc(11ch + 30px);
+  /* border-box: 14px padding left, 32px right for the caret, and a 1px border each side on top of the text's 11ch */
+  width: calc(11ch + 48px);
   padding-left: 14px;
   cursor: text;
 }

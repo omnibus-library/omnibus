@@ -1,5 +1,6 @@
 import { useId, useRef, useState } from "react";
 import { bookCount } from "../../format";
+import { ChevronDownGlyph } from "../Glyphs/Glyphs";
 import "../Chip/Chip.css";
 import "./ChipInput.css";
 
@@ -135,6 +136,11 @@ export function ChipInput({
             }
           }}
         />
+        {offered.length > 0 && (
+          <span className="chip-editor-caret">
+            <ChevronDownGlyph size={14} />
+          </span>
+        )}
         <SuggestionList id={listId} suggestions={offered} />
       </div>
     </div>

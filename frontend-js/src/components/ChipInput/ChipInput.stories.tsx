@@ -91,6 +91,20 @@ export const SuggestionsNameTheirValue: Story = {
   },
 };
 
+export const CaretMarksTheSuggestionList: Story = {
+  play: async ({ canvasElement, canvas, userEvent }) => {
+    const caret = () => canvasElement.querySelector(".chip-editor-caret");
+    await expect(caret()).not.toBeNull();
+
+    await userEvent.type(
+      canvas.getByRole("combobox", { name: "Add tags" }),
+      "zzz",
+    );
+
+    await expect(caret()).toBeNull();
+  },
+};
+
 export const RemoveChip: Story = {
   args: { values: ["cozy", "slow burn"] },
   play: async ({ canvas, userEvent, args }) => {
