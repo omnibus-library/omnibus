@@ -279,8 +279,8 @@ function Passages({ book }: { book: BookDetail }) {
             text={quoting.text ?? ""}
             author={book.authors[0] ?? ""}
             subtitle={book.title}
-            // The reader's fallback for a book with no accent.
-            accent={book.accent ?? "#3a3027"}
+            uuid={book.uuid}
+            accent={book.accent}
             onClose={() => setQuoting(null)}
           />
         </ConfirmModal>

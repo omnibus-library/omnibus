@@ -4,8 +4,21 @@ import { BaseComponent } from "./BaseComponent";
 export type QuoteFont = "Serif" | "Sans" | "Mono";
 export type QuoteSize = "S" | "M" | "L";
 export type QuoteStyle = "Bold" | "Italic";
+export type QuoteShape =
+  | "Square 1:1"
+  | "Post 4:5"
+  | "Portrait 3:4"
+  | "Story 9:16";
+export type QuoteSolid =
+  | "Book"
+  | "Ink"
+  | "Paper"
+  | "Moss"
+  | "Rose"
+  | "Dusk"
+  | "Sea";
 
-/** The quote card editor a saved passage opens, and its typography controls. */
+/** The quote card editor a saved passage opens: a canvas preview with its background, type and shape controls. */
 export class QuoteCardModalComponent extends BaseComponent {
   readonly root: Locator;
   readonly heading: Locator;
@@ -52,12 +65,32 @@ export class QuoteCardModalComponent extends BaseComponent {
       .getByRole("button", { name: style, exact: true });
   }
 
+  shapeButton(shape: QuoteShape): Locator {
+    return this.root
+      .getByRole("group", { name: "Shape" })
+      .getByRole("button", { name: shape, exact: true });
+  }
+
+  solidSwatch(solid: QuoteSolid): Locator {
+    return this.root
+      .getByRole("group", { name: "Solid backgrounds" })
+      .getByRole("button", { name: solid, exact: true });
+  }
+
   async chooseFont(font: QuoteFont): Promise<void> {
     await this.fontButton(font).click();
   }
 
   async chooseSize(size: QuoteSize): Promise<void> {
     await this.sizeButton(size).click();
+  }
+
+  async chooseShape(shape: QuoteShape): Promise<void> {
+    await this.shapeButton(shape).click();
+  }
+
+  async chooseSolid(solid: QuoteSolid): Promise<void> {
+    await this.solidSwatch(solid).click();
   }
 
   async toggleStyle(style: QuoteStyle): Promise<void> {

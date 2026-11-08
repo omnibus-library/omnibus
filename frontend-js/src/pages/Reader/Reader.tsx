@@ -415,6 +415,7 @@ function EpubPage({
         />
       )}
       <AnnotationTargets
+        uuid={uuid}
         target={target}
         book={book}
         onSave={saveNote}

@@ -1,18 +1,28 @@
-import type { FontKey, Ratio, SizeKey } from "./quoteStyle";
+import type { Wash } from "./quoteColor";
+import {
+  collapse,
+  type FontKey,
+  fitPassage,
+  passageSize,
+  type Ratio,
+  type SizeKey,
+  wrapLines,
+} from "./quoteStyle";
 
 /** Everything the canvas needs to draw one card. */
 export type CardDrawing = {
   text: string;
   author: string;
   subtitle: string;
-  bg: string;
-  ink: string;
+  wash: Wash;
   ratio: Ratio;
   font: FontKey;
   size: SizeKey;
   bold: boolean;
   italic: boolean;
 };
+
+type Face = { primary: string; stack: string };
 
 // The canvas mirrors of the editor's typeface tokens: the one family
 // `document.fonts.load` is asked for, and the stack the canvas draws with.
@@ -29,19 +39,31 @@ const FACES = {
     primary: "'Space Mono'",
     stack: "'Space Mono', ui-monospace, monospace",
   },
-} satisfies Record<FontKey, { primary: string; stack: string }>;
+} satisfies Record<FontKey, Face>;
 
-// Relative to the card width.
-const SCALES = { s: 0.82, m: 1, l: 1.24 } satisfies Record<SizeKey, number>;
+// The sans of the author and the mark, the display serif of the title.
+const SANS = FACES.sans;
+const DISPLAY = FACES.serif;
 
-const DIMENSIONS = {
-  "1:1": [1080, 1080],
-  "4:5": [1080, 1350],
-  "9:16": [1080, 1920],
-  "3:4": [1080, 1440],
-} satisfies Record<Ratio, [number, number]>;
+/** The card's width in pixels; every other measure is a fraction of it. */
+const CARD_WIDTH = 1080;
+
+const HEIGHTS = {
+  "1:1": 1080,
+  "4:5": 1350,
+  "3:4": 1440,
+  "9:16": 1920,
+} satisfies Record<Ratio, number>;
+
+/** The exported card's size in pixels. */
+export const cardSize = (ratio: Ratio) =>
+  ({ width: CARD_WIDTH, height: HEIGHTS[ratio] }) as const;
 
 const FILENAME = "omnibus-quote.png";
+const DEFAULT_ANGLE = 135;
+// The face's natural line height, and the extra the passage adds between its lines.
+const LINE_HEIGHT = 1.2;
+const LINE_GAP = 0.34;
 
 const fontSpec = (
   px: number,
@@ -50,42 +72,215 @@ const fontSpec = (
   italic: boolean,
 ) => `${italic ? "italic " : ""}${weight} ${px}px ${family}`;
 
-// A webfont the document hasn't loaded falls back mid-draw, and measureText would wrap
-// against the wrong metrics, so every face is resolved first. A failure still exports.
-async function loadFaces(card: CardDrawing) {
+const passageFont = (card: CardDrawing, px: number) =>
+  fontSpec(px, FACES[card.font].stack, card.bold ? 700 : 400, card.italic);
+
+/** Resolves every face a draw uses, so measuring wraps against the right metrics. A failure still draws. */
+export async function loadFaces(card: CardDrawing) {
   const face = FACES[card.font];
-  const [w] = DIMENSIONS[card.ratio];
-  const body = fontSpec(
-    Math.round(w * 0.052 * SCALES[card.size]),
-    face.primary,
-    card.bold ? 700 : 400,
-    card.italic,
-  );
-  const sub = fontSpec(Math.round(w * 0.026), face.primary, 400, true);
   await Promise.all([
-    document.fonts.load(body),
-    document.fonts.load(sub),
+    document.fonts.load(
+      fontSpec(32, face.primary, card.bold ? 700 : 400, card.italic),
+    ),
+    document.fonts.load(fontSpec(32, SANS.primary, 600, false)),
+    document.fonts.load(fontSpec(32, DISPLAY.primary, 400, true)),
   ]).catch(() => {});
 }
 
-function wrap(
+// Canvas letter-spacing is missing from some browsers, which then draw untracked.
+function setTracking(ctx: CanvasRenderingContext2D, px: number) {
+  ctx.letterSpacing = `${px}px`;
+}
+
+function paintWash(
   ctx: CanvasRenderingContext2D,
-  quote: string,
-  maxWidth: number,
-): string[] {
-  const lines: string[] = [];
-  let line = "";
-  for (const word of quote.split(/\s+/)) {
-    const next = line ? `${line} ${word}` : word;
-    if (ctx.measureText(next).width > maxWidth && line) {
-      lines.push(line);
-      line = word;
-    } else {
-      line = next;
-    }
+  w: number,
+  h: number,
+  wash: Wash,
+) {
+  // CSS's gradient line: through the centre, long enough that the corners take the end stops.
+  const angle = ((wash.angle ?? DEFAULT_ANGLE) * Math.PI) / 180;
+  const [dx, dy] = [Math.sin(angle), -Math.cos(angle)];
+  const half = (Math.abs(w * dx) + Math.abs(h * dy)) / 2;
+  const gradient = ctx.createLinearGradient(
+    w / 2 - dx * half,
+    h / 2 - dy * half,
+    w / 2 + dx * half,
+    h / 2 + dy * half,
+  );
+  gradient.addColorStop(0, wash.from);
+  gradient.addColorStop(1, wash.to);
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, w, h);
+}
+
+type Ink = { ctx: CanvasRenderingContext2D; color: string };
+
+function fillLine(
+  { ctx, color }: Ink,
+  value: string,
+  x: number,
+  lineTop: number,
+  px: number,
+  alpha: number,
+) {
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = color;
+  ctx.fillText(value, x, lineTop + (px * LINE_HEIGHT) / 2);
+  ctx.globalAlpha = 1;
+}
+
+// Paints the rule, author, title and mark; returns the footer's top edge.
+function paintFooter(ink: Ink, card: CardDrawing, w: number, h: number) {
+  const { ctx } = ink;
+  const pad = w * 0.094;
+  const markPx = w * 0.021;
+  const markTracking = w * 0.006;
+  const authorPx = w * 0.026;
+  const titlePx = w * 0.033;
+  const ruleH = Math.max(1, w * 0.004);
+
+  ctx.font = fontSpec(markPx, SANS.stack, 600, false);
+  setTracking(ctx, markTracking);
+  const markW = ctx.measureText("OMNIBUS").width;
+  setTracking(ctx, 0);
+
+  // Author and title wrap short of the mark, so they never overlap it.
+  const textMax = w - pad * 2 - markW - w * 0.03;
+  ctx.font = fontSpec(authorPx, SANS.stack, 600, false);
+  setTracking(ctx, w * 0.0036);
+  const authorName = card.author.trim().toUpperCase();
+  const author = authorName
+    ? (wrapLines((t) => ctx.measureText(t).width, authorName, textMax, 1)[0] ??
+      "")
+    : "";
+  setTracking(ctx, 0);
+
+  ctx.font = fontSpec(titlePx, DISPLAY.stack, 400, true);
+  const title = collapse(card.subtitle);
+  const titleLines = title
+    ? wrapLines((t) => ctx.measureText(t).width, title, textMax, 2)
+    : [];
+
+  const authorBlock = author ? authorPx * LINE_HEIGHT : 0;
+  const titleBlock = titleLines.length * titlePx * LINE_HEIGHT;
+  const below =
+    author || titleLines.length
+      ? w * 0.042 +
+        authorBlock +
+        (author && titleLines.length ? w * 0.012 : 0) +
+        titleBlock
+      : 0;
+  const top = h - pad - ruleH - below;
+
+  ctx.textBaseline = "middle";
+  ctx.globalAlpha = 0.22;
+  ctx.fillStyle = ink.color;
+  ctx.fillRect(pad, top, w * 0.14, ruleH);
+  ctx.globalAlpha = 1;
+
+  let y = top + ruleH + w * 0.042;
+  if (author) {
+    ctx.font = fontSpec(authorPx, SANS.stack, 600, false);
+    setTracking(ctx, w * 0.0036);
+    fillLine(ink, author, pad, y, authorPx, 0.75);
+    setTracking(ctx, 0);
+    y += authorBlock + w * 0.012;
   }
-  if (line) lines.push(line);
-  return lines;
+  ctx.font = fontSpec(titlePx, DISPLAY.stack, 400, true);
+  for (const line of titleLines) {
+    fillLine(ink, line, pad, y, titlePx, 0.62);
+    y += titlePx * LINE_HEIGHT;
+  }
+
+  ctx.font = fontSpec(markPx, SANS.stack, 600, false);
+  setTracking(ctx, markTracking);
+  ctx.textAlign = "right";
+  // The trailing tracking is part of the measured advance; add it back so the ink meets the padding.
+  fillLine(
+    ink,
+    "OMNIBUS",
+    w - pad + markTracking,
+    h - pad - markPx * LINE_HEIGHT,
+    markPx,
+    0.34,
+  );
+  ctx.textAlign = "left";
+  setTracking(ctx, 0);
+  return top;
+}
+
+// Paints the watermark and passage as one group centred above the footer.
+function paintPassage(
+  ink: Ink,
+  card: CardDrawing,
+  w: number,
+  footerTop: number,
+) {
+  const { ctx } = ink;
+  const pad = w * 0.094;
+  const passage = collapse(card.text);
+  const startPx = passageSize(passage.length, card.size) * w;
+  const region = footerTop - w * 0.03 - pad;
+
+  // Sized before centring, so the watermark's bottom clears the first line.
+  ctx.font = passageFont(card, w * 0.3);
+  // The bounding box is measured from the baseline in force, so fix it before measuring.
+  ctx.textBaseline = "alphabetic";
+  const mark = ctx.measureText("“");
+  const markInk = mark.actualBoundingBoxAscent + mark.actualBoundingBoxDescent;
+  const gap = w * 0.012;
+
+  const { px, lines } = fitPassage(
+    (size) => {
+      ctx.font = passageFont(card, size);
+      return (t) => ctx.measureText(t).width;
+    },
+    passage,
+    w - pad * 2,
+    startPx,
+    (size) =>
+      Math.max(
+        1,
+        Math.floor(
+          (region - markInk - gap + size * LINE_GAP) /
+            (size * (LINE_HEIGHT + LINE_GAP)),
+        ),
+      ),
+  );
+  const advance = px * (LINE_HEIGHT + LINE_GAP);
+  const group = markInk + gap + lines.length * advance - px * LINE_GAP;
+  const top = pad + Math.max(0, (region - group) / 2);
+
+  ctx.font = passageFont(card, w * 0.3);
+  ctx.globalAlpha = 0.13;
+  ctx.fillStyle = ink.color;
+  ctx.fillText("“", pad - w * 0.035, top + mark.actualBoundingBoxAscent);
+  ctx.globalAlpha = 1;
+
+  ctx.font = passageFont(card, px);
+  ctx.textBaseline = "middle";
+  lines.forEach((line, i) => {
+    fillLine(ink, line, pad, top + markInk + gap + i * advance, px, 1);
+  });
+}
+
+/** Paints the card onto `canvas` at export size; false when the canvas has no 2D context. */
+export function paintQuoteCard(canvas: HTMLCanvasElement, card: CardDrawing) {
+  const { width, height } = cardSize(card.ratio);
+  // A resize clears the canvas, so assign only on a change; the wash covers the rest.
+  if (canvas.width !== width) canvas.width = width;
+  if (canvas.height !== height) canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return false;
+  ctx.save();
+  paintWash(ctx, width, height, card.wash);
+  const ink = { ctx, color: card.wash.ink };
+  ctx.textAlign = "left";
+  const footerTop = paintFooter(ink, card, width, height);
+  paintPassage(ink, card, width, footerTop);
+  ctx.restore();
+  return true;
 }
 
 /** Draws the card on an offscreen canvas, or returns `null` when there is no 2D context. */
@@ -93,42 +288,8 @@ export async function drawQuoteCanvas(
   card: CardDrawing,
 ): Promise<HTMLCanvasElement | null> {
   await loadFaces(card);
-  const [W, H] = DIMENSIONS[card.ratio];
   const canvas = document.createElement("canvas");
-  canvas.width = W;
-  canvas.height = H;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return null;
-  const pad = Math.round(W * 0.1);
-  ctx.fillStyle = card.bg;
-  ctx.fillRect(0, 0, W, H);
-  ctx.fillStyle = card.ink;
-  ctx.textBaseline = "top";
-
-  ctx.font = `600 ${Math.round(W * 0.018)}px ui-monospace, monospace`;
-  ctx.globalAlpha = 0.55;
-  ctx.fillText("OMNIBUS · QUOTE", pad, pad);
-  ctx.globalAlpha = 1;
-
-  const face = FACES[card.font];
-  const fontPx = Math.round(W * 0.052 * SCALES[card.size]);
-  ctx.font = fontSpec(fontPx, face.stack, card.bold ? 700 : 400, card.italic);
-  const lines = wrap(ctx, `“${card.text}”`, W - pad * 2);
-  const lineH = Math.round(fontPx * 1.3);
-  const startY = Math.max(pad * 2.2, (H - lines.length * lineH) / 2 - lineH);
-  lines.forEach((line, i) => {
-    ctx.fillText(line, pad, startY + i * lineH);
-  });
-
-  const footY = H - pad - Math.round(W * 0.06);
-  ctx.globalAlpha = 0.85;
-  ctx.fillRect(pad, footY - Math.round(W * 0.02), W - pad * 2, 2);
-  ctx.font = `${Math.round(W * 0.022)}px ui-sans-serif, system-ui, sans-serif`;
-  ctx.fillText(card.author.toUpperCase(), pad, footY);
-  ctx.font = fontSpec(Math.round(W * 0.026), face.stack, 400, true);
-  ctx.fillText(card.subtitle, pad, footY + Math.round(W * 0.035));
-  ctx.globalAlpha = 1;
-  return canvas;
+  return paintQuoteCard(canvas, card) ? canvas : null;
 }
 
 async function renderPng(card: CardDrawing): Promise<Blob | null> {
@@ -172,11 +333,14 @@ export async function shareQuoteCard(card: CardDrawing) {
 
 /** Copies the card to the clipboard as a PNG; where that is refused, it downloads instead. */
 export async function copyQuoteCardImage(card: CardDrawing) {
-  const blob = await renderPng(card);
-  if (!blob) return;
+  // The write starts inside the click, with the PNG still rendering, or Safari refuses it.
+  const png = renderPng(card).then(
+    (blob) => blob ?? Promise.reject(new Error("no png")),
+  );
   try {
-    await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+    await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]);
   } catch {
-    download(blob);
+    const blob = await png.catch(() => null);
+    if (blob) download(blob);
   }
 }
