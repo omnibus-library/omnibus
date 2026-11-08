@@ -2,12 +2,14 @@
 
 use std::fs;
 
+use omnibus_shared::RequestKind;
+
 use crate::requests::clients::{ClientFile, TorrentStatus};
 use crate::requests::test_support::requests_config;
 
-use super::super::files::{pick, resolve};
+use super::super::files::{pick, pick_audio, resolve, AudioPick};
 use super::super::ImportError;
-use super::{write, EPUB_BYTES};
+use super::{write, EPUB_BYTES, M4B_BYTES, MP3_BYTES};
 
 const PDF_BYTES: &[u8] = b"%PDF-1.7 a pdf";
 
@@ -47,6 +49,7 @@ mod resolve {
             &status("/downloads"),
             &listed(&["Release/Dune.epub"]),
             &config,
+            RequestKind::Ebook,
         )
         .unwrap();
 
@@ -63,6 +66,7 @@ mod resolve {
             &status(tmp.path().to_str().unwrap()),
             &listed(&["Dune.epub"]),
             &config,
+            RequestKind::Ebook,
         )
         .unwrap();
 
@@ -79,6 +83,7 @@ mod resolve {
             &status(tmp.path().to_str().unwrap()),
             &listed(&["Dune.epub", "missing.epub", "missing.exe"]),
             &config,
+            RequestKind::Ebook,
         )
         .unwrap();
 
@@ -95,6 +100,7 @@ mod resolve {
             &status(gone.to_str().unwrap()),
             &listed(&["Dune.epub"]),
             &config,
+            RequestKind::Ebook,
         )
         .unwrap_err();
 
@@ -108,7 +114,13 @@ mod resolve {
         let dir = tmp.path().to_str();
 
         for config in [requests_config(dir, None), requests_config(None, dir)] {
-            let err = resolve(&status(dir.unwrap()), &listed(&["Dune.epub"]), &config).unwrap_err();
+            let err = resolve(
+                &status(dir.unwrap()),
+                &listed(&["Dune.epub"]),
+                &config,
+                RequestKind::Ebook,
+            )
+            .unwrap_err();
 
             assert!(matches!(err, ImportError::Cannot(_)), "{err}");
         }
@@ -126,6 +138,7 @@ mod resolve {
             &status(dl.to_str().unwrap()),
             &listed(&["../outside/secret.epub"]),
             &config,
+            RequestKind::Ebook,
         )
         .unwrap_err();
 
@@ -139,9 +152,146 @@ mod resolve {
         write(&dl, "Dune.epub", EPUB_BYTES);
         let config = requests_config(Some("/downloads"), dl.to_str());
 
-        let err = resolve(&status("/elsewhere"), &listed(&["Dune.epub"]), &config).unwrap_err();
+        let err = resolve(
+            &status("/elsewhere"),
+            &listed(&["Dune.epub"]),
+            &config,
+            RequestKind::Ebook,
+        )
+        .unwrap_err();
 
         assert!(matches!(err, ImportError::NotVisible(_)), "{err}");
+    }
+}
+
+mod resolve_audio {
+    use super::*;
+
+    #[test]
+    fn keeps_audio_files_and_leaves_out_ebooks_and_other_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let m4b = write(tmp.path(), "Release/Dune.M4B", M4B_BYTES);
+        let mp3 = write(tmp.path(), "Release/01.mp3", MP3_BYTES);
+        write(tmp.path(), "Release/Dune.epub", EPUB_BYTES);
+        write(tmp.path(), "Release/cover.jpg", b"jpg");
+        let config = requests_config(None, None);
+
+        let found = resolve(
+            &status(tmp.path().to_str().unwrap()),
+            &listed(&[
+                "Release/Dune.M4B",
+                "Release/01.mp3",
+                "Release/Dune.epub",
+                "Release/cover.jpg",
+            ]),
+            &config,
+            RequestKind::Audiobook,
+        )
+        .unwrap();
+
+        assert_eq!(
+            found,
+            vec![m4b.canonicalize().unwrap(), mp3.canonicalize().unwrap()]
+        );
+    }
+
+    #[test]
+    fn refuses_an_audio_path_that_escapes_the_download_folder() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dl = tmp.path().join("dl");
+        fs::create_dir_all(&dl).unwrap();
+        write(tmp.path(), "outside/secret.mp3", MP3_BYTES);
+        let config = requests_config(None, None);
+
+        let err = resolve(
+            &status(dl.to_str().unwrap()),
+            &listed(&["../outside/secret.mp3"]),
+            &config,
+            RequestKind::Audiobook,
+        )
+        .unwrap_err();
+
+        assert!(matches!(err, ImportError::NotVisible(_)), "{err}");
+    }
+}
+
+mod pick_audio {
+    use super::*;
+
+    fn nothing_to_add(paths: &[std::path::PathBuf]) -> bool {
+        matches!(
+            pick_audio(paths).unwrap_err(),
+            ImportError::Cannot(why) if why == "the download has no audiobook file to add"
+        )
+    }
+
+    #[test]
+    fn takes_the_m4b_over_a_larger_m4a() {
+        let tmp = tempfile::tempdir().unwrap();
+        let m4b = write(tmp.path(), "a.m4b", M4B_BYTES);
+        let m4a = write(tmp.path(), "b.m4a", &[M4B_BYTES, &[b'x'; 4096]].concat());
+
+        let picked = pick_audio(&[m4a, m4b.clone()]).unwrap();
+
+        assert!(matches!(picked, AudioPick::Single(p, "m4b") if p == m4b));
+    }
+
+    #[test]
+    fn takes_a_container_over_mp3s_when_a_release_carries_both() {
+        let tmp = tempfile::tempdir().unwrap();
+        let m4b = write(tmp.path(), "Dune.m4b", M4B_BYTES);
+        let mp3 = write(tmp.path(), "01.mp3", MP3_BYTES);
+
+        let picked = pick_audio(&[mp3, m4b.clone()]).unwrap();
+
+        assert!(matches!(picked, AudioPick::Single(p, "m4b") if p == m4b));
+    }
+
+    #[test]
+    fn takes_every_confirmed_mp3_when_there_is_no_container() {
+        let tmp = tempfile::tempdir().unwrap();
+        let one = write(tmp.path(), "CD1/01.mp3", MP3_BYTES);
+        let two = write(tmp.path(), "CD2/01.mp3", b"ID3 other bytes");
+
+        let picked = pick_audio(&[one.clone(), two.clone()]).unwrap();
+
+        assert!(matches!(picked, AudioPick::Parts(parts) if parts == [one, two]));
+    }
+
+    #[test]
+    fn drops_a_file_whose_extension_and_bytes_disagree() {
+        let tmp = tempfile::tempdir().unwrap();
+        let renamed = write(tmp.path(), "fake.m4b", MP3_BYTES);
+        let mp3 = write(tmp.path(), "01.mp3", MP3_BYTES);
+
+        let picked = pick_audio(&[renamed, mp3.clone()]).unwrap();
+
+        assert!(matches!(picked, AudioPick::Parts(parts) if parts == [mp3]));
+    }
+
+    #[test]
+    fn refuses_a_release_split_into_several_m4b_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = vec![
+            write(tmp.path(), "part1.m4b", M4B_BYTES),
+            write(tmp.path(), "part2.m4b", M4B_BYTES),
+        ];
+
+        let err = pick_audio(&paths).unwrap_err();
+
+        assert!(
+            matches!(&err, ImportError::Cannot(why) if why == "this version is split into several M4B files"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn fails_when_no_file_is_audio() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = vec![write(tmp.path(), "Dune.epub", EPUB_BYTES)];
+
+        assert!(nothing_to_add(&paths));
+        assert!(nothing_to_add(&[]));
     }
 }
 

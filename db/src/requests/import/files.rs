@@ -1,21 +1,25 @@
 //! Which of a finished download's files is the book. [`resolve`] maps the client's list of
 //! files onto this server's disk, refusing any that lead outside the download folder, and
-//! [`pick`] keeps the ones whose bytes really are an EPUB or PDF.
+//! [`pick`] keeps the one ebook whose bytes really are an EPUB or PDF, where [`pick_audio`]
+//! keeps the one M4B or the MP3s whose bytes really are audio.
 
 use std::fs::File;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
-use omnibus_shared::{detect_ebook_format, EBOOK_MAGIC_LEN};
+use omnibus_shared::{
+    detect_audiobook_format, detect_ebook_format, RequestKind, AUDIOBOOK_MAGIC_LEN, EBOOK_MAGIC_LEN,
+};
 
+use crate::audiobook::AUDIOBOOK_EXTENSIONS;
 use crate::requests::clients::{ClientFile, TorrentStatus};
 use crate::requests::paths::{map_client_path, PathMapError};
 use crate::settings::RequestsConfig;
 
 use super::ImportError;
 
-/// The EPUB and PDF files of the download as canonical paths on this server; other files are
-/// left unmapped. The two download folders map the client's view onto ours: both set, or
+/// The files of the download that `kind` imports (EPUB and PDF, or M4B, M4A and MP3) as
+/// canonical paths on this server; other files are left unmapped. The two download folders map the client's view onto ours: both set, or
 /// neither, in which case the download's own save folder is the same place to both. A listed
 /// file that was never written (the client lists files it was told to skip) is left out; one
 /// that leads outside the download folder fails the import. Does blocking filesystem calls.
@@ -23,6 +27,7 @@ pub fn resolve(
     status: &TorrentStatus,
     files: &[ClientFile],
     config: &RequestsConfig,
+    kind: RequestKind,
 ) -> Result<Vec<PathBuf>, ImportError> {
     let save = Path::new(&status.save_path);
     let (client_prefix, local_prefix) = match (
@@ -40,10 +45,7 @@ pub fn resolve(
     // A missing download folder is not a missing file.
     local_prefix.canonicalize().map_err(PathMapError::from)?;
     let mut found = Vec::new();
-    for file in files
-        .iter()
-        .filter(|f| ebook_extension(Path::new(&f.name)).is_some())
-    {
+    for file in files.iter().filter(|f| imports(kind, Path::new(&f.name))) {
         match map_client_path(&save.join(&file.name), client_prefix, local_prefix) {
             Ok(path) => found.push(path),
             Err(PathMapError::Io(e)) if e.kind() == io::ErrorKind::NotFound => {}
@@ -71,6 +73,55 @@ pub fn pick(paths: &[PathBuf]) -> Result<(PathBuf, &'static str), ImportError> {
         .ok_or(ImportError::NothingImportable)
 }
 
+fn imports(kind: RequestKind, path: &Path) -> bool {
+    match kind {
+        RequestKind::Ebook => ebook_extension(path).is_some(),
+        RequestKind::Audiobook => audio_extension(path).is_some(),
+    }
+}
+
+/// What [`pick_audio`] chose to file.
+#[derive(Debug)]
+pub enum AudioPick {
+    /// One M4B or M4A, filed alone; its lowercase extension.
+    Single(PathBuf, &'static str),
+    /// Every MP3, filed together in one folder.
+    Parts(Vec<PathBuf>),
+}
+
+/// The audiobook to add: the M4B, else the M4A, over any MP3s; else every MP3. Only a file
+/// whose extension and opening bytes agree counts. Several files of the best container
+/// format are refused, because each would be a book of its own. Reads each candidate's first
+/// bytes, so it is blocking.
+pub fn pick_audio(paths: &[PathBuf]) -> Result<AudioPick, ImportError> {
+    let mut confirmed: Vec<(PathBuf, &'static str)> = Vec::new();
+    for path in paths {
+        if let Some(extension) = confirmed_audio_format(path)? {
+            confirmed.push((path.clone(), extension));
+        }
+    }
+    for container in ["m4b", "m4a"] {
+        let mut of_format = confirmed.iter().filter(|(_, ext)| *ext == container);
+        match (of_format.next(), of_format.next()) {
+            (Some((path, ext)), None) => return Ok(AudioPick::Single(path.clone(), ext)),
+            (Some(_), Some(_)) => {
+                return Err(ImportError::Cannot(format!(
+                    "this version is split into several {} files",
+                    container.to_uppercase()
+                )))
+            }
+            _ => {}
+        }
+    }
+    let parts: Vec<PathBuf> = confirmed.into_iter().map(|(path, _)| path).collect();
+    if parts.is_empty() {
+        return Err(ImportError::Cannot(
+            "the download has no audiobook file to add".into(),
+        ));
+    }
+    Ok(AudioPick::Parts(parts))
+}
+
 /// `epub` or `pdf` when `path`'s extension names it, in any case.
 fn ebook_extension(path: &Path) -> Option<String> {
     let extension = path.extension()?.to_string_lossy().to_ascii_lowercase();
@@ -87,4 +138,27 @@ fn confirmed_format(path: &Path) -> Result<Option<&'static str>, ImportError> {
         .take(EBOOK_MAGIC_LEN as u64)
         .read_to_end(&mut head)?;
     Ok(detect_ebook_format(&head).filter(|sniffed| *sniffed == extension))
+}
+
+/// An [`AUDIOBOOK_EXTENSIONS`] entry when `path`'s extension names it, in any case.
+fn audio_extension(path: &Path) -> Option<&'static str> {
+    let extension = path.extension()?.to_string_lossy().to_ascii_lowercase();
+    AUDIOBOOK_EXTENSIONS
+        .iter()
+        .copied()
+        .find(|known| *known == extension)
+}
+
+/// The extension when it names audio and the opening bytes agree: an MP4 box for `m4b` and
+/// `m4a`, MP3 framing for `mp3`.
+fn confirmed_audio_format(path: &Path) -> Result<Option<&'static str>, ImportError> {
+    let Some(extension) = audio_extension(path) else {
+        return Ok(None);
+    };
+    let mut head = Vec::with_capacity(AUDIOBOOK_MAGIC_LEN);
+    File::open(path)?
+        .take(AUDIOBOOK_MAGIC_LEN as u64)
+        .read_to_end(&mut head)?;
+    let family = if extension == "mp3" { "mp3" } else { "mp4" };
+    Ok((detect_audiobook_format(&head) == Some(family)).then_some(extension))
 }

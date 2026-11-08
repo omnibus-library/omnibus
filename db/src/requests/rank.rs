@@ -227,11 +227,7 @@ fn format_points(format: &Format, profile: &Profile) -> f64 {
 }
 
 /// The bonuses and penalties read off the title and file count: language, retail, pack.
-fn language_and_pack_points(
-    release: &ProwlarrRelease,
-    words: &[String],
-    profile: &Profile,
-) -> f64 {
+fn language_and_pack_points(release: &ProwlarrRelease, words: &[String], profile: &Profile) -> f64 {
     let has = |list: &[&str]| words.iter().any(|w| list.contains(&w.as_str()));
     let mut points = 0.0;
     if has(FOREIGN_LANGUAGES) && !has(&["english"]) {

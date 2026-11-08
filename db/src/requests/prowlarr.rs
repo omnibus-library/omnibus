@@ -234,7 +234,11 @@ impl Prowlarr {
             RequestKind::Ebook => "7020",
             RequestKind::Audiobook => "3030",
         };
-        let params = [("query", query), ("categories", category), ("type", "search")];
+        let params = [
+            ("query", query),
+            ("categories", category),
+            ("type", "search"),
+        ];
         let raw: Vec<RawRelease> = self.get_with("search", &params, timeout).await?;
         let own_host = reqwest::Url::parse(&self.base).ok();
         let own_host = own_host.as_ref().and_then(|u| u.host_str());

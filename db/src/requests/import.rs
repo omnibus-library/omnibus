@@ -1,13 +1,14 @@
 //! Adds a finished download to the library, filed under the book that was asked for.
 //! [`import_finished`] runs inside the request poller, one request at a time so no two
-//! imports race on a merge: [`files`] picks the book out of the download, [`place`] stages
-//! it inside the library and renames it into the canonical layout named from the wished
-//! book, the worker scans it in, and it is merged into the wished book when the scanner
-//! filed it as a book of its own. The download is only read, never moved or removed. Its cover
+//! imports race on a merge: [`files`] picks the book out of the download (an EPUB or PDF
+//! for an ebook request, an M4B or a folder of MP3s for an audiobook one), [`place`] stages
+//! it inside that kind's library and renames it into the canonical layout named from the
+//! wished book, the worker scans it in, and it is merged into the wished book when the
+//! scanner filed it as a book of its own. The download is only read, never moved or removed. Its cover
 //! is kept as the request's candidate (see [`super::cover`]) whichever way the scan filed it.
 
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use omnibus_shared::{RequestKind, StuckReason};
@@ -100,14 +101,11 @@ async fn import_one(
     config: &RequestsConfig,
     row: &RequestRow,
 ) -> Result<Step, ImportError> {
-    if row.kind != RequestKind::Ebook {
-        return Err(cannot("audiobook import is not supported yet"));
-    }
-    let root = ebook_root(pool).await?;
+    let root = library_root(pool, row.kind).await?;
     let wished = wished_book(pool, &row.book_uuid).await?;
-    // A retry finds its file already filed, and goes straight to the scan.
+    // A retry finds its file or folder already filed, and goes straight to the scan.
     let key = match &row.import_key {
-        Some(key) if PathBuf::from(&root).join(key).is_file() => key.clone(),
+        Some(key) if PathBuf::from(&root).join(key).exists() => key.clone(),
         _ => match file_into_library(pool, client, config, row, &root, &wished).await? {
             Some(key) => key,
             None => return Ok(Step::Later),
@@ -121,14 +119,20 @@ fn cannot(why: &str) -> ImportError {
     ImportError::Cannot(why.to_string())
 }
 
-async fn ebook_root(pool: &SqlitePool) -> Result<String, ImportError> {
+/// The library folder that takes `kind`'s files.
+async fn library_root(pool: &SqlitePool, kind: RequestKind) -> Result<String, ImportError> {
     let settings = crate::get_settings(pool)
         .await
         .map_err(|e| ImportError::Cannot(format!("the library could not be read: {e}")))?;
-    settings
-        .ebook_library_path
-        .filter(|p| !p.is_empty())
-        .ok_or_else(|| cannot("no ebook library is set up"))
+    let (path, missing) = match kind {
+        RequestKind::Ebook => (settings.ebook_library_path, "no ebook library is set up"),
+        RequestKind::Audiobook => (
+            settings.audiobook_library_path,
+            "no audiobook library is set up",
+        ),
+    };
+    path.filter(|p| !p.is_empty())
+        .ok_or_else(|| cannot(missing))
 }
 
 /// The requested book, under its surviving uuid, with the author and title files are named by.
@@ -175,13 +179,11 @@ async fn file_into_library(
     }
     let listed = client.files(hash).await?;
     let (config, root_path) = (config.clone(), PathBuf::from(root));
-    let (id, author, title) = (row.id, wished.author.clone(), wished.title.clone());
+    let (id, kind) = (row.id, row.kind);
+    let (author, title) = (wished.author.clone(), wished.title.clone());
     let placed = tokio::task::spawn_blocking(move || -> Result<PathBuf, ImportError> {
-        let found = files::resolve(&status, &listed, &config)?;
-        let (src, ext) = files::pick(&found)?;
-        Ok(place::place_blocking(
-            &root_path, id, &src, &author, &title, ext,
-        )?)
+        let found = files::resolve(&status, &listed, &config, kind)?;
+        place_download(kind, &found, &root_path, id, &author, &title)
     })
     .await
     .map_err(|e| io::Error::other(e.to_string()))??;
@@ -192,10 +194,40 @@ async fn file_into_library(
         .into_owned();
     if let Err(e) = store::set_import_key(pool, row.id, row.chosen_result_id, &key).await {
         // Unrecorded, a retry would file a second copy beside this one.
-        let _ = tokio::fs::remove_file(&placed).await;
+        let _ = match placed.is_dir() {
+            true => tokio::fs::remove_dir_all(&placed).await,
+            false => tokio::fs::remove_file(&placed).await,
+        };
         return Err(e.into());
     }
     Ok(Some(key))
+}
+
+/// File what `kind` imports out of the `found` files of the download, and return where it
+/// landed: the file, or for several MP3s their folder. Blocking.
+fn place_download(
+    kind: RequestKind,
+    found: &[PathBuf],
+    root: &Path,
+    request_id: i64,
+    author: &str,
+    title: &str,
+) -> Result<PathBuf, ImportError> {
+    let placed = match kind {
+        RequestKind::Ebook => {
+            let (src, ext) = files::pick(found)?;
+            place::place_blocking(root, request_id, &src, author, title, ext)?
+        }
+        RequestKind::Audiobook => match files::pick_audio(found)? {
+            files::AudioPick::Single(src, ext) => {
+                place::place_blocking(root, request_id, &src, author, title, ext)?
+            }
+            files::AudioPick::Parts(parts) => {
+                place::place_folder_blocking(root, request_id, &parts, author, title)?
+            }
+        },
+    };
+    Ok(placed)
 }
 
 /// Scan the library so the file becomes a book, then fold that book into the wished one
@@ -209,8 +241,10 @@ async fn scan_and_merge(
     key: &str,
     wished: &Wished,
 ) -> Result<(), ImportError> {
-    let scan = worker.post(Task::Scan {
-        library_path: root.to_string(),
+    let library_path = root.to_string();
+    let scan = worker.post(match row.kind {
+        RequestKind::Ebook => Task::Scan { library_path },
+        RequestKind::Audiobook => Task::ScanAudiobooks { library_path },
     });
     if let TaskOutcome::Err(e) = worker.await_completion(scan).await {
         return Err(ImportError::Cannot(format!(
