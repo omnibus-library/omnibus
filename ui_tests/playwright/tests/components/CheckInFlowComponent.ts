@@ -121,7 +121,7 @@ export class CheckInFlowComponent extends BaseComponent {
     this.bookDetailText = root.getByTestId("check-in-book-detail");
     this.noteField = root.getByLabel("Edition note");
     this.checkInButton = root.getByRole("button", {
-      name: "Check in",
+      name: "Add my copy",
       exact: true,
     });
     this.cancelButton = root.getByRole("button", {

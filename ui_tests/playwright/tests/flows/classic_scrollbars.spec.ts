@@ -73,16 +73,15 @@ test.describe("always-on scrollbars", () => {
 
         await test.step("check every bar control shows and nothing scrolls sideways", async () => {
           await expect(topNav.navLink("Shelves")).toBeVisible();
-          await expect(topNav.checkInButton).toBeVisible();
-          await expect(topNav.addBooksButton).toBeVisible();
+          await expect(topNav.addButton).toBeVisible();
           expect(await scroll.scrollsSideways()).toBe(false);
         });
       });
     });
   }
 
-  // 320 is the narrowest phone, 360 the common Android width, 399 and 400 either side of the wordmark breakpoint.
-  for (const width of [320, 360, 399, 400]) {
+  // 299 and 300 sit either side of the wordmark breakpoint, 320 is the narrowest phone, 360 the common Android width.
+  for (const width of [299, 300, 320, 360]) {
     test.describe(`${width} wide`, () => {
       test.use({ viewport: { width, height: 600 } });
 
@@ -100,8 +99,7 @@ test.describe("always-on scrollbars", () => {
 
         await test.step("check every bar control shows and nothing scrolls sideways", async () => {
           await expect(topNav.homeLink).toBeVisible();
-          await expect(topNav.checkInButton).toBeVisible();
-          await expect(topNav.addBooksButton).toBeVisible();
+          await expect(topNav.addButton).toBeVisible();
           expect(await scroll.scrollsSideways()).toBe(false);
         });
       });

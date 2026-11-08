@@ -161,7 +161,7 @@ export function confirmSubtitle(
   viewerId: number | null,
 ): string {
   if (wishlisted) {
-    return "This one is on your wishlist — checking your copy in takes it off.";
+    return "This one is on your wishlist — adding your copy takes it off.";
   }
   if (book.has_files) {
     return "You already have this one digitally — this adds your print copy.";

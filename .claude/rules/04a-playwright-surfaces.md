@@ -129,7 +129,7 @@ spec: it needs two books on the stack at once, and `recent_progress` drops
 `unread` and `finished`, so a book another spec marks could leave the fan mid-run.
 
 **The add-books review is the edit sheet's form, not a confirm form.** The top
-nav's Add books opens the `Add a book` sheet over the library (there is no
+nav's Add menu → Upload book files opens the `Add a book` sheet over the library (there is no
 `/add-books` route). A successful inspect swaps the picker for the edit sheet's
 tabs (`Book information`), fields and cover card over a book that does not
 exist yet, so the selectors are `MetadataFormComponent`'s: fields by label in

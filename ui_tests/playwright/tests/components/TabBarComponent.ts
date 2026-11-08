@@ -3,7 +3,7 @@ import { BaseComponent } from "./BaseComponent";
 
 /**
  * The phone's bottom tab bar and its raised centre action. At desktop width
- * the nav shows the Check in and Add books buttons in its place.
+ * the nav shows the Add menu in its place.
  */
 export class TabBarComponent extends BaseComponent {
   readonly centerActionButton: Locator;

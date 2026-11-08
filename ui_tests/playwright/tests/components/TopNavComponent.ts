@@ -17,8 +17,11 @@ export class TopNavComponent extends BaseComponent {
   readonly root: Locator;
   readonly homeLink: Locator;
   readonly libraryLink: Locator;
-  readonly checkInButton: Locator;
-  readonly addBooksButton: Locator;
+  readonly addButton: Locator;
+  readonly addMenu: Locator;
+  readonly uploadBookFilesItem: Locator;
+  readonly addCopyItem: Locator;
+  readonly addToWishlistItem: Locator;
   readonly userMenuButton: Locator;
   readonly userMenuPanel: Locator;
   readonly searchButton: Locator;
@@ -43,12 +46,20 @@ export class TopNavComponent extends BaseComponent {
     this.root = page.getByRole("navigation", { name: "Primary" });
     this.homeLink = this.root.getByRole("link", { name: "Omnibus" });
     this.libraryLink = this.root.getByRole("link", { name: "Library" });
-    // A link to `/check-in`, whose dialog opens over the page it came from.
-    this.checkInButton = this.root.getByRole("link", {
-      name: "Check in",
+    this.addButton = this.root.getByRole("button", {
+      name: "Add",
       exact: true,
     });
-    this.addBooksButton = this.root.getByRole("button", { name: "Add books" });
+    this.addMenu = this.root.getByRole("menu", { name: "Add" });
+    // A test id, since a spec asserts the upload item absent.
+    this.uploadBookFilesItem = this.addMenu.getByTestId("add-menu-upload");
+    // Opens `/check-in`, whose dialog opens over the page it came from.
+    this.addCopyItem = this.addMenu.getByRole("menuitem", {
+      name: "Add a copy you own",
+    });
+    this.addToWishlistItem = this.addMenu.getByRole("menuitem", {
+      name: "Add to your wishlist",
+    });
     this.userMenuButton = this.root.getByTestId("user-menu-trigger");
     this.userMenuPanel = page.getByTestId("user-menu-panel");
     this.searchButton = page.getByTestId("search-trigger");
@@ -77,8 +88,23 @@ export class TopNavComponent extends BaseComponent {
     await this.libraryLink.click();
   }
 
+  async openAddMenu(): Promise<void> {
+    await this.addButton.click();
+  }
+
   async openCheckIn(): Promise<void> {
-    await this.checkInButton.click();
+    await this.openAddMenu();
+    await this.addCopyItem.click();
+  }
+
+  async openUploadBookFiles(): Promise<void> {
+    await this.openAddMenu();
+    await this.uploadBookFilesItem.click();
+  }
+
+  async openAddToWishlist(): Promise<void> {
+    await this.openAddMenu();
+    await this.addToWishlistItem.click();
   }
 
   async openUserMenu(): Promise<void> {

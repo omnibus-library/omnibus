@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
-import { useSearchParams } from "react-router";
+import { useEffect, useState } from "react";
+import { useLocation, useNavigate, useSearchParams } from "react-router";
 import {
   ApiError,
   type UserId,
@@ -149,13 +149,32 @@ function useSettledScope(scope: Scope, settled: boolean) {
   return shown;
 }
 
+/**
+ * Whether the add search is open, and a count of the top bar's Add menu asking for it (`state.add`).
+ * Each ask is cleared from history once taken, so Back or a reload doesn't open the search again.
+ */
+function useAddSearch() {
+  const { pathname, search, state } = useLocation();
+  const navigate = useNavigate();
+  const [adding, setAdding] = useState(false);
+  const [asks, setAsks] = useState(0);
+  const asked = state?.add === true;
+  useEffect(() => {
+    if (!asked) return;
+    setAdding(true);
+    setAsks((n) => n + 1);
+    navigate({ pathname, search }, { replace: true, state: null });
+  }, [asked, navigate, pathname, search]);
+  return { adding, setAdding, asks };
+}
+
 const readerId = (scope: Scope) => (scope.kind === "reader" ? scope.id : null);
 
 /** `/wishlists`: the household's wishlists, one reader's or everyone's, picked by `?user=`. */
 export function Wishlists() {
   const viewer = useCurrentUser();
   const scope = scopeFrom(useSearchParams()[0].get("user"), viewer.id);
-  const [adding, setAdding] = useState(false);
+  const { adding, setAdding, asks } = useAddSearch();
   const readers = useQuery(wishlistReadersQuery);
   const books = useQuery(wishlistBooksQuery(wishlistUser(scope)));
   // The title of a reader's list needs their name; the others need nothing.
@@ -216,7 +235,11 @@ export function Wishlists() {
                   )}
                 </div>
                 {answered && (
-                  <AddToWishlist open={adding} onOpenChange={setAdding} />
+                  <AddToWishlist
+                    open={adding}
+                    onOpenChange={setAdding}
+                    asks={asks}
+                  />
                 )}
               </header>
               {answered ? (

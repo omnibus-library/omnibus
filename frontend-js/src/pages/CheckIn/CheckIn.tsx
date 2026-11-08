@@ -46,7 +46,7 @@ export function CheckIn() {
   const location = useLocation();
   const viewerId = useCurrentUser().id;
   const [stage, setStage] = useState<Stage>(LOOKUP);
-  // The book page's "Check in when acquired" brings the ISBN it already holds.
+  // The book page's "Add a copy you own" brings the ISBN it already holds.
   const [params] = useSearchParams();
   const [isbn, setIsbn] = useState(params.get("isbn") ?? "");
   const [note, setNote] = useState("");
@@ -120,7 +120,7 @@ export function CheckIn() {
         offWishlist: confirm.wishlisted,
       });
     },
-    onError: (e) => setError(`Check-in failed: ${e.message}`),
+    onError: (e) => setError(`Couldn’t add your copy: ${e.message}`),
   });
   const ownIt = useMutation({
     mutationFn: (meta: ExternalBookMeta) =>
@@ -332,20 +332,20 @@ export function CheckIn() {
 
   return (
     <Modal
-      label="Check in a book"
+      label="Add a copy you own"
       backdropClass="check-in-overlay-scrim"
       dialogClass="check-in-overlay-panel"
       onClose={close}
       busy={writing}
     >
-      <PageTitle page="Check in" />
+      <PageTitle page="Add a copy" />
       <section className="card check-in" data-testid="check-in">
         {/* Present on every stage so a mid-flow abort never strands the reader. */}
         <button
           type="button"
           className="check-in-close"
           data-testid="check-in-close"
-          aria-label="Cancel check-in"
+          aria-label="Cancel adding a copy"
           title="Cancel"
           onClick={close}
           disabled={writing}

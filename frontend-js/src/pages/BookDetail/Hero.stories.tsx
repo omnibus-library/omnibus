@@ -1160,7 +1160,7 @@ export const WishlistOnlyBook: Story = {
     const find = canvas.getByRole("link", { name: "Find a copy" });
     await expect(find).toHaveAttribute("target", "_blank");
     await expect(
-      canvas.getByRole("link", { name: "Check in when acquired" }),
+      canvas.getByRole("link", { name: "Add a copy you own" }),
     ).toHaveAttribute("href", "/check-in");
     await expect(canvas.getByTestId("wishlist-remove")).toHaveTextContent(
       "Remove from wishlist",
@@ -1192,7 +1192,7 @@ export const WishlistCheckInCarriesTheBooksIsbn: Story = {
   },
   play: async ({ canvas }) => {
     await expect(
-      await canvas.findByRole("link", { name: "Check in when acquired" }),
+      await canvas.findByRole("link", { name: "Add a copy you own" }),
     ).toHaveAttribute("href", "/check-in?isbn=9780134685991");
   },
 };
