@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  DownloadClientKind,
   isHttpUrl,
   type RequestsSettingsStatus,
   type RequestsSettingsUpdate,
@@ -10,11 +11,54 @@ const address = z
   .trim()
   .refine(isHttpUrl, "Enter an http:// or https:// address.");
 
+/** What the form says about each download client: its name, how to reach it, and what its login and category are called. */
+type ClientInfo = {
+  name: string;
+  addressPlaceholder: string;
+  /** SABnzbd has no login: its API key goes in the secret field. */
+  hasUsername: boolean;
+  secret: "password" | "API key";
+  /** Transmission files a download under a label, the others under a category. */
+  category: "category" | "label";
+};
+
+export const CLIENTS: Record<DownloadClientKind, ClientInfo> = {
+  qbittorrent: {
+    name: "qBittorrent",
+    addressPlaceholder: "http://qbittorrent:8080…",
+    hasUsername: true,
+    secret: "password",
+    category: "category",
+  },
+  transmission: {
+    name: "Transmission",
+    addressPlaceholder: "http://transmission:9091…",
+    hasUsername: true,
+    secret: "password",
+    category: "label",
+  },
+  sabnzbd: {
+    name: "SABnzbd",
+    addressPlaceholder: "http://sabnzbd:8080…",
+    hasUsername: false,
+    secret: "API key",
+    category: "category",
+  },
+  nzbget: {
+    name: "NZBGet",
+    addressPlaceholder: "http://nzbget:6789…",
+    hasUsername: true,
+    secret: "password",
+    category: "category",
+  },
+};
+
 /** The connections form, field by field as the inputs name them, read into the update a Save sends; a blank secret keeps the stored one. */
 export const RequestsSchema = z
   .object({
     prowlarr_url: address,
     prowlarr_api_key: z.string(),
+    download_client_kind: DownloadClientKind,
     download_client_url: address,
     download_client_username: z.string().trim(),
     download_client_password: z.string(),
@@ -29,7 +73,6 @@ export const RequestsSchema = z
       ...fields
     }): RequestsSettingsUpdate => ({
       ...fields,
-      download_client_kind: "qbittorrent",
       ...(prowlarr_api_key !== "" && { prowlarr_api_key }),
       ...(download_client_password !== "" && { download_client_password }),
     }),
@@ -42,6 +85,7 @@ export type RequestsDraft = z.input<typeof RequestsSchema>;
 export const BLANK_REQUESTS_DRAFT: RequestsDraft = {
   prowlarr_url: "",
   prowlarr_api_key: "",
+  download_client_kind: "qbittorrent",
   download_client_url: "",
   download_client_username: "",
   download_client_password: "",
@@ -56,6 +100,7 @@ export const requestsDraftOf = (
 ): RequestsDraft => ({
   prowlarr_url: saved.prowlarr_url ?? "",
   prowlarr_api_key: "",
+  download_client_kind: saved.download_client_kind,
   download_client_url: saved.download_client_url ?? "",
   download_client_username: saved.download_client_username ?? "",
   download_client_password: "",

@@ -365,3 +365,136 @@ export const OffersNoClearForAKeyFromTheEnvironment: Story = {
     ).not.toBeInTheDocument();
   },
 };
+
+export const OffersEveryDownloadClient: Story = {
+  play: async ({ canvas }) => {
+    const choice = await canvas.findByLabelText("Download client");
+
+    await expect(choice).toHaveValue("qbittorrent");
+    const names = within(choice)
+      .getAllByRole("option")
+      .map((option) => option.textContent);
+    await expect(names).toEqual([
+      "qBittorrent",
+      "Transmission",
+      "SABnzbd",
+      "NZBGet",
+    ]);
+  },
+};
+
+export const SwapsTheFieldsWhenTheClientChanges: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const choice = await canvas.findByLabelText("Download client");
+    await waitFor(() => expect(choice).toBeEnabled());
+
+    await userEvent.selectOptions(choice, "sabnzbd");
+
+    await expect(canvas.getByLabelText("SABnzbd address")).toHaveAttribute(
+      "placeholder",
+      "http://sabnzbd:8080…",
+    );
+    await expect(canvas.getByLabelText("SABnzbd API key")).toBeInTheDocument();
+    await expect(
+      canvas.queryByLabelText("SABnzbd username"),
+    ).not.toBeInTheDocument();
+    await expect(
+      canvas.getByLabelText("SABnzbd category (optional)"),
+    ).toBeInTheDocument();
+
+    await userEvent.selectOptions(choice, "transmission");
+
+    await expect(
+      canvas.getByLabelText("Transmission username"),
+    ).toBeInTheDocument();
+    await expect(
+      canvas.getByLabelText("Transmission password"),
+    ).toBeInTheDocument();
+    const label = canvas.getByLabelText("Transmission label (optional)");
+    await expect(label).toHaveAccessibleDescription(
+      "Files Omnibus downloads under this Transmission label. Leave empty to use Transmission’s defaults.",
+    );
+    await expect(
+      canvas.getByLabelText("Completed folder, as Transmission sees it"),
+    ).toBeInTheDocument();
+  },
+};
+
+export const SavesTheChosenClient: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const choice = await canvas.findByLabelText("Download client");
+    await waitFor(() => expect(choice).toBeEnabled());
+    await userEvent.selectOptions(choice, "sabnzbd");
+    await userEvent.type(canvas.getByLabelText("SABnzbd API key"), "sab-key");
+    await userEvent.click(canvas.getByRole("button", { name: SAVE }));
+
+    await canvas.findByText("Request settings saved.");
+    await expect(writes.saved[0]).toMatchObject({
+      download_client_kind: "sabnzbd",
+      download_client_password: "sab-key",
+    });
+    await expect(
+      canvas.getByRole("button", { name: "Test SABnzbd" }),
+    ).toBeInTheDocument();
+  },
+};
+
+export const NamesTheSavedClientInTheTestButton: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...requestsHandlers(
+        aWireRequestsSettings({ download_client_kind: "nzbget" }),
+        writes,
+      ),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    const test = await canvas.findByRole("button", { name: "Test NZBGet" });
+    await waitFor(() => expect(test).toBeEnabled());
+    await expect(canvas.getByTestId("requests-status")).toHaveTextContent(
+      "Prowlarr and NZBGet set up",
+    );
+    await expect(canvas.getByLabelText("NZBGet address")).toHaveValue(
+      "http://qbittorrent:8080",
+    );
+
+    await userEvent.click(test);
+
+    await canvas.findByText(
+      "The download client answered and accepted the saved settings.",
+    );
+    await expect(writes.tests).toEqual(["client"]);
+  },
+};
+
+export const ClearsASabnzbdApiKeyAfterConfirming: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...requestsHandlers(
+        aWireRequestsSettings({ download_client_kind: "sabnzbd" }),
+        writes,
+      ),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByTestId("requests-clear-client-password"),
+    );
+
+    const dialog = await canvas.findByTestId("requests-clear-dialog");
+    await expect(
+      within(dialog).getByText("Clear the SABnzbd API key?"),
+    ).toBeInTheDocument();
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Clear API key" }),
+    );
+
+    await expect(
+      await canvas.findByText("SABnzbd API key cleared."),
+    ).toHaveClass("settings-status", "success");
+    await expect(writes.saved[0]).toMatchObject({
+      download_client_kind: "sabnzbd",
+      download_client_password: "",
+    });
+  },
+};
