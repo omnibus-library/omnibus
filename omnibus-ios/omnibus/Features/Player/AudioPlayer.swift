@@ -54,6 +54,8 @@ final class AudioPlayer {
     /// What a play/pause control draws and does: playing, or a start still owed
     /// that a press takes back. `isPlaying` alone says whether there is audio.
     var isPlayingOrStarting: Bool { pendingStarts.togglePauses(isPlaying: isPlaying) }
+    /// Whether a call's end is holding a start this player owes.
+    var startHeldByCall: Bool { pendingStarts.afterInterruption }
     /// Whether a load is still awaiting its item and opening position.
     var isLoading: Bool { loadingGeneration != nil }
     /// The generation of the load in flight. Not a flag: a load superseded by
@@ -1593,6 +1595,18 @@ final class AudioPlayer {
         // again if its load failed.
         guard book == nil else { return play() }
         loadOwed(retrying: nil)
+    }
+
+    /// Resume for a voice request: the book already loaded, else the most
+    /// recent audiobook if it can play right now. Answers the book it started.
+    func resumeLatest() async -> Book? {
+        if let book {
+            play()
+            return book
+        }
+        guard let target = await resumeTarget(failed: nil) else { return nil }
+        await load(book: target.book, fileID: target.fileID, known: target.known)
+        return target.book
     }
 
     /// Load what a play with no player to start owes: `failed` again, else

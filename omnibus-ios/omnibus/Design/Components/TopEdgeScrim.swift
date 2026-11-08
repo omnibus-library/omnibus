@@ -39,8 +39,7 @@ struct TopEdgeScrim: View {
             )
             .frame(height: sideBarEdge == nil ? height : Self.sideBarHeight)
             .frame(maxHeight: .infinity, alignment: .top)
-            // Across an iPhone Duo's side column too, so the band doesn't stop short of it.
-            .ignoresSafeArea(edges: [.top, .horizontal])
+            .fullBleed(.top)
             .allowsHitTesting(false)
     }
 }

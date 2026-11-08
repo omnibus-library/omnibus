@@ -18,7 +18,7 @@ pub mod text;
 pub mod toc;
 mod wordcount;
 
-pub use accent::extract_accent;
+pub use accent::{extract_accent, extract_cover_palette};
 pub use cover::extract_cover;
 pub(crate) use cover::resolve_cover_with;
 pub use parse::{parse_ebook_targets, parse_ebook_targets_with_progress, ParseTarget};
@@ -156,7 +156,7 @@ pub(crate) mod test_support {
     // every db test reaches for the same unique-per-invocation builder.
     // Re-export here so existing `use crate::ebook::test_support::*;`
     // globs keep resolving without touching every callsite.
-    pub(crate) use crate::test_support::{make_test_dir, solid_color_png};
+    pub(crate) use crate::test_support::{make_test_dir, solid_color_png, striped_png};
 
     /// Path to a real fixture epub from `test_data/epubs/generated/` so
     /// cover-related tests have real OPF + embedded image bytes to work

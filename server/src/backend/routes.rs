@@ -12,10 +12,10 @@ use crate::rate_limit::{rate_limit_by_ip, RateLimiter, RateLimits};
 
 use super::{
     account, account_kosync, admin_health, admin_sessions, audiobooks, author_photos, authors,
-    bookmarks, cleanup, covers, cross_format, deletion, ebooks, genres, highlights, journals,
-    kindle, kobo_devices, logs, merge, metadata, overrides, physical, profile, progress, ratings,
-    read_status, requests, requests_admin, reviews, scan, search, series, settings, shelves, stats,
-    suggestions, summary, tags, tasks, uploads, users, AppState,
+    bookmarks, cleanup, cover_palette, covers, cross_format, deletion, ebooks, genres, highlights,
+    journals, kindle, kobo_devices, logs, merge, metadata, overrides, physical, profile, progress,
+    ratings, read_status, requests, requests_admin, reviews, scan, search, series, settings,
+    shelves, stats, suggestions, summary, tags, tasks, uploads, users, AppState,
 };
 
 /// Health check, settings, ebooks, and audiobook playback routes.
@@ -202,6 +202,7 @@ fn engagement_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(ratings::post_rating))
         .routes(routes!(ratings::get_other_ratings))
         .routes(routes!(ratings::get_rating, ratings::delete_rating))
+        .routes(routes!(reviews::list_my_reviews))
         .routes(routes!(
             reviews::get_book_reviews,
             reviews::patch_review,
@@ -288,6 +289,7 @@ fn discovery_routes() -> OpenApiRouter<AppState> {
             author_photos::delete_author_photo
         ))
         .routes(routes!(covers::get_cover))
+        .routes(routes!(cover_palette::get_cover_palette))
         .routes(routes!(covers::get_thumb))
         .routes(routes!(authors::get_authors))
         .routes(routes!(authors::get_author_reading))

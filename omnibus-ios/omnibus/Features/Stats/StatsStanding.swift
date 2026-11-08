@@ -352,7 +352,7 @@ struct HeatmapView: View {
     var body: some View {
         let model = makeGrid()
         return VStack(alignment: .leading, spacing: Spacing.sm) {
-            ScrollView(.horizontal) {
+            SideRail(anchor: .trailing) {
                 VStack(alignment: .leading, spacing: 5) {
                     monthRuler(model)
                     grid(model)
@@ -360,9 +360,6 @@ struct HeatmapView: View {
                 .padding(.vertical, 2)
                 .screenPadding()
             }
-            .scrollIndicators(.hidden)
-            .defaultScrollAnchor(.trailing)
-            .endsAtSideBar()
 
             legend
                 .screenPadding()

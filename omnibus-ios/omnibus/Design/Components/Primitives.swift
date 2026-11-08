@@ -649,12 +649,13 @@ struct ProgressBar: View {
 
 // MARK: - Layout helpers
 
-/// Background that fills the whole screen including under the nav bar.
+/// Background that fills the whole screen including under the nav bar and
+/// an iPhone Duo's side column.
 struct ScreenBackground: View {
     @Environment(\.palette) private var palette
 
     var body: some View {
-        palette.bg0Color.ignoresSafeArea()
+        palette.bg0Color.fullBleed(.vertical)
     }
 }
 

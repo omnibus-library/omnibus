@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { AuthorId, BookUuid, SeriesId } from "./core";
 import { failure, ok, requireUuid, send } from "./core";
 import {
+  getCoverPalette,
   getEbookByUuid,
   getPostEbookSummaryFetchUrl,
   getSearchPalette,
@@ -11,6 +12,7 @@ import {
 } from "./generated/omnibus";
 import type {
   BookSuggestion as BookSuggestionWire,
+  CoverPair,
   EbookMetadata,
   MetadataOverrides,
   PaletteResults as PaletteWire,
@@ -148,6 +150,13 @@ export async function fetchBook(uuid: BookUuid): Promise<BookDetail | null> {
   if (res.status === 404) return null;
   if (res.status !== 200) throw failure(res);
   return toBookDetail(res.data);
+}
+
+export type { CoverPair };
+
+/** The gradient pairs drawn from a book's cover, darkest first; a book with no cover fails with a 404. */
+export async function fetchCoverPalette(uuid: BookUuid): Promise<CoverPair[]> {
+  return ok(await getCoverPalette(encodeURIComponent(uuid))).pairs;
 }
 
 /** Grouped search hits for `query`; `limit` raises the per-group cap. */

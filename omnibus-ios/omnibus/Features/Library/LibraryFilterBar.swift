@@ -21,7 +21,7 @@ struct LibraryFilterBar: View {
     @State private var openField: FilterField?
 
     var body: some View {
-        ScrollView(.horizontal) {
+        SideRail {
             HStack(spacing: 7) {
                 ForEach(FilterField.allCases) { field in
                     facet(field)
@@ -32,8 +32,6 @@ struct LibraryFilterBar: View {
             }
             .screenPadding()
         }
-        .scrollIndicators(.hidden)
-        .endsAtSideBar()
         .sheet(item: $openField) { field in
             FilterClauseSheet(initial: FilterClause.opening(field, in: store.clauses), viewerId: viewerId) {
                 store.apply($0)

@@ -8,6 +8,7 @@ import {
   getGetBookHouseholdMockHandler200,
   getGetBookInsightsMockHandler200,
   getGetBookReviewsMockHandler200,
+  getGetCoverPaletteMockHandler200,
   getGetGenresMockHandler200,
   getGetHighlightsMockHandler200,
   getGetJournalEntriesMockHandler200,
@@ -110,10 +111,19 @@ export function deferred() {
   return { promise, release };
 }
 
-/** Every cover and thumbnail answers with the sample cover. */
+/** The gradient pairs the sample cover (Red Rising) yields, darkest first. */
+const COVER_PAIRS = [
+  { from: "#5d1f1c", to: "#c01a1a", ink: "light" },
+  { from: "#1e1b1b", to: "#ab2527", ink: "light" },
+  { from: "#1e1b1b", to: "#5d1f1c", ink: "light" },
+  { from: "#efe4e6", to: "#d5c2c9", ink: "dark" },
+] as const;
+
+/** Every cover and thumbnail answers with the sample cover, and its palette with its gradient pairs. */
 export const coverHandlers = [
   http.get("/api/thumbs/:uuid/:size", svg),
   http.get("/api/covers/:uuid", svg),
+  getGetCoverPaletteMockHandler200({ pairs: [...COVER_PAIRS] }),
 ];
 
 /** The session `GET /api/auth/me` reports; `null` answers as a guest. */

@@ -33,7 +33,17 @@ pub fn closed_port_url() -> String {
 /// the paths that decode one (accent extraction, avatar downscaling) and so
 /// can't be driven with a magic-bytes stub.
 pub fn solid_color_png(r: u8, g: u8, b: u8, w: u32, h: u32) -> Vec<u8> {
-    let img = image::RgbImage::from_pixel(w, h, image::Rgb([r, g, b]));
+    striped_png(&[[r, g, b]], w, h)
+}
+
+/// Build an in-memory PNG of equal horizontal bands, one per colour, top to bottom — a
+/// *decodable* multi-colour cover.
+pub fn striped_png(stripes: &[[u8; 3]], w: u32, h: u32) -> Vec<u8> {
+    let band = (h / stripes.len() as u32).max(1);
+    let img = image::RgbImage::from_fn(w, h, |_, y| {
+        let i = ((y / band) as usize).min(stripes.len() - 1);
+        image::Rgb(stripes[i])
+    });
     let mut bytes = Vec::new();
     image::DynamicImage::ImageRgb8(img)
         .write_to(
@@ -1215,4 +1225,19 @@ pub async fn place_position(pool: &SqlitePool, user: i64, uuid: &str, percent: i
     )
     .await
     .unwrap();
+}
+
+// ---------------------------------------------------------------------------
+// Reviews
+// ---------------------------------------------------------------------------
+
+/// Stamp `user_id`'s review of `uuid` with `updated_at = ts`, to order reviews by hand.
+pub async fn set_review_updated_at(pool: &SqlitePool, user_id: i64, uuid: &str, ts: i64) {
+    sqlx::query("UPDATE reviews SET updated_at = ?1 WHERE user_id = ?2 AND book_uuid = ?3")
+        .bind(ts)
+        .bind(user_id)
+        .bind(uuid)
+        .execute(pool)
+        .await
+        .expect("set review updated_at");
 }

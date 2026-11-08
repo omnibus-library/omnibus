@@ -2944,6 +2944,42 @@
         }
       }
     },
+    "/api/books/{uuid}/cover/palette": {
+      "get": {
+        "tags": [
+          "Covers"
+        ],
+        "summary": "Get a cover's gradient pairs",
+        "description": "Up to four gradient pairs drawn from the book's cover, darkest first. Each `ink` reads\nat 4.5:1 or better on both stops of its pair. A cover too plain to yield a pair gives\nan empty list.",
+        "operationId": "get_cover_palette",
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "The book's uuid.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The cover's gradient pairs.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoverPalette"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No book has that uuid, or the book has no cover."
+          }
+        }
+      }
+    },
     "/api/books/{uuid}/cross-format-follow": {
       "post": {
         "tags": [
@@ -6644,6 +6680,46 @@
           },
           "429": {
             "description": "It would need a new search and you started too many requests lately."
+          }
+        }
+      }
+    },
+    "/api/reviews/mine": {
+      "get": {
+        "tags": [
+          "Reviews"
+        ],
+        "summary": "List your reviews",
+        "description": "Your own reviews with stars or text, private notes included, ordered by when their stars,\ntext or spoiler flag last changed, newest first. A review holding only private notes isn't listed, nor\nis one of a book no longer in the library.",
+        "operationId": "list_my_reviews",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "How many reviews to return, from 1 to 100. Defaults to 20; a value outside the range is\nmoved to the nearest end.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Your reviews, newest stars, text or spoiler flag change first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Review"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`limit` isn't a whole number."
           }
         }
       }
@@ -11854,6 +11930,53 @@
           "url": {
             "type": "string",
             "description": "The image to fetch, up to 2,048 bytes long. Only `https` URLs on public addresses\nare fetched."
+          }
+        }
+      },
+      "CoverInk": {
+        "type": "string",
+        "description": "Which ink reads on a gradient pair.",
+        "enum": [
+          "light",
+          "dark"
+        ]
+      },
+      "CoverPair": {
+        "type": "object",
+        "description": "Two stops of a gradient and the ink that reads on both.",
+        "required": [
+          "from",
+          "to",
+          "ink"
+        ],
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "The darker stop, as lowercase `#rrggbb`."
+          },
+          "ink": {
+            "$ref": "#/components/schemas/CoverInk",
+            "description": "The ink that keeps at least 4.5:1 contrast on both stops."
+          },
+          "to": {
+            "type": "string",
+            "description": "The lighter stop, as lowercase `#rrggbb`."
+          }
+        }
+      },
+      "CoverPalette": {
+        "type": "object",
+        "description": "Gradient pairs drawn from a book's cover, for backgrounds that echo the artwork.",
+        "required": [
+          "pairs"
+        ],
+        "properties": {
+          "pairs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CoverPair"
+            },
+            "description": "Zero to four pairs, darkest first. Empty when the cover is too plain to yield any."
           }
         }
       },
