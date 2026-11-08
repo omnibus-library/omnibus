@@ -8,6 +8,7 @@
 //  does it, can only ever approximate the preview.
 
 import SwiftUI
+import UIKit
 
 extension String {
     /// One space per run of whitespace, ends trimmed.
@@ -31,58 +32,173 @@ struct QuoteRequest: Identifiable {
     let text: String
 }
 
-/// A card background: a ground tone plus whether its ink is light or dark.
+/// A card background: two stops, the angle between them, and the ink drawn on top.
 struct QuoteStyle: Identifiable {
-    var id: String
-    var base: OKLCH
-    var lightInk: Bool
+    enum Kind: Hashable { case solid, gradient }
+
+    /// What VoiceOver reads on the swatch.
+    var name: String
+    var kind: Kind
+    var from: OKLCH
+    var to: OKLCH
+    // Not `ink`: `OKLCH` has its own `opacity(_:)`, which would shadow
+    // `Color`'s in `.foregroundStyle(style.ink.opacity(…))`.
+    var inkTone: OKLCH
+    var angle = 135
+
+    var id: String { "\(kind)-\(name)" }
+
+    var lightInk: Bool { inkTone.l > 0.5 }
+
+    var ink: Color { inkTone.color }
+
+    var gradient: LinearGradient {
+        let ends = Self.points(angle)
+        return LinearGradient(colors: [from.color, to.color], startPoint: ends.start, endPoint: ends.end)
+    }
 
     /// A two-stop wash rather than a flat fill — a flat colour behind serif
     /// type reads as a placeholder, and the drift is what gives the card
     /// depth at thumbnail size.
-    var gradient: LinearGradient {
-        LinearGradient(
-            colors: [
-                OKLCH(base.l, base.c, base.h).color,
-                OKLCH(
-                    max(0.06, base.l - (lightInk ? 0.10 : -0.05)),
-                    base.c * 0.85,
-                    base.h + 12
-                ).color,
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
+    static func solid(_ name: String, _ base: OKLCH, lightInk: Bool) -> QuoteStyle {
+        QuoteStyle(
+            name: name,
+            kind: .solid,
+            from: base,
+            to: OKLCH(max(0.06, base.l - (lightInk ? 0.10 : -0.05)), base.c * 0.85, base.h + 12),
+            inkTone: lightInk ? OKLCH(0.95, 0.012, base.h) : OKLCH(0.24, 0.02, base.h)
         )
     }
 
-    var ink: Color {
-        lightInk ? OKLCH(0.95, 0.012, base.h).color : OKLCH(0.24, 0.02, base.h).color
+    /// A preset or cover pair, drawn as exactly its two stops. `nil` when
+    /// either hex does not parse.
+    static func gradient(_ name: String, from: String, to: String, lightInk: Bool) -> QuoteStyle? {
+        guard let start = OKLCH.parse(cssValue: from), let end = OKLCH.parse(cssValue: to) else { return nil }
+        return QuoteStyle(
+            name: name,
+            kind: .gradient,
+            from: start,
+            to: end,
+            inkTone: lightInk ? lightHexInk : darkHexInk
+        )
     }
 
     static func book(_ tone: OKLCH) -> QuoteStyle {
-        QuoteStyle(id: "book", base: OKLCH(min(0.46, max(0.28, tone.l)), max(0.05, tone.c), tone.h), lightInk: true)
+        solid("Book", OKLCH(min(0.46, max(0.28, tone.l)), max(0.05, tone.c), tone.h), lightInk: true)
     }
 
-    static let presets: [QuoteStyle] = [
-        QuoteStyle(id: "ink", base: OKLCH(0.19, 0.012, 70), lightInk: true),
-        QuoteStyle(id: "paper", base: OKLCH(0.93, 0.017, 80), lightInk: false),
-        QuoteStyle(id: "moss", base: OKLCH(0.38, 0.075, 155), lightInk: true),
-        QuoteStyle(id: "rose", base: OKLCH(0.44, 0.11, 15), lightInk: true),
-        QuoteStyle(id: "dusk", base: OKLCH(0.36, 0.085, 285), lightInk: true),
-        QuoteStyle(id: "sea", base: OKLCH(0.40, 0.075, 230), lightInk: true),
+    static let solids: [QuoteStyle] = [
+        solid("Ink", OKLCH(0.19, 0.012, 70), lightInk: true),
+        solid("Paper", OKLCH(0.93, 0.017, 80), lightInk: false),
+        solid("Moss", OKLCH(0.38, 0.075, 155), lightInk: true),
+        solid("Rose", OKLCH(0.44, 0.11, 15), lightInk: true),
+        solid("Dusk", OKLCH(0.36, 0.085, 285), lightInk: true),
+        solid("Sea", OKLCH(0.40, 0.075, 230), lightInk: true),
     ]
+
+    static let gradients: [QuoteStyle] = [
+        ("Ember", "#7a1f16", "#a24c16", true),
+        ("Dusk", "#2e2660", "#9a4060", true),
+        ("Lagoon", "#0b4a5a", "#26357f", true),
+        ("Grove", "#183f2a", "#7a5c18", true),
+        ("Dawn", "#f7e1c8", "#eeb0a8", false),
+    ].compactMap { QuoteStyle.gradient($0.0, from: $0.1, to: $0.2, lightInk: $0.3) }
+
+    /// A picked colour as a solid; its ink follows the ground's contrast.
+    static func customSolid(_ base: OKLCH) -> QuoteStyle {
+        let lightInk = prefersLightInk(
+            over: [base],
+            light: OKLCH(0.95, 0.012, base.h),
+            dark: OKLCH(0.24, 0.02, base.h)
+        )
+        return solid("Custom colour", base, lightInk: lightInk)
+    }
+
+    static func customGradient(from: OKLCH, to: OKLCH, angle: Int) -> QuoteStyle {
+        let lightInk = prefersLightInk(over: [from, to], light: lightHexInk, dark: darkHexInk)
+        return QuoteStyle(
+            name: "Custom gradient",
+            kind: .gradient,
+            from: from,
+            to: to,
+            inkTone: lightInk ? lightHexInk : darkHexInk,
+            angle: angle
+        )
+    }
+
+    // The web's `LIGHT_INK` and its dark counterpart.
+    private static let lightHexInk = OKLCH.fromSRGB(r: 0xf5 / 255.0, g: 0xf0 / 255.0, b: 0xe8 / 255.0)
+    private static let darkHexInk = OKLCH.fromSRGB(r: 0x22 / 255.0, g: 0x1d / 255.0, b: 0x18 / 255.0)
+
+    /// Whether light ink reads better than dark over every stop: the ink
+    /// whose weakest contrast against any stop is the higher one wins, and a
+    /// tie goes to light.
+    static func prefersLightInk(over stops: [OKLCH], light: OKLCH, dark: OKLCH) -> Bool {
+        func weakest(_ ink: OKLCH) -> Double {
+            stops.map { ink.contrast(with: $0) }.min() ?? 0
+        }
+        return weakest(light) >= weakest(dark)
+    }
+
+    /// The gradient line for a CSS-style angle (0 up, 90 right), in 45° steps.
+    static func points(_ angle: Int) -> (start: UnitPoint, end: UnitPoint) {
+        switch ((angle % 360) + 360) % 360 / 45 {
+        case 0: return (start: .bottom, end: .top)
+        case 1: return (start: .bottomLeading, end: .topTrailing)
+        case 2: return (start: .leading, end: .trailing)
+        case 3: return (start: .topLeading, end: .bottomTrailing)
+        case 4: return (start: .top, end: .bottom)
+        case 5: return (start: .topTrailing, end: .bottomLeading)
+        case 6: return (start: .trailing, end: .leading)
+        default: return (start: .bottomTrailing, end: .topLeading)
+        }
+    }
+}
+
+extension OKLCH {
+    /// WCAG relative luminance of the colour as it lands in sRGB.
+    var luminance: Double {
+        func linear(_ channel: Double) -> Double {
+            channel <= 0.03928 ? channel / 12.92 : pow((channel + 0.055) / 1.055, 2.4)
+        }
+        let (r, g, b) = components
+        return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b)
+    }
+
+    /// WCAG contrast ratio against `other`, from 1 up to 21.
+    func contrast(with other: OKLCH) -> Double {
+        let lighter = max(luminance, other.luminance)
+        let darker = min(luminance, other.luminance)
+        return (lighter + 0.05) / (darker + 0.05)
+    }
+
+    /// A `ColorPicker` result. It can be extended-range or P3, so each channel
+    /// is clamped into sRGB first.
+    static func from(_ color: Color) -> OKLCH {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        _ = UIColor(color).getRed(&r, green: &g, blue: &b, alpha: &a)
+        func clamped(_ channel: CGFloat) -> Double { Double(min(1, max(0, channel))) }
+        return fromSRGB(r: clamped(r), g: clamped(g), b: clamped(b))
+    }
+
+    /// Lowercase `#rrggbb`.
+    var hex: String {
+        let (r, g, b) = components
+        return String(format: "#%02x%02x%02x", Int((r * 255).rounded()), Int((g * 255).rounded()), Int((b * 255).rounded()))
+    }
 }
 
 /// Card shapes, named for what they're for.
 enum QuoteRatio: String, CaseIterable, Identifiable {
-    case square, portrait, story
+    case square, post, portrait, story
 
     var id: String { rawValue }
 
     var value: CGFloat {
         switch self {
         case .square: 1
-        case .portrait: 4.0 / 5.0
+        case .post: 4.0 / 5.0
+        case .portrait: 3.0 / 4.0
         case .story: 9.0 / 16.0
         }
     }
@@ -90,9 +206,94 @@ enum QuoteRatio: String, CaseIterable, Identifiable {
     var label: String {
         switch self {
         case .square: "Square"
-        case .portrait: "Post"
+        case .post: "Post"
+        case .portrait: "Portrait"
         case .story: "Story"
         }
+    }
+
+    /// The ratio itself, drawn under the name.
+    var detail: String {
+        switch self {
+        case .square: "1:1"
+        case .post: "4:5"
+        case .portrait: "3:4"
+        case .story: "9:16"
+        }
+    }
+}
+
+/// The typeface the passage is set in.
+enum QuoteFace: String, CaseIterable {
+    case serif, sans, mono
+
+    var label: String { rawValue.capitalized }
+}
+
+/// How large the passage is set, as a multiple of its length-stepped size.
+enum QuoteSize: String, CaseIterable {
+    case s, m, l
+
+    var label: String { rawValue.uppercased() }
+
+    var scale: CGFloat {
+        switch self {
+        case .s: 0.85
+        case .m: 1.0
+        case .l: 1.18
+        }
+    }
+}
+
+/// Everything about the passage's type that a reader can change.
+struct QuoteType: Equatable {
+    var face = QuoteFace.serif
+    var size = QuoteSize.m
+    var bold = false
+    var italic = false
+
+    /// The passage face at `size` points. Only Cormorant's Regular, SemiBold
+    /// and Italic cuts and Instrument Sans's Regular and SemiBold are bundled,
+    /// so the combinations without a real cut are synthesised.
+    func font(_ size: CGFloat) -> Font {
+        switch face {
+        case .serif:
+            if italic {
+                let base = Font.displayItalic(size)
+                return bold ? base.bold() : base
+            }
+            return .display(size, weight: bold ? .semibold : .regular)
+        case .sans:
+            let base = Font.ui(size, weight: bold ? .semibold : .regular)
+            return italic ? base.italic() : base
+        case .mono:
+            let base = Font.system(size: size, weight: bold ? .bold : .regular, design: .monospaced)
+            return italic ? base.italic() : base
+        }
+    }
+}
+
+/// The colour pairs the server pulls from a book's cover. The endpoint is
+/// optional: an older server answers 404 and the Gradient row goes without.
+struct CoverPalette: Decodable, Sendable {
+    struct Pair: Decodable, Sendable {
+        var from: String
+        var to: String
+        var ink: String
+    }
+
+    var pairs: [Pair]
+
+    /// One gradient swatch per readable pair, numbered over the pairs kept.
+    var styles: [QuoteStyle] {
+        var styles: [QuoteStyle] = []
+        for pair in pairs {
+            let name = "Cover \(styles.count + 1)"
+            if let style = QuoteStyle.gradient(name, from: pair.from, to: pair.to, lightInk: pair.ink != "dark") {
+                styles.append(style)
+            }
+        }
+        return styles
     }
 }
 
@@ -106,25 +307,14 @@ struct QuoteCard: View {
     let author: String?
     let style: QuoteStyle
     let ratio: QuoteRatio
+    let type: QuoteType
     let width: CGFloat
 
     private var height: CGFloat { width / ratio.value }
     private var pad: CGFloat { width * 0.094 }
 
-    /// Long passages step down rather than shrink to fit: a card whose type
-    /// scales continuously with length has no typographic identity, and the
-    /// steps keep every card recognisably the same object.
     private var quoteSize: CGFloat {
-        let count = quote.count
-        let scale: CGFloat
-        switch count {
-        case ..<90: scale = 0.082
-        case ..<180: scale = 0.066
-        case ..<320: scale = 0.052
-        case ..<520: scale = 0.042
-        default: scale = 0.034
-        }
-        return width * scale
+        Self.passageSize(characters: quote.count, width: width, size: type.size)
     }
 
     private var text: String { quote.collapsingWhitespace }
@@ -136,24 +326,23 @@ struct QuoteCard: View {
             VStack(alignment: .leading, spacing: 0) {
                 Spacer(minLength: 0)
 
+                // Takes its own layout space, so it moves with the passage and
+                // can never sit on top of the first line.
+                Text("\u{201C}")
+                    .font(type.font(width * 0.30))
+                    .foregroundStyle(style.ink.opacity(0.13))
+                    .fixedSize()
+                    .frame(height: width * 0.16, alignment: .topLeading)
+                    .offset(x: -width * 0.035)
+                    .accessibilityHidden(true)
+
                 Text(text)
-                    .font(.display(quoteSize))
+                    .font(type.font(quoteSize))
                     .foregroundStyle(style.ink)
                     .lineSpacing(quoteSize * 0.34)
                     .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .layoutPriority(1)
                     .minimumScaleFactor(0.55)
-                    // An oversized opening quote, tucked behind the first
-                    // line. Anchored to the text rather than to the card, so
-                    // it stays with the passage on a tall story card instead
-                    // of stranding itself at the top edge.
-                    .background(alignment: .topLeading) {
-                        Text("\u{201C}")
-                            .font(.display(width * 0.30))
-                            .foregroundStyle(style.ink.opacity(0.13))
-                            .fixedSize()
-                            .offset(x: -width * 0.035, y: -width * 0.135)
-                    }
 
                 Spacer(minLength: 0)
 
@@ -168,11 +357,13 @@ struct QuoteCard: View {
                         .tracking(width * 0.0036)
                         .foregroundStyle(style.ink.opacity(0.75))
                         .padding(.bottom, width * 0.012)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 Text(title)
                     .font(.displayItalic(width * 0.033))
                     .foregroundStyle(style.ink.opacity(0.62))
                     .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .padding(pad)
 
@@ -189,166 +380,19 @@ struct QuoteCard: View {
     }
 }
 
-// MARK: - The composer
-
-/// Picking how a passage should look, and sending it somewhere.
-struct QuoteCardSheet: View {
-    let quote: String
-    let book: Book
-
-    @Environment(\.palette) private var palette
-    @Environment(\.dismiss) private var dismiss
-
-    @State private var styleID: String = "book"
-    @State private var ratio: QuoteRatio = .square
-    @State private var rendering = false
-
-    /// The book's own colour first — a card in the tone of its cover is the
-    /// one that reads as *this* book rather than as a template.
-    private var styles: [QuoteStyle] {
-        [QuoteStyle.book(CoverIdentity(book).tone)] + QuoteStyle.presets
-    }
-
-    private var style: QuoteStyle {
-        styles.first { $0.id == styleID } ?? styles[0]
-    }
-
-    private var author: String? { book.creators.first?.name }
-
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 26) {
-                    preview
-                    controls
-                    actions
-                }
-                .screenPadding()
-                .padding(.top, Spacing.md)
-                .padding(.bottom, 36)
-            }
-            .scrollIndicators(.hidden)
-            .background(ScreenBackground())
-            .navigationTitle("Quote card")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") { dismiss() }
-                }
-            }
+extension QuoteCard {
+    /// Long passages step down rather than shrink to fit: a card whose type
+    /// scales continuously with length has no typographic identity, and the
+    /// steps keep every card recognisably the same object.
+    nonisolated static func passageSize(characters: Int, width: CGFloat, size: QuoteSize) -> CGFloat {
+        let step: CGFloat
+        switch characters {
+        case ..<90: step = 0.082
+        case ..<180: step = 0.066
+        case ..<320: step = 0.052
+        case ..<520: step = 0.042
+        default: step = 0.034
         }
-        .tint(palette.accentColor)
-    }
-
-    private var preview: some View {
-        GeometryReader { geometry in
-            QuoteCard(
-                quote: quote,
-                title: book.displayTitle,
-                author: author,
-                style: style,
-                ratio: ratio,
-                width: geometry.size.width
-            )
-            .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
-            .shadow(color: .black.opacity(0.28), radius: 22, y: 10)
-        }
-        // The card sizes itself off the width it is given, so the container
-        // has to reserve the height that width will produce.
-        .aspectRatio(ratio.value, contentMode: .fit)
-        .animation(Motion.settle, value: ratio)
-        .animation(Motion.settle, value: styleID)
-    }
-
-    private var controls: some View {
-        VStack(alignment: .leading, spacing: Spacing.md) {
-            SectionLabel("Background")
-            HStack(spacing: 12) {
-                ForEach(styles) { option in
-                    Button {
-                        guard styleID != option.id else { return }
-                        Haptics.select()
-                        withAnimation(Motion.snap) { styleID = option.id }
-                    } label: {
-                        Circle()
-                            .fill(option.gradient)
-                            .frame(width: 34, height: 34)
-                            .overlay(
-                                Circle().strokeBorder(.white.opacity(0.18), lineWidth: 1)
-                            )
-                            .overlay {
-                                if styleID == option.id {
-                                    Circle()
-                                        .strokeBorder(palette.accentColor, lineWidth: 2)
-                                        .padding(-4)
-                                }
-                            }
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(option.id.capitalized)
-                    .accessibilityAddTraits(styleID == option.id ? [.isSelected, .isButton] : .isButton)
-                }
-                Spacer(minLength: 0)
-            }
-
-            SectionLabel("Shape")
-            PillSelector(
-                options: QuoteRatio.allCases,
-                label: \.label,
-                selection: $ratio
-            )
-        }
-    }
-
-    private var actions: some View {
-        VStack(spacing: Spacing.md) {
-            Button {
-                Haptics.tap()
-                share()
-            } label: {
-                Label("Share", systemImage: "square.and.arrow.up")
-            }
-            .buttonStyle(FilledButtonStyle())
-            .disabled(rendering)
-
-            Button {
-                Haptics.success()
-                if let image = render() {
-                    UIPasteboard.general.image = image
-                }
-            } label: {
-                Label("Copy image", systemImage: "doc.on.doc")
-            }
-            .buttonStyle(FilledButtonStyle(prominent: false))
-            .disabled(rendering)
-        }
-    }
-
-    private func share() {
-        rendering = true
-        defer { rendering = false }
-        guard let image = render() else { return }
-        ShareSheet.present(items: [image])
-    }
-
-    /// The card at export size. 1080pt wide with a scale of 1 gives a 1080px
-    /// PNG — the size every social surface wants — and because the card's
-    /// metrics are all fractions of its width, it is pixel-for-pixel the
-    /// preview, just larger.
-    @MainActor
-    private func render() -> UIImage? {
-        let renderer = ImageRenderer(
-            content: QuoteCard(
-                quote: quote,
-                title: book.displayTitle,
-                author: author,
-                style: style,
-                ratio: ratio,
-                width: 1080
-            )
-        )
-        renderer.scale = 1
-        renderer.isOpaque = true
-        return renderer.uiImage
+        return width * step * size.scale
     }
 }

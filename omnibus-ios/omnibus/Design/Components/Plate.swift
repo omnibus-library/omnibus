@@ -267,6 +267,8 @@ struct PillSelector<Value: Hashable>: View {
     let label: (Value) -> String
     @Binding var selection: Value
     var onChange: (Value) -> Void = { _ in }
+    /// A second line under each label, for a choice that needs a caption.
+    var detail: ((Value) -> String)? = nil
 
     @Environment(\.palette) private var palette
     @Namespace private var indicator
@@ -292,10 +294,18 @@ struct PillSelector<Value: Hashable>: View {
             withAnimation(Motion.snap) { selection = option }
             onChange(option)
         } label: {
-            Text(label(option))
-                .font(.ui(13, weight: isOn ? .semibold : .medium))
+            VStack(spacing: 1) {
+                Text(label(option))
+                    .font(.ui(13, weight: isOn ? .semibold : .medium))
+                    .lineLimit(1)
+                if let detail {
+                    Text(detail(option))
+                        .font(.ui(10))
+                        .opacity(0.7)
+                        .lineLimit(1)
+                }
+            }
                 .foregroundStyle(isOn ? palette.accentInk.color : palette.ink2Color)
-                .lineLimit(1)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 7)
                 .background {
