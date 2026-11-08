@@ -25,8 +25,8 @@ use omnibus_db::{
     },
 };
 use omnibus_shared::{
-    BookRequest, ChooseVersion, FileBytes, RequestListQuery, RequestListing, RequestState,
-    StartRequest, StartRequestFromMeta, StuckReason,
+    BookRequest, ChooseVersion, FileBytes, RequestKind, RequestListQuery, RequestListing,
+    RequestState, StartRequest, StartRequestFromMeta, StuckReason,
 };
 
 use crate::auth::AuthUser;
@@ -159,6 +159,22 @@ fn search_again(state: &AppState, user: i64, id: i64) {
     spawn_search(state, id);
 }
 
+/// A 409 when `kind` is an audiobook and no audiobook library is set up, so no download is
+/// started that could not be filed; `None` when the request may go on.
+async fn missing_library(state: &AppState, kind: RequestKind) -> Option<Response> {
+    if kind != RequestKind::Audiobook {
+        return None;
+    }
+    let settings = match db::get_settings(state.pool()).await {
+        Ok(settings) => settings,
+        Err(e) => return Some(internal("read settings", e)),
+    };
+    let set_up = settings
+        .audiobook_library_path
+        .is_some_and(|p| !p.is_empty());
+    (!set_up).then(|| (StatusCode::CONFLICT, "no audiobook library is set up").into_response())
+}
+
 fn too_many(what: &str) -> Response {
     (StatusCode::TOO_MANY_REQUESTS, what.to_string()).into_response()
 }
@@ -181,6 +197,7 @@ fn too_many(what: &str) -> Response {
         (status = 401, description = "You aren't signed in."),
         (status = 403, description = "Your account can't ask for books."),
         (status = 404, description = "Book requests are off on this server, or the book doesn't exist."),
+        (status = 409, description = "`kind` is `audiobook` and no audiobook library is set up."),
         (status = 429, description = "You started too many requests lately, or have too many in progress."),
     ),
 )]
@@ -195,6 +212,9 @@ pub(super) async fn post_start_request(
         Ok(None) => return (StatusCode::NOT_FOUND, "book not found").into_response(),
         Err(e) => return internal("resolve requested book", e),
     };
+    if let Some(refused) = missing_library(&state, body.kind).await {
+        return refused;
+    }
     if !state.request_starts().has_room(user.id) {
         return too_many("you started too many requests; try again in a few minutes");
     }
@@ -233,6 +253,7 @@ pub(super) async fn post_start_request(
         (status = 400, description = "A field of `meta` is over its length cap."),
         (status = 403, description = "Your account can't ask for books."),
         (status = 404, description = "Book requests are off on this server."),
+        (status = 409, description = "`kind` is `audiobook` and no audiobook library is set up."),
         (status = 429, description = "You started too many requests lately, or have too many in progress."),
     ),
 )]
@@ -243,6 +264,9 @@ pub(super) async fn post_start_request_from_meta(
 ) -> Response {
     if let Err(message) = body.validate() {
         return (StatusCode::BAD_REQUEST, message).into_response();
+    }
+    if let Some(refused) = missing_library(&state, body.kind).await {
+        return refused;
     }
     if !state.request_starts().has_room(user.id) {
         return too_many("you started too many requests; try again in a few minutes");

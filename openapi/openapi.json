@@ -3436,6 +3436,9 @@
           "404": {
             "description": "Book requests are off on this server, or the book doesn't exist."
           },
+          "409": {
+            "description": "`kind` is `audiobook` and no audiobook library is set up."
+          },
           "429": {
             "description": "You started too many requests lately, or have too many in progress."
           }
@@ -6478,6 +6481,9 @@
           },
           "404": {
             "description": "Book requests are off on this server."
+          },
+          "409": {
+            "description": "`kind` is `audiobook` and no audiobook library is set up."
           },
           "429": {
             "description": "You started too many requests lately, or have too many in progress."

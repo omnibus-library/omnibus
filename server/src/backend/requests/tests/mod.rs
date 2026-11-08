@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use axum::{http::StatusCode, Router};
 use omnibus_db::requests::store;
-use omnibus_db::test_support::EnvVarGuard;
+use omnibus_db::test_support::{count_rows, EnvVarGuard};
 use omnibus_shared::{
     BookRequest, ReleaseProtocol, RequestKind, RequestState, RequestsSettingsUpdate,
 };
@@ -51,6 +51,16 @@ async fn chooser(pool: &SqlitePool, name: &str) -> (i64, String) {
     let (id, token) = reader(pool, name).await;
     auth_test_support::set_request_flags(pool, id, false, false, true).await;
     (id, token)
+}
+
+/// Point the audiobook library at a folder, as a server that can file audiobooks has.
+async fn use_audiobook_library(pool: &SqlitePool) {
+    let settings = omnibus_shared::Settings {
+        ebook_library_path: None,
+        audiobook_library_path: Some("/tmp/omnibus-test-audiobooks".to_string()),
+        scan_interval_hours: None,
+    };
+    omnibus_db::set_settings(pool, &settings).await.unwrap();
 }
 
 /// A book in the library: its uuid.
@@ -359,6 +369,7 @@ mod post_start_request {
     #[tokio::test]
     async fn starts_an_audiobook_request_beside_a_live_ebook_one() {
         let (app, _, pool) = fixture_book_requests(true).await;
+        use_audiobook_library(&pool).await;
         let (_, token) = requester(&pool, "ada").await;
         let uuid = seed_book(&pool, "Dracula").await;
         start(&app, &uuid, &token, "ebook").await;
@@ -371,6 +382,21 @@ mod post_start_request {
             .await
             .unwrap();
         assert_eq!(kinds, ["ebook", "audiobook"]);
+    }
+
+    #[tokio::test]
+    async fn answers_409_for_an_audiobook_when_no_audiobook_library_is_set_up() {
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let (_, token) = requester(&pool, "ada").await;
+        let uuid = seed_book(&pool, "Dracula").await;
+
+        let res = start(&app, &uuid, &token, "audiobook").await;
+
+        assert_eq!(res.status(), StatusCode::CONFLICT);
+        assert_eq!(
+            count_rows(&pool, "SELECT COUNT(*) FROM book_requests").await,
+            0
+        );
     }
 
     #[tokio::test]

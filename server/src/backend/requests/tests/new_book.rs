@@ -56,6 +56,7 @@ mod post_start_request_from_meta {
     #[tokio::test]
     async fn records_a_looking_audiobook_request_on_a_new_book_with_201() {
         let (app, _, pool) = fixture_book_requests(true).await;
+        use_audiobook_library(&pool).await;
         let (_, token) = requester(&pool, "ada").await;
 
         let res = start(&app, &token, "audiobook", &piranesi()).await;
@@ -65,6 +66,17 @@ mod post_start_request_from_meta {
         assert_eq!(body.kind, RequestKind::Audiobook);
         assert_eq!(body.state, RequestState::Looking);
         assert_eq!(count_rows(&pool, BOOKS).await, 1);
+    }
+
+    #[tokio::test]
+    async fn answers_409_for_an_audiobook_without_a_library_and_makes_no_book() {
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let (_, token) = requester(&pool, "ada").await;
+
+        let res = start(&app, &token, "audiobook", &piranesi()).await;
+
+        assert_eq!(res.status(), StatusCode::CONFLICT);
+        assert_eq!(count_rows(&pool, BOOKS).await, 0);
     }
 
     #[tokio::test]
