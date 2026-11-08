@@ -19,7 +19,9 @@
 }
 .rd-drawer-body {
   flex: 1;
+  min-height: 0;
   overflow: auto;
+  overscroll-behavior: contain;
   padding: 12px 16px 24px;
   display: flex;
   flex-direction: column;
@@ -77,47 +79,19 @@
   color: var(--accent);
   margin-bottom: 4px;
 }
+/* The canvas is drawn at export size; CSS only scales it, and a 9:16 card still fits the drawer. */
 .rd-quote-card {
-  width: 100%;
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 44vh;
+  margin-inline: auto;
   border-radius: 12px;
-  padding: 30px 28px;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 18px;
-  font-family: var(--serif);
   box-shadow: 0 24px 50px -22px rgba(0, 0, 0, 0.6);
 }
-.rd-quote-card-head {
-  font-family: var(--mono);
-  font-size: 9px;
-  letter-spacing: 0.22em;
-  opacity: 0.55;
-}
-.rd-quote-card-body {
-  font-size: 22px;
-  line-height: 1.24;
-  font-style: italic;
-  text-wrap: balance;
-}
-.rd-quote-card-foot {
-  border-top: 1px solid currentColor;
-  opacity: 0.85;
-  padding-top: 10px;
-}
-.rd-quote-card-author {
-  font-family: var(--sans);
-  font-size: 9.5px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  opacity: 0.8;
-}
-.rd-quote-card-sub {
-  font-size: 14px;
-  margin-top: 1px;
-}
 .rd-quote-controls {
-  margin-top: 20px;
+  margin-top: 8px;
 }
 .rd-quote-label {
   font-family: var(--mono);
@@ -125,24 +99,166 @@
   color: var(--ink-3);
   margin: 16px 0 8px;
 }
+.rd-quote-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 16px 0 8px;
+}
+.rd-quote-heading .rd-quote-label {
+  margin: 0;
+}
+.rd-quote-kind-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line-2);
+  background: var(--bg-2);
+  color: var(--ink-1);
+  font-size: 12px;
+  cursor: pointer;
+}
+.rd-quote-kind-icon {
+  display: block;
+  width: 12px;
+  height: 12px;
+  background: var(--ink-3);
+}
+.rd-quote-kind-icon.solid {
+  border-radius: 50%;
+}
+.rd-quote-kind-icon.gradient {
+  border-radius: 4px;
+}
+/* One scrolling row, edge-faded on the side that has more to reach. */
 .rd-quote-swatches {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-padding-inline: 28px;
+  scrollbar-width: none;
+  /* Room for the selection ring, which would otherwise clip. */
+  padding: 4px;
+  margin: -4px;
+}
+.rd-quote-swatches::-webkit-scrollbar {
+  display: none;
+}
+.rd-quote-swatches[data-fade-end="true"] {
+  mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
+}
+.rd-quote-swatches[data-fade-start="true"] {
+  mask-image: linear-gradient(90deg, transparent, #000 28px);
+}
+.rd-quote-swatches[data-fade-start="true"][data-fade-end="true"] {
+  mask-image: linear-gradient(
+    90deg,
+    transparent,
+    #000 28px,
+    #000 calc(100% - 28px),
+    transparent
+  );
+}
+/* Wider than the row when it overflows, so its resizing is what tells the row to re-measure. */
+.rd-quote-track {
   display: flex;
   gap: 8px;
   align-items: center;
+  width: max-content;
+}
+.rd-quote-thumb {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 36px;
+  object-fit: cover;
+  border-radius: 2px 4px 4px 2px;
+  box-shadow: 0 0 0 1px var(--line-2);
+}
+.rd-quote-divider {
+  flex: 0 0 auto;
+  width: 1px;
+  height: 22px;
+  margin: 0 4px;
+  background: var(--line-2);
 }
 .rd-quote-swatch {
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
   cursor: pointer;
   border: 1px solid var(--line-2);
+  padding: 0;
+}
+.rd-quote-swatch.solid,
+.rd-quote-custom.solid {
+  border-radius: 50%;
+}
+.rd-quote-swatch.gradient {
+  border-radius: 8px;
+}
+/* The selection ring is a halo, so the focus outline stays distinct from it. */
+.rd-quote-swatch.on,
+.rd-quote-custom.on {
+  box-shadow:
+    0 0 0 2px var(--bg-1),
+    0 0 0 4px var(--accent);
+}
+.rd-quote-kind-pill:focus-visible,
+.rd-quote-swatch:focus-visible,
+.rd-quote-stop input:focus-visible,
+.rd-quote-rotate:focus-visible,
+.rd-quote-custom:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.rd-quote-custom-gradient {
+  background: linear-gradient(135deg, #e8735a 50%, #2a8c8c 50%);
+}
+.rd-quote-custom-gradient,
+.rd-quote-custom span {
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1;
+  text-shadow: 0 1px 2px color-mix(in oklch, black 55%, transparent);
+}
+.rd-quote-stops {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+.rd-quote-stop {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.rd-quote-stop input {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: none;
+  cursor: pointer;
+}
+.rd-quote-stop code {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-2);
 }
 .rd-quote-custom {
   position: relative;
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
-  overflow: hidden;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
   border: 1px solid var(--line-2);
   cursor: pointer;
   background: conic-gradient(
@@ -157,26 +273,36 @@
     #f43f5e
   );
 }
+.rd-quote-custom span {
+  pointer-events: none;
+}
 .rd-quote-custom input {
   position: absolute;
-  inset: -4px;
-  width: calc(100% + 8px);
-  height: calc(100% + 8px);
+  inset: 0;
+  width: 100%;
+  height: 100%;
   border: 0;
   padding: 0;
   cursor: pointer;
   opacity: 0;
 }
-.rd-quote-ratios,
+.rd-quote-type {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
 .rd-quote-chips {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
 }
+/* Pinned under the scrolling body, so Download and Copy stay in reach. */
 .rd-quote-actions {
+  flex: 0 0 auto;
   display: flex;
   gap: 8px;
-  margin-top: 22px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--line-2);
 }
 @media (max-width: 480px) {
   .rd-drawer.rd-quote-drawer {
