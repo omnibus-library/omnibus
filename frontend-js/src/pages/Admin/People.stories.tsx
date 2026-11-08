@@ -158,6 +158,39 @@ const REQUESTS_OFF = {
   can_choose_request_versions: false,
 };
 
+export const AskAndPickChipsShowForTheRequestPermissionsAHolderHolds: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...usersHandlers(
+        [
+          aWireAdminUser({
+            id: 20,
+            username: "dora",
+            can_start_requests: true,
+            can_choose_request_versions: false,
+          }),
+          aWireAdminUser({
+            id: 21,
+            username: "eli",
+            can_download: false,
+            can_start_requests: false,
+            can_choose_request_versions: true,
+          }),
+        ],
+        {},
+      ),
+    );
+  },
+  play: async ({ canvas }) => {
+    await expect(cellsOf(await canvas.findByTestId("user-row-20"))[1]).toBe(
+      "UploadDownloadAsk",
+    );
+    await expect(cellsOf(canvas.getByTestId("user-row-21"))[1]).toBe(
+      "UploadPick",
+    );
+  },
+};
+
 export const RequestChipIsHiddenWhenRequestsAreOff: Story = {
   parameters: { user: REQUESTS_OFF },
   beforeEach({ msw }) {

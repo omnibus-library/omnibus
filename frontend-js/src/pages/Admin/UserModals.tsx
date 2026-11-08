@@ -43,7 +43,12 @@ const GRANTS = [
   { flag: "can_upload", label: "Upload books" },
   { flag: "can_edit", label: "Edit metadata" },
   { flag: "can_download", label: "Download" },
-  { flag: "can_start_requests", label: "Request books" },
+] as const;
+
+/** The grants that only mean something while the server has book requests on. */
+const REQUEST_GRANTS = [
+  { flag: "can_start_requests", label: "Ask for books" },
+  { flag: "can_choose_request_versions", label: "Pick versions" },
 ] as const;
 
 function PermissionCheckbox({
@@ -107,18 +112,18 @@ function PermissionToggles({
           )
         }
       />
-      {GRANTS.filter(
-        ({ flag }) => requests || flag !== "can_start_requests",
-      ).map(({ flag, label }) => (
-        <PermissionCheckbox
-          key={flag}
-          label={label}
-          testId={`perm-${flag}`}
-          checked={perms[flag]}
-          disabled={perms.is_admin}
-          onToggle={(checked) => onChange({ ...perms, [flag]: checked })}
-        />
-      ))}
+      {[...GRANTS, ...(requests ? REQUEST_GRANTS : [])].map(
+        ({ flag, label }) => (
+          <PermissionCheckbox
+            key={flag}
+            label={label}
+            testId={`perm-${flag}`}
+            checked={perms[flag]}
+            disabled={perms.is_admin}
+            onToggle={(checked) => onChange({ ...perms, [flag]: checked })}
+          />
+        ),
+      )}
     </fieldset>
   );
 }

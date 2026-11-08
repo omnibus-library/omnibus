@@ -47,7 +47,8 @@ export function permissionChips(
     user.can_upload && "Upload",
     user.can_edit && "Edit",
     user.can_download && "Download",
-    requests && user.can_start_requests && "Request",
+    requests && user.can_start_requests && "Ask",
+    requests && user.can_choose_request_versions && "Pick",
   ].filter((chip) => chip !== false);
   return chips.length > 0 ? chips : [NO_PERMISSIONS];
 }

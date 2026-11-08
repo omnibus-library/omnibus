@@ -51,14 +51,15 @@ describe("permissionChips", () => {
         },
         true,
       ),
-    ).toEqual(["Upload", "Edit", "Download", "Request"]);
+    ).toEqual(["Upload", "Edit", "Download", "Ask", "Pick"]);
   });
 
   it.each([
     ["can_upload", "Upload"],
     ["can_edit", "Edit"],
     ["can_download", "Download"],
-    ["can_start_requests", "Request"],
+    ["can_start_requests", "Ask"],
+    ["can_choose_request_versions", "Pick"],
   ] as const)("returns %s alone as %s", (flag, chip) => {
     expect(permissionChips({ ...NONE, [flag]: true }, true)).toEqual([chip]);
   });
@@ -67,10 +68,15 @@ describe("permissionChips", () => {
     expect(permissionChips(NONE, true)).toEqual(["—"]);
   });
 
-  it("leaves out Request when requests are off", () => {
+  it("leaves out Ask and Pick when requests are off", () => {
     expect(
       permissionChips(
-        { ...NONE, can_upload: true, can_start_requests: true },
+        {
+          ...NONE,
+          can_upload: true,
+          can_start_requests: true,
+          can_choose_request_versions: true,
+        },
         false,
       ),
     ).toEqual(["Upload"]);
