@@ -13,7 +13,7 @@ fn max_upload_bytes_is_uncapped_when_env_unset() {
 
 #[test]
 fn max_upload_bytes_uses_env_cap_when_set() {
-    let _env = EnvVarGuard::set("OMNIBUS_MAX_UPLOAD_BYTES", Some("2048"));
+    let _env = EnvVarGuard::set("OMNIBUS_MAX_UPLOAD_BYTES", Some("4294967296"));
 
-    assert_eq!(max_upload_bytes(), 2048);
+    assert_eq!(max_upload_bytes(), 4_294_967_296);
 }

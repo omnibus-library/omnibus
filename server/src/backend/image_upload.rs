@@ -75,7 +75,9 @@ impl ImageFieldError {
 /// check, SVG rejection, size cap, magic-byte sniff. Returns the *detected*
 /// MIME + bytes, never the client's header — the stored extension has to
 /// match the actual content.
-pub(super) async fn read_image_field(field: Field<'_>) -> Result<(String, Bytes), ImageFieldError> {
+pub(super) async fn read_image_field(
+    mut field: Field<'_>,
+) -> Result<(String, Bytes), ImageFieldError> {
     let content_type = field
         .content_type()
         .unwrap_or("application/octet-stream")
@@ -86,13 +88,18 @@ pub(super) async fn read_image_field(field: Field<'_>) -> Result<(String, Bytes)
     if content_type.contains("svg") {
         return Err(ImageFieldError::Svg);
     }
-    let bytes = field
-        .bytes()
+    let mut buf: Vec<u8> = Vec::new();
+    while let Some(chunk) = field
+        .chunk()
         .await
-        .map_err(|e| ImageFieldError::Read(e.to_string()))?;
-    if bytes.len() > MAX_IMAGE_BYTES {
-        return Err(ImageFieldError::TooLarge);
+        .map_err(|e| ImageFieldError::Read(e.to_string()))?
+    {
+        if buf.len() + chunk.len() > MAX_IMAGE_BYTES {
+            return Err(ImageFieldError::TooLarge);
+        }
+        buf.extend_from_slice(&chunk);
     }
+    let bytes = Bytes::from(buf);
     // A `None` here means the bytes carry no recognisable image header, so
     // surface a 415 rather than `.unwrap()`-panicking the task (#210).
     match detect_image_format(&bytes) {
