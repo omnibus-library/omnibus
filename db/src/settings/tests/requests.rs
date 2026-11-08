@@ -108,6 +108,60 @@ mod set_requests_settings {
     }
 
     #[tokio::test]
+    async fn clears_the_old_clients_password_and_login_when_the_kind_changes_without_a_new_password(
+    ) {
+        let _env = EnvVarGuard::set("OMNIBUS_PROWLARR_API_KEY", None);
+        let pool = init_db("sqlite::memory:").await.unwrap();
+        set_requests_settings(&pool, &update()).await.unwrap();
+        let mut next = update();
+        next.download_client_kind = DownloadClientKind::Sabnzbd;
+        next.download_client_password = None;
+
+        set_requests_settings(&pool, &next).await.unwrap();
+
+        let config = effective_requests_config(&pool).await.unwrap();
+        assert_eq!(config.download_client_kind, DownloadClientKind::Sabnzbd);
+        assert_eq!(config.download_client_password, None);
+        assert_eq!(config.download_client_username, None);
+        assert_eq!(
+            config.prowlarr_api_key.as_deref(),
+            Some("prowlarr-key-123456")
+        );
+    }
+
+    #[tokio::test]
+    async fn keeps_a_login_typed_for_the_new_kind_when_the_password_is_left_out() {
+        let _env = EnvVarGuard::set("OMNIBUS_PROWLARR_API_KEY", None);
+        let pool = init_db("sqlite::memory:").await.unwrap();
+        set_requests_settings(&pool, &update()).await.unwrap();
+        let mut next = update();
+        next.download_client_kind = DownloadClientKind::Nzbget;
+        next.download_client_username = "nzbget".into();
+        next.download_client_password = None;
+
+        set_requests_settings(&pool, &next).await.unwrap();
+
+        let config = effective_requests_config(&pool).await.unwrap();
+        assert_eq!(config.download_client_username.as_deref(), Some("nzbget"));
+        assert_eq!(config.download_client_password, None);
+    }
+
+    #[tokio::test]
+    async fn stores_the_password_typed_with_a_new_kind() {
+        let _env = EnvVarGuard::set("OMNIBUS_PROWLARR_API_KEY", None);
+        let pool = init_db("sqlite::memory:").await.unwrap();
+        set_requests_settings(&pool, &update()).await.unwrap();
+        let mut next = update();
+        next.download_client_kind = DownloadClientKind::Sabnzbd;
+        next.download_client_password = Some("sab-key".into());
+
+        set_requests_settings(&pool, &next).await.unwrap();
+
+        let config = effective_requests_config(&pool).await.unwrap();
+        assert_eq!(config.download_client_password.as_deref(), Some("sab-key"));
+    }
+
+    #[tokio::test]
     async fn clears_saved_secrets_when_they_are_empty() {
         let _env = EnvVarGuard::set("OMNIBUS_PROWLARR_API_KEY", None);
         let pool = init_db("sqlite::memory:").await.unwrap();
