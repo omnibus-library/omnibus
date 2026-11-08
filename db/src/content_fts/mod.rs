@@ -398,9 +398,10 @@ async fn fetch_candidates(pool: &SqlitePool, library_path: &str) -> anyhow::Resu
 
 /// (Re)index chapter text for every EPUB or PDF book under `library_path` whose
 /// stored snapshot no longer matches the served file, and prune rows whose uuid
-/// no longer resolves to a book. An unreadable file is logged and skipped
-/// (retried next scan); a book whose every chapter is navigation or empty stores
-/// no rows, so it re-extracts each scan. `on_progress(processed, total, item)`.
+/// no longer resolves to a book. An unreadable file, or a store that fails, is
+/// logged and skipped (retried next scan), though a store that fails still makes
+/// the pass return an error; a book whose every chapter is navigation or empty
+/// stores no rows, so it re-extracts each scan. `on_progress(processed, total, item)`.
 pub async fn backfill_content_fts(
     pool: &SqlitePool,
     library_path: &str,
@@ -423,6 +424,7 @@ pub async fn backfill_content_fts(
     tracing::info!(count = total, "indexing epub content for search");
 
     let mut processed = 0u32;
+    let mut failed = 0u32;
     for candidate in candidates {
         processed = processed.saturating_add(1);
         on_progress(processed, total, &candidate.title);
@@ -446,10 +448,21 @@ pub async fn backfill_content_fts(
             );
             continue;
         };
-        replace_book_chapters(pool, &candidate, &chapters)
-            .await
-            .map_err(|e| anyhow::anyhow!("store content index for {}: {e}", candidate.book_uuid))?;
+        if let Err(error) = replace_book_chapters(pool, &candidate, &chapters).await {
+            tracing::warn!(
+                book_uuid = %candidate.book_uuid,
+                %error,
+                "content index store failed; will retry next scan"
+            );
+            failed += 1;
+        }
     }
+    // The pass indexes what it can, then reports the books it could not, so a
+    // persistent fault fails the task instead of passing silently.
+    anyhow::ensure!(
+        failed == 0,
+        "{failed} of {total} books failed to store their content index; will retry next scan"
+    );
     Ok(())
 }
 
@@ -462,7 +475,9 @@ async fn replace_book_chapters(
     candidate: &Candidate,
     chapters: &[extract::ChapterText],
 ) -> Result<(), sqlx::Error> {
-    let mut tx = pool.begin().await?;
+    // BEGIN IMMEDIATE: FTS5 reads its config when a connection first opens the
+    // table, so a deferred transaction would hold a stale snapshot (517).
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     sqlx::query("DELETE FROM book_content_chapters WHERE book_uuid = ?")
         .bind(&candidate.book_uuid)
         .execute(&mut *tx)

@@ -7,7 +7,10 @@ use sqlx::SqlitePool;
 
 use crate::ebook::test_support::copy_fixture_into;
 use crate::pool::init_db;
-use crate::test_support::{build_test_epub, build_test_pdf, count_rows, make_test_dir, TestPdf};
+use crate::test_support::{
+    build_test_epub, build_test_pdf, count_rows, file_db_url, hold_write_lock, make_test_dir,
+    reopen_file_pool, TestPdf,
+};
 
 use super::extract::extract_chapter_texts;
 use super::*;
@@ -396,6 +399,58 @@ async fn backfill_content_fts_prunes_rows_for_books_that_no_longer_exist() {
         0,
         "rows whose uuid resolves to no book must be pruned"
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn backfill_content_fts_indexes_book_while_another_connection_holds_the_write_lock() {
+    // WAL needs a real file: there a deferred transaction that has read cannot
+    // wait out another writer, and fails with a locked database instead.
+    let tmp = tempfile::tempdir().unwrap();
+    let lib = tmp.path().to_str().unwrap().to_string();
+    let url = file_db_url(tmp.path());
+    let pool = init_db(&url).await.unwrap();
+    seed_epub_book(&pool, tmp.path(), "alpha.epub", "uuid-a", "Alpha", 100, 200).await;
+    let pool = reopen_file_pool(pool, &url).await;
+
+    // The import's own write lands between the candidate read and the store.
+    let mut lock = None;
+    let result = backfill_content_fts(&pool, &lib, |_, _, _| {
+        lock.get_or_insert_with(|| {
+            tokio::task::block_in_place(|| {
+                tokio::runtime::Handle::current().block_on(hold_write_lock(&pool))
+            })
+        });
+    })
+    .await;
+    lock.expect("progress callback ran").await.unwrap();
+
+    result.unwrap();
+    assert!(!chapter_texts_of(&pool, "uuid-a").await.is_empty());
+}
+
+#[tokio::test]
+async fn backfill_content_fts_indexes_later_books_then_reports_the_books_it_failed_to_store() {
+    let dir = tempfile::tempdir().unwrap();
+    let lib = dir.path().to_str().unwrap().to_string();
+    let pool = init_db("sqlite::memory:").await.unwrap();
+    seed_epub_book(&pool, dir.path(), "alpha.epub", "uuid-a", "Alpha", 100, 200).await;
+    seed_epub_book(&pool, dir.path(), "beta.epub", "uuid-b", "Beta", 100, 200).await;
+    // Stands in for a store that fails (a lock held past the busy timeout).
+    sqlx::query(
+        "CREATE TRIGGER fail_store_for_a BEFORE INSERT ON book_content_chapters \
+         WHEN NEW.book_uuid = 'uuid-a' BEGIN SELECT RAISE(ABORT, 'store failed'); END",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let error = backfill_content_fts(&pool, &lib, |_, _, _| {})
+        .await
+        .unwrap_err();
+
+    assert!(error.to_string().contains("1 of 2"), "{error}");
+    assert!(chapter_texts_of(&pool, "uuid-a").await.is_empty());
+    assert!(!chapter_texts_of(&pool, "uuid-b").await.is_empty());
 }
 
 // ---------- search ----------
