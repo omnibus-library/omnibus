@@ -123,6 +123,31 @@ mod import_finished {
     }
 
     #[tokio::test]
+    async fn adds_the_epub_when_the_converter_setting_cannot_be_read() {
+        let env = env().await;
+        // A blob does not decode as the setting's text, so the status read fails.
+        sqlx::query("UPDATE settings SET value = x'ff' WHERE key = 'ebook_convert_path'")
+            .execute(&env.pool)
+            .await
+            .unwrap();
+        assert!(crate::ebook_convert_status(&env.pool).await.is_err());
+        let wished = wish(&env, "Dune", "Frank Herbert").await;
+        let request = finished_request(&env, &wished, RequestKind::Ebook).await;
+        let epub = epub_by("Dune", "Frank Herbert");
+        let client = downloaded(
+            &env,
+            &request,
+            &[("Dune.epub", &epub), ("Dune.mobi", &mobi_bytes())],
+        );
+
+        run(&env, &client).await;
+
+        assert_ready(&env, request.id).await;
+        assert_eq!(format_of_only_file(&env, &wished).await, "EPUB");
+        assert!(env.root.join("frank-herbert/dune/dune.epub").is_file());
+    }
+
+    #[tokio::test]
     async fn never_runs_the_converter_for_an_epub_download() {
         let env = env().await;
         let scripts = tempfile::tempdir().unwrap();

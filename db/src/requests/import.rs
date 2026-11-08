@@ -181,7 +181,7 @@ async fn file_into_library(
     let (id, author, title) = (row.id, wished.author.clone(), wished.title.clone());
     let found = blocking(move || files::resolve(&status, &listed, &config)).await?;
     // Probed only now: an import with no AZW3 or MOBI never spawns the converter.
-    let convertible = files::has_convertible(&found) && converter_runs(pool).await?;
+    let convertible = files::has_convertible(&found) && converter_runs(pool).await;
     let (src, ext) = blocking(move || files::pick(&found, convertible)).await?;
     let placed = if files::converts_to_epub(ext) {
         place::place_converted(pool, &root_path, id, &src, &author, &title).await?
@@ -201,12 +201,16 @@ async fn file_into_library(
     Ok(Some(key))
 }
 
-/// Whether `ebook-convert` runs, so an AZW3 or MOBI can be converted.
-async fn converter_runs(pool: &SqlitePool) -> Result<bool, ImportError> {
-    let status = crate::ebook_convert_status(pool)
-        .await
-        .map_err(|e| ImportError::Cannot(format!("the settings could not be read: {e}")))?;
-    Ok(status.available)
+/// Whether `ebook-convert` runs, so an AZW3 or MOBI can be converted. An unreadable setting
+/// counts as not, so a download that also holds an EPUB or PDF still imports.
+async fn converter_runs(pool: &SqlitePool) -> bool {
+    match crate::ebook_convert_status(pool).await {
+        Ok(status) => status.available,
+        Err(e) => {
+            tracing::warn!(error = %e, "check whether ebook-convert runs");
+            false
+        }
+    }
 }
 
 /// Run blocking filesystem work off the async runtime thread.
