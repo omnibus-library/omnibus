@@ -57,6 +57,30 @@ struct QuoteTypeTests {
         #expect(abs(Double(large) - 96.76) < 0.001)
     }
 
+    @Test("Sans italic is a skewed Instrument Sans, so the slant is in the font itself")
+    func sansFontSkewsTheDescriptorWhenItalic() throws {
+        let font = try #require(QuoteType(face: .sans, italic: true).sansFont(40))
+        // `UIFont.fontDescriptor` drops the matrix; CoreText keeps it.
+        let matrix = CTFontGetMatrix(font as CTFont)
+        #expect(font.fontName == Font.UIFace.regular)
+        #expect(matrix.a == 1 && matrix.d == 1)
+        #expect(isClose(Double(matrix.c), 0.2))
+    }
+
+    @Test("upright Sans carries no skew")
+    func sansFontIsUprightWhenNotItalic() throws {
+        let font = try #require(QuoteType(face: .sans).sansFont(40))
+        #expect(CTFontGetMatrix(font as CTFont).isIdentity)
+    }
+
+    @Test("bold Sans picks the SemiBold cut, upright or italic", arguments: [false, true])
+    func sansFontPicksTheRealCutForWeight(_ italic: Bool) throws {
+        let bold = try #require(QuoteType(face: .sans, bold: true, italic: italic).sansFont(40))
+        let regular = try #require(QuoteType(face: .sans, bold: false, italic: italic).sansFont(40))
+        #expect(bold.fontName == Font.UIFace.semibold)
+        #expect(regular.fontName == Font.UIFace.regular)
+    }
+
     @Test("a new card is Serif, M, upright and not bold")
     func quoteTypeDefaultsToUprightMediumSerif() {
         let type = QuoteType()
