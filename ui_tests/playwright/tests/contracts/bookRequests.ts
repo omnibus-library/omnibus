@@ -10,9 +10,9 @@ export const bookRequestUrls = {
 
 /** The request each book-request action must send, for `expectMutation`. */
 export const bookRequests = {
-  /** A start answers 201 for a new request. */
-  start: (): ExpectMutationOptions =>
-    post(bookRequestUrls.start, { kind: "ebook" }, 201),
+  /** A start for `kind` answers 201 for a new request. */
+  start: (kind: "ebook" | "audiobook" = "ebook"): ExpectMutationOptions =>
+    post(bookRequestUrls.start, { kind }, 201),
 
   choose: (): ExpectMutationOptions =>
     post(bookRequestUrls.choose, {

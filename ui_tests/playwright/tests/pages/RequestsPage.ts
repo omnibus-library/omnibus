@@ -14,11 +14,11 @@ export class RequestsPage extends BasePage {
   readonly items: Locator;
   /** The selected book's request, beside the list. */
   readonly pane: Locator;
-  /** The pane's lane for the request its book is filed under, not another reader's beside it. */
+  /** The pane's lane for the request its book is filed under, whichever format, not another reader's beside it. */
   readonly paneLane: Locator;
   /** The selected book's title, the pane's h2. */
   readonly paneTitle: Locator;
-  /** The lane's state in words, such as Looking, On its way or Ready to read. */
+  /** The lane's state in words, such as Looking, On its way, Ready to read or Ready to listen. */
   readonly paneState: Locator;
   /** Who asked for the selected book's request, and when. */
   readonly paneRequester: Locator;
@@ -51,7 +51,7 @@ export class RequestsPage extends BasePage {
     this.heading = page.getByRole("heading", { level: 1, name: "Requests" });
     this.items = page.getByTestId("requests-item");
     this.pane = page.getByTestId("requests-pane");
-    this.paneLane = this.pane.getByTestId("request-lane-ebook");
+    this.paneLane = this.pane.getByTestId(/^request-lane-/);
     this.paneTitle = this.pane.getByRole("heading", { level: 2 });
     this.paneState = this.paneLane.getByTestId("request-state");
     this.paneRequester = this.paneLane.getByTestId("request-requester");

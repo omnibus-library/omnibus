@@ -61,8 +61,12 @@ import { DUAL_FORMAT_BOOK, RESUME_PROMPT_BOOK } from "./dual_format";
 import { FIXTURE_BOOKS } from "./epubs";
 import { cleanupSet, type Owner } from "./lifecycle";
 
-/** A throwaway copy of the fixture library, and the wished-for books to delete from it. */
-export type ImportLibrary = { root: string; books: Set<string> };
+/** A throwaway copy of the fixture library, an empty audiobook library beside it, and the wished-for books to delete from them. */
+export type ImportLibrary = {
+  root: string;
+  audioRoot: string;
+  books: Set<string>;
+};
 
 /** A file a finished download holds: its name inside the download folder, and its bytes. */
 export type DownloadedFile = { name: string; bytes: Buffer };
@@ -298,8 +302,8 @@ export const test = base.extend<DataFixtures>({
     }
   },
 
-  // Points the server's ebook library at a copy of the fixtures, so an import files its book
-  // there and not in the committed tree. The copy keeps every relative path and timestamp, so
+  // Points the server's ebook library at a copy of the fixtures and its audiobook library at an
+  // empty folder, so an import files its book there and not in the committed tree. The copy keeps every relative path and timestamp, so
   // the books already indexed stay the same books. The books a test registers are deleted with
   // their files first, then the library path is put back; the lock keeps another saving test
   // from taking the copy for the original.
@@ -316,14 +320,16 @@ export const test = base.extend<DataFixtures>({
         recursive: true,
         preserveTimestamps: true,
       });
+      const audioRoot = mkdtempSync(join(tmpdir(), "omnibus-e2e-audiobooks-"));
       const moved = await settingsRequests.postSettings({
         ...original,
         ebook_library_path: root,
+        audiobook_library_path: audioRoot,
       });
-      await expect(moved, "point the ebook library at the copy").toBeOK();
+      await expect(moved, "point the libraries at the copies").toBeOK();
       await waitForWorkerIdle(request);
       const books = new Set<string>();
-      await use({ root, books });
+      await use({ root, audioRoot, books });
       for (const uuid of books) {
         const manifest = await ebooksRequests.getDeletionManifest(uuid);
         await expect(manifest).toBeOK();
@@ -338,6 +344,7 @@ export const test = base.extend<DataFixtures>({
       await expect(restored, "restore the library settings").toBeOK();
       await waitForWorkerIdle(request);
       rmSync(root, { recursive: true, force: true });
+      rmSync(audioRoot, { recursive: true, force: true });
     });
   },
 
