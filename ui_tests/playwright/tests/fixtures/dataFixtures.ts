@@ -54,19 +54,19 @@ import {
   type MockQbittorrent,
   startMockQbittorrent,
 } from "../utils/mockQbittorrent";
-import { fixturesDir, waitForWorkerIdle } from "../utils/seed";
+import {
+  audiobookFixturesDir,
+  fixturesDir,
+  waitForWorkerIdle,
+} from "../utils/seed";
 import { test as base, expect } from "./accountFixtures";
 import { MERGE_PRIMARY, MERGE_SECONDARY } from "./audiobooks";
 import { DUAL_FORMAT_BOOK, RESUME_PROMPT_BOOK } from "./dual_format";
 import { FIXTURE_BOOKS } from "./epubs";
 import { cleanupSet, type Owner } from "./lifecycle";
 
-/** A throwaway copy of the fixture library, an empty audiobook library beside it, and the wished-for books to delete from them. */
-export type ImportLibrary = {
-  root: string;
-  audioRoot: string;
-  books: Set<string>;
-};
+/** A throwaway copy of the fixture library, and the wished-for books to delete from it. */
+export type ImportLibrary = { root: string; books: Set<string> };
 
 /** A file a finished download holds: its name inside the download folder, and its bytes. */
 export type DownloadedFile = { name: string; bytes: Buffer };
@@ -119,6 +119,8 @@ async function indexedBooks(ebooks: EbooksRequests): Promise<IndexedBook[]> {
 }
 
 type DataFixtures = {
+  /** Set with `test.use` to point the audiobook library at a copy too, for a test that imports an audiobook. */
+  audiobookImports: boolean;
   scratchLibrary: LibrarySettings;
   savedMetadataKeys: Set<MetadataProvider>;
   createdBookUuids: Set<string>;
@@ -199,6 +201,8 @@ type DataFixtures = {
  * deletes or restores them after `use`.
  */
 export const test = base.extend<DataFixtures>({
+  audiobookImports: [false, { option: true }],
+
   // Library paths are server-wide, so saving a test's own repoints every reader
   // of the shared library until they are put back. The lock keeps two saving
   // tests from taking each other's scratch paths for the original.
@@ -302,13 +306,15 @@ export const test = base.extend<DataFixtures>({
     }
   },
 
-  // Points the server's ebook library at a copy of the fixtures and its audiobook library at an
-  // empty folder, so an import files its book there and not in the committed tree. The copy keeps every relative path and timestamp, so
-  // the books already indexed stay the same books. The books a test registers are deleted with
+  // Points the server's ebook library at a copy of the fixtures, so an import files its book
+  // there and not in the committed tree; with `audiobookImports`, the audiobook library moves to
+  // a copy too (empty when none was set), and only then, so specs reading the audiobooks elsewhere
+  // never lose them. The
+  // copy keeps every relative path and timestamp, so the books already indexed stay the same books. The books a test registers are deleted with
   // their files first, then the library path is put back; the lock keeps another saving test
   // from taking the copy for the original.
   libraryForImports: async (
-    { request, settingsRequests, ebooksRequests },
+    { request, settingsRequests, ebooksRequests, audiobookImports },
     use,
   ) => {
     await withLock("library-settings", async () => {
@@ -320,16 +326,26 @@ export const test = base.extend<DataFixtures>({
         recursive: true,
         preserveTimestamps: true,
       });
-      const audioRoot = mkdtempSync(join(tmpdir(), "omnibus-e2e-audiobooks-"));
+      const audioRoot = audiobookImports
+        ? mkdtempSync(join(tmpdir(), "omnibus-e2e-audiobooks-"))
+        : null;
+      // With no audiobook library set there are no indexed audiobooks to keep, and a copy's books
+      // would outlive its folder once the setting is cleared.
+      if (audioRoot && original.audiobook_library_path) {
+        cpSync(audiobookFixturesDir(), audioRoot, {
+          recursive: true,
+          preserveTimestamps: true,
+        });
+      }
       const moved = await settingsRequests.postSettings({
         ...original,
         ebook_library_path: root,
-        audiobook_library_path: audioRoot,
+        audiobook_library_path: audioRoot ?? original.audiobook_library_path,
       });
       await expect(moved, "point the libraries at the copies").toBeOK();
       await waitForWorkerIdle(request);
       const books = new Set<string>();
-      await use({ root, audioRoot, books });
+      await use({ root, books });
       for (const uuid of books) {
         const manifest = await ebooksRequests.getDeletionManifest(uuid);
         await expect(manifest).toBeOK();
@@ -344,7 +360,7 @@ export const test = base.extend<DataFixtures>({
       await expect(restored, "restore the library settings").toBeOK();
       await waitForWorkerIdle(request);
       rmSync(root, { recursive: true, force: true });
-      rmSync(audioRoot, { recursive: true, force: true });
+      if (audioRoot) rmSync(audioRoot, { recursive: true, force: true });
     });
   },
 

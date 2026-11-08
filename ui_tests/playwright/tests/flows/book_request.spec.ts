@@ -234,82 +234,97 @@ test.describe("book request", () => {
     });
   });
 
-  test("a requested audiobook reaches Ready to listen on the wished book", async ({
-    scanRequests,
-    ebooksRequests,
-    libraryForImports,
-    prowlarrFor,
-    qbittorrentFor,
-    wishlistsPage,
-    requestsPage,
-    expectMutation,
-  }) => {
-    test.setTimeout(180_000);
-    const book = buildExternalBook();
-    let uuid!: string;
-    let client!: Awaited<ReturnType<typeof qbittorrentFor>>;
-    const tales = join(
-      audiobookFixturesDir(),
-      "generated",
-      "grace_hopper_series",
-      "the_compiled_tales",
-    );
+  test.describe("audiobook import", () => {
+    // The audiobook library moves to a copy for these tests only.
+    test.use({ audiobookImports: true });
 
-    await test.step("wish for a book the library lacks", async () => {
-      const added = await scanRequests.postWishlistEntry(book);
-      await expect(added).toBeOK();
-      uuid = (await added.json()).book_uuid;
-      libraryForImports.books.add(uuid);
-    });
-
-    await test.step("find an M4B and an MP3 version, and a download client that holds the MP3 folder", async () => {
-      await prowlarrFor(audiobookReleasesFor(book));
-      client = await qbittorrentFor(
-        ["chapter01.mp3", "chapter02.mp3"].map((chapter) => ({
-          name: `Release/${book.title}/${chapter}`,
-          bytes: readFileSync(join(tales, chapter)),
-        })),
+    test("a requested audiobook reaches Ready to listen on the wished book", async ({
+      scanRequests,
+      ebooksRequests,
+      libraryForImports,
+      prowlarrFor,
+      qbittorrentFor,
+      wishlistsPage,
+      requestsPage,
+      expectMutation,
+    }) => {
+      test.setTimeout(180_000);
+      const book = buildExternalBook();
+      let uuid!: string;
+      let client!: Awaited<ReturnType<typeof qbittorrentFor>>;
+      let talesBefore!: number;
+      // The title the scan gives the downloaded MP3s, from their album tag; the fixture library
+      // may hold a book of it already, so the count is taken before and after.
+      const TALES = "The Compiled Tales";
+      const titled = async (title: string) => {
+        const listed = await ebooksRequests.getEbooks();
+        const { books }: { books: LibraryBook[] } = await listed.json();
+        return books.filter((b) => b.title === title).length;
+      };
+      const tales = join(
+        audiobookFixturesDir(),
+        "generated",
+        "grace_hopper_series",
+        "the_compiled_tales",
       );
-    });
 
-    await test.step("request the audiobook and see both versions", async () => {
-      await wishlistsPage.goto();
-      await expectMutation(bookRequests.start("audiobook"), () =>
-        wishlistsPage.requestAudiobook(book.title),
-      );
-      await expect(requestsPage.versions).toHaveCount(2, {
-        timeout: 10_000,
+      await test.step("wish for a book the library lacks", async () => {
+        const added = await scanRequests.postWishlistEntry(book);
+        await expect(added).toBeOK();
+        uuid = (await added.json()).book_uuid;
+        libraryForImports.books.add(uuid);
+        talesBefore = await titled(TALES);
       });
-    });
 
-    await test.step("choose the MP3 folder and see it on its way", async () => {
-      await expectMutation(bookRequests.choose(), () =>
-        requestsPage.choose(requestsPage.version("MP3")),
-      );
-      await expect(requestsPage.paneState).toHaveText("On its way", {
-        timeout: 15_000,
+      await test.step("find an M4B and an MP3 version, and a download client that holds the MP3 folder", async () => {
+        await prowlarrFor(audiobookReleasesFor(book));
+        client = await qbittorrentFor(
+          ["chapter01.mp3", "chapter02.mp3"].map((chapter) => ({
+            name: `Release/${book.title}/${chapter}`,
+            bytes: readFileSync(join(tales, chapter)),
+          })),
+        );
       });
-    });
 
-    await test.step("see it ready to listen once the download is done", async () => {
-      client.finish();
-      await expect(requestsPage.paneState).toHaveText("Ready to listen", {
-        timeout: 90_000,
+      await test.step("request the audiobook and see both versions", async () => {
+        await wishlistsPage.goto();
+        await expectMutation(bookRequests.start("audiobook"), () =>
+          wishlistsPage.requestAudiobook(book.title),
+        );
+        await expect(requestsPage.versions).toHaveCount(2, {
+          timeout: 10_000,
+        });
       });
-    });
 
-    await test.step("find the MP3 folder on the book that was wished for, once", async () => {
-      const detail = await ebooksRequests.getEbook(uuid);
-      await expect(detail).toBeOK();
-      const { book_files }: EbookDetail = await detail.json();
-      expect(book_files?.map((f) => f.format.toUpperCase())).toEqual(["MP3"]);
-      const listed = await ebooksRequests.getEbooks();
-      const { books }: { books: LibraryBook[] } = await listed.json();
-      expect(books.filter((b) => b.title === book.title)).toHaveLength(1);
-    });
+      await test.step("choose the MP3 folder and see it on its way", async () => {
+        await expectMutation(bookRequests.choose(), () =>
+          requestsPage.choose(requestsPage.version("MP3")),
+        );
+        await expect(requestsPage.paneState).toHaveText("On its way", {
+          timeout: 15_000,
+        });
+      });
 
-    await test.step("leave the download where it was", async () => {
-      expect(client.deleted).toEqual([]);
+      await test.step("see it ready to listen once the download is done", async () => {
+        client.finish();
+        await expect(requestsPage.paneState).toHaveText("Ready to listen", {
+          timeout: 90_000,
+        });
+      });
+
+      await test.step("find the MP3 folder on the book that was wished for, once", async () => {
+        const detail = await ebooksRequests.getEbook(uuid);
+        await expect(detail).toBeOK();
+        const { book_files }: EbookDetail = await detail.json();
+        expect(book_files?.map((f) => f.format.toUpperCase())).toEqual(["MP3"]);
+        expect(await titled(book.title)).toBe(1);
+        // The scan's own book for the folder was merged away, not left beside the wished one.
+        expect(await titled(TALES)).toBe(talesBefore);
+      });
+
+      await test.step("leave the download where it was", async () => {
+        expect(client.deleted).toEqual([]);
+      });
     });
   });
 
