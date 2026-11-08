@@ -10,7 +10,7 @@ mod fs;
 mod persist;
 
 pub use detect::{ebook_convert_available, ebook_convert_bin, is_runnable, warn_if_unavailable};
-pub use execute::{convert_book, ConvertError};
+pub use execute::{convert_book, convert_file, ConvertError};
 pub use fs::{convert_dir, convert_path};
 
 #[cfg(test)]
