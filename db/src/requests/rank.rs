@@ -101,7 +101,13 @@ fn format_of(tokens: &[String]) -> Format {
 }
 
 /// Drop what cannot be the book or cannot be used, then order what is left best first.
-pub fn rank(releases: Vec<ProwlarrRelease>, title: &str, author: &str) -> Vec<Ranked> {
+/// Only releases of the `wanted` protocol are kept: the download client fetches one kind.
+pub fn rank(
+    releases: Vec<ProwlarrRelease>,
+    title: &str,
+    author: &str,
+    wanted: ReleaseProtocol,
+) -> Vec<Ranked> {
     let author_tokens: Vec<String> = normalize_author(author)
         .unwrap_or_default()
         .split(' ')
@@ -110,7 +116,7 @@ pub fn rank(releases: Vec<ProwlarrRelease>, title: &str, author: &str) -> Vec<Ra
         .collect();
     let (kept, rejected): (Vec<Ranked>, Vec<Ranked>) = releases
         .into_iter()
-        .map(|release| assess(release, title, &author_tokens))
+        .map(|release| assess(release, title, &author_tokens, wanted))
         .partition(|r| !r.rejected);
     let median = median_size(&kept);
     let mut ranked: Vec<Ranked> = kept
@@ -130,7 +136,12 @@ pub fn rank(releases: Vec<ProwlarrRelease>, title: &str, author: &str) -> Vec<Ra
 
 /// Score one result without the size term, which needs the median of the others; a
 /// dropped one scores 0.
-fn assess(release: ProwlarrRelease, title: &str, author_tokens: &[String]) -> Ranked {
+fn assess(
+    release: ProwlarrRelease,
+    title: &str,
+    author_tokens: &[String],
+    wanted: ReleaseProtocol,
+) -> Ranked {
     let words = tokens(&release.title);
     let format = format_of(&words);
     let title_score = score_title_match(title, &release.title);
@@ -139,8 +150,8 @@ fn assess(release: ProwlarrRelease, title: &str, author_tokens: &[String]) -> Ra
         .iter()
         .any(|c| BOOK_CATEGORIES.contains(c))
         || release.seeders.is_some_and(|s| s < 1)
-        // shortcut: no Usenet download client until #3021; offer Usenet versions once one exists
-        || release.protocol == Some(ReleaseProtocol::Usenet)
+        // A release that names no protocol is taken for a torrent, as the indexers mostly are.
+        || release.protocol.unwrap_or(ReleaseProtocol::Torrent) != wanted
         || release
             .size_bytes
             .is_some_and(|s| !(MIN_SIZE_BYTES..=MAX_SIZE_BYTES).contains(&s))

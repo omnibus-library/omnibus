@@ -136,7 +136,12 @@ async fn attempt(pool: &SqlitePool, book_uuid: &str) -> Attempt {
         Ok(releases) => releases,
         Err(e) => return search_error(e),
     };
-    let ranked = rank(releases, &title, &author);
+    let ranked = rank(
+        releases,
+        &title,
+        &author,
+        config.download_client_kind.protocol(),
+    );
     if ranked.iter().all(|r| r.rejected) {
         return Attempt::Done(SearchOutcome::Stuck {
             reason: StuckReason::NotFound,

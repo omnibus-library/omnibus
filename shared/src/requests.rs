@@ -4,6 +4,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::book_requests::ReleaseProtocol;
+
 /// Maximum byte length of a connection URL.
 pub const REQUESTS_URL_MAX_LEN: usize = 2048;
 
@@ -40,6 +42,13 @@ impl DownloadClientKind {
         match s {
             "qbittorrent" => DownloadClientKind::Qbittorrent,
             _ => DownloadClientKind::default(),
+        }
+    }
+
+    /// Which kind of release this client can download.
+    pub fn protocol(self) -> ReleaseProtocol {
+        match self {
+            DownloadClientKind::Qbittorrent => ReleaseProtocol::Torrent,
         }
     }
 }
@@ -100,3 +109,6 @@ pub struct RequestsSettingsStatus {
     pub download_client_path_prefix: Option<String>,
     pub download_path_prefix: Option<String>,
 }
+
+#[cfg(test)]
+mod tests;
