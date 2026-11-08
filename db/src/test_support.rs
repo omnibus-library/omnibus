@@ -58,6 +58,30 @@ pub fn striped_png(stripes: &[[u8; 3]], w: u32, h: u32) -> Vec<u8> {
     bytes
 }
 
+/// A fileless book by `author`, with a solid PNG cover of `size` pixels when given: its uuid.
+/// The caller holds a [`CoversTempDir`].
+pub async fn book_with_png_cover(
+    pool: &SqlitePool,
+    title: &str,
+    author: &str,
+    size: Option<(u32, u32)>,
+) -> String {
+    let book = crate::FilelessBook {
+        title: title.to_string(),
+        authors: vec![author.to_string()],
+        isbn: None,
+        pubdate: None,
+        description: None,
+        cover: size.map(|(w, h)| crate::FilelessCover {
+            mime: "image/png".to_string(),
+            bytes: solid_color_png(10, 10, 200, w, h),
+        }),
+    };
+    crate::create_fileless_book(pool, book)
+        .await
+        .expect("create fileless book")
+}
+
 /// Build a unique temp directory per test invocation. Rust runs unit
 /// tests in parallel by default, so a fixed path under `temp_dir()`
 /// would collide between tests (and between repeated runs).

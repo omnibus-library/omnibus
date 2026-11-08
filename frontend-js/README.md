@@ -130,7 +130,9 @@ them off it is Not Found. The pane and the phone's full-screen detail are one co
 book, a lane for the request filed under it and for each other one still going (who asked and
 when, a Looking → Choose a version → On its way → Ready stepper, a download's release, size,
 source and time left, with Cancel and Choose another beside it, shown only to the reader who
-asked or an admin; the byline names whose wishlists hold the book), then the book's history of
+asked or an admin; a ready one names the version added and, to them, offers the download's
+cover when it is sharper than the book's own (`CoverOffer`: Use it or Keep this one); the
+byline names whose wishlists hold the book), then the book's history of
 cancelled and stuck requests and swapped versions, saying only what was recorded, with
 Request again on a cancelled one once its Undo has run out and while the reader has no other
 request going for the book. Both run against the stateful fake in

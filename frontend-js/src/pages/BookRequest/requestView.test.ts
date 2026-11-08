@@ -13,6 +13,7 @@ import {
 } from "../../testing/requestHandlers";
 import {
   canActOn,
+  coverSizesLine,
   downloadPercent,
   factParts,
   firstShown,
@@ -734,5 +735,20 @@ describe("wishersLine", () => {
     ],
   ])("reads %s", (_who, wanters, expected) => {
     expect(wishersLine(wanters, VIEWER)).toBe(expected);
+  });
+});
+
+describe("coverSizesLine", () => {
+  it("names both sizes without saying where the existing cover came from", () => {
+    const offer = {
+      width: 1600,
+      height: 2400,
+      currentWidth: 128,
+      currentHeight: 196,
+    };
+
+    expect(coverSizesLine(offer)).toBe(
+      "Its cover is 1600\u00a0×\u00a02400. The existing one is 128\u00a0×\u00a0196.",
+    );
   });
 });

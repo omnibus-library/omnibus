@@ -1462,3 +1462,215 @@ export const OnAPhoneTheDownloadAndHistoryReadAsTheCompSays: Story = {
     await expect(row).toHaveTextContent("EPUB · 2.4 MB · stopped at 40%");
   },
 };
+
+/** A ready request whose download brought a cover 1600 × 2400 over the book's 128 × 196. */
+const WITH_SHARPER_COVER: Parameters<typeof aWireRequest>[0] = {
+  state: "ready",
+  chosen_result_id: 11,
+  progress: 1,
+  versions: [EPUB],
+  // The clock, not NOW: "added just now" is read against it, and NOW ages as the file runs.
+  updated_at: Math.floor(Date.now() / 1000),
+  cover_offer: {
+    width: 1600,
+    height: 2400,
+    current_width: 128,
+    current_height: 196,
+  },
+};
+
+/** Where `element` sits on the page. */
+const boxOf = (element: HTMLElement) => element.getBoundingClientRect();
+
+export const ReadyWithSharperCover: Story = {
+  beforeEach({ msw }) {
+    msw.use(...seed(WITH_SHARPER_COVER));
+  },
+  play: async ({ canvas }) => {
+    const card = within(await canvas.findByTestId("request-cover-offer"));
+
+    await expect(
+      // The pane's lane title is an h3, so the offer's is an h4.
+      card.getByRole("heading", {
+        level: 4,
+        name: "The download has a sharper cover",
+      }),
+    ).toBeVisible();
+    // A heading, but drawn as a small sans line like the picked version's name, not a display title.
+    const drawn = getComputedStyle(card.getByRole("heading", { level: 4 }));
+    await expect(drawn.fontSize).toBe("14px");
+    await expect(drawn.fontFamily).toBe(
+      getComputedStyle(
+        canvas.getByTestId("request-chosen").firstElementChild as Element,
+      ).fontFamily,
+    );
+    await expect(card.getByTestId("request-cover-sizes")).toHaveTextContent(
+      "Its cover is 1600 × 2400. The existing one is 128 × 196.",
+    );
+    await expect(card.getByRole("figure", { name: "Now" })).toBeVisible();
+    await expect(
+      card.getByRole("figure", { name: "From the download" }),
+    ).toBeVisible();
+    await expect(
+      card
+        .getAllByRole("img")
+        .map((img) => [img.getAttribute("alt"), img.getAttribute("src")]),
+    ).toEqual([
+      ["Current cover", `/api/thumbs/${UUID}/md`],
+      ["Cover from the download", "/api/requests/7/cover"],
+    ]);
+    await expect(
+      card.getAllByRole("button").map((button) => button.textContent),
+    ).toEqual(["Keep this one", "Use the downloaded cover"]);
+    const picked = canvas.getByTestId("request-chosen");
+    await expect(picked).toHaveTextContent("Hyperion - Dan Simmons EPUB");
+    await expect(picked).toHaveTextContent(/2\.4 MB · Books · added just now/);
+    const [keep, take] = card.getAllByRole("button");
+    await expect(boxOf(keep as HTMLElement).top).toBeCloseTo(
+      boxOf(take as HTMLElement).top,
+      0,
+    );
+  },
+};
+
+export const ReadyWithSharperCoverOnPhone: Story = {
+  ...PHONE,
+  parameters: { ...PHONE.parameters, user: READER },
+  beforeEach({ msw }) {
+    msw.use(...seed(WITH_SHARPER_COVER));
+  },
+  play: async ({ canvas }) => {
+    const card = within(await canvas.findByTestId("request-cover-offer"));
+    const picked = canvas.getByTestId("request-chosen");
+    await expect(within(picked).getByText("EPUB · 2.4 MB")).toBeVisible();
+    await expect(picked).toHaveTextContent(/Books · added just now/);
+
+    const [now, download] = card.getAllByRole("figure");
+    await expect(boxOf(now as HTMLElement).top).toBeCloseTo(
+      boxOf(download as HTMLElement).top,
+      0,
+    );
+    await expect(boxOf(download as HTMLElement).left).toBeGreaterThan(
+      boxOf(now as HTMLElement).right,
+    );
+    const buttons = card.getAllByRole("button");
+    await expect(buttons.map((button) => button.textContent)).toEqual([
+      "Use the downloaded cover",
+      "Keep this one",
+    ]);
+    const [take, keep] = buttons.map((button) => boxOf(button));
+    await expect(take?.width).toBeCloseTo(keep?.width ?? 0, 0);
+    await expect(take?.bottom).toBeLessThan(keep?.top ?? 0);
+    await expect(take?.width).toBeGreaterThan(
+      boxOf(card.getByRole("figure", { name: "Now" })).width * 3,
+    );
+  },
+};
+
+export const TakesTheDownloadedCover: Story = {
+  parameters: { user: READER },
+  beforeEach({ msw }) {
+    msw.use(...seed(WITH_SHARPER_COVER));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByTestId("request-cover-take"));
+
+    await waitFor(() =>
+      expect(canvas.queryByTestId("request-cover-offer")).toBeNull(),
+    );
+    await expect(fake.writes).toEqual([{ kind: "take-cover", id: 7 }]);
+    await expect(canvas.getByRole("heading", { name: "Ebook" })).toHaveFocus();
+    const [header] = within(canvas.getByTestId("requests-pane")).getAllByTestId(
+      "cover",
+    );
+    await expect(
+      within(header as HTMLElement).getByRole("img"),
+    ).toHaveAttribute("src", `/api/thumbs/${UUID}/md?v=1`);
+  },
+};
+
+export const KeepsTheExistingCover: Story = {
+  parameters: { user: READER },
+  beforeEach({ msw }) {
+    msw.use(...seed(WITH_SHARPER_COVER));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByTestId("request-cover-keep"));
+
+    await waitFor(() =>
+      expect(canvas.queryByTestId("request-cover-offer")).toBeNull(),
+    );
+    await expect(fake.writes).toEqual([{ kind: "keep-cover", id: 7 }]);
+    await expect(canvas.getByRole("heading", { name: "Ebook" })).toHaveFocus();
+  },
+};
+
+export const AFailedCoverChoiceTellsYouAndKeepsTheCard: Story = {
+  parameters: { user: READER },
+  beforeEach({ msw }) {
+    msw.use(
+      failing("post", "/api/requests/:id/cover", 409),
+      ...seed(WITH_SHARPER_COVER),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByTestId("request-cover-take"));
+
+    await expect(
+      await canvas.findByText(/Couldn’t use that cover/),
+    ).toBeInTheDocument();
+    await expect(canvas.getByTestId("request-cover-offer")).toBeVisible();
+    await waitFor(() =>
+      expect(canvas.getByTestId("request-cover-take")).not.toHaveAttribute(
+        "aria-busy",
+        "true",
+      ),
+    );
+  },
+};
+
+let coverReads = 0;
+
+export const AFailedKeepTellsYouAndDropsTheStaleCard: Story = {
+  parameters: { user: READER },
+  beforeEach({ msw }) {
+    coverReads = 0;
+    msw.use(
+      failing("delete", "/api/requests/:id/cover", 409),
+      // The offer was settled elsewhere: the first read has it, every read after does not.
+      http.get("/api/requests/:id", () => {
+        coverReads += 1;
+        return HttpResponse.json(
+          aWireRequest({
+            ...WITH_SHARPER_COVER,
+            cover_offer: coverReads < 2 ? WITH_SHARPER_COVER.cover_offer : null,
+          }),
+        );
+      }),
+      ...seed(WITH_SHARPER_COVER),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByTestId("request-cover-keep"));
+
+    await expect(
+      await canvas.findByText(/Couldn’t keep this one/),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(canvas.queryByTestId("request-cover-offer")).toBeNull(),
+    );
+  },
+};
+
+export const HidesTheCoverOfferFromAnotherReader: Story = {
+  parameters: { user: NOT_THE_MAKER },
+  beforeEach({ msw }) {
+    msw.use(...seed(WITH_SHARPER_COVER));
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByTestId("request-state")).toHaveTextContent(
+      "Ready to read",
+    );
+    await expect(canvas.queryByTestId("request-cover-offer")).toBeNull();
+  },
+};

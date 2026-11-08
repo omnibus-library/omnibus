@@ -6638,6 +6638,137 @@
         }
       }
     },
+    "/api/requests/{id}/cover": {
+      "get": {
+        "tags": [
+          "Requests"
+        ],
+        "summary": "Get a request's downloaded cover",
+        "description": "The cover that came with the request's finished download, offered as a replacement for the\nbook's own: the image as stored, validated by its `ETag`. It is there while `cover_offer` is\non the request, until the offer is taken or kept (`POST` or `DELETE` on this path). Only the\nreader who made the request, or an admin, is offered it.",
+        "operationId": "get_request_cover",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The request's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The cover image.",
+            "content": {
+              "image/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileBytes"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "The cover is unchanged since the `ETag` sent in `If-None-Match`."
+          },
+          "401": {
+            "description": "You aren't signed in."
+          },
+          "404": {
+            "description": "Book requests are off on this server, there is no such request, or it has no cover on offer to you."
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Requests"
+        ],
+        "summary": "Use the downloaded cover",
+        "description": "Makes the cover the finished download brought the book's cover, the way uploading one\ndoes: it shows on every device, and a synced Kobo fetches it on its next sync. Only a\n`ready` request whose offer is still on (`cover_offer` in the request) takes it, and the\noffer is gone afterwards. Only the reader who made the request, or an admin, can do this.",
+        "operationId": "take_request_cover",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The request's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The book has the downloaded cover; the offer is gone.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookRequest"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "You aren't signed in."
+          },
+          "403": {
+            "description": "Your account can't make requests, or the request is another reader's."
+          },
+          "404": {
+            "description": "Book requests are off on this server, or there is no such request."
+          },
+          "409": {
+            "description": "No cover is on offer: it was taken or kept, or the downloaded one is not sharper."
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Requests"
+        ],
+        "summary": "Keep the book's cover",
+        "description": "Turns the downloaded cover down: the book keeps the cover it has, and the offer is gone\nfor good. Only the reader who made the request, or an admin, can do this.",
+        "operationId": "keep_request_cover",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The request's id.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The offer is gone.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookRequest"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "You aren't signed in."
+          },
+          "403": {
+            "description": "Your account can't make requests, or the request is another reader's."
+          },
+          "404": {
+            "description": "Book requests are off on this server, or there is no such request."
+          },
+          "409": {
+            "description": "No cover is on offer: it was already taken or kept."
+          }
+        }
+      }
+    },
     "/api/requests/{id}/retry": {
       "post": {
         "tags": [
@@ -10764,6 +10895,17 @@
             "format": "int64",
             "description": "The picked version's id once `state` is `chosen`."
           },
+          "cover_offer": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/CoverOffer",
+                "description": "A sharper cover the finished download brought, until it is taken or kept. Only on a\nsingle request's read; null in lists."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "created_at": {
             "type": "integer",
             "format": "int64",
@@ -12000,6 +12142,38 @@
           "light",
           "dark"
         ]
+      },
+      "CoverOffer": {
+        "type": "object",
+        "description": "A cover a finished download brought that has more pixels than the book's own, with both\nsizes in pixels. `GET /api/requests/{id}/cover` serves the offered one.",
+        "required": [
+          "width",
+          "height",
+          "current_width",
+          "current_height"
+        ],
+        "properties": {
+          "current_height": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "current_width": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "height": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "width": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
       },
       "CoverPair": {
         "type": "object",

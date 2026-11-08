@@ -19,7 +19,7 @@ const NOW: &str = "strftime('%s', 'now')";
 
 const COLUMNS: &str = "id, book_uuid, user_id, kind, state, stuck_reason, stuck_detail, \
                        chosen_result_id, client_tag, import_key, remove_tag, remove_since, progress, moved_at, expected_done_at, cancel_at, cancelled_by, \
-                       prior_state, note, created_at, updated_at";
+                       prior_state, note, offers_cover, cover_candidate, created_at, updated_at";
 
 /// Why a request could not be recorded or changed.
 #[derive(Debug, thiserror::Error)]
@@ -71,6 +71,10 @@ pub struct RequestRow {
     /// The state Undo restores while `cancel_at` is ahead.
     pub prior_state: Option<RequestState>,
     pub note: Option<String>,
+    /// False for a request whose book was made just for it: its import keeps the merge's own cover.
+    pub offers_cover: bool,
+    /// The uuid the download was scanned in as, whose cover is on offer; None once taken or kept.
+    pub cover_candidate: Option<String>,
     /// Unix seconds.
     pub created_at: i64,
     /// Unix seconds.
@@ -145,6 +149,8 @@ fn row_to_request(row: &SqliteRow) -> Result<RequestRow, sqlx::Error> {
             .map(|p| RequestState::from_db(&p).ok_or_else(|| corrupt("prior_state", p)))
             .transpose()?,
         note: row.try_get("note")?,
+        offers_cover: row.try_get::<i64, _>("offers_cover")? != 0,
+        cover_candidate: row.try_get("cover_candidate")?,
         created_at: row.try_get("created_at")?,
         updated_at: row.try_get("updated_at")?,
     })
