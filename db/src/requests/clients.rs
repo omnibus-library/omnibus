@@ -1,8 +1,8 @@
 //! The download client the server hands releases to and watches. [`DownloadClient`] is the
 //! seam the request pipeline works against; [`client_for`] builds the one the admin chose.
-//! A download is found by its BitTorrent info hash, which Omnibus reads from the release
-//! before the client is given it and stores with the request, so a restart loses no track of
-//! it and no other download can be mistaken for it.
+//! A download is found by an id Omnibus works out from the release before the client is
+//! given it and stores with the request, so a restart loses no track of it and no other
+//! download can be mistaken for it. The id is 40 lowercase hex characters.
 
 use std::future::Future;
 
@@ -14,16 +14,20 @@ use super::ConnectionError;
 
 pub mod infohash;
 pub mod qbittorrent;
+pub mod release;
 
 pub use qbittorrent::Qbittorrent;
+pub use release::Release;
 
-/// How far along one download is.
+/// How far along one download is. Every client reports in qBittorrent's vocabulary, so the
+/// poller and the importer read one set of state words whichever client ran the download.
 #[derive(Debug, Clone, PartialEq, serde::Deserialize)]
 pub struct TorrentStatus {
+    /// The download's id: the info hash of a torrent.
     pub hash: String,
     /// 0.0 to 1.0.
     pub progress: f64,
-    /// The client's own state word, such as `downloading` or `stalledUP`.
+    /// The qBittorrent state word, such as `downloading` or `stalledUP`.
     pub state: String,
     /// The folder the download's files sit in, as the client sees it.
     pub save_path: String,
@@ -48,9 +52,9 @@ pub struct ClientFile {
     pub size: u64,
 }
 
-/// A release fetched and its info hash read, which the client has not been given yet.
+/// A release fetched and its id worked out, which the client has not been given yet.
 pub struct Prepared<R> {
-    /// The lowercase hex info hash the client lists the download by.
+    /// The lowercase hex id the download is found by.
     pub hash: String,
     /// What the client is given: the fetched release.
     pub release: R,
@@ -108,24 +112,74 @@ pub trait DownloadClient {
     fn test(&self) -> impl Future<Output = Result<(), ConnectionError>> + Send;
 }
 
+/// Any one of the download clients, so [`client_for`] can return the one the admin chose.
+pub enum AnyClient {
+    Qbittorrent(Qbittorrent),
+}
+
+/// Run `$call` on whichever client `$any` holds.
+macro_rules! on_client {
+    ($any:expr, $client:ident => $call:expr) => {
+        match $any {
+            AnyClient::Qbittorrent($client) => $call,
+        }
+    };
+}
+
+impl DownloadClient for AnyClient {
+    type Release = Release;
+
+    async fn prepare(&self, link: &str) -> Result<Prepared<Release>, ConnectionError> {
+        on_client!(self, c => c.prepare(link).await)
+    }
+
+    async fn add(
+        &self,
+        prepared: Prepared<Release>,
+        category: &str,
+    ) -> Result<(), ConnectionError> {
+        on_client!(self, c => c.add(prepared, category).await)
+    }
+
+    async fn hash_for_tag(&self, tag: &str) -> Result<Option<String>, ConnectionError> {
+        on_client!(self, c => c.hash_for_tag(tag).await)
+    }
+
+    async fn status(&self, hash: &str) -> Result<Option<TorrentStatus>, ConnectionError> {
+        on_client!(self, c => c.status(hash).await)
+    }
+
+    async fn files(&self, hash: &str) -> Result<Vec<ClientFile>, ConnectionError> {
+        on_client!(self, c => c.files(hash).await)
+    }
+
+    async fn remove(&self, hash: &str, delete_files: bool) -> Result<(), ConnectionError> {
+        on_client!(self, c => c.remove(hash, delete_files).await)
+    }
+
+    async fn test(&self) -> Result<(), ConnectionError> {
+        on_client!(self, c => c.test().await)
+    }
+}
+
 /// The download client `config` names, or [`ConnectionError::NotConfigured`] without an
 /// address.
-pub fn client_for(config: &RequestsConfig) -> Result<impl DownloadClient, ConnectionError> {
+pub fn client_for(config: &RequestsConfig) -> Result<AnyClient, ConnectionError> {
     let url = config
         .download_client_url
         .as_deref()
         .ok_or(ConnectionError::NotConfigured)?;
+    let username = config
+        .download_client_username
+        .as_deref()
+        .unwrap_or_default();
+    let password = config
+        .download_client_password
+        .as_deref()
+        .unwrap_or_default();
     match config.download_client_kind {
-        DownloadClientKind::Qbittorrent => Qbittorrent::new(
-            url,
-            config
-                .download_client_username
-                .as_deref()
-                .unwrap_or_default(),
-            config
-                .download_client_password
-                .as_deref()
-                .unwrap_or_default(),
-        ),
+        DownloadClientKind::Qbittorrent => {
+            Qbittorrent::new(url, username, password).map(AnyClient::Qbittorrent)
+        }
     }
 }

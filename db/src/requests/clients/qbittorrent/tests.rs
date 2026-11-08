@@ -4,6 +4,7 @@ use serde_json::json;
 use wiremock::matchers::{body_string_contains, header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
+use crate::requests::clients::release::MAX_TORRENT_BYTES;
 use crate::test_support::closed_port_url;
 
 use super::*;
@@ -249,6 +250,23 @@ mod qbittorrent_add {
         let prepared = client_for(&server).prepare(MAGNET).await.unwrap();
 
         assert_eq!(prepared.hash, HASH);
+        assert!(server.received_requests().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn refuses_an_nzb_release_without_asking_the_client_anything() {
+        let server = MockServer::start().await;
+        let prepared = Prepared {
+            hash: HASH.to_string(),
+            release: Release::Nzb(b"<nzb/>".to_vec()),
+        };
+
+        let err = client_for(&server)
+            .add(prepared, "books")
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, ConnectionError::Rejected(_)), "{err:?}");
         assert!(server.received_requests().await.unwrap().is_empty());
     }
 
