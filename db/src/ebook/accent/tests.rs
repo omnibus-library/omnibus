@@ -100,3 +100,98 @@ fn extract_accent_completes_within_budget() {
         "extract_accent must stay well under multiple seconds on realistic input; took {elapsed:?}"
     );
 }
+
+// ── cover palette ──────────────────────────────────────────────────
+
+const NEAR_BLACK: [u8; 3] = [20, 20, 20];
+const RED: [u8; 3] = [200, 40, 40];
+const BLUE: [u8; 3] = [40, 60, 160];
+const GREEN: [u8; 3] = [30, 120, 60];
+const WHITE: [u8; 3] = [255, 255, 255];
+const CREAM: [u8; 3] = [240, 230, 215];
+
+fn hex_rgb(hex: &str) -> [f32; 3] {
+    let n = u32::from_str_radix(hex.trim_start_matches('#'), 16).expect("hex digits");
+    [
+        ((n >> 16) & 0xff) as f32 / 255.0,
+        ((n >> 8) & 0xff) as f32 / 255.0,
+        (n & 0xff) as f32 / 255.0,
+    ]
+}
+
+fn ink_rgb(ink: CoverInk) -> [f32; 3] {
+    hex_rgb(match ink {
+        CoverInk::Light => LIGHT_INK,
+        CoverInk::Dark => DARK_INK,
+    })
+}
+
+#[test]
+fn extract_cover_palette_returns_darkest_pair_first_with_lowercase_hex_for_a_striped_cover() {
+    let bytes = striped_png(&[RED, NEAR_BLACK, BLUE], 64, 96);
+    let pairs = extract_cover_palette(&bytes);
+
+    assert_eq!(pairs.len(), 2, "near-black → blue → red makes two pairs");
+    assert_eq!(pairs[0].to, pairs[1].from, "pairs chain through neighbours");
+    for hex in pairs.iter().flat_map(|p| [&p.from, &p.to]) {
+        assert_eq!(hex.len(), 7);
+        assert!(hex.starts_with('#'));
+        assert_eq!(hex.as_str(), hex.to_lowercase());
+    }
+    let lum = |hex: &String| relative_luminance(hex_rgb(hex));
+    assert!(lum(&pairs[0].from) < lum(&pairs[0].to));
+    assert!(lum(&pairs[0].to) < lum(&pairs[1].to));
+}
+
+#[test]
+fn extract_cover_palette_picks_an_ink_that_reaches_4_5_to_1_on_both_stops() {
+    let bytes = striped_png(&[CREAM, WHITE, RED, NEAR_BLACK, BLUE], 64, 100);
+    let pairs = extract_cover_palette(&bytes);
+
+    assert!(!pairs.is_empty());
+    for pair in &pairs {
+        let ink = relative_luminance(ink_rgb(pair.ink));
+        for stop in [&pair.from, &pair.to] {
+            let ratio = contrast_ratio(ink, relative_luminance(hex_rgb(stop)));
+            assert!(ratio >= 4.5, "{:?} on {stop} is only {ratio}", pair.ink);
+        }
+    }
+}
+
+#[test]
+fn extract_cover_palette_picks_dark_ink_for_a_pale_pair() {
+    let bytes = striped_png(&[CREAM, WHITE], 64, 96);
+    let pairs = extract_cover_palette(&bytes);
+
+    assert_eq!(pairs.len(), 1);
+    assert_eq!(pairs[0].ink, CoverInk::Dark);
+}
+
+#[test]
+fn extract_cover_palette_drops_a_pair_neither_ink_can_read_on() {
+    let bytes = striped_png(&[[0, 0, 0], RED, WHITE], 64, 96);
+    let pairs = extract_cover_palette(&bytes);
+
+    assert_eq!(pairs.len(), 1, "red → white has no ink that reads on both");
+    assert!(relative_luminance(hex_rgb(&pairs[0].to)) < 0.5);
+}
+
+#[test]
+fn extract_cover_palette_returns_at_most_four_pairs() {
+    let bytes = striped_png(&[NEAR_BLACK, RED, BLUE, GREEN, WHITE, CREAM], 64, 96);
+
+    // Five colours make four neighbours; red → white is the one no ink reads on.
+    assert_eq!(extract_cover_palette(&bytes).len(), 3);
+}
+
+#[test]
+fn extract_cover_palette_returns_no_pairs_for_a_single_colour_cover() {
+    let bytes = solid_color_png(200, 60, 50, 64, 96);
+
+    assert!(extract_cover_palette(&bytes).is_empty());
+}
+
+#[test]
+fn extract_cover_palette_returns_no_pairs_for_corrupt_bytes() {
+    assert!(extract_cover_palette(b"not an image, just text").is_empty());
+}

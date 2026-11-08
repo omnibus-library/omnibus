@@ -35,12 +35,15 @@ export function MoreMenu({
   items,
   onClose,
   radio = false,
+  checkBesideIcon = false,
 }: {
   label: string;
   items: MoreMenuItem[];
   onClose: () => void;
   /** Checked items are one choice among several: `menuitemradio`, not `menuitemcheckbox`. */
   radio?: boolean;
+  /** Keep the check in the gutter of an item that also has an icon, instead of the icon replacing it. */
+  checkBesideIcon?: boolean;
 }) {
   const menu = useRef<HTMLDivElement>(null);
   const id = useId();
@@ -57,7 +60,11 @@ export function MoreMenu({
   }, []);
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Escape" || event.key === "Tab") {
-      if (event.key === "Escape") event.preventDefault();
+      if (event.key === "Escape") {
+        event.preventDefault();
+        // The menu closes alone; a dialog or drawer around it stays open.
+        event.stopPropagation();
+      }
       return onClose();
     }
     const all = [...event.currentTarget.querySelectorAll<HTMLElement>(ITEMS)];
@@ -110,7 +117,7 @@ export function MoreMenu({
               item.onSelect();
             }}
           >
-            {gutter && !item.icon && (
+            {gutter && (checkBesideIcon || !item.icon) && (
               <span className="shd-menu-check" aria-hidden="true">
                 {item.checked && "✓"}
               </span>
