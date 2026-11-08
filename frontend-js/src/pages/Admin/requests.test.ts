@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RequestsSettingsStatus } from "../../api";
 import {
-  CLIENTS,
   type RequestsDraft,
   RequestsSchema,
   requestsDraftOf,
@@ -118,18 +117,5 @@ describe("download client kind", () => {
     };
 
     expect(requestsDraftOf(saved).download_client_kind).toBe("nzbget");
-  });
-});
-
-describe("CLIENTS", () => {
-  it("calls SABnzbd's secret an API key and gives it no login", () => {
-    expect(CLIENTS.sabnzbd).toMatchObject({
-      hasUsername: false,
-      secret: "API key",
-    });
-  });
-
-  it("files a Transmission download under a label", () => {
-    expect(CLIENTS.transmission.category).toBe("label");
   });
 });

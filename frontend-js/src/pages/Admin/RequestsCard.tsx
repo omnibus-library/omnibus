@@ -26,8 +26,10 @@ import { credentialState } from "./integrations";
 import {
   BLANK_REQUESTS_DRAFT,
   CLIENTS,
+  type ClientInfo,
   RequestsSchema,
   requestsDraftOf,
+  UNREAD_CLIENT,
 } from "./requests";
 
 type TestTarget = "prowlarr" | "client";
@@ -35,7 +37,7 @@ type TestTarget = "prowlarr" | "client";
 type SecretField = "prowlarr_api_key" | "download_client_password";
 
 /** What clearing each secret asks, says and confirms; the download client's follows the client it is for. */
-function secretClears(client: (typeof CLIENTS)[DownloadClientKind]) {
+function secretClears(client: ClientInfo) {
   const clears: Record<
     SecretField,
     { title: string; body: string; action: string; done: string }
@@ -77,9 +79,14 @@ export function RequestsCard() {
   });
   useUnsavedGuard("requests", form.formState.isDirty);
   // The fields follow the client chosen in the form; what acts on the saved settings follows the saved one.
-  const client = CLIENTS[form.watch("download_client_kind")];
-  const savedClient =
-    CLIENTS[saved.data?.download_client_kind ?? "qbittorrent"];
+  const chosenKind = form.watch("download_client_kind");
+  const client = saved.data ? CLIENTS[chosenKind] : UNREAD_CLIENT;
+  const savedClient = saved.data
+    ? CLIENTS[saved.data.download_client_kind]
+    : UNREAD_CLIENT;
+  const secretIsUnchanged =
+    saved.data?.download_client_password_masked &&
+    chosenKind === saved.data.download_client_kind;
   const clears = secretClears(savedClient);
 
   const keepAnswer = (answer: RequestsSettingsStatus) =>
@@ -309,11 +316,7 @@ export function RequestsCard() {
             autoCapitalize="none"
             autoCorrect="off"
             spellCheck={false}
-            placeholder={
-              saved.data?.download_client_password_masked
-                ? "•••• (unchanged)"
-                : ""
-            }
+            placeholder={secretIsUnchanged ? "•••• (unchanged)" : ""}
             {...unknown}
             {...form.register("download_client_password")}
           />
@@ -394,7 +397,7 @@ export function RequestsCard() {
               data-testid="requests-clear-prowlarr-key"
               onClick={() => setClearing("prowlarr_api_key")}
             >
-              Clear API key…
+              Clear Prowlarr API key…
             </Button>
           )}
           {saved.data?.download_client_password_masked && (
@@ -405,7 +408,7 @@ export function RequestsCard() {
               data-testid="requests-clear-client-password"
               onClick={() => setClearing("download_client_password")}
             >
-              Clear {savedClient.secret}…
+              Clear {savedClient.name} {savedClient.secret}…
             </Button>
           )}
           <Button

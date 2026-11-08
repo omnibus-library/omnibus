@@ -12,7 +12,7 @@ const address = z
   .refine(isHttpUrl, "Enter an http:// or https:// address.");
 
 /** What the form says about each download client: its name, how to reach it, and what its login and category are called. */
-type ClientInfo = {
+export type ClientInfo = {
   name: string;
   addressPlaceholder: string;
   /** SABnzbd has no login: its API key goes in the secret field. */
@@ -20,6 +20,15 @@ type ClientInfo = {
   secret: "password" | "API key";
   /** Transmission files a download under a label, the others under a category. */
   category: "category" | "label";
+};
+
+/** Stands in for the client until the saved settings are read, so no program is named that may not be the one. */
+export const UNREAD_CLIENT: ClientInfo = {
+  name: "Download client",
+  addressPlaceholder: "http://…",
+  hasUsername: true,
+  secret: "password",
+  category: "category",
 };
 
 export const CLIENTS: Record<DownloadClientKind, ClientInfo> = {

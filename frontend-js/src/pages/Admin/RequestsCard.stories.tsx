@@ -49,8 +49,15 @@ export const Loading: Story = {
       canvas.getByRole("button", { name: "Test Prowlarr" }),
     ).toBeDisabled();
     await expect(
-      canvas.getByRole("button", { name: "Test qBittorrent" }),
+      canvas.getByRole("button", { name: "Test Download client" }),
     ).toBeDisabled();
+    const named = canvas
+      .queryAllByText(/qBittorrent/)
+      .filter((element) => element.tagName !== "OPTION");
+    await expect(named).toEqual([]);
+    await expect(canvas.getByLabelText("Download client")).toHaveClass(
+      "ld-unknown",
+    );
   },
 };
 
@@ -162,7 +169,7 @@ export const SavesATypedKeyAndClearsTheField: Story = {
 
 export const RefusesAnAddressThatIsNotHttp: Story = {
   play: async ({ canvas, userEvent }) => {
-    const address = canvas.getByLabelText("qBittorrent address");
+    const address = await canvas.findByLabelText("qBittorrent address");
     await waitFor(() => expect(address).toHaveValue("http://qbittorrent:8080"));
     await userEvent.clear(address);
     await userEvent.type(address, "ftp://qbittorrent");
@@ -279,7 +286,7 @@ export const WaitsForTheKeyBeforeCallingItSetUp: Story = {
       ),
     );
     await expect(
-      canvas.queryByRole("button", { name: "Clear API key…" }),
+      canvas.queryByRole("button", { name: "Clear Prowlarr API key…" }),
     ).not.toBeInTheDocument();
   },
 };
@@ -305,7 +312,7 @@ export const HoldsTheTestsBackWhileTheFormIsEdited: Story = {
 export const ClearsTheKeyAfterConfirming: Story = {
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(
-      await canvas.findByRole("button", { name: "Clear API key…" }),
+      await canvas.findByRole("button", { name: "Clear Prowlarr API key…" }),
     );
 
     const dialog = await canvas.findByTestId("requests-clear-dialog");
@@ -331,7 +338,9 @@ export const ClearsTheKeyAfterConfirming: Story = {
 export const ClearsThePasswordAfterConfirming: Story = {
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(
-      await canvas.findByRole("button", { name: "Clear password…" }),
+      await canvas.findByRole("button", {
+        name: "Clear qBittorrent password…",
+      }),
     );
 
     const dialog = await canvas.findByTestId("requests-clear-dialog");
@@ -359,9 +368,9 @@ export const OffersNoClearForAKeyFromTheEnvironment: Story = {
     );
   },
   play: async ({ canvas }) => {
-    await canvas.findByRole("button", { name: "Clear password…" });
+    await canvas.findByRole("button", { name: "Clear qBittorrent password…" });
     await expect(
-      canvas.queryByRole("button", { name: "Clear API key…" }),
+      canvas.queryByRole("button", { name: "Clear Prowlarr API key…" }),
     ).not.toBeInTheDocument();
   },
 };
@@ -478,7 +487,7 @@ export const ClearsASabnzbdApiKeyAfterConfirming: Story = {
   },
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(
-      await canvas.findByTestId("requests-clear-client-password"),
+      await canvas.findByRole("button", { name: "Clear SABnzbd API key…" }),
     );
 
     const dialog = await canvas.findByTestId("requests-clear-dialog");
@@ -496,5 +505,31 @@ export const ClearsASabnzbdApiKeyAfterConfirming: Story = {
       download_client_kind: "sabnzbd",
       download_client_password: "",
     });
+  },
+};
+
+export const DoesNotCallTheOldClientsSecretUnchangedAfterASwitch: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const choice = await canvas.findByLabelText("Download client");
+    await waitFor(() => expect(choice).toBeEnabled());
+    const unchanged = "•••• (unchanged)";
+    await expect(canvas.getByLabelText("qBittorrent password")).toHaveAttribute(
+      "placeholder",
+      unchanged,
+    );
+
+    await userEvent.selectOptions(choice, "sabnzbd");
+
+    await expect(canvas.getByLabelText("SABnzbd API key")).not.toHaveAttribute(
+      "placeholder",
+      unchanged,
+    );
+
+    await userEvent.selectOptions(choice, "qbittorrent");
+
+    await expect(canvas.getByLabelText("qBittorrent password")).toHaveAttribute(
+      "placeholder",
+      unchanged,
+    );
   },
 };
