@@ -357,7 +357,7 @@ struct QuoteCard: View {
                     .layoutPriority(1)
                     .minimumScaleFactor(0.55)
 
-                Spacer(minLength: 0)
+                Spacer(minLength: width * Self.ruleGap)
 
                 Rectangle()
                     .fill(style.ink.opacity(0.22))
@@ -394,6 +394,9 @@ struct QuoteCard: View {
 }
 
 extension QuoteCard {
+    /// Least space between the passage and the rule, as a fraction of width.
+    nonisolated static let ruleGap: CGFloat = 0.05
+
     /// Long passages step down rather than shrink to fit: a card whose type
     /// scales continuously with length has no typographic identity, and the
     /// steps keep every card recognisably the same object.
