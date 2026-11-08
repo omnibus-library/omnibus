@@ -23,9 +23,13 @@ import { UsersCard } from "./UsersCard";
 
 const USERS = "/api/admin/users";
 
+// The server reports a request permission only while book requests are on.
+const REQUESTS_ON = { ...WIRE_ADA, book_requests: true };
+
 const meta = {
   title: "Pages/Admin/UserModals",
   component: UsersCard,
+  parameters: { user: REQUESTS_ON },
   beforeEach: resetUserModals,
 } satisfies Meta<typeof UsersCard>;
 
@@ -76,7 +80,7 @@ const readsOfUsersAndMe = [
   }),
   http.get("/api/auth/me", () => {
     reads.me += 1;
-    return HttpResponse.json(WIRE_ADA);
+    return HttpResponse.json(REQUESTS_ON);
   }),
 ];
 
@@ -109,6 +113,7 @@ export const NewUserOffersNoRequestGrantWhenRequestsAreOff: Story = {
   parameters: {
     user: {
       ...WIRE_ADA,
+      book_requests: false,
       can_start_requests: false,
       can_choose_request_versions: false,
     },

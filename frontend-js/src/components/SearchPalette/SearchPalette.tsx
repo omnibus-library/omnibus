@@ -114,7 +114,7 @@ function PaletteOverlay({ onClose }: { onClose: () => void }) {
   const [query, setQuery] = useState("");
   const { results, search } = usePaletteSearch(query);
   // Matched on the client from the live query, so they need no debounce.
-  const settings = matchingSettings(query, user.isAdmin, user.canStartRequests);
+  const settings = matchingSettings(query, user.isAdmin, user.requestsOn);
   const total = (results?.total ?? 0) + settings.length;
   const groups = paletteGroups(results, settings);
   const items = groups.flatMap((group) => group.items);

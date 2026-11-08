@@ -50,14 +50,13 @@ function People() {
 }
 
 function Integrations() {
-  // An admin holds `canStartRequests` exactly while the server has book requests on.
-  const canStartRequests = useCurrentUser().canStartRequests;
+  const requestsOn = useCurrentUser().requestsOn;
   return (
     <>
       <SmtpCard />
       <SecretKeyCard kind="hardcover" />
       <SecretKeyCard kind="google-books" />
-      {canStartRequests && <RequestsCard />}
+      {requestsOn && <RequestsCard />}
       <EbookConvertCard />
       <McpCard />
     </>

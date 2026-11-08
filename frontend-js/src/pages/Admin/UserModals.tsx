@@ -86,8 +86,7 @@ function PermissionToggles({
   perms: UserPermissions;
   onChange: (perms: UserPermissions) => void;
 }) {
-  // An admin holds `canStartRequests` exactly while the server has book requests on.
-  const requests = useCurrentUser().canStartRequests;
+  const requests = useCurrentUser().requestsOn;
   return (
     <fieldset className="users-perms">
       <legend>Permissions</legend>

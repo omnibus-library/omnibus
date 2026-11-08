@@ -16,6 +16,8 @@ import { WIRE_ADA } from "../../testing/wire";
 import { Admin } from "./Admin";
 
 const READER = { ...WIRE_ADA, is_admin: false };
+// The server reports a request permission only while book requests are on.
+const REQUESTS_ON = { ...WIRE_ADA, book_requests: true };
 
 // The shell's leave guard needs a data router, which the stories' own harness doesn't provide.
 function AdminRoutes({ path }: { path: string }) {
@@ -35,7 +37,7 @@ const meta = {
   title: "Pages/Admin",
   component: AdminRoutes,
   args: { path: "/admin" },
-  parameters: { ownRouter: true },
+  parameters: { ownRouter: true, user: REQUESTS_ON },
   beforeEach({ msw }) {
     msw.use(...adminHandlers());
   },
@@ -190,6 +192,7 @@ export const HidesTheRequestsCardWithoutRequestAccess: Story = {
   parameters: {
     user: {
       ...WIRE_ADA,
+      book_requests: false,
       can_start_requests: false,
       can_choose_request_versions: false,
     },

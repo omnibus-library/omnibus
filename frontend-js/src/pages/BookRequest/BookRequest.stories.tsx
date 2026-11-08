@@ -1137,6 +1137,10 @@ export const AReaderWhoCanPickChoosesForAnotherReader: Story = {
   },
   play: async ({ canvas, userEvent }) => {
     const rows = await canvas.findAllByTestId("request-version");
+    await expect(canvas.getByTestId("request-lane-ebook")).toHaveAttribute(
+      "data-needs-you",
+      "true",
+    );
 
     await userEvent.click(
       within(versionAt(rows, 1)).getByTestId("request-choose"),
@@ -1144,10 +1148,6 @@ export const AReaderWhoCanPickChoosesForAnotherReader: Story = {
 
     await waitFor(() =>
       expect(fake.writes).toEqual([{ kind: "choose", id: 7, resultId: 12 }]),
-    );
-    await expect(canvas.getByTestId("request-lane-ebook")).toHaveAttribute(
-      "data-needs-you",
-      "false",
     );
   },
 };

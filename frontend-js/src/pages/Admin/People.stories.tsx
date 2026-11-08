@@ -159,6 +159,7 @@ const REQUESTS_OFF = {
 };
 
 export const AskAndPickChipsShowForTheRequestPermissionsAHolderHolds: Story = {
+  parameters: { user: { ...WIRE_ADA, book_requests: true } },
   beforeEach({ msw }) {
     msw.use(
       ...usersHandlers(
