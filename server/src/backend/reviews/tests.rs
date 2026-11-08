@@ -1,5 +1,6 @@
 //! Tests for the book review REST handlers.
 use axum::http::StatusCode;
+use omnibus_db::test_support::set_review_updated_at;
 use omnibus_shared::{BookReviews, Review};
 use tower::ServiceExt;
 
@@ -312,6 +313,81 @@ async fn api_delete_review_returns_500_on_db_failure() {
             Some(&token),
             None,
         ))
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+}
+
+#[tokio::test]
+async fn api_list_my_reviews_requires_auth() {
+    let (app, _state, _pool) = fixture().await;
+
+    let res = app
+        .oneshot(request("GET", "/api/reviews/mine", None, None))
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn api_list_my_reviews_returns_your_reviews_newest_first_up_to_the_limit() {
+    let (app, _state, pool) = fixture().await;
+    let (_, a) = seed_book_with_uuid(&pool, "/lib", "Book A").await;
+    let (_, b) = seed_book_with_uuid(&pool, "/lib-b", "Book B").await;
+    let (user, token) = reader(&pool, "alice").await;
+    for (uuid, body) in [(&a, "First"), (&b, "Second")] {
+        app.clone()
+            .oneshot(patch(uuid, &token, serde_json::json!({ "body_md": body })))
+            .await
+            .unwrap();
+    }
+    set_review_updated_at(&pool, user, &a, 1).await;
+
+    let res = app
+        .clone()
+        .oneshot(get_with_bearer("/api/reviews/mine", &token))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let all: Vec<Review> = body_json(res).await;
+    let uuids: Vec<_> = all.iter().map(|r| r.book_uuid.clone()).collect();
+    assert_eq!(uuids, [b.clone(), a]);
+
+    let res = app
+        .oneshot(get_with_bearer("/api/reviews/mine?limit=0", &token))
+        .await
+        .unwrap();
+    let clamped: Vec<Review> = body_json(res).await;
+    assert_eq!(clamped.len(), 1);
+    assert_eq!(clamped[0].book_uuid, b);
+}
+
+#[tokio::test]
+async fn api_list_my_reviews_rejects_a_limit_that_is_not_a_number() {
+    let (app, _state, pool) = fixture().await;
+    let (_, token) = reader(&pool, "alice").await;
+
+    let res = app
+        .oneshot(get_with_bearer("/api/reviews/mine?limit=lots", &token))
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn api_list_my_reviews_returns_500_on_db_failure() {
+    let (app, _state, pool) = fixture().await;
+    let (_, token) = reader(&pool, "alice").await;
+    sqlx::query("DROP TABLE reviews")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let res = app
+        .oneshot(get_with_bearer("/api/reviews/mine", &token))
         .await
         .unwrap();
 

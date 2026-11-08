@@ -1,20 +1,51 @@
-//! Book review REST handlers (`/api/reviews/{uuid}`): read a book's reviews,
-//! patch your own field by field, delete it. A patch is validated at the
-//! boundary so bad stars or oversized text return 400. Private notes reach
-//! only their author; `db::reviews` enforces that by type.
+//! Book review REST handlers: `/api/reviews/{uuid}` reads a book's reviews and
+//! patches or deletes your own, and `/api/reviews/mine` lists your own. A
+//! patch is validated at the boundary so bad stars or oversized text return
+//! 400. Private notes reach only their author; `db::reviews` enforces that by
+//! type.
 
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::{IntoResponse, Response},
     Json,
 };
 use omnibus_db::{self as db, reviews::ReviewError};
-use omnibus_shared::{BookReviews, Review, ReviewPatch};
+use omnibus_shared::{BookReviews, MyReviewsQuery, Review, ReviewPatch};
 
 use crate::auth::AuthUser;
 
 use super::{internal, AppState};
+
+/// Ceiling on `?limit=` for `GET /api/reviews/mine`.
+const MY_REVIEWS_LIMIT_CAP: i64 = 100;
+
+/// List your reviews
+///
+/// Your own reviews with stars or text, private notes included, ordered by when their stars,
+/// text or spoiler flag last changed, newest first. A review holding only private notes isn't listed, nor
+/// is one of a book no longer in the library.
+#[utoipa::path(
+    get,
+    path = "/api/reviews/mine",
+    tag = "Reviews",
+    params(MyReviewsQuery),
+    responses(
+        (status = 200, description = "Your reviews, newest stars, text or spoiler flag change first.", body = Vec<Review>),
+        (status = 400, description = "`limit` isn't a whole number."),
+    ),
+)]
+pub(super) async fn list_my_reviews(
+    user: AuthUser,
+    State(state): State<AppState>,
+    Query(q): Query<MyReviewsQuery>,
+) -> Response {
+    let limit = q.limit.clamp(1, MY_REVIEWS_LIMIT_CAP);
+    match db::reviews::list_own_reviews(&state.pool, user.id, limit).await {
+        Ok(reviews) => Json(reviews).into_response(),
+        Err(e) => internal("list_my_reviews", e),
+    }
+}
 
 /// Get a book's reviews
 ///

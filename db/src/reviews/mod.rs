@@ -128,6 +128,31 @@ pub async fn get_review(
     load_own(pool, user_id, &canonical).await
 }
 
+/// The reader's own reviews that have stars or text, newest change to the public part —
+/// stars, text, spoiler flag — first, at most `limit` of them. A notes-only review, or one
+/// of a book no longer in the library, is skipped.
+pub async fn list_own_reviews(
+    pool: &SqlitePool,
+    user_id: i64,
+    limit: i64,
+) -> Result<Vec<Review>, ReviewError> {
+    let rows = sqlx::query(
+        "SELECT r.book_uuid, r.half_stars, r.body_md, r.notes_md, r.spoiler, r.rated_at,
+                r.created_at, r.updated_at
+           FROM reviews r
+          WHERE r.user_id = ?
+            AND (r.half_stars IS NOT NULL OR r.body_md IS NOT NULL)
+            AND EXISTS (SELECT 1 FROM books b WHERE b.uuid = r.book_uuid)
+          ORDER BY r.updated_at DESC, r.book_uuid
+          LIMIT ?",
+    )
+    .bind(user_id)
+    .bind(limit)
+    .fetch_all(pool)
+    .await?;
+    rows.iter().map(row_to_own).collect()
+}
+
 /// Apply a field-level patch to the reader's review of a book, creating it on
 /// first write, and return what is left — `None` when the patch emptied it,
 /// which deletes the row. A patch that changes nothing writes nothing.
@@ -289,29 +314,28 @@ async fn load_own(
     .bind(book_uuid)
     .fetch_optional(pool)
     .await?;
-    let Some(row) = row else {
-        return Ok(None);
-    };
+    row.as_ref().map(row_to_own).transpose()
+}
+
+fn row_to_own(row: &SqliteRow) -> Result<Review, ReviewError> {
     let body_md: Option<String> = row.try_get("body_md")?;
     let notes_md: Option<String> = row.try_get("notes_md")?;
-    Ok(Some(
-        Review {
-            book_uuid: row.try_get("book_uuid")?,
-            stars: stars(&row)?,
-            body_html: body_md.as_deref().map(markdown::render),
-            body_md,
-            notes_html: notes_md.as_deref().map(markdown::render),
-            notes_md,
-            spoiler: row.try_get("spoiler")?,
-            rated_at: row.try_get("rated_at")?,
-            created_at: row.try_get("created_at")?,
-            updated_at: row.try_get("updated_at")?,
-            rated_at_iso: None,
-            created_at_iso: None,
-            updated_at_iso: None,
-        }
-        .with_iso(),
-    ))
+    Ok(Review {
+        book_uuid: row.try_get("book_uuid")?,
+        stars: stars(row)?,
+        body_html: body_md.as_deref().map(markdown::render),
+        body_md,
+        notes_html: notes_md.as_deref().map(markdown::render),
+        notes_md,
+        spoiler: row.try_get("spoiler")?,
+        rated_at: row.try_get("rated_at")?,
+        created_at: row.try_get("created_at")?,
+        updated_at: row.try_get("updated_at")?,
+        rated_at_iso: None,
+        created_at_iso: None,
+        updated_at_iso: None,
+    }
+    .with_iso())
 }
 
 /// Every other reader's review with stars or text, never their notes: text

@@ -1,6 +1,7 @@
 //  DuoLayoutTests.swift
-//  The foldable-iPhone geometry: how a fold splits a view, and where the player
-//  puts its artwork and controls for every shape of screen it can be given.
+//  The foldable-iPhone geometry: how a fold splits a view, where the player
+//  puts its artwork and controls for every shape of screen it can be given,
+//  and how slabs and rails meet the side bar column.
 
 import CoreGraphics
 import SwiftUI
@@ -184,6 +185,40 @@ private let laptopFold = Fold(frame: CGRect(x: 0, y: 463, width: 669, height: 25
     #expect(BookDetailView.stageCoverScale(paneHeight: 648, underBar: true) == 1)
 }
 
+@Test func cornerClearanceDropsTheBarOnlyWhereATopCornerIsBareBesideASideBar() {
+    let drop = BookDetailView.barSide - BookDetailView.barTop
+    // The open Duo flat: the status bar is in the trailing column, leaving the leading corner bare.
+    #expect(BookDetailView.cornerClearance(
+        insets: EdgeInsets(top: 0, leading: 0, bottom: 20, trailing: 64), sideBar: .trailing
+    ) == drop)
+    // The same with the column on the leading edge: the trailing corner is bare.
+    #expect(BookDetailView.cornerClearance(
+        insets: EdgeInsets(top: 0, leading: 64, bottom: 20, trailing: 0), sideBar: .leading
+    ) == drop)
+    // An upright iPhone or an iPad: the status bar's inset guards both corners.
+    #expect(BookDetailView.cornerClearance(
+        insets: EdgeInsets(top: 62, leading: 0, bottom: 34, trailing: 0), sideBar: nil
+    ) == 0)
+    // A notched iPhone on its side: the sensor insets guard both corners.
+    #expect(BookDetailView.cornerClearance(
+        insets: EdgeInsets(top: 0, leading: 62, bottom: 21, trailing: 62), sideBar: nil
+    ) == 0)
+    // An iPhone SE on its side: no inset anywhere, but its corners are square.
+    #expect(BookDetailView.cornerClearance(insets: EdgeInsets(), sideBar: nil) == 0)
+    // The folded Duo on its side: the camera's inset guards one top corner, the other is bare.
+    #expect(BookDetailView.cornerClearance(
+        insets: EdgeInsets(top: 0, leading: 0, bottom: 21, trailing: 81), sideBar: .trailing
+    ) == drop)
+    // A side bar under a top inset: the status bar's inset already guards both corners.
+    #expect(BookDetailView.cornerClearance(
+        insets: EdgeInsets(top: 24, leading: 0, bottom: 20, trailing: 64), sideBar: .trailing
+    ) == 0)
+    // A side bar with both side edges inset: neither top corner is bare.
+    #expect(BookDetailView.cornerClearance(
+        insets: EdgeInsets(top: 0, leading: 62, bottom: 20, trailing: 64), sideBar: .trailing
+    ) == 0)
+}
+
 @Test func stageFadeRaiseEndsTheFadeWhereAStageBetweenTheDiscsRests() {
     // Below the bar, the fade sits on the bar's edge like the trailing pane's.
     #expect(BookDetailView.stageFadeRaise(underBar: false) == 0)
@@ -252,4 +287,18 @@ private let laptopFold = Fold(frame: CGRect(x: 0, y: 463, width: 669, height: 25
     #expect(HorizontalEdge.trailing.rectEdge(in: .leftToRight) == .right)
     #expect(HorizontalEdge.trailing.rectEdge(in: .rightToLeft) == .left)
     #expect(HorizontalEdge.leading.rectEdge(in: .leftToRight) == .left)
+}
+
+@Test func bleedEdgesAlwaysTakeInBothSidesForTheDuoSideColumn() {
+    #expect(Bleed.edges([]) == .horizontal)
+    #expect(Bleed.edges(.top) == [.top, .horizontal])
+    #expect(Bleed.edges(.bottom) == [.bottom, .horizontal])
+    #expect(Bleed.edges(.vertical) == .all)
+}
+
+@Test func sideBarRailEndFadesTheBarsEndOnlyOnceTheRailReachesTheColumn() {
+    #expect(SideBarRailEnd.fadingEnd(sideBar: .trailing, meetsColumn: true) == .trailing)
+    #expect(SideBarRailEnd.fadingEnd(sideBar: .leading, meetsColumn: true) == .leading)
+    #expect(SideBarRailEnd.fadingEnd(sideBar: .trailing, meetsColumn: false) == nil)
+    #expect(SideBarRailEnd.fadingEnd(sideBar: nil, meetsColumn: true) == nil)
 }

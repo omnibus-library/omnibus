@@ -68,6 +68,21 @@ impl Review {
     }
 }
 
+/// Query parameters of `GET /api/reviews/mine`.
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
+pub struct MyReviewsQuery {
+    /// How many reviews to return, from 1 to 100. Defaults to 20; a value outside the range is
+    /// moved to the nearest end.
+    #[serde(default = "default_my_reviews_limit")]
+    pub limit: i64,
+}
+
+fn default_my_reviews_limit() -> i64 {
+    20
+}
+
 /// Another reader's review of a book, with who wrote it. Never carries their private notes.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
