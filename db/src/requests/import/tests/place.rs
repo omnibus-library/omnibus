@@ -5,10 +5,11 @@ use std::path::Path;
 
 use sqlx::SqlitePool;
 
+use crate::convert::ConvertError;
+
 use super::super::place::{discard_staging, place_blocking, place_converted};
 use super::super::ImportError;
 use super::{failing_converter, mobi_bytes, working_converter, write, EPUB_BYTES};
-use crate::convert::ConvertError;
 
 /// A download folder holding `Dune.epub`, and an empty library root beside it.
 fn download_and_library(tmp: &Path) -> (std::path::PathBuf, std::path::PathBuf) {

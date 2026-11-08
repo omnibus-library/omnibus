@@ -32,13 +32,18 @@ use super::write;
 /// real worker. The database is a file: an in-memory one answers the scan's follow-up writes
 /// racing a merge with SQLITE_LOCKED, where a file waits its turn as production does.
 pub struct Env {
+    /// The file database the library and requests live in.
     pub pool: SqlitePool,
+    /// The worker the scan is posted to.
     pub worker: Arc<Worker>,
+    /// The ebook library root.
     pub root: PathBuf,
+    /// Where the finished downloads are written.
     pub dl: PathBuf,
     _tmp: tempfile::TempDir,
 }
 
+/// A fresh [`Env`] whose `ebook-convert` is a path that does not exist.
 pub async fn env() -> Env {
     let tmp = tempfile::tempdir().unwrap();
     let (root, dl) = (tmp.path().join("library"), tmp.path().join("dl"));
@@ -130,7 +135,7 @@ pub async fn finished_request(env: &Env, book_uuid: &str, kind: RequestKind) -> 
     request_at(env, book_uuid, kind, 1.0).await
 }
 
-pub async fn row(env: &Env, id: i64) -> RequestRow {
+async fn row(env: &Env, id: i64) -> RequestRow {
     store::get(&env.pool, id).await.unwrap().unwrap()
 }
 
@@ -160,6 +165,7 @@ async fn count(env: &Env, table: &str) -> i64 {
     count_rows(&env.pool, &format!("SELECT COUNT(*) FROM {table}")).await
 }
 
+/// How many files the book `uuid` has.
 pub async fn files_of(env: &Env, uuid: &str) -> usize {
     let book = get_book_by_uuid(&env.pool, uuid).await.unwrap().unwrap();
     get_book_files(&env.pool, book.id).await.unwrap().len()
