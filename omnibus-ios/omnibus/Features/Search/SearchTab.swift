@@ -151,7 +151,7 @@ struct BrowseDirectory: View {
             SectionLabel("Recently finished")
                 .screenPadding()
 
-            ScrollView(.horizontal) {
+            SideRail {
                 HStack(alignment: .top, spacing: 14) {
                     ForEach(finished) { book in
                         NavigationLink(value: Destination.book(uuid: book.bookUUID)) {
@@ -163,9 +163,7 @@ struct BrowseDirectory: View {
                 .screenPadding()
                 .scrollTargetLayout()
             }
-            .scrollIndicators(.hidden)
             .scrollTargetBehavior(.viewAligned)
-            .endsAtSideBar()
         }
     }
 

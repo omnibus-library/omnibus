@@ -42,7 +42,7 @@ struct ShelvesRail: View {
             .screenPadding()
 
             if !previews.isEmpty {
-                ScrollView(.horizontal) {
+                SideRail {
                     HStack(alignment: .top, spacing: 14) {
                         ForEach(previews) { preview in
                             NavigationLink(value: Destination.shelf(id: preview.shelf.id)) {
@@ -65,9 +65,7 @@ struct ShelvesRail: View {
                     .scrollTargetLayout()
                     .cascadeFill()
                 }
-                .scrollIndicators(.hidden)
                 .scrollTargetBehavior(.viewAligned)
-                .endsAtSideBar()
             }
         }
         .sheet(isPresented: $showCreate) {

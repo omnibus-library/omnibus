@@ -186,7 +186,7 @@ struct BookOverviewTab: View {
                 }
             }
 
-            ScrollView(.horizontal) {
+            SideRail(outset: 16) {
                 HStack(alignment: .top, spacing: 14) {
                     ForEach(model.authorBooks.prefix(12)) { other in
                         NavigationLink(value: Destination.book(uuid: other.uuid)) {
@@ -201,12 +201,8 @@ struct BookOverviewTab: View {
                         .buttonStyle(PressableStyle())
                     }
                 }
-                .padding(.horizontal, 16)
                 .padding(.bottom, 6)
             }
-            .scrollIndicators(.hidden)
-            .padding(.horizontal, -16)
-            .endsAtSideBar()
         }
     }
 }
@@ -349,13 +345,9 @@ private struct ChipRow<Chips: View>: View {
                 .font(.ui(15, weight: .semibold))
                 .foregroundStyle(palette.ink0Color)
                 .frame(width: 64, alignment: .leading)
-            ScrollView(.horizontal) {
+            SideRail(outset: 16, outsetEdges: .trailing) {
                 HStack(spacing: 8) { chips() }
-                    .padding(.trailing, 16)
             }
-            .scrollIndicators(.hidden)
-            .padding(.trailing, -16)
-            .endsAtSideBar()
         }
     }
 }
@@ -439,7 +431,7 @@ private struct SeriesFan: View {
             GeometryReader { geometry in
                 let width = geometry.size.width
 
-                ScrollView(.horizontal) {
+                SideRail(outset: 16) {
                     ZStack(alignment: .topLeading) {
                         ForEach(Array(members.enumerated()), id: \.element.id) { index, member in
                             card(member, index: index, width: width)
@@ -451,13 +443,10 @@ private struct SeriesFan: View {
                         height: spread ? SeriesFanLayout.spreadHeight : SeriesFanLayout.gatheredHeight,
                         alignment: .topLeading
                     )
-                    .padding(.horizontal, 16)
                     .padding(.top, 14)
                 }
                 .scrollDisabled(!spread)
-                .scrollIndicators(.hidden)
                 .scrollClipDisabled()
-                .padding(.horizontal, -16)
             }
             .frame(height: (spread ? SeriesFanLayout.spreadHeight : SeriesFanLayout.gatheredHeight) + 14)
             .padding(.top, 6)
@@ -635,7 +624,7 @@ private struct ReadAlikes: View {
     }
 
     private func shelf(_ items: [BookSuggestion]) -> some View {
-        ScrollView(.horizontal) {
+        SideRail(outset: 16) {
             HStack(alignment: .top, spacing: 14) {
                 ForEach(items) { item in
                     Button {
@@ -652,12 +641,8 @@ private struct ReadAlikes: View {
                     .accessibilityHint("Opens on Hardcover")
                 }
             }
-            .padding(.horizontal, 16)
             .padding(.bottom, 6)
         }
-        .scrollIndicators(.hidden)
-        .padding(.horizontal, -16)
-        .endsAtSideBar()
     }
 }
 

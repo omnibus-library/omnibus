@@ -202,6 +202,7 @@ fn engagement_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(ratings::post_rating))
         .routes(routes!(ratings::get_other_ratings))
         .routes(routes!(ratings::get_rating, ratings::delete_rating))
+        .routes(routes!(reviews::list_my_reviews))
         .routes(routes!(
             reviews::get_book_reviews,
             reviews::patch_review,
