@@ -7,13 +7,17 @@ use std::sync::Arc;
 
 use omnibus_shared::{RequestKind, RequestState, Settings, StuckReason, WishlistSource};
 use sqlx::SqlitePool;
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use crate::requests::poller::tick_with;
 use crate::requests::store::{self, RequestRow};
-use crate::requests::test_support::{requests_config, seed_picked, tag, update, Call, StubClient};
+use crate::requests::test_support::{
+    hash, pick, requests_config, seed_picked, update, Call, StubClient,
+};
 use crate::test_support::{
-    book_with_png_cover, build_stored_zip, build_test_epub, build_test_pdf, count_rows, seed_user,
-    solid_color_png, CoversTempDir, TestPdf,
+    book_with_png_cover, build_stored_zip, build_test_epub, build_test_pdf, count_rows,
+    external_meta, loopback_cover_config, seed_user, solid_color_png, CoversTempDir, TestPdf,
 };
 use crate::worker::{Task, Worker, WorkerConfig};
 use crate::{
@@ -112,7 +116,7 @@ async fn wish(env: &Env, title: &str, author: &str) -> String {
 /// A request of `kind` for `book_uuid` whose download reached `progress`.
 async fn request_at(env: &Env, book_uuid: &str, kind: RequestKind, progress: f64) -> RequestRow {
     let id = seed_picked(&env.pool, "ada", book_uuid, kind, "on_its_way").await;
-    let set = format!("client_tag = '{}', progress = {progress}", tag(id));
+    let set = format!("client_hash = '{}', progress = {progress}", hash(id));
     update(&env.pool, id, &set).await;
     row(env, id).await
 }
@@ -136,8 +140,8 @@ fn downloaded(env: &Env, request: &RequestRow, files: &[(&str, &[u8])]) -> StubC
             (*name, bytes.len() as u64)
         })
         .collect();
-    let tag = request.client_tag.as_deref().unwrap();
-    StubClient::new().with_files(tag, env.dl.to_str().unwrap(), &listed)
+    let hash = request.client_hash.as_deref().unwrap();
+    StubClient::new().with_files(hash, env.dl.to_str().unwrap(), &listed)
 }
 
 /// One pass of the import with the download folders unmapped.
@@ -357,6 +361,47 @@ mod import_finished {
         }
 
         #[tokio::test]
+        async fn records_nothing_for_a_request_made_from_a_providers_record() {
+            let _covers = CoversTempDir::new("import_cover_made_for_request");
+            let env = env().await;
+            let origin = MockServer::start().await;
+            Mock::given(method("GET"))
+                .and(path("/cover.png"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .insert_header("content-type", "image/png")
+                        .set_body_bytes(solid_color_png(200, 10, 10, 20, 30)),
+                )
+                .mount(&origin)
+                .await;
+            let mut meta = external_meta("Dune");
+            meta.authors = vec!["Frank Herbert".into()];
+            meta.cover_url = Some(format!("{}/cover.png", origin.uri()));
+            let ada = seed_user(&env.pool, "ada").await;
+            let made = store::start_for_new_book_with(
+                &env.pool,
+                ada,
+                &meta,
+                RequestKind::Ebook,
+                5,
+                &loopback_cover_config(),
+            )
+            .await
+            .unwrap();
+            pick(&env.pool, made.id, "on_its_way").await;
+            let set = format!("client_hash = '{}', progress = 1.0", hash(made.id));
+            update(&env.pool, made.id, &set).await;
+            let request = row(&env, made.id).await;
+            let epub = epub_with_cover("Dune", "Frank Herbert", Some((40, 60)));
+            let client = downloaded(&env, &request, &[("Dune.epub", &epub)]);
+
+            run(&env, &client).await;
+
+            assert_ready(&env, made.id).await;
+            assert_eq!(row(&env, made.id).await.cover_candidate, None);
+        }
+
+        #[tokio::test]
         async fn records_nothing_when_the_request_does_not_offer_the_cover() {
             let _covers = CoversTempDir::new("import_cover_not_offered");
             let env = env().await;
@@ -449,7 +494,7 @@ mod import_finished {
             let wished = wish(&env, "Dune", "Frank Herbert").await;
             let request = finished_request(&env, &wished, RequestKind::Ebook).await;
             let client = downloaded(&env, &request, &[("Dune.epub", &epub("dune"))])
-                .with_state(request.client_tag.as_deref().unwrap(), "moving");
+                .with_state(request.client_hash.as_deref().unwrap(), "moving");
 
             let waiting = run(&env, &client).await;
 

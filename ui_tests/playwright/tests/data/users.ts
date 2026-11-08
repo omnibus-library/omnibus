@@ -10,7 +10,8 @@ export type NewUser = Credentials & {
     can_upload: boolean;
     can_edit: boolean;
     can_download: boolean;
-    can_request: boolean;
+    can_start_requests: boolean;
+    can_choose_request_versions: boolean;
   };
 };
 
@@ -24,8 +25,19 @@ export function buildReader(): NewUser {
       can_upload: false,
       can_edit: false,
       can_download: true,
-      can_request: false,
+      can_start_requests: false,
+      can_choose_request_versions: false,
     },
+  };
+}
+
+/** A reader who may also ask for books but not pick their versions. */
+export function buildAsker(): NewUser {
+  const { permissions, ...reader } = buildReader();
+  return {
+    ...reader,
+    username: reader.username.replace("e2e_reader_", "e2e_asker_"),
+    permissions: { ...permissions, can_start_requests: true },
   };
 }
 

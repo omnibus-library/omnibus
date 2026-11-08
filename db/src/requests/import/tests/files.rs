@@ -18,6 +18,8 @@ fn status(save_path: &str) -> TorrentStatus {
         state: "stalledUP".to_string(),
         save_path: save_path.to_string(),
         eta: None,
+        tags: String::new(),
+        added_on: None,
     }
 }
 

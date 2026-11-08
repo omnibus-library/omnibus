@@ -6,7 +6,9 @@ use super::super::prowlarr::ProwlarrRelease;
 use super::*;
 
 mod change;
+mod handoff;
 mod list;
+mod new_book;
 
 const MAX_LIVE: i64 = 5;
 
@@ -169,6 +171,7 @@ fn ranked(title: &str, score: f64, best_match: bool, rejected: bool) -> Ranked {
             size_bytes: Some(1_000_000),
             seeders: Some(3),
             protocol: None,
+            info_url: None,
             indexer: Some("books".to_string()),
             link: format!("magnet:?xt=urn:btih:{title}"),
             categories: vec![7020],
@@ -215,7 +218,7 @@ mod get {
         sqlx::query(
             "UPDATE book_requests SET state = 'cancelled', prior_state = 'on_its_way',
              progress = 0.4, cancel_at = 1700000008, cancelled_by = 1, note = 'n',
-             moved_at = 1700000000, client_tag = 'omnibus-1' WHERE id = ?",
+             moved_at = 1700000000, client_hash = 'omnibus-1' WHERE id = ?",
         )
         .bind(id)
         .execute(&pool)
@@ -231,7 +234,7 @@ mod get {
         assert_eq!(row.cancelled_by, Some(1));
         assert_eq!(row.note.as_deref(), Some("n"));
         assert_eq!(row.moved_at, Some(1_700_000_000));
-        assert_eq!(row.client_tag.as_deref(), Some("omnibus-1"));
+        assert_eq!(row.client_hash.as_deref(), Some("omnibus-1"));
     }
 }
 
@@ -280,6 +283,28 @@ mod finish_search {
             .map(|v| v.seeders)
             .collect();
         assert_eq!(seeders, [Some(3), None]);
+    }
+
+    #[tokio::test]
+    async fn keeps_each_versions_page_and_none_where_prowlarr_gave_none() {
+        let pool = pool().await;
+        let id = start_looking(&pool).await;
+        let mut linked = ranked("linked", 800.0, false, false);
+        linked.release.info_url = Some("https://tracker.example/t/1".to_string());
+        let found = SearchOutcome::Found(vec![ranked("plain", 900.0, true, false), linked]);
+
+        finish_search(&pool, id, found).await.unwrap();
+
+        let pages: Vec<Option<String>> = versions(&pool, id)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|v| v.info_url)
+            .collect();
+        assert_eq!(
+            pages,
+            [None, Some("https://tracker.example/t/1".to_string())]
+        );
     }
 
     #[tokio::test]
@@ -545,7 +570,7 @@ mod restart {
         assert_eq!(row.stuck_detail, None);
         assert_eq!(row.progress, Some(1.0));
         assert_eq!(row.chosen_result_id, Some(picked));
-        assert_eq!(row.client_tag.as_deref(), Some("omnibus-1"));
+        assert_eq!(row.client_hash.as_deref(), Some("omnibus-1"));
         assert_eq!(row.import_key.as_deref(), Some("a/b/b.epub"));
         assert_eq!(awaiting_import(&pool).await.unwrap().len(), 1);
     }
@@ -725,7 +750,7 @@ async fn on_its_way_with_two_versions(pool: &SqlitePool) -> (i64, i64, i64) {
             .unwrap();
     choose(pool, id, ids[0]).await.unwrap();
     sqlx::query(
-        "UPDATE book_requests SET state = 'on_its_way', progress = 0.4, client_tag = 'omnibus-1',
+        "UPDATE book_requests SET state = 'on_its_way', progress = 0.4, client_hash = 'omnibus-1',
          moved_at = 5 WHERE id = ?",
     )
     .bind(id)

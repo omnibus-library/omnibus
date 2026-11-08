@@ -1,9 +1,9 @@
 //! Reader REST handlers for book requests: starting one for a book, listing every reader's
 //! requests or one book's, answering the search it runs, and taking or keeping the cover a
-//! finished download brought. Every route answers 404 while
-//! the book-requests flag is off, before the sign-in check, and a write answers 403 to a reader
-//! without the request permission. Requests are visible to every signed-in reader; only the
-//! requester or an admin acts on one, and only an admin is shown the search's technical detail.
+//! finished download brought. Every route answers 404 while the book-requests flag is off,
+//! before the sign-in check. Requests are visible to every signed-in reader; starting one needs
+//! the permission to ask, acting on any reader's needs the permission to pick versions (the
+//! maker may always cancel their own), and only an admin is shown the search's technical detail.
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::Mutex;
@@ -11,8 +11,8 @@ use std::time::{Duration, Instant};
 
 use axum::{
     body::Bytes,
-    extract::{FromRequestParts, Path, Query, State},
-    http::{request::Parts, HeaderMap, StatusCode},
+    extract::{Path, Query, State},
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
@@ -25,58 +25,26 @@ use omnibus_db::{
     },
 };
 use omnibus_shared::{
-    BookRequest, ChooseVersion, FileBytes, RequestKind, RequestListQuery, RequestListing,
-    RequestState, StartRequest, StuckReason,
+    BookRequest, ChooseVersion, FileBytes, RequestListQuery, RequestListing, RequestState,
+    StartRequest, StartRequestFromMeta, StuckReason,
 };
 
 use crate::auth::AuthUser;
 
 use super::{internal, overrides, AppState};
 
+mod access;
+
+use access::{
+    cancellable_request, chooser_request, find, may_choose, restorable_request, RequestsUser,
+    RequestsViewer,
+};
+
 /// Requests a reader may start (or retry) in [`START_WINDOW`].
 const MAX_STARTS: usize = 10;
 const START_WINDOW: Duration = Duration::from_secs(10 * 60);
 /// Requests a reader may have live at once.
 const MAX_LIVE: i64 = 5;
-
-/// A signed-in reader on a server with book requests on. The flag is checked first, so with
-/// it off even a signed-out caller gets 404. Every reader may see requests; see
-/// [`RequestsUser`] for who may make them.
-pub(super) struct RequestsViewer(pub(super) AuthUser);
-
-impl FromRequestParts<AppState> for RequestsViewer {
-    type Rejection = Response;
-
-    async fn from_request_parts(
-        parts: &mut Parts,
-        state: &AppState,
-    ) -> Result<Self, Self::Rejection> {
-        if !state.book_requests() {
-            return Err(StatusCode::NOT_FOUND.into_response());
-        }
-        Ok(RequestsViewer(
-            AuthUser::from_request_parts(parts, state).await?,
-        ))
-    }
-}
-
-/// A [`RequestsViewer`] who may also make requests: an admin, or a reader granted it.
-pub(super) struct RequestsUser(pub(super) AuthUser);
-
-impl FromRequestParts<AppState> for RequestsUser {
-    type Rejection = Response;
-
-    async fn from_request_parts(
-        parts: &mut Parts,
-        state: &AppState,
-    ) -> Result<Self, Self::Rejection> {
-        let RequestsViewer(user) = RequestsViewer::from_request_parts(parts, state).await?;
-        if !(user.is_admin || user.can_request) {
-            return Err((StatusCode::FORBIDDEN, "you can't make requests").into_response());
-        }
-        Ok(RequestsUser(user))
-    }
-}
 
 /// When each reader started their recent requests, to cap the rate. In memory: a restart
 /// forgets it, which only ever lets a few extra searches through.
@@ -136,13 +104,7 @@ fn summary(row: RequestRow, is_admin: bool) -> BookRequest {
     }
 }
 
-/// Whether `user` may act on `row`: an admin, or the reader who made it while they may still
-/// request. Only they are offered its downloaded cover.
-fn may_act(user: &AuthUser, row: &RequestRow) -> bool {
-    user.is_admin || (user.can_request && user.id == row.user_id)
-}
-
-/// [`summary`] plus the versions found and, to whoever may act on it, the cover on offer.
+/// [`summary`] plus the versions found and, to whoever may pick versions, the cover on offer.
 async fn view(
     state: &AppState,
     row: RequestRow,
@@ -151,7 +113,7 @@ async fn view(
     let versions = store::versions(state.pool(), row.id)
         .await
         .map_err(|e| internal("read request versions", e))?;
-    let cover_offer = if may_act(viewer, &row) {
+    let cover_offer = if may_choose(viewer) {
         cover::offer(state.pool(), &row)
             .await
             .map_err(|e| internal("read request cover offer", e))?
@@ -166,15 +128,6 @@ async fn view(
     })
 }
 
-/// Request `id`, or the 404 or 500 to send.
-async fn find(state: &AppState, id: i64) -> Result<RequestRow, Response> {
-    match store::get(state.pool(), id).await {
-        Ok(Some(row)) => Ok(row),
-        Ok(None) => Err((StatusCode::NOT_FOUND, "request not found").into_response()),
-        Err(e) => Err(internal("read request", e)),
-    }
-}
-
 /// Request `id` as the answer to `viewer`: 404 when it is gone.
 async fn answer(state: &AppState, id: i64, viewer: &AuthUser) -> Response {
     let row = match find(state, id).await {
@@ -185,15 +138,6 @@ async fn answer(state: &AppState, id: i64, viewer: &AuthUser) -> Response {
         Ok(request) => Json(request).into_response(),
         Err(res) => res,
     }
-}
-
-/// Request `id` if it exists and `user` made it or is an admin; else the 404 or 403 to send.
-async fn own_request(state: &AppState, user: &AuthUser, id: i64) -> Result<RequestRow, Response> {
-    let row = find(state, id).await?;
-    if row.user_id != user.id && !user.is_admin {
-        return Err((StatusCode::FORBIDDEN, "this isn't your request").into_response());
-    }
-    Ok(row)
 }
 
 /// Look for versions of the request's book in the background, once its row is committed.
@@ -236,7 +180,7 @@ fn too_many(what: &str) -> Response {
         (status = 200, description = "You already had a live request for this format; here it is.", body = BookRequest),
         (status = 400, description = "Only `ebook` can be requested yet."),
         (status = 401, description = "You aren't signed in."),
-        (status = 403, description = "Your account can't make requests."),
+        (status = 403, description = "Your account can't ask for books."),
         (status = 404, description = "Book requests are off on this server, or the book doesn't exist."),
         (status = 429, description = "You started too many requests lately, or have too many in progress."),
     ),
@@ -247,8 +191,8 @@ pub(super) async fn post_start_request(
     Path(uuid): Path<String>,
     Json(body): Json<StartRequest>,
 ) -> Response {
-    if body.kind != RequestKind::Ebook {
-        return (StatusCode::BAD_REQUEST, "only ebooks can be requested yet").into_response();
+    if let Err(message) = body.kind.check_requestable() {
+        return (StatusCode::BAD_REQUEST, message).into_response();
     }
     let book_uuid = match db::resolve_canonical_book_uuid(state.pool(), &uuid).await {
         Ok(Some(u)) => u,
@@ -273,6 +217,53 @@ pub(super) async fn post_start_request(
     };
     match view(&state, started.request, &user).await {
         Ok(request) => (status, Json(request)).into_response(),
+        Err(res) => res,
+    }
+}
+
+/// Start a request for a book the library lacks
+///
+/// Makes the book from a provider's record of it, without files, and starts looking for an
+/// ebook of it; poll `GET /api/requests/{id}` until it leaves `looking`. No wishlist entry is
+/// made. To request a book the library already has, use `POST /api/books/{uuid}/requests`.
+#[utoipa::path(
+    post,
+    path = "/api/requests",
+    tag = "Requests",
+    operation_id = "start_request_from_metadata",
+    request_body = StartRequestFromMeta,
+    responses(
+        (status = 201, description = "The book was made and the request started.", body = BookRequest),
+        (status = 400, description = "`kind` isn't `ebook`, or a field of `meta` is over its length cap."),
+        (status = 403, description = "Your account can't ask for books."),
+        (status = 404, description = "Book requests are off on this server."),
+        (status = 429, description = "You started too many requests lately, or have too many in progress."),
+    ),
+)]
+pub(super) async fn post_start_request_from_meta(
+    RequestsUser(user): RequestsUser,
+    State(state): State<AppState>,
+    Json(body): Json<StartRequestFromMeta>,
+) -> Response {
+    if let Err(message) = body.validate() {
+        return (StatusCode::BAD_REQUEST, message).into_response();
+    }
+    if !state.request_starts().has_room(user.id) {
+        return too_many("you started too many requests; try again in a few minutes");
+    }
+    let row =
+        match store::start_for_new_book(state.pool(), user.id, &body.meta, body.kind, MAX_LIVE)
+            .await
+        {
+            Ok(row) => row,
+            Err(RequestError::TooManyLive) => {
+                return too_many("you have too many requests in progress");
+            }
+            Err(e) => return internal("start request on a new book", e),
+        };
+    search_again(&state, user.id, row.id);
+    match view(&state, row, &user).await {
+        Ok(request) => (StatusCode::CREATED, Json(request)).into_response(),
         Err(res) => res,
     }
 }
@@ -393,8 +384,8 @@ pub(super) async fn get_request(
 ///
 /// The cover that came with the request's finished download, offered as a replacement for the
 /// book's own: the image as stored, validated by its `ETag`. It is there while `cover_offer` is
-/// on the request, until the offer is taken or kept (`POST` or `DELETE` on this path). Only the
-/// reader who made the request, or an admin, is offered it.
+/// on the request, until the offer is taken or kept (`POST` or `DELETE` on this path). Only a
+/// reader who can pick versions, or an admin, is offered it.
 #[utoipa::path(
     get,
     path = "/api/requests/{id}/cover",
@@ -418,7 +409,7 @@ pub(super) async fn get_request_cover(
         Ok(row) => row,
         Err(res) => return res,
     };
-    let offered = if may_act(&user, &row) {
+    let offered = if may_choose(&user) {
         cover::offer(state.pool(), &row).await
     } else {
         Ok(None)
@@ -435,7 +426,7 @@ pub(super) async fn get_request_cover(
 /// Makes the cover the finished download brought the book's cover, the way uploading one
 /// does: it shows on every device, and a synced Kobo fetches it on its next sync. Only a
 /// `ready` request whose offer is still on (`cover_offer` in the request) takes it, and the
-/// offer is gone afterwards. Only the reader who made the request, or an admin, can do this.
+/// offer is gone afterwards. Only a reader who can pick versions, or an admin, can do this.
 #[utoipa::path(
     post,
     path = "/api/requests/{id}/cover",
@@ -445,17 +436,17 @@ pub(super) async fn get_request_cover(
     responses(
         (status = 200, description = "The book has the downloaded cover; the offer is gone.", body = BookRequest),
         (status = 401, description = "You aren't signed in."),
-        (status = 403, description = "Your account can't make requests, or the request is another reader's."),
+        (status = 403, description = "Your account can't pick versions."),
         (status = 404, description = "Book requests are off on this server, or there is no such request."),
         (status = 409, description = "No cover is on offer: it was taken or kept, or the downloaded one is not sharper."),
     ),
 )]
 pub(super) async fn post_take_request_cover(
-    RequestsUser(user): RequestsUser,
+    RequestsViewer(user): RequestsViewer,
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> Response {
-    let row = match own_request(&state, &user, id).await {
+    let row = match chooser_request(&state, &user, id).await {
         Ok(row) => row,
         Err(res) => return res,
     };
@@ -495,7 +486,7 @@ pub(super) async fn post_take_request_cover(
 /// Keep the book's cover
 ///
 /// Turns the downloaded cover down: the book keeps the cover it has, and the offer is gone
-/// for good. Only the reader who made the request, or an admin, can do this.
+/// for good. Only a reader who can pick versions, or an admin, can do this.
 #[utoipa::path(
     delete,
     path = "/api/requests/{id}/cover",
@@ -505,17 +496,17 @@ pub(super) async fn post_take_request_cover(
     responses(
         (status = 200, description = "The offer is gone.", body = BookRequest),
         (status = 401, description = "You aren't signed in."),
-        (status = 403, description = "Your account can't make requests, or the request is another reader's."),
+        (status = 403, description = "Your account can't pick versions."),
         (status = 404, description = "Book requests are off on this server, or there is no such request."),
         (status = 409, description = "No cover is on offer: it was already taken or kept."),
     ),
 )]
 pub(super) async fn delete_keep_request_cover(
-    RequestsUser(user): RequestsUser,
+    RequestsViewer(user): RequestsViewer,
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> Response {
-    let row = match own_request(&state, &user, id).await {
+    let row = match chooser_request(&state, &user, id).await {
         Ok(row) => row,
         Err(res) => return res,
     };
@@ -543,8 +534,8 @@ pub(super) async fn delete_keep_request_cover(
 /// download and goes back to `choose` among the other versions, with nothing searched and
 /// nothing counted. One stuck because its finished download could not be added to the library
 /// (`couldnt_add`) goes back to `on_its_way` and only the adding is tried again: the download
-/// is kept, nothing is searched or fetched, and nothing is counted. Only the reader who made
-/// the request, or an admin, can do this.
+/// is kept, nothing is searched or fetched, and nothing is counted. Only a reader who can pick
+/// versions, or an admin, can do this.
 #[utoipa::path(
     post,
     path = "/api/requests/{id}/retry",
@@ -554,18 +545,18 @@ pub(super) async fn delete_keep_request_cover(
     responses(
         (status = 200, description = "The request is looking again, choosing again after a stopped download, or on its way again after a download that could not be added.", body = BookRequest),
         (status = 401, description = "You aren't signed in."),
-        (status = 403, description = "Your account can't make requests, or the request is another reader's."),
+        (status = 403, description = "Your account can't pick versions."),
         (status = 404, description = "Book requests are off on this server, or there is no such request."),
         (status = 409, description = "The request is past searching: it is waiting on a pick or was picked, or its download can't be added again because you asked for the same book since."),
         (status = 429, description = "You started too many requests lately, or have too many in progress."),
     ),
 )]
 pub(super) async fn post_retry_request(
-    RequestsUser(user): RequestsUser,
+    RequestsViewer(user): RequestsViewer,
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> Response {
-    let row = match own_request(&state, &user, id).await {
+    let row = match chooser_request(&state, &user, id).await {
         Ok(row) => row,
         Err(res) => return res,
     };
@@ -599,8 +590,8 @@ pub(super) async fn post_retry_request(
 /// request carries a `note` saying so, and the version is listed with `rejected` set. With no
 /// other version left it searches again and is `looking`, which counts as a start toward the
 /// rate limit. Only a request that is `on_its_way` and not fully downloaded, or stuck on a
-/// stopped download, can be swapped. Only the reader who made the request, or an admin, can
-/// do this.
+/// stopped download, can be swapped. Only a reader who can pick versions, or an admin, can do
+/// this.
 #[utoipa::path(
     post,
     path = "/api/requests/{id}/swap",
@@ -610,18 +601,18 @@ pub(super) async fn post_retry_request(
     responses(
         (status = 200, description = "The request is choosing again (or looking, with nothing else to choose).", body = BookRequest),
         (status = 401, description = "You aren't signed in."),
-        (status = 403, description = "Your account can't make requests, or the request is another reader's."),
+        (status = 403, description = "Your account can't pick versions."),
         (status = 404, description = "Book requests are off on this server, or there is no such request."),
         (status = 409, description = "The request isn't downloading, or its download is complete."),
         (status = 429, description = "It would need a new search and you started too many requests lately."),
     ),
 )]
 pub(super) async fn post_swap_request(
-    RequestsUser(user): RequestsUser,
+    RequestsViewer(user): RequestsViewer,
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> Response {
-    if let Err(res) = own_request(&state, &user, id).await {
+    if let Err(res) = chooser_request(&state, &user, id).await {
         return res;
     }
     // With no other version to choose from, the swap searches again, which counts as a start.
@@ -651,8 +642,7 @@ pub(super) async fn post_swap_request(
 ///
 /// Picks one of the versions a request found, which ends the choosing. Only a request in
 /// `choose` takes a pick, and only a version the request offers. The body carries the
-/// version's `id` and nothing else. Only the reader who made the request, or an admin, can
-/// pick.
+/// version's `id` and nothing else. Only a reader who can pick versions, or an admin, can pick.
 #[utoipa::path(
     post,
     path = "/api/requests/{id}/choose",
@@ -663,19 +653,19 @@ pub(super) async fn post_swap_request(
     responses(
         (status = 200, description = "The version is picked; the request is now `chosen`.", body = BookRequest),
         (status = 401, description = "You aren't signed in."),
-        (status = 403, description = "Your account can't make requests, or the request is another reader's."),
+        (status = 403, description = "Your account can't pick versions."),
         (status = 404, description = "Book requests are off on this server, or there is no such request or version."),
         (status = 409, description = "The request isn't waiting on a pick."),
         (status = 422, description = "The body isn't just a version id."),
     ),
 )]
 pub(super) async fn post_choose_version(
-    RequestsUser(user): RequestsUser,
+    RequestsViewer(user): RequestsViewer,
     State(state): State<AppState>,
     Path(id): Path<i64>,
     Json(body): Json<ChooseVersion>,
 ) -> Response {
-    if let Err(res) = own_request(&state, &user, id).await {
+    if let Err(res) = chooser_request(&state, &user, id).await {
         return res;
     }
     match store::choose(state.pool(), id, body.result_id).await {
@@ -696,7 +686,8 @@ pub(super) async fn post_choose_version(
 /// The request reads `cancelled` at once. The download is told to stop a few seconds later
 /// (see `cancel_at`), so `DELETE /api/requests/{id}/cancel` can take the cancel back until
 /// then. Only a request that is searching, waiting on a pick, picked or still downloading can
-/// be cancelled. Only the reader who made the request, or an admin, can do this.
+/// be cancelled. Only the reader who made the request, a reader who can pick versions, or an
+/// admin, can do this.
 #[utoipa::path(
     post,
     path = "/api/requests/{id}/cancel",
@@ -706,17 +697,17 @@ pub(super) async fn post_choose_version(
     responses(
         (status = 200, description = "The request is cancelled; undo it until `cancel_at`.", body = BookRequest),
         (status = 401, description = "You aren't signed in."),
-        (status = 403, description = "Your account can't make requests, or the request is another reader's."),
+        (status = 403, description = "The request is another reader's and your account can't pick versions."),
         (status = 404, description = "Book requests are off on this server, or there is no such request."),
         (status = 409, description = "The request can't be cancelled now: it is stuck, already cancelled or fully downloaded."),
     ),
 )]
 pub(super) async fn post_cancel_request(
-    RequestsUser(user): RequestsUser,
+    RequestsViewer(user): RequestsViewer,
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> Response {
-    if let Err(res) = own_request(&state, &user, id).await {
+    if let Err(res) = cancellable_request(&state, &user, id).await {
         return res;
     }
     match store::cancel(state.pool(), id, user.id, store::unix_now()).await {
@@ -736,8 +727,8 @@ pub(super) async fn post_cancel_request(
 /// Takes a cancel back while its grace lasts (until `cancel_at`), putting the request in the
 /// state it was cancelled from; a request cancelled while looking searches again, which counts
 /// as a start. After the grace the download is stopped and cannot be undone, nor can a cancel
-/// once you started another request for the same book. Only the reader who made the request, or
-/// an admin, can do this.
+/// once you started another request for the same book. Only a reader who can pick versions, an
+/// admin, or the reader who made the request while they can ask for books, can do this.
 #[utoipa::path(
     delete,
     path = "/api/requests/{id}/cancel",
@@ -747,19 +738,23 @@ pub(super) async fn post_cancel_request(
     responses(
         (status = 200, description = "The request is back as it was.", body = BookRequest),
         (status = 401, description = "You aren't signed in."),
-        (status = 403, description = "Your account can't make requests, or the request is another reader's."),
+        (status = 403, description = "Your account can't ask for books or pick versions, or the request is another reader's and it can't pick versions."),
         (status = 404, description = "Book requests are off on this server, or there is no such request."),
         (status = 409, description = "The request isn't cancelled, the undo grace has ended, or you have started another request for this book."),
-        (status = 429, description = "You have too many requests in progress to restore this one."),
+        (status = 429, description = "You started too many requests lately, or have too many in progress to restore this one."),
     ),
 )]
 pub(super) async fn delete_cancel_request(
-    RequestsUser(user): RequestsUser,
+    RequestsViewer(user): RequestsViewer,
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> Response {
-    if let Err(res) = own_request(&state, &user, id).await {
+    if let Err(res) = restorable_request(&state, &user, id).await {
         return res;
+    }
+    // Undoing a cancel starts the request again, so it counts like a start.
+    if !state.request_starts().has_room(user.id) {
+        return too_many("you started too many requests; try again in a few minutes");
     }
     match store::undo_cancel(state.pool(), id, store::unix_now(), MAX_LIVE).await {
         Ok(restored) => {

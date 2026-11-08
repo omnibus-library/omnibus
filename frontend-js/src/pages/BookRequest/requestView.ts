@@ -210,8 +210,19 @@ export function startFailure(error: unknown): string {
   }
 }
 
-/** How long a search may run before its request offers Try again: past the server's 30 s timeout. */
-export const SEARCH_STALE_AFTER_SECS = 60;
+/** What the lane says while a search runs, and once it has run long enough to say it is still going. */
+export const LOOKING_LABEL = "Looking for versions…";
+export const LOOKING_SLOW_LABEL = "Still searching for versions…";
+
+/** How long a search runs before its lane says it is still going. */
+export const SEARCH_SLOW_AFTER_SECS = 20;
+
+/** How long a search may run before its request offers Try again: past the first attempt's 120 s timeout. */
+export const SEARCH_STALE_AFTER_SECS = 150;
+
+/** Whether a search that began at `updatedAt` (Unix seconds) has run long enough by `now` to say it is still going. */
+export const isSearchSlow = (updatedAt: number, now: number) =>
+  now - updatedAt >= SEARCH_SLOW_AFTER_SECS;
 
 /** Whether a search that began at `updatedAt` (Unix seconds) has run past its timeout by `now`. */
 export const isSearchStale = (updatedAt: number, now: number) =>
@@ -230,11 +241,11 @@ export const holdsEbook = (formats: readonly string[]) =>
 export const holdsAudiobook = (formats: readonly string[]) =>
   upper(formats).some((f) => AUDIO_FORMATS.includes(f));
 
-/** Whether `viewer` may act on `request`: an admin, or the reader who made it while they may still request. */
-export const canActOn = (
-  viewer: Pick<User, "id" | "isAdmin" | "canRequest">,
+/** Whether `viewer` may cancel `request`: anyone who can pick versions, or the reader who made it. */
+export const canCancel = (
+  viewer: Pick<User, "id" | "canChooseRequestVersions">,
   request: Pick<BookRequest, "userId">,
-) => viewer.isAdmin || (viewer.canRequest && viewer.id === request.userId);
+) => viewer.canChooseRequestVersions || viewer.id === request.userId;
 
 const versionFacts = (version: RequestVersion) => {
   const size = versionSize(version.sizeBytes);
@@ -305,7 +316,7 @@ export const kindChip = (kind: RequestKind) =>
 /** Whether Request again is offered on `request`: a cancelled one whose undo has run out (`now` in Unix seconds), to a reader who may request and has no request of that format going for the book already, since starting one would only return it. */
 export function offersRequestAgain(
   request: Pick<BookRequest, "kind" | "state" | "cancelAt">,
-  viewer: Pick<User, "id" | "canRequest">,
+  viewer: Pick<User, "id" | "canStartRequests">,
   bookRequests: readonly Pick<BookRequest, "userId" | "kind" | "state">[],
   now: number,
 ): boolean {
@@ -315,7 +326,7 @@ export function offersRequestAgain(
   );
   return (
     request.state === "cancelled" &&
-    viewer.canRequest &&
+    viewer.canStartRequests &&
     !undoOpen &&
     !alreadyGoing
   );

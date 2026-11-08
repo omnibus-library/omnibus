@@ -87,13 +87,38 @@ async fn admin_create_user_sets_permissions_and_bypasses_registration_gate() {
             && stored.can_upload
             && stored.can_edit
             && stored.can_download
-            && stored.can_request
+            && stored.can_start_requests
+            && stored.can_choose_request_versions
     );
 
     // The new user can actually authenticate.
     crate::auth::verify_login(&p, "bob", "bunker9-longer-pass")
         .await
         .unwrap();
+}
+
+#[tokio::test]
+async fn admin_create_user_stores_picking_versions_without_asking_for_books() {
+    let p = pool().await;
+    create_user(&p, "alice", "hunter2-real-long").await.unwrap();
+    let perms = UserPermissions {
+        can_start_requests: false,
+        can_choose_request_versions: true,
+        ..READER
+    };
+
+    let row = admin_create_user(&p, "bob", "bunker9-longer-pass", perms)
+        .await
+        .unwrap();
+
+    assert!(!row.can_start_requests && row.can_choose_request_versions);
+    let stored = list_users(&p)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|u| u.id == row.id)
+        .unwrap();
+    assert!(!stored.can_start_requests && stored.can_choose_request_versions);
 }
 
 #[tokio::test]
@@ -138,7 +163,8 @@ async fn update_user_permissions_replaces_flags() {
             can_upload: true,
             can_edit: true,
             can_download: false,
-            can_request: true,
+            can_start_requests: true,
+            can_choose_request_versions: false,
         },
     )
     .await
@@ -150,8 +176,8 @@ async fn update_user_permissions_replaces_flags() {
         .into_iter()
         .find(|u| u.id == bob.id)
         .unwrap();
-    assert!(bob_row.can_upload && bob_row.can_edit && bob_row.can_request);
-    assert!(!bob_row.can_download && !bob_row.is_admin);
+    assert!(bob_row.can_upload && bob_row.can_edit && bob_row.can_start_requests);
+    assert!(!bob_row.can_download && !bob_row.is_admin && !bob_row.can_choose_request_versions);
 }
 
 #[tokio::test]

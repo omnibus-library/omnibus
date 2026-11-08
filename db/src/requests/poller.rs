@@ -2,7 +2,8 @@
 //! claims the cancels whose grace ended and takes out what is on the removal list, then adds
 //! what was picked, then reads every unfinished download; a tick then adds the finished ones
 //! to the library. All request state lives in the table, so a restart picks up where it
-//! stopped. The client is asked by tag, never by hash, and its answers are judged by [`judge`].
+//! stopped. A download is found in the client by its info hash alone, and the client's answers are
+//! judged by [`judge`].
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -162,8 +163,10 @@ async fn pass(
     now: i64,
 ) -> Result<(), PassError> {
     store::claim_due_cancels(pool, now).await?;
-    remove_pending(pool, client, now).await?;
+    resolve_legacy_tags(pool, client).await?;
+    // Before the removals, so a swap to another version of the same release keeps its torrent.
     add_picked(pool, client, category, now).await?;
+    remove_pending(pool, client, now).await?;
     follow_downloads(pool, client, now).await
 }
 
@@ -173,7 +176,7 @@ fn refused_one(e: &ConnectionError) -> bool {
 }
 
 /// Take each download on the removal list out of the client, files and all. A job the client
-/// has not shown yet may still be being fetched, so its tag stays until it has been seen and
+/// has not shown yet may still be being fetched, so its hash stays until it has been seen and
 /// removed, or [`APPEAR_SECS`] have passed without it.
 async fn remove_pending(
     pool: &SqlitePool,
@@ -181,12 +184,17 @@ async fn remove_pending(
     now: i64,
 ) -> Result<(), PassError> {
     for row in store::pending_removals(pool).await? {
-        let Some(tag) = row.remove_tag.as_deref() else {
+        let Some(hash) = row.remove_hash.as_deref() else {
             continue;
         };
-        if client.status(tag).await?.is_some() {
-            store::mark_removal_seen(pool, row.id, tag).await?;
-            match client.remove(tag, true).await {
+        // Another request may download the very same release; it keeps the torrent.
+        if store::hash_in_use(pool, hash, row.id).await? {
+            store::finish_removal(pool, row.id, hash).await?;
+            continue;
+        }
+        if client.status(hash).await?.is_some() {
+            store::mark_removal_seen(pool, row.id, hash).await?;
+            match client.remove(hash, true).await {
                 Err(e) if refused_one(&e) => tracing::warn!(error = %e, "remove a download"),
                 other => other?,
             }
@@ -194,13 +202,36 @@ async fn remove_pending(
             .remove_since
             .is_none_or(|since| now - since > APPEAR_SECS)
         {
-            store::finish_removal(pool, row.id, tag).await?;
+            store::finish_removal(pool, row.id, hash).await?;
         }
     }
     Ok(())
 }
 
-/// Start the download of every picked version the client does not already have. A link the
+/// Find the download an earlier version tagged for each request that still carries the tag:
+/// it is one Omnibus added, now known by hash. A request on its way whose download the client
+/// has lost is stopped; any other just forgets the tag.
+async fn resolve_legacy_tags(
+    pool: &SqlitePool,
+    client: &impl DownloadClient,
+) -> Result<(), PassError> {
+    for row in store::with_legacy_tag(pool).await? {
+        let Some(tag) = row.legacy_tag.as_deref() else {
+            continue;
+        };
+        let hash = client.hash_for_tag(tag).await?;
+        store::resolve_legacy_tag(pool, row.id, tag, hash.as_deref()).await?;
+        if hash.is_none() && row.state == omnibus_shared::RequestState::OnItsWay {
+            let why = "the download client no longer has it";
+            store::mark_stuck(pool, row.id, row.chosen_result_id, STOPPED, why).await?;
+        }
+    }
+    Ok(())
+}
+
+/// Hand every picked version to the client, adopting a torrent it already holds that this
+/// request has not recorded as its own. Ownership is written before the client is given the
+/// release, so a cancel or a crash meanwhile still finds the torrent to remove. A link the
 /// client refuses stops that request alone.
 async fn add_picked(
     pool: &SqlitePool,
@@ -209,21 +240,40 @@ async fn add_picked(
     now: i64,
 ) -> Result<(), PassError> {
     for row in store::awaiting_add(pool).await? {
-        let Some((tag, link)) = store::begin_download(pool, row.id).await? else {
+        let Some(link) = store::pick_link(pool, row.id).await? else {
             continue;
         };
-        if client.status(&tag).await?.is_none() {
-            match client.add(&link, category, &tag).await {
-                Ok(()) => {}
-                Err(e) if refused_one(&e) => {
-                    let why = e.to_string();
-                    store::mark_stuck(pool, row.id, row.chosen_result_id, STOPPED, &why).await?;
-                    continue;
-                }
-                Err(e) => return Err(e.into()),
+        let prepared = match client.prepare(&link).await {
+            Ok(prepared) => prepared,
+            Err(e) if refused_one(&e) => {
+                store::mark_stuck(pool, row.id, row.chosen_result_id, STOPPED, &e.to_string())
+                    .await?;
+                continue;
             }
+            Err(e) => return Err(e.into()),
+        };
+        let hash = prepared.hash.clone();
+        if client.status(&hash).await?.is_some() {
+            // Ours when this request recorded it, or called it off a moment ago.
+            let ours = (row.client_hash.as_deref() == Some(hash.as_str()) && !row.client_adopted)
+                || row.remove_hash.as_deref() == Some(hash.as_str());
+            store::mark_on_its_way(pool, row.id, &hash, !ours, now).await?;
+            continue;
         }
-        store::mark_on_its_way(pool, row.id, now).await?;
+        if !store::claim_hash(pool, row.id, &hash).await? {
+            continue;
+        }
+        match client.add(prepared, category).await {
+            Ok(()) => {}
+            Err(e) if refused_one(&e) => {
+                store::release_claim(pool, row.id, &hash).await?;
+                store::mark_stuck(pool, row.id, row.chosen_result_id, STOPPED, &e.to_string())
+                    .await?;
+                continue;
+            }
+            Err(e) => return Err(e.into()),
+        }
+        store::mark_on_its_way(pool, row.id, &hash, false, now).await?;
     }
     Ok(())
 }
@@ -234,10 +284,10 @@ async fn follow_downloads(
     now: i64,
 ) -> Result<(), PassError> {
     for row in store::downloading(pool).await? {
-        let Some(tag) = row.client_tag.as_deref() else {
+        let Some(hash) = row.client_hash.as_deref() else {
             continue;
         };
-        let status = client.status(tag).await?;
+        let status = client.status(hash).await?;
         let pick = row.chosen_result_id;
         let done_at = status.as_ref().and_then(|s| expected_done_at(s, now));
         match judge(&row, status.as_ref(), now) {

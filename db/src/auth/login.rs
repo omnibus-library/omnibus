@@ -39,7 +39,8 @@ fn sentinel_hash() -> AuthResult<&'static str> {
 pub async fn verify_login(pool: &SqlitePool, username: &str, password: &str) -> AuthResult<User> {
     let row = sqlx::query(
         "SELECT u.id, u.username, u.password_hash, u.is_admin, u.can_upload, u.can_edit,
-                u.can_download, u.can_request, u.kindle_email, u.display_name, u.hidden_formats,
+                u.can_download, u.can_start_requests, u.can_choose_request_versions, u.kindle_email,
+                u.display_name, u.hidden_formats,
                 u.book_detail_scroll_stops, u.stack_series, u.share_stats, u.stats_exclusions,
                 EXISTS(SELECT 1 FROM user_avatars a WHERE a.user_id = u.id) AS has_avatar,
                 u.failed_login_count, u.locked_until

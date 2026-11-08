@@ -9,14 +9,15 @@ use sqlx::Row;
 use crate::metadata_overrides::sql::overrides_win_sql;
 
 /// A `books` row the rest of the app treats as present: it has a file, a
-/// physical copy, or somebody's wishlist entry. Interpolated into a query that
+/// physical copy, somebody's wishlist entry, or a request. Interpolated into a query that
 /// aliases `books` as `b`.
-// The wishlist arm keeps a book that exists only to be wanted reachable by the
-// ISBN rung. A row matching none of the three is on no reader surface, so offering
+// The wishlist and request arms keep a book that exists only to be wanted or asked for
+// reachable by the ISBN rung. A row matching none of the four is on no reader surface, so offering
 // it as "already in your library" would file a copy against a book nothing reaches.
 pub(super) const LIVE_BOOK: &str = "(EXISTS (SELECT 1 FROM book_files bf WHERE bf.book_id = b.id)
         OR EXISTS (SELECT 1 FROM physical_copies pc WHERE pc.book_uuid = b.uuid)
-        OR EXISTS (SELECT 1 FROM wishlist_entries we WHERE we.book_uuid = b.uuid))";
+        OR EXISTS (SELECT 1 FROM wishlist_entries we WHERE we.book_uuid = b.uuid)
+        OR EXISTS (SELECT 1 FROM book_requests br WHERE br.book_uuid = b.uuid))";
 
 /// The separator the author subqueries join names on — a control character
 /// rather than `", "`, because a stored sort-form name carries the comma

@@ -150,6 +150,9 @@ mod prowlarr_indexer_status {
 mod prowlarr_search {
     use super::*;
 
+    /// Test time is production time divided by this, so a wait of 40 s is 400 ms here.
+    const SCALE: u32 = 100;
+
     async fn mount_search(server: &MockServer, response: ResponseTemplate) {
         Mock::given(method("GET"))
             .and(path("/api/v1/search"))
@@ -186,6 +189,26 @@ mod prowlarr_search {
         assert_eq!(found[0].categories, [7000, 7020]);
         assert_eq!(found[0].files, Some(1));
         assert_eq!(found[1].link, "magnet:?xt=urn:btih:abc");
+    }
+
+    #[tokio::test]
+    async fn search_reads_results_that_arrive_later_than_the_old_thirty_second_timeout() {
+        let server = MockServer::start().await;
+        let body = json!([
+            {"guid": "g1", "title": "Dracula epub", "downloadUrl": "http://prowlarr/1/download"},
+        ]);
+        let slow = ResponseTemplate::new(200)
+            .set_body_json(body)
+            .set_delay(Duration::from_secs(40) / SCALE);
+        mount_search(&server, slow).await;
+
+        let found = client_for(&server)
+            .search_within("Dracula Bram Stoker", SEARCH_TIMEOUT / SCALE)
+            .await
+            .unwrap();
+
+        let titles: Vec<&str> = found.iter().map(|r| r.title.as_str()).collect();
+        assert_eq!(titles, ["Dracula epub"]);
     }
 
     #[tokio::test]
@@ -229,6 +252,73 @@ mod prowlarr_search {
             [
                 Some(ReleaseProtocol::Torrent),
                 Some(ReleaseProtocol::Usenet),
+                None,
+                None
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn reads_each_releases_page_and_none_for_one_that_is_not_a_web_address() {
+        let server = MockServer::start().await;
+        let body = json!([
+            {"guid": "g1", "title": "t1", "downloadUrl": "http://prowlarr/1/download", "infoUrl": "https://tracker.example/t/1"},
+            {"guid": "g2", "title": "t2", "downloadUrl": "http://prowlarr/2/download", "infoUrl": "http://tracker.example/t/2"},
+            {"guid": "g3", "title": "t3", "downloadUrl": "http://prowlarr/3/download"},
+            {"guid": "g4", "title": "t4", "downloadUrl": "http://prowlarr/4/download", "infoUrl": "javascript:alert(1)"},
+            {"guid": "g5", "title": "t5", "downloadUrl": "http://prowlarr/5/download", "infoUrl": "https://user:pw@tracker.example/t/5"},
+        ]);
+        mount_search(&server, ResponseTemplate::new(200).set_body_json(body)).await;
+
+        let found = client_for(&server)
+            .search("Dracula Bram Stoker")
+            .await
+            .unwrap();
+
+        let pages: Vec<Option<&str>> = found.iter().map(|r| r.info_url.as_deref()).collect();
+        assert_eq!(
+            pages,
+            [
+                Some("https://tracker.example/t/1"),
+                Some("http://tracker.example/t/2"),
+                None,
+                None,
+                None
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn drops_a_page_on_prowlarrs_own_host_or_carrying_a_key() {
+        let server = MockServer::start().await;
+        let own = format!("{}/details/1", server.uri());
+        let body = json!([
+            {"guid": "g1", "title": "t1", "downloadUrl": "http://prowlarr/1/download", "infoUrl": own},
+            {"guid": "g2", "title": "t2", "downloadUrl": "http://prowlarr/2/download", "infoUrl": "https://tracker.example/t?id=2&apikey=k"},
+            {"guid": "g3", "title": "t3", "downloadUrl": "http://prowlarr/3/download", "infoUrl": "https://tracker.example/t?PassKey=k"},
+            {"guid": "g4", "title": "t4", "downloadUrl": "http://prowlarr/4/download", "infoUrl": "https://tracker.example/t?api_key=k"},
+            {"guid": "g5", "title": "t5", "downloadUrl": "http://prowlarr/5/download", "infoUrl": "https://tracker.example/t?id=5"},
+            {"guid": "g6", "title": "t6", "downloadUrl": "http://prowlarr/6/download", "infoUrl": "https://tracker.example/t?id=6;apikey=k"},
+            {"guid": "g7", "title": "t7", "downloadUrl": "http://prowlarr/7/download", "infoUrl": "https://tracker.example/t?id=7#apikey=k"},
+            {"guid": "g8", "title": "t8", "downloadUrl": "http://prowlarr/8/download", "infoUrl": "https://tracker.example/t?id=8&authkey=k"},
+        ]);
+        mount_search(&server, ResponseTemplate::new(200).set_body_json(body)).await;
+
+        let found = client_for(&server)
+            .search("Dracula Bram Stoker")
+            .await
+            .unwrap();
+
+        let pages: Vec<Option<&str>> = found.iter().map(|r| r.info_url.as_deref()).collect();
+        assert_eq!(
+            pages,
+            [
+                None,
+                None,
+                None,
+                None,
+                Some("https://tracker.example/t?id=5"),
+                None,
                 None,
                 None
             ]

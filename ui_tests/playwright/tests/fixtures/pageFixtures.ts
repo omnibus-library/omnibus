@@ -48,11 +48,14 @@ type PageFixtures = {
   expectMutation: ExpectMutation;
   readerExpectMutation: ExpectMutation;
   secondReaderExpectMutation: ExpectMutation;
+  askerExpectMutation: ExpectMutation;
   libraryPage: LibraryPage;
   bookDetailPage: BookDetailPage;
   requestsPage: RequestsPage;
   readerRequestsPage: RequestsPage;
+  askerRequestsPage: RequestsPage;
   wishlistsPage: WishlistsPage;
+  askerWishlistsPage: WishlistsPage;
   checkInPage: CheckInPage;
   epubReaderPage: EpubReaderPage;
   comicReaderPage: ComicReaderPage;
@@ -105,6 +108,10 @@ export const test = base.extend<PageFixtures>({
     await use(mutationsOn(secondReaderPage));
   },
 
+  askerExpectMutation: async ({ askerPage }, use) => {
+    await use(mutationsOn(askerPage));
+  },
+
   libraryPage: async ({ page }, use) => {
     await use(new LibraryPage(page));
   },
@@ -121,8 +128,16 @@ export const test = base.extend<PageFixtures>({
     await use(new RequestsPage(readerPage));
   },
 
+  askerRequestsPage: async ({ askerPage }, use) => {
+    await use(new RequestsPage(askerPage));
+  },
+
   wishlistsPage: async ({ page }, use) => {
     await use(new WishlistsPage(page));
+  },
+
+  askerWishlistsPage: async ({ askerPage }, use) => {
+    await use(new WishlistsPage(askerPage));
   },
 
   checkInPage: async ({ page }, use) => {

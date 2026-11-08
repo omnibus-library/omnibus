@@ -12,7 +12,7 @@ import {
   aWireVersion,
 } from "../../testing/requestHandlers";
 import {
-  canActOn,
+  canCancel,
   coverSizesLine,
   downloadPercent,
   factParts,
@@ -23,7 +23,10 @@ import {
   holdsEbook,
   isCancellable,
   isDownloading,
+  isSearchSlow,
   isSearchStale,
+  LOOKING_LABEL,
+  LOOKING_SLOW_LABEL,
   offersRequestAgain,
   pickedMeta,
   progressPercent,
@@ -55,6 +58,7 @@ const aVersion = (overrides: Partial<RequestVersion> = {}): RequestVersion => ({
   indexer: "MyAnonamouse",
   seeders: 142,
   protocol: "torrent",
+  infoUrl: null,
   bestMatch: false,
   rejected: false,
   ...overrides,
@@ -109,12 +113,13 @@ describe("stateView", () => {
       ["stuck", "couldnt_add"],
       ["cancelled", null],
     ] as const;
+    const words = /release|torrent|indexer|grab|seed/i;
     for (const [state, reason] of states) {
       const { heading, note } = stateView(state, reason);
-      expect(`${heading} ${note}`).not.toMatch(
-        /release|torrent|indexer|grab|seed/i,
-      );
+      expect(`${heading} ${note}`).not.toMatch(words);
     }
+    expect(LOOKING_LABEL).not.toMatch(words);
+    expect(LOOKING_SLOW_LABEL).not.toMatch(words);
   });
 });
 
@@ -242,10 +247,17 @@ describe("firstShown", () => {
   });
 });
 
+describe("isSearchSlow", () => {
+  it("turns true at twenty seconds and not a second before", () => {
+    expect(isSearchSlow(1000, 1019)).toBe(false);
+    expect(isSearchSlow(1000, 1020)).toBe(true);
+  });
+});
+
 describe("isSearchStale", () => {
-  it("turns true at sixty seconds and not a second before", () => {
-    expect(isSearchStale(1000, 1059)).toBe(false);
-    expect(isSearchStale(1000, 1060)).toBe(true);
+  it("turns true at a hundred and fifty seconds and not a second before", () => {
+    expect(isSearchStale(1000, 1149)).toBe(false);
+    expect(isSearchStale(1000, 1150)).toBe(true);
   });
 });
 
@@ -421,28 +433,27 @@ describe("swapFacts", () => {
   });
 });
 
-describe("canActOn", () => {
+describe("canCancel", () => {
   it.each([
     [
-      "an admin on another reader's request",
+      "a reader who can pick versions, on another reader's request",
       true,
-      { id: 2, isAdmin: true, canRequest: true },
+      { id: 2, canChooseRequestVersions: true },
     ],
     [
-      "the requester who may request",
+      "the requester who can't pick versions",
       true,
-      { id: 1, isAdmin: false, canRequest: true },
+      { id: 1, canChooseRequestVersions: false },
     ],
-    ["another reader", false, { id: 2, isAdmin: false, canRequest: true }],
     [
-      "the requester who may no longer request",
+      "another reader who can't pick versions",
       false,
-      { id: 1, isAdmin: false, canRequest: false },
+      { id: 2, canChooseRequestVersions: false },
     ],
-  ] as const)("lets %s act: %s", (_who, expected, viewer) => {
+  ] as const)("lets %s cancel: %s", (_who, expected, viewer) => {
     const request = { userId: 1 as UserId };
 
-    expect(canActOn({ ...viewer, id: viewer.id as UserId }, request)).toBe(
+    expect(canCancel({ ...viewer, id: viewer.id as UserId }, request)).toBe(
       expected,
     );
   });
@@ -450,7 +461,7 @@ describe("canActOn", () => {
 
 describe("offersRequestAgain", () => {
   const NOW = 1_000;
-  const ADA = { id: VIEWER, canRequest: true };
+  const ADA = { id: VIEWER, canStartRequests: true };
   const cancelled = {
     kind: "ebook",
     state: "cancelled",
@@ -501,7 +512,7 @@ describe("offersRequestAgain", () => {
   });
 
   it("holds it back from a reader who can't request", () => {
-    const viewer = { ...ADA, canRequest: false };
+    const viewer = { ...ADA, canStartRequests: false };
 
     expect(offersRequestAgain(cancelled, viewer, [], NOW)).toBe(false);
   });

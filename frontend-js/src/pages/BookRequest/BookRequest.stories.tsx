@@ -13,7 +13,11 @@ import {
 import { WIRE_ADA } from "../../testing/wire";
 import { Requests } from "../Requests/Requests";
 import { PHONE } from "../Wishlists/Wishlists.stories.shared";
-import { FROM_WISHLISTS } from "./requestView";
+import {
+  FROM_WISHLISTS,
+  SEARCH_SLOW_AFTER_SECS,
+  SEARCH_STALE_AFTER_SECS,
+} from "./requestView";
 
 const UUID = HYPERION.unique_identifier;
 
@@ -113,7 +117,7 @@ function Page() {
 
 // `book_requests` is on, or `Requests` answers Not Found.
 const ADA = { ...WIRE_ADA, book_requests: true };
-const READER = { ...ADA, is_admin: false, can_request: true };
+const READER = { ...ADA, is_admin: false, can_start_requests: true };
 
 const meta = {
   title: "Pages/BookRequest",
@@ -135,6 +139,10 @@ const seed = (request: Parameters<typeof aWireRequest>[0]) => {
 };
 
 export const Looking: Story = {
+  beforeEach({ msw }) {
+    // The clock, not NOW: the lane turns "still asking" 20 s after updated_at, and NOW ages as the file runs.
+    msw.use(...seed({ updated_at: Math.floor(Date.now() / 1000) }));
+  },
   play: async ({ canvas }) => {
     await expect(
       await canvas.findByRole("heading", { level: 2, name: "Hyperion" }),
@@ -145,8 +153,37 @@ export const Looking: Story = {
     );
     const waiting = canvas.getByTestId("request-looking");
     await expect(waiting).toHaveAttribute("role", "status");
-    await expect(waiting).toHaveTextContent("Looking for versions");
+    await expect(waiting).toHaveTextContent("Looking for versions…");
     await expect(canvas.queryByTestId("request-version")).toBeNull();
+  },
+};
+
+export const ASlowSearchSaysItIsStillAskingTheIndexers: Story = {
+  beforeEach({ msw }) {
+    const realNow = Date.now;
+    // A whole second, so updated_at lands one second short of slow; a hand-set clock because Storybook's spy recurses through Date.now.
+    const frozen = Math.floor(realNow() / 1000) * 1000;
+    msw.use(
+      ...seed({ updated_at: frozen / 1000 - (SEARCH_SLOW_AFTER_SECS - 1) }),
+    );
+    Date.now = () => frozen;
+    return () => {
+      Date.now = realNow;
+    };
+  },
+  play: async ({ canvas }) => {
+    const waiting = await canvas.findByTestId("request-looking");
+    await expect(waiting).toHaveTextContent("Looking for versions…");
+
+    const frozen = Date.now();
+    Date.now = () => frozen + 2000;
+
+    // The timer fires about two seconds later in real time and reads the moved clock.
+    await waitFor(
+      () => expect(waiting).toHaveTextContent("Still searching for versions…"),
+      { timeout: 4000 },
+    );
+    await expect(canvas.queryByTestId("request-try-again")).toBeNull();
   },
 };
 
@@ -271,9 +308,86 @@ export const AUsenetVersionSaysUsenetInPlaceOfSeeds: Story = {
   },
 };
 
+const PAGE = "https://tracker.example/t/11";
+
+export const AVersionsNameOpensItsSourcesPageInANewTab: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...seed({ state: "choose", versions: [{ ...EPUB, info_url: PAGE }] }),
+    );
+  },
+  play: async ({ canvas }) => {
+    const link = await canvas.findByRole("link", {
+      name: /^Hyperion - Dan Simmons EPUB.*opens the source’s page in a new tab$/,
+    });
+
+    await expect(link).toHaveAttribute("href", PAGE);
+    await expect(link).toHaveAttribute("target", "_blank");
+    await expect(link).toHaveAttribute("rel", "noopener noreferrer");
+  },
+};
+
+export const ATriedVersionsNameOpensItsPageToo: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...seed({
+        state: "choose",
+        versions: [EPUB, { ...TRIED, info_url: PAGE }],
+      }),
+    );
+  },
+  play: async ({ canvas }) => {
+    const rows = await canvas.findAllByTestId("request-version");
+
+    await expect(within(versionAt(rows, 1)).getByRole("link")).toHaveAttribute(
+      "href",
+      PAGE,
+    );
+    await expect(within(versionAt(rows, 0)).queryByRole("link")).toBeNull();
+  },
+};
+
+export const AVersionWithNoPageKeepsAPlainName: Story = {
+  beforeEach({ msw }) {
+    msw.use(...seed({ state: "choose", versions: [EPUB] }));
+  },
+  play: async ({ canvas }) => {
+    const row = within(await canvas.findByTestId("request-version"));
+
+    await expect(row.queryByRole("link")).toBeNull();
+    await expect(row.getByTestId("request-version-name").textContent).toBe(
+      EPUB.title,
+    );
+  },
+};
+
+export const AVersionWhosePageIsNotAWebAddressKeepsAPlainName: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...seed({
+        state: "choose",
+        versions: [{ ...EPUB, info_url: "javascript:alert(1)" }],
+      }),
+    );
+  },
+  play: async ({ canvas }) => {
+    const row = within(await canvas.findByTestId("request-version"));
+
+    await expect(row.queryByRole("link")).toBeNull();
+    await expect(row.getByTestId("request-version-name").textContent).toBe(
+      EPUB.title,
+    );
+  },
+};
+
 export const EachChooseButtonIsDescribedByItsOwnVersion: Story = {
   beforeEach({ msw }) {
-    msw.use(...seed({ state: "choose", versions: [EPUB, REVISED] }));
+    msw.use(
+      ...seed({
+        state: "choose",
+        versions: [{ ...EPUB, info_url: PAGE }, REVISED],
+      }),
+    );
   },
   play: async ({ canvas }) => {
     const [best, revised] = await canvas.findAllByRole("button", {
@@ -302,30 +416,6 @@ export const AVersionRowLeavesOutAnUnnamedSourceAndMissingSeeders: Story = {
     await expect(row.getByTestId("request-version-meta").textContent).toBe(
       `Format unknown${SEP}Size unknown`,
     );
-  },
-};
-
-export const DetailsRevealWhereEachVersionCameFromAndWhatItIsCalled: Story = {
-  beforeEach({ msw }) {
-    msw.use(...seed({ state: "choose", versions: [EPUB, PDF] }));
-  },
-  play: async ({ canvas, userEvent }) => {
-    const rows = await canvas.findAllByTestId("request-version");
-    await expect(canvas.queryByTestId("request-details")).toBeNull();
-    const toggle = canvas.getByTestId("request-details-toggle");
-    await expect(toggle).toHaveAttribute("aria-expanded", "false");
-
-    await userEvent.click(toggle);
-
-    await expect(toggle).toHaveAttribute("aria-expanded", "true");
-    await expect(canvas.getAllByTestId("request-details")).toHaveLength(2);
-    const details = within(versionAt(rows, 1)).getByTestId("request-details");
-    await expect(details).toHaveTextContent("Library Ink");
-    await expect(details).toHaveTextContent(
-      "Simmons, Dan - Hyperion (retail).pdf",
-    );
-    await userEvent.click(toggle);
-    await expect(canvas.queryByTestId("request-details")).toBeNull();
   },
 };
 
@@ -825,8 +915,19 @@ export const AnUnknownRequestShowsTheErrorWithAWayBack: Story = {
   },
 };
 
-const OLD = Math.floor(Date.now() / 1000) - 120;
-const NOT_THE_MAKER = { ...ADA, id: 2, is_admin: false };
+const OLD = Math.floor(Date.now() / 1000) - SEARCH_STALE_AFTER_SECS - 5;
+/** The maker of the stories' request, who can ask for books but not pick their versions. */
+const ASKER = { ...READER, can_choose_request_versions: false };
+/** Another reader who can pick versions but not ask for books. */
+const CHOOSER = { ...READER, id: 2, can_start_requests: false };
+/** Another reader who can neither ask nor pick. */
+const NOT_THE_MAKER = {
+  ...ADA,
+  id: 2,
+  is_admin: false,
+  can_start_requests: false,
+  can_choose_request_versions: false,
+};
 
 export const ALongRunningSearchOffersTryAgain: Story = {
   beforeEach({ msw }) {
@@ -851,33 +952,6 @@ export const AFreshSearchOffersNoTryAgain: Story = {
 
     await expect(canvas.queryByTestId("request-try-again")).toBeNull();
     await expect(canvas.queryByTestId("request-still-looking")).toBeNull();
-  },
-};
-
-export const AnotherReadersChoiceCanBeReadButNotMade: Story = {
-  parameters: { user: NOT_THE_MAKER },
-  beforeEach({ msw }) {
-    msw.use(...seed({ state: "choose", versions: [EPUB, PDF] }));
-  },
-  play: async ({ canvas }) => {
-    await expect(await canvas.findAllByTestId("request-version")).toHaveLength(
-      2,
-    );
-
-    await expect(canvas.queryByTestId("request-choose")).toBeNull();
-    await expect(canvas.getByTestId("request-details-toggle")).toBeVisible();
-  },
-};
-
-export const AnotherReadersStuckRequestOffersNoTryAgain: Story = {
-  parameters: { user: NOT_THE_MAKER },
-  beforeEach({ msw }) {
-    msw.use(...seed(STUCK));
-  },
-  play: async ({ canvas }) => {
-    await canvas.findByTestId("request-stuck-detail");
-
-    await expect(canvas.queryByTestId("request-try-again")).toBeNull();
   },
 };
 
@@ -951,6 +1025,148 @@ export const AnotherReadersDownloadOffersNoCancelOrChooseAnother: Story = {
   },
 };
 
+export const AReaderWhoCannotPickSeesTheVersionsAndWaits: Story = {
+  parameters: { user: ASKER },
+  beforeEach({ msw }) {
+    msw.use(...seed({ state: "choose", versions: [EPUB, PDF] }));
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findAllByTestId("request-version")).toHaveLength(
+      2,
+    );
+
+    await expect(canvas.queryByTestId("request-choose")).toBeNull();
+    await expect(
+      canvas.getByTestId("request-waiting-for-chooser"),
+    ).toHaveTextContent("Waiting for someone who can pick versions.");
+    await expect(
+      canvas.getByRole("button", { name: "Cancel request" }),
+    ).toBeVisible();
+    await expect(canvas.getByTestId("request-lane-ebook")).toHaveAttribute(
+      "data-needs-you",
+      "false",
+    );
+  },
+};
+
+export const AReaderWhoCanPickDoesNotWait: Story = {
+  beforeEach({ msw }) {
+    msw.use(...seed({ state: "choose", versions: [EPUB] }));
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("request-choose");
+
+    await expect(
+      canvas.queryByTestId("request-waiting-for-chooser"),
+    ).toBeNull();
+  },
+};
+
+export const AReaderWhoCannotPickGetsNoTryAgainOnAStuckRequest: Story = {
+  parameters: { user: ASKER },
+  beforeEach({ msw }) {
+    msw.use(...seed(STUCK));
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("request-stuck-detail");
+
+    await expect(canvas.queryByTestId("request-try-again")).toBeNull();
+    await expect(
+      canvas.getByTestId("request-waiting-to-try-again"),
+    ).toHaveTextContent(
+      "Waiting for someone who can pick versions to try again.",
+    );
+  },
+};
+
+export const AReaderWhoCanPickSeesTryAgainNotTheWait: Story = {
+  parameters: { user: CHOOSER },
+  beforeEach({ msw }) {
+    msw.use(...seed(STUCK));
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByTestId("request-try-again")).toBeEnabled();
+
+    await expect(
+      canvas.queryByTestId("request-waiting-to-try-again"),
+    ).toBeNull();
+  },
+};
+
+export const AReaderWhoCannotPickGetsNoTryAgainOnALongSearch: Story = {
+  parameters: { user: ASKER },
+  beforeEach({ msw }) {
+    msw.use(...seed({ updated_at: OLD }));
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("request-looking");
+
+    await expect(canvas.queryByTestId("request-try-again")).toBeNull();
+    await expect(canvas.queryByTestId("request-still-looking")).toBeNull();
+  },
+};
+
+export const AReaderWhoCannotPickCancelsTheirDownloadButCannotChooseAnother: Story =
+  {
+    parameters: { user: ASKER },
+    beforeEach({ msw }) {
+      msw.use(...seed(DOWNLOADING));
+    },
+    play: async ({ canvas }) => {
+      await canvas.findByTestId("request-downloading");
+
+      await expect(
+        canvas.getByRole("button", { name: "Cancel" }),
+      ).toBeVisible();
+      await expect(
+        canvas.queryByRole("button", { name: "Choose another" }),
+      ).toBeNull();
+    },
+  };
+
+export const AReaderWhoCanPickChoosesForAnotherReader: Story = {
+  parameters: { user: CHOOSER },
+  beforeEach({ msw }) {
+    msw.use(...seed({ state: "choose", versions: [EPUB, PDF] }));
+  },
+  play: async ({ canvas, userEvent }) => {
+    const rows = await canvas.findAllByTestId("request-version");
+    await expect(canvas.getByTestId("request-lane-ebook")).toHaveAttribute(
+      "data-needs-you",
+      "true",
+    );
+
+    await userEvent.click(
+      within(versionAt(rows, 1)).getByTestId("request-choose"),
+    );
+
+    await waitFor(() =>
+      expect(fake.writes).toEqual([{ kind: "choose", id: 7, resultId: 12 }]),
+    );
+  },
+};
+
+export const AReaderWhoCanPickCancelsAndChoosesAnotherOnAnotherReadersDownload: Story =
+  {
+    parameters: { user: CHOOSER },
+    beforeEach({ msw }) {
+      fake = requestFake([aWireRequest({ ...DOWNLOADING, user_id: 1 })], {
+        names: GRACE,
+      });
+      msw.use(bookHandler(HYPERION), ...fake.handlers);
+    },
+    play: async ({ canvas }) => {
+      await expect(
+        await canvas.findByRole("button", {
+          name: "Cancel Ada Lovelace’s request for Hyperion",
+        }),
+      ).toBeVisible();
+      await expect(
+        canvas.getByRole("button", { name: "Choose another" }),
+      ).toBeVisible();
+    },
+  };
+
 // ---- the stepper, the download card, the byline ----
 
 export const TheStepperMarksWhereTheRequestStands: Story = {
@@ -986,18 +1202,6 @@ export const ALaneWaitingOnYourPickIsMarked: Story = {
     await expect(
       await canvas.findByTestId("request-lane-ebook"),
     ).toHaveAttribute("data-needs-you", "true");
-  },
-};
-
-export const AnotherReadersPickIsNotMarkedAsYours: Story = {
-  parameters: { user: NOT_THE_MAKER },
-  beforeEach({ msw }) {
-    msw.use(...seed({ state: "choose", versions: [EPUB] }));
-  },
-  play: async ({ canvas }) => {
-    await expect(
-      await canvas.findByTestId("request-lane-ebook"),
-    ).toHaveAttribute("data-needs-you", "false");
   },
 };
 
@@ -1098,8 +1302,8 @@ export const AnAdminsCancelNamesWhoseRequestItIs: Story = {
 };
 
 export const AnotherReadersLiveRequestGetsALaneOfItsOwn: Story = {
-  // Both look the same to a reader, so the book is filed under the newest: yours.
-  parameters: { user: READER },
+  // Both look the same to a reader who can't pick versions, so the book is filed under the newest: yours.
+  parameters: { user: ASKER },
   beforeEach({ msw }) {
     fake = requestFake(
       [
@@ -1299,7 +1503,7 @@ export const HistoryRecordsAVersionSwappedForAnother: Story = {
 };
 
 export const HistoryOffersNoRequestAgainToAReaderWhoCantRequest: Story = {
-  parameters: { user: { ...READER, can_request: false } },
+  parameters: { user: { ...READER, can_start_requests: false } },
   beforeEach({ msw }) {
     msw.use(...withHistory(CANCELLED_NOW, CANCELLED_EARLIER));
   },
@@ -1662,8 +1866,8 @@ export const AFailedKeepTellsYouAndDropsTheStaleCard: Story = {
   },
 };
 
-export const HidesTheCoverOfferFromAnotherReader: Story = {
-  parameters: { user: NOT_THE_MAKER },
+export const HidesTheCoverOfferFromTheRequesterWhoCannotPickVersions: Story = {
+  parameters: { user: ASKER },
   beforeEach({ msw }) {
     msw.use(...seed(WITH_SHARPER_COVER));
   },
@@ -1672,5 +1876,17 @@ export const HidesTheCoverOfferFromAnotherReader: Story = {
       "Ready to read",
     );
     await expect(canvas.queryByTestId("request-cover-offer")).toBeNull();
+  },
+};
+
+export const OffersTheCoverToAReaderWhoCanPickOnAnotherReadersRequest: Story = {
+  parameters: { user: CHOOSER },
+  beforeEach({ msw }) {
+    msw.use(...seed(WITH_SHARPER_COVER));
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByTestId("request-cover-offer"),
+    ).toBeVisible();
   },
 };

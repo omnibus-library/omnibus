@@ -36,7 +36,8 @@ const NAMES = { 1: "Ada Lovelace", 2: "Grace Hopper" };
 const READER = {
   ...WIRE_ADA,
   is_admin: false,
-  can_request: true,
+  can_start_requests: true,
+  can_choose_request_versions: true,
   book_requests: true,
 };
 const GRACE = { ...READER, id: 2, display_name: "Grace Hopper" };
@@ -178,12 +179,24 @@ export const GroupsEachBookUnderWhereItStands: Story = {
   },
 };
 
-export const AnotherReadersPickIsStillLookingToYou: Story = {
-  parameters: { user: GRACE },
+export const AnyPickIsStillLookingToAReaderWhoCannotPickVersions: Story = {
+  parameters: { user: { ...GRACE, can_choose_request_versions: false } },
   play: async ({ canvas }) => {
     await expect(await groupsOn(canvas)).toEqual([
       ["On its way", "1", ["Carmilla"]],
       ["Looking", "2", ["Dracula", "Hyperion"]],
+      ["Cancelled", "1", []],
+    ]);
+  },
+};
+
+export const AnotherReadersPickNeedsAReaderWhoCanPickVersions: Story = {
+  parameters: { user: GRACE },
+  play: async ({ canvas }) => {
+    await expect(await groupsOn(canvas)).toEqual([
+      ["Needs you", "1", ["Dracula"]],
+      ["On its way", "1", ["Carmilla"]],
+      ["Looking", "1", ["Hyperion"]],
       ["Cancelled", "1", []],
     ]);
   },
@@ -294,7 +307,8 @@ export const AGroupFoldsFromTheKeyboard: Story = {
   play: async ({ canvas, userEvent }) => {
     const header = await canvas.findByRole("button", { name: "Needs you 1" });
 
-    await userEvent.tab();
+    // Other controls (the Request button) come first in the tab order.
+    header.focus();
     await expect(header).toHaveFocus();
     await userEvent.keyboard("{Enter}");
     await expect(canvas.queryByRole("link", { name: /Dracula/ })).toBeNull();

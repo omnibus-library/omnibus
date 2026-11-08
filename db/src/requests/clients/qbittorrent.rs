@@ -3,7 +3,8 @@
 //! cookie `SID` or `QBT_SID_<port>` by version and settings, so every `Set-Cookie` pair is
 //! echoed rather than one by name. A release link is fetched here and uploaded as a file:
 //! qBittorrent may have no route to Prowlarr, and the link carries the API key. Share
-//! limits are never sent: seeding is the admin's own policy in qBittorrent.
+//! limits are never sent: seeding is the admin's own policy in qBittorrent. A torrent is
+//! addressed by its info hash alone (`hashes=`), and a category is sent only when one is set.
 // shortcut: one login per call; cache the cookie if the poller's cadence ever makes it matter.
 
 use reqwest::header::{COOKIE, LOCATION, SET_COOKIE};
@@ -12,7 +13,8 @@ use reqwest::{RequestBuilder, Response, StatusCode, Url};
 
 use crate::requests::{check_status, http_client, ConnectionError, REQUEST_TIMEOUT};
 
-use super::{ClientFile, DownloadClient, TorrentStatus};
+use super::infohash;
+use super::{ClientFile, DownloadClient, Prepared, TorrentStatus};
 
 const SERVICE: &str = "qBittorrent";
 
@@ -23,7 +25,7 @@ pub const MAX_TORRENT_BYTES: usize = 4 * 1024 * 1024;
 const MAX_HOPS: usize = 3;
 
 /// What `torrents/add` is given: a magnet as `urls`, or the fetched torrent file.
-enum Release {
+pub enum Release {
     Magnet(String),
     File(Vec<u8>),
 }
@@ -155,19 +157,21 @@ impl Qbittorrent {
         Err(rejected("redirected too many times"))
     }
 
+    /// The download with info hash `hash`. The client is asked for that hash alone; the
+    /// check on the answer is for a client that ignores the filter.
     async fn status_with(
         &self,
         cookie: &str,
-        tag: &str,
+        hash: &str,
     ) -> Result<Option<TorrentStatus>, ConnectionError> {
         let response = self
-            .send(self.get("torrents/info", cookie).query(&[("tag", tag)]))
+            .send(self.get("torrents/info", cookie).query(&[("hashes", hash)]))
             .await?;
         let found: Vec<TorrentStatus> = response
             .json()
             .await
             .map_err(|e| ConnectionError::from_transport(&e))?;
-        Ok(found.into_iter().next())
+        Ok(found.into_iter().find(|t| t.hash == hash))
     }
 }
 
@@ -190,29 +194,43 @@ struct AddOutcome {
 }
 
 impl DownloadClient for Qbittorrent {
+    type Release = Release;
+
+    async fn prepare(&self, link: &str) -> Result<Prepared<Release>, ConnectionError> {
+        let release = self.fetch_release(link).await?;
+        let hash = match &release {
+            Release::Magnet(magnet) => infohash::from_magnet(magnet),
+            Release::File(bytes) => infohash::from_torrent(bytes),
+        }
+        .map_err(|e| rejected(&e.to_string()))?;
+        Ok(Prepared { hash, release })
+    }
+
     /// `Ok` means qBittorrent accepted the torrent; 5.x adds asynchronously, so it may
     /// still be pending, and `status` can answer `None` for a while.
-    async fn add(&self, link: &str, category: &str, tag: &str) -> Result<(), ConnectionError> {
-        let release = self.fetch_release(link).await?;
+    async fn add(
+        &self,
+        prepared: Prepared<Release>,
+        category: &str,
+    ) -> Result<(), ConnectionError> {
         let cookie = self.login().await?;
-        let request = match release {
+        let request = match prepared.release {
             Release::Magnet(magnet) => {
-                let form = [
-                    ("urls", magnet.as_str()),
-                    ("category", category),
-                    ("tags", tag),
-                ];
+                let mut form = vec![("urls", magnet.as_str())];
+                if !category.is_empty() {
+                    form.push(("category", category));
+                }
                 self.post("torrents/add", &cookie).form(&form)
             }
             Release::File(bytes) => {
                 let file = Part::bytes(bytes)
-                    .file_name(format!("{tag}.torrent"))
+                    .file_name(format!("{}.torrent", prepared.hash))
                     .mime_str("application/x-bittorrent")
                     .map_err(|e| ConnectionError::from_transport(&e))?;
-                let form = Form::new()
-                    .part("torrents", file)
-                    .text("category", category.to_string())
-                    .text("tags", tag.to_string());
+                let mut form = Form::new().part("torrents", file);
+                if !category.is_empty() {
+                    form = form.text("category", category.to_string());
+                }
                 self.post("torrents/add", &cookie).multipart(form)
             }
         };
@@ -235,19 +253,31 @@ impl DownloadClient for Qbittorrent {
         Ok(())
     }
 
-    async fn status(&self, tag: &str) -> Result<Option<TorrentStatus>, ConnectionError> {
+    async fn hash_for_tag(&self, tag: &str) -> Result<Option<String>, ConnectionError> {
         let cookie = self.login().await?;
-        self.status_with(&cookie, tag).await
+        let response = self
+            .send(self.get("torrents/info", &cookie).query(&[("tag", tag)]))
+            .await?;
+        let found: Vec<TorrentStatus> = response
+            .json()
+            .await
+            .map_err(|e| ConnectionError::from_transport(&e))?;
+        // Exactly this tag, never a lookalike; of several carrying it, the newest.
+        Ok(found
+            .into_iter()
+            .filter(|t| t.tags.split(',').any(|candidate| candidate.trim() == tag))
+            .max_by_key(|t| t.added_on)
+            .map(|t| t.hash))
     }
 
-    async fn files(&self, tag: &str) -> Result<Vec<ClientFile>, ConnectionError> {
+    async fn status(&self, hash: &str) -> Result<Option<TorrentStatus>, ConnectionError> {
         let cookie = self.login().await?;
-        let Some(torrent) = self.status_with(&cookie, tag).await? else {
-            return Ok(Vec::new());
-        };
-        let request = self
-            .get("torrents/files", &cookie)
-            .query(&[("hash", torrent.hash.as_str())]);
+        self.status_with(&cookie, hash).await
+    }
+
+    async fn files(&self, hash: &str) -> Result<Vec<ClientFile>, ConnectionError> {
+        let cookie = self.login().await?;
+        let request = self.get("torrents/files", &cookie).query(&[("hash", hash)]);
         let Some(response) = self.send_unless_gone(request).await? else {
             return Ok(Vec::new());
         };
@@ -257,13 +287,10 @@ impl DownloadClient for Qbittorrent {
             .map_err(|e| ConnectionError::from_transport(&e))
     }
 
-    async fn remove(&self, tag: &str, delete_files: bool) -> Result<(), ConnectionError> {
+    async fn remove(&self, hash: &str, delete_files: bool) -> Result<(), ConnectionError> {
         let cookie = self.login().await?;
-        let Some(torrent) = self.status_with(&cookie, tag).await? else {
-            return Ok(());
-        };
         let form = [
-            ("hashes", torrent.hash.as_str()),
+            ("hashes", hash),
             ("deleteFiles", if delete_files { "true" } else { "false" }),
         ];
         self.send_unless_gone(self.post("torrents/delete", &cookie).form(&form))

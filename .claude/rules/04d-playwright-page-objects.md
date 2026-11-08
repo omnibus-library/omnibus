@@ -50,6 +50,6 @@ through `readerPage` and the page objects built on it (`readerLibraryPage`,
 `readerBookDetailPage`, `readerSettingsPage`, `readerAdminPage`, `readerShelfPage`), each in a
 browser context signed in as them; `readerExpectMutation` is bound to that page
 and `readerRequest` makes the API calls. A household needs a second reader:
-`secondReaderAccount`, `secondReaderPage` and `secondReaderExpectMutation`.
+`secondReaderAccount`, `secondReaderPage` and `secondReaderExpectMutation`. A reader who may ask for books but not pick their versions is `askerAccount`, with `askerPage`, `askerScanRequests`, `askerRequestsPage`, `askerWishlistsPage` and `askerExpectMutation`.
 Because tests share the accounts, every fixture that changes one resets it on
 teardown (`presetStackSeries`, `presetShareStats`).

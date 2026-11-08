@@ -1,7 +1,7 @@
 import { queryOptions } from "@tanstack/react-query";
 import { toBook } from "./books";
 import type { BookUuid, UserId } from "./core";
-import { bumpCoverBust, ok, send } from "./core";
+import { bumpCoverBust, isHttpUrl, ok, send } from "./core";
 import {
   getBookRequest,
   getCancelBookRequestUrl,
@@ -10,6 +10,7 @@ import {
   getRequestsSettings,
   getRetryBookRequestUrl,
   getStartBookRequestUrl,
+  getStartRequestFromMetadataUrl,
   getSwapRequestVersionUrl,
   getTakeRequestCoverUrl,
   getTestDownloadClientConnectionUrl,
@@ -21,6 +22,7 @@ import {
 } from "./generated/omnibus";
 import type {
   BookRequest as BookRequestWire,
+  ExternalBookMeta,
   RequestListing as RequestListingWire,
   RequestState,
   RequestsSettingsStatus,
@@ -64,6 +66,11 @@ export async function testDownloadClient() {
 
 // A reader's book requests. Every query key starts with "requests".
 
+/** The address when it is an http(s) page, else null, so a stored value can never become a `javascript:` link. */
+function webPage(address: string | null | undefined) {
+  return address && isHttpUrl(address) ? address : null;
+}
+
 function toVersion(wire: RequestVersionWire) {
   return {
     id: wire.id,
@@ -74,6 +81,8 @@ function toVersion(wire: RequestVersionWire) {
     /** Null for a source with none, such as Usenet. */
     seeders: wire.seeders ?? null,
     protocol: wire.protocol ?? null,
+    /** The source's web page for the version; null when it gave none. */
+    infoUrl: webPage(wire.info_url),
     bestMatch: wire.best_match,
     /** Picked and given up: shown as one that did not work. */
     rejected: wire.rejected,
@@ -191,9 +200,17 @@ async function answered(res: Response): Promise<BookRequest> {
 }
 
 /** Starts looking for an ebook of the book, or returns the request already going. */
-export async function startBookRequest(uuid: BookUuid): Promise<BookRequest> {
+export async function startBookRequest(uuid: string): Promise<BookRequest> {
   const url = getStartBookRequestUrl(encodeURIComponent(uuid));
   return answered(await send(url, "POST", { kind: "ebook" }));
+}
+
+/** Makes a book without files from a provider's record and starts looking for an ebook of it. */
+export async function startRequestFromMeta(
+  meta: ExternalBookMeta,
+): Promise<BookRequest> {
+  const url = getStartRequestFromMetadataUrl();
+  return answered(await send(url, "POST", { kind: "ebook", meta }));
 }
 
 /** Looks again for a request that came up empty. */

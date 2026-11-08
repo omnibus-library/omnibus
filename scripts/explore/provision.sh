@@ -60,11 +60,11 @@ for i in $(seq 1 "$count"); do
   user="explorer-$i"
   pass="$(explore::gen_password)"
   if [ "$i" = "$reader" ]; then
-    role=reader perms='{"is_admin":false,"can_upload":false,"can_edit":true,"can_download":true,"can_request":false}'
+    role=reader perms='{"is_admin":false,"can_upload":false,"can_edit":true,"can_download":true,"can_start_requests":false,"can_choose_request_versions":false}'
   elif $is_admin; then
-    role=admin perms='{"is_admin":true,"can_upload":true,"can_edit":true,"can_download":true,"can_request":true}'
+    role=admin perms='{"is_admin":true,"can_upload":true,"can_edit":true,"can_download":true,"can_start_requests":true,"can_choose_request_versions":true}'
   else
-    role=non-admin perms='{"is_admin":false,"can_upload":true,"can_edit":true,"can_download":true,"can_request":false}'
+    role=non-admin perms='{"is_admin":false,"can_upload":true,"can_edit":true,"can_download":true,"can_start_requests":false,"can_choose_request_versions":false}'
   fi
   id=$(printf '%s' "$existing" | python3 -c '
 import json,sys

@@ -15,7 +15,33 @@
   border-right: 1px solid var(--line-2);
 }
 .rqs-head {
+  /* The Request search anchors to it. */
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
   padding: 0 8px 4px;
+}
+.rqs-head-text {
+  flex: 1;
+  min-width: 0;
+}
+/* Holds the button's width while the lists load, so the head does not shift. */
+.rqs-add-wait {
+  flex: none;
+  width: 104px;
+  height: 36px;
+}
+.rqs-add-wait .ld-skel {
+  --h: 100%;
+  border-radius: 10px;
+}
+/* The popover opens from the list's left edge and runs over the pane. */
+.rqs-head .bsearch-panel {
+  right: auto;
+  left: 0;
+  width: min(432px, calc(100vw - 40px));
 }
 .rqs-page .rqs-heading {
   margin: 0;
@@ -182,5 +208,15 @@
   .rqs-list {
     padding: 20px 0 32px;
     border-right: 0;
+  }
+  .rqs-head {
+    align-items: flex-start;
+  }
+  .rqs-add-wait {
+    width: 40px;
+    height: 40px;
+  }
+  .rqs-add-wait .ld-skel {
+    border-radius: 50%;
   }
 }

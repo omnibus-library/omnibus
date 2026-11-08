@@ -18,6 +18,7 @@ use super::ConnectionError;
 /// it waits after the first failure; each later wait doubles, up to [`MAX_WAIT`].
 #[derive(Debug, Clone, Copy)]
 pub struct Patience {
+    /// Counts only the next wait, so the last attempt can run one search timeout past it.
     pub budget: Duration,
     pub first_wait: Duration,
 }

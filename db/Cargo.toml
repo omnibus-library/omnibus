@@ -101,6 +101,11 @@ rand_core = { version = "0.6", features = ["getrandom"] } # held at 0.6: tied to
 #   API we use (Sha256 token hashing) is identical across the two. Bump in
 #   lockstep with the argon2 0.6 migration above.
 sha2 = "0.10"
+# The SHA-1 of a torrent's info dictionary, which is how a download is found again; 0.10 is the
+# RustCrypto `digest` line `sha2` and `lopdf` already pull in.
+sha1 = "0.10"
+# Decodes a base32 magnet hash; already in Cargo.lock.
+data-encoding = "2"
 base64 = "0.22"
 # KOReader document fingerprint (`db::partial_md5`): its sync protocol names a
 # book by an MD5 of file samples, so this is identity matching, not security.

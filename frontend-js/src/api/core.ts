@@ -193,3 +193,14 @@ export const avatarUrl = (id: UserId) => {
   const n = avatarBusts.get(id);
   return n ? `/api/users/${id}/avatar?v=${n}` : `/api/users/${id}/avatar`;
 };
+
+/** Whether `url` is blank or an http(s) address with a host. */
+export const isHttpUrl = (url: string) => {
+  if (url === "") return true;
+  try {
+    const { protocol, hostname } = new URL(url);
+    return (protocol === "http:" || protocol === "https:") && hostname !== "";
+  } catch {
+    return false;
+  }
+};

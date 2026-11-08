@@ -6,13 +6,14 @@ export function useNowPast(deadline: number | null) {
   const [now, setNow] = useState(nowSecs);
   useEffect(() => {
     if (deadline === null) return;
-    const wait = deadline - nowSecs();
-    if (wait < 0) {
-      // Already past on arrival: read the clock now, or a stale one holds until something else re-renders.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    // Re-arms while the clock still reads before the deadline, so an early fire does not strand the view.
+    const tick = () => {
+      const wait = deadline - nowSecs();
       setNow(nowSecs());
-      return;
-    }
-    const timer = setTimeout(() => setNow(nowSecs()), (wait + 1) * 1000);
+      if (wait >= 0) timer = setTimeout(tick, (wait + 1) * 1000);
+    };
+    tick();
     return () => clearTimeout(timer);
   }, [deadline]);
   return now;

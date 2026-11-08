@@ -633,6 +633,21 @@ export function ShelfGlyph({ size = 20 }: GlyphProps) {
   );
 }
 
+/** An arrow leaving up and to the right, beside a link that opens another page. */
+export function ExternalGlyph({ size = 12 }: GlyphProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      {...stroked}
+      aria-hidden="true"
+    >
+      <path d="M7 17 17 7M8 7h9v9" />
+    </svg>
+  );
+}
+
 /** Two branches meeting, for merging one book into another. */
 export function MergeGlyph({ size = 20 }: GlyphProps) {
   return (

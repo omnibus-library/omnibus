@@ -166,14 +166,14 @@ async fn file_into_library(
     root: &str,
     wished: &Wished,
 ) -> Result<Option<String>, ImportError> {
-    let tag = row.client_tag.as_deref().unwrap_or_default();
-    let Some(status) = client.status(tag).await? else {
+    let hash = row.client_hash.as_deref().unwrap_or_default();
+    let Some(status) = client.status(hash).await? else {
         return Err(cannot("the download client no longer has the download"));
     };
     if status.state.starts_with("moving") || status.state.starts_with("checking") {
         return Ok(None);
     }
-    let listed = client.files(tag).await?;
+    let listed = client.files(hash).await?;
     let (config, root_path) = (config.clone(), PathBuf::from(root));
     let (id, author, title) = (row.id, wished.author.clone(), wished.title.clone());
     let placed = tokio::task::spawn_blocking(move || -> Result<PathBuf, ImportError> {

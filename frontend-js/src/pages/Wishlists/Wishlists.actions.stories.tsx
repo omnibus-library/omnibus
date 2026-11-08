@@ -249,12 +249,14 @@ export const RequestIsHiddenWhenBothKindsAreHeld: Story = {
 const READER_WITHOUT_REQUESTS = {
   ...WIRE_ADA,
   is_admin: false,
-  can_request: false,
+  can_start_requests: false,
+  can_choose_request_versions: false,
 };
 const READER_WITH_REQUESTS = {
   ...WIRE_ADA,
   is_admin: false,
-  can_request: true,
+  can_start_requests: true,
+  can_choose_request_versions: true,
 };
 
 export const RequestIsHiddenFromAReaderWithoutThePermission: Story = {
@@ -270,7 +272,11 @@ export const RequestIsHiddenFromAReaderWithoutThePermission: Story = {
 export const RequestIsHiddenFromAnAdminWhenRequestsAreOff: Story = {
   parameters: {
     path: "/wishlists",
-    user: { ...WIRE_ADA, can_request: false },
+    user: {
+      ...WIRE_ADA,
+      can_start_requests: false,
+      can_choose_request_versions: false,
+    },
   },
   play: async ({ canvas }) => {
     const row = within(await rowOf(canvas, "Hyperion"));

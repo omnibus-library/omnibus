@@ -37,7 +37,8 @@ export function toUser(user: UserSummary) {
     canUpload: user.can_upload,
     canEdit: user.can_edit,
     canDownload: user.can_download,
-    canRequest: user.can_request ?? false,
+    canStartRequests: user.can_start_requests ?? false,
+    canChooseRequestVersions: user.can_choose_request_versions ?? false,
     /** The server has book requests on, so every reader may see them. */
     requestsOn: user.book_requests ?? false,
     hasAvatar: user.has_avatar ?? false,

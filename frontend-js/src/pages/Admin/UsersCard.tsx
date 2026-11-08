@@ -52,7 +52,7 @@ function UserRow({
   onOpen: (kind: "edit" | "delete" | "sessions") => void;
   onImpersonate: () => void;
 }) {
-  const requests = useCurrentUser().canRequest;
+  const requests = useCurrentUser().requestsOn;
   const unlock = useMutation({
     mutationFn: () => unlockUser(user.id),
     onSuccess: onUnlocked,

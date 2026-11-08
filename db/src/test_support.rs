@@ -1077,6 +1077,33 @@ pub async fn count_rows(pool: &SqlitePool, sql: &str) -> i64 {
     sqlx::query_scalar(sql).fetch_one(pool).await.unwrap()
 }
 
+/// A provider's record of `title` by Susanna Clarke, with no cover to fetch.
+pub fn external_meta(title: &str) -> omnibus_shared::ExternalBookMeta {
+    omnibus_shared::ExternalBookMeta {
+        isbn13: "9781635575637".into(),
+        title: title.into(),
+        authors: vec!["Susanna Clarke".into()],
+        year: Some("2020".into()),
+        pages: None,
+        publisher: Some("Bloomsbury".into()),
+        description: None,
+        cover_url: None,
+        series: None,
+        first_publish_year: None,
+        format: None,
+        source: omnibus_shared::metadata_lookup::MetadataProvider::OpenLibrary,
+    }
+}
+
+/// The cover-fetch terms with the loopback gates opened, so a test can point a
+/// fetch at a `wiremock` origin; every other gate is production's.
+pub fn loopback_cover_config() -> crate::author_photos::RemoteImageConfig {
+    let mut config = crate::metadata_lookup::provider_cover_image_config(true);
+    config.require_https = false;
+    config.host_allowlist.push("127.0.0.1".into());
+    config
+}
+
 /// Seed one EPUB book whose `book_file_path` resolves to a real file at
 /// `lib/sub/book.epub`, so exporters/converters that write next to the EPUB
 /// land inside `lib`. Returns `(books.id, books.uuid)`. Raw SQL (not the

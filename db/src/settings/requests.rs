@@ -5,8 +5,8 @@
 //! fallback, the download client password does not.
 
 use omnibus_shared::{
-    DownloadClientKind, RequestsSettingsStatus, RequestsSettingsUpdate, DEFAULT_DOWNLOAD_CATEGORY,
-    REQUESTS_FIELD_MAX_LEN, REQUESTS_PATH_MAX_LEN, REQUESTS_SECRET_MAX_LEN, REQUESTS_URL_MAX_LEN,
+    DownloadClientKind, RequestsSettingsStatus, RequestsSettingsUpdate, REQUESTS_FIELD_MAX_LEN,
+    REQUESTS_PATH_MAX_LEN, REQUESTS_SECRET_MAX_LEN, REQUESTS_URL_MAX_LEN,
 };
 use sqlx::SqlitePool;
 
@@ -63,18 +63,22 @@ fn check_len(label: &str, v: &str, max: usize) -> Result<(), SettingsError> {
     Ok(())
 }
 
+/// An `http(s)` URL with a host and no embedded login.
+pub fn is_plain_http_url(v: &str) -> bool {
+    reqwest::Url::parse(v).is_ok_and(|u| {
+        matches!(u.scheme(), "http" | "https")
+            && u.host_str().is_some()
+            && u.username().is_empty()
+            && u.password().is_none()
+    })
+}
+
 /// A blank URL is allowed (it clears the field); anything else must be an `http(s)` URL
 /// with a host and no embedded login. The message never echoes the value.
 fn check_url(label: &str, v: &str) -> Result<(), SettingsError> {
     let Some(v) = field(v) else { return Ok(()) };
     check_len(label, v, REQUESTS_URL_MAX_LEN)?;
-    let plain_http = reqwest::Url::parse(v).is_ok_and(|u| {
-        matches!(u.scheme(), "http" | "https")
-            && u.host_str().is_some()
-            && u.username().is_empty()
-            && u.password().is_none()
-    });
-    if !plain_http {
+    if !is_plain_http_url(v) {
         return Err(SettingsError::Validation(format!(
             "{label} must be an http(s) URL without a username or password"
         )));
@@ -183,7 +187,7 @@ pub async fn effective_requests_config(pool: &SqlitePool) -> Result<RequestsConf
         download_client_password: stored_password(pool).await?,
         download_client_category: get_setting(pool, CLIENT_CATEGORY_KEY)
             .await?
-            .unwrap_or_else(|| DEFAULT_DOWNLOAD_CATEGORY.to_string()),
+            .unwrap_or_default(),
         download_client_path_prefix: get_setting(pool, CLIENT_PATH_PREFIX_KEY).await?,
         download_path_prefix: get_setting(pool, DOWNLOAD_PATH_PREFIX_KEY).await?,
     })

@@ -339,7 +339,8 @@ describe("toUser", () => {
       canUpload: true,
       canEdit: true,
       canDownload: true,
-      canRequest: true,
+      canStartRequests: true,
+      canChooseRequestVersions: true,
       requestsOn: false,
       hasAvatar: true,
       hiddenFormats: [],
@@ -351,10 +352,17 @@ describe("toUser", () => {
     });
   });
 
-  it("reads a session without can_request as no permission", () => {
-    const { can_request: _, ...wire } = WIRE_ADA;
+  it("reads a session without the request permissions as neither", () => {
+    const {
+      can_start_requests: _start,
+      can_choose_request_versions: _choose,
+      ...wire
+    } = WIRE_ADA;
 
-    expect(toUser(wire).canRequest).toBe(false);
+    const user = toUser(wire);
+
+    expect(user.canStartRequests).toBe(false);
+    expect(user.canChooseRequestVersions).toBe(false);
   });
 
   it("reads the server's book-requests flag as requestsOn", () => {

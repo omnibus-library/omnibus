@@ -33,7 +33,8 @@ pub use keys::{
     set_hardcover_api_key,
 };
 pub use requests::{
-    effective_requests_config, requests_settings_status, set_requests_settings, RequestsConfig,
+    effective_requests_config, is_plain_http_url, requests_settings_status, set_requests_settings,
+    RequestsConfig,
 };
 
 /// `settings` KV keys consumed by the settings handlers. Kept as constants so the

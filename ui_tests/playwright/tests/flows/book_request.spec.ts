@@ -74,13 +74,16 @@ test.describe("book request", () => {
       expect(findings.searches).toEqual([`${book.title} ${author}`]);
     });
 
-    await test.step("read where a version came from", async () => {
+    await test.step("see where a version came from", async () => {
       const pdf = requestsPage.version("PDF");
-      await requestsPage.showDetails();
-      await expect(requestsPage.detailsOf(pdf)).toContainText(
-        "E2E Library Ink",
+      await expect(pdf).toContainText("E2E Library Ink");
+      await expect(pdf).not.toContainText("127.0.0.1");
+      const page = requestsPage.pageLinkOf(pdf);
+      await expect(page).toHaveAttribute(
+        "href",
+        `https://e2e-library.example/details/${book.isbn13}-PDF`,
       );
-      await expect(requestsPage.detailsOf(pdf)).not.toContainText("127.0.0.1");
+      await expect(page).toHaveAttribute("target", "_blank");
     });
 
     await test.step("choose the best match", async () => {
@@ -92,6 +95,59 @@ test.describe("book request", () => {
       await expect(requestsPage.versions).toHaveCount(0);
     });
   });
+  test("a reader who can only ask waits for an admin to pick the version", async ({
+    askerScanRequests,
+    createdBookUuids,
+    prowlarrFor,
+    askerWishlistsPage,
+    askerRequestsPage,
+    askerExpectMutation,
+    requestsPage,
+    expectMutation,
+  }) => {
+    const book = buildExternalBook();
+
+    await test.step("wish for a book the library lacks", async () => {
+      const added = await askerScanRequests.postWishlistEntry(book);
+      await expect(added).toBeOK();
+      createdBookUuids.add((await added.json()).book_uuid);
+      await prowlarrFor(releasesFor(book));
+    });
+
+    await test.step("request the ebook as a reader who can't pick versions", async () => {
+      await askerWishlistsPage.goto();
+      await askerExpectMutation(bookRequests.start(), () =>
+        askerWishlistsPage.requestEbook(book.title),
+      );
+      await askerRequestsPage.assertDisplayed();
+    });
+
+    await test.step("see the versions with no Choose, and a line saying whose turn it is", async () => {
+      await expect(askerRequestsPage.versions).toHaveCount(2, {
+        timeout: 10_000,
+      });
+      await expect(askerRequestsPage.chooseButtons).toHaveCount(0);
+      await expect(askerRequestsPage.waitingForChooser).toHaveText(
+        "Waiting for someone who can pick versions.",
+      );
+      await expect(askerRequestsPage.paneCancelButton).toBeVisible();
+    });
+
+    await test.step("find the book under Needs you as an admin", async () => {
+      await requestsPage.goto();
+      await expect(requestsPage.itemIn("Needs you", book.title)).toBeVisible();
+      await requestsPage.select(book.title);
+      await expect(requestsPage.versions).toHaveCount(2);
+    });
+
+    await test.step("choose the EPUB for the reader", async () => {
+      await expectMutation(bookRequests.choose(), () =>
+        requestsPage.choose(requestsPage.version("EPUB")),
+      );
+      await expect(requestsPage.paneState).toHaveText("Version chosen");
+    });
+  });
+
   test("a requested ebook reaches Ready to read on the wished book", async ({
     scanRequests,
     ebooksRequests,
@@ -307,6 +363,70 @@ test.describe("requests page", () => {
       await expect(requestsPage.itemIn("Cancelled", book.title)).toContainText(
         "Ebook · cancelled",
       );
+    });
+  });
+
+  test("start a request from the requests page", async ({
+    scanRequests,
+    createdBookUuids,
+    prowlarrFor,
+    requestsPage,
+    expectMutation,
+  }) => {
+    const book = buildExternalBook();
+    let uuid = "";
+    let release!: () => void;
+
+    await test.step("have a library book with no ebook and a search that holds", async () => {
+      const added = await scanRequests.postPhysicalOnly(book);
+      await expect(added).toBeOK();
+      uuid = (await added.json()).book_uuid;
+      createdBookUuids.add(uuid);
+      release = (await prowlarrFor(releasesFor(book))).holdSearches();
+    });
+
+    await test.step("search for it and request it", async () => {
+      await requestsPage.goto();
+      await expectMutation(bookRequests.start(), () =>
+        requestsPage.requestFromSearch(book.title),
+      );
+    });
+
+    await test.step("see its request selected and looking", async () => {
+      await requestsPage.assertSelected(uuid);
+      await expect(requestsPage.addPanel).toBeHidden();
+      await expect(requestsPage.itemIn("Looking", book.title)).toBeVisible();
+      await expect(requestsPage.paneState).toHaveText("Looking");
+      release();
+    });
+  });
+
+  test("keep the search open when starting a request fails", async ({
+    scanRequests,
+    createdBookUuids,
+    requestsPage,
+    expectMutation,
+  }) => {
+    const book = buildExternalBook();
+
+    await test.step("have a library book with no ebook", async () => {
+      const added = await scanRequests.postPhysicalOnly(book);
+      await expect(added).toBeOK();
+      createdBookUuids.add((await added.json()).book_uuid);
+    });
+
+    await test.step("try to request it while the server fails", async () => {
+      await requestsPage.goto();
+      await requestsPage.forceServerError(bookRequests.start());
+      await expectMutation(failing(bookRequests.start()), () =>
+        requestsPage.requestFromSearch(book.title),
+      );
+    });
+
+    await test.step("check the failure is told and nothing was started", async () => {
+      await expect(requestsPage.startFailedText).toBeVisible();
+      await expect(requestsPage.addPanel).toBeVisible();
+      await expect(requestsPage.item(book.title)).toHaveCount(0);
     });
   });
 

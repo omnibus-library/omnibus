@@ -165,7 +165,8 @@ export const SavedIsbnReplacesTheFilesOwn: Story = {
 const READER_WITHOUT_REQUESTS = {
   ...WIRE_ADA,
   is_admin: false,
-  can_request: false,
+  can_start_requests: false,
+  can_choose_request_versions: false,
 };
 
 export const Fileless: Story = {

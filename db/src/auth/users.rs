@@ -35,7 +35,8 @@ pub async fn create_user(pool: &SqlitePool, username: &str, password: &str) -> A
     let can_upload = if is_first { 1i64 } else { 0 };
     let can_edit = if is_first { 1i64 } else { 0 };
     let can_download = 1i64;
-    let can_request = if is_first { 1i64 } else { 0 };
+    let can_start_requests = if is_first { 1i64 } else { 0 };
+    let can_choose_request_versions = if is_first { 1i64 } else { 0 };
 
     // INVARIANT: update `password_changed_at` here when password changes.
     // The column defaults to `strftime('%s','now')` on INSERT (see
@@ -46,8 +47,9 @@ pub async fn create_user(pool: &SqlitePool, username: &str, password: &str) -> A
     // otherwise downstream "invalidate sessions older than last password
     // change" logic will silently read the account-creation timestamp.
     let id: i64 = sqlx::query_scalar(
-        "INSERT INTO users (username, password_hash, is_admin, can_upload, can_edit, can_download, can_request)
-         VALUES (?, ?, ?, ?, ?, ?, ?)
+        "INSERT INTO users (username, password_hash, is_admin, can_upload, can_edit, can_download,
+                            can_start_requests, can_choose_request_versions)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
          RETURNING id",
     )
     .bind(username)
@@ -56,7 +58,8 @@ pub async fn create_user(pool: &SqlitePool, username: &str, password: &str) -> A
     .bind(can_upload)
     .bind(can_edit)
     .bind(can_download)
-    .bind(can_request)
+    .bind(can_start_requests)
+    .bind(can_choose_request_versions)
     .fetch_one(&mut *tx)
     .await?;
 
@@ -83,7 +86,8 @@ pub async fn create_user(pool: &SqlitePool, username: &str, password: &str) -> A
         can_upload: can_upload != 0,
         can_edit: can_edit != 0,
         can_download: can_download != 0,
-        can_request: can_request != 0,
+        can_start_requests: can_start_requests != 0,
+        can_choose_request_versions: can_choose_request_versions != 0,
         kindle_email: None,
         display_name: None,
         has_avatar: false,
@@ -137,8 +141,8 @@ async fn check_registration_preconditions(
 /// `has_avatar` is derived rather than stored so it cannot drift from the
 /// `user_avatars` rows it describes.
 pub(crate) const USER_COLUMNS: &str =
-    "u.id, u.username, u.is_admin, u.can_upload, u.can_edit, u.can_download, u.can_request,
-     u.kindle_email, u.display_name, u.hidden_formats, u.book_detail_scroll_stops, u.stack_series,
+    "u.id, u.username, u.is_admin, u.can_upload, u.can_edit, u.can_download, u.can_start_requests,
+     u.can_choose_request_versions, u.kindle_email, u.display_name, u.hidden_formats, u.book_detail_scroll_stops, u.stack_series,
      u.share_stats, u.stats_exclusions,
      EXISTS(SELECT 1 FROM user_avatars a WHERE a.user_id = u.id) AS has_avatar";
 
@@ -498,7 +502,8 @@ fn row_to_admin_user(row: &sqlx::sqlite::SqliteRow, now: i64) -> AdminUserRow {
         can_upload: row.get::<i64, _>("can_upload") != 0,
         can_edit: row.get::<i64, _>("can_edit") != 0,
         can_download: row.get::<i64, _>("can_download") != 0,
-        can_request: row.get::<i64, _>("can_request") != 0,
+        can_start_requests: row.get::<i64, _>("can_start_requests") != 0,
+        can_choose_request_versions: row.get::<i64, _>("can_choose_request_versions") != 0,
         kindle_email: row.get("kindle_email"),
         display_name: row.get("display_name"),
         created_at: row.get("created_at"),
@@ -511,8 +516,8 @@ fn row_to_admin_user(row: &sqlx::sqlite::SqliteRow, now: i64) -> AdminUserRow {
 /// password material) with per-row created time and live locked state.
 pub async fn list_users(pool: &SqlitePool) -> AuthResult<Vec<AdminUserRow>> {
     let rows = sqlx::query(
-        "SELECT id, username, is_admin, can_upload, can_edit, can_download, can_request,
-                kindle_email, display_name, created_at, locked_until
+        "SELECT id, username, is_admin, can_upload, can_edit, can_download, can_start_requests,
+                can_choose_request_versions, kindle_email, display_name, created_at, locked_until
          FROM users ORDER BY created_at ASC, id ASC LIMIT ?",
     )
     .bind(LIST_USERS_LIMIT)
@@ -524,7 +529,7 @@ pub async fn list_users(pool: &SqlitePool) -> AuthResult<Vec<AdminUserRow>> {
 
 /// Admin-create a user with explicit permissions. Unlike [`create_user`], this
 /// bypasses the `registration_enabled` gate and first-user-admin logic, sets the
-/// five permission flags directly, provisions the Wishlist shelf and returns the
+/// six permission flags directly, provisions the Wishlist shelf and returns the
 /// new row. [`AuthError::UsernameTaken`] on a case-insensitive collision.
 pub async fn admin_create_user(
     pool: &SqlitePool,
@@ -550,8 +555,9 @@ pub async fn admin_create_user(
     }
 
     let id: i64 = sqlx::query_scalar(
-        "INSERT INTO users (username, password_hash, is_admin, can_upload, can_edit, can_download, can_request)
-         VALUES (?, ?, ?, ?, ?, ?, ?)
+        "INSERT INTO users (username, password_hash, is_admin, can_upload, can_edit, can_download,
+                            can_start_requests, can_choose_request_versions)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
          RETURNING id",
     )
     .bind(username)
@@ -560,7 +566,8 @@ pub async fn admin_create_user(
     .bind(perms.can_upload as i64)
     .bind(perms.can_edit as i64)
     .bind(perms.can_download as i64)
-    .bind(perms.can_request as i64)
+    .bind(perms.can_start_requests as i64)
+    .bind(perms.can_choose_request_versions as i64)
     .fetch_one(&mut *tx)
     .await?;
 
@@ -577,7 +584,8 @@ pub async fn admin_create_user(
         can_upload: perms.can_upload,
         can_edit: perms.can_edit,
         can_download: perms.can_download,
-        can_request: perms.can_request,
+        can_start_requests: perms.can_start_requests,
+        can_choose_request_versions: perms.can_choose_request_versions,
         kindle_email: None,
         display_name: None,
         created_at: now_unix(),
@@ -585,7 +593,7 @@ pub async fn admin_create_user(
     })
 }
 
-/// Replace a user's five permission flags. Refuses to demote the last
+/// Replace a user's six permission flags. Refuses to demote the last
 /// remaining admin ([`AuthError::LastAdmin`]) and errors with
 /// [`AuthError::UserNotFound`] for an unknown id. Runs under `BEGIN
 /// IMMEDIATE` so the admin-count guard can't race a concurrent demotion of a
@@ -606,14 +614,15 @@ pub async fn update_user_permissions(
 
     sqlx::query(
         "UPDATE users SET is_admin = ?, can_upload = ?, can_edit = ?, can_download = ?,
-                can_request = ?
+                can_start_requests = ?, can_choose_request_versions = ?
          WHERE id = ?",
     )
     .bind(perms.is_admin as i64)
     .bind(perms.can_upload as i64)
     .bind(perms.can_edit as i64)
     .bind(perms.can_download as i64)
-    .bind(perms.can_request as i64)
+    .bind(perms.can_start_requests as i64)
+    .bind(perms.can_choose_request_versions as i64)
     .bind(user_id)
     .execute(&mut *tx)
     .await?;

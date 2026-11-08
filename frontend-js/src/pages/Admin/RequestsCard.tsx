@@ -288,17 +288,23 @@ export function RequestsCard() {
           />
         </div>
         <div className="settings-field">
-          <label htmlFor="requests-client-category">Download category</label>
+          <label htmlFor="requests-client-category">
+            qBittorrent category (optional)
+          </label>
           <input
             type="text"
             id="requests-client-category"
+            aria-describedby="requests-client-category-hint"
             autoComplete="off"
             autoCapitalize="none"
             spellCheck={false}
-            placeholder="omnibus…"
             {...unknown}
             {...form.register("download_client_category", heldTrimmed)}
           />
+          <p className="settings-hint" id="requests-client-category-hint">
+            Files Omnibus downloads under this qBittorrent category. Leave empty
+            to use qBittorrent’s defaults.
+          </p>
         </div>
         <div className="settings-field">
           <label htmlFor="requests-client-folder">

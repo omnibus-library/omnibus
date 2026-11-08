@@ -35,24 +35,30 @@ one exception is a version row's seed count ("142 seeds"), which says how likely
 1. **Looking**: Omnibus is searching for versions of the book. A new request starts here.
 2. **Choose a version**: versions were found and the user picks one. This is the only state that needs the user.
    Once picked, the request shows as "Version chosen" until the download slice turns it into **On its way**.
+   Asking and picking are two permissions ("Ask for books" and "Pick versions", an admin holds both). A reader who
+   can only ask sees the versions and "Waiting for someone who can pick versions."; whoever can pick chooses for
+   any reader, and so also tries a stuck request again, chooses another version and settles the downloaded cover.
 3. **On its way**: the chosen version is downloading and being added to the library, shown as one progress bar.
 4. **Ready**: the format is in the library ("Ready to read" or "Ready to listen"). When the download's cover has more
-   pixels than the book's own, the requester or an admin is offered it ("Use the downloaded cover" or "Keep this one").
+   pixels than the book's own, someone who can pick versions is offered it ("Use the downloaded cover" or "Keep this one").
 
 Two states can end a request early:
 
 - **Stuck**: something went wrong, with a plain reason ("Couldn't find it", "Stopped moving", "Couldn't add it")
-  and a "Try again" button.
+  and, for readers who can pick versions, a "Try again" button; anyone else sees "Waiting for someone who can pick
+  versions to try again."
 - **Cancelled**: the user cancelled it (see S7).
 
 A found result is a **version**, never a "copy": "copy" already means a physical book in Omnibus. A version row shows
 its name, then where it came from, its format, size and seeds ("MyAnonamouse · EPUB · 1.8 MB · 142 seeds", or "Usenet"
 for a source with none), then whether it's the best match or didn't work. The best match and the next three show
-first, with "Show more" for the rest; "Details" opens the long form of every row. Usenet versions are left out
+first, with "Show more" for the rest. A version's name opens its source's page in a new tab, when the source gives one. Usenet versions are left out
 until Omnibus has a Usenet download client.
 
 Requesting from the wishlist asks one question (ebook or audiobook), starts the request, and takes the user
 straight to that book on the Requests page, already in "Looking".
+
+A request can also start from the Requests page's search ("+ Request"): it finds a library book or a provider's record of one the library lacks, and starts an ebook request without making a wishlist entry.
 
 ## Objectives
 
@@ -167,4 +173,4 @@ Notes:
   you · EPUB · 2.4 MB · stopped at 40%"). It never guesses a reason; choosing another version records "Swapped for
   another version" instead
 - Cancel is no longer offered once the import has started
-- Only the user who made the request (or an admin) can cancel it
+- Only the user who made the request, or someone who can pick versions, can cancel it

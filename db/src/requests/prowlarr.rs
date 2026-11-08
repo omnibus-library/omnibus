@@ -12,14 +12,14 @@ use reqwest::StatusCode;
 use serde::Deserialize;
 
 use crate::metadata_lookup::throttle::parse_retry_after;
-use crate::settings::RequestsConfig;
+use crate::settings::{is_plain_http_url, RequestsConfig};
 
 use super::{check_status, http_client, ConnectionError, REQUEST_TIMEOUT};
 
 const SERVICE: &str = "Prowlarr";
 
-/// A search fans out to every indexer, so it gets longer than a status call.
-const SEARCH_TIMEOUT: Duration = Duration::from_secs(30);
+/// Prowlarr answers a search when its slowest indexer does, and 15-40 s is normal.
+const SEARCH_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// How long to leave Prowlarr alone after a 429 that names no `Retry-After`.
 const DEFAULT_COOLDOWN: Duration = Duration::from_secs(10 * 60);
@@ -66,6 +66,8 @@ pub struct ProwlarrRelease {
     pub seeders: Option<i64>,
     /// Null when Prowlarr names none it knows.
     pub protocol: Option<ReleaseProtocol>,
+    /// The source's web page for the release; `None` when it gave none or one not safe to show.
+    pub info_url: Option<String>,
     pub indexer: Option<String>,
     /// A torrent-file URL or magnet; the client fetches the file and uploads it. Server-side only.
     pub link: String,
@@ -94,6 +96,8 @@ struct RawRelease {
     // Read loosely, so an unexpected shape loses only the protocol, not the whole search.
     protocol: Option<serde_json::Value>,
     indexer: Option<String>,
+    #[serde(rename = "infoUrl")]
+    info_url: Option<String>,
     #[serde(rename = "downloadUrl")]
     download_url: Option<String>,
     #[serde(rename = "magnetUrl")]
@@ -107,9 +111,43 @@ struct RawCategory {
     id: i64,
 }
 
+/// Parameter names that carry a login, in lower case.
+const KEY_PARAMS: [&str; 7] = [
+    "apikey",
+    "passkey",
+    "api_key",
+    "authkey",
+    "torrent_pass",
+    "rsskey",
+    "token",
+];
+
+/// Whether the query or fragment of `url` holds a login parameter, `;` counting as a separator too.
+// shortcut: keys carried in the URL path aren't detected, widen if an indexer is seen doing it
+fn carries_a_key(url: &reqwest::Url) -> bool {
+    [url.query(), url.fragment()]
+        .into_iter()
+        .flatten()
+        .flat_map(|part| part.split(['&', ';']))
+        .any(|pair| {
+            let name = pair.split('=').next().unwrap_or_default();
+            let name = urlencoding::decode(name).unwrap_or_default().to_lowercase();
+            KEY_PARAMS.contains(&name.as_str())
+        })
+}
+
+/// `page` when it is a plain web address that is neither on `prowlarr_host` nor carries a key.
+fn shown_page(page: Option<String>, prowlarr_host: Option<&str>) -> Option<String> {
+    let page = page.filter(|p| is_plain_http_url(p))?;
+    let url = reqwest::Url::parse(&page).ok()?;
+    let own_host = prowlarr_host.is_some() && url.host_str() == prowlarr_host;
+    (!own_host && !carries_a_key(&url)).then_some(page)
+}
+
 impl RawRelease {
-    /// The release, or `None` when it has no title or nothing to fetch it with.
-    fn into_release(self) -> Option<ProwlarrRelease> {
+    /// The release, or `None` when it has no title or nothing to fetch it with. Its page is
+    /// kept only when [`shown_page`] allows it.
+    fn into_release(self, prowlarr_host: Option<&str>) -> Option<ProwlarrRelease> {
         let link = self
             .download_url
             .or(self.magnet_url)
@@ -125,6 +163,7 @@ impl RawRelease {
                 .as_ref()
                 .and_then(serde_json::Value::as_str)
                 .and_then(ReleaseProtocol::parse),
+            info_url: shown_page(self.info_url, prowlarr_host),
             indexer: self.indexer.filter(|i| !i.is_empty()),
             link,
             categories: self
@@ -175,14 +214,24 @@ impl Prowlarr {
     /// Search the book categories for `query`, such as `Dracula Bram Stoker`. Results with
     /// no title or no link to fetch them by are left out.
     pub async fn search(&self, query: &str) -> Result<Vec<ProwlarrRelease>, ConnectionError> {
+        self.search_within(query, SEARCH_TIMEOUT).await
+    }
+
+    async fn search_within(
+        &self,
+        query: &str,
+        timeout: Duration,
+    ) -> Result<Vec<ProwlarrRelease>, ConnectionError> {
         if self.cooling_down() {
             return Err(ConnectionError::RateLimited);
         }
         let params = [("query", query), ("categories", "7020"), ("type", "search")];
-        let raw: Vec<RawRelease> = self.get_with("search", &params, SEARCH_TIMEOUT).await?;
+        let raw: Vec<RawRelease> = self.get_with("search", &params, timeout).await?;
+        let own_host = reqwest::Url::parse(&self.base).ok();
+        let own_host = own_host.as_ref().and_then(|u| u.host_str());
         Ok(raw
             .into_iter()
-            .filter_map(RawRelease::into_release)
+            .filter_map(|r| r.into_release(own_host))
             .collect())
     }
 

@@ -60,7 +60,8 @@ fn create_body(username: &str, password: &str, is_admin: bool) -> serde_json::Va
             "can_upload": is_admin,
             "can_edit": is_admin,
             "can_download": true,
-            "can_request": false,
+            "can_start_requests": false,
+            "can_choose_request_versions": false,
         },
     })
 }
@@ -191,7 +192,8 @@ async fn patch_permissions_returns_403_for_non_admin() {
             &format!("/api/admin/users/{}/permissions", bob.id),
             &token,
             Some(serde_json::json!({
-                "is_admin": false, "can_upload": true, "can_edit": true, "can_download": false, "can_request": false,
+                "is_admin": false, "can_upload": true, "can_edit": true, "can_download": false,
+                "can_start_requests": false, "can_choose_request_versions": false,
             })),
         ))
         .await
@@ -212,7 +214,8 @@ async fn patch_permissions_updates_flags() {
             &format!("/api/admin/users/{}/permissions", bob.id),
             &token,
             Some(serde_json::json!({
-                "is_admin": false, "can_upload": true, "can_edit": true, "can_download": false, "can_request": false,
+                "is_admin": false, "can_upload": true, "can_edit": true, "can_download": false,
+                "can_start_requests": false, "can_choose_request_versions": false,
             })),
         ))
         .await
@@ -225,13 +228,13 @@ async fn patch_permissions_updates_flags() {
 }
 
 #[tokio::test]
-async fn patch_permissions_grants_then_revokes_can_request_seen_by_auth_me() {
+async fn patch_permissions_grants_then_revokes_each_request_permission_seen_by_auth_me() {
     let (app, state, pool) = fixture_book_requests(true).await;
     let auth_app = crate::auth::auth_router(state);
     let admin_token = admin_token(&pool, "alice").await;
     let bob = auth_test_support::create_user(&pool, "bob").await;
     let bob_token = auth_test_support::bearer_token(&pool, bob.id).await;
-    let me_can_request = || async {
+    let me_request_flags = || async {
         let res = auth_app
             .clone()
             .oneshot(req("GET", "/api/auth/me", &bob_token, None))
@@ -239,29 +242,28 @@ async fn patch_permissions_grants_then_revokes_can_request_seen_by_auth_me() {
             .unwrap();
         assert_eq!(res.status(), StatusCode::OK);
         let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
-        serde_json::from_slice::<UserSummary>(&bytes)
-            .unwrap()
-            .can_request
+        let me = serde_json::from_slice::<UserSummary>(&bytes).unwrap();
+        (me.can_start_requests, me.can_choose_request_versions)
     };
-    let patch = |can_request: bool| {
+    let patch = |can_start: bool, can_choose: bool| {
         req(
             "PATCH",
             &format!("/api/admin/users/{}/permissions", bob.id),
             &admin_token,
             Some(serde_json::json!({
                 "is_admin": false, "can_upload": false, "can_edit": false, "can_download": true,
-                "can_request": can_request,
+                "can_start_requests": can_start,
+                "can_choose_request_versions": can_choose,
             })),
         )
     };
 
-    assert!(!me_can_request().await);
-    let res = app.clone().oneshot(patch(true)).await.unwrap();
-    assert_eq!(res.status(), StatusCode::NO_CONTENT);
-    assert!(me_can_request().await);
-    let res = app.clone().oneshot(patch(false)).await.unwrap();
-    assert_eq!(res.status(), StatusCode::NO_CONTENT);
-    assert!(!me_can_request().await);
+    assert_eq!(me_request_flags().await, (false, false));
+    for (start, choose) in [(true, false), (false, true), (false, false)] {
+        let res = app.clone().oneshot(patch(start, choose)).await.unwrap();
+        assert_eq!(res.status(), StatusCode::NO_CONTENT);
+        assert_eq!(me_request_flags().await, (start, choose));
+    }
 }
 
 #[tokio::test]
@@ -275,7 +277,8 @@ async fn patch_permissions_returns_409_demoting_last_admin() {
             &format!("/api/admin/users/{}/permissions", admin.id),
             &token,
             Some(serde_json::json!({
-                "is_admin": false, "can_upload": false, "can_edit": false, "can_download": true, "can_request": false,
+                "is_admin": false, "can_upload": false, "can_edit": false, "can_download": true,
+                "can_start_requests": false, "can_choose_request_versions": false,
             })),
         ))
         .await
@@ -293,7 +296,8 @@ async fn patch_permissions_returns_404_for_unknown_user() {
             "/api/admin/users/9999/permissions",
             &token,
             Some(serde_json::json!({
-                "is_admin": false, "can_upload": false, "can_edit": false, "can_download": true, "can_request": false,
+                "is_admin": false, "can_upload": false, "can_edit": false, "can_download": true,
+                "can_start_requests": false, "can_choose_request_versions": false,
             })),
         ))
         .await

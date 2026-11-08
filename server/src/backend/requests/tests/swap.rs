@@ -9,7 +9,12 @@ fn swap_uri(id: i64) -> String {
 /// A request on its way with the version it picked (`picked`) and one other (`other`); returns
 /// `(request id, picked id)`.
 async fn on_its_way(pool: &SqlitePool, user: i64) -> (i64, i64) {
-    let uuid = seed_book(pool, "Dracula").await;
+    on_its_way_for(pool, user, "Dracula").await
+}
+
+/// [`on_its_way`] for the book called `title`.
+async fn on_its_way_for(pool: &SqlitePool, user: i64, title: &str) -> (i64, i64) {
+    let uuid = seed_book(pool, title).await;
     let id = seed_request(pool, user, &uuid).await;
     let mut ids = Vec::new();
     for title in ["picked", "other"] {
@@ -27,7 +32,7 @@ async fn on_its_way(pool: &SqlitePool, user: i64) -> (i64, i64) {
     }
     sqlx::query(
         "UPDATE book_requests SET state = 'on_its_way', chosen_result_id = ?, progress = 0.3,
-         client_tag = 'omnibus-1' WHERE id = ?",
+         client_hash = 'omnibus-1' WHERE id = ?",
     )
     .bind(ids[0])
     .bind(id)
@@ -79,18 +84,32 @@ mod post_swap_request {
     }
 
     #[tokio::test]
-    async fn answers_403_to_another_reader_and_lets_an_admin_swap() {
+    async fn answers_403_to_a_reader_who_cannot_pick_even_on_their_own_request() {
         let (app, _, pool) = fixture_book_requests(true).await;
-        let (ada, _) = requester(&pool, "ada").await;
-        let (_, grace) = requester(&pool, "grace").await;
-        let admin = admin_token(&pool).await;
+        let (ada, token) = asker(&pool, "ada").await;
         let (id, _) = on_its_way(&pool, ada).await;
 
-        let other = send(&app, "POST", &swap_uri(id), Some(&grace), None).await;
-        let by_admin = send(&app, "POST", &swap_uri(id), Some(&admin), None).await;
+        let res = send(&app, "POST", &swap_uri(id), Some(&token), None).await;
 
-        assert_eq!(other.status(), StatusCode::FORBIDDEN);
-        assert_eq!(by_admin.status(), StatusCode::OK);
+        assert_eq!(res.status(), StatusCode::FORBIDDEN);
+        let row = store::get(&pool, id).await.unwrap().unwrap();
+        assert_eq!(row.state, RequestState::OnItsWay);
+    }
+
+    #[tokio::test]
+    async fn lets_a_chooser_and_an_admin_swap_another_readers_download() {
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let (ada, _) = asker(&pool, "ada").await;
+        let (_, picker) = chooser(&pool, "picker").await;
+        let admin = admin_token(&pool).await;
+
+        for (n, token) in [picker, admin].iter().enumerate() {
+            let (id, _) = on_its_way_for(&pool, ada, &format!("Dracula {n}")).await;
+
+            let res = send(&app, "POST", &swap_uri(id), Some(token), None).await;
+
+            assert_eq!(res.status(), StatusCode::OK, "token {n}");
+        }
     }
 
     #[tokio::test]

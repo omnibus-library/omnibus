@@ -3434,7 +3434,7 @@
             "description": "You aren't signed in."
           },
           "403": {
-            "description": "Your account can't make requests."
+            "description": "Your account can't ask for books."
           },
           "404": {
             "description": "Book requests are off on this server, or the book doesn't exist."
@@ -6444,6 +6444,48 @@
             "description": "Book requests are off on this server."
           }
         }
+      },
+      "post": {
+        "tags": [
+          "Requests"
+        ],
+        "summary": "Start a request for a book the library lacks",
+        "description": "Makes the book from a provider's record of it, without files, and starts looking for an\nebook of it; poll `GET /api/requests/{id}` until it leaves `looking`. No wishlist entry is\nmade. To request a book the library already has, use `POST /api/books/{uuid}/requests`.",
+        "operationId": "start_request_from_metadata",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartRequestFromMeta"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "The book was made and the request started.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookRequest"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`kind` isn't `ebook`, or a field of `meta` is over its length cap."
+          },
+          "403": {
+            "description": "Your account can't ask for books."
+          },
+          "404": {
+            "description": "Book requests are off on this server."
+          },
+          "429": {
+            "description": "You started too many requests lately, or have too many in progress."
+          }
+        }
       }
     },
     "/api/requests/{id}": {
@@ -6492,7 +6534,7 @@
           "Requests"
         ],
         "summary": "Cancel a request",
-        "description": "The request reads `cancelled` at once. The download is told to stop a few seconds later\n(see `cancel_at`), so `DELETE /api/requests/{id}/cancel` can take the cancel back until\nthen. Only a request that is searching, waiting on a pick, picked or still downloading can\nbe cancelled. Only the reader who made the request, or an admin, can do this.",
+        "description": "The request reads `cancelled` at once. The download is told to stop a few seconds later\n(see `cancel_at`), so `DELETE /api/requests/{id}/cancel` can take the cancel back until\nthen. Only a request that is searching, waiting on a pick, picked or still downloading can\nbe cancelled. Only the reader who made the request, a reader who can pick versions, or an\nadmin, can do this.",
         "operationId": "cancel_book_request",
         "parameters": [
           {
@@ -6521,7 +6563,7 @@
             "description": "You aren't signed in."
           },
           "403": {
-            "description": "Your account can't make requests, or the request is another reader's."
+            "description": "The request is another reader's and your account can't pick versions."
           },
           "404": {
             "description": "Book requests are off on this server, or there is no such request."
@@ -6536,7 +6578,7 @@
           "Requests"
         ],
         "summary": "Undo a cancel",
-        "description": "Takes a cancel back while its grace lasts (until `cancel_at`), putting the request in the\nstate it was cancelled from; a request cancelled while looking searches again, which counts\nas a start. After the grace the download is stopped and cannot be undone, nor can a cancel\nonce you started another request for the same book. Only the reader who made the request, or\nan admin, can do this.",
+        "description": "Takes a cancel back while its grace lasts (until `cancel_at`), putting the request in the\nstate it was cancelled from; a request cancelled while looking searches again, which counts\nas a start. After the grace the download is stopped and cannot be undone, nor can a cancel\nonce you started another request for the same book. Only a reader who can pick versions, an\nadmin, or the reader who made the request while they can ask for books, can do this.",
         "operationId": "undo_cancel_book_request",
         "parameters": [
           {
@@ -6565,7 +6607,7 @@
             "description": "You aren't signed in."
           },
           "403": {
-            "description": "Your account can't make requests, or the request is another reader's."
+            "description": "Your account can't ask for books or pick versions, or the request is another reader's and it can't pick versions."
           },
           "404": {
             "description": "Book requests are off on this server, or there is no such request."
@@ -6574,7 +6616,7 @@
             "description": "The request isn't cancelled, the undo grace has ended, or you have started another request for this book."
           },
           "429": {
-            "description": "You have too many requests in progress to restore this one."
+            "description": "You started too many requests lately, or have too many in progress to restore this one."
           }
         }
       }
@@ -6585,7 +6627,7 @@
           "Requests"
         ],
         "summary": "Choose a version",
-        "description": "Picks one of the versions a request found, which ends the choosing. Only a request in\n`choose` takes a pick, and only a version the request offers. The body carries the\nversion's `id` and nothing else. Only the reader who made the request, or an admin, can\npick.",
+        "description": "Picks one of the versions a request found, which ends the choosing. Only a request in\n`choose` takes a pick, and only a version the request offers. The body carries the\nversion's `id` and nothing else. Only a reader who can pick versions, or an admin, can pick.",
         "operationId": "choose_request_version",
         "parameters": [
           {
@@ -6624,7 +6666,7 @@
             "description": "You aren't signed in."
           },
           "403": {
-            "description": "Your account can't make requests, or the request is another reader's."
+            "description": "Your account can't pick versions."
           },
           "404": {
             "description": "Book requests are off on this server, or there is no such request or version."
@@ -6644,7 +6686,7 @@
           "Requests"
         ],
         "summary": "Get a request's downloaded cover",
-        "description": "The cover that came with the request's finished download, offered as a replacement for the\nbook's own: the image as stored, validated by its `ETag`. It is there while `cover_offer` is\non the request, until the offer is taken or kept (`POST` or `DELETE` on this path). Only the\nreader who made the request, or an admin, is offered it.",
+        "description": "The cover that came with the request's finished download, offered as a replacement for the\nbook's own: the image as stored, validated by its `ETag`. It is there while `cover_offer` is\non the request, until the offer is taken or kept (`POST` or `DELETE` on this path). Only a\nreader who can pick versions, or an admin, is offered it.",
         "operationId": "get_request_cover",
         "parameters": [
           {
@@ -6685,7 +6727,7 @@
           "Requests"
         ],
         "summary": "Use the downloaded cover",
-        "description": "Makes the cover the finished download brought the book's cover, the way uploading one\ndoes: it shows on every device, and a synced Kobo fetches it on its next sync. Only a\n`ready` request whose offer is still on (`cover_offer` in the request) takes it, and the\noffer is gone afterwards. Only the reader who made the request, or an admin, can do this.",
+        "description": "Makes the cover the finished download brought the book's cover, the way uploading one\ndoes: it shows on every device, and a synced Kobo fetches it on its next sync. Only a\n`ready` request whose offer is still on (`cover_offer` in the request) takes it, and the\noffer is gone afterwards. Only a reader who can pick versions, or an admin, can do this.",
         "operationId": "take_request_cover",
         "parameters": [
           {
@@ -6714,7 +6756,7 @@
             "description": "You aren't signed in."
           },
           "403": {
-            "description": "Your account can't make requests, or the request is another reader's."
+            "description": "Your account can't pick versions."
           },
           "404": {
             "description": "Book requests are off on this server, or there is no such request."
@@ -6729,7 +6771,7 @@
           "Requests"
         ],
         "summary": "Keep the book's cover",
-        "description": "Turns the downloaded cover down: the book keeps the cover it has, and the offer is gone\nfor good. Only the reader who made the request, or an admin, can do this.",
+        "description": "Turns the downloaded cover down: the book keeps the cover it has, and the offer is gone\nfor good. Only a reader who can pick versions, or an admin, can do this.",
         "operationId": "keep_request_cover",
         "parameters": [
           {
@@ -6758,7 +6800,7 @@
             "description": "You aren't signed in."
           },
           "403": {
-            "description": "Your account can't make requests, or the request is another reader's."
+            "description": "Your account can't pick versions."
           },
           "404": {
             "description": "Book requests are off on this server, or there is no such request."
@@ -6775,7 +6817,7 @@
           "Requests"
         ],
         "summary": "Try a request again",
-        "description": "Searches again for a request that is `stuck` or still `looking`, and puts it back to\n`looking`; poll `GET /api/requests/{id}` as after a start. That counts as a start toward\nthe rate limit. A request stuck on a stopped download (`stopped_moving`) instead drops that\ndownload and goes back to `choose` among the other versions, with nothing searched and\nnothing counted. One stuck because its finished download could not be added to the library\n(`couldnt_add`) goes back to `on_its_way` and only the adding is tried again: the download\nis kept, nothing is searched or fetched, and nothing is counted. Only the reader who made\nthe request, or an admin, can do this.",
+        "description": "Searches again for a request that is `stuck` or still `looking`, and puts it back to\n`looking`; poll `GET /api/requests/{id}` as after a start. That counts as a start toward\nthe rate limit. A request stuck on a stopped download (`stopped_moving`) instead drops that\ndownload and goes back to `choose` among the other versions, with nothing searched and\nnothing counted. One stuck because its finished download could not be added to the library\n(`couldnt_add`) goes back to `on_its_way` and only the adding is tried again: the download\nis kept, nothing is searched or fetched, and nothing is counted. Only a reader who can pick\nversions, or an admin, can do this.",
         "operationId": "retry_book_request",
         "parameters": [
           {
@@ -6804,7 +6846,7 @@
             "description": "You aren't signed in."
           },
           "403": {
-            "description": "Your account can't make requests, or the request is another reader's."
+            "description": "Your account can't pick versions."
           },
           "404": {
             "description": "Book requests are off on this server, or there is no such request."
@@ -6824,7 +6866,7 @@
           "Requests"
         ],
         "summary": "Pick another version",
-        "description": "Gives up the version that is downloading (or has stopped) for good and goes back to\n`choose` among the other versions found; the download is removed a moment later. The\nrequest carries a `note` saying so, and the version is listed with `rejected` set. With no\nother version left it searches again and is `looking`, which counts as a start toward the\nrate limit. Only a request that is `on_its_way` and not fully downloaded, or stuck on a\nstopped download, can be swapped. Only the reader who made the request, or an admin, can\ndo this.",
+        "description": "Gives up the version that is downloading (or has stopped) for good and goes back to\n`choose` among the other versions found; the download is removed a moment later. The\nrequest carries a `note` saying so, and the version is listed with `rejected` set. With no\nother version left it searches again and is `looking`, which counts as a start toward the\nrate limit. Only a request that is `on_its_way` and not fully downloaded, or stuck on a\nstopped download, can be swapped. Only a reader who can pick versions, or an admin, can do\nthis.",
         "operationId": "swap_request_version",
         "parameters": [
           {
@@ -6853,7 +6895,7 @@
             "description": "You aren't signed in."
           },
           "403": {
-            "description": "Your account can't make requests, or the request is another reader's."
+            "description": "Your account can't pick versions."
           },
           "404": {
             "description": "Book requests are off on this server, or there is no such request."
@@ -9502,18 +9544,22 @@
           "can_upload",
           "can_edit",
           "can_download",
-          "can_request",
+          "can_start_requests",
+          "can_choose_request_versions",
           "created_at",
           "locked"
         ],
         "properties": {
+          "can_choose_request_versions": {
+            "type": "boolean"
+          },
           "can_download": {
             "type": "boolean"
           },
           "can_edit": {
             "type": "boolean"
           },
-          "can_request": {
+          "can_start_requests": {
             "type": "boolean"
           },
           "can_upload": {
@@ -13323,7 +13369,7 @@
       },
       "ExternalBookMeta": {
         "type": "object",
-        "description": "Book metadata from an external provider. Only `isbn13`, `title` and `source` are\nalways set, and providers differ on the rest. `cover_url` points at the provider's\nimage, which the server downloads only when it creates a book or wishlist entry from\nthis metadata.",
+        "description": "Book metadata from an external provider. Only `isbn13`, `title` and `source` are\nalways set, and providers differ on the rest. `cover_url` points at the provider's\nimage, which the server downloads only when it creates a book from this metadata, for a\nwishlist entry, a physical copy or a request.",
         "required": [
           "isbn13",
           "title",
@@ -15977,6 +16023,13 @@
             ],
             "description": "The source the version came from."
           },
+          "info_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The source's web page for this version, an http or https address. Null when the source gave none."
+          },
           "protocol": {
             "oneOf": [
               {
@@ -16023,7 +16076,8 @@
         ],
         "properties": {
           "download_client_category": {
-            "type": "string"
+            "type": "string",
+            "description": "The category downloads are filed under; empty when none is sent."
           },
           "download_client_kind": {
             "$ref": "#/components/schemas/DownloadClientKind"
@@ -16092,7 +16146,7 @@
         "properties": {
           "download_client_category": {
             "type": "string",
-            "description": "The category the client files Omnibus downloads under, up to 255 bytes. Empty\nmeans `omnibus`."
+            "description": "The category the client files Omnibus downloads under, up to 255 bytes. Empty\nsends no category, so the client's own defaults apply."
           },
           "download_client_kind": {
             "$ref": "#/components/schemas/DownloadClientKind"
@@ -17682,6 +17736,24 @@
           }
         }
       },
+      "StartRequestFromMeta": {
+        "type": "object",
+        "description": "Starts a request for one format of a book the library doesn't have yet, made from a\nprovider's record of it. The book is created without files; no wishlist entry is made.",
+        "required": [
+          "kind",
+          "meta"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/RequestKind",
+            "description": "Only `ebook` can be requested yet."
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ExternalBookMeta",
+            "description": "The provider's record, as a metadata search returned it."
+          }
+        }
+      },
       "StatsRange": {
         "type": "string",
         "description": "The period reading stats cover. Each calendar period runs from its start to now, in\nyour time zone.",
@@ -18616,16 +18688,20 @@
           "can_upload",
           "can_edit",
           "can_download",
-          "can_request"
+          "can_start_requests",
+          "can_choose_request_versions"
         ],
         "properties": {
+          "can_choose_request_versions": {
+            "type": "boolean"
+          },
           "can_download": {
             "type": "boolean"
           },
           "can_edit": {
             "type": "boolean"
           },
-          "can_request": {
+          "can_start_requests": {
             "type": "boolean"
           },
           "can_upload": {
@@ -18654,7 +18730,11 @@
           },
           "book_requests": {
             "type": "boolean",
-            "description": "Whether the server has book requests on. Every reader may then see the requests on\n`GET /api/requests`, whatever their `can_request`."
+            "description": "Whether the server has book requests on. Every reader may then see the requests on\n`GET /api/requests`, whatever their `can_start_requests`."
+          },
+          "can_choose_request_versions": {
+            "type": "boolean",
+            "description": "Whether the user may pick the version of any reader's request: false for everyone while the server has book requests off, else admins always may."
           },
           "can_download": {
             "type": "boolean"
@@ -18662,9 +18742,9 @@
           "can_edit": {
             "type": "boolean"
           },
-          "can_request": {
+          "can_start_requests": {
             "type": "boolean",
-            "description": "Whether the user may request books the library lacks: false for everyone while the server has book requests off, else admins always may."
+            "description": "Whether the user may ask for a book the library lacks: false for everyone while the server has book requests off, else admins always may."
           },
           "can_upload": {
             "type": "boolean"

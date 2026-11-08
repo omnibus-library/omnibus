@@ -2,11 +2,13 @@ use omnibus_shared::{RequestState, StuckReason};
 use sqlx::SqlitePool;
 
 use crate::requests::store::{self, RequestRow};
-use crate::requests::test_support::{on_its_way, seed, tag, update, Call, StubClient};
+use crate::requests::test_support::{hash, magnet, on_its_way, seed, update, Call, StubClient};
 use crate::worker::{Worker, WorkerConfig};
 
 use super::*;
 
+mod hash_ownership;
+mod migration_0119;
 mod removal;
 
 const NOW: i64 = 1_800_000_000;
@@ -42,14 +44,14 @@ mod poll_once {
             tick(&pool, &client, NOW).await;
 
             let added = Call::Add {
-                link: "magnet:?xt=urn:btih:abc".to_string(),
+                link: magnet(id),
                 category: CATEGORY.to_string(),
-                tag: tag(id),
             };
-            assert_eq!(client.calls()[..2], [Call::Status(tag(id)), added]);
+            assert_eq!(client.calls()[..2], [Call::Status(hash(id)), added]);
             let after = row(&pool, id).await;
             assert_eq!(after.state, RequestState::OnItsWay);
-            assert_eq!(after.client_tag, Some(tag(id)));
+            assert_eq!(after.client_hash, Some(hash(id)));
+            assert!(!after.client_adopted);
             assert_eq!(after.moved_at, Some(NOW));
         }
 
@@ -68,15 +70,33 @@ mod poll_once {
         }
 
         #[tokio::test]
-        async fn adds_nothing_when_the_client_already_has_the_download() {
+        async fn adopts_a_download_the_client_already_has() {
             let pool = pool().await;
             let id = seed(&pool, "ada", "chosen").await;
-            let client = StubClient::new().with_status(&tag(id), 0.2, "downloading");
+            let client = StubClient::new().with_status(&hash(id), 0.2, "downloading");
 
             tick(&pool, &client, NOW).await;
 
-            assert!(!client.calls().iter().any(|c| matches!(c, Call::Add { .. })));
-            assert_eq!(row(&pool, id).await.state, RequestState::OnItsWay);
+            let after = row(&pool, id).await;
+            assert_eq!(after.state, RequestState::OnItsWay);
+            assert_eq!(after.client_hash, Some(hash(id)));
+            assert!(after.client_adopted);
+        }
+
+        #[tokio::test]
+        async fn never_takes_an_unrelated_finished_download_for_the_request() {
+            let pool = pool().await;
+            let id = seed(&pool, "ada", "chosen").await;
+            // A finished torrent from before, under some other request's hash.
+            let client = StubClient::new().with_status(&hash(id + 98), 1.0, "stalledUP");
+
+            tick(&pool, &client, NOW).await;
+
+            let after = row(&pool, id).await;
+            assert_eq!(after.client_hash, Some(hash(id)));
+            assert!(!after.client_adopted);
+            assert!(after.progress.is_none_or(|p| p < 1.0));
+            assert!(store::awaiting_import(&pool).await.unwrap().is_empty());
         }
     }
 
@@ -88,8 +108,8 @@ mod poll_once {
             let pool = pool().await;
             let refused = seed(&pool, "ada", "chosen").await;
             let healthy = on_its_way(&pool, "grace", 0.2, NOW - 60).await;
-            let client = StubClient::new().refusing(&tag(refused)).with_status(
-                &tag(healthy),
+            let client = StubClient::new().refusing(&hash(refused)).with_status(
+                &hash(healthy),
                 0.5,
                 "downloading",
             );
@@ -118,18 +138,18 @@ mod poll_once {
         async fn asks_about_a_request_on_its_way_after_a_restart_and_never_adds_it_again() {
             let pool = pool().await;
             let id = on_its_way(&pool, "ada", 0.4, NOW - 60).await;
-            let client = StubClient::new().with_status(&tag(id), 0.4, "downloading");
+            let client = StubClient::new().with_status(&hash(id), 0.4, "downloading");
 
             tick(&pool, &client, NOW).await;
 
-            assert_eq!(client.calls(), [Call::Status(tag(id))]);
+            assert_eq!(client.calls(), [Call::Status(hash(id))]);
         }
 
         #[tokio::test]
         async fn records_rising_progress_and_restarts_the_stall_clock() {
             let pool = pool().await;
             let id = on_its_way(&pool, "ada", 0.4, NOW - 60).await;
-            let client = StubClient::new().with_status(&tag(id), 0.55, "downloading");
+            let client = StubClient::new().with_status(&hash(id), 0.55, "downloading");
 
             tick(&pool, &client, NOW).await;
 
@@ -143,8 +163,8 @@ mod poll_once {
             let pool = pool().await;
             let id = on_its_way(&pool, "ada", 0.4, NOW - 60).await;
             let client = StubClient::new()
-                .with_status(&tag(id), 0.55, "downloading")
-                .with_eta(&tag(id), 180);
+                .with_status(&hash(id), 0.55, "downloading")
+                .with_eta(&hash(id), 180);
 
             tick(&pool, &client, NOW).await;
 
@@ -157,8 +177,8 @@ mod poll_once {
             let id = on_its_way(&pool, "ada", 0.4, NOW - 60).await;
             update(&pool, id, &format!("expected_done_at = {}", NOW + 30)).await;
             let client = StubClient::new()
-                .with_status(&tag(id), 0.4, "stalledDL")
-                .with_eta(&tag(id), 8_640_000);
+                .with_status(&hash(id), 0.4, "stalledDL")
+                .with_eta(&hash(id), 8_640_000);
 
             tick(&pool, &client, NOW).await;
 
@@ -172,8 +192,8 @@ mod poll_once {
             update(&pool, id, &format!("expected_done_at = {}", NOW + 30)).await;
             // A seeding torrent's eta is how long it seeds, not how long it downloads.
             let client = StubClient::new()
-                .with_status(&tag(id), 1.0, "uploading")
-                .with_eta(&tag(id), 500);
+                .with_status(&hash(id), 1.0, "uploading")
+                .with_eta(&hash(id), 500);
 
             tick(&pool, &client, NOW).await;
 
@@ -185,7 +205,7 @@ mod poll_once {
             let pool = pool().await;
             let id = on_its_way(&pool, "ada", 0.4, NOW - STALL_SECS - 1).await;
             update(&pool, id, &format!("expected_done_at = {}", NOW + 30)).await;
-            let client = StubClient::new().with_status(&tag(id), 0.4, "stalledDL");
+            let client = StubClient::new().with_status(&hash(id), 0.4, "stalledDL");
 
             tick(&pool, &client, NOW).await;
 
@@ -198,7 +218,7 @@ mod poll_once {
         async fn keeps_waiting_while_a_download_with_no_peers_is_inside_the_stall_window() {
             let pool = pool().await;
             let id = on_its_way(&pool, "ada", 0.4, NOW - STALL_SECS).await;
-            let client = StubClient::new().with_status(&tag(id), 0.4, "stalledDL");
+            let client = StubClient::new().with_status(&hash(id), 0.4, "stalledDL");
 
             tick(&pool, &client, NOW).await;
 
@@ -209,7 +229,7 @@ mod poll_once {
         async fn stops_a_download_whose_bytes_have_not_moved_for_longer_than_the_stall_window() {
             let pool = pool().await;
             let id = on_its_way(&pool, "ada", 0.4, NOW - STALL_SECS - 1).await;
-            let client = StubClient::new().with_status(&tag(id), 0.4, "stalledDL");
+            let client = StubClient::new().with_status(&hash(id), 0.4, "stalledDL");
 
             tick(&pool, &client, NOW).await;
 
@@ -224,8 +244,8 @@ mod poll_once {
             let broken = on_its_way(&pool, "ada", 0.4, NOW).await;
             let missing = on_its_way(&pool, "grace", 0.4, NOW).await;
             let client = StubClient::new()
-                .with_status(&tag(broken), 0.5, "error")
-                .with_status(&tag(missing), 0.5, "missingFiles");
+                .with_status(&hash(broken), 0.5, "error")
+                .with_status(&hash(missing), 0.5, "missingFiles");
 
             tick(&pool, &client, NOW).await;
 
@@ -244,8 +264,8 @@ mod poll_once {
             let seeding = on_its_way(&pool, "ada", 0.9, NOW - 60).await;
             let paused = on_its_way(&pool, "grace", 0.9, NOW - 60).await;
             let client = StubClient::new()
-                .with_status(&tag(seeding), 1.0, "stalledUP")
-                .with_status(&tag(paused), 1.0, "pausedUP");
+                .with_status(&hash(seeding), 1.0, "stalledUP")
+                .with_status(&hash(paused), 1.0, "pausedUP");
 
             let busy = tick(&pool, &client, NOW).await;
 
@@ -273,7 +293,7 @@ mod poll_once {
         async fn does_not_call_a_download_complete_while_the_client_is_still_checking_it() {
             let pool = pool().await;
             let id = on_its_way(&pool, "ada", 0.9, NOW - 60).await;
-            let client = StubClient::new().with_status(&tag(id), 0.99, "checkingDL");
+            let client = StubClient::new().with_status(&hash(id), 0.99, "checkingDL");
 
             tick(&pool, &client, NOW).await;
 
@@ -303,7 +323,7 @@ mod poll_once {
             update(
                 &pool,
                 id,
-                &format!("client_tag = '{}', moved_at = {}", tag(id), NOW - 599),
+                &format!("client_hash = '{}', moved_at = {}", hash(id), NOW - 599),
             )
             .await;
 
@@ -319,7 +339,7 @@ mod poll_once {
             update(
                 &pool,
                 id,
-                &format!("client_tag = '{}', moved_at = {}", tag(id), NOW - 601),
+                &format!("client_hash = '{}', moved_at = {}", hash(id), NOW - 601),
             )
             .await;
 
@@ -424,7 +444,7 @@ mod poll_once {
         async fn reports_work_while_a_download_is_incomplete() {
             let pool = pool().await;
             let id = on_its_way(&pool, "ada", 0.4, NOW).await;
-            let client = StubClient::new().with_status(&tag(id), 0.5, "downloading");
+            let client = StubClient::new().with_status(&hash(id), 0.5, "downloading");
 
             assert!(tick(&pool, &client, NOW).await);
         }

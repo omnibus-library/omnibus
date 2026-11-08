@@ -407,6 +407,10 @@
   padding: 0.2rem 0;
   cursor: pointer;
 }
+/* Under its checkbox, in line with the label's text. */
+.users-perm-hint {
+  margin-left: 1.5rem;
+}
 
 .users-modal-overlay {
   position: fixed;

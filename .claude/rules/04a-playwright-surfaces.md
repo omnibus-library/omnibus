@@ -188,9 +188,9 @@ previews the reader's latest. Delete author is behind `author-more`.
 
 **A request's version row has no format element.** The format sits inside
 the one-string source line (`request-version-meta`), so `RequestsPage.version`
-matches it there; Details is one lane-level toggle that opens every row's
-`request-details`, and Show more hides choosable versions past the first four
-(tried ones always show).
+matches it there; a version's name is a `link` (`pageLinkOf`) when the source gave
+a page; Show more hides choosable versions past the first four (tried ones always
+show).
 
 **The filter bar and what reads its saved filter** (the facets, their menus,
 the shelf lens and `/shelves/:id` states) have their own file:

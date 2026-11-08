@@ -81,13 +81,17 @@ export const googleBooksConfiguredQuery = queryOptions({
   staleTime: Number.POSITIVE_INFINITY,
 });
 
+/** A library book as the search found it: the palette hit's `formats` and `year` ride along, and a lookup by ISBN has neither. */
+export type FoundBook = ScanBook &
+  Partial<Pick<PaletteBookHit, "formats" | "year">>;
+
 /**
  * A library-search hit as the confirm screen renders a book. `author_display` stays one
  * entry, not split on ", ", because a sort-form name ("Weir, Andy") carries that separator.
  */
 export function scanBookFromHit(
   hit: PaletteBookHit & { uuid: string },
-): ScanBook {
+): FoundBook {
   const display = hit.author_display.trim();
   return {
     uuid: hit.uuid,
@@ -97,13 +101,15 @@ export function scanBookFromHit(
     has_physical: hit.has_physical ?? false,
     has_files: hit.formats.length > 0,
     isbn: null,
+    formats: hit.formats,
+    year: hit.year,
   };
 }
 
 /** The library's books matching `query`, and how many matched before the list was cut. */
 export async function searchLibraryBooks(
   query: string,
-): Promise<{ books: ScanBook[]; total: number }> {
+): Promise<{ books: FoundBook[]; total: number }> {
   const found = ok(await getSearchPalette({ q: query }));
   const books = found.books.flatMap((hit) =>
     hit.uuid ? [scanBookFromHit({ ...hit, uuid: hit.uuid })] : [],

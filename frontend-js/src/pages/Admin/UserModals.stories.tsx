@@ -23,9 +23,13 @@ import { UsersCard } from "./UsersCard";
 
 const USERS = "/api/admin/users";
 
+// The server reports a request permission only while book requests are on.
+const REQUESTS_ON = { ...WIRE_ADA, book_requests: true };
+
 const meta = {
   title: "Pages/Admin/UserModals",
   component: UsersCard,
+  parameters: { user: REQUESTS_ON },
   beforeEach: resetUserModals,
 } satisfies Meta<typeof UsersCard>;
 
@@ -76,7 +80,7 @@ const readsOfUsersAndMe = [
   }),
   http.get("/api/auth/me", () => {
     reads.me += 1;
-    return HttpResponse.json(WIRE_ADA);
+    return HttpResponse.json(REQUESTS_ON);
   }),
 ];
 
@@ -97,19 +101,33 @@ export const NewUserStartsWithDownloadOnly: Story = {
     await expect(checkbox(dialog, "Upload books")).not.toBeChecked();
     await expect(checkbox(dialog, "Edit metadata")).not.toBeChecked();
     await expect(checkbox(dialog, "Download")).toBeChecked();
-    await expect(checkbox(dialog, "Request books")).not.toBeChecked();
+    await expect(checkbox(dialog, "Ask for books")).not.toBeChecked();
+    await expect(checkbox(dialog, "Pick versions")).not.toBeChecked();
+    await expect(checkbox(dialog, "Pick versions")).toHaveAccessibleDescription(
+      "Choose, retry or cancel any reader’s request.",
+    );
+    await expect(
+      within(dialog).queryByRole("checkbox", { name: "Request books" }),
+    ).toBeNull();
   },
 };
 
 export const NewUserOffersNoRequestGrantWhenRequestsAreOff: Story = {
-  parameters: { user: { ...WIRE_ADA, can_request: false } },
+  parameters: {
+    user: {
+      ...WIRE_ADA,
+      book_requests: false,
+      can_start_requests: false,
+      can_choose_request_versions: false,
+    },
+  },
   render: () => <NewUserModal onClose={close} onCreated={done} />,
   play: async ({ canvas, userEvent }) => {
     const dialog = await canvas.findByRole("dialog", { name: "New user" });
     await expect(checkbox(dialog, "Download")).toBeInTheDocument();
-    await expect(
-      within(dialog).queryByRole("checkbox", { name: "Request books" }),
-    ).toBeNull();
+    for (const name of ["Ask for books", "Pick versions"]) {
+      await expect(within(dialog).queryByRole("checkbox", { name })).toBeNull();
+    }
 
     // Promoting then demoting must not leave a grant the admin cannot see.
     await userEvent.click(checkbox(dialog, "Administrator"));
@@ -123,7 +141,10 @@ export const NewUserOffersNoRequestGrantWhenRequestsAreOff: Story = {
       within(dialog).getByRole("button", { name: "Create user" }),
     );
     await waitFor(() => expect(writes.created).toHaveLength(1));
-    await expect(writes.created[0]?.permissions.can_request).toBe(false);
+    await expect(writes.created[0]?.permissions).toMatchObject({
+      can_start_requests: false,
+      can_choose_request_versions: false,
+    });
   },
 };
 
@@ -153,7 +174,8 @@ export const AdministratorForcesAndDisablesTheOtherGrants: Story = {
       "Upload books",
       "Edit metadata",
       "Download",
-      "Request books",
+      "Ask for books",
+      "Pick versions",
     ];
     for (const name of grants) {
       await expect(checkbox(dialog, name)).toBeChecked();
@@ -223,7 +245,7 @@ export const NewUserSendsWhatWasEntered: Story = {
       "Abcdefghij1",
     );
     await userEvent.click(checkbox(dialog, "Edit metadata"));
-    await userEvent.click(checkbox(dialog, "Request books"));
+    await userEvent.click(checkbox(dialog, "Ask for books"));
     await userEvent.click(
       within(dialog).getByRole("button", { name: "Create user" }),
     );
@@ -238,10 +260,33 @@ export const NewUserSendsWhatWasEntered: Story = {
           can_upload: false,
           can_edit: true,
           can_download: true,
-          can_request: true,
+          can_start_requests: true,
+          can_choose_request_versions: false,
         },
       },
     ]);
+  },
+};
+
+export const NewUserSendsPickVersionsWithoutAskForBooks: Story = {
+  render: () => <NewUserModal onClose={close} onCreated={done} />,
+  play: async ({ canvas, userEvent }) => {
+    const dialog = await canvas.findByRole("dialog", { name: "New user" });
+    await userEvent.type(within(dialog).getByLabelText("Username"), "carol");
+    await userEvent.type(
+      within(dialog).getByLabelText("Password"),
+      "Abcdefghij1",
+    );
+    await userEvent.click(checkbox(dialog, "Pick versions"));
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Create user" }),
+    );
+
+    await waitFor(() => expect(calls.done).toBe(1));
+    await expect(writes.created[0]?.permissions).toMatchObject({
+      can_start_requests: false,
+      can_choose_request_versions: true,
+    });
   },
 };
 
@@ -347,7 +392,8 @@ export const EditUserStartsFromTheRowsPermissions: Story = {
     await expect(checkbox(dialog, "Upload books")).toBeChecked();
     await expect(checkbox(dialog, "Edit metadata")).not.toBeChecked();
     await expect(checkbox(dialog, "Download")).toBeChecked();
-    await expect(checkbox(dialog, "Request books")).not.toBeChecked();
+    await expect(checkbox(dialog, "Ask for books")).not.toBeChecked();
+    await expect(checkbox(dialog, "Pick versions")).not.toBeChecked();
     await expect(
       within(dialog).getByLabelText("Reset password"),
     ).toHaveAccessibleDescription("Leave blank to keep the current password.");
@@ -377,7 +423,7 @@ export const EditUserSavesPermissionsWithoutAPassword: Story = {
   play: async ({ canvas, userEvent }) => {
     const dialog = await canvas.findByRole("dialog", { name: "Edit alice" });
     await userEvent.click(checkbox(dialog, "Edit metadata"));
-    await userEvent.click(checkbox(dialog, "Request books"));
+    await userEvent.click(checkbox(dialog, "Ask for books"));
     await userEvent.click(
       within(dialog).getByRole("button", { name: "Save changes" }),
     );
@@ -391,11 +437,29 @@ export const EditUserSavesPermissionsWithoutAPassword: Story = {
           can_upload: true,
           can_edit: true,
           can_download: true,
-          can_request: true,
+          can_start_requests: true,
+          can_choose_request_versions: false,
         },
       },
     ]);
     await expect(writes.passwords).toEqual([]);
+  },
+};
+
+export const EditUserSavesPickVersionsOnItsOwn: Story = {
+  render: editAlice,
+  play: async ({ canvas, userEvent }) => {
+    const dialog = await canvas.findByRole("dialog", { name: "Edit alice" });
+    await userEvent.click(checkbox(dialog, "Pick versions"));
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Save changes" }),
+    );
+
+    await waitFor(() => expect(calls.closed).toBe(1));
+    await expect(writes.permissions[0]?.permissions).toMatchObject({
+      can_start_requests: false,
+      can_choose_request_versions: true,
+    });
   },
 };
 

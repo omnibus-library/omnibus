@@ -74,7 +74,7 @@ const addFromTheMenu = async (
 const resultTitles = (section: ReturnType<typeof within>) =>
   section
     .queryAllByTestId("wishlists-add-result")
-    .map((r: HTMLElement) => r.querySelector(".wl-add-title")?.textContent);
+    .map((r: HTMLElement) => r.querySelector(".bsearch-title")?.textContent);
 
 export const OpensFocusedWithItsHint: Story = {
   play: async ({ canvas, userEvent }) => {
@@ -389,7 +389,7 @@ export const AddIsDisabledWhileItsRequestIsPending: Story = {
 
     await userEvent.click(add);
 
-    await waitFor(() => expect(add).toBeDisabled());
+    await waitFor(() => expect(add).toHaveAttribute("aria-disabled", "true"));
     // Nothing closes the panel while the add is in flight.
     await userEvent.keyboard("{Escape}");
     await userEvent.click(canvas.getByTestId("wishlists-add-scrim"));

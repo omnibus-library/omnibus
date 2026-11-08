@@ -9,8 +9,8 @@ import {
   sameSection,
 } from "./settingsIndex";
 
-const labels = (query: string, isAdmin: boolean, canRequest = false) =>
-  matchingSettings(query, isAdmin, canRequest).map((entry) => entry.label);
+const labels = (query: string, isAdmin: boolean, requestsOn = false) =>
+  matchingSettings(query, isAdmin, requestsOn).map((entry) => entry.label);
 
 /** The parts of a router location `sameSection` reads, for an in-app path. */
 const at = (path: string) => {

@@ -6,9 +6,17 @@ import {
   aWireVersion,
 } from "../../testing/requestHandlers";
 import { aWireBook } from "../../testing/wire";
-import { countsLine, groupRequests, itemLine } from "./requestGroups";
+import {
+  countsLine,
+  groupRequests,
+  itemLine,
+  requestedNotes,
+} from "./requestGroups";
 
-const ADA = { id: 1 as UserId, isAdmin: false, canRequest: true };
+/** A reader who can pick versions. */
+const ADA = { canChooseRequestVersions: true };
+/** A reader who can ask for books but not pick their versions. */
+const ASKER = { canChooseRequestVersions: false };
 const EPUB = aWireVersion({ id: 11 });
 
 /** A listed request for the book `uuid`. */
@@ -62,18 +70,21 @@ describe("groupRequests", () => {
       expect(shape(groups)).toEqual([["on_its_way", ["b"]]]);
     });
 
-    it("lists another reader's pick still to make as looking", () => {
-      const theirs = listing("b", { user_id: 2, state: "choose" });
+    it("lists any reader's pick still to make as looking to a reader who can't pick versions, their own included", () => {
+      const mine = listing("mine", { id: 1, user_id: 1, state: "choose" });
+      const theirs = listing("theirs", { id: 2, user_id: 2, state: "choose" });
 
-      expect(shape(groupRequests([theirs], ADA))).toEqual([["looking", ["b"]]]);
+      expect(shape(groupRequests([mine, theirs], ASKER))).toEqual([
+        ["looking", ["mine", "theirs"]],
+      ]);
     });
 
-    it("lists any pick still to make as needing an admin", () => {
-      const admin = { id: 9 as UserId, isAdmin: true, canRequest: true };
-      const theirs = listing("b", { user_id: 2, state: "choose" });
+    it("lists any reader's pick still to make as needing a reader who can pick versions", () => {
+      const mine = listing("mine", { id: 1, user_id: 1, state: "choose" });
+      const theirs = listing("theirs", { id: 2, user_id: 2, state: "choose" });
 
-      expect(shape(groupRequests([theirs], admin))).toEqual([
-        ["needs_you", ["b"]],
+      expect(shape(groupRequests([mine, theirs], ADA))).toEqual([
+        ["needs_you", ["mine", "theirs"]],
       ]);
     });
 
@@ -217,5 +228,55 @@ describe("countsLine", () => {
     ["a cancelled book beside one", groupsOf("looking", "cancelled"), "1 book"],
   ])("counts %s", (_case, groups, expected) => {
     expect(countsLine(groups)).toBe(expected);
+  });
+});
+
+describe("requestedNotes", () => {
+  it("names a book with an ebook request going in the list's words", () => {
+    const notes = requestedNotes(
+      [
+        listing("yours", { id: 1, state: "choose" }),
+        listing("coming", { id: 2, state: "on_its_way", progress: 0.62 }),
+        listing("looking", { id: 3, state: "looking" }),
+        listing("stuck", {
+          id: 4,
+          state: "stuck",
+          stuck_reason: "not_found",
+        }),
+      ],
+      ADA,
+    );
+
+    expect(Object.fromEntries(notes)).toEqual({
+      yours: "choose a version",
+      coming: "on its way · 62%",
+      looking: "looking",
+      stuck: "stuck · couldn’t find it",
+    });
+  });
+
+  it("leaves out a cancelled or finished request and an audiobook one", () => {
+    const notes = requestedNotes(
+      [
+        listing("cancelled", { id: 1, state: "cancelled" }),
+        listing("ready", { id: 2, state: "ready" }),
+        listing("audio", { id: 3, kind: "audiobook", state: "looking" }),
+      ],
+      ADA,
+    );
+
+    expect([...notes.keys()]).toEqual([]);
+  });
+
+  it("takes the newest of a book's requests going", () => {
+    const notes = requestedNotes(
+      [
+        listing("b", { id: 9, state: "looking" }),
+        listing("b", { id: 8, state: "on_its_way" }),
+      ],
+      ADA,
+    );
+
+    expect(notes.get("b")).toBe("looking");
   });
 });

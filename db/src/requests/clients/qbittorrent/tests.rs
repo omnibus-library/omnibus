@@ -8,7 +8,9 @@ use crate::test_support::closed_port_url;
 
 use super::*;
 
-const MAGNET: &str = "magnet:?xt=urn:btih:abc123&dn=Dune";
+/// The info hash of `MAGNET` and of `TORRENT`.
+const HASH: &str = "c17d23830376ac1478f394337fefbc169a9959ce";
+const MAGNET: &str = "magnet:?xt=urn:btih:c17d23830376ac1478f394337fefbc169a9959ce&dn=Dune";
 
 fn login_ok(cookie_name: &str) -> Mock {
     Mock::given(method("POST"))
@@ -46,10 +48,10 @@ fn torrent_info(hash: &str) -> serde_json::Value {
     }])
 }
 
-async fn mount_info(server: &MockServer, tag: &str, body: serde_json::Value) {
+async fn mount_info(server: &MockServer, hash: &str, body: serde_json::Value) {
     Mock::given(method("GET"))
         .and(path("/api/v2/torrents/info"))
-        .and(query_param("tag", tag))
+        .and(query_param("hashes", hash))
         .and(header("cookie", "SID=abc123"))
         .respond_with(ResponseTemplate::new(200).set_body_json(body))
         .mount(server)
@@ -189,8 +191,21 @@ mod qbittorrent_test {
 mod qbittorrent_add {
     use super::*;
 
-    #[tokio::test]
-    async fn posts_the_link_category_and_tag_and_no_share_limits() {
+    /// Fetch `link`, then hand it to the client: the hash it was prepared under.
+    async fn prepare_and_add(
+        server: &MockServer,
+        link: &str,
+        category: &str,
+    ) -> Result<String, ConnectionError> {
+        let client = client_for(server);
+        let prepared = client.prepare(link).await?;
+        let hash = prepared.hash.clone();
+        client.add(prepared, category).await?;
+        Ok(hash)
+    }
+
+    /// A client that accepts what it is given.
+    async fn accepting_server() -> MockServer {
         let server = signed_in_server().await;
         Mock::given(method("POST"))
             .and(path("/api/v2/torrents/add"))
@@ -198,29 +213,53 @@ mod qbittorrent_add {
             .respond_with(ResponseTemplate::new(200).set_body_string("Ok."))
             .mount(&server)
             .await;
+        server
+    }
 
-        client_for(&server)
-            .add(MAGNET, "books", "omnibus-7")
-            .await
-            .unwrap();
+    #[tokio::test]
+    async fn posts_the_link_and_category_with_no_tags_or_share_limits() {
+        let server = accepting_server().await;
+
+        let hash = prepare_and_add(&server, MAGNET, "books").await.unwrap();
 
         let sent = requests_to(&server, "torrents/add").await;
         let expected = vec![
             ("category".to_string(), "books".to_string()),
-            ("tags".to_string(), "omnibus-7".to_string()),
             ("urls".to_string(), MAGNET.to_string()),
         ];
         assert_eq!(form_pairs(&sent[0]), expected);
+        assert_eq!(hash, HASH);
     }
 
-    async fn add_answering(response: ResponseTemplate) -> Result<(), ConnectionError> {
+    #[tokio::test]
+    async fn sends_no_category_when_it_is_empty() {
+        let server = accepting_server().await;
+
+        prepare_and_add(&server, MAGNET, "").await.unwrap();
+
+        let sent = requests_to(&server, "torrents/add").await;
+        let expected = vec![("urls".to_string(), MAGNET.to_string())];
+        assert_eq!(form_pairs(&sent[0]), expected);
+    }
+
+    #[tokio::test]
+    async fn prepares_a_magnet_without_asking_the_client_anything() {
+        let server = MockServer::start().await;
+
+        let prepared = client_for(&server).prepare(MAGNET).await.unwrap();
+
+        assert_eq!(prepared.hash, HASH);
+        assert!(server.received_requests().await.unwrap().is_empty());
+    }
+
+    async fn add_answering(response: ResponseTemplate) -> Result<String, ConnectionError> {
         let server = signed_in_server().await;
         Mock::given(method("POST"))
             .and(path("/api/v2/torrents/add"))
             .respond_with(response)
             .mount(&server)
             .await;
-        client_for(&server).add(MAGNET, "books", "omnibus-7").await
+        prepare_and_add(&server, MAGNET, "books").await
     }
 
     #[tokio::test]
@@ -260,15 +299,14 @@ mod qbittorrent_add {
         assert!(result.is_ok(), "{result:?}");
     }
 
-    const TORRENT: &[u8] = b"d8:announce3:url4:infod4:name4:Duneee";
-
-    async fn add_ok(server: &MockServer) {
-        Mock::given(method("POST"))
-            .and(path("/api/v2/torrents/add"))
-            .and(header("cookie", "SID=abc123"))
-            .respond_with(ResponseTemplate::new(200).set_body_string("Ok."))
-            .mount(server)
-            .await;
+    /// A v1 torrent file whose info hash is `HASH`.
+    fn torrent() -> Vec<u8> {
+        let mut file =
+            b"d8:announce3:url4:infod6:lengthi3e4:name1:a12:piece lengthi16384e6:pieces20:"
+                .to_vec();
+        file.extend((0..20u8).collect::<Vec<_>>());
+        file.extend_from_slice(b"ee");
+        file
     }
 
     async fn mount_release(server: &MockServer, response: ResponseTemplate) -> String {
@@ -282,16 +320,17 @@ mod qbittorrent_add {
     }
 
     #[tokio::test]
-    async fn uploads_the_fetched_torrent_file_with_the_category_and_tag() {
-        let server = signed_in_server().await;
-        add_ok(&server).await;
-        let link = mount_release(&server, ResponseTemplate::new(200).set_body_bytes(TORRENT)).await;
+    async fn uploads_the_fetched_torrent_file_named_by_its_hash_with_the_category_and_no_tags() {
+        let server = accepting_server().await;
+        let link = mount_release(
+            &server,
+            ResponseTemplate::new(200).set_body_bytes(torrent()),
+        )
+        .await;
 
-        client_for(&server)
-            .add(&link, "books", "omnibus-7")
-            .await
-            .unwrap();
+        let hash = prepare_and_add(&server, &link, "books").await.unwrap();
 
+        assert_eq!(hash, HASH);
         let sent = requests_to(&server, "torrents/add").await;
         let content_type = sent[0].headers["content-type"].to_str().unwrap();
         assert!(
@@ -300,33 +339,44 @@ mod qbittorrent_add {
         );
         let body = String::from_utf8_lossy(&sent[0].body).into_owned();
         for expected in [
-            "name=\"torrents\"; filename=\"omnibus-7.torrent\"",
-            "application/x-bittorrent",
-            "d8:announce3:url4:infod4:name4:Duneee",
-            "name=\"category\"\r\n\r\nbooks",
-            "name=\"tags\"\r\n\r\nomnibus-7",
+            format!("name=\"torrents\"; filename=\"{HASH}.torrent\""),
+            "application/x-bittorrent".to_string(),
+            "d8:announce3:url4:infod6:lengthi3e".to_string(),
+            "name=\"category\"\r\n\r\nbooks".to_string(),
         ] {
-            assert!(body.contains(expected), "missing {expected:?} in {body}");
+            assert!(body.contains(&expected), "missing {expected:?} in {body}");
         }
         assert!(!body.contains("name=\"urls\""), "{body}");
+        assert!(!body.contains("name=\"tags\""), "{body}");
+    }
+
+    #[tokio::test]
+    async fn uploads_a_torrent_file_without_a_category_field_when_it_is_empty() {
+        let server = accepting_server().await;
+        let link = mount_release(
+            &server,
+            ResponseTemplate::new(200).set_body_bytes(torrent()),
+        )
+        .await;
+
+        prepare_and_add(&server, &link, "").await.unwrap();
+
+        let body = String::from_utf8_lossy(&requests_to(&server, "torrents/add").await[0].body)
+            .into_owned();
+        assert!(!body.contains("name=\"category\""), "{body}");
     }
 
     #[tokio::test]
     async fn sends_a_magnet_the_link_redirects_to_as_urls() {
-        let server = signed_in_server().await;
-        add_ok(&server).await;
+        let server = accepting_server().await;
         let redirect = ResponseTemplate::new(302).insert_header("location", MAGNET);
         let link = mount_release(&server, redirect).await;
 
-        client_for(&server)
-            .add(&link, "books", "omnibus-7")
-            .await
-            .unwrap();
+        prepare_and_add(&server, &link, "books").await.unwrap();
 
         let sent = requests_to(&server, "torrents/add").await;
         let expected = vec![
             ("category".to_string(), "books".to_string()),
-            ("tags".to_string(), "omnibus-7".to_string()),
             ("urls".to_string(), MAGNET.to_string()),
         ];
         assert_eq!(form_pairs(&sent[0]), expected);
@@ -334,33 +384,40 @@ mod qbittorrent_add {
 
     #[tokio::test]
     async fn sends_a_magnet_link_as_urls_without_fetching_anything() {
-        let server = signed_in_server().await;
-        add_ok(&server).await;
+        let server = accepting_server().await;
 
-        client_for(&server)
-            .add(MAGNET, "books", "omnibus-7")
-            .await
-            .unwrap();
+        prepare_and_add(&server, MAGNET, "books").await.unwrap();
 
         let all = server.received_requests().await.unwrap();
-        assert!(all.iter().all(|r| r.method == "POST"), "{all:?}");
+        assert!(
+            all.iter().all(|r| r.url.path().starts_with("/api/v2/")),
+            "{all:?}"
+        );
         assert_eq!(
-            form_pairs(&requests_to(&server, "torrents/add").await[0])[2].1,
+            form_pairs(&requests_to(&server, "torrents/add").await[0])[1].1,
             MAGNET
         );
     }
 
     #[tokio::test]
+    async fn rejects_a_release_with_no_v1_info_hash_without_adding_it() {
+        let server = accepting_server().await;
+        let v2 = b"d4:infod12:meta versioni2e4:name1:aee".to_vec();
+        let link = mount_release(&server, ResponseTemplate::new(200).set_body_bytes(v2)).await;
+
+        let err = prepare_and_add(&server, &link, "books").await.unwrap_err();
+
+        assert!(matches!(err, ConnectionError::Rejected(_)), "{err:?}");
+        assert!(requests_to(&server, "torrents/add").await.is_empty());
+    }
+
+    #[tokio::test]
     async fn rejects_a_link_whose_fetch_fails_without_echoing_it() {
         for status in [404, 500] {
-            let server = signed_in_server().await;
-            add_ok(&server).await;
+            let server = accepting_server().await;
             let link = mount_release(&server, ResponseTemplate::new(status)).await;
 
-            let err = client_for(&server)
-                .add(&link, "books", "omnibus-7")
-                .await
-                .unwrap_err();
+            let err = prepare_and_add(&server, &link, "books").await.unwrap_err();
 
             assert!(
                 matches!(err, ConnectionError::Rejected(_)),
@@ -377,25 +434,16 @@ mod qbittorrent_add {
         let big = vec![b'x'; MAX_TORRENT_BYTES + 1];
         let link = mount_release(&server, ResponseTemplate::new(200).set_body_bytes(big)).await;
 
-        let err = client_for(&server)
-            .add(&link, "books", "omnibus-7")
-            .await
-            .unwrap_err();
+        let err = prepare_and_add(&server, &link, "books").await.unwrap_err();
 
         assert!(matches!(err, ConnectionError::Rejected(_)), "{err:?}");
     }
 
     #[tokio::test]
-    async fn rejects_a_link_the_client_refuses() {
-        let server = signed_in_server().await;
-        Mock::given(method("POST"))
-            .and(path("/api/v2/torrents/add"))
-            .respond_with(ResponseTemplate::new(200).set_body_string("Fails."))
-            .mount(&server)
-            .await;
+    async fn rejects_a_link_that_is_not_a_url() {
+        let server = accepting_server().await;
 
-        let err = client_for(&server)
-            .add("not-a-link", "books", "omnibus-7")
+        let err = prepare_and_add(&server, "not-a-link", "books")
             .await
             .unwrap_err();
 
@@ -407,30 +455,102 @@ mod qbittorrent_status {
     use super::*;
 
     #[tokio::test]
-    async fn returns_progress_state_and_folders_for_the_tagged_torrent() {
+    async fn returns_progress_state_and_folders_for_the_torrent_with_the_hash() {
         let server = signed_in_server().await;
-        mount_info(&server, "omnibus-7", torrent_info("h1")).await;
+        mount_info(&server, HASH, torrent_info(HASH)).await;
 
-        let status = client_for(&server).status("omnibus-7").await.unwrap();
+        let status = client_for(&server).status(HASH).await.unwrap();
 
         let expected = TorrentStatus {
-            hash: "h1".into(),
+            hash: HASH.into(),
             progress: 0.5,
             state: "downloading".into(),
             save_path: "/downloads/omnibus".into(),
             eta: Some(180),
+            tags: String::new(),
+            added_on: None,
         };
         assert_eq!(status, Some(expected));
     }
 
     #[tokio::test]
-    async fn returns_none_when_no_torrent_has_the_tag() {
+    async fn returns_none_when_the_client_has_no_torrent_with_the_hash() {
         let server = signed_in_server().await;
-        mount_info(&server, "omnibus-7", json!([])).await;
+        mount_info(&server, HASH, json!([])).await;
 
-        let status = client_for(&server).status("omnibus-7").await.unwrap();
+        let status = client_for(&server).status(HASH).await.unwrap();
 
         assert_eq!(status, None);
+    }
+}
+
+mod qbittorrent_hash_guard {
+    use super::*;
+
+    #[tokio::test]
+    async fn status_is_none_when_the_client_answers_with_a_different_hash() {
+        let server = signed_in_server().await;
+        mount_info(&server, HASH, torrent_info("some-other-hash")).await;
+
+        let status = client_for(&server).status(HASH).await.unwrap();
+
+        assert_eq!(status, None);
+    }
+}
+
+mod qbittorrent_hash_for_tag {
+    use super::*;
+
+    async fn mount_tag(server: &MockServer, tag: &str, body: serde_json::Value) {
+        Mock::given(method("GET"))
+            .and(path("/api/v2/torrents/info"))
+            .and(query_param("tag", tag))
+            .respond_with(ResponseTemplate::new(200).set_body_json(body))
+            .mount(server)
+            .await;
+    }
+
+    fn tagged(hash: &str, tags: &str, added_on: i64) -> serde_json::Value {
+        json!({
+            "hash": hash, "progress": 1.0, "state": "stalledUP", "save_path": "/d",
+            "tags": tags, "added_on": added_on,
+        })
+    }
+
+    #[tokio::test]
+    async fn finds_the_newest_download_carrying_exactly_the_tag() {
+        let server = signed_in_server().await;
+        let body = json!([
+            tagged("old", "omnibus-1-1", 100),
+            tagged("new", "x, omnibus-1-1", 200),
+            tagged("lookalike", "omnibus-1-10", 300),
+        ]);
+        mount_tag(&server, "omnibus-1-1", body).await;
+
+        let hash = client_for(&server)
+            .hash_for_tag("omnibus-1-1")
+            .await
+            .unwrap();
+
+        assert_eq!(hash, Some("new".to_string()));
+    }
+
+    #[tokio::test]
+    async fn finds_nothing_when_no_download_carries_the_tag() {
+        let server = signed_in_server().await;
+        mount_tag(
+            &server,
+            "omnibus-1-1",
+            json!([tagged("h", "omnibus-1-10", 1)]),
+        )
+        .await;
+
+        let hash = client_for(&server)
+            .hash_for_tag("omnibus-1-1")
+            .await
+            .unwrap();
+
+        assert_eq!(hash, None);
     }
 }
 
@@ -438,12 +558,12 @@ mod qbittorrent_files {
     use super::*;
 
     #[tokio::test]
-    async fn lists_the_files_of_the_tagged_torrent_by_its_hash() {
+    async fn lists_the_files_of_the_torrent_by_its_hash() {
         let server = signed_in_server().await;
-        mount_info(&server, "omnibus-7", torrent_info("h1")).await;
+        mount_info(&server, HASH, torrent_info(HASH)).await;
         Mock::given(method("GET"))
             .and(path("/api/v2/torrents/files"))
-            .and(query_param("hash", "h1"))
+            .and(query_param("hash", HASH))
             .and(header("cookie", "SID=abc123"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!([
                 {"name": "Dune/Dune.epub", "size": 1200, "progress": 1.0},
@@ -452,7 +572,7 @@ mod qbittorrent_files {
             .mount(&server)
             .await;
 
-        let files = client_for(&server).files("omnibus-7").await.unwrap();
+        let files = client_for(&server).files(HASH).await.unwrap();
 
         let expected = vec![
             ClientFile {
@@ -470,14 +590,14 @@ mod qbittorrent_files {
     #[tokio::test]
     async fn logs_in_once_for_the_whole_call() {
         let server = signed_in_server().await;
-        mount_info(&server, "omnibus-7", torrent_info("h1")).await;
+        mount_info(&server, HASH, torrent_info(HASH)).await;
         Mock::given(method("GET"))
             .and(path("/api/v2/torrents/files"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
             .mount(&server)
             .await;
 
-        client_for(&server).files("omnibus-7").await.unwrap();
+        client_for(&server).files(HASH).await.unwrap();
 
         assert_eq!(requests_to(&server, "auth/login").await.len(), 1);
     }
@@ -485,14 +605,14 @@ mod qbittorrent_files {
     #[tokio::test]
     async fn returns_an_empty_list_when_the_torrent_vanished_before_its_files_were_read() {
         let server = signed_in_server().await;
-        mount_info(&server, "omnibus-7", torrent_info("h1")).await;
+        mount_info(&server, HASH, torrent_info(HASH)).await;
         Mock::given(method("GET"))
             .and(path("/api/v2/torrents/files"))
             .respond_with(ResponseTemplate::new(404))
             .mount(&server)
             .await;
 
-        let files = client_for(&server).files("omnibus-7").await.unwrap();
+        let files = client_for(&server).files(HASH).await.unwrap();
 
         assert_eq!(files, Vec::new());
     }
@@ -503,7 +623,7 @@ mod qbittorrent_remove {
 
     async fn deleting_server() -> MockServer {
         let server = signed_in_server().await;
-        mount_info(&server, "omnibus-7", torrent_info("h1")).await;
+        mount_info(&server, HASH, torrent_info(HASH)).await;
         Mock::given(method("POST"))
             .and(path("/api/v2/torrents/delete"))
             .and(header("cookie", "SID=abc123"))
@@ -519,14 +639,14 @@ mod qbittorrent_remove {
             let server = deleting_server().await;
 
             client_for(&server)
-                .remove("omnibus-7", delete_files)
+                .remove(HASH, delete_files)
                 .await
                 .unwrap();
 
             let sent = requests_to(&server, "torrents/delete").await;
             let expected = vec![
                 ("deleteFiles".to_string(), delete_files.to_string()),
-                ("hashes".to_string(), "h1".to_string()),
+                ("hashes".to_string(), HASH.to_string()),
             ];
             assert_eq!(form_pairs(&sent[0]), expected);
         }
@@ -535,25 +655,15 @@ mod qbittorrent_remove {
     #[tokio::test]
     async fn succeeds_when_the_torrent_vanished_before_it_was_deleted() {
         let server = signed_in_server().await;
-        mount_info(&server, "omnibus-7", torrent_info("h1")).await;
+        mount_info(&server, HASH, torrent_info(HASH)).await;
         Mock::given(method("POST"))
             .and(path("/api/v2/torrents/delete"))
             .respond_with(ResponseTemplate::new(404))
             .mount(&server)
             .await;
 
-        let result = client_for(&server).remove("omnibus-7", true).await;
+        let result = client_for(&server).remove(HASH, true).await;
 
         assert!(result.is_ok(), "{result:?}");
-    }
-
-    #[tokio::test]
-    async fn does_nothing_when_no_torrent_has_the_tag() {
-        let server = signed_in_server().await;
-        mount_info(&server, "omnibus-7", json!([])).await;
-
-        client_for(&server).remove("omnibus-7", true).await.unwrap();
-
-        assert!(requests_to(&server, "torrents/delete").await.is_empty());
     }
 }

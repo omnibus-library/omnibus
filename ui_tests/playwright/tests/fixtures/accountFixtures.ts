@@ -30,14 +30,20 @@ import {
   TARGET_BOOK_CFI,
   TARGET_BOOK_TITLE,
 } from "../data/stats";
-import { buildReader, type Credentials, type SeededUser } from "../data/users";
+import {
+  buildAsker,
+  buildReader,
+  type Credentials,
+  type NewUser,
+  type SeededUser,
+} from "../data/users";
 import { fetchBookUuidByTitle } from "../utils/ebooks";
 import { withLock } from "../utils/lock";
 import { cleanupSet, type Owner, presetting } from "./lifecycle";
 import { test as base, expect } from "./requestFixtures";
 import { loadAdminBearerToken, newBearerContext } from "./test";
 
-/** A plain reader this worker signs up once, for every test that needs one. */
+/** A reader this worker signs up once, for every test that needs one. */
 export type ReaderAccount = Credentials & {
   id: number;
   storageStatePath: string;
@@ -65,16 +71,16 @@ async function signInPastLimit(
   return response;
 }
 
-/** Signs up a reader and signs it in for a cookie and a bearer; deletes it after `use`. */
+/** Signs up `reader` and signs it in for a cookie and a bearer; deletes it after `use`. */
 async function withReaderAccount(
   api: APIRequest,
   workerInfo: WorkerInfo,
+  reader: NewUser,
   use: (account: ReaderAccount) => Promise<void>,
 ): Promise<void> {
   const options = workerInfo.project.use;
   const admin = await newBearerContext(api, options, loadAdminBearerToken());
   const users = new UsersRequests(admin);
-  const reader = buildReader();
   const created = await users.postUser(reader);
   await expect(created, `create ${reader.username}`).toBeOK();
   const { id } = await created.json();
@@ -119,6 +125,7 @@ async function usePageAs(
 type AccountWorkerFixtures = {
   readerAccount: ReaderAccount;
   secondReaderAccount: ReaderAccount;
+  askerAccount: ReaderAccount;
 };
 
 type AccountFixtures = {
@@ -127,6 +134,9 @@ type AccountFixtures = {
   readerShelvesRequests: ShelvesRequests;
   readerAccountRequests: AccountRequests;
   readerScanRequests: ScanRequests;
+  askerPage: Page;
+  askerRequest: APIRequestContext;
+  askerScanRequests: ScanRequests;
   readerReviewsRequests: ReviewsRequests;
   readerReadStatusRequests: ReadStatusRequests;
   accountFor: (owner: Owner) => AccountRequests;
@@ -161,15 +171,43 @@ export const test = base.extend<AccountFixtures, AccountWorkerFixtures>({
   // calls a minute per IP and a worker runs its tests one at a time.
   readerAccount: [
     async ({ playwright }, use, workerInfo) =>
-      withReaderAccount(playwright.request, workerInfo, use),
+      withReaderAccount(playwright.request, workerInfo, buildReader(), use),
     { scope: "worker", timeout: 120_000 },
   ],
 
   secondReaderAccount: [
     async ({ playwright }, use, workerInfo) =>
-      withReaderAccount(playwright.request, workerInfo, use),
+      withReaderAccount(playwright.request, workerInfo, buildReader(), use),
     { scope: "worker", timeout: 120_000 },
   ],
+
+  // Can ask for books but not pick their versions.
+  askerAccount: [
+    async ({ playwright }, use, workerInfo) =>
+      withReaderAccount(playwright.request, workerInfo, buildAsker(), use),
+    { scope: "worker", timeout: 120_000 },
+  ],
+
+  askerPage: async ({ browser, askerAccount, viewport }, use) => {
+    await usePageAs(browser, askerAccount, viewport, use);
+  },
+
+  askerRequest: async (
+    { playwright, baseURL, extraHTTPHeaders, askerAccount },
+    use,
+  ) => {
+    const context = await newBearerContext(
+      playwright.request,
+      { baseURL, extraHTTPHeaders },
+      askerAccount.bearerToken,
+    );
+    await use(context);
+    await context.dispose();
+  },
+
+  askerScanRequests: async ({ askerRequest }, use) => {
+    await use(new ScanRequests(askerRequest));
+  },
 
   readerPage: async ({ browser, readerAccount, viewport }, use) => {
     await usePageAs(browser, readerAccount, viewport, use);

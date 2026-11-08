@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useNavigate } from "react-router";
 import type { z } from "zod";
@@ -35,40 +35,64 @@ const NEW_USER_PERMISSIONS: UserPermissions = {
   can_upload: false,
   can_edit: false,
   can_download: true,
-  can_request: false,
+  can_start_requests: false,
+  can_choose_request_versions: false,
 };
 
-const GRANTS = [
+type Grant = { flag: keyof UserPermissions; label: string; hint?: string };
+
+const GRANTS: readonly Grant[] = [
   { flag: "can_upload", label: "Upload books" },
   { flag: "can_edit", label: "Edit metadata" },
   { flag: "can_download", label: "Download" },
-  { flag: "can_request", label: "Request books" },
-] as const;
+];
+
+/** The grants that only mean something while the server has book requests on. */
+const REQUEST_GRANTS: readonly Grant[] = [
+  { flag: "can_start_requests", label: "Ask for books" },
+  {
+    flag: "can_choose_request_versions",
+    label: "Pick versions",
+    hint: "Choose, retry or cancel any reader’s request.",
+  },
+];
 
 function PermissionCheckbox({
   label,
+  hint,
   testId,
   checked,
   disabled,
   onToggle,
 }: {
   label: string;
+  /** What the grant lets the user do, read with the checkbox. */
+  hint?: string;
   testId: string;
   checked: boolean;
   disabled: boolean;
   onToggle: (checked: boolean) => void;
 }) {
+  const hintId = useId();
   return (
-    <label className="users-perm-row">
-      <input
-        type="checkbox"
-        data-testid={testId}
-        checked={checked}
-        disabled={disabled}
-        onChange={(e) => onToggle(e.target.checked)}
-      />
-      <span>{label}</span>
-    </label>
+    <>
+      <label className="users-perm-row">
+        <input
+          type="checkbox"
+          data-testid={testId}
+          checked={checked}
+          disabled={disabled}
+          aria-describedby={hint ? hintId : undefined}
+          onChange={(e) => onToggle(e.target.checked)}
+        />
+        <span>{label}</span>
+      </label>
+      {hint && (
+        <p className="settings-hint users-perm-hint" id={hintId}>
+          {hint}
+        </p>
+      )}
+    </>
   );
 }
 
@@ -80,8 +104,7 @@ function PermissionToggles({
   perms: UserPermissions;
   onChange: (perms: UserPermissions) => void;
 }) {
-  // An admin holds `canRequest` exactly while the server has book requests on.
-  const requests = useCurrentUser().canRequest;
+  const requests = useCurrentUser().requestsOn;
   return (
     <fieldset className="users-perms">
       <legend>Permissions</legend>
@@ -98,17 +121,20 @@ function PermissionToggles({
                   can_upload: true,
                   can_edit: true,
                   can_download: true,
-                  can_request: requests || perms.can_request,
+                  can_start_requests: requests || perms.can_start_requests,
+                  can_choose_request_versions:
+                    requests || perms.can_choose_request_versions,
                 }
               : { ...perms, is_admin: false },
           )
         }
       />
-      {GRANTS.filter(({ flag }) => requests || flag !== "can_request").map(
-        ({ flag, label }) => (
+      {[...GRANTS, ...(requests ? REQUEST_GRANTS : [])].map(
+        ({ flag, label, hint }) => (
           <PermissionCheckbox
             key={flag}
             label={label}
+            hint={hint}
             testId={`perm-${flag}`}
             checked={perms[flag]}
             disabled={perms.is_admin}

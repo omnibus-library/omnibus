@@ -25,6 +25,10 @@ export class RequestsPage extends BasePage {
   readonly paneCancelButton: Locator;
   readonly looking: Locator;
   readonly versions: Locator;
+  /** The Choose buttons on the versions, none for a reader who can't pick versions. */
+  readonly chooseButtons: Locator;
+  /** The line a reader who can't pick versions sees in place of the Choose buttons. */
+  readonly waitingForChooser: Locator;
   readonly bestMatchBadges: Locator;
   readonly chosen: Locator;
   /** The download's percent, once the client has reported. */
@@ -33,6 +37,12 @@ export class RequestsPage extends BasePage {
   /** What went wrong, in technical words; only an admin sees it. */
   readonly stuckDetail: Locator;
   readonly cancelFailedText: Locator;
+  /** The header's Request button, which opens the search for a book to request. */
+  readonly addButton: Locator;
+  /** The search's field, once its panel is open. */
+  readonly addSearchField: Locator;
+  readonly addPanel: Locator;
+  readonly startFailedText: Locator;
 
   constructor(page: Page) {
     super(page);
@@ -48,12 +58,22 @@ export class RequestsPage extends BasePage {
     this.paneCancelButton = this.paneLane.getByTestId("request-cancel");
     this.looking = this.paneLane.getByTestId("request-looking");
     this.versions = this.paneLane.getByTestId("request-version");
+    this.chooseButtons = this.versions.getByTestId("request-choose");
+    this.waitingForChooser = this.paneLane.getByTestId(
+      "request-waiting-for-chooser",
+    );
     this.bestMatchBadges = this.paneLane.getByTestId("request-best-match");
     this.chosen = this.paneLane.getByTestId("request-chosen");
     this.percent = this.paneLane.getByTestId("request-percent");
     this.tryAgain = this.paneLane.getByRole("button", { name: "Try again" });
     this.stuckDetail = this.paneLane.getByTestId("request-stuck-detail");
     this.cancelFailedText = page.getByText(/Couldn’t cancel/);
+    this.addButton = page.getByTestId("requests-add");
+    this.addPanel = page.getByTestId("requests-add-panel");
+    this.startFailedText = page.getByText("Couldn’t start the request.");
+    this.addSearchField = this.addPanel.getByRole("searchbox", {
+      name: "Title, author or ISBN",
+    });
   }
 
   protected get readyLocator(): Locator {
@@ -91,6 +111,20 @@ export class RequestsPage extends BasePage {
     await this.item(title).click();
   }
 
+  /** Checks the page is showing `uuid`'s book, as its address says. */
+  async assertSelected(uuid: string): Promise<void> {
+    await this.assertDisplayedAt(new RegExp(`/requests\\?book=${uuid}$`));
+  }
+
+  /** Searches the header's Request panel for `title` and starts an ebook request on the library book it finds. */
+  async requestFromSearch(title: string): Promise<void> {
+    await this.addButton.click();
+    await this.addSearchField.fill(title);
+    await this.addPanel
+      .getByRole("button", { name: `Request ${title}`, exact: true })
+      .click();
+  }
+
   async cancel(): Promise<void> {
     await this.paneCancelButton.click();
   }
@@ -110,13 +144,9 @@ export class RequestsPage extends BasePage {
     return version.getByTestId("request-best-match");
   }
 
-  /** Opens Details for the lane, which shows every version's long form. */
-  async showDetails(): Promise<void> {
-    await this.paneLane.getByRole("button", { name: "Details" }).click();
-  }
-
-  detailsOf(version: Locator): Locator {
-    return version.getByTestId("request-details");
+  /** The link that opens `version`'s source page. */
+  pageLinkOf(version: Locator): Locator {
+    return version.getByRole("link");
   }
 
   async choose(version: Locator): Promise<void> {
