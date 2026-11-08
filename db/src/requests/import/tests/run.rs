@@ -5,7 +5,9 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use omnibus_shared::{RequestKind, RequestState, Settings, StuckReason, WishlistSource};
+use omnibus_shared::{
+    DownloadClientKind, RequestKind, RequestState, Settings, StuckReason, WishlistSource,
+};
 use sqlx::SqlitePool;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -15,6 +17,7 @@ use crate::requests::store::{self, RequestRow};
 use crate::requests::test_support::{
     hash, pick, requests_config, seed_picked, update, Call, StubClient,
 };
+use crate::settings::RequestsConfig;
 use crate::test_support::{
     book_with_png_cover, build_stored_zip, build_test_epub, build_test_pdf, count_rows,
     external_meta, loopback_cover_config, seed_user, solid_color_png, CoversTempDir, TestPdf,
@@ -146,7 +149,15 @@ fn downloaded(env: &Env, request: &RequestRow, files: &[(&str, &[u8])]) -> StubC
 
 /// One pass of the import with the download folders unmapped.
 async fn run(env: &Env, client: &StubClient) -> bool {
-    let config = requests_config(None, None);
+    run_with(env, client, DownloadClientKind::Qbittorrent).await
+}
+
+/// [`run`], with `kind` as the download client the admin chose.
+async fn run_with(env: &Env, client: &StubClient, kind: DownloadClientKind) -> bool {
+    let config = RequestsConfig {
+        download_client_kind: kind,
+        ..requests_config(None, None)
+    };
     import_finished(&env.pool, client, &env.worker, &config)
         .await
         .unwrap()
@@ -260,6 +271,54 @@ mod import_finished {
                 .any(|call| matches!(call, Call::Remove { .. } | Call::Add { .. }));
             assert!(!removed);
             assert_eq!(fs::read(env.dl.join("Dune.epub")).unwrap(), bytes);
+        }
+    }
+
+    mod download_removal {
+        use super::*;
+
+        #[tokio::test]
+        async fn queues_a_usenet_job_for_removal_without_calling_the_client() {
+            let env = env().await;
+            let wished = wish(&env, "Dune", "Frank Herbert").await;
+            let request = finished_request(&env, &wished, RequestKind::Ebook).await;
+            let client = downloaded(&env, &request, &[("Dune.epub", &epub("dune"))]);
+
+            run_with(&env, &client, DownloadClientKind::Sabnzbd).await;
+
+            assert_ready(&env, request.id).await;
+            assert_eq!(row(&env, request.id).await.remove_hash, request.client_hash);
+            let removed = client
+                .calls()
+                .iter()
+                .any(|call| matches!(call, Call::Remove { .. }));
+            assert!(!removed);
+        }
+
+        #[tokio::test]
+        async fn queues_no_removal_for_a_torrent() {
+            let env = env().await;
+            let wished = wish(&env, "Dune", "Frank Herbert").await;
+            let request = finished_request(&env, &wished, RequestKind::Ebook).await;
+            let client = downloaded(&env, &request, &[("Dune.epub", &epub("dune"))]);
+
+            run_with(&env, &client, DownloadClientKind::Transmission).await;
+
+            assert_ready(&env, request.id).await;
+            assert_eq!(row(&env, request.id).await.remove_hash, None);
+        }
+
+        #[tokio::test]
+        async fn queues_no_removal_when_the_import_fails() {
+            let env = env().await;
+            let wished = wish(&env, "Dune", "Frank Herbert").await;
+            let request = finished_request(&env, &wished, RequestKind::Ebook).await;
+            let client = downloaded(&env, &request, &[("setup.exe", b"MZ")]);
+
+            run_with(&env, &client, DownloadClientKind::Nzbget).await;
+
+            couldnt_add_detail(&env, request.id).await;
+            assert_eq!(row(&env, request.id).await.remove_hash, None);
         }
     }
 

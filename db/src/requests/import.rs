@@ -3,14 +3,15 @@
 //! imports race on a merge: [`files`] picks the book out of the download, [`place`] stages
 //! it inside the library and renames it into the canonical layout named from the wished
 //! book, the worker scans it in, and it is merged into the wished book when the scanner
-//! filed it as a book of its own. The download is only read, never moved or removed. Its cover
+//! filed it as a book of its own. The download is only read here, never moved or removed; a
+//! usenet job is then queued for the poller to take out of the client. Its cover
 //! is kept as the request's candidate (see [`super::cover`]) whichever way the scan filed it.
 
 use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use omnibus_shared::{RequestKind, StuckReason};
+use omnibus_shared::{ReleaseProtocol, RequestKind, StuckReason};
 use sqlx::SqlitePool;
 
 use crate::merge::{merge_books, MergeError};
@@ -66,11 +67,12 @@ pub async fn import_finished(
     worker: &Arc<Worker>,
     config: &RequestsConfig,
 ) -> Result<bool, RequestError> {
+    let remove_download = config.download_client_kind.protocol() == ReleaseProtocol::Usenet;
     let mut waiting = false;
     for row in store::awaiting_import(pool).await? {
         let pick = row.chosen_result_id;
         match import_one(pool, client, worker, config, &row).await {
-            Ok(Step::Added) => store::mark_ready(pool, row.id, pick).await?,
+            Ok(Step::Added) => store::mark_ready(pool, row.id, pick, remove_download).await?,
             Ok(Step::Later) => waiting = true,
             Err(ImportError::Client(e)) => {
                 tracing::warn!(error = %e, request = row.id, "download client, during an import");
