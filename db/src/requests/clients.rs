@@ -15,9 +15,11 @@ use super::ConnectionError;
 pub mod infohash;
 pub mod qbittorrent;
 pub mod release;
+pub mod transmission;
 
 pub use qbittorrent::Qbittorrent;
 pub use release::Release;
+pub use transmission::Transmission;
 
 /// How far along one download is. Every client reports in qBittorrent's vocabulary, so the
 /// poller and the importer read one set of state words whichever client ran the download.
@@ -115,6 +117,7 @@ pub trait DownloadClient {
 /// Any one of the download clients, so [`client_for`] can return the one the admin chose.
 pub enum AnyClient {
     Qbittorrent(Qbittorrent),
+    Transmission(Transmission),
 }
 
 /// Run `$call` on whichever client `$any` holds.
@@ -122,6 +125,7 @@ macro_rules! on_client {
     ($any:expr, $client:ident => $call:expr) => {
         match $any {
             AnyClient::Qbittorrent($client) => $call,
+            AnyClient::Transmission($client) => $call,
         }
     };
 }
@@ -180,6 +184,9 @@ pub fn client_for(config: &RequestsConfig) -> Result<AnyClient, ConnectionError>
     match config.download_client_kind {
         DownloadClientKind::Qbittorrent => {
             Qbittorrent::new(url, username, password).map(AnyClient::Qbittorrent)
+        }
+        DownloadClientKind::Transmission => {
+            Transmission::new(url, username, password).map(AnyClient::Transmission)
         }
     }
 }

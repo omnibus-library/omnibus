@@ -26,6 +26,8 @@ pub enum DownloadClientKind {
     /// qBittorrent, through its Web API v2.
     #[default]
     Qbittorrent,
+    /// Transmission, through its JSON RPC.
+    Transmission,
 }
 
 impl DownloadClientKind {
@@ -33,6 +35,7 @@ impl DownloadClientKind {
     pub fn as_str(self) -> &'static str {
         match self {
             DownloadClientKind::Qbittorrent => "qbittorrent",
+            DownloadClientKind::Transmission => "transmission",
         }
     }
 
@@ -41,6 +44,7 @@ impl DownloadClientKind {
     pub fn from_str_or_default(s: &str) -> Self {
         match s {
             "qbittorrent" => DownloadClientKind::Qbittorrent,
+            "transmission" => DownloadClientKind::Transmission,
             _ => DownloadClientKind::default(),
         }
     }
@@ -48,7 +52,9 @@ impl DownloadClientKind {
     /// Which kind of release this client can download.
     pub fn protocol(self) -> ReleaseProtocol {
         match self {
-            DownloadClientKind::Qbittorrent => ReleaseProtocol::Torrent,
+            DownloadClientKind::Qbittorrent | DownloadClientKind::Transmission => {
+                ReleaseProtocol::Torrent
+            }
         }
     }
 }

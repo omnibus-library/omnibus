@@ -12886,7 +12886,8 @@
         "type": "string",
         "description": "Which download client program the server talks to.",
         "enum": [
-          "qbittorrent"
+          "qbittorrent",
+          "transmission"
         ]
       },
       "DownloadFormat": {

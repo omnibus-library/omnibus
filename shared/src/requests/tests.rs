@@ -12,4 +12,12 @@ mod download_client_kind_protocol {
             ReleaseProtocol::Torrent
         );
     }
+
+    #[test]
+    fn transmission_fetches_torrents() {
+        assert_eq!(
+            DownloadClientKind::Transmission.protocol(),
+            ReleaseProtocol::Torrent
+        );
+    }
 }
