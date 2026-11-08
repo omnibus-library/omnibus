@@ -133,6 +133,7 @@ function RequestSlot({ book, kind }: { book: BookDetail; kind: RequestKind }) {
       <Button
         size="sm"
         data-testid={`files-request-${kind}`}
+        aria-label={`Request ${kind}`}
         aria-disabled={start.isPending}
         aria-busy={start.isPending}
         onClick={() => {

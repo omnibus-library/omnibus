@@ -252,6 +252,18 @@ export const AnEbookOnlyBookOffersTheAudiobook: Story = {
   },
 };
 
+export const FilelessNamesEachRequestButtonByItsFormat: Story = {
+  args: { book: aBook({ formats: [], book_files: [] }) },
+  play: async ({ canvas }) => {
+    await expect(
+      canvas.getByRole("button", { name: "Request ebook" }),
+    ).toBeInTheDocument();
+    await expect(
+      canvas.getByRole("button", { name: "Request audiobook" }),
+    ).toBeInTheDocument();
+  },
+};
+
 export const NoAudiobookSlotWhenTheBookHoldsOne: Story = {
   args: { book: toBookDetail(aWireAudiobook({ unique_identifier: UUID })) },
   play: async ({ canvas }) => {

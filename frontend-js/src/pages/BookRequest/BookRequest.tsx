@@ -605,6 +605,12 @@ function Lane({
   // Held here: a cancelled request has no Cancel button left, but its Undo toast still needs this.
   const title = useRef<HTMLHeadingElement>(null);
   const focusTitle = () => title.current?.focus();
+  const { focusNew } = context;
+  useEffect(() => {
+    if (focusNew.current !== request.kind) return;
+    focusNew.current = null;
+    title.current?.focus();
+  }, [focusNew, request.kind]);
   const cancel = useCancel(request.id, focusTitle);
   const [focusVersions, setFocusVersions] = useState(false);
   const swap = useSwap(request.id, () => setFocusVersions(true));
@@ -721,24 +727,28 @@ type LaneContext = {
   /** The book's requests as listed, for who made each and whether Request again would only return one going; `undefined` until read. */
   listings: readonly RequestListing[] | undefined;
   variant: DossierVariant;
+  /** The kind of a request just started from a not-requested lane; its lane takes focus when it mounts. */
+  focusNew: { current: RequestKind | null };
 };
 
 const KINDS: readonly RequestKind[] = ["ebook", "audiobook"];
 
-/** A format the book has neither in the library nor in any lane shown, with a button to request it. */
+/** A format the book has neither in the library nor among its requests, with a button to request it. */
 function UnrequestedLane({
   uuid,
   kind,
   variant,
+  onStarted,
 }: {
   uuid: BookUuid;
   kind: RequestKind;
   variant: DossierVariant;
+  onStarted: () => void;
 }) {
   const phone = useMediaQuery(PHONE_QUERY);
   const titleId = useId();
   // The page stays put while the lists are read again, then this lane gives way to the new request's.
-  const start = useStartRequest(uuid, { stay: true });
+  const start = useStartRequest(uuid, { stay: true, onStarted });
   const Heading = variant === "pane" ? "h3" : "h2";
   return (
     <section
@@ -807,6 +817,7 @@ export function RequestDossier({
   const viewer = useCurrentUser();
   const { state } = useLocation();
   const titleRef = useRef<HTMLHeadingElement>(null);
+  const focusNew = useRef<RequestKind | null>(null);
   const shown = book.data !== undefined && request.data !== undefined;
   useEffect(() => {
     if (focusTitle && shown) titleRef.current?.focus();
@@ -835,6 +846,7 @@ export function RequestDossier({
     book: book.data,
     listings: listed.data,
     variant,
+    focusNew,
   };
   const Title = variant === "page" ? "h1" : "h2";
   return (
@@ -898,12 +910,13 @@ export function RequestDossier({
           context={context}
         />
       ))}
-      {split &&
+      {listed.data &&
         viewer.canStartRequests &&
         KINDS.filter(
           (kind) =>
             !holds(kind, formats) &&
-            ![request.data, ...split.lanes.map((l) => l.request)].some(
+            // Any request for the kind, live or over, has its own lane or history row.
+            ![request.data, ...listed.data.map((l) => l.request)].some(
               (r) => r.kind === kind,
             ),
         ).map((kind) => (
@@ -912,6 +925,9 @@ export function RequestDossier({
             uuid={uuid}
             kind={kind}
             variant={variant}
+            onStarted={() => {
+              focusNew.current = kind;
+            }}
           />
         ))}
       <RequestHistory

@@ -899,7 +899,11 @@ export const AnAudiobookNotRequestedOffersItBesideTheEbookLane: Story = {
     );
 
     // The new request takes the lane's place, and the page stays where it was.
-    await canvas.findByTestId("request-lane-audiobook");
+    const started = within(await canvas.findByTestId("request-lane-audiobook"));
+    // The button that was pressed is gone, so focus moves to the new lane.
+    await waitFor(() =>
+      expect(started.getByRole("heading", { name: "Audiobook" })).toHaveFocus(),
+    );
     await expect(fake.started).toEqual(["audiobook"]);
     await expect(
       canvas.queryByTestId("request-unrequested-audiobook"),
@@ -973,6 +977,99 @@ export const NoAudiobookLaneNotRequestedBesideAnotherReadersAudiobookRequest: St
       ).toBeNull();
     },
   };
+
+export const NoAudiobookLaneNotRequestedOnceTheAudiobookIsReady: Story = {
+  beforeEach({ msw }) {
+    // The book's formats are stale: the ready audiobook is not in them yet, nor in a lane.
+    fake = requestFake([
+      aWireRequest({
+        id: 7,
+        kind: "audiobook",
+        state: "ready",
+        chosen_result_id: 11,
+        progress: 1,
+      }),
+      aWireRequest({ id: 8 }),
+    ]);
+    msw.use(bookHandler(HYPERION), ...fake.handlers);
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("request-requester");
+
+    await expect(
+      canvas.queryByTestId("request-unrequested-audiobook"),
+    ).toBeNull();
+  },
+};
+
+export const ACancelledAudiobookOffersOnlyItsHistoryRowsRequestAgain: Story = {
+  parameters: { user: READER },
+  beforeEach({ msw }) {
+    fake = requestFake([
+      aWireRequest({ id: 7, kind: "audiobook", ...CANCELLED_NOW }),
+      aWireRequest({ id: 8 }),
+    ]);
+    msw.use(bookHandler(HYPERION), ...fake.handlers);
+  },
+  play: async ({ canvas }) => {
+    const history = within(await canvas.findByTestId("request-history"));
+
+    await expect(
+      history.getByRole("button", { name: "Request again" }),
+    ).toBeInTheDocument();
+    await expect(
+      canvas.queryByTestId("request-unrequested-audiobook"),
+    ).toBeNull();
+    await expect(
+      canvas.queryByRole("button", { name: "Request audiobook" }),
+    ).toBeNull();
+  },
+};
+
+let listGate = false;
+
+export const TheNotRequestedButtonStaysBusyUntilItsLaneIsReplaced: Story = {
+  beforeEach({ msw }) {
+    held = deferred();
+    listGate = false;
+    const ebook = aWireRequest({ state: "choose", versions: [EPUB] });
+    fake = requestFake([ebook]);
+    msw.use(
+      http.get("/api/books/:uuid/requests", async () => {
+        // The ebook stays the main lane; the audiobook joins it as another lane once this is read.
+        if (fake.started.length === 0) {
+          return HttpResponse.json([aWireListing({ request: ebook })]);
+        }
+        listGate = true;
+        await held.promise;
+        return HttpResponse.json([
+          aWireListing({
+            request: aWireRequest({ id: 8, kind: "audiobook" }),
+          }),
+          aWireListing({ request: ebook }),
+        ]);
+      }),
+      bookHandler(HYPERION),
+      ...fake.handlers,
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    const lane = within(
+      await canvas.findByTestId("request-unrequested-audiobook"),
+    );
+    const button = lane.getByRole("button", { name: "Request audiobook" });
+
+    await userEvent.click(button);
+    await waitFor(() => expect(listGate).toBe(true));
+
+    await expect(button).toHaveAttribute("aria-busy", "true");
+    held.release();
+    await canvas.findByTestId("request-other-lane-audiobook");
+    await expect(
+      canvas.queryByTestId("request-unrequested-audiobook"),
+    ).toBeNull();
+  },
+};
 
 export const NoLaneNotRequestedForAReaderWhoCannotStartRequests: Story = {
   parameters: { user: { ...ADA, is_admin: false, can_start_requests: false } },
