@@ -70,19 +70,31 @@ mod get_request {
     }
 
     #[tokio::test]
-    async fn leaves_the_offer_out_for_a_reader_who_cannot_act_on_the_request() {
+    async fn leaves_the_offer_out_for_a_reader_who_cannot_pick_versions_even_the_requester() {
         let _covers = CoversDirGuard::new("request_cover_offer_hidden");
         let (app, _, pool) = fixture_book_requests(true).await;
-        let (ada, _) = requester(&pool, "ada").await;
-        let (_, grace) = requester(&pool, "grace").await;
+        let (ada, ada_token) = asker(&pool, "ada").await;
+        let (_, grace) = asker(&pool, "grace").await;
         let (_, plain) = reader(&pool, "plain").await;
+        let (id, _) = ready_with_candidate(&pool, ada, (20, 30), (40, 60)).await;
+
+        for token in [&ada_token, &grace, &plain] {
+            assert_eq!(read_request(&app, token, id).await.cover_offer, None);
+        }
+    }
+
+    #[tokio::test]
+    async fn carries_the_offer_for_a_chooser_and_an_admin_on_another_readers_request() {
+        let _covers = CoversDirGuard::new("request_cover_offer_chooser");
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let (ada, _) = asker(&pool, "ada").await;
+        let (_, picker) = chooser(&pool, "picker").await;
         let admin = admin_token(&pool).await;
         let (id, _) = ready_with_candidate(&pool, ada, (20, 30), (40, 60)).await;
 
-        for token in [&grace, &plain] {
-            assert_eq!(read_request(&app, token, id).await.cover_offer, None);
+        for token in [&picker, &admin] {
+            assert!(read_request(&app, token, id).await.cover_offer.is_some());
         }
-        assert!(read_request(&app, &admin, id).await.cover_offer.is_some());
     }
 
     #[tokio::test]
@@ -128,21 +140,33 @@ mod get_request_cover {
     }
 
     #[tokio::test]
-    async fn answers_404_to_a_reader_the_offer_is_not_for_and_serves_an_admin() {
+    async fn answers_404_to_a_reader_who_cannot_pick_versions_even_the_requester() {
         let _covers = CoversDirGuard::new("request_cover_serve_who");
         let (app, _, pool) = fixture_book_requests(true).await;
-        let (ada, _) = requester(&pool, "ada").await;
-        let (_, grace) = requester(&pool, "grace").await;
+        let (ada, ada_token) = asker(&pool, "ada").await;
+        let (_, grace) = asker(&pool, "grace").await;
         let (_, plain) = reader(&pool, "plain").await;
-        let admin = admin_token(&pool).await;
         let (id, _) = ready_with_candidate(&pool, ada, (20, 30), (40, 60)).await;
 
-        for token in [&grace, &plain] {
+        for token in [&ada_token, &grace, &plain] {
             let res = send(&app, "GET", &cover_uri(id), Some(token), None).await;
             assert_eq!(res.status(), StatusCode::NOT_FOUND);
         }
-        let res = send(&app, "GET", &cover_uri(id), Some(&admin), None).await;
-        assert_eq!(res.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn serves_a_chooser_and_an_admin_another_readers_candidate() {
+        let _covers = CoversDirGuard::new("request_cover_serve_chooser");
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let (ada, _) = asker(&pool, "ada").await;
+        let (_, picker) = chooser(&pool, "picker").await;
+        let admin = admin_token(&pool).await;
+        let (id, _) = ready_with_candidate(&pool, ada, (20, 30), (40, 60)).await;
+
+        for token in [&picker, &admin] {
+            let res = send(&app, "GET", &cover_uri(id), Some(token), None).await;
+            assert_eq!(res.status(), StatusCode::OK);
+        }
     }
 
     #[tokio::test]
@@ -302,20 +326,30 @@ mod post_take_request_cover {
     }
 
     #[tokio::test]
-    async fn refuses_another_reader_and_leaves_the_offer() {
-        let _covers = CoversDirGuard::new("request_cover_take_other");
+    async fn lets_a_chooser_take_another_readers_offer() {
+        let _covers = CoversDirGuard::new("request_cover_take_chooser");
         let (app, _, pool) = fixture_book_requests(true).await;
-        let (ada, ada_token) = requester(&pool, "ada").await;
-        let (_, grace) = requester(&pool, "grace").await;
+        let (ada, _) = asker(&pool, "ada").await;
+        let (_, picker) = chooser(&pool, "picker").await;
         let (id, _) = ready_with_candidate(&pool, ada, (20, 30), (40, 60)).await;
 
-        let res = send(&app, "POST", &cover_uri(id), Some(&grace), None).await;
+        let res = send(&app, "POST", &cover_uri(id), Some(&picker), None).await;
+
+        assert_eq!(res.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn refuses_a_reader_who_cannot_pick_even_the_requester_and_leaves_the_offer() {
+        let _covers = CoversDirGuard::new("request_cover_take_other");
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let (ada, ada_token) = asker(&pool, "ada").await;
+        let admin = admin_token(&pool).await;
+        let (id, _) = ready_with_candidate(&pool, ada, (20, 30), (40, 60)).await;
+
+        let res = send(&app, "POST", &cover_uri(id), Some(&ada_token), None).await;
 
         assert_eq!(res.status(), StatusCode::FORBIDDEN);
-        assert!(read_request(&app, &ada_token, id)
-            .await
-            .cover_offer
-            .is_some());
+        assert!(read_request(&app, &admin, id).await.cover_offer.is_some());
     }
 
     #[tokio::test]
@@ -404,18 +438,30 @@ mod delete_keep_request_cover {
     }
 
     #[tokio::test]
-    async fn lets_an_admin_keep_and_refuses_another_reader() {
+    async fn lets_a_chooser_keep_another_readers_offer() {
+        let _covers = CoversDirGuard::new("request_cover_keep_chooser");
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let (ada, _) = asker(&pool, "ada").await;
+        let (_, picker) = chooser(&pool, "picker").await;
+        let (id, _) = ready_with_candidate(&pool, ada, (20, 30), (40, 60)).await;
+
+        let res = send(&app, "DELETE", &cover_uri(id), Some(&picker), None).await;
+
+        assert_eq!(res.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn refuses_a_reader_who_cannot_pick_even_the_requester_and_lets_an_admin_keep() {
         let _covers = CoversDirGuard::new("request_cover_keep_who");
         let (app, _, pool) = fixture_book_requests(true).await;
-        let (ada, _) = requester(&pool, "ada").await;
-        let (_, grace) = requester(&pool, "grace").await;
+        let (ada, ada_token) = asker(&pool, "ada").await;
         let admin = admin_token(&pool).await;
         let (id, _) = ready_with_candidate(&pool, ada, (20, 30), (40, 60)).await;
 
-        let other = send(&app, "DELETE", &cover_uri(id), Some(&grace), None).await;
+        let own = send(&app, "DELETE", &cover_uri(id), Some(&ada_token), None).await;
         let by_admin = send(&app, "DELETE", &cover_uri(id), Some(&admin), None).await;
 
-        assert_eq!(other.status(), StatusCode::FORBIDDEN);
+        assert_eq!(own.status(), StatusCode::FORBIDDEN);
         assert_eq!(by_admin.status(), StatusCode::OK);
     }
 

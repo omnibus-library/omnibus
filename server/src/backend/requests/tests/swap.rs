@@ -79,18 +79,40 @@ mod post_swap_request {
     }
 
     #[tokio::test]
-    async fn answers_403_to_another_reader_and_lets_an_admin_swap() {
+    async fn answers_403_to_a_reader_who_cannot_pick_even_on_their_own_request() {
         let (app, _, pool) = fixture_book_requests(true).await;
-        let (ada, _) = requester(&pool, "ada").await;
-        let (_, grace) = requester(&pool, "grace").await;
+        let (ada, token) = asker(&pool, "ada").await;
+        let (id, _) = on_its_way(&pool, ada).await;
+
+        let res = send(&app, "POST", &swap_uri(id), Some(&token), None).await;
+
+        assert_eq!(res.status(), StatusCode::FORBIDDEN);
+        let row = store::get(&pool, id).await.unwrap().unwrap();
+        assert_eq!(row.state, RequestState::OnItsWay);
+    }
+
+    #[tokio::test]
+    async fn lets_a_chooser_swap_another_readers_download() {
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let (ada, _) = asker(&pool, "ada").await;
+        let (_, picker) = chooser(&pool, "picker").await;
+        let (id, _) = on_its_way(&pool, ada).await;
+
+        let res = send(&app, "POST", &swap_uri(id), Some(&picker), None).await;
+
+        assert_eq!(res.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn lets_an_admin_swap_another_readers_download() {
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let (ada, _) = asker(&pool, "ada").await;
         let admin = admin_token(&pool).await;
         let (id, _) = on_its_way(&pool, ada).await;
 
-        let other = send(&app, "POST", &swap_uri(id), Some(&grace), None).await;
-        let by_admin = send(&app, "POST", &swap_uri(id), Some(&admin), None).await;
+        let res = send(&app, "POST", &swap_uri(id), Some(&admin), None).await;
 
-        assert_eq!(other.status(), StatusCode::FORBIDDEN);
-        assert_eq!(by_admin.status(), StatusCode::OK);
+        assert_eq!(res.status(), StatusCode::OK);
     }
 
     #[tokio::test]

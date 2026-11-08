@@ -39,6 +39,20 @@ async fn requester(pool: &SqlitePool, name: &str) -> (i64, String) {
     (id, token)
 }
 
+/// A reader who may ask for books but not pick their versions: id and bearer token.
+async fn asker(pool: &SqlitePool, name: &str) -> (i64, String) {
+    let (id, token) = reader(pool, name).await;
+    auth_test_support::set_request_flags(pool, id, false, true, false).await;
+    (id, token)
+}
+
+/// A reader who may pick versions but not ask for books: id and bearer token.
+async fn chooser(pool: &SqlitePool, name: &str) -> (i64, String) {
+    let (id, token) = reader(pool, name).await;
+    auth_test_support::set_request_flags(pool, id, false, false, true).await;
+    (id, token)
+}
+
 /// A book in the library: its uuid.
 async fn seed_book(pool: &SqlitePool, title: &str) -> String {
     seed_book_with_uuid(pool, "/lib", title).await.1
@@ -125,8 +139,11 @@ fn start_uri(uuid: &str) -> String {
 mod flag_and_permission_gate {
     use super::*;
 
-    fn writes() -> [(&'static str, String, Option<Value>); 9] {
-        [
+    type Route = (&'static str, String, Option<Value>);
+
+    /// The routes that start a request: they need the permission to ask.
+    fn start_writes() -> Vec<Route> {
+        vec![
             ("POST", start_uri("any"), Some(json!({"kind": "ebook"}))),
             (
                 "POST",
@@ -135,10 +152,15 @@ mod flag_and_permission_gate {
                     json!({"kind": "ebook", "meta": {"isbn13": "9781635575637", "title": "Piranesi", "authors": [], "source": "open_library"}}),
                 ),
             ),
+        ]
+    }
+
+    /// The routes that pick, swap, search again or settle the cover: they need the permission to
+    /// pick versions, and answer 403 before looking the request up.
+    fn chooser_writes() -> Vec<Route> {
+        vec![
             ("POST", "/api/requests/1/retry".to_string(), None),
             ("POST", "/api/requests/1/swap".to_string(), None),
-            ("POST", "/api/requests/1/cancel".to_string(), None),
-            ("DELETE", "/api/requests/1/cancel".to_string(), None),
             ("POST", "/api/requests/1/cover".to_string(), None),
             ("DELETE", "/api/requests/1/cover".to_string(), None),
             (
@@ -149,7 +171,19 @@ mod flag_and_permission_gate {
         ]
     }
 
-    fn reads() -> [(&'static str, String, Option<Value>); 4] {
+    /// Cancel and undo: the maker may, so a stranger is turned away only once the request is found.
+    fn cancel_writes() -> Vec<Route> {
+        vec![
+            ("POST", "/api/requests/1/cancel".to_string(), None),
+            ("DELETE", "/api/requests/1/cancel".to_string(), None),
+        ]
+    }
+
+    fn writes() -> Vec<Route> {
+        [start_writes(), chooser_writes(), cancel_writes()].concat()
+    }
+
+    fn reads() -> [Route; 4] {
         [
             ("GET", start_uri("any"), None),
             ("GET", "/api/requests".to_string(), None),
@@ -182,13 +216,30 @@ mod flag_and_permission_gate {
     }
 
     #[tokio::test]
-    async fn answers_403_to_a_reader_without_the_permission_on_the_writes() {
+    async fn answers_403_to_a_reader_who_cannot_ask_on_the_start_routes() {
         let (app, _, pool) = fixture_book_requests(true).await;
         let (_, plain) = reader(&pool, "plain").await;
+        let (_, picker) = chooser(&pool, "picker").await;
 
-        for (method, uri, body) in writes() {
-            let res = send(&app, method, &uri, Some(&plain), body).await;
-            assert_eq!(res.status(), StatusCode::FORBIDDEN, "{uri}");
+        for token in [plain, picker] {
+            for (method, uri, body) in start_writes() {
+                let res = send(&app, method, &uri, Some(&token), body).await;
+                assert_eq!(res.status(), StatusCode::FORBIDDEN, "{uri}");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn answers_403_to_a_reader_who_cannot_pick_on_the_picking_routes() {
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let (_, plain) = reader(&pool, "plain").await;
+        let (_, asking) = asker(&pool, "asking").await;
+
+        for token in [plain, asking] {
+            for (method, uri, body) in chooser_writes() {
+                let res = send(&app, method, &uri, Some(&token), body).await;
+                assert_eq!(res.status(), StatusCode::FORBIDDEN, "{uri}");
+            }
         }
     }
 
@@ -215,13 +266,14 @@ mod flag_and_permission_gate {
     }
 
     #[tokio::test]
-    async fn lets_an_admin_and_a_granted_reader_start_a_request_when_on() {
+    async fn lets_an_admin_and_a_reader_who_can_ask_start_a_request_when_on() {
         let (app, _, pool) = fixture_book_requests(true).await;
         let admin = admin_token(&pool).await;
         let (_, granted) = requester(&pool, "granted").await;
+        let (_, asking) = asker(&pool, "asking").await;
         let uuid = seed_book(&pool, "Dracula").await;
 
-        for token in [admin, granted] {
+        for token in [admin, granted, asking] {
             let body = Some(json!({"kind": "ebook"}));
             let res = send(&app, "POST", &start_uri(&uuid), Some(&token), body).await;
             assert!(res.status().is_success());

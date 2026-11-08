@@ -53,19 +53,60 @@ mod post_cancel_request {
     }
 
     #[tokio::test]
-    async fn answers_403_to_another_reader_and_lets_an_admin_cancel() {
+    async fn lets_a_reader_who_can_neither_ask_nor_pick_cancel_their_own_request() {
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let (plain, token) = reader(&pool, "plain").await;
+        let uuid = seed_book(&pool, "Dracula").await;
+        let id = seed_request(&pool, plain, &uuid).await;
+
+        let res = send(&app, "POST", &cancel_uri(id), Some(&token), None).await;
+
+        assert_eq!(res.status(), StatusCode::OK);
+        let row = store::get(&pool, id).await.unwrap().unwrap();
+        assert_eq!(row.cancelled_by, Some(plain));
+    }
+
+    #[tokio::test]
+    async fn answers_403_to_another_reader_who_cannot_pick_versions() {
         let (app, _, pool) = fixture_book_requests(true).await;
         let (ada, _) = requester(&pool, "ada").await;
-        let (_, grace) = requester(&pool, "grace").await;
+        let (_, grace) = asker(&pool, "grace").await;
+        let uuid = seed_book(&pool, "Dracula").await;
+        let id = seed_request(&pool, ada, &uuid).await;
+
+        let res = send(&app, "POST", &cancel_uri(id), Some(&grace), None).await;
+
+        assert_eq!(res.status(), StatusCode::FORBIDDEN);
+        let row = store::get(&pool, id).await.unwrap().unwrap();
+        assert_eq!(row.state, RequestState::Looking);
+    }
+
+    #[tokio::test]
+    async fn lets_a_chooser_cancel_another_readers_request() {
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let (ada, _) = requester(&pool, "ada").await;
+        let (picker, token) = chooser(&pool, "picker").await;
+        let uuid = seed_book(&pool, "Dracula").await;
+        let id = seed_request(&pool, ada, &uuid).await;
+
+        let res = send(&app, "POST", &cancel_uri(id), Some(&token), None).await;
+
+        assert_eq!(res.status(), StatusCode::OK);
+        let row = store::get(&pool, id).await.unwrap().unwrap();
+        assert_eq!(row.cancelled_by, Some(picker));
+    }
+
+    #[tokio::test]
+    async fn lets_an_admin_cancel_another_readers_request() {
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let (ada, _) = requester(&pool, "ada").await;
         let admin = admin_token(&pool).await;
         let uuid = seed_book(&pool, "Dracula").await;
         let id = seed_request(&pool, ada, &uuid).await;
 
-        let other = send(&app, "POST", &cancel_uri(id), Some(&grace), None).await;
-        let by_admin = send(&app, "POST", &cancel_uri(id), Some(&admin), None).await;
+        let res = send(&app, "POST", &cancel_uri(id), Some(&admin), None).await;
 
-        assert_eq!(other.status(), StatusCode::FORBIDDEN);
-        assert_eq!(by_admin.status(), StatusCode::OK);
+        assert_eq!(res.status(), StatusCode::OK);
         let row = store::get(&pool, id).await.unwrap().unwrap();
         assert_ne!(row.cancelled_by, Some(ada));
     }
@@ -82,9 +123,9 @@ mod post_cancel_request {
     }
 
     #[tokio::test]
-    async fn answers_404_for_an_unknown_request() {
+    async fn answers_404_for_an_unknown_request_to_a_reader_who_cannot_pick_versions() {
         let (app, _, pool) = fixture_book_requests(true).await;
-        let (_, token) = requester(&pool, "ada").await;
+        let (_, token) = reader(&pool, "plain").await;
 
         let res = send(&app, "POST", &cancel_uri(999), Some(&token), None).await;
 
@@ -148,10 +189,23 @@ mod delete_cancel_request {
     }
 
     #[tokio::test]
-    async fn answers_403_to_another_reader() {
+    async fn lets_a_reader_who_can_neither_ask_nor_pick_undo_their_own_cancel() {
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let (plain, token) = reader(&pool, "plain").await;
+        let uuid = seed_book(&pool, "Dracula").await;
+        let id = seed_request(&pool, plain, &uuid).await;
+        send(&app, "POST", &cancel_uri(id), Some(&token), None).await;
+
+        let res = send(&app, "DELETE", &cancel_uri(id), Some(&token), None).await;
+
+        assert_eq!(res.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn answers_403_to_another_reader_who_cannot_pick_versions() {
         let (app, _, pool) = fixture_book_requests(true).await;
         let (ada, token) = requester(&pool, "ada").await;
-        let (_, grace) = requester(&pool, "grace").await;
+        let (_, grace) = asker(&pool, "grace").await;
         let uuid = seed_book(&pool, "Dracula").await;
         let id = seed_request(&pool, ada, &uuid).await;
         send(&app, "POST", &cancel_uri(id), Some(&token), None).await;
@@ -159,6 +213,20 @@ mod delete_cancel_request {
         let res = send(&app, "DELETE", &cancel_uri(id), Some(&grace), None).await;
 
         assert_eq!(res.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn lets_a_chooser_undo_another_readers_cancel() {
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let (ada, token) = requester(&pool, "ada").await;
+        let (_, picker) = chooser(&pool, "picker").await;
+        let uuid = seed_book(&pool, "Dracula").await;
+        let id = seed_request(&pool, ada, &uuid).await;
+        send(&app, "POST", &cancel_uri(id), Some(&token), None).await;
+
+        let res = send(&app, "DELETE", &cancel_uri(id), Some(&picker), None).await;
+
+        assert_eq!(res.status(), StatusCode::OK);
     }
 
     #[tokio::test]
