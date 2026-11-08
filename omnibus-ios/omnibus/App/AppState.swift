@@ -258,8 +258,9 @@ final class AppState {
         phase = .needsServer
         // The Home Screen is outside the app's sandbox, so a snapshot left
         // behind here keeps showing the previous server's books — titles and
-        // cover art — to whoever picks the phone up next.
+        // cover art — to whoever picks the phone up next. Spotlight likewise.
         await WidgetSnapshotWriter.shared.refresh()
+        await LibrarySpotlight.shared.refresh()
     }
 
     func signedIn(_ user: UserSummary) {
@@ -275,9 +276,15 @@ final class AppState {
         // anything has been written and publishes the "No books yet" card to an
         // account with a full library — where it would sit until the next
         // foreground.
+        //
+        // Sign-out emptied Spotlight, and a completed pass refills it. One that
+        // doesn't complete still leaves a mirror kept from before the sign-out
+        // to index. Another sync may still be running and swap the mirror
+        // under that pass, which then removes nothing from Spotlight.
         Task {
-            await LibraryIndex.shared.sync(force: true)
+            let completed = await LibraryIndex.shared.sync(force: true)
             await WidgetSnapshotWriter.shared.refresh()
+            if !completed { await LibrarySpotlight.shared.refresh() }
         }
     }
 
@@ -297,6 +304,7 @@ final class AppState {
         phase = .needsLogin
         // Same reason as `changeServer`: the widget survives the sign-out.
         await WidgetSnapshotWriter.shared.refresh()
+        await LibrarySpotlight.shared.refresh()
     }
 
     private func handleUnauthorized() {
@@ -307,7 +315,10 @@ final class AppState {
         // publishes the signed-out card. Without it the Home Screen keeps the
         // revoked session's titles and cover art until some *other* hook
         // happens to fire.
-        Task { await WidgetSnapshotWriter.shared.refresh() }
+        Task {
+            await WidgetSnapshotWriter.shared.refresh()
+            await LibrarySpotlight.shared.refresh()
+        }
     }
 }
 
