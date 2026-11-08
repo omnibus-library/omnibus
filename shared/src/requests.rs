@@ -30,6 +30,8 @@ pub enum DownloadClientKind {
     Transmission,
     /// SABnzbd, through its API. Its API key goes in the password field.
     Sabnzbd,
+    /// NZBGet, through its JSON-RPC.
+    Nzbget,
 }
 
 impl DownloadClientKind {
@@ -39,6 +41,7 @@ impl DownloadClientKind {
             DownloadClientKind::Qbittorrent => "qbittorrent",
             DownloadClientKind::Transmission => "transmission",
             DownloadClientKind::Sabnzbd => "sabnzbd",
+            DownloadClientKind::Nzbget => "nzbget",
         }
     }
 
@@ -49,6 +52,7 @@ impl DownloadClientKind {
             "qbittorrent" => DownloadClientKind::Qbittorrent,
             "transmission" => DownloadClientKind::Transmission,
             "sabnzbd" => DownloadClientKind::Sabnzbd,
+            "nzbget" => DownloadClientKind::Nzbget,
             _ => DownloadClientKind::default(),
         }
     }
@@ -59,7 +63,7 @@ impl DownloadClientKind {
             DownloadClientKind::Qbittorrent | DownloadClientKind::Transmission => {
                 ReleaseProtocol::Torrent
             }
-            DownloadClientKind::Sabnzbd => ReleaseProtocol::Usenet,
+            DownloadClientKind::Sabnzbd | DownloadClientKind::Nzbget => ReleaseProtocol::Usenet,
         }
     }
 }

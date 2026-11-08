@@ -14,12 +14,14 @@ use super::ConnectionError;
 use usenet::JobFolders;
 
 pub mod infohash;
+pub mod nzbget;
 pub mod qbittorrent;
 pub mod release;
 pub mod sabnzbd;
 pub mod transmission;
 pub mod usenet;
 
+pub use nzbget::Nzbget;
 pub use qbittorrent::Qbittorrent;
 pub use release::Release;
 pub use sabnzbd::Sabnzbd;
@@ -123,6 +125,7 @@ pub enum AnyClient {
     Qbittorrent(Qbittorrent),
     Transmission(Transmission),
     Sabnzbd(Sabnzbd),
+    Nzbget(Nzbget),
 }
 
 /// Run `$call` on whichever client `$any` holds.
@@ -132,6 +135,7 @@ macro_rules! on_client {
             AnyClient::Qbittorrent($client) => $call,
             AnyClient::Transmission($client) => $call,
             AnyClient::Sabnzbd($client) => $call,
+            AnyClient::Nzbget($client) => $call,
         }
     };
 }
@@ -187,6 +191,10 @@ pub fn client_for(config: &RequestsConfig) -> Result<AnyClient, ConnectionError>
         .download_client_password
         .as_deref()
         .unwrap_or_default();
+    let folders = JobFolders::new(
+        config.download_client_path_prefix.as_deref(),
+        config.download_path_prefix.as_deref(),
+    );
     match config.download_client_kind {
         DownloadClientKind::Qbittorrent => {
             Qbittorrent::new(url, username, password).map(AnyClient::Qbittorrent)
@@ -195,11 +203,9 @@ pub fn client_for(config: &RequestsConfig) -> Result<AnyClient, ConnectionError>
             Transmission::new(url, username, password).map(AnyClient::Transmission)
         }
         // SABnzbd's API key sits in the password slot; it has no login.
-        DownloadClientKind::Sabnzbd => Sabnzbd::new(url, password).map(|client| {
-            AnyClient::Sabnzbd(client.with_folders(JobFolders::new(
-                config.download_client_path_prefix.as_deref(),
-                config.download_path_prefix.as_deref(),
-            )))
-        }),
+        DownloadClientKind::Sabnzbd => Sabnzbd::new(url, password)
+            .map(|client| AnyClient::Sabnzbd(client.with_folders(folders))),
+        DownloadClientKind::Nzbget => Nzbget::new(url, username, password)
+            .map(|client| AnyClient::Nzbget(client.with_folders(folders))),
     }
 }

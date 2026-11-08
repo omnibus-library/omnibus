@@ -12888,7 +12888,8 @@
         "enum": [
           "qbittorrent",
           "transmission",
-          "sabnzbd"
+          "sabnzbd",
+          "nzbget"
         ]
       },
       "DownloadFormat": {
