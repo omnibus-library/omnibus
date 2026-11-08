@@ -258,7 +258,7 @@ mod qbittorrent_add {
         let server = MockServer::start().await;
         let prepared = Prepared {
             hash: HASH.to_string(),
-            release: Release::Nzb(b"<nzb/>".to_vec()),
+            release: Release::NzbLink("http://nzb.invalid/1".to_string()),
         };
 
         let err = client_for(&server)

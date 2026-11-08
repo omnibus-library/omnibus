@@ -6,6 +6,7 @@
 //! (unpacked), in qBittorrent's state words, so the poller never imports a half-built one.
 // shortcut: one lookup per call, no ETA: SABnzbd's `timeleft` is not read.
 
+use omnibus_shared::ReleaseProtocol;
 use reqwest::multipart::{Form, Part};
 use reqwest::RequestBuilder;
 use serde::de::DeserializeOwned;
@@ -13,13 +14,11 @@ use serde_json::Value;
 
 use crate::requests::{check_status, http_client, ConnectionError, REQUEST_TIMEOUT};
 
-use super::usenet::{job_name, prepare, JobFolders};
+use super::release::fetch_nzb;
+use super::usenet::{job_name, prepare, JobFolders, UNPACKING_PROGRESS};
 use super::{ClientFile, DownloadClient, Prepared, Release, TorrentStatus};
 
 const SERVICE: &str = "SABnzbd";
-
-/// A job under full progress in the queue is not done until SABnzbd has unpacked it.
-const QUEUE_PROGRESS_CAP: f64 = 0.99;
 
 /// A SABnzbd instance and its API key. No `Debug`: it holds the key.
 pub struct Sabnzbd {
@@ -91,13 +90,13 @@ impl Found {
                     _ => "downloading",
                 };
                 let share = percentage(&slot.percentage) / 100.0;
-                (state, share.min(QUEUE_PROGRESS_CAP), String::new())
+                (state, share.min(UNPACKING_PROGRESS), String::new())
             }
             Found::History(slot) => match slot.status.as_str() {
                 "Completed" => ("stoppedUP", 1.0, slot.storage),
-                "Failed" => ("error", QUEUE_PROGRESS_CAP, slot.storage),
+                "Failed" => ("error", UNPACKING_PROGRESS, slot.storage),
                 // Verifying, repairing, extracting, moving: not yet in its final folder.
-                _ => ("checkingDL", QUEUE_PROGRESS_CAP, slot.storage),
+                _ => ("checkingDL", UNPACKING_PROGRESS, slot.storage),
             },
         };
         TorrentStatus {
@@ -200,7 +199,7 @@ impl DownloadClient for Sabnzbd {
     type Release = Release;
 
     async fn prepare(&self, link: &str) -> Result<Prepared<Release>, ConnectionError> {
-        prepare(&self.http, link, self.timeout).await
+        prepare(link)
     }
 
     async fn add(
@@ -208,9 +207,10 @@ impl DownloadClient for Sabnzbd {
         prepared: Prepared<Release>,
         category: &str,
     ) -> Result<(), ConnectionError> {
-        let Release::Nzb(bytes) = prepared.release else {
+        let Release::NzbLink(link) = prepared.release else {
             return Err(not_nzb());
         };
+        let bytes = fetch_nzb(&self.http, &link, self.timeout).await?;
         let name = job_name(&prepared.hash);
         let file = Part::bytes(bytes)
             .file_name(format!("{name}.nzb"))
@@ -237,9 +237,8 @@ impl DownloadClient for Sabnzbd {
         Ok(())
     }
 
-    async fn hash_for_tag(&self, _tag: &str) -> Result<Option<String>, ConnectionError> {
-        // Only a qBittorrent download was ever tagged.
-        Ok(None)
+    fn protocol(&self) -> ReleaseProtocol {
+        ReleaseProtocol::Usenet
     }
 
     async fn status(&self, hash: &str) -> Result<Option<TorrentStatus>, ConnectionError> {

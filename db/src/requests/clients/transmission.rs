@@ -30,14 +30,6 @@ pub struct Transmission {
     timeout: std::time::Duration,
 }
 
-/// The envelope every RPC answer comes in.
-#[derive(serde::Deserialize)]
-struct Reply<T> {
-    result: String,
-    #[serde(default)]
-    arguments: T,
-}
-
 /// The fields of a `torrent-get` row that `status` asks for.
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -55,15 +47,6 @@ struct Torrent {
 #[derive(serde::Deserialize)]
 struct Torrents<T> {
     torrents: Vec<T>,
-}
-
-// By hand: a derive would require `T: Default`, which a row has no use for.
-impl<T> Default for Torrents<T> {
-    fn default() -> Self {
-        Self {
-            torrents: Vec::new(),
-        }
-    }
 }
 
 /// The fields of a `torrent-get` row that `files` asks for.
@@ -115,7 +98,7 @@ impl Transmission {
     }
 
     /// Call `rpc_method` and return its `arguments`, failing on any `result` but `success`.
-    async fn rpc<T: DeserializeOwned + Default>(
+    async fn rpc<T: DeserializeOwned>(
         &self,
         rpc_method: &str,
         arguments: Value,
@@ -127,18 +110,20 @@ impl Transmission {
             response = self.post(&body, session).await?;
         }
         check_status(response.status(), SERVICE, ConnectionError::BadLogin)?;
-        let reply: Reply<T> = response
-            .json()
-            .await
-            .map_err(|e| ConnectionError::from_transport(&e))?;
-        if reply.result != "success" {
+        let mut reply: Value = response.json().await.map_err(|_| unreadable())?;
+        let result = reply["result"].as_str().ok_or_else(unreadable)?;
+        if result != "success" {
             return Err(ConnectionError::Rejected(format!(
-                "{SERVICE} refused the request: {}",
-                reply.result
+                "{SERVICE} refused the request: {result}"
             )));
         }
-        Ok(reply.arguments)
+        serde_json::from_value(reply["arguments"].take()).map_err(|_| unreadable())
     }
+}
+
+/// An answer that is not the shape Transmission's RPC sends: the address is not Transmission.
+fn unreadable() -> ConnectionError {
+    ConnectionError::BadUrl(SERVICE.to_string())
 }
 
 /// qBittorrent's word for a Transmission torrent. Only a local error counts as one: a
@@ -181,7 +166,7 @@ impl DownloadClient for Transmission {
         let hash = match &release {
             Release::Magnet(magnet) => infohash::from_magnet(magnet),
             Release::File(bytes) => infohash::from_torrent(bytes),
-            Release::Nzb(_) => return Err(not_torrent()),
+            Release::NzbLink(_) => return Err(not_torrent()),
         }
         .map_err(|e| rejected(&e.to_string()))?;
         Ok(Prepared { hash, release })
@@ -195,7 +180,7 @@ impl DownloadClient for Transmission {
         let mut arguments = match prepared.release {
             Release::Magnet(magnet) => json!({"filename": magnet}),
             Release::File(bytes) => json!({"metainfo": STANDARD.encode(bytes)}),
-            Release::Nzb(_) => return Err(not_torrent()),
+            Release::NzbLink(_) => return Err(not_torrent()),
         };
         if !category.is_empty() {
             arguments["labels"] = json!([category]);
@@ -203,11 +188,6 @@ impl DownloadClient for Transmission {
         // A torrent Transmission already holds answers `torrent-duplicate`, also a success.
         self.rpc::<Value>("torrent-add", arguments).await?;
         Ok(())
-    }
-
-    async fn hash_for_tag(&self, _tag: &str) -> Result<Option<String>, ConnectionError> {
-        // Only a qBittorrent download was ever tagged.
-        Ok(None)
     }
 
     async fn status(&self, hash: &str) -> Result<Option<TorrentStatus>, ConnectionError> {

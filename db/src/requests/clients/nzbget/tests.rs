@@ -125,6 +125,16 @@ mod nzbget_test {
     }
 
     #[tokio::test]
+    async fn accepts_a_reply_whose_error_member_is_null() {
+        let server = fake_nzbget().await;
+        answer(&server, "version", json!({"result": "21.1", "error": null})).await;
+
+        let result = client_for(&server).test().await;
+
+        assert!(result.is_ok(), "{result:?}");
+    }
+
+    #[tokio::test]
     async fn rejects_an_error_member_with_the_clients_reason() {
         let server = fake_nzbget().await;
         let refusal = json!({"version": "1.1", "error": {"name": "JSONRPCError", "message": "Invalid procedure"}});
@@ -142,19 +152,26 @@ mod nzbget_test {
 mod nzbget_add {
     use super::*;
 
-    fn nzb() -> Prepared<Release> {
+    /// The release `server` hands out as an NZB at its own address; the link carries a key.
+    async fn nzb_on(server: &MockServer) -> Prepared<Release> {
+        Mock::given(method("GET"))
+            .and(path("/13/download"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(b"<nzb/>"))
+            .mount(server)
+            .await;
         Prepared {
             hash: ID.to_string(),
-            release: Release::Nzb(b"<nzb/>".to_vec()),
+            release: Release::NzbLink(format!("{}/13/download?apikey=secret", server.uri())),
         }
     }
 
     #[tokio::test]
-    async fn appends_the_nzb_as_base64_under_the_job_name_and_category() {
+    async fn appends_the_fetched_nzb_as_base64_under_the_job_name_and_category() {
         let server = fake_nzbget().await;
         reply(&server, "append", json!(12)).await;
+        let prepared = nzb_on(&server).await;
 
-        client_for(&server).add(nzb(), "books").await.unwrap();
+        client_for(&server).add(prepared, "books").await.unwrap();
 
         let sent = calls_to(&server, "append").await;
         let expected = json!([
@@ -173,12 +190,40 @@ mod nzbget_add {
     }
 
     #[tokio::test]
+    async fn rejects_a_failed_fetch_without_echoing_the_link_or_appending() {
+        let server = fake_nzbget().await;
+        reply(&server, "append", json!(12)).await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(500))
+            .mount(&server)
+            .await;
+        let link = format!("{}/13/download?apikey=secret", server.uri());
+        let prepared = Prepared {
+            hash: ID.to_string(),
+            release: Release::NzbLink(link),
+        };
+
+        let err = client_for(&server)
+            .add(prepared, "books")
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, ConnectionError::Rejected(_)), "{err:?}");
+        assert!(!err.to_string().contains("secret"), "{err}");
+        assert!(calls_to(&server, "append").await.is_empty());
+    }
+
+    #[tokio::test]
     async fn rejects_an_id_of_zero_or_less() {
         for refused in [0, -1] {
             let server = fake_nzbget().await;
             reply(&server, "append", json!(refused)).await;
+            let prepared = nzb_on(&server).await;
 
-            let err = client_for(&server).add(nzb(), "books").await.unwrap_err();
+            let err = client_for(&server)
+                .add(prepared, "books")
+                .await
+                .unwrap_err();
 
             assert!(
                 matches!(err, ConnectionError::Rejected(_)),
@@ -400,6 +445,16 @@ mod nzbget_remove {
     }
 
     #[tokio::test]
+    async fn rejects_an_edit_the_client_reports_it_did_not_make() {
+        let server = server_with(vec![group("DOWNLOADING", 100, 40)], vec![]).await;
+        reply(&server, "editqueue", json!(false)).await;
+
+        let err = client_for(&server).remove(ID, true).await.unwrap_err();
+
+        assert!(matches!(err, ConnectionError::Rejected(_)), "{err:?}");
+    }
+
+    #[tokio::test]
     async fn succeeds_without_deleting_when_the_client_no_longer_has_the_job() {
         let server = server_with(vec![], vec![]).await;
 
@@ -407,19 +462,5 @@ mod nzbget_remove {
 
         assert!(result.is_ok(), "{result:?}");
         assert!(editqueue_calls(&server).await.is_empty());
-    }
-}
-
-mod nzbget_hash_for_tag {
-    use super::*;
-
-    #[tokio::test]
-    async fn finds_nothing_because_only_qbittorrent_downloads_were_ever_tagged() {
-        let server = MockServer::start().await;
-
-        let found = client_for(&server).hash_for_tag("omnibus-7").await.unwrap();
-
-        assert_eq!(found, None);
-        assert!(server.received_requests().await.unwrap().is_empty());
     }
 }

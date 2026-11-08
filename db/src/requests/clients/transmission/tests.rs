@@ -146,6 +146,19 @@ mod transmission_test {
         }
 
         #[tokio::test]
+        async fn reports_an_answer_that_is_not_json_as_a_bad_url() {
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .respond_with(ResponseTemplate::new(200).set_body_string("<html>login</html>"))
+                .mount(&server)
+                .await;
+
+            let err = client_for(&server).test().await.unwrap_err();
+
+            assert!(matches!(err, ConnectionError::BadUrl(_)), "{err:?}");
+        }
+
+        #[tokio::test]
         async fn rejects_a_result_other_than_success_without_echoing_the_address() {
             let server = fake_transmission().await;
             let refusal = json!({"result": "method name not recognized", "arguments": {}});
@@ -270,7 +283,7 @@ mod transmission_add {
         let server = MockServer::start().await;
         let prepared = Prepared {
             hash: HASH.to_string(),
-            release: Release::Nzb(b"<nzb/>".to_vec()),
+            release: Release::NzbLink("http://nzb.invalid/1".to_string()),
         };
 
         let err = client_for(&server)
@@ -377,6 +390,22 @@ mod transmission_status {
     }
 
     #[tokio::test]
+    async fn rejects_an_error_result_that_comes_with_empty_arguments() {
+        let server = fake_transmission().await;
+        let refusal = json!({"result": "no such torrent", "arguments": {}});
+        answer(
+            &server,
+            "torrent-get",
+            ResponseTemplate::new(200).set_body_json(refusal),
+        )
+        .await;
+
+        let err = client_for(&server).status(HASH).await.unwrap_err();
+
+        assert!(matches!(err, ConnectionError::Rejected(_)), "{err:?}");
+    }
+
+    #[tokio::test]
     async fn returns_none_when_transmission_has_no_torrent_with_the_hash() {
         let server = fake_transmission().await;
         reply(&server, "torrent-get", json!({"torrents": []})).await;
@@ -448,19 +477,5 @@ mod transmission_remove {
             let expected = json!({"ids": [HASH], "delete-local-data": delete_files});
             assert_eq!(sent[0]["arguments"], expected);
         }
-    }
-}
-
-mod transmission_hash_for_tag {
-    use super::*;
-
-    #[tokio::test]
-    async fn finds_nothing_without_asking_the_client_because_it_never_tagged_a_torrent() {
-        let server = MockServer::start().await;
-
-        let found = client_for(&server).hash_for_tag("omnibus-7").await.unwrap();
-
-        assert_eq!(found, None);
-        assert!(server.received_requests().await.unwrap().is_empty());
     }
 }

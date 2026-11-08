@@ -150,7 +150,7 @@ impl DownloadClient for Qbittorrent {
         let hash = match &release {
             Release::Magnet(magnet) => infohash::from_magnet(magnet),
             Release::File(bytes) => infohash::from_torrent(bytes),
-            Release::Nzb(_) => return Err(not_torrent()),
+            Release::NzbLink(_) => return Err(not_torrent()),
         }
         .map_err(|e| rejected(&e.to_string()))?;
         Ok(Prepared { hash, release })
@@ -164,7 +164,7 @@ impl DownloadClient for Qbittorrent {
         category: &str,
     ) -> Result<(), ConnectionError> {
         // Refused before the login: a release this client cannot take needs no session.
-        if matches!(prepared.release, Release::Nzb(_)) {
+        if matches!(prepared.release, Release::NzbLink(_)) {
             return Err(not_torrent());
         }
         let cookie = self.login().await?;
@@ -176,7 +176,7 @@ impl DownloadClient for Qbittorrent {
                 }
                 self.post("torrents/add", &cookie).form(&form)
             }
-            Release::Nzb(_) => return Err(not_torrent()),
+            Release::NzbLink(_) => return Err(not_torrent()),
             Release::File(bytes) => {
                 let file = Part::bytes(bytes)
                     .file_name(format!("{}.torrent", prepared.hash))

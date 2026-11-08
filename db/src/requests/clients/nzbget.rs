@@ -7,18 +7,17 @@
 // shortcut: one lookup per call, no ETA: NZBGet's download rate is not read.
 
 use base64::engine::{general_purpose::STANDARD, Engine as _};
+use omnibus_shared::ReleaseProtocol;
 use serde::de::DeserializeOwned;
 use serde_json::{json, Value};
 
 use crate::requests::{check_status, http_client, ConnectionError, REQUEST_TIMEOUT};
 
-use super::usenet::{job_name, prepare, JobFolders};
+use super::release::fetch_nzb;
+use super::usenet::{job_name, prepare, JobFolders, UNPACKING_PROGRESS};
 use super::{ClientFile, DownloadClient, Prepared, Release, TorrentStatus};
 
 const SERVICE: &str = "NZBGet";
-
-/// A job under full progress is not done until NZBGet has unpacked it.
-const PROGRESS_CAP: f64 = 0.99;
 
 /// A NZBGet instance and the login to reach it. No `Debug`: it holds the password.
 pub struct Nzbget {
@@ -99,14 +98,14 @@ impl Found {
                     0.0
                 };
                 let save_path = folder(group.final_dir, group.dest_dir);
-                (state, share.min(PROGRESS_CAP), save_path)
+                (state, share.min(UNPACKING_PROGRESS), save_path)
             }
             Found::History(entry) => {
                 let save_path = folder(entry.final_dir, entry.dest_dir);
                 match entry.status.split('/').next() {
                     Some("SUCCESS") => ("stoppedUP", 1.0, save_path),
                     Some("DELETED") => return None,
-                    _ => ("error", PROGRESS_CAP, save_path),
+                    _ => ("error", UNPACKING_PROGRESS, save_path),
                 }
             }
         };
@@ -169,7 +168,7 @@ impl Nzbget {
             .map_err(|e| ConnectionError::from_transport(&e))?;
         check_status(response.status(), SERVICE, ConnectionError::BadLogin)?;
         let mut body: Value = response.json().await.map_err(|_| unreadable())?;
-        if let Some(error) = body.get("error") {
+        if let Some(error) = body.get("error").filter(|e| !e.is_null()) {
             let why = error["message"]
                 .as_str()
                 .unwrap_or("it refused the request");
@@ -198,7 +197,7 @@ impl DownloadClient for Nzbget {
     type Release = Release;
 
     async fn prepare(&self, link: &str) -> Result<Prepared<Release>, ConnectionError> {
-        prepare(&self.http, link, self.timeout).await
+        prepare(link)
     }
 
     async fn add(
@@ -206,9 +205,10 @@ impl DownloadClient for Nzbget {
         prepared: Prepared<Release>,
         category: &str,
     ) -> Result<(), ConnectionError> {
-        let Release::Nzb(bytes) = prepared.release else {
+        let Release::NzbLink(link) = prepared.release else {
             return Err(not_nzb());
         };
+        let bytes = fetch_nzb(&self.http, &link, self.timeout).await?;
         let name = format!("{}.nzb", job_name(&prepared.hash));
         // Name, content, category, priority, top, paused, dupe key, score, mode, parameters.
         let params = json!([
@@ -232,9 +232,8 @@ impl DownloadClient for Nzbget {
         Ok(())
     }
 
-    async fn hash_for_tag(&self, _tag: &str) -> Result<Option<String>, ConnectionError> {
-        // Only a qBittorrent download was ever tagged.
-        Ok(None)
+    fn protocol(&self) -> ReleaseProtocol {
+        ReleaseProtocol::Usenet
     }
 
     async fn status(&self, hash: &str) -> Result<Option<TorrentStatus>, ConnectionError> {
@@ -259,8 +258,14 @@ impl DownloadClient for Nzbget {
             (Found::History(_), true) => "HistoryFinalDelete",
             (Found::History(_), false) => "HistoryDelete",
         };
-        self.rpc::<bool>("editqueue", json!([command, "", [found.id()]]))
+        let edited: bool = self
+            .rpc("editqueue", json!([command, "", [found.id()]]))
             .await?;
+        if !edited {
+            return Err(ConnectionError::Rejected(format!(
+                "{SERVICE} did not remove the job"
+            )));
+        }
         Ok(())
     }
 

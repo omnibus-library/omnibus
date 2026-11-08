@@ -24,8 +24,9 @@ pub enum Release {
     Magnet(String),
     /// A `.torrent` file.
     File(Vec<u8>),
-    /// An NZB file.
-    Nzb(Vec<u8>),
+    /// The link an NZB is fetched from when the usenet client is given the job, so a grab is
+    /// made only once the client is known to be reachable.
+    NzbLink(String),
 }
 
 /// The reason a release link was refused, as the end of "the release link ...".
@@ -33,24 +34,23 @@ pub fn rejected(why: &str) -> ConnectionError {
     ConnectionError::Rejected(format!("the release link {why}"))
 }
 
-/// What a fetch looks for: how big it may be, what to call it, whether a magnet will do.
+/// What a fetch looks for: how big it may be and what to call it.
 struct Wanted {
     limit: usize,
     noun: &'static str,
-    magnet_ok: bool,
 }
 
 const TORRENT: Wanted = Wanted {
     limit: MAX_TORRENT_BYTES,
     noun: "a torrent file",
-    magnet_ok: true,
 };
 
 const NZB: Wanted = Wanted {
     limit: MAX_NZB_BYTES,
     noun: "an NZB file",
-    magnet_ok: false,
 };
+
+const MAGNET_NOT_NZB: &str = "is a magnet, not an NZB";
 
 /// Resolve `link` to a magnet or the torrent file it names.
 pub async fn fetch_torrent(
@@ -64,15 +64,25 @@ pub async fn fetch_torrent(
     }
 }
 
-/// Resolve `link` to the NZB file it names.
+/// Refuse, without a request, a link an NZB cannot be fetched from.
+pub fn check_nzb_link(link: &str) -> Result<(), ConnectionError> {
+    let url = Url::parse(link).map_err(|_| rejected("is not a URL"))?;
+    match url.scheme() {
+        "http" | "https" => Ok(()),
+        "magnet" => Err(rejected(MAGNET_NOT_NZB)),
+        _ => Err(rejected("is not a web address")),
+    }
+}
+
+/// Fetch the NZB file `link` names.
 pub async fn fetch_nzb(
     http: &reqwest::Client,
     link: &str,
     timeout: Duration,
-) -> Result<Release, ConnectionError> {
+) -> Result<Vec<u8>, ConnectionError> {
     match fetch(http, link, timeout, &NZB).await? {
-        Fetched::Magnet(_) => Err(rejected("is a magnet, not an NZB")),
-        Fetched::Bytes(bytes) => Ok(Release::Nzb(bytes)),
+        Fetched::Magnet(_) => Err(rejected(MAGNET_NOT_NZB)),
+        Fetched::Bytes(bytes) => Ok(bytes),
     }
 }
 
@@ -91,7 +101,7 @@ async fn fetch(
 ) -> Result<Fetched, ConnectionError> {
     let mut url = Url::parse(link).map_err(|_| rejected("is not a URL"))?;
     for _ in 0..=MAX_HOPS {
-        if url.scheme() == "magnet" && wanted.magnet_ok {
+        if url.scheme() == "magnet" {
             return Ok(Fetched::Magnet(url.into()));
         }
         if !matches!(url.scheme(), "http" | "https") {

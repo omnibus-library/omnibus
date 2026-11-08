@@ -6,12 +6,11 @@
 
 use std::future::Future;
 
-use omnibus_shared::DownloadClientKind;
+use omnibus_shared::{DownloadClientKind, ReleaseProtocol};
 
 use crate::settings::RequestsConfig;
 
 use super::ConnectionError;
-use usenet::JobFolders;
 
 pub mod infohash;
 pub mod nzbget;
@@ -90,11 +89,19 @@ pub trait DownloadClient {
     ) -> impl Future<Output = Result<(), ConnectionError>> + Send;
 
     /// The info hash of the newest download carrying exactly `tag`, for a download an earlier
-    /// version of Omnibus tagged; `None` when the client has none.
+    /// version of Omnibus tagged; `None` when the client has none. Only qBittorrent was ever
+    /// tagged, so the default finds nothing.
     fn hash_for_tag(
         &self,
-        tag: &str,
-    ) -> impl Future<Output = Result<Option<String>, ConnectionError>> + Send;
+        _tag: &str,
+    ) -> impl Future<Output = Result<Option<String>, ConnectionError>> + Send {
+        async { Ok(None) }
+    }
+
+    /// Which kind of release this client downloads.
+    fn protocol(&self) -> ReleaseProtocol {
+        ReleaseProtocol::Torrent
+    }
 
     /// The download with info hash `hash`, or `None` when the client has none.
     fn status(
@@ -159,6 +166,10 @@ impl DownloadClient for AnyClient {
         on_client!(self, c => c.hash_for_tag(tag).await)
     }
 
+    fn protocol(&self) -> ReleaseProtocol {
+        on_client!(self, c => c.protocol())
+    }
+
     async fn status(&self, hash: &str) -> Result<Option<TorrentStatus>, ConnectionError> {
         on_client!(self, c => c.status(hash).await)
     }
@@ -191,7 +202,7 @@ pub fn client_for(config: &RequestsConfig) -> Result<AnyClient, ConnectionError>
         .download_client_password
         .as_deref()
         .unwrap_or_default();
-    let folders = JobFolders::new(
+    let folders = usenet::JobFolders::new(
         config.download_client_path_prefix.as_deref(),
         config.download_path_prefix.as_deref(),
     );

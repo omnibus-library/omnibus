@@ -5,6 +5,8 @@ use tempfile::TempDir;
 use wiremock::matchers::{method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
+use crate::requests::clients::release::MAX_NZB_BYTES;
+
 use super::*;
 
 /// The id of a job, and the name SABnzbd lists it under.
@@ -123,11 +125,22 @@ mod sabnzbd_test {
 mod sabnzbd_add {
     use super::*;
 
-    fn nzb(hash: &str) -> Prepared<Release> {
+    /// The release `server` hands out as an NZB at its own address; the link carries a key.
+    async fn nzb_on(server: &MockServer, response: ResponseTemplate) -> Prepared<Release> {
+        Mock::given(method("GET"))
+            .and(path("/13/download"))
+            .and(query_param("apikey", "secret"))
+            .respond_with(response)
+            .mount(server)
+            .await;
         Prepared {
-            hash: hash.to_string(),
-            release: Release::Nzb(b"<nzb/>".to_vec()),
+            hash: ID.to_string(),
+            release: Release::NzbLink(format!("{}/13/download?apikey=secret", server.uri())),
         }
+    }
+
+    async fn nzb_file() -> ResponseTemplate {
+        ResponseTemplate::new(200).set_body_bytes(b"<nzb/>")
     }
 
     async fn accepting_server() -> MockServer {
@@ -144,17 +157,26 @@ mod sabnzbd_add {
         server
     }
 
+    async fn uploads(server: &MockServer) -> Vec<wiremock::Request> {
+        let all = server.received_requests().await.unwrap();
+        all.into_iter()
+            .filter(|r| r.method.as_str() == "POST")
+            .collect()
+    }
+
     #[tokio::test]
-    async fn uploads_the_nzb_under_the_job_name_with_the_category() {
+    async fn uploads_the_fetched_nzb_under_the_job_name_with_the_category() {
         let server = accepting_server().await;
+        let prepared = nzb_on(&server, nzb_file().await).await;
 
-        client_for(&server).add(nzb(ID), "books").await.unwrap();
+        client_for(&server).add(prepared, "books").await.unwrap();
 
-        let sent = server.received_requests().await.unwrap();
+        let sent = uploads(&server).await;
         let query: HashMap<String, String> = sent[0].url.query_pairs().into_owned().collect();
         assert_eq!(query["apikey"], KEY);
         assert_eq!(query["nzbname"], NAME);
         assert_eq!(query["cat"], "books");
+        assert!(!sent[0].url.as_str().contains("secret"));
         let body = String::from_utf8_lossy(&sent[0].body);
         assert!(body.contains(&format!("filename=\"{NAME}.nzb\"")), "{body}");
         assert!(body.contains("<nzb/>"), "{body}");
@@ -163,10 +185,45 @@ mod sabnzbd_add {
     #[tokio::test]
     async fn sends_no_category_when_it_is_empty() {
         let server = accepting_server().await;
+        let prepared = nzb_on(&server, nzb_file().await).await;
 
-        client_for(&server).add(nzb(ID), "").await.unwrap();
+        client_for(&server).add(prepared, "").await.unwrap();
 
-        assert!(!queries(&server).await[0].contains_key("cat"));
+        assert!(!uploads(&server).await[0]
+            .url
+            .query()
+            .unwrap()
+            .contains("cat="));
+    }
+
+    #[tokio::test]
+    async fn rejects_a_failed_fetch_without_echoing_the_link_or_uploading() {
+        let server = accepting_server().await;
+        let prepared = nzb_on(&server, ResponseTemplate::new(500)).await;
+
+        let err = client_for(&server)
+            .add(prepared, "books")
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, ConnectionError::Rejected(_)), "{err:?}");
+        assert!(!err.to_string().contains("secret"), "{err}");
+        assert!(uploads(&server).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn rejects_an_nzb_larger_than_the_cap_without_uploading() {
+        let server = accepting_server().await;
+        let big = vec![b'x'; MAX_NZB_BYTES + 1];
+        let prepared = nzb_on(&server, ResponseTemplate::new(200).set_body_bytes(big)).await;
+
+        let err = client_for(&server)
+            .add(prepared, "books")
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, ConnectionError::Rejected(_)), "{err:?}");
+        assert!(uploads(&server).await.is_empty());
     }
 
     #[tokio::test]
@@ -177,8 +234,12 @@ mod sabnzbd_add {
             .respond_with(ResponseTemplate::new(200).set_body_json(refusal))
             .mount(&server)
             .await;
+        let prepared = nzb_on(&server, nzb_file().await).await;
 
-        let err = client_for(&server).add(nzb(ID), "books").await.unwrap_err();
+        let err = client_for(&server)
+            .add(prepared, "books")
+            .await
+            .unwrap_err();
 
         assert!(matches!(err, ConnectionError::Rejected(_)), "{err:?}");
     }
@@ -192,8 +253,12 @@ mod sabnzbd_add {
             )
             .mount(&server)
             .await;
+        let prepared = nzb_on(&server, nzb_file().await).await;
 
-        let err = client_for(&server).add(nzb(ID), "books").await.unwrap_err();
+        let err = client_for(&server)
+            .add(prepared, "books")
+            .await
+            .unwrap_err();
 
         assert!(matches!(err, ConnectionError::Rejected(_)), "{err:?}");
     }
@@ -436,7 +501,7 @@ mod sabnzbd_hash_for_tag {
     use super::*;
 
     #[tokio::test]
-    async fn finds_nothing_because_only_qbittorrent_downloads_were_ever_tagged() {
+    async fn finds_nothing_for_a_client_that_never_tagged_a_download() {
         let server = MockServer::start().await;
 
         let found = client_for(&server).hash_for_tag("omnibus-7").await.unwrap();

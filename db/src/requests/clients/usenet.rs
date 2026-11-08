@@ -1,20 +1,20 @@
 //! What the usenet clients (SABnzbd, NZBGet) share. A usenet job has no info hash, so its id
 //! is the SHA-1 of the release link, in the same 40 lowercase hex characters, and the client
 //! is given the job under the name `omnibus-<id>`. The id is known before the client is
-//! given the NZB, and the same link always gives the same id, so a retry finds the job by its
-//! name. The client's own job id is never stored: it is looked up by name when needed. The
-//! job folder is read from this server's disk, since the clients list no files.
+//! given the NZB (which its `add` fetches, not `prepare`), and the same link always gives
+//! the same id, so a retry finds the job by its name. The client's own job id is never
+//! stored: it is looked up by name when needed. The job folder is read from this server's
+//! disk, since the clients list no files.
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
 use sha1::{Digest, Sha1};
 
 use crate::requests::paths::{map_client_path, PathMapError};
 use crate::requests::ConnectionError;
 
-use super::release::{fetch_nzb, Release};
+use super::release::{check_nzb_link, Release};
 use super::{ClientFile, Prepared};
 
 /// Folders deeper than this inside a job's folder are not read.
@@ -30,16 +30,17 @@ pub fn job_name(id: &str) -> String {
     format!("omnibus-{id}")
 }
 
-/// Fetch the NZB `link` names and work out the job's id from the link.
-pub async fn prepare(
-    http: &reqwest::Client,
-    link: &str,
-    timeout: Duration,
-) -> Result<Prepared<Release>, ConnectionError> {
-    let release = fetch_nzb(http, link, timeout).await?;
+/// A usenet job reports under this until its client has unpacked it, so a job that fails
+/// while verifying, repairing or unpacking never looks finished to the poller.
+pub const UNPACKING_PROGRESS: f64 = 0.99;
+
+/// Work out the job's id from `link` without a request: the NZB is fetched only when the
+/// client is given it, after the client is known to be reachable.
+pub fn prepare(link: &str) -> Result<Prepared<Release>, ConnectionError> {
+    check_nzb_link(link)?;
     Ok(Prepared {
         hash: job_id(link),
-        release,
+        release: Release::NzbLink(link.to_string()),
     })
 }
 
@@ -61,8 +62,8 @@ impl JobFolders {
     }
 
     /// The files under the job folder `save_path` (as the client names it), relative to
-    /// it. A folder that cannot be found or read lists nothing, so the import is refused
-    /// once rather than retried.
+    /// it. A folder that cannot be found or read lists nothing; the import, finding no file in
+    /// a folder it cannot map, ends "not visible" once rather than retrying.
     pub async fn files(&self, save_path: &str) -> Vec<ClientFile> {
         let save_path = PathBuf::from(save_path);
         let (client, local) = (self.client_prefix.clone(), self.local_prefix.clone());

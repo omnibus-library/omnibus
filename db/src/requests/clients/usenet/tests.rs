@@ -1,14 +1,7 @@
 use std::fs;
-use std::time::Duration;
-
-use tempfile::TempDir;
-use wiremock::matchers::{method, path, query_param};
-use wiremock::{Mock, MockServer, ResponseTemplate};
-
-use crate::requests::clients::release::MAX_NZB_BYTES;
-use crate::requests::http_client;
 
 use super::*;
+use tempfile::TempDir;
 
 /// The SHA-1 of `abc`, from FIPS 180-1.
 const ABC_SHA1: &str = "a9993e364706816aba3e25717850c26c9cd0d89d";
@@ -39,65 +32,34 @@ mod job_name_of {
 mod prepare_nzb {
     use super::*;
 
-    async fn prepare_link(link: &str) -> Result<Prepared<Release>, ConnectionError> {
-        prepare(&http_client().unwrap(), link, Duration::from_secs(5)).await
+    #[test]
+    fn names_the_job_by_the_hash_of_its_link_and_carries_the_link() {
+        let link = "http://prowlarr.invalid/13/download?apikey=secret";
+
+        let prepared = prepare(link).unwrap();
+
+        assert_eq!(prepared.hash, job_id(link));
+        assert!(matches!(prepared.release, Release::NzbLink(l) if l == link));
     }
 
-    async fn serve_nzb(response: ResponseTemplate) -> (MockServer, String) {
-        let server = MockServer::start().await;
-        Mock::given(method("GET"))
-            .and(path("/13/download"))
-            .and(query_param("apikey", "secret"))
-            .respond_with(response)
-            .mount(&server)
-            .await;
-        let link = format!("{}/13/download?apikey=secret&link=abc", server.uri());
-        (server, link)
+    #[test]
+    fn rejects_a_magnet_link_naming_why() {
+        let err = prepare("magnet:?xt=urn:btih:abc").err().unwrap();
+
+        assert!(matches!(&err, ConnectionError::Rejected(_)), "{err:?}");
+        assert_eq!(err.to_string(), "the release link is a magnet, not an NZB");
     }
 
-    #[tokio::test]
-    async fn fetches_the_nzb_and_names_it_by_the_hash_of_its_link() {
-        let (_server, link) = serve_nzb(ResponseTemplate::new(200).set_body_bytes(b"<nzb/>")).await;
-
-        let prepared = prepare_link(&link).await.unwrap();
-
-        assert_eq!(prepared.hash, job_id(&link));
-        assert!(matches!(prepared.release, Release::Nzb(bytes) if bytes == b"<nzb/>"));
-    }
-
-    #[tokio::test]
-    async fn rejects_a_magnet_link_without_fetching_anything() {
-        let err = prepare_link("magnet:?xt=urn:btih:abc").await.err().unwrap();
+    #[test]
+    fn rejects_a_link_that_is_not_a_web_address() {
+        let err = prepare("ftp://host.invalid/a.nzb").err().unwrap();
 
         assert!(matches!(err, ConnectionError::Rejected(_)), "{err:?}");
     }
 
-    #[tokio::test]
-    async fn rejects_a_link_that_is_not_a_web_address() {
-        let err = prepare_link("ftp://host.invalid/a.nzb")
-            .await
-            .err()
-            .unwrap();
-
-        assert!(matches!(err, ConnectionError::Rejected(_)), "{err:?}");
-    }
-
-    #[tokio::test]
-    async fn rejects_a_failed_fetch_without_echoing_the_link() {
-        let (_server, link) = serve_nzb(ResponseTemplate::new(500)).await;
-
-        let err = prepare_link(&link).await.err().unwrap();
-
-        assert!(matches!(err, ConnectionError::Rejected(_)), "{err:?}");
-        assert!(!err.to_string().contains("secret"), "{err}");
-    }
-
-    #[tokio::test]
-    async fn rejects_an_nzb_larger_than_the_cap() {
-        let big = vec![b'x'; MAX_NZB_BYTES + 1];
-        let (_server, link) = serve_nzb(ResponseTemplate::new(200).set_body_bytes(big)).await;
-
-        let err = prepare_link(&link).await.err().unwrap();
+    #[test]
+    fn rejects_a_link_that_is_not_a_url() {
+        let err = prepare("not-a-link").err().unwrap();
 
         assert!(matches!(err, ConnectionError::Rejected(_)), "{err:?}");
     }
