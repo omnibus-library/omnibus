@@ -10,9 +10,9 @@ final class ReaderStageView: UIView {
     let webView: WKWebView
     let curl: PageCurlHost
 
-    /// Told when the window's size or safe areas change, and whether the status bar was
-    /// hidden when they were read.
-    var onScreenChange: ((ReaderScreen, _ statusBarHidden: Bool) -> Void)?
+    /// Told when the window's size or safe areas change, whether the status bar was
+    /// hidden when they were read, and the top inset the page itself was handed.
+    var onScreenChange: ((ReaderScreen, _ statusBarHidden: Bool, _ pageTop: CGFloat) -> Void)?
     /// Told whether a hinged phone is folded, as the hinge moves.
     var onFoldChange: ((Bool) -> Void)?
     /// The edge an iPhone Duo runs its bars down, whose column the page takes
@@ -22,6 +22,7 @@ final class ReaderStageView: UIView {
     }
     private var reportedScreen: ReaderScreen?
     private var reportedStatusBarHidden: Bool?
+    private var reportedPageTop: CGFloat?
 
     init(webView: WKWebView, curl: PageCurlHost) {
         self.webView = webView
@@ -67,16 +68,23 @@ final class ReaderStageView: UIView {
     }
 
     /// The window, not this view: the audio dock shortens the stage, which
-    /// would understate the long side the landscape rule reads.
+    /// would understate the long side the landscape rule reads. The page top is
+    /// this view's own, which the web view's `env()` resolves from: an open iPhone
+    /// Duo's window keeps its top inset with the status bar hidden, while the
+    /// view's drops to zero.
     private func reportScreen() {
         guard let window else { return }
         var screen = ReaderScreen(size: window.bounds.size, insets: window.safeAreaInsets)
         let statusBarHidden = window.windowScene?.statusBarManager?.isStatusBarHidden ?? false
+        let pageTop = safeAreaInsets.top
         screen.stageInsets = reclaimedInsets(in: window, screen: screen)
-        guard screen != reportedScreen || statusBarHidden != reportedStatusBarHidden else { return }
+        guard screen != reportedScreen || statusBarHidden != reportedStatusBarHidden
+            || pageTop != reportedPageTop
+        else { return }
         reportedScreen = screen
         reportedStatusBarHidden = statusBarHidden
-        onScreenChange?(screen, statusBarHidden)
+        reportedPageTop = pageTop
+        onScreenChange?(screen, statusBarHidden, pageTop)
     }
 
     /// The side column given back, or nil where the stage keeps the safe area.

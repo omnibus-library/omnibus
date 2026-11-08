@@ -649,12 +649,11 @@ struct MetadataEditView: View {
         .padding(.horizontal, 16)
         .padding(.top, 10)
         .padding(.bottom, 8)
-        .background {
+        .slabBackground(bleeding: .bottom) {
             palette.bg2Color.opacity(0.45)
                 .overlay(alignment: .top) {
                     Rectangle().fill(palette.ink0Color.opacity(0.12)).frame(height: 1)
                 }
-                .ignoresSafeArea(edges: [.bottom, .horizontal])
         }
     }
 

@@ -217,10 +217,10 @@ final class LibraryModel {
             hasPaginated: hasPaginated
         ) else { return }
 
-        async let mirror: Void = LibraryIndex.shared.sync()
+        async let mirror = LibraryIndex.shared.sync()
         await refreshResume(freshOnly: true)
         await revalidateFirstPage()
-        await mirror
+        _ = await mirror
     }
 
     /// Pure poll gate, split out so the guard is testable without a server:
@@ -374,9 +374,7 @@ struct LibraryView: View {
                         AmbientWash(tone: ambientTone)
                             .frame(height: 420)
                             .frame(maxHeight: .infinity, alignment: .top)
-                            // Under the iPhone Duo's side bar too, which would
-                            // otherwise stand as a black strip beside the glow.
-                            .ignoresSafeArea(edges: [.top, .horizontal])
+                            .fullBleed(.top)
                             // Cross-fades when the book you're reading changes.
                             .animation(Motion.page, value: ambientTone.h)
                     }
@@ -389,9 +387,9 @@ struct LibraryView: View {
             // An explicit pull is the one place the whole-library mirror is
             // worth re-pulling on demand rather than on its own schedule.
             .refreshTask {
-                async let mirror: Void = LibraryIndex.shared.sync(force: true)
+                async let mirror = LibraryIndex.shared.sync(force: true)
                 await model.reload()
-                await mirror
+                _ = await mirror
             }
             .withDestinations()
         }

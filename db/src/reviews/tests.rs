@@ -9,7 +9,9 @@ use omnibus_shared::ReviewPatch;
 use super::*;
 use crate::init_db;
 use crate::journal_images::{self, journal_images_dir};
-use crate::test_support::{count_rows, seed_synced_ebook, seed_user, EnvVarGuard};
+use crate::test_support::{
+    count_rows, seed_synced_ebook, seed_user, set_review_updated_at, EnvVarGuard,
+};
 
 async fn setup() -> (SqlitePool, i64, String) {
     let pool = init_db("sqlite::memory:").await.unwrap();
@@ -697,4 +699,58 @@ async fn delete_review_drops_the_cached_stats_summary() {
     delete_review(&pool, user, &uuid).await.unwrap();
 
     assert_eq!(avg_stars(&pool, user).await, None);
+}
+
+#[tokio::test]
+async fn list_own_reviews_returns_only_the_readers_rated_or_written_reviews_newest_first() {
+    let (pool, user, a) = setup().await;
+    let b = seed_synced_ebook(&pool, "b.epub", "Book B", "Author").await;
+    let c = seed_synced_ebook(&pool, "c.epub", "Book C", "Author").await;
+    let other = seed_user(&pool, "bob").await;
+    update_review(&pool, user, &a, &stars(3.0)).await.unwrap();
+    update_review(&pool, user, &b, &text("Loved it"))
+        .await
+        .unwrap();
+    update_review(&pool, user, &c, &notes("private"))
+        .await
+        .unwrap();
+    update_review(&pool, other, &a, &text("Theirs"))
+        .await
+        .unwrap();
+    set_review_updated_at(&pool, user, &a, 100).await;
+    set_review_updated_at(&pool, user, &b, 200).await;
+
+    let reviews = list_own_reviews(&pool, user, 10).await.unwrap();
+
+    let uuids: Vec<_> = reviews.iter().map(|r| r.book_uuid.as_str()).collect();
+    assert_eq!(uuids, [b.as_str(), a.as_str()]);
+    assert_eq!(reviews[0].body_md.as_deref(), Some("Loved it"));
+
+    let first = list_own_reviews(&pool, user, 1).await.unwrap();
+    assert_eq!(first.len(), 1);
+    assert_eq!(first[0].book_uuid, b);
+}
+
+#[tokio::test]
+async fn list_own_reviews_skips_a_review_whose_book_is_gone() {
+    let (pool, user, uuid) = setup().await;
+    update_review(&pool, user, &uuid, &stars(4.0))
+        .await
+        .unwrap();
+    sqlx::query("UPDATE reviews SET book_uuid = 'vanished'")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    assert!(list_own_reviews(&pool, user, 10).await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn list_own_reviews_propagates_db_error_when_pool_is_closed() {
+    let (pool, user, _) = setup().await;
+    pool.close().await;
+
+    let err = list_own_reviews(&pool, user, 10).await.unwrap_err();
+
+    assert!(matches!(err, ReviewError::Sqlx(_)));
 }

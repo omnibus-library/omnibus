@@ -179,8 +179,9 @@ struct ReaderStatusBarTests {
         controller.observe(stage)
     }
 
-    private func report(_ screen: ReaderScreen, statusBarHidden: Bool) {
-        stage.onScreenChange?(screen, statusBarHidden)
+    /// The page's own top inset matches the window's unless `pageTop` says otherwise.
+    private func report(_ screen: ReaderScreen, statusBarHidden: Bool, pageTop: CGFloat? = nil) {
+        stage.onScreenChange?(screen, statusBarHidden, pageTop ?? screen.insets.top)
     }
 
     @Test("a controller keeps the status bar hidden until it has been told what screen it is on")
@@ -203,6 +204,40 @@ struct ReaderStatusBarTests {
 
         #expect(!controller.hidesStatusBar(chromeVisible: true))
         #expect(controller.hidesStatusBar(chromeVisible: false))
+    }
+
+    @Test("an open iPhone Duo, whose window keeps a top inset its page doesn't get, keeps the status bar hidden")
+    func openDuoKeepsTheStatusBarHidden() {
+        // Measured on the simulator: the window holds 82pt either way, the page 0pt
+        // under a hidden bar and 82pt under a shown one, so showing it moved the page.
+        let open = ReaderScreen(
+            size: CGSize(width: 669, height: 951),
+            insets: UIEdgeInsets(top: 82, left: 0, bottom: 34, right: 0)
+        )
+
+        report(open, statusBarHidden: true, pageTop: 0)
+
+        #expect(controller.hidesStatusBar(chromeVisible: true))
+        #expect(controller.hidesStatusBar(chromeVisible: false))
+    }
+
+    @Test("an open iPhone Duo keeps the status bar hidden past a stale report, until its size changes")
+    func openDuoHoldsTheStatusBarHiddenUntilTheSizeChanges() {
+        // Leaving the audio player, the bar can hide before the page's 82pt top inset drops.
+        let open = ReaderScreen(
+            size: CGSize(width: 669, height: 951),
+            insets: UIEdgeInsets(top: 82, left: 0, bottom: 34, right: 0)
+        )
+        report(open, statusBarHidden: true, pageTop: 0)
+
+        report(open, statusBarHidden: true, pageTop: 82)
+
+        #expect(controller.hidesStatusBar(chromeVisible: true))
+
+        let turned = ReaderScreen(size: CGSize(width: 951, height: 669), insets: open.insets)
+        report(turned, statusBarHidden: true, pageTop: 82)
+
+        #expect(!controller.hidesStatusBar(chromeVisible: true))
     }
 
     @Test("a report taken with the status bar showing updates the screen, not the decision")
