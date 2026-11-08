@@ -25,6 +25,10 @@ export class RequestsPage extends BasePage {
   readonly paneCancelButton: Locator;
   readonly looking: Locator;
   readonly versions: Locator;
+  /** The Choose buttons on the versions, none for a reader who can't pick versions. */
+  readonly chooseButtons: Locator;
+  /** The line a reader who can't pick versions sees in place of the Choose buttons. */
+  readonly waitingForChooser: Locator;
   readonly bestMatchBadges: Locator;
   readonly chosen: Locator;
   /** The download's percent, once the client has reported. */
@@ -54,6 +58,10 @@ export class RequestsPage extends BasePage {
     this.paneCancelButton = this.paneLane.getByTestId("request-cancel");
     this.looking = this.paneLane.getByTestId("request-looking");
     this.versions = this.paneLane.getByTestId("request-version");
+    this.chooseButtons = this.versions.getByTestId("request-choose");
+    this.waitingForChooser = this.paneLane.getByTestId(
+      "request-waiting-for-chooser",
+    );
     this.bestMatchBadges = this.paneLane.getByTestId("request-best-match");
     this.chosen = this.paneLane.getByTestId("request-chosen");
     this.percent = this.paneLane.getByTestId("request-percent");

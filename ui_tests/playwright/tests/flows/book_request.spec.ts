@@ -95,6 +95,59 @@ test.describe("book request", () => {
       await expect(requestsPage.versions).toHaveCount(0);
     });
   });
+  test("a reader who can only ask waits for an admin to pick the version", async ({
+    askerScanRequests,
+    createdBookUuids,
+    prowlarrFor,
+    askerWishlistsPage,
+    askerRequestsPage,
+    askerExpectMutation,
+    requestsPage,
+    expectMutation,
+  }) => {
+    const book = buildExternalBook();
+
+    await test.step("wish for a book the library lacks", async () => {
+      const added = await askerScanRequests.postWishlistEntry(book);
+      await expect(added).toBeOK();
+      createdBookUuids.add((await added.json()).book_uuid);
+      await prowlarrFor(releasesFor(book));
+    });
+
+    await test.step("request the ebook as a reader who can't pick versions", async () => {
+      await askerWishlistsPage.goto();
+      await askerExpectMutation(bookRequests.start(), () =>
+        askerWishlistsPage.requestEbook(book.title),
+      );
+      await askerRequestsPage.assertDisplayed();
+    });
+
+    await test.step("see the versions with no Choose, and a line saying whose turn it is", async () => {
+      await expect(askerRequestsPage.versions).toHaveCount(2, {
+        timeout: 10_000,
+      });
+      await expect(askerRequestsPage.chooseButtons).toHaveCount(0);
+      await expect(askerRequestsPage.waitingForChooser).toHaveText(
+        "Waiting for someone who can pick versions.",
+      );
+      await expect(askerRequestsPage.paneCancelButton).toBeVisible();
+    });
+
+    await test.step("find the book under Needs you as an admin", async () => {
+      await requestsPage.goto();
+      await expect(requestsPage.itemIn("Needs you", book.title)).toBeVisible();
+      await requestsPage.select(book.title);
+      await expect(requestsPage.versions).toHaveCount(2);
+    });
+
+    await test.step("choose the EPUB for the reader", async () => {
+      await expectMutation(bookRequests.choose(), () =>
+        requestsPage.choose(requestsPage.version("EPUB")),
+      );
+      await expect(requestsPage.paneState).toHaveText("Version chosen");
+    });
+  });
+
   test("a requested ebook reaches Ready to read on the wished book", async ({
     scanRequests,
     ebooksRequests,

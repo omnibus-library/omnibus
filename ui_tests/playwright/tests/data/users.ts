@@ -31,6 +31,16 @@ export function buildReader(): NewUser {
   };
 }
 
+/** A reader who may also ask for books but not pick their versions. */
+export function buildAsker(): NewUser {
+  const { permissions, ...reader } = buildReader();
+  return {
+    ...reader,
+    username: reader.username.replace("e2e_reader_", "e2e_asker_"),
+    permissions: { ...permissions, can_start_requests: true },
+  };
+}
+
 /** A user the server holds, with the id its delete call takes. */
 export type SeededUser = NewUser & { id: number };
 
