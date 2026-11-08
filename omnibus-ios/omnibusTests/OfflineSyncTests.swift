@@ -1452,6 +1452,7 @@ struct UserScopedPrefixTests {
             CacheKey.ratingsOthers(uuid),
             // Holds the reader's private notes.
             CacheKey.reviews(uuid),
+            CacheKey.myReviews,
             CacheKey.readStatus(uuid),
             CacheKey.playbackRate(uuid),
             CacheKey.stats(.week),

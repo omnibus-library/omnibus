@@ -933,7 +933,7 @@ struct MiniPlayerBar: View {
             // is where the other half of the picture lives.
             ProgressBar(fraction: fraction, tint: palette.accentColor, height: Self.progressRailHeight)
                 // Edge to edge like the bar's material, past a side column or sensor inset.
-                .ignoresSafeArea(.container, edges: .horizontal)
+                .fullBleed()
 
             Button { expand(book) } label: {
                 HStack(spacing: 11) {

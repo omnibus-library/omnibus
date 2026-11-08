@@ -133,18 +133,15 @@ struct EditionRail: View {
     @Environment(\.palette) private var palette
 
     var body: some View {
-        ScrollView(.horizontal) {
+        SideRail(outset: 16) {
             HStack(alignment: .bottom, spacing: 14) {
                 ForEach(editions) { edition in
                     stop(edition, isOn: edition.id == selected.id)
                 }
             }
-            .padding(.horizontal, 16)
             .padding(.top, 14)
             .padding(.bottom, 8)
         }
-        .scrollIndicators(.hidden)
-        .padding(.horizontal, -16)
         .padding(.top, 2)
     }
 

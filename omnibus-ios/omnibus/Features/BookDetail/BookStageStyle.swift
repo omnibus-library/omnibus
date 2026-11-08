@@ -128,14 +128,12 @@ struct BookTabStrip: View {
             }
         }
         .padding(.horizontal, Self.inset)
-        .background {
+        .slabBackground {
             if backed {
                 ZStack {
                     Rectangle().fill(.ultraThinMaterial)
                     palette.bg0Color.opacity(0.78)
                 }
-                // Across an iPhone Duo's side column too, so the slab doesn't stop short of it.
-                .ignoresSafeArea(edges: .horizontal)
             }
         }
         .overlay(alignment: .bottom) {

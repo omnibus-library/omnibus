@@ -259,6 +259,9 @@ actor OfflineStore {
     /// count is what lets `cachePut(_:_:ifGeneration:)` tell. In memory only:
     /// no request outlives the process.
     private var generations: [String: Int] = [:]
+    /// How many times the mirror's rows have been swapped or published this
+    /// session, so a reader paging it can tell it moved underneath.
+    private(set) var mirrorGeneration = 0
     /// The database file; `nil` is the app's own under `dataDirectory`.
     private let path: String?
 
@@ -575,6 +578,17 @@ actor OfflineStore {
     @discardableResult
     func cacheUpdate(_ key: String, _ change: @Sendable (Data?) -> Data?) -> Data? {
         guard isOpen, let next = change(cacheGet(key)) else { return nil }
+        cachePut(key, next)
+        return next
+    }
+
+    /// `cacheUpdate`, with `source`'s stored bytes handed to `change` too:
+    /// read in the same actor step, so no write to `source` lands in between.
+    @discardableResult
+    func cacheUpdate(
+        _ key: String, reading source: String, _ change: @Sendable (Data?, Data?) -> Data?
+    ) -> Data? {
+        guard isOpen, let next = change(cacheGet(key), cacheGet(source)) else { return nil }
         cachePut(key, next)
         return next
     }
@@ -1078,6 +1092,7 @@ actor OfflineStore {
     /// incremental deletion would drop a book that still exists.
     func promoteCompletedStaging() {
         guard isOpen else { return }
+        mirrorGeneration &+= 1
         exec("BEGIN IMMEDIATE")
         exec("DELETE FROM books")
         exec("INSERT INTO books SELECT * FROM books_staging")
@@ -1093,6 +1108,7 @@ actor OfflineStore {
     /// so the pass can resume and later swap properly.
     func publishPartialStaging() {
         guard isOpen else { return }
+        mirrorGeneration &+= 1
         exec("BEGIN IMMEDIATE")
         exec("INSERT OR REPLACE INTO books SELECT * FROM books_staging")
         exec("COMMIT")
@@ -1452,13 +1468,14 @@ actor OfflineStore {
     /// `CacheKey` can mint against `isUserScoped` so the next one can't slip
     /// through the same gap.
     ///
-    /// `reviews:` holds the reader's private notes beside what every reader
-    /// can see.
+    /// `reviews:` and `my_reviews` hold the reader's private notes beside what
+    /// every reader can see.
     static let userScopedPrefixes = [
         "me", "progress:", "recent_progress", "recent_audio", "rate:", "highlights:",
         "bookmarks:", "journals:", "rating:", "ratings_others:", "shelves", "shelf:",
         "shelf_page:", "shelf_previews", "stats:", "reader_cfi:", "audio_pos:",
         "audio_rate:", "read_status:", "shelves_with:", "syncprompt:", "reviews:",
+        "my_reviews",
     ]
 
     /// Whether the account-switch wipe removes `key`: a user-scoped prefix, or
@@ -1500,6 +1517,7 @@ actor OfflineStore {
         for record in allDownloads() {
             Self.removeFiles(of: record)
         }
+        mirrorGeneration &+= 1
         exec("BEGIN IMMEDIATE")
         exec("DELETE FROM kv")
         exec("DELETE FROM ops")

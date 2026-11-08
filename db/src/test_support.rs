@@ -1244,3 +1244,18 @@ pub async fn place_position(pool: &SqlitePool, user: i64, uuid: &str, percent: i
     .await
     .unwrap();
 }
+
+// ---------------------------------------------------------------------------
+// Reviews
+// ---------------------------------------------------------------------------
+
+/// Stamp `user_id`'s review of `uuid` with `updated_at = ts`, to order reviews by hand.
+pub async fn set_review_updated_at(pool: &SqlitePool, user_id: i64, uuid: &str, ts: i64) {
+    sqlx::query("UPDATE reviews SET updated_at = ?1 WHERE user_id = ?2 AND book_uuid = ?3")
+        .bind(ts)
+        .bind(user_id)
+        .bind(uuid)
+        .execute(pool)
+        .await
+        .expect("set review updated_at");
+}
