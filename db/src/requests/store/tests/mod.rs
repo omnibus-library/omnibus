@@ -6,6 +6,7 @@ use super::super::prowlarr::ProwlarrRelease;
 use super::*;
 
 mod change;
+mod list;
 
 const MAX_LIVE: i64 = 5;
 
@@ -412,7 +413,9 @@ mod a_verdict_for_an_old_pick {
         let (id, picked, _) = on_its_way_with_two_versions(&pool).await;
         let stale = Some(picked + 100);
 
-        record_progress(&pool, id, stale, 0.9, NOW).await.unwrap();
+        record_progress(&pool, id, stale, 0.9, NOW, Some(NOW + 60))
+            .await
+            .unwrap();
         mark_stuck(&pool, id, stale, StuckReason::StoppedMoving, "old news")
             .await
             .unwrap();
@@ -420,6 +423,18 @@ mod a_verdict_for_an_old_pick {
         let row = state_of(&pool, id).await;
         assert_eq!(row.state, RequestState::OnItsWay);
         assert_eq!(row.progress, Some(0.4));
+    }
+
+    #[tokio::test]
+    async fn records_no_finish_time_once_the_request_holds_another_pick() {
+        let pool = pool().await;
+        let (id, picked, _) = on_its_way_with_two_versions(&pool).await;
+
+        record_expected_done_at(&pool, id, Some(picked + 100), Some(NOW + 60))
+            .await
+            .unwrap();
+
+        assert_eq!(state_of(&pool, id).await.expected_done_at, None);
     }
 
     #[tokio::test]
@@ -730,6 +745,16 @@ mod database_failure {
         pool.close().await;
 
         let result = start(&pool, ada, "book-1", RequestKind::Ebook, 5).await;
+
+        assert!(matches!(result, Err(RequestError::Db(_))));
+    }
+
+    #[tokio::test]
+    async fn list_propagates_a_db_error_when_the_pool_is_closed() {
+        let pool = pool().await;
+        pool.close().await;
+
+        let result = list(&pool, ListFilter::default()).await;
 
         assert!(matches!(result, Err(RequestError::Db(_))));
     }

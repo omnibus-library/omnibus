@@ -24,6 +24,10 @@ pub struct TorrentStatus {
     pub state: String,
     /// The folder the download's files sit in, as the client sees it.
     pub save_path: String,
+    /// How many more seconds the client expects the download to take; qBittorrent sends
+    /// 8640000 when it can't tell.
+    #[serde(default)]
+    pub eta: Option<i64>,
 }
 
 /// One file inside a download.

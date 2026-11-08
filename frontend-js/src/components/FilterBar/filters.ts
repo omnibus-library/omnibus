@@ -1,4 +1,5 @@
 import type { FilterClause, FilterField, Shelf, UserId } from "../../api";
+import { PHONE_QUERY } from "../../useMediaQuery";
 
 export const MAX_FILTER_CLAUSES = 16;
 export const MAX_FILTER_VALUES = 64;
@@ -12,7 +13,7 @@ const MENU_ROOM = 460;
 
 /** Scrolls `facet` up under the top bar when its menu would not fit below it; phones get a bottom sheet instead. */
 export function revealBelow(facet: HTMLElement): void {
-  if (matchMedia("(max-width: 720px)").matches) return;
+  if (matchMedia(PHONE_QUERY).matches) return;
   if (innerHeight - facet.getBoundingClientRect().bottom < MENU_ROOM) {
     facet.scrollIntoView({ block: "start", behavior: "instant" });
   }

@@ -1,21 +1,44 @@
 import { describe, expect, it } from "vitest";
-import { ApiError, type RequestVersion } from "../../api";
 import {
+  ApiError,
+  type RequestVersion,
+  toBookRequest,
+  toRequestListing,
+  type UserId,
+} from "../../api";
+import {
+  aWireListing,
+  aWireRequest,
+  aWireVersion,
+} from "../../testing/requestHandlers";
+import {
+  canActOn,
+  downloadPercent,
+  factParts,
   firstShown,
+  fromWishlists,
+  historyDay,
   holdsAudiobook,
   holdsEbook,
   isCancellable,
   isDownloading,
   isSearchStale,
+  offersRequestAgain,
   pickedMeta,
   progressPercent,
+  requestFacts,
   requestPath,
+  splitBookRequests,
   startFailure,
   stateView,
+  stepsFor,
+  swapFacts,
+  timeLeft,
   undoToastMs,
   versionSize,
   versionSource,
   versionsFound,
+  wishersLine,
 } from "./requestView";
 
 const NBSP = "\u00a0";
@@ -112,8 +135,8 @@ describe("startFailure", () => {
 });
 
 describe("requestPath", () => {
-  it("is the book's own address with /request and the request's id", () => {
-    expect(requestPath("abc-123", 7)).toBe("/books/abc-123/request?id=7");
+  it("is the Requests page's address for the book, escaped", () => {
+    expect(requestPath("abc 123")).toBe("/requests?book=abc%20123");
   });
 });
 
@@ -267,6 +290,14 @@ describe("progressPercent", () => {
     expect(progressPercent(0.999)).toBe(99);
   });
 
+  it("never reads 100 while any of the download is left", () => {
+    expect(progressPercent(0.99996)).toBe(99);
+  });
+
+  it("reads a whole percent through floating-point noise", () => {
+    expect(progressPercent(0.29)).toBe(29);
+  });
+
   it("reads a finished download as 100 and an unread one as 0", () => {
     expect(progressPercent(1)).toBe(100);
     expect(progressPercent(null)).toBe(0);
@@ -293,5 +324,415 @@ describe("undoToastMs", () => {
   it("never goes negative once the grace has all but gone", () => {
     expect(undoToastMs(101, 100)).toBe(0);
     expect(undoToastMs(90, 100)).toBe(0);
+  });
+});
+
+const VIEWER = 1 as UserId;
+const EPUB = aWireVersion({ id: 11 });
+const PDF = aWireVersion({ id: 12, format: "PDF", size_bytes: 9_100_000 });
+
+/** A listed request, as the lists draw it. */
+const listing = (
+  request: Parameters<typeof aWireRequest>[0],
+  cancelledByName: string | null = null,
+) =>
+  toRequestListing(
+    aWireListing({
+      request: aWireRequest(request),
+      cancelled_by_name: cancelledByName,
+    }),
+  );
+
+describe("requestFacts", () => {
+  it("records who cancelled it, the version and how far it got", () => {
+    const cancelled = listing(
+      {
+        state: "cancelled",
+        cancelled_by: VIEWER,
+        chosen_result_id: EPUB.id,
+        progress: 0.4,
+        versions: [EPUB],
+      },
+      "Ada Lovelace",
+    );
+
+    expect(requestFacts(cancelled, VIEWER)).toBe(
+      "Cancelled by you · EPUB · 2.4\u00a0MB · stopped at 40%",
+    );
+  });
+
+  it("names the reader who cancelled it when that was someone else", () => {
+    const cancelled = listing({ state: "cancelled", cancelled_by: 2 }, "Grace");
+
+    expect(requestFacts(cancelled, VIEWER)).toBe("Cancelled by Grace");
+  });
+
+  it("says only cancelled once the canceller's account is gone", () => {
+    const cancelled = listing({ state: "cancelled", cancelled_by: 9 });
+
+    expect(requestFacts(cancelled, VIEWER)).toBe("Cancelled");
+  });
+
+  it("gives a stuck request its reason and how far its download got", () => {
+    const stuck = listing({
+      state: "stuck",
+      stuck_reason: "stopped_moving",
+      chosen_result_id: PDF.id,
+      progress: 0.25,
+      versions: [PDF],
+    });
+
+    expect(requestFacts(stuck, VIEWER)).toBe(
+      "Stopped moving · PDF · 9.1\u00a0MB · stopped at 25%",
+    );
+  });
+
+  it("leaves out where a download stopped once it had finished", () => {
+    const unfiled = listing({
+      state: "stuck",
+      stuck_reason: "couldnt_add",
+      chosen_result_id: EPUB.id,
+      progress: 1,
+      versions: [EPUB],
+    });
+
+    expect(requestFacts(unfiled, VIEWER)).toBe(
+      "Couldn’t add it · EPUB · 2.4\u00a0MB",
+    );
+  });
+
+  it("names a request with no version picked by its state alone", () => {
+    expect(requestFacts(listing({ state: "looking" }), VIEWER)).toBe("Looking");
+  });
+});
+
+describe("swapFacts", () => {
+  it("records each version given up as swapped for another", () => {
+    const swapped = listing({
+      state: "on_its_way",
+      chosen_result_id: EPUB.id,
+      versions: [EPUB, { ...PDF, rejected: true }],
+    });
+
+    expect(swapFacts(swapped)).toEqual([
+      { id: PDF.id, text: "Swapped for another version · PDF · 9.1\u00a0MB" },
+    ]);
+  });
+});
+
+describe("canActOn", () => {
+  it.each([
+    [
+      "an admin on another reader's request",
+      true,
+      { id: 2, isAdmin: true, canRequest: true },
+    ],
+    [
+      "the requester who may request",
+      true,
+      { id: 1, isAdmin: false, canRequest: true },
+    ],
+    ["another reader", false, { id: 2, isAdmin: false, canRequest: true }],
+    [
+      "the requester who may no longer request",
+      false,
+      { id: 1, isAdmin: false, canRequest: false },
+    ],
+  ] as const)("lets %s act: %s", (_who, expected, viewer) => {
+    const request = { userId: 1 as UserId };
+
+    expect(canActOn({ ...viewer, id: viewer.id as UserId }, request)).toBe(
+      expected,
+    );
+  });
+});
+
+describe("offersRequestAgain", () => {
+  const NOW = 1_000;
+  const ADA = { id: VIEWER, canRequest: true };
+  const cancelled = {
+    kind: "ebook",
+    state: "cancelled",
+    cancelAt: null,
+  } as const;
+
+  it("offers it on a cancelled request once its undo has run out", () => {
+    expect(offersRequestAgain(cancelled, ADA, [], NOW)).toBe(true);
+  });
+
+  it.each([
+    ["still open", false, NOW + 1],
+    ["ending now", true, NOW],
+  ])("with the undo %s offers it: %s", (_when, expected, cancelAt) => {
+    const graced = { ...cancelled, cancelAt };
+
+    expect(offersRequestAgain(graced, ADA, [], NOW)).toBe(expected);
+  });
+
+  it("holds it back while the viewer has the book's format requested already", () => {
+    const live = {
+      userId: VIEWER,
+      kind: "ebook",
+      state: "on_its_way",
+    } as const;
+
+    expect(offersRequestAgain(cancelled, ADA, [live], NOW)).toBe(false);
+  });
+
+  it("offers it beside another reader's live request", () => {
+    const theirs = {
+      userId: 2 as UserId,
+      kind: "ebook",
+      state: "looking",
+    } as const;
+
+    expect(offersRequestAgain(cancelled, ADA, [theirs], NOW)).toBe(true);
+  });
+
+  it("offers it beside the viewer's live request for the other format", () => {
+    const audio = {
+      userId: VIEWER,
+      kind: "audiobook",
+      state: "looking",
+    } as const;
+
+    expect(offersRequestAgain(cancelled, ADA, [audio], NOW)).toBe(true);
+  });
+
+  it("holds it back from a reader who can't request", () => {
+    const viewer = { ...ADA, canRequest: false };
+
+    expect(offersRequestAgain(cancelled, viewer, [], NOW)).toBe(false);
+  });
+
+  it("holds it back on a request that wasn't cancelled", () => {
+    const stuck = { ...cancelled, state: "stuck" } as const;
+
+    expect(offersRequestAgain(stuck, ADA, [], NOW)).toBe(false);
+  });
+});
+
+describe("splitBookRequests", () => {
+  const SHOWN = 7;
+  const ids = (found: readonly { request: { id: number } }[]) =>
+    found.map((l) => l.request.id);
+
+  it("gives another reader's live request a lane of its own", () => {
+    const split = splitBookRequests(
+      [listing({ id: 8, user_id: 2, state: "choose" }), listing({ id: SHOWN })],
+      SHOWN,
+    );
+
+    expect(ids(split.lanes)).toEqual([8]);
+    expect(split.history).toEqual([]);
+  });
+
+  it("keeps a cancelled request in the history", () => {
+    const split = splitBookRequests(
+      [listing({ id: 5, state: "cancelled" })],
+      SHOWN,
+    );
+
+    expect(ids(split.history)).toEqual([5]);
+    expect(split.lanes).toEqual([]);
+  });
+
+  it("gives a stuck request a lane of its own and leaves it out of the history", () => {
+    const split = splitBookRequests(
+      [listing({ id: 4, state: "stuck", stuck_reason: "not_found" })],
+      SHOWN,
+    );
+
+    expect(ids(split.lanes)).toEqual([4]);
+    expect(split.history).toEqual([]);
+  });
+
+  it("keeps a request that swapped a version in the history", () => {
+    const swapped = listing({
+      id: 3,
+      state: "ready",
+      chosen_result_id: EPUB.id,
+      versions: [EPUB, { ...PDF, rejected: true }],
+    });
+
+    expect(ids(splitBookRequests([swapped], SHOWN).history)).toEqual([3]);
+  });
+
+  it("leaves a ready request with nothing swapped out of the history", () => {
+    const ready = listing({ id: 3, state: "ready" });
+
+    expect(splitBookRequests([ready], SHOWN).history).toEqual([]);
+  });
+
+  it("never lists the request on screen", () => {
+    const shown = listing({ id: SHOWN, state: "cancelled" });
+
+    expect(splitBookRequests([shown], SHOWN)).toEqual({
+      lanes: [],
+      history: [],
+    });
+  });
+});
+
+describe("fromWishlists", () => {
+  it.each([
+    ["a wishlist", { from: "wishlists" }, true],
+    ["the Requests list", { from: "requests" }, false],
+    ["anywhere else", { from: "search" }, false],
+    ["no state", null, false],
+  ])("reads a page opened from %s", (_where, state, expected) => {
+    expect(fromWishlists(state)).toBe(expected);
+  });
+});
+
+describe("historyDay", () => {
+  it("names the day on the reader's calendar without the year", () => {
+    const lateOnOct12Utc = Date.UTC(2026, 9, 12, 23) / 1000;
+
+    expect(historyDay(lateOnOct12Utc, "UTC")).toBe("Oct 12");
+    expect(historyDay(lateOnOct12Utc, "Pacific/Kiritimati")).toBe("Oct 13");
+  });
+});
+
+describe("stepsFor", () => {
+  const steps = (request: Parameters<typeof aWireRequest>[0]) =>
+    stepsFor(toBookRequest(aWireRequest(request)));
+
+  it("makes Looking the current step of a search", () => {
+    expect(steps({ state: "looking" })).toEqual([
+      { label: "Looking", status: "current", percent: null },
+      { label: "Choose a version", status: "todo", percent: null },
+      { label: "On its way", status: "todo", percent: null },
+      { label: "Ready", status: "todo", percent: null },
+    ]);
+  });
+
+  it("counts what the search found once the reader is choosing", () => {
+    expect(steps({ state: "choose", versions: [EPUB, PDF] })).toEqual([
+      { label: "Looking · 2 found", status: "done", percent: null },
+      { label: "Choose a version", status: "current", percent: null },
+      { label: "On its way", status: "todo", percent: null },
+      { label: "Ready", status: "todo", percent: null },
+    ]);
+  });
+
+  it("names the pick made and carries the download's percent", () => {
+    const downloading = steps({
+      state: "on_its_way",
+      chosen_result_id: EPUB.id,
+      progress: 0.62,
+      versions: [EPUB],
+    });
+
+    expect(downloading?.slice(1, 3)).toEqual([
+      { label: "Chose a version", status: "done", percent: null },
+      { label: "On its way", status: "current", percent: 62 },
+    ]);
+  });
+
+  it("leaves the percent off a picked version not yet started", () => {
+    expect(steps({ state: "chosen", versions: [EPUB] })?.[2]).toEqual({
+      label: "On its way",
+      status: "current",
+      percent: null,
+    });
+  });
+
+  it("marks every step done once the book is ready", () => {
+    const ready = steps({ state: "ready", versions: [EPUB] });
+
+    expect(ready?.map((step) => step.status)).toEqual([
+      "done",
+      "done",
+      "done",
+      "done",
+    ]);
+  });
+
+  it.each(["stuck", "cancelled"] as const)(
+    "has no steps for a %s request",
+    (state) => {
+      expect(steps({ state })).toBeNull();
+    },
+  );
+});
+
+describe("timeLeft", () => {
+  const NOW = 1_000;
+  const at = (secs: number, progress = 0.5) => ({
+    expectedDoneAt: NOW + secs,
+    progress,
+  });
+
+  it.each([
+    [1, "less than a minute left"],
+    [59, "less than a minute left"],
+    [60, "about 1 min left"],
+    [150, "about 3 min left"],
+    [3599, "about 1 hour left"],
+    [7200, "about 2 hours left"],
+  ])("reads %s seconds to go as %s", (secs, expected) => {
+    expect(timeLeft(at(secs), NOW)).toBe(expected);
+  });
+
+  it.each([
+    ["the client can't tell", { expectedDoneAt: null, progress: 0.5 }],
+    ["the time has come", at(0)],
+    ["the time has passed", at(-30)],
+    ["the download is complete", at(120, 1)],
+  ])("says nothing once %s", (_when, request) => {
+    expect(timeLeft(request, NOW)).toBeNull();
+  });
+});
+
+describe("downloadPercent", () => {
+  it.each([
+    ["a download under way", { state: "on_its_way", progress: 0.62 }, 62],
+    ["one not yet reported", { state: "on_its_way", progress: null }, null],
+    ["a complete one", { state: "on_its_way", progress: 1 }, null],
+    ["a stuck one", { state: "stuck", progress: 0.4 }, null],
+  ] as const)("shows %s as %s", (_case, request, expected) => {
+    expect(downloadPercent(request)).toBe(expected);
+  });
+});
+
+describe("factParts", () => {
+  it("splits what happened from the version and how far it got", () => {
+    const cancelled = listing(
+      {
+        state: "cancelled",
+        cancelled_by: VIEWER,
+        chosen_result_id: EPUB.id,
+        progress: 0.4,
+        versions: [EPUB],
+      },
+      "Ada Lovelace",
+    );
+
+    expect(factParts(cancelled, VIEWER)).toEqual({
+      head: "Cancelled by you",
+      details: ["EPUB", "2.4\u00a0MB", "stopped at 40%"],
+    });
+  });
+});
+
+describe("wishersLine", () => {
+  const wanter = (id: number, name: string) => ({ id: id as UserId, name });
+
+  it.each([
+    ["nobody", [], null],
+    ["one reader", [wanter(2, "Jordan")], "On Jordan’s wishlist"],
+    [
+      "two readers",
+      [wanter(2, "Jordan"), wanter(3, "Riley")],
+      "On Jordan’s and Riley’s wishlists",
+    ],
+    [
+      "three readers, the viewer among them",
+      [wanter(2, "Jordan"), wanter(1, "Ada"), wanter(3, "Riley")],
+      "On Jordan’s, your and Riley’s wishlists",
+    ],
+  ])("reads %s", (_who, wanters, expected) => {
+    expect(wishersLine(wanters, VIEWER)).toBe(expected);
   });
 });

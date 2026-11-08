@@ -50,7 +50,7 @@ function People() {
 }
 
 function Integrations() {
-  // The feature's boot flag reaches the client only as the signed-in admin's own `canRequest`.
+  // An admin holds `canRequest` exactly while the server has book requests on.
   const canRequest = useCurrentUser().canRequest;
   return (
     <>

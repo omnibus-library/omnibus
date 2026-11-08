@@ -51,7 +51,7 @@ first, with "Show more" for the rest; "Details" opens the long form of every row
 until Omnibus has a Usenet download client.
 
 Requesting from the wishlist asks one question (ebook or audiobook), starts the request, and takes the user
-straight to that book's request page, already in "Looking".
+straight to that book on the Requests page, already in "Looking".
 
 ## Objectives
 
@@ -148,19 +148,20 @@ End result: Wishlist books can be removed easily from the wishlist, but requests
 1. User adds Dracula to their wishlist
 2. User requests the EPUB for Dracula and picks a release
 3. The download starts
-4. User clicks "Cancel" on the request in the requests page
+4. User selects Dracula on the requests page and clicks "Cancel" beside its download
    - The request shows as cancelled right away, with an "Undo" toast
    - Omnibus waits until the toast closes before telling the requester to stop, so "Undo" just keeps the download going
 5. The requester stops the download and deletes the partial file
    - Nothing half-downloaded ever lands in the library folder
-6. The request moves to the book's request history as "Cancelled", with a "Request again" button
+6. The request moves to the book's request history as "Cancelled", with a "Request again" button once the
+   "Undo" has run out and while the user has no other request going for it
 7. Dracula stays on the user's wishlist, and its EPUB slot goes back to "Not requested"
 
 End result: The download is stopped and cleaned up, the cancelled request stays in history, and the wish is untouched
 
 Notes:
 
-- "Pick another" is not a cancel: it stops this download and goes back to the versions found, but the request stays alive
+- "Choose another" is not a cancel: it stops this download and goes back to the versions found, but the request stays alive
 - History only records what Omnibus knows: who cancelled, when, which version and how far it got (e.g. "Cancelled by
   you · EPUB · 2.4 MB · stopped at 40%"). It never guesses a reason; choosing another version records "Swapped for
   another version" instead

@@ -1,5 +1,5 @@
 //! The `can_request` a session reports: the stored permission, masked by the
-//! `OMNIBUS_BOOK_REQUESTS` boot flag, on both `me` and `login`.
+//! `OMNIBUS_BOOK_REQUESTS` boot flag, on both `me` and `login`; and the flag itself.
 
 use axum::body::to_bytes;
 use omnibus_shared::{LoginResponse, UserSummary};
@@ -75,6 +75,52 @@ mod get_me {
                 .await
                 .can_request
         );
+    }
+}
+
+mod book_requests_flag {
+    use super::*;
+
+    #[tokio::test]
+    async fn reaches_a_reader_without_the_permission_on_me_when_on() {
+        let (_, state, pool) = fixture_book_requests(true).await;
+        let user = auth_test_support::create_user(&pool, "reader").await;
+        let token = auth_test_support::bearer_token(&pool, user.id).await;
+
+        let summary = me(crate::auth::auth_router(state), &token).await;
+
+        assert!(summary.book_requests);
+        assert!(!summary.can_request);
+    }
+
+    #[tokio::test]
+    async fn reads_off_on_me_when_the_flag_is_off() {
+        let (_, state, pool) = fixture_book_requests(false).await;
+        let admin = auth_test_support::create_admin(&pool, "ada").await;
+        let token = auth_test_support::bearer_token(&pool, admin.id).await;
+
+        assert!(
+            !me(crate::auth::auth_router(state), &token)
+                .await
+                .book_requests
+        );
+    }
+
+    #[tokio::test]
+    async fn reaches_a_reader_on_login_when_on() {
+        let (_, state, pool) = fixture_book_requests(true).await;
+        auth_test_support::create_user_with_password(&pool, "reader", PASSWORD).await;
+
+        let res = crate::auth::auth_router(state)
+            .oneshot(json_req(
+                "/api/auth/login",
+                "POST",
+                serde_json::json!({"username": "reader", "password": PASSWORD, "client_kind": "ios"}),
+            ))
+            .await
+            .unwrap();
+
+        assert!(json_of::<LoginResponse>(res).await.user.book_requests);
     }
 }
 

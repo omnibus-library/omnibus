@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { HttpResponse, http } from "msw";
+import { useLocation } from "react-router";
 import { expect, fn, waitFor, within } from "storybook/test";
 import { toBookDetail } from "../../api";
 import {
@@ -239,13 +240,37 @@ export const NoEbookSlotForAReaderWithoutThePermission: Story = {
   },
 };
 
+/** Where the router is, to see what a request opened. */
+function Where() {
+  const { pathname, search } = useLocation();
+  return (
+    <output data-testid="where">
+      {pathname}
+      {search}
+    </output>
+  );
+}
+
 export const RequestStartsAnEbookRequestForTheBook: Story = {
   args: { book: aBook({ formats: [], book_files: [] }) },
+  decorators: [
+    (Story) => (
+      <>
+        <Story />
+        <Where />
+      </>
+    ),
+  ],
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(canvas.getByTestId("files-request-ebook"));
 
     await waitFor(() =>
       expect(requests.writes).toEqual([{ kind: "start", uuid: UUID }]),
+    );
+    await waitFor(() =>
+      expect(canvas.getByTestId("where")).toHaveTextContent(
+        `/requests?book=${UUID}`,
+      ),
     );
   },
 };

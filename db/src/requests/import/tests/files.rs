@@ -17,6 +17,7 @@ fn status(save_path: &str) -> TorrentStatus {
         progress: 1.0,
         state: "stalledUP".to_string(),
         save_path: save_path.to_string(),
+        eta: None,
     }
 }
 

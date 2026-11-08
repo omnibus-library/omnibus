@@ -1,13 +1,17 @@
 import { type HttpHandler, HttpResponse, http } from "msw";
+import { isLive } from "../api";
 import {
   type BookRequest,
   ChooseVersion,
+  type EbookMetadata,
+  type RequestListing,
   type RequestVersion,
   StartRequest,
 } from "../api/generated/schemas";
+import { aWireBook } from "./wire";
 
 // A stateful MSW fake of the book-request routes, in the shape the server sends them.
-// A write a story makes shows in the next read; `writes` records them in order.
+// A write a story makes shows in the next read, the lists included; `writes` records them in order.
 
 const NOW = Math.floor(Date.now() / 1000);
 
@@ -43,6 +47,7 @@ export function aWireRequest(
     stuck_detail: null,
     chosen_result_id: null,
     progress: null,
+    expected_done_at: null,
     cancel_at: null,
     cancelled_by: null,
     note: null,
@@ -52,6 +57,35 @@ export function aWireRequest(
     ...overrides,
   };
 }
+
+/** The book the fake's requests are for unless told otherwise. */
+export const HYPERION = aWireBook({
+  title: "Hyperion",
+  unique_identifier: "uuid-hyperion",
+  creators: [{ name: "Dan Simmons", role: null, file_as: null, id: 3 }],
+  formats: [],
+});
+
+/** A request as the lists send it: Ada's looking request for Hyperion unless told otherwise. */
+export function aWireListing(
+  overrides: Partial<RequestListing> = {},
+): RequestListing {
+  return {
+    request: aWireRequest(),
+    book: HYPERION,
+    requester_name: "Ada Lovelace",
+    requester_has_avatar: false,
+    cancelled_by_name: null,
+    ...overrides,
+  };
+}
+
+/** What the lists add to a request: its book and the names of who made and who cancelled it; and who is signed in, for a start. */
+export type ListingContext = {
+  books?: EbookMetadata[];
+  names?: Record<number, string>;
+  viewer?: number;
+};
 
 /** The writes the fake answered, in order. */
 export type RequestWrite =
@@ -69,9 +103,34 @@ export type RequestFake = {
 
 const SWAPPED = "Swapped for another version";
 
-/** The routes over `initial` requests. A start adds a looking request; a retry puts one back to looking, or back to choosing after a stopped download. */
-export function requestFake(initial: BookRequest[] = []): RequestFake {
+/** The routes over `initial` requests. A start adds a looking request for `viewer`, or returns theirs already going for the book as the server does; a retry puts one back to looking, or back to choosing after a stopped download. */
+export function requestFake(
+  initial: BookRequest[] = [],
+  {
+    books = [HYPERION],
+    names = { 1: "Ada Lovelace" },
+    viewer = 1,
+  }: ListingContext = {},
+): RequestFake {
   const requests = new Map(initial.map((r) => [r.id, r]));
+  const listing = (r: BookRequest): RequestListing => ({
+    request: {
+      ...r,
+      versions: r.versions.filter(
+        (v) => v.rejected || v.id === r.chosen_result_id,
+      ),
+    },
+    book:
+      books.find((b) => b.unique_identifier === r.book_uuid) ??
+      aWireBook({ unique_identifier: r.book_uuid }),
+    requester_name: names[r.user_id] ?? `Reader ${r.user_id}`,
+    requester_has_avatar: false,
+    cancelled_by_name:
+      r.cancelled_by === null || r.cancelled_by === undefined
+        ? null
+        : (names[r.cancelled_by] ?? null),
+  });
+  const newestFirst = () => [...requests.values()].sort((a, b) => b.id - a.id);
   // The state a cancel left, which an undo puts back.
   const before = new Map<number, BookRequest["state"]>();
   const fake: RequestFake = { handlers: [], writes: [] };
@@ -102,13 +161,32 @@ export function requestFake(initial: BookRequest[] = []): RequestFake {
       StartRequest.parse(await request.json());
       const uuid = String(params.uuid);
       fake.writes.push({ kind: "start", uuid });
+      const going = [...requests.values()].find(
+        (r) =>
+          r.user_id === viewer &&
+          r.book_uuid === uuid &&
+          r.kind === "ebook" &&
+          isLive(r.state),
+      );
+      if (going) return HttpResponse.json(going);
       const made = aWireRequest({
         id: Math.max(0, ...requests.keys()) + 1,
         book_uuid: uuid,
+        user_id: viewer,
       });
       requests.set(made.id, made);
       return HttpResponse.json(made, { status: 201 });
     }),
+    http.get("/api/requests", () =>
+      HttpResponse.json(newestFirst().map(listing)),
+    ),
+    http.get("/api/books/:uuid/requests", ({ params }) =>
+      HttpResponse.json(
+        newestFirst()
+          .filter((r) => r.book_uuid === params.uuid)
+          .map(listing),
+      ),
+    ),
     http.get("/api/requests/:id", ({ params }) => {
       const found = find(params.id);
       return found ? HttpResponse.json(found) : refuse(404);
@@ -162,6 +240,7 @@ export function requestFake(initial: BookRequest[] = []): RequestFake {
         ...found,
         state: "cancelled" as const,
         cancelled_by: found.user_id,
+        updated_at: Math.floor(Date.now() / 1000),
         // The clock, not NOW: the Undo toast is timed against it, and NOW ages as the file runs.
         cancel_at: Math.floor(Date.now() / 1000) + 8,
       };

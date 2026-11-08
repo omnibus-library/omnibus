@@ -142,6 +142,14 @@ impl StubClient {
         self
     }
 
+    /// The client expects the download marked `tag` to take `eta` more seconds.
+    pub fn with_eta(self, tag: &str, eta: i64) -> Self {
+        if let Some(status) = self.script().statuses.get_mut(tag) {
+            status.eta = Some(eta);
+        }
+        self
+    }
+
     /// Give the download marked `tag` finished, saved in `save_path` and holding `files`
     /// (name and size).
     pub fn with_files(self, tag: &str, save_path: &str, files: &[(&str, u64)]) -> Self {
@@ -183,6 +191,7 @@ impl StubClient {
             progress,
             state: state.to_string(),
             save_path: String::new(),
+            eta: None,
         };
         self.script().statuses.insert(tag.to_string(), status);
     }

@@ -1,5 +1,8 @@
 import { useSyncExternalStore } from "react";
 
+/** The phone line most of the app's layout keys off. */
+export const PHONE_QUERY = "(max-width: 720px)";
+
 /** Whether `query` matches now, and again whenever that changes. */
 export function useMediaQuery(query: string): boolean {
   return useSyncExternalStore(

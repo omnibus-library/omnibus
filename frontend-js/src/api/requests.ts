@@ -1,4 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
+import { toBook } from "./books";
 import type { BookUuid, UserId } from "./core";
 import { ok, send } from "./core";
 import {
@@ -12,10 +13,14 @@ import {
   getTestDownloadClientConnectionUrl,
   getTestProwlarrConnectionUrl,
   getUndoCancelBookRequestUrl,
+  listBookRequests,
+  listRequests,
   setRequestsSettings,
 } from "./generated/omnibus";
 import type {
   BookRequest as BookRequestWire,
+  RequestListing as RequestListingWire,
+  RequestState,
   RequestsSettingsStatus,
   RequestsSettingsUpdate,
   RequestVersion as RequestVersionWire,
@@ -23,6 +28,7 @@ import type {
 import { BookRequest as BookRequestSchema } from "./generated/schemas";
 
 export type {
+  RequestKind,
   RequestState,
   RequestsSettingsStatus,
   RequestsSettingsUpdate,
@@ -87,9 +93,14 @@ export function toBookRequest(wire: BookRequestWire) {
     chosenResultId: wire.chosen_result_id ?? null,
     /** 0 to 1 while the download runs. */
     progress: wire.progress ?? null,
+    /** Unix seconds; when the download client expects the download to finish. */
+    expectedDoneAt: wire.expected_done_at ?? null,
     /** Unix seconds; when a cancelled request stops being undoable. */
     cancelAt: wire.cancel_at ?? null,
+    cancelledBy: (wire.cancelled_by ?? null) as UserId | null,
     note: wire.note ?? null,
+    /** Unix seconds. */
+    createdAt: wire.created_at,
     /** Unix seconds. */
     updatedAt: wire.updated_at,
     versions: wire.versions.map(toVersion),
@@ -98,8 +109,60 @@ export function toBookRequest(wire: BookRequestWire) {
 
 export type BookRequest = ReturnType<typeof toBookRequest>;
 
+/** A request as the lists draw it; its `versions` are only the one it picked and those it gave up. */
+export function toRequestListing(wire: RequestListingWire) {
+  return {
+    request: toBookRequest(wire.request),
+    book: toBook(wire.book),
+    requesterName: wire.requester_name,
+    requesterHasAvatar: wire.requester_has_avatar,
+    /** `null` unless cancelled, or once that account is gone. */
+    cancelledByName: wire.cancelled_by_name ?? null,
+  };
+}
+
+export type RequestListing = ReturnType<typeof toRequestListing>;
+
+/** The prefix of every list of requests, which any write to a request makes stale. */
+export const REQUEST_LISTS_KEY = ["requests", "list"] as const;
+
 /** How often a request still moving is asked about again. */
 export const REQUEST_POLL_MS = 2000;
+
+/** Whether a request is moving without the reader: searching, picked or downloading. */
+export const isMoving = (state: RequestState) =>
+  state === "looking" || state === "chosen" || state === "on_its_way";
+
+/** Whether a request is still going for its reader: looking, choosing, picked or downloading. */
+export const isLive = (state: RequestState) =>
+  state === "choose" || isMoving(state);
+
+/** How often a list is read again: every `every` ms while any request in it is moving. */
+export const listPollMs = (
+  listings: readonly { request: { state: RequestState } }[] | undefined,
+  every = REQUEST_POLL_MS,
+) => (listings?.some((l) => isMoving(l.request.state)) ? every : false);
+
+/** How often the household's list is read again; the pane's own request polls faster. */
+const HOUSEHOLD_POLL_MS = 10_000;
+
+/** Every reader's requests, newest first; read again while any is moving. */
+export const requestsQuery = queryOptions({
+  queryKey: [...REQUEST_LISTS_KEY, "all"],
+  queryFn: async () => ok(await listRequests()).map(toRequestListing),
+  refetchInterval: (query) => listPollMs(query.state.data, HOUSEHOLD_POLL_MS),
+});
+
+/** One book's requests, newest first: its history. */
+export const bookRequestsQuery = (uuid: BookUuid) =>
+  queryOptions({
+    queryKey: [...REQUEST_LISTS_KEY, "book", uuid],
+    queryFn: async () =>
+      ok(await listBookRequests(encodeURIComponent(uuid))).map(
+        toRequestListing,
+      ),
+    refetchInterval: (query) => listPollMs(query.state.data),
+  });
 
 /** One request; while it is looking, picked or downloading, it is read again every couple of seconds. */
 export const bookRequestQuery = (id: number) =>
@@ -108,9 +171,7 @@ export const bookRequestQuery = (id: number) =>
     queryFn: async () => toBookRequest(ok(await getBookRequest(id))),
     refetchInterval: (query) => {
       const state = query.state.data?.state;
-      const moving =
-        state === "looking" || state === "chosen" || state === "on_its_way";
-      return moving ? REQUEST_POLL_MS : false;
+      return state && isMoving(state) ? REQUEST_POLL_MS : false;
     },
   });
 

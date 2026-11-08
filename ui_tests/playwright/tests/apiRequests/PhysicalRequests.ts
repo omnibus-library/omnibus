@@ -12,6 +12,11 @@ export class PhysicalRequests extends BaseRequests {
     return this.delete(`/api/physical/${bookUuid}`);
   }
 
+  /** Takes the book off the context's own wishlist. */
+  deleteWishlistEntry(bookUuid: string): Promise<APIResponse> {
+    return this.delete(`/api/physical/${bookUuid}/wishlist`);
+  }
+
   deleteCopy(copyId: number): Promise<APIResponse> {
     return this.delete(`/api/physical/copies/${copyId}`);
   }

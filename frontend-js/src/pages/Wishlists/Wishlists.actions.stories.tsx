@@ -1,15 +1,18 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { HttpResponse, http } from "msw";
 import { expect, waitFor, within } from "storybook/test";
-import { parseBookUuid } from "../../api";
+import { bookRequestsQuery, parseBookUuid, requestsQuery } from "../../api";
 import {
   expectInvalidated,
   seedQueries,
   storyClient,
 } from "../../testing/AppHarness";
 import { deferred, failing } from "../../testing/handlers";
-import { realPointer } from "../../testing/pointer";
-import { requestFake } from "../../testing/requestHandlers";
+import {
+  aWireListing,
+  aWireRequest,
+  requestFake,
+} from "../../testing/requestHandlers";
 import { WIRE_ADA } from "../../testing/wire";
 import { BOOKS } from "../../testing/wishlistHandlers";
 import { bookQuery } from "../BookDetail/queries";
@@ -101,13 +104,91 @@ export const RequestEbookStartsARequestAndOpensItsPage: Story = {
     );
 
     await expect(await canvas.findByTestId("where")).toHaveTextContent(
-      `/books/${BOOKS.hyperion.uuid}/request?id=1`,
+      `/requests?book=${BOOKS.hyperion.uuid}`,
     );
     await expect(requests.writes).toEqual([
       { kind: "start", uuid: BOOKS.hyperion.uuid },
     ]);
   },
 };
+
+let heldList = deferred();
+let listReads = 0;
+
+export const RequestEbookOpensRequestsOnceItsListHoldsTheRequest: Story = {
+  beforeEach({ msw }) {
+    heldList = deferred();
+    listReads = 0;
+    // The first read is the cached list from before; the second is the one the start waits for.
+    msw.use(
+      http.get("/api/requests", async () => {
+        listReads += 1;
+        if (listReads === 1) return HttpResponse.json([]);
+        await heldList.promise;
+        return HttpResponse.json([
+          aWireListing({
+            request: aWireRequest({ id: 1, book_uuid: BOOKS.hyperion.uuid }),
+          }),
+        ]);
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await storyClient().prefetchQuery(requestsQuery);
+    const row = within(await rowOf(canvas, "Hyperion"));
+
+    await userEvent.click(row.getByTestId("wishlists-request"));
+    await userEvent.click(
+      await canvas.findByRole("menuitem", { name: "Request ebook" }),
+    );
+
+    await waitFor(() => expect(listReads).toBe(2));
+    await expect(canvas.queryByTestId("where")).toBeNull();
+    heldList.release();
+    await expect(await canvas.findByTestId("where")).toHaveTextContent(
+      `/requests?book=${BOOKS.hyperion.uuid}`,
+    );
+    const listed = storyClient().getQueryData(requestsQuery.queryKey);
+    await expect(listed?.map((l) => l.request.bookUuid)).toEqual([
+      BOOKS.hyperion.uuid,
+    ]);
+  },
+};
+
+let heldHistory = deferred();
+let historyReads = 0;
+
+export const RequestEbookOpensRequestsWithoutWaitingForTheBooksHistory: Story =
+  {
+    beforeEach({ msw }) {
+      heldHistory = deferred();
+      historyReads = 0;
+      msw.use(
+        http.get("/api/books/:uuid/requests", async () => {
+          historyReads += 1;
+          if (historyReads > 1) await heldHistory.promise;
+          return HttpResponse.json([]);
+        }),
+      );
+    },
+    play: async ({ canvas, userEvent }) => {
+      const uuid = parseBookUuid(BOOKS.hyperion.uuid);
+      if (!uuid) throw new Error("a fixture book has no uuid");
+      await storyClient().prefetchQuery(bookRequestsQuery(uuid));
+      const row = within(await rowOf(canvas, "Hyperion"));
+
+      await userEvent.click(row.getByTestId("wishlists-request"));
+      await userEvent.click(
+        await canvas.findByRole("menuitem", { name: "Request ebook" }),
+      );
+
+      // The history is read again once the page is open; the page does not wait for it.
+      await expect(await canvas.findByTestId("where")).toHaveTextContent(
+        `/requests?book=${BOOKS.hyperion.uuid}`,
+      );
+      heldHistory.release();
+    },
+  };
 
 export const ARefusedRequestSaysWhyAndStaysOnTheList: Story = {
   beforeEach({ msw }) {
@@ -210,28 +291,17 @@ export const RequestIsShownToAReaderWithThePermission: Story = {
   },
 };
 
-export const ActionsStayLaidOutAndShowOnHoverOrFocus: Story = {
+export const ActionsStayLaidOutAndShowWithoutHover: Story = {
   play: async ({ canvas }) => {
     const hyperion = within(await rowOf(canvas, "Hyperion"));
     const redRising = within(await rowOf(canvas, "Red Rising"));
     const slot = (row: typeof hyperion) =>
       row.getByTestId("wishlists-find-copy").parentElement as HTMLElement;
-    await expect(getComputedStyle(slot(hyperion)).opacity).toBe("0");
+    await expect(getComputedStyle(slot(hyperion)).opacity).toBe("1");
+    await expect(getComputedStyle(slot(redRising)).opacity).toBe("1");
     // Red Rising has one button fewer, and its slot is the same width.
     await expect(slot(redRising).getBoundingClientRect().width).toBe(
       slot(hyperion).getBoundingClientRect().width,
-    );
-
-    const pointer = await realPointer();
-    await pointer.hover(hyperion.getByTestId("wishlists-title"));
-    await waitFor(() =>
-      expect(getComputedStyle(slot(hyperion)).opacity).toBe("1"),
-    );
-    await pointer.unhover(hyperion.getByTestId("wishlists-title"));
-
-    redRising.getByTestId("wishlists-find-copy").focus();
-    await waitFor(() =>
-      expect(getComputedStyle(slot(redRising)).opacity).toBe("1"),
     );
   },
 };
@@ -522,7 +592,7 @@ export const RequestEbookInTheGetSheetStartsARequestAndOpensItsPage: Story = {
     await userEvent.click(sheet.getByRole("button", { name: /Request ebook/ }));
 
     await expect(await canvas.findByTestId("where")).toHaveTextContent(
-      `/books/${BOOKS.hyperion.uuid}/request?id=1`,
+      `/requests?book=${BOOKS.hyperion.uuid}`,
     );
     await expect(requests.writes).toEqual([
       { kind: "start", uuid: BOOKS.hyperion.uuid },

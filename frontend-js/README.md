@@ -38,10 +38,11 @@ pages (`/authors/:id`, `/series/:id`, `/shelves/:id`), the three readers
 (`/read`, `/comic`, `/pdf`), the audiobook player (`/listen/:uuid`, `?file_id`
 picks one of a book's files), personal settings (`/settings`), Administration
 (`/admin`, `/admin/cleanup/:kind`), stats (`/stats`), the chart builder
-(`/stats/chart`), the household's wishlists (`/wishlists`) and Not Found are
-the screens, and the top bar carries the user menu, the ⌘K search palette and
-the Add menu: Upload book files (the Add books sheet, not a route), Add a copy
-you own (`/check-in`) and Add to your wishlist (`/wishlists` with its search open). There is no phone tab bar. A bare
+(`/stats/chart`), the household's wishlists (`/wishlists`), every reader's book
+requests (`/requests`) and Not Found are the screens, and the top bar carries
+the user menu, the ⌘K search palette and the Add menu: Upload book files (the
+Add books sheet, not a route), Add a copy you own (`/check-in`) and Add to your
+wishlist (`/wishlists` with its search open). There is no phone tab bar. A bare
 `/search` and `/connect` redirect to the library.
 `/settings` has its five sections (Profile, Preferences, Goals, Devices,
 Sign-in & security) picked by `?section=`; an old slug redirects to its new
@@ -110,13 +111,30 @@ book, picked by `?user=` (`all`, or a reader's id; anything else is your own). A
 the left, or a menu under the title on a phone, lists everyone and each reader with their
 count. Every signed-in reader sees every list, whether or not that reader shares their
 stats. A row shows the library's holdings of the book (`EPUB ×3`, `PRINT`) and, on a wide
-screen, Find a Copy and Request on hover, with Remove and its Undo on your own list only
+screen, Find a Copy and Request, with Remove and its Undo on your own list only
 (a book that existed only to be wanted leaves with its last entry, so that removal has no
 Undo); a phone gets one Get sheet instead. Request stays disabled until Shelfarr is
 connected. Add to wishlist searches the library and the providers by title, author or
 ISBN and always adds to your own list; a provider's record that matches a library book is
 added to that book rather than minted as a second one. The page's stories run against the
 stateful fake in `src/testing/wishlistHandlers.ts`.
+Requests (`/requests`) lists every reader's requests one item per book, grouped by where the
+book stands (Needs you, On its way, Looking, Stuck, Ready, Cancelled), beside a pane with the
+selected book's request. Each group header folds, and the fold is remembered on the device;
+Cancelled starts folded and is left out of the count under the title; a selected book that moves into a folded group (a cancel files it under Cancelled) opens that group for the visit, without storing it. `/requests?book=<uuid>`
+is the only address of a book's request, and the first book is selected when `?book=` is
+absent. On a phone the list stands alone and each item opens that address full screen, which
+offers "‹ Requests" back (a request started from a wishlist row offers "← Back to Wishlists"
+instead, at every width). The user menu links it while the server has book requests on; with
+them off it is Not Found. The pane and the phone's full-screen detail are one component: the
+book, a lane for the request filed under it and for each other one still going (who asked and
+when, a Looking → Choose a version → On its way → Ready stepper, a download's release, size,
+source and time left, with Cancel and Choose another beside it, shown only to the reader who
+asked or an admin; the byline names whose wishlists hold the book), then the book's history of
+cancelled and stuck requests and swapped versions, saying only what was recorded, with
+Request again on a cancelled one once its Undo has run out and while the reader has no other
+request going for the book. Both run against the stateful fake in
+`src/testing/requestHandlers.ts`.
 A page that throws renders `RouteError` inside the top bar; anything else that
 throws (the session gate, the shell, a reader) renders it full-screen.
 
@@ -236,7 +254,8 @@ shell provides it.
   schema, the rules a field is refused by and the override diff), `dirty`,
   `editionFields` and `fetch`, the View Transition helper `viewTransition`, `uploads`,
   check-in's `checkInFlow` and `scan`, `findCopy`, the wishlists' `wishlistView` (scope, headings,
-  holdings badges, what each row can request and the add panel's lookup results), the
+  holdings badges, what each row can request and the add panel's lookup results), the book
+  requests' `requestView` and the Requests list's `requestGroups`, the
   scanner's `scanStatus` and `loadScanner`, the discovery pages' `browseOrder`, `bookStates`, `authorsOrder`,
   `authorProgress`, `seriesOrder`, `seriesProgress`, `shelvesIndex`, the shelf rules' `rules`, the picker's
   `picker`, the shelf page's `shelfAccess` and `narrow`, the readers' `pager`,

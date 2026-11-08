@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   bookRequestQuery,
   cancelBookRequest,
+  REQUEST_LISTS_KEY,
   type BookRequest as Request,
   swapRequestVersion,
   undoCancelBookRequest,
@@ -13,11 +14,13 @@ import { undoToastMs } from "./requestView";
 export const messageOf = (error: unknown) =>
   error instanceof Error ? error.message : "Something went wrong.";
 
-/** Replaces the cached request with the server's latest answer to a write, so polling follows the new state. */
+/** Replaces the cached request with the server's latest answer to a write, so polling follows the new state, and has the lists read again; returned, so a mutation stays pending until they are. */
 export function useAnswer(id: number) {
   const client = useQueryClient();
-  return (request: Request) =>
+  return (request: Request) => {
     client.setQueryData(bookRequestQuery(id).queryKey, request);
+    return client.invalidateQueries({ queryKey: REQUEST_LISTS_KEY });
+  };
 }
 
 /** Drops any poll in flight before a write, so a stale answer cannot flip the lane back. */
@@ -27,17 +30,18 @@ function useHoldPolls(id: number) {
     client.cancelQueries({ queryKey: bookRequestQuery(id).queryKey });
 }
 
-/** Cancel with an Undo toast for as long as the server will take it back; `onUndone` runs once Undo has put the request back. */
-export function useCancel(id: number, onUndone: () => void) {
+/** Cancel with an Undo toast for as long as the server will take it back; `refocus` runs once the cancel, or its Undo, is in and the button pressed is gone. */
+export function useCancel(id: number, refocus: () => void) {
   const toast = useToast();
+  const client = useQueryClient();
   const answer = useAnswer(id);
   const hold = useHoldPolls(id);
   const undo = useMutation({
     mutationFn: () => undoCancelBookRequest(id),
     onMutate: hold,
     onSuccess: (restored) => {
-      answer(restored);
-      onUndone();
+      refocus();
+      return answer(restored);
     },
     onError: (error) => toast(`Couldn’t undo: ${messageOf(error)}`),
   });
@@ -45,15 +49,24 @@ export function useCancel(id: number, onUndone: () => void) {
     mutationFn: () => cancelBookRequest(id),
     onMutate: hold,
     onSuccess: (cancelled) => {
-      answer(cancelled);
-      if (cancelled.cancelAt === null) return;
+      refocus();
+      const refreshed = answer(cancelled);
+      if (cancelled.cancelAt === null) return refreshed;
       toast(
         "Request cancelled",
         { label: "Undo", onClick: () => undo.mutate() },
         undoToastMs(cancelled.cancelAt, nowSecs()),
       );
+      return refreshed;
     },
-    onError: (error) => toast(`Couldn’t cancel: ${messageOf(error)}`),
+    onError: (error) => {
+      toast(`Couldn’t cancel: ${messageOf(error)}`);
+      // The refusal may mean the request moved on meanwhile, so it and the lists are read again.
+      return Promise.all([
+        client.invalidateQueries({ queryKey: bookRequestQuery(id).queryKey }),
+        client.invalidateQueries({ queryKey: REQUEST_LISTS_KEY }),
+      ]);
+    },
   });
 }
 
@@ -66,9 +79,9 @@ export function useSwap(id: number, onSwapped: () => void) {
     mutationFn: () => swapRequestVersion(id),
     onMutate: hold,
     onSuccess: (swapped) => {
-      answer(swapped);
       onSwapped();
+      return answer(swapped);
     },
-    onError: (error) => toast(`Couldn’t pick another: ${messageOf(error)}`),
+    onError: (error) => toast(`Couldn’t choose another: ${messageOf(error)}`),
   });
 }

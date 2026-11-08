@@ -1,0 +1,186 @@
+/* Every reader's book requests: the grouped list on the left, the selected book's request beside it. */
+.rqs-page {
+  --rqs-bleed: clamp(1.25rem, 4vw, 3.5rem);
+  --rqs-nav-h: 65px;
+
+  display: grid;
+  grid-template-columns: 380px minmax(0, 1fr);
+  min-height: calc(100dvh - var(--rqs-nav-h));
+  /* Full-bleed under the top bar, so the list's rule meets the window's edges. */
+  margin-inline: calc(-1 * var(--rqs-bleed));
+}
+
+.rqs-list {
+  padding: 32px 16px 32px 20px;
+  border-right: 1px solid var(--line-2);
+}
+.rqs-head {
+  padding: 0 8px 4px;
+}
+.rqs-page .rqs-heading {
+  margin: 0;
+  font: 600 36px / 1.1 var(--serif);
+  letter-spacing: -0.005em;
+  color: var(--ink-0);
+}
+.rqs-page .rqs-subline {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.rqs-page .rqs-group-label {
+  margin: 0;
+}
+.rqs-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 14px 8px 6px;
+  border: 0;
+  background: none;
+  font: 500 10.5px / 1 var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  text-align: left;
+  cursor: pointer;
+}
+.rqs-group-count {
+  color: var(--ink-2);
+}
+.rqs-items {
+  list-style: none;
+}
+.rqs-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 54px;
+  padding: 8px 10px;
+  border-radius: var(--r-md);
+  color: inherit;
+  text-decoration: none;
+  transition: background-color 0.15s;
+}
+.rqs-item[aria-current="true"] {
+  background: var(--bg-1);
+}
+.rqs-item:focus-visible,
+.rqs-group-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+@media (hover: hover) {
+  .rqs-item:not([aria-current="true"]):hover {
+    background: color-mix(in oklch, var(--bg-1) 55%, transparent);
+  }
+  .rqs-group-toggle:hover {
+    color: var(--ink-1);
+  }
+}
+@media (hover: none) {
+  .rqs-group-toggle:active {
+    color: var(--ink-1);
+  }
+}
+.rqs-cover {
+  flex: none;
+  width: 24px;
+}
+/* The plate's type is sized for a grid cover; one this small needs a smaller one. */
+.rqs-cover .cover .ct {
+  font-size: 5px;
+}
+.rqs-cover .cover .ca {
+  display: none;
+}
+.rqs-item-text {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+.rqs-item-title {
+  overflow: hidden;
+  font: 600 17px / 1.15 var(--serif);
+  color: var(--ink-0);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rqs-item-line {
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--ink-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rqs-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ink-1);
+}
+.rqs-dot[data-group="needs_you"] {
+  background: var(--accent);
+}
+.rqs-dot[data-group="stuck"] {
+  background: var(--bad);
+}
+.rqs-dot[data-group="ready"] {
+  background: var(--ok);
+}
+.rqs-dot[data-group="cancelled"] {
+  background: var(--ink-3);
+}
+.rqs-chevron {
+  flex: none;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--ink-3);
+}
+
+/* Stays in view under the top bar while the list scrolls past it. */
+.rqs-pane {
+  position: sticky;
+  top: var(--rqs-nav-h);
+  align-self: start;
+  max-height: calc(100dvh - var(--rqs-nav-h));
+  min-width: 0;
+  overflow-y: auto;
+}
+
+.rqs-failure {
+  display: grid;
+  justify-items: start;
+  gap: 12px;
+  padding: 18px 8px;
+  color: var(--ink-2);
+}
+.rqs-empty {
+  padding: 18px 8px;
+  color: var(--ink-2);
+}
+.rqs-page .rqs-empty-title {
+  margin: 0 0 8px;
+  font: 600 23px / 1.15 var(--serif);
+  color: var(--ink-0);
+}
+.rqs-page .rqs-empty-body {
+  margin: 0;
+  font-size: 14px;
+}
+
+/* A phone shows the list alone; each item opens its book full screen at /requests?book=. */
+@media (max-width: 720px) {
+  .rqs-page {
+    grid-template-columns: minmax(0, 1fr);
+    margin-inline: 0;
+  }
+  .rqs-list {
+    padding: 20px 0 32px;
+    border-right: 0;
+  }
+}

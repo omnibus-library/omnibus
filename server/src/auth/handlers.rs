@@ -76,6 +76,7 @@ fn user_summary(u: &auth_db::User, book_requests: bool) -> UserSummary {
         can_edit: u.can_edit,
         can_download: u.can_download,
         can_request: request_access(book_requests, u.is_admin, u.can_request),
+        book_requests,
         kindle_email: u.kindle_email.clone(),
         display_name: u.display_name.clone(),
         has_avatar: u.has_avatar,
@@ -465,6 +466,7 @@ async fn me_handler(user: AuthUser, State(state): State<AppState>) -> Response {
     Json(UserSummary {
         impersonation,
         can_request: request_access(state.book_requests(), user.is_admin, user.can_request),
+        book_requests: state.book_requests(),
         ..user.summary()
     })
     .into_response()

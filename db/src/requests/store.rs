@@ -18,7 +18,7 @@ const DOWNLOADING: &str = "(state = 'on_its_way' AND (progress IS NULL OR progre
 const NOW: &str = "strftime('%s', 'now')";
 
 const COLUMNS: &str = "id, book_uuid, user_id, kind, state, stuck_reason, stuck_detail, \
-                       chosen_result_id, client_tag, import_key, remove_tag, remove_since, progress, moved_at, cancel_at, cancelled_by, \
+                       chosen_result_id, client_tag, import_key, remove_tag, remove_since, progress, moved_at, expected_done_at, cancel_at, cancelled_by, \
                        prior_state, note, created_at, updated_at";
 
 /// Why a request could not be recorded or changed.
@@ -35,6 +35,8 @@ pub enum RequestError {
     NotFound,
     #[error(transparent)]
     Db(#[from] sqlx::Error),
+    #[error(transparent)]
+    Books(#[from] crate::books::BooksError),
 }
 
 /// One request as stored. `stuck_detail` is for admins only; the handler withholds it.
@@ -61,6 +63,8 @@ pub struct RequestRow {
     pub progress: Option<f64>,
     /// When the download last gained bytes, in Unix seconds.
     pub moved_at: Option<i64>,
+    /// When the client expects the download to finish, in Unix seconds.
+    pub expected_done_at: Option<i64>,
     /// When the client is told to remove the download, in Unix seconds.
     pub cancel_at: Option<i64>,
     pub cancelled_by: Option<i64>,
@@ -91,6 +95,24 @@ pub enum SearchOutcome {
     },
 }
 
+/// A `book_request_results` row as a version; `rejected` is whether it was picked and given up.
+fn row_to_version(r: &SqliteRow) -> Result<RequestVersion, sqlx::Error> {
+    Ok(RequestVersion {
+        id: r.try_get("id")?,
+        title: r.try_get("title")?,
+        size_bytes: r.try_get("size_bytes")?,
+        format: r.try_get("format")?,
+        indexer: r.try_get("indexer")?,
+        seeders: r.try_get("seeders")?,
+        protocol: r
+            .try_get::<Option<String>, _>("protocol")?
+            .as_deref()
+            .and_then(ReleaseProtocol::parse),
+        best_match: r.try_get::<i64, _>("best_match")? != 0,
+        rejected: r.try_get::<i64, _>("tried")? != 0,
+    })
+}
+
 fn row_to_request(row: &SqliteRow) -> Result<RequestRow, sqlx::Error> {
     let corrupt = |column: &str, value: String| {
         sqlx::Error::Decode(format!("book_requests.{column} holds {value:?}").into())
@@ -116,6 +138,7 @@ fn row_to_request(row: &SqliteRow) -> Result<RequestRow, sqlx::Error> {
         remove_since: row.try_get("remove_since")?,
         progress: row.try_get("progress")?,
         moved_at: row.try_get("moved_at")?,
+        expected_done_at: row.try_get("expected_done_at")?,
         cancel_at: row.try_get("cancel_at")?,
         cancelled_by: row.try_get("cancelled_by")?,
         prior_state: prior
@@ -188,23 +211,6 @@ pub async fn get(pool: &SqlitePool, id: i64) -> Result<Option<RequestRow>, Reque
     Ok(row.as_ref().map(row_to_request).transpose()?)
 }
 
-/// Every request for the book, newest first.
-pub async fn list_for_book(
-    pool: &SqlitePool,
-    book_uuid: &str,
-) -> Result<Vec<RequestRow>, RequestError> {
-    let rows = sqlx::query(&format!(
-        "SELECT {COLUMNS} FROM book_requests WHERE book_uuid = ? ORDER BY id DESC"
-    ))
-    .bind(book_uuid)
-    .fetch_all(pool)
-    .await?;
-    Ok(rows
-        .iter()
-        .map(row_to_request)
-        .collect::<Result<Vec<_>, sqlx::Error>>()?)
-}
-
 /// The versions worth showing for a request, best first: the ones to choose from, then the
 /// ones that were picked and given up (`rejected`). Versions the ranking dropped are never
 /// returned.
@@ -221,22 +227,7 @@ pub async fn versions(
     .await?;
     Ok(rows
         .iter()
-        .map(|r| {
-            Ok(RequestVersion {
-                id: r.try_get("id")?,
-                title: r.try_get("title")?,
-                size_bytes: r.try_get("size_bytes")?,
-                format: r.try_get("format")?,
-                indexer: r.try_get("indexer")?,
-                seeders: r.try_get("seeders")?,
-                protocol: r
-                    .try_get::<Option<String>, _>("protocol")?
-                    .as_deref()
-                    .and_then(ReleaseProtocol::parse),
-                best_match: r.try_get::<i64, _>("best_match")? != 0,
-                rejected: r.try_get::<i64, _>("tried")? != 0,
-            })
-        })
+        .map(row_to_version)
         .collect::<Result<Vec<_>, sqlx::Error>>()?)
 }
 
@@ -429,13 +420,15 @@ pub async fn choose(pool: &SqlitePool, id: i64, result_id: i64) -> Result<(), Re
 
 mod change;
 mod download;
+mod list;
 
 pub use change::{cancel, swap, undo_cancel, CANCEL_GRACE_SECS};
 pub use download::{
     awaiting_add, awaiting_import, begin_download, claim_due_cancels, downloading, finish_removal,
     has_download_work, mark_on_its_way, mark_ready, mark_removal_seen, mark_stuck,
-    pending_removals, record_progress, set_import_key, unix_now,
+    pending_removals, record_expected_done_at, record_progress, set_import_key, unix_now,
 };
+pub use list::{list, ListFilter, Listed};
 
 #[cfg(test)]
 mod tests;

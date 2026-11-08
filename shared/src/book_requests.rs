@@ -212,6 +212,9 @@ pub struct BookRequest {
     pub updated_at: i64,
     /// How much of the download is done, 0 to 1, once `state` is `on_its_way`.
     pub progress: Option<f64>,
+    /// While `on_its_way`, when the download client expects the download to finish, in Unix
+    /// seconds. Null when it can't tell.
+    pub expected_done_at: Option<i64>,
     /// While `cancelled`, when the download is told to stop, in Unix seconds; the request can
     /// be undone until then. Null once it has stopped, and for a request never cancelled.
     pub cancel_at: Option<i64>,
@@ -219,9 +222,36 @@ pub struct BookRequest {
     pub cancelled_by: Option<i64>,
     /// What Omnibus knows about why it moved on, such as "Swapped for another version".
     pub note: Option<String>,
-    /// The versions found, best first. Empty until the search has run, and always empty in
-    /// a book's list of requests: read one request for its versions.
+    /// The versions found, best first. Empty until the search has run. In a list of
+    /// requests, only the version picked and then those given up: read one request for the rest.
     pub versions: Vec<RequestVersion>,
+}
+
+/// A request as a list shows it: its book, who made it and who cancelled it.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct RequestListing {
+    pub request: BookRequest,
+    /// The requested book, without its description.
+    pub book: crate::EbookMetadata,
+    /// The requester's display name, or their username when they have none.
+    pub requester_name: String,
+    /// Whether `GET /api/users/{id}/avatar` has the requester's photo to serve.
+    pub requester_has_avatar: bool,
+    /// Who cancelled it, named the same way. Null unless it was cancelled, or once that
+    /// account is deleted.
+    pub cancelled_by_name: Option<String>,
+}
+
+/// Which requests `GET /api/requests` returns. Leave a field out to match every request.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
+pub struct RequestListQuery {
+    /// Only requests in this state.
+    pub state: Option<RequestState>,
+    /// Only requests this reader made, by user id.
+    pub user: Option<i64>,
 }
 
 #[cfg(test)]

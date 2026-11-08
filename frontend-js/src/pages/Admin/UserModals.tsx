@@ -80,7 +80,7 @@ function PermissionToggles({
   perms: UserPermissions;
   onChange: (perms: UserPermissions) => void;
 }) {
-  // The feature's boot flag reaches the client only as the signed-in admin's own `canRequest`.
+  // An admin holds `canRequest` exactly while the server has book requests on.
   const requests = useCurrentUser().canRequest;
   return (
     <fieldset className="users-perms">

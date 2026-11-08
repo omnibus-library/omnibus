@@ -1,40 +1,69 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { type Ref, useEffect, useId, useRef, useState } from "react";
-import { Link, Navigate, useParams, useSearchParams } from "react-router";
+import {
+  type ReactNode,
+  type Ref,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
+import { Link, useLocation } from "react-router";
 import {
   type BookUuid,
   bookRequestQuery,
+  bookRequestsQuery,
   chooseRequestVersion,
-  parseBookUuid,
-  positiveInt,
   type BookRequest as Request,
+  type RequestListing,
   type RequestVersion,
   retryBookRequest,
   thumbUrl,
+  wishlistBooksQuery,
 } from "../../api";
 import { Button } from "../../components/Button/Button";
 import { Cover } from "../../components/Cover/Cover";
 import { BusyLabel, Loading } from "../../components/Loading/Loading";
 import { PageError, PageNotFound } from "../../components/PageState/PageState";
 import { PageTitle } from "../../components/PageTitle/PageTitle";
-import { ToastProvider, useToast } from "../../components/Toast/Toast";
-import { nowSecs } from "../../format";
+import { useToast } from "../../components/Toast/Toast";
+import { UserAvatar } from "../../components/UserAvatar/UserAvatar";
+import { nowSecs, recency } from "../../format";
 import { useCurrentUser } from "../../session";
+import { PHONE_QUERY, useMediaQuery } from "../../useMediaQuery";
 import { bookQuery } from "../BookDetail/queries";
 import {
+  type DossierVariant,
+  RequestAgain,
+  RequestHistory,
+} from "./RequestHistory";
+import {
+  canActOn,
+  downloadPercent,
   firstShown,
+  fromWishlists,
   isCancellable,
   isDownloading,
   isSearchStale,
+  kindChip,
+  kindLabel,
+  offersRequestAgain,
   pickedMeta,
+  pickedVersion,
   progressPercent,
-  requestPath,
+  type RequestStep,
   SEARCH_STALE_AFTER_SECS,
+  SEP,
+  splitBookRequests,
   stateView,
+  stepsFor,
+  versionSize,
   versionSource,
   versionsFound,
+  wishersLine,
 } from "./requestView";
+import { useNowPast } from "./useNowPast";
 import { messageOf, useAnswer, useCancel, useSwap } from "./useRequestActions";
+import { useTimeLeft } from "./useTimeLeft";
 import "./BookRequest.css";
 
 /** One version found: its release name, its source line, a Best match or Didn’t work tag, Choose, and the long form when Details is open. */
@@ -204,19 +233,32 @@ function Choices({
   );
 }
 
-/** The version picked, named as its row named it: the release name over its size and source. */
-function Picked({ request }: { request: Request }) {
-  const picked = request.versions.find((v) => v.id === request.chosenResultId);
-  const meta = picked ? pickedMeta(picked) : "";
+/** The version picked, named as its row named it: the release name over its size and source, with `children` (a download's bar) between, and `extra` (its time left) after the source. */
+function Picked({
+  request,
+  children,
+  extra,
+}: {
+  request: Request;
+  children?: ReactNode;
+  extra?: string | null;
+}) {
+  const picked = pickedVersion(request);
+  const meta = [picked ? pickedMeta(picked) : "", extra ?? ""]
+    .filter((part) => part)
+    .join(SEP);
   return (
     <div className="rq-picked" data-testid="request-chosen">
-      <p className="rq-version-name">{picked ? picked.title : "Your pick"}</p>
+      <p className="rq-version-name" title={picked?.title}>
+        {picked ? picked.title : "Your pick"}
+      </p>
+      {children}
       {meta && <p className="rq-version-meta">{meta}</p>}
     </div>
   );
 }
 
-/** The one bar for a download: a native progress element, labelled, with its percent beside it. Before the client has reported, the bar has no value and no percent. Once it is complete, the wait is for the library to take it. */
+/** The one bar for a download: a native progress element, labelled; its percent is on the lane's stepper. Before the client has reported, the bar has no value. Once it is complete, the wait is for the library to take it. */
 function Downloading({ request }: { request: Request }) {
   if ((request.progress ?? 0) >= 1) {
     return (
@@ -237,24 +279,101 @@ function Downloading({ request }: { request: Request }) {
         value={percent ?? undefined}
         max={100}
       />
-      {percent !== null && (
-        <span className="rq-percent" data-testid="request-percent">
-          {percent}%
-        </span>
-      )}
     </div>
   );
 }
 
-/** Cancel while a request is still going, and Pick another while its version downloads; one at a time. */
+/** A download in its own card: the pick, its bar and its time left, with Choose another and Cancel beside. A phone heads the card with the format and size, dims the release name, ends on the percent and time left, and sets the buttons below. */
+function Download({
+  request,
+  actions,
+}: {
+  request: Request;
+  actions: ReactNode;
+}) {
+  const phone = useMediaQuery(PHONE_QUERY);
+  const left = useTimeLeft(request);
+  if (!phone) {
+    return (
+      <div className="rq-download">
+        <Picked request={request} extra={left}>
+          <Downloading request={request} />
+        </Picked>
+        {actions}
+      </div>
+    );
+  }
+  const picked = pickedVersion(request);
+  const percent = downloadPercent(request);
+  const heading = picked
+    ? [picked.format, versionSize(picked.sizeBytes)]
+        .filter((part) => part !== null)
+        .join(SEP)
+    : "Your pick";
+  return (
+    <>
+      <div className="rq-download" data-testid="request-chosen">
+        <div className="rq-picked">
+          <p className="rq-download-heading">{heading}</p>
+          {picked && <p className="rq-version-meta">{picked.title}</p>}
+          <Downloading request={request} />
+          {(percent !== null || left) && (
+            <p className="rq-version-meta">
+              {percent !== null && (
+                <span data-testid="request-percent">{percent}%</span>
+              )}
+              {percent !== null && left && SEP}
+              {left}
+            </p>
+          )}
+        </div>
+      </div>
+      {actions}
+    </>
+  );
+}
+
+/** Where a request stands as steps: Looking, Choose a version, On its way, Ready. */
+function Steps({ steps }: { steps: readonly RequestStep[] }) {
+  // A phone shows the download's percent in its card instead.
+  const phone = useMediaQuery(PHONE_QUERY);
+  return (
+    <ol className="rq-steps" aria-label="Progress of this request">
+      {steps.map((step) => (
+        <li
+          key={step.label}
+          className="rq-step"
+          data-status={step.status}
+          aria-current={step.status === "current" ? "step" : undefined}
+        >
+          <span className="rq-step-dot" aria-hidden="true" />
+          <span>
+            {step.label}
+            {step.percent !== null && !phone && (
+              <>
+                {" · "}
+                <span data-testid="request-percent">{step.percent}%</span>
+              </>
+            )}
+          </span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+/** Cancel while a request is still going, and Choose another while its version downloads; one at a time. */
 function Actions({
   request,
   cancel,
   swap,
+  cancelLabel,
 }: {
   request: Request;
   cancel: ReturnType<typeof useCancel>;
   swap: ReturnType<typeof useSwap>;
+  /** Names whose request it is when the viewer is an admin acting on another reader's. */
+  cancelLabel: string | undefined;
 }) {
   const busy = cancel.isPending || swap.isPending;
   // Under the versions, Cancel sits with the text links as the comp's smaller "Cancel request".
@@ -263,6 +382,8 @@ function Actions({
     <div className="rq-actions">
       {isDownloading(request) && (
         <Button
+          variant="ghost"
+          size="sm"
           data-testid="request-pick-another"
           // aria-disabled, not disabled: a control that disables itself drops the keyboard's focus.
           aria-disabled={busy}
@@ -273,16 +394,17 @@ function Actions({
         >
           <BusyLabel
             busy={swap.isPending}
-            label="Pick another"
-            busyLabel="Picking…"
+            label="Choose another"
+            busyLabel="Choosing…"
           />
         </Button>
       )}
       <Button
         variant="ghost"
-        size={choosing ? "sm" : "md"}
+        size="sm"
         className={choosing ? "rq-flush" : undefined}
         data-testid="request-cancel"
+        aria-label={cancelLabel}
         aria-disabled={busy}
         aria-busy={cancel.isPending}
         onClick={() => {
@@ -313,8 +435,9 @@ function TryAgain({
   const retry = useMutation({
     mutationFn: () => retryBookRequest(request.id),
     onSuccess: (tried) => {
-      answer(tried);
+      const refreshed = answer(tried);
       onTried();
+      return refreshed;
     },
     onError: (error) => toast(`Couldn’t try again: ${messageOf(error)}`),
   });
@@ -353,16 +476,8 @@ function Stuck({
 }
 
 /** Whether a search that began at `updatedAt` should have ended by now; re-checked when it would turn so. */
-function useSearchStale(updatedAt: number) {
-  const [now, setNow] = useState(nowSecs);
-  useEffect(() => {
-    const wait = updatedAt + SEARCH_STALE_AFTER_SECS - nowSecs();
-    if (wait <= 0) return;
-    const timer = setTimeout(() => setNow(nowSecs()), (wait + 1) * 1000);
-    return () => clearTimeout(timer);
-  }, [updatedAt]);
-  return isSearchStale(updatedAt, now);
-}
+const useSearchStale = (updatedAt: number) =>
+  isSearchStale(updatedAt, useNowPast(updatedAt + SEARCH_STALE_AFTER_SECS));
 
 /** The wait for a search, with a way out once it has run past its timeout. */
 function Looking({
@@ -394,43 +509,111 @@ function Looking({
   );
 }
 
-/** The ebook lane: what became of the request, in the state's own words. */
-function Lane({ request }: { request: Request }) {
+/** Who made a request and how long ago: "requested by (AL) Ada Lovelace · 2h ago"; a phone drops "requested by". */
+function Requester({
+  request,
+  listing,
+}: {
+  request: Request;
+  listing: RequestListing;
+}) {
   const viewer = useCurrentUser();
+  const phone = useMediaQuery(PHONE_QUERY);
+  const mine = request.userId === viewer.id;
+  const user = {
+    id: request.userId,
+    name: listing.requesterName,
+    hasAvatar: listing.requesterHasAvatar,
+  };
+  return (
+    <p className="rq-requester" data-testid="request-requester">
+      {!phone && <span>· requested by</span>}{" "}
+      <UserAvatar
+        user={user}
+        className="rq-avatar"
+        photoClassName="rq-avatar-photo"
+      />{" "}
+      <span className="rq-requester-name">
+        {mine ? "You" : listing.requesterName}
+      </span>{" "}
+      <span>· {recency(nowSecs(), request.createdAt)}</span>
+    </p>
+  );
+}
+
+/** A request's lane: its format, who asked, and what became of it in the state's own words. */
+function Lane({
+  request,
+  context,
+  main,
+}: {
+  request: Request;
+  context: LaneContext;
+  /** The request the page or pane is for, rather than another one still going for the book. */
+  main: boolean;
+}) {
+  const viewer = useCurrentUser();
+  const titleId = useId();
   // Held here: a cancelled request has no Cancel button left, but its Undo toast still needs this.
   const title = useRef<HTMLHeadingElement>(null);
   const focusTitle = () => title.current?.focus();
   const cancel = useCancel(request.id, focusTitle);
   const [focusVersions, setFocusVersions] = useState(false);
   const swap = useSwap(request.id, () => setFocusVersions(true));
+  const now = useNowPast(request.cancelAt);
   // Anyone may read a request; only its maker, or an admin, may act on it.
-  const canAct = viewer.id === request.userId || viewer.isAdmin;
+  const canAct = canActOn(viewer, request);
+  const listing = context.listings?.find((l) => l.request.id === request.id);
+  const mine = request.userId === viewer.id;
+  // Another reader's Cancel names whose request it is, so it waits for the list that says.
+  const cancelLabel = mine
+    ? undefined
+    : listing &&
+      `Cancel ${listing.requesterName}’s request for ${context.title}`;
+  const actions = canAct && isCancellable(request) && (mine || cancelLabel) && (
+    <Actions
+      request={request}
+      cancel={cancel}
+      swap={swap}
+      cancelLabel={cancelLabel}
+    />
+  );
+  const Heading = context.variant === "pane" ? "h3" : "h2";
   const { heading, note } = stateView(request.state, request.stuckReason);
+  const steps = stepsFor(request);
   return (
     <section
       className="rq-panel rq-lane"
-      aria-labelledby="rq-lane-title"
-      data-testid="request-lane-ebook"
+      aria-labelledby={titleId}
+      data-needs-you={request.state === "choose" && canAct}
+      data-testid={`${main ? "request-lane" : "request-other-lane"}-${request.kind}`}
     >
       <div className="rq-lane-head">
-        <h2
+        <span className="rq-chip">{kindChip(request.kind)}</span>
+        <Heading
           ref={title}
           tabIndex={-1}
-          id="rq-lane-title"
+          id={titleId}
           className="rq-lane-title"
         >
-          Ebook
-        </h2>
-        <p
-          className="rq-state"
-          role="status"
-          data-testid="request-state"
-          data-state={request.state}
-        >
-          {heading}
-        </p>
+          {kindLabel(request.kind)}
+        </Heading>
+        {listing && <Requester request={request} listing={listing} />}
       </div>
-      {note && <p className="rq-note">{note}</p>}
+      {/* The stepper shows where it stands; the words stay for a screen reader to announce. */}
+      <p
+        className={steps ? "rq-state ld-sr" : "rq-state"}
+        role="status"
+        data-testid="request-state"
+        data-state={request.state}
+      >
+        {heading}
+      </p>
+      {steps ? (
+        <Steps steps={steps} />
+      ) : (
+        note && <p className="rq-note">{note}</p>
+      )}
       {request.state === "looking" && (
         <Looking request={request} canAct={canAct} onTried={focusTitle} />
       )}
@@ -442,27 +625,80 @@ function Lane({ request }: { request: Request }) {
           onFocused={() => setFocusVersions(false)}
         />
       )}
-      {(request.state === "chosen" || request.state === "on_its_way") && (
-        <Picked request={request} />
+      {request.state === "chosen" && <Picked request={request} />}
+      {request.state === "on_its_way" ? (
+        <Download request={request} actions={actions} />
+      ) : (
+        actions
       )}
-      {request.state === "on_its_way" && <Downloading request={request} />}
       {request.state === "stuck" && (
         <Stuck request={request} canAct={canAct} onTried={focusTitle} />
       )}
-      {canAct && isCancellable(request) && (
-        <Actions request={request} cancel={cancel} swap={swap} />
-      )}
+      {context.listings &&
+        offersRequestAgain(
+          request,
+          viewer,
+          context.listings.map((l) => l.request),
+          now,
+        ) && (
+          <div className="rq-actions">
+            <RequestAgain uuid={request.bookUuid} />
+          </div>
+        )}
     </section>
   );
 }
 
-function RequestPage({ uuid, id }: { uuid: BookUuid; id: number }) {
+/** What a lane needs to know about the rest of the book's requests. */
+type LaneContext = {
+  /** The book's title, for an admin's Cancel label. */
+  title: string;
+  /** The book's requests as listed, for who made each and whether Request again would only return one going; `undefined` until read. */
+  listings: readonly RequestListing[] | undefined;
+  variant: DossierVariant;
+};
+
+/** Another reader's request still going for the book, in a lane of its own. */
+function OtherLane({ id, context }: { id: number; context: LaneContext }) {
+  const request = useQuery(bookRequestQuery(id));
+  if (request.data === undefined) {
+    return request.isPending ? (
+      <Loading kind="section" label="Reading this request…" />
+    ) : null;
+  }
+  return <Lane request={request.data} context={context} main={false} />;
+}
+
+/** A book's requests: the book above, a lane for the request asked for and each other one still going, and the book's history below. It is the Requests list's detail pane and, on a phone, the full-screen page; `focusTitle` moves focus to the book's title once it shows. */
+export function RequestDossier({
+  uuid,
+  id,
+  variant,
+  focusTitle = false,
+}: {
+  uuid: BookUuid;
+  id: number;
+  variant: DossierVariant;
+  focusTitle?: boolean;
+}) {
   const book = useQuery(bookQuery(uuid));
   const request = useQuery(bookRequestQuery(id));
+  const listed = useQuery(bookRequestsQuery(uuid));
+  // shortcut: the merged list holds the newest 1000 wished books; a book past them reads as unwished.
+  const wishlists = useQuery(wishlistBooksQuery("all"));
+  const viewer = useCurrentUser();
+  const { state } = useLocation();
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const shown = book.data !== undefined && request.data !== undefined;
+  useEffect(() => {
+    if (focusTitle && shown) titleRef.current?.focus();
+  }, [focusTitle, shown]);
   const back = `/books/${uuid}`;
   // A failed background poll keeps showing what was last read.
   if (book.data === undefined || request.data === undefined) {
-    if (book.isPending || request.isPending) return <Loading kind="page" />;
+    if (book.isPending || request.isPending) {
+      return <Loading kind={variant === "page" ? "page" : "section"} />;
+    }
     return (
       <PageError
         message={messageOf(book.error ?? request.error)}
@@ -472,14 +708,31 @@ function RequestPage({ uuid, id }: { uuid: BookUuid; id: number }) {
     );
   }
   if (book.data === null) return <PageNotFound subject="Book" />;
-  // The address named the book by an old uuid; the request knows the current one.
-  if (request.data.bookUuid !== uuid) {
-    return <Navigate replace to={requestPath(request.data.bookUuid, id)} />;
-  }
   const { title, authors } = book.data;
+  // Unknown until the wishlists answer: the clause stays out rather than claiming nobody.
+  const wanted = wishlists.data?.find((w) => w.uuid === uuid)?.wantedBy;
+  const wishers = wanted ? wishersLine(wanted, viewer.id) : null;
+  const split = listed.data && splitBookRequests(listed.data, id);
+  const context: LaneContext = { title, listings: listed.data, variant };
+  const Title = variant === "page" ? "h1" : "h2";
   return (
-    <div className="rq-page" data-testid="request-page">
-      <PageTitle page={`Request ${title}`} />
+    <div
+      className="rq-page"
+      data-variant={variant}
+      data-testid={variant === "page" ? "request-page" : "requests-pane"}
+    >
+      {variant === "page" && <PageTitle page={`Request ${title}`} />}
+      {fromWishlists(state) ? (
+        <Link className="rq-back" to="/wishlists">
+          ← Back to Wishlists
+        </Link>
+      ) : (
+        variant === "page" && (
+          <Link className="rq-back" to="/requests">
+            ‹ Requests
+          </Link>
+        )
+      )}
       <header className="rq-head">
         <div className="rq-cover">
           <Cover
@@ -488,35 +741,46 @@ function RequestPage({ uuid, id }: { uuid: BookUuid; id: number }) {
           />
         </div>
         <div className="rq-head-text">
-          <p className="rq-eyebrow">Request</p>
-          <h1 className="rq-title" data-testid="request-title">
+          <Title
+            ref={titleRef}
+            tabIndex={-1}
+            className="rq-title"
+            data-testid="request-title"
+          >
             {title}
-          </h1>
-          {authors.length > 0 && (
-            <p className="rq-author">{authors.join(", ")}</p>
+          </Title>
+          {(authors.length > 0 || wishers) && (
+            <p className="rq-author" data-testid="request-byline">
+              {authors.length > 0 && <span>{authors.join(", ")}</span>}
+              {authors.length > 0 && wishers && (
+                <span className="rq-byline-sep"> · </span>
+              )}
+              {wishers && <span className="rq-wishers">{wishers}</span>}
+            </p>
           )}
-          <Link className="rq-back" to={back}>
-            Back to book
-          </Link>
         </div>
+        <Link className="rq-open" to={back}>
+          Open book page
+        </Link>
       </header>
-      <Lane key={request.data.id} request={request.data} />
+      <Lane
+        key={request.data.id}
+        request={request.data}
+        context={context}
+        main
+      />
+      {split?.lanes.map((other) => (
+        <OtherLane
+          key={other.request.id}
+          id={other.request.id}
+          context={context}
+        />
+      ))}
+      <RequestHistory
+        listed={listed}
+        history={split?.history}
+        variant={variant}
+      />
     </div>
-  );
-}
-
-/** A book's request page: the book above, one lane per format, ebook only for now. */
-export function BookRequest() {
-  const { uuid: rawUuid } = useParams();
-  const [params] = useSearchParams();
-  const uuid = parseBookUuid(rawUuid);
-  const id = positiveInt(params.get("id"));
-  if (!uuid || id === null) {
-    return <PageNotFound subject="Request" />;
-  }
-  return (
-    <ToastProvider>
-      <RequestPage uuid={uuid} id={id} />
-    </ToastProvider>
   );
 }

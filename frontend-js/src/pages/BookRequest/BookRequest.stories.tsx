@@ -1,23 +1,21 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { HttpResponse, http } from "msw";
-import { Route, Routes } from "react-router";
+import { Link, Route, Routes, useLocation } from "react-router";
 import { expect, waitFor, within } from "storybook/test";
 import { bookHandler, deferred, failing } from "../../testing/handlers";
 import {
+  aWireListing,
   aWireRequest,
   aWireVersion,
+  HYPERION,
   requestFake,
 } from "../../testing/requestHandlers";
-import { aWireBook, WIRE_ADA } from "../../testing/wire";
-import { BookRequest } from "./BookRequest";
+import { WIRE_ADA } from "../../testing/wire";
+import { Requests } from "../Requests/Requests";
+import { PHONE } from "../Wishlists/Wishlists.stories.shared";
+import { FROM_WISHLISTS } from "./requestView";
 
-const UUID = "uuid-hyperion";
-const BOOK = aWireBook({
-  title: "Hyperion",
-  unique_identifier: UUID,
-  creators: [{ name: "Dan Simmons", role: null, file_as: null, id: 3 }],
-  formats: [],
-});
+const UUID = HYPERION.unique_identifier;
 
 const EPUB = aWireVersion({ id: 11, best_match: true });
 const PDF = aWireVersion({
@@ -70,6 +68,9 @@ const NBSP = "\u00a0";
 const SEP = `${NBSP}· `;
 
 let fake = requestFake();
+
+/** No book on anyone's wishlist, unless a story says otherwise. */
+const NOBODY_WISHES = http.get("/api/wishlists", () => HttpResponse.json([]));
 let held = deferred();
 
 /** The version row at `index`. */
@@ -79,24 +80,48 @@ function versionAt(rows: HTMLElement[], index: number) {
   return row;
 }
 
-function Page() {
+/** Where the router is, so a story can see the page move to another request. */
+function Where() {
+  const { pathname, search } = useLocation();
   return (
-    <Routes>
-      <Route path="/books/:uuid/request" element={<BookRequest />} />
-      <Route path="/books/:uuid" element={<h1>Book page</h1>} />
-    </Routes>
+    <output data-testid="where">
+      {pathname}
+      {search}
+    </output>
   );
 }
 
-const READER = { ...WIRE_ADA, is_admin: false, can_request: true };
+function Page() {
+  return (
+    <>
+      <Routes>
+        <Route path="/requests" element={<Requests />} />
+        <Route
+          path="/start"
+          element={
+            <Link to={`/requests?book=${UUID}`} state={FROM_WISHLISTS}>
+              Request from a wishlist
+            </Link>
+          }
+        />
+        <Route path="/books/:uuid" element={<h1>Book page</h1>} />
+      </Routes>
+      <Where />
+    </>
+  );
+}
+
+// `book_requests` is on, or `Requests` answers Not Found.
+const ADA = { ...WIRE_ADA, book_requests: true };
+const READER = { ...ADA, is_admin: false, can_request: true };
 
 const meta = {
   title: "Pages/BookRequest",
   component: Page,
-  parameters: { path: `/books/${UUID}/request?id=7` },
+  parameters: { path: `/requests?book=${UUID}`, user: ADA },
   beforeEach({ msw }) {
     fake = requestFake([aWireRequest()]);
-    msw.use(bookHandler(BOOK), ...fake.handlers);
+    msw.use(bookHandler(HYPERION), ...fake.handlers, NOBODY_WISHES);
   },
 } satisfies Meta<typeof Page>;
 
@@ -106,13 +131,13 @@ type Story = StoryObj<typeof meta>;
 // Handlers listed first win in one `msw.use`, so a story that overrides a route puts it before these.
 const seed = (request: Parameters<typeof aWireRequest>[0]) => {
   fake = requestFake([aWireRequest(request)]);
-  return [bookHandler(BOOK), ...fake.handlers];
+  return [bookHandler(HYPERION), ...fake.handlers];
 };
 
 export const Looking: Story = {
   play: async ({ canvas }) => {
     await expect(
-      await canvas.findByRole("heading", { level: 1, name: "Hyperion" }),
+      await canvas.findByRole("heading", { level: 2, name: "Hyperion" }),
     ).toBeInTheDocument();
     await expect(canvas.getByText("Dan Simmons")).toBeInTheDocument();
     await expect(canvas.getByTestId("request-state")).toHaveTextContent(
@@ -326,7 +351,9 @@ export const ChoosingAVersionSendsItsIdAndConfirmsThePick: Story = {
     await expect(canvas.getByTestId("request-chosen")).toHaveTextContent(
       "Simmons, Dan - Hyperion (retail).pdf",
     );
-    await expect(canvas.getByText("We’ll fetch it next.")).toBeVisible();
+    await expect(
+      canvas.getByRole("listitem", { current: "step" }),
+    ).toHaveTextContent("On its way");
     await expect(canvas.queryByTestId("request-choose")).toBeNull();
   },
 };
@@ -455,7 +482,7 @@ export const TryAgainSearchesAgainAndReturnsToLooking: Story = {
       "Looking",
     );
     await expect(
-      canvas.getByRole("heading", { level: 2, name: "Ebook" }),
+      canvas.getByRole("heading", { level: 3, name: "Ebook" }),
     ).toHaveFocus();
     await expect(fake.writes).toEqual([{ kind: "retry", id: 7 }]);
   },
@@ -484,7 +511,7 @@ const DOWNLOADING: Parameters<typeof aWireRequest>[0] = {
   versions: [EPUB, PDF],
 };
 
-export const OnItsWayShowsOneProgressBarWithCancelAndPickAnother: Story = {
+export const OnItsWayShowsOneProgressBarWithCancelAndChooseAnother: Story = {
   beforeEach({ msw }) {
     msw.use(...seed(DOWNLOADING));
   },
@@ -499,7 +526,7 @@ export const OnItsWayShowsOneProgressBarWithCancelAndPickAnother: Story = {
     );
     await expect(canvas.getByRole("button", { name: "Cancel" })).toBeEnabled();
     await expect(
-      canvas.getByRole("button", { name: "Pick another" }),
+      canvas.getByRole("button", { name: "Choose another" }),
     ).toBeEnabled();
   },
 };
@@ -554,7 +581,7 @@ export const ABarBeforeTheClientReportsHasNoValueAndNoPercent: Story = {
   },
 };
 
-export const CancelAndPickAnotherLockTogetherWhileOneIsPending: Story = {
+export const CancelAndChooseAnotherLockTogetherWhileOneIsPending: Story = {
   beforeEach({ msw }) {
     held = deferred();
     msw.use(
@@ -584,7 +611,7 @@ export const CancelAndPickAnotherLockTogetherWhileOneIsPending: Story = {
   },
 };
 
-export const AFinishedDownloadOffersNeitherCancelNorPickAnother: Story = {
+export const AFinishedDownloadOffersNeitherCancelNorChooseAnother: Story = {
   beforeEach({ msw }) {
     msw.use(...seed({ ...DOWNLOADING, progress: 1 }));
   },
@@ -596,7 +623,7 @@ export const AFinishedDownloadOffersNeitherCancelNorPickAnother: Story = {
 
     await expect(canvas.queryByRole("button", { name: "Cancel" })).toBeNull();
     await expect(
-      canvas.queryByRole("button", { name: "Pick another" }),
+      canvas.queryByRole("button", { name: "Choose another" }),
     ).toBeNull();
   },
 };
@@ -616,7 +643,9 @@ export const CancellingShowsCancelledAtOnceWithAnUndoThatPutsItBack: Story = {
       ),
     );
     await expect(canvas.queryByTestId("request-downloading")).toBeNull();
-    await userEvent.click(await canvas.findByRole("button", { name: "Undo" }));
+    // The toast's Undo takes the keyboard's focus from the Cancel that is gone.
+    await expect(canvas.getByRole("button", { name: "Undo" })).toHaveFocus();
+    await userEvent.click(canvas.getByRole("button", { name: "Undo" }));
     await waitFor(() =>
       expect(canvas.getByTestId("request-state")).toHaveTextContent(
         "On its way",
@@ -653,14 +682,14 @@ export const AFailedCancelTellsYouAndKeepsTheDownload: Story = {
   },
 };
 
-export const PickAnotherGoesBackToTheVersionsWithThePickedOneMarkedDidntWork: Story =
+export const ChooseAnotherGoesBackToTheVersionsWithThePickedOneMarkedDidntWork: Story =
   {
     beforeEach({ msw }) {
       msw.use(...seed(DOWNLOADING));
     },
     play: async ({ canvas, userEvent }) => {
       await userEvent.click(
-        await canvas.findByRole("button", { name: "Pick another" }),
+        await canvas.findByRole("button", { name: "Choose another" }),
       );
 
       await waitFor(() =>
@@ -725,9 +754,12 @@ export const ReadyToRead: Story = {
     await expect(await canvas.findByTestId("request-state")).toHaveTextContent(
       "Ready to read",
     );
-    await expect(canvas.getByText("It’s in the library.")).toBeInTheDocument();
+    const pane = within(canvas.getByTestId("requests-pane"));
+    await expect(
+      pane.getAllByRole("listitem").map((step) => step.dataset.status),
+    ).toEqual(["done", "done", "done", "done"]);
     await expect(canvas.queryByTestId("request-downloading")).toBeNull();
-    await expect(canvas.queryByRole("button")).toBeNull();
+    await expect(pane.queryByRole("button")).toBeNull();
   },
 };
 
@@ -769,10 +801,10 @@ export const CouldntAddItShowsAnAdminWhatWentWrong: Story = {
   },
 };
 
-export const TheBookLinkGoesBackToTheBookPage: Story = {
+export const OpenBookPageGoesToTheBookPage: Story = {
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(
-      await canvas.findByRole("link", { name: "Back to book" }),
+      await canvas.findByRole("link", { name: "Open book page" }),
     );
 
     await expect(
@@ -782,7 +814,9 @@ export const TheBookLinkGoesBackToTheBookPage: Story = {
 };
 
 export const AnUnknownRequestShowsTheErrorWithAWayBack: Story = {
-  parameters: { path: `/books/${UUID}/request?id=99` },
+  beforeEach({ msw }) {
+    msw.use(failing("get", "/api/requests/:id", 404));
+  },
   play: async ({ canvas }) => {
     await expect(await canvas.findByRole("alert")).toBeInTheDocument();
     await expect(
@@ -792,7 +826,7 @@ export const AnUnknownRequestShowsTheErrorWithAWayBack: Story = {
 };
 
 const OLD = Math.floor(Date.now() / 1000) - 120;
-const NOT_THE_MAKER = { ...WIRE_ADA, id: 2, is_admin: false };
+const NOT_THE_MAKER = { ...ADA, id: 2, is_admin: false };
 
 export const ALongRunningSearchOffersTryAgain: Story = {
   beforeEach({ msw }) {
@@ -902,22 +936,7 @@ export const ChoosingMarksOnlyTheChosenRowBusy: Story = {
   },
 };
 
-export const AnOldUuidInTheAddressMovesToTheBooksCurrentOne: Story = {
-  parameters: { path: "/books/old-uuid/request?id=7" },
-  beforeEach({ msw }) {
-    msw.use(
-      http.get("/api/ebooks/:uuid", () => HttpResponse.json(BOOK)),
-      ...seed({}),
-    );
-  },
-  play: async ({ canvas }) => {
-    await expect(
-      await canvas.findByRole("link", { name: "Back to book" }),
-    ).toHaveAttribute("href", `/books/${UUID}`);
-  },
-};
-
-export const AnotherReadersDownloadOffersNoCancelOrPickAnother: Story = {
+export const AnotherReadersDownloadOffersNoCancelOrChooseAnother: Story = {
   parameters: { user: NOT_THE_MAKER },
   beforeEach({ msw }) {
     msw.use(...seed(DOWNLOADING));
@@ -927,7 +946,519 @@ export const AnotherReadersDownloadOffersNoCancelOrPickAnother: Story = {
 
     await expect(canvas.queryByRole("button", { name: "Cancel" })).toBeNull();
     await expect(
-      canvas.queryByRole("button", { name: "Pick another" }),
+      canvas.queryByRole("button", { name: "Choose another" }),
     ).toBeNull();
+  },
+};
+
+// ---- the stepper, the download card, the byline ----
+
+export const TheStepperMarksWhereTheRequestStands: Story = {
+  beforeEach({ msw }) {
+    msw.use(...seed({ state: "choose", versions: [EPUB, PDF] }));
+  },
+  play: async ({ canvas }) => {
+    const steps = within(
+      await canvas.findByRole("list", { name: "Progress of this request" }),
+    ).getAllByRole("listitem");
+
+    await expect(steps.map((step) => step.textContent)).toEqual([
+      "Looking · 2 found",
+      "Choose a version",
+      "On its way",
+      "Ready",
+    ]);
+    await expect(steps.map((step) => step.dataset.status)).toEqual([
+      "done",
+      "current",
+      "todo",
+      "todo",
+    ]);
+    await expect(steps[1]).toHaveAttribute("aria-current", "step");
+  },
+};
+
+export const ALaneWaitingOnYourPickIsMarked: Story = {
+  beforeEach({ msw }) {
+    msw.use(...seed({ state: "choose", versions: [EPUB] }));
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByTestId("request-lane-ebook"),
+    ).toHaveAttribute("data-needs-you", "true");
+  },
+};
+
+export const AnotherReadersPickIsNotMarkedAsYours: Story = {
+  parameters: { user: NOT_THE_MAKER },
+  beforeEach({ msw }) {
+    msw.use(...seed({ state: "choose", versions: [EPUB] }));
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByTestId("request-lane-ebook"),
+    ).toHaveAttribute("data-needs-you", "false");
+  },
+};
+
+export const ADownloadShowsTheReleaseItsSourceAndTimeLeft: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...seed({
+        ...DOWNLOADING,
+        expected_done_at: Math.floor(Date.now() / 1000) + 180,
+      }),
+    );
+  },
+  play: async ({ canvas }) => {
+    const chosen = within(await canvas.findByTestId("request-chosen"));
+
+    await expect(chosen.getByText(EPUB.title)).toBeVisible();
+    await expect(
+      chosen.getByText("2.4 MB · Books · about 3 min left"),
+    ).toBeVisible();
+  },
+};
+
+export const TheBylineNamesWhoseWishlistsHoldTheBook: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      http.get("/api/wishlists", () =>
+        HttpResponse.json([
+          {
+            book: HYPERION,
+            added_at: 0,
+            wanted_by: [
+              { id: 2, name: "Jordan" },
+              { id: 3, name: "Riley" },
+            ],
+            holdings: [],
+          },
+        ]),
+      ),
+    );
+  },
+  play: async ({ canvas }) => {
+    await waitFor(() =>
+      expect(canvas.getByTestId("request-byline")).toHaveTextContent(
+        "Dan Simmons · On Jordan’s and Riley’s wishlists",
+      ),
+    );
+  },
+};
+
+export const TheBylineIsTheAuthorAloneWhenNobodyWishesForIt: Story = {
+  beforeEach({ msw }) {
+    msw.use(http.get("/api/wishlists", () => HttpResponse.json([])));
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByTestId("request-byline")).toHaveTextContent(
+      /^Dan Simmons$/,
+    );
+  },
+};
+
+// ---- who asked, and another reader's lane ----
+
+const GRACE = { 1: "Ada Lovelace", 2: "Grace Hopper" };
+
+export const TheLaneNamesWhoAskedAndWhen: Story = {
+  parameters: { user: { ...ADA, id: 3 } },
+  beforeEach({ msw }) {
+    fake = requestFake([aWireRequest({ user_id: 2 })], { names: GRACE });
+    msw.use(bookHandler(HYPERION), ...fake.handlers);
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByTestId("request-requester"),
+    ).toHaveTextContent("· requested by GH Grace Hopper · just now");
+  },
+};
+
+export const TheLaneCallsYourOwnRequestYours: Story = {
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByTestId("request-requester"),
+    ).toHaveTextContent("· requested by AL You · just now");
+  },
+};
+
+export const AnAdminsCancelNamesWhoseRequestItIs: Story = {
+  beforeEach({ msw }) {
+    fake = requestFake([aWireRequest({ user_id: 2 })], { names: GRACE });
+    msw.use(bookHandler(HYPERION), ...fake.handlers);
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByRole("button", {
+        name: "Cancel Grace Hopper’s request for Hyperion",
+      }),
+    ).toBeInTheDocument();
+  },
+};
+
+export const AnotherReadersLiveRequestGetsALaneOfItsOwn: Story = {
+  // Both look the same to a reader, so the book is filed under the newest: yours.
+  parameters: { user: READER },
+  beforeEach({ msw }) {
+    fake = requestFake(
+      [
+        aWireRequest({ id: 9 }),
+        aWireRequest({ id: 8, user_id: 2, state: "choose", versions: [EPUB] }),
+      ],
+      { names: GRACE },
+    );
+    msw.use(bookHandler(HYPERION), ...fake.handlers);
+  },
+  play: async ({ canvas }) => {
+    await waitFor(() =>
+      expect(canvas.getAllByTestId("request-state")).toHaveLength(2),
+    );
+    const mine = canvas.getByTestId("request-lane-ebook");
+    const theirs = canvas.getByTestId("request-other-lane-ebook");
+
+    await expect(mine).toHaveTextContent("Looking");
+    await expect(theirs).toHaveTextContent("Grace Hopper");
+    await expect(theirs).toHaveTextContent("Choose a version");
+  },
+};
+
+export const AStuckRequestBesideTheFiledOneKeepsItsTryAgain: Story = {
+  parameters: { user: READER },
+  beforeEach({ msw }) {
+    // Grace's search outranks the viewer's stuck one, so the stuck one is no longer the main lane.
+    fake = requestFake(
+      [
+        aWireRequest({ id: 8, state: "stuck", stuck_reason: "not_found" }),
+        aWireRequest({ id: 9, user_id: 2, state: "looking" }),
+      ],
+      { names: GRACE },
+    );
+    msw.use(bookHandler(HYPERION), ...fake.handlers);
+  },
+  play: async ({ canvas }) => {
+    const pane = within(await canvas.findByTestId("requests-pane"));
+    const stuck = within(await pane.findByTestId("request-other-lane-ebook"));
+
+    await expect(
+      await stuck.findByRole("button", { name: "Try again" }),
+    ).toBeEnabled();
+    await expect(pane.queryByTestId("request-history")).toBeNull();
+  },
+};
+
+// ---- the book's history: its other requests ----
+
+const OCT_12 = Date.UTC(2026, 9, 12, 12) / 1000;
+
+const CANCELLED_EARLIER = aWireRequest({
+  id: 5,
+  state: "cancelled",
+  cancelled_by: 1,
+  chosen_result_id: EPUB.id,
+  progress: 0.4,
+  versions: [EPUB],
+  updated_at: OCT_12,
+});
+
+/** The request on screen, `shown`, and the book's earlier ones. */
+const withHistory = (
+  shown: Parameters<typeof aWireRequest>[0],
+  ...earlier: Parameters<typeof aWireRequest>[0][]
+) => {
+  fake = requestFake([aWireRequest(shown), ...earlier.map(aWireRequest)]);
+  return [bookHandler(HYPERION), ...fake.handlers];
+};
+
+const CANCELLED_NOW = { state: "cancelled", cancelled_by: 1 } as const;
+
+export const HistoryRecordsACancelledRequestOnTheDayItEnded: Story = {
+  beforeEach({ msw }) {
+    msw.use(...withHistory({}, CANCELLED_EARLIER));
+  },
+  play: async ({ canvas }) => {
+    const history = within(await canvas.findByTestId("request-history"));
+    // One row: the request on screen is not its own history.
+    const row = await history.findByTestId("request-history-row");
+
+    await expect(row).toHaveTextContent(
+      "Cancelled by you · EPUB · 2.4 MB · stopped at 40%",
+    );
+    await expect(
+      within(row).getByTestId("request-history-day"),
+    ).toHaveTextContent("Oct 12");
+    // The row names the book already on screen, so it links nowhere.
+    await expect(within(row).queryByRole("link")).toBeNull();
+  },
+};
+
+export const RequestAgainFromHistoryStartsANewRequestInLooking: Story = {
+  parameters: { user: READER, path: "/start" },
+  beforeEach({ msw }) {
+    msw.use(...withHistory(CANCELLED_NOW, CANCELLED_EARLIER));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("link", { name: "Request from a wishlist" }),
+    );
+    const pane = await canvas.findByTestId("requests-pane");
+    const history = within(await within(pane).findByTestId("request-history"));
+    // The dossier's own loader is the pane blanking between the old request and the new.
+    let blanked = false;
+    const watch = new MutationObserver((records) => {
+      for (const { addedNodes } of records) {
+        for (const node of addedNodes) {
+          if (node.textContent?.includes("Loading…")) blanked = true;
+        }
+      }
+    });
+    watch.observe(pane, { childList: true, subtree: true });
+
+    await userEvent.click(
+      await history.findByRole("button", { name: "Request again" }),
+    );
+
+    await waitFor(() =>
+      expect(canvas.getByTestId("request-state")).toHaveTextContent("Looking"),
+    );
+    watch.disconnect();
+    await expect(blanked).toBe(false);
+    // The page stayed put, so the way back to the wishlist it came from is still there.
+    await expect(
+      canvas.getByRole("link", { name: "← Back to Wishlists" }),
+    ).toBeInTheDocument();
+    await expect(canvas.getByTestId("where")).toHaveTextContent(
+      `/requests?book=${UUID}`,
+    );
+    await expect(fake.writes).toEqual([{ kind: "start", uuid: UUID }]);
+  },
+};
+
+export const RequestAgainWaitsForTheUndoToRunOut: Story = {
+  parameters: { user: READER },
+  beforeEach({ msw }) {
+    msw.use(
+      ...withHistory({
+        ...CANCELLED_NOW,
+        cancel_at: Math.floor(Date.now() / 1000) + 600,
+      }),
+    );
+  },
+  play: async ({ canvas }) => {
+    await waitFor(() =>
+      expect(canvas.getByTestId("request-state")).toHaveTextContent(
+        "Cancelled",
+      ),
+    );
+
+    await expect(
+      canvas.queryByRole("button", { name: "Request again" }),
+    ).toBeNull();
+  },
+};
+
+export const RequestAgainIsNotOfferedBesideYourLiveRequest: Story = {
+  parameters: { user: READER },
+  beforeEach({ msw }) {
+    msw.use(...withHistory({}, CANCELLED_EARLIER));
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("request-history-row");
+
+    await expect(
+      canvas.queryByRole("button", { name: "Request again" }),
+    ).toBeNull();
+  },
+};
+
+export const HistoryRecordsAVersionSwappedForAnother: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...withHistory(
+        {},
+        {
+          id: 5,
+          state: "ready",
+          chosen_result_id: EPUB.id,
+          progress: 1,
+          versions: [EPUB, { ...PDF, rejected: true }],
+        },
+      ),
+    );
+  },
+  play: async ({ canvas }) => {
+    const row = await canvas.findByTestId("request-history-row");
+
+    await expect(row).toHaveTextContent(
+      "Swapped for another version · PDF · 9.1 MB",
+    );
+    await expect(
+      within(row).queryByRole("button", { name: "Request again" }),
+    ).toBeNull();
+  },
+};
+
+export const HistoryOffersNoRequestAgainToAReaderWhoCantRequest: Story = {
+  parameters: { user: { ...READER, can_request: false } },
+  beforeEach({ msw }) {
+    msw.use(...withHistory(CANCELLED_NOW, CANCELLED_EARLIER));
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("request-history-row");
+
+    await expect(
+      canvas.queryByRole("button", { name: "Request again" }),
+    ).toBeNull();
+  },
+};
+
+export const ABookWithNoOtherRequestShowsNoHistory: Story = {
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("request-looking");
+
+    await waitFor(() =>
+      expect(canvas.queryByTestId("request-history")).toBeNull(),
+    );
+  },
+};
+
+let historyTries = 0;
+
+export const AFailedHistoryReadOffersTryAgain: Story = {
+  beforeEach({ msw }) {
+    historyTries = 0;
+    msw.use(
+      http.get("/api/books/:uuid/requests", () => {
+        historyTries += 1;
+        return historyTries === 1
+          ? new HttpResponse("down", { status: 500 })
+          : HttpResponse.json([
+              aWireListing({ request: aWireRequest() }),
+              aWireListing({ request: CANCELLED_EARLIER }),
+            ]);
+      }),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await expect(await canvas.findByRole("alert")).toHaveTextContent(
+      "Couldn’t read this book’s request history.",
+    );
+
+    await userEvent.click(canvas.getByRole("button", { name: "Try again" }));
+
+    await expect(
+      await canvas.findByTestId("request-history-row"),
+    ).toHaveTextContent("Cancelled by you");
+    await expect(canvas.queryByRole("alert")).toBeNull();
+  },
+};
+
+export const AnAdminsCancelWaitsForWhoseRequestItIs: Story = {
+  beforeEach({ msw }) {
+    held = deferred();
+    fake = requestFake([aWireRequest({ user_id: 2 })], { names: GRACE });
+    msw.use(
+      http.get("/api/books/:uuid/requests", async () => {
+        await held.promise;
+        return HttpResponse.json([
+          aWireListing({
+            request: aWireRequest({ user_id: 2 }),
+            requester_name: "Grace Hopper",
+          }),
+        ]);
+      }),
+      bookHandler(HYPERION),
+      ...fake.handlers,
+    );
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("request-looking");
+
+    await expect(canvas.queryByTestId("request-cancel")).toBeNull();
+    held.release();
+    await expect(
+      await canvas.findByRole("button", {
+        name: "Cancel Grace Hopper’s request for Hyperion",
+      }),
+    ).toBeInTheDocument();
+  },
+};
+
+let historyReads = 0;
+
+export const AFailedHistoryRereadKeepsTheRowsShown: Story = {
+  beforeEach({ msw }) {
+    historyReads = 0;
+    msw.use(
+      http.get("/api/books/:uuid/requests", () => {
+        historyReads += 1;
+        return historyReads === 1
+          ? HttpResponse.json([
+              aWireListing({ request: aWireRequest({ ...DOWNLOADING }) }),
+              aWireListing({ request: CANCELLED_EARLIER }),
+            ])
+          : new HttpResponse("down", { status: 500 });
+      }),
+      ...withHistory(DOWNLOADING, CANCELLED_EARLIER),
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    await canvas.findByTestId("request-history-row");
+
+    // A cancel has the lists read again; this read fails.
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Cancel" }),
+    );
+
+    await waitFor(() => expect(historyReads).toBeGreaterThan(1));
+    await expect(canvas.getByTestId("request-history-row")).toBeInTheDocument();
+    await expect(canvas.queryByRole("alert")).toBeNull();
+  },
+};
+
+export const ACancelledRequestOffersRequestAgain: Story = {
+  parameters: { user: READER },
+  beforeEach({ msw }) {
+    msw.use(...seed(CANCELLED_NOW));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Request again" }),
+    );
+
+    await waitFor(() =>
+      expect(fake.writes).toEqual([{ kind: "start", uuid: UUID }]),
+    );
+  },
+};
+
+export const OnAPhoneTheDownloadAndHistoryReadAsTheCompSays: Story = {
+  ...PHONE,
+  parameters: { ...PHONE.parameters, user: READER },
+  beforeEach({ msw }) {
+    msw.use(
+      ...withHistory(
+        {
+          ...DOWNLOADING,
+          expected_done_at: Math.floor(Date.now() / 1000) + 180,
+        },
+        CANCELLED_EARLIER,
+      ),
+    );
+  },
+  play: async ({ canvas }) => {
+    const card = await canvas.findByTestId("request-chosen");
+    await expect(within(card).getByText("EPUB · 2.4 MB")).toBeVisible();
+    await expect(card).toHaveTextContent("42% · about 3 min left");
+    await expect(
+      canvas.getByRole("listitem", { current: "step" }),
+    ).toHaveTextContent(/^On its way$/);
+    await expect(canvas.getByTestId("request-requester")).toHaveTextContent(
+      /^AL You · just now$/,
+    );
+
+    const row = await canvas.findByTestId("request-history-row");
+    await expect(row).toHaveTextContent("Ebook cancelled by you · Oct 12");
+    await expect(row).toHaveTextContent("EPUB · 2.4 MB · stopped at 40%");
   },
 };
