@@ -10,7 +10,7 @@ use omnibus_shared::{RequestState, StuckReason};
 use sqlx::SqlitePool;
 
 use super::prowlarr::Prowlarr;
-use super::rank::rank;
+use super::rank::{names_convertible, rank};
 use super::store::{self, RequestError, SearchOutcome};
 use super::ConnectionError;
 
@@ -136,7 +136,9 @@ async fn attempt(pool: &SqlitePool, book_uuid: &str) -> Attempt {
         Ok(releases) => releases,
         Err(e) => return search_error(e),
     };
-    let ranked = rank(releases, &title, &author, conversion_available(pool).await);
+    // Probed only when a result could use it: the check spawns the converter.
+    let convertible = names_convertible(&releases) && conversion_available(pool).await;
+    let ranked = rank(releases, &title, &author, convertible);
     if ranked.iter().all(|r| r.rejected) {
         return Attempt::Done(SearchOutcome::Stuck {
             reason: StuckReason::NotFound,

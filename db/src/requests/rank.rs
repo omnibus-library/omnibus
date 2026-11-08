@@ -118,6 +118,17 @@ fn format_of(tokens: &[String], convertible: bool) -> Format {
         })
 }
 
+/// Whether any result's title names a format the server converts to EPUB, so it is worth
+/// asking whether the converter runs.
+pub fn names_convertible(releases: &[ProwlarrRelease]) -> bool {
+    releases.iter().any(|r| {
+        let words = tokens(&r.title);
+        EPUB_CONVERTIBLE_FORMATS
+            .iter()
+            .any(|format| words.iter().any(|w| w == format))
+    })
+}
+
 /// Drop what cannot be the book or cannot be used, then order what is left best first.
 /// `convertible` is whether the server can convert AZW3 and MOBI to EPUB on import.
 pub fn rank(

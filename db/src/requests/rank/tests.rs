@@ -426,3 +426,22 @@ mod convertible_formats {
         );
     }
 }
+
+mod names_convertible {
+    use super::*;
+
+    #[test]
+    fn is_true_only_when_a_title_names_azw3_or_mobi() {
+        let plain = vec![
+            release("Dracula - Bram Stoker EPUB"),
+            release("Dracula - Bram Stoker PDF"),
+        ];
+        let with_mobi = vec![
+            release("Dracula - Bram Stoker EPUB"),
+            release("Dracula - Bram Stoker [MOBI]"),
+        ];
+
+        assert!(!names_convertible(&plain));
+        assert!(names_convertible(&with_mobi));
+    }
+}
