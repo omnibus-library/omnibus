@@ -36,6 +36,7 @@ function stuckView(reason: StuckReason | null) {
 export function stateView(
   state: RequestState,
   stuckReason: StuckReason | null = null,
+  kind: RequestKind = "ebook",
 ): {
   heading: string;
   /** Absent where the lane's own content says it. */
@@ -57,7 +58,10 @@ export function stateView(
         note: "Downloading, then adding it to the library.",
       };
     case "ready":
-      return { heading: "Ready to read", note: "It’s in the library." };
+      return {
+        heading: kind === "audiobook" ? "Ready to listen" : "Ready to read",
+        note: "It’s in the library.",
+      };
     case "stuck":
       return stuckView(stuckReason);
     case "cancelled":
@@ -241,6 +245,10 @@ export const holdsEbook = (formats: readonly string[]) =>
 export const holdsAudiobook = (formats: readonly string[]) =>
   upper(formats).some((f) => AUDIO_FORMATS.includes(f));
 
+/** Whether `formats` include one of `kind`. */
+export const holds = (kind: RequestKind, formats: readonly string[]) =>
+  kind === "ebook" ? holdsEbook(formats) : holdsAudiobook(formats);
+
 /** Whether `viewer` may cancel `request`: anyone who can pick versions, or the reader who made it. */
 export const canCancel = (
   viewer: Pick<User, "id" | "canChooseRequestVersions">,
@@ -261,7 +269,7 @@ export function factParts(
     request.cancelledBy === viewer ? "you" : (cancelledByName ?? null);
   const head =
     request.state !== "cancelled"
-      ? stateView(request.state, request.stuckReason).heading
+      ? stateView(request.state, request.stuckReason, request.kind).heading
       : canceller
         ? `Cancelled by ${canceller}`
         : "Cancelled";

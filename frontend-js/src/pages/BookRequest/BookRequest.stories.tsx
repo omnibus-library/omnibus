@@ -849,7 +849,163 @@ export const ReadyToRead: Story = {
       pane.getAllByRole("listitem").map((step) => step.dataset.status),
     ).toEqual(["done", "done", "done", "done"]);
     await expect(canvas.queryByTestId("request-downloading")).toBeNull();
-    await expect(pane.queryByRole("button")).toBeNull();
+    // The audiobook not requested has its own button; the ready lane has none.
+    await expect(
+      within(canvas.getByTestId("request-lane-ebook")).queryByRole("button"),
+    ).toBeNull();
+  },
+};
+
+export const ReadyAudiobookReadsReadyToListen: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...seed({
+        kind: "audiobook",
+        state: "ready",
+        chosen_result_id: 11,
+        progress: 1,
+      }),
+    );
+  },
+  play: async ({ canvas }) => {
+    const lane = within(await canvas.findByTestId("request-lane-audiobook"));
+
+    await expect(lane.getByText("M4B")).toBeInTheDocument();
+    await expect(
+      lane.getByRole("heading", { name: "Audiobook" }),
+    ).toBeInTheDocument();
+    await expect(lane.getByTestId("request-state")).toHaveTextContent(
+      "Ready to listen",
+    );
+  },
+};
+
+export const AnAudiobookNotRequestedOffersItBesideTheEbookLane: Story = {
+  play: async ({ canvas, userEvent }) => {
+    await canvas.findByTestId("request-lane-ebook");
+    const lane = within(
+      await canvas.findByTestId("request-unrequested-audiobook"),
+    );
+
+    await expect(lane.getByText("M4B")).toBeInTheDocument();
+    await expect(
+      lane.getByRole("heading", { name: "Audiobook" }),
+    ).toBeInTheDocument();
+    await expect(lane.getByText("· not requested")).toBeInTheDocument();
+    await expect(lane.queryByTestId("request-state")).toBeNull();
+
+    await userEvent.click(
+      lane.getByRole("button", { name: "Request audiobook" }),
+    );
+
+    // The new request takes the lane's place, and the page stays where it was.
+    await canvas.findByTestId("request-lane-audiobook");
+    await expect(fake.started).toEqual(["audiobook"]);
+    await expect(
+      canvas.queryByTestId("request-unrequested-audiobook"),
+    ).toBeNull();
+    await expect(canvas.getByTestId("where")).toHaveTextContent(
+      `/requests?book=${UUID}`,
+    );
+  },
+};
+
+export const OnAPhoneAnAudiobookNotRequestedReadsAsTheCompSays: Story = {
+  ...PHONE,
+  play: async ({ canvas }) => {
+    const lane = within(
+      await canvas.findByTestId("request-unrequested-audiobook"),
+    );
+
+    await expect(lane.getByText("not requested")).toBeInTheDocument();
+    await expect(lane.getByRole("button", { name: "Request" })).toBeEnabled();
+  },
+};
+
+export const AnAudiobookRequestOffersTheEbookNotRequested: Story = {
+  beforeEach({ msw }) {
+    msw.use(...seed({ kind: "audiobook", state: "looking" }));
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("request-lane-audiobook");
+    const lane = within(await canvas.findByTestId("request-unrequested-ebook"));
+
+    await expect(lane.getByText("EPUB")).toBeInTheDocument();
+    await expect(
+      lane.getByRole("heading", { name: "Ebook" }),
+    ).toBeInTheDocument();
+    await expect(
+      lane.getByRole("button", { name: "Request ebook" }),
+    ).toBeEnabled();
+    await expect(
+      canvas.queryByTestId("request-unrequested-audiobook"),
+    ).toBeNull();
+  },
+};
+
+export const NoAudiobookLaneNotRequestedWhenTheBookHoldsOne: Story = {
+  beforeEach({ msw }) {
+    msw.use(bookHandler({ ...HYPERION, formats: ["M4B"] }), ...fake.handlers);
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("request-lane-ebook");
+
+    await expect(
+      canvas.queryByTestId("request-unrequested-audiobook"),
+    ).toBeNull();
+  },
+};
+
+export const NoAudiobookLaneNotRequestedBesideAnotherReadersAudiobookRequest: Story =
+  {
+    beforeEach({ msw }) {
+      fake = requestFake([
+        aWireRequest({ id: 7, user_id: 2, kind: "audiobook" }),
+        aWireRequest({ id: 8 }),
+      ]);
+      msw.use(bookHandler(HYPERION), ...fake.handlers);
+    },
+    play: async ({ canvas }) => {
+      await canvas.findByTestId("request-other-lane-audiobook");
+
+      await expect(
+        canvas.queryByTestId("request-unrequested-audiobook"),
+      ).toBeNull();
+    },
+  };
+
+export const NoLaneNotRequestedForAReaderWhoCannotStartRequests: Story = {
+  parameters: { user: { ...ADA, is_admin: false, can_start_requests: false } },
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("request-lane-ebook");
+    // The requester shows once the book's requests are read.
+    await canvas.findByTestId("request-requester");
+
+    await expect(
+      canvas.queryByTestId("request-unrequested-audiobook"),
+    ).toBeNull();
+  },
+};
+
+export const NoLaneNotRequestedUntilTheBooksRequestsAreRead: Story = {
+  beforeEach({ msw }) {
+    held = deferred();
+    msw.use(
+      http.get("/api/books/:uuid/requests", async () => {
+        await held.promise;
+        return HttpResponse.json([]);
+      }),
+      ...seed({}),
+    );
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByTestId("request-lane-ebook");
+
+    await expect(
+      canvas.queryByTestId("request-unrequested-audiobook"),
+    ).toBeNull();
+    held.release();
+    await canvas.findByTestId("request-unrequested-audiobook");
   },
 };
 
@@ -1633,6 +1789,20 @@ export const ACancelledRequestOffersRequestAgain: Story = {
     await waitFor(() =>
       expect(fake.writes).toEqual([{ kind: "start", uuid: UUID }]),
     );
+  },
+};
+
+export const RequestAgainRestartsTheKindOfTheCancelledRequest: Story = {
+  parameters: { user: READER },
+  beforeEach({ msw }) {
+    msw.use(...seed({ ...CANCELLED_NOW, kind: "audiobook" }));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Request again" }),
+    );
+
+    await waitFor(() => expect(fake.started).toEqual(["audiobook"]));
   },
 };
 

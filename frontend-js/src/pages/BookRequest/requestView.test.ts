@@ -19,6 +19,7 @@ import {
   firstShown,
   fromWishlists,
   historyDay,
+  holds,
   holdsAudiobook,
   holdsEbook,
   isCancellable,
@@ -90,6 +91,13 @@ describe("stateView", () => {
   it("names ready as Ready to read", () => {
     expect(stateView("ready")).toEqual({
       heading: "Ready to read",
+      note: "It’s in the library.",
+    });
+  });
+
+  it("names a ready audiobook Ready to listen", () => {
+    expect(stateView("ready", null, "audiobook")).toEqual({
+      heading: "Ready to listen",
       note: "It’s in the library.",
     });
   });
@@ -725,6 +733,25 @@ describe("factParts", () => {
       head: "Cancelled by you",
       details: ["EPUB", "2.4\u00a0MB", "stopped at 40%"],
     });
+  });
+});
+
+describe("factParts for an audiobook", () => {
+  it("heads a ready audiobook Ready to listen", () => {
+    const ready = listing({ state: "ready", kind: "audiobook" });
+
+    expect(factParts(ready, VIEWER).head).toBe("Ready to listen");
+  });
+});
+
+describe("holds", () => {
+  it.each([
+    ["ebook", ["EPUB"], true],
+    ["ebook", ["M4B"], false],
+    ["audiobook", ["M4B"], true],
+    ["audiobook", ["EPUB", "PDF"], false],
+  ] as const)("reports %s as held among %j: %s", (kind, formats, expected) => {
+    expect(holds(kind, formats)).toBe(expected);
   });
 });
 

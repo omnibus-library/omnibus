@@ -15,6 +15,7 @@ import {
   bookRequestsQuery,
   chooseRequestVersion,
   type BookRequest as Request,
+  type RequestKind,
   type RequestListing,
   type RequestVersion,
   retryBookRequest,
@@ -44,6 +45,7 @@ import {
   downloadPercent,
   firstShown,
   fromWishlists,
+  holds,
   isCancellable,
   isDownloading,
   isSearchSlow,
@@ -70,6 +72,7 @@ import {
 } from "./requestView";
 import { useNowPast } from "./useNowPast";
 import { messageOf, useAnswer, useCancel, useSwap } from "./useRequestActions";
+import { useStartRequest } from "./useStartRequest";
 import { useTimeLeft } from "./useTimeLeft";
 import "./BookRequest.css";
 
@@ -627,7 +630,11 @@ function Lane({
       />
     );
   const Heading = context.variant === "pane" ? "h3" : "h2";
-  const { heading, note } = stateView(request.state, request.stuckReason);
+  const { heading, note } = stateView(
+    request.state,
+    request.stuckReason,
+    request.kind,
+  );
   const steps = stepsFor(request);
   return (
     <section
@@ -716,6 +723,59 @@ type LaneContext = {
   variant: DossierVariant;
 };
 
+const KINDS: readonly RequestKind[] = ["ebook", "audiobook"];
+
+/** A format the book has neither in the library nor in any lane shown, with a button to request it. */
+function UnrequestedLane({
+  uuid,
+  kind,
+  variant,
+}: {
+  uuid: BookUuid;
+  kind: RequestKind;
+  variant: DossierVariant;
+}) {
+  const phone = useMediaQuery(PHONE_QUERY);
+  const titleId = useId();
+  // The page stays put while the lists are read again, then this lane gives way to the new request's.
+  const start = useStartRequest(uuid, { stay: true });
+  const Heading = variant === "pane" ? "h3" : "h2";
+  return (
+    <section
+      className="rq-panel rq-lane"
+      aria-labelledby={titleId}
+      data-testid={`request-unrequested-${kind}`}
+    >
+      <div className="rq-lane-head">
+        <span className="rq-chip">{kindChip(kind)}</span>
+        <Heading id={titleId} className="rq-lane-title">
+          {kindLabel(kind)}
+        </Heading>
+        <p className="rq-requester">
+          {phone ? "not requested" : "· not requested"}
+        </p>
+      </div>
+      <div className="rq-actions">
+        <Button
+          size="sm"
+          // aria-disabled, not disabled: a control that disables itself drops the keyboard's focus.
+          aria-disabled={start.isPending}
+          aria-busy={start.isPending}
+          onClick={() => {
+            if (!start.isPending) start.mutate(kind);
+          }}
+        >
+          <BusyLabel
+            busy={start.isPending}
+            label={phone ? "Request" : `Request ${kind}`}
+            busyLabel="Requesting…"
+          />
+        </Button>
+      </div>
+    </section>
+  );
+}
+
 /** Another reader's request still going for the book, in a lane of its own. */
 function OtherLane({ id, context }: { id: number; context: LaneContext }) {
   const request = useQuery(bookRequestQuery(id));
@@ -766,7 +826,7 @@ export function RequestDossier({
     );
   }
   if (book.data === null) return <PageNotFound subject="Book" />;
-  const { title, authors } = book.data;
+  const { title, authors, formats } = book.data;
   // Unknown until the wishlists answer: the clause stays out rather than claiming nobody.
   const wanted = wishlists.data?.find((w) => w.uuid === uuid)?.wantedBy;
   const wishers = wanted ? wishersLine(wanted, viewer.id) : null;
@@ -838,6 +898,22 @@ export function RequestDossier({
           context={context}
         />
       ))}
+      {split &&
+        viewer.canStartRequests &&
+        KINDS.filter(
+          (kind) =>
+            !holds(kind, formats) &&
+            ![request.data, ...split.lanes.map((l) => l.request)].some(
+              (r) => r.kind === kind,
+            ),
+        ).map((kind) => (
+          <UnrequestedLane
+            key={kind}
+            uuid={uuid}
+            kind={kind}
+            variant={variant}
+          />
+        ))}
       <RequestHistory
         listed={listed}
         history={split?.history}
