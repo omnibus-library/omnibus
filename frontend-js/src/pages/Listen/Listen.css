@@ -31,8 +31,8 @@
   grid-template-columns: 1fr 1fr;
   align-items: center;
   gap: 80px;
-  /* Vertical room so a scrolled-to-end toolbar keeps its focus ring. */
-  padding: 24px 56px;
+  /* Just enough block room that a scrolled-to-end toolbar keeps its focus ring. */
+  padding: 8px 56px;
 }
 
 .lp-cover-col {
