@@ -7,32 +7,16 @@
 //! addressed by its info hash alone (`hashes=`), and a category is sent only when one is set.
 // shortcut: one login per call; cache the cookie if the poller's cadence ever makes it matter.
 
-use reqwest::header::{COOKIE, LOCATION, SET_COOKIE};
+use reqwest::header::{COOKIE, SET_COOKIE};
 use reqwest::multipart::{Form, Part};
-use reqwest::{RequestBuilder, Response, StatusCode, Url};
+use reqwest::{RequestBuilder, Response, StatusCode};
 
 use crate::requests::{check_status, http_client, ConnectionError, REQUEST_TIMEOUT};
 
-use super::infohash;
-use super::{ClientFile, DownloadClient, Prepared, TorrentStatus};
+use super::release::{fetch_torrent, rejected, Release};
+use super::{infohash, ClientFile, DownloadClient, Prepared, TorrentStatus};
 
 const SERVICE: &str = "qBittorrent";
-
-/// A torrent file is kilobytes; anything past this is not one.
-pub const MAX_TORRENT_BYTES: usize = 4 * 1024 * 1024;
-
-/// How many redirects a release link may take before it is given up on.
-const MAX_HOPS: usize = 3;
-
-/// What `torrents/add` is given: a magnet as `urls`, or the fetched torrent file.
-pub enum Release {
-    Magnet(String),
-    File(Vec<u8>),
-}
-
-fn rejected(why: &str) -> ConnectionError {
-    ConnectionError::Rejected(format!("the release link {why}"))
-}
 
 /// A qBittorrent instance and the login to reach it. No `Debug`: it holds the password.
 pub struct Qbittorrent {
@@ -118,45 +102,6 @@ impl Qbittorrent {
         Ok(Some(response))
     }
 
-    /// Resolve `link` to what the client is given, following up to [`MAX_HOPS`] redirects
-    /// ourselves since [`http_client`] follows none. Errors never echo the link: it carries
-    /// the Prowlarr API key.
-    async fn fetch_release(&self, link: &str) -> Result<Release, ConnectionError> {
-        let mut url = Url::parse(link).map_err(|_| rejected("is not a URL"))?;
-        for _ in 0..=MAX_HOPS {
-            if url.scheme() == "magnet" {
-                return Ok(Release::Magnet(url.into()));
-            }
-            let response = self.call(self.http.get(url.clone())).await?;
-            let status = response.status();
-            if status.is_redirection() {
-                let location = response
-                    .headers()
-                    .get(LOCATION)
-                    .and_then(|v| v.to_str().ok())
-                    .and_then(|l| url.join(l).ok())
-                    .ok_or_else(|| rejected("redirected nowhere"))?;
-                url = location;
-                continue;
-            }
-            if !status.is_success() {
-                return Err(rejected(&format!("answered {status}")));
-            }
-            if response.content_length().unwrap_or(0) as usize > MAX_TORRENT_BYTES {
-                return Err(rejected("is too large to be a torrent file"));
-            }
-            let bytes = response
-                .bytes()
-                .await
-                .map_err(|e| ConnectionError::from_transport(&e))?;
-            if bytes.len() > MAX_TORRENT_BYTES {
-                return Err(rejected("is too large to be a torrent file"));
-            }
-            return Ok(Release::File(bytes.to_vec()));
-        }
-        Err(rejected("redirected too many times"))
-    }
-
     /// The download with info hash `hash`. The client is asked for that hash alone; the
     /// check on the answer is for a client that ignores the filter.
     async fn status_with(
@@ -173,6 +118,10 @@ impl Qbittorrent {
             .map_err(|e| ConnectionError::from_transport(&e))?;
         Ok(found.into_iter().find(|t| t.hash == hash))
     }
+}
+
+fn not_torrent() -> ConnectionError {
+    ConnectionError::Rejected(format!("{SERVICE} downloads torrents, not NZB files"))
 }
 
 /// Every `name=value` the response sets, joined for a `Cookie` header.
@@ -197,10 +146,11 @@ impl DownloadClient for Qbittorrent {
     type Release = Release;
 
     async fn prepare(&self, link: &str) -> Result<Prepared<Release>, ConnectionError> {
-        let release = self.fetch_release(link).await?;
+        let release = fetch_torrent(&self.http, link, self.timeout).await?;
         let hash = match &release {
             Release::Magnet(magnet) => infohash::from_magnet(magnet),
             Release::File(bytes) => infohash::from_torrent(bytes),
+            Release::NzbLink(_) => return Err(not_torrent()),
         }
         .map_err(|e| rejected(&e.to_string()))?;
         Ok(Prepared { hash, release })
@@ -213,6 +163,10 @@ impl DownloadClient for Qbittorrent {
         prepared: Prepared<Release>,
         category: &str,
     ) -> Result<(), ConnectionError> {
+        // Refused before the login: a release this client cannot take needs no session.
+        if matches!(prepared.release, Release::NzbLink(_)) {
+            return Err(not_torrent());
+        }
         let cookie = self.login().await?;
         let request = match prepared.release {
             Release::Magnet(magnet) => {
@@ -222,6 +176,7 @@ impl DownloadClient for Qbittorrent {
                 }
                 self.post("torrents/add", &cookie).form(&form)
             }
+            Release::NzbLink(_) => return Err(not_torrent()),
             Release::File(bytes) => {
                 let file = Part::bytes(bytes)
                     .file_name(format!("{}.torrent", prepared.hash))

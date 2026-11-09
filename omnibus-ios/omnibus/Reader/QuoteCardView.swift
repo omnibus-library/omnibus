@@ -254,7 +254,8 @@ struct QuoteType: Equatable {
 
     /// The passage face at `size` points. Only Cormorant's Regular, SemiBold
     /// and Italic cuts and Instrument Sans's Regular and SemiBold are bundled,
-    /// so the combinations without a real cut are synthesised.
+    /// so the rest are synthesised. Sans italic is skewed inside the font: no
+    /// Instrument Sans italic is bundled, so `Font.italic()` has no cut to pick.
     func font(_ size: CGFloat) -> Font {
         switch face {
         case .serif:
@@ -264,12 +265,24 @@ struct QuoteType: Equatable {
             }
             return .display(size, weight: bold ? .semibold : .regular)
         case .sans:
-            let base = Font.ui(size, weight: bold ? .semibold : .regular)
-            return italic ? base.italic() : base
+            if let font = sansFont(size) { return Font(font) }
+            return .ui(size, weight: bold ? .semibold : .regular)
         case .mono:
             let base = Font.system(size: size, weight: bold ? .bold : .regular, design: .monospaced)
             return italic ? base.italic() : base
         }
+    }
+}
+
+extension QuoteType {
+    /// The `.sans` passage face.
+    func sansFont(_ size: CGFloat) -> UIFont? {
+        let name = Font.UIFace.name(for: bold ? .semibold : .regular)
+        // The descriptor initialiser substitutes a system font for an unknown name.
+        guard UIFont(name: name, size: size) != nil else { return nil }
+        // Glyph space is y-up, so a positive `c` leans right (~11°).
+        let skew = italic ? CGAffineTransform(a: 1, b: 0, c: 0.2, d: 1, tx: 0, ty: 0) : .identity
+        return UIFont(descriptor: UIFontDescriptor(name: name, matrix: skew), size: size)
     }
 }
 
@@ -344,7 +357,7 @@ struct QuoteCard: View {
                     .layoutPriority(1)
                     .minimumScaleFactor(0.55)
 
-                Spacer(minLength: 0)
+                Spacer(minLength: width * Self.ruleGap)
 
                 Rectangle()
                     .fill(style.ink.opacity(0.22))
@@ -381,6 +394,9 @@ struct QuoteCard: View {
 }
 
 extension QuoteCard {
+    /// Least space between the passage and the rule, as a fraction of width.
+    nonisolated static let ruleGap: CGFloat = 0.05
+
     /// Long passages step down rather than shrink to fit: a card whose type
     /// scales continuously with length has no typographic identity, and the
     /// steps keep every card recognisably the same object.

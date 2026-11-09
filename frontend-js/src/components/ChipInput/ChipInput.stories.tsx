@@ -8,9 +8,9 @@ const MANY = Array.from({ length: 200 }, (_, i) => ({
   count: 1,
 }));
 
-const offered = () =>
+const offered = (attribute: "value" | "label" = "value") =>
   [...document.querySelectorAll("datalist option")].map((o) =>
-    o.getAttribute("value"),
+    o.getAttribute(attribute),
   );
 
 // Holds the chips the way a form would, and still reports each change.
@@ -82,6 +82,26 @@ export const AddFromSuggestion: Story = {
       "cozy",
       "Space opera",
     ]);
+  },
+};
+
+export const SuggestionsNameTheirValue: Story = {
+  play: async () => {
+    await expect(offered("label")).toEqual(["Space opera · 12 books"]);
+  },
+};
+
+export const CaretMarksTheSuggestionList: Story = {
+  play: async ({ canvasElement, canvas, userEvent }) => {
+    const caret = () => canvasElement.querySelector(".chip-editor-caret");
+    await expect(caret()).not.toBeNull();
+
+    await userEvent.type(
+      canvas.getByRole("combobox", { name: "Add tags" }),
+      "zzz",
+    );
+
+    await expect(caret()).toBeNull();
   },
 };
 

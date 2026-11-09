@@ -19,7 +19,14 @@ fn release(title: &str) -> ProwlarrRelease {
 }
 
 fn ranked(releases: Vec<ProwlarrRelease>) -> Vec<Ranked> {
-    rank(releases, TITLE, AUTHOR, RequestKind::Ebook)
+    rank(
+        releases,
+        TITLE,
+        AUTHOR,
+        RequestKind::Ebook,
+        ReleaseProtocol::Torrent,
+        false,
+    )
 }
 
 fn kept_titles(releases: Vec<ProwlarrRelease>) -> Vec<String> {
@@ -31,8 +38,19 @@ fn kept_titles(releases: Vec<ProwlarrRelease>) -> Vec<String> {
 }
 
 fn is_dropped(release: ProwlarrRelease) -> bool {
+    is_dropped_for(release, ReleaseProtocol::Torrent)
+}
+
+fn is_dropped_for(release: ProwlarrRelease, wanted: ReleaseProtocol) -> bool {
     let title = release.title.clone();
-    let all = ranked(vec![release]);
+    let all = rank(
+        vec![release],
+        TITLE,
+        AUTHOR,
+        RequestKind::Ebook,
+        wanted,
+        false,
+    );
     all.iter()
         .find(|r| r.release.title == title)
         .unwrap()
@@ -75,7 +93,7 @@ mod drop_rules {
     }
 
     #[test]
-    fn drops_a_usenet_release() {
+    fn drops_a_usenet_release_for_a_torrent_client() {
         let mut usenet = release("Dracula - Bram Stoker EPUB");
         usenet.protocol = Some(ReleaseProtocol::Usenet);
 
@@ -83,11 +101,40 @@ mod drop_rules {
     }
 
     #[test]
-    fn keeps_a_torrent_release() {
+    fn keeps_a_torrent_release_for_a_torrent_client() {
         let mut torrent = release("Dracula - Bram Stoker EPUB");
         torrent.protocol = Some(ReleaseProtocol::Torrent);
 
         assert!(!is_dropped(torrent));
+    }
+
+    #[test]
+    fn keeps_a_release_with_no_protocol_for_a_torrent_client() {
+        assert!(!is_dropped(release("Dracula - Bram Stoker EPUB")));
+    }
+
+    #[test]
+    fn keeps_a_usenet_release_for_a_usenet_client() {
+        let mut usenet = release("Dracula - Bram Stoker EPUB");
+        usenet.protocol = Some(ReleaseProtocol::Usenet);
+
+        assert!(!is_dropped_for(usenet, ReleaseProtocol::Usenet));
+    }
+
+    #[test]
+    fn drops_a_torrent_release_for_a_usenet_client() {
+        let mut torrent = release("Dracula - Bram Stoker EPUB");
+        torrent.protocol = Some(ReleaseProtocol::Torrent);
+
+        assert!(is_dropped_for(torrent, ReleaseProtocol::Usenet));
+    }
+
+    #[test]
+    fn drops_a_release_with_no_protocol_for_a_usenet_client() {
+        assert!(is_dropped_for(
+            release("Dracula - Bram Stoker EPUB"),
+            ReleaseProtocol::Usenet
+        ));
     }
 
     #[test]
@@ -148,6 +195,8 @@ mod drop_rules {
             TITLE,
             "Stoker, Bram",
             RequestKind::Ebook,
+            ReleaseProtocol::Torrent,
+            false,
         );
 
         assert!(!all[0].rejected);
@@ -312,6 +361,156 @@ mod format_label {
     }
 }
 
+mod convertible_formats {
+    use super::*;
+
+    fn ranked_convertible(releases: Vec<ProwlarrRelease>) -> Vec<Ranked> {
+        rank(
+            releases,
+            TITLE,
+            AUTHOR,
+            RequestKind::Ebook,
+            ReleaseProtocol::Torrent,
+            true,
+        )
+    }
+
+    fn kept_convertible(releases: Vec<ProwlarrRelease>) -> Vec<String> {
+        ranked_convertible(releases)
+            .into_iter()
+            .filter(|r| !r.rejected)
+            .map(|r| r.release.title)
+            .collect()
+    }
+
+    fn format_of_only(title: &str, convertible: bool) -> Option<String> {
+        let all = rank(
+            vec![release(title)],
+            TITLE,
+            AUTHOR,
+            RequestKind::Ebook,
+            ReleaseProtocol::Torrent,
+            convertible,
+        );
+        assert!(!all[0].rejected, "{title} was dropped");
+        all[0].format.clone()
+    }
+
+    #[test]
+    fn keeps_azw3_and_mobi_with_their_own_format_label_when_convertible() {
+        assert_eq!(
+            format_of_only("Dracula - Bram Stoker AZW3", true).as_deref(),
+            Some("AZW3")
+        );
+        assert_eq!(
+            format_of_only("Dracula - Bram Stoker [MOBI]", true).as_deref(),
+            Some("MOBI")
+        );
+    }
+
+    #[test]
+    fn drops_azw3_and_mobi_when_not_convertible() {
+        let all = rank(
+            vec![
+                release("Dracula - Bram Stoker AZW3"),
+                release("Dracula - Bram Stoker [MOBI]"),
+            ],
+            TITLE,
+            AUTHOR,
+            RequestKind::Ebook,
+            ReleaseProtocol::Torrent,
+            false,
+        );
+
+        assert!(all.iter().all(|r| r.rejected));
+    }
+
+    #[test]
+    fn orders_formats_epub_then_azw3_and_mobi_then_pdf_then_cbz_then_unnamed() {
+        let order = kept_convertible(vec![
+            release("Dracula - Bram Stoker"),
+            release("Dracula - Bram Stoker CBZ"),
+            release("Dracula - Bram Stoker PDF"),
+            release("Dracula - Bram Stoker MOBI"),
+            release("Dracula - Bram Stoker AZW3"),
+            release("Dracula - Bram Stoker EPUB"),
+        ]);
+
+        let mut converted = order[1..3].to_vec();
+        converted.sort();
+        assert_eq!(
+            (&order[0], converted, &order[3..]),
+            (
+                &"Dracula - Bram Stoker EPUB".to_string(),
+                vec![
+                    "Dracula - Bram Stoker AZW3".to_string(),
+                    "Dracula - Bram Stoker MOBI".to_string()
+                ],
+                &[
+                    "Dracula - Bram Stoker PDF".to_string(),
+                    "Dracula - Bram Stoker CBZ".to_string(),
+                    "Dracula - Bram Stoker".to_string(),
+                ][..]
+            )
+        );
+    }
+
+    #[test]
+    fn lets_a_far_closer_title_match_beat_a_better_format() {
+        let order = kept_convertible(vec![
+            release("Bram Stoker - Dracula (Annotated) EPUB"),
+            release("Dracula - Bram Stoker AZW3"),
+        ]);
+
+        assert_eq!(order[0], "Dracula - Bram Stoker AZW3");
+    }
+
+    #[test]
+    fn keeps_azw_and_azw4_dropped_when_convertible() {
+        let all = ranked_convertible(vec![
+            release("Dracula - Bram Stoker AZW"),
+            release("Dracula - Bram Stoker AZW4"),
+        ]);
+
+        assert!(all.iter().all(|r| r.rejected));
+    }
+
+    #[test]
+    fn labels_a_title_naming_several_formats_with_the_one_worth_the_most() {
+        assert_eq!(
+            format_of_only("Dracula - Bram Stoker EPUB MOBI", true).as_deref(),
+            Some("EPUB")
+        );
+        assert_eq!(
+            format_of_only("Dracula - Bram Stoker PDF AZW3", true).as_deref(),
+            Some("AZW3")
+        );
+        assert_eq!(
+            format_of_only("Dracula - Bram Stoker PDF AZW3", false).as_deref(),
+            Some("PDF")
+        );
+    }
+}
+
+mod names_convertible {
+    use super::*;
+
+    #[test]
+    fn is_true_only_when_a_title_names_azw3_or_mobi() {
+        let plain = vec![
+            release("Dracula - Bram Stoker EPUB"),
+            release("Dracula - Bram Stoker PDF"),
+        ];
+        let with_mobi = vec![
+            release("Dracula - Bram Stoker EPUB"),
+            release("Dracula - Bram Stoker [MOBI]"),
+        ];
+
+        assert!(!names_convertible(&plain));
+        assert!(names_convertible(&with_mobi));
+    }
+}
+
 mod audio_profile {
     use super::*;
 
@@ -325,7 +524,14 @@ mod audio_profile {
     }
 
     fn ranked_audio(releases: Vec<ProwlarrRelease>) -> Vec<Ranked> {
-        rank(releases, TITLE, AUTHOR, RequestKind::Audiobook)
+        rank(
+            releases,
+            TITLE,
+            AUTHOR,
+            RequestKind::Audiobook,
+            ReleaseProtocol::Torrent,
+            false,
+        )
     }
 
     fn audio_titles(releases: Vec<ProwlarrRelease>) -> Vec<String> {
@@ -434,6 +640,20 @@ mod audio_profile {
 
         assert_eq!(order[0], "Dracula - Bram Stoker MP3");
     }
+
+    #[test]
+    fn never_offers_an_audio_release_as_a_converted_format() {
+        let all = rank(
+            vec![audio("Dracula - Bram Stoker MOBI")],
+            TITLE,
+            AUTHOR,
+            RequestKind::Audiobook,
+            ReleaseProtocol::Torrent,
+            true,
+        );
+
+        assert_eq!(all[0].format, None);
+    }
 }
 
 mod cause {
@@ -457,7 +677,7 @@ mod cause {
             cause_of(release("Frankenstein - Mary Shelley EPUB")),
             Some(Rejection::Book)
         );
-        assert_eq!(cause_of(usenet), Some(Rejection::Usenet));
+        assert_eq!(cause_of(usenet), Some(Rejection::Protocol));
         assert_eq!(cause_of(dead), Some(Rejection::Unusable));
         assert_eq!(cause_of(release("Dracula - Bram Stoker EPUB")), None);
     }
@@ -468,5 +688,19 @@ mod cause {
         usenet.protocol = Some(ReleaseProtocol::Usenet);
 
         assert_eq!(cause_of(usenet), Some(Rejection::Book));
+    }
+
+    #[test]
+    fn blames_the_protocol_for_a_torrent_release_under_a_usenet_client() {
+        let all = rank(
+            vec![release("Dracula - Bram Stoker EPUB")],
+            TITLE,
+            AUTHOR,
+            RequestKind::Ebook,
+            ReleaseProtocol::Usenet,
+            false,
+        );
+
+        assert_eq!(all[0].cause, Some(Rejection::Protocol));
     }
 }

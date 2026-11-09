@@ -194,8 +194,8 @@ pub struct RequestVersion {
     /// The name the version was published under.
     pub title: String,
     pub size_bytes: Option<i64>,
-    /// `EPUB`, `PDF` or `CBZ` for an ebook; `M4B`, `M4A` or `MP3` for an audiobook. Null when
-    /// the name does not say.
+    /// `EPUB`, `PDF`, `CBZ`, `AZW3` or `MOBI` for an ebook, the last two converted to EPUB
+    /// when added; `M4B`, `M4A` or `MP3` for an audiobook. Null when the name does not say.
     pub format: Option<String>,
     /// The source the version came from.
     pub indexer: Option<String>,

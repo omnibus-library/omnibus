@@ -7,9 +7,9 @@ use omnibus_shared::RequestKind;
 use crate::requests::clients::{ClientFile, TorrentStatus};
 use crate::requests::test_support::requests_config;
 
-use super::super::files::{pick, pick_audio, resolve, AudioPick};
+use super::super::files::{has_convertible, pick, pick_audio, resolve, AudioPick};
 use super::super::ImportError;
-use super::{write, EPUB_BYTES, M4B_BYTES, MP3_BYTES};
+use super::{mobi_bytes, write, EPUB_BYTES, M4B_BYTES, MP3_BYTES};
 
 const PDF_BYTES: &[u8] = b"%PDF-1.7 a pdf";
 
@@ -54,6 +54,16 @@ mod resolve {
         .unwrap();
 
         assert_eq!(found, vec![file.canonicalize().unwrap()]);
+    }
+
+    #[test]
+    fn refuses_a_save_folder_outside_the_clients_prefix_even_when_no_file_is_listed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config = requests_config(Some("/downloads"), tmp.path().to_str());
+
+        let err = resolve(&status("/elsewhere/job"), &[], &config, RequestKind::Ebook).unwrap_err();
+
+        assert!(matches!(err, ImportError::NotVisible(_)), "{err:?}");
     }
 
     #[test]
@@ -124,6 +134,27 @@ mod resolve {
 
             assert!(matches!(err, ImportError::Cannot(_)), "{err}");
         }
+    }
+
+    #[test]
+    fn maps_azw3_and_mobi_files_whatever_the_case_of_the_extension() {
+        let tmp = tempfile::tempdir().unwrap();
+        let azw3 = write(tmp.path(), "Dune.AZW3", &mobi_bytes());
+        let mobi = write(tmp.path(), "Dune.mobi", &mobi_bytes());
+        let config = requests_config(None, None);
+
+        let found = resolve(
+            &status(tmp.path().to_str().unwrap()),
+            &listed(&["Dune.AZW3", "Dune.mobi", "Dune.azw"]),
+            &config,
+            RequestKind::Ebook,
+        )
+        .unwrap();
+
+        assert_eq!(
+            found,
+            vec![azw3.canonicalize().unwrap(), mobi.canonicalize().unwrap()]
+        );
     }
 
     #[test]
@@ -347,7 +378,7 @@ mod pick {
             write(tmp.path(), "book.cbz", EPUB_BYTES),
         ];
 
-        let err = pick(&paths).unwrap_err();
+        let err = pick(&paths, false).unwrap_err();
 
         assert!(matches!(err, ImportError::NothingImportable), "{err}");
     }
@@ -357,7 +388,7 @@ mod pick {
         let tmp = tempfile::tempdir().unwrap();
         let paths = vec![write(tmp.path(), "fake.epub", b"<html>not an epub</html>")];
 
-        let err = pick(&paths).unwrap_err();
+        let err = pick(&paths, false).unwrap_err();
 
         assert!(matches!(err, ImportError::NothingImportable), "{err}");
     }
@@ -368,7 +399,7 @@ mod pick {
         let epub = write(tmp.path(), "small.epub", EPUB_BYTES);
         let pdf = write(tmp.path(), "huge.pdf", &[PDF_BYTES, &[b'x'; 4096]].concat());
 
-        let picked = pick(&[pdf, epub.clone()]).unwrap();
+        let picked = pick(&[pdf, epub.clone()], false).unwrap();
 
         assert_eq!(picked, (epub, "epub"));
     }
@@ -379,15 +410,109 @@ mod pick {
         let small = write(tmp.path(), "a.epub", EPUB_BYTES);
         let large = write(tmp.path(), "b.epub", &[EPUB_BYTES, &[b'x'; 4096]].concat());
 
-        let picked = pick(&[small, large.clone()]).unwrap();
+        let picked = pick(&[small, large.clone()], false).unwrap();
 
         assert_eq!(picked, (large, "epub"));
     }
 
     #[test]
     fn fails_nothing_importable_on_an_empty_list() {
-        let err = pick(&[]).unwrap_err();
+        let err = pick(&[], false).unwrap_err();
 
         assert!(matches!(err, ImportError::NothingImportable), "{err}");
+    }
+}
+
+mod pick_convertible {
+    use super::*;
+
+    #[test]
+    fn prefers_epub_then_azw3_and_mobi_then_pdf() {
+        let tmp = tempfile::tempdir().unwrap();
+        let big = vec![b'x'; 4096];
+        let epub = write(tmp.path(), "a.epub", EPUB_BYTES);
+        let mobi = write(tmp.path(), "b.mobi", &[mobi_bytes(), big.clone()].concat());
+        let pdf = write(tmp.path(), "c.pdf", &[PDF_BYTES, &big].concat());
+
+        assert_eq!(
+            pick(&[pdf.clone(), mobi.clone(), epub.clone()], true).unwrap(),
+            (epub, "epub")
+        );
+        assert_eq!(pick(&[pdf, mobi.clone()], true).unwrap(), (mobi, "mobi"));
+    }
+
+    #[test]
+    fn takes_the_larger_of_an_azw3_and_a_mobi() {
+        let tmp = tempfile::tempdir().unwrap();
+        let small = write(tmp.path(), "a.mobi", &mobi_bytes());
+        let large = write(
+            tmp.path(),
+            "b.azw3",
+            &[mobi_bytes(), vec![b'x'; 4096]].concat(),
+        );
+
+        assert_eq!(
+            pick(&[small, large.clone()], true).unwrap(),
+            (large, "azw3")
+        );
+    }
+
+    #[test]
+    fn ignores_a_mobi_for_a_pdf_when_conversion_is_not_available() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mobi = write(tmp.path(), "a.mobi", &mobi_bytes());
+        let pdf = write(tmp.path(), "b.pdf", PDF_BYTES);
+
+        assert_eq!(pick(&[mobi, pdf.clone()], false).unwrap(), (pdf, "pdf"));
+    }
+
+    #[test]
+    fn names_the_missing_converter_when_only_a_mobi_is_left_and_conversion_is_not_available() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mobi = write(tmp.path(), "a.mobi", &mobi_bytes());
+
+        let err = pick(&[mobi], false).unwrap_err();
+
+        assert!(
+            matches!(
+                err,
+                ImportError::Convert(crate::convert::ConvertError::BinaryUnavailable)
+            ),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn drops_a_mobi_whose_bytes_are_not_a_palmdb() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = vec![write(tmp.path(), "fake.mobi", b"<html>not a mobi</html>")];
+
+        let err = pick(&paths, true).unwrap_err();
+
+        assert!(matches!(err, ImportError::NothingImportable), "{err}");
+    }
+
+    #[test]
+    fn drops_a_mobi_too_short_to_hold_a_palmdb_header() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = vec![write(tmp.path(), "short.azw3", b"BOOKMOBI")];
+
+        let err = pick(&paths, true).unwrap_err();
+
+        assert!(matches!(err, ImportError::NothingImportable), "{err}");
+    }
+}
+
+mod has_convertible {
+    use super::*;
+
+    #[test]
+    fn is_true_only_when_an_azw3_or_mobi_is_listed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let epub = write(tmp.path(), "a.epub", EPUB_BYTES);
+        let mobi = write(tmp.path(), "b.MOBI", &mobi_bytes());
+
+        assert!(!has_convertible(std::slice::from_ref(&epub)));
+        assert!(has_convertible(&[epub, mobi]));
     }
 }

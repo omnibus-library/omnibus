@@ -572,6 +572,7 @@ export function requestsHandlers(
         prowlarr_api_key_masked: update.prowlarr_api_key
           ? masked
           : current.prowlarr_api_key_masked,
+        download_client_kind: update.download_client_kind,
         download_client_url: update.download_client_url || null,
         download_client_username: update.download_client_username || null,
         download_client_password_masked: update.download_client_password

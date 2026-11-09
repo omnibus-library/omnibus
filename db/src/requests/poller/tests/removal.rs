@@ -103,6 +103,54 @@ mod cancelled_downloads {
     }
 }
 
+mod imported_downloads {
+    use super::*;
+
+    /// A request whose usenet job was imported: ready, with its job on the removal list.
+    async fn imported_usenet_job(pool: &SqlitePool, name: &str) -> i64 {
+        let id = on_its_way(pool, name, 1.0, NOW - 60).await;
+        let chosen = row(pool, id).await.chosen_result_id;
+        store::mark_ready(pool, id, chosen, true).await.unwrap();
+        id
+    }
+
+    #[tokio::test]
+    async fn removes_the_job_and_its_files_on_the_next_pass_and_then_forgets_it() {
+        let pool = pool().await;
+        let id = imported_usenet_job(&pool, "ada").await;
+        let client = StubClient::new().with_status(&hash(id), 1.0, "stoppedUP");
+
+        tick(&pool, &client, NOW).await;
+        tick(&pool, &client, NOW + 5).await;
+
+        let remove = Call::Remove {
+            hash: hash(id),
+            delete_files: true,
+        };
+        assert!(client.calls().contains(&remove));
+        let after = row(&pool, id).await;
+        assert_eq!(after.state, RequestState::Ready);
+        assert_eq!(after.remove_hash, None);
+    }
+
+    #[tokio::test]
+    async fn keeps_a_job_that_another_live_request_shares_and_drops_the_removal() {
+        let pool = pool().await;
+        let id = imported_usenet_job(&pool, "ada").await;
+        let other = on_its_way(&pool, "bob", 0.4, NOW - 60).await;
+        update(&pool, other, &format!("client_hash = '{}'", hash(id))).await;
+        let client = StubClient::new().with_status(&hash(id), 1.0, "stoppedUP");
+
+        tick(&pool, &client, NOW).await;
+
+        assert!(!client
+            .calls()
+            .iter()
+            .any(|c| matches!(c, Call::Remove { .. })));
+        assert_eq!(row(&pool, id).await.remove_hash, None);
+    }
+}
+
 mod adopted_downloads {
     use super::*;
 

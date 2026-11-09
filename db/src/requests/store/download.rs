@@ -239,18 +239,25 @@ pub async fn set_import_key(
     Ok(())
 }
 
-/// End the import of request `id`'s pick `chosen`: the book is in the library.
+/// End the import of request `id`'s pick `chosen`: the book is in the library. With
+/// `remove_download`, a download Omnibus added also goes on the removal list, unless a removal
+/// is already waiting there.
 pub async fn mark_ready(
     pool: &SqlitePool,
     id: i64,
     chosen: Option<i64>,
+    remove_download: bool,
 ) -> Result<(), RequestError> {
+    const QUEUE: &str = "?3 AND client_adopted = 0 AND remove_hash IS NULL";
     sqlx::query(&format!(
-        "UPDATE book_requests SET state = 'ready', updated_at = {NOW}
-         WHERE id = ? AND state = 'on_its_way' AND chosen_result_id = ?"
+        "UPDATE book_requests SET state = 'ready', updated_at = {NOW},
+             remove_hash = CASE WHEN {QUEUE} THEN client_hash ELSE remove_hash END,
+             remove_since = CASE WHEN {QUEUE} THEN NULL ELSE remove_since END
+         WHERE id = ?1 AND state = 'on_its_way' AND chosen_result_id = ?2"
     ))
     .bind(id)
     .bind(chosen)
+    .bind(remove_download)
     .execute(pool)
     .await?;
     Ok(())

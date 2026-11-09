@@ -39,6 +39,13 @@ describe("matchingSettings", () => {
     expect(labels("prowlarr", true, true)).toEqual(["Book requests"]);
   });
 
+  it.each(["transmission", "sabnzbd", "nzbget", "usenet"])(
+    "finds the request connections by %s",
+    (word) => {
+      expect(labels(word, true, true)).toEqual(["Book requests"]);
+    },
+  );
+
   it("hides the request connections without request access", () => {
     expect(labels("prowlarr", true, false)).toEqual([]);
   });

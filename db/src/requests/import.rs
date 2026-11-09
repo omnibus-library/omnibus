@@ -3,16 +3,17 @@
 //! imports race on a merge: [`files`] picks the book out of the download (an EPUB or PDF
 //! for an ebook request, an M4B or a folder of MP3s for an audiobook one), [`place`] stages
 //! it inside that kind's library and renames it into the canonical layout named from the
-//! wished book, the worker scans it in, and it is merged into the wished book when the
-//! scanner filed it as a book of its own. The download is only read, never moved or removed.
-//! Its cover is kept as the request's candidate (see [`super::cover`]) whichever way the scan
-//! filed it.
+//! wished book (an AZW3 or MOBI is converted to EPUB there first), the worker scans it in, and
+//! it is merged into the wished book when the scanner filed it as a book of its own. The
+//! download is only read here, never moved or removed; a usenet job is then queued for the
+//! poller to take out of the client. Its cover is kept as the request's candidate (see
+//! [`super::cover`]) whichever way the scan filed it.
 
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use omnibus_shared::{RequestKind, StuckReason};
+use omnibus_shared::{ReleaseProtocol, RequestKind, StuckReason};
 use sqlx::SqlitePool;
 
 use crate::merge::{merge_books, MergeError};
@@ -42,6 +43,9 @@ pub enum ImportError {
     /// Any other reason the library cannot take the file; the message is the whole story.
     #[error("{0}")]
     Cannot(String),
+    /// The conversion's own message, which carries the converter's output for the admin.
+    #[error(transparent)]
+    Convert(#[from] crate::convert::ConvertError),
     #[error("merging into the requested book failed: {0}")]
     Merge(#[from] MergeError),
     #[error("the download client could not be asked: {0}")]
@@ -68,11 +72,12 @@ pub async fn import_finished(
     worker: &Arc<Worker>,
     config: &RequestsConfig,
 ) -> Result<bool, RequestError> {
+    let remove_download = config.download_client_kind.protocol() == ReleaseProtocol::Usenet;
     let mut waiting = false;
     for row in store::awaiting_import(pool).await? {
         let pick = row.chosen_result_id;
         match import_one(pool, client, worker, config, &row).await {
-            Ok(Step::Added) => store::mark_ready(pool, row.id, pick).await?,
+            Ok(Step::Added) => store::mark_ready(pool, row.id, pick, remove_download).await?,
             Ok(Step::Later) => waiting = true,
             // Neither says anything about the download, so the request waits for the next pass.
             Err(
@@ -203,13 +208,16 @@ async fn file_into_library(
     let (config, root_path) = (config.clone(), PathBuf::from(root));
     let (id, kind) = (row.id, row.kind);
     let (author, title) = (wished.author.clone(), wished.title.clone());
-    let (placed, is_folder) =
-        tokio::task::spawn_blocking(move || -> Result<(PathBuf, bool), ImportError> {
-            let found = files::resolve(&status, &listed, &config, kind)?;
-            place_download(kind, &found, &root_path, id, &author, &title)
-        })
-        .await
-        .map_err(|e| io::Error::other(e.to_string()))??;
+    let found = blocking(move || files::resolve(&status, &listed, &config, kind)).await?;
+    let (placed, is_folder) = match kind {
+        RequestKind::Ebook => (
+            place_ebook(pool, root_path, id, found, author, title).await?,
+            false,
+        ),
+        RequestKind::Audiobook => {
+            blocking(move || place_audio(&found, &root_path, id, &author, &title)).await?
+        }
+    };
     let key = placed
         .strip_prefix(root)
         .map_err(|e| io::Error::other(e.to_string()))?
@@ -226,30 +234,70 @@ async fn file_into_library(
     Ok(Some(key))
 }
 
-/// File what `kind` imports out of the `found` files of the download, and return where it
-/// landed, and whether that is a folder (several MP3s) rather than a file. Blocking.
-fn place_download(
-    kind: RequestKind,
+/// File the ebook out of the `found` files of the download, converting an AZW3 or MOBI to
+/// EPUB first, and return where it landed.
+async fn place_ebook(
+    pool: &SqlitePool,
+    root: PathBuf,
+    request_id: i64,
+    found: Vec<PathBuf>,
+    author: String,
+    title: String,
+) -> Result<PathBuf, ImportError> {
+    // Probed only now: an import with no AZW3 or MOBI never spawns the converter.
+    let convertible = files::has_convertible(&found) && converter_runs(pool).await;
+    let (src, ext) = blocking(move || files::pick(&found, convertible)).await?;
+    if files::converts_to_epub(ext) {
+        return place::place_converted(pool, &root, request_id, &src, &author, &title).await;
+    }
+    Ok(
+        blocking(move || place::place_blocking(&root, request_id, &src, &author, &title, ext))
+            .await?,
+    )
+}
+
+/// File the audiobook out of the `found` files of the download, and return where it landed,
+/// and whether that is a folder (several MP3s) rather than a file. Blocking.
+fn place_audio(
     found: &[PathBuf],
     root: &Path,
     request_id: i64,
     author: &str,
     title: &str,
 ) -> Result<(PathBuf, bool), ImportError> {
-    let file = |src: &Path, ext| place::place_blocking(root, request_id, src, author, title, ext);
-    Ok(match kind {
-        RequestKind::Ebook => {
-            let (src, ext) = files::pick(found)?;
-            (file(&src, ext)?, false)
-        }
-        RequestKind::Audiobook => match files::pick_audio(found)? {
-            files::AudioPick::Single(src, ext) => (file(&src, ext)?, false),
-            files::AudioPick::Parts(parts) => (
-                place::place_folder_blocking(root, request_id, &parts, author, title)?,
-                true,
-            ),
-        },
+    Ok(match files::pick_audio(found)? {
+        files::AudioPick::Single(src, ext) => (
+            place::place_blocking(root, request_id, &src, author, title, ext)?,
+            false,
+        ),
+        files::AudioPick::Parts(parts) => (
+            place::place_folder_blocking(root, request_id, &parts, author, title)?,
+            true,
+        ),
     })
+}
+
+/// Whether `ebook-convert` runs, so an AZW3 or MOBI can be converted. An unreadable setting
+/// counts as not, so a download that also holds an EPUB or PDF still imports.
+async fn converter_runs(pool: &SqlitePool) -> bool {
+    match crate::ebook_convert_status(pool).await {
+        Ok(status) => status.available,
+        Err(e) => {
+            tracing::warn!(error = %e, "check whether ebook-convert runs");
+            false
+        }
+    }
+}
+
+/// Run blocking filesystem work off the async runtime thread.
+async fn blocking<T, E>(work: impl FnOnce() -> Result<T, E> + Send + 'static) -> Result<T, E>
+where
+    T: Send + 'static,
+    E: From<io::Error> + Send + 'static,
+{
+    tokio::task::spawn_blocking(work)
+        .await
+        .map_err(|e| io::Error::other(e.to_string()))?
 }
 
 /// Scan the library so the file becomes a book, then fold that book into the wished one

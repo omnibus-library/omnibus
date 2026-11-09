@@ -8,7 +8,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use omnibus_shared::StuckReason;
+use omnibus_shared::{ReleaseProtocol, StuckReason};
 use sqlx::SqlitePool;
 
 use crate::settings::RequestsConfig;
@@ -253,12 +253,22 @@ async fn add_picked(
             Err(e) => return Err(e.into()),
         };
         let hash = prepared.hash.clone();
-        if client.status(&hash).await?.is_some() {
-            // Ours when this request recorded it, or called it off a moment ago.
-            let ours = (row.client_hash.as_deref() == Some(hash.as_str()) && !row.client_adopted)
-                || row.remove_hash.as_deref() == Some(hash.as_str());
-            store::mark_on_its_way(pool, row.id, &hash, !ours, now).await?;
-            continue;
+        match client.status(&hash).await? {
+            // A usenet job that failed would stop this request again at once; clear it to retry.
+            Some(found)
+                if client.protocol() == ReleaseProtocol::Usenet && found.state == "error" =>
+            {
+                client.remove(&hash, true).await?;
+            }
+            Some(_) => {
+                // Ours when this request recorded it, or called it off a moment ago.
+                let ours = (row.client_hash.as_deref() == Some(hash.as_str())
+                    && !row.client_adopted)
+                    || row.remove_hash.as_deref() == Some(hash.as_str());
+                store::mark_on_its_way(pool, row.id, &hash, !ours, now).await?;
+                continue;
+            }
+            None => {}
         }
         if !store::claim_hash(pool, row.id, &hash).await? {
             continue;
@@ -290,7 +300,7 @@ async fn follow_downloads(
         let status = client.status(hash).await?;
         let pick = row.chosen_result_id;
         let done_at = status.as_ref().and_then(|s| expected_done_at(s, now));
-        match judge(&row, status.as_ref(), now) {
+        match judge(&row, status.as_ref(), now, client.protocol()) {
             Verdict::Wait if done_at != row.expected_done_at => {
                 store::record_expected_done_at(pool, row.id, pick, done_at).await?
             }
@@ -317,8 +327,14 @@ fn expected_done_at(status: &TorrentStatus, now: i64) -> Option<i64> {
         .map(|eta| now + eta)
 }
 
-/// What the client's answer for `row`'s download (`None`: it has none) means at `now`.
-fn judge(row: &RequestRow, status: Option<&TorrentStatus>, now: i64) -> Verdict {
+/// What the client's answer for `row`'s download (`None`: it has none) means at `now`, from a
+/// client fetching `protocol`.
+fn judge(
+    row: &RequestRow,
+    status: Option<&TorrentStatus>,
+    now: i64,
+    protocol: ReleaseProtocol,
+) -> Verdict {
     let idle_secs = now - row.moved_at.unwrap_or(now);
     let Some(status) = status else {
         // qBittorrent 5.x adds asynchronously, so a torrent can take a while to show up.
@@ -330,8 +346,12 @@ fn judge(row: &RequestRow, status: Option<&TorrentStatus>, now: i64) -> Verdict 
         };
     };
     if matches!(status.state.as_str(), "error" | "missingFiles") {
-        let why = match status.state.as_str() {
-            "missingFiles" => "the download client can no longer find the downloaded files",
+        let why = match (status.state.as_str(), protocol) {
+            ("missingFiles", _) => "the download client can no longer find the downloaded files",
+            (_, ReleaseProtocol::Usenet) => {
+                "the download client reports the usenet job failed: it could not be downloaded, \
+                 repaired or unpacked"
+            }
             _ => "the download client reports an error with this download",
         };
         return Verdict::Stopped(why.into());

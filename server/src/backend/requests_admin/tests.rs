@@ -5,7 +5,7 @@ use axum::{body::to_bytes, http::StatusCode, Router};
 use omnibus_shared::RequestsSettingsStatus;
 use serde_json::{json, Value};
 use tower::ServiceExt;
-use wiremock::matchers::{header, method, path};
+use wiremock::matchers::{header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use crate::auth::test_support as auth_test_support;
@@ -275,6 +275,60 @@ mod post_test_client {
 
         assert_eq!(status, StatusCode::BAD_GATEWAY);
         assert_eq!(body, "the login was rejected");
+    }
+
+    /// Save the connections with SABnzbd chosen, its API key in the password slot.
+    async fn save_sabnzbd(app: &Router, token: &str, client: &str) {
+        let mut body = settings_body();
+        body["download_client_kind"] = json!("sabnzbd");
+        body["download_client_url"] = json!(client);
+        let res = app
+            .clone()
+            .oneshot(request("PUT", SETTINGS, Some(token), Some(body)))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+    }
+
+    async fn sabnzbd_answering(response: ResponseTemplate) -> MockServer {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api"))
+            .and(query_param("mode", "queue"))
+            .and(query_param("apikey", "hunter2-hunter2"))
+            .respond_with(response)
+            .mount(&server)
+            .await;
+        server
+    }
+
+    #[tokio::test]
+    async fn answers_200_when_sabnzbd_accepts_the_saved_api_key() {
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let token = admin_token(&pool).await;
+        let sabnzbd = sabnzbd_answering(
+            ResponseTemplate::new(200).set_body_json(json!({"queue": {"slots": []}})),
+        )
+        .await;
+        save_sabnzbd(&app, &token, &sabnzbd.uri()).await;
+
+        let (status, _) = post(&app, TEST_CLIENT, &token).await;
+
+        assert_eq!(status, StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn answers_502_when_sabnzbd_refuses_the_saved_api_key() {
+        let (app, _, pool) = fixture_book_requests(true).await;
+        let token = admin_token(&pool).await;
+        let refusal = json!({"status": false, "error": "API Key Incorrect"});
+        let sabnzbd = sabnzbd_answering(ResponseTemplate::new(200).set_body_json(refusal)).await;
+        save_sabnzbd(&app, &token, &sabnzbd.uri()).await;
+
+        let (status, body) = post(&app, TEST_CLIENT, &token).await;
+
+        assert_eq!(status, StatusCode::BAD_GATEWAY);
+        assert_eq!(body, "the API key was rejected");
     }
 
     #[tokio::test]

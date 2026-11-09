@@ -30,7 +30,10 @@ import type {
   RequestsSettingsUpdate,
   RequestVersion as RequestVersionWire,
 } from "./generated/schemas";
-import { BookRequest as BookRequestSchema } from "./generated/schemas";
+import {
+  BookRequest as BookRequestSchema,
+  DownloadClientKind,
+} from "./generated/schemas";
 
 export type {
   RequestKind,
@@ -39,6 +42,7 @@ export type {
   RequestsSettingsUpdate,
   StuckReason,
 } from "./generated/schemas";
+export { DownloadClientKind };
 
 // The Requests section's reads and writes. Every query key starts with "admin".
 

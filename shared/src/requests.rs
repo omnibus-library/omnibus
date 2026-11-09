@@ -4,6 +4,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::book_requests::ReleaseProtocol;
+
 /// Maximum byte length of a connection URL.
 pub const REQUESTS_URL_MAX_LEN: usize = 2048;
 
@@ -24,6 +26,12 @@ pub enum DownloadClientKind {
     /// qBittorrent, through its Web API v2.
     #[default]
     Qbittorrent,
+    /// Transmission, through its JSON RPC.
+    Transmission,
+    /// SABnzbd, through its API. Its API key goes in the password field.
+    Sabnzbd,
+    /// NZBGet, through its JSON-RPC.
+    Nzbget,
 }
 
 impl DownloadClientKind {
@@ -31,6 +39,9 @@ impl DownloadClientKind {
     pub fn as_str(self) -> &'static str {
         match self {
             DownloadClientKind::Qbittorrent => "qbittorrent",
+            DownloadClientKind::Transmission => "transmission",
+            DownloadClientKind::Sabnzbd => "sabnzbd",
+            DownloadClientKind::Nzbget => "nzbget",
         }
     }
 
@@ -39,7 +50,20 @@ impl DownloadClientKind {
     pub fn from_str_or_default(s: &str) -> Self {
         match s {
             "qbittorrent" => DownloadClientKind::Qbittorrent,
+            "transmission" => DownloadClientKind::Transmission,
+            "sabnzbd" => DownloadClientKind::Sabnzbd,
+            "nzbget" => DownloadClientKind::Nzbget,
             _ => DownloadClientKind::default(),
+        }
+    }
+
+    /// Which kind of release this client can download.
+    pub fn protocol(self) -> ReleaseProtocol {
+        match self {
+            DownloadClientKind::Qbittorrent | DownloadClientKind::Transmission => {
+                ReleaseProtocol::Torrent
+            }
+            DownloadClientKind::Sabnzbd | DownloadClientKind::Nzbget => ReleaseProtocol::Usenet,
         }
     }
 }
@@ -63,10 +87,10 @@ pub struct RequestsSettingsUpdate {
     /// The download client's web address: an `http` or `https` URL of up to 2048 bytes,
     /// without a username or password in it.
     pub download_client_url: String,
-    /// The download client login, up to 255 bytes.
+    /// The download client login, up to 255 bytes. SABnzbd has none and ignores it.
     pub download_client_username: String,
-    /// The download client password, up to 1024 bytes. Null or left out keeps the saved
-    /// password. An empty string clears it.
+    /// The download client password, up to 1024 bytes; for SABnzbd, its API key. Null or
+    /// left out keeps the saved password. An empty string clears it.
     #[serde(default)]
     pub download_client_password: Option<String>,
     /// The category the client files Omnibus downloads under, up to 255 bytes. Empty
@@ -93,10 +117,13 @@ pub struct RequestsSettingsStatus {
     pub download_client_kind: DownloadClientKind,
     pub download_client_url: Option<String>,
     pub download_client_username: Option<String>,
-    /// A masked preview of the password. Null when no password is set.
+    /// A masked preview of the password, or of SABnzbd's API key. Null when none is set.
     pub download_client_password_masked: Option<String>,
     /// The category downloads are filed under; empty when none is sent.
     pub download_client_category: String,
     pub download_client_path_prefix: Option<String>,
     pub download_path_prefix: Option<String>,
 }
+
+#[cfg(test)]
+mod tests;

@@ -1,6 +1,8 @@
 use std::time::{Duration, Instant};
 
-use omnibus_shared::{RequestKind, RequestState, RequestsSettingsUpdate, StuckReason};
+use omnibus_shared::{
+    DownloadClientKind, RequestKind, RequestState, RequestsSettingsUpdate, StuckReason,
+};
 use serde_json::{json, Value};
 use sqlx::SqlitePool;
 use wiremock::matchers::{header, method, path, query_param};
@@ -24,11 +26,15 @@ async fn pool_with_prowlarr(url: &str) -> SqlitePool {
 }
 
 async fn pool_with_prowlarr_key(url: &str, key: &str) -> SqlitePool {
+    pool_with_client(url, key, DownloadClientKind::default()).await
+}
+
+async fn pool_with_client(url: &str, key: &str, kind: DownloadClientKind) -> SqlitePool {
     let pool = crate::pool::init_db("sqlite::memory:").await.unwrap();
     let update = RequestsSettingsUpdate {
         prowlarr_url: url.to_string(),
         prowlarr_api_key: Some(key.to_string()),
-        download_client_kind: Default::default(),
+        download_client_kind: kind,
         download_client_url: String::new(),
         download_client_username: String::new(),
         download_client_password: None,
@@ -39,7 +45,15 @@ async fn pool_with_prowlarr_key(url: &str, key: &str) -> SqlitePool {
     crate::settings::set_requests_settings(&pool, &update)
         .await
         .unwrap();
+    set_converter(&pool, "/nonexistent/omnibus-ebook-convert-probe").await;
     pool
+}
+
+/// Point the effective `ebook-convert` at `path`, overriding any env var or `$PATH` entry.
+async fn set_converter(pool: &SqlitePool, path: &str) {
+    crate::set_ebook_convert_path(pool, Some(path))
+        .await
+        .unwrap();
 }
 
 /// A `looking` ebook request for a fileless "Dracula" by Bram Stoker.
@@ -129,6 +143,80 @@ mod run_search {
         assert_eq!(dropped, 1);
     }
 
+    fn azw3_release() -> Value {
+        json!({
+            "guid": "g3", "title": "Dracula - Bram Stoker AZW3", "size": 900000, "seeders": 9,
+            "indexer": "Books", "downloadUrl": "http://prowlarr/3/download", "categories": [{"id": 7020}],
+        })
+    }
+
+    #[tokio::test]
+    async fn offers_an_azw3_version_when_ebook_convert_runs() {
+        let server = MockServer::start().await;
+        mount_search(&server, json!([azw3_release()])).await;
+        let pool = pool_with_prowlarr(&server.uri()).await;
+        // `env --version` exits 0, standing in for a working Calibre.
+        set_converter(&pool, "env").await;
+        let id = looking_request(&pool).await;
+
+        run_search(&pool, id).await.unwrap();
+
+        assert_eq!(row(&pool, id).await.state, RequestState::Choose);
+        let shown = store::versions(&pool, id).await.unwrap();
+        assert_eq!(shown.len(), 1);
+        assert_eq!(shown[0].format.as_deref(), Some("AZW3"));
+    }
+
+    #[tokio::test]
+    async fn drops_an_azw3_version_when_ebook_convert_does_not_run() {
+        let server = MockServer::start().await;
+        mount_search(&server, json!([azw3_release()])).await;
+        let pool = pool_with_prowlarr(&server.uri()).await;
+        let id = looking_request(&pool).await;
+
+        run_search(&pool, id).await.unwrap();
+
+        let current = row(&pool, id).await;
+        assert_eq!(current.state, RequestState::Stuck);
+        assert_eq!(current.stuck_reason, Some(StuckReason::NotFound));
+    }
+
+    #[tokio::test]
+    async fn drops_an_azw3_version_when_the_converter_setting_cannot_be_read() {
+        let server = MockServer::start().await;
+        mount_search(&server, json!([azw3_release(), good_release()])).await;
+        let pool = pool_with_prowlarr(&server.uri()).await;
+        // A blob does not decode as the setting's text, so the status read fails.
+        sqlx::query("UPDATE settings SET value = x'ff' WHERE key = 'ebook_convert_path'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(crate::ebook_convert_status(&pool).await.is_err());
+        let id = looking_request(&pool).await;
+
+        run_search(&pool, id).await.unwrap();
+
+        let shown = store::versions(&pool, id).await.unwrap();
+        assert_eq!(shown.len(), 1);
+        assert_eq!(shown[0].format.as_deref(), Some("EPUB"));
+    }
+
+    #[tokio::test]
+    async fn offers_a_usenet_version_when_the_download_client_is_a_usenet_one() {
+        let server = MockServer::start().await;
+        let mut usenet = good_release();
+        usenet["protocol"] = json!("usenet");
+        mount_search(&server, json!([usenet])).await;
+        let pool =
+            pool_with_client(&server.uri(), "indexer-key", DownloadClientKind::Sabnzbd).await;
+        let id = looking_request(&pool).await;
+
+        run_search(&pool, id).await.unwrap();
+
+        assert_eq!(row(&pool, id).await.state, RequestState::Choose);
+        assert_eq!(store::versions(&pool, id).await.unwrap().len(), 1);
+    }
+
     #[tokio::test]
     async fn searches_the_audiobook_category_and_ranks_audio_for_an_audiobook_request() {
         let server = MockServer::start().await;
@@ -216,6 +304,31 @@ mod run_search {
             Some(
                 "searched for “Dracula Bram Stoker”: 2 results came back: \
                  2 were usenet releases the download client can't fetch"
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn names_torrent_as_the_cause_when_a_usenet_client_gets_only_torrents() {
+        let server = MockServer::start().await;
+        let torrent = json!({
+            "guid": "g1", "title": "Dracula - Bram Stoker EPUB", "size": 900000, "seeders": 4,
+            "protocol": "torrent", "downloadUrl": "http://prowlarr/1/download",
+            "categories": [{"id": 7020}],
+        });
+        mount_search(&server, json!([torrent])).await;
+        mount_indexer_status(&server, json!([])).await;
+        let pool =
+            pool_with_client(&server.uri(), "indexer-key", DownloadClientKind::Sabnzbd).await;
+        let id = looking_request(&pool).await;
+
+        run_search(&pool, id).await.unwrap();
+
+        assert_eq!(
+            row(&pool, id).await.stuck_detail.as_deref(),
+            Some(
+                "searched for “Dracula Bram Stoker”: 1 result came back: \
+                 1 was a torrent release the download client can't fetch"
             )
         );
     }

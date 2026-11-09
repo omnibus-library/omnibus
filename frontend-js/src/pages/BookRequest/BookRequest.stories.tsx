@@ -66,6 +66,14 @@ const TRIED = aWireVersion({
   seeders: 0,
   rejected: true,
 });
+const AZW3 = aWireVersion({
+  id: 21,
+  title: "Hyperion - Dan Simmons AZW3",
+  size_bytes: 1_700_000,
+  format: "AZW3",
+  indexer: "IPTorrents",
+  seeders: 9,
+});
 /** Six that can be chosen and one that was tried, in the server's order. */
 const MANY = [EPUB, REVISED, USENET, SCENE, PDF, UNNAMED, TRIED];
 const NBSP = "\u00a0";
@@ -400,6 +408,74 @@ export const EachChooseButtonIsDescribedByItsOwnVersion: Story = {
     await expect(revised).toHaveAccessibleDescription(
       /^Hyperion - Dan Simmons EPUB \[Gollancz, corrected contents v2\] Books\s·\sEPUB\s·\s2\.4\sMB\s·\s37\sseeds$/,
     );
+  },
+};
+
+export const AnAzw3VersionIsTaggedAsConvertedToEpubAndNamesItsFormat: Story = {
+  beforeEach({ msw }) {
+    msw.use(...seed({ state: "choose", versions: [AZW3, EPUB] }));
+  },
+  play: async ({ canvas }) => {
+    const rows = await canvas.findAllByTestId("request-version");
+    const azw3 = within(versionAt(rows, 0));
+
+    await expect(azw3.getByTestId("request-version-meta").textContent).toBe(
+      `IPTorrents${SEP}AZW3${SEP}1.7${NBSP}MB${SEP}9${NBSP}seeds`,
+    );
+    await expect(azw3.getByTestId("request-converts")).toHaveTextContent(
+      "We’ll convert it to EPUB",
+    );
+    await expect(canvas.getAllByTestId("request-converts")).toHaveLength(1);
+  },
+};
+
+export const AConvertedVersionThatIsTheBestMatchShowsBothTags: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...seed({
+        state: "choose",
+        versions: [{ ...AZW3, best_match: true }],
+      }),
+    );
+  },
+  play: async ({ canvas }) => {
+    const choose = await canvas.findByRole("button", { name: "Choose" });
+
+    await expect(canvas.getByTestId("request-best-match")).toBeInTheDocument();
+    await expect(canvas.getByTestId("request-converts")).toBeInTheDocument();
+    await expect(choose).toHaveAccessibleDescription(
+      /Best match We’ll convert it to EPUB$/,
+    );
+  },
+};
+
+export const ATriedAzw3VersionShowsOnlyDidntWork: Story = {
+  beforeEach({ msw }) {
+    msw.use(
+      ...seed({
+        state: "choose",
+        versions: [EPUB, { ...AZW3, rejected: true }],
+      }),
+    );
+  },
+  play: async ({ canvas }) => {
+    const rows = await canvas.findAllByTestId("request-version");
+
+    await expect(
+      within(versionAt(rows, 1)).getByTestId("request-didnt-work"),
+    ).toBeInTheDocument();
+    await expect(canvas.queryByTestId("request-converts")).toBeNull();
+  },
+};
+
+export const EpubPdfAndUnnamedVersionsShowNoConvertTag: Story = {
+  beforeEach({ msw }) {
+    msw.use(...seed({ state: "choose", versions: MANY }));
+  },
+  play: async ({ canvas }) => {
+    await canvas.findAllByTestId("request-version");
+
+    await expect(canvas.queryByTestId("request-converts")).toBeNull();
   },
 };
 

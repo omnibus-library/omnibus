@@ -10,6 +10,7 @@ use super::*;
 mod hash_ownership;
 mod migration_0119;
 mod removal;
+mod usenet;
 
 const NOW: i64 = 1_800_000_000;
 const CATEGORY: &str = "omnibus";

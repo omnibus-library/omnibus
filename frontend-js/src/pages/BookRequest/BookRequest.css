@@ -264,6 +264,10 @@
   text-transform: uppercase;
   color: var(--accent);
 }
+/* Light keeps the pale amber accent, ~1.8:1 on its rows; this reaches 4.8:1 on --bg-2. */
+[data-theme="light"] .rq-tag {
+  color: oklch(0.52 0.11 50);
+}
 /* Dimmed through colour, not opacity, and no further than --ink-2, so it stays readable. */
 .rq-version[data-rejected="true"] :is(.rq-version-name, .rq-tag) {
   color: var(--ink-2);

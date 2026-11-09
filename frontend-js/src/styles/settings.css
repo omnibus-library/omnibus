@@ -577,7 +577,8 @@
 .settings-field input[aria-invalid="true"] {
   border-color: var(--bad);
 }
-.settings-field input.ld-unknown:not([type="checkbox"]) {
+.settings-field input.ld-unknown:not([type="checkbox"]),
+.settings-field select.ld-unknown {
   cursor: progress;
   background: color-mix(in oklch, var(--ink-3) 14%, var(--bg-2));
 }

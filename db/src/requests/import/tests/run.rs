@@ -5,7 +5,9 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use omnibus_shared::{RequestKind, RequestState, Settings, StuckReason, WishlistSource};
+use omnibus_shared::{
+    DownloadClientKind, RequestKind, RequestState, Settings, StuckReason, WishlistSource,
+};
 use sqlx::SqlitePool;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -15,6 +17,7 @@ use crate::requests::store::{self, RequestRow};
 use crate::requests::test_support::{
     hash, pick, requests_config, seed_picked, update, Call, StubClient,
 };
+use crate::settings::RequestsConfig;
 use crate::test_support::{
     book_with_png_cover, build_stored_zip, build_test_epub, build_test_pdf, count_rows,
     external_meta, loopback_cover_config, seed_user, solid_color_png, CoversTempDir, TestPdf,
@@ -32,18 +35,19 @@ use super::write;
 /// real worker. The database is a file: an in-memory one answers the scan's follow-up writes
 /// racing a merge with SQLITE_LOCKED, where a file waits its turn as production does.
 pub struct Env {
-    /// The database the import reads and writes.
+    /// The file database the library and requests live in.
     pub pool: SqlitePool,
-    /// The worker that runs the scans.
+    /// The worker the scan is posted to.
     pub worker: Arc<Worker>,
-    /// The ebook library folder.
+    /// The ebook library root.
     pub root: PathBuf,
-    /// The folder the download client reports its files in.
+    /// Where the finished downloads are written.
     pub dl: PathBuf,
     _tmp: tempfile::TempDir,
 }
 
-/// A fresh environment with the ebook library set and no audiobook library.
+/// A fresh [`Env`] with the ebook library set, no audiobook library, and an `ebook-convert`
+/// path that does not exist.
 pub async fn env() -> Env {
     let tmp = tempfile::tempdir().unwrap();
     let (root, dl) = (tmp.path().join("library"), tmp.path().join("dl"));
@@ -54,6 +58,10 @@ pub async fn env() -> Env {
         tmp.path().join("omnibus.db").display()
     );
     let pool = crate::pool::init_db(&url).await.unwrap();
+    // Not the developer's Calibre: an import that needs a converter says so through its own.
+    crate::set_ebook_convert_path(&pool, Some("/nonexistent/omnibus-ebook-convert-probe"))
+        .await
+        .unwrap();
     let worker = Worker::new(pool.clone(), WorkerConfig::default());
     let env = Env {
         pool,
@@ -151,7 +159,15 @@ pub fn downloaded(env: &Env, request: &RequestRow, files: &[(&str, &[u8])]) -> S
 
 /// One pass of the import with the download folders unmapped.
 pub async fn run(env: &Env, client: &StubClient) -> bool {
-    let config = requests_config(None, None);
+    run_with(env, client, DownloadClientKind::Qbittorrent).await
+}
+
+/// [`run`], with `kind` as the download client the admin chose.
+async fn run_with(env: &Env, client: &StubClient, kind: DownloadClientKind) -> bool {
+    let config = RequestsConfig {
+        download_client_kind: kind,
+        ..requests_config(None, None)
+    };
     import_finished(&env.pool, client, &env.worker, &config)
         .await
         .unwrap()
@@ -161,7 +177,7 @@ async fn count(env: &Env, table: &str) -> i64 {
     count_rows(&env.pool, &format!("SELECT COUNT(*) FROM {table}")).await
 }
 
-/// How many files the book holds.
+/// How many files the book `uuid` has.
 pub async fn files_of(env: &Env, uuid: &str) -> usize {
     let book = get_book_by_uuid(&env.pool, uuid).await.unwrap().unwrap();
     get_book_files(&env.pool, book.id).await.unwrap().len()
@@ -266,6 +282,54 @@ mod import_finished {
                 .any(|call| matches!(call, Call::Remove { .. } | Call::Add { .. }));
             assert!(!removed);
             assert_eq!(fs::read(env.dl.join("Dune.epub")).unwrap(), bytes);
+        }
+    }
+
+    mod download_removal {
+        use super::*;
+
+        #[tokio::test]
+        async fn queues_a_usenet_job_for_removal_without_calling_the_client() {
+            let env = env().await;
+            let wished = wish(&env, "Dune", "Frank Herbert").await;
+            let request = finished_request(&env, &wished, RequestKind::Ebook).await;
+            let client = downloaded(&env, &request, &[("Dune.epub", &epub("dune"))]);
+
+            run_with(&env, &client, DownloadClientKind::Sabnzbd).await;
+
+            assert_ready(&env, request.id).await;
+            assert_eq!(row(&env, request.id).await.remove_hash, request.client_hash);
+            let removed = client
+                .calls()
+                .iter()
+                .any(|call| matches!(call, Call::Remove { .. }));
+            assert!(!removed);
+        }
+
+        #[tokio::test]
+        async fn queues_no_removal_for_a_torrent() {
+            let env = env().await;
+            let wished = wish(&env, "Dune", "Frank Herbert").await;
+            let request = finished_request(&env, &wished, RequestKind::Ebook).await;
+            let client = downloaded(&env, &request, &[("Dune.epub", &epub("dune"))]);
+
+            run_with(&env, &client, DownloadClientKind::Transmission).await;
+
+            assert_ready(&env, request.id).await;
+            assert_eq!(row(&env, request.id).await.remove_hash, None);
+        }
+
+        #[tokio::test]
+        async fn queues_no_removal_when_the_import_fails() {
+            let env = env().await;
+            let wished = wish(&env, "Dune", "Frank Herbert").await;
+            let request = finished_request(&env, &wished, RequestKind::Ebook).await;
+            let client = downloaded(&env, &request, &[("setup.exe", b"MZ")]);
+
+            run_with(&env, &client, DownloadClientKind::Nzbget).await;
+
+            couldnt_add_detail(&env, request.id).await;
+            assert_eq!(row(&env, request.id).await.remove_hash, None);
         }
     }
 
@@ -580,6 +644,26 @@ mod import_finished {
             let request = finished_request(&env, &wished, RequestKind::Ebook).await;
             let client = downloaded(&env, &request, &[("Dune.epub", &epub("dune"))]);
             let config = requests_config(Some("/downloads"), env.dl.to_str());
+
+            import_finished(&env.pool, &client, &env.worker, &config)
+                .await
+                .unwrap();
+
+            let detail = couldnt_add_detail(&env, request.id).await;
+            assert!(detail.contains("not visible"), "{detail}");
+        }
+
+        #[tokio::test]
+        async fn when_a_usenet_jobs_folder_is_outside_the_clients_prefix() {
+            let env = env().await;
+            let wished = wish(&env, "Dune", "Frank Herbert").await;
+            let request = finished_request(&env, &wished, RequestKind::Ebook).await;
+            let hash = request.client_hash.clone().unwrap();
+            let client = StubClient::new().with_files(&hash, "/elsewhere/job", &[]);
+            let config = RequestsConfig {
+                download_client_kind: DownloadClientKind::Sabnzbd,
+                ..requests_config(Some("/downloads"), env.dl.to_str())
+            };
 
             import_finished(&env.pool, &client, &env.worker, &config)
                 .await

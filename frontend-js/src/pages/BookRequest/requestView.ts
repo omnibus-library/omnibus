@@ -166,6 +166,10 @@ export const versionSource = (
     .filter((part) => part !== null)
     .join(SEP);
 
+/** Whether adding a version converts it to EPUB first; mirrors `EPUB_CONVERTIBLE_FORMATS` in the server's `convert` module. */
+export const convertsToEpub = (version: Pick<RequestVersion, "format">) =>
+  version.format === "AZW3" || version.format === "MOBI";
+
 /** The line under a picked version's name: its size and source, each left out when unknown. */
 export const pickedMeta = (
   version: Pick<RequestVersion, "indexer" | "sizeBytes">,

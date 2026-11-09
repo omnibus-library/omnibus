@@ -61,6 +61,66 @@ mod mark_on_its_way {
     }
 }
 
+mod mark_ready {
+    use super::*;
+
+    /// A request on its way whose download was added by Omnibus, or `adopted` by the client.
+    async fn downloaded(pool: &SqlitePool, adopted: bool) -> (i64, Option<i64>) {
+        let id = seed_picked(pool, "ada", "book-1", RequestKind::Ebook, "on_its_way").await;
+        let set = format!("client_hash = '{}', client_adopted = {adopted}", hash(id));
+        update(pool, id, &set).await;
+        (id, get(pool, id).await.unwrap().unwrap().chosen_result_id)
+    }
+
+    #[tokio::test]
+    async fn queues_the_download_for_removal_when_asked() {
+        let pool = pool().await;
+        let (id, chosen) = downloaded(&pool, false).await;
+
+        mark_ready(&pool, id, chosen, true).await.unwrap();
+
+        let after = get(&pool, id).await.unwrap().unwrap();
+        assert_eq!(after.state, RequestState::Ready);
+        assert_eq!(after.remove_hash, Some(hash(id)));
+        assert_eq!(after.remove_since, None);
+    }
+
+    #[tokio::test]
+    async fn changes_nothing_but_the_state_when_not_asked_to_remove() {
+        let pool = pool().await;
+        let (id, chosen) = downloaded(&pool, false).await;
+
+        mark_ready(&pool, id, chosen, false).await.unwrap();
+
+        let after = get(&pool, id).await.unwrap().unwrap();
+        assert_eq!(after.state, RequestState::Ready);
+        assert_eq!(after.remove_hash, None);
+    }
+
+    #[tokio::test]
+    async fn queues_nothing_for_a_download_the_client_already_held() {
+        let pool = pool().await;
+        let (id, chosen) = downloaded(&pool, true).await;
+
+        mark_ready(&pool, id, chosen, true).await.unwrap();
+
+        assert_eq!(get(&pool, id).await.unwrap().unwrap().remove_hash, None);
+    }
+
+    #[tokio::test]
+    async fn keeps_a_removal_that_is_already_pending() {
+        let pool = pool().await;
+        let (id, chosen) = downloaded(&pool, false).await;
+        update(&pool, id, "remove_hash = 'earlier', remove_since = 5").await;
+
+        mark_ready(&pool, id, chosen, true).await.unwrap();
+
+        let after = get(&pool, id).await.unwrap().unwrap();
+        assert_eq!(after.remove_hash.as_deref(), Some("earlier"));
+        assert_eq!(after.remove_since, Some(5));
+    }
+}
+
 mod offers_cover {
     use super::*;
 
