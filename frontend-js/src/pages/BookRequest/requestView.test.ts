@@ -13,6 +13,7 @@ import {
 } from "../../testing/requestHandlers";
 import {
   canCancel,
+  convertsToEpub,
   coverSizesLine,
   downloadPercent,
   factParts,
@@ -150,6 +151,19 @@ describe("versionSize", () => {
   it("writes a size in decimal units and leaves a missing one out", () => {
     expect(versionSize(2_400_000)).toBe(`2.4${NBSP}MB`);
     expect(versionSize(null)).toBeNull();
+  });
+});
+
+describe("convertsToEpub", () => {
+  it.each([
+    ["AZW3", true],
+    ["MOBI", true],
+    ["EPUB", false],
+    ["PDF", false],
+    ["CBZ", false],
+    [null, false],
+  ])("answers for the %s format", (format, expected) => {
+    expect(convertsToEpub(aVersion({ format }))).toBe(expected);
   });
 });
 

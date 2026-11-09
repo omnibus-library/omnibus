@@ -10,7 +10,7 @@ use omnibus_shared::{RequestState, StuckReason};
 use sqlx::SqlitePool;
 
 use super::prowlarr::Prowlarr;
-use super::rank::rank;
+use super::rank::{names_convertible, rank};
 use super::store::{self, RequestError, SearchOutcome};
 use super::ConnectionError;
 
@@ -136,7 +136,9 @@ async fn attempt(pool: &SqlitePool, book_uuid: &str) -> Attempt {
         Ok(releases) => releases,
         Err(e) => return search_error(e),
     };
-    let ranked = rank(releases, &title, &author);
+    // Probed only when a result could use it: the check spawns the converter.
+    let convertible = names_convertible(&releases) && conversion_available(pool).await;
+    let ranked = rank(releases, &title, &author, convertible);
     if ranked.iter().all(|r| r.rejected) {
         return Attempt::Done(SearchOutcome::Stuck {
             reason: StuckReason::NotFound,
@@ -144,6 +146,18 @@ async fn attempt(pool: &SqlitePool, book_uuid: &str) -> Attempt {
         });
     }
     Attempt::Done(SearchOutcome::Found(ranked))
+}
+
+/// Whether `ebook-convert` runs, so AZW3 and MOBI versions can be added. An unreadable
+/// setting counts as not: those versions would fail to import, so they are not offered.
+async fn conversion_available(pool: &SqlitePool) -> bool {
+    match crate::ebook_convert_status(pool).await {
+        Ok(status) => status.available,
+        Err(e) => {
+            tracing::warn!(error = %e, "check whether ebook-convert runs");
+            false
+        }
+    }
 }
 
 /// Which indexers Prowlarr has switched off, when it will say; the likeliest reason an

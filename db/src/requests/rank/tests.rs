@@ -19,7 +19,7 @@ fn release(title: &str) -> ProwlarrRelease {
 }
 
 fn ranked(releases: Vec<ProwlarrRelease>) -> Vec<Ranked> {
-    rank(releases, TITLE, AUTHOR)
+    rank(releases, TITLE, AUTHOR, false)
 }
 
 fn kept_titles(releases: Vec<ProwlarrRelease>) -> Vec<String> {
@@ -147,6 +147,7 @@ mod drop_rules {
             vec![release("Dracula - Stoker, Bram EPUB")],
             TITLE,
             "Stoker, Bram",
+            false,
         );
 
         assert!(!all[0].rejected);
@@ -308,5 +309,139 @@ mod format_label {
 
         assert_eq!(all[0].format.as_deref(), Some("EPUB"));
         assert_eq!(all[1].format, None);
+    }
+}
+
+mod convertible_formats {
+    use super::*;
+
+    fn ranked_convertible(releases: Vec<ProwlarrRelease>) -> Vec<Ranked> {
+        rank(releases, TITLE, AUTHOR, true)
+    }
+
+    fn kept_convertible(releases: Vec<ProwlarrRelease>) -> Vec<String> {
+        ranked_convertible(releases)
+            .into_iter()
+            .filter(|r| !r.rejected)
+            .map(|r| r.release.title)
+            .collect()
+    }
+
+    fn format_of_only(title: &str, convertible: bool) -> Option<String> {
+        let all = rank(vec![release(title)], TITLE, AUTHOR, convertible);
+        assert!(!all[0].rejected, "{title} was dropped");
+        all[0].format.clone()
+    }
+
+    #[test]
+    fn keeps_azw3_and_mobi_with_their_own_format_label_when_convertible() {
+        assert_eq!(
+            format_of_only("Dracula - Bram Stoker AZW3", true).as_deref(),
+            Some("AZW3")
+        );
+        assert_eq!(
+            format_of_only("Dracula - Bram Stoker [MOBI]", true).as_deref(),
+            Some("MOBI")
+        );
+    }
+
+    #[test]
+    fn drops_azw3_and_mobi_when_not_convertible() {
+        let all = rank(
+            vec![
+                release("Dracula - Bram Stoker AZW3"),
+                release("Dracula - Bram Stoker [MOBI]"),
+            ],
+            TITLE,
+            AUTHOR,
+            false,
+        );
+
+        assert!(all.iter().all(|r| r.rejected));
+    }
+
+    #[test]
+    fn orders_formats_epub_then_azw3_and_mobi_then_pdf_then_cbz_then_unnamed() {
+        let order = kept_convertible(vec![
+            release("Dracula - Bram Stoker"),
+            release("Dracula - Bram Stoker CBZ"),
+            release("Dracula - Bram Stoker PDF"),
+            release("Dracula - Bram Stoker MOBI"),
+            release("Dracula - Bram Stoker AZW3"),
+            release("Dracula - Bram Stoker EPUB"),
+        ]);
+
+        let mut converted = order[1..3].to_vec();
+        converted.sort();
+        assert_eq!(
+            (&order[0], converted, &order[3..]),
+            (
+                &"Dracula - Bram Stoker EPUB".to_string(),
+                vec![
+                    "Dracula - Bram Stoker AZW3".to_string(),
+                    "Dracula - Bram Stoker MOBI".to_string()
+                ],
+                &[
+                    "Dracula - Bram Stoker PDF".to_string(),
+                    "Dracula - Bram Stoker CBZ".to_string(),
+                    "Dracula - Bram Stoker".to_string(),
+                ][..]
+            )
+        );
+    }
+
+    #[test]
+    fn lets_a_far_closer_title_match_beat_a_better_format() {
+        let order = kept_convertible(vec![
+            release("Bram Stoker - Dracula (Annotated) EPUB"),
+            release("Dracula - Bram Stoker AZW3"),
+        ]);
+
+        assert_eq!(order[0], "Dracula - Bram Stoker AZW3");
+    }
+
+    #[test]
+    fn keeps_azw_and_azw4_dropped_when_convertible() {
+        let all = ranked_convertible(vec![
+            release("Dracula - Bram Stoker AZW"),
+            release("Dracula - Bram Stoker AZW4"),
+        ]);
+
+        assert!(all.iter().all(|r| r.rejected));
+    }
+
+    #[test]
+    fn labels_a_title_naming_several_formats_with_the_one_worth_the_most() {
+        assert_eq!(
+            format_of_only("Dracula - Bram Stoker EPUB MOBI", true).as_deref(),
+            Some("EPUB")
+        );
+        assert_eq!(
+            format_of_only("Dracula - Bram Stoker PDF AZW3", true).as_deref(),
+            Some("AZW3")
+        );
+        assert_eq!(
+            format_of_only("Dracula - Bram Stoker PDF AZW3", false).as_deref(),
+            Some("PDF")
+        );
+    }
+}
+
+mod names_convertible {
+    use super::*;
+
+    #[test]
+    fn is_true_only_when_a_title_names_azw3_or_mobi() {
+        let plain = vec![
+            release("Dracula - Bram Stoker EPUB"),
+            release("Dracula - Bram Stoker PDF"),
+        ];
+        let with_mobi = vec![
+            release("Dracula - Bram Stoker EPUB"),
+            release("Dracula - Bram Stoker [MOBI]"),
+        ];
+
+        assert!(!names_convertible(&plain));
+        assert!(names_convertible(&with_mobi));
     }
 }

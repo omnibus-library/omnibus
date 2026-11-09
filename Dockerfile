@@ -58,8 +58,10 @@ RUN pnpm install --frozen-lockfile && pnpm run build \
 # Must match the builder's glibc (trixie) — the server binary is linked against it.
 FROM debian:trixie-slim AS runtime
 
+# The last six: the libraries a mounted Calibre needs to convert; Calibre itself is not in the image.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ffmpeg ca-certificates curl gosu \
+        libxcb1 libegl1 libopengl0 libglx0 libxkbcommon0 libfontconfig1 \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --uid 1000 --user-group --create-home --shell /usr/sbin/nologin omnibus
 

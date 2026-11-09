@@ -2,7 +2,8 @@
 //! book's `source_format` file to `target_format`, caching the result via an
 //! atomic temp-then-rename ([`super::fs::convert_path`]), then persists it
 //! as a `book_files` row ([`super::persist::persist_converted_file`]).
-//! Driven by `Task::ConvertFormat` (`crate::worker`).
+//! Driven by `Task::ConvertFormat` (`crate::worker`). `convert_file` is the
+//! same shell-out on a bare file, for callers with no `book_files` row yet.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -19,6 +20,10 @@ use crate::settings::effective_ebook_convert_path;
 /// `ebook-convert` is far lighter than an ffmpeg transcode, but still
 /// generous for a large book on a loaded host.
 const DEFAULT_TIMEOUT_SECS: u64 = 600;
+
+/// How much of a failed run's output the error keeps: the tail, where Calibre puts the
+/// actual error after its progress noise.
+const STDERR_TAIL_BYTES: usize = 4096;
 
 /// Errors from the format-conversion path. `SourceMissing`, `BinaryUnavailable`,
 /// `Timeout` and `InvalidFormat` stay distinct because
@@ -60,12 +65,7 @@ pub async fn convert_book(
     // token that's already been proven safe.
     validate_format_pair(source_format, target_format)?;
 
-    let (bin, _source) = effective_ebook_convert_path(pool)
-        .await
-        .context("resolve ebook-convert path")?;
-    if !probe_runnable(&bin).await {
-        return Err(ConvertError::BinaryUnavailable);
-    }
+    let bin = runnable_bin(pool).await?;
 
     let src = crate::book_file_path(pool, book_id, source_format)
         .await
@@ -118,6 +118,24 @@ pub async fn convert_book(
     Ok(out_path)
 }
 
+/// Convert `src` into `out` with the effective `ebook-convert`; the output format is
+/// `out`'s extension. Writes nothing else and records nothing.
+pub async fn convert_file(pool: &SqlitePool, src: &Path, out: &Path) -> Result<(), ConvertError> {
+    let bin = runnable_bin(pool).await?;
+    run_ebook_convert(&bin, src, out).await
+}
+
+/// The effective `ebook-convert` command, once it has answered a `--version` probe.
+async fn runnable_bin(pool: &SqlitePool) -> Result<String, ConvertError> {
+    let (bin, _source) = effective_ebook_convert_path(pool)
+        .await
+        .context("resolve ebook-convert path")?;
+    if !probe_runnable(&bin).await {
+        return Err(ConvertError::BinaryUnavailable);
+    }
+    Ok(bin)
+}
+
 /// `--version` probe for `bin`, off the async runtime thread (the probe
 /// itself blocks on a child process). A join failure (panic/cancel) reads as
 /// "not available" rather than propagating — the probe is just a fast-fail
@@ -131,6 +149,12 @@ async fn probe_runnable(bin: &str) -> bool {
             false
         }
     }
+}
+
+/// The last [`STDERR_TAIL_BYTES`] of `output` as trimmed text.
+fn tail_text(output: &[u8]) -> String {
+    let tail = &output[output.len().saturating_sub(STDERR_TAIL_BYTES)..];
+    String::from_utf8_lossy(tail).trim().to_string()
 }
 
 /// Run `<bin> <src> <out>` under a wall-clock timeout
@@ -159,9 +183,13 @@ async fn run_ebook_convert(bin: &str, src: &Path, out: &Path) -> Result<(), Conv
     match tokio::time::timeout(Duration::from_secs(timeout_secs), child.wait_with_output()).await {
         Ok(Ok(output)) if output.status.success() => Ok(()),
         Ok(Ok(output)) => {
-            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            // A failure Calibre only logs (it prints progress to stdout) has an empty stderr.
+            let cause = match tail_text(&output.stderr) {
+                empty if empty.is_empty() => tail_text(&output.stdout),
+                stderr => stderr,
+            };
             Err(ConvertError::Failed(anyhow::anyhow!(
-                "ebook-convert exited with {}: {stderr}",
+                "ebook-convert exited with {}: {cause}",
                 output.status
             )))
         }

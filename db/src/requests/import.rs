@@ -2,7 +2,7 @@
 //! [`import_finished`] runs inside the request poller, one request at a time so no two
 //! imports race on a merge: [`files`] picks the book out of the download, [`place`] stages
 //! it inside the library and renames it into the canonical layout named from the wished
-//! book, the worker scans it in, and it is merged into the wished book when the scanner
+//! book (an AZW3 or MOBI is converted to EPUB there first), the worker scans it in, and it is merged into the wished book when the scanner
 //! filed it as a book of its own. The download is only read, never moved or removed. Its cover
 //! is kept as the request's candidate (see [`super::cover`]) whichever way the scan filed it.
 
@@ -40,6 +40,9 @@ pub enum ImportError {
     /// Any other reason the library cannot take the file; the message is the whole story.
     #[error("{0}")]
     Cannot(String),
+    /// The conversion's own message, which carries the converter's output for the admin.
+    #[error(transparent)]
+    Convert(#[from] crate::convert::ConvertError),
     #[error("merging into the requested book failed: {0}")]
     Merge(#[from] MergeError),
     #[error("the download client could not be asked: {0}")]
@@ -176,15 +179,15 @@ async fn file_into_library(
     let listed = client.files(hash).await?;
     let (config, root_path) = (config.clone(), PathBuf::from(root));
     let (id, author, title) = (row.id, wished.author.clone(), wished.title.clone());
-    let placed = tokio::task::spawn_blocking(move || -> Result<PathBuf, ImportError> {
-        let found = files::resolve(&status, &listed, &config)?;
-        let (src, ext) = files::pick(&found)?;
-        Ok(place::place_blocking(
-            &root_path, id, &src, &author, &title, ext,
-        )?)
-    })
-    .await
-    .map_err(|e| io::Error::other(e.to_string()))??;
+    let found = blocking(move || files::resolve(&status, &listed, &config)).await?;
+    // Probed only now: an import with no AZW3 or MOBI never spawns the converter.
+    let convertible = files::has_convertible(&found) && converter_runs(pool).await;
+    let (src, ext) = blocking(move || files::pick(&found, convertible)).await?;
+    let placed = if files::converts_to_epub(ext) {
+        place::place_converted(pool, &root_path, id, &src, &author, &title).await?
+    } else {
+        blocking(move || place::place_blocking(&root_path, id, &src, &author, &title, ext)).await?
+    };
     let key = placed
         .strip_prefix(root)
         .map_err(|e| io::Error::other(e.to_string()))?
@@ -196,6 +199,29 @@ async fn file_into_library(
         return Err(e.into());
     }
     Ok(Some(key))
+}
+
+/// Whether `ebook-convert` runs, so an AZW3 or MOBI can be converted. An unreadable setting
+/// counts as not, so a download that also holds an EPUB or PDF still imports.
+async fn converter_runs(pool: &SqlitePool) -> bool {
+    match crate::ebook_convert_status(pool).await {
+        Ok(status) => status.available,
+        Err(e) => {
+            tracing::warn!(error = %e, "check whether ebook-convert runs");
+            false
+        }
+    }
+}
+
+/// Run blocking filesystem work off the async runtime thread.
+async fn blocking<T, E>(work: impl FnOnce() -> Result<T, E> + Send + 'static) -> Result<T, E>
+where
+    T: Send + 'static,
+    E: From<io::Error> + Send + 'static,
+{
+    tokio::task::spawn_blocking(work)
+        .await
+        .map_err(|e| io::Error::other(e.to_string()))?
 }
 
 /// Scan the library so the file becomes a book, then fold that book into the wished one

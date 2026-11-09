@@ -8,6 +8,7 @@
 
 use omnibus_shared::ReleaseProtocol;
 
+use crate::convert::EPUB_CONVERTIBLE_FORMATS;
 use crate::ebook::EBOOK_EXTENSIONS;
 use crate::metadata_lookup::{score_title_match, MIN_RELEVANCE_SCORE};
 use crate::normalize::{normalize_author, normalize_title};
@@ -25,6 +26,9 @@ const BEST_MATCH_MIN: f64 = 850.0;
 const TITLE_WEIGHT: f64 = 100.0;
 /// Points per place in [`EBOOK_EXTENSIONS`]: the first (EPUB) earns the most.
 const FORMAT_STEP: f64 = 20.0;
+/// Between EPUB's 60 and PDF's 40 ([`FORMAT_STEP`] places), so a converted version ranks
+/// below EPUB and above PDF.
+const CONVERTED_FORMAT_POINTS: f64 = 50.0;
 const FOREIGN_LANGUAGE_PENALTY: f64 = 30.0;
 const RETAIL_BONUS: f64 = 15.0;
 const SEEDER_WEIGHT: f64 = 1.5;
@@ -33,8 +37,9 @@ const SIZE_CLOSENESS_MAX: f64 = 5.0;
 /// every single-file result.
 const MULTI_FILE_PENALTY: f64 = 500.0;
 
-/// Formats Omnibus cannot read; a result naming only these is dropped. A result that names
-/// no format at all is kept and ranks last.
+/// Formats Omnibus cannot read; a result naming only these is dropped, except the
+/// [`EPUB_CONVERTIBLE_FORMATS`] while conversion is available. A result that names no format
+/// at all is kept and ranks last.
 const UNREADABLE_FORMATS: &[&str] = &[
     "mobi", "azw", "azw3", "azw4", "djvu", "lit", "fb2", "rtf", "doc", "docx", "txt", "chm", "cbr",
     "lrf", "pdb", "htmlz",
@@ -60,7 +65,8 @@ const FOREIGN_LANGUAGES: &[&str] = &[
 /// A search result with its place in the order.
 pub struct Ranked {
     pub release: ProwlarrRelease,
-    /// `EPUB`, `PDF` or `CBZ`; `None` when the title names none.
+    /// `EPUB`, `PDF`, `CBZ`, `AZW3` or `MOBI`, the last two converted to EPUB when added;
+    /// `None` when the title names none.
     pub format: Option<String>,
     pub score: f64,
     pub best_match: bool,
@@ -70,8 +76,8 @@ pub struct Ranked {
 
 /// What a result's title says about its format.
 enum Format {
-    /// Place in [`EBOOK_EXTENSIONS`].
-    Readable(usize),
+    /// The lowercase extension, and the points it earns.
+    Readable(&'static str, f64),
     Unreadable,
     Unnamed,
 }
@@ -84,24 +90,53 @@ fn tokens(title: &str) -> Vec<String> {
         .collect()
 }
 
-fn format_of(tokens: &[String]) -> Format {
-    let readable = EBOOK_EXTENSIONS
+/// The format a title names: of several, the one worth the most points. AZW3 and MOBI count
+/// only when `convertible`.
+fn format_of(tokens: &[String], convertible: bool) -> Format {
+    let native = EBOOK_EXTENSIONS
         .iter()
-        .position(|ext| tokens.iter().any(|t| t == ext));
-    match readable {
-        Some(place) => Format::Readable(place),
-        None if tokens
+        .enumerate()
+        .map(|(place, ext)| (*ext, (EBOOK_EXTENSIONS.len() - place) as f64 * FORMAT_STEP));
+    let converted = EPUB_CONVERTIBLE_FORMATS
+        .iter()
+        .filter(|_| convertible)
+        .map(|ext| (*ext, CONVERTED_FORMAT_POINTS));
+    native
+        .chain(converted)
+        .filter(|(ext, _)| tokens.iter().any(|t| t == ext))
+        .max_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|(ext, points)| Format::Readable(ext, points))
+        .unwrap_or_else(|| {
+            if tokens
+                .iter()
+                .any(|t| UNREADABLE_FORMATS.contains(&t.as_str()))
+            {
+                Format::Unreadable
+            } else {
+                Format::Unnamed
+            }
+        })
+}
+
+/// Whether any result's title names a format the server converts to EPUB, so it is worth
+/// asking whether the converter runs.
+pub fn names_convertible(releases: &[ProwlarrRelease]) -> bool {
+    releases.iter().any(|r| {
+        let words = tokens(&r.title);
+        EPUB_CONVERTIBLE_FORMATS
             .iter()
-            .any(|t| UNREADABLE_FORMATS.contains(&t.as_str())) =>
-        {
-            Format::Unreadable
-        }
-        None => Format::Unnamed,
-    }
+            .any(|format| words.iter().any(|w| w == format))
+    })
 }
 
 /// Drop what cannot be the book or cannot be used, then order what is left best first.
-pub fn rank(releases: Vec<ProwlarrRelease>, title: &str, author: &str) -> Vec<Ranked> {
+/// `convertible` is whether the server can convert AZW3 and MOBI to EPUB on import.
+pub fn rank(
+    releases: Vec<ProwlarrRelease>,
+    title: &str,
+    author: &str,
+    convertible: bool,
+) -> Vec<Ranked> {
     let author_tokens: Vec<String> = normalize_author(author)
         .unwrap_or_default()
         .split(' ')
@@ -110,7 +145,7 @@ pub fn rank(releases: Vec<ProwlarrRelease>, title: &str, author: &str) -> Vec<Ra
         .collect();
     let (kept, rejected): (Vec<Ranked>, Vec<Ranked>) = releases
         .into_iter()
-        .map(|release| assess(release, title, &author_tokens))
+        .map(|release| assess(release, title, &author_tokens, convertible))
         .partition(|r| !r.rejected);
     let median = median_size(&kept);
     let mut ranked: Vec<Ranked> = kept
@@ -130,9 +165,14 @@ pub fn rank(releases: Vec<ProwlarrRelease>, title: &str, author: &str) -> Vec<Ra
 
 /// Score one result without the size term, which needs the median of the others; a
 /// dropped one scores 0.
-fn assess(release: ProwlarrRelease, title: &str, author_tokens: &[String]) -> Ranked {
+fn assess(
+    release: ProwlarrRelease,
+    title: &str,
+    author_tokens: &[String],
+    convertible: bool,
+) -> Ranked {
     let words = tokens(&release.title);
-    let format = format_of(&words);
+    let format = format_of(&words, convertible);
     let title_score = score_title_match(title, &release.title);
     let unusable = !release
         .categories
@@ -158,7 +198,7 @@ fn assess(release: ProwlarrRelease, title: &str, author_tokens: &[String]) -> Ra
     };
     Ranked {
         format: match format {
-            Format::Readable(place) => Some(EBOOK_EXTENSIONS[place].to_uppercase()),
+            Format::Readable(ext, _) => Some(ext.to_uppercase()),
             _ => None,
         },
         release,
@@ -170,7 +210,7 @@ fn assess(release: ProwlarrRelease, title: &str, author_tokens: &[String]) -> Ra
 
 fn format_points(format: &Format) -> f64 {
     match format {
-        Format::Readable(place) => (EBOOK_EXTENSIONS.len() - place) as f64 * FORMAT_STEP,
+        Format::Readable(_, points) => *points,
         _ => 0.0,
     }
 }
