@@ -16013,7 +16013,7 @@
               "string",
               "null"
             ],
-            "description": "`EPUB`, `PDF` or `CBZ`. Null when the name does not say."
+            "description": "`EPUB`, `PDF`, `CBZ`, `AZW3` or `MOBI`; the last two are converted to EPUB when added.\nNull when the name does not say."
           },
           "id": {
             "type": "integer",

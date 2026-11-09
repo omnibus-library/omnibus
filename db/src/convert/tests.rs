@@ -458,3 +458,152 @@ async fn converting_two_different_target_formats_produces_two_distinct_converted
     assert!(files.iter().any(|f| f.format.eq_ignore_ascii_case("MOBI")));
     assert!(files.iter().any(|f| f.format.eq_ignore_ascii_case("AZW3")));
 }
+
+// ---------------------------------------------------------------------------
+// execute: convert_file
+// ---------------------------------------------------------------------------
+
+/// Write a fake `ebook-convert` that answers `--version`, then fails with a
+/// long stderr whose only useful line, `the-real-error`, comes last.
+fn write_noisy_ebook_convert(path: &Path) {
+    let script = "#!/bin/sh\n\
+         if [ \"$1\" = \"--version\" ]; then echo 'ebook-convert 0-fake'; exit 0; fi\n\
+         echo 'HEAD-MARKER' 1>&2\n\
+         i=0\n\
+         while [ $i -lt 600 ]; do printf 'aaaaaaaaaaaaaaaa' 1>&2; i=$((i+1)); done\n\
+         echo 'the-real-error' 1>&2\n\
+         exit 3\n";
+    std::fs::write(path, script).unwrap();
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+}
+
+#[tokio::test]
+async fn convert_file_writes_the_converted_file_at_the_output_path() {
+    let pool = crate::pool::init_db("sqlite::memory:").await.unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let script = dir.path().join("ebook-convert");
+    write_fake_ebook_convert(&script, &dir.path().join("runs"));
+    let (src, out) = (dir.path().join("in.azw3"), dir.path().join("out.epub"));
+    std::fs::write(&src, b"azw3 bytes").unwrap();
+    let _env = EnvVarGuard::set_os("OMNIBUS_EBOOK_CONVERT_PATH", Some(script.as_os_str()));
+
+    convert_file(&pool, &src, &out).await.unwrap();
+
+    assert_eq!(std::fs::read(&out).unwrap(), b"azw3 bytes");
+}
+
+#[tokio::test]
+async fn convert_file_returns_binary_unavailable_when_ebook_convert_is_missing() {
+    let pool = crate::pool::init_db("sqlite::memory:").await.unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let _env = EnvVarGuard::set(
+        "OMNIBUS_EBOOK_CONVERT_PATH",
+        Some("/nonexistent/omnibus-ebook-convert-probe"),
+    );
+
+    let err = convert_file(
+        &pool,
+        &dir.path().join("in.azw3"),
+        &dir.path().join("out.epub"),
+    )
+    .await
+    .unwrap_err();
+
+    assert!(
+        matches!(err, ConvertError::BinaryUnavailable),
+        "got {err:?}"
+    );
+}
+
+#[tokio::test]
+async fn convert_file_returns_failed_with_the_stderr_when_ebook_convert_exits_non_zero() {
+    let pool = crate::pool::init_db("sqlite::memory:").await.unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let script = dir.path().join("ebook-convert");
+    write_failing_ebook_convert(&script);
+    let _env = EnvVarGuard::set_os("OMNIBUS_EBOOK_CONVERT_PATH", Some(script.as_os_str()));
+
+    let err = convert_file(
+        &pool,
+        &dir.path().join("in.azw3"),
+        &dir.path().join("out.epub"),
+    )
+    .await
+    .unwrap_err();
+
+    assert!(
+        matches!(&err, ConvertError::Failed(_))
+            && err.to_string().contains("boom: conversion failed"),
+        "got {err:?}"
+    );
+}
+
+#[tokio::test]
+async fn convert_file_keeps_only_the_tail_of_a_long_stderr() {
+    let pool = crate::pool::init_db("sqlite::memory:").await.unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let script = dir.path().join("ebook-convert");
+    write_noisy_ebook_convert(&script);
+    let _env = EnvVarGuard::set_os("OMNIBUS_EBOOK_CONVERT_PATH", Some(script.as_os_str()));
+
+    let message = convert_file(
+        &pool,
+        &dir.path().join("in.azw3"),
+        &dir.path().join("out.epub"),
+    )
+    .await
+    .unwrap_err()
+    .to_string();
+
+    assert!(message.contains("the-real-error"), "got {message}");
+    assert!(!message.contains("HEAD-MARKER"), "got {message}");
+    assert!(message.len() < 4096 + 200, "got {} bytes", message.len());
+}
+
+#[tokio::test]
+async fn convert_file_returns_timeout_when_the_job_exceeds_the_configured_watchdog() {
+    let pool = crate::pool::init_db("sqlite::memory:").await.unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let script = dir.path().join("ebook-convert");
+    write_slow_ebook_convert(&script);
+    let _env = EnvVarGuard::set_os("OMNIBUS_EBOOK_CONVERT_PATH", Some(script.as_os_str()))
+        .also_set("OMNIBUS_CONVERT_TIMEOUT_SECS", Some("1"));
+
+    let err = convert_file(
+        &pool,
+        &dir.path().join("in.azw3"),
+        &dir.path().join("out.epub"),
+    )
+    .await
+    .unwrap_err();
+
+    assert!(matches!(err, ConvertError::Timeout(1)), "got {err:?}");
+}
+
+#[tokio::test]
+async fn convert_file_falls_back_to_stdout_when_a_failed_run_wrote_nothing_to_stderr() {
+    let pool = crate::pool::init_db("sqlite::memory:").await.unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let script = dir.path().join("ebook-convert");
+    let body = "#!/bin/sh\n\
+         if [ \"$1\" = \"--version\" ]; then echo 'ebook-convert 0-fake'; exit 0; fi\n\
+         echo 'only-on-stdout: could not read the book'\n\
+         exit 1\n";
+    std::fs::write(&script, body).unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let _env = EnvVarGuard::set_os("OMNIBUS_EBOOK_CONVERT_PATH", Some(script.as_os_str()));
+
+    let message = convert_file(
+        &pool,
+        &dir.path().join("in.azw3"),
+        &dir.path().join("out.epub"),
+    )
+    .await
+    .unwrap_err()
+    .to_string();
+
+    assert!(
+        message.contains("only-on-stdout: could not read the book"),
+        "got {message}"
+    );
+}

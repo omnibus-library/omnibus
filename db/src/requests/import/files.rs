@@ -1,20 +1,26 @@
 //! Which of a finished download's files is the book. [`resolve`] maps the client's list of
 //! files onto this server's disk, refusing any that lead outside the download folder, and
-//! [`pick`] keeps the ones whose bytes really are an EPUB or PDF.
+//! [`pick`] keeps the ones whose bytes really are an EPUB, PDF, or (when the server can
+//! convert them) AZW3 or MOBI.
 
 use std::fs::File;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
-use omnibus_shared::{detect_ebook_format, EBOOK_MAGIC_LEN};
+use omnibus_shared::detect_ebook_format;
 
+use crate::convert::{ConvertError, EPUB_CONVERTIBLE_FORMATS};
 use crate::requests::clients::{ClientFile, TorrentStatus};
 use crate::requests::paths::{map_client_path, PathMapError};
 use crate::settings::RequestsConfig;
 
 use super::ImportError;
 
-/// The EPUB and PDF files of the download as canonical paths on this server; other files are
+/// Where the PalmDB type and creator, `BOOKMOBI`, sit in a MOBI or AZW3 file, which is
+/// how far into the file its format can be told.
+const PALMDB_MAGIC: std::ops::Range<usize> = 60..68;
+
+/// The EPUB, PDF, AZW3 and MOBI files of the download as canonical paths on this server; other files are
 /// left unmapped. The two download folders map the client's view onto ours: both set, or
 /// neither, in which case the download's own save folder is the same place to both. A listed
 /// file that was never written (the client lists files it was told to skip) is left out; one
@@ -57,38 +63,75 @@ pub fn resolve(
     Ok(found)
 }
 
-/// The file to add and its format: an EPUB over a PDF, then the largest. Only a file whose
-/// extension and opening bytes agree on `epub` or `pdf` counts. Reads each candidate's first
-/// bytes, so it is blocking.
-pub fn pick(paths: &[PathBuf]) -> Result<(PathBuf, &'static str), ImportError> {
-    let mut best: Option<((bool, u64), PathBuf, &'static str)> = None;
+/// Whether `format` (a [`pick`] result) is one the import converts to EPUB.
+pub fn converts_to_epub(format: &str) -> bool {
+    EPUB_CONVERTIBLE_FORMATS.contains(&format)
+}
+
+/// Whether any of `paths` has an AZW3 or MOBI extension: only then does the import need to
+/// know if the converter runs.
+pub fn has_convertible(paths: &[PathBuf]) -> bool {
+    paths
+        .iter()
+        .any(|p| ebook_extension(p).is_some_and(converts_to_epub))
+}
+
+/// The file to add and its format: an EPUB over an AZW3 or MOBI over a PDF, then the
+/// largest. Only a file whose extension and opening bytes agree counts. An AZW3 or MOBI is
+/// skipped unless `convertible`, and if one was all there was, the error names the missing
+/// converter. Reads each candidate's first bytes, so it is blocking.
+pub fn pick(paths: &[PathBuf], convertible: bool) -> Result<(PathBuf, &'static str), ImportError> {
+    let mut best: Option<((u8, u64), PathBuf, &'static str)> = None;
+    let mut skipped_for_converter = false;
     for path in paths {
         let Some(format) = confirmed_format(path)? else {
             continue;
         };
-        let rank = (format == "epub", path.metadata()?.len());
+        let converts = converts_to_epub(format);
+        if converts && !convertible {
+            skipped_for_converter = true;
+            continue;
+        }
+        let preference = match format {
+            "epub" => 2,
+            _ if converts => 1,
+            _ => 0,
+        };
+        let rank = (preference, path.metadata()?.len());
         if best.as_ref().is_none_or(|(top, ..)| rank > *top) {
             best = Some((rank, path.clone(), format));
         }
     }
-    best.map(|(_, path, format)| (path, format))
-        .ok_or(ImportError::NothingImportable)
+    match best {
+        Some((_, path, format)) => Ok((path, format)),
+        None if skipped_for_converter => Err(ConvertError::BinaryUnavailable.into()),
+        None => Err(ImportError::NothingImportable),
+    }
 }
 
-/// `epub` or `pdf` when `path`'s extension names it, in any case.
-fn ebook_extension(path: &Path) -> Option<String> {
+/// `epub`, `pdf`, `azw3` or `mobi` when `path`'s extension names it, in any case.
+fn ebook_extension(path: &Path) -> Option<&'static str> {
     let extension = path.extension()?.to_string_lossy().to_ascii_lowercase();
-    matches!(extension.as_str(), "epub" | "pdf").then_some(extension)
+    ["epub", "pdf"]
+        .iter()
+        .chain(EPUB_CONVERTIBLE_FORMATS)
+        .find(|known| **known == extension)
+        .copied()
 }
 
-/// `epub` or `pdf` when `path`'s extension names it and its opening bytes agree.
+/// The format of `path` when its extension names one and its opening bytes agree.
 fn confirmed_format(path: &Path) -> Result<Option<&'static str>, ImportError> {
     let Some(extension) = ebook_extension(path) else {
         return Ok(None);
     };
-    let mut head = Vec::with_capacity(EBOOK_MAGIC_LEN);
+    let mut head = Vec::with_capacity(PALMDB_MAGIC.end);
     File::open(path)?
-        .take(EBOOK_MAGIC_LEN as u64)
+        .take(PALMDB_MAGIC.end as u64)
         .read_to_end(&mut head)?;
-    Ok(detect_ebook_format(&head).filter(|sniffed| *sniffed == extension))
+    let agrees = if converts_to_epub(extension) {
+        head.get(PALMDB_MAGIC) == Some(b"BOOKMOBI".as_slice())
+    } else {
+        detect_ebook_format(&head) == Some(extension)
+    };
+    Ok(agrees.then_some(extension))
 }

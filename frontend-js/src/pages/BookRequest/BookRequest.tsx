@@ -41,6 +41,7 @@ import {
 } from "./RequestHistory";
 import {
   canCancel,
+  convertsToEpub,
   downloadPercent,
   firstShown,
   fromWishlists,
@@ -73,7 +74,7 @@ import { messageOf, useAnswer, useCancel, useSwap } from "./useRequestActions";
 import { useTimeLeft } from "./useTimeLeft";
 import "./BookRequest.css";
 
-/** One version found: its name, its source line, a Best match or Didn’t work tag, and Choose. */
+/** One version found: its name, its source line, a Best match or Didn’t work tag, a convert tag, and Choose. */
 function VersionRow({
   version,
   choosing,
@@ -94,7 +95,9 @@ function VersionRow({
   const nameId = useId();
   const metaId = useId();
   const bestId = useId();
+  const convertId = useId();
   const best = version.bestMatch && !version.rejected;
+  const converts = convertsToEpub(version) && !version.rejected;
   return (
     <li
       ref={rowRef}
@@ -145,13 +148,18 @@ function VersionRow({
             </p>
           )
         )}
+        {converts && (
+          <p id={convertId} className="rq-tag" data-testid="request-converts">
+            We’ll convert it to EPUB
+          </p>
+        )}
       </div>
       {onChoose && !version.rejected && (
         <Button
           variant={best ? "primary" : "default"}
           size="sm"
           data-testid="request-choose"
-          aria-describedby={`${nameId} ${metaId}${best ? ` ${bestId}` : ""}`}
+          aria-describedby={`${nameId} ${metaId}${best ? ` ${bestId}` : ""}${converts ? ` ${convertId}` : ""}`}
           aria-busy={choosing}
           // aria-disabled, not disabled: a control that disables itself drops the keyboard's focus.
           aria-disabled={locked}

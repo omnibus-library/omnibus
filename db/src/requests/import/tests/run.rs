@@ -34,15 +34,20 @@ use super::write;
 /// A library root and a download folder on disk, a database that points at the library, and a
 /// real worker. The database is a file: an in-memory one answers the scan's follow-up writes
 /// racing a merge with SQLITE_LOCKED, where a file waits its turn as production does.
-struct Env {
-    pool: SqlitePool,
-    worker: Arc<Worker>,
-    root: PathBuf,
-    dl: PathBuf,
+pub struct Env {
+    /// The file database the library and requests live in.
+    pub pool: SqlitePool,
+    /// The worker the scan is posted to.
+    pub worker: Arc<Worker>,
+    /// The ebook library root.
+    pub root: PathBuf,
+    /// Where the finished downloads are written.
+    pub dl: PathBuf,
     _tmp: tempfile::TempDir,
 }
 
-async fn env() -> Env {
+/// A fresh [`Env`] whose `ebook-convert` is a path that does not exist.
+pub async fn env() -> Env {
     let tmp = tempfile::tempdir().unwrap();
     let (root, dl) = (tmp.path().join("library"), tmp.path().join("dl"));
     fs::create_dir_all(&root).unwrap();
@@ -52,6 +57,10 @@ async fn env() -> Env {
         tmp.path().join("omnibus.db").display()
     );
     let pool = crate::pool::init_db(&url).await.unwrap();
+    // Not the developer's Calibre: an import that needs a converter says so through its own.
+    crate::set_ebook_convert_path(&pool, Some("/nonexistent/omnibus-ebook-convert-probe"))
+        .await
+        .unwrap();
     let worker = Worker::new(pool.clone(), WorkerConfig::default());
     let env = Env {
         pool,
@@ -79,7 +88,7 @@ fn epub(text: &str) -> Vec<u8> {
 }
 
 /// An EPUB whose own metadata names `title` and `author`.
-fn epub_by(title: &str, author: &str) -> Vec<u8> {
+pub fn epub_by(title: &str, author: &str) -> Vec<u8> {
     let container: &[u8] = br#"<?xml version="1.0"?>
 <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
   <rootfiles><rootfile full-path="content.opf" media-type="application/oebps-package+xml"/></rootfiles>
@@ -104,7 +113,7 @@ fn epub_by(title: &str, author: &str) -> Vec<u8> {
 }
 
 /// A fileless book, as a wishlist entry makes one.
-async fn wish(env: &Env, title: &str, author: &str) -> String {
+pub async fn wish(env: &Env, title: &str, author: &str) -> String {
     let book = FilelessBook {
         title: title.to_string(),
         authors: vec![author.to_string()],
@@ -125,7 +134,7 @@ async fn request_at(env: &Env, book_uuid: &str, kind: RequestKind, progress: f64
 }
 
 /// A request whose download is complete and waits for the import.
-async fn finished_request(env: &Env, book_uuid: &str, kind: RequestKind) -> RequestRow {
+pub async fn finished_request(env: &Env, book_uuid: &str, kind: RequestKind) -> RequestRow {
     request_at(env, book_uuid, kind, 1.0).await
 }
 
@@ -135,7 +144,7 @@ async fn row(env: &Env, id: i64) -> RequestRow {
 
 /// Write `files` (relative name, bytes) into the download folder, and return a client that
 /// holds them as the finished download of `request`.
-fn downloaded(env: &Env, request: &RequestRow, files: &[(&str, &[u8])]) -> StubClient {
+pub fn downloaded(env: &Env, request: &RequestRow, files: &[(&str, &[u8])]) -> StubClient {
     let listed: Vec<(&str, u64)> = files
         .iter()
         .map(|(name, bytes)| {
@@ -148,7 +157,7 @@ fn downloaded(env: &Env, request: &RequestRow, files: &[(&str, &[u8])]) -> StubC
 }
 
 /// One pass of the import with the download folders unmapped.
-async fn run(env: &Env, client: &StubClient) -> bool {
+pub async fn run(env: &Env, client: &StubClient) -> bool {
     run_with(env, client, DownloadClientKind::Qbittorrent).await
 }
 
@@ -167,7 +176,8 @@ async fn count(env: &Env, table: &str) -> i64 {
     count_rows(&env.pool, &format!("SELECT COUNT(*) FROM {table}")).await
 }
 
-async fn files_of(env: &Env, uuid: &str) -> usize {
+/// How many files the book `uuid` has.
+pub async fn files_of(env: &Env, uuid: &str) -> usize {
     let book = get_book_by_uuid(&env.pool, uuid).await.unwrap().unwrap();
     get_book_files(&env.pool, book.id).await.unwrap().len()
 }
@@ -187,13 +197,13 @@ async fn index_existing(env: &Env, name: &str, bytes: &[u8]) -> String {
 }
 
 /// Assert the request ended `ready`, showing the admin's detail if it did not.
-async fn assert_ready(env: &Env, id: i64) {
+pub async fn assert_ready(env: &Env, id: i64) {
     let after = row(env, id).await;
     assert_eq!(after.state, RequestState::Ready, "{:?}", after.stuck_detail);
 }
 
 /// The request's detail for an admin, after asserting it ended `couldnt_add`.
-async fn couldnt_add_detail(env: &Env, id: i64) -> String {
+pub async fn couldnt_add_detail(env: &Env, id: i64) -> String {
     let after = row(env, id).await;
     assert_eq!(after.state, RequestState::Stuck);
     assert_eq!(after.stuck_reason, Some(StuckReason::CouldntAdd));

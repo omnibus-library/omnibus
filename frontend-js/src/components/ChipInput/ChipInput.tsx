@@ -1,5 +1,6 @@
 import { useId, useRef, useState } from "react";
 import { bookCount } from "../../format";
+import { ChevronDownGlyph } from "../Glyphs/Glyphs";
 import "../Chip/Chip.css";
 import "./ChipInput.css";
 
@@ -8,11 +9,35 @@ const MAX_SUGGESTIONS = 50;
 
 const sameName = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
+type Suggestion = { name: string; count: number };
+
+/** A native datalist of names, each with its book count. */
+export function SuggestionList({
+  id,
+  suggestions,
+}: {
+  id: string;
+  suggestions: Suggestion[];
+}) {
+  return (
+    <datalist id={id}>
+      {suggestions.map((s) => (
+        <option
+          key={s.name}
+          value={s.name}
+          // Firefox and Safari draw only the label, so it names the value too.
+          label={`${s.name} · ${bookCount(s.count)}`}
+        />
+      ))}
+    </datalist>
+  );
+}
+
 type ChipInputProps = {
   label: string;
   values: string[];
   onChange: (values: string[]) => void;
-  suggestions: { name: string; count: number }[];
+  suggestions: Suggestion[];
   placeholder: string;
   /** Names a chip's remove button with its value: "Remove tag" gives "Remove tag cozy". */
   removeLabel: string;
@@ -96,10 +121,10 @@ export function ChipInput({
           value={draft}
           onChange={(e) => {
             // A pick from the datalist arrives as a replacement, not as typing.
-            const picked =
+            const fromList =
               "inputType" in e.nativeEvent &&
               e.nativeEvent.inputType === "insertReplacementText";
-            if (picked) add(e.target.value);
+            if (fromList) add(e.target.value);
             else setDraft(e.target.value);
           }}
           onKeyDown={(e) => {
@@ -111,11 +136,12 @@ export function ChipInput({
             }
           }}
         />
-        <datalist id={listId}>
-          {offered.map((s) => (
-            <option key={s.name} value={s.name} label={bookCount(s.count)} />
-          ))}
-        </datalist>
+        {offered.length > 0 && (
+          <span className="chip-editor-caret">
+            <ChevronDownGlyph size={14} />
+          </span>
+        )}
+        <SuggestionList id={listId} suggestions={offered} />
       </div>
     </div>
   );
