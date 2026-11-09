@@ -362,7 +362,13 @@ mod convertible_formats {
     }
 
     fn format_of_only(title: &str, convertible: bool) -> Option<String> {
-        let all = rank(vec![release(title)], TITLE, AUTHOR, ReleaseProtocol::Torrent, convertible);
+        let all = rank(
+            vec![release(title)],
+            TITLE,
+            AUTHOR,
+            ReleaseProtocol::Torrent,
+            convertible,
+        );
         assert!(!all[0].rejected, "{title} was dropped");
         all[0].format.clone()
     }
