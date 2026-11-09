@@ -502,11 +502,6 @@ function Stuck({
 }) {
   return (
     <div className="rq-stuck">
-      {request.stuckDetail && (
-        <p className="rq-stuck-detail" data-testid="request-stuck-detail">
-          {request.stuckDetail}
-        </p>
-      )}
       {canChoose ? (
         <TryAgain request={request} onTried={onTried} />
       ) : (
@@ -640,6 +635,7 @@ function Lane({
     request.state,
     request.stuckReason,
     request.kind,
+    request.stuckDetail,
   );
   const steps = stepsFor(request);
   return (
@@ -673,7 +669,18 @@ function Lane({
       {steps ? (
         <Steps steps={steps} />
       ) : (
-        note && <p className="rq-note">{note}</p>
+        note && (
+          <p
+            className="rq-note"
+            data-testid={
+              request.state === "stuck" && request.stuckDetail
+                ? "request-stuck-detail"
+                : undefined
+            }
+          >
+            {note}
+          </p>
+        )
       )}
       {request.state === "looking" && (
         <Looking request={request} canChoose={canChoose} onTried={focusTitle} />

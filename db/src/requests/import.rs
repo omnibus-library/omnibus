@@ -28,8 +28,8 @@ use super::ConnectionError;
 pub mod files;
 pub mod place;
 
-/// Why a finished download could not be added. Each message is for an admin: the reader
-/// sees only "Couldn't add it". A client that cannot be reached is not a failure of the
+/// Why a finished download could not be added. Each message is shown as the request's
+/// detail, so it says in plain words what went wrong. A client that cannot be reached is not a failure of the
 /// import; it is retried on the next pass.
 #[derive(Debug, thiserror::Error)]
 pub enum ImportError {
@@ -58,7 +58,7 @@ struct Wished {
 }
 
 /// Add every finished download to the library, one at a time. A request ends `ready`, or
-/// `couldnt_add` with the reason for admins; one that must wait (its client cannot be
+/// `couldnt_add` with the reason; one that must wait (its client cannot be
 /// reached, or is still moving the files) stays as it is for the next pass, and the answer
 /// is then true.
 // shortcut: the poller does nothing else while a scan is awaited; move imports to a spawned task if big libraries make cancels lag.

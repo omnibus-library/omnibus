@@ -171,12 +171,15 @@ mod run_search {
         assert_eq!(stuck.stuck_reason, Some(StuckReason::NotFound));
         assert_eq!(
             stuck.stuck_detail.as_deref(),
-            Some("indexer 3 disabled until 2030-01-01T00:00:00Z")
+            Some(
+                "searched for “Dracula Bram Stoker”: no results came back; \
+                 indexer 3 disabled until 2030-01-01T00:00:00Z"
+            )
         );
     }
 
     #[tokio::test]
-    async fn leaves_the_detail_empty_when_no_indexer_is_failing() {
+    async fn says_nothing_came_back_when_no_indexer_is_failing() {
         let server = MockServer::start().await;
         mount_search(&server, json!([])).await;
         mount_indexer_status(&server, json!([])).await;
@@ -185,7 +188,32 @@ mod run_search {
 
         run_search(&pool, id).await.unwrap();
 
-        assert_eq!(row(&pool, id).await.stuck_detail, None);
+        assert_eq!(
+            row(&pool, id).await.stuck_detail.as_deref(),
+            Some("searched for “Dracula Bram Stoker”: no results came back")
+        );
+    }
+
+    #[tokio::test]
+    async fn says_how_many_results_came_back_when_none_could_be_offered() {
+        let server = MockServer::start().await;
+        let unreadable = json!({
+            "guid": "g2", "title": "Dracula - Bram Stoker MOBI", "size": 900000, "seeders": 4,
+            "downloadUrl": "http://prowlarr/2/download?apikey=secret", "categories": [{"id": 7020}],
+        });
+        mount_search(&server, json!([unreadable])).await;
+        mount_indexer_status(&server, json!([])).await;
+        let pool = pool_with_prowlarr(&server.uri()).await;
+        let id = looking_request(&pool).await;
+
+        run_search(&pool, id).await.unwrap();
+
+        let detail = row(&pool, id).await.stuck_detail.unwrap();
+        assert_eq!(
+            detail,
+            "searched for “Dracula Bram Stoker”: 1 result came back, but it did not match the book's title and author or fit the ebook limits on format, size and seeders"
+        );
+        assert!(!detail.contains("secret"));
     }
 
     #[tokio::test]

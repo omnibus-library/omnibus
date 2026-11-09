@@ -6497,7 +6497,7 @@
           "Requests"
         ],
         "summary": "Get a request",
-        "description": "One request and the versions found so far. Any signed-in reader may read any request.\nOnly an admin is sent `stuck_detail`.",
+        "description": "One request and the versions found so far. Any signed-in reader may read any request,\n`stuck_detail` included.",
         "operationId": "get_book_request",
         "parameters": [
           {
@@ -10998,7 +10998,7 @@
               "string",
               "null"
             ],
-            "description": "What the search ran into, in technical words. Only an admin is sent it."
+            "description": "What went wrong, in plain words, such as what was searched and found or why a download\nstopped; set with `stuck_reason`. Sent to every reader who can see the request."
           },
           "stuck_reason": {
             "oneOf": [

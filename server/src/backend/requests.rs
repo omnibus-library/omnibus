@@ -3,7 +3,7 @@
 //! finished download brought. Every route answers 404 while the book-requests flag is off,
 //! before the sign-in check. Requests are visible to every signed-in reader; starting one needs
 //! the permission to ask, acting on any reader's needs the permission to pick versions (the
-//! maker may always cancel their own), and only an admin is shown the search's technical detail.
+//! maker may always cancel their own). A stuck request's detail goes to everyone who can see it.
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::Mutex;
@@ -80,9 +80,8 @@ impl StartLog {
     }
 }
 
-/// The wire form of a stored request, with no versions. The search's technical detail goes
-/// only to an admin.
-fn summary(row: RequestRow, is_admin: bool) -> BookRequest {
+/// The wire form of a stored request, with no versions.
+fn summary(row: RequestRow) -> BookRequest {
     BookRequest {
         id: row.id,
         book_uuid: row.book_uuid,
@@ -90,7 +89,7 @@ fn summary(row: RequestRow, is_admin: bool) -> BookRequest {
         kind: row.kind,
         state: row.state,
         stuck_reason: row.stuck_reason,
-        stuck_detail: row.stuck_detail.filter(|_| is_admin),
+        stuck_detail: row.stuck_detail,
         chosen_result_id: row.chosen_result_id,
         progress: row.progress,
         expected_done_at: row.expected_done_at,
@@ -124,7 +123,7 @@ async fn view(
     Ok(BookRequest {
         versions,
         cover_offer,
-        ..summary(row, viewer.is_admin)
+        ..summary(row)
     })
 }
 
@@ -288,9 +287,8 @@ pub(super) async fn post_start_request_from_meta(
     }
 }
 
-/// The requests `filter` matches, as the answer to `viewer`, each with the versions it picked
-/// and gave up.
-async fn list_answer(state: &AppState, filter: ListFilter<'_>, viewer: &AuthUser) -> Response {
+/// The requests `filter` matches, each with the versions it picked and gave up.
+async fn list_answer(state: &AppState, filter: ListFilter<'_>) -> Response {
     let listed = match store::list(state.pool(), filter).await {
         Ok(listed) => listed,
         Err(e) => return internal("list requests", e),
@@ -300,7 +298,7 @@ async fn list_answer(state: &AppState, filter: ListFilter<'_>, viewer: &AuthUser
         .map(|l| RequestListing {
             request: BookRequest {
                 versions: l.versions,
-                ..summary(l.request, viewer.is_admin)
+                ..summary(l.request)
             },
             book: l.book,
             requester_name: l.requester_name,
@@ -330,7 +328,7 @@ async fn list_answer(state: &AppState, filter: ListFilter<'_>, viewer: &AuthUser
     ),
 )]
 pub(super) async fn get_book_requests(
-    RequestsViewer(viewer): RequestsViewer,
+    _: RequestsViewer,
     State(state): State<AppState>,
     Path(uuid): Path<String>,
 ) -> Response {
@@ -342,7 +340,7 @@ pub(super) async fn get_book_requests(
         book_uuid: Some(&book_uuid),
         ..ListFilter::default()
     };
-    list_answer(&state, filter, &viewer).await
+    list_answer(&state, filter).await
 }
 
 /// List requests
@@ -364,7 +362,7 @@ pub(super) async fn get_book_requests(
     ),
 )]
 pub(super) async fn get_requests(
-    RequestsViewer(viewer): RequestsViewer,
+    _: RequestsViewer,
     State(state): State<AppState>,
     Query(query): Query<RequestListQuery>,
 ) -> Response {
@@ -373,13 +371,13 @@ pub(super) async fn get_requests(
         state: query.state,
         ..ListFilter::default()
     };
-    list_answer(&state, filter, &viewer).await
+    list_answer(&state, filter).await
 }
 
 /// Get a request
 ///
-/// One request and the versions found so far. Any signed-in reader may read any request.
-/// Only an admin is sent `stuck_detail`.
+/// One request and the versions found so far. Any signed-in reader may read any request,
+/// `stuck_detail` included.
 #[utoipa::path(
     get,
     path = "/api/requests/{id}",

@@ -426,6 +426,10 @@ mod finish_search_after_a_swap {
         let row = state_of(&pool, id).await;
         assert_eq!(row.state, RequestState::Stuck);
         assert_eq!(row.stuck_reason, Some(StuckReason::NotFound));
+        assert_eq!(
+            row.stuck_detail.as_deref(),
+            Some("every version worth offering had already been tried and given up")
+        );
     }
 }
 

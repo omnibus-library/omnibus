@@ -236,6 +236,10 @@ mod poll_once {
             let after = row(&pool, id).await;
             assert_eq!(after.state, RequestState::Stuck);
             assert_eq!(after.stuck_reason, Some(StuckReason::StoppedMoving));
+            assert_eq!(
+                after.stuck_detail.as_deref(),
+                Some("the download made no progress for 12 hours")
+            );
         }
 
         #[tokio::test]
@@ -249,8 +253,15 @@ mod poll_once {
 
             tick(&pool, &client, NOW).await;
 
-            for id in [broken, missing] {
-                assert_eq!(row(&pool, id).await.state, RequestState::Stuck, "{id}");
+            for (id, state) in [(broken, "error"), (missing, "missingFiles")] {
+                let stopped = row(&pool, id).await;
+                assert_eq!(stopped.state, RequestState::Stuck, "{id}");
+                assert_eq!(
+                    stopped.stuck_detail,
+                    Some(format!(
+                        "the download client reports an error (state: {state})"
+                    ))
+                );
             }
         }
     }

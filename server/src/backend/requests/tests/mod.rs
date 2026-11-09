@@ -517,7 +517,7 @@ mod get_request {
     }
 
     #[tokio::test]
-    async fn shows_another_readers_request_but_hides_the_stuck_detail_from_a_reader() {
+    async fn shows_another_readers_request_with_its_stuck_detail_to_a_reader() {
         let (app, _, pool) = fixture_book_requests(true).await;
         let (ada, _) = requester(&pool, "ada").await;
         let (_, grace) = requester(&pool, "grace").await;
@@ -542,8 +542,11 @@ mod get_request {
             body.stuck_reason,
             Some(omnibus_shared::StuckReason::SearchFailed)
         );
-        assert_eq!(body.stuck_detail, None);
-        assert!(!text.contains("connection refused"));
+        assert_eq!(
+            body.stuck_detail.as_deref(),
+            Some("could not connect (connection refused or failed)")
+        );
+        assert!(text.contains("connection refused"));
     }
 
     #[tokio::test]
@@ -692,7 +695,7 @@ mod search_after_start {
             as_reader.stuck_reason,
             Some(omnibus_shared::StuckReason::SearchFailed)
         );
-        assert_eq!(as_reader.stuck_detail, None);
-        assert_eq!(as_admin.stuck_detail.as_deref(), Some("not set up yet"));
+        assert_eq!(as_reader.stuck_detail.as_deref(), Some("not set up yet"));
+        assert_eq!(as_admin.stuck_detail, as_reader.stuck_detail);
     }
 }

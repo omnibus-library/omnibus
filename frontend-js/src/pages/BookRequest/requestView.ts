@@ -12,22 +12,27 @@ import {
 } from "../../api";
 import { fileSize, plural } from "../../format";
 
-function stuckView(reason: StuckReason | null) {
+const capitalised = (text: string) =>
+  text.charAt(0).toUpperCase() + text.slice(1);
+
+/** A stuck request's heading, and under it the explicit error the server recorded, or a general line when it recorded none. */
+function stuckView(reason: StuckReason | null, detail: string | null) {
+  const explicit = detail?.trim() ? capitalised(detail.trim()) : null;
   switch (reason) {
     case "stopped_moving":
       return {
         heading: "Stopped moving",
-        note: "The download stopped making progress.",
+        note: explicit ?? "The download stopped making progress.",
       };
     case "couldnt_add":
       return {
         heading: "Couldn’t add it",
-        note: "It downloaded but couldn’t be added to the library.",
+        note: explicit ?? "It downloaded but couldn’t be added to the library.",
       };
     default:
       return {
         heading: "Couldn’t find it",
-        note: "Nothing worth showing turned up.",
+        note: explicit ?? "Nothing worth showing turned up.",
       };
   }
 }
@@ -37,6 +42,7 @@ export function stateView(
   state: RequestState,
   stuckReason: StuckReason | null = null,
   kind: RequestKind = "ebook",
+  stuckDetail: string | null = null,
 ): {
   heading: string;
   /** Absent where the lane's own content says it. */
@@ -63,7 +69,7 @@ export function stateView(
         note: "It’s in the library.",
       };
     case "stuck":
-      return stuckView(stuckReason);
+      return stuckView(stuckReason, stuckDetail);
     case "cancelled":
       return { heading: "Cancelled", note: "This request was cancelled." };
     default: {

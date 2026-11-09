@@ -1,7 +1,7 @@
 //! Runs the search behind a `looking` request: asks Prowlarr for the book's title and first
 //! author, ranks what comes back and records the outcome. A request ends `choose` when
 //! some version survived, else `stuck`; the word the reader sees is the same for both
-//! reasons, but the reason and detail (for admins) differ. A Prowlarr that is briefly
+//! reasons, but the reason and the detail, which says what was searched and found, differ. A Prowlarr that is briefly
 //! unreachable or rate limiting is retried for a while before the request gives up.
 
 use std::time::{Duration, Instant};
@@ -136,14 +136,43 @@ async fn attempt(pool: &SqlitePool, book_uuid: &str, kind: RequestKind) -> Attem
         Ok(releases) => releases,
         Err(e) => return search_error(e),
     };
+    let found = releases.len();
     let ranked = rank(releases, &title, &author, kind);
     if ranked.iter().all(|r| r.rejected) {
+        let detail = not_found_detail(query.trim(), kind, found, failing_indexers(&prowlarr).await);
         return Attempt::Done(SearchOutcome::Stuck {
             reason: StuckReason::NotFound,
-            detail: failing_indexers(&prowlarr).await,
+            detail: Some(detail),
         });
     }
     Attempt::Done(SearchOutcome::Found(ranked))
+}
+
+/// What a search that ended `not_found` says for itself: what was asked, how many results
+/// came back, why none was offered, and which indexers were down.
+fn not_found_detail(
+    query: &str,
+    kind: RequestKind,
+    found: usize,
+    indexers: Option<String>,
+) -> String {
+    let came_back = match found {
+        0 => "no results came back".to_string(),
+        1 => format!(
+            "1 result came back, but it did not match the book's title and author or fit the {} limits on format, size and seeders",
+            kind.as_str()
+        ),
+        n => format!(
+            "{n} results came back, but none matched the book's title and author or fit the {} limits on format, size and seeders",
+            kind.as_str()
+        ),
+    };
+    let mut detail = format!("searched for “{query}”: {came_back}");
+    if let Some(indexers) = indexers {
+        detail.push_str("; ");
+        detail.push_str(&indexers);
+    }
+    detail
 }
 
 /// Which indexers Prowlarr has switched off, when it will say; the likeliest reason an

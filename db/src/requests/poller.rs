@@ -60,7 +60,7 @@ enum PassError {
 enum Verdict {
     Wait,
     Progress(f64),
-    Stopped(&'static str),
+    Stopped(String),
 }
 
 /// Read the connection settings, run one pass and import what finished; returns how long to
@@ -300,7 +300,7 @@ async fn follow_downloads(
                 let done_at = done_at.filter(|_| p < 1.0);
                 store::record_progress(pool, row.id, pick, p, now, done_at).await?
             }
-            Verdict::Stopped(why) => store::mark_stuck(pool, row.id, pick, STOPPED, why).await?,
+            Verdict::Stopped(why) => store::mark_stuck(pool, row.id, pick, STOPPED, &why).await?,
         }
     }
     Ok(())
@@ -324,13 +324,16 @@ fn judge(row: &RequestRow, status: Option<&TorrentStatus>, now: i64) -> Verdict 
         // qBittorrent 5.x adds asynchronously, so a torrent can take a while to show up.
         let seen = row.progress.is_some();
         return if seen || idle_secs > APPEAR_SECS {
-            Verdict::Stopped("the download client no longer has it")
+            Verdict::Stopped("the download client no longer has it".into())
         } else {
             Verdict::Wait
         };
     };
     if matches!(status.state.as_str(), "error" | "missingFiles") {
-        return Verdict::Stopped("the download client reports an error");
+        return Verdict::Stopped(format!(
+            "the download client reports an error (state: {})",
+            status.state
+        ));
     }
     if status.progress >= 1.0 || FINISHED_STATES.contains(&status.state.as_str()) {
         return Verdict::Progress(1.0);
@@ -339,9 +342,21 @@ fn judge(row: &RequestRow, status: Option<&TorrentStatus>, now: i64) -> Verdict 
         return Verdict::Progress(status.progress);
     }
     if idle_secs > STALL_SECS {
-        return Verdict::Stopped("no data has arrived for a long while");
+        return Verdict::Stopped(format!(
+            "the download made no progress for {}",
+            elapsed(idle_secs)
+        ));
     }
     Verdict::Wait
+}
+
+/// `secs` as whole hours, or minutes when under two hours: "12 hours", "45 minutes".
+fn elapsed(secs: i64) -> String {
+    if secs >= 2 * 3600 {
+        format!("{} hours", secs / 3600)
+    } else {
+        format!("{} minutes", secs / 60)
+    }
 }
 
 /// Stop every download on its way, for `why`. A pick not yet added keeps waiting: it has not

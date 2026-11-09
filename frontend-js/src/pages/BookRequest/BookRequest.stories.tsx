@@ -541,22 +541,68 @@ export const StuckSaysCouldntFindItAndOffersTryAgain: Story = {
     await expect(await canvas.findByTestId("request-state")).toHaveTextContent(
       "Couldn’t find it",
     );
+    // With nothing recorded, the general line stands in for the error.
+    await expect(
+      canvas.getByText("Nothing worth showing turned up."),
+    ).toBeVisible();
+    await expect(canvas.queryByTestId("request-stuck-detail")).toBeNull();
     await expect(
       canvas.getByRole("button", { name: "Try again" }),
     ).toBeEnabled();
   },
 };
 
-export const StuckShowsWhatWentWrongWhenTheServerSendsIt: Story = {
+/** A stuck request of `reason` as a reader who is not an admin sees it: the state's name, then the error itself, once. */
+const showsTheError = (
+  reason: "not_found" | "search_failed" | "stopped_moving" | "couldnt_add",
+  heading: string,
+  detail: string,
+  shown: string,
+): Story => ({
+  parameters: { user: READER },
   beforeEach({ msw }) {
-    msw.use(...seed(STUCK));
+    msw.use(
+      ...seed({ state: "stuck", stuck_reason: reason, stuck_detail: detail }),
+    );
   },
   play: async ({ canvas }) => {
-    await expect(
-      await canvas.findByTestId("request-stuck-detail"),
-    ).toHaveTextContent("indexer 3 disabled until 2030-01-01T00:00:00Z");
+    await expect(await canvas.findByTestId("request-state")).toHaveTextContent(
+      heading,
+    );
+    await expect(canvas.getByTestId("request-stuck-detail")).toHaveTextContent(
+      shown,
+    );
+    await expect(canvas.getAllByText(shown)).toHaveLength(1);
   },
-};
+});
+
+export const StuckNotFoundShowsAReaderWhatWasSearched = showsTheError(
+  "not_found",
+  "Couldn’t find it",
+  "searched for “Hyperion Dan Simmons”: no results came back",
+  "Searched for “Hyperion Dan Simmons”: no results came back",
+);
+
+export const StuckSearchFailedShowsAReaderTheConnectionError = showsTheError(
+  "search_failed",
+  "Couldn’t find it",
+  "could not connect (connection refused or failed)",
+  "Could not connect (connection refused or failed)",
+);
+
+export const StuckStoppedMovingShowsAReaderHowLongItStalled = showsTheError(
+  "stopped_moving",
+  "Stopped moving",
+  "the download made no progress for 12 hours",
+  "The download made no progress for 12 hours",
+);
+
+export const StuckCouldntAddShowsAReaderTheImportError = showsTheError(
+  "couldnt_add",
+  "Couldn’t add it",
+  "filing the download failed: permission denied",
+  "Filing the download failed: permission denied",
+);
 
 export const TryAgainSearchesAgainAndReturnsToLooking: Story = {
   beforeEach({ msw }) {
@@ -1128,7 +1174,7 @@ export const CouldntAddItNamesItAndOffersTryAgain: Story = {
   },
 };
 
-export const CouldntAddItShowsAnAdminWhatWentWrong: Story = {
+export const CouldntAddItShowsAnAdminTheSameError: Story = {
   beforeEach({ msw }) {
     msw.use(
       ...seed({
@@ -1140,7 +1186,7 @@ export const CouldntAddItShowsAnAdminWhatWentWrong: Story = {
   play: async ({ canvas }) => {
     await expect(
       await canvas.findByTestId("request-stuck-detail"),
-    ).toHaveTextContent("filing the download failed: permission denied");
+    ).toHaveTextContent("Filing the download failed: permission denied");
   },
 };
 

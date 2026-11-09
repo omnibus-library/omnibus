@@ -95,6 +95,32 @@ describe("stateView", () => {
     });
   });
 
+  it("puts the recorded error under a stuck request's heading, its first letter capitalised", () => {
+    expect(
+      stateView(
+        "stuck",
+        "stopped_moving",
+        "ebook",
+        "the download made no progress for 12 hours",
+      ),
+    ).toEqual({
+      heading: "Stopped moving",
+      note: "The download made no progress for 12 hours",
+    });
+  });
+
+  it.each([
+    ["not_found", "Nothing worth showing turned up."],
+    ["stopped_moving", "The download stopped making progress."],
+    ["couldnt_add", "It downloaded but couldn’t be added to the library."],
+  ] as const)(
+    "falls back to a general line for %s with no error recorded",
+    (reason, note) => {
+      expect(stateView("stuck", reason, "ebook", null).note).toBe(note);
+      expect(stateView("stuck", reason, "ebook", "  ").note).toBe(note);
+    },
+  );
+
   it("names a ready audiobook Ready to listen", () => {
     expect(stateView("ready", null, "audiobook")).toEqual({
       heading: "Ready to listen",

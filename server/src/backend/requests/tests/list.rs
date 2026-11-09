@@ -77,7 +77,7 @@ mod get_requests {
     }
 
     #[tokio::test]
-    async fn sends_a_stuck_requests_detail_to_an_admin_but_not_to_a_reader() {
+    async fn sends_a_stuck_requests_detail_to_a_reader_and_an_admin() {
         let (app, _, pool) = fixture_book_requests(true).await;
         let (ada, ada_token) = requester(&pool, "ada").await;
         let admin = admin_token(&pool).await;
@@ -95,11 +95,12 @@ mod get_requests {
         let as_reader = listed(&app, "/api/requests", &ada_token).await;
         let as_admin = listed(&app, "/api/requests", &admin).await;
 
-        assert_eq!(as_reader[0].request.stuck_detail, None);
-        assert_eq!(
-            as_admin[0].request.stuck_detail.as_deref(),
-            Some("prowlarr refused the connection")
-        );
+        for listing in [&as_reader[0], &as_admin[0]] {
+            assert_eq!(
+                listing.request.stuck_detail.as_deref(),
+                Some("prowlarr refused the connection")
+            );
+        }
     }
 
     #[tokio::test]

@@ -225,7 +225,8 @@ pub struct BookRequest {
     pub state: RequestState,
     /// Set while `state` is `stuck`.
     pub stuck_reason: Option<StuckReason>,
-    /// What the search ran into, in technical words. Only an admin is sent it.
+    /// What went wrong, in plain words, such as what was searched and found or why a download
+    /// stopped; set with `stuck_reason`. Sent to every reader who can see the request.
     pub stuck_detail: Option<String>,
     /// The picked version's id once `state` is `chosen`.
     pub chosen_result_id: Option<i64>,
