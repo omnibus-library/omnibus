@@ -10,22 +10,31 @@
 #                                        empty database
 #   ios-validate.sh server down          stop it
 #   ios-validate.sh server status        its address and pid, if running
-#   ios-validate.sh sim up               create (first use) and boot this
-#                                        worktree's simulator; prints its UDID
-#   ios-validate.sh sim delete           shut it down and delete it
-#   ios-validate.sh tour <TestClass>     run one omnibusUITests class on this
-#                                        worktree's simulator, from a clean
-#                                        install, with the server passed in
-#   ios-validate.sh cleanup              server down + sim delete; run before
-#                                        `wt remove`, or from a user-level
-#                                        pre-remove hook (see the skill)
+#   ios-validate.sh sim up [--duo]       create (first use) and boot this
+#                                        worktree's simulator; prints its UDID.
+#                                        --duo: its iPhone Duo instead
+#   ios-validate.sh sim delete [--duo]   shut it down and delete it
+#   ios-validate.sh tour <TestClass> [--duo]
+#                                        run one omnibusUITests class on this
+#                                        worktree's simulator (or Duo), from a
+#                                        clean install, with the server passed
+#                                        in; the tour can fold, rotate and shoot
+#                                        the device through the pose channel
+#   ios-validate.sh cleanup              server down + delete both simulators;
+#                                        run before `wt remove`, or from a
+#                                        user-level pre-remove hook (see the skill)
 #
 # Env: OMNIBUS_IOS_SERVER_BIN  a prebuilt omnibus server binary to run instead
 #                              of building this worktree's — fine when the
 #                              change is iOS-only
 #
 # State lives in .claude/runtime/ios-validate/: the server's database, covers,
-# log and pid, the env.sh a tour reads, and the tour's shots/.
+# log and pid, the env.sh a tour reads, the tour's shots/, and pose/.
+#
+# Pose channel: a tour can't run host commands, but it can write files on the
+# host. It writes one line to pose/request (`open`, `rotate landscape-left`,
+# `screenshot 01-name`, … — scripts/ios-pose.sh's commands, a screenshot named
+# into shots/), and this script answers in pose/reply: `ok …` or `error …`.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -36,6 +45,7 @@ PIDFILE="$SERVER/pid"
 # The binary the pid was launched from, so a reused pid is never mistaken for it.
 BINFILE="$SERVER/bin"
 ENVFILE="$STATE/env.sh"
+POSE="$STATE/pose"
 
 TOUR_USER="tour"
 TOUR_PASSWORD="omnibus-tour-2026"
@@ -202,9 +212,14 @@ server_status() {
   fi
 }
 
+# $1 is --duo for this worktree's iPhone Duo, else its plain iPhone.
 sim_up() {
   local udid
-  udid="$(ios_sim_ensure "$(ios_sim_name "$ROOT")")"
+  if [ "${1:-}" = "--duo" ]; then
+    udid="$(ios_sim_ensure_duo "$(ios_sim_duo_name "$ROOT")")"
+  else
+    udid="$(ios_sim_ensure "$(ios_sim_name "$ROOT")")"
+  fi
   xcrun simctl bootstatus "$udid" -b >/dev/null
   echo "$udid"
 }
@@ -212,7 +227,11 @@ sim_up() {
 sim_delete() {
   command -v xcrun >/dev/null 2>&1 || return 0
   local name udid
-  name="$(ios_sim_name "$ROOT")"
+  if [ "${1:-}" = "--duo" ]; then
+    name="$(ios_sim_duo_name "$ROOT")"
+  else
+    name="$(ios_sim_name "$ROOT")"
+  fi
   for udid in $(ios_sim_find "$name"); do
     xcrun simctl shutdown "$udid" >/dev/null 2>&1 || true
     xcrun simctl delete "$udid"
@@ -220,26 +239,69 @@ sim_delete() {
   done
 }
 
+# Answers the tour's pose requests until killed. Only ios-pose.sh's own
+# commands pass, and a screenshot's name is kept inside shots/.
+pose_server() {
+  local udid="$1" line reply
+  local -a words
+  while :; do
+    if [ -f "$POSE/request" ]; then
+      line="$(cat "$POSE/request")"
+      rm -f "$POSE/request"
+      read -r -a words <<<"$line"
+      case "${words[0]:-}" in
+        open | close | half | show) ;;
+        hinge | rotate) [ "${#words[@]}" -eq 2 ] || words=(invalid) ;;
+        screenshot)
+          if [ "${#words[@]}" -eq 2 ] && [[ "${words[1]}" =~ ^[A-Za-z0-9._-]+$ ]]; then
+            words[1]="$OMNIBUS_TOUR_SHOTS/${words[1]%.png}.png"
+          else
+            words=(invalid)
+          fi
+          ;;
+        *) words=(invalid) ;;
+      esac
+      if [ "${words[0]}" = invalid ]; then
+        reply="error: not a pose request: $line"
+      elif reply="$("$HERE/ios-pose.sh" -d "$udid" "${words[@]}" 2>&1)"; then
+        reply="ok ${reply//$'\n'/ }"
+      else
+        reply="error: ${reply//$'\n'/ }"
+      fi
+      echo "pose: $line -> $reply" >&2
+      echo "$reply" >"$POSE/reply.tmp"
+      mv "$POSE/reply.tmp" "$POSE/reply"
+    fi
+    sleep 0.2
+  done
+}
+
 tour() {
-  local class="${1:?usage: ios-validate.sh tour <TestClass>}" udid
+  local class="${1:?usage: ios-validate.sh tour <TestClass> [--duo]}" udid
   { [ -f "$ENVFILE" ] && server_pid >/dev/null; } || die "no scratch server — run \`ios-validate.sh server up\` first"
   # shellcheck disable=SC1090
   source "$ENVFILE"
-  udid="$(sim_up)"
+  udid="$(sim_up "${2:-}")"
   # A clean container, so nothing a previous tour cached or chose carries over.
   xcrun simctl uninstall "$udid" "$BUNDLE_ID" >/dev/null 2>&1 || true
-  rm -rf "$OMNIBUS_TOUR_SHOTS"
-  mkdir -p "$OMNIBUS_TOUR_SHOTS"
+  rm -rf "$OMNIBUS_TOUR_SHOTS" "$POSE"
+  mkdir -p "$OMNIBUS_TOUR_SHOTS" "$POSE"
+  pose_server "$udid" 2>"$STATE/pose.log" &
+  local pose_pid=$!
   # xcodebuild hands TEST_RUNNER_-prefixed variables to the test process, minus the prefix.
   local status=0
   TEST_RUNNER_OMNIBUS_TOUR_SERVER="$OMNIBUS_TOUR_SERVER" \
     TEST_RUNNER_OMNIBUS_TOUR_USER="$OMNIBUS_TOUR_USER" \
     TEST_RUNNER_OMNIBUS_TOUR_PASSWORD="$OMNIBUS_TOUR_PASSWORD" \
     TEST_RUNNER_OMNIBUS_TOUR_SHOTS="$OMNIBUS_TOUR_SHOTS" \
+    TEST_RUNNER_OMNIBUS_TOUR_POSE="$POSE" \
     OMNIBUS_IOS_TEST_SIM_UDID="$udid" \
     OMNIBUS_IOS_RESULTS_DIR="$STATE/results" \
     "$ROOT/scripts/ios-test.sh" "ui/$class" >"$STATE/tour.log" 2>&1 || status=$?
+  kill "$pose_pid" 2>/dev/null || true
+  wait "$pose_pid" 2>/dev/null || true
   grep -E "error:|TEST (SUCCEEDED|FAILED)" "$STATE/tour.log" >&2 || true
+  [ -s "$STATE/pose.log" ] && cat "$STATE/pose.log" >&2
   echo "shots in $OMNIBUS_TOUR_SHOTS:" >&2
   ls -1 "$OMNIBUS_TOUR_SHOTS" >&2 || true
   echo "full log: $STATE/tour.log; assertion messages: $STATE/results/ui-$class.xcresult" >&2
@@ -249,6 +311,7 @@ tour() {
 cleanup() {
   server_down || true
   sim_delete || true
+  sim_delete --duo || true
 }
 
 case "${1:-}" in
@@ -262,12 +325,12 @@ case "${1:-}" in
     ;;
   sim)
     case "${2:-}" in
-      up) sim_up ;;
-      delete) sim_delete ;;
-      *) die "usage: ios-validate.sh sim up|delete" ;;
+      up) sim_up "${3:-}" ;;
+      delete) sim_delete "${3:-}" ;;
+      *) die "usage: ios-validate.sh sim up|delete [--duo]" ;;
     esac
     ;;
-  tour) tour "${2:-}" ;;
+  tour) tour "${2:-}" "${3:-}" ;;
   cleanup) cleanup ;;
   __start) server_start ;;
   *) die "usage: ios-validate.sh server|sim|tour|cleanup … (see the header)" ;;

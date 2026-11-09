@@ -1,6 +1,7 @@
 //  ScreenTour.swift — a scratch screenshot tour, copied from
 //  .claude/skills/ios-validate/screen-tour.swift. Gitignored, so it never
-//  ships. Run it with `scripts/ios-validate.sh tour ScreenTour`.
+//  ships. Run it with `scripts/ios-validate.sh tour ScreenTour` (add `--duo`
+//  for the iPhone Duo).
 
 import XCTest
 
@@ -20,6 +21,12 @@ final class ScreenTour: XCTestCase {
         open("library/shelves")
         XCTAssertTrue(app.staticTexts["Shelves"].firstMatch.waitForExistence(timeout: 10))
         shot("02-shelves")
+
+        // Poses: `rotate <portrait|landscape-left|landscape-right|portrait-upside-down>`
+        // on any iPhone; `open`, `close`, `half`, `hinge <deg>` on the Duo only.
+        pose("rotate landscape-left")
+        shot("03-shelves-landscape")
+        pose("rotate portrait")
     }
 
     // MARK: - Helpers
@@ -61,11 +68,36 @@ final class ScreenTour: XCTestCase {
         dismissSavePassword()
     }
 
+    /// Shot by the host, of whichever display hosts the UI: an open Duo's
+    /// `XCUIScreen.main` is its dark cover.
     private func shot(_ name: String) {
         sleep(1) // transitions and cover loads settle
-        let dir = URL(fileURLWithPath: env["OMNIBUS_TOUR_SHOTS"] ?? NSTemporaryDirectory())
-        let png = XCUIScreen.main.screenshot().pngRepresentation
-        XCTAssertNoThrow(try png.write(to: dir.appendingPathComponent("\(name).png")))
+        pose("screenshot \(name)")
+    }
+
+    /// Asks `scripts/ios-validate.sh` to run `scripts/ios-pose.sh <request>` on
+    /// this simulator and waits for the answer; a failed pose fails the test.
+    private func pose(_ request: String, timeout: TimeInterval = 30) {
+        guard let path = env["OMNIBUS_TOUR_POSE"] else {
+            return XCTFail("pose(\(request)) needs scripts/ios-validate.sh tour")
+        }
+        let dir = URL(fileURLWithPath: path)
+        let reply = dir.appendingPathComponent("reply")
+        try? FileManager.default.removeItem(at: reply)
+        let pending = dir.appendingPathComponent("request.tmp")
+        XCTAssertNoThrow(try Data(request.utf8).write(to: pending))
+        XCTAssertNoThrow(try FileManager.default.moveItem(at: pending, to: dir.appendingPathComponent("request")))
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if let answer = try? String(contentsOf: reply, encoding: .utf8) {
+                try? FileManager.default.removeItem(at: reply)
+                XCTAssertTrue(answer.hasPrefix("ok"), "pose(\(request)): \(answer)")
+                sleep(1) // the app relays out after a fold or turn
+                return
+            }
+            usleep(200_000)
+        }
+        XCTFail("pose(\(request)) got no answer in \(Int(timeout))s")
     }
 
     /// The keychain's "Save Password?" prompt lands after sign-in, sometimes a screen later.
@@ -77,10 +109,12 @@ final class ScreenTour: XCTestCase {
     }
 
     /// Swipes until `element` is on screen: a lazy grid only builds the cells near it.
+    /// Swipes the scroll view, not the app: an open Duo's app frame is its cover.
     private func scrollTo(_ element: XCUIElement, maxSwipes: Int = 8) {
+        let surface = app.scrollViews.firstMatch.exists ? app.scrollViews.firstMatch : app.collectionViews.firstMatch
         var swipes = 0
         while !(element.exists && element.isHittable) && swipes < maxSwipes {
-            app.swipeUp(velocity: .slow)
+            surface.swipeUp(velocity: .slow)
             swipes += 1
         }
     }

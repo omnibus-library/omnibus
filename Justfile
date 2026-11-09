@@ -139,9 +139,12 @@ dev-react-build-test:
     bash scripts/tests/dev-react-build.test.sh
 
 # Tests that scripts/lib/ios-sim.sh picks a plain iOS runtime beside a
-# device-specific one. Plain bash with a stubbed `xcrun`, like dev-react-build-test.
+# device-specific one, and that scripts/ios-pose.sh folds and rotates each kind
+# of iPhone the way it listens. Plain bash with a stubbed `xcrun`, like
+# dev-react-build-test.
 ios-sim-test:
     bash scripts/tests/ios-sim-ensure.test.sh
+    bash scripts/tests/ios-pose.test.sh
 
 # Tests for scripts/check-migration-numbers.sh against throwaway git repos.
 # Plain bash, like dev-react-build-test.
@@ -306,3 +309,9 @@ ios-release-guard:
 # hint for the Connect screen. See scripts/ios-sim.sh.
 ios-sim:
     scripts/ios-sim.sh
+
+# Fold, open or rotate a booted simulator, or shoot its active screen — the
+# iPhone Duo's pose without Device Hub. `just ios-pose -d <udid> open`,
+# `rotate landscape-left`, `show`, `screenshot <file>`; see scripts/ios-pose.sh.
+ios-pose *args:
+    scripts/ios-pose.sh {{args}}

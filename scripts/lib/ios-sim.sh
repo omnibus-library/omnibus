@@ -71,6 +71,33 @@ ios_sim_ensure() {
   echo "$udid"
 }
 
+# This worktree's iPhone Duo, beside its plain test iPhone: `<ios_sim_name>-duo`.
+ios_sim_duo_name() {
+  echo "$(ios_sim_name "$1")-duo"
+}
+
+# Echo the UDID of the iPhone Duo named $1, creating it on first use. The Duo
+# lives only on its own runtime (`iOS-27-2-iPhone19-4`), which the newest-iPhone
+# picker skips, so the runtime is the newest one that supports the device type.
+ios_sim_ensure_duo() {
+  local name="$1" devtype="com.apple.CoreSimulator.SimDeviceType.iPhone-Duo" runtime udid
+  runtime="$(xcrun simctl list --json runtimes available | jq -r --arg t "$devtype" '
+    [.runtimes[] | select(any(.supportedDeviceTypes[]?; .identifier == $t))]
+    | sort_by(.version | split(".") | map(tonumber)) | last | .identifier // empty')"
+  if [ -z "$runtime" ]; then
+    echo "ios-sim: no installed runtime runs the iPhone Duo; install it from Xcode > Settings > Components" >&2
+    return 1
+  fi
+  udid="$(xcrun simctl list --json devices available | jq -r \
+    --arg rt "$runtime" --arg name "$name" \
+    '.devices[$rt][]? | select(.name == $name) | .udid' | head -n 1)"
+  if [ -z "$udid" ]; then
+    udid="$(xcrun simctl create "$name" "$devtype" "$runtime")"
+    echo "ios-sim: created simulator '$name' (iPhone Duo on $runtime)" >&2
+  fi
+  echo "$udid"
+}
+
 # Echo the UDID of every simulator named $1, on any runtime, one per line.
 ios_sim_find() {
   xcrun simctl list --json devices | jq -r --arg name "$1" \
