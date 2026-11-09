@@ -1151,12 +1151,13 @@
   transition: transform 0.38s cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 /* Dims the back leaves with a scrim, not a filter: iOS 27 Safari draws a
-   filtered leaf around the cover's drop-shadow filter in the wrong place. */
+   filtered leaf around the cover's drop-shadow filter in the wrong place.
+   It reaches 2px right to cover the page edge `.cover-wrap::after` hangs. */
 .lmq .ss-leaf::after {
   content: "";
   position: absolute;
-  inset: 0;
-  border-radius: 2px 4px 4px 2px;
+  inset: 0 -2px 0 0;
+  border-radius: 2px 6px 6px 2px / 2px calc(1.5% + 2px) calc(1.5% + 2px) 2px;
   background: #000;
   opacity: calc(var(--i) * 0.16);
   pointer-events: none;
