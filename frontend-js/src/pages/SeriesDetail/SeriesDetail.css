@@ -20,13 +20,26 @@
   z-index: 2;
   translate: 20px 0;
   rotate: 4deg;
-  filter: brightness(0.82);
 }
 .se-fan-cover:nth-child(3) {
   z-index: 1;
   translate: 38px 0;
   rotate: 8deg;
-  filter: brightness(0.66);
+}
+/* Dims the back covers with a scrim, not a filter: iOS 27 Safari draws a
+   filtered cover around the drop-shadow filter in the wrong place.
+   It reaches 2px right to cover the page edge `.cover-wrap::after` hangs. */
+.se-fan-cover:nth-child(n + 2)::after {
+  content: "";
+  position: absolute;
+  inset: 0 -2px 0 0;
+  border-radius: 2px 6px 6px 2px / 2px calc(1.5% + 2px) calc(1.5% + 2px) 2px;
+  background: #000;
+  opacity: 0.18;
+  pointer-events: none;
+}
+.se-fan-cover:nth-child(3)::after {
+  opacity: 0.34;
 }
 
 .se-meta-link {
