@@ -1148,10 +1148,19 @@
   transform-origin: 15% 100%;
   transform: translate(calc(var(--i) * 7.5%), calc(var(--i) * -2.4%))
     rotate(calc(var(--i) * 1.8deg));
-  filter: brightness(calc(1 - var(--i) * 0.16));
-  transition:
-    transform 0.38s cubic-bezier(0.2, 0.7, 0.2, 1),
-    filter 0.3s;
+  transition: transform 0.38s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+/* Dims the back leaves with a scrim, not a filter: iOS 27 Safari draws a
+   filtered leaf around the cover's drop-shadow filter in the wrong place. */
+.lmq .ss-leaf::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 2px 4px 4px 2px;
+  background: #000;
+  opacity: calc(var(--i) * 0.16);
+  pointer-events: none;
+  transition: opacity 0.3s;
 }
 .lmq .ss-leaf .cover-wrap {
   filter: drop-shadow(0 10px 14px oklch(0 0 0 / 0.5));
@@ -1193,7 +1202,9 @@
   .lmq .ss-stack:hover .ss-leaf {
     transform: translate(calc(var(--i) * 13%), calc(var(--i) * -3%))
       rotate(calc(var(--i) * 4.5deg));
-    filter: none;
+  }
+  .lmq .ss-stack:hover .ss-leaf::after {
+    opacity: 0;
   }
   .lmq .ss-stack:hover .ss-count {
     opacity: 0;
@@ -1393,6 +1404,7 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .lmq .ss-leaf,
+  .lmq .ss-leaf::after,
   .lmq .ss-count,
   .lmq .ss-sw,
   .lmq .ss-sw::after {

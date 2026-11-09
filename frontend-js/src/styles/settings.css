@@ -494,6 +494,7 @@
 .settings-field input[type="text"],
 .settings-field input[type="password"],
 .settings-field input[type="email"],
+.settings-field input[type="url"],
 .settings-field input[type="number"],
 .settings-field input[type="search"],
 .settings-field select {
@@ -509,6 +510,7 @@
 .settings-field input[type="text"]:focus,
 .settings-field input[type="password"]:focus,
 .settings-field input[type="email"]:focus,
+.settings-field input[type="url"]:focus,
 .settings-field input[type="number"]:focus,
 .settings-field input[type="search"]:focus,
 .settings-field select:focus {
