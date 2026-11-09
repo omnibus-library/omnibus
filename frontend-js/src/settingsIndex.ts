@@ -154,7 +154,15 @@ const SETTINGS_INDEX: readonly SettingsEntry[] = [
   {
     ...entry(
       "Book requests",
-      ["prowlarr", "qbittorrent", "download client"],
+      [
+        "prowlarr",
+        "download client",
+        "qbittorrent",
+        "transmission",
+        "sabnzbd",
+        "nzbget",
+        "usenet",
+      ],
       INTEGRATIONS,
     ),
     needsRequestAccess: true,

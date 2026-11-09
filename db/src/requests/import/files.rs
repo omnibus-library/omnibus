@@ -45,6 +45,10 @@ pub fn resolve(
     };
     // A missing download folder is not a missing file.
     local_prefix.canonicalize().map_err(PathMapError::from)?;
+    // A usenet client lists nothing for a folder this server cannot reach; say so.
+    if files.is_empty() {
+        map_client_path(save, client_prefix, local_prefix)?;
+    }
     let mut found = Vec::new();
     for file in files
         .iter()

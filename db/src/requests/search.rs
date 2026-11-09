@@ -138,7 +138,13 @@ async fn attempt(pool: &SqlitePool, book_uuid: &str) -> Attempt {
     };
     // Probed only when a result could use it: the check spawns the converter.
     let convertible = names_convertible(&releases) && conversion_available(pool).await;
-    let ranked = rank(releases, &title, &author, convertible);
+    let ranked = rank(
+        releases,
+        &title,
+        &author,
+        config.download_client_kind.protocol(),
+        convertible,
+    );
     if ranked.iter().all(|r| r.rejected) {
         return Attempt::Done(SearchOutcome::Stuck {
             reason: StuckReason::NotFound,

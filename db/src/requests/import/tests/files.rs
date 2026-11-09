@@ -54,6 +54,16 @@ mod resolve {
     }
 
     #[test]
+    fn refuses_a_save_folder_outside_the_clients_prefix_even_when_no_file_is_listed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config = requests_config(Some("/downloads"), tmp.path().to_str());
+
+        let err = resolve(&status("/elsewhere/job"), &[], &config).unwrap_err();
+
+        assert!(matches!(err, ImportError::NotVisible(_)), "{err:?}");
+    }
+
+    #[test]
     fn uses_the_save_folder_when_the_folders_are_not_mapped() {
         let tmp = tempfile::tempdir().unwrap();
         let file = write(tmp.path(), "Dune.epub", EPUB_BYTES);

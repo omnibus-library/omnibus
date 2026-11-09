@@ -19,7 +19,7 @@ fn release(title: &str) -> ProwlarrRelease {
 }
 
 fn ranked(releases: Vec<ProwlarrRelease>) -> Vec<Ranked> {
-    rank(releases, TITLE, AUTHOR, false)
+    rank(releases, TITLE, AUTHOR, ReleaseProtocol::Torrent, false)
 }
 
 fn kept_titles(releases: Vec<ProwlarrRelease>) -> Vec<String> {
@@ -31,8 +31,12 @@ fn kept_titles(releases: Vec<ProwlarrRelease>) -> Vec<String> {
 }
 
 fn is_dropped(release: ProwlarrRelease) -> bool {
+    is_dropped_for(release, ReleaseProtocol::Torrent)
+}
+
+fn is_dropped_for(release: ProwlarrRelease, wanted: ReleaseProtocol) -> bool {
     let title = release.title.clone();
-    let all = ranked(vec![release]);
+    let all = rank(vec![release], TITLE, AUTHOR, wanted, false);
     all.iter()
         .find(|r| r.release.title == title)
         .unwrap()
@@ -75,7 +79,7 @@ mod drop_rules {
     }
 
     #[test]
-    fn drops_a_usenet_release() {
+    fn drops_a_usenet_release_for_a_torrent_client() {
         let mut usenet = release("Dracula - Bram Stoker EPUB");
         usenet.protocol = Some(ReleaseProtocol::Usenet);
 
@@ -83,11 +87,40 @@ mod drop_rules {
     }
 
     #[test]
-    fn keeps_a_torrent_release() {
+    fn keeps_a_torrent_release_for_a_torrent_client() {
         let mut torrent = release("Dracula - Bram Stoker EPUB");
         torrent.protocol = Some(ReleaseProtocol::Torrent);
 
         assert!(!is_dropped(torrent));
+    }
+
+    #[test]
+    fn keeps_a_release_with_no_protocol_for_a_torrent_client() {
+        assert!(!is_dropped(release("Dracula - Bram Stoker EPUB")));
+    }
+
+    #[test]
+    fn keeps_a_usenet_release_for_a_usenet_client() {
+        let mut usenet = release("Dracula - Bram Stoker EPUB");
+        usenet.protocol = Some(ReleaseProtocol::Usenet);
+
+        assert!(!is_dropped_for(usenet, ReleaseProtocol::Usenet));
+    }
+
+    #[test]
+    fn drops_a_torrent_release_for_a_usenet_client() {
+        let mut torrent = release("Dracula - Bram Stoker EPUB");
+        torrent.protocol = Some(ReleaseProtocol::Torrent);
+
+        assert!(is_dropped_for(torrent, ReleaseProtocol::Usenet));
+    }
+
+    #[test]
+    fn drops_a_release_with_no_protocol_for_a_usenet_client() {
+        assert!(is_dropped_for(
+            release("Dracula - Bram Stoker EPUB"),
+            ReleaseProtocol::Usenet
+        ));
     }
 
     #[test]
@@ -147,6 +180,7 @@ mod drop_rules {
             vec![release("Dracula - Stoker, Bram EPUB")],
             TITLE,
             "Stoker, Bram",
+            ReleaseProtocol::Torrent,
             false,
         );
 
@@ -316,7 +350,7 @@ mod convertible_formats {
     use super::*;
 
     fn ranked_convertible(releases: Vec<ProwlarrRelease>) -> Vec<Ranked> {
-        rank(releases, TITLE, AUTHOR, true)
+        rank(releases, TITLE, AUTHOR, ReleaseProtocol::Torrent, true)
     }
 
     fn kept_convertible(releases: Vec<ProwlarrRelease>) -> Vec<String> {
@@ -328,7 +362,13 @@ mod convertible_formats {
     }
 
     fn format_of_only(title: &str, convertible: bool) -> Option<String> {
-        let all = rank(vec![release(title)], TITLE, AUTHOR, convertible);
+        let all = rank(
+            vec![release(title)],
+            TITLE,
+            AUTHOR,
+            ReleaseProtocol::Torrent,
+            convertible,
+        );
         assert!(!all[0].rejected, "{title} was dropped");
         all[0].format.clone()
     }
@@ -354,6 +394,7 @@ mod convertible_formats {
             ],
             TITLE,
             AUTHOR,
+            ReleaseProtocol::Torrent,
             false,
         );
 

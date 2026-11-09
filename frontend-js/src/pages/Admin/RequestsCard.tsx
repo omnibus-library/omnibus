@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import {
+  DownloadClientKind,
   type RequestsSettingsStatus,
   replaceQueryData,
   requestsSettingsQuery,
@@ -24,32 +25,38 @@ import { CredentialStatus } from "./CredentialStatus";
 import { credentialState } from "./integrations";
 import {
   BLANK_REQUESTS_DRAFT,
+  CLIENTS,
+  type ClientInfo,
   RequestsSchema,
   requestsDraftOf,
+  UNREAD_CLIENT,
 } from "./requests";
 
 type TestTarget = "prowlarr" | "client";
 
 type SecretField = "prowlarr_api_key" | "download_client_password";
 
-/** What clearing each secret asks, says and confirms. */
-const SECRET_CLEARS: Record<
-  SecretField,
-  { title: string; body: string; action: string; done: string }
-> = {
-  prowlarr_api_key: {
-    title: "Clear the Prowlarr API key?",
-    body: "Searching stops until a key is set again, unless the server has OMNIBUS_PROWLARR_API_KEY set, which then takes over.",
-    action: "Clear API key",
-    done: "Prowlarr API key cleared.",
-  },
-  download_client_password: {
-    title: "Clear the qBittorrent password?",
-    body: "Downloads stop until the password is set again, unless qBittorrent lets Omnibus in without one.",
-    action: "Clear password",
-    done: "qBittorrent password cleared.",
-  },
-};
+/** What clearing each secret asks, says and confirms; the download client's follows the client it is for. */
+function secretClears(client: ClientInfo) {
+  const clears: Record<
+    SecretField,
+    { title: string; body: string; action: string; done: string }
+  > = {
+    prowlarr_api_key: {
+      title: "Clear the Prowlarr API key?",
+      body: "Searching stops until a key is set again, unless the server has OMNIBUS_PROWLARR_API_KEY set, which then takes over.",
+      action: "Clear API key",
+      done: "Prowlarr API key cleared.",
+    },
+    download_client_password: {
+      title: `Clear the ${client.name} ${client.secret}?`,
+      body: `Downloads stop until the ${client.secret} is set again, unless ${client.name} lets Omnibus in without one.`,
+      action: `Clear ${client.secret}`,
+      done: `${client.name} ${client.secret} cleared.`,
+    },
+  };
+  return clears;
+}
 
 const TARGET_NAMES: Record<TestTarget, string> = {
   prowlarr: "Prowlarr",
@@ -71,6 +78,16 @@ export function RequestsCard() {
     shouldFocusError: false,
   });
   useUnsavedGuard("requests", form.formState.isDirty);
+  // The fields follow the client chosen in the form; what acts on the saved settings follows the saved one.
+  const chosenKind = form.watch("download_client_kind");
+  const client = saved.data ? CLIENTS[chosenKind] : UNREAD_CLIENT;
+  const savedClient = saved.data
+    ? CLIENTS[saved.data.download_client_kind]
+    : UNREAD_CLIENT;
+  const secretIsUnchanged =
+    saved.data?.download_client_password_masked &&
+    chosenKind === saved.data.download_client_kind;
+  const clears = secretClears(savedClient);
 
   const keepAnswer = (answer: RequestsSettingsStatus) =>
     replaceQueryData(queryClient, requestsSettingsQuery.queryKey, answer);
@@ -136,8 +153,7 @@ export function RequestsCard() {
       [field]: "",
     };
     clear.mutate(update, {
-      onSuccess: () =>
-        setStatus({ message: SECRET_CLEARS[field].done, error: false }),
+      onSuccess: () => setStatus({ message: clears[field].done, error: false }),
       onError: (error) =>
         setStatus({
           message: `Couldn’t clear it: ${error.message}`,
@@ -205,8 +221,9 @@ export function RequestsCard() {
     <section className="card" data-testid="requests-card">
       <h3>Book requests</h3>
       <p className="subtitle">
-        Where Omnibus searches for books (Prowlarr) and downloads them
-        (qBittorrent). The test buttons check what is saved, so save first.
+        Where Omnibus searches for books (Prowlarr) and downloads them (
+        {savedClient.name}). The test buttons check what is saved, so save
+        first.
       </p>
       <form className="settings-form" noValidate onSubmit={submit}>
         <div className="settings-field">
@@ -243,34 +260,55 @@ export function RequestsCard() {
           />
         </div>
         <div className="settings-field">
-          <label htmlFor="requests-client-url">qBittorrent address</label>
+          <label htmlFor="requests-client-kind">Download client</label>
+          <select
+            id="requests-client-kind"
+            data-testid="requests-client-kind"
+            {...unknown}
+            {...form.register("download_client_kind")}
+          >
+            {DownloadClientKind.options.map((kind) => (
+              <option key={kind} value={kind}>
+                {CLIENTS[kind].name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="settings-field">
+          <label htmlFor="requests-client-url">{client.name} address</label>
           <input
             type="url"
             id="requests-client-url"
             autoComplete="off"
             autoCapitalize="none"
             spellCheck={false}
-            placeholder="http://qbittorrent:8080…"
+            placeholder={client.addressPlaceholder}
             {...unknown}
             {...addressProps("download_client_url")}
             {...form.register("download_client_url", heldTrimmed)}
           />
           {addressError("download_client_url")}
         </div>
+        {client.hasUsername && (
+          <div className="settings-field">
+            <label htmlFor="requests-client-username">
+              {client.name} username
+            </label>
+            <input
+              type="text"
+              id="requests-client-username"
+              autoComplete="off"
+              autoCapitalize="none"
+              spellCheck={false}
+              {...unknown}
+              {...form.register("download_client_username", heldTrimmed)}
+            />
+          </div>
+        )}
         <div className="settings-field">
-          <label htmlFor="requests-client-username">qBittorrent username</label>
-          <input
-            type="text"
-            id="requests-client-username"
-            autoComplete="off"
-            autoCapitalize="none"
-            spellCheck={false}
-            {...unknown}
-            {...form.register("download_client_username", heldTrimmed)}
-          />
-        </div>
-        <div className="settings-field">
-          <label htmlFor="requests-client-password">qBittorrent password</label>
+          <label htmlFor="requests-client-password">
+            {client.name} {client.secret}
+          </label>
           <input
             type="password"
             id="requests-client-password"
@@ -278,18 +316,14 @@ export function RequestsCard() {
             autoCapitalize="none"
             autoCorrect="off"
             spellCheck={false}
-            placeholder={
-              saved.data?.download_client_password_masked
-                ? "•••• (unchanged)"
-                : ""
-            }
+            placeholder={secretIsUnchanged ? "•••• (unchanged)" : ""}
             {...unknown}
             {...form.register("download_client_password")}
           />
         </div>
         <div className="settings-field">
           <label htmlFor="requests-client-category">
-            qBittorrent category (optional)
+            {client.name} {client.category} (optional)
           </label>
           <input
             type="text"
@@ -302,13 +336,13 @@ export function RequestsCard() {
             {...form.register("download_client_category", heldTrimmed)}
           />
           <p className="settings-hint" id="requests-client-category-hint">
-            Files Omnibus downloads under this qBittorrent category. Leave empty
-            to use qBittorrent’s defaults.
+            Files Omnibus downloads under this {client.name} {client.category}.
+            Leave empty to use {client.name}’s defaults.
           </p>
         </div>
         <div className="settings-field">
           <label htmlFor="requests-client-folder">
-            Completed folder, as qBittorrent sees it
+            Completed folder, as {client.name} sees it
           </label>
           <input
             type="text"
@@ -340,7 +374,7 @@ export function RequestsCard() {
           <CredentialStatus
             testId="requests-status"
             state={credentialState(connected, readFailed)}
-            detail="Prowlarr and qBittorrent set up"
+            detail={`Prowlarr and ${savedClient.name} set up`}
             unconfigured="Not set up"
           />
           {readFailed && (
@@ -363,7 +397,7 @@ export function RequestsCard() {
               data-testid="requests-clear-prowlarr-key"
               onClick={() => setClearing("prowlarr_api_key")}
             >
-              Clear API key…
+              Clear Prowlarr API key…
             </Button>
           )}
           {saved.data?.download_client_password_masked && (
@@ -374,7 +408,7 @@ export function RequestsCard() {
               data-testid="requests-clear-client-password"
               onClick={() => setClearing("download_client_password")}
             >
-              Clear password…
+              Clear {savedClient.name} {savedClient.secret}…
             </Button>
           )}
           <Button
@@ -403,7 +437,7 @@ export function RequestsCard() {
           >
             <BusyLabel
               busy={testing("client")}
-              label="Test qBittorrent"
+              label={`Test ${savedClient.name}`}
               busyLabel="Testing…"
             />
           </Button>
@@ -426,9 +460,9 @@ export function RequestsCard() {
       {clearing && (
         <ConfirmDialog
           testId="requests-clear-dialog"
-          title={SECRET_CLEARS[clearing].title}
-          body={SECRET_CLEARS[clearing].body}
-          action={SECRET_CLEARS[clearing].action}
+          title={clears[clearing].title}
+          body={clears[clearing].body}
+          action={clears[clearing].action}
           busyLabel="Clearing…"
           busy={clear.isPending}
           onCancel={() => setClearing(null)}

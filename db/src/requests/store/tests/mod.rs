@@ -479,7 +479,9 @@ mod a_verdict_for_an_old_pick {
         let pool = pool().await;
         let (id, picked, _) = on_its_way_with_two_versions(&pool).await;
 
-        mark_ready(&pool, id, Some(picked + 100)).await.unwrap();
+        mark_ready(&pool, id, Some(picked + 100), false)
+            .await
+            .unwrap();
 
         assert_eq!(state_of(&pool, id).await.state, RequestState::OnItsWay);
     }

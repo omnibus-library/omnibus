@@ -130,11 +130,13 @@ pub fn names_convertible(releases: &[ProwlarrRelease]) -> bool {
 }
 
 /// Drop what cannot be the book or cannot be used, then order what is left best first.
+/// Only releases of the `wanted` protocol are kept: the download client fetches one kind.
 /// `convertible` is whether the server can convert AZW3 and MOBI to EPUB on import.
 pub fn rank(
     releases: Vec<ProwlarrRelease>,
     title: &str,
     author: &str,
+    wanted: ReleaseProtocol,
     convertible: bool,
 ) -> Vec<Ranked> {
     let author_tokens: Vec<String> = normalize_author(author)
@@ -145,7 +147,7 @@ pub fn rank(
         .collect();
     let (kept, rejected): (Vec<Ranked>, Vec<Ranked>) = releases
         .into_iter()
-        .map(|release| assess(release, title, &author_tokens, convertible))
+        .map(|release| assess(release, title, &author_tokens, wanted, convertible))
         .partition(|r| !r.rejected);
     let median = median_size(&kept);
     let mut ranked: Vec<Ranked> = kept
@@ -169,6 +171,7 @@ fn assess(
     release: ProwlarrRelease,
     title: &str,
     author_tokens: &[String],
+    wanted: ReleaseProtocol,
     convertible: bool,
 ) -> Ranked {
     let words = tokens(&release.title);
@@ -179,8 +182,8 @@ fn assess(
         .iter()
         .any(|c| BOOK_CATEGORIES.contains(c))
         || release.seeders.is_some_and(|s| s < 1)
-        // shortcut: no Usenet download client until #3021; offer Usenet versions once one exists
-        || release.protocol == Some(ReleaseProtocol::Usenet)
+        // A release that names no protocol is taken for a torrent, as the indexers mostly are.
+        || release.protocol.unwrap_or(ReleaseProtocol::Torrent) != wanted
         || release
             .size_bytes
             .is_some_and(|s| !(MIN_SIZE_BYTES..=MAX_SIZE_BYTES).contains(&s))

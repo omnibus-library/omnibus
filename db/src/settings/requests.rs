@@ -133,6 +133,9 @@ pub async fn set_requests_settings(
 ) -> Result<(), SettingsError> {
     validate(update)?;
     let mut tx = pool.begin().await?;
+    // A secret meant for another client is not the new one's: drop it with the kind.
+    let kind_changed = stored_kind(&mut tx).await? != update.download_client_kind;
+    let carried_username = stored_value(&mut tx, CLIENT_USERNAME_KEY).await?;
     let plain = [
         (PROWLARR_URL_KEY, &update.prowlarr_url),
         (CLIENT_URL_KEY, &update.download_client_url),
@@ -156,8 +159,36 @@ pub async fn set_requests_settings(
             upsert_or_clear(&mut tx, key, Some(v.as_str()).filter(|s| !s.is_empty())).await?;
         }
     }
+    if kind_changed && update.download_client_password.is_none() {
+        upsert_or_clear(&mut tx, CLIENT_PASSWORD_KEY, None).await?;
+        // The old login travels with the form; one typed for the new client stays.
+        if carried_username.as_deref() == field(&update.download_client_username) {
+            upsert_or_clear(&mut tx, CLIENT_USERNAME_KEY, None).await?;
+        }
+    }
     tx.commit().await?;
     Ok(())
+}
+
+async fn stored_value(
+    tx: &mut sqlx::SqliteConnection,
+    key: &str,
+) -> Result<Option<String>, SettingsError> {
+    Ok(
+        sqlx::query_scalar::<_, String>("SELECT value FROM settings WHERE key = ?")
+            .bind(key)
+            .fetch_optional(tx)
+            .await?,
+    )
+}
+
+/// The saved client kind, the default one when none is saved.
+async fn stored_kind(tx: &mut sqlx::SqliteConnection) -> Result<DownloadClientKind, SettingsError> {
+    let saved = stored_value(tx, CLIENT_KIND_KEY).await?;
+    Ok(saved.as_deref().map_or_else(
+        DownloadClientKind::default,
+        DownloadClientKind::from_str_or_default,
+    ))
 }
 
 /// The saved password as typed: unlike [`get_setting`], a whitespace-only one is kept.

@@ -922,11 +922,11 @@
           "Admin"
         ],
         "summary": "Test the download client connection",
-        "description": "Logs in to the download client with the saved address and login and reports whether it\nanswered. It changes nothing. Needs an admin account.",
+        "description": "Calls the download client with the saved address and login, or API key, and reports\nwhether it answered and accepted them. It changes nothing. Needs an admin account.",
         "operationId": "test_download_client_connection",
         "responses": {
           "200": {
-            "description": "The download client answered and accepted the login."
+            "description": "The download client answered and accepted the login or API key."
           },
           "403": {
             "description": "You aren't an admin."
@@ -12886,7 +12886,10 @@
         "type": "string",
         "description": "Which download client program the server talks to.",
         "enum": [
-          "qbittorrent"
+          "qbittorrent",
+          "transmission",
+          "sabnzbd",
+          "nzbget"
         ]
       },
       "DownloadFormat": {
@@ -16087,7 +16090,7 @@
               "string",
               "null"
             ],
-            "description": "A masked preview of the password. Null when no password is set."
+            "description": "A masked preview of the password, or of SABnzbd's API key. Null when none is set."
           },
           "download_client_path_prefix": {
             "type": [
@@ -16156,7 +16159,7 @@
               "string",
               "null"
             ],
-            "description": "The download client password, up to 1024 bytes. Null or left out keeps the saved\npassword. An empty string clears it."
+            "description": "The download client password, up to 1024 bytes; for SABnzbd, its API key. Null or\nleft out keeps the saved password. An empty string clears it."
           },
           "download_client_path_prefix": {
             "type": "string",
@@ -16168,7 +16171,7 @@
           },
           "download_client_username": {
             "type": "string",
-            "description": "The download client login, up to 255 bytes."
+            "description": "The download client login, up to 255 bytes. SABnzbd has none and ignores it."
           },
           "download_path_prefix": {
             "type": "string",

@@ -1,6 +1,8 @@
 use std::time::{Duration, Instant};
 
-use omnibus_shared::{RequestKind, RequestState, RequestsSettingsUpdate, StuckReason};
+use omnibus_shared::{
+    DownloadClientKind, RequestKind, RequestState, RequestsSettingsUpdate, StuckReason,
+};
 use serde_json::{json, Value};
 use sqlx::SqlitePool;
 use wiremock::matchers::{header, method, path, query_param};
@@ -24,11 +26,15 @@ async fn pool_with_prowlarr(url: &str) -> SqlitePool {
 }
 
 async fn pool_with_prowlarr_key(url: &str, key: &str) -> SqlitePool {
+    pool_with_client(url, key, DownloadClientKind::default()).await
+}
+
+async fn pool_with_client(url: &str, key: &str, kind: DownloadClientKind) -> SqlitePool {
     let pool = crate::pool::init_db("sqlite::memory:").await.unwrap();
     let update = RequestsSettingsUpdate {
         prowlarr_url: url.to_string(),
         prowlarr_api_key: Some(key.to_string()),
-        download_client_kind: Default::default(),
+        download_client_kind: kind,
         download_client_url: String::new(),
         download_client_username: String::new(),
         download_client_password: None,
@@ -189,6 +195,22 @@ mod run_search {
         let shown = store::versions(&pool, id).await.unwrap();
         assert_eq!(shown.len(), 1);
         assert_eq!(shown[0].format.as_deref(), Some("EPUB"));
+    }
+
+    #[tokio::test]
+    async fn offers_a_usenet_version_when_the_download_client_is_a_usenet_one() {
+        let server = MockServer::start().await;
+        let mut usenet = good_release();
+        usenet["protocol"] = json!("usenet");
+        mount_search(&server, json!([usenet])).await;
+        let pool =
+            pool_with_client(&server.uri(), "indexer-key", DownloadClientKind::Sabnzbd).await;
+        let id = looking_request(&pool).await;
+
+        run_search(&pool, id).await.unwrap();
+
+        assert_eq!(row(&pool, id).await.state, RequestState::Choose);
+        assert_eq!(store::versions(&pool, id).await.unwrap().len(), 1);
     }
 
     #[tokio::test]
