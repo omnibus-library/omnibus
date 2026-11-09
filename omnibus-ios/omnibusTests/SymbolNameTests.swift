@@ -38,6 +38,16 @@ struct SymbolNameTests {
         #expect(UIImage(systemName: ShelfDetailView.unreachableGlyph) != nil)
     }
 
+    @Test("the shelf tile's kind and visibility glyphs resolve")
+    func shelfTileGlyphsResolve() {
+        for kind in [ShelfKind.smart, .manual, .wishlist] {
+            #expect(UIImage(systemName: kind.glyph) != nil)
+        }
+        for visibility in [ShelfVisibility.private, .public] {
+            #expect(UIImage(systemName: visibility.glyph) != nil)
+        }
+    }
+
     @Test("the library's stack-series glyph resolves")
     func stackGlyphResolves() {
         #expect(UIImage(systemName: SeriesStackCell.glyph) != nil)

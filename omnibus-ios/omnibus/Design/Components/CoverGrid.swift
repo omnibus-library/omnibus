@@ -16,11 +16,14 @@ enum CoverGridDensity: CaseIterable {
     case regular
     /// An author's books and search results, which fit a column more.
     case compact
+    /// The shelves index's captioned tiles, wider than a cover.
+    case tiles
 
     var minimum: CGFloat {
         switch self {
         case .regular: 112
         case .compact: 104
+        case .tiles: 156
         }
     }
 
@@ -28,6 +31,7 @@ enum CoverGridDensity: CaseIterable {
         switch self {
         case .regular: 168
         case .compact: 150
+        case .tiles: 300
         }
     }
 
@@ -35,6 +39,7 @@ enum CoverGridDensity: CaseIterable {
         switch self {
         case .regular: 16
         case .compact: 14
+        case .tiles: 12
         }
     }
 
@@ -49,6 +54,7 @@ enum CoverGridDensity: CaseIterable {
         switch self {
         case .regular: 26
         case .compact: 20
+        case .tiles: 14
         }
     }
 }
