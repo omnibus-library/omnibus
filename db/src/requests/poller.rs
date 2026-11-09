@@ -330,10 +330,11 @@ fn judge(row: &RequestRow, status: Option<&TorrentStatus>, now: i64) -> Verdict 
         };
     };
     if matches!(status.state.as_str(), "error" | "missingFiles") {
-        return Verdict::Stopped(format!(
-            "the download client reports an error (state: {})",
-            status.state
-        ));
+        let why = match status.state.as_str() {
+            "missingFiles" => "the download client can no longer find the downloaded files",
+            _ => "the download client reports an error with this download",
+        };
+        return Verdict::Stopped(why.into());
     }
     if status.progress >= 1.0 || FINISHED_STATES.contains(&status.state.as_str()) {
         return Verdict::Progress(1.0);
@@ -343,20 +344,11 @@ fn judge(row: &RequestRow, status: Option<&TorrentStatus>, now: i64) -> Verdict 
     }
     if idle_secs > STALL_SECS {
         return Verdict::Stopped(format!(
-            "the download made no progress for {}",
-            elapsed(idle_secs)
+            "the download made no progress for {} hours",
+            idle_secs / 3600
         ));
     }
     Verdict::Wait
-}
-
-/// `secs` as whole hours, or minutes when under two hours: "12 hours", "45 minutes".
-fn elapsed(secs: i64) -> String {
-    if secs >= 2 * 3600 {
-        format!("{} hours", secs / 3600)
-    } else {
-        format!("{} minutes", secs / 60)
-    }
 }
 
 /// Stop every download on its way, for `why`. A pick not yet added keeps waiting: it has not

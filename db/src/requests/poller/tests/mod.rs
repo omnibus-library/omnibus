@@ -131,6 +131,35 @@ mod poll_once {
         }
     }
 
+    mod unreadable_link {
+        use super::*;
+
+        #[tokio::test]
+        async fn never_puts_the_release_link_in_the_reason_it_gives() {
+            let pool = pool().await;
+            let id = seed(&pool, "ada", "chosen").await;
+            sqlx::query(
+                "UPDATE book_request_results SET download_url = 'http://prowlarr/9/download?apikey=secret'
+                 WHERE request_id = ?",
+            )
+            .bind(id)
+            .execute(&pool)
+            .await
+            .unwrap();
+            let mut failing_since = None;
+
+            poll_once(&pool, &StubClient::new(), CATEGORY, NOW, &mut failing_since)
+                .await
+                .unwrap();
+
+            let stopped = row(&pool, id).await;
+            assert_eq!(stopped.state, RequestState::Stuck);
+            let detail = stopped.stuck_detail.unwrap();
+            assert!(detail.starts_with("the release link"), "{detail}");
+            assert!(!detail.contains("secret"), "{detail}");
+        }
+    }
+
     mod tracking {
         use super::*;
 
@@ -253,15 +282,19 @@ mod poll_once {
 
             tick(&pool, &client, NOW).await;
 
-            for (id, state) in [(broken, "error"), (missing, "missingFiles")] {
+            for (id, why) in [
+                (
+                    broken,
+                    "the download client reports an error with this download",
+                ),
+                (
+                    missing,
+                    "the download client can no longer find the downloaded files",
+                ),
+            ] {
                 let stopped = row(&pool, id).await;
                 assert_eq!(stopped.state, RequestState::Stuck, "{id}");
-                assert_eq!(
-                    stopped.stuck_detail,
-                    Some(format!(
-                        "the download client reports an error (state: {state})"
-                    ))
-                );
+                assert_eq!(stopped.stuck_detail.as_deref(), Some(why));
             }
         }
     }

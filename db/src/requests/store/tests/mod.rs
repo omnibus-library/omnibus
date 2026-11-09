@@ -3,6 +3,7 @@ use sqlx::SqlitePool;
 use crate::test_support::seed_user;
 
 use super::super::prowlarr::ProwlarrRelease;
+use super::super::rank::Rejection;
 use super::*;
 
 mod change;
@@ -181,6 +182,7 @@ fn ranked(title: &str, score: f64, best_match: bool, rejected: bool) -> Ranked {
         score,
         best_match,
         rejected,
+        cause: rejected.then_some(Rejection::Book),
     }
 }
 

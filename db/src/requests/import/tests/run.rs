@@ -481,6 +481,26 @@ mod import_finished {
         use super::*;
 
         #[tokio::test]
+        async fn leaves_the_request_waiting_when_the_merge_fails_on_the_database() {
+            let env = env().await;
+            let wished = wish(&env, "Dune", "Frank Herbert").await;
+            let request = finished_request(&env, &wished, RequestKind::Ebook).await;
+            let client = downloaded(&env, &request, &[("Dune.epub", &epub("dune"))]);
+            sqlx::query(
+                "CREATE TRIGGER no_merges BEFORE INSERT ON merge_log
+                 BEGIN SELECT RAISE(ABORT, 'merges are off'); END",
+            )
+            .execute(&env.pool)
+            .await
+            .unwrap();
+
+            let waiting = run(&env, &client).await;
+
+            assert!(waiting);
+            assert_eq!(row(&env, request.id).await.state, RequestState::OnItsWay);
+        }
+
+        #[tokio::test]
         async fn leaves_the_request_for_the_next_pass_when_the_client_cannot_be_reached() {
             let env = env().await;
             let wished = wish(&env, "Dune", "Frank Herbert").await;
@@ -640,26 +660,6 @@ mod import_finished {
             assert!(get_book_by_uuid(&env.pool, &other).await.unwrap().is_some());
             assert_eq!(files_of(&env, &wished).await, 0);
             assert_eq!(files_of(&env, &other).await, 2);
-        }
-
-        #[tokio::test]
-        async fn when_the_merge_fails() {
-            let env = env().await;
-            let wished = wish(&env, "Dune", "Frank Herbert").await;
-            let request = finished_request(&env, &wished, RequestKind::Ebook).await;
-            let client = downloaded(&env, &request, &[("Dune.epub", &epub("dune"))]);
-            sqlx::query(
-                "CREATE TRIGGER no_merges BEFORE INSERT ON merge_log
-                 BEGIN SELECT RAISE(ABORT, 'merges are off'); END",
-            )
-            .execute(&env.pool)
-            .await
-            .unwrap();
-
-            run(&env, &client).await;
-
-            let detail = couldnt_add_detail(&env, request.id).await;
-            assert!(detail.contains("merging"), "{detail}");
         }
 
         #[tokio::test]

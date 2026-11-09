@@ -4,9 +4,10 @@
 use std::fs;
 use std::path::PathBuf;
 
-use omnibus_shared::{RequestKind, Settings};
+use omnibus_shared::{RequestKind, RequestState, Settings};
 use sqlx::SqlitePool;
 
+use crate::requests::store;
 use crate::requests::test_support::{update, StubClient};
 use crate::set_settings;
 use crate::test_support::{build_m4b_with_chapters, count_rows, generated_audiobook};
@@ -193,7 +194,8 @@ mod import_finished {
         use super::*;
 
         #[tokio::test]
-        async fn removes_the_placed_folder_when_the_import_key_cannot_be_recorded() {
+        async fn removes_the_placed_folder_and_leaves_the_request_waiting_when_the_import_key_cannot_be_recorded(
+        ) {
             let env = env().await;
             let audio = with_audio_library(&env).await;
             let wished = wish(&env, "Dune", "Frank Herbert").await;
@@ -208,11 +210,12 @@ mod import_finished {
             .await
             .unwrap();
 
-            run(&env, &client).await;
+            let waiting = run(&env, &client).await;
 
+            assert!(waiting);
             assert!(!audio.join("frank-herbert").join("dune").exists());
-            let detail = couldnt_add_detail(&env, request.id).await;
-            assert!(detail.contains("refused"), "{detail}");
+            let after = store::get(&env.pool, request.id).await.unwrap().unwrap();
+            assert_eq!(after.state, RequestState::OnItsWay);
         }
     }
 

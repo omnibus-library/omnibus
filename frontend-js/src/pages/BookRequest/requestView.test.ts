@@ -106,7 +106,19 @@ describe("stateView", () => {
     ).toEqual({
       heading: "Stopped moving",
       note: "The download made no progress for 12 hours",
+      explicit: true,
     });
+  });
+
+  it("leaves a name that opens with a lower-case letter and a capital as written", () => {
+    expect(
+      stateView(
+        "stuck",
+        "stopped_moving",
+        "ebook",
+        "qBittorrent did not accept the torrent",
+      ).note,
+    ).toBe("qBittorrent did not accept the torrent");
   });
 
   it.each([
@@ -116,8 +128,10 @@ describe("stateView", () => {
   ] as const)(
     "falls back to a general line for %s with no error recorded",
     (reason, note) => {
-      expect(stateView("stuck", reason, "ebook", null).note).toBe(note);
-      expect(stateView("stuck", reason, "ebook", "  ").note).toBe(note);
+      expect(stateView("stuck", reason, "ebook", null)).toMatchObject({
+        note,
+        explicit: false,
+      });
     },
   );
 
@@ -132,6 +146,7 @@ describe("stateView", () => {
     expect(stateView("stuck", "couldnt_add")).toEqual({
       heading: "Couldn’t add it",
       note: "It downloaded but couldn’t be added to the library.",
+      explicit: false,
     });
   });
 

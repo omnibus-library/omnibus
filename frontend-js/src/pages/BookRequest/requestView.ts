@@ -12,27 +12,34 @@ import {
 } from "../../api";
 import { fileSize, plural } from "../../format";
 
+/** `text` opening a sentence; a lower-case word with a capital after it, such as "qBittorrent", is a name and stays as written. */
 const capitalised = (text: string) =>
-  text.charAt(0).toUpperCase() + text.slice(1);
+  /^[a-z][A-Z]/.test(text)
+    ? text
+    : text.charAt(0).toUpperCase() + text.slice(1);
 
-/** A stuck request's heading, and under it the explicit error the server recorded, or a general line when it recorded none. */
+/** A stuck request's heading, and under it the explicit error the server recorded (`explicit`), or a general line when it recorded none. */
 function stuckView(reason: StuckReason | null, detail: string | null) {
-  const explicit = detail?.trim() ? capitalised(detail.trim()) : null;
+  const recorded = detail ? capitalised(detail) : null;
+  const explicit = recorded !== null;
   switch (reason) {
     case "stopped_moving":
       return {
         heading: "Stopped moving",
-        note: explicit ?? "The download stopped making progress.",
+        note: recorded ?? "The download stopped making progress.",
+        explicit,
       };
     case "couldnt_add":
       return {
         heading: "Couldn’t add it",
-        note: explicit ?? "It downloaded but couldn’t be added to the library.",
+        note: recorded ?? "It downloaded but couldn’t be added to the library.",
+        explicit,
       };
     default:
       return {
         heading: "Couldn’t find it",
-        note: explicit ?? "Nothing worth showing turned up.",
+        note: recorded ?? "Nothing worth showing turned up.",
+        explicit,
       };
   }
 }
@@ -47,6 +54,8 @@ export function stateView(
   heading: string;
   /** Absent where the lane's own content says it. */
   note: string | null;
+  /** Whether `note` is the error the server recorded, not a general line. */
+  explicit?: boolean;
 } {
   switch (state) {
     case "looking":

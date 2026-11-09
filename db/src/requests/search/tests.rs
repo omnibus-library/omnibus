@@ -195,25 +195,63 @@ mod run_search {
     }
 
     #[tokio::test]
-    async fn says_how_many_results_came_back_when_none_could_be_offered() {
+    async fn names_usenet_as_the_cause_when_every_result_is_a_usenet_release() {
         let server = MockServer::start().await;
-        let unreadable = json!({
-            "guid": "g2", "title": "Dracula - Bram Stoker MOBI", "size": 900000, "seeders": 4,
-            "downloadUrl": "http://prowlarr/2/download?apikey=secret", "categories": [{"id": 7020}],
-        });
-        mount_search(&server, json!([unreadable])).await;
+        let usenet = |guid: &str| {
+            json!({
+                "guid": guid, "title": "Dracula - Bram Stoker EPUB", "size": 900000,
+                "protocol": "usenet", "downloadUrl": "http://prowlarr/9/download?apikey=secret",
+                "categories": [{"id": 7020}],
+            })
+        };
+        mount_search(&server, json!([usenet("g1"), usenet("g2")])).await;
         mount_indexer_status(&server, json!([])).await;
         let pool = pool_with_prowlarr(&server.uri()).await;
         let id = looking_request(&pool).await;
 
         run_search(&pool, id).await.unwrap();
 
-        let detail = row(&pool, id).await.stuck_detail.unwrap();
         assert_eq!(
-            detail,
-            "searched for “Dracula Bram Stoker”: 1 result came back, but it did not match the book's title and author or fit the ebook limits on format, size and seeders"
+            row(&pool, id).await.stuck_detail.as_deref(),
+            Some(
+                "searched for “Dracula Bram Stoker”: 2 results came back: \
+                 2 were usenet releases the download client can't fetch"
+            )
         );
-        assert!(!detail.contains("secret"));
+    }
+
+    #[tokio::test]
+    async fn counts_each_cause_when_results_were_dropped_for_different_reasons() {
+        let server = MockServer::start().await;
+        let usenet = json!({
+            "guid": "g1", "title": "Dracula - Bram Stoker EPUB", "size": 900000,
+            "protocol": "usenet", "downloadUrl": "http://prowlarr/1/download",
+            "categories": [{"id": 7020}],
+        });
+        let mobi = json!({
+            "guid": "g2", "title": "Dracula - Bram Stoker MOBI", "size": 900000, "seeders": 4,
+            "downloadUrl": "http://prowlarr/2/download", "categories": [{"id": 7020}],
+        });
+        let other_book = json!({
+            "guid": "g3", "title": "Frankenstein - Mary Shelley EPUB", "size": 900000, "seeders": 4,
+            "downloadUrl": "http://prowlarr/3/download", "categories": [{"id": 7020}],
+        });
+        mount_search(&server, json!([usenet, mobi, other_book])).await;
+        mount_indexer_status(&server, json!([])).await;
+        let pool = pool_with_prowlarr(&server.uri()).await;
+        let id = looking_request(&pool).await;
+
+        run_search(&pool, id).await.unwrap();
+
+        assert_eq!(
+            row(&pool, id).await.stuck_detail.as_deref(),
+            Some(
+                "searched for “Dracula Bram Stoker”: 3 results came back: \
+                 1 didn't match the book's title and author, \
+                 1 was a usenet release the download client can't fetch, \
+                 1 had a format, size or seeder count that can't be used"
+            )
+        );
     }
 
     #[tokio::test]
@@ -227,7 +265,7 @@ mod run_search {
         assert_eq!(stuck.stuck_reason, Some(StuckReason::SearchFailed));
         assert_eq!(
             stuck.stuck_detail.as_deref(),
-            Some("could not connect (connection refused or failed)")
+            Some("Prowlarr could not be reached (connection refused or failed)")
         );
     }
 
@@ -241,7 +279,10 @@ mod run_search {
 
         let stuck = row(&pool, id).await;
         assert_eq!(stuck.stuck_reason, Some(StuckReason::SearchFailed));
-        assert_eq!(stuck.stuck_detail.as_deref(), Some("not set up yet"));
+        assert_eq!(
+            stuck.stuck_detail.as_deref(),
+            Some("Prowlarr is not set up yet")
+        );
     }
 
     #[tokio::test]

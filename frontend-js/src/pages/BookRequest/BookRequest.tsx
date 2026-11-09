@@ -631,7 +631,7 @@ function Lane({
       />
     );
   const Heading = context.variant === "pane" ? "h3" : "h2";
-  const { heading, note } = stateView(
+  const { heading, note, explicit } = stateView(
     request.state,
     request.stuckReason,
     request.kind,
@@ -657,31 +657,25 @@ function Lane({
         </Heading>
         {listing && <Requester request={request} listing={listing} />}
       </div>
-      {/* The stepper shows where it stands; the words stay for a screen reader to announce. */}
-      <p
-        className={steps ? "rq-state ld-sr" : "rq-state"}
-        role="status"
-        data-testid="request-state"
-        data-state={request.state}
-      >
-        {heading}
-      </p>
-      {steps ? (
-        <Steps steps={steps} />
-      ) : (
-        note && (
+      {/* The stepper shows where it stands; the words stay for a screen reader to announce, with the error under a stuck heading. */}
+      <div className={steps ? "ld-sr" : "rq-status"} role="status">
+        <p
+          className="rq-state"
+          data-testid="request-state"
+          data-state={request.state}
+        >
+          {heading}
+        </p>
+        {!steps && note && (
           <p
             className="rq-note"
-            data-testid={
-              request.state === "stuck" && request.stuckDetail
-                ? "request-stuck-detail"
-                : undefined
-            }
+            data-testid={explicit ? "request-stuck-detail" : undefined}
           >
             {note}
           </p>
-        )
-      )}
+        )}
+      </div>
+      {steps && <Steps steps={steps} />}
       {request.state === "looking" && (
         <Looking request={request} canChoose={canChoose} onTried={focusTitle} />
       )}

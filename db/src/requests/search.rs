@@ -10,7 +10,7 @@ use omnibus_shared::{RequestKind, RequestState, StuckReason};
 use sqlx::SqlitePool;
 
 use super::prowlarr::Prowlarr;
-use super::rank::rank;
+use super::rank::{rank, Ranked, Rejection};
 use super::store::{self, RequestError, SearchOutcome};
 use super::ConnectionError;
 
@@ -91,9 +91,19 @@ fn failed(detail: impl Into<String>) -> Attempt {
     Attempt::Done(stuck_failed(detail))
 }
 
+/// A failed call to Prowlarr, said so that the reader can tell which service it was.
+fn prowlarr_says(e: &ConnectionError) -> String {
+    match e {
+        ConnectionError::NotConfigured => "Prowlarr is not set up yet".to_string(),
+        ConnectionError::Unreachable(why) => format!("Prowlarr could not be reached ({why})"),
+        ConnectionError::BadApiKey => "Prowlarr rejected the API key".to_string(),
+        other => other.to_string(),
+    }
+}
+
 /// A failed call to Prowlarr: retried when it was only unreachable or rate limiting.
 fn search_error(e: ConnectionError) -> Attempt {
-    let outcome = stuck_failed(e.to_string());
+    let outcome = stuck_failed(prowlarr_says(&e));
     match e {
         ConnectionError::Unreachable(_) | ConnectionError::RateLimited => {
             Attempt::Transient(outcome)
@@ -129,17 +139,16 @@ async fn attempt(pool: &SqlitePool, book_uuid: &str, kind: RequestKind) -> Attem
     };
     let prowlarr = match Prowlarr::from_config(&config) {
         Ok(p) => p,
-        Err(e) => return failed(e.to_string()),
+        Err(e) => return failed(prowlarr_says(&e)),
     };
     let query = format!("{title} {author}");
     let releases = match prowlarr.search(query.trim(), kind).await {
         Ok(releases) => releases,
         Err(e) => return search_error(e),
     };
-    let found = releases.len();
     let ranked = rank(releases, &title, &author, kind);
     if ranked.iter().all(|r| r.rejected) {
-        let detail = not_found_detail(query.trim(), kind, found, failing_indexers(&prowlarr).await);
+        let detail = not_found_detail(query.trim(), &ranked, failing_indexers(&prowlarr).await);
         return Attempt::Done(SearchOutcome::Stuck {
             reason: StuckReason::NotFound,
             detail: Some(detail),
@@ -149,25 +158,49 @@ async fn attempt(pool: &SqlitePool, book_uuid: &str, kind: RequestKind) -> Attem
 }
 
 /// What a search that ended `not_found` says for itself: what was asked, how many results
-/// came back, why none was offered, and which indexers were down.
-fn not_found_detail(
-    query: &str,
-    kind: RequestKind,
-    found: usize,
-    indexers: Option<String>,
-) -> String {
-    let came_back = match found {
+/// came back, why each was dropped, and which indexers were down.
+fn not_found_detail(query: &str, ranked: &[Ranked], indexers: Option<String>) -> String {
+    let came_back = match ranked.len() {
         0 => "no results came back".to_string(),
-        1 => format!(
-            "1 result came back, but it did not match the book's title and author or fit the {} limits on format, size and seeders",
-            kind.as_str()
-        ),
-        n => format!(
-            "{n} results came back, but none matched the book's title and author or fit the {} limits on format, size and seeders",
-            kind.as_str()
-        ),
+        1 => "1 result came back".to_string(),
+        n => format!("{n} results came back"),
     };
+    let count = |cause| ranked.iter().filter(|r| r.cause == Some(cause)).count();
+    let causes = [
+        (
+            Rejection::Category,
+            "was in another category",
+            "were in another category",
+        ),
+        (
+            Rejection::Book,
+            "didn't match the book's title and author",
+            "didn't match the book's title and author",
+        ),
+        (
+            Rejection::Usenet,
+            "was a usenet release the download client can't fetch",
+            "were usenet releases the download client can't fetch",
+        ),
+        (
+            Rejection::Unusable,
+            "had a format, size or seeder count that can't be used",
+            "had a format, size or seeder count that can't be used",
+        ),
+    ];
+    let why: Vec<String> = causes
+        .iter()
+        .filter_map(|&(cause, one, many)| match count(cause) {
+            0 => None,
+            1 => Some(format!("1 {one}")),
+            n => Some(format!("{n} {many}")),
+        })
+        .collect();
     let mut detail = format!("searched for “{query}”: {came_back}");
+    if !why.is_empty() {
+        detail.push_str(": ");
+        detail.push_str(&why.join(", "));
+    }
     if let Some(indexers) = indexers {
         detail.push_str("; ");
         detail.push_str(&indexers);

@@ -573,6 +573,13 @@ const showsTheError = (
       shown,
     );
     await expect(canvas.getAllByText(shown)).toHaveLength(1);
+    // Heading and error sit in one status region, so they are announced together.
+    const status = canvas
+      .getByTestId("request-state")
+      .closest('[role="status"]');
+    await expect(status).toContainElement(
+      canvas.getByTestId("request-stuck-detail"),
+    );
   },
 });
 

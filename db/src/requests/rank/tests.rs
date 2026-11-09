@@ -435,3 +435,38 @@ mod audio_profile {
         assert_eq!(order[0], "Dracula - Bram Stoker MP3");
     }
 }
+
+mod cause {
+    use super::*;
+
+    fn cause_of(release: ProwlarrRelease) -> Option<Rejection> {
+        ranked(vec![release])[0].cause
+    }
+
+    #[test]
+    fn names_the_first_reason_a_release_was_dropped() {
+        let mut other_category = release("Dracula - Bram Stoker EPUB");
+        other_category.categories = vec![3030];
+        let mut usenet = release("Dracula - Bram Stoker EPUB");
+        usenet.protocol = Some(ReleaseProtocol::Usenet);
+        let mut dead = release("Dracula - Bram Stoker EPUB");
+        dead.seeders = Some(0);
+
+        assert_eq!(cause_of(other_category), Some(Rejection::Category));
+        assert_eq!(
+            cause_of(release("Frankenstein - Mary Shelley EPUB")),
+            Some(Rejection::Book)
+        );
+        assert_eq!(cause_of(usenet), Some(Rejection::Usenet));
+        assert_eq!(cause_of(dead), Some(Rejection::Unusable));
+        assert_eq!(cause_of(release("Dracula - Bram Stoker EPUB")), None);
+    }
+
+    #[test]
+    fn blames_the_book_before_the_protocol_when_a_usenet_release_is_another_book() {
+        let mut usenet = release("Frankenstein - Mary Shelley EPUB");
+        usenet.protocol = Some(ReleaseProtocol::Usenet);
+
+        assert_eq!(cause_of(usenet), Some(Rejection::Book));
+    }
+}

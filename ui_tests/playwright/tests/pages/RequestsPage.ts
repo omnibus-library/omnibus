@@ -34,7 +34,7 @@ export class RequestsPage extends BasePage {
   /** The download's percent, once the client has reported. */
   readonly percent: Locator;
   readonly tryAgain: Locator;
-  /** What went wrong, in technical words; only an admin sees it. */
+  /** The error a stuck request names, in plain words; every reader sees it. */
   readonly stuckDetail: Locator;
   readonly cancelFailedText: Locator;
   /** The header's Request button, which opens the search for a book to request. */

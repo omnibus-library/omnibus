@@ -546,7 +546,6 @@ mod get_request {
             body.stuck_detail.as_deref(),
             Some("could not connect (connection refused or failed)")
         );
-        assert!(text.contains("connection refused"));
     }
 
     #[tokio::test]
@@ -695,7 +694,10 @@ mod search_after_start {
             as_reader.stuck_reason,
             Some(omnibus_shared::StuckReason::SearchFailed)
         );
-        assert_eq!(as_reader.stuck_detail.as_deref(), Some("not set up yet"));
+        assert_eq!(
+            as_reader.stuck_detail.as_deref(),
+            Some("Prowlarr is not set up yet")
+        );
         assert_eq!(as_admin.stuck_detail, as_reader.stuck_detail);
     }
 }

@@ -110,6 +110,21 @@ pub struct Ranked {
     pub best_match: bool,
     /// Dropped: stored for the record, never shown.
     pub rejected: bool,
+    /// Why it was dropped; `None` for a result that was kept.
+    pub cause: Option<Rejection>,
+}
+
+/// The first reason a result was dropped, in the order a reader would check them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Rejection {
+    /// Listed outside the category the request's kind searches.
+    Category,
+    /// Its title or author is not the book's.
+    Book,
+    /// A Usenet release, which no download client here can fetch.
+    Usenet,
+    /// A format, size or seeder count that cannot be used.
+    Unusable,
 }
 
 /// What a result's title says about its format.
@@ -195,20 +210,31 @@ fn assess(
     let words = tokens(&release.title);
     let format = format_of(&words, profile);
     let title_score = score_title_match(title, &release.title);
-    let unusable = !release
+    let wrong_category = !release
         .categories
         .iter()
-        .any(|c| profile.categories.contains(c))
-        || release.seeders.is_some_and(|s| s < 1)
-        // shortcut: no Usenet download client until #3021; offer Usenet versions once one exists
-        || release.protocol == Some(ReleaseProtocol::Usenet)
+        .any(|c| profile.categories.contains(c));
+    // shortcut: no Usenet download client until #3021; offer Usenet versions once one exists
+    let usenet = release.protocol == Some(ReleaseProtocol::Usenet);
+    let unusable = release.seeders.is_some_and(|s| s < 1)
         || release
             .size_bytes
             .is_some_and(|s| !profile.sizes.contains(&s))
         || matches!(format, Format::Unreadable);
     let wrong_book = title_score < MIN_RELEVANCE_SCORE
         || (!author_tokens.is_empty() && !author_tokens.iter().any(|t| words.contains(t)));
-    let rejected = unusable || wrong_book;
+    let cause = if wrong_category {
+        Some(Rejection::Category)
+    } else if wrong_book {
+        Some(Rejection::Book)
+    } else if usenet {
+        Some(Rejection::Usenet)
+    } else if unusable {
+        Some(Rejection::Unusable)
+    } else {
+        None
+    };
+    let rejected = cause.is_some();
     let score = if rejected {
         0.0
     } else {
@@ -226,6 +252,7 @@ fn assess(
         score,
         best_match: false,
         rejected,
+        cause,
     }
 }
 

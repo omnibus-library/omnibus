@@ -58,9 +58,9 @@ struct Wished {
 }
 
 /// Add every finished download to the library, one at a time. A request ends `ready`, or
-/// `couldnt_add` with the reason; one that must wait (its client cannot be
-/// reached, or is still moving the files) stays as it is for the next pass, and the answer
-/// is then true.
+/// `couldnt_add` with the reason; one that must wait (its client cannot be reached or is
+/// still moving the files, or the database failed it) stays as it is for the next pass, and the
+/// answer is then true.
 // shortcut: the poller does nothing else while a scan is awaited; move imports to a spawned task if big libraries make cancels lag.
 pub async fn import_finished(
     pool: &SqlitePool,
@@ -74,8 +74,13 @@ pub async fn import_finished(
         match import_one(pool, client, worker, config, &row).await {
             Ok(Step::Added) => store::mark_ready(pool, row.id, pick).await?,
             Ok(Step::Later) => waiting = true,
-            Err(ImportError::Client(e)) => {
-                tracing::warn!(error = %e, request = row.id, "download client, during an import");
+            // Neither says anything about the download, so the request waits for the next pass.
+            Err(
+                e @ (ImportError::Client(_)
+                | ImportError::Db(_)
+                | ImportError::Merge(MergeError::Db(_))),
+            ) => {
+                tracing::warn!(error = %e, request = row.id, "an import could not go on");
                 waiting = true;
             }
             Err(e) => {
