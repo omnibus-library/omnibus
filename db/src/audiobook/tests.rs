@@ -5,7 +5,7 @@
 use std::fs;
 
 use super::*;
-use crate::test_support::make_test_dir;
+use crate::test_support::{generated_audiobook, make_test_dir};
 
 #[test]
 fn stat_with_no_path_returns_empty() {
@@ -216,17 +216,9 @@ fn build_indexed_book_surfaces_error_for_undecodable_audio() {
     );
 }
 
-/// Absolute path to a committed (non-download-gated) generated audiobook
-/// fixture under `test_data/audiobooks/generated/`.
-fn generated_fixture(rel: &str) -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../test_data/audiobooks/generated")
-        .join(rel)
-}
-
 #[test]
 fn inspect_audiobook_files_single_mp3_reads_book_metadata() {
-    let path = generated_fixture("ada_lovelace_solo/the_analytical_audiobook.mp3");
+    let path = generated_audiobook("ada_lovelace_solo/the_analytical_audiobook.mp3");
     let out = inspect_audiobook_files(&[path]).expect("fixture should parse");
     assert!(
         out.title.as_deref().is_some_and(|t| !t.is_empty()),
@@ -242,8 +234,8 @@ fn inspect_audiobook_files_single_mp3_reads_book_metadata() {
 #[test]
 fn inspect_audiobook_files_multi_mp3_derives_title_from_album() {
     let parts = [
-        generated_fixture("grace_hopper_series/the_compiled_tales/chapter01.mp3"),
-        generated_fixture("grace_hopper_series/the_compiled_tales/chapter02.mp3"),
+        generated_audiobook("grace_hopper_series/the_compiled_tales/chapter01.mp3"),
+        generated_audiobook("grace_hopper_series/the_compiled_tales/chapter02.mp3"),
     ];
     let out = inspect_audiobook_files(&parts).expect("fixtures should parse");
     // Multi-file: the book title is the shared album tag, not either

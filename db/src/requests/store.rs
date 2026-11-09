@@ -48,7 +48,7 @@ pub enum RequestError {
     Scan(#[from] crate::scan::ScanError),
 }
 
-/// One request as stored. `stuck_detail` is for admins only; the handler withholds it.
+/// One request as stored. `stuck_detail` is the plain-words reason it is stuck, for whoever may see the request.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RequestRow {
     pub id: i64,
@@ -397,7 +397,7 @@ async fn without_given_up(
     if ranked.iter().all(|r| r.rejected) {
         return Ok(SearchOutcome::Stuck {
             reason: StuckReason::NotFound,
-            detail: None,
+            detail: Some("every version worth offering had already been tried and given up".into()),
         });
     }
     Ok(SearchOutcome::Found(ranked))

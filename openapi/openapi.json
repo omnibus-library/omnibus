@@ -3427,9 +3427,6 @@
               }
             }
           },
-          "400": {
-            "description": "Only `ebook` can be requested yet."
-          },
           "401": {
             "description": "You aren't signed in."
           },
@@ -3438,6 +3435,9 @@
           },
           "404": {
             "description": "Book requests are off on this server, or the book doesn't exist."
+          },
+          "409": {
+            "description": "`kind` is `audiobook` and no audiobook library is set up."
           },
           "429": {
             "description": "You started too many requests lately, or have too many in progress."
@@ -6450,7 +6450,7 @@
           "Requests"
         ],
         "summary": "Start a request for a book the library lacks",
-        "description": "Makes the book from a provider's record of it, without files, and starts looking for an\nebook of it; poll `GET /api/requests/{id}` until it leaves `looking`. No wishlist entry is\nmade. To request a book the library already has, use `POST /api/books/{uuid}/requests`.",
+        "description": "Makes the book from a provider's record of it, without files, and starts looking for the\nformat you asked for; poll `GET /api/requests/{id}` until it leaves `looking`. No wishlist\nentry is made. To request a book the library already has, use `POST /api/books/{uuid}/requests`.",
         "operationId": "start_request_from_metadata",
         "requestBody": {
           "content": {
@@ -6474,13 +6474,16 @@
             }
           },
           "400": {
-            "description": "`kind` isn't `ebook`, or a field of `meta` is over its length cap."
+            "description": "A field of `meta` is over its length cap."
           },
           "403": {
             "description": "Your account can't ask for books."
           },
           "404": {
             "description": "Book requests are off on this server."
+          },
+          "409": {
+            "description": "`kind` is `audiobook` and no audiobook library is set up."
           },
           "429": {
             "description": "You started too many requests lately, or have too many in progress."
@@ -6494,7 +6497,7 @@
           "Requests"
         ],
         "summary": "Get a request",
-        "description": "One request and the versions found so far. Any signed-in reader may read any request.\nOnly an admin is sent `stuck_detail`.",
+        "description": "One request and the versions found so far. Any signed-in reader may read any request,\n`stuck_detail` included.",
         "operationId": "get_book_request",
         "parameters": [
           {
@@ -10995,7 +10998,7 @@
               "string",
               "null"
             ],
-            "description": "What the search ran into, in technical words. Only an admin is sent it."
+            "description": "What went wrong, in plain words, such as what was searched and found or why a download\nstopped; set with `stuck_reason`. Sent to every reader who can see the request."
           },
           "stuck_reason": {
             "oneOf": [
@@ -16013,7 +16016,7 @@
               "string",
               "null"
             ],
-            "description": "`EPUB`, `PDF`, `CBZ`, `AZW3` or `MOBI`; the last two are converted to EPUB when added.\nNull when the name does not say."
+            "description": "`EPUB`, `PDF`, `CBZ`, `AZW3` or `MOBI` for an ebook, the last two converted to EPUB\nwhen added; `M4B`, `M4A` or `MP3` for an audiobook. Null when the name does not say."
           },
           "id": {
             "type": "integer",
@@ -17735,7 +17738,7 @@
         "properties": {
           "kind": {
             "$ref": "#/components/schemas/RequestKind",
-            "description": "Only `ebook` can be requested yet."
+            "description": "Which format to fetch."
           }
         }
       },
@@ -17749,7 +17752,7 @@
         "properties": {
           "kind": {
             "$ref": "#/components/schemas/RequestKind",
-            "description": "Only `ebook` can be requested yet."
+            "description": "Which format to fetch."
           },
           "meta": {
             "$ref": "#/components/schemas/ExternalBookMeta",

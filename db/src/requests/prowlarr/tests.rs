@@ -176,7 +176,7 @@ mod prowlarr_search {
         mount_search(&server, ResponseTemplate::new(200).set_body_json(body)).await;
 
         let found = client_for(&server)
-            .search("Dracula Bram Stoker")
+            .search("Dracula Bram Stoker", RequestKind::Ebook)
             .await
             .unwrap();
 
@@ -192,6 +192,27 @@ mod prowlarr_search {
     }
 
     #[tokio::test]
+    async fn asks_for_the_audiobook_category_for_an_audiobook_search() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v1/search"))
+            .and(query_param("categories", "3030"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!([
+                {"guid": "g1", "title": "Dracula m4b", "downloadUrl": "http://prowlarr/1/download"},
+            ])))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let found = client_for(&server)
+            .search("Dracula Bram Stoker", RequestKind::Audiobook)
+            .await
+            .unwrap();
+
+        assert_eq!(found.len(), 1);
+    }
+
+    #[tokio::test]
     async fn search_reads_results_that_arrive_later_than_the_old_thirty_second_timeout() {
         let server = MockServer::start().await;
         let body = json!([
@@ -203,7 +224,11 @@ mod prowlarr_search {
         mount_search(&server, slow).await;
 
         let found = client_for(&server)
-            .search_within("Dracula Bram Stoker", SEARCH_TIMEOUT / SCALE)
+            .search_within(
+                "Dracula Bram Stoker",
+                RequestKind::Ebook,
+                SEARCH_TIMEOUT / SCALE,
+            )
             .await
             .unwrap();
 
@@ -222,7 +247,7 @@ mod prowlarr_search {
         mount_search(&server, ResponseTemplate::new(200).set_body_json(body)).await;
 
         let found = client_for(&server)
-            .search("Dracula Bram Stoker")
+            .search("Dracula Bram Stoker", RequestKind::Ebook)
             .await
             .unwrap();
 
@@ -242,7 +267,7 @@ mod prowlarr_search {
         mount_search(&server, ResponseTemplate::new(200).set_body_json(body)).await;
 
         let found = client_for(&server)
-            .search("Dracula Bram Stoker")
+            .search("Dracula Bram Stoker", RequestKind::Ebook)
             .await
             .unwrap();
 
@@ -271,7 +296,7 @@ mod prowlarr_search {
         mount_search(&server, ResponseTemplate::new(200).set_body_json(body)).await;
 
         let found = client_for(&server)
-            .search("Dracula Bram Stoker")
+            .search("Dracula Bram Stoker", RequestKind::Ebook)
             .await
             .unwrap();
 
@@ -305,7 +330,7 @@ mod prowlarr_search {
         mount_search(&server, ResponseTemplate::new(200).set_body_json(body)).await;
 
         let found = client_for(&server)
-            .search("Dracula Bram Stoker")
+            .search("Dracula Bram Stoker", RequestKind::Ebook)
             .await
             .unwrap();
 
@@ -334,7 +359,7 @@ mod prowlarr_search {
         mount_search(&server, ResponseTemplate::new(200).set_body_json(body)).await;
 
         let found = client_for(&server)
-            .search("Dracula Bram Stoker")
+            .search("Dracula Bram Stoker", RequestKind::Ebook)
             .await
             .unwrap();
 
@@ -353,8 +378,14 @@ mod prowlarr_search {
         // handed this server's port.
         let client = Prowlarr::new(&server.uri(), "key-prowlarr-429-cooldown").unwrap();
 
-        let first = client.search("Dracula Bram Stoker").await.unwrap_err();
-        let second = client.search("Dracula Bram Stoker").await.unwrap_err();
+        let first = client
+            .search("Dracula Bram Stoker", RequestKind::Ebook)
+            .await
+            .unwrap_err();
+        let second = client
+            .search("Dracula Bram Stoker", RequestKind::Ebook)
+            .await
+            .unwrap_err();
 
         assert!(matches!(first, ConnectionError::RateLimited));
         assert!(matches!(second, ConnectionError::RateLimited));
@@ -373,8 +404,14 @@ mod prowlarr_search {
             .await;
         let client = Prowlarr::new(&server.uri(), "key-prowlarr-huge-retry-after").unwrap();
 
-        let first = client.search("Dracula Bram Stoker").await.unwrap_err();
-        let second = client.search("Dracula Bram Stoker").await.unwrap_err();
+        let first = client
+            .search("Dracula Bram Stoker", RequestKind::Ebook)
+            .await
+            .unwrap_err();
+        let second = client
+            .search("Dracula Bram Stoker", RequestKind::Ebook)
+            .await
+            .unwrap_err();
 
         assert!(matches!(first, ConnectionError::RateLimited));
         assert!(matches!(second, ConnectionError::RateLimited));
@@ -386,7 +423,7 @@ mod prowlarr_search {
         mount_search(&server, ResponseTemplate::new(401)).await;
 
         let err = client_for(&server)
-            .search("Dracula Bram Stoker")
+            .search("Dracula Bram Stoker", RequestKind::Ebook)
             .await
             .unwrap_err();
 

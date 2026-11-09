@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useId, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router";
 import {
   addToWishlist,
@@ -33,6 +33,11 @@ import {
 const REQUEST_LABEL = {
   ebook: "Request ebook",
   audiobook: "Request audiobook",
+} satisfies Record<RequestKind, string>;
+
+const REQUEST_HINT = {
+  ebook: "EPUB · to read",
+  audiobook: "M4B · to listen",
 } satisfies Record<RequestKind, string>;
 
 function Holdings({ holdings }: Pick<WishlistBook, "holdings">) {
@@ -93,39 +98,7 @@ function useRemove(book: WishlistBook) {
 const messageOf = (error: unknown) =>
   error instanceof Error ? error.message : "Something went wrong.";
 
-const AUDIOBOOK_REASON = "Audiobook requests aren’t available yet";
-
-/** Request ▾ with nothing to ask for yet: it stays focusable, says why, and does nothing. */
-function RequestUnavailable() {
-  const reason = useId();
-  // Without a pointer to hover with, a tap is what shows why it can't be used.
-  const [tapped, setTapped] = useState(false);
-  return (
-    <span className="wl-request-wrap">
-      <button
-        type="button"
-        className="btn sm wl-act wl-request"
-        data-testid="wishlists-request"
-        aria-disabled="true"
-        aria-describedby={reason}
-        onClick={() => setTapped(!tapped)}
-        onBlur={() => setTapped(false)}
-      >
-        Request
-        <ChevronDownGlyph size={10} />
-      </button>
-      <span
-        role="tooltip"
-        id={reason}
-        className={tapped ? "wl-tip is-shown" : "wl-tip"}
-      >
-        {AUDIOBOOK_REASON}
-      </span>
-    </span>
-  );
-}
-
-/** Request ▾: what can be asked for. An ebook starts a request and opens it; an audiobook can't be asked for yet. */
+/** Request ▾: what can be asked for. Each item starts a request of its kind and opens it. */
 function RequestMenu({
   book,
   kinds,
@@ -136,7 +109,6 @@ function RequestMenu({
   start: StartRequest;
 }) {
   const [open, setOpen] = useState(false);
-  if (!kinds.includes("ebook")) return <RequestUnavailable />;
   return (
     <span className="wl-request-wrap">
       <button
@@ -165,9 +137,8 @@ function RequestMenu({
           items={kinds.map((kind) => ({
             label: REQUEST_LABEL[kind],
             testId: `wishlists-request-${kind}`,
-            disabled: kind === "audiobook",
-            note: kind === "audiobook" ? "Not available yet" : undefined,
-            onSelect: () => start.mutate(),
+            description: REQUEST_HINT[kind],
+            onSelect: () => start.mutate(kind),
           }))}
         />
       )}
@@ -283,17 +254,15 @@ function GetSheet({
               <button
                 type="button"
                 className="wl-sheet-item"
-                disabled={kind === "audiobook" || start.isPending}
+                disabled={start.isPending}
                 onClick={() => {
-                  start.mutate();
+                  start.mutate(kind);
                   onDismiss();
                 }}
               >
                 <span>{REQUEST_LABEL[kind]}</span>
                 <span className="wl-sheet-sub">
-                  {kind === "audiobook"
-                    ? "Not available yet"
-                    : "Start looking for a version"}
+                  Start looking for a version
                 </span>
               </button>
             </li>

@@ -4,6 +4,7 @@
 //! [`crate::scanner`] / [`crate::ebook`] plus the sidecar cover lookup
 //! ([`sidecar_cover_for`]). Per-helper docs spell out slug + sidecar rules.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 const MAX_SLUG_LEN: usize = 80;
@@ -261,6 +262,27 @@ pub fn sanitize_part_filename(filename: &str) -> String {
         Some(ext) if !ext.is_empty() => format!("{stem_slug}.{ext}"),
         _ => stem_slug,
     }
+}
+
+/// Ensure a part filename is unique among `used` by inserting a numeric suffix
+/// (`name.mp3` → `name-2.mp3`) before the extension on collision, and record it.
+pub fn dedupe_part_name(name: String, used: &mut HashSet<String>) -> String {
+    if used.insert(name.clone()) {
+        return name;
+    }
+    let path = Path::new(&name);
+    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or(&name);
+    let ext = path.extension().and_then(|s| s.to_str());
+    for n in 2..=9999 {
+        let candidate = match ext {
+            Some(ext) => format!("{stem}-{n}.{ext}"),
+            None => format!("{stem}-{n}"),
+        };
+        if used.insert(candidate.clone()) {
+            return candidate;
+        }
+    }
+    name
 }
 
 #[cfg(test)]

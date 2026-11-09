@@ -120,6 +120,10 @@
   height: 100%;
   object-fit: cover;
 }
+.rq-status {
+  display: grid;
+  gap: 14px;
+}
 .rq-state {
   font-size: 13px;
   color: var(--accent);
@@ -190,6 +194,7 @@
 .rq-note {
   color: var(--ink-2);
   font-size: 14px;
+  overflow-wrap: anywhere;
 }
 
 /* ---- the versions found ---- */
@@ -405,11 +410,6 @@
   display: grid;
   gap: 12px;
   justify-items: start;
-}
-.rq-stuck-detail {
-  font: 400 12px / 1.4 var(--mono);
-  color: var(--ink-2);
-  overflow-wrap: anywhere;
 }
 
 .rq-page .btn:focus-visible,

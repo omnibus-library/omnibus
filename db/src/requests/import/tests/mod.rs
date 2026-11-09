@@ -4,12 +4,16 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
+mod audio;
 mod convert;
 mod files;
 mod place;
 mod run;
 
 const EPUB_BYTES: &[u8] = b"PK\x03\x04 an epub";
+/// An MP4 `ftyp` box, enough for the magic check.
+const M4B_BYTES: &[u8] = b"\x00\x00\x00\x18ftypM4B  an audiobook";
+const MP3_BYTES: &[u8] = b"ID3\x04\x00\x00\x00\x00\x00\x00 an mp3";
 
 /// A MOBI or AZW3 file's head: the PalmDB type and creator, `BOOKMOBI`, sit at byte 60.
 fn mobi_bytes() -> Vec<u8> {

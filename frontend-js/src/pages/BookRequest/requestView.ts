@@ -12,22 +12,34 @@ import {
 } from "../../api";
 import { fileSize, plural } from "../../format";
 
-function stuckView(reason: StuckReason | null) {
+/** `text` opening a sentence; a lower-case word with a capital after it, such as "qBittorrent", is a name and stays as written. */
+const capitalised = (text: string) =>
+  /^[a-z][A-Z]/.test(text)
+    ? text
+    : text.charAt(0).toUpperCase() + text.slice(1);
+
+/** A stuck request's heading, and under it the explicit error the server recorded (`explicit`), or a general line when it recorded none. */
+function stuckView(reason: StuckReason | null, detail: string | null) {
+  const recorded = detail ? capitalised(detail) : null;
+  const explicit = recorded !== null;
   switch (reason) {
     case "stopped_moving":
       return {
         heading: "Stopped moving",
-        note: "The download stopped making progress.",
+        note: recorded ?? "The download stopped making progress.",
+        explicit,
       };
     case "couldnt_add":
       return {
         heading: "Couldn’t add it",
-        note: "It downloaded but couldn’t be added to the library.",
+        note: recorded ?? "It downloaded but couldn’t be added to the library.",
+        explicit,
       };
     default:
       return {
         heading: "Couldn’t find it",
-        note: "Nothing worth showing turned up.",
+        note: recorded ?? "Nothing worth showing turned up.",
+        explicit,
       };
   }
 }
@@ -36,10 +48,14 @@ function stuckView(reason: StuckReason | null) {
 export function stateView(
   state: RequestState,
   stuckReason: StuckReason | null = null,
+  kind: RequestKind = "ebook",
+  stuckDetail: string | null = null,
 ): {
   heading: string;
   /** Absent where the lane's own content says it. */
   note: string | null;
+  /** Whether `note` is the error the server recorded, not a general line. */
+  explicit?: boolean;
 } {
   switch (state) {
     case "looking":
@@ -57,9 +73,12 @@ export function stateView(
         note: "Downloading, then adding it to the library.",
       };
     case "ready":
-      return { heading: "Ready to read", note: "It’s in the library." };
+      return {
+        heading: kind === "audiobook" ? "Ready to listen" : "Ready to read",
+        note: "It’s in the library.",
+      };
     case "stuck":
-      return stuckView(stuckReason);
+      return stuckView(stuckReason, stuckDetail);
     case "cancelled":
       return { heading: "Cancelled", note: "This request was cancelled." };
     default: {
@@ -245,6 +264,10 @@ export const holdsEbook = (formats: readonly string[]) =>
 export const holdsAudiobook = (formats: readonly string[]) =>
   upper(formats).some((f) => AUDIO_FORMATS.includes(f));
 
+/** Whether `formats` include one of `kind`. */
+export const holds = (kind: RequestKind, formats: readonly string[]) =>
+  kind === "ebook" ? holdsEbook(formats) : holdsAudiobook(formats);
+
 /** Whether `viewer` may cancel `request`: anyone who can pick versions, or the reader who made it. */
 export const canCancel = (
   viewer: Pick<User, "id" | "canChooseRequestVersions">,
@@ -265,7 +288,7 @@ export function factParts(
     request.cancelledBy === viewer ? "you" : (cancelledByName ?? null);
   const head =
     request.state !== "cancelled"
-      ? stateView(request.state, request.stuckReason).heading
+      ? stateView(request.state, request.stuckReason, request.kind).heading
       : canceller
         ? `Cancelled by ${canceller}`
         : "Cancelled";

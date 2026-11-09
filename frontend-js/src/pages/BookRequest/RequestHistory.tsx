@@ -1,5 +1,5 @@
 import type { UseQueryResult } from "@tanstack/react-query";
-import type { BookUuid, RequestListing } from "../../api";
+import type { BookUuid, RequestKind, RequestListing } from "../../api";
 import { Button } from "../../components/Button/Button";
 import { BusyLabel, Loading } from "../../components/Loading/Loading";
 import { useCurrentUser } from "../../session";
@@ -19,8 +19,14 @@ import { useStartRequest } from "./useStartRequest";
 /** Where a book's requests are shown: full screen on a phone, or in the Requests list's pane. */
 export type DossierVariant = "page" | "pane";
 
-/** Starts a new request for the book, for the viewer; the page stays put while its lists are read again. */
-export function RequestAgain({ uuid }: { uuid: BookUuid }) {
+/** Starts a new request of the same `kind` for the book, for the viewer; the page stays put while its lists are read again. */
+export function RequestAgain({
+  uuid,
+  kind,
+}: {
+  uuid: BookUuid;
+  kind: RequestKind;
+}) {
   const start = useStartRequest(uuid, { stay: true });
   return (
     <Button
@@ -30,7 +36,7 @@ export function RequestAgain({ uuid }: { uuid: BookUuid }) {
       aria-disabled={start.isPending}
       aria-busy={start.isPending}
       onClick={() => {
-        if (!start.isPending) start.mutate();
+        if (!start.isPending) start.mutate(kind);
       }}
     >
       <BusyLabel
@@ -97,7 +103,7 @@ function HistoryRow({
         viewer,
         listings.map((l) => l.request),
         now,
-      ) && <RequestAgain uuid={request.bookUuid} />}
+      ) && <RequestAgain uuid={request.bookUuid} kind={request.kind} />}
     </li>
   );
 }

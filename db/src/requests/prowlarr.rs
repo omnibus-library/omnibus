@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
-use omnibus_shared::ReleaseProtocol;
+use omnibus_shared::{ReleaseProtocol, RequestKind};
 use reqwest::StatusCode;
 use serde::Deserialize;
 
@@ -211,21 +211,31 @@ impl Prowlarr {
         self.get("indexerstatus").await
     }
 
-    /// Search the book categories for `query`, such as `Dracula Bram Stoker`. Results with
-    /// no title or no link to fetch them by are left out.
-    pub async fn search(&self, query: &str) -> Result<Vec<ProwlarrRelease>, ConnectionError> {
-        self.search_within(query, SEARCH_TIMEOUT).await
+    /// Search the ebook or audiobook category for `query`, such as `Dracula Bram Stoker`.
+    /// Results with no title or no link to fetch them by are left out.
+    pub async fn search(
+        &self,
+        query: &str,
+        kind: RequestKind,
+    ) -> Result<Vec<ProwlarrRelease>, ConnectionError> {
+        self.search_within(query, kind, SEARCH_TIMEOUT).await
     }
 
     async fn search_within(
         &self,
         query: &str,
+        kind: RequestKind,
         timeout: Duration,
     ) -> Result<Vec<ProwlarrRelease>, ConnectionError> {
         if self.cooling_down() {
             return Err(ConnectionError::RateLimited);
         }
-        let params = [("query", query), ("categories", "7020"), ("type", "search")];
+        let category = super::rank::search_category(kind);
+        let params = [
+            ("query", query),
+            ("categories", category),
+            ("type", "search"),
+        ];
         let raw: Vec<RawRelease> = self.get_with("search", &params, timeout).await?;
         let own_host = reqwest::Url::parse(&self.base).ok();
         let own_host = own_host.as_ref().and_then(|u| u.host_str());

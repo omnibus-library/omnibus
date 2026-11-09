@@ -95,6 +95,14 @@ pub fn make_test_dir(suffix: &str) -> PathBuf {
     dir
 }
 
+/// Absolute path to a committed (non-download-gated) generated audiobook
+/// fixture under `test_data/audiobooks/generated/`.
+pub fn generated_audiobook(rel: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../test_data/audiobooks/generated")
+        .join(rel)
+}
+
 // ---------------------------------------------------------------------------
 // In-memory EPUB fixtures
 // ---------------------------------------------------------------------------

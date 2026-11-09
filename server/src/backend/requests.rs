@@ -3,7 +3,7 @@
 //! finished download brought. Every route answers 404 while the book-requests flag is off,
 //! before the sign-in check. Requests are visible to every signed-in reader; starting one needs
 //! the permission to ask, acting on any reader's needs the permission to pick versions (the
-//! maker may always cancel their own), and only an admin is shown the search's technical detail.
+//! maker may always cancel their own). A stuck request's detail goes to everyone who can see it.
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::Mutex;
@@ -25,8 +25,8 @@ use omnibus_db::{
     },
 };
 use omnibus_shared::{
-    BookRequest, ChooseVersion, FileBytes, RequestListQuery, RequestListing, RequestState,
-    StartRequest, StartRequestFromMeta, StuckReason,
+    BookRequest, ChooseVersion, FileBytes, RequestKind, RequestListQuery, RequestListing,
+    RequestState, StartRequest, StartRequestFromMeta, StuckReason,
 };
 
 use crate::auth::AuthUser;
@@ -80,9 +80,8 @@ impl StartLog {
     }
 }
 
-/// The wire form of a stored request, with no versions. The search's technical detail goes
-/// only to an admin.
-fn summary(row: RequestRow, is_admin: bool) -> BookRequest {
+/// The wire form of a stored request, with no versions.
+fn summary(row: RequestRow) -> BookRequest {
     BookRequest {
         id: row.id,
         book_uuid: row.book_uuid,
@@ -90,7 +89,7 @@ fn summary(row: RequestRow, is_admin: bool) -> BookRequest {
         kind: row.kind,
         state: row.state,
         stuck_reason: row.stuck_reason,
-        stuck_detail: row.stuck_detail.filter(|_| is_admin),
+        stuck_detail: row.stuck_detail,
         chosen_result_id: row.chosen_result_id,
         progress: row.progress,
         expected_done_at: row.expected_done_at,
@@ -124,7 +123,7 @@ async fn view(
     Ok(BookRequest {
         versions,
         cover_offer,
-        ..summary(row, viewer.is_admin)
+        ..summary(row)
     })
 }
 
@@ -159,6 +158,22 @@ fn search_again(state: &AppState, user: i64, id: i64) {
     spawn_search(state, id);
 }
 
+/// A 409 when `kind` is an audiobook and no audiobook library is set up, so no download is
+/// started that could not be filed; `None` when the request may go on.
+async fn missing_library(state: &AppState, kind: RequestKind) -> Option<Response> {
+    if kind != RequestKind::Audiobook {
+        return None;
+    }
+    let settings = match db::get_settings(state.pool()).await {
+        Ok(settings) => settings,
+        Err(e) => return Some(internal("read settings", e)),
+    };
+    let set_up = settings
+        .audiobook_library_path
+        .is_some_and(|p| !p.is_empty());
+    (!set_up).then(|| (StatusCode::CONFLICT, "no audiobook library is set up").into_response())
+}
+
 fn too_many(what: &str) -> Response {
     (StatusCode::TOO_MANY_REQUESTS, what.to_string()).into_response()
 }
@@ -178,10 +193,10 @@ fn too_many(what: &str) -> Response {
     responses(
         (status = 201, description = "The request started.", body = BookRequest),
         (status = 200, description = "You already had a live request for this format; here it is.", body = BookRequest),
-        (status = 400, description = "Only `ebook` can be requested yet."),
         (status = 401, description = "You aren't signed in."),
         (status = 403, description = "Your account can't ask for books."),
         (status = 404, description = "Book requests are off on this server, or the book doesn't exist."),
+        (status = 409, description = "`kind` is `audiobook` and no audiobook library is set up."),
         (status = 429, description = "You started too many requests lately, or have too many in progress."),
     ),
 )]
@@ -191,14 +206,14 @@ pub(super) async fn post_start_request(
     Path(uuid): Path<String>,
     Json(body): Json<StartRequest>,
 ) -> Response {
-    if let Err(message) = body.kind.check_requestable() {
-        return (StatusCode::BAD_REQUEST, message).into_response();
-    }
     let book_uuid = match db::resolve_canonical_book_uuid(state.pool(), &uuid).await {
         Ok(Some(u)) => u,
         Ok(None) => return (StatusCode::NOT_FOUND, "book not found").into_response(),
         Err(e) => return internal("resolve requested book", e),
     };
+    if let Some(refused) = missing_library(&state, body.kind).await {
+        return refused;
+    }
     if !state.request_starts().has_room(user.id) {
         return too_many("you started too many requests; try again in a few minutes");
     }
@@ -223,9 +238,9 @@ pub(super) async fn post_start_request(
 
 /// Start a request for a book the library lacks
 ///
-/// Makes the book from a provider's record of it, without files, and starts looking for an
-/// ebook of it; poll `GET /api/requests/{id}` until it leaves `looking`. No wishlist entry is
-/// made. To request a book the library already has, use `POST /api/books/{uuid}/requests`.
+/// Makes the book from a provider's record of it, without files, and starts looking for the
+/// format you asked for; poll `GET /api/requests/{id}` until it leaves `looking`. No wishlist
+/// entry is made. To request a book the library already has, use `POST /api/books/{uuid}/requests`.
 #[utoipa::path(
     post,
     path = "/api/requests",
@@ -234,9 +249,10 @@ pub(super) async fn post_start_request(
     request_body = StartRequestFromMeta,
     responses(
         (status = 201, description = "The book was made and the request started.", body = BookRequest),
-        (status = 400, description = "`kind` isn't `ebook`, or a field of `meta` is over its length cap."),
+        (status = 400, description = "A field of `meta` is over its length cap."),
         (status = 403, description = "Your account can't ask for books."),
         (status = 404, description = "Book requests are off on this server."),
+        (status = 409, description = "`kind` is `audiobook` and no audiobook library is set up."),
         (status = 429, description = "You started too many requests lately, or have too many in progress."),
     ),
 )]
@@ -247,6 +263,9 @@ pub(super) async fn post_start_request_from_meta(
 ) -> Response {
     if let Err(message) = body.validate() {
         return (StatusCode::BAD_REQUEST, message).into_response();
+    }
+    if let Some(refused) = missing_library(&state, body.kind).await {
+        return refused;
     }
     if !state.request_starts().has_room(user.id) {
         return too_many("you started too many requests; try again in a few minutes");
@@ -268,9 +287,8 @@ pub(super) async fn post_start_request_from_meta(
     }
 }
 
-/// The requests `filter` matches, as the answer to `viewer`, each with the versions it picked
-/// and gave up.
-async fn list_answer(state: &AppState, filter: ListFilter<'_>, viewer: &AuthUser) -> Response {
+/// The requests `filter` matches, each with the versions it picked and gave up.
+async fn list_answer(state: &AppState, filter: ListFilter<'_>) -> Response {
     let listed = match store::list(state.pool(), filter).await {
         Ok(listed) => listed,
         Err(e) => return internal("list requests", e),
@@ -280,7 +298,7 @@ async fn list_answer(state: &AppState, filter: ListFilter<'_>, viewer: &AuthUser
         .map(|l| RequestListing {
             request: BookRequest {
                 versions: l.versions,
-                ..summary(l.request, viewer.is_admin)
+                ..summary(l.request)
             },
             book: l.book,
             requester_name: l.requester_name,
@@ -310,7 +328,7 @@ async fn list_answer(state: &AppState, filter: ListFilter<'_>, viewer: &AuthUser
     ),
 )]
 pub(super) async fn get_book_requests(
-    RequestsViewer(viewer): RequestsViewer,
+    _: RequestsViewer,
     State(state): State<AppState>,
     Path(uuid): Path<String>,
 ) -> Response {
@@ -322,7 +340,7 @@ pub(super) async fn get_book_requests(
         book_uuid: Some(&book_uuid),
         ..ListFilter::default()
     };
-    list_answer(&state, filter, &viewer).await
+    list_answer(&state, filter).await
 }
 
 /// List requests
@@ -344,7 +362,7 @@ pub(super) async fn get_book_requests(
     ),
 )]
 pub(super) async fn get_requests(
-    RequestsViewer(viewer): RequestsViewer,
+    _: RequestsViewer,
     State(state): State<AppState>,
     Query(query): Query<RequestListQuery>,
 ) -> Response {
@@ -353,13 +371,13 @@ pub(super) async fn get_requests(
         state: query.state,
         ..ListFilter::default()
     };
-    list_answer(&state, filter, &viewer).await
+    list_answer(&state, filter).await
 }
 
 /// Get a request
 ///
-/// One request and the versions found so far. Any signed-in reader may read any request.
-/// Only an admin is sent `stuck_detail`.
+/// One request and the versions found so far. Any signed-in reader may read any request,
+/// `stuck_detail` included.
 #[utoipa::path(
     get,
     path = "/api/requests/{id}",

@@ -15,6 +15,7 @@ import {
   bookRequestsQuery,
   chooseRequestVersion,
   type BookRequest as Request,
+  type RequestKind,
   type RequestListing,
   type RequestVersion,
   retryBookRequest,
@@ -45,6 +46,7 @@ import {
   downloadPercent,
   firstShown,
   fromWishlists,
+  holds,
   isCancellable,
   isDownloading,
   isSearchSlow,
@@ -71,6 +73,7 @@ import {
 } from "./requestView";
 import { useNowPast } from "./useNowPast";
 import { messageOf, useAnswer, useCancel, useSwap } from "./useRequestActions";
+import { useStartRequest } from "./useStartRequest";
 import { useTimeLeft } from "./useTimeLeft";
 import "./BookRequest.css";
 
@@ -507,11 +510,6 @@ function Stuck({
 }) {
   return (
     <div className="rq-stuck">
-      {request.stuckDetail && (
-        <p className="rq-stuck-detail" data-testid="request-stuck-detail">
-          {request.stuckDetail}
-        </p>
-      )}
       {canChoose ? (
         <TryAgain request={request} onTried={onTried} />
       ) : (
@@ -610,6 +608,12 @@ function Lane({
   // Held here: a cancelled request has no Cancel button left, but its Undo toast still needs this.
   const title = useRef<HTMLHeadingElement>(null);
   const focusTitle = () => title.current?.focus();
+  const { focusNew } = context;
+  useEffect(() => {
+    if (focusNew.current !== request.kind) return;
+    focusNew.current = null;
+    title.current?.focus();
+  }, [focusNew, request.kind]);
   const cancel = useCancel(request.id, focusTitle);
   const [focusVersions, setFocusVersions] = useState(false);
   const swap = useSwap(request.id, () => setFocusVersions(true));
@@ -635,7 +639,12 @@ function Lane({
       />
     );
   const Heading = context.variant === "pane" ? "h3" : "h2";
-  const { heading, note } = stateView(request.state, request.stuckReason);
+  const { heading, note, explicit } = stateView(
+    request.state,
+    request.stuckReason,
+    request.kind,
+    request.stuckDetail,
+  );
   const steps = stepsFor(request);
   return (
     <section
@@ -656,20 +665,25 @@ function Lane({
         </Heading>
         {listing && <Requester request={request} listing={listing} />}
       </div>
-      {/* The stepper shows where it stands; the words stay for a screen reader to announce. */}
-      <p
-        className={steps ? "rq-state ld-sr" : "rq-state"}
-        role="status"
-        data-testid="request-state"
-        data-state={request.state}
-      >
-        {heading}
-      </p>
-      {steps ? (
-        <Steps steps={steps} />
-      ) : (
-        note && <p className="rq-note">{note}</p>
-      )}
+      {/* The stepper shows where it stands; the words stay for a screen reader to announce, with the error under a stuck heading. */}
+      <div className={steps ? "ld-sr" : "rq-status"} role="status">
+        <p
+          className="rq-state"
+          data-testid="request-state"
+          data-state={request.state}
+        >
+          {heading}
+        </p>
+        {!steps && note && (
+          <p
+            className="rq-note"
+            data-testid={explicit ? "request-stuck-detail" : undefined}
+          >
+            {note}
+          </p>
+        )}
+      </div>
+      {steps && <Steps steps={steps} />}
       {request.state === "looking" && (
         <Looking request={request} canChoose={canChoose} onTried={focusTitle} />
       )}
@@ -708,7 +722,7 @@ function Lane({
           now,
         ) && (
           <div className="rq-actions">
-            <RequestAgain uuid={request.bookUuid} />
+            <RequestAgain uuid={request.bookUuid} kind={request.kind} />
           </div>
         )}
     </section>
@@ -722,7 +736,64 @@ type LaneContext = {
   /** The book's requests as listed, for who made each and whether Request again would only return one going; `undefined` until read. */
   listings: readonly RequestListing[] | undefined;
   variant: DossierVariant;
+  /** The kind of a request just started from a not-requested lane; its lane takes focus when it mounts. */
+  focusNew: { current: RequestKind | null };
 };
+
+const KINDS: readonly RequestKind[] = ["ebook", "audiobook"];
+
+/** A format the book has neither in the library nor among its requests, with a button to request it. */
+function UnrequestedLane({
+  uuid,
+  kind,
+  variant,
+  onStarted,
+}: {
+  uuid: BookUuid;
+  kind: RequestKind;
+  variant: DossierVariant;
+  onStarted: () => void;
+}) {
+  const phone = useMediaQuery(PHONE_QUERY);
+  const titleId = useId();
+  // The page stays put while the lists are read again, then this lane gives way to the new request's.
+  const start = useStartRequest(uuid, { stay: true, onStarted });
+  const Heading = variant === "pane" ? "h3" : "h2";
+  return (
+    <section
+      className="rq-panel rq-lane"
+      aria-labelledby={titleId}
+      data-testid={`request-unrequested-${kind}`}
+    >
+      <div className="rq-lane-head">
+        <span className="rq-chip">{kindChip(kind)}</span>
+        <Heading id={titleId} className="rq-lane-title">
+          {kindLabel(kind)}
+        </Heading>
+        <p className="rq-requester">
+          {phone ? "not requested" : "· not requested"}
+        </p>
+      </div>
+      <div className="rq-actions">
+        <Button
+          size="sm"
+          // aria-disabled, not disabled: a control that disables itself drops the keyboard's focus.
+          aria-disabled={start.isPending}
+          aria-busy={start.isPending}
+          onClick={() => {
+            if (!start.isPending) start.mutate(kind);
+          }}
+        >
+          <BusyLabel
+            busy={start.isPending}
+            label={phone ? "Request" : `Request ${kind}`}
+            busyLabel="Requesting…"
+          />
+        </Button>
+      </div>
+    </section>
+  );
+}
 
 /** Another reader's request still going for the book, in a lane of its own. */
 function OtherLane({ id, context }: { id: number; context: LaneContext }) {
@@ -755,6 +826,7 @@ export function RequestDossier({
   const viewer = useCurrentUser();
   const { state } = useLocation();
   const titleRef = useRef<HTMLHeadingElement>(null);
+  const focusNew = useRef<RequestKind | null>(null);
   const shown = book.data !== undefined && request.data !== undefined;
   useEffect(() => {
     if (focusTitle && shown) titleRef.current?.focus();
@@ -774,7 +846,7 @@ export function RequestDossier({
     );
   }
   if (book.data === null) return <PageNotFound subject="Book" />;
-  const { title, authors } = book.data;
+  const { title, authors, formats } = book.data;
   // Unknown until the wishlists answer: the clause stays out rather than claiming nobody.
   const wanted = wishlists.data?.find((w) => w.uuid === uuid)?.wantedBy;
   const wishers = wanted ? wishersLine(wanted, viewer.id) : null;
@@ -783,6 +855,7 @@ export function RequestDossier({
     book: book.data,
     listings: listed.data,
     variant,
+    focusNew,
   };
   const Title = variant === "page" ? "h1" : "h2";
   return (
@@ -846,6 +919,26 @@ export function RequestDossier({
           context={context}
         />
       ))}
+      {listed.data &&
+        viewer.canStartRequests &&
+        KINDS.filter(
+          (kind) =>
+            !holds(kind, formats) &&
+            // Any request for the kind, live or over, has its own lane or history row.
+            ![request.data, ...listed.data.map((l) => l.request)].some(
+              (r) => r.kind === kind,
+            ),
+        ).map((kind) => (
+          <UnrequestedLane
+            key={kind}
+            uuid={uuid}
+            kind={kind}
+            variant={variant}
+            onStarted={() => {
+              focusNew.current = kind;
+            }}
+          />
+        ))}
       <RequestHistory
         listed={listed}
         history={split?.history}

@@ -7,9 +7,11 @@ use sqlx::SqlitePool;
 
 use crate::convert::ConvertError;
 
-use super::super::place::{discard_staging, place_blocking, place_converted};
+use super::super::place::{
+    discard_staging, place_blocking, place_converted, place_folder_blocking,
+};
 use super::super::ImportError;
-use super::{failing_converter, mobi_bytes, working_converter, write, EPUB_BYTES};
+use super::{failing_converter, mobi_bytes, working_converter, write, EPUB_BYTES, MP3_BYTES};
 
 /// A download folder holding `Dune.epub`, and an empty library root beside it.
 fn download_and_library(tmp: &Path) -> (std::path::PathBuf, std::path::PathBuf) {
@@ -68,6 +70,18 @@ mod place_blocking {
 
         assert_eq!(fs::read(placed).unwrap(), EPUB_BYTES);
         assert!(!root.join(".omnibus-staging").exists());
+    }
+
+    #[test]
+    fn fails_and_creates_nothing_when_the_library_folder_is_missing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (src, _) = download_and_library(tmp.path());
+        let absent = tmp.path().join("not-mounted");
+
+        let err = place_blocking(&absent, 7, &src, "Frank Herbert", "Dune", "epub");
+
+        assert!(err.is_err());
+        assert!(!absent.exists());
     }
 
     #[test]
@@ -189,6 +203,99 @@ mod place_converted {
             "{err}"
         );
         assert_eq!(fs::read_dir(&f.root).unwrap().count(), 0);
+    }
+}
+
+mod place_folder_blocking {
+    use super::*;
+
+    /// Two chapters in separate disc folders of a download, and an empty library root.
+    fn two_discs(tmp: &Path) -> (Vec<std::path::PathBuf>, std::path::PathBuf) {
+        let parts = vec![
+            write(tmp, "dl/Dune/CD1/01.mp3", MP3_BYTES),
+            write(tmp, "dl/Dune/CD2/01.mp3", b"ID3 the second disc"),
+        ];
+        let root = tmp.join("library");
+        fs::create_dir_all(&root).unwrap();
+        (parts, root)
+    }
+
+    #[test]
+    fn files_nested_parts_in_one_canonical_folder_under_distinct_names() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (parts, root) = two_discs(tmp.path());
+
+        let placed = place_folder_blocking(&root, 7, &parts, "Frank Herbert", "Dune").unwrap();
+
+        assert_eq!(placed, root.join("frank-herbert/dune"));
+        assert_eq!(fs::read(placed.join("cd1-01.mp3")).unwrap(), MP3_BYTES);
+        assert_eq!(
+            fs::read(placed.join("cd2-01.mp3")).unwrap(),
+            b"ID3 the second disc"
+        );
+    }
+
+    #[test]
+    fn removes_the_staging_dir_after_the_rename() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (parts, root) = two_discs(tmp.path());
+
+        place_folder_blocking(&root, 7, &parts, "Frank Herbert", "Dune").unwrap();
+
+        assert!(!root.join(".omnibus-staging").exists());
+    }
+
+    #[test]
+    fn removes_the_staging_dir_and_leaves_no_folder_when_a_part_is_missing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (mut parts, root) = two_discs(tmp.path());
+        parts.push(tmp.path().join("dl/Dune/CD3/gone.mp3"));
+
+        let err = place_folder_blocking(&root, 7, &parts, "Frank Herbert", "Dune");
+
+        assert!(err.is_err());
+        assert!(!root.join(".omnibus-staging").exists());
+        assert!(!root.join("frank-herbert").exists());
+    }
+
+    #[test]
+    fn numbers_a_part_whose_name_collides_after_the_slug_is_cut_short() {
+        let tmp = tempfile::tempdir().unwrap();
+        let long = "a".repeat(80);
+        let parts = vec![
+            write(tmp.path(), &format!("dl/{long}-001.mp3"), MP3_BYTES),
+            write(tmp.path(), &format!("dl/{long}-002.mp3"), MP3_BYTES),
+        ];
+        let root = tmp.path().join("library");
+        fs::create_dir_all(&root).unwrap();
+
+        let placed = place_folder_blocking(&root, 7, &parts, "Frank Herbert", "Dune").unwrap();
+
+        assert!(placed.join(format!("{long}.mp3")).is_file());
+        assert!(placed.join(format!("{long}-2.mp3")).is_file());
+    }
+
+    #[test]
+    fn fails_and_creates_nothing_when_the_library_folder_is_missing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (parts, _) = two_discs(tmp.path());
+        let absent = tmp.path().join("not-mounted");
+
+        let err = place_folder_blocking(&absent, 7, &parts, "Frank Herbert", "Dune");
+
+        assert!(err.is_err());
+        assert!(!absent.exists());
+    }
+
+    #[test]
+    fn never_touches_the_downloaded_parts() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (parts, root) = two_discs(tmp.path());
+
+        place_folder_blocking(&root, 7, &parts, "Frank Herbert", "Dune").unwrap();
+
+        assert_eq!(fs::read(&parts[0]).unwrap(), MP3_BYTES);
+        assert!(parts[1].is_file());
     }
 }
 

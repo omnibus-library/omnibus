@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync, statSync } from "node:fs";
+import { mkdirSync, rmSync, statSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -14,13 +14,16 @@ import { join } from "node:path";
 // there's nothing to serialize and the uncontended lock is a no-op.)
 
 const STALE_MS = 60_000;
+// A holder touches its lock this often, so only a crashed one ever looks abandoned.
+const REFRESH_MS = STALE_MS / 3;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * Run `fn` while holding a machine-wide lock named `name`. Acquisition spins
  * on an atomic `mkdir`; a lock older than {@link STALE_MS} is treated as
- * abandoned (a crashed worker) and reclaimed. The lock is always released,
+ * abandoned (a crashed worker) and reclaimed; a live holder refreshes it every
+ * {@link REFRESH_MS}, so a long `fn` keeps it. The lock is always released,
  * even if `fn` throws — callers must leave shared state restored before
  * returning so the next holder sees a clean fixture.
  */
@@ -46,9 +49,18 @@ export async function withLock<T>(
       await sleep(50 + Math.floor(Math.random() * 100));
     }
   }
+  const refresh = setInterval(() => {
+    try {
+      const now = new Date();
+      utimesSync(dir, now, now);
+    } catch {
+      // The lock is gone (reclaimed or released); there is nothing to keep.
+    }
+  }, REFRESH_MS);
   try {
     return await fn();
   } finally {
+    clearInterval(refresh);
     rmSync(dir, { recursive: true, force: true });
   }
 }

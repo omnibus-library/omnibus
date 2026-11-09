@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use axum::{http::StatusCode, Router};
 use omnibus_db::requests::store;
-use omnibus_db::test_support::EnvVarGuard;
+use omnibus_db::test_support::{count_rows, EnvVarGuard};
 use omnibus_shared::{
     BookRequest, ReleaseProtocol, RequestKind, RequestState, RequestsSettingsUpdate,
 };
@@ -51,6 +51,16 @@ async fn chooser(pool: &SqlitePool, name: &str) -> (i64, String) {
     let (id, token) = reader(pool, name).await;
     auth_test_support::set_request_flags(pool, id, false, false, true).await;
     (id, token)
+}
+
+/// Point the audiobook library at a folder, as a server that can file audiobooks has.
+async fn use_audiobook_library(pool: &SqlitePool) {
+    let settings = omnibus_shared::Settings {
+        ebook_library_path: None,
+        audiobook_library_path: Some("/tmp/omnibus-test-audiobooks".to_string()),
+        scan_interval_hours: None,
+    };
+    omnibus_db::set_settings(pool, &settings).await.unwrap();
 }
 
 /// A book in the library: its uuid.
@@ -357,19 +367,36 @@ mod post_start_request {
     }
 
     #[tokio::test]
-    async fn answers_400_for_an_audiobook_and_writes_nothing() {
+    async fn starts_an_audiobook_request_beside_a_live_ebook_one() {
+        let (app, _, pool) = fixture_book_requests(true).await;
+        use_audiobook_library(&pool).await;
+        let (_, token) = requester(&pool, "ada").await;
+        let uuid = seed_book(&pool, "Dracula").await;
+        start(&app, &uuid, &token, "ebook").await;
+
+        let res = start(&app, &uuid, &token, "audiobook").await;
+
+        assert_eq!(res.status(), StatusCode::CREATED);
+        let kinds: Vec<String> = sqlx::query_scalar("SELECT kind FROM book_requests ORDER BY id")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+        assert_eq!(kinds, ["ebook", "audiobook"]);
+    }
+
+    #[tokio::test]
+    async fn answers_409_for_an_audiobook_when_no_audiobook_library_is_set_up() {
         let (app, _, pool) = fixture_book_requests(true).await;
         let (_, token) = requester(&pool, "ada").await;
         let uuid = seed_book(&pool, "Dracula").await;
 
         let res = start(&app, &uuid, &token, "audiobook").await;
 
-        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
-        let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM book_requests")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-        assert_eq!(rows, 0);
+        assert_eq!(res.status(), StatusCode::CONFLICT);
+        assert_eq!(
+            count_rows(&pool, "SELECT COUNT(*) FROM book_requests").await,
+            0
+        );
     }
 
     #[tokio::test]
@@ -490,7 +517,7 @@ mod get_request {
     }
 
     #[tokio::test]
-    async fn shows_another_readers_request_but_hides_the_stuck_detail_from_a_reader() {
+    async fn shows_another_readers_request_with_its_stuck_detail_to_a_reader() {
         let (app, _, pool) = fixture_book_requests(true).await;
         let (ada, _) = requester(&pool, "ada").await;
         let (_, grace) = requester(&pool, "grace").await;
@@ -515,8 +542,10 @@ mod get_request {
             body.stuck_reason,
             Some(omnibus_shared::StuckReason::SearchFailed)
         );
-        assert_eq!(body.stuck_detail, None);
-        assert!(!text.contains("connection refused"));
+        assert_eq!(
+            body.stuck_detail.as_deref(),
+            Some("could not connect (connection refused or failed)")
+        );
     }
 
     #[tokio::test]
@@ -665,7 +694,10 @@ mod search_after_start {
             as_reader.stuck_reason,
             Some(omnibus_shared::StuckReason::SearchFailed)
         );
-        assert_eq!(as_reader.stuck_detail, None);
-        assert_eq!(as_admin.stuck_detail.as_deref(), Some("not set up yet"));
+        assert_eq!(
+            as_reader.stuck_detail.as_deref(),
+            Some("Prowlarr is not set up yet")
+        );
+        assert_eq!(as_admin.stuck_detail, as_reader.stuck_detail);
     }
 }

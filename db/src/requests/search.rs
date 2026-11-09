@@ -1,16 +1,16 @@
 //! Runs the search behind a `looking` request: asks Prowlarr for the book's title and first
 //! author, ranks what comes back and records the outcome. A request ends `choose` when
 //! some version survived, else `stuck`; the word the reader sees is the same for both
-//! reasons, but the reason and detail (for admins) differ. A Prowlarr that is briefly
+//! reasons, but the reason and the detail, which says what was searched and found, differ. A Prowlarr that is briefly
 //! unreachable or rate limiting is retried for a while before the request gives up.
 
 use std::time::{Duration, Instant};
 
-use omnibus_shared::{RequestState, StuckReason};
+use omnibus_shared::{ReleaseProtocol, RequestKind, RequestState, StuckReason};
 use sqlx::SqlitePool;
 
 use super::prowlarr::Prowlarr;
-use super::rank::{names_convertible, rank};
+use super::rank::{names_convertible, rank, Ranked, Rejection};
 use super::store::{self, RequestError, SearchOutcome};
 use super::ConnectionError;
 
@@ -59,7 +59,7 @@ pub async fn run_search_with(
     let began = Instant::now();
     let mut wait = patience.first_wait;
     let outcome = loop {
-        match attempt(pool, &request.book_uuid).await {
+        match attempt(pool, &request.book_uuid, request.kind).await {
             Attempt::Done(outcome) => break outcome,
             Attempt::Transient(outcome) if began.elapsed() + wait > patience.budget => {
                 break outcome;
@@ -91,9 +91,19 @@ fn failed(detail: impl Into<String>) -> Attempt {
     Attempt::Done(stuck_failed(detail))
 }
 
+/// A failed call to Prowlarr, said so that the reader can tell which service it was.
+fn prowlarr_says(e: &ConnectionError) -> String {
+    match e {
+        ConnectionError::NotConfigured => "Prowlarr is not set up yet".to_string(),
+        ConnectionError::Unreachable(why) => format!("Prowlarr could not be reached ({why})"),
+        ConnectionError::BadApiKey => "Prowlarr rejected the API key".to_string(),
+        other => other.to_string(),
+    }
+}
+
 /// A failed call to Prowlarr: retried when it was only unreachable or rate limiting.
 fn search_error(e: ConnectionError) -> Attempt {
-    let outcome = stuck_failed(e.to_string());
+    let outcome = stuck_failed(prowlarr_says(&e));
     match e {
         ConnectionError::Unreachable(_) | ConnectionError::RateLimited => {
             Attempt::Transient(outcome)
@@ -102,7 +112,7 @@ fn search_error(e: ConnectionError) -> Attempt {
     }
 }
 
-async fn attempt(pool: &SqlitePool, book_uuid: &str) -> Attempt {
+async fn attempt(pool: &SqlitePool, book_uuid: &str, kind: RequestKind) -> Attempt {
     let book = match crate::get_book_by_uuid(pool, book_uuid).await {
         Ok(Some(book)) => book,
         Ok(None) => return failed("the book no longer exists"),
@@ -129,26 +139,36 @@ async fn attempt(pool: &SqlitePool, book_uuid: &str) -> Attempt {
     };
     let prowlarr = match Prowlarr::from_config(&config) {
         Ok(p) => p,
-        Err(e) => return failed(e.to_string()),
+        Err(e) => return failed(prowlarr_says(&e)),
     };
     let query = format!("{title} {author}");
-    let releases = match prowlarr.search(query.trim()).await {
+    let releases = match prowlarr.search(query.trim(), kind).await {
         Ok(releases) => releases,
         Err(e) => return search_error(e),
     };
-    // Probed only when a result could use it: the check spawns the converter.
-    let convertible = names_convertible(&releases) && conversion_available(pool).await;
+    // Probed only when a result could use it: the check spawns the converter. Audiobooks are
+    // never converted.
+    let convertible = kind == RequestKind::Ebook
+        && names_convertible(&releases)
+        && conversion_available(pool).await;
     let ranked = rank(
         releases,
         &title,
         &author,
+        kind,
         config.download_client_kind.protocol(),
         convertible,
     );
     if ranked.iter().all(|r| r.rejected) {
+        let detail = not_found_detail(
+            query.trim(),
+            &ranked,
+            config.download_client_kind.protocol(),
+            failing_indexers(&prowlarr).await,
+        );
         return Attempt::Done(SearchOutcome::Stuck {
             reason: StuckReason::NotFound,
-            detail: failing_indexers(&prowlarr).await,
+            detail: Some(detail),
         });
     }
     Attempt::Done(SearchOutcome::Found(ranked))
@@ -164,6 +184,66 @@ async fn conversion_available(pool: &SqlitePool) -> bool {
             false
         }
     }
+}
+
+/// What a search that ended `not_found` says for itself: what was asked, how many results
+/// came back, why each was dropped, and which indexers were down.
+fn not_found_detail(
+    query: &str,
+    ranked: &[Ranked],
+    wanted: ReleaseProtocol,
+    indexers: Option<String>,
+) -> String {
+    let came_back = match ranked.len() {
+        0 => "no results came back".to_string(),
+        1 => "1 result came back".to_string(),
+        n => format!("{n} results came back"),
+    };
+    let count = |cause| ranked.iter().filter(|r| r.cause == Some(cause)).count();
+    let other = match wanted {
+        ReleaseProtocol::Torrent => "usenet",
+        ReleaseProtocol::Usenet => "torrent",
+    };
+    let causes = [
+        (
+            Rejection::Category,
+            "was in another category",
+            "were in another category",
+        ),
+        (
+            Rejection::Book,
+            "didn't match the book's title and author",
+            "didn't match the book's title and author",
+        ),
+        (
+            Rejection::Protocol,
+            &format!("was a {other} release the download client can't fetch"),
+            &format!("were {other} releases the download client can't fetch"),
+        ),
+        (
+            Rejection::Unusable,
+            "had a format, size or seeder count that can't be used",
+            "had a format, size or seeder count that can't be used",
+        ),
+    ];
+    let why: Vec<String> = causes
+        .iter()
+        .filter_map(|&(cause, one, many)| match count(cause) {
+            0 => None,
+            1 => Some(format!("1 {one}")),
+            n => Some(format!("{n} {many}")),
+        })
+        .collect();
+    let mut detail = format!("searched for “{query}”: {came_back}");
+    if !why.is_empty() {
+        detail.push_str(": ");
+        detail.push_str(&why.join(", "));
+    }
+    if let Some(indexers) = indexers {
+        detail.push_str("; ");
+        detail.push_str(&indexers);
+    }
+    detail
 }
 
 /// Which indexers Prowlarr has switched off, when it will say; the likeliest reason an

@@ -54,6 +54,31 @@ mod failed_job {
     }
 }
 
+mod failed_while_on_its_way {
+    use super::*;
+
+    #[tokio::test]
+    async fn stops_the_request_saying_the_usenet_job_failed() {
+        let pool = pool().await;
+        let id = on_its_way(&pool, "ada", 0.4, NOW).await;
+        let client = StubClient::new()
+            .with_protocol(ReleaseProtocol::Usenet)
+            .with_status(&hash(id), 0.5, "error");
+
+        tick(&pool, &client, NOW).await;
+
+        let stopped = row(&pool, id).await;
+        assert_eq!(stopped.state, RequestState::Stuck);
+        assert_eq!(
+            stopped.stuck_detail.as_deref(),
+            Some(
+                "the download client reports the usenet job failed: it could not be downloaded, \
+                 repaired or unpacked"
+            )
+        );
+    }
+}
+
 mod client_down {
     use super::*;
 

@@ -49,28 +49,67 @@ export function prowlarrUpdate(
   };
 }
 
+type ReleaseSpec = {
+  format: string;
+  size: number;
+  seeders: number;
+  indexer: string;
+  /** The Newznab category: 7020 for an ebook, 3030 for an audiobook. */
+  category: number;
+};
+
+/** A search result for `book` in `format`. */
+const release = (
+  book: ExternalBookMeta,
+  { format, size, seeders, indexer, category }: ReleaseSpec,
+) => ({
+  guid: `${book.isbn13}-${format}`,
+  title: `${book.title} - ${book.authors.join(", ")} [${format}]`,
+  size,
+  seeders,
+  indexer,
+  infoUrl: `https://e2e-library.example/details/${book.isbn13}-${format}`,
+  // A magnet, whose info hash is how the server finds the download again.
+  downloadUrl: `magnet:?xt=urn:btih:${createHash("sha1").update(`${book.isbn13}-${format}`).digest("hex")}`,
+  categories: [{ id: category }],
+});
+
 /** The versions the mock Prowlarr offers for `book`: a retail EPUB and a smaller PDF. */
 export function releasesFor(book: ExternalBookMeta) {
-  const named = (format: string) =>
-    `${book.title} - ${book.authors.join(", ")} [${format}]`;
-  const release = (
-    format: string,
-    size: number,
-    seeders: number,
-    indexer: string,
-  ) => ({
-    guid: `${book.isbn13}-${format}`,
-    title: named(format),
-    size,
-    seeders,
-    indexer,
-    infoUrl: `https://e2e-library.example/details/${book.isbn13}-${format}`,
-    // A magnet, whose info hash is how the server finds the download again.
-    downloadUrl: `magnet:?xt=urn:btih:${createHash("sha1").update(`${book.isbn13}-${format}`).digest("hex")}`,
-    categories: [{ id: 7020 }],
-  });
   return [
-    release("PDF", 6_400_000, 3, "E2E Library Ink"),
-    release("EPUB", 1_200_000, 14, "E2E Books"),
+    release(book, {
+      format: "PDF",
+      size: 6_400_000,
+      seeders: 3,
+      indexer: "E2E Library Ink",
+      category: 7020,
+    }),
+    release(book, {
+      format: "EPUB",
+      size: 1_200_000,
+      seeders: 14,
+      indexer: "E2E Books",
+      category: 7020,
+    }),
+  ];
+}
+
+/** The audiobook versions the mock Prowlarr offers for `book`: a single M4B and a folder of MP3s. */
+export function audiobookReleasesFor(book: ExternalBookMeta) {
+  return [
+    release(book, {
+      format: "M4B",
+      size: 310_000_000,
+      seeders: 9,
+      indexer: "E2E Audio",
+      category: 3030,
+    }),
+    release(book, {
+      format: "MP3",
+      size: 280_000_000,
+      seeders: 6,
+      indexer: "E2E Audio",
+      category: 3030,
+    }),
   ];
 }

@@ -12,6 +12,8 @@ export class WishlistsPage extends BasePage {
   readonly rows: Locator;
   /** The Request menu's ebook item, once a row's menu is open. */
   readonly requestEbookItem: Locator;
+  /** The Request menu's audiobook item, once a row's menu is open. */
+  readonly requestAudiobookItem: Locator;
   /** The add search's field, once its panel is open. */
   readonly addSearchField: Locator;
 
@@ -22,6 +24,9 @@ export class WishlistsPage extends BasePage {
     this.rows = page.getByTestId("wishlists-row");
     this.requestEbookItem = page.getByRole("menuitem", {
       name: "Request ebook",
+    });
+    this.requestAudiobookItem = page.getByRole("menuitem", {
+      name: "Request audiobook",
     });
     this.addSearchField = page
       .getByTestId("wishlists-add-panel")
@@ -56,5 +61,11 @@ export class WishlistsPage extends BasePage {
   async requestEbook(title: string): Promise<void> {
     await this.openRequestMenu(title);
     await this.requestEbookItem.click();
+  }
+
+  /** Starts an audiobook request for `title`. It opens the book on the Requests page. */
+  async requestAudiobook(title: string): Promise<void> {
+    await this.openRequestMenu(title);
+    await this.requestAudiobookItem.click();
   }
 }

@@ -76,7 +76,7 @@ mod get_request_when_couldnt_add {
     use super::*;
 
     #[tokio::test]
-    async fn shows_a_reader_the_reason_without_the_detail_and_an_admin_both() {
+    async fn shows_a_reader_and_an_admin_the_same_detail() {
         let (app, _, pool) = fixture_book_requests(true).await;
         let (ada, token) = requester(&pool, "ada").await;
         let admin = admin_token(&pool).await;
@@ -89,13 +89,12 @@ mod get_request_when_couldnt_add {
         let reader_text = body_text(as_reader).await;
         let reader: BookRequest = serde_json::from_str(&reader_text).unwrap();
         assert_eq!(reader.stuck_reason, Some(StuckReason::CouldntAdd));
-        assert_eq!(reader.stuck_detail, None);
-        assert!(!reader_text.contains("read-only"));
-        assert!(!reader_text.contains("import_key"));
-        let admin: BookRequest = body_json(as_admin).await;
         assert_eq!(
-            admin.stuck_detail.as_deref(),
+            reader.stuck_detail.as_deref(),
             Some("filing the download failed: /srv/library is read-only")
         );
+        assert!(!reader_text.contains("import_key"));
+        let admin: BookRequest = body_json(as_admin).await;
+        assert_eq!(admin.stuck_detail, reader.stuck_detail);
     }
 }

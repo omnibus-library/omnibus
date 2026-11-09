@@ -58,6 +58,10 @@ async fn set_converter(pool: &SqlitePool, path: &str) {
 
 /// A `looking` ebook request for a fileless "Dracula" by Bram Stoker.
 async fn looking_request(pool: &SqlitePool) -> i64 {
+    looking_request_of(pool, RequestKind::Ebook).await
+}
+
+async fn looking_request_of(pool: &SqlitePool, kind: RequestKind) -> i64 {
     let uuid = crate::physical::create_fileless_book(
         pool,
         FilelessBook {
@@ -72,7 +76,7 @@ async fn looking_request(pool: &SqlitePool) -> i64 {
     .await
     .unwrap();
     let user = crate::test_support::seed_user(pool, "ada").await;
-    store::start(pool, user, &uuid, RequestKind::Ebook, 5)
+    store::start(pool, user, &uuid, kind, 5)
         .await
         .unwrap()
         .request
@@ -214,6 +218,32 @@ mod run_search {
     }
 
     #[tokio::test]
+    async fn searches_the_audiobook_category_and_ranks_audio_for_an_audiobook_request() {
+        let server = MockServer::start().await;
+        let m4b = json!({
+            "guid": "g1", "title": "Dracula - Bram Stoker M4B", "size": 310_000_000, "seeders": 12,
+            "indexer": "Audio", "downloadUrl": "http://prowlarr/1/download",
+            "categories": [{"id": 3030}],
+        });
+        Mock::given(method("GET"))
+            .and(path("/api/v1/search"))
+            .and(query_param("categories", "3030"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!([m4b])))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let pool = pool_with_prowlarr(&server.uri()).await;
+        let id = looking_request_of(&pool, RequestKind::Audiobook).await;
+
+        run_search(&pool, id).await.unwrap();
+
+        assert_eq!(row(&pool, id).await.state, RequestState::Choose);
+        let shown = store::versions(&pool, id).await.unwrap();
+        assert_eq!(shown.len(), 1);
+        assert_eq!(shown[0].format.as_deref(), Some("M4B"));
+    }
+
+    #[tokio::test]
     async fn gets_stuck_not_found_with_the_failing_indexers_when_no_result_survives() {
         let server = MockServer::start().await;
         mount_search(&server, json!([])).await;
@@ -229,12 +259,15 @@ mod run_search {
         assert_eq!(stuck.stuck_reason, Some(StuckReason::NotFound));
         assert_eq!(
             stuck.stuck_detail.as_deref(),
-            Some("indexer 3 disabled until 2030-01-01T00:00:00Z")
+            Some(
+                "searched for “Dracula Bram Stoker”: no results came back; \
+                 indexer 3 disabled until 2030-01-01T00:00:00Z"
+            )
         );
     }
 
     #[tokio::test]
-    async fn leaves_the_detail_empty_when_no_indexer_is_failing() {
+    async fn says_nothing_came_back_when_no_indexer_is_failing() {
         let server = MockServer::start().await;
         mount_search(&server, json!([])).await;
         mount_indexer_status(&server, json!([])).await;
@@ -243,7 +276,95 @@ mod run_search {
 
         run_search(&pool, id).await.unwrap();
 
-        assert_eq!(row(&pool, id).await.stuck_detail, None);
+        assert_eq!(
+            row(&pool, id).await.stuck_detail.as_deref(),
+            Some("searched for “Dracula Bram Stoker”: no results came back")
+        );
+    }
+
+    #[tokio::test]
+    async fn names_usenet_as_the_cause_when_every_result_is_a_usenet_release() {
+        let server = MockServer::start().await;
+        let usenet = |guid: &str| {
+            json!({
+                "guid": guid, "title": "Dracula - Bram Stoker EPUB", "size": 900000,
+                "protocol": "usenet", "downloadUrl": "http://prowlarr/9/download?apikey=secret",
+                "categories": [{"id": 7020}],
+            })
+        };
+        mount_search(&server, json!([usenet("g1"), usenet("g2")])).await;
+        mount_indexer_status(&server, json!([])).await;
+        let pool = pool_with_prowlarr(&server.uri()).await;
+        let id = looking_request(&pool).await;
+
+        run_search(&pool, id).await.unwrap();
+
+        assert_eq!(
+            row(&pool, id).await.stuck_detail.as_deref(),
+            Some(
+                "searched for “Dracula Bram Stoker”: 2 results came back: \
+                 2 were usenet releases the download client can't fetch"
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn names_torrent_as_the_cause_when_a_usenet_client_gets_only_torrents() {
+        let server = MockServer::start().await;
+        let torrent = json!({
+            "guid": "g1", "title": "Dracula - Bram Stoker EPUB", "size": 900000, "seeders": 4,
+            "protocol": "torrent", "downloadUrl": "http://prowlarr/1/download",
+            "categories": [{"id": 7020}],
+        });
+        mount_search(&server, json!([torrent])).await;
+        mount_indexer_status(&server, json!([])).await;
+        let pool =
+            pool_with_client(&server.uri(), "indexer-key", DownloadClientKind::Sabnzbd).await;
+        let id = looking_request(&pool).await;
+
+        run_search(&pool, id).await.unwrap();
+
+        assert_eq!(
+            row(&pool, id).await.stuck_detail.as_deref(),
+            Some(
+                "searched for “Dracula Bram Stoker”: 1 result came back: \
+                 1 was a torrent release the download client can't fetch"
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn counts_each_cause_when_results_were_dropped_for_different_reasons() {
+        let server = MockServer::start().await;
+        let usenet = json!({
+            "guid": "g1", "title": "Dracula - Bram Stoker EPUB", "size": 900000,
+            "protocol": "usenet", "downloadUrl": "http://prowlarr/1/download",
+            "categories": [{"id": 7020}],
+        });
+        let mobi = json!({
+            "guid": "g2", "title": "Dracula - Bram Stoker MOBI", "size": 900000, "seeders": 4,
+            "downloadUrl": "http://prowlarr/2/download", "categories": [{"id": 7020}],
+        });
+        let other_book = json!({
+            "guid": "g3", "title": "Frankenstein - Mary Shelley EPUB", "size": 900000, "seeders": 4,
+            "downloadUrl": "http://prowlarr/3/download", "categories": [{"id": 7020}],
+        });
+        mount_search(&server, json!([usenet, mobi, other_book])).await;
+        mount_indexer_status(&server, json!([])).await;
+        let pool = pool_with_prowlarr(&server.uri()).await;
+        let id = looking_request(&pool).await;
+
+        run_search(&pool, id).await.unwrap();
+
+        assert_eq!(
+            row(&pool, id).await.stuck_detail.as_deref(),
+            Some(
+                "searched for “Dracula Bram Stoker”: 3 results came back: \
+                 1 didn't match the book's title and author, \
+                 1 was a usenet release the download client can't fetch, \
+                 1 had a format, size or seeder count that can't be used"
+            )
+        );
     }
 
     #[tokio::test]
@@ -257,7 +378,7 @@ mod run_search {
         assert_eq!(stuck.stuck_reason, Some(StuckReason::SearchFailed));
         assert_eq!(
             stuck.stuck_detail.as_deref(),
-            Some("could not connect (connection refused or failed)")
+            Some("Prowlarr could not be reached (connection refused or failed)")
         );
     }
 
@@ -271,7 +392,10 @@ mod run_search {
 
         let stuck = row(&pool, id).await;
         assert_eq!(stuck.stuck_reason, Some(StuckReason::SearchFailed));
-        assert_eq!(stuck.stuck_detail.as_deref(), Some("not set up yet"));
+        assert_eq!(
+            stuck.stuck_detail.as_deref(),
+            Some("Prowlarr is not set up yet")
+        );
     }
 
     #[tokio::test]

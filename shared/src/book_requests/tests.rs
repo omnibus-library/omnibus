@@ -51,22 +51,6 @@ fn start_request_from_meta_rejects_a_field_of_meta_over_its_cap() {
 }
 
 #[test]
-fn request_kind_check_requestable_accepts_only_an_ebook() {
-    assert_eq!(RequestKind::Ebook.check_requestable(), Ok(()));
-    assert_eq!(
-        RequestKind::Audiobook.check_requestable(),
-        Err("only ebooks can be requested yet")
-    );
-}
-
-#[test]
-fn start_request_from_meta_rejects_an_audiobook() {
-    assert!(start_from(RequestKind::Audiobook, "Piranesi")
-        .validate()
-        .is_err());
-}
-
-#[test]
 fn release_protocol_round_trips_its_tokens_and_knows_no_other() {
     assert_eq!(
         ReleaseProtocol::parse("usenet"),

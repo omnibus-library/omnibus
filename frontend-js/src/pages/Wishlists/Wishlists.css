@@ -267,30 +267,6 @@
   color: var(--ink-2);
   cursor: not-allowed;
 }
-.wl-tip {
-  position: absolute;
-  right: 0;
-  bottom: calc(100% + 8px);
-  z-index: 3;
-  padding: 6px 10px;
-  border-radius: var(--r-sm);
-  background: var(--bg-3);
-  color: var(--ink-0);
-  font-size: 12px;
-  white-space: nowrap;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.12s;
-}
-.wl-request:focus-visible + .wl-tip,
-.wl-tip.is-shown {
-  opacity: 1;
-}
-@media (prefers-reduced-motion: reduce) {
-  .wl-tip {
-    transition: none;
-  }
-}
 
 /* ---- empty ---- */
 
@@ -335,9 +311,6 @@
   }
   .wl-row:hover {
     background: var(--bg-1);
-  }
-  .wl-request-wrap:hover .wl-tip {
-    opacity: 1;
   }
   .wl-title:hover {
     color: var(--accent);

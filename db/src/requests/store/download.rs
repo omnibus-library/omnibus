@@ -308,7 +308,7 @@ pub async fn record_expected_done_at(
 }
 
 /// End a request's pick `chosen`, picked or downloading, as stuck for `reason`. `detail` is
-/// for admins.
+/// the reader-facing explanation, in plain words and never carrying a link or key.
 pub async fn mark_stuck(
     pool: &SqlitePool,
     id: i64,

@@ -1,17 +1,21 @@
-//! Puts a downloaded file into the library in one step the scanner can never see half of.
-//! The file is linked (or copied) into a staging folder inside the library root, so it is
-//! on the same filesystem, then renamed to its canonical place; an AZW3 or MOBI is instead
-//! converted into the staging folder, from the download. Staging is a dot folder, which
-//! every library walk skips, and it is cleared on every exit, so nothing half-written is
-//! ever left to be indexed. The download itself is only read.
+//! Puts a downloaded file, or a folder of audiobook parts, into the library in one step the
+//! scanner can never see half of. The files are linked (or copied) into a staging folder
+//! inside the library root, so they are on the same filesystem, then renamed to their
+//! canonical place; an AZW3 or MOBI is instead converted into the staging folder, from the
+//! download. Staging is a dot folder, which every library walk skips, and it is cleared on
+//! every exit, so nothing half-written is ever left to be indexed. The download itself is
+//! only read.
 
+use std::collections::HashSet;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
 use sqlx::SqlitePool;
 
-use crate::library_layout::allocate_canonical_path;
+use crate::library_layout::{
+    allocate_canonical_dir, allocate_canonical_path, dedupe_part_name, sanitize_part_filename,
+};
 
 use super::{blocking, ImportError};
 
@@ -22,9 +26,22 @@ fn staging_dir(root: &Path, request_id: i64) -> PathBuf {
     root.join(STAGING_DIR).join(request_id.to_string())
 }
 
+/// Fail unless `root` is a folder that exists, so an unmounted library is never filled on the
+/// disk beneath its mount point.
+fn require_root(root: &Path) -> io::Result<()> {
+    if root.is_dir() {
+        return Ok(());
+    }
+    Err(io::Error::new(
+        io::ErrorKind::NotFound,
+        "the library folder is missing",
+    ))
+}
+
 /// Put `src` into the library under `root` as `ext`, named from the book's `author` and
 /// `title`, and return where it landed. A fresh staging folder is made for `request_id`
-/// first, and removed whatever happens. `src` is never changed or moved. Blocking.
+/// first, and removed whatever happens. `src` is never changed or moved. Fails when `root` is
+/// not an existing folder. Blocking.
 pub fn place_blocking(
     root: &Path,
     request_id: i64,
@@ -33,6 +50,7 @@ pub fn place_blocking(
     title: &str,
     ext: &str,
 ) -> io::Result<PathBuf> {
+    require_root(root)?;
     discard_staging(root, request_id)?;
     let placed = stage_and_rename(root, request_id, src, author, title, ext);
     if let Err(e) = discard_staging(root, request_id) {
@@ -52,8 +70,7 @@ fn stage_and_rename(
     let staging = staging_dir(root, request_id);
     fs::create_dir_all(&staging)?;
     let staged = staging.join(format!("book.{ext}"));
-    // A link costs no space; a different filesystem or one without links gets a copy.
-    fs::hard_link(src, &staged).or_else(|_| fs::copy(src, &staged).map(|_| ()))?;
+    link_or_copy(src, &staged)?;
     rename_into_library(root, &staged, author, title, ext)
 }
 
@@ -87,6 +104,7 @@ pub async fn place_converted(
     let staging = blocking({
         let root = root.to_path_buf();
         move || {
+            require_root(&root)?;
             discard_staging(&root, request_id)?;
             let staging = staging_dir(&root, request_id);
             fs::create_dir_all(&staging)?;
@@ -110,6 +128,81 @@ pub async fn place_converted(
         tracing::warn!(error = %e, request = request_id, "could not clear the import staging folder");
     }
     placed
+}
+
+/// Put `parts` into one new canonical folder under `root`, named from the book's `author`
+/// and `title`, and return the folder. Each part is named for its path below the parts'
+/// common parent (`CD1/01.mp3` becomes `cd1-01.mp3`); two that come to one name are numbered.
+/// Staged and cleaned up as [`place_blocking`] does. Blocking.
+pub fn place_folder_blocking(
+    root: &Path,
+    request_id: i64,
+    parts: &[PathBuf],
+    author: &str,
+    title: &str,
+) -> io::Result<PathBuf> {
+    require_root(root)?;
+    discard_staging(root, request_id)?;
+    let placed = stage_folder_and_rename(root, request_id, parts, author, title);
+    if let Err(e) = discard_staging(root, request_id) {
+        tracing::warn!(error = %e, request = request_id, "could not clear the import staging folder");
+    }
+    placed
+}
+
+fn stage_folder_and_rename(
+    root: &Path,
+    request_id: i64,
+    parts: &[PathBuf],
+    author: &str,
+    title: &str,
+) -> io::Result<PathBuf> {
+    let staging = staging_dir(root, request_id).join("book");
+    fs::create_dir_all(&staging)?;
+    let below = common_parent(parts);
+    let mut used = HashSet::new();
+    for part in parts {
+        let name = dedupe_part_name(
+            part_name(part.strip_prefix(&below).unwrap_or(part)),
+            &mut used,
+        );
+        link_or_copy(part, &staging.join(name))?;
+    }
+    let dest = allocate_canonical_dir(root, author, title)?;
+    if let Some(author_dir) = dest.parent() {
+        fs::create_dir_all(author_dir)?;
+    }
+    fs::rename(&staging, &dest)?;
+    Ok(dest)
+}
+
+/// A link costs no space; a different filesystem or one without links gets a copy.
+fn link_or_copy(src: &Path, dest: &Path) -> io::Result<()> {
+    fs::hard_link(src, dest).or_else(|_| fs::copy(src, dest).map(|_| ()))
+}
+
+/// The deepest folder every part sits under.
+fn common_parent(parts: &[PathBuf]) -> PathBuf {
+    let mut dirs = parts.iter().filter_map(|p| p.parent());
+    let Some(first) = dirs.next() else {
+        return PathBuf::new();
+    };
+    let mut common: Vec<_> = first.components().collect();
+    for dir in dirs {
+        let shared = common
+            .iter()
+            .zip(dir.components())
+            .take_while(|(a, b)| *a == b)
+            .count();
+        common.truncate(shared);
+    }
+    common.into_iter().collect()
+}
+
+/// The filename a part is filed under: its folders and name joined with `-`.
+fn part_name(relative: &Path) -> String {
+    let joined: Vec<_> = relative.iter().map(|c| c.to_string_lossy()).collect();
+    sanitize_part_filename(&joined.join("-"))
 }
 
 /// Remove request `request_id`'s staging folder, and the shared one when it is left empty.

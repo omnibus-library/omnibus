@@ -20,6 +20,7 @@ import {
   firstShown,
   fromWishlists,
   historyDay,
+  holds,
   holdsAudiobook,
   holdsEbook,
   isCancellable,
@@ -95,10 +96,58 @@ describe("stateView", () => {
     });
   });
 
+  it("puts the recorded error under a stuck request's heading, its first letter capitalised", () => {
+    expect(
+      stateView(
+        "stuck",
+        "stopped_moving",
+        "ebook",
+        "the download made no progress for 12 hours",
+      ),
+    ).toEqual({
+      heading: "Stopped moving",
+      note: "The download made no progress for 12 hours",
+      explicit: true,
+    });
+  });
+
+  it("leaves a name that opens with a lower-case letter and a capital as written", () => {
+    expect(
+      stateView(
+        "stuck",
+        "stopped_moving",
+        "ebook",
+        "qBittorrent did not accept the torrent",
+      ).note,
+    ).toBe("qBittorrent did not accept the torrent");
+  });
+
+  it.each([
+    ["not_found", "Nothing worth showing turned up."],
+    ["stopped_moving", "The download stopped making progress."],
+    ["couldnt_add", "It downloaded but couldn’t be added to the library."],
+  ] as const)(
+    "falls back to a general line for %s with no error recorded",
+    (reason, note) => {
+      expect(stateView("stuck", reason, "ebook", null)).toMatchObject({
+        note,
+        explicit: false,
+      });
+    },
+  );
+
+  it("names a ready audiobook Ready to listen", () => {
+    expect(stateView("ready", null, "audiobook")).toEqual({
+      heading: "Ready to listen",
+      note: "It’s in the library.",
+    });
+  });
+
   it("names couldnt_add as Couldn’t add it", () => {
     expect(stateView("stuck", "couldnt_add")).toEqual({
       heading: "Couldn’t add it",
       note: "It downloaded but couldn’t be added to the library.",
+      explicit: false,
     });
   });
 
@@ -739,6 +788,25 @@ describe("factParts", () => {
       head: "Cancelled by you",
       details: ["EPUB", "2.4\u00a0MB", "stopped at 40%"],
     });
+  });
+});
+
+describe("factParts for an audiobook", () => {
+  it("heads a ready audiobook Ready to listen", () => {
+    const ready = listing({ state: "ready", kind: "audiobook" });
+
+    expect(factParts(ready, VIEWER).head).toBe("Ready to listen");
+  });
+});
+
+describe("holds", () => {
+  it.each([
+    ["ebook", ["EPUB"], true],
+    ["ebook", ["M4B"], false],
+    ["audiobook", ["M4B"], true],
+    ["audiobook", ["EPUB", "PDF"], false],
+  ] as const)("reports %s as held among %j: %s", (kind, formats, expected) => {
+    expect(holds(kind, formats)).toBe(expected);
   });
 });
 

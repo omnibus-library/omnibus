@@ -84,13 +84,29 @@ export const RequestOpensAMenuOfWhatCanBeAskedFor: Story = {
       await canvas.findByRole("menu", { name: "Request Hyperion" }),
     );
     await expect(request).toHaveAttribute("aria-expanded", "true");
-    await expect(
-      menu.getByRole("menuitem", { name: "Request ebook" }),
-    ).toBeEnabled();
-    const audiobook = menu.getByRole("menuitem", { name: /Request audiobook/ });
-    await expect(audiobook).toBeDisabled();
-    await expect(audiobook).toHaveTextContent("Not available yet");
+    const ebook = menu.getByRole("menuitem", { name: "Request ebook" });
+    await expect(ebook).toBeEnabled();
+    await expect(ebook).toHaveTextContent("EPUB · to read");
+    const audiobook = menu.getByRole("menuitem", { name: "Request audiobook" });
+    await expect(audiobook).toBeEnabled();
+    await expect(audiobook).toHaveTextContent("M4B · to listen");
     await expect(requests.writes).toEqual([]);
+  },
+};
+
+export const RequestAudiobookStartsAnAudiobookRequestAndOpensItsPage: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const row = within(await rowOf(canvas, "Hyperion"));
+
+    await userEvent.click(row.getByTestId("wishlists-request"));
+    await userEvent.click(
+      await canvas.findByRole("menuitem", { name: "Request audiobook" }),
+    );
+
+    await expect(await canvas.findByTestId("where")).toHaveTextContent(
+      `/requests?book=${BOOKS.hyperion.uuid}`,
+    );
+    await expect(requests.started).toEqual(["audiobook"]);
   },
 };
 
@@ -216,19 +232,23 @@ export const ARefusedRequestSaysWhyAndStaysOnTheList: Story = {
   },
 };
 
-export const RequestIsAnUnavailableButtonWhenOnlyAnAudiobookIsLeft: Story = {
+export const RequestOffersOnlyTheAudiobookWhenAnEpubIsHeld: Story = {
   play: async ({ canvas, userEvent }) => {
-    // An epub is held, so only the audiobook is left to ask for, and that can't be asked for yet.
     const row = within(await rowOf(canvas, "Project Hail Mary"));
     const request = row.getByTestId("wishlists-request");
-    await expect(request).toHaveAttribute("aria-disabled", "true");
-    await expect(request).toHaveAccessibleDescription(
-      "Audiobook requests aren’t available yet",
-    );
+    await expect(request).not.toHaveAttribute("aria-disabled", "true");
 
     await userEvent.click(request);
 
-    await expect(canvas.queryByRole("menu")).not.toBeInTheDocument();
+    const menu = within(
+      await canvas.findByRole("menu", { name: "Request Project Hail Mary" }),
+    );
+    await expect(
+      menu.getByRole("menuitem", { name: "Request audiobook" }),
+    ).toBeEnabled();
+    await expect(
+      menu.queryByRole("menuitem", { name: "Request ebook" }),
+    ).toBeNull();
     await expect(requests.writes).toEqual([]);
   },
 };
@@ -475,14 +495,29 @@ export const GetSheetOnYourListOffersFindRequestOpenAndRemove: Story = {
       sheet.getByRole("button", { name: /Request ebook/ }),
     ).toBeEnabled();
     const audiobook = sheet.getByRole("button", { name: /Request audiobook/ });
-    await expect(audiobook).toBeDisabled();
-    await expect(audiobook).toHaveTextContent("Not available yet");
+    await expect(audiobook).toBeEnabled();
+    await expect(audiobook).toHaveTextContent("Start looking for a version");
     await expect(
       sheet.getByRole("link", { name: "Open book page" }),
     ).toHaveAttribute("href", `/books/${BOOKS.hyperion.uuid}`);
     await expect(
       sheet.getByRole("button", { name: "Remove from wishlist" }),
     ).toBeInTheDocument();
+  },
+};
+
+export const GetSheetRequestAudiobookStartsAnAudiobookRequest: Story = {
+  ...PHONE,
+  play: async ({ canvas, userEvent }) => {
+    const row = within(await rowOf(canvas, "Hyperion"));
+    await userEvent.click(row.getByTestId("wishlists-get"));
+    const sheet = within(await canvas.findByTestId("wishlists-get-sheet"));
+
+    await userEvent.click(
+      sheet.getByRole("button", { name: /Request audiobook/ }),
+    );
+
+    await waitFor(() => expect(requests.started).toEqual(["audiobook"]));
   },
 };
 
@@ -523,7 +558,7 @@ export const GetSheetOnAnotherReadersListHasNoRemove: Story = {
     ).toBeNull();
     await expect(
       sheet.getByRole("button", { name: /Request audiobook/ }),
-    ).toBeDisabled();
+    ).toBeEnabled();
     await expect(
       sheet.queryByRole("button", { name: "Remove from wishlist" }),
     ).toBeNull();
