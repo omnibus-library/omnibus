@@ -19,6 +19,7 @@ struct RequestsView: View {
     @Environment(AppState.self) private var app
     @Environment(\.palette) private var palette
     @State private var model = RequestsModel()
+    @State private var adding = false
 
     private var viewer: RequestViewer? { app.user.map(RequestViewer.init) }
 
@@ -35,6 +36,17 @@ struct RequestsView: View {
         .background(ScreenBackground())
         .navigationTitle("Requests")
         .navigationBarTitleDisplayMode(.large)
+        .toolbar {
+            if viewer?.canStart == true {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { adding = true } label: { Image(systemName: "plus") }
+                        .disabled(!Connectivity.shared.isOnline || model.listings == nil)
+                        .accessibilityLabel("Request a book")
+                        .accessibilityIdentifier("requests-add")
+                }
+            }
+        }
+        .sheet(isPresented: $adding) { AddRequestSheet(model: model) }
         .task {
             await model.load()
             while let interval = RequestsFlow.listPollInterval(model.listings) {

@@ -200,4 +200,43 @@ struct RequestsFlowTests {
             #expect(RequestViewer(user) == RequestViewer(id: 4, canStart: true, canChoose: false))
         }
     }
+
+    struct AddSheet {
+        @Test func namesEveryBookWithAnEbookRequestStillGoing() {
+            let listings = [
+                listing("choosing", id: 1, state: .choose), listing("looking", id: 2, state: .looking),
+                listing("picked", id: 3, state: .chosen), listing("coming", id: 4, state: .onItsWay, progress: 0.6),
+                listing("stuck", id: 5, state: .stuck, stuckReason: .notFound),
+            ]
+            #expect(RequestsFlow.requestedBooks(listings) == ["choosing", "looking", "picked", "coming", "stuck"])
+        }
+
+        @Test func leavesOutAFinishedOrCancelledRequestAndAnAudiobookOne() {
+            let listings = [
+                listing("cancelled", id: 1, state: .cancelled), listing("ready", id: 2, state: .ready),
+                listing("audio", id: 3, kind: .audiobook, state: .looking),
+            ]
+            #expect(RequestsFlow.requestedBooks(listings).isEmpty)
+        }
+
+        @Test func opensABookThatIsAlreadyRequestedEvenWhenTheLibraryHoldsAnEbook() {
+            #expect(RequestsFlow.addAction(uuid: "b", formats: ["EPUB"], hasFiles: true, requested: ["b"]) == .open)
+        }
+
+        @Test func holdsABookWhoseFormatsIncludeAnEbook() {
+            #expect(RequestsFlow.addAction(uuid: "b", formats: ["EPUB", "M4B"], hasFiles: false, requested: []) == .held)
+            #expect(RequestsFlow.addAction(uuid: "b", formats: ["pdf"], hasFiles: false, requested: []) == .held)
+        }
+
+        @Test func startsForABookWithOnlyAnAudiobookOrPrintInTheLibrary() {
+            #expect(RequestsFlow.addAction(uuid: "b", formats: ["M4B"], hasFiles: true, requested: []) == .start)
+            #expect(RequestsFlow.addAction(uuid: "b", formats: ["PRINT"], hasFiles: false, requested: []) == .start)
+            #expect(RequestsFlow.addAction(uuid: "b", formats: [], hasFiles: false, requested: []) == .start)
+        }
+
+        @Test func readsAnIsbnLookupsBookByWhetherItHasAnyFile() {
+            #expect(RequestsFlow.addAction(uuid: "b", formats: nil, hasFiles: true, requested: []) == .held)
+            #expect(RequestsFlow.addAction(uuid: "b", formats: nil, hasFiles: false, requested: []) == .start)
+        }
+    }
 }

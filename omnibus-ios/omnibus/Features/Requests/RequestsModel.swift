@@ -62,6 +62,14 @@ struct RequestToast: Identifiable, Equatable {
     var duration: Duration = .seconds(4)
 }
 
+/// Where the Add sheet goes once a start settles.
+enum AddOutcome: Equatable {
+    /// The book whose request page to push.
+    case show(uuid: String)
+    /// What the sheet says.
+    case failed(String)
+}
+
 @Observable @MainActor
 final class RequestsModel {
     static let foldsKey = "omnibus.requests_folds"
@@ -69,6 +77,8 @@ final class RequestsModel {
     /// Nil until the first read answers.
     private(set) var listings: [RequestListing]?
     private(set) var failure: String?
+    /// Whether a start is running, so the sheet can't start a second.
+    private(set) var isStarting = false
     /// The reader's own fold choices by group; a group with none follows `RequestsFlow.defaultFolds`.
     private var folds: [String: Bool]
 
@@ -96,6 +106,9 @@ final class RequestsModel {
         if let fresh = try? await api.list() { listings = fresh }
     }
 
+    /// The books with an ebook request going, which the Add sheet opens rather than starts again.
+    var requested: Set<String> { RequestsFlow.requestedBooks(listings ?? []) }
+
     func groups(viewer: RequestViewer) -> [RequestGroup] {
         RequestsFlow.groups(listings ?? [], viewer: viewer)
     }
@@ -108,6 +121,58 @@ final class RequestsModel {
         folds[key.rawValue] = !isFolded(key)
         defaults.set(folds, forKey: Self.foldsKey)
     }
+
+    // MARK: - Starting
+
+    /// Starts an ebook request on a library book.
+    func startFromLibrary(uuid: String) async -> AddOutcome {
+        guard !isStarting else { return Self.stillStarting }
+        isStarting = true
+        defer { isStarting = false }
+        return await start(uuid: uuid)
+    }
+
+    /// Starts from a provider's record: on the library book it matches when there is one (opening its
+    /// request, or refusing when the library holds an ebook), else on a book made from the record.
+    func startFromRecord(_ meta: ExternalBookMeta, lookup: ScanOutcome?) async -> AddOutcome {
+        guard !isStarting else { return Self.stillStarting }
+        isStarting = true
+        defer { isStarting = false }
+        let outcome: ScanOutcome
+        if let lookup {
+            outcome = lookup
+        } else {
+            do { outcome = try await api.resolveMeta(meta) } catch {
+                return .failed("Couldn\u{2019}t look up \(meta.title).")
+            }
+        }
+        if let found = WishlistsFlow.isbnResults(outcome).library.first {
+            switch RequestsFlow.addAction(uuid: found.uuid, formats: nil, hasFiles: found.hasFiles, requested: requested) {
+            case .open: return .show(uuid: found.uuid)
+            case .held: return .failed("\(meta.title) is already in the library.")
+            case .start: return await start(uuid: found.uuid)
+            }
+        }
+        do {
+            let started = try await api.startFromMeta(meta)
+            await load()
+            return .show(uuid: started.bookUUID)
+        } catch {
+            return .failed(BookRequestFlow.startFailure(error))
+        }
+    }
+
+    private func start(uuid: String) async -> AddOutcome {
+        do {
+            let started = try await api.start(uuid, .ebook)
+            await load()
+            return .show(uuid: started.bookUUID)
+        } catch {
+            return .failed(BookRequestFlow.startFailure(error))
+        }
+    }
+
+    private static let stillStarting = AddOutcome.failed("Still starting the last request.")
 
     static func message(_ error: Error) -> String {
         (error as? APIError)?.errorDescription ?? error.localizedDescription

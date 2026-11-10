@@ -138,4 +138,31 @@ enum RequestsFlow {
     static func listPollInterval(_ listings: [RequestListing]?) -> Duration? {
         listings?.contains { BookRequestFlow.isMoving($0.request.state) } == true ? pollInterval : nil
     }
+
+    // MARK: - The Request a book sheet
+
+    /// What a library book calls for on the Add sheet.
+    enum AddAction: Equatable {
+        /// Its request is going: open it.
+        case open
+        /// The library already has an ebook: nothing to request.
+        case held
+        case start
+    }
+
+    /// Each book with an ebook request still going (finished and cancelled ones don't count), by uuid.
+    static func requestedBooks(_ listings: [RequestListing]) -> Set<String> {
+        Set(
+            listings.filter {
+                let request = $0.request
+                return request.kind == .ebook && request.state != .ready && request.state != .cancelled
+            }.map(\.book.uuid))
+    }
+
+    /// Open its request, say its ebook is here, or start one. A lookup by ISBN sends no `formats`, so any file counts as an ebook.
+    static func addAction(uuid: String, formats: [String]?, hasFiles: Bool, requested: Set<String>) -> AddAction {
+        if requested.contains(uuid) { return .open }
+        let holdsEbook = formats.map { BookRequestFlow.holds(kind: .ebook, formats: $0) } ?? hasFiles
+        return holdsEbook ? .held : .start
+    }
 }

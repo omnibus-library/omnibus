@@ -38,6 +38,8 @@ struct RequestButtonStyle: ButtonStyle {
 
     var emphasis: Emphasis = .secondary
     var fullWidth = false
+    /// A fixed width, so buttons that swap labels in a list stay one size with the label centred.
+    var width: CGFloat?
 
     @Environment(\.palette) private var palette
     @Environment(\.isEnabled) private var isEnabled
@@ -46,7 +48,10 @@ struct RequestButtonStyle: ButtonStyle {
         configuration.label
             .font(.ui(14, weight: .semibold))
             .foregroundStyle(emphasis == .primary ? palette.accentInkColor : emphasis == .ghost ? palette.ink1Color : palette.ink0Color)
-            .padding(.horizontal, emphasis == .ghost ? 4 : 16)
+            .lineLimit(1)
+            .minimumScaleFactor(0.85)
+            .padding(.horizontal, width == nil ? (emphasis == .ghost ? 4 : 16) : 6)
+            .frame(width: width, height: width == nil ? nil : 40)
             .frame(maxWidth: fullWidth ? .infinity : nil, minHeight: 40)
             .background(
                 Capsule().fill(emphasis == .primary ? palette.accentColor : emphasis == .secondary ? palette.bg3Color : .clear))
