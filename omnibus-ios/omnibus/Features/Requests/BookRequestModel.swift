@@ -15,7 +15,7 @@ final class BookRequestModel {
     private(set) var listings: [RequestListing]?
     /// The full reads of each lane's request, by id: only these carry every version and any cover offer.
     private(set) var reads: [Int64: BookRequest] = [:]
-    /// The request the page opened on; it stays the main lane for the page's life.
+    /// The request the page opened on; it stays the main lane while it is listed.
     private(set) var mainID: Int64?
     private(set) var failure: String?
     /// The book itself is gone.
@@ -76,36 +76,55 @@ final class BookRequestModel {
 
     // MARK: - Reads
 
-    /// Reads the book, its listings and wishers, then each lane's full request.
+    /// Reads the book, its listings and wishers, then each lane's full request. A failure shows only
+    /// while there is no page yet; a write that lands meanwhile keeps its answer.
     func load(viewer: RequestViewer) async {
         self.viewer = viewer
+        let started = generation
+        let hadPage = book != nil && failure == nil
+        if !hadPage {
+            isMissing = false
+            failure = nil
+        }
         let uuid = uuid, api = api
         async let bookRead = Self.attempt { try await api.book(uuid) }
         async let listRead = Self.attempt { try await api.bookList(uuid) }
         async let wishRead = Self.attempt { try await api.wanters(uuid) }
         let (bookResult, listResult, wishResult) = await (bookRead, listRead, wishRead)
-        isMissing = false
-        failure = nil
-        if case let .failure(error) = bookResult {
-            if case .http(404, _) = error as? APIError { isMissing = true } else { failure = RequestsModel.message(error) }
-            return
-        }
         guard case let .success(found) = bookResult, case let .success(listed) = listResult else {
-            if case let .failure(error) = listResult { failure = RequestsModel.message(error) }
+            if !hadPage { fail(bookResult, listResult) }
             return
         }
         book = found
-        listings = listed
         wanters = try? wishResult.get()
-        guard let main = BookRequestFlow.mainRequest(listings ?? [], viewer: viewer) else { return }
-        mainID = main.request.id
-        let others = BookRequestFlow.splitBookRequests(listings ?? [], shown: main.request.id).lanes.map(\.request.id)
-        async let mainRead = Self.attempt { try await api.request(main.request.id) }
+        guard started == generation else { return }
+        listings = listed
+        settleMain()
+        guard let mainID else { return }
+        let others = BookRequestFlow.splitBookRequests(listed, shown: mainID).lanes.map(\.request.id)
+        async let mainRead = Self.attempt { try await api.request(mainID) }
         let otherReads = await readAll(others)
-        switch await mainRead {
+        let main = await mainRead
+        guard started == generation else { return }
+        switch main {
         case let .success(request): reads = otherReads.merging([request.id: request]) { $1 }
-        case let .failure(error): failure = RequestsModel.message(error)
+        case let .failure(error): if !hadPage { failure = RequestsModel.message(error) }
         }
+    }
+
+    private func fail(_ bookResult: Result<Book, Error>, _ listResult: Result<[RequestListing], Error>) {
+        if case let .failure(error) = bookResult {
+            if case .http(404, _) = error as? APIError { isMissing = true } else { failure = RequestsModel.message(error) }
+        } else if case let .failure(error) = listResult {
+            failure = RequestsModel.message(error)
+        }
+    }
+
+    /// Keeps the lane the page opened on while its request is listed; else the list's most urgent one.
+    private func settleMain() {
+        guard let listings else { return }
+        if let mainID, listings.contains(where: { $0.request.id == mainID }) { return }
+        mainID = BookRequestFlow.mainRequest(listings, viewer: viewer)?.request.id
     }
 
     /// Reads the listings and every moving lane again; a failure leaves the page as it was.
@@ -173,8 +192,9 @@ final class BookRequestModel {
 
     /// Takes a cancel back and shows whatever the server returns.
     func undo(_ shown: RequestToast) async {
+        // Kept while another write runs, so the Undo isn't lost silently.
+        guard busy == nil, let id = shown.undoRequestID else { return }
         toast = nil
-        guard let id = shown.undoRequestID else { return }
         let api = api
         await write(Self.failure(.undo), busy: .undoing(id), allowed: true) { try await api.undoCancel(id) }
     }
@@ -193,6 +213,7 @@ final class BookRequestModel {
 
     /// When the next cancel's undo window closes, so a view can read the clock again then.
     var nextWindowClose: Date? {
+        _ = clock  // read so a view keyed on this wakes after each tick
         let open = (lanes + history.map(\.request)).filter { $0.state == .cancelled }
             .compactMap(\.cancelAt).map { Date(timeIntervalSince1970: TimeInterval($0)) }
         return open.filter { $0 > now() }.min()
@@ -233,7 +254,9 @@ final class BookRequestModel {
     }
 
     private func rereadListings() async {
-        if let fresh = try? await api.bookList(uuid) { listings = fresh }
+        guard let fresh = try? await api.bookList(uuid) else { return }
+        listings = fresh
+        settleMain()
     }
 
     /// Each id's full request, concurrently; one that fails is left out.
