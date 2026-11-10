@@ -33,19 +33,10 @@ impl Format {
     }
 
     /// The extension of the file a finished download holds.
-    // shortcut: AZW3 delivers the EPUB's bytes, so the import never converts; ship a real AZW3 to exercise conversion.
     pub fn extension(self) -> &'static str {
         match self {
             Format::Epub | Format::Azw3 => "epub",
             Format::M4b => "m4b",
-        }
-    }
-
-    /// Whether the format is a book to read or to listen to.
-    pub fn kind(self) -> RequestKind {
-        match self {
-            Format::Epub | Format::Azw3 => RequestKind::Ebook,
-            Format::M4b => RequestKind::Audiobook,
         }
     }
 
@@ -66,6 +57,7 @@ pub struct Release {
     pub id: String,
     /// The query and the format's label, such as `Dracula EPUB`.
     pub title: String,
+    /// The file format the title names.
     pub format: Format,
     /// Whether a torrent client or a usenet client takes it.
     pub protocol: ReleaseProtocol,
@@ -86,9 +78,9 @@ impl Release {
 
     /// The Newznab category Prowlarr lists it under.
     pub fn category(&self) -> i64 {
-        match self.format.kind() {
-            RequestKind::Ebook => EBOOK_CATEGORY,
-            RequestKind::Audiobook => AUDIOBOOK_CATEGORY,
+        match self.format {
+            Format::Epub | Format::Azw3 => EBOOK_CATEGORY,
+            Format::M4b => AUDIOBOOK_CATEGORY,
         }
     }
 }

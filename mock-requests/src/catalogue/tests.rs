@@ -29,6 +29,7 @@ fn releases_offers_epub_and_azw3_as_torrent_and_usenet_for_an_ebook() {
             ("Dracula Bram Stoker AZW3", ReleaseProtocol::Usenet),
         ]
     );
+    assert!(found.iter().all(|r| r.category() == 7020));
 }
 
 #[test]
@@ -143,11 +144,4 @@ fn is_id_accepts_forty_lowercase_hex_only() {
     ] {
         assert!(!is_id(bad), "{bad}");
     }
-}
-
-#[test]
-fn kind_is_ebook_for_epub_and_azw3_and_audiobook_for_m4b() {
-    assert_eq!(Format::Epub.kind(), RequestKind::Ebook);
-    assert_eq!(Format::Azw3.kind(), RequestKind::Ebook);
-    assert_eq!(Format::M4b.kind(), RequestKind::Audiobook);
 }
