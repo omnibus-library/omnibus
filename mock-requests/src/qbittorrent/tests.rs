@@ -2,7 +2,7 @@
 
 use std::fs;
 
-use omnibus_db::requests::clients::{ClientFile, DownloadClient, Qbittorrent};
+use omnibus_db::requests::clients::{ClientFile, DownloadClient, Qbittorrent, Transmission};
 use omnibus_db::requests::ConnectionError;
 use omnibus_shared::ReleaseProtocol;
 use serde_json::json;
@@ -54,7 +54,7 @@ async fn status_files_and_disk_agree_once_the_download_is_done() {
     assert_eq!(status.state, "stalledUP");
     assert_eq!(status.progress, 1.0);
     assert_eq!(status.save_path, mock.downloads.to_str().unwrap());
-    let name = format!("mock-{hash}/mock-{hash}.epub");
+    let name = format!("qbittorrent-{hash}/mock-{hash}.epub");
     let files = client(&mock).files(&hash).await.unwrap();
     assert_eq!(
         files,
@@ -72,13 +72,33 @@ async fn remove_deletes_the_download_and_its_folder_but_not_the_downloads_dir() 
     control(&mock, "/_mock/downloads", json!({"secs": 0})).await;
     let (hash, _) = add_epub(&mock, &client(&mock), ReleaseProtocol::Torrent).await;
     client(&mock).status(&hash).await.unwrap();
-    assert!(mock.downloads.join(format!("mock-{hash}")).exists());
+    assert!(mock.downloads.join(format!("qbittorrent-{hash}")).exists());
 
     client(&mock).remove(&hash, true).await.unwrap();
 
     assert!(client(&mock).status(&hash).await.unwrap().is_none());
-    assert!(!mock.downloads.join(format!("mock-{hash}")).exists());
+    assert!(!mock.downloads.join(format!("qbittorrent-{hash}")).exists());
     assert!(mock.downloads.exists());
+}
+
+#[tokio::test]
+async fn remove_leaves_transmissions_copy_of_the_same_release_on_disk() {
+    let mock = spawn().await;
+    control(&mock, "/_mock/downloads", json!({"secs": 0})).await;
+    let link = found(&mock, ReleaseProtocol::Torrent, "EPUB").await.link;
+    let transmission = Transmission::new(&mock.origin, CLIENT_USERNAME, CLIENT_PASSWORD).unwrap();
+    let prepared = client(&mock).prepare(&link).await.unwrap();
+    let hash = prepared.hash.clone();
+    client(&mock).add(prepared, "").await.unwrap();
+    let prepared = transmission.prepare(&link).await.unwrap();
+    transmission.add(prepared, "").await.unwrap();
+    client(&mock).status(&hash).await.unwrap();
+
+    client(&mock).remove(&hash, true).await.unwrap();
+
+    let kept = transmission.files(&hash).await.unwrap();
+    assert_eq!(kept.len(), 1);
+    assert!(mock.downloads.join(&kept[0].name).exists());
 }
 
 #[tokio::test]
@@ -127,7 +147,7 @@ async fn files_lists_only_a_readme_when_downloads_are_set_to_junk() {
 
     let files = client(&mock).files(&hash).await.unwrap();
     let names: Vec<_> = files.iter().map(|f| f.name.as_str()).collect();
-    assert_eq!(names, [format!("mock-{hash}/README.txt")]);
+    assert_eq!(names, [format!("qbittorrent-{hash}/README.txt")]);
 }
 
 #[tokio::test]

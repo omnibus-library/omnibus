@@ -1,6 +1,6 @@
 //! The fake qBittorrent Web API v2: login, add by magnet, list, files and delete. Any login
 //! is accepted and no cookie is checked. A torrent is the release id a magnet names, and its
-//! files appear under `mock-<id>/` once the download finishes.
+//! files appear under `qbittorrent-<id>/` once the download finishes.
 
 use std::time::Instant;
 

@@ -280,7 +280,10 @@ impl Store {
         let release = magnet_hash(magnet)
             .and_then(|hash| self.release(&hash).cloned())
             .filter(|r| r.protocol == client.protocol())?;
-        let (id, folder) = (release.id.clone(), format!("mock-{}", release.id));
+        let (id, folder) = (
+            release.id.clone(),
+            format!("{}-{}", client.as_str(), release.id),
+        );
         self.add(client, id.clone(), release, folder, now);
         Some(id)
     }

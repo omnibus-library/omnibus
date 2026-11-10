@@ -69,7 +69,7 @@ async fn status_files_and_disk_agree_once_the_download_is_done() {
     assert_eq!(status.state, "uploading");
     assert_eq!(status.progress, 1.0);
     assert_eq!(status.save_path, mock.downloads.to_str().unwrap());
-    let name = format!("mock-{hash}/mock-{hash}.epub");
+    let name = format!("transmission-{hash}/mock-{hash}.epub");
     let files = client(&mock).files(&hash).await.unwrap();
     assert_eq!(
         files,
@@ -113,12 +113,12 @@ async fn remove_deletes_the_download_and_its_folder() {
     control(&mock, "/_mock/downloads", json!({"secs": 0})).await;
     let (hash, _) = add_epub(&mock, &client(&mock), ReleaseProtocol::Torrent).await;
     client(&mock).status(&hash).await.unwrap();
-    assert!(mock.downloads.join(format!("mock-{hash}")).exists());
+    assert!(mock.downloads.join(format!("transmission-{hash}")).exists());
 
     client(&mock).remove(&hash, true).await.unwrap();
 
     assert!(client(&mock).status(&hash).await.unwrap().is_none());
-    assert!(!mock.downloads.join(format!("mock-{hash}")).exists());
+    assert!(!mock.downloads.join(format!("transmission-{hash}")).exists());
     assert!(mock.downloads.exists());
 }
 

@@ -350,7 +350,7 @@ fn add_torrent_starts_a_download_for_a_magnet_the_mock_offered() {
         .store
         .find(DownloadClientKind::Transmission, &offered.id)
         .unwrap();
-    assert_eq!(held.folder, format!("mock-{}", offered.id));
+    assert_eq!(held.folder, format!("transmission-{}", offered.id));
 }
 
 #[test]

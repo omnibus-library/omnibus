@@ -1,7 +1,7 @@
 //! The fake Transmission RPC at `/transmission/rpc`. Like the real one it answers 409 with a
 //! session id until a call carries it, which the server's client handles. Any login is
 //! accepted. A torrent is the release id a magnet names, and its files appear under
-//! `mock-<id>/` once the download finishes.
+//! `transmission-<id>/` once the download finishes.
 
 use std::time::Instant;
 
