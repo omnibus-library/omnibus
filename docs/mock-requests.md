@@ -49,6 +49,14 @@ included, because the settings read masks secrets and a real service's could not
 restored. Clear the connection in Settings, Requests first. If requests are off it
 says to set `OMNIBUS_BOOK_REQUESTS=1` and `just dev-bounce`.
 
+Two more refusals protect what it must not touch. `--local` asks the server on the
+published port for its `repo_root` (`/api/_health`) and stops unless that is this
+checkout, since a stale `.claude/runtime/port` can name another worktree's server. And
+it stops when the server's ebook or audiobook library sits under this checkout's
+`test_data/`: an import would add the downloaded book to the committed fixtures
+(`git add .` would then commit it). Point the library elsewhere, or use
+`ios-validate.sh server up --requests`, which serves clones.
+
 Without `--local` or `--server`, the mock just serves and you enter its address
 and the key in Settings, Requests yourself.
 

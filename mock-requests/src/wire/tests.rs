@@ -23,6 +23,8 @@ struct Config {
     put: u16,
     test_indexer: (u16, &'static str),
     test_client: (u16, &'static str),
+    repo_root: String,
+    libraries: Value,
 }
 
 struct Stub {
@@ -80,6 +82,12 @@ async fn handle(
             .into_response(),
         "POST /api/auth/login" => (status(c.login), Json(json!({"token": "tok"}))).into_response(),
         "POST /api/auth/logout" => StatusCode::OK.into_response(),
+        "GET /api/_health" => Json(json!({
+            "app": "omnibus", "status": "ok", "build_id": "1",
+            "repo_root": c.repo_root, "version": "dev", "time": 0,
+        }))
+        .into_response(),
+        "GET /api/settings" => Json(c.libraries.clone()).into_response(),
         "GET /api/admin/requests/settings" => {
             (status(c.settings), Json(c.saved.clone())).into_response()
         }
@@ -106,6 +114,8 @@ fn config() -> Config {
         put: 200,
         test_indexer: (200, ""),
         test_client: (200, ""),
+        repo_root: "/repo".into(),
+        libraries: json!({"ebook_library_path": "/srv/ebooks", "audiobook_library_path": null}),
     }
 }
 
@@ -123,15 +133,19 @@ async fn spawn_stub(config: Config) -> (String, Arc<Stub>) {
     (origin, stub)
 }
 
+const TEST_DATA: &str = "/repo/test_data";
+
 async fn run(server: &str, kind: DownloadClientKind) -> Result<(), WireError> {
-    wire(
-        server,
-        Some("admin:s3cret:with-colon"),
-        MOCK,
-        kind,
-        Path::new("/dl"),
-    )
-    .await
+    run_guarding(server, kind, Path::new(TEST_DATA)).await
+}
+
+async fn run_guarding(
+    server: &str,
+    kind: DownloadClientKind,
+    test_data: &Path,
+) -> Result<(), WireError> {
+    let seed = Some("admin:s3cret:with-colon");
+    wire(server, seed, MOCK, kind, Path::new("/dl"), test_data).await
 }
 
 fn calls(stub: &Stub) -> Vec<String> {
@@ -150,6 +164,7 @@ async fn wire_logs_in_saves_the_mock_tests_both_connections_and_logs_out() {
         calls(&stub),
         [
             "POST /api/auth/login",
+            "GET /api/settings",
             "GET /api/admin/requests/settings",
             "PUT /api/admin/requests/settings",
             "POST /api/admin/requests/settings/test-indexer",
@@ -287,13 +302,13 @@ async fn wire_sends_nothing_when_it_cannot_be_set_up() {
     let (origin, stub) = spawn_stub(config()).await;
     let mock = MOCK;
     let kind = DownloadClientKind::Qbittorrent;
-    let downloads = Path::new("/dl");
+    let (dl, td) = (Path::new("/dl"), Path::new(TEST_DATA));
 
-    let remote = wire("http://192.0.2.1:3000", Some("a:b"), mock, kind, downloads).await;
-    let missing = wire(&origin, None, mock, kind, downloads).await;
-    let empty = wire(&origin, Some(""), mock, kind, downloads).await;
-    let malformed = wire(&origin, Some("nocolon"), mock, kind, downloads).await;
-    let nameless = wire(&origin, Some(":pw"), mock, kind, downloads).await;
+    let remote = wire("http://192.0.2.1:3000", Some("a:b"), mock, kind, dl, td).await;
+    let missing = wire(&origin, None, mock, kind, dl, td).await;
+    let empty = wire(&origin, Some(""), mock, kind, dl, td).await;
+    let malformed = wire(&origin, Some("nocolon"), mock, kind, dl, td).await;
+    let nameless = wire(&origin, Some(":pw"), mock, kind, dl, td).await;
 
     for result in [remote, missing, empty, malformed, nameless] {
         assert!(matches!(result, Err(WireError::Setup(_))), "{result:?}");
@@ -366,19 +381,93 @@ async fn wire_follows_no_redirect_so_the_password_goes_nowhere_else() {
     assert_eq!(calls(&stub), ["POST /api/auth/login"]);
 }
 
-#[test]
-fn local_origin_reads_the_port_the_dev_server_published() {
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("port"), "3010\n").unwrap();
+#[tokio::test]
+async fn wire_refuses_a_library_inside_test_data_before_saving_anything() {
+    let test_data = tempfile::tempdir().unwrap();
+    std::fs::create_dir(test_data.path().join("epubs")).unwrap();
+    let inside = test_data.path().join("epubs");
+    let inside = inside.to_str().unwrap();
+    for field in ["ebook_library_path", "audiobook_library_path"] {
+        let mut cfg = config();
+        cfg.libraries = json!({ field: inside });
+        let (origin, stub) = spawn_stub(cfg).await;
 
-    assert_eq!(local_origin(dir.path()).unwrap(), "http://127.0.0.1:3010");
+        let err = run_guarding(&origin, DownloadClientKind::Qbittorrent, test_data.path())
+            .await
+            .unwrap_err();
+
+        let shown = err.to_string();
+        assert!(
+            matches!(&err, WireError::Setup(_)) && shown.contains("test_data"),
+            "{field}: {shown}"
+        );
+        assert!(
+            !calls(&stub).iter().any(|c| c.starts_with("PUT")),
+            "{field}"
+        );
+        assert_eq!(calls(&stub).last().unwrap(), "POST /api/auth/logout");
+    }
 }
 
-#[test]
-fn local_origin_asks_for_dev_up_when_no_port_was_published() {
+/// Writes `port` as the dev server's published port in a fresh runtime dir.
+fn runtime_dir(port: &str) -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("port"), format!("{port}\n")).unwrap();
+    dir
+}
+
+fn port_of(origin: &str) -> &str {
+    origin.rsplit(':').next().unwrap()
+}
+
+#[tokio::test]
+async fn local_origin_reads_the_port_the_dev_server_published() {
+    let (origin, _) = spawn_stub(config()).await;
+    let dir = runtime_dir(port_of(&origin));
+
+    let found = local_origin(dir.path(), Path::new("/repo")).await.unwrap();
+
+    assert_eq!(found, origin);
+}
+
+#[tokio::test]
+async fn local_origin_asks_for_dev_up_when_no_port_was_published() {
     let dir = tempfile::tempdir().unwrap();
 
-    let err = local_origin(dir.path()).unwrap_err();
+    let err = local_origin(dir.path(), Path::new("/repo"))
+        .await
+        .unwrap_err();
+
+    assert!(
+        matches!(&err, WireError::Setup(m) if m.contains("just dev-up")),
+        "{err:?}"
+    );
+}
+
+#[tokio::test]
+async fn local_origin_refuses_a_port_file_that_names_another_checkouts_server() {
+    let mut cfg = config();
+    cfg.repo_root = "/elsewhere/omnibus".into();
+    let (origin, _) = spawn_stub(cfg).await;
+    let dir = runtime_dir(port_of(&origin));
+
+    let err = local_origin(dir.path(), Path::new("/repo"))
+        .await
+        .unwrap_err();
+
+    assert!(
+        matches!(&err, WireError::Setup(m) if m.contains("another checkout")),
+        "{err:?}"
+    );
+}
+
+#[tokio::test]
+async fn local_origin_asks_for_dev_up_when_nothing_answers_on_the_published_port() {
+    let dir = runtime_dir("1");
+
+    let err = local_origin(dir.path(), Path::new("/repo"))
+        .await
+        .unwrap_err();
 
     assert!(
         matches!(&err, WireError::Setup(m) if m.contains("just dev-up")),

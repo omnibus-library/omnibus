@@ -4,12 +4,16 @@
 //! logs out. Only a loopback server is ever logged in to (the login carries the seed
 //! password), no redirect is followed, and a connection that is set and not this mock's own
 //! is never overwritten, since the settings read masks secrets and could not restore it.
+//! `--local` also checks that the server on the published port is this checkout's, and
+//! nothing is saved while a server library sits under the committed `test_data/`.
 
 use std::net::IpAddr;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use omnibus_shared::{DownloadClientKind, RequestsSettingsStatus, RequestsSettingsUpdate};
+use omnibus_shared::{
+    DownloadClientKind, Health, RequestsSettingsStatus, RequestsSettingsUpdate, Settings,
+};
 use reqwest::{RequestBuilder, Response, StatusCode};
 use serde::{Deserialize, Serialize};
 
@@ -43,15 +47,44 @@ pub enum WireError {
     Server { step: &'static str, detail: String },
 }
 
-/// This worktree's dev-server origin, from the `port` file `just dev-up` publishes in `runtime_dir`.
-pub fn local_origin(runtime_dir: &Path) -> Result<String, WireError> {
+/// This checkout's top-level folder, which a server of this checkout reports as its `repo_root`.
+pub fn checkout_root() -> Result<PathBuf, WireError> {
+    let git = std::process::Command::new("git")
+        .args(["rev-parse", "--show-toplevel"])
+        .output()
+        .ok()
+        .filter(|out| out.status.success())
+        .and_then(|out| String::from_utf8(out.stdout).ok());
+    match git {
+        Some(root) => Ok(PathBuf::from(root.trim())),
+        None => std::env::current_dir().map_err(|e| WireError::Setup(e.to_string())),
+    }
+}
+
+/// This checkout's dev-server origin, from the `port` file `just dev-up` publishes in
+/// `runtime_dir`. A stale file can name another checkout's server, so the server on that
+/// port must report `repo_root` as its folder.
+pub async fn local_origin(runtime_dir: &Path, repo_root: &Path) -> Result<String, WireError> {
+    let no_server =
+        || WireError::Setup("no dev server is running here: run `just dev-up` first".into());
     let port = std::fs::read_to_string(runtime_dir.join("port"))
         .ok()
         .and_then(|text| text.trim().parse::<u16>().ok())
-        .ok_or_else(|| {
-            WireError::Setup("no dev server is running here: run `just dev-up` first".into())
-        })?;
-    Ok(format!("http://127.0.0.1:{port}"))
+        .ok_or_else(no_server)?;
+    let origin = format!("http://127.0.0.1:{port}");
+    let reply = http()?
+        .get(format!("{origin}/api/_health"))
+        .send()
+        .await
+        .map_err(|_| no_server())?;
+    let health: Health = reply.json().await.map_err(|_| no_server())?;
+    if Path::new(&health.repo_root) != repo_root {
+        return Err(WireError::Setup(format!(
+            "the server on port {port} belongs to another checkout ({}): run `just dev-up` here",
+            health.repo_root
+        )));
+    }
+    Ok(origin)
 }
 
 /// Whether `url` names this machine: `localhost`, a `127.0.0.0/8` address or `::1`.
@@ -80,13 +113,15 @@ struct LoginReply {
 }
 
 /// Point the Omnibus at `server` at the mock at `mock_origin`, with `client` as its download
-/// client and `downloads` as the folder both sides read finished files from.
+/// client and `downloads` as the folder both sides read finished files from. Refuses when
+/// the server's library sits under `test_data`, which an import would write into.
 pub async fn wire(
     server: &str,
     seed: Option<&str>,
     mock_origin: &str,
     client: DownloadClientKind,
     downloads: &Path,
+    test_data: &Path,
 ) -> Result<(), WireError> {
     let server = server.trim_end_matches('/');
     if !is_loopback(server) {
@@ -98,15 +133,10 @@ pub async fn wire(
         .and_then(|seed| seed.split_once(':'))
         .filter(|(username, _)| !username.is_empty())
         .ok_or_else(|| WireError::Setup(format!("{SEED_USER_ENV} must be <user>:<password>")))?;
-    // A followed 307/308 would resend the seed password to wherever `Location` points.
-    let http = reqwest::Client::builder()
-        .redirect(reqwest::redirect::Policy::none())
-        .timeout(REQUEST_TIMEOUT)
-        .build()
-        .map_err(|e| failed("login", e))?;
+    let http = http()?;
     let token = login(&http, server, username, password).await?;
     let update = update_for(mock_origin, client, downloads);
-    let result = configure(&http, server, &token, &update).await;
+    let result = configure(&http, server, &token, &update, test_data).await;
     // Ending the session is best effort: an admin session left behind just expires.
     let _ = http
         .post(format!("{server}/api/auth/logout"))
@@ -114,6 +144,16 @@ pub async fn wire(
         .send()
         .await;
     result
+}
+
+/// A client that follows no redirect: a 307/308 would resend the seed password to wherever
+/// `Location` points.
+fn http() -> Result<reqwest::Client, WireError> {
+    reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(REQUEST_TIMEOUT)
+        .build()
+        .map_err(|e| failed("connect", e))
 }
 
 fn update_for(mock: &str, client: DownloadClientKind, downloads: &Path) -> RequestsSettingsUpdate {
@@ -161,7 +201,19 @@ async fn configure(
     server: &str,
     token: &str,
     update: &RequestsSettingsUpdate,
+    test_data: &Path,
 ) -> Result<(), WireError> {
+    let libraries = checked(
+        "read library settings",
+        http.get(format!("{server}/api/settings"))
+            .bearer_auth(token),
+    )
+    .await?;
+    let libraries: Settings = libraries
+        .json()
+        .await
+        .map_err(|e| failed("read library settings", e))?;
+    guard_libraries(&libraries, test_data)?;
     let url = |path: &str| format!("{server}{SETTINGS}{path}");
     let read = http.get(url("")).bearer_auth(token).send().await;
     let read = read.map_err(|e| failed("read settings", e))?;
@@ -182,6 +234,25 @@ async fn configure(
         ("test-client", "/test-client"),
     ] {
         checked(step, http.post(url(path)).bearer_auth(token)).await?;
+    }
+    Ok(())
+}
+
+/// Refuse when an import would land in the committed fixtures under `test_data`.
+fn guard_libraries(libraries: &Settings, test_data: &Path) -> Result<(), WireError> {
+    let real = |p: &Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+    let root = real(test_data);
+    let paths = [
+        &libraries.ebook_library_path,
+        &libraries.audiobook_library_path,
+    ];
+    for path in paths.into_iter().flatten() {
+        if real(Path::new(path)).starts_with(&root) {
+            return Err(WireError::Setup(format!(
+                "the server's library {path} is inside the committed test_data/: an import \
+                 would add files to the fixtures, so point the library elsewhere first"
+            )));
+        }
     }
     Ok(())
 }
