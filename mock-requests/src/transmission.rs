@@ -1,7 +1,7 @@
 //! The fake Transmission RPC at `/transmission/rpc`. Like the real one it answers 409 with a
 //! session id until a call carries it, which the server's client handles. Any login is
 //! accepted. A torrent is the release id a magnet names, and its files appear under
-//! `mock-<id>/` once the download finishes.
+//! `transmission-<id>/` once the download finishes.
 
 use std::time::Instant;
 
@@ -64,7 +64,7 @@ fn add(store: &mut Store, args: &Value) -> Value {
     let Some(release) = release else {
         return json!({"result": "invalid or corrupt torrent file"});
     };
-    let (id, folder) = (release.id.clone(), format!("mock-{}", release.id));
+    let (id, folder) = (release.id.clone(), format!("transmission-{}", release.id));
     store.add(
         Client::Transmission,
         id.clone(),
