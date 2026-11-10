@@ -151,6 +151,7 @@ just ios-test                                               # omnibusTests unit 
 just ios-test-ui                                            # omnibusUITests
 just ios-release-guard                                      # DEBUG-only hooks absent from a Release build
 just ios-sim                                                # boot newest iPhone sim, build, install, launch
+just ios-pose open                                          # fold/rotate a sim without Device Hub: open|close|half|hinge <deg>|rotate <o>|show|screenshot <f>
 
 # MCP stdio server (mcp/ crate — out of default-members, build explicitly).
 # `just test` / `just lint` / CI name it explicitly, so its suite gates a merge.

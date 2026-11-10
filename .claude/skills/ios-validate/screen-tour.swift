@@ -1,12 +1,14 @@
 //  ScreenTour.swift — a scratch screenshot tour, copied from
 //  .claude/skills/ios-validate/screen-tour.swift. Gitignored, so it never
-//  ships. Run it with `scripts/ios-validate.sh tour ScreenTour`.
+//  ships. Run it with `scripts/ios-validate.sh tour ScreenTour` (add `--duo`
+//  for the iPhone Duo).
 
 import XCTest
 
 final class ScreenTour: XCTestCase {
     private var app: XCUIApplication!
     private let env = ProcessInfo.processInfo.environment
+    private var poseNumber = 0
 
     func testTour() throws {
         continueAfterFailure = true
@@ -20,6 +22,12 @@ final class ScreenTour: XCTestCase {
         open("library/shelves")
         XCTAssertTrue(app.staticTexts["Shelves"].firstMatch.waitForExistence(timeout: 10))
         shot("02-shelves")
+
+        // Poses: `rotate <portrait|landscape-left|landscape-right|portrait-upside-down>`
+        // on any iPhone; `open`, `close`, `half`, `hinge <deg>` on the Duo only.
+        pose("rotate landscape-left")
+        shot("03-shelves-landscape")
+        pose("rotate portrait")
     }
 
     // MARK: - Helpers
@@ -61,11 +69,65 @@ final class ScreenTour: XCTestCase {
         dismissSavePassword()
     }
 
+    /// Shot by the host, of whichever display hosts the UI: an open Duo's
+    /// `XCUIScreen.main` is its dark cover.
     private func shot(_ name: String) {
         sleep(1) // transitions and cover loads settle
-        let dir = URL(fileURLWithPath: env["OMNIBUS_TOUR_SHOTS"] ?? NSTemporaryDirectory())
-        let png = XCUIScreen.main.screenshot().pngRepresentation
-        XCTAssertNoThrow(try png.write(to: dir.appendingPathComponent("\(name).png")))
+        pose("screenshot \(name)")
+    }
+
+    /// Asks `scripts/ios-validate.sh` to run `scripts/ios-pose.sh <request>` on
+    /// this simulator and waits for the answer; a failed pose fails the test.
+    private func pose(_ request: String, timeout: TimeInterval? = nil) {
+        guard let path = env["OMNIBUS_TOUR_POSE"] else {
+            return XCTFail("pose(\(request)) needs scripts/ios-validate.sh tour")
+        }
+        // A hinge waits up to 2 × OMNIBUS_IOS_POSE_TIMEOUT + 8 s, plus the helper's first build.
+        let timeout = timeout ?? max(60, 2 * poseStep() + 40)
+        // Numbered, so a late reply to a request that timed out is never taken as this one's.
+        poseNumber += 1
+        let number = "\(poseNumber)"
+        let files = FileManager.default
+        let dir = URL(fileURLWithPath: path)
+        let reply = dir.appendingPathComponent("reply")
+        let claimed = dir.appendingPathComponent("reply.claimed")
+        let posted = dir.appendingPathComponent("request")
+        try? files.removeItem(at: reply)
+        let pending = dir.appendingPathComponent("request.tmp")
+        XCTAssertNoThrow(try Data("\(number) \(request)".utf8).write(to: pending))
+        try? files.removeItem(at: posted) // one that timed out, still unread
+        XCTAssertNoThrow(try files.moveItem(at: pending, to: posted))
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            // Claimed before it is read, so a reply landing after the read is never deleted unread.
+            try? files.removeItem(at: claimed)
+            if (try? files.moveItem(at: reply, to: claimed)) != nil,
+               let answer = try? String(contentsOf: claimed, encoding: .utf8) {
+                try? files.removeItem(at: claimed)
+                let parts = answer.trimmingCharacters(in: .whitespacesAndNewlines)
+                    .split(separator: " ", maxSplits: 1).map(String.init)
+                guard parts.first == number else { continue }
+                let body = parts.count > 1 ? parts[1] : ""
+                XCTAssertTrue(body.hasPrefix("ok"), "pose(\(request)): \(body)")
+                let verb = request.split(separator: " ").first.map(String.init) ?? ""
+                if ["rotate", "open", "close", "half", "hinge"].contains(verb) {
+                    sleep(1) // the app relays out after a fold or turn
+                }
+                return
+            }
+            usleep(200_000)
+        }
+        XCTFail("pose(\(request)) got no answer in \(Int(timeout))s")
+    }
+
+    /// OMNIBUS_IOS_POSE_TIMEOUT as `ios-pose.sh` accepts it (plain digits, 1–600), else its default 8.
+    private func poseStep() -> Double {
+        let raw = env["OMNIBUS_IOS_POSE_TIMEOUT"] ?? ""
+        let scalars = raw.unicodeScalars
+        guard (1...3).contains(scalars.count), scalars.first != "0",
+              scalars.allSatisfy({ ("0"..."9").contains($0) }),
+              let seconds = Int(raw), seconds <= 600 else { return 8 }
+        return Double(seconds)
     }
 
     /// The keychain's "Save Password?" prompt lands after sign-in, sometimes a screen later.
@@ -77,10 +139,16 @@ final class ScreenTour: XCTestCase {
     }
 
     /// Swipes until `element` is on screen: a lazy grid only builds the cells near it.
+    /// Swipes the outermost scroller, not the app: an open Duo's app frame is its cover.
     private func scrollTo(_ element: XCUIElement, maxSwipes: Int = 8) {
+        // Document order puts the page's scroller before any strip nested inside it.
+        let types = [XCUIElement.ElementType.scrollView.rawValue, XCUIElement.ElementType.collectionView.rawValue]
+        let scroller = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "elementType IN %@", types)).firstMatch
+        let surface: XCUIElement = scroller.exists ? scroller : app
         var swipes = 0
         while !(element.exists && element.isHittable) && swipes < maxSwipes {
-            app.swipeUp(velocity: .slow)
+            surface.swipeUp(velocity: .slow)
             swipes += 1
         }
     }

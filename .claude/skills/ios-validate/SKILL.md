@@ -38,18 +38,21 @@ Done when every screen the tour will show has the data it needs.
 cp .claude/skills/ios-validate/screen-tour.swift omnibus-ios/omnibusUITests/ScreenTour.swift
 ```
 
-`ScreenTour*.swift` is gitignored, so the tour can't be committed. Replace the blocks in `testTour` with one per screen: `open(<route>)`, wait for an element that proves the screen drew, `shot(<name>)`.
+`ScreenTour*.swift` is gitignored, so the tour can't be committed. Replace the blocks in `testTour` with one per screen: `open(<route>)`, wait for an element that proves the screen drew, `shot(<name>)`. `shot` is taken by the host, of whichever display shows the app.
 
 A route is `<tab>/<screen>/<screen>…`, opened as `omnibus://debug/screen/<route>` (DEBUG builds only). The tab is `library`, `search`, `stats` or `you`; each screen after it is pushed in order: `shelves`, `shelf/<id>`, `authors`, `author/<id>`, `series`, `series/<id>`, `tags`, `tag/<name>`, `genres`, `genre/<name>`, `book/<uuid>`, `results/<query>`, `settings`, `goals`, `stats-exclusions`, `downloads`. `App/DebugScreenLink.swift` is the parser. The metadata editor is a sheet, not a route: open `book/<uuid>`, then tap `book-more` and `metadata-edit-open`.
 
 - **State the tour writes stays written.** A setting it flips is still flipped on the next run; start over with `server up --fresh` (about 30 s), then seed again.
 - **Lazy grids** build only the cells near the viewport: `scrollTo(element)` before asserting on or shooting anything below the fold.
-- **Landscape** on a simulator XCTest can't rotate (iPhone Duo): open `omnibus://debug/orientation/landscape` (or `portrait`), parsed by `App/DebugOrientation.swift`. The Duo's pose (closed, open, partly folded) changes only from Device Hub; open, `XCUIScreen.main` is still the dark outer display, so shoot the largest of `XCUIScreen.screens`. And `scripts/ios-validate.sh tour` always creates a non-Duo iPhone, so run `scripts/ios-test.sh ui/<Tour>` with `OMNIBUS_IOS_TEST_SIM_UDID` and the `TEST_RUNNER_` variables `tour()` sets. See the iPhone Duo section of `docs/ios.md`.
+- **Poses: rotate and fold from the tour.** `pose("rotate landscape-left")` (or `portrait`, `landscape-right`, `portrait-upside-down`) turns the device; on the iPhone Duo `pose("open")`, `pose("close")`, `pose("half")` and `pose("hinge 120")` fold it. Each call waits until the device reports the new pose, and a failed one fails the test. Shoot every pose a screen supports: on the Duo that is closed, open, open on its side, and half-open. Never ask the user to unfold the Duo in Device Hub, and don't use `omnibus://debug/orientation/…`: it turns the app without the device, so swipes go the wrong way.
+- **On an open Duo** `XCUIApplication.tap()` and `app.swipeUp()` land on the dark cover: tap elements, and swipe a scroll view (the template's `scrollTo` does). See the iPhone Duo section of `docs/ios.md`.
+- **Outside a tour**, `scripts/ios-pose.sh` (`just ios-pose`) does the same from the shell: `open`, `close`, `half`, `hinge <deg>`, `rotate <orientation>`, `show`, `screenshot <file>`, on this worktree's Duo or `-d <udid>`.
 
 ## 4. Run it
 
 ```bash
-scripts/ios-validate.sh tour ScreenTour
+scripts/ios-validate.sh tour ScreenTour          # this worktree's iPhone
+scripts/ios-validate.sh tour ScreenTour --duo    # this worktree's iPhone Duo
 ```
 
 It uninstalls the app so the run starts from a clean container, runs only `ScreenTour` on this worktree's simulator (created and booted on first use), and lists the PNGs in `.claude/runtime/ios-validate/shots/`. Read every shot: the tour is done when each one shows the screen it names, since a passing test can still photograph the wrong screen. A failed assertion's message is only in the result bundle: `xcrun xcresulttool get test-results tests --path .claude/runtime/ios-validate/results/ui-ScreenTour.xcresult`. Each edit-and-rerun cycle takes 2–3 minutes.
@@ -58,7 +61,7 @@ It uninstalls the app so the run starts from a clean container, runs only `Scree
 
 - Give the user the shots: attach them where the session can, otherwise their paths.
 - Delete `omnibus-ios/omnibusUITests/ScreenTour.swift`, then `scripts/ios-validate.sh server down`.
-- The simulator stays for the next tour. Before removing the worktree, `scripts/ios-validate.sh cleanup` stops the server and deletes the simulator. A user-level worktrunk hook can run it for every `wt remove`:
+- The simulators stay for the next tour. Before removing the worktree, `scripts/ios-validate.sh cleanup` stops the server and deletes both simulators. A user-level worktrunk hook can run it for every `wt remove`:
 
   ```toml
   # ~/.config/worktrunk/config.toml

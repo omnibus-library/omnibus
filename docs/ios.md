@@ -431,15 +431,26 @@ builds the app unchanged and every answer is "none".
   reader's own view gets none, so showing the bar would move the page down; the
   reader judges the bar's room from its own view and keeps it hidden there.
 
-Device Hub (Xcode 27's Simulator) is the only thing that changes the simulator's pose
-(Closed, Partially Open, Open and Rotate Right in its toolbar); neither `simctl` nor
-XCTest can fold it or rotate it. With the phone open, XCTest's `XCUIScreen.main` and
-`XCUIApplication.tap()` still address the dark outer display: shoot the largest of
-`XCUIScreen.screens`, and tap elements rather than the app. `simctl io <udid> screenshot`
-needs `--display=primary` (outer) or `--display=primary-1` (inner), and a DEBUG build
-rotates on `omnibus://debug/orientation/<portrait|landscape>` (`App/DebugOrientation.swift`).
-Don't toggle a display with `simctl io … screenConfig power`: it left both screens dark
-until the device was rebooted.
+Device Hub (Xcode 27's Simulator) folds and turns the simulator by hand; scripts do it
+with `scripts/ios-pose.sh` (`open`, `close`, `half`, `hinge <deg>`, `rotate <orientation>`,
+`show`, `screenshot <file>`), and a screenshot tour with `pose(…)`
+(`scripts/ios-validate.sh tour <Tour> --duo`, the `ios-validate` skill). Device Hub's
+hinge slider and orientation picker each post one vendor-defined HID event (usage page
+0xFF61, usage 0x5B, a serialized `{source, type, value}` dictionary) that the
+simulator's locationd turns into the CoreMotion hinge angle and the device orientation;
+`scripts/lib/ios-pose-helper.m` posts the same event from inside the simulator
+(`simctl spawn`). It is private API found by disassembly, so a new Xcode may move it:
+`just ios-sim-test` checks only the script logic, a tour checks the real thing. The Duo
+ignores `devicectl device orientation set`, which plain iPhones follow, and the
+`omnibus://debug/orientation/<portrait|landscape>` link (`App/DebugOrientation.swift`)
+turns only the app, so prefer a real rotation.
+
+With the phone open, XCTest's `XCUIScreen.main` and `XCUIApplication.tap()` still
+address the dark outer display: tap elements rather than the app, and shoot through
+the host (`ios-pose.sh screenshot`, which picks the display `devicectl device info
+displays` marks active), or with `simctl io <udid> screenshot --display=primary`
+(outer) or `--display=primary-1` (inner). Don't toggle a display with `simctl io …
+screenConfig power`: it left both screens dark until the device was rebooted.
 
 ## Models and offline
 
