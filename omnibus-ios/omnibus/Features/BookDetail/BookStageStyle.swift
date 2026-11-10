@@ -428,6 +428,7 @@ struct StageToast: View {
                     .disabled(actionDisabled)
                     .font(.ui(15, weight: .semibold))
                     .foregroundStyle(palette.bookText)
+                    .opacity(actionDisabled ? 0.4 : 1)
                     .frame(minHeight: 44)
                     .padding(.horizontal, 10)
             }
