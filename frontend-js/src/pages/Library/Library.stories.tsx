@@ -234,13 +234,25 @@ export const Loading: Story = {
   beforeEach({ msw }) {
     msw.use(hanging("/api/ebooks"));
   },
-  play: async ({ canvas }) => {
+  play: async ({ canvas, canvasElement }) => {
     // The toast's live region is a status too, so the loader is found by its words.
     await expect(
       canvas
         .getByText("Taking the books off the shelf")
         .closest("[role=status]"),
     ).toBeInTheDocument();
+    // Each placeholder cover fills its own cell, not the whole grid stacked on its siblings.
+    const covers = [
+      ...canvasElement.querySelectorAll(".ld-covers .ld-skel--cover"),
+    ];
+    await expect(covers.length).toBeGreaterThan(1);
+    for (const cover of covers) {
+      const box = cover.getBoundingClientRect();
+      const cell = cover.parentElement?.getBoundingClientRect();
+      await expect(Math.round(box.left)).toBe(Math.round(cell?.left ?? -1));
+      await expect(Math.round(box.top)).toBe(Math.round(cell?.top ?? -1));
+      await expect(Math.round(box.width)).toBe(Math.round(cell?.width ?? -1));
+    }
   },
 };
 
