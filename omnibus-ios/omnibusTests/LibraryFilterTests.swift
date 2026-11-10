@@ -26,17 +26,6 @@ private func formDecoded(_ url: URL, _ name: String) -> String? {
         .removingPercentEncoding
 }
 
-/// Polls `condition` on the main actor until it holds or `timeout` passes.
-@MainActor
-private func eventually(timeout: Duration = .seconds(5), _ condition: () -> Bool) async -> Bool {
-    let deadline = ContinuousClock.now + timeout
-    while ContinuousClock.now < deadline {
-        if condition() { return true }
-        try? await Task.sleep(for: .milliseconds(20))
-    }
-    return condition()
-}
-
 /// The first library page key read under `clauses`.
 private func libraryKey(_ clauses: [FilterClause]) -> String {
     var filter = LibraryFilter()

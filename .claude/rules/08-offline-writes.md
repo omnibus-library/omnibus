@@ -130,6 +130,10 @@ Not queued, by test:
 | `POST /api/physical/{uuid}/wishlist` (Undo of a Wishlists-screen remove) | none, on its own — the other half of the remove pair (below) |
 | `POST /api/scan/wishlist` (Wishlists-screen Add sheet) | 3 — payload comes from the server's lookup |
 | `POST /api/shelves/preview` | not a mutation; a read wearing POST |
+| `POST /api/books/{uuid}/requests`, `POST /api/requests` (start a book request, both routes) | 2 — commands |
+| `POST /api/requests/{id}/choose`, `/swap`, `/retry` (choose, choose another, try again) | 2 — commands |
+| `POST` / `DELETE /api/requests/{id}/cancel` (cancel and its Undo) | 2 — commands |
+| `POST` / `DELETE /api/requests/{id}/cover` (take or keep the downloaded cover) | 2 — commands |
 
 These writes go directly to the server and surface failures.
 

@@ -64,6 +64,12 @@ ignore = [
     # Revisit when lopdf moves to a maintained font parser.
     { id = "RUSTSEC-2026-0192", reason = "ttf-parser unmaintained — transitive via lopdf 0.42 / pdf-extract (db::pdf); lopdf 0.42 is required for RUSTSEC-2026-0187, so a downgrade is worse; awaiting an upstream font-parser migration" },
 
+    # ---- Bundled SQLite 3.46.0 in `libsqlite3-sys 0.30.1` (sqlx-sqlite), fixed
+    # only in libsqlite3-sys 0.39, which no sqlx release accepts. The app opens
+    # only its own database, so a crafted `-wal` pair needs write access to the
+    # data dir first. Keep in sync with the cargo-audit `--ignore` in rust.yml.
+    { id = "RUSTSEC-2026-0459", reason = "bundled SQLite < 3.54 via sqlx-sqlite 0.8.6; no sqlx release allows the fixed libsqlite3-sys 0.39; only the app's own DB file is opened" },
+
 ]
 
 # NB: RUSTSEC-2026-0381 (webpki-roots distrusted emSign roots) has no entry

@@ -2,6 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { expect, waitFor, type within } from "storybook/test";
 import type { Book } from "../../api";
+import { expectPlate, found } from "../../testing/dom";
 import {
   failing,
   hanging,
@@ -83,7 +84,30 @@ export const Loading: Story = {
   },
   play: async ({ canvas }) => {
     const grid = await canvas.findByTestId("picker-loading");
-    await expect(grid.querySelectorAll(".pick-card-skel")).toHaveLength(8);
+    const skels = [...grid.querySelectorAll<HTMLElement>(".pick-card-skel")];
+    await expect(skels).toHaveLength(8);
+    // Each placeholder cover sits in its card's cover column, not stacked over the grid.
+    for (const card of skels) {
+      const cover = found(
+        card.querySelector(".ld-skel--cover"),
+        "the card's placeholder cover",
+      );
+      const style = getComputedStyle(card);
+      const column = Number.parseFloat(style.gridTemplateColumns);
+      if (!Number.isFinite(column)) {
+        throw new Error("the card's cover column is missing");
+      }
+      const frame = card.getBoundingClientRect();
+      const left =
+        frame.left + card.clientLeft + Number.parseFloat(style.paddingLeft);
+      const top =
+        frame.top + card.clientTop + Number.parseFloat(style.paddingTop);
+      const box = cover.getBoundingClientRect();
+      await expect(Math.round(box.width)).toBe(Math.round(column));
+      await expectPlate(box.width, box.height);
+      await expect(Math.round(box.left)).toBe(Math.round(left));
+      await expect(Math.round(box.top)).toBe(Math.round(top));
+    }
     await expect(canvas.getByRole("status")).toHaveTextContent("Counting…");
   },
 };
