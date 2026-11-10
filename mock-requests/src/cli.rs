@@ -4,6 +4,9 @@ use std::path::PathBuf;
 
 use omnibus_shared::DownloadClientKind;
 
+/// Where `just dev-up` publishes this worktree's dev-server port.
+pub const RUNTIME_DIR: &str = ".claude/runtime";
+
 /// The text `--help` prints.
 pub const USAGE: &str = "\
 mock-requests: a fake Prowlarr and fake download clients for Omnibus book requests

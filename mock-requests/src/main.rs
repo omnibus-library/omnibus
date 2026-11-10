@@ -1,10 +1,14 @@
 //! The `mock-requests` binary: parse the command line, bind loopback, serve the fakes
-//! until killed, and say when it is ready.
+//! until killed, and say when it is ready. With `--local` or `--server` it first points that
+//! Omnibus at the mock, which has to be serving by then: the server tests the connections.
+
+use std::path::Path;
 
 use anyhow::Context;
 
 use omnibus_mock_requests::catalogue::Payloads;
-use omnibus_mock_requests::cli::{self, Command};
+use omnibus_mock_requests::cli::{self, Command, Target, RUNTIME_DIR};
+use omnibus_mock_requests::wire::{self, SEED_USER_ENV};
 use omnibus_mock_requests::{router, Mock};
 
 #[tokio::main]
@@ -30,14 +34,24 @@ async fn main() -> anyhow::Result<()> {
         .local_addr()
         .context("cannot read the address")?
         .port();
+    let origin = format!("http://127.0.0.1:{port}");
     let mock = Mock::new(
-        format!("http://127.0.0.1:{port}"),
+        origin.clone(),
         downloads.clone(),
         payloads,
         args.download_secs,
     );
     let app = router(mock);
     let server = tokio::spawn(async move { axum::serve(listener, app).await });
+    if let Some(target) = &args.target {
+        let omnibus = match target {
+            Target::Local => wire::local_origin(Path::new(RUNTIME_DIR))?,
+            Target::Server(origin) => origin.clone(),
+        };
+        let seed = std::env::var(SEED_USER_ENV).ok();
+        wire::wire(&omnibus, seed.as_deref(), &origin, args.client, &downloads).await?;
+        eprintln!("wired {omnibus} to the mock ({})", args.client.as_str());
+    }
     println!(
         "MOCK_REQUESTS_READY port={port} downloads={} pid={}",
         downloads.display(),

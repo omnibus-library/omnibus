@@ -21,6 +21,7 @@ pub mod sabnzbd;
 #[cfg(test)]
 mod test_support;
 pub mod transmission;
+pub mod wire;
 
 use catalogue::Payloads;
 use downloads::Store;

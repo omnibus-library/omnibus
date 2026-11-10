@@ -68,6 +68,16 @@ dev-bounce:
 kobo *args:
     scripts/with-dev-env.sh default cargo run -q -p omnibus-mock-kobo -- tui "$@"
 
+# Run the fake Prowlarr and download clients (qBittorrent, Transmission, SABnzbd, NZBGet)
+# on one loopback port, so book requests can be made without real services.
+# `--local` points this worktree's dev server at it (run `just dev-up` with
+# OMNIBUS_BOOK_REQUESTS=1 first) and refuses to replace connections saved for another
+# address; `--client` picks which download client (docs/mock-requests.md). Needs
+# `just fixtures` for the audiobook payload.
+[positional-arguments]
+mock-requests *args: fixtures
+    scripts/with-dev-env.sh default cargo run -q -p omnibus-mock-requests -- "$@"
+
 # Interactive KOReader in a browser tab (Docker), syncing with any Omnibus instance:
 # it asks for the plugin zip from the instance's Settings (or `--plugin PATH`), which
 # alone carries the server and device. `--local` follows this worktree's dev server
