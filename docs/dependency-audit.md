@@ -60,6 +60,13 @@ warns on anything outside this list.
   Accepted: like `rsa`, cargo-deny's graph never reaches it, so the exemption
   is only the cargo-audit step's `--ignore RUSTSEC-2026-0381` in `rust.yml`.
   Revisit when sqlx moves to webpki-roots 1.
+- `libsqlite3-sys 0.30.1`, RUSTSEC-2026-0459 (bundled SQLite < 3.54.0 can
+  return uninitialized memory when it opens a crafted database + `-wal` pair).
+  It bundles SQLite 3.46.0; the fix is libsqlite3-sys >= 0.39, but sqlx-sqlite
+  0.8.6 requires `^0.30` and sqlx 0.9 still caps it below 0.38. The app opens
+  only its own `DATABASE_URL` database, so planting a crafted pair needs write
+  access to the data dir first. Ignored in both `deny.toml` and the
+  cargo-audit step. Revisit when sqlx accepts libsqlite3-sys 0.39.
 
 ## Yanked crates
 
