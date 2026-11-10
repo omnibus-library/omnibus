@@ -8,7 +8,8 @@
 #   ios-validate.sh server up [--fresh] [--requests]
 #                                        start the scratch server, or reuse the
 #                                        running one; --fresh restarts it on an
-#                                        empty database; --requests turns book
+#                                        empty database (as does switching
+#                                        --requests on or off); --requests turns book
 #                                        requests on, clones the libraries so an
 #                                        import never dirties test_data/, and
 #                                        starts mock-requests (a fake Prowlarr
@@ -111,6 +112,15 @@ server_up() {
       *) die "usage: ios-validate.sh server up [--fresh] [--requests]" ;;
     esac
   done
+  # A kept database indexed the library roots of the mode it was made in, and --requests
+  # moves them to clones, so switching modes starts over.
+  local want=plain kept
+  [ "$requests" = 1 ] && want=requests
+  kept="$(cat "$SERVER/mode" 2>/dev/null || echo plain)"
+  if [ "$fresh" = 0 ] && [ -f "$SERVER/omnibus.db" ] && [ "$kept" != "$want" ]; then
+    echo "ios-validate: the kept server ran in $kept mode; starting $want on an empty database" >&2
+    fresh=1
+  fi
   if [ "$fresh" = 0 ] && server_pid >/dev/null && [ -f "$ENVFILE" ] &&
     { [ "$requests" = 0 ] || requests_running; }; then
     server_status
@@ -156,7 +166,7 @@ clone_libraries() {
 start_mock() {
   local base="$1" mockbin log="$SERVER/mock-requests.log" waited=0 line="" launched
   echo "ios-validate: building mock-requests…" >&2
-  cargo build -q -p omnibus-mock-requests
+  cargo build -q -p omnibus-mock-requests || die "mock-requests did not build"
   mockbin="$CARGO_TARGET_DIR/debug/mock-requests"
   [ -x "$mockbin" ] || die "no mock-requests binary at $mockbin"
   mkdir -p "$SERVER/downloads"
@@ -207,6 +217,7 @@ server_start() {
   port="${choice%%:*}"
 
   mkdir -p "$SERVER"/{data,covers,thumbs}
+  if [ "$requests" = 1 ]; then echo requests >"$SERVER/mode"; else echo plain >"$SERVER/mode"; fi
   echo "$bin" >"$BINFILE"
   # A clean environment rather than the dev shell's, so nothing from a
   # developer's .env (their own library path, API keys, log dir) reaches it.
@@ -305,7 +316,11 @@ server_status() {
     source "$ENVFILE"
     echo "scratch server: http://$OMNIBUS_TOUR_SERVER (pid $pid), sign in as $OMNIBUS_TOUR_USER / $OMNIBUS_TOUR_PASSWORD"
     if [ -n "${OMNIBUS_TOUR_REQUESTS:-}" ]; then
-      echo "mock-requests: $OMNIBUS_TOUR_REQUESTS, control API at $OMNIBUS_TOUR_REQUESTS/_mock"
+      if mock_pid >/dev/null; then
+        echo "mock-requests: $OMNIBUS_TOUR_REQUESTS, control API at $OMNIBUS_TOUR_REQUESTS/_mock"
+      else
+        echo "mock-requests: not running"
+      fi
     fi
     echo "seed over REST with: source $ENVFILE; curl -H \"authorization: Bearer \$OMNIBUS_TOUR_TOKEN\" http://\$OMNIBUS_TOUR_SERVER/api/…"
   else
