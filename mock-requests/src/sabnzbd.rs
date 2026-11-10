@@ -12,7 +12,7 @@ use axum::{Json, Router};
 use omnibus_shared::ReleaseProtocol;
 use serde_json::{json, Value};
 
-use crate::downloads::{Client, Download, Outcome, Store};
+use crate::downloads::{Client, Download, Store};
 use crate::nzb::{job_name_ok, release_id};
 use crate::Shared;
 
@@ -41,15 +41,10 @@ async fn read(State(mock): State<Shared>, Query(params): Params) -> Json<Value> 
     }
 }
 
-/// A job that has failed or finished is in history; the rest are queued.
-fn finished(d: &Download) -> bool {
-    d.done || d.outcome == Outcome::Fail
-}
-
 fn queue(store: &Store) -> Vec<Value> {
     store
         .of(Client::Sabnzbd)
-        .filter(|d| !finished(d))
+        .filter(|d| !d.ended())
         .map(|d| {
             json!({
                 "nzo_id": nzo(d),
@@ -65,7 +60,7 @@ fn queue(store: &Store) -> Vec<Value> {
 fn history(store: &Store) -> Vec<Value> {
     store
         .of(Client::Sabnzbd)
-        .filter(|d| finished(d))
+        .filter(|d| d.ended())
         .map(|d| {
             json!({
                 "nzo_id": nzo(d),

@@ -14,6 +14,7 @@ pub mod cli;
 pub mod control;
 pub mod downloads;
 pub mod nzb;
+pub mod nzbget;
 pub mod prowlarr;
 pub mod qbittorrent;
 pub mod sabnzbd;
@@ -70,6 +71,7 @@ pub fn router(mock: Shared) -> Router {
         .merge(transmission::routes())
         .merge(nzb::routes())
         .merge(sabnzbd::routes())
+        .merge(nzbget::routes())
         .merge(control::routes())
         .with_state(mock)
 }
