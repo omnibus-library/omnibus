@@ -49,10 +49,11 @@ final class BookRequestModel {
     // MARK: - Derived
 
     /// The main lane, then each other request going or stuck; one whose full read hasn't arrived waits.
-    var lanes: [BookRequest] {
+    var lanes: [BookRequest] { laneIDs.compactMap { reads[$0] } }
+
+    private var laneIDs: [Int64] {
         guard let mainID, let listings else { return [] }
-        let others = BookRequestFlow.splitBookRequests(listings, shown: mainID).lanes.map(\.request.id)
-        return ([mainID] + others).compactMap { reads[$0] }
+        return [mainID] + BookRequestFlow.splitBookRequests(listings, shown: mainID).lanes.map(\.request.id)
     }
 
     /// The book's past requests: the cancelled ones and any that swapped a version.
@@ -67,7 +68,11 @@ final class BookRequestModel {
         return BookRequestFlow.unrequestedKinds(formats: book.formats, listings: listings, viewer: viewer)
     }
 
-    var pollInterval: Duration? { BookRequestFlow.detailPollInterval(lanes) }
+    /// Counts the listings too, so a lane whose full read failed keeps polling and its read is retried.
+    var pollInterval: Duration? {
+        let listed = laneIDs.compactMap { id in listings?.first { $0.request.id == id }?.request }
+        return BookRequestFlow.detailPollInterval(lanes + listed)
+    }
 
     /// Who asked for `lane`, as the list names them.
     func listing(for lane: BookRequest) -> RequestListing? {
@@ -135,9 +140,13 @@ final class BookRequestModel {
         guard let fresh = try? await api.bookList(uuid), let mainID else { return }
         let others = BookRequestFlow.splitBookRequests(fresh, shown: mainID).lanes.map(\.request.id)
         let moving = lanes.filter { BookRequestFlow.isMoving($0.state) }.map(\.id)
-        // A lane that appeared since the last read has no full request yet.
-        let unread = ([mainID] + others).filter { reads[$0] == nil }
-        let answers = await readAll(Array(Set(moving + unread)))
+        // A lane that appeared since the last read, or changed on another client, needs its full request again.
+        let stale = ([mainID] + others).filter { id in
+            guard let read = reads[id] else { return true }
+            guard let listed = fresh.first(where: { $0.request.id == id })?.request else { return false }
+            return listed.state != read.state || listed.updatedAt != read.updatedAt
+        }
+        let answers = await readAll(Array(Set(moving + stale)))
         guard started == generation else { return }
         listings = fresh
         reads.merge(answers) { $1 }

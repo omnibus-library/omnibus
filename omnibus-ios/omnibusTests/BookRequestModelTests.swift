@@ -190,6 +190,33 @@ struct BookRequestModelTests {
         #expect(moving.pollInterval == .seconds(2))
     }
 
+    @Test func pollsWhileAMovingLanesFullReadHasFailed() async {
+        let rows = [listing("b", id: 1, state: .choose), listing("b", id: 2, userID: 2, state: .onItsWay, progress: 0.3)]
+        let model = model(bookRequestAPI(listings: rows, full: [aRequest(id: 1, state: .choose)]))
+        await model.load(viewer: adaViewer)
+        #expect(model.pollInterval == .seconds(2))
+    }
+
+    @Test func aPollReReadsALaneWhoseListingChangedOnAnotherClient() async {
+        let log = ReadLog()
+        let downloading = aRequest(id: 2, userID: 2, state: .onItsWay, progress: 0.3)
+        let api = fakeRequestsAPI(
+            bookList: { _ in
+                await log.list()
+                let first = await log.listReads == 1
+                return [listing("b", id: 1, state: first ? .choose : .chosen, updatedAt: first ? 1_000 : 2_000), aListing(downloading)]
+            },
+            request: { id in
+                if id == 2 { return downloading }
+                return await log.listReads > 1 ? aRequest(id: 1, state: .chosen, updatedAt: 2_000) : aRequest(id: 1, state: .choose)
+            },
+            book: { _ in aBook })
+        let model = model(api)
+        await model.load(viewer: adaViewer)
+        await model.poll()
+        #expect(model.lanes.first { $0.id == 1 }?.state == .chosen)
+    }
+
     @Test func aLanesRequesterComesFromTheMatchingListing() async throws {
         let rows = [
             aListing(aRequest(id: 1, userID: 2), requesterName: "Jordan", requesterHasAvatar: true),
