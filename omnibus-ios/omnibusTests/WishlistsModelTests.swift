@@ -58,11 +58,14 @@ actor CallCounter {
 
 func fakeAPI(
     readers: @escaping @Sendable () async throws -> WishlistReaders = { fakeReaders },
-    books: @escaping @Sendable (WishlistScope) async throws -> [WishlistBook] = { _ in [] }
+    books: @escaping @Sendable (WishlistScope) async throws -> [WishlistBook] = { _ in [] },
+    requests: @escaping @Sendable () async throws -> [RequestListing] = { [] },
+    startRequest: @escaping @Sendable (String, RequestKind) async throws -> BookRequest = { _, _ in throw FakeFailure() }
 ) -> WishlistsAPI {
     WishlistsAPI(
         readers: readers, books: books, remove: { _ in false }, add: { _ in },
-        entry: { _ in nil }, addScanned: { _ in "new" }, resolveMeta: { _ in .unresolved }
+        entry: { _ in nil }, addScanned: { _ in "new" }, resolveMeta: { _ in .unresolved },
+        requests: requests, startRequest: startRequest
     )
 }
 
@@ -106,7 +109,9 @@ actor FakeWishlist {
             add: { try await self.add($0) },
             entry: { try await self.entry($0) },
             addScanned: { try await self.addScanned($0) },
-            resolveMeta: { await self.resolveMeta($0) }
+            resolveMeta: { await self.resolveMeta($0) },
+            requests: { [] },
+            startRequest: { _, _ in throw FakeFailure() }
         )
     }
 
@@ -448,5 +453,67 @@ struct WishlistsModelTests {
         let failure = await model.add(.library(dune), via: .titleSearch)
         #expect(failure == "Couldn\u{2019}t add Dune: boom")
         #expect(model.toast == nil)
+    }
+
+    // MARK: - Requests on the Get sheet
+
+    @Test func loadReadsTheRequestsWhenTheServerHasThemOnAndMapsTheNewestLiveStatePerKind() async {
+        let rows = [
+            listing("a", id: 5, kind: .ebook, state: .onItsWay),
+            listing("a", id: 4, kind: .ebook, state: .looking),
+            listing("a", id: 3, kind: .audiobook, state: .cancelled),
+            listing("b", id: 2, kind: .audiobook, state: .choose),
+            listing("c", id: 1, kind: .ebook, state: .stuck, stuckReason: .notFound),
+        ]
+        let model = WishlistsModel(api: fakeAPI(books: { _ in [wishlistBook("a")] }, requests: { rows }))
+        model.readsRequests = true
+        await model.load()
+        #expect(model.liveRequests == ["a": [.ebook: .onItsWay], "b": [.audiobook: .choose]])
+    }
+
+    @Test func loadReadsNoRequestsWhenTheServerHasThemOff() async {
+        let asked = CallCounter()
+        let model = WishlistsModel(api: fakeAPI(requests: { _ = await asked.next(); return [] }))
+        await model.load()
+        #expect(await asked.next() == 1)
+        #expect(model.liveRequests.isEmpty)
+    }
+
+    @Test func aFailedRequestsReadLeavesTheListAndNoLiveRequests() async {
+        let model = WishlistsModel(
+            api: fakeAPI(books: { _ in [wishlistBook("a")] }, requests: { throw FakeFailure() }))
+        model.readsRequests = true
+        await model.load()
+        #expect(model.books == [wishlistBook("a")])
+        #expect(model.liveRequests.isEmpty)
+        #expect(model.failure == nil)
+    }
+
+    @Test func startingARequestPostsItsKindAndAnswersTrueForTheViewToPush() async {
+        let sent = CallCounter()
+        let model = WishlistsModel(
+            api: fakeAPI(startRequest: { uuid, kind in
+                #expect(uuid == "a")
+                #expect(kind == .audiobook)
+                _ = await sent.next()
+                return aRequest(uuid: uuid, kind: kind, state: .looking)
+            }))
+        #expect(await model.startRequest(uuid: "a", kind: .audiobook))
+        #expect(await sent.next() == 2)
+        #expect(model.toast == nil)
+        #expect(model.liveRequests["a"]?[.audiobook] == .looking)
+    }
+
+    @Test(arguments: [
+        (429, "You have a lot of requests going. Try again in a few minutes."),
+        (403, "Your account can\u{2019}t make requests."),
+        (404, "That book is no longer in the library."),
+        (500, "Couldn\u{2019}t start the request."),
+    ])
+    func aRefusedRequestToastsItsPlainWords(status: Int, words: String) async {
+        let model = WishlistsModel(
+            api: fakeAPI(startRequest: { _, _ in throw APIError.http(status: status, message: "x") }))
+        #expect(!(await model.startRequest(uuid: "a", kind: .ebook)))
+        #expect(model.toast?.text == words)
     }
 }

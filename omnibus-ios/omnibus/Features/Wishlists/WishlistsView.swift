@@ -7,6 +7,7 @@ import SwiftUI
 struct WishlistsView: View {
     @Environment(AppState.self) private var app
     @Environment(\.palette) private var palette
+    @Environment(\.openDestination) private var openDestination
     @State private var model = WishlistsModel()
     @State private var getting: WishlistBook?
     @State private var adding = false
@@ -41,11 +42,25 @@ struct WishlistsView: View {
         .animation(Motion.settle, value: model.toast?.id)
         .sheet(isPresented: $adding) { AddToWishlistSheet(model: model) }
         .sheet(item: $getting) { item in
-            WishlistGetSheet(item: item, scope: model.scope, viewer: app.user?.id) {
-                Task { await model.remove(item) }
-            }
+            WishlistGetSheet(
+                item: item, scope: model.scope, viewer: app.user?.id,
+                requestItems: WishlistsFlow.requestItems(
+                    holdings: item.holdings, canStart: app.user?.canStartRequests == true,
+                    live: model.liveRequests[item.id] ?? [:]),
+                onRequest: { kind in
+                    Task {
+                        if await model.startRequest(uuid: item.id, kind: kind) {
+                            openDestination(.bookRequest(uuid: item.id))
+                        }
+                    }
+                },
+                onRemove: { Task { await model.remove(item) } }
+            )
         }
-        .task { await model.load() }
+        .task {
+            model.readsRequests = app.user?.bookRequests == true
+            await model.load()
+        }
     }
 
     @ViewBuilder

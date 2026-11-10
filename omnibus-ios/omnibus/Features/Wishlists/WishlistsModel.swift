@@ -20,6 +20,10 @@ struct WishlistsAPI: Sendable {
     var addScanned: @Sendable (WishlistAddRequest) async throws -> String
     /// Matches a provider record against the library.
     var resolveMeta: @Sendable (ExternalBookMeta) async throws -> ScanOutcome
+    /// Every reader's requests, newest first.
+    var requests: @Sendable () async throws -> [RequestListing]
+    /// Starts a request of a kind on a library book.
+    var startRequest: @Sendable (String, RequestKind) async throws -> BookRequest
 
     static let live = WishlistsAPI(
         readers: { try await UserDataService.wishlistReaders() },
@@ -28,7 +32,9 @@ struct WishlistsAPI: Sendable {
         add: { try await UserDataService.addWishlistEntry(uuid: $0) },
         entry: { try await UserDataService.wishlistEntryNow(uuid: $0) },
         addScanned: { try await UserDataService.addScannedToWishlist($0) },
-        resolveMeta: { try await APIClient.shared.post("/api/scan/resolve-meta", body: ResolveMetaRequest(meta: $0)) }
+        resolveMeta: { try await APIClient.shared.post("/api/scan/resolve-meta", body: ResolveMetaRequest(meta: $0)) },
+        requests: { try await RequestService.list() },
+        startRequest: { try await RequestService.start(bookUUID: $0, kind: $1) }
     )
 }
 
@@ -78,6 +84,10 @@ final class WishlistsModel {
     private(set) var failure: String?
     private(set) var isAdding = false
     var toast: WishlistToast?
+    /// Whether the server has book requests on, so a load reads them. Set by the screen.
+    var readsRequests = false
+    /// Each book's kinds with a request going; empty where the read failed or requests are off.
+    private(set) var liveRequests: [String: [RequestKind: RequestState]] = [:]
     /// Books with a remove in flight, so a second tap is ignored.
     private var removing: Set<String> = []
     /// Numbers each load so only the newest one's answer is applied.
@@ -96,6 +106,7 @@ final class WishlistsModel {
         loadGeneration += 1
         let generation = loadGeneration
         async let fetchedReaders = try? api.readers()
+        async let fetchedRequests = readRequests()
         do {
             let list = try await api.books(requested)
             if requested == scope, generation == loadGeneration {
@@ -106,6 +117,26 @@ final class WishlistsModel {
             if requested == scope, generation == loadGeneration { failure = Self.message(error) }
         }
         if let fetchedReaders = await fetchedReaders, generation == loadGeneration { readers = fetchedReaders }
+        let requests = await fetchedRequests
+        if generation == loadGeneration, readsRequests { liveRequests = requests }
+    }
+
+    /// A failed read leaves the Get sheet with only its Request rows.
+    private func readRequests() async -> [String: [RequestKind: RequestState]] {
+        guard readsRequests, let listings = try? await api.requests() else { return [:] }
+        return WishlistsFlow.liveRequests(listings)
+    }
+
+    /// Starts a request; true when it stands, so the screen can open its page. A refusal toasts why.
+    func startRequest(uuid: String, kind: RequestKind) async -> Bool {
+        do {
+            let started = try await api.startRequest(uuid, kind)
+            if BookRequestFlow.isLive(started.state) { liveRequests[uuid, default: [:]][kind] = started.state }
+            return true
+        } catch {
+            toast = WishlistToast(text: BookRequestFlow.startFailure(error))
+            return false
+        }
     }
 
     func select(_ newScope: WishlistScope) async {
