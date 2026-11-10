@@ -1347,12 +1347,15 @@ struct ShelfSummary: Codable, Hashable, Sendable, Identifiable {
     var visibility: ShelfVisibility
     var accent: String?
     var bookCount: Int64
+    /// Optional so a shelf list cached before the field was read still decodes.
+    var ownerHasAvatar: Bool?
 
     enum CodingKeys: String, CodingKey {
         case id, kind, name, visibility, accent
         case ownerUserId = "owner_user_id"
         case ownerUsername = "owner_username"
         case bookCount = "book_count"
+        case ownerHasAvatar = "owner_has_avatar"
     }
 }
 
