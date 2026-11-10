@@ -78,23 +78,33 @@ final class ScreenTour: XCTestCase {
 
     /// Asks `scripts/ios-validate.sh` to run `scripts/ios-pose.sh <request>` on
     /// this simulator and waits for the answer; a failed pose fails the test.
-    private func pose(_ request: String, timeout: TimeInterval = 30) {
+    private func pose(_ request: String, timeout: TimeInterval? = nil) {
         guard let path = env["OMNIBUS_TOUR_POSE"] else {
             return XCTFail("pose(\(request)) needs scripts/ios-validate.sh tour")
         }
+        // A hinge waits up to 2 × OMNIBUS_IOS_POSE_TIMEOUT + 8 s, plus the helper's first build.
+        let step = Double(env["OMNIBUS_IOS_POSE_TIMEOUT"] ?? "") ?? 8
+        let timeout = timeout ?? max(60, 2 * step + 40)
         // Numbered, so a late reply to a request that timed out is never taken as this one's.
         poseNumber += 1
         let number = "\(poseNumber)"
+        let files = FileManager.default
         let dir = URL(fileURLWithPath: path)
         let reply = dir.appendingPathComponent("reply")
-        try? FileManager.default.removeItem(at: reply)
+        let claimed = dir.appendingPathComponent("reply.claimed")
+        let posted = dir.appendingPathComponent("request")
+        try? files.removeItem(at: reply)
         let pending = dir.appendingPathComponent("request.tmp")
         XCTAssertNoThrow(try Data("\(number) \(request)".utf8).write(to: pending))
-        XCTAssertNoThrow(try FileManager.default.moveItem(at: pending, to: dir.appendingPathComponent("request")))
+        try? files.removeItem(at: posted) // one that timed out, still unread
+        XCTAssertNoThrow(try files.moveItem(at: pending, to: posted))
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
-            if let answer = try? String(contentsOf: reply, encoding: .utf8) {
-                try? FileManager.default.removeItem(at: reply)
+            // Claimed before it is read, so a reply landing after the read is never deleted unread.
+            try? files.removeItem(at: claimed)
+            if (try? files.moveItem(at: reply, to: claimed)) != nil,
+               let answer = try? String(contentsOf: claimed, encoding: .utf8) {
+                try? files.removeItem(at: claimed)
                 let parts = answer.trimmingCharacters(in: .whitespacesAndNewlines)
                     .split(separator: " ", maxSplits: 1).map(String.init)
                 guard parts.first == number else { continue }

@@ -103,3 +103,16 @@ ios_sim_find() {
   xcrun simctl list --json devices | jq -r --arg name "$1" \
     '.devices[][] | select(.name == $name) | .udid'
 }
+
+# Echo the UDID of the simulator named $1 to drive, or nothing when none has
+# that name: booted before shut down, then the newest runtime (by the version
+# ios_sim_ensure_duo sorts on), since one left on an older runtime keeps the name.
+ios_sim_find_preferred() {
+  local versions
+  versions="$(xcrun simctl list --json runtimes | jq -c \
+    '[.runtimes[] | {key: .identifier, value: .version}] | from_entries')"
+  xcrun simctl list --json devices | jq -r --arg name "$1" --argjson v "${versions:-"{}"}" '
+    [.devices | to_entries[] | .key as $rt | .value[] | select(.name == $name)
+     | {udid, rank: [.state == "Booted", (($v[$rt] // "0") | split(".") | map(tonumber? // 0))]}]
+    | sort_by(.rank) | last | .udid // empty'
+}

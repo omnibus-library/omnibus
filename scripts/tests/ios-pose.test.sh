@@ -4,7 +4,8 @@
 # angle out of range never reaches the simulator, a rotation goes through the
 # Duo's HID event on a foldable and through devicectl on a plain iPhone, a
 # screenshot with no display to read says so, a worktree without a Duo is told
-# how to make one, and a booted Duo wins over a stale one of the same name.
+# how to make one, and a booted Duo wins over a stale one of the same name, the
+# newest runtime's over an older one's when both are booted.
 #
 # Stub `xcrun` and `xcode-select` answer from fixed JSON and log every command;
 # the helper binary is a pre-made file in a scratch cache, so nothing is
@@ -47,7 +48,7 @@ cat >"$tmp/bin/xcrun" <<STUB
 #!/usr/bin/env bash
 echo "\$*" >>"$tmp/log"
 case "\$*" in
-  "simctl list --json runtimes available") cat "$tmp/runtimes.json" ;;
+  "simctl list --json runtimes"*) cat "$tmp/runtimes.json" ;;
   "simctl list --json devices"*) cat "$tmp/devices.json" ;;
   simctl\ create\ *) echo "CREATED" ;;
   "simctl spawn DUO "*" angle") echo 0.0 ;;
@@ -134,3 +135,21 @@ JSON
 pose rotate landscape-left || fail "rotate on the worktree's Duo failed: $(cat "$tmp/err")"
 grep -q "spawn STALE" "$tmp/log" && fail "picked the shut-down Duo"
 echo "PASS: a booted Duo wins over a stale one of the same name"
+
+cat >"$tmp/runtimes.json" <<'JSON'
+{"runtimes": [
+  {"identifier": "com.apple.CoreSimulator.SimRuntime.iOS-27-2-iPhone19-4", "version": "27.2"},
+  {"identifier": "com.apple.CoreSimulator.SimRuntime.iOS-27-1-iPhone19-4", "version": "27.1"}
+]}
+JSON
+cat >"$tmp/devices.json" <<'JSON'
+{"devices": {
+  "com.apple.CoreSimulator.SimRuntime.iOS-27-1-iPhone19-4": [
+    {"name": "omnibus-tests-wt-x-duo", "udid": "OLDER", "state": "Booted"}],
+  "com.apple.CoreSimulator.SimRuntime.iOS-27-2-iPhone19-4": [
+    {"name": "omnibus-tests-wt-x-duo", "udid": "DUO", "state": "Booted"}]
+}}
+JSON
+pose rotate landscape-left || fail "rotate with two booted Duos failed: $(cat "$tmp/err")"
+grep -q "spawn OLDER" "$tmp/log" && fail "picked the older runtime's Duo"
+echo "PASS: of two booted Duos, the newest runtime's wins"

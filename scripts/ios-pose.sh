@@ -43,9 +43,7 @@ fi
 
 resolve_udid() {
   if [ -z "$UDID" ]; then
-    # A booted one first: a Duo left on an older runtime keeps the same name.
-    UDID="$(xcrun simctl list --json devices | jq -r --arg n "$(ios_sim_duo_name "$ROOT")" '
-      [.devices[][] | select(.name == $n)] | (map(select(.state == "Booted")) + .) | first | .udid // empty')"
+    UDID="$(ios_sim_find_preferred "$(ios_sim_duo_name "$ROOT")")"
     [ -n "$UDID" ] || die "no simulator given and this worktree has no Duo — run \`scripts/ios-validate.sh sim up --duo\` or pass -d <udid>"
   fi
   xcrun simctl list --json devices | jq -e --arg u "$UDID" \
@@ -54,7 +52,10 @@ resolve_udid() {
 }
 
 # Built once per helper source and Xcode, outside the nix shell's compiler.
-helper() {
+# Never call it in a command substitution: its die must exit the script.
+HELPER_BIN=""
+ensure_helper() {
+  [ -z "$HELPER_BIN" ] || return 0
   local key bin tmp
   key="$( (cat "$HELPER_SRC"; xcode-select -p) | shasum | cut -c1-12)"
   bin="$HELPER_CACHE/ios-pose-helper-$key"
@@ -75,11 +76,12 @@ helper() {
     fi
     mv -f "$tmp" "$bin"
   fi
-  echo "$bin"
+  HELPER_BIN="$bin"
 }
 
 run_helper() {
-  xcrun simctl spawn "$UDID" "$(helper)" "$@"
+  ensure_helper
+  xcrun simctl spawn "$UDID" "$HELPER_BIN" "$@"
 }
 
 set_hinge() {
@@ -152,7 +154,7 @@ rotate() {
   local want event="$1"
   want="$(devicectl_orientation "$1")" ||
     die "orientation must be portrait, landscape-left, landscape-right or portrait-upside-down: $1"
-  helper >/dev/null # a build failure dies here, not as "no hinge" below
+  ensure_helper # here, where a build failure is heard, not under the probe's 2>/dev/null
   if run_helper angle >/dev/null 2>&1; then
     [ "$event" = portrait-upside-down ] && event=pud
     run_helper orient "$event"
@@ -172,7 +174,7 @@ active_display() {
 
 show() {
   local angle
-  helper >/dev/null
+  ensure_helper # in this shell: the substitution below would swallow a build failure
   angle="$(run_helper angle 2>/dev/null)" || angle="none"
   echo "hinge=$angle orientation=$(orientation) display=$(active_display)"
 }
