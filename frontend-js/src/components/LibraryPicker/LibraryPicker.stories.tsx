@@ -2,6 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { expect, waitFor, type within } from "storybook/test";
 import type { Book } from "../../api";
+import { found } from "../../testing/dom";
 import {
   failing,
   hanging,
@@ -83,7 +84,32 @@ export const Loading: Story = {
   },
   play: async ({ canvas }) => {
     const grid = await canvas.findByTestId("picker-loading");
-    await expect(grid.querySelectorAll(".pick-card-skel")).toHaveLength(8);
+    const skels = [...grid.querySelectorAll<HTMLElement>(".pick-card-skel")];
+    await expect(skels).toHaveLength(8);
+    // Each placeholder cover sits in its card's cover column, not stacked over the grid.
+    for (const card of skels) {
+      const cover = found(
+        card.querySelector(".ld-skel--cover"),
+        "the card's placeholder cover",
+      );
+      const style = getComputedStyle(card);
+      const column = Number.parseFloat(style.gridTemplateColumns);
+      const left =
+        card.getBoundingClientRect().left +
+        card.clientLeft +
+        Number.parseFloat(style.paddingLeft);
+      const top =
+        card.getBoundingClientRect().top +
+        card.clientTop +
+        Number.parseFloat(style.paddingTop);
+      const box = cover.getBoundingClientRect();
+      await expect(Math.round(box.width)).toBe(Math.round(column));
+      await expect(
+        Math.abs(Math.round(box.height) - Math.round(box.width * 1.5)),
+      ).toBeLessThanOrEqual(1);
+      await expect(Math.round(box.left)).toBe(Math.round(left));
+      await expect(Math.round(box.top)).toBe(Math.round(top));
+    }
     await expect(canvas.getByRole("status")).toHaveTextContent("Counting…");
   },
 };

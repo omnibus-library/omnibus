@@ -13,6 +13,7 @@ import type {
   MetadataOverrides,
 } from "../../api/generated/schemas";
 import { storyClient } from "../../testing/AppHarness";
+import { found } from "../../testing/dom";
 import {
   addShelfBooksHandler,
   bulkOverridesHandler,
@@ -248,10 +249,13 @@ export const Loading: Story = {
     await expect(covers.length).toBeGreaterThan(1);
     for (const cover of covers) {
       const box = cover.getBoundingClientRect();
-      const cell = cover.closest(".ld-covers-cell")?.getBoundingClientRect();
-      await expect(Math.round(box.left)).toBe(Math.round(cell?.left ?? -1));
-      await expect(Math.round(box.top)).toBe(Math.round(cell?.top ?? -1));
-      await expect(Math.round(box.width)).toBe(Math.round(cell?.width ?? -1));
+      const cell = found(
+        cover.closest(".ld-covers-cell"),
+        "the cover's cell",
+      ).getBoundingClientRect();
+      await expect(Math.round(box.left)).toBe(Math.round(cell.left));
+      await expect(Math.round(box.top)).toBe(Math.round(cell.top));
+      await expect(Math.round(box.width)).toBe(Math.round(cell.width));
       // A 2:3 plate, not one collapsed to a sliver.
       await expect(
         Math.abs(Math.round(box.height) - Math.round(box.width * 1.5)),
@@ -1399,25 +1403,35 @@ export const ResumeStackPending: Story = {
       canvas.queryByRole("region", { name: "Continue reading" }),
     ).not.toBeInTheDocument();
     // Each fan card holds a cover of real height, inside its own card.
-    const cards = [...canvasElement.querySelectorAll(".lmq-fcard-pending")];
+    const cards = [
+      ...canvasElement.querySelectorAll<HTMLElement>(".lmq-fcard-pending"),
+    ];
     await expect(cards).toHaveLength(3);
     for (const card of cards) {
-      const cover = card.querySelector(".ld-skel--cover");
-      const box = cover?.getBoundingClientRect();
+      const cover = found(
+        card.querySelector<HTMLElement>(".ld-skel--cover"),
+        "the fan card's placeholder cover",
+      );
+      const box = cover.getBoundingClientRect();
       const frame = card.getBoundingClientRect();
-      await expect(box?.height ?? 0).toBeGreaterThan(0);
-      await expect(Math.round(box?.left ?? -1)).toBeGreaterThanOrEqual(
+      await expect(box.height).toBeGreaterThan(0);
+      await expect(Math.round(box.left)).toBeGreaterThanOrEqual(
         Math.floor(frame.left),
       );
-      await expect(Math.round(box?.top ?? -1)).toBeGreaterThanOrEqual(
+      await expect(Math.round(box.top)).toBeGreaterThanOrEqual(
         Math.floor(frame.top),
       );
-      await expect(Math.round(box?.right ?? Infinity)).toBeLessThanOrEqual(
+      await expect(Math.round(box.right)).toBeLessThanOrEqual(
         Math.ceil(frame.right),
       );
-      await expect(Math.round(box?.bottom ?? Infinity)).toBeLessThanOrEqual(
+      await expect(Math.round(box.bottom)).toBeLessThanOrEqual(
         Math.ceil(frame.bottom),
       );
+      // Layout sizes, since the rotated cards' client rects are hulls: a 2:3 plate the card's width.
+      await expect(cover.offsetWidth).toBe(card.offsetWidth);
+      await expect(
+        Math.abs(cover.offsetHeight - Math.round(cover.offsetWidth * 1.5)),
+      ).toBeLessThanOrEqual(1);
     }
   },
 };

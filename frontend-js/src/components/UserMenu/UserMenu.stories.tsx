@@ -9,6 +9,7 @@ import {
 } from "../../api/generated/omnibus.msw";
 import { meQuery } from "../../session";
 import { storyClient } from "../../testing/AppHarness";
+import { found } from "../../testing/dom";
 import {
   failing,
   hanging,
@@ -154,16 +155,20 @@ export const ProgressLoading: Story = {
       "Finding your place",
     );
     // The placeholder cover fills its frame rather than escaping it.
-    const frame = canvas
-      .getByTestId("user-menu-now-reading-pending")
-      .querySelector(".um-nr-cover");
-    const cover = frame?.querySelector(".ld-skel--cover");
-    const want = frame?.getBoundingClientRect();
-    const got = cover?.getBoundingClientRect();
+    const frame = found(
+      canvas
+        .getByTestId("user-menu-now-reading-pending")
+        .querySelector(".um-nr-cover"),
+      "the cover frame",
+    );
+    const cover = found(
+      frame.querySelector(".ld-skel--cover"),
+      "the placeholder cover",
+    );
+    const want = frame.getBoundingClientRect();
+    const got = cover.getBoundingClientRect();
     for (const side of ["left", "top", "width", "height"] as const) {
-      await expect(Math.round(got?.[side] ?? -1)).toBe(
-        Math.round(want?.[side] ?? -2),
-      );
+      await expect(Math.round(got[side])).toBe(Math.round(want[side]));
     }
   },
 };
