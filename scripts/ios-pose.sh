@@ -26,6 +26,8 @@ HELPER_SRC="$HERE/lib/ios-pose-helper.m"
 HELPER_CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/omnibus-ios-pose"
 # Whole seconds a change may take to show up before it counts as failed.
 TIMEOUT="${OMNIBUS_IOS_POSE_TIMEOUT:-8}"
+# Seconds one devicectl call may take: it can hang on a wedged simulator.
+DEVICECTL_TIMEOUT=5
 
 # shellcheck source=lib/ios-sim.sh
 source "$HERE/lib/ios-sim.sh"
@@ -34,8 +36,6 @@ die() {
   echo "ios-pose: $*" >&2
   exit 1
 }
-
-[[ "$TIMEOUT" =~ ^[1-9][0-9]*$ ]] || die "OMNIBUS_IOS_POSE_TIMEOUT must be a whole number of seconds: $TIMEOUT"
 
 UDID="${OMNIBUS_IOS_POSE_UDID:-}"
 if [ "${1:-}" = "-d" ]; then
@@ -53,7 +53,16 @@ resolve_udid() {
     die "simulator $UDID is not booted (xcrun simctl boot $UDID)"
 }
 
+# Checked only by the commands that wait, so a screenshot never fails on it. The
+# tour's pose() accepts the same set (screen-tour.swift).
+check_timeout() {
+  [[ "$TIMEOUT" =~ ^[1-9][0-9]{0,2}$ ]] && [ "$TIMEOUT" -le 600 ] ||
+    die "OMNIBUS_IOS_POSE_TIMEOUT must be whole seconds from 1 to 600: $TIMEOUT"
+}
+
 # Built once per helper source and Xcode, outside the nix shell's compiler.
+# Called in the main shell before any probe, so a failed build exits rather
+# than reading as "no hinge" inside an `if` or `$(…)`.
 HELPER_BIN=""
 ensure_helper() {
   [ -z "$HELPER_BIN" ] || return 0
@@ -90,6 +99,8 @@ set_hinge() {
   if ! [[ "$degrees" =~ ^[0-9]+([.][0-9]+)?$ ]] || ! awk -v d="$degrees" 'BEGIN { exit !(d <= 180) }'; then
     die "hinge angle must be a number from 0 to 180: $degrees"
   fi
+  check_timeout
+  ensure_helper
   run_helper hinge "$degrees" "$TIMEOUT"
   wait_display "$degrees"
 }
@@ -108,7 +119,7 @@ wait_display() {
   fi
   while [ "$SECONDS" -le "$deadline" ]; do
     # A failed read is retried, not fatal: devicectl drops the odd call.
-    now="$(xcrun devicectl device info displays -d "$UDID" -q -j - 2>/dev/null | jq -r '
+    now="$(xcrun devicectl device info displays -d "$UDID" -q -t "$DEVICECTL_TIMEOUT" -j - 2>/dev/null | jq -r '
       [.result.displays[]? | select(.type.integrated != null and .active == true)] | first
       | if . == null then "none" else "\(.name):\(.primary)" end')" || now=none
     if [ "$now" = "$last" ] && [ "$now" != none ] &&
@@ -136,7 +147,7 @@ devicectl_orientation() {
 }
 
 orientation() {
-  xcrun devicectl device orientation get -d "$UDID" -q -j - 2>/dev/null |
+  xcrun devicectl device orientation get -d "$UDID" -q -t "$DEVICECTL_TIMEOUT" -j - 2>/dev/null |
     jq -r '.result.deviceOrientationNonFlat // .result.deviceOrientation // "unknown"'
 }
 
@@ -155,11 +166,13 @@ rotate() {
   local want event="$1"
   want="$(devicectl_orientation "$1")" ||
     die "orientation must be portrait, landscape-left, landscape-right or portrait-upside-down: $1"
+  check_timeout
+  ensure_helper
   if run_helper angle >/dev/null 2>&1; then
     [ "$event" = portrait-upside-down ] && event=pud
     run_helper orient "$event"
   else
-    xcrun devicectl device orientation set "$want" -d "$UDID" -q >/dev/null 2>&1 || true
+    xcrun devicectl device orientation set "$want" -d "$UDID" -q -t "$DEVICECTL_TIMEOUT" >/dev/null 2>&1 || true
   fi
   wait_orientation "$want" || die "the simulator did not turn to $1 (it reports $(orientation))"
 }
@@ -167,13 +180,14 @@ rotate() {
 # The integrated display whose `active` flag is set: a folded Duo keeps its
 # inner backlight on for a moment, so the backlight is not the signal.
 active_display() {
-  xcrun devicectl device info displays -d "$UDID" -q -j - 2>/dev/null | jq -r '
+  xcrun devicectl device info displays -d "$UDID" -q -t "$DEVICECTL_TIMEOUT" -j - 2>/dev/null | jq -r '
     [.result.displays[]? | select(.type.integrated != null)] as $d
     | (($d | map(select(.active == true)) | first) // ($d | first) // {}) | .name // empty'
 }
 
 show() {
   local angle
+  ensure_helper
   angle="$(run_helper angle 2>/dev/null)" || angle="none"
   echo "hinge=$angle orientation=$(orientation) display=$(active_display)"
 }
@@ -189,10 +203,6 @@ screenshot() {
 command="${1:-}"
 [ -n "$command" ] || die "usage: ios-pose.sh [-d <udid>] open|close|half|hinge <deg>|rotate <orientation>|show|screenshot <file> (see the header)"
 resolve_udid
-# Built here, in this shell, so a failed build exits before any probe hides it.
-case "$command" in
-  open | close | half | hinge | rotate | show) ensure_helper ;;
-esac
 case "$command" in
   open) set_hinge 180 ;;
   close) set_hinge 0 ;;

@@ -247,9 +247,10 @@ pose_server() {
   local udid="$1" line reply id
   local -a words
   while :; do
-    if [ -f "$POSE/request" ]; then
-      line="$(cat "$POSE/request")"
-      rm -f "$POSE/request"
+    # Claimed before it is read, so a request posted after the read is never deleted unread.
+    if mv "$POSE/request" "$POSE/request.claimed" 2>/dev/null; then
+      line="$(cat "$POSE/request.claimed")"
+      rm -f "$POSE/request.claimed"
       read -r -a words <<<"$line"
       id="${words[0]:-}"
       if [[ "$id" =~ ^[0-9]+$ ]]; then

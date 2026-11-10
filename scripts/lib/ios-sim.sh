@@ -23,6 +23,10 @@ ios_sim_name() {
   fi
 }
 
+# jq: a runtime's version string as a sortable key; the one "newest runtime"
+# order, tolerant of a missing version or a part that is not a number.
+IOS_SIM_VERSION_KEY='def version_key: (. // "0") | tostring | split(".") | map(tonumber? // 0);'
+
 # Echo the newest iOS runtime that has an available iPhone, as one line of
 # JSON `{key, devs}` (devs: its iPhones), or nothing when there is none.
 #
@@ -34,14 +38,14 @@ ios_sim_name() {
 # iPhone Duo's `iOS-27-2-iPhone19-4`) holds one model and has no numeric
 # version.
 ios_sim_newest_iphone_runtime() {
-  xcrun simctl list --json devices available | jq -c '
+  xcrun simctl list --json devices available | jq -c "$IOS_SIM_VERSION_KEY"'
     .devices | to_entries
     | map(select(.key | test("SimRuntime\\.iOS-[0-9]+(-[0-9]+)*$")))
     | map({key,
            ver: (.key | sub(".*iOS-"; "") | gsub("-"; ".")),
            devs: [.value[] | select(.name | startswith("iPhone"))]})
     | map(select(.devs | length > 0))
-    | sort_by(.ver | split(".") | map(tonumber))
+    | sort_by(.ver | version_key)
     | if length == 0 then empty else last | {key, devs} end'
 }
 
@@ -76,10 +80,6 @@ ios_sim_duo_name() {
   echo "$(ios_sim_name "$1")-duo"
 }
 
-# jq: a runtime's version string as a sortable key; the one "newest runtime"
-# order, tolerant of a part that is not a number.
-IOS_SIM_VERSION_KEY='def version_key: split(".") | map(tonumber? // 0);'
-
 # Echo the UDID of the iPhone Duo named $1, creating it on first use. The Duo
 # lives only on its own runtime (`iOS-27-2-iPhone19-4`), which the newest-iPhone
 # picker skips, so the runtime is the newest one that supports the device type.
@@ -108,15 +108,15 @@ ios_sim_find() {
     '.devices[][] | select(.name == $name) | .udid'
 }
 
-# Echo the UDID of the simulator named $1 to drive, or nothing when none has
-# that name: booted before shut down, then the newest runtime, since one left
-# on an older runtime keeps the name.
+# Echo the UDID of the available simulator named $1 to drive, or nothing when
+# none has that name: booted before shut down, then the newest runtime, since
+# one left on an older runtime keeps the name.
 ios_sim_find_preferred() {
   local versions
-  versions="$(xcrun simctl list --json runtimes | jq -c \
+  versions="$(xcrun simctl list --json runtimes available | jq -c \
     '[.runtimes[] | {key: .identifier, value: .version}] | from_entries')"
-  xcrun simctl list --json devices | jq -r --arg name "$1" --argjson v "${versions:-"{}"}" "$IOS_SIM_VERSION_KEY"'
+  xcrun simctl list --json devices available | jq -r --arg name "$1" --argjson v "${versions:-"{}"}" "$IOS_SIM_VERSION_KEY"'
     [.devices | to_entries[] | .key as $rt | .value[] | select(.name == $name)
-     | {udid, rank: [.state == "Booted", (($v[$rt] // "0") | version_key)]}]
+     | {udid, rank: [.state == "Booted", ($v[$rt] | version_key)]}]
     | sort_by(.rank) | last | .udid // empty'
 }

@@ -83,8 +83,7 @@ final class ScreenTour: XCTestCase {
             return XCTFail("pose(\(request)) needs scripts/ios-validate.sh tour")
         }
         // A hinge waits up to 2 × OMNIBUS_IOS_POSE_TIMEOUT + 8 s, plus the helper's first build.
-        let step = Double(Int(env["OMNIBUS_IOS_POSE_TIMEOUT"] ?? "") ?? 8)
-        let timeout = timeout ?? max(60, 2 * step + 40)
+        let timeout = timeout ?? max(60, 2 * poseStep() + 40)
         // Numbered, so a late reply to a request that timed out is never taken as this one's.
         poseNumber += 1
         let number = "\(poseNumber)"
@@ -119,6 +118,16 @@ final class ScreenTour: XCTestCase {
             usleep(200_000)
         }
         XCTFail("pose(\(request)) got no answer in \(Int(timeout))s")
+    }
+
+    /// OMNIBUS_IOS_POSE_TIMEOUT as `ios-pose.sh` accepts it (plain digits, 1–600), else its default 8.
+    private func poseStep() -> Double {
+        let raw = env["OMNIBUS_IOS_POSE_TIMEOUT"] ?? ""
+        let scalars = raw.unicodeScalars
+        guard (1...3).contains(scalars.count), scalars.first != "0",
+              scalars.allSatisfy({ ("0"..."9").contains($0) }),
+              let seconds = Int(raw), seconds <= 600 else { return 8 }
+        return Double(seconds)
     }
 
     /// The keychain's "Save Password?" prompt lands after sign-in, sometimes a screen later.
