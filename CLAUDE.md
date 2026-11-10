@@ -128,7 +128,7 @@ cargo test -p omnibus-db                                    # db + scanner + syn
 cargo test -p omnibus-shared                                # shared serde / ebook / progress tests
 cargo test -p omnibus-mcp                                   # MCP tool-layer tests (crate is out of default-members)
 cargo test -p omnibus-mock-kobo                             # fake Kobo firmware tests (crate is out of default-members)
-cargo test -p omnibus-mock-requests                         # fake Prowlarr / download client tests (crate is out of default-members)
+cargo nextest run -p omnibus-mock-requests                  # fake Prowlarr / download client tests (crate is out of default-members; nextest, not cargo test)
 cargo clippy                                                # lint default-members (server, shared)
 cargo fmt                                                   # format all crates
 

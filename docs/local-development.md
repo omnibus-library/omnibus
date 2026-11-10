@@ -125,7 +125,7 @@ cargo test -p omnibus-db                           # db + scanner + sync tests
 cargo test -p omnibus-shared                       # shared serde / ebook / progress tests
 cargo test -p omnibus-mcp                          # MCP tool layer (out of default-members)
 cargo test -p omnibus-mock-kobo                    # fake Kobo firmware tests (out of default-members)
-cargo test -p omnibus-mock-requests                # fake Prowlarr / download client tests (out of default-members)
+cargo nextest run -p omnibus-mock-requests         # fake Prowlarr / download client tests (out of default-members; nextest, not cargo test)
 ```
 
 ### Web E2E (Playwright)

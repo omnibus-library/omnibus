@@ -122,8 +122,6 @@ already finished is not touched by either.
 
 ## Tests
 
-The fakes are tested only through `omnibus-db`'s real clients, so the server's own
-code is the contract: `cargo nextest run -p omnibus-mock-requests`. Use nextest, not
-`cargo test`: the clients pool one HTTP client per process, and a connection can die
-with an earlier test's runtime. No fixtures are needed; the tests write temp
-payloads.
+`cargo nextest run -p omnibus-mock-requests`. Use nextest, not `cargo test`: the
+clients pool one HTTP client per process, and a connection can die with an earlier
+test's runtime. No fixtures are needed; the tests write temp payloads.

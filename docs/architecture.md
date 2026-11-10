@@ -58,7 +58,7 @@ Default `cargo build` / `clippy` covers `server` and `shared` (and `db` through
 `server`). `mcp` is excluded via workspace `default-members` (a client binary
 daily server work never compiles): `cargo build -p omnibus-mcp`. So are
 `mock-kobo` and `mock-requests`: `cargo test -p omnibus-mock-kobo`,
-`cargo test -p omnibus-mock-requests`.
+`cargo nextest run -p omnibus-mock-requests`.
 
 Beside the workspace:
 

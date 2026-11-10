@@ -2,7 +2,7 @@
 //! port: their paths don't collide, so the server's request settings pick between
 //! qBittorrent, Transmission, SABnzbd and NZBGet by kind alone. Searches are answered
 //! from the query (see [`catalogue`]), and a control API under `/_mock` steers what the
-//! fakes report. The fakes are tested through `omnibus-db`'s real clients.
+//! fakes report.
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
