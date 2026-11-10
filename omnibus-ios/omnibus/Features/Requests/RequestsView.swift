@@ -57,7 +57,10 @@ struct RequestsView: View {
                     header(group)
                     if !model.isFolded(group.key) {
                         ForEach(group.items, id: \.request.id) { item in
-                            RequestRow(item: item, group: group.key)
+                            NavigationLink(value: Destination.bookRequest(uuid: item.book.uuid)) {
+                                RequestRow(item: item, group: group.key)
+                            }
+                            .buttonStyle(.plain)
                             Hairline()
                         }
                     }

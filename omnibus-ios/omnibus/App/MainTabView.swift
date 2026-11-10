@@ -18,6 +18,7 @@ enum Destination: Hashable {
     case shelf(id: Int64)
     case wishlists
     case requests
+    case bookRequest(uuid: String)
     case tags
     case tag(name: String)
     case genres
@@ -404,6 +405,9 @@ struct DestinationRouter: ViewModifier {
                 WishlistsView()
             case .requests:
                 RequestsView()
+            case let .bookRequest(uuid):
+                BookRequestView(uuid: uuid)
+                    .id(uuid)
             case .tags:
                 TaxonomyCloudView(facet: .tag)
             case let .tag(name):
