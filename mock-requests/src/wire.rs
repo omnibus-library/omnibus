@@ -2,7 +2,7 @@
 //! request can be made without touching Settings. It logs in as the dev seed admin, saves
 //! the mock as the Prowlarr and download client connections, has the server test both, and
 //! logs out. Only a loopback server is ever logged in to (the login carries the seed
-//! password), no redirect is followed, and a connection already saved for another address
+//! password), no redirect is followed, and a connection that is set and not this mock's own
 //! is never overwritten, since the settings read masks secrets and could not restore it.
 
 use std::net::IpAddr;
@@ -37,9 +37,7 @@ pub enum WireError {
         "book requests are off on this server: set OMNIBUS_BOOK_REQUESTS=1 and `just dev-bounce`"
     )]
     RequestsOff,
-    #[error(
-        "the server already points {0} at another address: clear it in Settings > Requests first"
-    )]
+    #[error("the server already points {0} at something that is not this mock: clear it in Settings > Requests first")]
     InUse(String),
     #[error("{step} failed: {detail}")]
     Server { step: &'static str, detail: String },
@@ -188,16 +186,33 @@ async fn configure(
     Ok(())
 }
 
-/// Refuse to replace a connection saved for another machine.
+/// Refuse to replace a connection that is set and is not this mock's own, since the
+/// settings read masks secrets and they could not be restored.
 fn guard(saved: &RequestsSettingsStatus) -> Result<(), WireError> {
-    let elsewhere = |url: &Option<String>| url.as_deref().is_some_and(|u| !is_loopback(u));
-    if elsewhere(&saved.prowlarr_url) {
+    let prowlarr_is_ours = saved.prowlarr_url.is_none()
+        || saved.prowlarr_api_key_masked.as_deref() == Some(key_preview(PROWLARR_API_KEY).as_str());
+    let client_is_ours = saved.download_client_url.is_none()
+        || saved.download_client_username.as_deref() == Some(CLIENT_USERNAME);
+    if !prowlarr_is_ours {
         return Err(WireError::InUse("Prowlarr".into()));
     }
-    if elsewhere(&saved.download_client_url) {
+    if !client_is_ours {
         return Err(WireError::InUse("the download client".into()));
     }
     Ok(())
+}
+
+/// How the settings read previews `key`: its first and last four characters (a key over 8).
+fn key_preview(key: &str) -> String {
+    let (head, tail) = (
+        key.chars().take(4),
+        key.chars().skip(key.chars().count() - 4),
+    );
+    format!(
+        "{}\u{2026}{}",
+        head.collect::<String>(),
+        tail.collect::<String>()
+    )
 }
 
 async fn checked(step: &'static str, request: RequestBuilder) -> Result<Response, WireError> {

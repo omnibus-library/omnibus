@@ -186,15 +186,56 @@ async fn wire_saves_every_field_the_mock_answers_to() {
     assert_eq!(saved.download_path_prefix, "/dl");
 }
 
+/// A saved download client at `url` logging in as `username`.
+fn client_saved(url: &str, username: &str) -> Value {
+    let mut saved = saved_with(None, Some(url));
+    saved["download_client_username"] = json!(username);
+    saved
+}
+
 #[tokio::test]
-async fn wire_replaces_connections_already_on_this_machine() {
+async fn wire_replaces_a_previous_mock_wiring() {
     let mut cfg = config();
-    cfg.saved = saved_with(Some("http://localhost:9696"), Some("http://127.0.0.1:8080"));
+    cfg.saved = client_saved("http://127.0.0.1:5555", "mock");
+    cfg.saved["prowlarr_url"] = json!("http://127.0.0.1:5555");
+    cfg.saved["prowlarr_api_key_masked"] = json!("mock\u{2026}ests");
     let (origin, stub) = spawn_stub(cfg).await;
 
     run(&origin, DownloadClientKind::Qbittorrent).await.unwrap();
 
     assert!(calls(&stub).contains(&"PUT /api/admin/requests/settings".to_string()));
+}
+
+#[tokio::test]
+async fn wire_refuses_real_services_on_this_machine() {
+    let mut real_prowlarr = saved_with(Some("http://localhost:9696"), None);
+    real_prowlarr["prowlarr_api_key_masked"] = json!("abcd\u{2026}wxyz");
+    let cases = [
+        (real_prowlarr, "Prowlarr"),
+        (
+            client_saved("http://127.0.0.1:8080", "admin"),
+            "download client",
+        ),
+        (
+            saved_with(None, Some("http://127.0.0.1:8080")),
+            "download client",
+        ),
+    ];
+    for (saved, who) in cases {
+        let mut cfg = config();
+        cfg.saved = saved;
+        let (origin, stub) = spawn_stub(cfg).await;
+
+        let err = run(&origin, DownloadClientKind::Qbittorrent)
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(&err, WireError::InUse(w) if w.contains(who)),
+            "{who}: {err:?}"
+        );
+        assert!(!calls(&stub).iter().any(|c| c.starts_with("PUT")), "{who}");
+    }
 }
 
 #[tokio::test]

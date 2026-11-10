@@ -43,9 +43,11 @@ just mock-requests --local     # prints MOCK_REQUESTS_READY port=â€¦ downloads=â
 the mock as the Prowlarr and download client connections (the client's folder
 and the server's are both the downloads folder), and has the server test both. It
 stays pointed at the mock after the mock exits. It **refuses** to run when the
-server already points Prowlarr or the download client at a non-loopback address,
-because the settings read masks secrets and they could not be restored. If requests
-are off it says to set `OMNIBUS_BOOK_REQUESTS=1` and `just dev-bounce`.
+server already points Prowlarr or the download client at anything but a previous
+mock wiring (the saved login is `mock`, the saved key is the mock's), loopback
+included, because the settings read masks secrets and a real service's could not be
+restored. Clear the connection in Settings, Requests first. If requests are off it
+says to set `OMNIBUS_BOOK_REQUESTS=1` and `just dev-bounce`.
 
 Without `--local` or `--server`, the mock just serves and you enter its address
 and the key in Settings, Requests yourself.
