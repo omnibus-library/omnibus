@@ -31,7 +31,7 @@ struct RequestsAPI: Sendable {
         list: { try await RequestService.list() },
         bookList: { try await RequestService.list(bookUUID: $0) },
         request: { try await RequestService.get(id: $0) },
-        book: { try await LibraryService.settledBook(uuid: $0) },
+        book: { try await APIClient.shared.get("/api/ebooks/\($0)") },
         wanters: { uuid in
             try await UserDataService.wishlists(scope: .everyone).first { $0.id == uuid }?.wantedBy ?? []
         },
