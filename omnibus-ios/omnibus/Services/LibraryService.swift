@@ -628,7 +628,7 @@ enum LibraryService {
     /// size, including the ones the current screen isn't showing, plus the
     /// full-size cover the readers fetch. The cached book record goes too:
     /// its `has_cover_override` predates the write.
-    private static func invalidateCoverCaches(uuid: String) async {
+    static func invalidateCoverCaches(uuid: String) async {
         for size in [ThumbSize.sm, .md, .lg] {
             await ImageCache.shared.invalidate("/api/thumbs/\(uuid)/\(size.rawValue)")
         }

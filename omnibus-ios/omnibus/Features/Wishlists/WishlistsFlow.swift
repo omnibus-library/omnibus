@@ -20,16 +20,19 @@ enum WishlistScope: Hashable, Sendable {
     }
 }
 
-/// What a reader may ask the library to find for them.
-enum WishlistRequestKind: CaseIterable, Sendable {
-    case ebook, audiobook
-
-    var title: String {
-        switch self {
-        case .ebook: "Request ebook"
-        case .audiobook: "Request audiobook"
-        }
+/// One Request or View row on a book's Get sheet.
+struct WishlistRequestItem: Equatable {
+    enum Action: Equatable {
+        /// Starts a request, then opens its page.
+        case request
+        /// Opens the request that is going.
+        case view
     }
+
+    var kind: RequestKind
+    var action: Action
+    var title: String
+    var detail: String
 }
 
 /// What the Add sheet's field asks for.
@@ -41,16 +44,39 @@ enum WishlistSearch: Equatable {
 }
 
 enum WishlistsFlow {
-    private static let audioFormats: Set<String> = ["M4B", "M4A", "MP3"]
+    /// The kinds the library lacks, by the same rule as the request page.
+    static func requestable(_ holdings: [WishlistHolding]) -> [RequestKind] {
+        let formats = holdings.map(\.format)
+        return RequestKind.allCases.filter { !BookRequestFlow.holds(kind: $0, formats: formats) }
+    }
 
-    /// The kinds the library lacks: audio is M4B, M4A or MP3, any other
-    /// digital format is an ebook, and print counts as neither.
-    static func requestable(_ holdings: [WishlistHolding]) -> [WishlistRequestKind] {
-        let formats = holdings.map { $0.format.uppercased() }
-        var kinds: [WishlistRequestKind] = []
-        if !formats.contains(where: { $0 != "PRINT" && !audioFormats.contains($0) }) { kinds.append(.ebook) }
-        if !formats.contains(where: audioFormats.contains) { kinds.append(.audiobook) }
-        return kinds
+    /// The Get sheet's request rows, ebook then audiobook: View where a request is going for the kind (to
+    /// any reader, since viewing needs no permission), else Request for a kind the library lacks and only
+    /// to a reader who may start one.
+    static func requestItems(
+        holdings: [WishlistHolding], canStart: Bool, live: [RequestKind: RequestState]
+    ) -> [WishlistRequestItem] {
+        let lacking = requestable(holdings)
+        return RequestKind.allCases.compactMap { kind in
+            if let state = live[kind] {
+                return WishlistRequestItem(
+                    kind: kind, action: .view, title: "View \(kind.rawValue) request",
+                    detail: BookRequestFlow.stateView(state, kind: kind).heading)
+            }
+            guard canStart, lacking.contains(kind) else { return nil }
+            return WishlistRequestItem(
+                kind: kind, action: .request, title: "Request \(kind.rawValue)", detail: "Opens its request page")
+        }
+    }
+
+    /// Each book's kinds with a request going, by uuid, at the newest one's state. `listings` come newest first.
+    static func liveRequests(_ listings: [RequestListing]) -> [String: [RequestKind: RequestState]] {
+        var live: [String: [RequestKind: RequestState]] = [:]
+        for listing in listings where BookRequestFlow.isLive(listing.request.state) {
+            let (uuid, kind) = (listing.book.uuid, listing.request.kind)
+            if live[uuid]?[kind] == nil { live[uuid, default: [:]][kind] = listing.request.state }
+        }
+        return live
     }
 
     /// Everyone, you, then every other reader in server order. The server's

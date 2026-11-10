@@ -184,7 +184,8 @@
   box-shadow: inset 0 0 0 1px color-mix(in oklch, black 15%, transparent);
 }
 .um-nr-cover .cover-wrap,
-.um-nr-cover .cover {
+.um-nr-cover .cover,
+.um-nr-cover .ld-skel--cover {
   width: 100%;
   height: 100%;
 }

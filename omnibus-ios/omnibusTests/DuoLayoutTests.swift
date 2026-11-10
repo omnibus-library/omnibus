@@ -176,6 +176,13 @@ private let laptopFold = Fold(frame: CGRect(x: 0, y: 463, width: 669, height: 25
     ) == nil)
 }
 
+@Test func requestPageSplitsAtTheHingeAndStaysOneColumnUpright() throws {
+    let split = try #require(BookRequestView.split(size: innerWide.size, fold: bookFold))
+    #expect(split.leading == bookFold.frame.minX)
+    #expect(split.gap == bookFold.frame.width)
+    #expect(BookRequestView.split(size: CGSize(width: 370, height: 678), fold: nil) == nil)
+}
+
 @Test func stageCoverScaleShrinksTheCoverOnlyOnAShortPage() {
     // The folded Duo on its side: 466pt less the home indicator's 21.
     let short = BookDetailView.stageCoverScale(paneHeight: 445, underBar: false)

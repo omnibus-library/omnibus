@@ -195,13 +195,11 @@ start_mock() {
 # $1 is 1 for --requests.
 server_start() {
   local requests="${1:-0}" ebooks="$ROOT/test_data/epubs" audiobooks="$ROOT/test_data/audiobooks"
-  local -a extra_env=()
   cd "$ROOT"
   if [ "$requests" = 1 ]; then
     clone_libraries
     ebooks="$SERVER/library/epubs"
     audiobooks="$SERVER/library/audiobooks"
-    extra_env=(OMNIBUS_BOOK_REQUESTS=1)
   fi
   # shellcheck source=lib/dev-port.sh
   source "$ROOT/scripts/lib/dev-port.sh"
@@ -235,7 +233,7 @@ server_start() {
       OMNIBUS_THUMBS_DIR="$SERVER/thumbs" \
       OMNIBUS_DEV_DISABLE_RATE_LIMITS=1 \
       OMNIBUS_SECURE_COOKIES=0 \
-      ${extra_env[@]+"${extra_env[@]}"} \
+      OMNIBUS_BOOK_REQUESTS=1 \
       "$bin" >"$SERVER/server.log" 2>&1 &
     echo $! >"$PIDFILE"
   )
