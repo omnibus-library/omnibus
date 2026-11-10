@@ -636,6 +636,34 @@ struct BookRequestModelTests {
         #expect(await startedOnAnEmptyPage().pollInterval != nil)
     }
 
+    private func startedWhileTheListingsFail() async -> BookRequestModel {
+        let calls = CallCounter()
+        let api = fakeRequestsAPI(
+            bookList: { _ in
+                if await calls.next() > 1 { throw FakeFailure() }
+                return []
+            },
+            request: { id in aRequest(id: id, state: .looking) },
+            book: { _ in aBook },
+            start: { uuid, kind in aRequest(id: 2, uuid: uuid, kind: kind, state: .looking) })
+        let model = model(api)
+        await model.load(viewer: adaViewer)
+        await model.start(.ebook)
+        return model
+    }
+
+    @Test func aStartWhoseListingsFailToRereadStillGivesItsLane() async {
+        #expect(await startedWhileTheListingsFail().lanes.map(\.id) == [2])
+    }
+
+    @Test func aStartWhoseListingsFailToRereadStillPollsItsLane() async {
+        #expect(await startedWhileTheListingsFail().pollInterval != nil)
+    }
+
+    @Test func aStartWhoseListingsFailToRereadNoLongerOffersItsKind() async {
+        #expect(await startedWhileTheListingsFail().unrequested == [.audiobook])
+    }
+
     // MARK: - Requester actions
 
     @Test func cancellingSwapsInTheCancelledLaneAndReReadsTheListings() async {
@@ -644,6 +672,42 @@ struct BookRequestModelTests {
         await model.cancel(model.lanes[0])
         #expect(model.lanes.first?.state == .cancelled)
         #expect(await log.listReads == 2)
+    }
+
+    /// A cancel that has answered while its listings reread is still held open.
+    private func cancelAwaitingItsListings() async -> (model: BookRequestModel, release: Gate, cancelling: Task<Void, Never>) {
+        let started = Gate()
+        let release = Gate()
+        let calls = CallCounter()
+        let lane = aRequest(state: .looking)
+        let api = fakeRequestsAPI(
+            bookList: { _ in
+                if await calls.next() > 1 {
+                    await started.open()
+                    await release.wait()
+                }
+                return [aListing(lane)]
+            },
+            request: { _ in lane }, book: { _ in aBook }, cancel: { _ in aCancelled(cancelAt: 1_010) })
+        let model = model(api)
+        await model.load(viewer: adaViewer)
+        let cancelling = Task { await model.cancel(model.lanes[0]) }
+        await started.wait()
+        return (model, release, cancelling)
+    }
+
+    @Test func cancellingOffersUndoBeforeTheListingsAnswer() async {
+        let run = await cancelAwaitingItsListings()
+        #expect(run.model.toast?.undoRequestID == 1)
+        await run.release.open()
+        await run.cancelling.value
+    }
+
+    @Test func cancellingFreesTheButtonsBeforeTheListingsAnswer() async {
+        let run = await cancelAwaitingItsListings()
+        #expect(run.model.busy == nil)
+        await run.release.open()
+        await run.cancelling.value
     }
 
     @Test func cancellingToastsAnUndoForTheGraceThatIsLeft() async {

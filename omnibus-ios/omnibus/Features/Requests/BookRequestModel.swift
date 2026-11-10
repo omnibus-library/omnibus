@@ -192,13 +192,17 @@ final class BookRequestModel {
     func cancel(_ lane: BookRequest) async {
         let api = api
         let allowed = BookRequestFlow.canCancel(viewer: viewer, request: lane) && BookRequestFlow.isCancellable(lane)
-        let cancelled = await write(Self.failure(.cancel), busy: .cancelling(lane.id), allowed: allowed, rereading: lane.id) {
-            try await api.cancel(lane.id)
+        let cancelled = await write(
+            Self.failure(.cancel), busy: .cancelling(lane.id), allowed: allowed, rereading: lane.id, rereadsListings: false
+        ) { try await api.cancel(lane.id) }
+        guard let cancelled else { return }
+        if let delay = BookRequestFlow.undoDelay(cancelAt: cancelled.cancelAt, now: now()) {
+            toast = RequestToast(
+                text: "\(BookRequestFlow.kindLabel(cancelled.kind)) request cancelled", undoRequestID: cancelled.id,
+                duration: delay)
         }
-        guard let cancelled, let delay = BookRequestFlow.undoDelay(cancelAt: cancelled.cancelAt, now: now()) else { return }
-        toast = RequestToast(
-            text: "\(BookRequestFlow.kindLabel(cancelled.kind)) request cancelled", undoRequestID: cancelled.id,
-            duration: delay)
+        // Read once Undo is up and unlocked, so a slow list can't eat the server's grace.
+        await rereadListings()
     }
 
     /// Takes a cancel back and shows whatever the server returns.
@@ -241,7 +245,7 @@ final class BookRequestModel {
     /// Answers what the server returned.
     @discardableResult
     private func write(
-        _ failure: (Error) -> String, busy: Busy, allowed: Bool, rereading: Int64? = nil,
+        _ failure: (Error) -> String, busy: Busy, allowed: Bool, rereading: Int64? = nil, rereadsListings: Bool = true,
         _ call: @Sendable () async throws -> BookRequest
     ) async -> BookRequest? {
         guard self.busy == nil, allowed else { return nil }
@@ -252,7 +256,8 @@ final class BookRequestModel {
         do {
             let answer = try await call()
             reads[answer.id] = answer
-            await rereadListings()
+            adopt(answer)
+            if rereadsListings { await rereadListings() }
             return answer
         } catch {
             toast = failureToast(failure(error))
@@ -271,8 +276,23 @@ final class BookRequestModel {
         return RequestToast(text: text, undoRequestID: id, duration: left ?? .zero)
     }
 
+    /// Files a write's answer in the listings, so its lane and its kind hold even when the reread fails.
+    private func adopt(_ answer: BookRequest) {
+        guard var listed = listings, let book else { return }
+        if let at = listed.firstIndex(where: { $0.request.id == answer.id }) {
+            listed[at].request = answer
+        } else {
+            // shortcut: the requester's name stays blank until the next listings read fills it.
+            listed.append(RequestListing(request: answer, book: book, requesterName: "", requesterHasAvatar: false))
+        }
+        listings = listed
+        settleMain()
+    }
+
+    /// A write that lands meanwhile has the newer listings, so this read is dropped.
     private func rereadListings() async {
-        guard let fresh = try? await api.bookList(uuid) else { return }
+        let started = generation
+        guard let fresh = try? await api.bookList(uuid), started == generation else { return }
         listings = fresh
         settleMain()
     }
