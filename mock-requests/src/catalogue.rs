@@ -94,6 +94,15 @@ fn percent_encode(text: &str) -> String {
         .collect()
 }
 
+/// The 40-hex info hash a magnet names, lowercased.
+pub fn magnet_hash(magnet: &str) -> Option<String> {
+    let rest = magnet.split("urn:btih:").nth(1)?;
+    let hash = rest.get(..40)?;
+    hash.bytes()
+        .all(|b| b.is_ascii_hexdigit())
+        .then(|| hash.to_ascii_lowercase())
+}
+
 /// The kind of book a Prowlarr `categories` value searches for.
 pub fn kind_for_category(category: &str) -> Option<RequestKind> {
     match category {

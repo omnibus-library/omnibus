@@ -103,3 +103,14 @@ fn find_names_just_fixtures_when_the_epub_is_missing() {
 
     assert!(err.to_string().contains("just fixtures"), "{err}");
 }
+
+#[test]
+fn magnet_hash_reads_the_hash_a_release_link_carries() {
+    let found = releases("Dracula", RequestKind::Ebook, counter());
+
+    let hash = magnet_hash(&found[0].link("http://127.0.0.1:1"));
+
+    assert_eq!(hash, Some(found[0].id.clone()));
+    assert_eq!(magnet_hash("magnet:?xt=urn:btih:short"), None);
+    assert_eq!(magnet_hash("http://x"), None);
+}

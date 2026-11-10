@@ -14,6 +14,7 @@ pub mod cli;
 pub mod control;
 pub mod downloads;
 pub mod prowlarr;
+pub mod qbittorrent;
 #[cfg(test)]
 mod test_support;
 
@@ -33,21 +34,22 @@ pub const CLIENT_PASSWORD: &str = "mock";
 pub struct Mock {
     /// This mock's own address, such as `http://127.0.0.1:8123`, which usenet links point at.
     pub origin: String,
-    /// The canonical folder finished downloads are written under.
-    pub downloads: PathBuf,
-    pub payloads: Payloads,
     store: Mutex<Store>,
 }
 
 pub type Shared = Arc<Mock>;
 
 impl Mock {
-    pub fn new(origin: String, downloads: PathBuf, payloads: Payloads) -> Shared {
+    /// A mock whose downloads are written under `downloads` and take `download_secs`.
+    pub fn new(
+        origin: String,
+        downloads: PathBuf,
+        payloads: Payloads,
+        download_secs: u64,
+    ) -> Shared {
         Arc::new(Self {
             origin,
-            downloads,
-            payloads,
-            store: Mutex::new(Store::default()),
+            store: Mutex::new(Store::new(downloads, payloads, download_secs)),
         })
     }
 
@@ -61,6 +63,7 @@ impl Mock {
 pub fn router(mock: Shared) -> Router {
     Router::new()
         .merge(prowlarr::routes())
+        .merge(qbittorrent::routes())
         .merge(control::routes())
         .with_state(mock)
 }

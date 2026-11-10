@@ -34,6 +34,7 @@ async fn main() -> anyhow::Result<()> {
         format!("http://127.0.0.1:{port}"),
         downloads.clone(),
         payloads,
+        args.download_secs,
     );
     let app = router(mock);
     let server = tokio::spawn(async move { axum::serve(listener, app).await });
