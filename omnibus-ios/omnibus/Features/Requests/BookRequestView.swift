@@ -74,23 +74,52 @@ struct BookRequestView: View {
         }
     }
 
+    /// Share of a wide page the book's own pane takes, and the narrowest wide page that splits: the book page's.
+    static let headerPaneShare = BookDetailView.stagePaneShare
+    static let twoPaneWidth = BookDetailView.twoPaneWidth
+
+    /// The two panes a page this big splits into, or nil for one column.
+    static func split(size: CGSize, fold: Fold?) -> PaneSplit? {
+        PaneSplit.resolve(size: size, fold: fold, share: headerPaneShare, minimumWidth: twoPaneWidth)
+    }
+
     private func page(_ book: Book) -> some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: Spacing.lg) {
-                header(book)
-                ForEach(model.lanes) { lane in
-                    RequestLane(model: model, lane: lane)
+        // The keyboard-down size, as on the book page, so a field's keyboard can't flip the layout.
+        PaneGeometryReader { pane, _ in
+            if let split = Self.split(size: pane.size, fold: pane.fold) {
+                HStack(spacing: 0) {
+                    scrolling { header(book) }.frame(width: split.leading)
+                    Color.clear.frame(width: split.gap)
+                    scrolling { lanes; history }.frame(width: split.trailing)
                 }
-                ForEach(model.unrequested, id: \.self) { kind in
-                    UnrequestedLane(model: model, kind: kind)
+            } else {
+                scrolling {
+                    header(book)
+                    lanes
+                    history
                 }
-                history
             }
-            .screenPadding()
-            .padding(.vertical, Spacing.md)
+        }
+    }
+
+    private func scrolling<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: Spacing.lg) { content() }
+                .screenPadding()
+                .padding(.vertical, Spacing.md)
         }
         .scrollIndicators(.hidden)
         .refreshTask { await model.load(viewer: viewer) }
+    }
+
+    @ViewBuilder
+    private var lanes: some View {
+        ForEach(model.lanes) { lane in
+            RequestLane(model: model, lane: lane)
+        }
+        ForEach(model.unrequested, id: \.self) { kind in
+            UnrequestedLane(model: model, kind: kind)
+        }
     }
 
     private func header(_ book: Book) -> some View {
