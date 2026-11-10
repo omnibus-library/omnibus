@@ -13,7 +13,7 @@ import type {
   MetadataOverrides,
 } from "../../api/generated/schemas";
 import { storyClient } from "../../testing/AppHarness";
-import { found } from "../../testing/dom";
+import { expectPlate, found } from "../../testing/dom";
 import {
   addShelfBooksHandler,
   bulkOverridesHandler,
@@ -257,9 +257,7 @@ export const Loading: Story = {
       await expect(Math.round(box.top)).toBe(Math.round(cell.top));
       await expect(Math.round(box.width)).toBe(Math.round(cell.width));
       // A 2:3 plate, not one collapsed to a sliver.
-      await expect(
-        Math.abs(Math.round(box.height) - Math.round(box.width * 1.5)),
-      ).toBeLessThanOrEqual(1);
+      await expectPlate(box.width, box.height);
     }
   },
 };
@@ -1429,9 +1427,7 @@ export const ResumeStackPending: Story = {
       );
       // Layout sizes, since the rotated cards' client rects are hulls: a 2:3 plate the card's width.
       await expect(cover.offsetWidth).toBe(card.offsetWidth);
-      await expect(
-        Math.abs(cover.offsetHeight - Math.round(cover.offsetWidth * 1.5)),
-      ).toBeLessThanOrEqual(1);
+      await expectPlate(cover.offsetWidth, cover.offsetHeight);
     }
   },
 };

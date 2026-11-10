@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { expect, waitFor, type within } from "storybook/test";
 import type { Book } from "../../api";
-import { found } from "../../testing/dom";
+import { expectPlate, found } from "../../testing/dom";
 import {
   failing,
   hanging,
@@ -94,19 +94,17 @@ export const Loading: Story = {
       );
       const style = getComputedStyle(card);
       const column = Number.parseFloat(style.gridTemplateColumns);
+      if (!Number.isFinite(column)) {
+        throw new Error("the card's cover column is missing");
+      }
+      const frame = card.getBoundingClientRect();
       const left =
-        card.getBoundingClientRect().left +
-        card.clientLeft +
-        Number.parseFloat(style.paddingLeft);
+        frame.left + card.clientLeft + Number.parseFloat(style.paddingLeft);
       const top =
-        card.getBoundingClientRect().top +
-        card.clientTop +
-        Number.parseFloat(style.paddingTop);
+        frame.top + card.clientTop + Number.parseFloat(style.paddingTop);
       const box = cover.getBoundingClientRect();
       await expect(Math.round(box.width)).toBe(Math.round(column));
-      await expect(
-        Math.abs(Math.round(box.height) - Math.round(box.width * 1.5)),
-      ).toBeLessThanOrEqual(1);
+      await expectPlate(box.width, box.height);
       await expect(Math.round(box.left)).toBe(Math.round(left));
       await expect(Math.round(box.top)).toBe(Math.round(top));
     }
