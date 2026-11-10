@@ -30,14 +30,15 @@ struct BookFilesTab: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if hasHeldFormats || !slots.isEmpty {
-                Text(hasHeldFormats ? "On this phone" : "Files")
-                    .font(.display(30, weight: .semibold))
-                    .foregroundStyle(palette.ink0Color)
-                    .accessibilityAddTraits(.isHeader)
-                    .padding(.bottom, 12)
-
+            if hasHeldFormats {
+                sectionHeading("On this phone")
                 formats
+            }
+
+            if !slots.isEmpty {
+                sectionHeading("Not in the library")
+                    .padding(.top, hasHeldFormats ? 32 : 0)
+                requestSlots
             }
 
             if let requestError {
@@ -81,6 +82,14 @@ struct BookFilesTab: View {
     /// The kinds this reader can ask for because the library lacks them.
     private var slots: [RequestKind] { BookRequestFlow.fileSlots(user: app.user, formats: book.formats) }
 
+    private func sectionHeading(_ title: String) -> some View {
+        Text(title)
+            .font(.display(30, weight: .semibold))
+            .foregroundStyle(palette.ink0Color)
+            .accessibilityAddTraits(.isHeader)
+            .padding(.bottom, 12)
+    }
+
     private var formats: some View {
         VStack(spacing: 0) {
             if book.hasEbook {
@@ -106,8 +115,15 @@ struct BookFilesTab: View {
                         .accessibilityHidden(true)
                 }
             }
+        }
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(palette.bg1Color))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private var requestSlots: some View {
+        VStack(spacing: 0) {
             ForEach(Array(slots.enumerated()), id: \.element) { index, kind in
-                if hasHeldFormats || index > 0 { rule }
+                if index > 0 { rule }
                 requestSlot(kind)
             }
         }
@@ -117,7 +133,7 @@ struct BookFilesTab: View {
 
     /// A format the library lacks, with a button to request it. Commands never queue offline (rule 08).
     private func requestSlot(_ kind: RequestKind) -> some View {
-        formatRow(BookRequestFlow.kindLabel(kind), detail: "Not in the library") {
+        formatRow(BookRequestFlow.kindLabel(kind), detail: nil) {
             Button(starting == kind ? "Requesting\u{2026}" : "Request") { Task { await request(kind) } }
                 .buttonStyle(RequestButtonStyle(width: 100))
                 .disabled(starting != nil || !Connectivity.shared.isOnline)
@@ -143,17 +159,19 @@ struct BookFilesTab: View {
     }
 
     private func formatRow<Control: View>(
-        _ title: String, detail: String, @ViewBuilder control: () -> Control
+        _ title: String, detail: String?, @ViewBuilder control: () -> Control
     ) -> some View {
         HStack(spacing: Spacing.md) {
             VStack(alignment: .leading, spacing: 0) {
                 Text(title)
                     .font(.ui(16, weight: .semibold))
                     .foregroundStyle(palette.ink0Color)
-                Text(detail)
-                    .font(.ui(14))
-                    .foregroundStyle(palette.ink1Color)
-                    .fixedSize(horizontal: false, vertical: true)
+                if let detail {
+                    Text(detail)
+                        .font(.ui(14))
+                        .foregroundStyle(palette.ink1Color)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             Spacer(minLength: 0)
             control()
