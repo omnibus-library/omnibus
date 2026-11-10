@@ -28,5 +28,5 @@ tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "syn
 [dev-dependencies]
 omnibus-db = { path = "../db" }
 # The control API tests call it directly.
-reqwest = { workspace = true, features = ["query"] }
+reqwest = { workspace = true, features = ["query", "multipart"] }
 tempfile = { workspace = true }
