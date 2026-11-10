@@ -2,8 +2,8 @@
 # (`just modules`), the KOReader lane report's, scratch-server.sh's
 # scratch-dir regression test, `just koreader`'s preflight checks, run-dir
 # lifecycle, and home linking and plugin-zip install, the Docker entrypoint's
-# bash suite, the dev server's process-tree stop, its React build swap, and
-# the migration-number check.
+# bash suite, the dev server's process-tree stop, its React build swap, the
+# iOS simulator and pose scripts, and the migration-number check.
 #
 # The TestFlight scripts only ever execute against Apple's live API — one
 # during a release dispatch, one on a daily schedule — so a regression is
@@ -15,7 +15,7 @@
 # Deliberately scoped to these suites rather than all of scripts/tests/: the
 # dev-port/dev-serve/with-dev-env bash tests expect a Nix dev shell and a
 # worktree layout that this runner does not have. The scratch-server, Docker
-# entrypoint, dev-server-down, dev-react-build, check-migration-numbers and ios-sim ones are plain bash with stubbed I/O,
+# entrypoint, dev-server-down, dev-react-build, check-migration-numbers, ios-sim and ios-pose ones are plain bash with stubbed I/O,
 # stand-in processes or scratch git repos, so they run here.
 name: Script tests
 
@@ -53,6 +53,9 @@ on:
       - "scripts/ios-sim.sh"
       - "scripts/explore/ios.sh"
       - "scripts/tests/ios-sim-ensure.test.sh"
+      - "scripts/ios-pose.sh"
+      - "scripts/lib/ios-pose-helper.m"
+      - "scripts/tests/ios-pose.test.sh"
       - ".github/workflows/script-tests.yml"
   pull_request:
     paths:
@@ -84,6 +87,9 @@ on:
       - "scripts/ios-sim.sh"
       - "scripts/explore/ios.sh"
       - "scripts/tests/ios-sim-ensure.test.sh"
+      - "scripts/ios-pose.sh"
+      - "scripts/lib/ios-pose-helper.m"
+      - "scripts/tests/ios-pose.test.sh"
       - ".github/workflows/script-tests.yml"
 
 permissions:
@@ -205,8 +211,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Run suite
-        run: bash scripts/tests/ios-sim-ensure.test.sh
+      - name: Run suites
+        run: |
+          bash scripts/tests/ios-sim-ensure.test.sh
+          bash scripts/tests/ios-pose.test.sh
 
   dev-react-build:
     name: dev-port.sh React build

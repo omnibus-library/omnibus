@@ -8,6 +8,7 @@ import XCTest
 final class ScreenTour: XCTestCase {
     private var app: XCUIApplication!
     private let env = ProcessInfo.processInfo.environment
+    private var poseNumber = 0
 
     func testTour() throws {
         continueAfterFailure = true
@@ -81,18 +82,28 @@ final class ScreenTour: XCTestCase {
         guard let path = env["OMNIBUS_TOUR_POSE"] else {
             return XCTFail("pose(\(request)) needs scripts/ios-validate.sh tour")
         }
+        // Numbered, so a late reply to a request that timed out is never taken as this one's.
+        poseNumber += 1
+        let number = "\(poseNumber)"
         let dir = URL(fileURLWithPath: path)
         let reply = dir.appendingPathComponent("reply")
         try? FileManager.default.removeItem(at: reply)
         let pending = dir.appendingPathComponent("request.tmp")
-        XCTAssertNoThrow(try Data(request.utf8).write(to: pending))
+        XCTAssertNoThrow(try Data("\(number) \(request)".utf8).write(to: pending))
         XCTAssertNoThrow(try FileManager.default.moveItem(at: pending, to: dir.appendingPathComponent("request")))
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
             if let answer = try? String(contentsOf: reply, encoding: .utf8) {
                 try? FileManager.default.removeItem(at: reply)
-                XCTAssertTrue(answer.hasPrefix("ok"), "pose(\(request)): \(answer)")
-                sleep(1) // the app relays out after a fold or turn
+                let parts = answer.trimmingCharacters(in: .whitespacesAndNewlines)
+                    .split(separator: " ", maxSplits: 1).map(String.init)
+                guard parts.first == number else { continue }
+                let body = parts.count > 1 ? parts[1] : ""
+                XCTAssertTrue(body.hasPrefix("ok"), "pose(\(request)): \(body)")
+                let verb = request.split(separator: " ").first.map(String.init) ?? ""
+                if ["rotate", "open", "close", "half", "hinge"].contains(verb) {
+                    sleep(1) // the app relays out after a fold or turn
+                }
                 return
             }
             usleep(200_000)
@@ -109,9 +120,13 @@ final class ScreenTour: XCTestCase {
     }
 
     /// Swipes until `element` is on screen: a lazy grid only builds the cells near it.
-    /// Swipes the scroll view, not the app: an open Duo's app frame is its cover.
+    /// Swipes the outermost scroller, not the app: an open Duo's app frame is its cover.
     private func scrollTo(_ element: XCUIElement, maxSwipes: Int = 8) {
-        let surface = app.scrollViews.firstMatch.exists ? app.scrollViews.firstMatch : app.collectionViews.firstMatch
+        // Document order puts the page's scroller before any strip nested inside it.
+        let types = [XCUIElement.ElementType.scrollView.rawValue, XCUIElement.ElementType.collectionView.rawValue]
+        let scroller = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "elementType IN %@", types)).firstMatch
+        let surface: XCUIElement = scroller.exists ? scroller : app
         var swipes = 0
         while !(element.exists && element.isHittable) && swipes < maxSwipes {
             surface.swipeUp(velocity: .slow)

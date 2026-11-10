@@ -32,9 +32,10 @@
 # log and pid, the env.sh a tour reads, the tour's shots/, and pose/.
 #
 # Pose channel: a tour can't run host commands, but it can write files on the
-# host. It writes one line to pose/request (`open`, `rotate landscape-left`,
-# `screenshot 01-name`, … — scripts/ios-pose.sh's commands, a screenshot named
-# into shots/), and this script answers in pose/reply: `ok …` or `error …`.
+# host. It writes one line to pose/request, a sequence number then the request
+# (`3 open`, `4 rotate landscape-left`, `5 screenshot 01-name`, … —
+# scripts/ios-pose.sh's commands, a screenshot named into shots/), and this
+# script answers in pose/reply with the same number: `3 ok …` or `3 error …`.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -240,15 +241,23 @@ sim_delete() {
 }
 
 # Answers the tour's pose requests until killed. Only ios-pose.sh's own
-# commands pass, and a screenshot's name is kept inside shots/.
+# commands pass, and a screenshot's name is kept inside shots/. The reply echoes
+# the request's number, so a tour that gave up on one never takes its late reply.
 pose_server() {
-  local udid="$1" line reply
+  local udid="$1" line reply id
   local -a words
   while :; do
     if [ -f "$POSE/request" ]; then
       line="$(cat "$POSE/request")"
       rm -f "$POSE/request"
       read -r -a words <<<"$line"
+      id="${words[0]:-}"
+      if [[ "$id" =~ ^[0-9]+$ ]]; then
+        words=("${words[@]:1}")
+      else
+        id=""
+        words=()
+      fi
       case "${words[0]:-}" in
         open | close | half | show) ;;
         hinge | rotate) [ "${#words[@]}" -eq 2 ] || words=(invalid) ;;
@@ -268,6 +277,7 @@ pose_server() {
       else
         reply="error: ${reply//$'\n'/ }"
       fi
+      reply="${id:+$id }$reply"
       echo "pose: $line -> $reply" >&2
       echo "$reply" >"$POSE/reply.tmp"
       mv "$POSE/reply.tmp" "$POSE/reply"

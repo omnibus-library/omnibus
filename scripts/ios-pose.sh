@@ -43,7 +43,9 @@ fi
 
 resolve_udid() {
   if [ -z "$UDID" ]; then
-    UDID="$(ios_sim_find "$(ios_sim_duo_name "$ROOT")" | head -n 1)"
+    # A booted one first: a Duo left on an older runtime keeps the same name.
+    UDID="$(xcrun simctl list --json devices | jq -r --arg n "$(ios_sim_duo_name "$ROOT")" '
+      [.devices[][] | select(.name == $n)] | (map(select(.state == "Booted")) + .) | first | .udid // empty')"
     [ -n "$UDID" ] || die "no simulator given and this worktree has no Duo — run \`scripts/ios-validate.sh sim up --duo\` or pass -d <udid>"
   fi
   xcrun simctl list --json devices | jq -e --arg u "$UDID" \
@@ -53,16 +55,25 @@ resolve_udid() {
 
 # Built once per helper source and Xcode, outside the nix shell's compiler.
 helper() {
-  local key bin
+  local key bin tmp
   key="$( (cat "$HELPER_SRC"; xcode-select -p) | shasum | cut -c1-12)"
   bin="$HELPER_CACHE/ios-pose-helper-$key"
   if [ ! -x "$bin" ]; then
+    # Built under a private name and renamed in, so a concurrent build in another
+    # worktree never leaves a half-written binary at $bin.
     mkdir -p "$HELPER_CACHE"
-    env -u LD -u CC -u CXX -u SDKROOT xcrun -sdk iphonesimulator clang -arch arm64 \
-      -mios-simulator-version-min=17.0 -O2 -fobjc-arc -o "$bin.tmp" "$HELPER_SRC" \
-      -framework IOKit -framework Foundation -framework CoreMotion >&2 || die "could not build the helper"
-    codesign -f -s - "$bin.tmp" >/dev/null 2>&1 || die "could not sign the helper"
-    mv "$bin.tmp" "$bin"
+    tmp="$(mktemp "$HELPER_CACHE/.build.XXXXXX")"
+    if ! env -u LD -u CC -u CXX -u SDKROOT xcrun -sdk iphonesimulator clang -arch arm64 \
+      -mios-simulator-version-min=17.0 -O2 -fobjc-arc -o "$tmp" "$HELPER_SRC" \
+      -framework IOKit -framework Foundation -framework CoreMotion >&2; then
+      rm -f "$tmp"
+      die "could not build the helper"
+    fi
+    if ! chmod 755 "$tmp" || ! codesign -f -s - "$tmp" >/dev/null 2>&1; then
+      rm -f "$tmp"
+      die "could not sign the helper"
+    fi
+    mv -f "$tmp" "$bin"
   fi
   echo "$bin"
 }
@@ -80,21 +91,27 @@ set_hinge() {
   wait_display "$degrees"
 }
 
-# The UI moves between displays a moment after the hinge reports its angle.
-# Wait for the active display to hold still for a second, and closed (0°) must
-# land on the cover (primary), flat (180°) on the inner display.
+# The UI moves between displays 1–3 s after the hinge reports its angle.
+# Closed (0°) must land on the cover (primary) and flat (180°) on the inner
+# display, held for a second; any other angle has no known display, so it must
+# hold still past that lag (7 half-second samples) before it counts.
 wait_display() {
-  local want=any last="" now stable=0 deadline=$((SECONDS + TIMEOUT))
+  local want=any last="" now stable=0 hold=2 deadline=$((SECONDS + TIMEOUT))
   awk -v d="$1" 'BEGIN { exit !(d == 0) }' && want=true
   awk -v d="$1" 'BEGIN { exit !(d == 180) }' && want=false
+  if [ "$want" = any ]; then
+    hold=7
+    deadline=$((deadline + 8))
+  fi
   while [ "$SECONDS" -le "$deadline" ]; do
+    # A failed read is retried, not fatal: devicectl drops the odd call.
     now="$(xcrun devicectl device info displays -d "$UDID" -q -j - 2>/dev/null | jq -r '
-      [.result.displays[] | select(.type.integrated != null and .active == true)] | first
-      | if . == null then "none" else "\(.name):\(.primary)" end')"
+      [.result.displays[]? | select(.type.integrated != null and .active == true)] | first
+      | if . == null then "none" else "\(.name):\(.primary)" end')" || now=none
     if [ "$now" = "$last" ] && [ "$now" != none ] &&
       { [ "$want" = any ] || [ "${now##*:}" = "$want" ]; }; then
       stable=$((stable + 1))
-      [ "$stable" -ge 2 ] && return 0
+      [ "$stable" -ge "$hold" ] && return 0
     else
       stable=0
     fi
@@ -135,6 +152,7 @@ rotate() {
   local want event="$1"
   want="$(devicectl_orientation "$1")" ||
     die "orientation must be portrait, landscape-left, landscape-right or portrait-upside-down: $1"
+  helper >/dev/null # a build failure dies here, not as "no hinge" below
   if run_helper angle >/dev/null 2>&1; then
     [ "$event" = portrait-upside-down ] && event=pud
     run_helper orient "$event"
@@ -148,19 +166,20 @@ rotate() {
 # inner backlight on for a moment, so the backlight is not the signal.
 active_display() {
   xcrun devicectl device info displays -d "$UDID" -q -j - 2>/dev/null | jq -r '
-    [.result.displays[] | select(.type.integrated != null)] as $d
+    [.result.displays[]? | select(.type.integrated != null)] as $d
     | (($d | map(select(.active == true)) | first) // ($d | first) // {}) | .name // empty'
 }
 
 show() {
   local angle
+  helper >/dev/null
   angle="$(run_helper angle 2>/dev/null)" || angle="none"
   echo "hinge=$angle orientation=$(orientation) display=$(active_display)"
 }
 
 screenshot() {
   local file="${1:?usage: ios-pose.sh screenshot <file.png>}" display out
-  display="$(active_display)"
+  display="$(active_display)" || display=""
   [ -n "$display" ] || die "the simulator reports no integrated display"
   out="$(xcrun simctl io "$UDID" screenshot --display="$display" "$file" 2>&1)" || die "screenshot failed: $out"
   echo "$file ($display)"

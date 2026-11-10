@@ -2,12 +2,14 @@
 # Tests scripts/ios-pose.sh and ios_sim_ensure_duo (scripts/lib/ios-sim.sh)
 # without a simulator: the iPhone Duo is made on its own runtime, a hinge
 # angle out of range never reaches the simulator, a rotation goes through the
-# Duo's HID event on a foldable and through devicectl on a plain iPhone, and a
-# worktree without a Duo is told how to make one.
+# Duo's HID event on a foldable and through devicectl on a plain iPhone, a
+# screenshot with no display to read says so, a worktree without a Duo is told
+# how to make one, and a booted Duo wins over a stale one of the same name.
 #
-# A stub `xcrun` answers simctl and devicectl from fixed JSON and logs every
-# command; the helper binary is a pre-made file in a scratch cache, so nothing
-# is compiled. Real hardware is covered by the ios-validate skill's tours.
+# Stub `xcrun` and `xcode-select` answer from fixed JSON and log every command;
+# the helper binary is a pre-made file in a scratch cache, so nothing is
+# compiled and no Xcode is needed. Real hardware is covered by the ios-validate
+# skill's tours.
 #
 # Usage: scripts/tests/ios-pose.test.sh
 set -euo pipefail
@@ -56,10 +58,13 @@ case "\$*" in
   "devicectl device orientation set "*) ;;
   "devicectl device orientation get "*)
     echo "{\"result\": {\"deviceOrientationNonFlat\": \"\$(cat "$tmp/orientation")\"}}" ;;
+  "devicectl device info displays "*) echo '{"result": {}}' ;;
   *) echo "unexpected xcrun \$*" >&2; exit 1 ;;
 esac
 STUB
 chmod +x "$tmp/bin/xcrun"
+printf '#!/usr/bin/env bash\necho /Applications/Xcode.app/Contents/Developer\n' >"$tmp/bin/xcode-select"
+chmod +x "$tmp/bin/xcode-select"
 
 # A checkout named like a worktree, so the default Duo name is predictable.
 repo="$tmp/wt-x"
@@ -70,7 +75,7 @@ cp "$repo_root/scripts/lib/ios-pose-helper.m" "$repo/scripts/lib/"
 git init -q "$repo"
 
 # The helper ios-pose.sh would build, already in its cache under the same key.
-key="$( (cat "$repo/scripts/lib/ios-pose-helper.m"; xcode-select -p) | shasum | cut -c1-12)"
+key="$( (cat "$repo/scripts/lib/ios-pose-helper.m"; PATH="$tmp/bin:$PATH" xcode-select -p) | shasum | cut -c1-12)"
 mkdir -p "$tmp/cache/omnibus-ios-pose"
 touch "$tmp/cache/omnibus-ios-pose/ios-pose-helper-$key"
 chmod +x "$tmp/cache/omnibus-ios-pose/ios-pose-helper-$key"
@@ -113,3 +118,19 @@ echo "PASS: an unknown orientation is refused"
 pose show && fail "show ran without a device"
 grep -q "sim up --duo" "$tmp/err" || fail "no-device error said: $(cat "$tmp/err")"
 echo "PASS: a worktree without a Duo is told how to make one"
+
+pose -d DUO screenshot "$tmp/shot.png" && fail "screenshot succeeded with no display"
+grep -q "reports no integrated display" "$tmp/err" || fail "displayless screenshot said: $(cat "$tmp/err")"
+echo "PASS: a screenshot with no display to read says so"
+
+cat >"$tmp/devices.json" <<'JSON'
+{"devices": {
+  "com.apple.CoreSimulator.SimRuntime.iOS-27-1-iPhone19-4": [
+    {"name": "omnibus-tests-wt-x-duo", "udid": "STALE", "state": "Shutdown"}],
+  "com.apple.CoreSimulator.SimRuntime.iOS-27-2-iPhone19-4": [
+    {"name": "omnibus-tests-wt-x-duo", "udid": "DUO", "state": "Booted"}]
+}}
+JSON
+pose rotate landscape-left || fail "rotate on the worktree's Duo failed: $(cat "$tmp/err")"
+grep -q "spawn STALE" "$tmp/log" && fail "picked the shut-down Duo"
+echo "PASS: a booted Duo wins over a stale one of the same name"
