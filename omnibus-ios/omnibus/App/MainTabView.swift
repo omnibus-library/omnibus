@@ -93,14 +93,6 @@ struct TabPaths: Equatable {
     }
 }
 
-extension TabPaths {
-    /// A push onto `tab`'s stack, bound to the tab rather than to whichever one is selected when it runs,
-    /// so an answer that arrives after a tab switch still lands where it was asked.
-    static func opener(for tab: AppTab, in paths: Binding<TabPaths>) -> (Destination) -> Void {
-        { paths.wrappedValue[tab].append($0) }
-    }
-}
-
 struct MainTabView: View {
     @Environment(AppState.self) private var app
     @Environment(AudioPlayer.self) private var player
@@ -142,7 +134,9 @@ struct MainTabView: View {
     private func tabRoot(_ tab: AppTab, _ root: some View) -> some View {
         root
             .background { TabBarPlacementProbe { systemBarPlacement = $0 } }
-            .environment(\.openDestination, TabPaths.opener(for: tab, in: $paths))
+            // Bound to `tab`, so an answer that lands after a tab switch goes to the stack of the tab that
+            // asked, not necessarily the screen that did; a page already on top isn't pushed again.
+            .environment(\.openDestination) { if paths[tab].last != $0 { paths[tab].append($0) } }
     }
 
     /// The selection the system bar drives, which reports a tap on the open tab as a reselect.

@@ -61,21 +61,6 @@ import Testing
     #expect(paths.you == [.settings])
 }
 
-// MARK: - A push lands in the stack that asked
-
-@Test func tabOpenerPushesOntoItsOwnTabsStackOnly() {
-    final class Held { var paths = TabPaths() }
-    let held = Held()
-    let open = TabPaths.opener(for: .you, in: Binding(get: { held.paths }, set: { held.paths = $0 }))
-
-    open(.requests)
-
-    #expect(held.paths.you == [.requests])
-    #expect(held.paths.library.isEmpty)
-    #expect(held.paths.search.isEmpty)
-    #expect(held.paths.stats.isEmpty)
-}
-
 @Test func onlyTheSelectedTabsStackDecidesTheBar() {
     var paths = TabPaths()
     paths.library = [.book(uuid: "a")]
