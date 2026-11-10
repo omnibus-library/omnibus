@@ -17,6 +17,7 @@ pub mod prowlarr;
 pub mod qbittorrent;
 #[cfg(test)]
 mod test_support;
+pub mod transmission;
 
 use catalogue::Payloads;
 use downloads::Store;
@@ -64,6 +65,7 @@ pub fn router(mock: Shared) -> Router {
     Router::new()
         .merge(prowlarr::routes())
         .merge(qbittorrent::routes())
+        .merge(transmission::routes())
         .merge(control::routes())
         .with_state(mock)
 }
