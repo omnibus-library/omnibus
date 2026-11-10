@@ -9,14 +9,19 @@ use axum::http::{header::SET_COOKIE, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Form, Json, Router};
-use omnibus_shared::ReleaseProtocol;
+use omnibus_shared::DownloadClientKind;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::catalogue::magnet_hash;
-use crate::downloads::{Client, Download, Outcome};
+use crate::downloads::{Download, Outcome};
 use crate::Shared;
 
+const KIND: DownloadClientKind = DownloadClientKind::Qbittorrent;
+
+/// qBittorrent's `eta` for a download it cannot time.
+const NO_ETA: i64 = 8_640_000;
+
+/// The Web API v2 routes.
 pub fn routes() -> Router<Shared> {
     Router::new()
         .route("/api/v2/auth/login", post(login))
@@ -42,16 +47,12 @@ struct AddForm {
 
 /// 200 `Ok.` when the magnet names a torrent release the mock offered, else 200 `Fails.`.
 async fn add(State(mock): State<Shared>, Form(form): Form<AddForm>) -> &'static str {
-    let mut store = mock.store();
-    let release = magnet_hash(&form.urls)
-        .and_then(|hash| store.release(&hash).cloned())
-        .filter(|r| r.protocol == ReleaseProtocol::Torrent);
-    let Some(release) = release else {
-        return "Fails.";
-    };
-    let (id, folder) = (release.id.clone(), format!("mock-{}", release.id));
-    store.add(Client::Qbittorrent, id, release, folder, Instant::now());
-    "Ok."
+    let added = mock.store().add_torrent(KIND, &form.urls, Instant::now());
+    if added.is_some() {
+        "Ok."
+    } else {
+        "Fails."
+    }
 }
 
 #[derive(Deserialize)]
@@ -61,8 +62,7 @@ struct InfoQuery {
 }
 
 async fn info(State(mock): State<Shared>, Query(q): Query<InfoQuery>) -> Json<Vec<Value>> {
-    let mut store = mock.store();
-    store.refresh(Instant::now());
+    let store = mock.fresh_store();
     let root = store.root().to_string_lossy().into_owned();
     let wanted = |d: &Download| {
         q.hashes
@@ -70,7 +70,7 @@ async fn info(State(mock): State<Shared>, Query(q): Query<InfoQuery>) -> Json<Ve
             .is_none_or(|hashes| hashes.split('|').any(|h| h == d.id))
     };
     let rows = store
-        .of(Client::Qbittorrent)
+        .of(KIND)
         .filter(|d| wanted(d))
         .map(|d| {
             json!({
@@ -78,7 +78,7 @@ async fn info(State(mock): State<Shared>, Query(q): Query<InfoQuery>) -> Json<Ve
                 "progress": d.progress(),
                 "state": state(d),
                 "save_path": root,
-                "eta": d.eta(),
+                "eta": d.eta(store.secs).unwrap_or(NO_ETA),
                 "tags": "",
                 "added_on": d.added,
             })
@@ -103,9 +103,8 @@ struct FilesQuery {
 }
 
 async fn files(State(mock): State<Shared>, Query(q): Query<FilesQuery>) -> Response {
-    let mut store = mock.store();
-    store.refresh(Instant::now());
-    let Some(download) = store.find(Client::Qbittorrent, &q.hash) else {
+    let store = mock.fresh_store();
+    let Some(download) = store.find(KIND, &q.hash) else {
         return StatusCode::NOT_FOUND.into_response();
     };
     let listed: Vec<Value> = store
@@ -127,7 +126,7 @@ struct DeleteForm {
 async fn delete(State(mock): State<Shared>, Form(form): Form<DeleteForm>) {
     let mut store = mock.store();
     for hash in form.hashes.split('|') {
-        store.remove(Client::Qbittorrent, hash, form.delete_files == "true");
+        store.remove(KIND, hash, form.delete_files == "true");
     }
 }
 

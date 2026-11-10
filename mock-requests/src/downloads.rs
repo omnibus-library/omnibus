@@ -11,9 +11,11 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
+use omnibus_shared::DownloadClientKind;
 use serde::{Deserialize, Serialize};
 
-use crate::catalogue::{Payloads, Release};
+use crate::catalogue::{magnet_hash, Payloads, Release};
+use crate::nzb::{job_name_ok, release_id};
 
 /// What the fake Prowlarr answers a search with.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -43,38 +45,27 @@ pub enum Outcome {
     Junk,
 }
 
-/// Which fake a download was given to.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Client {
-    Qbittorrent,
-    Transmission,
-    Sabnzbd,
-    Nzbget,
-}
-
 /// One download a fake client holds.
 pub struct Download {
     /// A torrent's info hash, or a usenet job's name.
     pub id: String,
     /// SABnzbd's and NZBGet's numeric job id.
     pub num: u64,
-    pub client: Client,
+    /// The fake it was given to.
+    pub client: DownloadClientKind,
+    /// What it is a download of.
     pub release: Release,
     /// The one folder under the downloads root the files land in.
     pub folder: String,
     /// When it was added, in Unix seconds.
     pub added: i64,
+    /// How this download goes.
     pub outcome: Outcome,
-    secs: u64,
     progress: f64,
     last: Instant,
     /// The payload has been written; the download is over.
     pub done: bool,
 }
-
-/// What a torrent client reports when it cannot tell how long is left.
-const UNKNOWN_ETA: i64 = 8_640_000;
 
 impl Download {
     /// 0.0 to 1.0.
@@ -82,15 +73,11 @@ impl Download {
         self.progress
     }
 
-    /// Whole seconds left, as a client would estimate them.
-    pub fn eta(&self) -> i64 {
-        match (self.done, self.outcome) {
-            (true, _) => 0,
-            (_, Outcome::Complete | Outcome::Junk) => {
-                ((1.0 - self.progress) * self.secs as f64).ceil() as i64
-            }
-            _ => UNKNOWN_ETA,
-        }
+    /// Whole seconds left of a download that takes `secs`, as a client would estimate them;
+    /// `None` once it is over, and for one that is stalled or failed.
+    pub fn eta(&self, secs: u64) -> Option<i64> {
+        self.running()
+            .then(|| ((1.0 - self.progress) * secs as f64).ceil() as i64)
     }
 
     /// The payload file's name, such as `mock-<release id>.epub`.
@@ -111,20 +98,22 @@ impl Download {
         !self.done && matches!(self.outcome, Outcome::Complete | Outcome::Junk)
     }
 
-    /// Bank the time since the last read at the rate the current outcome allows.
-    fn advance(&mut self, now: Instant) {
+    /// Bank the time since the last read at the rate the current outcome allows, for a
+    /// download that takes `secs`.
+    fn advance(&mut self, now: Instant, secs: u64) {
         let elapsed = now.saturating_duration_since(self.last).as_secs_f64();
         self.last = now;
         if self.running() {
-            self.progress = if self.secs == 0 {
+            self.progress = if secs == 0 {
                 1.0
             } else {
-                (self.progress + elapsed / self.secs as f64).min(1.0)
+                (self.progress + elapsed / secs as f64).min(1.0)
             };
         }
     }
 }
 
+/// Every fake's state; see the module doc.
 pub struct Store {
     started: u64,
     counter: u64,
@@ -133,9 +122,11 @@ pub struct Store {
     downloads: Vec<Download>,
     root: PathBuf,
     payloads: Payloads,
+    /// What a search answers.
     pub search: SearchMode,
     /// What later downloads do, and the seconds they take.
     pub outcome: Outcome,
+    /// Seconds a download takes to run its course.
     pub secs: u64,
 }
 
@@ -176,6 +167,7 @@ impl Store {
         self.releases.insert(release.id.clone(), release);
     }
 
+    /// The release with this id, if a search made it.
     pub fn release(&self, id: &str) -> Option<&Release> {
         self.releases.get(id)
     }
@@ -184,7 +176,7 @@ impl Store {
     /// `id` keeps it, so a retry finds the job it made.
     pub fn add(
         &mut self,
-        client: Client,
+        client: DownloadClientKind,
         id: String,
         release: Release,
         folder: String,
@@ -205,7 +197,6 @@ impl Store {
             folder,
             added,
             outcome: self.outcome,
-            secs: self.secs,
             progress: 0.0,
             last: now,
             done: false,
@@ -213,17 +204,19 @@ impl Store {
         self.next_num
     }
 
-    pub fn find(&self, client: Client, id: &str) -> Option<&Download> {
+    /// The download `client` holds under `id`.
+    pub fn find(&self, client: DownloadClientKind, id: &str) -> Option<&Download> {
         self.downloads
             .iter()
             .find(|d| d.client == client && d.id == id)
     }
 
     /// Every download `client` holds, oldest first.
-    pub fn of(&self, client: Client) -> impl Iterator<Item = &Download> {
+    pub fn of(&self, client: DownloadClientKind) -> impl Iterator<Item = &Download> {
         self.downloads.iter().filter(move |d| d.client == client)
     }
 
+    /// Every download, of every client.
     pub fn all(&self) -> &[Download] {
         &self.downloads
     }
@@ -231,7 +224,7 @@ impl Store {
     /// Bring every download up to `now`, writing the payload of any that just finished.
     pub fn refresh(&mut self, now: Instant) {
         for d in &mut self.downloads {
-            d.advance(now);
+            d.advance(now, self.secs);
             if d.running() && d.progress >= 1.0 {
                 match deliver(&self.root, &self.payloads, d) {
                     Ok(()) => d.done = true,
@@ -251,7 +244,6 @@ impl Store {
         self.secs = secs.unwrap_or(self.secs);
         for d in self.downloads.iter_mut().filter(|d| !d.done) {
             d.outcome = self.outcome;
-            d.secs = self.secs;
         }
     }
 
@@ -268,14 +260,62 @@ impl Store {
         files
     }
 
+    /// Start the torrent `magnet` names for `client` and return its id, or `None` when the
+    /// mock never offered that release as a torrent.
+    pub fn add_torrent(
+        &mut self,
+        client: DownloadClientKind,
+        magnet: &str,
+        now: Instant,
+    ) -> Option<String> {
+        let release = magnet_hash(magnet)
+            .and_then(|hash| self.release(&hash).cloned())
+            .filter(|r| r.protocol == client.protocol())?;
+        let (id, folder) = (release.id.clone(), format!("mock-{}", release.id));
+        self.add(client, id.clone(), release, folder, now);
+        Some(id)
+    }
+
+    /// Start the job `name` for `client` from an uploaded `nzb` and return its number, or why
+    /// the mock refused it. The name becomes a folder, so only the names Omnibus gives pass.
+    pub fn add_usenet(
+        &mut self,
+        client: DownloadClientKind,
+        name: &str,
+        nzb: &[u8],
+        now: Instant,
+    ) -> Result<u64, &'static str> {
+        if !job_name_ok(name) {
+            return Err("the job name is not one Omnibus gives");
+        }
+        let release = release_id(nzb)
+            .and_then(|id| self.release(&id).cloned())
+            .filter(|r| r.protocol == client.protocol())
+            .ok_or("this NZB is not one the mock offered")?;
+        Ok(self.add(client, name.to_string(), release, name.to_string(), now))
+    }
+
     /// Forget a download, and delete its folder when `delete_files`. Only the download's own
     /// folder is ever removed, never the downloads root.
-    pub fn remove(&mut self, client: Client, id: &str, delete_files: bool) {
-        let Some(at) = self
+    pub fn remove(&mut self, client: DownloadClientKind, id: &str, delete_files: bool) {
+        let at = self
             .downloads
             .iter()
-            .position(|d| d.client == client && d.id == id)
-        else {
+            .position(|d| d.client == client && d.id == id);
+        self.drop_at(at, delete_files);
+    }
+
+    /// [`Self::remove`] for the download a usenet client numbered `num`.
+    pub fn remove_num(&mut self, client: DownloadClientKind, num: u64, delete_files: bool) {
+        let at = self
+            .downloads
+            .iter()
+            .position(|d| d.client == client && d.num == num);
+        self.drop_at(at, delete_files);
+    }
+
+    fn drop_at(&mut self, at: Option<usize>, delete_files: bool) {
+        let Some(at) = at else {
             return;
         };
         let gone = self.downloads.remove(at);

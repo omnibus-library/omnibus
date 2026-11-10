@@ -9,24 +9,25 @@ use axum::routing::post;
 use axum::Json;
 use axum::Router;
 use base64::engine::{general_purpose::STANDARD, Engine as _};
-use omnibus_shared::ReleaseProtocol;
+use omnibus_shared::DownloadClientKind;
 use serde_json::{json, Value};
 
-use crate::downloads::{Client, Download, Store};
-use crate::nzb::{job_name_ok, release_id};
+use crate::downloads::{Download, Store};
 use crate::Shared;
 
 /// The size every mock job reports, so the bar can be worked out from what is left.
 const JOB_MB: f64 = 100.0;
 
+const KIND: DownloadClientKind = DownloadClientKind::Nzbget;
+
+/// The JSON-RPC route.
 pub fn routes() -> Router<Shared> {
     Router::new().route("/jsonrpc", post(rpc))
 }
 
 async fn rpc(State(mock): State<Shared>, Json(call): Json<Value>) -> Json<Value> {
     let params = &call["params"];
-    let mut store = mock.store();
-    store.refresh(Instant::now());
+    let mut store = mock.fresh_store();
     let outcome = match call["method"].as_str() {
         Some("version") => Ok(json!("21.1")),
         Some("listgroups") => Ok(Value::Array(groups(&store))),
@@ -51,7 +52,7 @@ fn dir(store: &Store, d: &Download) -> String {
 
 fn groups(store: &Store) -> Vec<Value> {
     store
-        .of(Client::Nzbget)
+        .of(KIND)
         .filter(|d| !d.ended())
         .map(|d| {
             json!({
@@ -69,7 +70,7 @@ fn groups(store: &Store) -> Vec<Value> {
 
 fn history(store: &Store) -> Vec<Value> {
     store
-        .of(Client::Nzbget)
+        .of(KIND)
         .filter(|d| d.ended())
         .map(|d| {
             json!({
@@ -87,23 +88,10 @@ fn history(store: &Store) -> Vec<Value> {
 fn append(store: &mut Store, params: &Value) -> Result<Value, String> {
     let name = params[0].as_str().unwrap_or_default();
     let name = name.strip_suffix(".nzb").unwrap_or(name);
-    if !job_name_ok(name) {
-        return Err("the job name is not one Omnibus gives".into());
-    }
     let nzb = STANDARD
         .decode(params[1].as_str().unwrap_or_default())
         .map_err(|_| "the NZB is not base64".to_string())?;
-    let release = release_id(&nzb)
-        .and_then(|id| store.release(&id).cloned())
-        .filter(|r| r.protocol == ReleaseProtocol::Usenet)
-        .ok_or("this NZB is not one the mock offered")?;
-    let num = store.add(
-        Client::Nzbget,
-        name.to_string(),
-        release,
-        name.to_string(),
-        Instant::now(),
-    );
+    let num = store.add_usenet(KIND, name, &nzb, Instant::now())?;
     Ok(json!(num))
 }
 
@@ -126,13 +114,7 @@ fn edit(store: &mut Store, params: &Value) -> bool {
         .flatten()
         .filter_map(Value::as_u64)
     {
-        let id = store
-            .of(Client::Nzbget)
-            .find(|d| d.num == num)
-            .map(|d| d.id.clone());
-        if let Some(id) = id {
-            store.remove(Client::Nzbget, &id, delete_files);
-        }
+        store.remove_num(KIND, num, delete_files);
     }
     true
 }

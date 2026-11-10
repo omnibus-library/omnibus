@@ -81,3 +81,12 @@ fn parse_refuses_what_it_cannot_use() {
         );
     }
 }
+
+#[test]
+fn parse_accepts_each_download_client_kind() {
+    for kind in ["qbittorrent", "transmission", "sabnzbd", "nzbget"] {
+        let args = run(&["--local", "--client", kind]);
+
+        assert_eq!(args.client.as_str(), kind);
+    }
+}

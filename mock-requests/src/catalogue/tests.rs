@@ -120,3 +120,34 @@ fn magnet_hash_reads_the_hash_a_release_link_carries() {
     assert_eq!(magnet_hash("magnet:?xt=urn:btih:short"), None);
     assert_eq!(magnet_hash("http://x"), None);
 }
+
+#[test]
+fn magnet_hash_lowercases_an_uppercase_hash() {
+    let upper = "ABCDEF0123456789ABCDEF0123456789ABCDEF01";
+
+    let hash = magnet_hash(&format!("magnet:?xt=urn:btih:{upper}&dn=x"));
+
+    assert_eq!(hash, Some(upper.to_ascii_lowercase()));
+}
+
+#[test]
+fn is_id_accepts_forty_lowercase_hex_only() {
+    let hex = "0123456789abcdef0123456789abcdef01234567";
+
+    assert!(is_id(hex));
+    for bad in [
+        &hex[1..],
+        &hex.to_uppercase(),
+        "",
+        "g123456789abcdef0123456789abcdef01234567",
+    ] {
+        assert!(!is_id(bad), "{bad}");
+    }
+}
+
+#[test]
+fn kind_is_ebook_for_epub_and_azw3_and_audiobook_for_m4b() {
+    assert_eq!(Format::Epub.kind(), RequestKind::Ebook);
+    assert_eq!(Format::Azw3.kind(), RequestKind::Ebook);
+    assert_eq!(Format::M4b.kind(), RequestKind::Audiobook);
+}

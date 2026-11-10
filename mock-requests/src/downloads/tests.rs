@@ -3,7 +3,7 @@
 use std::fs;
 use std::time::Duration;
 
-use omnibus_shared::{ReleaseProtocol, RequestKind};
+use omnibus_shared::ReleaseProtocol;
 
 use crate::catalogue::{Format, Payloads};
 
@@ -13,7 +13,6 @@ fn release(id: &str, format: Format) -> Release {
     Release {
         id: id.into(),
         title: "Dracula".into(),
-        kind: RequestKind::Ebook,
         format,
         protocol: ReleaseProtocol::Torrent,
     }
@@ -56,7 +55,7 @@ impl Fixture {
     /// Adds a torrent EPUB download named after `id`.
     fn add(&mut self, id: &str) -> u64 {
         self.store.add(
-            Client::Qbittorrent,
+            DownloadClientKind::Qbittorrent,
             id.into(),
             release(id, Format::Epub),
             format!("mock-{id}"),
@@ -71,7 +70,10 @@ impl Fixture {
     }
 
     fn progress(&self, id: &str) -> f64 {
-        self.store.find(Client::Qbittorrent, id).unwrap().progress()
+        self.store
+            .find(DownloadClientKind::Qbittorrent, id)
+            .unwrap()
+            .progress()
     }
 }
 
@@ -110,11 +112,23 @@ fn refresh_reports_half_progress_at_half_the_time_and_all_of_it_at_the_end() {
 
     f.after(15);
     assert_eq!(f.progress("a"), 0.5);
-    assert_eq!(f.store.find(Client::Qbittorrent, "a").unwrap().eta(), 15);
+    assert_eq!(
+        f.store
+            .find(DownloadClientKind::Qbittorrent, "a")
+            .unwrap()
+            .eta(30),
+        Some(15)
+    );
 
     f.after(15);
     assert_eq!(f.progress("a"), 1.0);
-    assert_eq!(f.store.find(Client::Qbittorrent, "a").unwrap().eta(), 0);
+    assert_eq!(
+        f.store
+            .find(DownloadClientKind::Qbittorrent, "a")
+            .unwrap()
+            .eta(30),
+        None
+    );
 }
 
 #[test]
@@ -161,7 +175,12 @@ fn fail_freezes_progress_without_finishing() {
     f.after(100);
 
     assert_eq!(f.progress("a"), 0.0);
-    assert!(!f.store.find(Client::Qbittorrent, "a").unwrap().done);
+    assert!(
+        !f.store
+            .find(DownloadClientKind::Qbittorrent, "a")
+            .unwrap()
+            .done
+    );
 }
 
 #[test]
@@ -181,7 +200,7 @@ fn refresh_writes_the_payload_into_the_download_folder_once_it_finishes() {
 fn refresh_delivers_an_m4b_release_as_an_m4b_file() {
     let mut f = fixture(0);
     f.store.add(
-        Client::Qbittorrent,
+        DownloadClientKind::Qbittorrent,
         "b".into(),
         release("b", Format::M4b),
         "mock-b".into(),
@@ -240,8 +259,11 @@ fn find_sees_only_downloads_of_its_own_client() {
     let mut f = fixture(30);
     f.add("a");
 
-    assert!(f.store.find(Client::Transmission, "a").is_none());
-    assert!(f.store.find(Client::Qbittorrent, "a").is_some());
+    assert!(f
+        .store
+        .find(DownloadClientKind::Transmission, "a")
+        .is_none());
+    assert!(f.store.find(DownloadClientKind::Qbittorrent, "a").is_some());
 }
 
 #[test]
@@ -251,9 +273,9 @@ fn remove_deletes_the_download_folder_and_nothing_else() {
     f.add("b");
     f.after(0);
 
-    f.store.remove(Client::Qbittorrent, "a", true);
+    f.store.remove(DownloadClientKind::Qbittorrent, "a", true);
 
-    assert!(f.store.find(Client::Qbittorrent, "a").is_none());
+    assert!(f.store.find(DownloadClientKind::Qbittorrent, "a").is_none());
     assert!(!f.downloads.join("mock-a").exists());
     assert!(f.downloads.join("mock-b").exists());
 }
@@ -264,7 +286,7 @@ fn remove_keeps_the_files_when_asked_to() {
     f.add("a");
     f.after(0);
 
-    f.store.remove(Client::Qbittorrent, "a", false);
+    f.store.remove(DownloadClientKind::Qbittorrent, "a", false);
 
     assert!(f.downloads.join("mock-a/mock-a.epub").exists());
 }
@@ -278,9 +300,12 @@ fn set_applies_to_unfinished_downloads_and_to_later_ones() {
     f.add("b");
 
     for id in ["a", "b"] {
-        let d = f.store.find(Client::Qbittorrent, id).unwrap();
-        assert_eq!((d.outcome, d.secs), (Outcome::Stall, 60), "{id}");
+        let d = f.store.find(DownloadClientKind::Qbittorrent, id).unwrap();
+        assert_eq!(d.outcome, Outcome::Stall, "{id}");
     }
+    f.store.set(Some(Outcome::Complete), None, f.now);
+    f.after(30);
+    assert_eq!((f.progress("a"), f.progress("b")), (0.5, 0.5));
 }
 
 #[test]
@@ -292,7 +317,107 @@ fn set_leaves_a_finished_download_alone() {
     f.store.set(Some(Outcome::Fail), None, f.now);
 
     assert_eq!(
-        f.store.find(Client::Qbittorrent, "a").unwrap().outcome,
+        f.store
+            .find(DownloadClientKind::Qbittorrent, "a")
+            .unwrap()
+            .outcome,
         Outcome::Complete
     );
+}
+
+impl Fixture {
+    /// A release the store has made and kept, as a search would, over `protocol`.
+    fn offered(&mut self, protocol: ReleaseProtocol) -> Release {
+        let mut made = release(&self.store.mint(), Format::Epub);
+        made.protocol = protocol;
+        self.store.remember(made.clone());
+        made
+    }
+}
+
+#[test]
+fn add_torrent_starts_a_download_for_a_magnet_the_mock_offered() {
+    let mut f = fixture(30);
+    let offered = f.offered(ReleaseProtocol::Torrent);
+    let magnet = offered.link("http://127.0.0.1:1");
+
+    let id = f
+        .store
+        .add_torrent(DownloadClientKind::Transmission, &magnet, f.now);
+
+    assert_eq!(id.as_deref(), Some(offered.id.as_str()));
+    let held = f
+        .store
+        .find(DownloadClientKind::Transmission, &offered.id)
+        .unwrap();
+    assert_eq!(held.folder, format!("mock-{}", offered.id));
+}
+
+#[test]
+fn add_torrent_is_none_for_a_usenet_release_and_for_an_unknown_magnet() {
+    let mut f = fixture(30);
+    let usenet = f.offered(ReleaseProtocol::Usenet);
+    let unknown = format!("magnet:?xt=urn:btih:{}", "c".repeat(40));
+
+    for link in [usenet.link("http://127.0.0.1:1"), unknown] {
+        let id = f
+            .store
+            .add_torrent(DownloadClientKind::Qbittorrent, &link, f.now);
+
+        assert_eq!(id, None, "{link}");
+    }
+}
+
+#[test]
+fn add_usenet_starts_a_job_named_after_the_upload() {
+    let mut f = fixture(30);
+    let offered = f.offered(ReleaseProtocol::Usenet);
+    let name = format!("omnibus-{}", "a".repeat(40));
+
+    let num = f.store.add_usenet(
+        DownloadClientKind::Sabnzbd,
+        &name,
+        crate::nzb::body(&offered.id).as_bytes(),
+        f.now,
+    );
+
+    let held = f.store.find(DownloadClientKind::Sabnzbd, &name).unwrap();
+    assert_eq!((num, held.folder.as_str()), (Ok(held.num), name.as_str()));
+}
+
+#[test]
+fn add_usenet_refuses_a_job_name_that_could_be_a_path_and_an_nzb_it_never_offered() {
+    let mut f = fixture(30);
+    let offered = f.offered(ReleaseProtocol::Usenet);
+    let good = format!("omnibus-{}", "a".repeat(40));
+    let cases = [
+        ("../escape", crate::nzb::body(&offered.id)),
+        (good.as_str(), crate::nzb::body(&"d".repeat(40))),
+        (good.as_str(), "<nzb></nzb>".to_string()),
+    ];
+    for (name, nzb) in cases {
+        let added = f
+            .store
+            .add_usenet(DownloadClientKind::Nzbget, name, nzb.as_bytes(), f.now);
+
+        assert!(added.is_err(), "{name}");
+    }
+    assert!(f.store.all().is_empty());
+}
+
+#[test]
+fn remove_num_forgets_only_the_download_with_that_number_of_that_client() {
+    let mut f = fixture(0);
+    let (a, b) = (f.add("a"), f.add("b"));
+    f.after(0);
+
+    f.store
+        .remove_num(DownloadClientKind::Transmission, a, true);
+    assert!(f.store.find(DownloadClientKind::Qbittorrent, "a").is_some());
+    f.store.remove_num(DownloadClientKind::Qbittorrent, a, true);
+
+    assert!(f.store.find(DownloadClientKind::Qbittorrent, "a").is_none());
+    assert!(!f.downloads.join("mock-a").exists());
+    assert!(f.store.find(DownloadClientKind::Qbittorrent, "b").is_some());
+    assert_ne!(a, b);
 }

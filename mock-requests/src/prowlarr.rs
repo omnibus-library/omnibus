@@ -17,6 +17,7 @@ use crate::{Shared, PROWLARR_API_KEY};
 
 const INDEXER: &str = "Mock Indexer";
 
+/// The Prowlarr routes, behind the API key.
 pub fn routes() -> Router<Shared> {
     Router::new()
         .route("/api/v1/system/status", get(status))
@@ -73,7 +74,7 @@ fn row(release: &Release, origin: &str) -> Value {
     let mut row = json!({
         "guid": release.id,
         "title": release.title,
-        "size": release.size_bytes(),
+        "size": release.format.size_bytes(),
         "seeders": torrent.then_some(25),
         "protocol": release.protocol.as_str(),
         "indexer": INDEXER,

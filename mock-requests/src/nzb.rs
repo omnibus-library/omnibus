@@ -10,10 +10,12 @@ use axum::routing::get;
 use axum::Router;
 use omnibus_shared::ReleaseProtocol;
 
+use crate::catalogue::is_id;
 use crate::Shared;
 
 const MARKER: &str = r#"<meta type="name">"#;
 
+/// The route that serves a usenet release's NZB.
 pub fn routes() -> Router<Shared> {
     Router::new().route("/nzb/{id}", get(serve))
 }
@@ -50,16 +52,13 @@ pub fn release_id(nzb: &[u8]) -> Option<String> {
     let text = std::str::from_utf8(nzb).ok()?;
     let rest = text.split(MARKER).nth(1)?;
     let id = rest.split('<').next()?;
-    let hex = id.len() == 40 && id.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'));
-    hex.then(|| id.to_string())
+    is_id(id).then(|| id.to_string())
 }
 
 /// Whether `name` is `omnibus-` and 40 lowercase hex characters, the only job names the
 /// server gives, so that a name taken from a request can safely be a folder.
 pub fn job_name_ok(name: &str) -> bool {
-    name.strip_prefix("omnibus-").is_some_and(|hex| {
-        hex.len() == 40 && hex.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
-    })
+    name.strip_prefix("omnibus-").is_some_and(is_id)
 }
 
 #[cfg(test)]

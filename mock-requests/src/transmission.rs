@@ -10,15 +10,16 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::{Json, Router};
-use omnibus_shared::ReleaseProtocol;
+use omnibus_shared::DownloadClientKind;
 use serde_json::{json, Value};
 
-use crate::catalogue::magnet_hash;
-use crate::downloads::{Client, Download, Outcome, Store};
+use crate::downloads::{Download, Outcome, Store};
 use crate::Shared;
 
 const SESSION_HEADER: &str = "x-transmission-session-id";
 const SESSION_ID: &str = "mock-session";
+
+const KIND: DownloadClientKind = DownloadClientKind::Transmission;
 
 /// Transmission's status number for a torrent that is downloading.
 const DOWNLOADING: u8 = 4;
@@ -29,6 +30,7 @@ const SEEDING: u8 = 6;
 /// `error` value for a local error, the one the server reads as a failed download.
 const LOCAL_ERROR: i64 = 3;
 
+/// The RPC route.
 pub fn routes() -> Router<Shared> {
     Router::new().route("/transmission/rpc", post(rpc))
 }
@@ -39,8 +41,7 @@ async fn rpc(State(mock): State<Shared>, headers: HeaderMap, Json(call): Json<Va
         return (StatusCode::CONFLICT, [(SESSION_HEADER, SESSION_ID)]).into_response();
     }
     let args = &call["arguments"];
-    let mut store = mock.store();
-    store.refresh(Instant::now());
+    let mut store = mock.fresh_store();
     let reply = match call["method"].as_str() {
         Some("session-get") => success(json!({})),
         Some("torrent-add") => add(&mut store, args),
@@ -56,23 +57,13 @@ fn success(arguments: Value) -> Value {
 }
 
 fn add(store: &mut Store, args: &Value) -> Value {
-    let release = args["filename"]
+    let id = args["filename"]
         .as_str()
-        .and_then(magnet_hash)
-        .and_then(|hash| store.release(&hash).cloned())
-        .filter(|r| r.protocol == ReleaseProtocol::Torrent);
-    let Some(release) = release else {
-        return json!({"result": "invalid or corrupt torrent file"});
-    };
-    let (id, folder) = (release.id.clone(), format!("mock-{}", release.id));
-    store.add(
-        Client::Transmission,
-        id.clone(),
-        release,
-        folder,
-        Instant::now(),
-    );
-    success(json!({"torrent-added": {"hashString": id}}))
+        .and_then(|magnet| store.add_torrent(KIND, magnet, Instant::now()));
+    match id {
+        Some(id) => success(json!({"torrent-added": {"hashString": id}})),
+        None => json!({"result": "invalid or corrupt torrent file"}),
+    }
 }
 
 /// The torrents `ids` names, or all of them when it names none.
@@ -82,7 +73,7 @@ fn get(store: &Store, args: &Value) -> Value {
         .as_array()
         .is_some_and(|f| f.iter().any(|f| f == "files"));
     let torrents: Vec<Value> = store
-        .of(Client::Transmission)
+        .of(KIND)
         .filter(|d| ids.is_none_or(|ids| ids.iter().any(|id| id == d.id.as_str())))
         .map(|d| torrent(store, d, wants_files))
         .collect();
@@ -96,11 +87,7 @@ fn torrent(store: &Store, d: &Download, with_files: bool) -> Value {
         _ => (DOWNLOADING, 0),
     };
     // Transmission sends -1 for "unknown" and for a torrent that is no longer downloading.
-    let eta = if d.done || matches!(d.outcome, Outcome::Stall | Outcome::Fail) {
-        -1
-    } else {
-        d.eta()
-    };
+    let eta = d.eta(store.secs).unwrap_or(-1);
     let mut row = json!({
         "hashString": d.id,
         "status": status,
@@ -128,7 +115,7 @@ fn remove(store: &mut Store, args: &Value) -> Value {
         .flatten()
         .filter_map(Value::as_str)
     {
-        store.remove(Client::Transmission, id, delete_files);
+        store.remove(KIND, id, delete_files);
     }
     success(json!({}))
 }

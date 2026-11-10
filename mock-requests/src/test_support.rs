@@ -13,11 +13,14 @@ use tempfile::TempDir;
 use crate::catalogue::Payloads;
 use crate::{router, Mock, PROWLARR_API_KEY};
 
+/// What the EPUB payload holds.
 pub const EPUB_BYTES: &[u8] = b"mock epub payload";
+/// What the M4B payload holds.
 pub const M4B_BYTES: &[u8] = b"mock m4b payload";
 
 /// A running mock and the temp dirs it works in; both go when this drops.
 pub struct Running {
+    /// The mock's address, such as `http://127.0.0.1:8123`.
     pub origin: String,
     /// The canonical folder finished downloads land in.
     pub downloads: PathBuf,
