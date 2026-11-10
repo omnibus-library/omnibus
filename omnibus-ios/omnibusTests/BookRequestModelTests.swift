@@ -241,6 +241,16 @@ struct BookRequestModelTests {
         #expect(model.busy == nil)
     }
 
+    @Test func aFailedWriteKeepsAnOpenUndoToast() async {
+        let model = await loaded(aRequest(state: .looking)) {
+            $0.cancel = { _ in aCancelled(cancelAt: 1_010) }
+            $0.choose = { _, _ in throw APIError.http(status: 409, message: "taken") }
+        }
+        await model.cancel(model.lanes[0])
+        await model.choose(model.lanes[0], version: 11)
+        #expect(model.toast?.undoRequestID == 1)
+    }
+
     @Test func swappingRetryingAndTakingOrKeepingACoverEachReplaceTheLane() async {
         let choosing = aRequest(state: .choose, versions: [aVersion()])
         let stuckLane = aRequest(state: .stuck, stuckReason: .notFound)
@@ -379,7 +389,8 @@ struct BookRequestModelTests {
         #expect(model.lanes.first?.state == .cancelled)
     }
 
-    @Test func undoIsIgnoredAndTheToastKeptWhileAnotherWriteRuns() async {
+    /// A model with an Undo toast up and a start in flight, after Undo was tapped and the start finished.
+    private func undoTappedDuringAStart() async -> (model: BookRequestModel, toast: RequestToast, undone: ReadLog) {
         let started = Gate()
         let release = Gate()
         let undone = ReadLog()
@@ -400,8 +411,38 @@ struct BookRequestModelTests {
         await model.undo(toast)
         await release.open()
         await starting.value
-        #expect(await undone.singles.isEmpty)
-        #expect(model.toast == toast)
+        return (model, toast, undone)
+    }
+
+    @Test func undoSendsNothingWhileAnotherWriteRuns() async {
+        let run = await undoTappedDuringAStart()
+        #expect(await run.undone.singles.isEmpty)
+    }
+
+    @Test func undoKeepsTheToastWhileAnotherWriteRuns() async {
+        let run = await undoTappedDuringAStart()
+        #expect(run.model.toast == run.toast)
+    }
+
+    @Test func aWriteDuringTheFirstLoadKeepsTheLanesThatLoadReads() async {
+        let started = Gate()
+        let release = Gate()
+        let api = fakeRequestsAPI(
+            bookList: { _ in [listing("b", id: 1, state: .looking)] },
+            request: { id in
+                await started.open()
+                await release.wait()
+                return aRequest(id: id, state: .looking)
+            },
+            book: { _ in aBook },
+            start: { _, _ in throw FakeFailure() })
+        let model = model(api)
+        let load = Task { await model.load(viewer: adaViewer) }
+        await started.wait()
+        await model.start(.audiobook)
+        await release.open()
+        await load.value
+        #expect(model.lanes.map(\.id) == [1])
     }
 
     @Test func aReloadThatFailsKeepsTheLoadedPage() async {
@@ -419,16 +460,29 @@ struct BookRequestModelTests {
         #expect(model.lanes.map(\.id) == [1])
     }
 
-    @Test func nextWindowCloseWakesAnObserverWhenTheClockTicksAndThenNamesTheLaterWindow() async {
+    /// A model whose two cancels' undo windows close at 1,010 and 1,020, the clock reading 1,000.
+    private func twoOpenWindows() async -> (model: BookRequestModel, clock: TestClock) {
         let clock = TestClock(1_000)
         let rows = [aListing(aCancelled(1, cancelAt: 1_010)), aListing(aCancelled(2, cancelAt: 1_020))]
         let model = BookRequestModel(uuid: "b", api: bookRequestAPI(listings: rows), now: { clock.date })
         await model.load(viewer: adaViewer)
+        return (model, clock)
+    }
+
+    @Test func nextWindowCloseWakesAnObserverWhenTheClockTicks() async {
+        final class Flag: @unchecked Sendable { var raised = false }
+        let (model, clock) = await twoOpenWindows()
         let woken = Flag()
-        withObservationTracking { _ = model.nextWindowClose } onChange: { woken.raise() }
+        withObservationTracking { _ = model.nextWindowClose } onChange: { woken.raised = true }
         clock.advance(to: 1_010)
         model.tick()
-        #expect(woken.isRaised)
+        #expect(woken.raised)
+    }
+
+    @Test func nextWindowCloseNamesTheLaterWindowOnceTheEarlierOneCloses() async {
+        let (model, clock) = await twoOpenWindows()
+        clock.advance(to: 1_010)
+        model.tick()
         #expect(model.nextWindowClose == Date(timeIntervalSince1970: 1_020))
     }
 
@@ -450,7 +504,7 @@ struct BookRequestModelTests {
         #expect(model.lanes.map(\.id) == [2, 3])
     }
 
-    @Test func startingOnAnEmptyPageGivesItsLaneAndPollsIt() async {
+    private func startedOnAnEmptyPage() async -> BookRequestModel {
         let calls = CallCounter()
         let api = fakeRequestsAPI(
             bookList: { _ in await calls.next() == 1 ? [] : [listing("b", id: 2, state: .looking)] },
@@ -460,8 +514,15 @@ struct BookRequestModelTests {
         let model = model(api)
         await model.load(viewer: adaViewer)
         await model.start(.ebook)
-        #expect(model.lanes.map(\.id) == [2])
-        #expect(model.pollInterval != nil)
+        return model
+    }
+
+    @Test func startingOnAnEmptyPageGivesItsLane() async {
+        #expect(await startedOnAnEmptyPage().lanes.map(\.id) == [2])
+    }
+
+    @Test func startingOnAnEmptyPageStartsPollingItsLane() async {
+        #expect(await startedOnAnEmptyPage().pollInterval != nil)
     }
 
     // MARK: - Requester actions
@@ -625,15 +686,6 @@ struct BookRequestModelTests {
 
 private func aCancelled(_ id: Int64 = 1, userID: Int64 = 1, kind: RequestKind = .ebook, cancelAt: Int64? = 110) -> BookRequest {
     aRequest(id: id, userID: userID, kind: kind, state: .cancelled, cancelAt: cancelAt, cancelledBy: userID)
-}
-
-/// A flag an observation's `onChange` raises.
-final class Flag: @unchecked Sendable {
-    private let lock = NSLock()
-    private var raised = false
-
-    var isRaised: Bool { lock.withLock { raised } }
-    func raise() { lock.withLock { raised = true } }
 }
 
 /// A clock a test moves by hand.

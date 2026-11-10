@@ -105,10 +105,12 @@ final class BookRequestModel {
         async let mainRead = Self.attempt { try await api.request(mainID) }
         let otherReads = await readAll(others)
         let main = await mainRead
-        guard started == generation else { return }
         switch main {
-        case let .success(request): reads = otherReads.merging([request.id: request]) { $1 }
-        case let .failure(error): if !hadPage { failure = WishlistsModel.message(error) }
+        case let .success(request):
+            let answers = otherReads.merging([request.id: request]) { $1 }
+            // A write that landed meanwhile keeps its answers; this read only fills the lanes it lacks.
+            if started == generation { reads = answers } else { reads.merge(answers) { kept, _ in kept } }
+        case let .failure(error): if started == generation, !hadPage { failure = WishlistsModel.message(error) }
         }
     }
 
@@ -244,7 +246,8 @@ final class BookRequestModel {
             await rereadListings()
             return answer
         } catch {
-            toast = RequestToast(text: failure(error))
+            // An open Undo outranks a failure: losing it loses the only way back.
+            if toast?.undoRequestID == nil { toast = RequestToast(text: failure(error)) }
             if let rereading {
                 if let fresh = try? await api.request(rereading) { reads[rereading] = fresh }
                 await rereadListings()
