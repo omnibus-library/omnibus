@@ -334,16 +334,25 @@ struct BookRequestFlowTests {
             #expect(BookRequestFlow.isCancellable(aRequest(state: state, progress: progress)) == expected)
         }
 
-        @Test func letsAChooserCancelAnyonesRequestAndAnAskerOnlyTheirOwn() {
+        @Test func letsAChooserCancelAnyonesRequest() {
+            #expect(BookRequestFlow.canCancel(viewer: RequestViewer(id: 2, canStart: true, canChoose: true), request: aRequest(userID: 1)))
+        }
+
+        @Test func letsAnAskerCancelTheirOwnRequest() {
+            #expect(BookRequestFlow.canCancel(viewer: RequestViewer(id: 1, canStart: true, canChoose: false), request: aRequest(userID: 1)))
+        }
+
+        @Test func holdsCancelBackFromAnAskerOnSomeoneElsesRequest() {
             let theirs = aRequest(userID: 1)
-            #expect(BookRequestFlow.canCancel(viewer: RequestViewer(id: 2, canStart: true, canChoose: true), request: theirs))
-            #expect(BookRequestFlow.canCancel(viewer: RequestViewer(id: 1, canStart: true, canChoose: false), request: theirs))
             #expect(!BookRequestFlow.canCancel(viewer: RequestViewer(id: 2, canStart: true, canChoose: false), request: theirs))
         }
 
-        @Test func turnsSearchSlowAtTwentySecondsAndStaleAtAHundredAndFifty() {
+        @Test func turnsSearchSlowAtTwentySeconds() {
             #expect(!BookRequestFlow.isSearchSlow(updatedAt: 1000, now: at(1019)))
             #expect(BookRequestFlow.isSearchSlow(updatedAt: 1000, now: at(1020)))
+        }
+
+        @Test func turnsSearchStaleAtAHundredAndFiftySeconds() {
             #expect(!BookRequestFlow.isSearchStale(updatedAt: 1000, now: at(1149)))
             #expect(BookRequestFlow.isSearchStale(updatedAt: 1000, now: at(1150)))
         }
@@ -442,16 +451,22 @@ struct BookRequestFlowTests {
             #expect(!BookRequestFlow.offersRequestAgain(cancelled, viewer: ada, bookRequests: [live], now: now))
         }
 
-        @Test func offersItBesideAnotherReadersLiveRequestAndTheViewersOtherFormat() {
+        @Test func offersItBesideAnotherReadersLiveRequest() {
             let theirs = aRequest(id: 2, userID: 2, kind: .ebook, state: .looking)
-            let audio = aRequest(id: 3, userID: 1, kind: .audiobook, state: .looking)
             #expect(BookRequestFlow.offersRequestAgain(cancelled, viewer: ada, bookRequests: [theirs], now: now))
+        }
+
+        @Test func offersItBesideTheViewersLiveRequestOfTheOtherFormat() {
+            let audio = aRequest(id: 3, userID: 1, kind: .audiobook, state: .looking)
             #expect(BookRequestFlow.offersRequestAgain(cancelled, viewer: ada, bookRequests: [audio], now: now))
         }
 
-        @Test func holdsItBackFromAReaderWhoCantRequestAndOnARequestThatWasntCancelled() {
+        @Test func holdsItBackFromAReaderWhoCantRequest() {
             let viewer = RequestViewer(id: 1, canStart: false, canChoose: true)
             #expect(!BookRequestFlow.offersRequestAgain(cancelled, viewer: viewer, bookRequests: [], now: now))
+        }
+
+        @Test func holdsItBackOnARequestThatWasntCancelled() {
             let stuck = aRequest(state: .stuck)
             #expect(!BookRequestFlow.offersRequestAgain(stuck, viewer: ada, bookRequests: [], now: now))
         }

@@ -111,8 +111,7 @@ struct BookRequestModelTests {
         #expect(model.lanes.first?.id == 2)
     }
 
-    @Test func aPollReReadsOnlyTheLanesThatAreMovingAndTheListings() async {
-        let log = ReadLog()
+    private func polled(_ log: ReadLog) async {
         let rows = [
             listing("b", id: 3, userID: 2, state: .stuck, stuckReason: .notFound),
             listing("b", id: 2, state: .onItsWay, progress: 0.5),
@@ -121,7 +120,17 @@ struct BookRequestModelTests {
         await model.load(viewer: adaViewer)
         await log.clear()
         await model.poll()
+    }
+
+    @Test func aPollReReadsOnlyTheLanesThatAreMoving() async {
+        let log = ReadLog()
+        await polled(log)
         #expect(await log.singles == [2])
+    }
+
+    @Test func aPollReReadsTheListings() async {
+        let log = ReadLog()
+        await polled(log)
         #expect(await log.listReads == 2)
     }
 
@@ -169,10 +178,13 @@ struct BookRequestModelTests {
         #expect(model.lanes.map(\.id) == [1, 2])
     }
 
-    @Test func pollsOnlyWhileALaneIsMovingAndNotWhileTheReaderIsChoosing() async {
+    @Test func doesNotPollWhileTheReaderIsChoosing() async {
         let choosing = model(bookRequestAPI(listings: [listing("b", id: 1, state: .choose)]))
         await choosing.load(viewer: adaViewer)
         #expect(choosing.pollInterval == nil)
+    }
+
+    @Test func pollsWhileALaneIsMoving() async {
         let moving = model(bookRequestAPI(listings: [listing("b", id: 1, state: .chosen)]))
         await moving.load(viewer: adaViewer)
         #expect(moving.pollInterval == .seconds(2))
@@ -205,18 +217,26 @@ struct BookRequestModelTests {
         return model
     }
 
-    @Test func choosingAVersionReplacesTheLaneWithTheServersAnswerAndReReadsTheListings() async {
-        let log = ReadLog()
+    private func choosingVersion11(log: ReadLog) async -> BookRequestModel {
         let chosenLane = aRequest(state: .chosen, chosenResultID: 11, versions: [aVersion()])
         let model = await loaded(aRequest(state: .choose, versions: [aVersion(), aVersion(id: 12)]), log: log) {
             $0.choose = { _, _ in chosenLane }
         }
-        let listReads = await log.listReads
         await model.choose(model.lanes[0], version: 11)
+        return model
+    }
+
+    @Test func choosingAVersionReplacesTheLaneWithTheServersAnswer() async {
+        let model = await choosingVersion11(log: ReadLog())
         #expect(model.lanes.first?.state == .chosen)
-        #expect(await log.listReads == listReads + 1)
         #expect(model.toast == nil)
         #expect(model.busy == nil)
+    }
+
+    @Test func choosingAVersionReReadsTheListings() async {
+        let log = ReadLog()
+        _ = await choosingVersion11(log: log)
+        #expect(await log.listReads == 2)
     }
 
     @Test func choosingSendsTheRequestAndVersionIds() async {
@@ -232,11 +252,20 @@ struct BookRequestModelTests {
         #expect(await sent.singles == [5, 9])
     }
 
-    @Test func aFailedChoiceToastsItsCopyAndKeepsTheLane() async {
+    private func failedChoice() async -> BookRequestModel {
         let model = await loaded(aRequest(state: .choose, versions: [aVersion()])) { $0.choose = { _, _ in throw APIError.http(status: 409, message: "taken") } }
         await model.choose(model.lanes[0], version: 11)
+        return model
+    }
+
+    @Test func aFailedChoiceToastsItsCopy() async {
+        let model = await failedChoice()
         #expect(model.toast?.text == "Couldn\u{2019}t choose that version: taken")
         #expect(model.toast?.undoRequestID == nil)
+    }
+
+    @Test func aFailedChoiceKeepsTheLaneAndFreesTheButtons() async {
+        let model = await failedChoice()
         #expect(model.lanes.first?.state == .choose)
         #expect(model.busy == nil)
     }
@@ -253,49 +282,81 @@ struct BookRequestModelTests {
         #expect(model.toast?.duration == .seconds(8.5))
     }
 
-    @Test func swappingRetryingAndTakingOrKeepingACoverEachReplaceTheLane() async {
+    @Test func swappingReplacesTheLaneWithTheServersAnswer() async {
         let choosing = aRequest(state: .choose, versions: [aVersion()])
-        let stuckLane = aRequest(state: .stuck, stuckReason: .notFound)
-        let offer = CoverOffer(width: 1600, height: 2400, currentWidth: 128, currentHeight: 196)
-        let readyLane = aRequest(state: .ready, coverOffer: offer)
-        let swapped = await loaded(aRequest(state: .onItsWay, progress: 0.3)) { $0.swap = { _ in choosing } }
-        await swapped.swap(swapped.lanes[0])
-        #expect(swapped.lanes.first?.state == .choose)
-        let retried = await loaded(stuckLane) { $0.retry = { _ in aRequest(state: .looking) } }
-        await retried.retry(retried.lanes[0])
-        #expect(retried.lanes.first?.state == .looking)
-        let taken = await loaded(readyLane) { $0.takeCover = { _ in aRequest(state: .ready) } }
-        await taken.takeCover(taken.lanes[0])
-        #expect(taken.lanes.first?.coverOffer == nil)
-        let kept = await loaded(readyLane) { $0.keepCover = { _ in aRequest(state: .ready) } }
-        await kept.keepCover(kept.lanes[0])
-        #expect(kept.lanes.first?.coverOffer == nil)
+        let model = await loaded(aRequest(state: .onItsWay, progress: 0.3)) { $0.swap = { _ in choosing } }
+        await model.swap(model.lanes[0])
+        #expect(model.lanes.first?.state == .choose)
     }
 
-    @Test func eachFailureToastsItsOwnCopy() async {
-        let fail: @Sendable (Int64) async throws -> BookRequest = { _ in throw APIError.http(status: 500, message: "boom") }
-        let swapped = await loaded(aRequest(state: .onItsWay)) { $0.swap = fail }
-        await swapped.swap(swapped.lanes[0])
-        #expect(swapped.toast?.text == "Couldn\u{2019}t choose another: boom")
-        let retried = await loaded(aRequest(state: .stuck, stuckReason: .notFound)) { $0.retry = fail }
-        await retried.retry(retried.lanes[0])
-        #expect(retried.toast?.text == "Couldn\u{2019}t try again: boom")
-        let taken = await loaded(aRequest(state: .ready)) { $0.takeCover = fail }
-        await taken.takeCover(taken.lanes[0])
-        #expect(taken.toast?.text == "Couldn\u{2019}t use that cover: boom")
-        let kept = await loaded(aRequest(state: .ready)) { $0.keepCover = fail }
-        await kept.keepCover(kept.lanes[0])
-        #expect(kept.toast?.text == "Couldn\u{2019}t keep this one: boom")
+    @Test func retryingReplacesTheLaneWithTheServersAnswer() async {
+        let model = await loaded(aRequest(state: .stuck, stuckReason: .notFound)) { $0.retry = { _ in aRequest(state: .looking) } }
+        await model.retry(model.lanes[0])
+        #expect(model.lanes.first?.state == .looking)
     }
 
-    @Test func aFailedCoverWriteReReadsTheLaneAndTheListings() async {
-        let log = ReadLog()
+    private var coverOffered: BookRequest {
+        aRequest(state: .ready, coverOffer: CoverOffer(width: 1600, height: 2400, currentWidth: 128, currentHeight: 196))
+    }
+
+    @Test func takingTheCoverClearsItsOffer() async {
+        let model = await loaded(coverOffered) { $0.takeCover = { _ in aRequest(state: .ready) } }
+        await model.takeCover(model.lanes[0])
+        #expect(model.lanes.first?.coverOffer == nil)
+    }
+
+    @Test func keepingTheCurrentCoverClearsItsOffer() async {
+        let model = await loaded(coverOffered) { $0.keepCover = { _ in aRequest(state: .ready) } }
+        await model.keepCover(model.lanes[0])
+        #expect(model.lanes.first?.coverOffer == nil)
+    }
+
+    private let failWith500: @Sendable (Int64) async throws -> BookRequest = { _ in throw APIError.http(status: 500, message: "boom") }
+
+    @Test func aFailedSwapToastsItsCopy() async {
+        let fail = failWith500
+        let model = await loaded(aRequest(state: .onItsWay)) { $0.swap = fail }
+        await model.swap(model.lanes[0])
+        #expect(model.toast?.text == "Couldn\u{2019}t choose another: boom")
+    }
+
+    @Test func aFailedRetryToastsItsCopy() async {
+        let fail = failWith500
+        let model = await loaded(aRequest(state: .stuck, stuckReason: .notFound)) { $0.retry = fail }
+        await model.retry(model.lanes[0])
+        #expect(model.toast?.text == "Couldn\u{2019}t try again: boom")
+    }
+
+    @Test func aFailedTakeOfTheCoverToastsItsCopy() async {
+        let fail = failWith500
+        let model = await loaded(aRequest(state: .ready)) { $0.takeCover = fail }
+        await model.takeCover(model.lanes[0])
+        #expect(model.toast?.text == "Couldn\u{2019}t use that cover: boom")
+    }
+
+    @Test func aFailedKeepOfTheCoverToastsItsCopy() async {
+        let fail = failWith500
+        let model = await loaded(aRequest(state: .ready)) { $0.keepCover = fail }
+        await model.keepCover(model.lanes[0])
+        #expect(model.toast?.text == "Couldn\u{2019}t keep this one: boom")
+    }
+
+    private func failedTake(_ log: ReadLog) async {
         let model = await loaded(aRequest(state: .ready), log: log) { $0.takeCover = { _ in throw APIError.http(status: 409, message: "gone") } }
         await log.clear()
-        let listReads = await log.listReads
         await model.takeCover(model.lanes[0])
+    }
+
+    @Test func aFailedCoverWriteReReadsTheLane() async {
+        let log = ReadLog()
+        await failedTake(log)
         #expect(await log.singles == [1])
-        #expect(await log.listReads == listReads + 1)
+    }
+
+    @Test func aFailedCoverWriteReReadsTheListings() async {
+        let log = ReadLog()
+        await failedTake(log)
+        #expect(await log.listReads == 2)
     }
 
     @Test func aFailedChoiceDoesNotReRead() async {
@@ -550,16 +611,21 @@ struct BookRequestModelTests {
 
     // MARK: - Requester actions
 
-    @Test func cancellingSwapsInTheCancelledLaneAndToastsAnUndoForTheGraceThatIsLeft() async {
+    @Test func cancellingSwapsInTheCancelledLaneAndReReadsTheListings() async {
         let log = ReadLog()
         let model = await loaded(aRequest(state: .looking), log: log) { $0.cancel = { _ in aCancelled() } }
         await model.cancel(model.lanes[0])
         #expect(model.lanes.first?.state == .cancelled)
+        #expect(await log.listReads == 2)
+    }
+
+    @Test func cancellingToastsAnUndoForTheGraceThatIsLeft() async {
+        let model = await loaded(aRequest(state: .looking)) { $0.cancel = { _ in aCancelled() } }
+        await model.cancel(model.lanes[0])
         #expect(model.toast?.text == "Ebook request cancelled")
         #expect(model.toast?.undoRequestID == 1)
         // The server's cancel_at is 110 and the clock reads 1000, so the grace is already gone.
         #expect(model.toast?.duration == .zero)
-        #expect(await log.listReads == 2)
     }
 
     @Test func theUndoToastLastsUntilASecondAndAHalfBeforeCancelAt() async {
@@ -581,13 +647,18 @@ struct BookRequestModelTests {
         #expect(model.toast == nil)
     }
 
-    @Test func aFailedCancelToastsItsCopyAndReReads() async {
+    @Test func aFailedCancelToastsItsCopyWithNoUndo() async {
+        let model = await loaded(aRequest(state: .looking)) { $0.cancel = { _ in throw APIError.http(status: 409, message: "too late") } }
+        await model.cancel(model.lanes[0])
+        #expect(model.toast?.text == "Couldn\u{2019}t cancel: too late")
+        #expect(model.toast?.undoRequestID == nil)
+    }
+
+    @Test func aFailedCancelReReadsTheRequest() async {
         let log = ReadLog()
         let model = await loaded(aRequest(state: .looking), log: log) { $0.cancel = { _ in throw APIError.http(status: 409, message: "too late") } }
         await log.clear()
         await model.cancel(model.lanes[0])
-        #expect(model.toast?.text == "Couldn\u{2019}t cancel: too late")
-        #expect(model.toast?.undoRequestID == nil)
         #expect(await log.singles == [1])
     }
 
@@ -612,11 +683,14 @@ struct BookRequestModelTests {
         #expect(model.toast?.text == "Couldn\u{2019}t undo: gone")
     }
 
-    @Test func aChooserCancelsAnotherReadersRequestAndAnAskerCannot() async {
-        let theirs = aRequest(userID: 2, state: .looking)
-        let chooser = await loaded(theirs) { $0.cancel = { _ in aCancelled(userID: 2) } }
+    @Test func aChooserCancelsAnotherReadersRequest() async {
+        let chooser = await loaded(aRequest(userID: 2, state: .looking)) { $0.cancel = { _ in aCancelled(userID: 2) } }
         await chooser.cancel(chooser.lanes[0])
         #expect(chooser.lanes.first?.state == .cancelled)
+    }
+
+    @Test func anAskerCannotCancelAnotherReadersRequest() async {
+        let theirs = aRequest(userID: 2, state: .looking)
         let sent = ReadLog()
         let asker = await loaded(theirs, viewer: askerViewer) { $0.cancel = { id in await sent.single(id); return aCancelled(userID: 2) } }
         await asker.cancel(asker.lanes[0])
@@ -692,15 +766,22 @@ struct BookRequestModelTests {
         #expect(model.nextWindowClose == nil)
     }
 
-    @Test func requestAgainIsHeldBackWhileTheViewerHasThatKindGoingAndFromAReaderWhoCantStart() async {
+    @Test func requestAgainIsHeldBackWhileTheViewerHasThatKindGoing() async {
         let live = aListing(aRequest(id: 2, state: .looking))
         let old = aListing(aCancelled(1, cancelAt: nil))
         let going = model(bookRequestAPI(listings: [live, old]))
         await going.load(viewer: adaViewer)
         #expect(!going.offersRequestAgain(aCancelled(1, cancelAt: nil)))
-        let alone = model(bookRequestAPI(listings: [old]))
+    }
+
+    @Test func requestAgainIsOfferedWhenNothingOfThatKindIsGoing() async {
+        let alone = model(bookRequestAPI(listings: [aListing(aCancelled(1, cancelAt: nil))]))
         await alone.load(viewer: adaViewer)
         #expect(alone.offersRequestAgain(aCancelled(1, cancelAt: nil)))
+    }
+
+    @Test func requestAgainIsHeldBackFromAReaderWhoCantStart() async {
+        let old = aListing(aCancelled(1, cancelAt: nil))
         let asker = model(bookRequestAPI(listings: [old]))
         await asker.load(viewer: RequestViewer(id: 1, canStart: false, canChoose: false))
         #expect(!asker.offersRequestAgain(aCancelled(1, cancelAt: nil)))
