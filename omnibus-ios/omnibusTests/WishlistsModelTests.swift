@@ -306,6 +306,12 @@ struct WishlistsModelTests {
         publisher: nil, description: nil, coverURL: nil, source: "open_library"
     )
 
+    @Test func aSharedSearchHitBecomesTheWishlistHitOfTheSameKind() {
+        #expect(WishlistHit(.library(dune, formats: ["EPUB"])) == .library(dune))
+        #expect(WishlistHit(.online(duneRecord, lookup: nil)) == .online(duneRecord, lookup: nil))
+        #expect(BookSearchHit.library(dune, formats: nil).title == "Dune")
+    }
+
     @Test(arguments: [
         (FoundVia.barcodeScan, WishlistSource.scan),
         (.isbnEntry, .manual),

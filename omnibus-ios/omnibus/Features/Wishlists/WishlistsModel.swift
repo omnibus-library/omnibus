@@ -46,6 +46,15 @@ enum WishlistHit: Equatable {
     }
 }
 
+extension WishlistHit {
+    init(_ hit: BookSearchHit) {
+        switch hit {
+        case let .library(book, _): self = .library(book)
+        case let .online(meta, lookup): self = .online(meta, lookup: lookup)
+        }
+    }
+}
+
 /// A short message over the list, with an Undo when the write can be taken back.
 struct WishlistToast: Identifiable, Equatable {
     enum Undo: Equatable {
