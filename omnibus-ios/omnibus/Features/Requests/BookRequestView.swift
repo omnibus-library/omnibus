@@ -38,7 +38,8 @@ struct BookRequestView: View {
         // Re-reads the clock when an undo window closes, so Request again appears without a reload.
         .task(id: model.nextWindowClose) {
             guard let close = model.nextWindowClose else { return }
-            try? await Task.sleep(for: .seconds(max(0, close.timeIntervalSince(model.now()))))
+            // Past the close, so the wake never lands a hair before it and finds the window still open.
+            try? await Task.sleep(for: .seconds(max(0, close.timeIntervalSince(model.now())) + 0.25))
             guard !Task.isCancelled else { return }
             model.tick()
         }
