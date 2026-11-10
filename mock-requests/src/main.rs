@@ -16,6 +16,10 @@ async fn main() -> anyhow::Result<()> {
         }
         Command::Run(args) => args,
     };
+    // shortcut: wiring isn't built yet, so refuse rather than ignore; drop once it lands.
+    if args.target.is_some() {
+        anyhow::bail!("--local and --server are not supported yet");
+    }
     let payloads = Payloads::find(&args.test_data)?;
     std::fs::create_dir_all(&args.downloads)
         .with_context(|| format!("cannot create {}", args.downloads.display()))?;
