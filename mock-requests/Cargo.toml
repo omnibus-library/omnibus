@@ -1,0 +1,32 @@
+# Fake Prowlarr and download clients (qBittorrent, Transmission, SABnzbd, NZBGet)
+# for the book-request pipeline. Dev tooling only, out of default-members like
+# `mock-kobo/`. Unlike mock-kobo it depends on `omnibus-db` and `omnibus-shared` on
+# purpose: the server's own clients are the contract the fakes are tested against,
+# and the wiring body is the shared settings type itself.
+
+[package]
+name = "omnibus-mock-requests"
+version = "0.1.0"
+edition = "2021"
+license.workspace = true
+
+[[bin]]
+name = "mock-requests"
+path = "src/main.rs"
+
+[dependencies]
+# `main.rs` is the only user: the library reports typed errors.
+anyhow = "1"
+# Same version/features `server/` uses, so cargo unifies on one build.
+axum = { version = "0.8", features = ["multipart"] }
+omnibus-shared = { path = "../shared" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "sync"] }
+
+[dev-dependencies]
+omnibus-db = { path = "../db" }
+# The control API tests call it directly.
+reqwest = { workspace = true, features = ["query"] }
+tempfile = { workspace = true }

@@ -1,9 +1,9 @@
 [workspace]
-members = ["server", "shared", "db", "mcp", "mock-kobo"]
+members = ["server", "shared", "db", "mcp", "mock-kobo", "mock-requests"]
 # `mcp` is out of default-members — it is a standalone client binary that daily
 # server work never needs to compile; build it explicitly with
-# `cargo build -p omnibus-mcp`. `mock-kobo` (a fake Kobo for sync tests) is
-# out for the same reason.
+# `cargo build -p omnibus-mcp`. `mock-kobo` (a fake Kobo for sync tests) and
+# `mock-requests` (a fake Prowlarr and download clients) are out for the same reason.
 default-members = ["server", "shared"]
 resolver = "2"
 
