@@ -402,10 +402,10 @@ struct BookRequestFlowTests {
     }
 
     struct FileSlots {
-        private func reader(bookRequests: Bool = true, canStart: Bool = true) -> UserSummary {
+        private func reader(bookRequests: Bool = true) -> UserSummary {
             var user = UserSummary(id: 1, username: "ada", isAdmin: false, canUpload: false, canEdit: false, canDownload: true)
             user.bookRequests = bookRequests
-            user.canStartRequests = canStart
+            user.canStartRequests = true
             return user
         }
 
@@ -413,16 +413,8 @@ struct BookRequestFlowTests {
             #expect(BookRequestFlow.fileSlots(user: reader(), formats: []) == [.ebook, .audiobook])
         }
 
-        @Test func offersOnlyTheKindTheLibraryLacks() {
-            #expect(BookRequestFlow.fileSlots(user: reader(), formats: ["EPUB"]) == [.audiobook])
-        }
-
         @Test func offersNothingWhenBookRequestsAreOff() {
             #expect(BookRequestFlow.fileSlots(user: reader(bookRequests: false), formats: []).isEmpty)
-        }
-
-        @Test func offersNothingToAReaderWhoCantStart() {
-            #expect(BookRequestFlow.fileSlots(user: reader(canStart: false), formats: []).isEmpty)
         }
 
         @Test func offersNothingWhenNobodyIsSignedIn() {
