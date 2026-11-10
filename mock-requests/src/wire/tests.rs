@@ -504,6 +504,24 @@ fn guard_libraries_refuses_a_missing_leaf_reached_through_a_symlink_into_test_da
 }
 
 #[test]
+fn guard_libraries_refuses_a_checkouts_test_data_folder_itself() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::create_dir(tmp.path().join(".git")).unwrap();
+    std::fs::create_dir(tmp.path().join("test_data")).unwrap();
+
+    let err = guard_libraries(&libraries_at(&tmp.path().join("test_data"))).unwrap_err();
+
+    assert!(matches!(err, WireError::Setup(_)), "{err:?}");
+}
+
+#[test]
+fn guard_libraries_refuses_a_relative_library_path() {
+    let err = guard_libraries(&libraries_at(Path::new("books"))).unwrap_err();
+
+    assert!(matches!(err, WireError::Setup(_)), "{err:?}");
+}
+
+#[test]
 fn guard_libraries_refuses_test_data_in_any_letter_case() {
     let tmp = tempfile::tempdir().unwrap();
     std::fs::create_dir(tmp.path().join(".git")).unwrap();

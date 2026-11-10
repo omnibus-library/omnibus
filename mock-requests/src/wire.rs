@@ -252,7 +252,14 @@ fn guard_libraries(libraries: &Settings) -> Result<(), WireError> {
         &libraries.ebook_library_path,
         &libraries.audiobook_library_path,
     ];
-    for path in paths.into_iter().flatten() {
+    for path in paths.into_iter().flatten().filter(|p| !p.is_empty()) {
+        // A relative path resolves against the server's working folder, which the mock can't see.
+        if Path::new(path).is_relative() {
+            return Err(WireError::Setup(format!(
+                "the server's library {path} is a relative path the mock cannot check, so set an \
+                 absolute one first"
+            )));
+        }
         if in_checkout_fixtures(&resolve(Path::new(path))) {
             return Err(WireError::Setup(format!(
                 "the server's library {path} is inside a checkout's test_data/ folder: an import \
@@ -277,9 +284,10 @@ fn resolve(path: &Path) -> PathBuf {
     path.to_path_buf()
 }
 
-/// Whether a `test_data` component, in any letter case, sits directly in a git checkout.
+/// Whether `path` is or is under a `test_data` folder, in any letter case, that sits
+/// directly in a git checkout.
 fn in_checkout_fixtures(path: &Path) -> bool {
-    path.ancestors().skip(1).any(|dir| {
+    path.ancestors().any(|dir| {
         dir.file_name()
             .is_some_and(|name| name.eq_ignore_ascii_case("test_data"))
             && dir.parent().is_some_and(|root| root.join(".git").exists())
