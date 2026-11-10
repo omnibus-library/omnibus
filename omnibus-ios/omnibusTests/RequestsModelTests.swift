@@ -252,4 +252,17 @@ struct RequestsModelTests {
         _ = await first.value
         #expect(await started.libraryStarts == ["a"])
     }
+
+    @Test func startingFromALibraryBookCanAskForAnAudiobook() async {
+        let sent = Started()
+        let api = fakeRequestsAPI(
+            list: { [] },
+            start: { uuid, kind in
+                await sent.library("\(uuid):\(kind.rawValue)")
+                return aRequest(uuid: uuid, kind: kind)
+            })
+        let model = RequestsModel(api: api, defaults: requestDefaults())
+        #expect(await model.startFromLibrary(uuid: "lib", kind: .audiobook) == .show(uuid: "lib"))
+        #expect(await sent.libraryStarts == ["lib:audiobook"])
+    }
 }

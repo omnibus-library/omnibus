@@ -583,4 +583,23 @@ struct BookRequestFlowTests {
             #expect(BookRequestFlow.askedBy(theirs, viewer: 1, now: at(1_000)) == "Jordan \u{b7} 2h ago")
         }
     }
+
+    struct Slots {
+        @Test func offersASlotForEachKindTheLibraryLacksWhenRequestsAreOnAndTheReaderMayStart() {
+            #expect(BookRequestFlow.requestSlots(formats: [], requestsOn: true, canStart: true) == [.ebook, .audiobook])
+            #expect(BookRequestFlow.requestSlots(formats: ["EPUB"], requestsOn: true, canStart: true) == [.audiobook])
+            #expect(BookRequestFlow.requestSlots(formats: ["M4B"], requestsOn: true, canStart: true) == [.ebook])
+            #expect(BookRequestFlow.requestSlots(formats: ["PRINT"], requestsOn: true, canStart: true) == [.ebook, .audiobook])
+        }
+
+        @Test func offersNoSlotForAKindTheLibraryHolds() {
+            #expect(BookRequestFlow.requestSlots(formats: ["EPUB", "M4B"], requestsOn: true, canStart: true).isEmpty)
+            #expect(BookRequestFlow.requestSlots(formats: ["pdf", "mp3"], requestsOn: true, canStart: true).isEmpty)
+        }
+
+        @Test func offersNoSlotWhenRequestsAreOffOrTheReaderMayNotStart() {
+            #expect(BookRequestFlow.requestSlots(formats: [], requestsOn: false, canStart: true).isEmpty)
+            #expect(BookRequestFlow.requestSlots(formats: [], requestsOn: true, canStart: false).isEmpty)
+        }
+    }
 }

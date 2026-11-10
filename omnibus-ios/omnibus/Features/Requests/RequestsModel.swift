@@ -124,12 +124,12 @@ final class RequestsModel {
 
     // MARK: - Starting
 
-    /// Starts an ebook request on a library book.
-    func startFromLibrary(uuid: String) async -> AddOutcome {
+    /// Starts a request on a library book: an ebook unless `kind` says otherwise.
+    func startFromLibrary(uuid: String, kind: RequestKind = .ebook) async -> AddOutcome {
         guard !isStarting else { return Self.stillStarting }
         isStarting = true
         defer { isStarting = false }
-        return await start(uuid: uuid)
+        return await start(uuid: uuid, kind: kind)
     }
 
     /// Starts from a provider's record: on the library book it matches when there is one (opening its
@@ -162,9 +162,9 @@ final class RequestsModel {
         }
     }
 
-    private func start(uuid: String) async -> AddOutcome {
+    private func start(uuid: String, kind: RequestKind = .ebook) async -> AddOutcome {
         do {
-            let started = try await api.start(uuid, .ebook)
+            let started = try await api.start(uuid, kind)
             await load()
             return .show(uuid: started.bookUUID)
         } catch {

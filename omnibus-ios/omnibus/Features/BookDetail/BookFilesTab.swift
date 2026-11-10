@@ -10,6 +10,11 @@ struct BookFilesTab: View {
     var onAlignment: () -> Void
 
     @Environment(\.palette) private var palette
+    @Environment(AppState.self) private var app
+    @Environment(\.openDestination) private var openDestination
+    @State private var requests = RequestsModel()
+    /// Why the last request couldn't start.
+    @State private var requestError: String?
     // Not `private`: a private stored property makes the memberwise
     // initializer private too, and this view is constructed from the page.
     var downloads = DownloadManager.shared
@@ -24,14 +29,21 @@ struct BookFilesTab: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if book.hasEbook || book.hasAudiobook || book.hasPhysical {
-                Text("On this phone")
+            if hasHeldFormats || !slots.isEmpty {
+                Text(hasHeldFormats ? "On this phone" : "Files")
                     .font(.display(30, weight: .semibold))
                     .foregroundStyle(palette.ink0Color)
                     .accessibilityAddTraits(.isHeader)
                     .padding(.bottom, 12)
 
                 formats
+            }
+
+            if let requestError {
+                Text(requestError)
+                    .font(.ui(13))
+                    .foregroundStyle(palette.badColor)
+                    .padding(.top, 8)
             }
 
             // Full width, below the rows rather than inside one: the control in
@@ -63,6 +75,14 @@ struct BookFilesTab: View {
 
     // MARK: - Formats
 
+    private var hasHeldFormats: Bool { book.hasEbook || book.hasAudiobook || book.hasPhysical }
+
+    /// The kinds this reader can ask for because the library lacks them.
+    private var slots: [RequestKind] {
+        BookRequestFlow.requestSlots(
+            formats: book.formats, requestsOn: app.user?.bookRequests == true, canStart: app.user?.canStartRequests == true)
+    }
+
     private var formats: some View {
         VStack(spacing: 0) {
             if book.hasEbook {
@@ -88,9 +108,31 @@ struct BookFilesTab: View {
                         .accessibilityHidden(true)
                 }
             }
+            ForEach(Array(slots.enumerated()), id: \.element) { index, kind in
+                if hasHeldFormats || index > 0 { rule }
+                requestSlot(kind)
+            }
         }
         .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(palette.bg1Color))
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    /// A format the library lacks, with a button to request it. Commands never queue offline (rule 08).
+    private func requestSlot(_ kind: RequestKind) -> some View {
+        formatRow(BookRequestFlow.kindLabel(kind), detail: "Not in the library") {
+            Button(requests.isStarting ? "Requesting\u{2026}" : "Request") { Task { await request(kind) } }
+                .buttonStyle(RequestButtonStyle(width: 100))
+                .disabled(requests.isStarting || !Connectivity.shared.isOnline)
+                .accessibilityLabel("Request \(kind.rawValue)")
+        }
+    }
+
+    private func request(_ kind: RequestKind) async {
+        requestError = nil
+        switch await requests.startFromLibrary(uuid: book.uuid, kind: kind) {
+        case let .show(uuid): openDestination(.bookRequest(uuid: uuid))
+        case let .failed(message): requestError = message
+        }
     }
 
     private var rule: some View {

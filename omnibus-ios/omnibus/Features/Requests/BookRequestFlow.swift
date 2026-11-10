@@ -336,6 +336,12 @@ enum BookRequestFlow {
         }
     }
 
+    /// The Request rows on a book's Files tab: each kind the library lacks, when the server has requests on and the reader may start one.
+    static func requestSlots(formats: [String], requestsOn: Bool, canStart: Bool) -> [RequestKind] {
+        guard requestsOn, canStart else { return [] }
+        return RequestKind.allCases.filter { !holds(kind: $0, formats: formats) }
+    }
+
     /// The kinds the viewer may start that the library lacks and no request, in any state, covers.
     static func unrequestedKinds(formats: [String], listings: [RequestListing], viewer: RequestViewer) -> [RequestKind] {
         guard viewer.canStart else { return [] }
