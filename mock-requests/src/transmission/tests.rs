@@ -113,6 +113,7 @@ async fn remove_deletes_the_download_and_its_folder() {
     control(&mock, "/_mock/downloads", json!({"secs": 0})).await;
     let (hash, _) = add_epub(&mock, &client(&mock), ReleaseProtocol::Torrent).await;
     client(&mock).status(&hash).await.unwrap();
+    assert!(mock.downloads.join(format!("mock-{hash}")).exists());
 
     client(&mock).remove(&hash, true).await.unwrap();
 

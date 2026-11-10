@@ -139,6 +139,7 @@ async fn remove_deletes_a_finished_job_and_its_folder() {
     control(&mock, "/_mock/downloads", json!({"secs": 0})).await;
     let (hash, _) = add_epub(&mock, &client(&mock), ReleaseProtocol::Usenet).await;
     client(&mock).status(&hash).await.unwrap();
+    assert!(mock.downloads.join(format!("omnibus-{hash}")).exists());
 
     client(&mock).remove(&hash, true).await.unwrap();
 

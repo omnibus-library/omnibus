@@ -6,7 +6,7 @@ use omnibus_db::requests::ConnectionError;
 use omnibus_shared::{ReleaseProtocol, RequestKind};
 use serde_json::{json, Value};
 
-use crate::test_support::{add_epub, control, spawn, Running};
+use crate::test_support::{add_epub, control, control_reply, spawn, Running};
 use crate::{CLIENT_PASSWORD, CLIENT_USERNAME, PROWLARR_API_KEY};
 
 async fn view(mock: &Running) -> Value {
@@ -30,7 +30,7 @@ async fn search(mock: &Running) -> Result<usize, ConnectionError> {
 async fn search_mode_empty_makes_the_search_find_nothing() {
     let mock = spawn().await;
 
-    let reply = control(&mock, "/_mock/search", json!({"mode": "empty"})).await;
+    let reply = control_reply(&mock, "/_mock/search", json!({"mode": "empty"})).await;
 
     assert!(reply.status().is_success());
     assert_eq!(search(&mock).await.unwrap(), 0);
@@ -61,7 +61,7 @@ async fn search_mode_results_restores_the_catalogue() {
 async fn search_mode_answers_a_client_error_for_an_unknown_mode() {
     let mock = spawn().await;
 
-    let reply = control(&mock, "/_mock/search", json!({"mode": "sideways"})).await;
+    let reply = control_reply(&mock, "/_mock/search", json!({"mode": "sideways"})).await;
 
     assert!(reply.status().is_client_error(), "{}", reply.status());
 }
@@ -72,7 +72,7 @@ async fn downloads_settings_apply_to_a_download_already_added_and_to_later_ones(
     let qbit = Qbittorrent::new(&mock.origin, CLIENT_USERNAME, CLIENT_PASSWORD).unwrap();
     let (first, _) = add_epub(&mock, &qbit, ReleaseProtocol::Torrent).await;
 
-    let reply = control(
+    let reply = control_reply(
         &mock,
         "/_mock/downloads",
         json!({"outcome": "fail", "secs": 5}),
@@ -116,7 +116,7 @@ async fn downloads_settings_answer_a_client_error_for_a_bad_body() {
         json!({"secs": "soon"}),
         json!({"outcom": "fail"}),
     ] {
-        let reply = control(&mock, "/_mock/downloads", body.clone()).await;
+        let reply = control_reply(&mock, "/_mock/downloads", body.clone()).await;
 
         assert!(
             reply.status().is_client_error(),

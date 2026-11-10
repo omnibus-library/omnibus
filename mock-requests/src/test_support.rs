@@ -65,14 +65,20 @@ pub async fn found(mock: &Running, protocol: ReleaseProtocol, format: &str) -> P
         .unwrap()
 }
 
-/// `PUT` a control-API `body` to `path` and return the reply.
-pub async fn control(mock: &Running, path: &str, body: Value) -> reqwest::Response {
+/// `PUT` a control-API `body` to `path` and return the reply, whatever its status.
+pub async fn control_reply(mock: &Running, path: &str, body: Value) -> reqwest::Response {
     reqwest::Client::new()
         .put(format!("{}{path}", mock.origin))
         .json(&body)
         .send()
         .await
         .unwrap()
+}
+
+/// [`control_reply`] for a setup step, which must succeed or the test proves nothing.
+pub async fn control(mock: &Running, path: &str, body: Value) {
+    let reply = control_reply(mock, path, body).await;
+    assert!(reply.status().is_success(), "{path}: {}", reply.status());
 }
 
 /// Hands `client` the EPUB of `protocol` and returns its job id and the release's own id.
