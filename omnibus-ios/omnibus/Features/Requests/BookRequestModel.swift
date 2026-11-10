@@ -246,14 +246,20 @@ final class BookRequestModel {
             await rereadListings()
             return answer
         } catch {
-            // An open Undo outranks a failure: losing it loses the only way back.
-            if toast?.undoRequestID == nil { toast = RequestToast(text: failure(error)) }
+            toast = failureToast(failure(error))
             if let rereading {
                 if let fresh = try? await api.request(rereading) { reads[rereading] = fresh }
                 await rereadListings()
             }
             return nil
         }
+    }
+
+    /// The failure's toast; an open Undo rides along, since losing it loses the only way back.
+    private func failureToast(_ text: String) -> RequestToast {
+        guard let id = toast?.undoRequestID else { return RequestToast(text: text) }
+        let left = BookRequestFlow.undoDelay(cancelAt: reads[id]?.cancelAt, now: now())
+        return RequestToast(text: text, undoRequestID: id, duration: left ?? .zero)
     }
 
     private func rereadListings() async {

@@ -241,14 +241,16 @@ struct BookRequestModelTests {
         #expect(model.busy == nil)
     }
 
-    @Test func aFailedWriteKeepsAnOpenUndoToast() async {
+    @Test func aFailedWriteWhileUndoIsOpenShowsItsCopyAndKeepsTheUndoWithItsRemainingWindow() async {
         let model = await loaded(aRequest(state: .looking)) {
             $0.cancel = { _ in aCancelled(cancelAt: 1_010) }
             $0.choose = { _, _ in throw APIError.http(status: 409, message: "taken") }
         }
         await model.cancel(model.lanes[0])
         await model.choose(model.lanes[0], version: 11)
+        #expect(model.toast?.text == "Couldn\u{2019}t choose that version: taken")
         #expect(model.toast?.undoRequestID == 1)
+        #expect(model.toast?.duration == .seconds(8.5))
     }
 
     @Test func swappingRetryingAndTakingOrKeepingACoverEachReplaceTheLane() async {
