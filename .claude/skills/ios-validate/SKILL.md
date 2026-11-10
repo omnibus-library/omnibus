@@ -17,6 +17,9 @@ It builds this worktree's server (minutes on a first build; sccache shares the d
 
 - **iOS-only change:** skip the build with `OMNIBUS_IOS_SERVER_BIN=<a built server>`, e.g. `~/.cache/cargo-target/omnibus/debug/omnibus`.
 - **Fixtures missing:** `just fixtures`.
+- **Book requests:** `server up --requests` boots the server with `OMNIBUS_BOOK_REQUESTS=1` on APFS clones of the libraries (an import files into a copy, never `test_data/`), then starts `mock-requests` wired to it as the Prowlarr and qBittorrent connections. `env.sh` gains `OMNIBUS_TOUR_REQUESTS`, the mock's address. A running server without the mock is restarted, keeping its database. Done when `server status` prints a `mock-requests:` line and `curl -sf $OMNIBUS_TOUR_REQUESTS/_mock` answers JSON. A request then walks Looking, Choose a version, On its way (the bar moves over 30 s) and Ready; to reach the stuck states, `curl -X PUT -H 'content-type: application/json' "$OMNIBUS_TOUR_REQUESTS/_mock/<route>" -d '<body>'` with:
+  - `search` `{"mode":"empty"}` for not found, `{"mode":"fail"}` for search failed, `{"mode":"results"}` to restore it.
+  - `downloads` `{"outcome":"fail"}` for stopped moving, `{"outcome":"junk"}` for couldn't add, `{"outcome":"stall"}` to freeze the bar, `{"outcome":"complete","secs":5}` to restore it and speed it up. It applies to every unfinished download and every later one.
 
 ## 2. Seed what the screens need
 

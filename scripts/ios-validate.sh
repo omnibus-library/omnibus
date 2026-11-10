@@ -5,11 +5,17 @@
 # once. Backs the ios-validate skill (.claude/skills/ios-validate/SKILL.md).
 #
 # Usage:
-#   ios-validate.sh server up [--fresh]  start the scratch server, or reuse the
+#   ios-validate.sh server up [--fresh] [--requests]
+#                                        start the scratch server, or reuse the
 #                                        running one; --fresh restarts it on an
-#                                        empty database
-#   ios-validate.sh server down          stop it
-#   ios-validate.sh server status        its address and pid, if running
+#                                        empty database; --requests turns book
+#                                        requests on, clones the libraries so an
+#                                        import never dirties test_data/, and
+#                                        starts mock-requests (a fake Prowlarr
+#                                        and qBittorrent) wired to the server
+#   ios-validate.sh server down          stop it (and the mock)
+#   ios-validate.sh server status        its address and pid, if running, and
+#                                        the mock's address
 #   ios-validate.sh sim up [--duo]       create (first use) and boot this
 #                                        worktree's simulator; prints its UDID.
 #                                        --duo: its iPhone Duo instead
@@ -29,7 +35,8 @@
 #                              change is iOS-only
 #
 # State lives in .claude/runtime/ios-validate/: the server's database, covers,
-# log and pid, the env.sh a tour reads, the tour's shots/, and pose/.
+# log and pid, the mock's (--requests) library clones, downloads, log and pid, the
+# env.sh a tour reads, the tour's shots/, and pose/.
 #
 # Pose channel: a tour can't run host commands, but it can write files on the
 # host. It writes one line to pose/request, a sequence number then the request
@@ -45,6 +52,9 @@ SERVER="$STATE/server"
 PIDFILE="$SERVER/pid"
 # The binary the pid was launched from, so a reused pid is never mistaken for it.
 BINFILE="$SERVER/bin"
+# The same pair for mock-requests, which only `server up --requests` starts.
+MOCK_PIDFILE="$SERVER/mock-requests.pid"
+MOCK_BINFILE="$SERVER/mock-requests.bin"
 ENVFILE="$STATE/env.sh"
 POSE="$STATE/pose"
 
@@ -61,28 +71,48 @@ die() {
   exit 1
 }
 
-server_pid() {
-  [ -f "$PIDFILE" ] && [ -f "$BINFILE" ] || return 1
+# The pid in pidfile $1 when it still runs the binary named in $2, never a bare pid.
+live_pid() {
+  [ -f "$1" ] && [ -f "$2" ] || return 1
   local pid command
-  pid="$(cat "$PIDFILE")"
+  pid="$(cat "$1")"
   command="$(ps -p "$pid" -o command= 2>/dev/null)" || return 1
   case "$command" in
-    "$(cat "$BINFILE")"*) echo "$pid" ;;
+    "$(cat "$2")"*) echo "$pid" ;;
     *) return 1 ;;
   esac
 }
 
+server_pid() { live_pid "$PIDFILE" "$BINFILE"; }
+
+mock_pid() { live_pid "$MOCK_PIDFILE" "$MOCK_BINFILE"; }
+
+# $1 is the pid, $2 what it was.
 stop_pid() {
   kill "$1" 2>/dev/null || return 0
   for _ in $(seq 1 20); do
     kill -0 "$1" 2>/dev/null || break
     sleep 0.5
   done
-  echo "ios-validate: stopped the scratch server ($1)" >&2
+  echo "ios-validate: stopped the ${2:-scratch server} ($1)" >&2
+}
+
+# Whether the running server was started with --requests and its mock is still up.
+requests_running() {
+  grep -q OMNIBUS_TOUR_REQUESTS "$ENVFILE" 2>/dev/null && mock_pid >/dev/null
 }
 
 server_up() {
-  if [ "${1:-}" != "--fresh" ] && server_pid >/dev/null && [ -f "$ENVFILE" ]; then
+  local fresh=0 requests=0 arg
+  for arg in "$@"; do
+    case "$arg" in
+      --fresh) fresh=1 ;;
+      --requests) requests=1 ;;
+      *) die "usage: ios-validate.sh server up [--fresh] [--requests]" ;;
+    esac
+  done
+  if [ "$fresh" = 0 ] && server_pid >/dev/null && [ -f "$ENVFILE" ] &&
+    { [ "$requests" = 0 ] || requests_running; }; then
     server_status
     return 0
   fi
@@ -90,7 +120,7 @@ server_up() {
   # it keeps a port in this window that nothing will ever stop.
   server_down
   rm -f "$ENVFILE"
-  if [ "${1:-}" = "--fresh" ]; then
+  if [ "$fresh" = 1 ]; then
     rm -rf "$SERVER"
   fi
   # Absolute, because the start runs from the repo root and launches from $SERVER.
@@ -107,13 +137,61 @@ server_up() {
   # worktree's build in one target dir and its server in one window.
   cd "$ROOT"
   env -u PORT -u CARGO_TARGET_DIR \
-    "$ROOT/scripts/with-dev-env.sh" default "$HERE/ios-validate.sh" __start
+    "$ROOT/scripts/with-dev-env.sh" default "$HERE/ios-validate.sh" __start "$requests"
+}
+
+# APFS clones of the fixture libraries under $SERVER/library, made when missing, so an
+# import files into a copy and never into the committed tree. macOS's own cp, since the
+# dev shell's GNU one has no -c.
+clone_libraries() {
+  mkdir -p "$SERVER/library"
+  local name
+  for name in epubs audiobooks; do
+    [ -d "$SERVER/library/$name" ] || /bin/cp -cR "$ROOT/test_data/$name" "$SERVER/library/$name"
+  done
+}
+
+# Runs inside the dev shell, once the server at $1 is up: build mock-requests, start it
+# wired to that server, and wait for its ready line. Prints the mock's address.
+start_mock() {
+  local base="$1" mockbin log="$SERVER/mock-requests.log" waited=0 line="" launched
+  echo "ios-validate: building mock-requests…" >&2
+  cargo build -q -p omnibus-mock-requests
+  mockbin="$CARGO_TARGET_DIR/debug/mock-requests"
+  [ -x "$mockbin" ] || die "no mock-requests binary at $mockbin"
+  mkdir -p "$SERVER/downloads"
+  echo "$mockbin" >"$MOCK_BINFILE"
+  (
+    cd "$SERVER"
+    nohup env -i HOME="$HOME" PATH="$PATH" \
+      OMNIBUS_DEV_SEED_USER="$TOUR_USER:$TOUR_PASSWORD" \
+      "$mockbin" --server "$base" --downloads "$SERVER/downloads" \
+      --test-data "$ROOT/test_data" >"$log" 2>&1 &
+    echo $! >"$MOCK_PIDFILE"
+  )
+  launched="$(cat "$MOCK_PIDFILE")"
+  until line="$(grep -m1 '^MOCK_REQUESTS_READY' "$log")"; do
+    kill -0 "$launched" 2>/dev/null || { tail -20 "$log" >&2; die "mock-requests exited"; }
+    [ "$waited" -lt 60 ] || { tail -20 "$log" >&2; die "mock-requests not ready after 60s"; }
+    sleep 1
+    waited=$((waited + 1))
+  done
+  echo "http://127.0.0.1:$(echo "$line" | sed -n 's/.* port=\([0-9]*\).*/\1/p')"
 }
 
 # Runs inside the dev shell: build (unless given a binary), pick a port in
 # this worktree's window, start the server, wait for its library to index.
+# $1 is 1 for --requests.
 server_start() {
+  local requests="${1:-0}" ebooks="$ROOT/test_data/epubs" audiobooks="$ROOT/test_data/audiobooks"
+  local -a extra_env=()
   cd "$ROOT"
+  if [ "$requests" = 1 ]; then
+    clone_libraries
+    ebooks="$SERVER/library/epubs"
+    audiobooks="$SERVER/library/audiobooks"
+    extra_env=(OMNIBUS_BOOK_REQUESTS=1)
+  fi
   # shellcheck source=lib/dev-port.sh
   source "$ROOT/scripts/lib/dev-port.sh"
   local bin="${OMNIBUS_IOS_SERVER_BIN:-}"
@@ -137,8 +215,8 @@ server_start() {
     nohup env -i HOME="$HOME" PATH="$PATH" \
       PORT="$port" IP=127.0.0.1 \
       DATABASE_URL="sqlite://$SERVER/omnibus.db?mode=rwc" \
-      EBOOK_LIBRARY_PATH="$ROOT/test_data/epubs" \
-      AUDIOBOOK_LIBRARY_PATH="$ROOT/test_data/audiobooks" \
+      EBOOK_LIBRARY_PATH="$ebooks" \
+      AUDIOBOOK_LIBRARY_PATH="$audiobooks" \
       OMNIBUS_DEV_SEED_USER="$TOUR_USER:$TOUR_PASSWORD" \
       OMNIBUS_PUBLIC_ORIGIN="http://127.0.0.1:$port" \
       OMNIBUS_DATA_DIR="$SERVER/data" \
@@ -146,6 +224,7 @@ server_start() {
       OMNIBUS_THUMBS_DIR="$SERVER/thumbs" \
       OMNIBUS_DEV_DISABLE_RATE_LIMITS=1 \
       OMNIBUS_SECURE_COOKIES=0 \
+      ${extra_env[@]+"${extra_env[@]}"} \
       "$bin" >"$SERVER/server.log" 2>&1 &
     echo $! >"$PIDFILE"
   )
@@ -173,6 +252,11 @@ server_start() {
     waited=$((waited + 2))
   done
 
+  local mock_origin=""
+  if [ "$requests" = 1 ]; then
+    mock_origin="$(start_mock "$base")"
+  fi
+
   # %q, so a checkout path with spaces survives the round trip through `source`.
   {
     printf 'export OMNIBUS_TOUR_SERVER=%q\n' "127.0.0.1:$port"
@@ -180,6 +264,9 @@ server_start() {
     printf 'export OMNIBUS_TOUR_PASSWORD=%q\n' "$TOUR_PASSWORD"
     printf 'export OMNIBUS_TOUR_TOKEN=%q\n' "$token"
     printf 'export OMNIBUS_TOUR_SHOTS=%q\n' "$STATE/shots"
+    if [ -n "$mock_origin" ]; then
+      printf 'export OMNIBUS_TOUR_REQUESTS=%q\n' "$mock_origin"
+    fi
   } >"$ENVFILE"
   trap - EXIT
   server_status
@@ -192,6 +279,15 @@ server_down() {
     stop_pid "$pid"
   fi
   rm -f "$PIDFILE"
+  mock_down
+}
+
+mock_down() {
+  local pid
+  if pid="$(mock_pid)"; then
+    stop_pid "$pid" "mock-requests"
+  fi
+  rm -f "$MOCK_PIDFILE"
 }
 
 abandon_start() {
@@ -199,6 +295,7 @@ abandon_start() {
   if [ "$(cat "$PIDFILE" 2>/dev/null)" = "$1" ]; then
     rm -f "$PIDFILE"
   fi
+  mock_down
 }
 
 server_status() {
@@ -207,6 +304,9 @@ server_status() {
     # shellcheck disable=SC1090
     source "$ENVFILE"
     echo "scratch server: http://$OMNIBUS_TOUR_SERVER (pid $pid), sign in as $OMNIBUS_TOUR_USER / $OMNIBUS_TOUR_PASSWORD"
+    if [ -n "${OMNIBUS_TOUR_REQUESTS:-}" ]; then
+      echo "mock-requests: $OMNIBUS_TOUR_REQUESTS, control API at $OMNIBUS_TOUR_REQUESTS/_mock"
+    fi
     echo "seed over REST with: source $ENVFILE; curl -H \"authorization: Bearer \$OMNIBUS_TOUR_TOKEN\" http://\$OMNIBUS_TOUR_SERVER/api/…"
   else
     echo "scratch server: not running"
@@ -329,10 +429,10 @@ cleanup() {
 case "${1:-}" in
   server)
     case "${2:-}" in
-      up) server_up "${3:-}" ;;
+      up) shift 2 && server_up "$@" ;;
       down) server_down ;;
       status) server_status ;;
-      *) die "usage: ios-validate.sh server up [--fresh]|down|status" ;;
+      *) die "usage: ios-validate.sh server up [--fresh] [--requests]|down|status" ;;
     esac
     ;;
   sim)
@@ -344,6 +444,6 @@ case "${1:-}" in
     ;;
   tour) tour "${2:-}" "${3:-}" ;;
   cleanup) cleanup ;;
-  __start) server_start ;;
+  __start) server_start "${2:-0}" ;;
   *) die "usage: ios-validate.sh server|sim|tour|cleanup … (see the header)" ;;
 esac
