@@ -7,9 +7,10 @@ import SwiftUI
 struct WishlistsView: View {
     @Environment(AppState.self) private var app
     @Environment(\.palette) private var palette
-    @Environment(\.openDestination) private var openDestination
     @State private var model = WishlistsModel()
     @State private var getting: WishlistBook?
+    /// The book whose request page to push within this stack.
+    @State private var pushedRequest: String?
     @State private var adding = false
 
     var body: some View {
@@ -40,6 +41,7 @@ struct WishlistsView: View {
         }
         .overlay(alignment: .bottom) { toastLayer }
         .animation(Motion.settle, value: model.toast?.id)
+        .navigationDestination(item: $pushedRequest) { BookRequestView(uuid: $0).id($0) }
         .sheet(isPresented: $adding) { AddToWishlistSheet(model: model) }
         .sheet(item: $getting) { item in
             WishlistGetSheet(
@@ -48,12 +50,9 @@ struct WishlistsView: View {
                     holdings: item.holdings, canStart: app.user?.canStartRequests == true,
                     live: model.liveRequests[item.id] ?? [:]),
                 onRequest: { kind in
-                    Task {
-                        if await model.startRequest(uuid: item.id, kind: kind) {
-                            openDestination(.bookRequest(uuid: item.id))
-                        }
-                    }
+                    Task { if await model.startRequest(uuid: item.id, kind: kind) { pushedRequest = item.id } }
                 },
+                onView: { pushedRequest = item.id },
                 onRemove: { Task { await model.remove(item) } }
             )
         }

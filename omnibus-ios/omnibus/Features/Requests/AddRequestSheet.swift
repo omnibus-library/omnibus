@@ -54,6 +54,7 @@ struct AddRequestSheet: View {
         case .open:
             Button("Open") { if let uuid = decision.uuid { show(uuid) } }
                 .buttonStyle(RequestButtonStyle(width: Self.buttonWidth))
+                .disabled(model.isStarting)
                 .accessibilityLabel("Open \(hit.title)")
         case .start:
             Button(model.isStarting ? "Requesting\u{2026}" : "Request") { Task { await request(hit) } }

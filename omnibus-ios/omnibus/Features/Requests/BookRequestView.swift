@@ -15,7 +15,7 @@ struct BookRequestView: View {
     }
 
     private var viewer: RequestViewer {
-        app.user.map(RequestViewer.init) ?? RequestViewer(id: 0, canStart: false, canChoose: false)
+        app.user.map(RequestViewer.init) ?? .nobody
     }
 
     var body: some View {
@@ -59,6 +59,7 @@ struct BookRequestView: View {
                 text: toast.text,
                 actionLabel: toast.undoRequestID == nil ? nil : "Undo",
                 action: { Task { await model.undo(toast) } },
+                actionDisabled: model.busy != nil,
                 onDismiss: { model.toast = nil }
             )
                 .padding(.horizontal, 16)

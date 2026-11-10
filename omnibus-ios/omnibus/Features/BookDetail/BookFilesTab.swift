@@ -11,8 +11,10 @@ struct BookFilesTab: View {
 
     @Environment(\.palette) private var palette
     @Environment(AppState.self) private var app
-    @Environment(\.openDestination) private var openDestination
-    @State private var requests = RequestsModel()
+    /// The kind being started, so only its button reads "Requesting\u{2026}".
+    @State private var starting: RequestKind?
+    /// The book whose request page to push within the stack this tab lives in (the Check-in cover has its own).
+    @State private var pushedRequest: String?
     /// Why the last request couldn't start.
     @State private var requestError: String?
     // Not `private`: a private stored property makes the memberwise
@@ -71,6 +73,7 @@ struct BookFilesTab: View {
 
             details
         }
+        .navigationDestination(item: $pushedRequest) { BookRequestView(uuid: $0).id($0) }
     }
 
     // MARK: - Formats
@@ -79,8 +82,8 @@ struct BookFilesTab: View {
 
     /// The kinds this reader can ask for because the library lacks them.
     private var slots: [RequestKind] {
-        BookRequestFlow.requestSlots(
-            formats: book.formats, requestsOn: app.user?.bookRequests == true, canStart: app.user?.canStartRequests == true)
+        guard let user = app.user, user.bookRequests else { return [] }
+        return BookRequestFlow.unrequestedKinds(formats: book.formats, listings: [], viewer: RequestViewer(user))
     }
 
     private var formats: some View {
@@ -120,18 +123,22 @@ struct BookFilesTab: View {
     /// A format the library lacks, with a button to request it. Commands never queue offline (rule 08).
     private func requestSlot(_ kind: RequestKind) -> some View {
         formatRow(BookRequestFlow.kindLabel(kind), detail: "Not in the library") {
-            Button(requests.isStarting ? "Requesting\u{2026}" : "Request") { Task { await request(kind) } }
+            Button(starting == kind ? "Requesting\u{2026}" : "Request") { Task { await request(kind) } }
                 .buttonStyle(RequestButtonStyle(width: 100))
-                .disabled(requests.isStarting || !Connectivity.shared.isOnline)
+                .disabled(starting != nil || !Connectivity.shared.isOnline)
                 .accessibilityLabel("Request \(kind.rawValue)")
         }
     }
 
     private func request(_ kind: RequestKind) async {
+        guard starting == nil else { return }
         requestError = nil
-        switch await requests.startFromLibrary(uuid: book.uuid, kind: kind) {
-        case let .show(uuid): openDestination(.bookRequest(uuid: uuid))
-        case let .failed(message): requestError = message
+        starting = kind
+        defer { starting = nil }
+        do {
+            pushedRequest = try await RequestService.start(bookUUID: book.uuid, kind: kind).bookUUID
+        } catch {
+            requestError = BookRequestFlow.startFailure(error)
         }
     }
 

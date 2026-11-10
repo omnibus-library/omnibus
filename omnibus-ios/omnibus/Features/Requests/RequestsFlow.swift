@@ -12,6 +12,9 @@ struct RequestViewer: Equatable, Sendable {
 }
 
 extension RequestViewer {
+    /// Nobody signed in: may do nothing.
+    static let nobody = RequestViewer(id: 0, canStart: false, canChoose: false)
+
     init(_ user: UserSummary) {
         self.init(id: user.id, canStart: user.canStartRequests, canChoose: user.canChooseRequestVersions)
     }

@@ -411,6 +411,7 @@ struct StageToast: View {
     let text: String
     var actionLabel: String?
     var action: (() -> Void)?
+    var actionDisabled = false
     var onDismiss: (() -> Void)?
 
     @Environment(\.palette) private var palette
@@ -424,6 +425,7 @@ struct StageToast: View {
             Spacer(minLength: 0)
             if let actionLabel, let action {
                 Button(actionLabel, action: action)
+                    .disabled(actionDisabled)
                     .font(.ui(15, weight: .semibold))
                     .foregroundStyle(palette.bookText)
                     .frame(minHeight: 44)

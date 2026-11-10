@@ -88,6 +88,7 @@ final class WishlistsModel {
     var readsRequests = false
     /// Each book's kinds with a request going; empty where the read failed or requests are off.
     private(set) var liveRequests: [String: [RequestKind: RequestState]] = [:]
+    private var isStartingRequest = false
     /// Books with a remove in flight, so a second tap is ignored.
     private var removing: Set<String> = []
     /// Numbers each load so only the newest one's answer is applied.
@@ -127,8 +128,12 @@ final class WishlistsModel {
         return WishlistsFlow.liveRequests(listings)
     }
 
-    /// Starts a request; true when it stands, so the screen can open its page. A refusal toasts why.
+    /// Starts a request; true when it stands, so the screen can open its page. A refusal toasts why,
+    /// and a start while another runs is ignored.
     func startRequest(uuid: String, kind: RequestKind) async -> Bool {
+        guard !isStartingRequest else { return false }
+        isStartingRequest = true
+        defer { isStartingRequest = false }
         do {
             let started = try await api.startRequest(uuid, kind)
             if BookRequestFlow.isLive(started.state) { liveRequests[uuid, default: [:]][kind] = started.state }

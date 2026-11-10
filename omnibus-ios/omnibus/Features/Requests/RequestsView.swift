@@ -47,8 +47,9 @@ struct RequestsView: View {
             }
         }
         .sheet(isPresented: $adding) { AddRequestSheet(model: model) }
-        .task {
-            await model.load()
+        .task { await model.load() }
+        // Keyed on whether anything is moving, so a list that starts moving after a retry or refresh restarts the loop.
+        .task(id: RequestsFlow.listPollInterval(model.listings) != nil) {
             while let interval = RequestsFlow.listPollInterval(model.listings) {
                 try? await Task.sleep(for: interval)
                 guard !Task.isCancelled else { return }
@@ -58,7 +59,7 @@ struct RequestsView: View {
     }
 
     private var list: some View {
-        let groups = model.groups(viewer: viewer ?? RequestViewer(id: 0, canStart: false, canChoose: false))
+        let groups = model.groups(viewer: viewer ?? .nobody)
         return ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
                 Text(RequestsFlow.countsLine(groups))
