@@ -44,23 +44,15 @@ async fn main() -> anyhow::Result<()> {
     let app = router(mock);
     let server = tokio::spawn(async move { axum::serve(listener, app).await });
     if let Some(target) = &args.target {
-        let repo = wire::checkout_root()?;
         let omnibus = match target {
-            Target::Local => wire::local_origin(Path::new(RUNTIME_DIR), &repo).await?,
+            Target::Local => {
+                let here = std::env::current_dir().context("cannot read the working folder")?;
+                wire::local_origin(Path::new(RUNTIME_DIR), &here).await?
+            }
             Target::Server(origin) => origin.clone(),
         };
         let seed = std::env::var(SEED_USER_ENV).ok();
-        let test_data = repo.join("test_data");
-        let (mock, kind) = (&origin, args.client);
-        wire::wire(
-            &omnibus,
-            seed.as_deref(),
-            mock,
-            kind,
-            &downloads,
-            &test_data,
-        )
-        .await?;
+        wire::wire(&omnibus, seed.as_deref(), &origin, args.client, &downloads).await?;
         eprintln!("wired {omnibus} to the mock ({})", args.client.as_str());
     }
     println!(

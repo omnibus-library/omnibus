@@ -133,19 +133,9 @@ async fn spawn_stub(config: Config) -> (String, Arc<Stub>) {
     (origin, stub)
 }
 
-const TEST_DATA: &str = "/repo/test_data";
-
 async fn run(server: &str, kind: DownloadClientKind) -> Result<(), WireError> {
-    run_guarding(server, kind, Path::new(TEST_DATA)).await
-}
-
-async fn run_guarding(
-    server: &str,
-    kind: DownloadClientKind,
-    test_data: &Path,
-) -> Result<(), WireError> {
     let seed = Some("admin:s3cret:with-colon");
-    wire(server, seed, MOCK, kind, Path::new("/dl"), test_data).await
+    wire(server, seed, MOCK, kind, Path::new("/dl")).await
 }
 
 fn calls(stub: &Stub) -> Vec<String> {
@@ -255,7 +245,11 @@ async fn wire_refuses_real_services_on_this_machine() {
 
 #[tokio::test]
 async fn wire_refuses_to_overwrite_a_saved_address_that_is_not_on_this_machine() {
+    let mut mock_key_elsewhere = saved_with(Some("http://prowlarr.lan:9696"), None);
+    mock_key_elsewhere["prowlarr_api_key_masked"] = json!("mock\u{2026}ests");
     let cases = [
+        (mock_key_elsewhere, "Prowlarr"),
+        (client_saved("http://qbit.lan:8080", "mock"), "download client"),
         (
             saved_with(Some("http://prowlarr.lan:9696"), None),
             "Prowlarr",
@@ -302,13 +296,13 @@ async fn wire_sends_nothing_when_it_cannot_be_set_up() {
     let (origin, stub) = spawn_stub(config()).await;
     let mock = MOCK;
     let kind = DownloadClientKind::Qbittorrent;
-    let (dl, td) = (Path::new("/dl"), Path::new(TEST_DATA));
+    let dl = Path::new("/dl");
 
-    let remote = wire("http://192.0.2.1:3000", Some("a:b"), mock, kind, dl, td).await;
-    let missing = wire(&origin, None, mock, kind, dl, td).await;
-    let empty = wire(&origin, Some(""), mock, kind, dl, td).await;
-    let malformed = wire(&origin, Some("nocolon"), mock, kind, dl, td).await;
-    let nameless = wire(&origin, Some(":pw"), mock, kind, dl, td).await;
+    let remote = wire("http://192.0.2.1:3000", Some("a:b"), mock, kind, dl).await;
+    let missing = wire(&origin, None, mock, kind, dl).await;
+    let empty = wire(&origin, Some(""), mock, kind, dl).await;
+    let malformed = wire(&origin, Some("nocolon"), mock, kind, dl).await;
+    let nameless = wire(&origin, Some(":pw"), mock, kind, dl).await;
 
     for result in [remote, missing, empty, malformed, nameless] {
         assert!(matches!(result, Err(WireError::Setup(_))), "{result:?}");
@@ -382,17 +376,17 @@ async fn wire_follows_no_redirect_so_the_password_goes_nowhere_else() {
 }
 
 #[tokio::test]
-async fn wire_refuses_a_library_inside_test_data_before_saving_anything() {
-    let test_data = tempfile::tempdir().unwrap();
-    std::fs::create_dir(test_data.path().join("epubs")).unwrap();
-    let inside = test_data.path().join("epubs");
+async fn wire_refuses_a_library_inside_any_test_data_before_saving_anything() {
+    let other_checkout = tempfile::tempdir().unwrap();
+    let inside = other_checkout.path().join("test_data/epubs");
+    std::fs::create_dir_all(&inside).unwrap();
     let inside = inside.to_str().unwrap();
     for field in ["ebook_library_path", "audiobook_library_path"] {
         let mut cfg = config();
         cfg.libraries = json!({ field: inside });
         let (origin, stub) = spawn_stub(cfg).await;
 
-        let err = run_guarding(&origin, DownloadClientKind::Qbittorrent, test_data.path())
+        let err = run(&origin, DownloadClientKind::Qbittorrent)
             .await
             .unwrap_err();
 

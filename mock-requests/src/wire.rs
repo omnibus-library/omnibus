@@ -5,10 +5,10 @@
 //! password), no redirect is followed, and a connection that is set and not this mock's own
 //! is never overwritten, since the settings read masks secrets and could not restore it.
 //! `--local` also checks that the server on the published port is this checkout's, and
-//! nothing is saved while a server library sits under the committed `test_data/`.
+//! nothing is saved while a server library sits under any `test_data/` folder.
 
 use std::net::IpAddr;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Duration;
 
 use omnibus_shared::{
@@ -45,20 +45,6 @@ pub enum WireError {
     InUse(String),
     #[error("{step} failed: {detail}")]
     Server { step: &'static str, detail: String },
-}
-
-/// This checkout's top-level folder, which a server of this checkout reports as its `repo_root`.
-pub fn checkout_root() -> Result<PathBuf, WireError> {
-    let git = std::process::Command::new("git")
-        .args(["rev-parse", "--show-toplevel"])
-        .output()
-        .ok()
-        .filter(|out| out.status.success())
-        .and_then(|out| String::from_utf8(out.stdout).ok());
-    match git {
-        Some(root) => Ok(PathBuf::from(root.trim())),
-        None => std::env::current_dir().map_err(|e| WireError::Setup(e.to_string())),
-    }
 }
 
 /// This checkout's dev-server origin, from the `port` file `just dev-up` publishes in
@@ -114,14 +100,13 @@ struct LoginReply {
 
 /// Point the Omnibus at `server` at the mock at `mock_origin`, with `client` as its download
 /// client and `downloads` as the folder both sides read finished files from. Refuses when
-/// the server's library sits under `test_data`, which an import would write into.
+/// the server's library sits under a `test_data` folder, which an import would write into.
 pub async fn wire(
     server: &str,
     seed: Option<&str>,
     mock_origin: &str,
     client: DownloadClientKind,
     downloads: &Path,
-    test_data: &Path,
 ) -> Result<(), WireError> {
     let server = server.trim_end_matches('/');
     if !is_loopback(server) {
@@ -136,7 +121,7 @@ pub async fn wire(
     let http = http()?;
     let token = login(&http, server, username, password).await?;
     let update = update_for(mock_origin, client, downloads);
-    let result = configure(&http, server, &token, &update, test_data).await;
+    let result = configure(&http, server, &token, &update).await;
     // Ending the session is best effort: an admin session left behind just expires.
     let _ = http
         .post(format!("{server}/api/auth/logout"))
@@ -201,7 +186,6 @@ async fn configure(
     server: &str,
     token: &str,
     update: &RequestsSettingsUpdate,
-    test_data: &Path,
 ) -> Result<(), WireError> {
     let libraries = checked(
         "read library settings",
@@ -213,7 +197,7 @@ async fn configure(
         .json()
         .await
         .map_err(|e| failed("read library settings", e))?;
-    guard_libraries(&libraries, test_data)?;
+    guard_libraries(&libraries)?;
     let url = |path: &str| format!("{server}{SETTINGS}{path}");
     let read = http.get(url("")).bearer_auth(token).send().await;
     let read = read.map_err(|e| failed("read settings", e))?;
@@ -238,52 +222,46 @@ async fn configure(
     Ok(())
 }
 
-/// Refuse when an import would land in the committed fixtures under `test_data`.
-fn guard_libraries(libraries: &Settings, test_data: &Path) -> Result<(), WireError> {
-    let real = |p: &Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
-    let root = real(test_data);
+/// Refuse when an import would land in a `test_data` folder, whichever checkout's.
+fn guard_libraries(libraries: &Settings) -> Result<(), WireError> {
     let paths = [
         &libraries.ebook_library_path,
         &libraries.audiobook_library_path,
     ];
     for path in paths.into_iter().flatten() {
-        if real(Path::new(path)).starts_with(&root) {
+        let path = Path::new(path);
+        let real = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        if real.components().any(|c| c.as_os_str() == "test_data") {
             return Err(WireError::Setup(format!(
-                "the server's library {path} is inside the committed test_data/: an import \
-                 would add files to the fixtures, so point the library elsewhere first"
+                "the server's library {} is inside a test_data/ folder: an import would add \
+                 files to the fixtures, so point the library elsewhere first",
+                path.display()
             )));
         }
     }
     Ok(())
 }
 
+/// How the settings read previews [`PROWLARR_API_KEY`]: its first and last four characters.
+const PROWLARR_KEY_MASKED: &str = "mock\u{2026}ests";
+
 /// Refuse to replace a connection that is set and is not this mock's own, since the
-/// settings read masks secrets and they could not be restored.
+/// settings read masks secrets and they could not be restored. The mock's own is on this
+/// machine and carries the mock's identity.
 fn guard(saved: &RequestsSettingsStatus) -> Result<(), WireError> {
-    let prowlarr_is_ours = saved.prowlarr_url.is_none()
-        || saved.prowlarr_api_key_masked.as_deref() == Some(key_preview(PROWLARR_API_KEY).as_str());
-    let client_is_ours = saved.download_client_url.is_none()
-        || saved.download_client_username.as_deref() == Some(CLIENT_USERNAME);
-    if !prowlarr_is_ours {
+    let ours = |url: &Option<String>, identity_matches: bool| {
+        url.as_deref()
+            .is_none_or(|url| is_loopback(url) && identity_matches)
+    };
+    let prowlarr_key = saved.prowlarr_api_key_masked.as_deref() == Some(PROWLARR_KEY_MASKED);
+    let client_user = saved.download_client_username.as_deref() == Some(CLIENT_USERNAME);
+    if !ours(&saved.prowlarr_url, prowlarr_key) {
         return Err(WireError::InUse("Prowlarr".into()));
     }
-    if !client_is_ours {
+    if !ours(&saved.download_client_url, client_user) {
         return Err(WireError::InUse("the download client".into()));
     }
     Ok(())
-}
-
-/// How the settings read previews `key`: its first and last four characters (a key over 8).
-fn key_preview(key: &str) -> String {
-    let (head, tail) = (
-        key.chars().take(4),
-        key.chars().skip(key.chars().count() - 4),
-    );
-    format!(
-        "{}\u{2026}{}",
-        head.collect::<String>(),
-        tail.collect::<String>()
-    )
 }
 
 async fn checked(step: &'static str, request: RequestBuilder) -> Result<Response, WireError> {

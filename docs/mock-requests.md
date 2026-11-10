@@ -44,7 +44,7 @@ the mock as the Prowlarr and download client connections (the client's folder
 and the server's are both the downloads folder), and has the server test both. It
 stays pointed at the mock after the mock exits. It **refuses** to run when the
 server already points Prowlarr or the download client at anything but a previous
-mock wiring (the saved login is `mock`, the saved key is the mock's), loopback
+mock wiring (on this machine, with the login `mock` and the mock's key), loopback
 included, because the settings read masks secrets and a real service's could not be
 restored. Clear the connection in Settings, Requests first. If requests are off it
 says to set `OMNIBUS_BOOK_REQUESTS=1` and `just dev-bounce`.
@@ -52,8 +52,8 @@ says to set `OMNIBUS_BOOK_REQUESTS=1` and `just dev-bounce`.
 Two more refusals protect what it must not touch. `--local` asks the server on the
 published port for its `repo_root` (`/api/_health`) and stops unless that is this
 checkout, since a stale `.claude/runtime/port` can name another worktree's server. And
-it stops when the server's ebook or audiobook library sits under this checkout's
-`test_data/`: an import would add the downloaded book to the committed fixtures
+it stops when the server's ebook or audiobook library sits under any `test_data/`
+folder, whichever checkout's: an import would add the downloaded book to the committed fixtures
 (`git add .` would then commit it). Point the library elsewhere, or use
 `ios-validate.sh server up --requests`, which serves clones.
 
