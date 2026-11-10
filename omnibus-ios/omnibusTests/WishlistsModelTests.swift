@@ -46,6 +46,17 @@ actor Gate {
     }
 }
 
+/// Polls `condition` on the main actor until it holds or `timeout` passes.
+@MainActor
+func eventually(timeout: Duration = .seconds(5), _ condition: () -> Bool) async -> Bool {
+    let deadline = ContinuousClock.now + timeout
+    while ContinuousClock.now < deadline {
+        if condition() { return true }
+        try? await Task.sleep(for: .milliseconds(20))
+    }
+    return condition()
+}
+
 /// Numbers a fake's calls so it can answer the first differently from the rest.
 actor CallCounter {
     private var count = 0

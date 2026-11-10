@@ -124,12 +124,12 @@ final class RequestsModel {
 
     // MARK: - Starting
 
-    /// Starts a request on a library book: an ebook unless `kind` says otherwise.
-    func startFromLibrary(uuid: String, kind: RequestKind = .ebook) async -> AddOutcome {
+    /// Starts an ebook request on a library book.
+    func startFromLibrary(uuid: String) async -> AddOutcome {
         guard !isStarting else { return Self.stillStarting }
         isStarting = true
         defer { isStarting = false }
-        return await start(uuid: uuid, kind: kind)
+        return await start(uuid: uuid)
     }
 
     /// Starts from a provider's record: on the library book it matches when there is one (opening its
@@ -155,25 +155,22 @@ final class RequestsModel {
         }
         do {
             let started = try await api.startFromMeta(meta)
-            reloadInBackground()
+            Task { await poll() }
             return .show(uuid: started.bookUUID)
         } catch {
             return .failed(BookRequestFlow.startFailure(error))
         }
     }
 
-    private func start(uuid: String, kind: RequestKind = .ebook) async -> AddOutcome {
+    private func start(uuid: String) async -> AddOutcome {
         do {
-            let started = try await api.start(uuid, kind)
-            reloadInBackground()
+            let started = try await api.start(uuid, .ebook)
+            Task { await poll() }
             return .show(uuid: started.bookUUID)
         } catch {
             return .failed(BookRequestFlow.startFailure(error))
         }
     }
-
-    /// Reads the list again without holding the push to the request's page behind it.
-    private func reloadInBackground() { Task { await load() } }
 
     private static let stillStarting = AddOutcome.failed("Still starting the last request.")
 }

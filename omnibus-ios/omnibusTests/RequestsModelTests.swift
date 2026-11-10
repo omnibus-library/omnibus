@@ -145,8 +145,8 @@ struct RequestsModelTests {
             resolveMeta: { _ in await started.resolve(); return resolved })
     }
 
-    @Test func startingFromALibraryBookStartsAnEbookShowsItsPageWithoutWaitingForTheReload() async {
-        let started = Started()
+    @Test(.timeLimit(.minutes(1)))
+    func startingFromALibraryBookShowsItsPageWithoutWaitingForTheReload() async {
         let calls = CallCounter()
         let release = Gate()
         let api = fakeRequestsAPI(
@@ -155,19 +155,19 @@ struct RequestsModelTests {
                 await release.wait()
                 return [listing("lib", state: .looking)]
             },
-            start: { uuid, kind in
-                #expect(kind == .ebook)
-                await started.library(uuid)
-                return aRequest(uuid: uuid, state: .looking)
-            })
+            start: { uuid, _ in aRequest(uuid: uuid, state: .looking) })
         let model = RequestsModel(api: api, defaults: requestDefaults())
         await model.load()
-        let outcome = await model.startFromLibrary(uuid: "lib")
-        #expect(outcome == .show(uuid: "lib"))
-        #expect(await started.libraryStarts == ["lib"])
+        #expect(await model.startFromLibrary(uuid: "lib") == .show(uuid: "lib"))
         await release.open()
-        for _ in 0..<1_000 where model.listings?.isEmpty != false { await Task.yield() }
-        #expect(model.listings?.map(\.book.uuid) == ["lib"])
+        #expect(await eventually { model.listings?.map(\.book.uuid) == ["lib"] })
+    }
+
+    @Test func startingFromALibraryBookStartsAnEbook() async {
+        let started = Started()
+        let model = RequestsModel(api: startingAPI(started, list: []), defaults: requestDefaults())
+        _ = await model.startFromLibrary(uuid: "lib")
+        #expect(await started.libraryStarts == ["lib"])
     }
 
     @Test(arguments: [
@@ -258,18 +258,5 @@ struct RequestsModelTests {
         await release.open()
         _ = await first.value
         #expect(await started.libraryStarts == ["a"])
-    }
-
-    @Test func startingFromALibraryBookCanAskForAnAudiobook() async {
-        let sent = Started()
-        let api = fakeRequestsAPI(
-            list: { [] },
-            start: { uuid, kind in
-                await sent.library("\(uuid):\(kind.rawValue)")
-                return aRequest(uuid: uuid, kind: kind)
-            })
-        let model = RequestsModel(api: api, defaults: requestDefaults())
-        #expect(await model.startFromLibrary(uuid: "lib", kind: .audiobook) == .show(uuid: "lib"))
-        #expect(await sent.libraryStarts == ["lib:audiobook"])
     }
 }
