@@ -11,10 +11,9 @@ struct BookFilesTab: View {
 
     @Environment(\.palette) private var palette
     @Environment(AppState.self) private var app
+    @Environment(\.openDestination) private var openDestination
     /// The kind being started, so only its button reads "Requesting\u{2026}".
     @State private var starting: RequestKind?
-    /// The book whose request page to push within the stack this tab lives in (the Check-in cover has its own).
-    @State private var pushedRequest: String?
     /// Why the last request couldn't start.
     @State private var requestError: String?
     // Not `private`: a private stored property makes the memberwise
@@ -73,7 +72,6 @@ struct BookFilesTab: View {
 
             details
         }
-        .navigationDestination(item: $pushedRequest) { BookRequestView(uuid: $0).id($0) }
     }
 
     // MARK: - Formats
@@ -133,7 +131,8 @@ struct BookFilesTab: View {
         starting = kind
         defer { starting = nil }
         do {
-            pushedRequest = try await RequestService.start(bookUUID: book.uuid, kind: kind).bookUUID
+            let started = try await RequestService.start(bookUUID: book.uuid, kind: kind)
+            openDestination(.bookRequest(uuid: started.bookUUID))
         } catch {
             requestError = BookRequestFlow.startFailure(error)
         }

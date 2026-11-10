@@ -90,7 +90,6 @@ struct WishlistGetSheet: View {
     let viewer: Int64?
     let requestItems: [WishlistRequestItem]
     var onRequest: (RequestKind) -> Void
-    var onView: () -> Void
     var onRemove: () -> Void
 
     @Environment(\.palette) private var palette
@@ -111,7 +110,7 @@ struct WishlistGetSheet: View {
                 case .view:
                     action(request.title, detail: request.detail) {
                         dismiss()
-                        onView()
+                        openDestination(.bookRequest(uuid: item.id))
                     }
                 case .request:
                     action(request.title, detail: request.detail, enabled: Connectivity.shared.isOnline) {

@@ -45,7 +45,7 @@ enum Destination: Hashable {
 }
 
 extension EnvironmentValues {
-    /// Pushes a screen onto the selected tab's stack, for sheets that can't hold a `NavigationLink`.
+    /// Pushes a screen onto the stack the caller lives in, for sheets that can't hold a `NavigationLink`.
     @Entry var openDestination: (Destination) -> Void = { _ in }
 }
 
@@ -93,6 +93,14 @@ struct TabPaths: Equatable {
     }
 }
 
+extension TabPaths {
+    /// A push onto `tab`'s stack, bound to the tab rather than to whichever one is selected when it runs,
+    /// so an answer that arrives after a tab switch still lands where it was asked.
+    static func opener(for tab: AppTab, in paths: Binding<TabPaths>) -> (Destination) -> Void {
+        { paths.wrappedValue[tab].append($0) }
+    }
+}
+
 struct MainTabView: View {
     @Environment(AppState.self) private var app
     @Environment(AudioPlayer.self) private var player
@@ -130,9 +138,11 @@ struct MainTabView: View {
         sideBarEdge != nil || (systemBarPlacement.map { $0 != .bottomBar } ?? false)
     }
 
-    /// A tab's root, with the probe for where the bar sits.
-    private func tabRoot(_ root: some View) -> some View {
-        root.background { TabBarPlacementProbe { systemBarPlacement = $0 } }
+    /// A tab's root, with the probe for where the bar sits and the push into its own stack.
+    private func tabRoot(_ tab: AppTab, _ root: some View) -> some View {
+        root
+            .background { TabBarPlacementProbe { systemBarPlacement = $0 } }
+            .environment(\.openDestination, TabPaths.opener(for: tab, in: $paths))
     }
 
     /// The selection the system bar drives, which reports a tap on the open tab as a reselect.
@@ -149,16 +159,16 @@ struct MainTabView: View {
         // Titled and iconed for the system's own bar, for where it takes over.
         TabView(selection: tabSelection) {
             Tab(AppTab.library.label, systemImage: AppTab.library.icon, value: AppTab.library) {
-                tabRoot(LibraryView(addSheetPresented: $addSheetPresented, path: $paths.library))
+                tabRoot(.library, LibraryView(addSheetPresented: $addSheetPresented, path: $paths.library))
             }
             Tab(AppTab.search.label, systemImage: AppTab.search.icon, value: AppTab.search) {
-                tabRoot(SearchTab(path: $paths.search))
+                tabRoot(.search, SearchTab(path: $paths.search))
             }
             Tab(AppTab.stats.label, systemImage: AppTab.stats.icon, value: AppTab.stats) {
-                tabRoot(StatsView(path: $paths.stats))
+                tabRoot(.stats, StatsView(path: $paths.stats))
             }
             Tab(AppTab.you.label, systemImage: AppTab.you.icon, value: AppTab.you) {
-                tabRoot(AccountView(path: $paths.you))
+                tabRoot(.you, AccountView(path: $paths.you))
             }
         }
         // `TabView` keeps tab state and lazy loading; only its chrome is
@@ -197,8 +207,6 @@ struct MainTabView: View {
         // the modified view — on the inset's content it is a no-op (#2102).
         .ignoresSafeArea(.keyboard, edges: .bottom)
         .environment(reselect)
-        // The selected tab's own stack, so the pushed screen still decides the tab bar's fate.
-        .environment(\.openDestination) { paths[selection].append($0) }
         .sheet(isPresented: $addSheetPresented) {
             AddBooksSheet()
         }
