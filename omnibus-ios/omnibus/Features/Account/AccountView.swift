@@ -30,6 +30,8 @@ struct AccountView: View {
     @State private var hiddenFormats: Set<String> = []
     @State private var hiddenSaved = false
     @State private var hiddenError: String?
+    /// Books waiting on this reader to pick a version, shown as the Requests row's pill.
+    @State private var needsYou = 0
     private var downloads = DownloadManager.shared
     private var connectivity = Connectivity.shared
 
@@ -84,6 +86,7 @@ struct AccountView: View {
             kindleEmail = app.user?.kindleEmail ?? ""
             hiddenFormats = Set(app.user?.hiddenFormats ?? [])
             await connectivity.refreshPendingCount()
+            await refreshNeedsYou()
         }
         .onChange(of: kindleEmail) { _, _ in
             kindleSaved = false
@@ -216,6 +219,7 @@ struct AccountView: View {
                 }
                 linkRow("Shelves", icon: "square.stack", to: .shelves)
                 linkRow("Wishlists", icon: "heart", to: .wishlists)
+                if app.user?.bookRequests == true { requestsRow }
                 linkRow("Authors", icon: "person.2", to: .authorsIndex)
                 linkRow("Series", icon: "square.grid.2x2", to: .seriesIndex)
                 linkRow("Tags", icon: "tag", to: .tags)
@@ -225,6 +229,37 @@ struct AccountView: View {
                 RecordRule()
             }
         }
+    }
+
+    /// Requests, with an accent pill when books wait on this reader to pick a version.
+    private var requestsRow: some View {
+        NavigationLink(value: Destination.requests) {
+            rowShell {
+                icon("tray.and.arrow.down")
+                rowTitle("Requests")
+                Spacer(minLength: 0)
+                if let pill = RequestsFlow.needsYouPill(needsYou) {
+                    Text(pill)
+                        .font(.ui(12, weight: .semibold))
+                        .foregroundStyle(palette.accentInkColor)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 3)
+                        .background(Capsule().fill(palette.accentColor))
+                }
+                chevron
+            }
+        }
+        .buttonStyle(PressableStyle())
+    }
+
+    /// A failed read shows no pill rather than a stale count.
+    private func refreshNeedsYou() async {
+        guard let user = app.user, user.bookRequests else {
+            needsYou = 0
+            return
+        }
+        let listings = try? await RequestService.list()
+        needsYou = listings.map { RequestsFlow.needsYouCount($0, viewer: RequestViewer(user)) } ?? 0
     }
 
     private var offline: some View {

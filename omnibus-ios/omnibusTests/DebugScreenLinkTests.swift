@@ -33,6 +33,10 @@ struct DebugScreenLinkTests {
         #expect(route("omnibus://debug/screen/you/series/shelves")?.path == [.seriesIndex, .shelves])
     }
 
+    @Test func requestsOpensTheListOnTheYouTab() {
+        #expect(route("omnibus://debug/screen/you/requests") == ScreenRoute(tab: .you, path: [.requests]))
+    }
+
     @Test func aNameArgumentIsPercentDecoded() {
         #expect(route("omnibus://debug/screen/you/tag/Science%20Fiction")?.path == [.tag(name: "Science Fiction")])
     }

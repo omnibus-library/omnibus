@@ -72,6 +72,7 @@ final class DebugScreenLink {
         case "goals": return .readingGoals
         case "stats-exclusions": return .statsExclusions
         case "downloads": return .downloads
+        case "requests": return .requests
         // A bare `series` is the index; `series/<id>` one series.
         case "series":
             guard let id = rest.first.flatMap(Int64.init) else { return .seriesIndex }
