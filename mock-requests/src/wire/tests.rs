@@ -21,6 +21,8 @@ struct Config {
     settings: u16,
     saved: Value,
     put: u16,
+    /// How many saves answer 500 before `put` applies.
+    put_500s: usize,
     test_indexer: (u16, &'static str),
     test_client: (u16, &'static str),
     repo_root: String,
@@ -93,7 +95,15 @@ async fn handle(
         }
         "PUT /api/admin/requests/settings" => {
             *stub.put_body.lock().unwrap() = serde_json::from_slice(&body).ok();
-            (status(c.put), "a field is too long").into_response()
+            let puts = stub
+                .calls
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|r| **r == route)
+                .count();
+            let code = if puts <= c.put_500s { 500 } else { c.put };
+            (status(code), "a field is too long").into_response()
         }
         "POST /api/admin/requests/settings/test-indexer" => {
             (status(c.test_indexer.0), c.test_indexer.1).into_response()
@@ -112,6 +122,7 @@ fn config() -> Config {
         settings: 200,
         saved: nothing_saved(),
         put: 200,
+        put_500s: 0,
         test_indexer: (200, ""),
         test_client: (200, ""),
         repo_root: "/repo".into(),
@@ -344,6 +355,58 @@ async fn wire_names_the_step_that_a_server_refused() {
         );
         assert!(!shown.contains("127.0.0.1"), "{shown}");
     }
+}
+
+fn puts(stub: &Stub) -> usize {
+    calls(stub)
+        .iter()
+        .filter(|r| *r == "PUT /api/admin/requests/settings")
+        .count()
+}
+
+#[tokio::test]
+async fn wire_retries_a_save_the_server_fails_with_a_500_then_finishes() {
+    let mut cfg = config();
+    cfg.put_500s = 2;
+    let (origin, stub) = spawn_stub(cfg).await;
+
+    run(&origin, DownloadClientKind::Qbittorrent).await.unwrap();
+
+    assert_eq!(puts(&stub), 3);
+    assert_eq!(
+        calls(&stub).last().map(String::as_str),
+        Some("POST /api/auth/logout")
+    );
+}
+
+#[tokio::test]
+async fn wire_gives_up_on_a_save_that_keeps_failing_with_a_500() {
+    let mut cfg = config();
+    cfg.put_500s = usize::MAX;
+    let (origin, stub) = spawn_stub(cfg).await;
+
+    let err = run(&origin, DownloadClientKind::Qbittorrent)
+        .await
+        .unwrap_err();
+
+    assert!(
+        matches!(&err, WireError::Server { step: "save settings", detail } if detail.contains("500")),
+        "{err}"
+    );
+    assert_eq!(puts(&stub), 4);
+}
+
+#[tokio::test]
+async fn wire_does_not_retry_a_save_the_server_refused_as_invalid() {
+    let mut cfg = config();
+    cfg.put = 422;
+    let (origin, stub) = spawn_stub(cfg).await;
+
+    run(&origin, DownloadClientKind::Qbittorrent)
+        .await
+        .unwrap_err();
+
+    assert_eq!(puts(&stub), 1);
 }
 
 #[tokio::test]

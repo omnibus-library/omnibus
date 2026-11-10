@@ -30,6 +30,10 @@ const LOGIN_DEVICE_NAME: &str = "omnibus-mock-requests";
 /// The longest reply body quoted in an error.
 const DETAIL_LIMIT: usize = 300;
 
+/// How many times the save is sent, and the wait between sends.
+const SAVE_ATTEMPTS: u32 = 4;
+const SAVE_RETRY_DELAY: Duration = Duration::from_millis(250);
+
 const SETTINGS: &str = "/api/admin/requests/settings";
 
 /// Why the mock could not be wired in.
@@ -208,11 +212,7 @@ async fn configure(
     let saved: RequestsSettingsStatus =
         read.json().await.map_err(|e| failed("read settings", e))?;
     guard(&saved)?;
-    checked(
-        "save settings",
-        http.put(url("")).bearer_auth(token).json(update),
-    )
-    .await?;
+    save(http, &url(""), token, update).await?;
     for (step, path) in [
         ("test-indexer", "/test-indexer"),
         ("test-client", "/test-client"),
@@ -220,6 +220,30 @@ async fn configure(
         checked(step, http.post(url(path)).bearer_auth(token)).await?;
     }
     Ok(())
+}
+
+/// The settings save, sent again on a 5xx.
+// shortcut: `set_requests_settings` (db/src/settings/requests.rs) reads before it writes in a
+// deferred transaction, so a write the first index commits in between fails it at once with a
+// 500, whatever the busy timeout. Retry a few times until the server takes the lock up front.
+async fn save(
+    http: &reqwest::Client,
+    url: &str,
+    token: &str,
+    update: &RequestsSettingsUpdate,
+) -> Result<(), WireError> {
+    let mut attempt = 1;
+    loop {
+        let reply = http.put(url).bearer_auth(token).json(update).send().await;
+        let reply = reply.map_err(|e| failed("save settings", e))?;
+        if reply.status().is_server_error() && attempt < SAVE_ATTEMPTS {
+            attempt += 1;
+            tokio::time::sleep(SAVE_RETRY_DELAY).await;
+            continue;
+        }
+        checked_response("save settings", reply).await?;
+        return Ok(());
+    }
 }
 
 /// Refuse when an import would land in a checkout's committed `test_data/` fixtures.
