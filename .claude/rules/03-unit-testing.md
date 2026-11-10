@@ -103,12 +103,13 @@ async fn get_book_propagates_db_error_when_pool_is_closed() { ... }
 ## Running
 
 ```bash
-just test                                          # every Rust suite (db + server + shared + mcp + mock-kobo), then the script suites
+just test                                          # every Rust suite (db + server + shared + mcp + mock-kobo + mock-requests), then the script suites
 just test-rust                                     # the Rust suites alone
 cargo test -p omnibus                              # /api/* REST integration tests
 cargo test -p omnibus-db                           # db + scanner + sync tests
 cargo test -p omnibus-shared                       # shared serde / ebook / progress tests
 cargo test -p omnibus-mcp                          # MCP tool-layer tests (out of default-members)
 cargo test -p omnibus-mock-kobo                    # fake Kobo firmware tests (out of default-members)
+cargo test -p omnibus-mock-requests                # fake Prowlarr / download client tests (out of default-members)
 cargo test -p <crate> <test_name>                  # single test by name
 ```

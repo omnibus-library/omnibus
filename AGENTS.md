@@ -12,7 +12,7 @@ regardless of which agent or tool you are:
   content validators, keep-skills-fresh, end-of-session).
 - **[.claude/skills/](.claude/skills/)** — task recipes: `add-backend-route`,
   `add-playwright-flow`, `create-github-issue`, `ui-validate`.
-- **[docs/architecture.md](docs/architecture.md)** — how the five crates fit
+- **[docs/architecture.md](docs/architecture.md)** — how the six crates fit
   together (request flows, cross-module design); per-module detail lives in
   each file's own `//!` doc, printed by `just modules <dir>`.
 

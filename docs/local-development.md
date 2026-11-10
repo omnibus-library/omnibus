@@ -97,8 +97,8 @@ tests fail with a pointer to it when they're missing.
 ## Tests & lint
 
 ```bash
-just test    # full matrix: db + server + shared + mcp + mock-kobo, then the script suites
-just lint    # cargo fmt --check + clippy, mcp and mock-kobo included, + migration numbers vs origin/main
+just test    # full matrix: db + server + shared + mcp + mock-kobo + mock-requests, then the script suites
+just lint    # cargo fmt --check + clippy, mcp, mock-kobo and mock-requests included, + migration numbers vs origin/main
 just check   # lint then test
 
 just coverage       # lcov + per-file summary via cargo-llvm-cov over nextest
@@ -116,8 +116,8 @@ just openapi-gen  # rewrite openapi/openapi.json
 just openapi      # regenerate, then browse it as an API reference on a local port
 ```
 
-Per-crate, when you want a tighter loop. `cargo test` alone skips `mcp` and
-`mock-kobo` (out of default-members), so name them explicitly:
+Per-crate, when you want a tighter loop. `cargo test` alone skips `mcp`,
+`mock-kobo` and `mock-requests` (out of default-members), so name them explicitly:
 
 ```bash
 cargo test -p omnibus                              # /api/* REST integration tests
@@ -125,6 +125,7 @@ cargo test -p omnibus-db                           # db + scanner + sync tests
 cargo test -p omnibus-shared                       # shared serde / ebook / progress tests
 cargo test -p omnibus-mcp                          # MCP tool layer (out of default-members)
 cargo test -p omnibus-mock-kobo                    # fake Kobo firmware tests (out of default-members)
+cargo test -p omnibus-mock-requests                # fake Prowlarr / download client tests (out of default-members)
 ```
 
 ### Web E2E (Playwright)
@@ -184,7 +185,7 @@ the one above.
 
 ## Project layout
 
-Five-crate Cargo workspace:
+Six-crate Cargo workspace:
 
 | Crate | Responsibility |
 |---|---|
@@ -193,6 +194,7 @@ Five-crate Cargo workspace:
 | `server/` | the `omnibus` binary: REST router, Kobo, KOReader, OPDS, the web client at `/` |
 | `mcp/` | MCP tool layer over the `/api/*` surface (out of default-members) |
 | `mock-kobo/` | fake Kobo e-reader that syncs against the Kobo routes (out of default-members) |
+| `mock-requests/` | fake Prowlarr and download clients for book requests (out of default-members; [mock-requests.md](mock-requests.md)) |
 
 Alongside it, `frontend-js/` holds the React web client (Vite + pnpm, with its
 own checks: biome, tsc, vitest) and `omnibus-ios/` the native SwiftUI iOS client — an Xcode
