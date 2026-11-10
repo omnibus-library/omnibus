@@ -13,6 +13,7 @@ import type {
   MetadataOverrides,
 } from "../../api/generated/schemas";
 import { storyClient } from "../../testing/AppHarness";
+import { expectPlate, found } from "../../testing/dom";
 import {
   addShelfBooksHandler,
   bulkOverridesHandler,
@@ -234,13 +235,30 @@ export const Loading: Story = {
   beforeEach({ msw }) {
     msw.use(hanging("/api/ebooks"));
   },
-  play: async ({ canvas }) => {
+  play: async ({ canvas, canvasElement }) => {
     // The toast's live region is a status too, so the loader is found by its words.
     await expect(
       canvas
         .getByText("Taking the books off the shelf")
         .closest("[role=status]"),
     ).toBeInTheDocument();
+    // Each placeholder cover fills its own cell, not the whole grid stacked on its siblings.
+    const covers = [
+      ...canvasElement.querySelectorAll(".ld-covers .ld-skel--cover"),
+    ];
+    await expect(covers.length).toBeGreaterThan(1);
+    for (const cover of covers) {
+      const box = cover.getBoundingClientRect();
+      const cell = found(
+        cover.closest(".ld-covers-cell"),
+        "the cover's cell",
+      ).getBoundingClientRect();
+      await expect(Math.round(box.left)).toBe(Math.round(cell.left));
+      await expect(Math.round(box.top)).toBe(Math.round(cell.top));
+      await expect(Math.round(box.width)).toBe(Math.round(cell.width));
+      // A 2:3 plate, not one collapsed to a sliver.
+      await expectPlate(box.width, box.height);
+    }
   },
 };
 
@@ -1382,6 +1400,35 @@ export const ResumeStackPending: Story = {
     await expect(
       canvas.queryByRole("region", { name: "Continue reading" }),
     ).not.toBeInTheDocument();
+    // Each fan card holds a cover of real height, inside its own card.
+    const cards = [
+      ...canvasElement.querySelectorAll<HTMLElement>(".lmq-fcard-pending"),
+    ];
+    await expect(cards).toHaveLength(3);
+    for (const card of cards) {
+      const cover = found(
+        card.querySelector<HTMLElement>(".ld-skel--cover"),
+        "the fan card's placeholder cover",
+      );
+      const box = cover.getBoundingClientRect();
+      const frame = card.getBoundingClientRect();
+      await expect(box.height).toBeGreaterThan(0);
+      await expect(Math.round(box.left)).toBeGreaterThanOrEqual(
+        Math.floor(frame.left),
+      );
+      await expect(Math.round(box.top)).toBeGreaterThanOrEqual(
+        Math.floor(frame.top),
+      );
+      await expect(Math.round(box.right)).toBeLessThanOrEqual(
+        Math.ceil(frame.right),
+      );
+      await expect(Math.round(box.bottom)).toBeLessThanOrEqual(
+        Math.ceil(frame.bottom),
+      );
+      // Layout sizes, since the rotated cards' client rects are hulls: a 2:3 plate the card's width.
+      await expect(cover.offsetWidth).toBe(card.offsetWidth);
+      await expectPlate(cover.offsetWidth, cover.offsetHeight);
+    }
   },
 };
 

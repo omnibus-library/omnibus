@@ -1078,7 +1078,7 @@
   --cover-min: 170px;
   gap: 30px 22px;
 }
-.lmq .lib-loading .ld-covers-cell .ld-skel.line {
+.lmq .lib-loading .ld-covers-cell .ld-skel.ld-skel--line {
   display: none;
 }
 .lmq .lib-tile-art {

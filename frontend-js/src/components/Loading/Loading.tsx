@@ -191,7 +191,7 @@ type SkeletonProps = {
 export function Skeleton({ shape = "line", index = 0, style }: SkeletonProps) {
   return (
     <span
-      className={`ld-skel ${shape}`}
+      className={`ld-skel ld-skel--${shape}`}
       style={{ "--i": index, ...style }}
       aria-hidden="true"
     />
