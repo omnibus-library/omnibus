@@ -528,25 +528,56 @@ struct WishlistsModelTests {
         #expect(model.toast?.text == words)
     }
 
-    @Test func aSecondRequestStartIsIgnoredWhileOneRuns() async {
-        let started = Gate()
-        let release = Gate()
-        let sent = CallCounter()
-        let model = WishlistsModel(
+    /// A model whose first start holds on `release`; a second would fail the count instead of hanging.
+    private func modelHoldingTheFirstStart(
+        started: Gate, release: Gate, sent: CallCounter
+    ) -> WishlistsModel {
+        WishlistsModel(
             api: fakeAPI(startRequest: { uuid, kind in
-                // Only the first call holds, so an unguarded second one fails the count instead of hanging.
                 if await sent.next() == 1 {
                     await started.open()
                     await release.wait()
                 }
                 return aRequest(uuid: uuid, kind: kind, state: .looking)
             }))
+    }
+
+    @Test func aSecondRequestStartIsIgnoredWhileOneRuns() async {
+        let started = Gate()
+        let release = Gate()
+        let sent = CallCounter()
+        let model = modelHoldingTheFirstStart(started: started, release: release, sent: sent)
         let first = Task { await model.startRequest(uuid: "a", kind: .ebook) }
         await started.wait()
         #expect(!(await model.startRequest(uuid: "b", kind: .audiobook)))
-        #expect(model.toast?.text == "Still starting the last request.")
         await release.open()
         #expect(await first.value)
         #expect(await sent.next() == 2)
+    }
+
+    @Test func aSecondRequestStartToastsThatTheFirstIsStillStarting() async {
+        let started = Gate()
+        let release = Gate()
+        let model = modelHoldingTheFirstStart(started: started, release: release, sent: CallCounter())
+        let first = Task { await model.startRequest(uuid: "a", kind: .ebook) }
+        await started.wait()
+        _ = await model.startRequest(uuid: "b", kind: .audiobook)
+        #expect(model.toast?.text == "Still starting the last request.")
+        await release.open()
+        _ = await first.value
+    }
+
+    @Test func aSecondRequestStartKeepsAnOpenUndoToast() async {
+        let started = Gate()
+        let release = Gate()
+        let model = modelHoldingTheFirstStart(started: started, release: release, sent: CallCounter())
+        let first = Task { await model.startRequest(uuid: "a", kind: .ebook) }
+        await started.wait()
+        let undoable = WishlistToast(text: "Removed Dune from your wishlist", undo: .readd(uuid: "lib", title: "Dune"))
+        model.toast = undoable
+        _ = await model.startRequest(uuid: "b", kind: .audiobook)
+        #expect(model.toast == undoable)
+        await release.open()
+        _ = await first.value
     }
 }

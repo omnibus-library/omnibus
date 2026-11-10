@@ -129,10 +129,10 @@ final class WishlistsModel {
     }
 
     /// Starts a request; true when it stands, so the screen can open its page. A refusal toasts why,
-    /// and a start while another runs is ignored.
+    /// and a start while another runs is ignored with a toast, unless an Undo is open.
     func startRequest(uuid: String, kind: RequestKind) async -> Bool {
         guard !isStartingRequest else {
-            toast = WishlistToast(text: "Still starting the last request.")
+            if toast?.undo == nil { toast = WishlistToast(text: "Still starting the last request.") }
             return false
         }
         isStartingRequest = true
