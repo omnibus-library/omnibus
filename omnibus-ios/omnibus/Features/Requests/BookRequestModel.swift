@@ -24,6 +24,8 @@ final class BookRequestModel {
     /// The write in flight, if any; one runs at a time, so every other button locks.
     private(set) var busy: Busy?
     var toast: RequestToast?
+    /// Bumped when a cancel's undo window closes, so a view reads the clock again.
+    private(set) var clock = 0
     /// Numbers each write, so a poll that started before one is dropped when it answers after it.
     private var generation = 0
 
@@ -31,6 +33,8 @@ final class BookRequestModel {
     enum Busy: Equatable {
         case choosing(request: Int64, version: Int64)
         case swapping(Int64), retrying(Int64), takingCover(Int64), keepingCover(Int64)
+        case cancelling(Int64), undoing(Int64)
+        case starting(RequestKind)
     }
 
     let api: RequestsAPI
@@ -118,11 +122,11 @@ final class BookRequestModel {
         reads.merge(answers) { $1 }
     }
 
-    // MARK: - Chooser writes
+    // MARK: - Writes
 
     func choose(_ lane: BookRequest, version: Int64) async {
         let api = api
-        await write(.choose, busy: .choosing(request: lane.id, version: version), lane: lane) {
+        await write(Self.failure(.choose), busy: .choosing(request: lane.id, version: version), allowed: viewer.canChoose) {
             try await api.choose(lane.id, version)
         }
     }
@@ -130,18 +134,18 @@ final class BookRequestModel {
     /// Gives up the downloading version and goes back to choosing among the others.
     func swap(_ lane: BookRequest) async {
         let api = api
-        await write(.swap, busy: .swapping(lane.id), lane: lane) { try await api.swap(lane.id) }
+        await write(Self.failure(.swap), busy: .swapping(lane.id), allowed: viewer.canChoose) { try await api.swap(lane.id) }
     }
 
     func retry(_ lane: BookRequest) async {
         let api = api
-        await write(.retry, busy: .retrying(lane.id), lane: lane) { try await api.retry(lane.id) }
+        await write(Self.failure(.retry), busy: .retrying(lane.id), allowed: viewer.canChoose) { try await api.retry(lane.id) }
     }
 
     /// Makes the downloaded cover the book's own.
     func takeCover(_ lane: BookRequest) async {
         let api = api
-        await write(.takeCover, busy: .takingCover(lane.id), lane: lane, rereadOnFailure: true) {
+        await write(Self.failure(.takeCover), busy: .takingCover(lane.id), allowed: viewer.canChoose, rereading: lane.id) {
             try await api.takeCover(lane.id)
         }
     }
@@ -149,32 +153,82 @@ final class BookRequestModel {
     /// Turns the downloaded cover down.
     func keepCover(_ lane: BookRequest) async {
         let api = api
-        await write(.keepCover, busy: .keepingCover(lane.id), lane: lane, rereadOnFailure: true) {
+        await write(Self.failure(.keepCover), busy: .keepingCover(lane.id), allowed: viewer.canChoose, rereading: lane.id) {
             try await api.keepCover(lane.id)
         }
     }
 
-    /// Runs one chooser write: the lane takes the server's answer and the listings are read again; a
-    /// failure toasts, and a cover refusal may mean the request moved on, so it reads again too.
+    /// Cancels, then offers Undo for as long as the server will take it back.
+    func cancel(_ lane: BookRequest) async {
+        let api = api
+        let allowed = BookRequestFlow.canCancel(viewer: viewer, request: lane) && BookRequestFlow.isCancellable(lane)
+        let cancelled = await write(Self.failure(.cancel), busy: .cancelling(lane.id), allowed: allowed, rereading: lane.id) {
+            try await api.cancel(lane.id)
+        }
+        guard let cancelled, let delay = BookRequestFlow.undoDelay(cancelAt: cancelled.cancelAt, now: now()) else { return }
+        toast = RequestToast(
+            text: "\(BookRequestFlow.kindLabel(cancelled.kind)) request cancelled", undoRequestID: cancelled.id,
+            duration: delay)
+    }
+
+    /// Takes a cancel back and shows whatever the server returns.
+    func undo(_ shown: RequestToast) async {
+        toast = nil
+        guard let id = shown.undoRequestID else { return }
+        let api = api
+        await write(Self.failure(.undo), busy: .undoing(id), allowed: true) { try await api.undoCancel(id) }
+    }
+
+    /// Starts a request of `kind` and stays on the page; the new lane arrives with the listings.
+    func start(_ kind: RequestKind) async {
+        let api = api, uuid = uuid
+        await write(BookRequestFlow.startFailure, busy: .starting(kind), allowed: viewer.canStart) { try await api.start(uuid, kind) }
+    }
+
+    /// Whether Request again is offered on `request` now.
+    func offersRequestAgain(_ request: BookRequest) -> Bool {
+        BookRequestFlow.offersRequestAgain(
+            request, viewer: viewer, bookRequests: (listings ?? []).map(\.request), now: now())
+    }
+
+    /// When the next cancel's undo window closes, so a view can read the clock again then.
+    var nextWindowClose: Date? {
+        let open = (lanes + history.map(\.request)).filter { $0.state == .cancelled }
+            .compactMap(\.cancelAt).map { Date(timeIntervalSince1970: TimeInterval($0)) }
+        return open.filter { $0 > now() }.min()
+    }
+
+    func tick() { clock &+= 1 }
+
+    private static func failure(_ action: BookRequestFlow.Action) -> (Error) -> String {
+        { BookRequestFlow.actionFailure(action, error: $0) }
+    }
+
+    /// Runs one write: the request takes the server's answer and the listings are read again; a failure
+    /// toasts, and where `rereading` names a request the refusal may mean it moved on, so it is read again.
+    /// Answers what the server returned.
+    @discardableResult
     private func write(
-        _ action: BookRequestFlow.Action, busy: Busy, lane: BookRequest, rereadOnFailure: Bool = false,
+        _ failure: (Error) -> String, busy: Busy, allowed: Bool, rereading: Int64? = nil,
         _ call: @Sendable () async throws -> BookRequest
-    ) async {
-        guard self.busy == nil, viewer.canChoose else { return }
+    ) async -> BookRequest? {
+        guard self.busy == nil, allowed else { return nil }
         self.busy = busy
         defer { self.busy = nil }
         generation += 1
+        defer { generation += 1 }
         do {
-            reads[lane.id] = try await call()
-            generation += 1
+            let answer = try await call()
+            reads[answer.id] = answer
             await rereadListings()
+            return answer
         } catch {
-            generation += 1
-            toast = RequestToast(text: BookRequestFlow.actionFailure(action, error: error))
-            if rereadOnFailure {
-                if let fresh = try? await api.request(lane.id) { reads[lane.id] = fresh }
+            toast = RequestToast(text: failure(error))
+            if let rereading {
+                if let fresh = try? await api.request(rereading) { reads[rereading] = fresh }
                 await rereadListings()
             }
+            return nil
         }
     }
 

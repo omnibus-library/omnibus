@@ -350,6 +350,179 @@ struct BookRequestModelTests {
         await poll.value
         #expect(model.lanes.first?.state == .choose)
     }
+
+    // MARK: - Requester actions
+
+    @Test func cancellingSwapsInTheCancelledLaneAndToastsAnUndoForTheGraceThatIsLeft() async {
+        let log = ReadLog()
+        let model = await loaded(aRequest(state: .looking), log: log) { $0.cancel = { _ in aCancelled() } }
+        await model.cancel(model.lanes[0])
+        #expect(model.lanes.first?.state == .cancelled)
+        #expect(model.toast?.text == "Ebook request cancelled")
+        #expect(model.toast?.undoRequestID == 1)
+        // The server's cancel_at is 110 and the clock reads 1000, so the grace is already gone.
+        #expect(model.toast?.duration == .zero)
+        #expect(await log.listReads == 2)
+    }
+
+    @Test func theUndoToastLastsUntilASecondAndAHalfBeforeCancelAt() async {
+        let model = await loaded(aRequest(state: .looking)) { $0.cancel = { _ in aCancelled(cancelAt: 1_010) } }
+        await model.cancel(model.lanes[0])
+        #expect(model.toast?.duration == .seconds(8.5))
+    }
+
+    @Test func namesAnAudiobookCancelInItsToast() async {
+        let model = await loaded(aRequest(kind: .audiobook, state: .looking)) { $0.cancel = { _ in aCancelled(kind: .audiobook, cancelAt: 1_010) } }
+        await model.cancel(model.lanes[0])
+        #expect(model.toast?.text == "Audiobook request cancelled")
+    }
+
+    @Test func aCancelWithNoCancelAtShowsNoToast() async {
+        let model = await loaded(aRequest(state: .looking)) { $0.cancel = { _ in aCancelled(cancelAt: nil) } }
+        await model.cancel(model.lanes[0])
+        #expect(model.lanes.first?.state == .cancelled)
+        #expect(model.toast == nil)
+    }
+
+    @Test func aFailedCancelToastsItsCopyAndReReads() async {
+        let log = ReadLog()
+        let model = await loaded(aRequest(state: .looking), log: log) { $0.cancel = { _ in throw APIError.http(status: 409, message: "too late") } }
+        await log.clear()
+        await model.cancel(model.lanes[0])
+        #expect(model.toast?.text == "Couldn\u{2019}t cancel: too late")
+        #expect(model.toast?.undoRequestID == nil)
+        #expect(await log.singles == [1])
+    }
+
+    @Test func undoRestoresWhateverTheServerReturns() async throws {
+        let model = await loaded(aRequest(state: .looking)) {
+            $0.cancel = { _ in aCancelled(cancelAt: 1_010) }
+            $0.undoCancel = { _ in aRequest(state: .onItsWay, progress: 0.4) }
+        }
+        await model.cancel(model.lanes[0])
+        await model.undo(try #require(model.toast))
+        #expect(model.lanes.first?.state == .onItsWay)
+        #expect(model.toast == nil)
+    }
+
+    @Test func aFailedUndoToastsItsCopy() async throws {
+        let model = await loaded(aRequest(state: .looking)) {
+            $0.cancel = { _ in aCancelled(cancelAt: 1_010) }
+            $0.undoCancel = { _ in throw APIError.http(status: 409, message: "gone") }
+        }
+        await model.cancel(model.lanes[0])
+        await model.undo(try #require(model.toast))
+        #expect(model.toast?.text == "Couldn\u{2019}t undo: gone")
+    }
+
+    @Test func aChooserCancelsAnotherReadersRequestAndAnAskerCannot() async {
+        let theirs = aRequest(userID: 2, state: .looking)
+        let chooser = await loaded(theirs) { $0.cancel = { _ in aCancelled(userID: 2) } }
+        await chooser.cancel(chooser.lanes[0])
+        #expect(chooser.lanes.first?.state == .cancelled)
+        let sent = ReadLog()
+        let asker = await loaded(theirs, viewer: askerViewer) { $0.cancel = { id in await sent.single(id); return aCancelled(userID: 2) } }
+        await asker.cancel(asker.lanes[0])
+        #expect(await sent.singles.isEmpty)
+        #expect(asker.lanes.first?.state == .looking)
+    }
+
+    @Test func startingARequestStaysOnThePageAndReloadsTheLanes() async {
+        let log = ReadLog()
+        let calls = CallCounter()
+        let started = ReadLog()
+        let api = fakeRequestsAPI(
+            bookList: { _ in
+                await log.list()
+                return await calls.next() == 1
+                    ? [listing("b", id: 1, kind: .ebook, state: .looking)]
+                    : [listing("b", id: 2, kind: .audiobook, state: .looking), listing("b", id: 1, kind: .ebook, state: .looking)]
+            },
+            request: { id in aRequest(id: id, kind: id == 2 ? .audiobook : .ebook, state: .looking) },
+            book: { _ in aBook },
+            start: { uuid, kind in
+                await started.single(kind == .audiobook ? 1 : 0)
+                return aRequest(id: 2, uuid: uuid, kind: kind, state: .looking)
+            })
+        let model = model(api)
+        await model.load(viewer: adaViewer)
+        #expect(model.unrequested == [.audiobook])
+        await model.start(.audiobook)
+        #expect(await started.singles == [1])
+        #expect(model.lanes.map(\.id) == [1, 2])
+        #expect(model.unrequested.isEmpty)
+        #expect(model.toast == nil)
+    }
+
+    @Test(arguments: [
+        (429, "You have a lot of requests going. Try again in a few minutes."),
+        (403, "Your account can\u{2019}t make requests."),
+        (404, "That book is no longer in the library."),
+        (500, "Couldn\u{2019}t start the request."),
+    ])
+    func aRefusedStartToastsItsPlainWords(status: Int, words: String) async {
+        let api = fakeRequestsAPI(
+            bookList: { _ in [] }, book: { _ in aBook }, start: { _, _ in throw APIError.http(status: status, message: "x") })
+        let model = model(api)
+        await model.load(viewer: adaViewer)
+        await model.start(.ebook)
+        #expect(model.toast?.text == words)
+        #expect(model.busy == nil)
+    }
+
+    @Test func aReaderWhoCantStartMakesNoStart() async {
+        let started = ReadLog()
+        let api = fakeRequestsAPI(
+            bookList: { _ in [] }, book: { _ in aBook }, start: { _, _ in await started.single(1); return aRequest() })
+        let model = model(api)
+        await model.load(viewer: RequestViewer(id: 1, canStart: false, canChoose: true))
+        await model.start(.ebook)
+        #expect(await started.singles.isEmpty)
+    }
+
+    @Test func requestAgainAppearsOnceTheUndoWindowPassesWithoutAReload() async {
+        let clock = TestClock(1_000)
+        let cancelledLane = aCancelled(cancelAt: 1_010)
+        let api = bookRequestAPI(listings: [aListing(cancelledLane)])
+        let model = BookRequestModel(uuid: "b", api: api, now: { clock.date })
+        await model.load(viewer: adaViewer)
+        let lane = model.lanes[0]
+        #expect(!model.offersRequestAgain(lane))
+        #expect(model.nextWindowClose == Date(timeIntervalSince1970: 1_010))
+        clock.advance(to: 1_010)
+        model.tick()
+        #expect(model.offersRequestAgain(lane))
+        #expect(model.nextWindowClose == nil)
+    }
+
+    @Test func requestAgainIsHeldBackWhileTheViewerHasThatKindGoingAndFromAReaderWhoCantStart() async {
+        let live = aListing(aRequest(id: 2, state: .looking))
+        let old = aListing(aCancelled(1, cancelAt: nil))
+        let going = model(bookRequestAPI(listings: [live, old]))
+        await going.load(viewer: adaViewer)
+        #expect(!going.offersRequestAgain(aCancelled(1, cancelAt: nil)))
+        let alone = model(bookRequestAPI(listings: [old]))
+        await alone.load(viewer: adaViewer)
+        #expect(alone.offersRequestAgain(aCancelled(1, cancelAt: nil)))
+        let asker = model(bookRequestAPI(listings: [old]))
+        await asker.load(viewer: RequestViewer(id: 1, canStart: false, canChoose: false))
+        #expect(!asker.offersRequestAgain(aCancelled(1, cancelAt: nil)))
+    }
+}
+
+private func aCancelled(_ id: Int64 = 1, userID: Int64 = 1, kind: RequestKind = .ebook, cancelAt: Int64? = 110) -> BookRequest {
+    aRequest(id: id, userID: userID, kind: kind, state: .cancelled, cancelAt: cancelAt, cancelledBy: userID)
+}
+
+/// A clock a test moves by hand.
+final class TestClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var seconds: Double
+
+    init(_ seconds: Double) { self.seconds = seconds }
+
+    var date: Date { lock.withLock { Date(timeIntervalSince1970: seconds) } }
+    func advance(to seconds: Double) { lock.withLock { self.seconds = seconds } }
 }
 
 /// The calls a chooser action makes, overridable one at a time; every read answers from `full`.
@@ -362,6 +535,8 @@ struct RequestsAPIFakes {
     var retry: @Sendable (Int64) async throws -> BookRequest = { _ in throw FakeFailure() }
     var takeCover: @Sendable (Int64) async throws -> BookRequest = { _ in throw FakeFailure() }
     var keepCover: @Sendable (Int64) async throws -> BookRequest = { _ in throw FakeFailure() }
+    var cancel: @Sendable (Int64) async throws -> BookRequest = { _ in throw FakeFailure() }
+    var undoCancel: @Sendable (Int64) async throws -> BookRequest = { _ in throw FakeFailure() }
 
     var api: RequestsAPI {
         let listings = listings, full = full, log = log
@@ -372,6 +547,7 @@ struct RequestsAPIFakes {
                 guard let found = full.first(where: { $0.id == id }) else { throw FakeFailure() }
                 return found
             },
-            book: { _ in aBook }, choose: choose, swap: swap, retry: retry, takeCover: takeCover, keepCover: keepCover)
+            book: { _ in aBook }, choose: choose, swap: swap, retry: retry, cancel: cancel, undoCancel: undoCancel,
+            takeCover: takeCover, keepCover: keepCover)
     }
 }

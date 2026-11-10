@@ -35,6 +35,13 @@ struct BookRequestView: View {
         .overlay(alignment: .bottom) { toastLayer }
         .animation(Motion.settle, value: model.toast?.id)
         .task { await model.load(viewer: viewer) }
+        // Re-reads the clock when an undo window closes, so Request again appears without a reload.
+        .task(id: model.nextWindowClose) {
+            guard let close = model.nextWindowClose else { return }
+            try? await Task.sleep(for: .seconds(max(0, close.timeIntervalSince(model.now()))))
+            guard !Task.isCancelled else { return }
+            model.tick()
+        }
         // Keyed on whether anything is moving, so a lane that starts moving after a write restarts the loop.
         .task(id: model.pollInterval != nil) {
             while let interval = model.pollInterval {
@@ -48,7 +55,12 @@ struct BookRequestView: View {
     @ViewBuilder
     private var toastLayer: some View {
         if let toast = model.toast {
-            StageToast(text: toast.text, onDismiss: { model.toast = nil })
+            StageToast(
+                text: toast.text,
+                actionLabel: toast.undoRequestID == nil ? nil : "Undo",
+                action: { Task { await model.undo(toast) } },
+                onDismiss: { model.toast = nil }
+            )
                 .padding(.horizontal, 16)
                 .padding(.bottom, Spacing.md)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -68,7 +80,7 @@ struct BookRequestView: View {
                     RequestLane(model: model, lane: lane)
                 }
                 ForEach(model.unrequested, id: \.self) { kind in
-                    UnrequestedLane(kind: kind)
+                    UnrequestedLane(model: model, kind: kind)
                 }
                 history
             }
@@ -115,7 +127,7 @@ struct BookRequestView: View {
                     .foregroundStyle(palette.ink3Color)
                     .accessibilityAddTraits(.isHeader)
                 ForEach(rows, id: \.request.id) { row in
-                    HistoryRow(listing: row, viewer: viewer)
+                    HistoryRow(model: model, listing: row)
                 }
             }
         }
@@ -124,26 +136,34 @@ struct BookRequestView: View {
 
 /// One past request, saying only what was recorded.
 private struct HistoryRow: View {
+    let model: BookRequestModel
     let listing: RequestListing
-    let viewer: RequestViewer
 
     @Environment(\.palette) private var palette
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(BookRequestFlow.historyLine(listing, viewer: viewer.id))
-                .font(.ui(14))
-                .foregroundStyle(palette.ink0Color)
-            if let details = BookRequestFlow.historyDetails(listing) {
-                Text(details).font(.ui(12)).foregroundStyle(palette.ink3Color)
+        // Read so the row draws again when a cancel's undo window closes.
+        let _ = model.clock
+        HStack(spacing: Spacing.md) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(BookRequestFlow.historyLine(listing, viewer: model.viewer.id))
+                    .font(.ui(14))
+                    .foregroundStyle(palette.ink0Color)
+                if let details = BookRequestFlow.historyDetails(listing) {
+                    Text(details).font(.ui(12)).foregroundStyle(palette.ink3Color)
+                }
+                ForEach(BookRequestFlow.swapFacts(listing), id: \.id) { fact in
+                    Text(fact.text).font(.ui(12)).foregroundStyle(palette.ink3Color)
+                }
             }
-            ForEach(BookRequestFlow.swapFacts(listing), id: \.id) { fact in
-                Text(fact.text).font(.ui(12)).foregroundStyle(palette.ink3Color)
+            Spacer(minLength: 0)
+            if model.offersRequestAgain(listing.request) {
+                RequestButton(model: model, kind: listing.request.kind, label: "Request again")
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Spacing.md)
         .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(palette.bg2Color))
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
     }
 }

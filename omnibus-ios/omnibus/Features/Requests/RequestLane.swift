@@ -65,6 +65,8 @@ struct RequestLane: View {
     private var listing: RequestListing? { model.listing(for: lane) }
 
     var body: some View {
+        // Read so the card draws again when a cancel's undo window closes.
+        let _ = model.clock
         VStack(alignment: .leading, spacing: Spacing.md) {
             head
             if let steps = BookRequestFlow.steps(lane) {
@@ -73,6 +75,7 @@ struct RequestLane: View {
                 stateNote
             }
             content
+            actions
         }
         .laneCard(palette)
         .accessibilityElement(children: .contain)
@@ -151,7 +154,6 @@ struct RequestLane: View {
             PickedCard(lane: lane, meta: nil)
         case .onItsWay:
             DownloadCard(lane: lane, left: BookRequestFlow.timeLeft(lane, now: model.now()))
-            if model.viewer.canChoose && BookRequestFlow.isDownloading(lane) { chooseAnother }
         case .ready:
             if BookRequestFlow.pickedVersion(lane) != nil {
                 PickedCard(
@@ -170,8 +172,36 @@ struct RequestLane: View {
                     .font(.ui(13)).foregroundStyle(palette.ink2Color)
             }
         case .cancelled:
-            EmptyView()
+            if model.offersRequestAgain(lane) { RequestButton(model: model, kind: lane.kind, label: "Request again") }
         }
+    }
+
+    /// Choose another while a version downloads, and Cancel while the request is still going.
+    @ViewBuilder
+    private var actions: some View {
+        let canSwap = lane.state == .onItsWay && model.viewer.canChoose && BookRequestFlow.isDownloading(lane)
+        let canCancel = BookRequestFlow.canCancel(viewer: model.viewer, request: lane) && BookRequestFlow.isCancellable(lane)
+        if canSwap || canCancel {
+            HStack(spacing: Spacing.sm) {
+                if canSwap { chooseAnother }
+                if canCancel { cancel }
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
+    private var cancel: some View {
+        let early = lane.state == .looking || lane.state == .choose
+        let mine = lane.userID == model.viewer.id
+        return Button(model.busy == .cancelling(lane.id) ? "Cancelling\u{2026}" : early ? "Cancel request" : "Cancel") {
+            Task { await model.cancel(lane) }
+        }
+        .buttonStyle(RequestButtonStyle(emphasis: .ghost))
+        .disabled(locked)
+        // Another reader's Cancel names whose request it is.
+        .accessibilityLabel(
+            mine ? (early ? "Cancel request" : "Cancel")
+                : "Cancel \(listing?.requesterName ?? "their")\u{2019}s request for \(model.book?.displayTitle ?? "this book")")
     }
 
     /// Commands never queue offline (rule 08), so every button waits for the server to be reachable.
@@ -415,8 +445,23 @@ private struct CoverOfferCard: View {
 
 // MARK: - Unrequested
 
+/// Starts a request of `kind`: the unrequested lane's Request and a cancelled request's Request again.
+struct RequestButton: View {
+    let model: BookRequestModel
+    let kind: RequestKind
+    let label: String
+
+    var body: some View {
+        Button(model.busy == .starting(kind) ? "Requesting\u{2026}" : label) { Task { await model.start(kind) } }
+            .buttonStyle(RequestButtonStyle())
+            .disabled(model.busy != nil || !Connectivity.shared.isOnline)
+            .accessibilityLabel("\(label) \(BookRequestFlow.kindLabel(kind).lowercased())")
+    }
+}
+
 /// A format the book has neither in the library nor among its requests.
 struct UnrequestedLane: View {
+    let model: BookRequestModel
     let kind: RequestKind
 
     @Environment(\.palette) private var palette
@@ -429,13 +474,14 @@ struct UnrequestedLane: View {
                 .foregroundStyle(palette.ink0Color)
             Text("not requested").font(.ui(12.5)).foregroundStyle(palette.ink3Color)
             Spacer(minLength: 0)
+            RequestButton(model: model, kind: kind, label: "Request")
         }
         .padding(Spacing.md)
         .overlay(
             RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
                 .strokeBorder(palette.line2Color, style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
         )
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("request-unrequested-\(kind.rawValue)")
     }
 }
