@@ -5,10 +5,10 @@
 //! password), no redirect is followed, and a connection that is set and not this mock's own
 //! is never overwritten, since the settings read masks secrets and could not restore it.
 //! `--local` also checks that the server on the published port is this checkout's, and
-//! nothing is saved while a server library sits under any `test_data/` folder.
+//! nothing is saved while a server library sits in a checkout's `test_data/` folder.
 
 use std::net::IpAddr;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use omnibus_shared::{
@@ -100,7 +100,7 @@ struct LoginReply {
 
 /// Point the Omnibus at `server` at the mock at `mock_origin`, with `client` as its download
 /// client and `downloads` as the folder both sides read finished files from. Refuses when
-/// the server's library sits under a `test_data` folder, which an import would write into.
+/// the server's library sits in a checkout's `test_data` folder, which an import would write into.
 pub async fn wire(
     server: &str,
     seed: Option<&str>,
@@ -222,24 +222,44 @@ async fn configure(
     Ok(())
 }
 
-/// Refuse when an import would land in a `test_data` folder, whichever checkout's.
+/// Refuse when an import would land in a checkout's committed `test_data/` fixtures.
 fn guard_libraries(libraries: &Settings) -> Result<(), WireError> {
     let paths = [
         &libraries.ebook_library_path,
         &libraries.audiobook_library_path,
     ];
     for path in paths.into_iter().flatten() {
-        let path = Path::new(path);
-        let real = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-        if real.components().any(|c| c.as_os_str() == "test_data") {
+        if in_checkout_fixtures(&resolve(Path::new(path))) {
             return Err(WireError::Setup(format!(
-                "the server's library {} is inside a test_data/ folder: an import would add \
-                 files to the fixtures, so point the library elsewhere first",
-                path.display()
+                "the server's library {path} is inside a checkout's test_data/ folder: an import \
+                 would add files to the fixtures, so point the library elsewhere first"
             )));
         }
     }
     Ok(())
+}
+
+/// `path` with symlinks resolved as far as it exists, and the missing tail kept as typed.
+fn resolve(path: &Path) -> PathBuf {
+    let mut tail = Vec::new();
+    let mut head = path;
+    while let Some(parent) = head.parent() {
+        if let Ok(real) = head.canonicalize() {
+            return tail.iter().rev().fold(real, |acc, part| acc.join(part));
+        }
+        tail.extend(head.file_name());
+        head = parent;
+    }
+    path.to_path_buf()
+}
+
+/// Whether a `test_data` component, in any letter case, sits directly in a git checkout.
+fn in_checkout_fixtures(path: &Path) -> bool {
+    path.ancestors().skip(1).any(|dir| {
+        dir.file_name()
+            .is_some_and(|name| name.eq_ignore_ascii_case("test_data"))
+            && dir.parent().is_some_and(|root| root.join(".git").exists())
+    })
 }
 
 /// How the settings read previews [`PROWLARR_API_KEY`]: its first and last four characters.

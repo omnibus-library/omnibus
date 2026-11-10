@@ -203,7 +203,7 @@ async fn wire_replaces_a_previous_mock_wiring() {
     let mut cfg = config();
     cfg.saved = client_saved("http://127.0.0.1:5555", "mock");
     cfg.saved["prowlarr_url"] = json!("http://127.0.0.1:5555");
-    cfg.saved["prowlarr_api_key_masked"] = json!("mock\u{2026}ests");
+    cfg.saved["prowlarr_api_key_masked"] = json!(PROWLARR_KEY_MASKED);
     let (origin, stub) = spawn_stub(cfg).await;
 
     run(&origin, DownloadClientKind::Qbittorrent).await.unwrap();
@@ -246,7 +246,7 @@ async fn wire_refuses_real_services_on_this_machine() {
 #[tokio::test]
 async fn wire_refuses_to_overwrite_a_saved_address_that_is_not_on_this_machine() {
     let mut mock_key_elsewhere = saved_with(Some("http://prowlarr.lan:9696"), None);
-    mock_key_elsewhere["prowlarr_api_key_masked"] = json!("mock\u{2026}ests");
+    mock_key_elsewhere["prowlarr_api_key_masked"] = json!(PROWLARR_KEY_MASKED);
     let cases = [
         (mock_key_elsewhere, "Prowlarr"),
         (
@@ -381,6 +381,7 @@ async fn wire_follows_no_redirect_so_the_password_goes_nowhere_else() {
 #[tokio::test]
 async fn wire_refuses_a_library_inside_any_test_data_before_saving_anything() {
     let other_checkout = tempfile::tempdir().unwrap();
+    std::fs::create_dir(other_checkout.path().join(".git")).unwrap();
     let inside = other_checkout.path().join("test_data/epubs");
     std::fs::create_dir_all(&inside).unwrap();
     let inside = inside.to_str().unwrap();
@@ -404,6 +405,69 @@ async fn wire_refuses_a_library_inside_any_test_data_before_saving_anything() {
         );
         assert_eq!(calls(&stub).last().unwrap(), "POST /api/auth/logout");
     }
+}
+
+fn libraries_at(path: &Path) -> Settings {
+    Settings {
+        ebook_library_path: Some(path.to_str().unwrap().into()),
+        ..Settings::default()
+    }
+}
+
+#[test]
+fn prowlarr_key_masked_previews_the_first_and_last_four_of_the_key() {
+    let key: Vec<char> = PROWLARR_API_KEY.chars().collect();
+    let head: String = key[..4].iter().collect();
+    let tail: String = key[key.len() - 4..].iter().collect();
+
+    assert_eq!(PROWLARR_KEY_MASKED, format!("{head}\u{2026}{tail}"));
+}
+
+#[test]
+fn guard_libraries_refuses_a_missing_leaf_reached_through_a_symlink_into_test_data() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::create_dir(tmp.path().join("repo")).unwrap();
+    std::fs::create_dir(tmp.path().join("repo/.git")).unwrap();
+    std::fs::create_dir_all(tmp.path().join("repo/test_data/epubs")).unwrap();
+    std::os::unix::fs::symlink(
+        tmp.path().join("repo/test_data/epubs"),
+        tmp.path().join("link"),
+    )
+    .unwrap();
+
+    let err = guard_libraries(&libraries_at(&tmp.path().join("link/not-yet"))).unwrap_err();
+
+    assert!(matches!(err, WireError::Setup(_)), "{err:?}");
+}
+
+#[test]
+fn guard_libraries_refuses_test_data_in_any_letter_case() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::create_dir(tmp.path().join(".git")).unwrap();
+    std::fs::create_dir_all(tmp.path().join("Test_Data/epubs")).unwrap();
+
+    let err = guard_libraries(&libraries_at(&tmp.path().join("Test_Data/epubs"))).unwrap_err();
+
+    assert!(matches!(err, WireError::Setup(_)), "{err:?}");
+}
+
+#[test]
+fn guard_libraries_accepts_a_checkout_that_merely_lives_under_a_test_data_folder() {
+    let tmp = tempfile::tempdir().unwrap();
+    let lib = tmp.path().join("chore/test_data/repo/.claude/runtime/lib");
+    std::fs::create_dir_all(&lib).unwrap();
+    std::fs::create_dir(tmp.path().join("chore/test_data/repo/.git")).unwrap();
+
+    guard_libraries(&libraries_at(&lib)).unwrap();
+}
+
+#[test]
+fn guard_libraries_accepts_a_test_data_folder_that_is_not_in_a_checkout() {
+    let tmp = tempfile::tempdir().unwrap();
+    let lib = tmp.path().join("nas/test_data/books");
+    std::fs::create_dir_all(&lib).unwrap();
+
+    guard_libraries(&libraries_at(&lib)).unwrap();
 }
 
 /// Writes `port` as the dev server's published port in a fresh runtime dir.

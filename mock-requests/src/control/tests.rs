@@ -30,9 +30,8 @@ async fn search(mock: &Running) -> Result<usize, ConnectionError> {
 async fn search_mode_empty_makes_the_search_find_nothing() {
     let mock = spawn().await;
 
-    let reply = control_reply(&mock, "/_mock/search", json!({"mode": "empty"})).await;
+    control(&mock, "/_mock/search", json!({"mode": "empty"})).await;
 
-    assert!(reply.status().is_success());
     assert_eq!(search(&mock).await.unwrap(), 0);
     assert_eq!(view(&mock).await["search"], "empty");
 }
@@ -72,7 +71,7 @@ async fn downloads_settings_apply_to_a_download_already_added_and_to_later_ones(
     let qbit = Qbittorrent::new(&mock.origin, CLIENT_USERNAME, CLIENT_PASSWORD).unwrap();
     let (first, _) = add_epub(&mock, &qbit, ReleaseProtocol::Torrent).await;
 
-    let reply = control_reply(
+    control(
         &mock,
         "/_mock/downloads",
         json!({"outcome": "fail", "secs": 5}),
@@ -80,7 +79,6 @@ async fn downloads_settings_apply_to_a_download_already_added_and_to_later_ones(
     .await;
     let (second, _) = add_epub(&mock, &qbit, ReleaseProtocol::Torrent).await;
 
-    assert!(reply.status().is_success());
     let seen = view(&mock).await;
     assert_eq!(seen["outcome"], "fail");
     assert_eq!(seen["secs"], 5);

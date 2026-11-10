@@ -105,7 +105,7 @@ requests_running() {
 }
 
 server_up() {
-  local fresh=0 requests=0 arg
+  local fresh=0 requests=0 arg why="--fresh was given"
   for arg in "$@"; do
     case "$arg" in
       --fresh) fresh=1 ;;
@@ -117,11 +117,12 @@ server_up() {
   # finish the old one's requests, so a kept database serves neither switch.
   if [ "$requests" = 1 ] && ! requests_running; then
     fresh=1
+    why="--requests needs its own library clones and mock"
   elif [ "$requests" = 0 ] && [ -d "$SERVER/library" ]; then
     fresh=1
+    why="leaving --requests"
   fi
-  if [ "$fresh" = 0 ] && server_pid >/dev/null && [ -f "$ENVFILE" ] &&
-    { [ "$requests" = 0 ] || requests_running; }; then
+  if [ "$fresh" = 0 ] && server_pid >/dev/null && [ -f "$ENVFILE" ]; then
     server_status
     return 0
   fi
@@ -130,6 +131,7 @@ server_up() {
   server_down
   rm -f "$ENVFILE"
   if [ "$fresh" = 1 ]; then
+    [ ! -f "$SERVER/omnibus.db" ] || echo "ios-validate: discarding the kept database: $why" >&2
     rm -rf "$SERVER"
   fi
   # Absolute, because the start runs from the repo root and launches from $SERVER.
@@ -149,14 +151,14 @@ server_up() {
     "$ROOT/scripts/with-dev-env.sh" default "$HERE/ios-validate.sh" __start "$requests"
 }
 
-# APFS clones of the fixture libraries under $SERVER/library, made when missing, so an
-# import files into a copy and never into the committed tree. macOS's own cp, since the
+# APFS clones of the fixture libraries under $SERVER/library, so an import files into a
+# copy and never into the committed tree. Always made anew: every start follows a wipe. macOS's own cp, since the
 # dev shell's GNU one has no -c.
 clone_libraries() {
   mkdir -p "$SERVER/library"
   local name
   for name in epubs audiobooks; do
-    [ -d "$SERVER/library/$name" ] || /bin/cp -cR "$ROOT/test_data/$name" "$SERVER/library/$name"
+    /bin/cp -cR "$ROOT/test_data/$name" "$SERVER/library/$name"
   done
 }
 

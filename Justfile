@@ -72,8 +72,8 @@ kobo *args:
 # on one loopback port, so book requests can be made without real services.
 # `--local` points this worktree's dev server at it (run `just dev-up` with
 # OMNIBUS_BOOK_REQUESTS=1 first) and refuses to replace a connection that is not a
-# previous mock wiring, or a library under any test_data/ folder; `--client` picks
-# which download client (docs/mock-requests.md). Needs `just fixtures` for the
+# previous mock wiring, and refuses to run while a library sits in a checkout's
+# test_data/; `--client` picks which download client (docs/mock-requests.md). Needs `just fixtures` for the
 # audiobook payload.
 [positional-arguments]
 mock-requests *args: fixtures

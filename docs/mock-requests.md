@@ -52,9 +52,10 @@ says to set `OMNIBUS_BOOK_REQUESTS=1` and `just dev-bounce`.
 Two more refusals protect what it must not touch. `--local` asks the server on the
 published port for its `repo_root` (`/api/_health`) and stops unless that is this
 checkout, since a stale `.claude/runtime/port` can name another worktree's server. And
-it stops when the server's ebook or audiobook library sits under any `test_data/`
-folder, whichever checkout's: an import would add the downloaded book to the committed fixtures
-(`git add .` would then commit it). Point the library elsewhere, or use
+it stops when the server's ebook or audiobook library sits in a checkout's
+`test_data/` folder (any letter case, symlinks followed, a git checkout beside it): an
+import would add the downloaded book to the committed fixtures (`git add .` would then
+commit it). A `test_data` folder elsewhere is fine. Point the library elsewhere, or use
 `ios-validate.sh server up --requests`, which serves clones.
 
 Without `--local` or `--server`, the mock just serves and you enter its address
