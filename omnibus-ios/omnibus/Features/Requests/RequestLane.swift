@@ -310,20 +310,23 @@ private struct VersionRow: View {
 
     @ViewBuilder
     private var name: some View {
-        let title = Text(version.title).font(.ui(15, weight: .medium)).foregroundStyle(palette.ink0Color)
+        let font = Font.ui(15, weight: .medium)
         if let url = version.infoURL.flatMap(Self.sourcePage) {
             Link(destination: url) {
-                (title + Text(" \u{2060}") + Text(Image(systemName: "arrow.up.right")).font(.system(size: 11)).foregroundColor(palette.ink3Color))
+                // The word joiner keeps the arrow on the name's last line.
+                Text("\(version.title)\u{2060} \(Image(systemName: "arrow.up.right"))")
+                    .font(font)
+                    .foregroundStyle(palette.ink0Color)
                     .multilineTextAlignment(.leading)
             }
             .accessibilityHint("Opens the source\u{2019}s page")
         } else {
-            title
+            Text(version.title).font(font).foregroundStyle(palette.ink0Color)
         }
     }
 
     /// Only an http or https page is opened.
-    private static func sourcePage(_ raw: String) -> URL? {
+    private nonisolated static func sourcePage(_ raw: String) -> URL? {
         guard let url = URL(string: raw), ["http", "https"].contains(url.scheme?.lowercased()) else { return nil }
         return url
     }
