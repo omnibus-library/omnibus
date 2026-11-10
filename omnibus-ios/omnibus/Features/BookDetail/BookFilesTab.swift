@@ -10,6 +10,12 @@ struct BookFilesTab: View {
     var onAlignment: () -> Void
 
     @Environment(\.palette) private var palette
+    @Environment(AppState.self) private var app
+    @Environment(\.openDestination) private var openDestination
+    /// The kind being started, so only its button reads "Requesting\u{2026}".
+    @State private var starting: RequestKind?
+    /// Why the last request couldn't start.
+    @State private var requestError: String?
     // Not `private`: a private stored property makes the memberwise
     // initializer private too, and this view is constructed from the page.
     var downloads = DownloadManager.shared
@@ -24,14 +30,22 @@ struct BookFilesTab: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if book.hasEbook || book.hasAudiobook || book.hasPhysical {
-                Text("On this phone")
-                    .font(.display(30, weight: .semibold))
-                    .foregroundStyle(palette.ink0Color)
-                    .accessibilityAddTraits(.isHeader)
-                    .padding(.bottom, 12)
-
+            if hasHeldFormats {
+                sectionHeading("On this phone")
                 formats
+            }
+
+            if !slots.isEmpty {
+                sectionHeading("Not in the library")
+                    .padding(.top, hasHeldFormats ? 32 : 0)
+                requestSlots
+            }
+
+            if let requestError {
+                Text(requestError)
+                    .font(.ui(13))
+                    .foregroundStyle(palette.badColor)
+                    .padding(.top, 8)
             }
 
             // Full width, below the rows rather than inside one: the control in
@@ -63,6 +77,19 @@ struct BookFilesTab: View {
 
     // MARK: - Formats
 
+    private var hasHeldFormats: Bool { book.hasEbook || book.hasAudiobook || book.hasPhysical }
+
+    /// The kinds this reader can ask for because the library lacks them.
+    private var slots: [RequestKind] { BookRequestFlow.fileSlots(user: app.user, formats: book.formats) }
+
+    private func sectionHeading(_ title: String) -> some View {
+        Text(title)
+            .font(.display(30, weight: .semibold))
+            .foregroundStyle(palette.ink0Color)
+            .accessibilityAddTraits(.isHeader)
+            .padding(.bottom, 12)
+    }
+
     private var formats: some View {
         VStack(spacing: 0) {
             if book.hasEbook {
@@ -93,22 +120,58 @@ struct BookFilesTab: View {
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
+    private var requestSlots: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(slots.enumerated()), id: \.element) { index, kind in
+                if index > 0 { rule }
+                requestSlot(kind)
+            }
+        }
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(palette.bg1Color))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    /// A format the library lacks, with a button to request it. Commands never queue offline (rule 08).
+    private func requestSlot(_ kind: RequestKind) -> some View {
+        formatRow(BookRequestFlow.kindLabel(kind), detail: nil) {
+            Button(starting == kind ? "Requesting\u{2026}" : "Request") { Task { await request(kind) } }
+                .buttonStyle(RequestButtonStyle(width: 100))
+                .disabled(starting != nil || !Connectivity.shared.isOnline)
+                .accessibilityLabel("Request \(kind.rawValue)")
+        }
+    }
+
+    private func request(_ kind: RequestKind) async {
+        guard starting == nil else { return }
+        requestError = nil
+        starting = kind
+        defer { starting = nil }
+        do {
+            let started = try await RequestService.start(bookUUID: book.uuid, kind: kind)
+            openDestination(.bookRequest(uuid: started.bookUUID))
+        } catch {
+            requestError = BookRequestFlow.startFailure(error)
+        }
+    }
+
     private var rule: some View {
         Rectangle().fill(palette.line.color).frame(height: 0.5)
     }
 
     private func formatRow<Control: View>(
-        _ title: String, detail: String, @ViewBuilder control: () -> Control
+        _ title: String, detail: String?, @ViewBuilder control: () -> Control
     ) -> some View {
         HStack(spacing: Spacing.md) {
             VStack(alignment: .leading, spacing: 0) {
                 Text(title)
                     .font(.ui(16, weight: .semibold))
                     .foregroundStyle(palette.ink0Color)
-                Text(detail)
-                    .font(.ui(14))
-                    .foregroundStyle(palette.ink1Color)
-                    .fixedSize(horizontal: false, vertical: true)
+                if let detail {
+                    Text(detail)
+                        .font(.ui(14))
+                        .foregroundStyle(palette.ink1Color)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             Spacer(minLength: 0)
             control()

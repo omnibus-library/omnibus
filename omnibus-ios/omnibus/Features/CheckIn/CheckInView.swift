@@ -87,19 +87,7 @@ struct CheckInView: View {
         // Full-screen detail rather than a push inside the sheet; closing it
         // returns to the check-in flow, so the scan loop is never lost.
         .fullScreenCover(item: $detailTarget) { target in
-            NavigationStack {
-                BookDetailView(uuid: target.uuid)
-                    .withDestinations()
-                    .toolbar {
-                        ToolbarItem(placement: .topBarLeading) {
-                            Button {
-                                detailTarget = nil
-                            } label: {
-                                Image(systemName: "chevron.left")
-                            }
-                        }
-                    }
-            }
+            CheckInDetailCover(uuid: target.uuid) { detailTarget = nil }
         }
     }
 
@@ -876,5 +864,26 @@ struct BarcodeScannerView: UIViewControllerRepresentable {
                 return
             }
         }
+    }
+}
+
+/// A book's page over the check-in sheet, with a stack of its own so what it opens lands here, not under the sheet.
+private struct CheckInDetailCover: View {
+    let uuid: String
+    let close: () -> Void
+
+    @State private var path: [Destination] = []
+
+    var body: some View {
+        NavigationStack(path: $path) {
+            BookDetailView(uuid: uuid)
+                .withDestinations()
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button(action: close) { Image(systemName: "chevron.left") }
+                    }
+                }
+        }
+        .environment(\.openDestination) { path.append($0) }
     }
 }

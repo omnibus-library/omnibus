@@ -33,6 +33,22 @@ struct DebugScreenLinkTests {
         #expect(route("omnibus://debug/screen/you/series/shelves")?.path == [.seriesIndex, .shelves])
     }
 
+    @Test func requestsOpensTheListOnTheYouTab() {
+        #expect(route("omnibus://debug/screen/you/requests") == ScreenRoute(tab: .you, path: [.requests]))
+    }
+
+    @Test func requestOpensABooksRequestPageOverTheList() {
+        #expect(
+            route("omnibus://debug/screen/you/requests/request/u-1")
+                == ScreenRoute(tab: .you, path: [.requests, .bookRequest(uuid: "u-1")])
+        )
+        #expect(route("omnibus://debug/screen/you/request") == nil)
+    }
+
+    @Test func theRequestPageLeavesTheTabBarUp() {
+        #expect(!Destination.bookRequest(uuid: "u-1").hidesTabBar)
+    }
+
     @Test func aNameArgumentIsPercentDecoded() {
         #expect(route("omnibus://debug/screen/you/tag/Science%20Fiction")?.path == [.tag(name: "Science Fiction")])
     }

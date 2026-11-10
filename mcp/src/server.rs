@@ -7,7 +7,7 @@ use std::sync::{Arc, OnceLock};
 
 use base64::Engine as _;
 use rmcp::handler::server::router::tool::ToolRouter;
-use rmcp::model::{Icon, Implementation, ServerCapabilities, ServerInfo};
+use rmcp::model::{Icon, Implementation, ServerCapabilities, ServerConfig};
 use rmcp::{tool_handler, ErrorData, ServerHandler};
 
 use crate::client::{ClientError, OmnibusClient};
@@ -70,7 +70,7 @@ impl From<ClientError> for ErrorData {
 
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for OmnibusMcp {
-    fn get_info(&self) -> ServerInfo {
+    fn get_info(&self) -> ServerConfig {
         // Not `Implementation::from_build_env()` alone — that reports the
         // rmcp crate's own name/version, not this binary's (the struct is
         // non-exhaustive, so mutate its fields instead).
@@ -78,7 +78,7 @@ impl ServerHandler for OmnibusMcp {
         implementation.name = env!("CARGO_PKG_NAME").to_string();
         implementation.version = env!("CARGO_PKG_VERSION").to_string();
         implementation.icons = Some(vec![stoat_icon()]);
-        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
+        ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(implementation)
             .with_instructions(
                 "Access to an Omnibus ebook/audiobook library. Read-only tools browse \

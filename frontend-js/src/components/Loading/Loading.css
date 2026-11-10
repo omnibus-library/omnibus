@@ -317,25 +317,26 @@
   animation: ld-glint 2.2s var(--ld-ease) infinite;
   animation-delay: calc(var(--i, 0) * 70ms);
 }
-.ld-skel.line {
+/* Shapes carry an `ld-skel--` prefix: a bare `cover` also matches Cover.css's absolute fill, and which wins depends on chunk order. */
+.ld-skel.ld-skel--line {
   height: 0.85em;
   width: var(--w, 100%);
   border-radius: 999px;
 }
-.ld-skel.line.lg {
+.ld-skel.ld-skel--line.lg {
   height: 1.4em;
 }
-.ld-skel.circle {
+.ld-skel.ld-skel--circle {
   border-radius: 50%;
   aspect-ratio: 1;
   width: var(--w, 32px);
 }
-.ld-skel.block {
+.ld-skel.ld-skel--block {
   height: var(--h, 96px);
   width: var(--w, 100%);
   border-radius: var(--r-md);
 }
-.ld-skel.cover {
+.ld-skel.ld-skel--cover {
   aspect-ratio: 2 / 3;
   width: 100%;
   border-radius: 3px 6px 6px 3px;
@@ -348,7 +349,7 @@
     ),
     color-mix(in oklch, var(--ink-3) 16%, var(--bg-1));
 }
-.ld-skel.cover::before {
+.ld-skel.ld-skel--cover::before {
   content: "";
   position: absolute;
   left: 18%;
@@ -371,10 +372,10 @@
   flex-direction: column;
   gap: 9px;
 }
-.ld-covers-cell .ld-skel.line {
+.ld-covers-cell .ld-skel.ld-skel--line {
   --w: 78%;
 }
-.ld-covers-cell .ld-skel.line + .ld-skel.line {
+.ld-covers-cell .ld-skel.ld-skel--line + .ld-skel.ld-skel--line {
   --w: 52%;
   height: 0.7em;
 }
@@ -393,7 +394,7 @@
 .ld-rows-row:last-child {
   border-bottom: none;
 }
-.ld-rows-row .ld-skel.circle {
+.ld-rows-row .ld-skel.ld-skel--circle {
   --w: 32px;
 }
 .ld-rows-text {
