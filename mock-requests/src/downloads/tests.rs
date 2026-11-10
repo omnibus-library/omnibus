@@ -391,13 +391,21 @@ fn add_usenet_refuses_a_job_name_that_could_be_a_path_and_an_nzb_it_never_offere
     let offered = f.offered(ReleaseProtocol::Usenet);
     let good = format!("omnibus-{}", "a".repeat(40));
     let cases = [
-        ("../escape", crate::nzb::body(&offered.id), UsenetRefused::JobName),
+        (
+            "../escape",
+            crate::nzb::body(&offered.id),
+            UsenetRefused::JobName,
+        ),
         (
             good.as_str(),
             crate::nzb::body(&"d".repeat(40)),
             UsenetRefused::UnknownNzb,
         ),
-        (good.as_str(), "<nzb></nzb>".to_string(), UsenetRefused::UnknownNzb),
+        (
+            good.as_str(),
+            "<nzb></nzb>".to_string(),
+            UsenetRefused::UnknownNzb,
+        ),
     ];
     for (name, nzb, refused) in cases {
         let added = f

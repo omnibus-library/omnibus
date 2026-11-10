@@ -249,7 +249,10 @@ async fn wire_refuses_to_overwrite_a_saved_address_that_is_not_on_this_machine()
     mock_key_elsewhere["prowlarr_api_key_masked"] = json!("mock\u{2026}ests");
     let cases = [
         (mock_key_elsewhere, "Prowlarr"),
-        (client_saved("http://qbit.lan:8080", "mock"), "download client"),
+        (
+            client_saved("http://qbit.lan:8080", "mock"),
+            "download client",
+        ),
         (
             saved_with(Some("http://prowlarr.lan:9696"), None),
             "Prowlarr",
