@@ -81,10 +81,7 @@ struct BookFilesTab: View {
     private var hasHeldFormats: Bool { book.hasEbook || book.hasAudiobook || book.hasPhysical }
 
     /// The kinds this reader can ask for because the library lacks them.
-    private var slots: [RequestKind] {
-        guard let user = app.user, user.bookRequests else { return [] }
-        return BookRequestFlow.unrequestedKinds(formats: book.formats, listings: [], viewer: RequestViewer(user))
-    }
+    private var slots: [RequestKind] { BookRequestFlow.fileSlots(user: app.user, formats: book.formats) }
 
     private var formats: some View {
         VStack(spacing: 0) {

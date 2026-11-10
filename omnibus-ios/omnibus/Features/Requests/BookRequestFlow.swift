@@ -337,6 +337,12 @@ enum BookRequestFlow {
         }
     }
 
+    /// The kinds the Files tab offers to request: none unless book requests are on and the reader may start one.
+    static func fileSlots(user: UserSummary?, formats: [String]) -> [RequestKind] {
+        guard let user, user.bookRequests else { return [] }
+        return unrequestedKinds(formats: formats, listings: [], viewer: RequestViewer(user))
+    }
+
     /// How often the page reads again: every two seconds while any lane is moving.
     static func detailPollInterval(_ requests: [BookRequest]) -> Duration? {
         requests.contains { isMoving($0.state) } ? .seconds(2) : nil

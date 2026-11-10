@@ -401,6 +401,35 @@ struct BookRequestFlowTests {
         }
     }
 
+    struct FileSlots {
+        private func reader(bookRequests: Bool = true, canStart: Bool = true) -> UserSummary {
+            var user = UserSummary(id: 1, username: "ada", isAdmin: false, canUpload: false, canEdit: false, canDownload: true)
+            user.bookRequests = bookRequests
+            user.canStartRequests = canStart
+            return user
+        }
+
+        @Test func offersEachKindTheLibraryLacks() {
+            #expect(BookRequestFlow.fileSlots(user: reader(), formats: []) == [.ebook, .audiobook])
+        }
+
+        @Test func offersOnlyTheKindTheLibraryLacks() {
+            #expect(BookRequestFlow.fileSlots(user: reader(), formats: ["EPUB"]) == [.audiobook])
+        }
+
+        @Test func offersNothingWhenBookRequestsAreOff() {
+            #expect(BookRequestFlow.fileSlots(user: reader(bookRequests: false), formats: []).isEmpty)
+        }
+
+        @Test func offersNothingToAReaderWhoCantStart() {
+            #expect(BookRequestFlow.fileSlots(user: reader(canStart: false), formats: []).isEmpty)
+        }
+
+        @Test func offersNothingWhenNobodyIsSignedIn() {
+            #expect(BookRequestFlow.fileSlots(user: nil, formats: []).isEmpty)
+        }
+    }
+
     struct RequestAgain {
         private let now = at(1_000)
         private let cancelled = aRequest(state: .cancelled, cancelAt: nil)
