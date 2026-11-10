@@ -91,7 +91,9 @@ fn append(store: &mut Store, params: &Value) -> Result<Value, String> {
     let nzb = STANDARD
         .decode(params[1].as_str().unwrap_or_default())
         .map_err(|_| "the NZB is not base64".to_string())?;
-    let num = store.add_usenet(KIND, name, &nzb, Instant::now())?;
+    let num = store
+        .add_usenet(KIND, name, &nzb, Instant::now())
+        .map_err(|refused| refused.to_string())?;
     Ok(json!(num))
 }
 

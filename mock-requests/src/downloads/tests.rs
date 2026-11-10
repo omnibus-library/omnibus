@@ -391,16 +391,20 @@ fn add_usenet_refuses_a_job_name_that_could_be_a_path_and_an_nzb_it_never_offere
     let offered = f.offered(ReleaseProtocol::Usenet);
     let good = format!("omnibus-{}", "a".repeat(40));
     let cases = [
-        ("../escape", crate::nzb::body(&offered.id)),
-        (good.as_str(), crate::nzb::body(&"d".repeat(40))),
-        (good.as_str(), "<nzb></nzb>".to_string()),
+        ("../escape", crate::nzb::body(&offered.id), UsenetRefused::JobName),
+        (
+            good.as_str(),
+            crate::nzb::body(&"d".repeat(40)),
+            UsenetRefused::UnknownNzb,
+        ),
+        (good.as_str(), "<nzb></nzb>".to_string(), UsenetRefused::UnknownNzb),
     ];
-    for (name, nzb) in cases {
+    for (name, nzb, refused) in cases {
         let added = f
             .store
             .add_usenet(DownloadClientKind::Nzbget, name, nzb.as_bytes(), f.now);
 
-        assert!(added.is_err(), "{name}");
+        assert_eq!(added, Err(refused), "{name}");
     }
     assert!(f.store.all().is_empty());
 }

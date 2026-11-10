@@ -105,7 +105,7 @@ async fn addfile(
     let added = mock.store().add_usenet(KIND, name, &nzb, Instant::now());
     Json(match added {
         Ok(num) => json!({"status": true, "nzo_ids": [format!("{NZO_PREFIX}{num}")]}),
-        Err(why) => json!({"status": false, "error": why}),
+        Err(why) => json!({"status": false, "error": why.to_string()}),
     })
 }
 

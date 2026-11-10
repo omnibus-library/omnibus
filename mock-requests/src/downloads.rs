@@ -45,6 +45,15 @@ pub enum Outcome {
     Junk,
 }
 
+/// Why a usenet client was refused an upload.
+#[derive(Debug, PartialEq, Eq, thiserror::Error)]
+pub enum UsenetRefused {
+    #[error("the job name is not one Omnibus gives")]
+    JobName,
+    #[error("this NZB is not one the mock offered")]
+    UnknownNzb,
+}
+
 /// One download a fake client holds.
 pub struct Download {
     /// A torrent's info hash, or a usenet job's name.
@@ -284,14 +293,14 @@ impl Store {
         name: &str,
         nzb: &[u8],
         now: Instant,
-    ) -> Result<u64, &'static str> {
+    ) -> Result<u64, UsenetRefused> {
         if !job_name_ok(name) {
-            return Err("the job name is not one Omnibus gives");
+            return Err(UsenetRefused::JobName);
         }
         let release = release_id(nzb)
             .and_then(|id| self.release(&id).cloned())
             .filter(|r| r.protocol == client.protocol())
-            .ok_or("this NZB is not one the mock offered")?;
+            .ok_or(UsenetRefused::UnknownNzb)?;
         Ok(self.add(client, name.to_string(), release, name.to_string(), now))
     }
 
