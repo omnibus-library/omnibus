@@ -1,3 +1,5 @@
+//! The store's clock-driven progress, delivery, removal and outcome changes, with no HTTP.
+
 use std::fs;
 use std::time::Duration;
 

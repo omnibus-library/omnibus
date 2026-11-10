@@ -1,3 +1,5 @@
+//! The releases the catalogue makes from a query, and how a finished download's payload is found.
+
 use omnibus_db::requests::clients::infohash;
 
 use super::*;
@@ -33,7 +35,11 @@ fn releases_offers_epub_and_azw3_as_torrent_and_usenet_for_an_ebook() {
 fn releases_offers_one_m4b_per_protocol_for_an_audiobook() {
     let found = releases("Dracula", RequestKind::Audiobook, counter());
 
-    assert_eq!(found.len(), 2);
+    let protocols: Vec<_> = found.iter().map(|r| r.protocol).collect();
+    assert_eq!(
+        protocols,
+        [ReleaseProtocol::Torrent, ReleaseProtocol::Usenet]
+    );
     assert!(found
         .iter()
         .all(|r| r.format == Format::M4b && r.category() == 3030));

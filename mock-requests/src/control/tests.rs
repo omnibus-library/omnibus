@@ -1,20 +1,13 @@
-use omnibus_db::requests::clients::{DownloadClient, Qbittorrent};
+//! Contract tests: the `/_mock` control API steers what the server's own clients see.
+
+use omnibus_db::requests::clients::Qbittorrent;
 use omnibus_db::requests::prowlarr::Prowlarr;
 use omnibus_db::requests::ConnectionError;
 use omnibus_shared::{ReleaseProtocol, RequestKind};
 use serde_json::{json, Value};
 
-use crate::test_support::{found, spawn, Running};
+use crate::test_support::{add_epub, control, spawn, Running};
 use crate::{CLIENT_PASSWORD, CLIENT_USERNAME, PROWLARR_API_KEY};
-
-async fn put(mock: &Running, path: &str, body: Value) -> reqwest::Response {
-    reqwest::Client::new()
-        .put(format!("{}{path}", mock.origin))
-        .json(&body)
-        .send()
-        .await
-        .unwrap()
-}
 
 async fn view(mock: &Running) -> Value {
     reqwest::get(format!("{}/_mock", mock.origin))
@@ -37,7 +30,7 @@ async fn search(mock: &Running) -> Result<usize, ConnectionError> {
 async fn search_mode_empty_makes_the_search_find_nothing() {
     let mock = spawn().await;
 
-    let reply = put(&mock, "/_mock/search", json!({"mode": "empty"})).await;
+    let reply = control(&mock, "/_mock/search", json!({"mode": "empty"})).await;
 
     assert!(reply.status().is_success());
     assert_eq!(search(&mock).await.unwrap(), 0);
@@ -47,7 +40,7 @@ async fn search_mode_empty_makes_the_search_find_nothing() {
 #[tokio::test]
 async fn search_mode_fail_makes_the_search_a_rejection_the_server_does_not_retry() {
     let mock = spawn().await;
-    put(&mock, "/_mock/search", json!({"mode": "fail"})).await;
+    control(&mock, "/_mock/search", json!({"mode": "fail"})).await;
 
     let err = search(&mock).await.unwrap_err();
 
@@ -57,9 +50,9 @@ async fn search_mode_fail_makes_the_search_a_rejection_the_server_does_not_retry
 #[tokio::test]
 async fn search_mode_results_restores_the_catalogue() {
     let mock = spawn().await;
-    put(&mock, "/_mock/search", json!({"mode": "empty"})).await;
+    control(&mock, "/_mock/search", json!({"mode": "empty"})).await;
 
-    put(&mock, "/_mock/search", json!({"mode": "results"})).await;
+    control(&mock, "/_mock/search", json!({"mode": "results"})).await;
 
     assert_eq!(search(&mock).await.unwrap(), 4);
 }
@@ -68,33 +61,24 @@ async fn search_mode_results_restores_the_catalogue() {
 async fn search_mode_answers_a_client_error_for_an_unknown_mode() {
     let mock = spawn().await;
 
-    let reply = put(&mock, "/_mock/search", json!({"mode": "sideways"})).await;
+    let reply = control(&mock, "/_mock/search", json!({"mode": "sideways"})).await;
 
     assert!(reply.status().is_client_error(), "{}", reply.status());
-}
-
-/// Hands qBittorrent the torrent EPUB and returns its hash.
-async fn add_a_torrent(mock: &Running) -> String {
-    let client = Qbittorrent::new(&mock.origin, CLIENT_USERNAME, CLIENT_PASSWORD).unwrap();
-    let link = found(mock, ReleaseProtocol::Torrent, "EPUB").await.link;
-    let prepared = client.prepare(&link).await.unwrap();
-    let hash = prepared.hash.clone();
-    client.add(prepared, "").await.unwrap();
-    hash
 }
 
 #[tokio::test]
 async fn downloads_settings_apply_to_a_download_already_added_and_to_later_ones() {
     let mock = spawn().await;
-    let first = add_a_torrent(&mock).await;
+    let qbit = Qbittorrent::new(&mock.origin, CLIENT_USERNAME, CLIENT_PASSWORD).unwrap();
+    let (first, _) = add_epub(&mock, &qbit, ReleaseProtocol::Torrent).await;
 
-    let reply = put(
+    let reply = control(
         &mock,
         "/_mock/downloads",
         json!({"outcome": "fail", "secs": 5}),
     )
     .await;
-    let second = add_a_torrent(&mock).await;
+    let (second, _) = add_epub(&mock, &qbit, ReleaseProtocol::Torrent).await;
 
     assert!(reply.status().is_success());
     let seen = view(&mock).await;
@@ -112,9 +96,9 @@ async fn downloads_settings_apply_to_a_download_already_added_and_to_later_ones(
 #[tokio::test]
 async fn downloads_settings_keep_what_the_body_leaves_out() {
     let mock = spawn().await;
-    put(&mock, "/_mock/downloads", json!({"secs": 7})).await;
+    control(&mock, "/_mock/downloads", json!({"secs": 7})).await;
 
-    put(&mock, "/_mock/downloads", json!({"outcome": "stall"})).await;
+    control(&mock, "/_mock/downloads", json!({"outcome": "stall"})).await;
 
     let seen = view(&mock).await;
     assert_eq!(
@@ -132,7 +116,7 @@ async fn downloads_settings_answer_a_client_error_for_a_bad_body() {
         json!({"secs": "soon"}),
         json!({"outcom": "fail"}),
     ] {
-        let reply = put(&mock, "/_mock/downloads", body.clone()).await;
+        let reply = control(&mock, "/_mock/downloads", body.clone()).await;
 
         assert!(
             reply.status().is_client_error(),

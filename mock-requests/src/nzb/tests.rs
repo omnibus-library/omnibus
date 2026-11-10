@@ -1,3 +1,5 @@
+//! The NZB body and the checks on what an upload names, plus the `/nzb/{id}` route.
+
 use omnibus_shared::ReleaseProtocol;
 
 use crate::test_support::{found, spawn};

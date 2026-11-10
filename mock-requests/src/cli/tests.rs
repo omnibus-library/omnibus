@@ -1,3 +1,5 @@
+//! The command line: its defaults, each flag, and what it refuses.
+
 use super::*;
 
 fn parse_all(args: &[&str]) -> Result<Command, CliError> {
