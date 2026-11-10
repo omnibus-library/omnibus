@@ -248,10 +248,14 @@ export const Loading: Story = {
     await expect(covers.length).toBeGreaterThan(1);
     for (const cover of covers) {
       const box = cover.getBoundingClientRect();
-      const cell = cover.parentElement?.getBoundingClientRect();
+      const cell = cover.closest(".ld-covers-cell")?.getBoundingClientRect();
       await expect(Math.round(box.left)).toBe(Math.round(cell?.left ?? -1));
       await expect(Math.round(box.top)).toBe(Math.round(cell?.top ?? -1));
       await expect(Math.round(box.width)).toBe(Math.round(cell?.width ?? -1));
+      // A 2:3 plate, not one collapsed to a sliver.
+      await expect(
+        Math.abs(Math.round(box.height) - Math.round(box.width * 1.5)),
+      ).toBeLessThanOrEqual(1);
     }
   },
 };
@@ -1394,6 +1398,27 @@ export const ResumeStackPending: Story = {
     await expect(
       canvas.queryByRole("region", { name: "Continue reading" }),
     ).not.toBeInTheDocument();
+    // Each fan card holds a cover of real height, inside its own card.
+    const cards = [...canvasElement.querySelectorAll(".lmq-fcard-pending")];
+    await expect(cards).toHaveLength(3);
+    for (const card of cards) {
+      const cover = card.querySelector(".ld-skel--cover");
+      const box = cover?.getBoundingClientRect();
+      const frame = card.getBoundingClientRect();
+      await expect(box?.height ?? 0).toBeGreaterThan(0);
+      await expect(Math.round(box?.left ?? -1)).toBeGreaterThanOrEqual(
+        Math.floor(frame.left),
+      );
+      await expect(Math.round(box?.top ?? -1)).toBeGreaterThanOrEqual(
+        Math.floor(frame.top),
+      );
+      await expect(Math.round(box?.right ?? Infinity)).toBeLessThanOrEqual(
+        Math.ceil(frame.right),
+      );
+      await expect(Math.round(box?.bottom ?? Infinity)).toBeLessThanOrEqual(
+        Math.ceil(frame.bottom),
+      );
+    }
   },
 };
 

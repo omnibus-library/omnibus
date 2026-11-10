@@ -153,6 +153,18 @@ export const ProgressLoading: Story = {
     await expect(canvas.getByRole("status")).toHaveTextContent(
       "Finding your place",
     );
+    // The placeholder cover fills its frame rather than escaping it.
+    const frame = canvas
+      .getByTestId("user-menu-now-reading-pending")
+      .querySelector(".um-nr-cover");
+    const cover = frame?.querySelector(".ld-skel--cover");
+    const want = frame?.getBoundingClientRect();
+    const got = cover?.getBoundingClientRect();
+    for (const side of ["left", "top", "width", "height"] as const) {
+      await expect(Math.round(got?.[side] ?? -1)).toBe(
+        Math.round(want?.[side] ?? -2),
+      );
+    }
   },
 };
 
