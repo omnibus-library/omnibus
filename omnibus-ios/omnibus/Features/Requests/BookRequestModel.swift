@@ -21,6 +21,17 @@ final class BookRequestModel {
     /// The book itself is gone.
     private(set) var isMissing = false
     private(set) var viewer = RequestViewer(id: 0, canStart: false, canChoose: false)
+    /// The write in flight, if any; one runs at a time, so every other button locks.
+    private(set) var busy: Busy?
+    var toast: RequestToast?
+    /// Numbers each write, so a poll that started before one is dropped when it answers after it.
+    private var generation = 0
+
+    /// A write in flight, naming the request and the button that started it.
+    enum Busy: Equatable {
+        case choosing(request: Int64, version: Int64)
+        case swapping(Int64), retrying(Int64), takingCover(Int64), keepingCover(Int64)
+    }
 
     let api: RequestsAPI
     let now: @Sendable () -> Date
@@ -95,14 +106,80 @@ final class BookRequestModel {
 
     /// Reads the listings and every moving lane again; a failure leaves the page as it was.
     func poll() async {
+        let started = generation
         guard let fresh = try? await api.bookList(uuid), let mainID else { return }
         let others = BookRequestFlow.splitBookRequests(fresh, shown: mainID).lanes.map(\.request.id)
         let moving = lanes.filter { BookRequestFlow.isMoving($0.state) }.map(\.id)
         // A lane that appeared since the last read has no full request yet.
         let unread = ([mainID] + others).filter { reads[$0] == nil }
         let answers = await readAll(Array(Set(moving + unread)))
+        guard started == generation else { return }
         listings = fresh
         reads.merge(answers) { $1 }
+    }
+
+    // MARK: - Chooser writes
+
+    func choose(_ lane: BookRequest, version: Int64) async {
+        let api = api
+        await write(.choose, busy: .choosing(request: lane.id, version: version), lane: lane) {
+            try await api.choose(lane.id, version)
+        }
+    }
+
+    /// Gives up the downloading version and goes back to choosing among the others.
+    func swap(_ lane: BookRequest) async {
+        let api = api
+        await write(.swap, busy: .swapping(lane.id), lane: lane) { try await api.swap(lane.id) }
+    }
+
+    func retry(_ lane: BookRequest) async {
+        let api = api
+        await write(.retry, busy: .retrying(lane.id), lane: lane) { try await api.retry(lane.id) }
+    }
+
+    /// Makes the downloaded cover the book's own.
+    func takeCover(_ lane: BookRequest) async {
+        let api = api
+        await write(.takeCover, busy: .takingCover(lane.id), lane: lane, rereadOnFailure: true) {
+            try await api.takeCover(lane.id)
+        }
+    }
+
+    /// Turns the downloaded cover down.
+    func keepCover(_ lane: BookRequest) async {
+        let api = api
+        await write(.keepCover, busy: .keepingCover(lane.id), lane: lane, rereadOnFailure: true) {
+            try await api.keepCover(lane.id)
+        }
+    }
+
+    /// Runs one chooser write: the lane takes the server's answer and the listings are read again; a
+    /// failure toasts, and a cover refusal may mean the request moved on, so it reads again too.
+    private func write(
+        _ action: BookRequestFlow.Action, busy: Busy, lane: BookRequest, rereadOnFailure: Bool = false,
+        _ call: @Sendable () async throws -> BookRequest
+    ) async {
+        guard self.busy == nil, viewer.canChoose else { return }
+        self.busy = busy
+        defer { self.busy = nil }
+        generation += 1
+        do {
+            reads[lane.id] = try await call()
+            generation += 1
+            await rereadListings()
+        } catch {
+            generation += 1
+            toast = RequestToast(text: BookRequestFlow.actionFailure(action, error: error))
+            if rereadOnFailure {
+                if let fresh = try? await api.request(lane.id) { reads[lane.id] = fresh }
+                await rereadListings()
+            }
+        }
+    }
+
+    private func rereadListings() async {
+        if let fresh = try? await api.bookList(uuid) { listings = fresh }
     }
 
     /// Each id's full request, concurrently; one that fails is left out.

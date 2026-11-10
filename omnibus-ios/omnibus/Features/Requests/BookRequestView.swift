@@ -32,6 +32,8 @@ struct BookRequestView: View {
         }
         .background(ScreenBackground())
         .navigationBarTitleDisplayMode(.inline)
+        .overlay(alignment: .bottom) { toastLayer }
+        .animation(Motion.settle, value: model.toast?.id)
         .task { await model.load(viewer: viewer) }
         // Keyed on whether anything is moving, so a lane that starts moving after a write restarts the loop.
         .task(id: model.pollInterval != nil) {
@@ -40,6 +42,21 @@ struct BookRequestView: View {
                 guard !Task.isCancelled else { return }
                 await model.poll()
             }
+        }
+    }
+
+    @ViewBuilder
+    private var toastLayer: some View {
+        if let toast = model.toast {
+            StageToast(text: toast.text, onDismiss: { model.toast = nil })
+                .padding(.horizontal, 16)
+                .padding(.bottom, Spacing.md)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .task(id: toast.id) {
+                    try? await Task.sleep(for: toast.duration)
+                    guard !Task.isCancelled else { return }
+                    model.toast = nil
+                }
         }
     }
 

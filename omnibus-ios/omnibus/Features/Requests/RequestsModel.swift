@@ -43,9 +43,23 @@ struct RequestsAPI: Sendable {
         retry: { try await RequestService.retry(id: $0) },
         cancel: { try await RequestService.cancel(id: $0) },
         undoCancel: { try await RequestService.undoCancel(id: $0) },
-        takeCover: { try await RequestService.takeCover(id: $0) },
+        takeCover: {
+            let taken = try await RequestService.takeCover(id: $0)
+            await LibraryService.invalidateCoverCaches(uuid: taken.bookUUID)
+            return taken
+        },
         keepCover: { try await RequestService.keepCover(id: $0) }
     )
+}
+
+/// A short message over a request screen, with an Undo when the write can be taken back.
+struct RequestToast: Identifiable, Equatable {
+    let id = UUID()
+    var text: String
+    /// Set only for a cancel: the request Undo restores.
+    var undoRequestID: Int64?
+    /// How long it stays; a cancel's lasts until the server stops taking it back.
+    var duration: Duration = .seconds(4)
 }
 
 @Observable @MainActor
