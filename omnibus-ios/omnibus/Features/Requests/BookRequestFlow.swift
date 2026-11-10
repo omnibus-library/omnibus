@@ -227,6 +227,9 @@ enum BookRequestFlow {
 
     // MARK: - Failures
 
+    /// What a start says when it is ignored because another is still running.
+    static let stillStarting = "Still starting the last request."
+
     /// Why starting a request failed, as a sentence for a toast.
     static func startFailure(_ error: Error) -> String {
         guard case let .http(status, _) = error as? APIError else { return "Couldn\u{2019}t start the request." }

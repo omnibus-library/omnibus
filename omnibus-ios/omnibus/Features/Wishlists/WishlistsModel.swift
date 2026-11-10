@@ -132,7 +132,7 @@ final class WishlistsModel {
     /// and a start while another runs is ignored with a toast, unless an Undo is open.
     func startRequest(uuid: String, kind: RequestKind) async -> Bool {
         guard !isStartingRequest else {
-            if toast?.undo == nil { toast = WishlistToast(text: "Still starting the last request.") }
+            if toast?.undo == nil { toast = WishlistToast(text: BookRequestFlow.stillStarting) }
             return false
         }
         isStartingRequest = true

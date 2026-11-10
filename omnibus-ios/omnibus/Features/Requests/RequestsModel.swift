@@ -172,5 +172,5 @@ final class RequestsModel {
         }
     }
 
-    private static let stillStarting = AddOutcome.failed("Still starting the last request.")
+    private static let stillStarting = AddOutcome.failed(BookRequestFlow.stillStarting)
 }
