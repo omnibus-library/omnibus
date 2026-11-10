@@ -544,6 +544,7 @@ struct WishlistsModelTests {
         let first = Task { await model.startRequest(uuid: "a", kind: .ebook) }
         await started.wait()
         #expect(!(await model.startRequest(uuid: "b", kind: .audiobook)))
+        #expect(model.toast?.text == "Still starting the last request.")
         await release.open()
         #expect(await first.value)
         #expect(await sent.next() == 2)
