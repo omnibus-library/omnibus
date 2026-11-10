@@ -79,7 +79,7 @@ omnibus-db = { path = "../db" }
 omnibus-mcp = { path = "../mcp", features = ["http"] }
 # The rmcp SDK itself, for the transport types `mcp_http` wires into axum.
 # Version + features unified with `omnibus-mcp`'s own dependency.
-rmcp = { version = "3.1", features = ["transport-streamable-http-server"] }
+rmcp = { version = "3.9", features = ["transport-streamable-http-server"] }
 
 # Prints the OpenAPI document; `just openapi-gen` writes it to `openapi/openapi.json`.
 [[example]]
