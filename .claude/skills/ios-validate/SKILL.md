@@ -30,6 +30,16 @@ api /api/shelves/<id>/books -X POST -d '{"book_uuids":["…"]}'
 sqlite3 .claude/runtime/ios-validate/server/omnibus.db "select id, uuid, title from books"   # uuids aren't in GET /api/ebooks
 ```
 
+The scratch server runs with `OMNIBUS_BOOK_REQUESTS=1`, so the Requests screens exist. The `tour` account is the admin, so it can already start and choose; grant a plain reader either with `update users set can_start_requests = 1, can_choose_request_versions = 1 where username = '…'`. Book requests have no REST seed that skips the search, so insert rows into the database (`book_requests`, one `book_request_results` per version for a `choose` request; columns in `db/migrations/0113`–`0119`; `book_uuid` is a `books.uuid`):
+
+```bash
+sqlite3 .claude/runtime/ios-validate/server/omnibus.db "insert into book_requests (book_uuid, user_id, kind, state) values ('<uuid>', 1, 'ebook', 'choose')"
+```
+
+- **Seed `looking` and `choose` rows; shoot `chosen` and `on_its_way` first.** The search runs only for a request started through the API, so a seeded `looking` or `choose` row stays put. With no download client configured, the poller turns a `chosen` or `on_its_way` row `stuck` within a minute, so seed those just before the shot, with `progress` and `expected_done_at` set, and seed again between shots.
+- **A cancelled row's Undo** needs `cancel_at` in the future (`strftime('%s','now') + 30`); once it passes, the poller closes it for good.
+- Rows read newest first by id; the list files each book under its most urgent request.
+
 Done when every screen the tour will show has the data it needs.
 
 ## 3. Write the tour
@@ -40,7 +50,7 @@ cp .claude/skills/ios-validate/screen-tour.swift omnibus-ios/omnibusUITests/Scre
 
 `ScreenTour*.swift` is gitignored, so the tour can't be committed. Replace the blocks in `testTour` with one per screen: `open(<route>)`, wait for an element that proves the screen drew, `shot(<name>)`. `shot` is taken by the host, of whichever display shows the app.
 
-A route is `<tab>/<screen>/<screen>…`, opened as `omnibus://debug/screen/<route>` (DEBUG builds only). The tab is `library`, `search`, `stats` or `you`; each screen after it is pushed in order: `shelves`, `shelf/<id>`, `authors`, `author/<id>`, `series`, `series/<id>`, `tags`, `tag/<name>`, `genres`, `genre/<name>`, `book/<uuid>`, `results/<query>`, `settings`, `goals`, `stats-exclusions`, `downloads`. `App/DebugScreenLink.swift` is the parser. The metadata editor is a sheet, not a route: open `book/<uuid>`, then tap `book-more` and `metadata-edit-open`.
+A route is `<tab>/<screen>/<screen>…`, opened as `omnibus://debug/screen/<route>` (DEBUG builds only). The tab is `library`, `search`, `stats` or `you`; each screen after it is pushed in order: `shelves`, `shelf/<id>`, `authors`, `author/<id>`, `series`, `series/<id>`, `tags`, `tag/<name>`, `genres`, `genre/<name>`, `book/<uuid>`, `results/<query>`, `settings`, `goals`, `stats-exclusions`, `downloads`, `requests`, `request/<uuid>`. `App/DebugScreenLink.swift` is the parser. The metadata editor is a sheet, not a route: open `book/<uuid>`, then tap `book-more` and `metadata-edit-open`. So is the Request a book sheet: open `you/requests`, then tap `requests-add`.
 
 - **State the tour writes stays written.** A setting it flips is still flipped on the next run; start over with `server up --fresh` (about 30 s), then seed again.
 - **Lazy grids** build only the cells near the viewport: `scrollTo(element)` before asserting on or shooting anything below the fold.

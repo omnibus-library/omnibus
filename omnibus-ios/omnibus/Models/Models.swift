@@ -491,6 +491,12 @@ struct UserSummary: Codable, Hashable, Sendable {
     var shareStatsSetting: Bool?
     /// The filter whose matching books the reader's stats leave out; `nil` from a server that predates it.
     var statsExclusionsSetting: StatsExclusions?
+    /// Whether the server has book requests on; every reader may then see them.
+    var bookRequests: Bool = false
+    /// Whether this user may ask for a book the library lacks.
+    var canStartRequests: Bool = false
+    /// Whether this user may pick the version of any reader's request.
+    var canChooseRequestVersions: Bool = false
 
     /// The name to show for this user — never render `username` on its own.
     var display: String { displayName ?? username }
@@ -512,6 +518,9 @@ struct UserSummary: Codable, Hashable, Sendable {
         case stackSeries = "stack_series"
         case shareStatsSetting = "share_stats"
         case statsExclusionsSetting = "stats_exclusions"
+        case bookRequests = "book_requests"
+        case canStartRequests = "can_start_requests"
+        case canChooseRequestVersions = "can_choose_request_versions"
     }
 }
 
@@ -2270,11 +2279,14 @@ struct ScanBook: Codable, Hashable, Sendable {
     var coverURL: String?
     var hasPhysical: Bool
     var isbn: String?
+    /// Whether the book has a digital file; false for a physical-only or wishlist-only book.
+    var hasFiles: Bool = false
 
     enum CodingKeys: String, CodingKey {
         case uuid, title, authors, isbn
         case coverURL = "cover_url"
         case hasPhysical = "has_physical"
+        case hasFiles = "has_files"
     }
 }
 

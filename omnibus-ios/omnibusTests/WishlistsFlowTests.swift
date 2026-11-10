@@ -108,17 +108,59 @@ struct WishlistsFlowTests {
     }
 
     @Test(arguments: [
-        ([], [WishlistRequestKind.ebook, .audiobook]),
+        ([], [RequestKind.ebook, .audiobook]),
         (["EPUB"], [.audiobook]),
         (["epub"], [.audiobook]),
         (["M4B"], [.ebook]),
         (["mp3"], [.ebook]),
         (["PRINT"], [.ebook, .audiobook]),
         (["EPUB", "M4B"], []),
-    ] as [([String], [WishlistRequestKind])])
-    func requestableOffersOnlyTheKindsTheLibraryLacks(formats: [String], kinds: [WishlistRequestKind]) {
+    ] as [([String], [RequestKind])])
+    func requestableOffersOnlyTheKindsTheLibraryLacks(formats: [String], kinds: [RequestKind]) {
         let holdings = formats.map { WishlistHolding(format: $0, count: 1) }
         #expect(WishlistsFlow.requestable(holdings) == kinds)
+    }
+
+    private func items(
+        _ formats: [String], canStart: Bool = true, live: [RequestKind: RequestState] = [:]
+    ) -> [WishlistRequestItem] {
+        let holdings = formats.map { WishlistHolding(format: $0, count: 1) }
+        return WishlistsFlow.requestItems(holdings: holdings, canStart: canStart, live: live)
+    }
+
+    @Test func offersARequestForEachKindTheLibraryLacksToAReaderWhoCanStart() {
+        #expect(
+            items([]) == [
+                WishlistRequestItem(kind: .ebook, action: .request, title: "Request ebook", detail: "Opens its request page"),
+                WishlistRequestItem(kind: .audiobook, action: .request, title: "Request audiobook", detail: "Opens its request page"),
+            ])
+        #expect(items(["EPUB"]).map(\.title) == ["Request audiobook"])
+    }
+
+    @Test func offersNothingForAKindTheLibraryHoldsOrToAReaderWhoCantStart() {
+        #expect(items(["EPUB", "M4B"]).isEmpty)
+        #expect(items([], canStart: false).isEmpty)
+    }
+
+    @Test func offersAViewForAKindWithALiveRequestEvenToAReaderWhoCantStart() {
+        let shown = items(["EPUB"], canStart: false, live: [.ebook: .onItsWay])
+        #expect(
+            shown == [WishlistRequestItem(kind: .ebook, action: .view, title: "View ebook request", detail: "On its way")])
+    }
+
+    @Test func putsTheViewBesideTheRequestOfTheOtherKind() {
+        let shown = items([], live: [.ebook: .onItsWay])
+        #expect(shown.map(\.title) == ["View ebook request", "Request audiobook"])
+        #expect(shown.map(\.action) == [.view, .request])
+    }
+
+    @Test(arguments: [
+        (RequestState.looking, "Looking"), (.choose, "Choose a version"), (.chosen, "Version chosen"),
+        (.onItsWay, "On its way"),
+    ])
+    func subtitlesAViewWithTheStatesHeading(state: RequestState, heading: String) {
+        #expect(items([], live: [.audiobook: state]).last?.detail == heading)
+        #expect(items([], live: [.audiobook: state]).last?.title == "View audiobook request")
     }
 
     @Test func searchReadsAnIsbnAsALookupAndAnythingElseAsText() {

@@ -146,6 +146,7 @@ server_start() {
       OMNIBUS_THUMBS_DIR="$SERVER/thumbs" \
       OMNIBUS_DEV_DISABLE_RATE_LIMITS=1 \
       OMNIBUS_SECURE_COOKIES=0 \
+      OMNIBUS_BOOK_REQUESTS=1 \
       "$bin" >"$SERVER/server.log" 2>&1 &
     echo $! >"$PIDFILE"
   )

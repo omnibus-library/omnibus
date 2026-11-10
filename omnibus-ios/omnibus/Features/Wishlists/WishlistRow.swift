@@ -82,12 +82,14 @@ struct WishlistRow: View {
     }
 }
 
-/// The Get menu for one book: where to find it, what can't be requested yet,
-/// its page, and on your own list Remove.
+/// The Get menu for one book: where to find it, its requests (view the one going,
+/// or ask for a kind the library lacks), its page, and on your own list Remove.
 struct WishlistGetSheet: View {
     let item: WishlistBook
     let scope: WishlistScope
     let viewer: Int64?
+    let requestItems: [WishlistRequestItem]
+    var onRequest: (RequestKind) -> Void
     var onRemove: () -> Void
 
     @Environment(\.palette) private var palette
@@ -103,8 +105,19 @@ struct WishlistGetSheet: View {
                 StoreLink.open(book: item.book, with: openURL)
                 dismiss()
             }
-            ForEach(WishlistsFlow.requestable(item.holdings), id: \.self) { kind in
-                action(kind.title, detail: "Not available yet", enabled: false) {}
+            ForEach(requestItems, id: \.kind) { request in
+                switch request.action {
+                case .view:
+                    action(request.title, detail: request.detail) {
+                        dismiss()
+                        openDestination(.bookRequest(uuid: item.id))
+                    }
+                case .request:
+                    action(request.title, detail: request.detail, enabled: Connectivity.shared.isOnline) {
+                        dismiss()
+                        onRequest(request.kind)
+                    }
+                }
             }
             action("Open book page") {
                 dismiss()
