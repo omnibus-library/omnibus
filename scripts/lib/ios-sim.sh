@@ -76,14 +76,18 @@ ios_sim_duo_name() {
   echo "$(ios_sim_name "$1")-duo"
 }
 
+# jq: a runtime's version string as a sortable key; the one "newest runtime"
+# order, tolerant of a part that is not a number.
+IOS_SIM_VERSION_KEY='def version_key: split(".") | map(tonumber? // 0);'
+
 # Echo the UDID of the iPhone Duo named $1, creating it on first use. The Duo
 # lives only on its own runtime (`iOS-27-2-iPhone19-4`), which the newest-iPhone
 # picker skips, so the runtime is the newest one that supports the device type.
 ios_sim_ensure_duo() {
   local name="$1" devtype="com.apple.CoreSimulator.SimDeviceType.iPhone-Duo" runtime udid
-  runtime="$(xcrun simctl list --json runtimes available | jq -r --arg t "$devtype" '
+  runtime="$(xcrun simctl list --json runtimes available | jq -r --arg t "$devtype" "$IOS_SIM_VERSION_KEY"'
     [.runtimes[] | select(any(.supportedDeviceTypes[]?; .identifier == $t))]
-    | sort_by(.version | split(".") | map(tonumber)) | last | .identifier // empty')"
+    | sort_by(.version | version_key) | last | .identifier // empty')"
   if [ -z "$runtime" ]; then
     echo "ios-sim: no installed runtime runs the iPhone Duo; install it from Xcode > Settings > Components" >&2
     return 1
@@ -105,14 +109,14 @@ ios_sim_find() {
 }
 
 # Echo the UDID of the simulator named $1 to drive, or nothing when none has
-# that name: booted before shut down, then the newest runtime (by the version
-# ios_sim_ensure_duo sorts on), since one left on an older runtime keeps the name.
+# that name: booted before shut down, then the newest runtime, since one left
+# on an older runtime keeps the name.
 ios_sim_find_preferred() {
   local versions
   versions="$(xcrun simctl list --json runtimes | jq -c \
     '[.runtimes[] | {key: .identifier, value: .version}] | from_entries')"
-  xcrun simctl list --json devices | jq -r --arg name "$1" --argjson v "${versions:-"{}"}" '
+  xcrun simctl list --json devices | jq -r --arg name "$1" --argjson v "${versions:-"{}"}" "$IOS_SIM_VERSION_KEY"'
     [.devices | to_entries[] | .key as $rt | .value[] | select(.name == $name)
-     | {udid, rank: [.state == "Booted", (($v[$rt] // "0") | split(".") | map(tonumber? // 0))]}]
+     | {udid, rank: [.state == "Booted", (($v[$rt] // "0") | version_key)]}]
     | sort_by(.rank) | last | .udid // empty'
 }

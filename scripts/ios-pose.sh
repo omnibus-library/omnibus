@@ -24,7 +24,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(git -C "$HERE" rev-parse --show-toplevel)"
 HELPER_SRC="$HERE/lib/ios-pose-helper.m"
 HELPER_CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/omnibus-ios-pose"
-# Seconds a change may take to show up before it counts as failed.
+# Whole seconds a change may take to show up before it counts as failed.
 TIMEOUT="${OMNIBUS_IOS_POSE_TIMEOUT:-8}"
 
 # shellcheck source=lib/ios-sim.sh
@@ -34,6 +34,8 @@ die() {
   echo "ios-pose: $*" >&2
   exit 1
 }
+
+[[ "$TIMEOUT" =~ ^[1-9][0-9]*$ ]] || die "OMNIBUS_IOS_POSE_TIMEOUT must be a whole number of seconds: $TIMEOUT"
 
 UDID="${OMNIBUS_IOS_POSE_UDID:-}"
 if [ "${1:-}" = "-d" ]; then
@@ -52,7 +54,6 @@ resolve_udid() {
 }
 
 # Built once per helper source and Xcode, outside the nix shell's compiler.
-# Never call it in a command substitution: its die must exit the script.
 HELPER_BIN=""
 ensure_helper() {
   [ -z "$HELPER_BIN" ] || return 0
@@ -154,7 +155,6 @@ rotate() {
   local want event="$1"
   want="$(devicectl_orientation "$1")" ||
     die "orientation must be portrait, landscape-left, landscape-right or portrait-upside-down: $1"
-  ensure_helper # here, where a build failure is heard, not under the probe's 2>/dev/null
   if run_helper angle >/dev/null 2>&1; then
     [ "$event" = portrait-upside-down ] && event=pud
     run_helper orient "$event"
@@ -174,7 +174,6 @@ active_display() {
 
 show() {
   local angle
-  ensure_helper # in this shell: the substitution below would swallow a build failure
   angle="$(run_helper angle 2>/dev/null)" || angle="none"
   echo "hinge=$angle orientation=$(orientation) display=$(active_display)"
 }
@@ -190,6 +189,10 @@ screenshot() {
 command="${1:-}"
 [ -n "$command" ] || die "usage: ios-pose.sh [-d <udid>] open|close|half|hinge <deg>|rotate <orientation>|show|screenshot <file> (see the header)"
 resolve_udid
+# Built here, in this shell, so a failed build exits before any probe hides it.
+case "$command" in
+  open | close | half | hinge | rotate | show) ensure_helper ;;
+esac
 case "$command" in
   open) set_hinge 180 ;;
   close) set_hinge 0 ;;

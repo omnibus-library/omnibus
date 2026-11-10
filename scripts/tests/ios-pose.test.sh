@@ -4,8 +4,8 @@
 # angle out of range never reaches the simulator, a rotation goes through the
 # Duo's HID event on a foldable and through devicectl on a plain iPhone, a
 # screenshot with no display to read says so, a worktree without a Duo is told
-# how to make one, and a booted Duo wins over a stale one of the same name, the
-# newest runtime's over an older one's when both are booted.
+# how to make one, and a booted Duo wins over a stale one of the same name, even
+# one on a newer runtime, and the newest runtime's when both are booted.
 #
 # Stub `xcrun` and `xcode-select` answer from fixed JSON and log every command;
 # the helper binary is a pre-made file in a scratch cache, so nothing is
@@ -153,3 +153,15 @@ JSON
 pose rotate landscape-left || fail "rotate with two booted Duos failed: $(cat "$tmp/err")"
 grep -q "spawn OLDER" "$tmp/log" && fail "picked the older runtime's Duo"
 echo "PASS: of two booted Duos, the newest runtime's wins"
+
+cat >"$tmp/devices.json" <<'JSON'
+{"devices": {
+  "com.apple.CoreSimulator.SimRuntime.iOS-27-1-iPhone19-4": [
+    {"name": "omnibus-tests-wt-x-duo", "udid": "DUO", "state": "Booted"}],
+  "com.apple.CoreSimulator.SimRuntime.iOS-27-2-iPhone19-4": [
+    {"name": "omnibus-tests-wt-x-duo", "udid": "NEWER", "state": "Shutdown"}]
+}}
+JSON
+pose rotate landscape-left || fail "rotate with a shut-down newer Duo failed: $(cat "$tmp/err")"
+grep -q "spawn DUO" "$tmp/log" || fail "did not pick the booted Duo: $(cat "$tmp/log")"
+echo "PASS: a booted Duo on an older runtime wins over a shut-down newer one"

@@ -83,7 +83,7 @@ final class ScreenTour: XCTestCase {
             return XCTFail("pose(\(request)) needs scripts/ios-validate.sh tour")
         }
         // A hinge waits up to 2 × OMNIBUS_IOS_POSE_TIMEOUT + 8 s, plus the helper's first build.
-        let step = Double(env["OMNIBUS_IOS_POSE_TIMEOUT"] ?? "") ?? 8
+        let step = Double(Int(env["OMNIBUS_IOS_POSE_TIMEOUT"] ?? "") ?? 8)
         let timeout = timeout ?? max(60, 2 * step + 40)
         // Numbered, so a late reply to a request that timed out is never taken as this one's.
         poseNumber += 1
