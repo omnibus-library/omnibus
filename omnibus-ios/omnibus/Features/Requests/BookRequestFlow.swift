@@ -10,8 +10,6 @@ struct RequestStateView: Equatable {
     var heading: String
     /// Nil where the lane's own content says it.
     var note: String?
-    /// Whether `note` is the error the server recorded, not a general line.
-    var explicit = false
 }
 
 enum BookRequestFlow {
@@ -36,19 +34,16 @@ enum BookRequestFlow {
 
     private static func stuckView(_ reason: StuckReason?, _ detail: String?) -> RequestStateView {
         let recorded = detail.flatMap(\.nilIfBlank).map(capitalised)
-        let explicit = recorded != nil
         switch reason {
         case .stoppedMoving:
             return RequestStateView(
-                heading: "Stopped moving", note: recorded ?? "The download stopped making progress.", explicit: explicit)
+                heading: "Stopped moving", note: recorded ?? "The download stopped making progress.")
         case .couldntAdd:
             return RequestStateView(
                 heading: "Couldn\u{2019}t add it",
-                note: recorded ?? "It downloaded but couldn\u{2019}t be added to the library.", explicit: explicit)
+                note: recorded ?? "It downloaded but couldn\u{2019}t be added to the library.")
         case .notFound, .searchFailed, nil:
-            return RequestStateView(
-                heading: "Couldn\u{2019}t find it", note: recorded ?? "Nothing worth showing turned up.",
-                explicit: explicit)
+            return RequestStateView(heading: "Couldn\u{2019}t find it", note: recorded ?? "Nothing worth showing turned up.")
         }
     }
 
@@ -102,8 +97,6 @@ enum BookRequestFlow {
         enum Status: Equatable { case done, current, todo }
         var label: String
         var status: Status
-        /// The download's percent, on the On its way step while it runs.
-        var percent: Int?
     }
 
     /// The step each state is on; ready has passed them all.
@@ -125,7 +118,7 @@ enum BookRequestFlow {
         return [
             Step(label: at > 0 && found > 0 ? "Looking \u{b7} \(found) found" : "Looking", status: status(0)),
             Step(label: at > 1 ? "Chose a version" : "Choose a version", status: status(1)),
-            Step(label: "On its way", status: status(2), percent: downloadPercent(request)),
+            Step(label: "On its way", status: status(2)),
             Step(label: "Ready", status: status(3)),
         ]
     }
@@ -334,12 +327,6 @@ enum BookRequestFlow {
         case .ebook: return upper.contains { $0 != "PRINT" && !audioFormats.contains($0) }
         case .audiobook: return upper.contains { audioFormats.contains($0) }
         }
-    }
-
-    /// The Request rows on a book's Files tab: each kind the library lacks, when the server has requests on and the reader may start one.
-    static func requestSlots(formats: [String], requestsOn: Bool, canStart: Bool) -> [RequestKind] {
-        guard requestsOn, canStart else { return [] }
-        return RequestKind.allCases.filter { !holds(kind: $0, formats: formats) }
     }
 
     /// The kinds the viewer may start that the library lacks and no request, in any state, covers.

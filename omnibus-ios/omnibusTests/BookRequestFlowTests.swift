@@ -48,7 +48,7 @@ struct BookRequestFlowTests {
                 .stuck, stuckReason: .stoppedMoving, stuckDetail: "the download made no progress for 12 hours")
             #expect(
                 view == RequestStateView(
-                    heading: "Stopped moving", note: "The download made no progress for 12 hours", explicit: true))
+                    heading: "Stopped moving", note: "The download made no progress for 12 hours"))
         }
 
         @Test func leavesANameOpeningWithALowerCaseLetterAndACapitalAsWritten() {
@@ -65,7 +65,6 @@ struct BookRequestFlowTests {
         func fallsBackToAGeneralLineWhenNoErrorWasRecorded(reason: StuckReason, note: String) {
             let view = BookRequestFlow.stateView(.stuck, stuckReason: reason, stuckDetail: nil)
             #expect(view.note == note)
-            #expect(!view.explicit)
         }
 
         @Test func neverUsesTheDownloadersWords() {
@@ -88,10 +87,10 @@ struct BookRequestFlowTests {
         @Test func makesLookingTheCurrentStepOfASearch() {
             #expect(
                 steps(aRequest(state: .looking)) == [
-                    .init(label: "Looking", status: .current, percent: nil),
-                    .init(label: "Choose a version", status: .todo, percent: nil),
-                    .init(label: "On its way", status: .todo, percent: nil),
-                    .init(label: "Ready", status: .todo, percent: nil),
+                    .init(label: "Looking", status: .current),
+                    .init(label: "Choose a version", status: .todo),
+                    .init(label: "On its way", status: .todo),
+                    .init(label: "Ready", status: .todo),
                 ])
         }
 
@@ -99,27 +98,21 @@ struct BookRequestFlowTests {
             let found = [aVersion(id: 1), aVersion(id: 2, rejected: true)]
             #expect(
                 steps(aRequest(state: .choose, versions: found)) == [
-                    .init(label: "Looking \u{b7} 2 found", status: .done, percent: nil),
-                    .init(label: "Choose a version", status: .current, percent: nil),
-                    .init(label: "On its way", status: .todo, percent: nil),
-                    .init(label: "Ready", status: .todo, percent: nil),
+                    .init(label: "Looking \u{b7} 2 found", status: .done),
+                    .init(label: "Choose a version", status: .current),
+                    .init(label: "On its way", status: .todo),
+                    .init(label: "Ready", status: .todo),
                 ])
         }
 
-        @Test func namesThePickMadeAndCarriesTheDownloadsPercent() {
+        @Test func namesThePickMadeAndMarksTheDownloadCurrent() {
             let downloading = steps(
                 aRequest(state: .onItsWay, chosenResultID: 11, progress: 0.62, versions: [aVersion()]))
             #expect(
                 downloading?[1...2].map { $0 } == [
-                    .init(label: "Chose a version", status: .done, percent: nil),
-                    .init(label: "On its way", status: .current, percent: 62),
+                    .init(label: "Chose a version", status: .done),
+                    .init(label: "On its way", status: .current),
                 ])
-        }
-
-        @Test func leavesThePercentOffAPickedVersionNotYetStarted() {
-            #expect(
-                steps(aRequest(state: .chosen, versions: [aVersion()]))?[2]
-                    == .init(label: "On its way", status: .current, percent: nil))
         }
 
         @Test func marksEveryStepDoneOnceTheBookIsReady() {
@@ -581,25 +574,6 @@ struct BookRequestFlowTests {
             let theirs = aListing(aRequest(userID: 2, createdAt: 1_000 - 7_200), requesterName: "Jordan")
             #expect(BookRequestFlow.askedBy(mine, viewer: 1, now: at(1_000)) == "You \u{b7} just now")
             #expect(BookRequestFlow.askedBy(theirs, viewer: 1, now: at(1_000)) == "Jordan \u{b7} 2h ago")
-        }
-    }
-
-    struct Slots {
-        @Test func offersASlotForEachKindTheLibraryLacksWhenRequestsAreOnAndTheReaderMayStart() {
-            #expect(BookRequestFlow.requestSlots(formats: [], requestsOn: true, canStart: true) == [.ebook, .audiobook])
-            #expect(BookRequestFlow.requestSlots(formats: ["EPUB"], requestsOn: true, canStart: true) == [.audiobook])
-            #expect(BookRequestFlow.requestSlots(formats: ["M4B"], requestsOn: true, canStart: true) == [.ebook])
-            #expect(BookRequestFlow.requestSlots(formats: ["PRINT"], requestsOn: true, canStart: true) == [.ebook, .audiobook])
-        }
-
-        @Test func offersNoSlotForAKindTheLibraryHolds() {
-            #expect(BookRequestFlow.requestSlots(formats: ["EPUB", "M4B"], requestsOn: true, canStart: true).isEmpty)
-            #expect(BookRequestFlow.requestSlots(formats: ["pdf", "mp3"], requestsOn: true, canStart: true).isEmpty)
-        }
-
-        @Test func offersNoSlotWhenRequestsAreOffOrTheReaderMayNotStart() {
-            #expect(BookRequestFlow.requestSlots(formats: [], requestsOn: false, canStart: true).isEmpty)
-            #expect(BookRequestFlow.requestSlots(formats: [], requestsOn: true, canStart: false).isEmpty)
         }
     }
 }

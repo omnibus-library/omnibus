@@ -6,10 +6,8 @@ import Foundation
 
 enum RequestService {
     static let listPath = "/api/requests"
-    static let startFromMetaPath = "/api/requests"
 
     static func bookListPath(uuid: String) -> String { "/api/books/\(segment(uuid))/requests" }
-    static func startPath(uuid: String) -> String { bookListPath(uuid: uuid) }
 
     static func path(id: Int64, action: String? = nil) -> String {
         action.map { "/api/requests/\(id)/\($0)" } ?? "/api/requests/\(id)"
@@ -42,11 +40,11 @@ enum RequestService {
     // MARK: - Starting
 
     static func start(bookUUID: String, kind: RequestKind) async throws -> BookRequest {
-        try await APIClient.shared.post(startPath(uuid: bookUUID), body: StartRequest(kind: kind))
+        try await APIClient.shared.post(bookListPath(uuid: bookUUID), body: StartRequest(kind: kind))
     }
 
     static func start(meta: ExternalBookMeta) async throws -> BookRequest {
-        try await APIClient.shared.post(startFromMetaPath, body: StartRequestFromMeta(meta: meta))
+        try await APIClient.shared.post(listPath, body: StartRequestFromMeta(meta: meta))
     }
 
     // MARK: - Moving a request

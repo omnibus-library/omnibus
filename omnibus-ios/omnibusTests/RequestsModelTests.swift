@@ -145,11 +145,16 @@ struct RequestsModelTests {
             resolveMeta: { _ in await started.resolve(); return resolved })
     }
 
-    @Test func startingFromALibraryBookStartsAnEbookReloadsTheListAndShowsItsPage() async {
+    @Test func startingFromALibraryBookStartsAnEbookShowsItsPageWithoutWaitingForTheReload() async {
         let started = Started()
         let calls = CallCounter()
+        let release = Gate()
         let api = fakeRequestsAPI(
-            list: { await calls.next() == 1 ? [] : [listing("lib", state: .looking)] },
+            list: {
+                if await calls.next() == 1 { return [] }
+                await release.wait()
+                return [listing("lib", state: .looking)]
+            },
             start: { uuid, kind in
                 #expect(kind == .ebook)
                 await started.library(uuid)
@@ -160,6 +165,8 @@ struct RequestsModelTests {
         let outcome = await model.startFromLibrary(uuid: "lib")
         #expect(outcome == .show(uuid: "lib"))
         #expect(await started.libraryStarts == ["lib"])
+        await release.open()
+        for _ in 0..<1_000 where model.listings?.isEmpty != false { await Task.yield() }
         #expect(model.listings?.map(\.book.uuid) == ["lib"])
     }
 

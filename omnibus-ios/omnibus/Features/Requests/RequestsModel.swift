@@ -31,7 +31,7 @@ struct RequestsAPI: Sendable {
         list: { try await RequestService.list() },
         bookList: { try await RequestService.list(bookUUID: $0) },
         request: { try await RequestService.get(id: $0) },
-        book: { try await APIClient.shared.get("/api/ebooks/\($0)") },
+        book: { try await LibraryService.settledBook(uuid: $0) },
         wanters: { uuid in
             try await UserDataService.wishlists(scope: .everyone).first { $0.id == uuid }?.wantedBy ?? []
         },
@@ -97,7 +97,7 @@ final class RequestsModel {
             listings = try await api.list()
             failure = nil
         } catch {
-            failure = Self.message(error)
+            failure = WishlistsModel.message(error)
         }
     }
 
@@ -155,7 +155,7 @@ final class RequestsModel {
         }
         do {
             let started = try await api.startFromMeta(meta)
-            await load()
+            reloadInBackground()
             return .show(uuid: started.bookUUID)
         } catch {
             return .failed(BookRequestFlow.startFailure(error))
@@ -165,16 +165,15 @@ final class RequestsModel {
     private func start(uuid: String, kind: RequestKind = .ebook) async -> AddOutcome {
         do {
             let started = try await api.start(uuid, kind)
-            await load()
+            reloadInBackground()
             return .show(uuid: started.bookUUID)
         } catch {
             return .failed(BookRequestFlow.startFailure(error))
         }
     }
 
-    private static let stillStarting = AddOutcome.failed("Still starting the last request.")
+    /// Reads the list again without holding the push to the request's page behind it.
+    private func reloadInBackground() { Task { await load() } }
 
-    static func message(_ error: Error) -> String {
-        (error as? APIError)?.errorDescription ?? error.localizedDescription
-    }
+    private static let stillStarting = AddOutcome.failed("Still starting the last request.")
 }

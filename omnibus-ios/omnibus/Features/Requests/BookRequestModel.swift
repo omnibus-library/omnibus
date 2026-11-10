@@ -20,7 +20,7 @@ final class BookRequestModel {
     private(set) var failure: String?
     /// The book itself is gone.
     private(set) var isMissing = false
-    private(set) var viewer = RequestViewer(id: 0, canStart: false, canChoose: false)
+    private(set) var viewer = RequestViewer.nobody
     /// The write in flight, if any; one runs at a time, so every other button locks.
     private(set) var busy: Busy?
     var toast: RequestToast?
@@ -108,15 +108,15 @@ final class BookRequestModel {
         guard started == generation else { return }
         switch main {
         case let .success(request): reads = otherReads.merging([request.id: request]) { $1 }
-        case let .failure(error): if !hadPage { failure = RequestsModel.message(error) }
+        case let .failure(error): if !hadPage { failure = WishlistsModel.message(error) }
         }
     }
 
     private func fail(_ bookResult: Result<Book, Error>, _ listResult: Result<[RequestListing], Error>) {
         if case let .failure(error) = bookResult {
-            if case .http(404, _) = error as? APIError { isMissing = true } else { failure = RequestsModel.message(error) }
+            if case .http(404, _) = error as? APIError { isMissing = true } else { failure = WishlistsModel.message(error) }
         } else if case let .failure(error) = listResult {
-            failure = RequestsModel.message(error)
+            failure = WishlistsModel.message(error)
         }
     }
 

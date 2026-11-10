@@ -193,8 +193,6 @@ struct RequestsCodecTests {
         #expect(RequestService.listPath == "/api/requests")
         #expect(RequestService.bookListPath(uuid: "u-1") == "/api/books/u-1/requests")
         #expect(RequestService.path(id: 5) == "/api/requests/5")
-        #expect(RequestService.startPath(uuid: "u-1") == "/api/books/u-1/requests")
-        #expect(RequestService.startFromMetaPath == "/api/requests")
         #expect(RequestService.path(id: 5, action: "choose") == "/api/requests/5/choose")
         #expect(RequestService.path(id: 5, action: "cover") == "/api/requests/5/cover")
     }
@@ -202,6 +200,5 @@ struct RequestsCodecTests {
     @Test("a uuid path segment is percent-encoded")
     func encodesTheUUIDSegment() {
         #expect(RequestService.bookListPath(uuid: "a b/c") == "/api/books/a%20b%2Fc/requests")
-        #expect(RequestService.startPath(uuid: "a b/c") == "/api/books/a%20b%2Fc/requests")
     }
 }

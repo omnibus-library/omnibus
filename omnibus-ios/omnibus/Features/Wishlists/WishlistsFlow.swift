@@ -44,16 +44,10 @@ enum WishlistSearch: Equatable {
 }
 
 enum WishlistsFlow {
-    private static let audioFormats: Set<String> = ["M4B", "M4A", "MP3"]
-
-    /// The kinds the library lacks: audio is M4B, M4A or MP3, any other
-    /// digital format is an ebook, and print counts as neither.
+    /// The kinds the library lacks, by the same rule as the request page.
     static func requestable(_ holdings: [WishlistHolding]) -> [RequestKind] {
-        let formats = holdings.map { $0.format.uppercased() }
-        var kinds: [RequestKind] = []
-        if !formats.contains(where: { $0 != "PRINT" && !audioFormats.contains($0) }) { kinds.append(.ebook) }
-        if !formats.contains(where: audioFormats.contains) { kinds.append(.audiobook) }
-        return kinds
+        let formats = holdings.map(\.format)
+        return RequestKind.allCases.filter { !BookRequestFlow.holds(kind: $0, formats: formats) }
     }
 
     /// The Get sheet's request rows, ebook then audiobook: View where a request is going for the kind (to
