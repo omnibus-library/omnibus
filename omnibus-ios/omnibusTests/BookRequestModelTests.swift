@@ -447,6 +447,27 @@ struct BookRequestModelTests {
         #expect(model.lanes.map(\.id) == [1])
     }
 
+    @Test func aFailedReadOfTheMainRequestShowsTheMessageEvenWhenAWriteRacedTheFirstLoad() async {
+        let started = Gate()
+        let release = Gate()
+        let api = fakeRequestsAPI(
+            bookList: { _ in [listing("b", id: 1, state: .looking)] },
+            request: { _ in
+                await started.open()
+                await release.wait()
+                throw FakeFailure()
+            },
+            book: { _ in aBook },
+            start: { _, _ in throw FakeFailure() })
+        let model = model(api)
+        let load = Task { await model.load(viewer: adaViewer) }
+        await started.wait()
+        await model.start(.audiobook)
+        await release.open()
+        await load.value
+        #expect(model.failure == "boom")
+    }
+
     @Test func aReloadThatFailsKeepsTheLoadedPage() async {
         let calls = CallCounter()
         let api = fakeRequestsAPI(

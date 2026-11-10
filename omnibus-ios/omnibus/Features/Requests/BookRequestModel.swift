@@ -110,7 +110,7 @@ final class BookRequestModel {
             let answers = otherReads.merging([request.id: request]) { $1 }
             // A write that landed meanwhile keeps its answers; this read only fills the lanes it lacks.
             if started == generation { reads = answers } else { reads.merge(answers) { kept, _ in kept } }
-        case let .failure(error): if started == generation, !hadPage { failure = WishlistsModel.message(error) }
+        case let .failure(error): if !hadPage, reads[mainID] == nil { failure = WishlistsModel.message(error) }
         }
     }
 
