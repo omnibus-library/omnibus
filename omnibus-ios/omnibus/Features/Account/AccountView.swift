@@ -86,7 +86,10 @@ struct AccountView: View {
             kindleEmail = app.user?.kindleEmail ?? ""
             hiddenFormats = Set(app.user?.hiddenFormats ?? [])
             await connectivity.refreshPendingCount()
-            await refreshNeedsYou()
+        }
+        // Keyed on the path, since the stack stays up while Requests is pushed and popped.
+        .task(id: path.isEmpty) {
+            if path.isEmpty { await refreshNeedsYou() }
         }
         .onChange(of: kindleEmail) { _, _ in
             kindleSaved = false
