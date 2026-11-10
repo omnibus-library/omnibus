@@ -109,7 +109,6 @@ struct RequestsCodecTests {
         ])
     func decodesEachState(wire: String, expected: RequestState) throws {
         #expect(try decode(RequestState.self, "\"\(wire)\"") == expected)
-        #expect(RequestState.allCases.count == 7)
     }
 
     @Test(

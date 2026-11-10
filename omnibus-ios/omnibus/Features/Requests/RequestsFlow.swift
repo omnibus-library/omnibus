@@ -76,24 +76,23 @@ enum RequestsFlow {
     }
 
     /// One item per book, filed under its most urgent request (the newest of equals; the last
-    /// cancelled among cancelled ones), in group order with empty groups left out.
+    /// cancelled among cancelled ones), in group order with empty groups left out. A book keeps the
+    /// slot where its newest request appeared.
     static func groups(_ listings: [RequestListing], viewer: RequestViewer) -> [RequestGroup] {
-        var filed: [String: (rank: Int, key: RequestGroupKey, listing: RequestListing)] = [:]
-        for listing in listings {
+        var filed: [String: (rank: Int, key: RequestGroupKey, listing: RequestListing, slot: Int)] = [:]
+        for (index, listing) in listings.enumerated() {
             let key = groupKey(of: listing.request, viewer: viewer)
             let rank = RequestGroupKey.allCases.firstIndex(of: key) ?? 0
-            if let held = filed[listing.book.uuid] {
+            let held = filed[listing.book.uuid]
+            if let held {
                 let lastCancelled = key == .cancelled && rank == held.rank
                     && listing.request.updatedAt > held.listing.request.updatedAt
                 guard rank < held.rank || lastCancelled else { continue }
             }
-            filed[listing.book.uuid] = (rank, key, listing)
+            filed[listing.book.uuid] = (rank, key, listing, held?.slot ?? index)
         }
         return RequestGroupKey.allCases.compactMap { key in
-            // Listings arrive newest first; the dictionary has lost that order, so restore it.
-            let items = listings.filter { listing in
-                filed[listing.book.uuid].map { $0.key == key && $0.listing.request.id == listing.request.id } ?? false
-            }
+            let items = filed.values.filter { $0.key == key }.sorted { $0.slot < $1.slot }.map(\.listing)
             return items.isEmpty ? nil : RequestGroup(key: key, items: items)
         }
     }

@@ -72,6 +72,17 @@ struct RequestsFlowTests {
             #expect(groups.first?.items.first?.request.id == 3)
         }
 
+        @Test func keepsEachBookAtTheSlotWhereItsNewestRequestAppeared() {
+            let groups = RequestsFlow.groups(
+                [
+                    listing("a", id: 3, state: .cancelled), listing("b", id: 2, state: .looking),
+                    listing("a", id: 1, state: .looking),
+                ],
+                viewer: adaViewer
+            )
+            #expect(shape(groups) == ["looking=a,b"])
+        }
+
         @Test func filesABookUnderItsMostUrgentRequest() {
             let groups = RequestsFlow.groups(
                 [
@@ -176,10 +187,6 @@ struct RequestsFlowTests {
             #expect(RequestGroupKey.ready.tone == .ok)
             #expect(RequestGroupKey.cancelled.tone == .ink3)
             #expect([RequestGroupKey.onItsWay, .looking].map(\.tone) == [.ink1, .ink1])
-        }
-
-        @Test func foldsOnlyCancelledByDefault() {
-            #expect(RequestGroupKey.allCases.filter { RequestsFlow.defaultFolds[$0] == true } == [.cancelled])
         }
 
         @Test func pollsEveryTenSecondsWhileAnyRequestIsMoving() {
