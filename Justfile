@@ -172,7 +172,8 @@ test-rust: fixtures
         cargo nextest run -p omnibus && \
         cargo nextest run -p omnibus-shared && \
         cargo nextest run -p omnibus-mcp && \
-        cargo nextest run -p omnibus-mock-kobo'
+        cargo nextest run -p omnibus-mock-kobo && \
+        cargo nextest run -p omnibus-mock-requests'
 
 # Line/region coverage over the same crates as `just test`, via
 # cargo-llvm-cov driving cargo-nextest (matches the CI `test` job). Each crate
@@ -188,6 +189,7 @@ coverage: fixtures
         cargo llvm-cov nextest --no-report -p omnibus-shared && \
         cargo llvm-cov nextest --no-report -p omnibus-mcp && \
         cargo llvm-cov nextest --no-report -p omnibus-mock-kobo && \
+        cargo llvm-cov nextest --no-report -p omnibus-mock-requests && \
         cargo llvm-cov report --lcov --output-path lcov.info && \
         cargo llvm-cov report'
 
@@ -202,6 +204,7 @@ coverage-html: fixtures
         cargo llvm-cov nextest --no-report -p omnibus-shared && \
         cargo llvm-cov nextest --no-report -p omnibus-mcp && \
         cargo llvm-cov nextest --no-report -p omnibus-mock-kobo && \
+        cargo llvm-cov nextest --no-report -p omnibus-mock-requests && \
         cargo llvm-cov report --html --open'
 
 # Structural CSS lint — stylelint over the React client's stylesheets, scoped to
@@ -267,7 +270,8 @@ lint: lint-css migration-numbers
         cargo fmt --check && \
         cargo clippy --all-targets -- -D warnings && \
         cargo clippy -p omnibus-mcp --all-targets -- -D warnings && \
-        cargo clippy -p omnibus-mock-kobo --all-targets -- -D warnings'
+        cargo clippy -p omnibus-mock-kobo --all-targets -- -D warnings && \
+        cargo clippy -p omnibus-mock-requests --all-targets -- -D warnings'
 
 # Lint then test — the pre-push gate referenced by rule 99.
 check: lint test

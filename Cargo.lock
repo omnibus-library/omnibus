@@ -2617,6 +2617,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "omnibus-mock-requests"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "omnibus-db",
+ "omnibus-shared",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "omnibus-shared"
 version = "0.1.0"
 dependencies = [

@@ -143,6 +143,8 @@ jobs:
           # Out of `default-members` too; small and native, so the shared bucket.
           - name: mock-kobo
             cmd: cargo clippy -p omnibus-mock-kobo --all-targets -- -D warnings
+          - name: mock-requests
+            cmd: cargo clippy -p omnibus-mock-requests --all-targets -- -D warnings
     steps:
       - uses: actions/checkout@v4
 
@@ -209,6 +211,9 @@ jobs:
           # Out of `default-members`; its suite stubs the server it syncs with.
           - name: mock-kobo
             args: -p omnibus-mock-kobo
+          # Out of `default-members`; no fixtures — its suite writes temp payload files.
+          - name: mock-requests
+            args: -p omnibus-mock-requests
     steps:
       - uses: actions/checkout@v4
 
