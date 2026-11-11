@@ -36,6 +36,14 @@ private func firstScrollView(in view: UIView) -> UIScrollView? {
     return view.subviews.lazy.compactMap(firstScrollView(in:)).first
 }
 
+/// Hide a test's window and drop its views, so no stale key window outlives
+/// the test in the app-hosted suite.
+@MainActor
+private func tearDown(_ window: UIWindow) {
+    window.isHidden = true
+    window.rootViewController = nil
+}
+
 @Suite("Stranded scroll views")
 @MainActor
 struct StrandedScrollTests {
@@ -93,6 +101,7 @@ struct StrandedScrollTests {
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
         window.rootViewController = UIViewController()
         window.makeKeyAndVisible()
+        defer { tearDown(window) }
         let view = UIScrollView(frame: window.bounds)
         view.contentSize = CGSize(width: 390, height: 2000)
         view.contentInsetAdjustmentBehavior = .never
@@ -105,9 +114,10 @@ struct StrandedScrollTests {
         view.contentOffset = CGPoint(x: 0, y: -600)
 
         refresh.endRefreshing()
-        runLoop { view.contentOffset.y == -82 }
+        // The half-point slack `strandedRest` allows for layout rounding.
+        runLoop { abs(view.contentOffset.y + 82) <= 0.5 }
 
-        #expect(view.contentOffset.y == -82)
+        #expect(abs(view.contentOffset.y + 82) <= 0.5)
         #expect(view.strandedRest == nil)
     }
 
@@ -124,6 +134,7 @@ struct StrandedScrollTests {
         )
         window.rootViewController = host
         window.makeKeyAndVisible()
+        defer { tearDown(window) }
         var rail: UIScrollView?
         runLoop {
             // A window with no scene isn't laid out by the run loop alone.

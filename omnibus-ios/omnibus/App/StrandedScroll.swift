@@ -62,3 +62,15 @@ func settleStrandedScrollViews(in scene: UIWindowScene) {
         settleStrandedScrollViews(in: window)
     }
 }
+
+/// Settle each window scene's stranded scroll views as that scene becomes
+/// active. Call once, at launch: each call adds another observer.
+@MainActor
+func settleStrandedScrollViewsOnActivation() {
+    _ = NotificationCenter.default.addObserver(
+        forName: UIScene.didActivateNotification, object: nil, queue: .main
+    ) { note in
+        guard let scene = note.object as? UIWindowScene else { return }
+        MainActor.assumeIsolated { settleStrandedScrollViews(in: scene) }
+    }
+}
