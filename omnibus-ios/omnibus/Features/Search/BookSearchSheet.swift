@@ -76,6 +76,7 @@ struct BookSearchSheet<Control: View>: View {
                 }
                 .screenPadding()
                 .padding(.vertical, Spacing.lg)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .scrollDismissesKeyboard(.interactively)
             .background(ScreenBackground())
