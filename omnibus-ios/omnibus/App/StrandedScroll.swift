@@ -5,8 +5,11 @@
 //  Notification Center — is cancelled as the app leaves the foreground, and
 //  UIKit skips the bounce-back it would normally run then. The view stays
 //  pulled down at rest, the refresh control's spinner showing still through
-//  the gap, until the next drag. The app's scene-phase hook calls this on
-//  every return to the foreground to finish the bounce UIKit dropped.
+//  the gap, until the next drag. The app calls this each time a window scene
+//  becomes active, to finish the bounce UIKit dropped. It watches each scene
+//  rather than the app's scene phase: a car or a second iPad window can stay
+//  active while the swiped window drops out, so the app as a whole never
+//  leaves the foreground.
 
 import UIKit
 
@@ -14,9 +17,14 @@ extension UIScrollView {
     /// Where this view should be resting, if it is idle outside its scrollable
     /// range with nothing left to bring it back; nil otherwise.
     ///
-    /// A finger, a fling, a zoom or a running refresh each settles the view on
+    /// Only a view a finger can drag past its edge can be stranded, and a
+    /// finger, a fling, a zoom or a running refresh each settles the view on
     /// its own, so any of them leaves it alone.
     var strandedRest: CGPoint? {
+        // A view that doesn't scroll or bounce can't be dragged out of range,
+        // so one out of range got there on purpose: a reader's web view or a
+        // framework's internal scroller.
+        guard isScrollEnabled, bounces else { return nil }
         guard !isTracking, !isDecelerating, !isZooming, !isZoomBouncing,
               refreshControl?.isRefreshing != true else { return nil }
         let inset = adjustedContentInset
@@ -47,12 +55,10 @@ func settleStrandedScrollViews(in root: UIView, animated: Bool = true) {
     }
 }
 
-/// Settle the stranded scroll views in every window the app has connected.
+/// Settle the stranded scroll views in every window of `scene`.
 @MainActor
-func settleStrandedScrollViews() {
-    for case let scene as UIWindowScene in UIApplication.shared.connectedScenes {
-        for window in scene.windows {
-            settleStrandedScrollViews(in: window)
-        }
+func settleStrandedScrollViews(in scene: UIWindowScene) {
+    for window in scene.windows {
+        settleStrandedScrollViews(in: window)
     }
 }

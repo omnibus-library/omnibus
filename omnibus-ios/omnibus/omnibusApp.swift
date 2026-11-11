@@ -58,7 +58,6 @@ struct OmnibusApp: App {
                 // never again, so without this the app only ever synced on a
                 // cold start, a sign-in, or a reconnect it happened to notice.
                 .onChange(of: scenePhase) { _, phase in
-                    if phase == .active { settleStrandedScrollViews() }
                     guard appState.phase == .ready else { return }
                     switch phase {
                     case .active:
@@ -68,6 +67,13 @@ struct OmnibusApp: App {
                     default:
                         break
                     }
+                }
+                // Per scene, not on `scenePhase` above: that is every scene's
+                // at once, and stays active while a car or another iPad
+                // window does.
+                .onReceive(NotificationCenter.default.publisher(for: UIScene.didActivateNotification)) { note in
+                    guard let scene = note.object as? UIWindowScene else { return }
+                    settleStrandedScrollViews(in: scene)
                 }
         }
     }

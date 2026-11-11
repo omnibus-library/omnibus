@@ -4,6 +4,7 @@
 //  spinner showing, and nothing but this brings it back.
 
 import CoreGraphics
+import SwiftUI
 import Testing
 import UIKit
 
@@ -16,6 +17,23 @@ private func scroller(offset: CGPoint) -> UIScrollView {
     view.contentSize = CGSize(width: 300, height: 1000)
     view.contentOffset = offset
     return view
+}
+
+/// Spin the main run loop until `done` holds or `timeout` passes, so UIKit's
+/// own animations and SwiftUI's layout get to run.
+@MainActor
+private func runLoop(until done: () -> Bool, timeout: TimeInterval = 3) {
+    let deadline = Date().addingTimeInterval(timeout)
+    while !done(), Date() < deadline {
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+    }
+}
+
+/// The first scroll view at or under `view`.
+@MainActor
+private func firstScrollView(in view: UIView) -> UIScrollView? {
+    if let scroll = view as? UIScrollView { return scroll }
+    return view.subviews.lazy.compactMap(firstScrollView(in:)).first
 }
 
 @Suite("Stranded scroll views")
@@ -52,6 +70,73 @@ struct StrandedScrollTests {
         view.refreshControl = UIRefreshControl()
         view.refreshControl?.beginRefreshing()
         #expect(view.strandedRest == nil)
+    }
+
+    @Test("a view a finger can't scroll is left alone, wherever it rests")
+    func unscrollableIsLeftAlone() {
+        let view = scroller(offset: CGPoint(x: 0, y: -400))
+        view.isScrollEnabled = false
+        #expect(view.strandedRest == nil)
+    }
+
+    @Test("a view that doesn't bounce is left alone, wherever it rests")
+    func unbouncingIsLeftAlone() {
+        let view = scroller(offset: CGPoint(x: 0, y: -400))
+        view.bounces = false
+        #expect(view.strandedRest == nil)
+    }
+
+    // Why skipping a refreshing view is safe: ending the refresh puts the
+    // view back itself, however deep the pull it was left at.
+    @Test("ending a refresh brings a view left past its top back to rest")
+    func endingRefreshSettlesTheView() {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        window.rootViewController = UIViewController()
+        window.makeKeyAndVisible()
+        let view = UIScrollView(frame: window.bounds)
+        view.contentSize = CGSize(width: 390, height: 2000)
+        view.contentInsetAdjustmentBehavior = .never
+        view.contentInset.top = 82
+        view.contentOffset = CGPoint(x: 0, y: -82)
+        window.rootViewController?.view.addSubview(view)
+        let refresh = UIRefreshControl()
+        view.refreshControl = refresh
+        refresh.beginRefreshing()
+        view.contentOffset = CGPoint(x: 0, y: -600)
+
+        refresh.endRefreshing()
+        runLoop { view.contentOffset.y == -82 }
+
+        #expect(view.contentOffset.y == -82)
+        #expect(view.strandedRest == nil)
+    }
+
+    // SwiftUI right-aligns a short row with an inset, not an offset past the
+    // edge; were it the offset, settling would snap the rail to its start.
+    @Test("a short rail anchored to its trailing end is not stranded")
+    func trailingAnchoredRailIsNotStranded() throws {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        let host = UIHostingController(rootView:
+            ScrollView(.horizontal) {
+                HStack { ForEach(0 ..< 2) { _ in Color.red.frame(width: 60, height: 60) } }
+            }
+            .defaultScrollAnchor(.trailing)
+        )
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        var rail: UIScrollView?
+        runLoop {
+            // A window with no scene isn't laid out by the run loop alone.
+            host.view.layoutIfNeeded()
+            rail = firstScrollView(in: host.view)
+            // Laid out and anchored: the row shows its trailing end, inset
+            // in from the leading edge.
+            return (rail?.contentSize.width ?? 0) > 0 && (rail?.contentOffset.x ?? 0) < 0
+        }
+
+        let scroll = try #require(rail)
+        #expect(scroll.contentOffset.x < 0)
+        #expect(scroll.strandedRest == nil)
     }
 
     @Test("settling reaches a stranded view nested anywhere under the root")
