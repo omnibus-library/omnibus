@@ -600,7 +600,7 @@ function Lane({
 }: {
   request: Request;
   context: LaneContext;
-  /** The request the page or pane is for, rather than another one still going for the book. */
+  /** The request the page or pane is for, rather than another of the book's. */
   main: boolean;
 }) {
   const viewer = useCurrentUser();
@@ -795,7 +795,7 @@ function UnrequestedLane({
   );
 }
 
-/** Another reader's request still going for the book, in a lane of its own. */
+/** Another of the book's requests that is not cancelled, in a lane of its own. */
 function OtherLane({ id, context }: { id: number; context: LaneContext }) {
   const request = useQuery(bookRequestQuery(id));
   if (request.data === undefined) {
@@ -806,7 +806,7 @@ function OtherLane({ id, context }: { id: number; context: LaneContext }) {
   return <Lane request={request.data} context={context} main={false} />;
 }
 
-/** A book's requests: the book above, a lane for the request asked for and each other one still going, and the book's history below. It is the Requests list's detail pane and, on a phone, the full-screen page; `focusTitle` moves focus to the book's title once it shows. */
+/** A book's requests: the book above, a lane for the request asked for and each other one not cancelled, and the book's history below. It is the Requests list's detail pane and, on a phone, the full-screen page; `focusTitle` moves focus to the book's title once it shows. */
 export function RequestDossier({
   uuid,
   id,
