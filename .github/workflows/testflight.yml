@@ -99,7 +99,7 @@ jobs:
     steps:
       # fetch-depth: 0 pulls full history + tags so `git describe` can find the
       # latest release tag (checkout fetches neither by default).
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       # `required: true` only means present: `gh workflow run` and the API
@@ -191,7 +191,7 @@ jobs:
       # name: the product is OmnibusWidgets.appex and the id ends `.widgets`.
       WIDGET_BUNDLE_ID: com.omnibus.mobile.widgets
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: iOS signing setup
         id: signing
@@ -419,7 +419,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v5
         with:
