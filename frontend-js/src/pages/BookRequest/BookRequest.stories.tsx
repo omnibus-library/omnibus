@@ -1109,7 +1109,7 @@ export const NoAudiobookLaneNotRequestedBesideAnotherReadersAudiobookRequest: St
 
 export const NoAudiobookLaneNotRequestedOnceTheAudiobookIsReady: Story = {
   beforeEach({ msw }) {
-    // The book's formats are stale: the ready audiobook is not in them yet, nor in a lane.
+    // The book's formats are stale: the ready audiobook is not in them yet, only in a lane.
     fake = requestFake([
       aWireRequest({
         id: 7,
@@ -1123,7 +1123,7 @@ export const NoAudiobookLaneNotRequestedOnceTheAudiobookIsReady: Story = {
     msw.use(bookHandler(HYPERION), ...fake.handlers);
   },
   play: async ({ canvas }) => {
-    await canvas.findByTestId("request-requester");
+    await canvas.findByTestId("request-other-lane-audiobook");
 
     await expect(
       canvas.queryByTestId("request-unrequested-audiobook"),
@@ -1709,6 +1709,32 @@ export const AnotherReadersLiveRequestGetsALaneOfItsOwn: Story = {
   },
 };
 
+export const BothReadyRequestsKeepTheirLanes: Story = {
+  beforeEach({ msw }) {
+    const ready = {
+      state: "ready",
+      chosen_result_id: EPUB.id,
+      progress: 1,
+    } as const;
+    fake = requestFake([
+      aWireRequest({ id: 8, ...ready, versions: [EPUB] }),
+      aWireRequest({ id: 9, kind: "audiobook", ...ready, versions: [EPUB] }),
+    ]);
+    msw.use(bookHandler(HYPERION), ...fake.handlers);
+  },
+  play: async ({ canvas }) => {
+    const pane = within(await canvas.findByTestId("requests-pane"));
+    // Whichever the list files the book under is the main lane; the other keeps a lane of its own.
+    await waitFor(() =>
+      expect(
+        pane.getAllByTestId("request-state").map((s) => s.textContent),
+      ).toEqual(expect.arrayContaining(["Ready to read", "Ready to listen"])),
+    );
+
+    await expect(pane.queryByTestId("request-history")).toBeNull();
+  },
+};
+
 export const AStuckRequestBesideTheFiledOneKeepsItsTryAgain: Story = {
   parameters: { user: READER },
   beforeEach({ msw }) {
@@ -1864,9 +1890,8 @@ export const HistoryRecordsAVersionSwappedForAnother: Story = {
         {},
         {
           id: 5,
-          state: "ready",
+          state: "cancelled",
           chosen_result_id: EPUB.id,
-          progress: 1,
           versions: [EPUB, { ...PDF, rejected: true }],
         },
       ),

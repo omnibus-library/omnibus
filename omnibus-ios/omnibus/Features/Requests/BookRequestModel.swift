@@ -1,6 +1,6 @@
 //  BookRequestModel.swift
 //  The request page's state: a book's lanes (the request the page opened on and
-//  each other one going or stuck), its history, and the reads that keep them
+//  each other one not cancelled), its history, and the reads that keep them
 //  current. The API sits behind a seam so decisions can be tested without a server.
 
 import Foundation
@@ -48,7 +48,7 @@ final class BookRequestModel {
 
     // MARK: - Derived
 
-    /// The main lane, then each other request going or stuck; one whose full read hasn't arrived waits.
+    /// The main lane, then each other request not cancelled; one whose full read hasn't arrived waits.
     var lanes: [BookRequest] { laneIDs.compactMap { reads[$0] } }
 
     private var laneIDs: [Int64] {
@@ -56,7 +56,7 @@ final class BookRequestModel {
         return [mainID] + BookRequestFlow.splitBookRequests(listings, shown: mainID).lanes.map(\.request.id)
     }
 
-    /// The book's past requests: the cancelled ones and any that swapped a version.
+    /// The book's past requests: the cancelled ones and any still going that swapped a version.
     var history: [RequestListing] {
         guard let listings else { return [] }
         return BookRequestFlow.splitBookRequests(listings, shown: mainID ?? 0).history

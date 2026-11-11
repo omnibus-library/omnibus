@@ -1,6 +1,6 @@
 //  BookRequestView.swift
 //  A book's requests on one page: the book, a lane for the request it opened on
-//  and each other one going or stuck, the formats not yet requested, and the
+//  and each other one not cancelled, the formats not yet requested, and the
 //  history. Pushed from the Requests list and the wishlist's Get sheet.
 
 import SwiftUI

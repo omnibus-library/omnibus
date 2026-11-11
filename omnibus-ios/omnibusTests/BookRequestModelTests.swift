@@ -111,6 +111,16 @@ struct BookRequestModelTests {
         #expect(model.lanes.first?.id == 2)
     }
 
+    @Test func reEnteringABookWithAReadyEbookAndAReadyAudiobookShowsBoth() async {
+        let rows = [listing("b", id: 2, kind: .audiobook, state: .ready), listing("b", id: 1, kind: .ebook, state: .ready)]
+        // A fresh model re-picks the main lane, as coming back to the page does.
+        let again = model(bookRequestAPI(listings: rows))
+        await again.load(viewer: adaViewer)
+        #expect(Set(again.lanes.map(\.kind)) == [.ebook, .audiobook])
+        #expect(again.history.isEmpty)
+        #expect(again.pollInterval == nil)
+    }
+
     private func polled(_ log: ReadLog) async {
         let rows = [
             listing("b", id: 3, userID: 2, state: .stuck, stuckReason: .notFound),

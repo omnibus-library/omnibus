@@ -359,20 +359,18 @@ export function offersRequestAgain(
   );
 }
 
-/** A book's requests besides the one on screen: those still going, and stuck ones that await a Try again, get a lane of their own; the history keeps the cancelled ones and any that swapped a version. */
+/** A book's requests besides the one on screen: every one not cancelled gets a lane of its own, so a ready one keeps its files on screen; the history keeps the cancelled ones and any still going that swapped a version. */
 export function splitBookRequests(
   listings: readonly RequestListing[],
   shown: number,
 ) {
   const others = listings.filter((l) => l.request.id !== shown);
   return {
-    lanes: others.filter(
-      ({ request }) => isLive(request.state) || request.state === "stuck",
-    ),
+    lanes: others.filter(({ request }) => request.state !== "cancelled"),
     history: others.filter(
       ({ request }) =>
         request.state === "cancelled" ||
-        (request.state !== "stuck" && request.versions.some((v) => v.rejected)),
+        (isLive(request.state) && request.versions.some((v) => v.rejected)),
     ),
   };
 }

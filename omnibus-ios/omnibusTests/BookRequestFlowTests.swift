@@ -495,15 +495,33 @@ struct BookRequestFlowTests {
             #expect(split.history.isEmpty)
         }
 
-        @Test func keepsARequestThatSwappedAVersionInTheHistory() {
-            let swapped = aListing(
-                aRequest(id: 3, state: .ready, chosenResultID: 11, versions: [aVersion(), aVersion(id: 12, rejected: true)]))
+        @Test func keepsALiveRequestThatSwappedAVersionInTheHistory() {
+            let swapped = aListing(aRequest(id: 3, state: .choose, versions: [aVersion(), aVersion(id: 12, rejected: true)]))
             #expect(ids(BookRequestFlow.splitBookRequests([swapped], shown: 7).history) == [3])
         }
 
-        @Test func leavesAReadyRequestWithNothingSwappedAndTheRequestOnScreenOut() {
-            let ready = listing("b", id: 3, state: .ready)
-            #expect(BookRequestFlow.splitBookRequests([ready], shown: 7).history.isEmpty)
+        @Test func givesAReadyRequestALaneAndLeavesItOutOfTheHistory() {
+            let split = BookRequestFlow.splitBookRequests([listing("b", id: 3, state: .ready)], shown: 7)
+            #expect(ids(split.lanes) == [3])
+            #expect(split.history.isEmpty)
+        }
+
+        @Test func givesAReadyRequestThatSwappedAVersionALaneAndLeavesItOutOfTheHistory() {
+            let swapped = aListing(
+                aRequest(id: 3, state: .ready, chosenResultID: 11, versions: [aVersion(), aVersion(id: 12, rejected: true)]))
+            let split = BookRequestFlow.splitBookRequests([swapped], shown: 7)
+            #expect(ids(split.lanes) == [3])
+            #expect(split.history.isEmpty)
+        }
+
+        @Test(arguments: [1, 2] as [Int64])
+        func keepsBothReadyRequestsOnScreenWhicheverIsShown(shown: Int64) {
+            let both = [listing("b", id: 1, kind: .ebook, state: .ready), listing("b", id: 2, kind: .audiobook, state: .ready)]
+            let lanes = ids(BookRequestFlow.splitBookRequests(both, shown: shown).lanes)
+            #expect(([shown] + lanes).sorted() == [1, 2])
+        }
+
+        @Test func leavesTheRequestOnScreenOut() {
             let shown = listing("b", id: 7, state: .cancelled)
             let split = BookRequestFlow.splitBookRequests([shown], shown: 7)
             #expect(split.lanes.isEmpty && split.history.isEmpty)

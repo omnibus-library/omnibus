@@ -358,17 +358,17 @@ enum BookRequestFlow {
         RequestsFlow.groups(listings, viewer: viewer).first?.items.first
     }
 
-    /// A book's requests besides the one on screen: those going or stuck get a lane; the history keeps the
-    /// cancelled ones and any that swapped a version.
+    /// A book's requests besides the one on screen: every one not cancelled gets a lane, so a ready one keeps
+    /// its files on screen; the history keeps the cancelled ones and any still going that swapped a version.
     static func splitBookRequests(
         _ listings: [RequestListing], shown: Int64
     ) -> (lanes: [RequestListing], history: [RequestListing]) {
         let others = listings.filter { $0.request.id != shown }
         return (
-            others.filter { isLive($0.request.state) || $0.request.state == .stuck },
+            others.filter { $0.request.state != .cancelled },
             others.filter {
                 $0.request.state == .cancelled
-                    || ($0.request.state != .stuck && $0.request.versions.contains { $0.rejected })
+                    || (isLive($0.request.state) && $0.request.versions.contains { $0.rejected })
             }
         )
     }

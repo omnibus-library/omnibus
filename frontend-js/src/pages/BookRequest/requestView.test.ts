@@ -622,22 +622,54 @@ describe("splitBookRequests", () => {
     expect(split.history).toEqual([]);
   });
 
-  it("keeps a request that swapped a version in the history", () => {
+  it("keeps a live request that swapped a version in the history", () => {
     const swapped = listing({
       id: 3,
-      state: "ready",
-      chosen_result_id: EPUB.id,
+      state: "choose",
       versions: [EPUB, { ...PDF, rejected: true }],
     });
 
     expect(ids(splitBookRequests([swapped], SHOWN).history)).toEqual([3]);
   });
 
-  it("leaves a ready request with nothing swapped out of the history", () => {
-    const ready = listing({ id: 3, state: "ready" });
+  it("gives a ready request a lane of its own and leaves it out of the history", () => {
+    const split = splitBookRequests(
+      [listing({ id: 3, state: "ready" })],
+      SHOWN,
+    );
 
-    expect(splitBookRequests([ready], SHOWN).history).toEqual([]);
+    expect(ids(split.lanes)).toEqual([3]);
+    expect(split.history).toEqual([]);
   });
+
+  it("gives a ready request that swapped a version a lane and leaves it out of the history", () => {
+    const swapped = listing({
+      id: 3,
+      state: "ready",
+      chosen_result_id: EPUB.id,
+      versions: [EPUB, { ...PDF, rejected: true }],
+    });
+    const split = splitBookRequests([swapped], SHOWN);
+
+    expect(ids(split.lanes)).toEqual([3]);
+    expect(split.history).toEqual([]);
+  });
+
+  it.each([
+    ["the ebook", 1],
+    ["the audiobook", 2],
+  ])(
+    "keeps both ready requests on screen when %s is shown",
+    (_shown, shown) => {
+      const both = [
+        listing({ id: 1, kind: "ebook", state: "ready" }),
+        listing({ id: 2, kind: "audiobook", state: "ready" }),
+      ];
+      const { lanes } = splitBookRequests(both, shown);
+
+      expect([shown, ...ids(lanes)].sort()).toEqual([1, 2]);
+    },
+  );
 
   it("never lists the request on screen", () => {
     const shown = listing({ id: SHOWN, state: "cancelled" });
