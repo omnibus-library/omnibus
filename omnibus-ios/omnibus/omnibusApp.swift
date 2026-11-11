@@ -44,6 +44,11 @@ struct OmnibusApp: App {
         // Has to happen before launch finishes, so it can't wait for the
         // scene-phase handler below.
         LifecycleSync.shared.registerBackgroundTask()
+        // Per scene, not on `scenePhase` below: that is every scene's at once,
+        // and stays active while a car or another iPad window does. Observed
+        // once here, not from each window's view, which would hear every
+        // scene's activation and settle it once per window.
+        settleStrandedScrollViewsOnActivation()
     }
 
     var body: some Scene {
