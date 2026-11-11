@@ -19,6 +19,8 @@ path = "src/main.rs"
 anyhow = "1"
 # Same version/features `server/` uses, so cargo unifies on one build.
 axum = { version = "0.8", features = ["multipart"] }
+# Same version `db/` uses to carry NZB bytes, so cargo unifies on one build.
+base64 = "0.22"
 omnibus-shared = { path = "../shared" }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -28,5 +30,5 @@ tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "syn
 [dev-dependencies]
 omnibus-db = { path = "../db" }
 # The control API tests call it directly.
-reqwest = { workspace = true, features = ["query"] }
+reqwest = { workspace = true, features = ["query", "multipart"] }
 tempfile = { workspace = true }

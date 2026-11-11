@@ -102,6 +102,11 @@ impl Download {
         )
     }
 
+    /// The download is over, finished or failed, which usenet clients list in history.
+    pub fn ended(&self) -> bool {
+        self.done || self.outcome == Outcome::Fail
+    }
+
     fn running(&self) -> bool {
         !self.done && matches!(self.outcome, Outcome::Complete | Outcome::Junk)
     }
