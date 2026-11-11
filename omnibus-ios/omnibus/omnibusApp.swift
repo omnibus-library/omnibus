@@ -58,6 +58,7 @@ struct OmnibusApp: App {
                 // never again, so without this the app only ever synced on a
                 // cold start, a sign-in, or a reconnect it happened to notice.
                 .onChange(of: scenePhase) { _, phase in
+                    if phase == .active { settleStrandedScrollViews() }
                     guard appState.phase == .ready else { return }
                     switch phase {
                     case .active:
